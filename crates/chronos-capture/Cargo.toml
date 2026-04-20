@@ -1,0 +1,8 @@
+[package]
+name = "chronos-capture"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+chronos-domain = { workspace = true }
+tokio = { workspace = true }

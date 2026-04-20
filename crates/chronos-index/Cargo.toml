@@ -1,0 +1,7 @@
+[package]
+name = "chronos-index"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+chronos-domain = { workspace = true }

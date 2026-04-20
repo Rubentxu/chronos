@@ -1,0 +1,9 @@
+[package]
+name = "chronos-query"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+chronos-domain = { workspace = true }
+chronos-format = { workspace = true }
+chronos-index = { workspace = true }

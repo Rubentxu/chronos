@@ -1,0 +1,35 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environ
+.env
+.env.*
+
+# Build artifacts
+*.d
+*.rlib
+*.so
+*.dylib
+*.dll
+
+# Test artifacts (compiled C fixtures)
+tests/fixtures/test_add
+tests/fixtures/test_segfault
+
+# Profiling
+flamegraph.svg
+perf.data
+perf.data.old

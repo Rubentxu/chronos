@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "chronos": {
+      "command": "cargo",
+      "args": ["run", "--package", "chronos-mcp", "--bin", "chronos-mcp"],
+      "cwd": "/home/rubentxu/Proyectos/rust/chronos"
+    }
+  }
+}

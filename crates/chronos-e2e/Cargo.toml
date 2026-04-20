@@ -1,0 +1,21 @@
+[package]
+name = "chronos-e2e"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+chronos-domain = { workspace = true }
+chronos-capture = { workspace = true }
+chronos-native = { workspace = true }
+chronos-index = { workspace = true }
+chronos-query = { workspace = true }
+chronos-format = { workspace = true }
+chronos-mcp = { workspace = true }
+tokio = { workspace = true }
+rmcp = { version = "1.5", features = ["server", "macros", "schemars", "transport-io"] }
+tempfile = "3"
+
+[[test]]
+name = "e2e"
+path = "tests/e2e.rs"

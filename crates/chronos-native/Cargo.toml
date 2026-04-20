@@ -1,0 +1,14 @@
+[package]
+name = "chronos-native"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+chronos-domain = { workspace = true }
+chronos-capture = { workspace = true }
+nix = { workspace = true }
+gimli = { workspace = true }
+object = { workspace = true }
+memmap2 = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }

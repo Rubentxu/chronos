@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "chronos": {
+      "command": "/path/to/chronos-mcp",
+      "args": [],
+      "env": {
+        "RUST_LOG": "info"
+      }
+    }
+  }
+}
