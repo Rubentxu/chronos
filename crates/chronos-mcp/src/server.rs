@@ -6,33 +6,30 @@ use chronos_domain::{
     CaptureConfig, EventType, TraceEvent, TraceQuery,
 };
 use chronos_index::builder::IndexBuilder;
-use chronos_native::NativeAdapter;
+use chronos_native::capture_runner::{CaptureRunner, CaptureEndReason};
 use chronos_query::QueryEngine;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, Content};
 use rmcp::tool;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use chronos_capture::TraceAdapter;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::info;
 
 /// The Chronos MCP server state.
 pub struct ChronosServer {
-    /// Active capture sessions (session_id → session + events).
+    /// Active capture sessions (session_id → runner).
     sessions: Arc<Mutex<HashMap<String, ActiveSession>>>,
     /// Loaded query engines (session_id → engine).
     engines: Arc<Mutex<HashMap<String, QueryEngine>>>,
 }
 
-/// An active capture session with its events.
+/// An active capture session with its runner.
 struct ActiveSession {
-    #[allow(dead_code)]
     pid: u32,
-    events: Vec<TraceEvent>,
+    runner: CaptureRunner,
 }
 
 // ============================================================================
@@ -243,33 +240,35 @@ impl ChronosServer {
         config.args = params.args;
         config.capture_syscalls = params.trace_syscalls;
         if let Some(cwd) = params.cwd {
-            config.cwd = Some(PathBuf::from(cwd));
+            config.cwd = Some(std::path::PathBuf::from(cwd));
         }
 
-        let adapter = NativeAdapter::new();
-        match adapter.start_capture(config) {
-            Ok(session) => {
-                let session_id = session.session_id.clone();
-                let pid = session.pid;
+        let mut runner = CaptureRunner::new(config);
+
+        match runner.start() {
+            Ok(pid) => {
+                let session_id = uuid::Uuid::new_v4().to_string();
+                info!("Capture session {} started for PID {}", session_id, pid);
+
                 let mut sessions = self.sessions.lock().await;
                 sessions.insert(session_id.clone(), ActiveSession {
-                    pid,
-                    events: Vec::new(),
+                    pid: pid as u32,
+                    runner,
                 });
-                drop(sessions);
-
-                self.build_and_store_engine(&session_id, Vec::new()).await;
 
                 let result = serde_json::json!({
                     "session_id": session_id,
                     "pid": pid,
                     "status": "active",
                     "message": format!("Program '{}' launched under trace capture", params.program),
+                    "hint": "Use debug_stop to finalize the session, then query tools to analyze the trace."
                 });
                 Ok(CallToolResult::success(json_content(&result)))
             }
             Err(e) => {
-                Ok(CallToolResult::error(text_content(format!("Error: {}", e))))
+                Ok(CallToolResult::error(text_content(format!(
+                    "Failed to start capture: {}", e
+                ))))
             }
         }
     }
@@ -280,32 +279,12 @@ impl ChronosServer {
         params: Parameters<DebugAttachParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let config = CaptureConfig::new(format!("pid:{}", params.pid));
-        let adapter = NativeAdapter::new();
-
-        match adapter.attach_to_process(params.pid, config) {
-            Ok(session) => {
-                let session_id = session.session_id.clone();
-                let mut sessions = self.sessions.lock().await;
-                sessions.insert(session_id.clone(), ActiveSession {
-                    pid: params.pid,
-                    events: Vec::new(),
-                });
-                drop(sessions);
-
-                self.build_and_store_engine(&session_id, Vec::new()).await;
-
-                let result = serde_json::json!({
-                    "session_id": session_id,
-                    "status": "active",
-                    "pid": params.pid,
-                });
-                Ok(CallToolResult::success(json_content(&result)))
-            }
-            Err(e) => {
-                Ok(CallToolResult::error(text_content(format!("Error: {}", e))))
-            }
-        }
+        // Attach-based capture will be supported in a future update.
+        // For now, return an informational message.
+        Ok(CallToolResult::error(text_content(format!(
+            "Attach to PID {} is not yet supported. Use debug_run to launch a program under trace.",
+            params.pid
+        ))))
     }
 
     #[tool(name = "debug_stop", description = "Stop an active trace capture session and build query indices.")]
@@ -317,13 +296,54 @@ impl ChronosServer {
         let mut sessions = self.sessions.lock().await;
 
         match sessions.remove(&params.session_id) {
-            Some(active) => {
-                self.build_and_store_engine(&params.session_id, active.events).await;
-                let result = serde_json::json!({
-                    "session_id": params.session_id,
-                    "status": "finalized",
-                });
-                Ok(CallToolResult::success(json_content(&result)))
+            Some(mut active) => {
+                info!("Stopping capture session {}", params.session_id);
+
+                // Stop the runner and collect events (blocks until event loop finishes)
+                let capture_result = tokio::task::spawn_blocking(move || {
+                    active.runner.stop_and_collect()
+                })
+                .await;
+
+                let result = match capture_result {
+                    Ok(Ok(capture)) => {
+                        let total_events = capture.total_events;
+                        let end_reason_str = match &capture.end_reason {
+                            CaptureEndReason::Exited(code) => format!("exited({})", code),
+                            CaptureEndReason::Signaled { signal_name, .. } => format!("signaled({})", signal_name),
+                            CaptureEndReason::StoppedByUser => "stopped_by_user".into(),
+                            CaptureEndReason::Failed(e) => format!("failed({})", e),
+                        };
+
+                        info!(
+                            "Capture {} finished: {} events, reason: {}",
+                            params.session_id, total_events, end_reason_str
+                        );
+
+                        // Build indices and store engine
+                        self.build_and_store_engine(&params.session_id, capture.events).await;
+
+                        let output = serde_json::json!({
+                            "session_id": params.session_id,
+                            "status": "finalized",
+                            "total_events": total_events,
+                            "end_reason": end_reason_str,
+                            "hint": "Session is now queryable. Use query_events, get_call_stack, get_execution_summary, etc."
+                        });
+                        Ok(CallToolResult::success(json_content(&output)))
+                    }
+                    Ok(Err(e)) => {
+                        Ok(CallToolResult::error(text_content(format!(
+                            "Capture collection failed: {}", e
+                        ))))
+                    }
+                    Err(e) => {
+                        Ok(CallToolResult::error(text_content(format!(
+                            "Capture thread error: {}", e
+                        ))))
+                    }
+                };
+                result
             }
             None => {
                 Ok(CallToolResult::error(text_content(format!(

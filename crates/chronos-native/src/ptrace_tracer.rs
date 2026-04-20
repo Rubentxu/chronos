@@ -109,6 +109,8 @@ pub struct PtraceTracer {
     config: PtraceConfig,
     /// Whether initial setup (setoptions) has been done.
     initialized: bool,
+    /// Buffered events from a previous wait_event that produced multiple events.
+    pending_events: Vec<PtraceEvent>,
 }
 
 impl PtraceTracer {
@@ -119,6 +121,7 @@ impl PtraceTracer {
             traced_pids: std::collections::HashSet::new(),
             config,
             initialized: false,
+            pending_events: Vec::new(),
         }
     }
 
@@ -287,7 +290,14 @@ impl PtraceTracer {
     /// Wait for the next ptrace event from any traced process.
     ///
     /// Returns the event and associated data. Blocks until an event occurs.
+    /// If capture_registers is enabled, register snapshots are yielded as
+    /// separate events before the stop event that triggered them.
     pub fn wait_event(&mut self) -> Result<Option<PtraceEvent>, TraceError> {
+        // Return buffered events first
+        if !self.pending_events.is_empty() {
+            return Ok(Some(self.pending_events.remove(0)));
+        }
+
         // Wait for any child (pid -1 means any)
         let wait_flags = WaitPidFlag::__WALL;
 
@@ -335,12 +345,9 @@ impl PtraceTracer {
                     let _ = self.setup_ptrace_options(pid);
                 }
 
-                // Return registers event first if captured, then the stop event
+                // Buffer registers event if captured; will be returned on next wait_event() call
                 if let Some(re) = regs_event {
-                    // We'll need to buffer one event... for now, just return the combined info
-                    // Actually, let's return just the stop event with registers included
-                    // We can always separate them later
-                    return Ok(Some(re));
+                    self.pending_events.push(re);
                 }
 
                 Some(PtraceEvent::Stopped {

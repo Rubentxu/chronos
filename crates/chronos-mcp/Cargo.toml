@@ -18,6 +18,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 rmcp = { version = "1.5", features = ["server", "macros", "schemars", "transport-io"] }
+uuid = { workspace = true }
 
 [[bin]]
 name = "chronos-mcp"

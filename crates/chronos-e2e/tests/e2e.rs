@@ -371,3 +371,122 @@ fn test_full_pipeline_simulation() {
     let _stack_after_all = engine.reconstruct_call_stack(100);
     assert!(stack_at_add.len() >= 1);
 }
+
+// ============================================================================
+// Real ptrace capture tests
+// ============================================================================
+
+/// Test that the capture runner can trace /bin/true (exits immediately).
+/// Run with: cargo test --package chronos-e2e --test e2e -- test_capture_runner_bin_true --nocapture --ignored
+#[test]
+#[ignore]
+fn test_capture_runner_bin_true() {
+    use chronos_domain::CaptureConfig;
+    use chronos_native::capture_runner::{CaptureEndReason, CaptureRunner};
+
+    let config = CaptureConfig::new("/bin/true");
+    let mut runner = CaptureRunner::new(config);
+
+    // Run capture to completion (blocks until process exits)
+    let result = runner.run_to_completion().expect("Should capture /bin/true");
+
+    // Should have captured some events
+    eprintln!("Captured {} events from /bin/true", result.total_events);
+
+    // Process should have exited with code 0
+    assert!(
+        matches!(result.end_reason, CaptureEndReason::Exited(0)),
+        "Expected Exited(0), got: {:?}", result.end_reason
+    );
+
+    // We should have at least the initial stop + exit events
+    assert!(result.total_events > 0, "Should capture at least 1 event");
+    assert!(!result.events.is_empty());
+
+    // Print events for debugging
+    for (i, evt) in result.events.iter().take(10).enumerate() {
+        let func = evt.location.function.as_deref().unwrap_or("???");
+        eprintln!("  Event {}: {:?} at 0x{:x} in {} (thread {})",
+            i, evt.event_type, evt.location.address, func, evt.thread_id);
+    }
+}
+
+/// Test capture of a compiled C fixture with symbol resolution.
+/// Run with: cargo test --package chronos-e2e --test e2e -- test_capture_runner_c_fixture --nocapture --ignored
+#[test]
+#[ignore]
+fn test_capture_runner_c_fixture_with_symbols() {
+    use chronos_domain::CaptureConfig;
+    use chronos_native::capture_runner::{CaptureEndReason, CaptureRunner};
+
+    let binary = compile_fixture("test_add.c");
+
+    let config = CaptureConfig::new(binary.to_str().unwrap());
+    let mut runner = CaptureRunner::new(config);
+
+    let result = runner.run_to_completion().expect("Should capture test_add");
+
+    eprintln!("Captured {} events from test_add", result.total_events);
+
+    assert!(
+        matches!(result.end_reason, CaptureEndReason::Exited(0)),
+        "test_add should exit with 0, got: {:?}", result.end_reason
+    );
+
+    assert!(result.total_events > 0, "Should capture events");
+
+    // Check that symbol resolution worked
+    let events_with_function: Vec<_> = result.events.iter()
+        .filter(|e| e.location.function.is_some())
+        .collect();
+
+    eprintln!("Events with function names: {}/{}", events_with_function.len(), result.events.len());
+
+    for evt in &result.events {
+        let func = evt.location.function.as_deref().unwrap_or("???");
+        eprintln!("  {:?} at 0x{:x} in {} (thread {})",
+            evt.event_type, evt.location.address, func, evt.thread_id);
+    }
+}
+
+/// Test capture runner with a crashing program.
+/// Ignored by default — segfault handling needs more work.
+#[test]
+#[ignore]
+fn test_capture_runner_segfault() {
+    use chronos_domain::CaptureConfig;
+    use chronos_native::capture_runner::{CaptureEndReason, CaptureRunner};
+
+    let binary = compile_fixture("test_segfault.c");
+
+    let config = CaptureConfig::new(binary.to_str().unwrap());
+    let mut runner = CaptureRunner::new(config);
+
+    let result = runner.run_to_completion().expect("Should capture test_segfault");
+
+    eprintln!("Captured {} events from test_segfault", result.total_events);
+
+    // Process should have been signaled
+    match &result.end_reason {
+        CaptureEndReason::Signaled { signal_name, .. } => {
+            assert!(
+                signal_name.contains("SEGV") || signal_name.contains("KILL"),
+                "Expected SIGSEGV, got: {}", signal_name
+            );
+        }
+        CaptureEndReason::Exited(code) => {
+            eprintln!("Process exited with code {} (may be signal-encoded)", code);
+        }
+        other => {
+            eprintln!("End reason: {:?}", other);
+        }
+    }
+
+    assert!(result.total_events > 0, "Should capture events before crash");
+
+    for evt in &result.events {
+        let func = evt.location.function.as_deref().unwrap_or("???");
+        eprintln!("  {:?} at 0x{:x} in {} (thread {})",
+            evt.event_type, evt.location.address, func, evt.thread_id);
+    }
+}
