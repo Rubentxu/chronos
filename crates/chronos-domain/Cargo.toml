@@ -9,6 +9,7 @@ rust-version.workspace = true
 thiserror = { workspace = true }
 serde = { workspace = true }
 uuid = { workspace = true }
+schemars = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

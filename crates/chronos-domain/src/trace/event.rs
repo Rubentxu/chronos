@@ -3,6 +3,7 @@
 use crate::trace::SourceLocation;
 use crate::value::VariableInfo;
 use serde::{Deserialize, Serialize};
+use schemars::JsonSchema;
 
 /// Unique identifier for events within a session.
 pub type EventId = u64;
@@ -81,6 +82,14 @@ impl std::fmt::Display for EventType {
     }
 }
 
+/// Kind of Python trace event.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
+pub enum PythonEventKind {
+    Call,
+    Return,
+    Exception,
+}
+
 /// Event-specific data carried by a [`TraceEvent`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum EventData {
@@ -141,6 +150,22 @@ pub enum EventData {
     Custom {
         name: String,
         data_json: String,
+    },
+
+    /// Python function call/return/exception data.
+    PythonFrame {
+        /// "module.Class.method" or just "func_name"
+        qualified_name: String,
+        /// Absolute path to .py file
+        file: String,
+        /// Line number
+        line: u32,
+        /// Whether the frame is a generator (always false in MVP)
+        is_generator: bool,
+        /// Captured locals at call site
+        locals: Option<Vec<VariableInfo>>,
+        /// Kind of Python event
+        event_kind: PythonEventKind,
     },
 }
 
@@ -310,6 +335,106 @@ impl TraceEvent {
         }
     }
 
+    /// Create a Python call event.
+    pub fn python_call(
+        event_id: EventId,
+        timestamp_ns: TimestampNs,
+        thread_id: ThreadId,
+        qualified_name: impl Into<String>,
+        file: impl Into<String>,
+        line: u32,
+    ) -> Self {
+        let qualified_name = qualified_name.into();
+        let file = file.into();
+        Self {
+            event_id,
+            timestamp_ns,
+            thread_id,
+            event_type: EventType::FunctionEntry,
+            location: SourceLocation {
+                file: Some(file.clone()),
+                line: Some(line),
+                function: Some(qualified_name.clone()),
+                ..Default::default()
+            },
+            data: EventData::PythonFrame {
+                qualified_name,
+                file,
+                line,
+                is_generator: false,
+                locals: None,
+                event_kind: PythonEventKind::Call,
+            },
+        }
+    }
+
+    /// Create a Python call event with local variables.
+    pub fn python_call_with_locals(
+        event_id: EventId,
+        timestamp_ns: TimestampNs,
+        thread_id: ThreadId,
+        qualified_name: impl Into<String>,
+        file: impl Into<String>,
+        line: u32,
+        locals: Vec<VariableInfo>,
+    ) -> Self {
+        let qualified_name = qualified_name.into();
+        let file = file.into();
+        Self {
+            event_id,
+            timestamp_ns,
+            thread_id,
+            event_type: EventType::FunctionEntry,
+            location: SourceLocation {
+                file: Some(file.clone()),
+                line: Some(line),
+                function: Some(qualified_name.clone()),
+                ..Default::default()
+            },
+            data: EventData::PythonFrame {
+                qualified_name,
+                file,
+                line,
+                is_generator: false,
+                locals: Some(locals),
+                event_kind: PythonEventKind::Call,
+            },
+        }
+    }
+
+    /// Create a Python return event.
+    pub fn python_return(
+        event_id: EventId,
+        timestamp_ns: TimestampNs,
+        thread_id: ThreadId,
+        qualified_name: impl Into<String>,
+        file: impl Into<String>,
+        line: u32,
+    ) -> Self {
+        let qualified_name = qualified_name.into();
+        let file = file.into();
+        Self {
+            event_id,
+            timestamp_ns,
+            thread_id,
+            event_type: EventType::FunctionExit,
+            location: SourceLocation {
+                file: Some(file.clone()),
+                line: Some(line),
+                function: Some(qualified_name.clone()),
+                ..Default::default()
+            },
+            data: EventData::PythonFrame {
+                qualified_name,
+                file,
+                line,
+                is_generator: false,
+                locals: None,
+                event_kind: PythonEventKind::Return,
+            },
+        }
+    }
+
     /// Get the function name from this event, if applicable.
     pub fn function_name(&self) -> Option<&str> {
         self.location.function.as_deref()
@@ -332,6 +457,7 @@ impl Default for SourceLocation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::VariableScope;
 
     #[test]
     fn test_event_type_display() {
@@ -402,5 +528,121 @@ mod tests {
         let json = serde_json::to_string(&event).unwrap();
         let deserialized: TraceEvent = serde_json::from_str(&json).unwrap();
         assert_eq!(event, deserialized);
+    }
+
+    #[test]
+    fn test_python_frame_serialization_roundtrip() {
+        // Test PythonEventKind variants
+        assert_eq!(
+            serde_json::to_string(&PythonEventKind::Call).unwrap(),
+            "\"Call\""
+        );
+        assert_eq!(
+            serde_json::to_string(&PythonEventKind::Return).unwrap(),
+            "\"Return\""
+        );
+        assert_eq!(
+            serde_json::to_string(&PythonEventKind::Exception).unwrap(),
+            "\"Exception\""
+        );
+
+        // Test PythonFrame roundtrip through EventData
+        let locals = vec![
+            VariableInfo::new("x", "42", "int", 0x1000, VariableScope::Local),
+            VariableInfo::new("name", "'hello'", "str", 0x2000, VariableScope::Local),
+        ];
+        let python_data = EventData::PythonFrame {
+            qualified_name: "my_module.MyClass.my_method".to_string(),
+            file: "/path/to/script.py".to_string(),
+            line: 42,
+            is_generator: false,
+            locals: Some(locals),
+            event_kind: PythonEventKind::Call,
+        };
+        let json = serde_json::to_string(&python_data).unwrap();
+        let deserialized: EventData = serde_json::from_str(&json).unwrap();
+        assert_eq!(python_data, deserialized);
+
+        // Test without locals
+        let python_data_no_locals = EventData::PythonFrame {
+            qualified_name: "simple_func".to_string(),
+            file: "/path/to/script.py".to_string(),
+            line: 10,
+            is_generator: false,
+            locals: None,
+            event_kind: PythonEventKind::Return,
+        };
+        let json = serde_json::to_string(&python_data_no_locals).unwrap();
+        let deserialized: EventData = serde_json::from_str(&json).unwrap();
+        assert_eq!(python_data_no_locals, deserialized);
+    }
+
+    #[test]
+    fn test_python_frame_entry_exit() {
+        // Test python_call constructor
+        let call_event = TraceEvent::python_call(
+            1,
+            1000,
+            42,
+            "my_module.MyClass.my_method",
+            "/path/to/script.py",
+            42,
+        );
+        assert_eq!(call_event.event_id, 1);
+        assert_eq!(call_event.timestamp_ns, 1000);
+        assert_eq!(call_event.thread_id, 42);
+        assert_eq!(call_event.location.file.as_deref(), Some("/path/to/script.py"));
+        assert_eq!(call_event.location.line, Some(42));
+        match &call_event.data {
+            EventData::PythonFrame { qualified_name, file, line, is_generator, locals, event_kind } => {
+                assert_eq!(qualified_name, "my_module.MyClass.my_method");
+                assert_eq!(file, "/path/to/script.py");
+                assert_eq!(*line, 42);
+                assert!(!*is_generator);
+                assert!(locals.is_none());
+                assert_eq!(event_kind, &PythonEventKind::Call);
+            }
+            _ => panic!("Expected PythonFrame data"),
+        }
+
+        // Test python_return constructor
+        let return_event = TraceEvent::python_return(
+            2,
+            2000,
+            42,
+            "my_module.MyClass.my_method",
+            "/path/to/script.py",
+            50,
+        );
+        assert_eq!(return_event.event_id, 2);
+        assert_eq!(return_event.timestamp_ns, 2000);
+        match &return_event.data {
+            EventData::PythonFrame { event_kind, .. } => {
+                assert_eq!(event_kind, &PythonEventKind::Return);
+            }
+            _ => panic!("Expected PythonFrame data"),
+        }
+
+        // Test python_call_with_locals
+        let locals = vec![
+            VariableInfo::new("x", "42", "int", 0x1000, VariableScope::Local),
+        ];
+        let call_with_locals = TraceEvent::python_call_with_locals(
+            3,
+            1500,
+            42,
+            "my_func",
+            "/path/to/script.py",
+            10,
+            locals.clone(),
+        );
+        match &call_with_locals.data {
+            EventData::PythonFrame { locals: event_locals, event_kind, .. } => {
+                assert!(event_locals.is_some());
+                assert_eq!(event_locals.as_ref().unwrap().len(), 1);
+                assert_eq!(event_kind, &PythonEventKind::Call);
+            }
+            _ => panic!("Expected PythonFrame data"),
+        }
     }
 }
