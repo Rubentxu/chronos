@@ -60,10 +60,10 @@ impl TraceDiff {
     ) -> DiffReport {
         // Hash all events
         let hashes_a: std::collections::HashSet<String> =
-            events_a.iter().map(|e| hash_event(e)).collect();
+            events_a.iter().map(hash_event).collect();
 
         let hashes_b: std::collections::HashSet<String> =
-            events_b.iter().map(|e| hash_event(e)).collect();
+            events_b.iter().map(hash_event).collect();
 
         let hashes_a: Vec<String> = hashes_a.into_iter().collect();
         let hashes_b: Vec<String> = hashes_b.into_iter().collect();

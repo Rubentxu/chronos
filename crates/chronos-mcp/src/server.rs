@@ -394,11 +394,7 @@ impl ChronosServer {
             .into_iter()
             .filter(|e| {
                 // Keep everything except raw register snapshots and unknowns
-                match (&e.event_type, &e.data) {
-                    (EventType::Custom, EventData::Registers(_)) => false,
-                    (EventType::Unknown, _) => false,
-                    _ => true,
-                }
+                !matches!((&e.event_type, &e.data), (EventType::Custom, EventData::Registers(_)) | (EventType::Unknown, _))
             })
             .collect();
 

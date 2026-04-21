@@ -47,6 +47,7 @@ pub struct SessionStore {
 
 impl SessionStore {
     /// Open a session store at the given path, creating it if necessary.
+    #[allow(clippy::result_large_err)]
     pub fn open(path: &Path) -> Result<Self, StoreError> {
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
@@ -59,6 +60,7 @@ impl SessionStore {
     }
 
     /// Create an in-memory session store (for testing).
+    #[allow(clippy::result_large_err)]
     pub fn in_memory() -> Result<Self, StoreError> {
         let db = Arc::new(
             redb::Builder::new()
@@ -71,6 +73,7 @@ impl SessionStore {
 
     /// Save all events for a session. Stores events in CAS and records metadata.
     /// Returns the list of content hashes.
+    #[allow(clippy::result_large_err)]
     pub fn save_session(
         &self,
         metadata: SessionMetadata,
@@ -124,6 +127,7 @@ impl SessionStore {
     }
 
     /// Load all events for a session (via CAS lookup).
+    #[allow(clippy::result_large_err)]
     pub fn load_session(
         &self,
         session_id: &str,
@@ -183,6 +187,7 @@ impl SessionStore {
     }
 
     /// List all saved sessions (metadata only).
+    #[allow(clippy::result_large_err)]
     pub fn list_sessions(&self) -> Result<Vec<SessionMetadata>, StoreError> {
         let tx = self
             .db
@@ -204,6 +209,7 @@ impl SessionStore {
     }
 
     /// Delete a session and its event references (not CAS entries — they may be shared).
+    #[allow(clippy::result_large_err)]
     pub fn delete_session(&self, session_id: &str) -> Result<(), StoreError> {
         // Validate session_id contains no path separators
         if session_id.contains('/') || session_id.contains('\\') {
@@ -244,6 +250,7 @@ impl SessionStore {
     }
 
     /// Check if a session exists.
+    #[allow(clippy::result_large_err)]
     pub fn session_exists(&self, session_id: &str) -> Result<bool, StoreError> {
         let tx = self
             .db

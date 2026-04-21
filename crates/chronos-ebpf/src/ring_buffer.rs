@@ -61,9 +61,9 @@ impl BpfRingBuffer {
     pub fn poll(&mut self) -> Result<PollResult, EbpfError> {
         #[cfg(not(feature = "ebpf"))]
         {
-            return Err(EbpfError::Unavailable {
+            Err(EbpfError::Unavailable {
                 reason: "ebpf feature not enabled".to_string(),
-            });
+            })
         }
 
         #[cfg(feature = "ebpf")]
@@ -104,14 +104,9 @@ impl BpfRingBuffer {
     /// Returns an empty vec (not an error) without the `ebpf` feature.
     pub fn drain_events(&mut self) -> Vec<TraceEvent> {
         let mut result = Vec::new();
-        loop {
-            match self.poll() {
-                Ok(PollResult::Event(ev)) => {
-                    let te = self.to_trace_event(ev);
-                    result.push(te);
-                }
-                Ok(PollResult::Empty) | Ok(PollResult::Closed) | Err(_) => break,
-            }
+        while let Ok(PollResult::Event(ev)) = self.poll() {
+            let te = self.to_trace_event(ev);
+            result.push(te);
         }
         result
     }

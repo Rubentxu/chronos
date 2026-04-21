@@ -49,7 +49,7 @@ impl TraceFileWriter {
         self.max_timestamp = Some(self.max_timestamp.map_or(ts, |m: u64| m.max(ts)));
 
         // Flush every 1000 events to avoid large memory buffers
-        if self.event_count % 1000 == 0 {
+        if self.event_count.is_multiple_of(1000) {
             self.writer.flush()?;
         }
 

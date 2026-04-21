@@ -12,18 +12,13 @@ pub const MAX_FUNC_NAME_LEN: usize = 64;
 /// Event kind discriminant — mirrors `EventType` but uses a simple `u8`
 /// for ABI compatibility with the BPF ring buffer.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum EbpfEventKind {
+    #[default]
     FunctionEntry = 0,
     FunctionExit = 1,
     VariableWrite = 2,
     MemoryWrite = 3,
-}
-
-impl Default for EbpfEventKind {
-    fn default() -> Self {
-        Self::FunctionEntry
-    }
 }
 
 /// Fixed-size event struct written by BPF uprobe programs into the ring buffer.

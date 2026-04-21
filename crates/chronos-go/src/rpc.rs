@@ -155,6 +155,7 @@ pub struct DelveVar {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(non_snake_case)]
 pub struct GoroutineInfo {
     pub id: i64,
     #[serde(rename = "currentLoc")]
@@ -162,6 +163,7 @@ pub struct GoroutineInfo {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(non_snake_case)]
 pub struct DelveState {
     pub exited: Option<bool>,
     #[serde(rename = "currentThread")]
@@ -169,6 +171,7 @@ pub struct DelveState {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(non_snake_case)]
 pub struct ThreadInfo {
     #[serde(rename = "goroutineID")]
     pub goroutineID: i64,

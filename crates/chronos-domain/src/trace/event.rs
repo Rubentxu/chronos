@@ -248,7 +248,7 @@ pub enum EventData {
 }
 
 /// x86_64 CPU register state snapshot.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct RegisterState {
     pub rax: u64,
     pub rbx: u64,
@@ -268,31 +268,6 @@ pub struct RegisterState {
     pub r15: u64,
     pub rip: u64,
     pub rflags: u64,
-}
-
-impl Default for RegisterState {
-    fn default() -> Self {
-        Self {
-            rax: 0,
-            rbx: 0,
-            rcx: 0,
-            rdx: 0,
-            rsi: 0,
-            rdi: 0,
-            rbp: 0,
-            rsp: 0,
-            r8: 0,
-            r9: 0,
-            r10: 0,
-            r11: 0,
-            r12: 0,
-            r13: 0,
-            r14: 0,
-            r15: 0,
-            rip: 0,
-            rflags: 0,
-        }
-    }
 }
 
 /// A single trace event — the fundamental unit of recorded execution.
@@ -633,6 +608,7 @@ impl TraceEvent {
     }
 
     /// Create a JavaScript frame event.
+    #[allow(clippy::too_many_arguments)]
     pub fn js_frame(
         event_id: EventId,
         timestamp_ns: TimestampNs,
@@ -665,19 +641,6 @@ impl TraceEvent {
                 scope_chain: Vec::new(),
                 event_kind: kind,
             },
-        }
-    }
-}
-
-// SourceLocation needs Default for the ..Default::default() pattern
-impl Default for SourceLocation {
-    fn default() -> Self {
-        Self {
-            file: None,
-            line: None,
-            column: None,
-            function: None,
-            address: 0,
         }
     }
 }

@@ -34,6 +34,7 @@ impl ContentStore {
     }
 
     /// Ensure the CAS table exists (call from a write transaction).
+    #[allow(clippy::result_large_err)]
     fn ensure_table(&self, tx: &mut redb::WriteTransaction) -> Result<(), StoreError> {
         tx.open_table(CAS_TABLE)
             .map_err(|e| StoreError::Database(e.into()))?;
@@ -44,6 +45,7 @@ impl ContentStore {
     ///
     /// If the event was already stored, returns the existing hash (dedup).
     /// Uses BLAKE3 for content addressing and LZ4 for compression.
+    #[allow(clippy::result_large_err)]
     pub fn put(&self, event: &TraceEvent) -> Result<ContentHash, StoreError> {
         // Serialize with bincode
         let serialized =
@@ -101,6 +103,7 @@ impl ContentStore {
     /// Retrieve and decompress a TraceEvent by its content hash.
     ///
     /// Returns `Ok(None)` if the hash is not found in the store.
+    #[allow(clippy::result_large_err)]
     pub fn get(&self, hash_hex: &str) -> Result<Option<TraceEvent>, StoreError> {
         let tx = self
             .db
@@ -129,6 +132,7 @@ impl ContentStore {
     }
 
     /// Check if a hash exists in the store without deserializing the event.
+    #[allow(clippy::result_large_err)]
     pub fn contains(&self, hash_hex: &str) -> Result<bool, StoreError> {
         let tx = self
             .db

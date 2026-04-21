@@ -8,6 +8,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 
 pub struct PythonSubprocess {
+    #[allow(dead_code)]
     child: Child,
     stdout: BufReader<tokio::process::ChildStdout>,
 }

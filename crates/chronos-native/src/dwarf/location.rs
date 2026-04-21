@@ -17,8 +17,8 @@ pub fn source_location(
     let file = location.file.map(|f| f.to_string());
 
     // Get line and column
-    let line = location.line.map(|l| l as u32);
-    let column = location.column.map(|c| c as u32);
+    let line = location.line;
+    let column = location.column;
 
     // Note: addr2line::Location doesn't have a function field directly
     // Function names come from the frame (but addr2line's API is different)

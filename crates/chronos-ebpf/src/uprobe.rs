@@ -79,9 +79,9 @@ impl UprobeManager {
         #[cfg(not(feature = "ebpf"))]
         {
             let _ = (binary, symbol);
-            return Err(EbpfError::Unavailable {
+            Err(EbpfError::Unavailable {
                 reason: "ebpf feature not enabled".to_string(),
-            });
+            })
         }
 
         #[cfg(feature = "ebpf")]
@@ -121,9 +121,9 @@ impl UprobeManager {
         #[cfg(not(feature = "ebpf"))]
         {
             let _ = (binary, symbol);
-            return Err(EbpfError::Unavailable {
+            Err(EbpfError::Unavailable {
                 reason: "ebpf feature not enabled".to_string(),
-            });
+            })
         }
 
         #[cfg(feature = "ebpf")]

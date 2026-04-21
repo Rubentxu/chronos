@@ -10,8 +10,10 @@ use serde::Deserialize;
 use serde_json::Value;
 
 /// CDP message ID counter
+#[allow(dead_code)]
 static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
+#[allow(dead_code)]
 fn next_id() -> u64 {
     NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
@@ -255,7 +257,7 @@ impl CdpClient {
                     // Handle outgoing messages
                     msg = ws_read.recv() => {
                         if let Some(text) = msg {
-                            if let Err(e) = write.send(Message::Text(text.into())).await {
+                            if let Err(e) = write.send(Message::Text(text)).await {
                                 error!("Failed to send CDP message: {}", e);
                                 break;
                             }

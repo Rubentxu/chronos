@@ -17,9 +17,10 @@ use serde::{Deserialize, Serialize};
 /// Each level is a superset of the level above it.
 /// Use `expand()` to move from coarser to finer detail.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
 pub enum CompressionLevel {
     /// Level 0 — one-line executive summary.
+    #[default]
     Executive = 0,
     /// Level 1 — top-10 hotspot functions.
     Hotspot = 1,
@@ -58,12 +59,6 @@ impl CompressionLevel {
             Self::Detail => "detail",
             Self::Microscopy => "microscopy",
         }
-    }
-}
-
-impl Default for CompressionLevel {
-    fn default() -> Self {
-        Self::Executive
     }
 }
 

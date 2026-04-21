@@ -53,6 +53,7 @@ impl GoAdapter {
     }
 
     /// Convert a Delve state to trace events.
+    #[allow(dead_code)]
     fn state_to_events(
         &self,
         state: &crate::rpc::DelveState,

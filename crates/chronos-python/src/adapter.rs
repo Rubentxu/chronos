@@ -54,6 +54,7 @@ impl PythonAdapter {
     }
 
     /// Convert a RawPythonEvent to a TraceEvent.
+    #[allow(dead_code)]
     fn raw_to_trace_event(state: &mut PythonAdapterState, raw: RawPythonEvent) -> TraceEvent {
         let event_id = state.next_event_id;
         state.next_event_id += 1;

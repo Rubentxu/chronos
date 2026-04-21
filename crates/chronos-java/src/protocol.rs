@@ -55,7 +55,7 @@ impl JdwpClient {
             .await
             .map_err(|e| JavaError::JdwpHandshake(format!("Recv failed: {}", e)))?;
 
-        if &recv != JDWP_HANDSHAKE {
+        if recv != JDWP_HANDSHAKE {
             return Err(JavaError::JdwpHandshake(
                 "Handshake bytes mismatch".to_string(),
             ));

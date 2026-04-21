@@ -143,11 +143,11 @@ impl<'a> Parser<'a> {
             match token {
                 Token::Plus => {
                     self.advance();
-                    left = left + self.parse_mul_div()?;
+                    left += self.parse_mul_div()?;
                 }
                 Token::Minus => {
                     self.advance();
-                    left = left - self.parse_mul_div()?;
+                    left -= self.parse_mul_div()?;
                 }
                 _ => break,
             }
@@ -161,7 +161,7 @@ impl<'a> Parser<'a> {
             match token {
                 Token::Mul => {
                     self.advance();
-                    left = left * self.parse_unary()?;
+                    left *= self.parse_unary()?;
                 }
                 Token::Div => {
                     self.advance();
@@ -169,7 +169,7 @@ impl<'a> Parser<'a> {
                     if rhs == 0.0 {
                         return Err(EvalError::DivisionByZero);
                     }
-                    left = left / rhs;
+                    left /= rhs;
                 }
                 _ => break,
             }

@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Location in source code corresponding to a trace event.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
 pub struct SourceLocation {
     /// Source file path (absolute or relative).
     pub file: Option<String>,

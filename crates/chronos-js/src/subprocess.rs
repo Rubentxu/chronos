@@ -20,13 +20,13 @@ impl NodeProcess {
     pub fn spawn(script: &str, port: u16) -> Result<Self, JsAdapterError> {
         let node_path = which("node").map_err(|_| JsAdapterError::NodeNotFound)?;
 
-        let mut child = Command::new(&node_path)
+        let child = Command::new(&node_path)
             .args([format!("--inspect={}", port), script.to_string()])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true)
             .spawn()
-            .map_err(|e| JsAdapterError::SpawnFailed(e))?;
+            .map_err(JsAdapterError::SpawnFailed)?;
 
         // Wait a moment for the process to start
         // (best effort - we check again in wait_for_cdp_ready)
@@ -98,7 +98,7 @@ impl NodeProcess {
             .wait()
             .await
             .map(|s| s.code().unwrap_or(-1))
-            .map_err(|e| JsAdapterError::SpawnFailed(e))
+            .map_err(JsAdapterError::SpawnFailed)
     }
 }
 
