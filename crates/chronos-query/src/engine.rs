@@ -445,6 +445,7 @@ impl QueryEngine {
             EventData::PythonFrame { locals, .. } => locals.clone().unwrap_or_default(),
             EventData::JavaFrame { locals, .. } => locals.clone().unwrap_or_default(),
             EventData::GoFrame { locals, .. } => locals.clone().unwrap_or_default(),
+            EventData::JsFrame { locals, .. } => locals.clone().unwrap_or_default(),
             EventData::Variable(var_info) => vec![var_info.clone()],
             _ => vec![],
         }
@@ -1433,6 +1434,31 @@ mod tests {
         )
     }
 
+    fn make_js_frame_with_locals(
+        id: u64,
+        ts: u64,
+        tid: u64,
+        locals: Vec<chronos_domain::VariableInfo>,
+    ) -> TraceEvent {
+        use chronos_domain::JsEventKind;
+        TraceEvent::new(
+            id,
+            ts,
+            tid,
+            EventType::BreakpointHit,
+            SourceLocation::new("app.js", 10, "myFunction", 0x1000 + id),
+            EventData::JsFrame {
+                function_name: "myFunction".to_string(),
+                script_url: "http://localhost:3000/app.js".to_string(),
+                line_number: 10,
+                column_number: 2,
+                locals: Some(locals),
+                scope_chain: vec!["Local".to_string()],
+                event_kind: JsEventKind::Breakpoint,
+            },
+        )
+    }
+
     fn make_variable_write_event(
         id: u64,
         ts: u64,
@@ -1503,6 +1529,37 @@ mod tests {
         assert_eq!(vars.len(), 1);
         assert_eq!(vars[0].name, "count");
         assert_eq!(vars[0].value, "100");
+    }
+
+    #[test]
+    fn test_get_variables_js_frame() {
+        let locals = vec![var_x()];
+        let events = vec![make_js_frame_with_locals(0, 100, 1, locals)];
+        let engine = QueryEngine::new(events);
+
+        let vars = engine.get_variables_at_event(0);
+        assert_eq!(vars.len(), 1);
+        assert_eq!(vars[0].name, "x");
+        assert_eq!(vars[0].value, "42");
+    }
+
+    #[test]
+    fn test_get_variables_js_frame_empty_locals() {
+        // JsFrame with None locals
+        let event = TraceEvent::js_frame(
+            0,
+            100,
+            1,
+            "myFunction",
+            "http://localhost:3000/app.js".to_string(),
+            10,
+            2,
+            chronos_domain::JsEventKind::Breakpoint,
+        );
+        let engine = QueryEngine::new(vec![event]);
+
+        let vars = engine.get_variables_at_event(0);
+        assert!(vars.is_empty());
     }
 
     #[test]

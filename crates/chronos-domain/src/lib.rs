@@ -22,7 +22,7 @@ pub use query::{
     EventFilter, PerfEntry, PerfQuery, PerfResult, PerfSortBy, QueryResult, TraceQuery,
 };
 pub use trace::{
-    CaptureConfig, CaptureSession, EventData, EventType, GoEventKind, JavaEventKind, Language,
-    PythonEventKind, RegisterState, SessionState, SourceLocation, TraceEvent,
+    CaptureConfig, CaptureSession, EventData, EventType, GoEventKind, JavaEventKind, JsEventKind,
+    Language, PythonEventKind, RegisterState, SessionState, SourceLocation, TraceEvent,
 };
 pub use value::{TypedValue, VariableInfo, VariableScope};

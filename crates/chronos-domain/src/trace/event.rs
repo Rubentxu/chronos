@@ -107,6 +107,15 @@ pub enum GoEventKind {
     Exception,
 }
 
+/// Kind of JavaScript trace event.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
+pub enum JsEventKind {
+    Breakpoint,
+    Step,
+    Exception,
+    Other(String),
+}
+
 /// Event-specific data carried by a [`TraceEvent`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum EventData {
@@ -217,6 +226,24 @@ pub enum EventData {
         locals: Option<Vec<VariableInfo>>,
         /// Kind of Go event
         event_kind: GoEventKind,
+    },
+
+    /// JavaScript frame data from CDP.
+    JsFrame {
+        /// Function name
+        function_name: String,
+        /// Absolute URL/script path
+        script_url: String,
+        /// Source line number
+        line_number: u32,
+        /// Source column number
+        column_number: u32,
+        /// Captured local variables
+        locals: Option<Vec<VariableInfo>>,
+        /// Scope chain as list of scope type names
+        scope_chain: Vec<String>,
+        /// Kind of JavaScript event
+        event_kind: JsEventKind,
     },
 }
 
@@ -600,6 +627,42 @@ impl TraceEvent {
                 file,
                 line,
                 locals: None,
+                event_kind: kind,
+            },
+        }
+    }
+
+    /// Create a JavaScript frame event.
+    pub fn js_frame(
+        event_id: EventId,
+        timestamp_ns: TimestampNs,
+        thread_id: ThreadId,
+        function_name: impl Into<String>,
+        script_url: String,
+        line: u32,
+        column: u32,
+        kind: JsEventKind,
+    ) -> Self {
+        let function_name = function_name.into();
+        Self {
+            event_id,
+            timestamp_ns,
+            thread_id,
+            event_type: EventType::BreakpointHit,
+            location: SourceLocation {
+                file: Some(script_url.clone()),
+                line: Some(line),
+                column: Some(column),
+                function: Some(function_name.clone()),
+                ..Default::default()
+            },
+            data: EventData::JsFrame {
+                function_name,
+                script_url,
+                line_number: line,
+                column_number: column,
+                locals: None,
+                scope_chain: Vec::new(),
                 event_kind: kind,
             },
         }
@@ -1035,6 +1098,110 @@ mod tests {
                 assert_eq!(*event_kind, super::GoEventKind::Breakpoint);
             }
             _ => panic!("Expected GoFrame data"),
+        }
+    }
+
+    #[test]
+    fn test_js_event_kind_serialization() {
+        // Test JsEventKind variants
+        assert_eq!(
+            serde_json::to_string(&super::JsEventKind::Breakpoint).unwrap(),
+            "\"Breakpoint\""
+        );
+        assert_eq!(
+            serde_json::to_string(&super::JsEventKind::Step).unwrap(),
+            "\"Step\""
+        );
+        assert_eq!(
+            serde_json::to_string(&super::JsEventKind::Exception).unwrap(),
+            "\"Exception\""
+        );
+
+        // Other variant serializes as JSON object
+        let other_json = serde_json::to_string(&super::JsEventKind::Other("Pause".to_string())).unwrap();
+        assert_eq!(other_json, "{\"Other\":\"Pause\"}");
+
+        // Test deserialization
+        let parsed: super::JsEventKind = serde_json::from_str("\"Breakpoint\"").unwrap();
+        assert_eq!(parsed, super::JsEventKind::Breakpoint);
+        let parsed: super::JsEventKind = serde_json::from_str("\"Step\"").unwrap();
+        assert_eq!(parsed, super::JsEventKind::Step);
+        let parsed: super::JsEventKind = serde_json::from_str("\"Exception\"").unwrap();
+        assert_eq!(parsed, super::JsEventKind::Exception);
+    }
+
+    #[test]
+    fn test_js_frame_serialization_roundtrip() {
+        use crate::VariableScope;
+
+        let js_frame = super::EventData::JsFrame {
+            function_name: "myFunction".to_string(),
+            script_url: "http://localhost:3000/app.js".to_string(),
+            line_number: 42,
+            column_number: 10,
+            locals: Some(vec![crate::VariableInfo::new(
+                "x",
+                "10",
+                "number",
+                0x1000,
+                VariableScope::Local,
+            )]),
+            scope_chain: vec!["Local".to_string(), "Closure".to_string()],
+            event_kind: super::JsEventKind::Breakpoint,
+        };
+        let json = serde_json::to_string(&js_frame).unwrap();
+        let deserialized: super::EventData = serde_json::from_str(&json).unwrap();
+        assert_eq!(js_frame, deserialized);
+
+        // Test without optional fields
+        let js_frame_no_opts = super::EventData::JsFrame {
+            function_name: "anonymous".to_string(),
+            script_url: "eval".to_string(),
+            line_number: 1,
+            column_number: 0,
+            locals: None,
+            scope_chain: Vec::new(),
+            event_kind: super::JsEventKind::Step,
+        };
+        let json = serde_json::to_string(&js_frame_no_opts).unwrap();
+        let deserialized: super::EventData = serde_json::from_str(&json).unwrap();
+        assert_eq!(js_frame_no_opts, deserialized);
+    }
+
+    #[test]
+    fn test_js_frame_constructor() {
+        let event = super::TraceEvent::js_frame(
+            1,
+            1000,
+            42,
+            "myFunction",
+            "http://localhost:3000/app.js".to_string(),
+            42,
+            10,
+            super::JsEventKind::Breakpoint,
+        );
+        assert_eq!(event.event_id, 1);
+        assert_eq!(event.timestamp_ns, 1000);
+        assert_eq!(event.thread_id, 42);
+        assert_eq!(event.event_type, super::EventType::BreakpointHit);
+        assert_eq!(event.location.line, Some(42));
+        assert_eq!(event.location.column, Some(10));
+        match &event.data {
+            super::EventData::JsFrame {
+                function_name,
+                script_url,
+                line_number,
+                column_number,
+                event_kind,
+                ..
+            } => {
+                assert_eq!(function_name, "myFunction");
+                assert_eq!(script_url, "http://localhost:3000/app.js");
+                assert_eq!(*line_number, 42);
+                assert_eq!(*column_number, 10);
+                assert_eq!(*event_kind, super::JsEventKind::Breakpoint);
+            }
+            _ => panic!("Expected JsFrame data"),
         }
     }
 }
