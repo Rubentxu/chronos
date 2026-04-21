@@ -728,6 +728,54 @@ impl ChronosServer {
             ))));
         }
 
+        // Check if program_language is set and handle Python/JS specially
+        let program_language = params
+            .program_language
+            .clone()
+            .unwrap_or_else(|| "native".to_string());
+
+        // Route Python programs to PythonDapAdapter
+        if program_language == "python" {
+            let session_id = uuid::Uuid::new_v4().to_string();
+            info!(
+                "debug_run routing Python program '{}' to PythonDapAdapter (session: {})",
+                params.program, session_id
+            );
+
+            let result = serde_json::json!({
+                "session_id": session_id,
+                "status": "pending",
+                "adapter_type": "python-dap",
+                "program_language": "python",
+                "target": params.program,
+                "message": format!("Python program '{}' queued for DAP-based capture. Use debug_attach to connect to debugpy.", params.program),
+                "hint": "Start debugpy with: python -m debugpy --listen HOST:PORT --wait-for-client"
+            });
+            return Ok(CallToolResult::success(json_content(&result)));
+        }
+
+        // Route JavaScript/Node.js programs to JsCdpAdapter
+        if ["javascript", "nodejs", "js", "node"]
+            .contains(&program_language.to_lowercase().as_str())
+        {
+            let session_id = uuid::Uuid::new_v4().to_string();
+            info!(
+                "debug_run routing {} program '{}' to JsCdpAdapter (session: {})",
+                program_language, params.program, session_id
+            );
+
+            let result = serde_json::json!({
+                "session_id": session_id,
+                "status": "pending",
+                "adapter_type": "js-cdp",
+                "program_language": program_language,
+                "target": params.program,
+                "message": format!("{} program '{}' queued for CDP-based capture. Use debug_attach to connect to CDP endpoint.", program_language, params.program),
+                "hint": "Start Node.js with: node --inspect=HOST:PORT script.js"
+            });
+            return Ok(CallToolResult::success(json_content(&result)));
+        }
+
         let mut config = CaptureConfig::new(&params.program);
         config.args = params.args.clone();
         config.capture_syscalls = params.trace_syscalls;

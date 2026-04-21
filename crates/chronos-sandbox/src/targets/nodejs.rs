@@ -13,7 +13,8 @@ pub struct NodeJsTarget {
     pid: Arc<Mutex<Option<u32>>>,
     port: u16,
     /// Tokio runtime for async CDP operations. Only Some when attached.
-    runtime: Arc<Mutex<Option<tokio::runtime::Runtime>>>,
+    /// Stored as Arc<Runtime> so it can be cloned and reused across CDP calls.
+    runtime: Arc<Mutex<Option<Arc<tokio::runtime::Runtime>>>>,
     /// WebSocket URL for CDP connection.
     ws_url: String,
 }
@@ -48,15 +49,16 @@ impl NodeJsTarget {
     }
 
     /// Internal: connect to CDP WebSocket and enable debugger.
-    fn connect_cdp(&self) -> Result<(), SandboxError> {
+    /// Uses the runtime stored in `self.runtime` (via `handle.block_on()`) so the
+    /// same runtime can be reused for subsequent CDP calls (set_breakpoint, wait, resume).
+    fn connect_cdp(&self, rt: Arc<tokio::runtime::Runtime>) -> Result<(), SandboxError> {
         use tokio_tungstenite::{connect_async, tungstenite::Message};
         use futures_util::{SinkExt, StreamExt};
 
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| SandboxError::DebugTargetConnectFailed(format!("Failed to create runtime: {}", e)))?;
-
         let ws_url = self.ws_url.clone();
-        rt.block_on(async {
+        let handle = rt.handle().clone();
+
+        handle.block_on(async {
             // Connect to the CDP WebSocket endpoint
             let (ws_stream, _) = connect_async(&ws_url)
                 .await
@@ -127,8 +129,26 @@ impl DebugTarget for NodeJsTarget {
             return Err(SandboxError::DebugTargetConnectFailed("already attached".to_string()));
         }
 
-        // Connect to CDP WebSocket
-        self.connect_cdp()?;
+        // Create and store runtime BEFORE connecting - key invariant: after attach succeeds,
+        // self.runtime must be Some so subsequent CDP calls (set_breakpoint, wait, resume) work
+        let mut runtime_guard = self.runtime.write().unwrap();
+        if runtime_guard.is_some() {
+            return Err(SandboxError::DebugTargetConnectFailed("already attached".to_string()));
+        }
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| SandboxError::DebugTargetConnectFailed(format!("Failed to create runtime: {}", e)))?;
+        let rt_arc = Arc::new(rt);
+        // Clone for connect_cdp to use
+        let rt_for_cdp = rt_arc.clone();
+        *runtime_guard = Some(rt_arc);
+        drop(runtime_guard);
+
+        // Connect to CDP WebSocket using the stored runtime
+        if let Err(e) = self.connect_cdp(rt_for_cdp) {
+            // Clean up: remove the runtime on failure so invariant holds
+            *self.runtime.write().unwrap() = None;
+            return Err(e);
+        }
 
         *self.attached.lock().unwrap() = true;
         Ok(())
@@ -146,11 +166,21 @@ impl DebugTarget for NodeJsTarget {
         let child = cmd.spawn().map_err(|e| SandboxError::DebugTargetConnectFailed(e.to_string()))?;
         let pid = child.id();
 
+        // Create and store runtime BEFORE connecting - key invariant: after spawn succeeds,
+        // self.runtime must be Some so subsequent CDP calls (set_breakpoint, wait, resume) work
+        let mut runtime_guard = self.runtime.write().unwrap();
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| SandboxError::DebugTargetConnectFailed(format!("Failed to create runtime: {}", e)))?;
+        let rt_arc = Arc::new(rt);
+        let rt_for_cdp = rt_arc.clone();
+        *runtime_guard = Some(rt_arc);
+        drop(runtime_guard);
+
         // Wait briefly for Node to start the inspector
         std::thread::sleep(std::time::Duration::from_millis(200));
 
-        // Connect to CDP
-        if let Err(e) = self.connect_cdp() {
+        // Connect to CDP using the stored runtime
+        if let Err(e) = self.connect_cdp(rt_for_cdp) {
             // Log but don't fail - the process might still be running
             tracing::warn!("CDP connection failed (may still work): {}", e);
         }
@@ -170,19 +200,20 @@ impl DebugTarget for NodeJsTarget {
             return Err(SandboxError::DebugTargetConnectFailed("not attached".to_string()));
         }
 
-        // CDP WebSocket requires async context - use a blocking approach
-        let rt = self.runtime.lock().unwrap();
-        if rt.is_none() {
-            // We don't have a runtime stored, so we can't send commands
-            // This is expected if we only did spawn without attach
+        // CDP WebSocket requires async context - use the stored runtime
+        let rt_guard = self.runtime.lock().unwrap();
+        if rt_guard.is_none() {
             return Err(SandboxError::DebugTargetConnectFailed(
-                "CDP runtime not available - use attach() first".to_string(),
+                "CDP runtime not available".to_string(),
             ));
         }
+        let rt_arc = rt_guard.as_ref().unwrap().clone();
+        drop(rt_guard);
 
         let ws_url = self.ws_url.clone();
+        let handle = rt_arc.handle().clone();
 
-        rt.as_ref().unwrap().block_on(async move {
+        handle.block_on(async move {
             use tokio_tungstenite::{connect_async, tungstenite::Message};
             use futures_util::{SinkExt, StreamExt};
 
@@ -217,17 +248,20 @@ impl DebugTarget for NodeJsTarget {
             return Err(SandboxError::DebugTargetConnectFailed("not attached".to_string()));
         }
 
-        // Wait for CDP debugger paused event
-        let rt = self.runtime.lock().unwrap();
-        let ws_url = self.ws_url.clone();
-
-        if rt.is_none() {
+        // Wait for CDP debugger paused event - use the stored runtime
+        let rt_guard = self.runtime.lock().unwrap();
+        if rt_guard.is_none() {
             return Err(SandboxError::DebugTargetConnectFailed(
                 "CDP runtime not available".to_string(),
             ));
         }
+        let rt_arc = rt_guard.as_ref().unwrap().clone();
+        drop(rt_guard);
 
-        rt.as_ref().unwrap().block_on(async move {
+        let ws_url = self.ws_url.clone();
+        let handle = rt_arc.handle().clone();
+
+        handle.block_on(async move {
             use tokio_tungstenite::{connect_async, tungstenite::Message};
             use futures_util::StreamExt;
 
@@ -287,16 +321,19 @@ impl DebugTarget for NodeJsTarget {
             return Err(SandboxError::DebugTargetConnectFailed("not attached".to_string()));
         }
 
-        let rt = self.runtime.lock().unwrap();
-        let ws_url = self.ws_url.clone();
-
-        if rt.is_none() {
+        let rt_guard = self.runtime.lock().unwrap();
+        if rt_guard.is_none() {
             return Err(SandboxError::DebugTargetConnectFailed(
                 "CDP runtime not available".to_string(),
             ));
         }
+        let rt_arc = rt_guard.as_ref().unwrap().clone();
+        drop(rt_guard);
 
-        rt.as_ref().unwrap().block_on(async move {
+        let ws_url = self.ws_url.clone();
+        let handle = rt_arc.handle().clone();
+
+        handle.block_on(async move {
             use tokio_tungstenite::{connect_async, tungstenite::Message};
             use futures_util::{SinkExt, StreamExt};
 

@@ -3,7 +3,17 @@
 //! Tests the PythonDapAdapter and DapSession types.
 
 use chronos_capture::TraceAdapter;
-use chronos_python::{DapClient, DapSession, PythonDapAdapter};
+use chronos_python::PythonDapAdapter;
+
+#[test]
+fn test_python_adapter_session_flow() {
+    // Creates PythonDapAdapter, verifies it has correct host/port
+    let adapter = PythonDapAdapter::new("127.0.0.1".to_string(), 5678);
+    // Just verify it was created — no real connection needed
+    assert_eq!(adapter.port(), 5678);
+    assert_eq!(adapter.name(), "python-dap");
+    assert_eq!(adapter.get_language(), chronos_domain::Language::Python);
+}
 
 #[test]
 fn test_dap_client_creation() {

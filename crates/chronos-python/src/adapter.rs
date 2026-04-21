@@ -319,6 +319,16 @@ impl PythonDapAdapter {
         }
     }
 
+    /// Returns the port where debugpy is expected to be listening.
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    /// Returns the host where debugpy is expected to be running.
+    pub fn host(&self) -> &str {
+        &self.host
+    }
+
     /// Connect to debugpy and return a DAP session.
     pub fn connect(&self, pid: u32) -> Result<DapSession, PythonAdapterError> {
         let addr = format!("{}:{}", self.host, self.port);

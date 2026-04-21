@@ -107,9 +107,5 @@ mod tests {
         }
         // At minimum, we should be able to spawn and read without errors
         // The exact number of events depends on implementation details
-        assert!(
-            events.len() >= 0,
-            "Should be able to read events without error"
-        );
     }
 }

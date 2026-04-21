@@ -18,6 +18,15 @@ impl AdapterRegistry {
         }
     }
 
+    /// Create a new registry with the given adapters pre-registered.
+    pub fn with_adapters(adapters: Vec<Arc<dyn TraceAdapter>>) -> Self {
+        let mut registry = Self::new();
+        for adapter in adapters {
+            registry.register(adapter);
+        }
+        registry
+    }
+
     /// Register an adapter for a language.
     pub fn register(&mut self, adapter: Arc<dyn TraceAdapter>) {
         self.adapters.insert(adapter.get_language(), adapter);
@@ -52,6 +61,21 @@ impl AdapterRegistry {
     /// Check if an adapter is registered for a language.
     pub fn has_adapter(&self, language: Language) -> bool {
         self.adapters.contains_key(&language)
+    }
+
+    /// Check if the registry supports a given language string (e.g., "python", "javascript").
+    #[allow(dead_code)]
+    pub fn supports_language_string(&self, lang: &str) -> bool {
+        match lang.to_lowercase().as_str() {
+            "python" => self.has_adapter(Language::Python),
+            "javascript" | "nodejs" | "js" | "node" => self.has_adapter(Language::JavaScript),
+            "rust" | "c" | "cpp" | "c++" | "native" => {
+                self.has_adapter(Language::Rust)
+                    || self.has_adapter(Language::C)
+                    || self.has_adapter(Language::Cpp)
+            }
+            _ => false,
+        }
     }
 }
 
