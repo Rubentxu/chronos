@@ -12,11 +12,13 @@ pub mod native_adapter;
 pub mod ptrace_tracer;
 pub mod symbol_resolver;
 pub mod syscall_table;
+pub mod watchpoint;
 
 pub use breakpoint::BreakpointManager;
 pub use capture_runner::{AttachMode, CaptureEndReason, CaptureResult, CaptureRunner, CaptureState};
 pub use dwarf::DwarfReader;
 pub use native_adapter::NativeAdapter;
 pub use ptrace_tracer::{PtraceConfig, PtraceEvent, PtraceTracer};
-pub use symbol_resolver::{SymbolInfo, SymbolResolver};
+pub use symbol_resolver::{SymbolInfo, SymbolResolver, SymbolResolverError};
 pub use syscall_table::resolve_syscall;
+pub use watchpoint::{HardwareWatchpointManager, HardwareWatchpoint, WatchpointCondition, WatchpointSize, WatchpointError};

@@ -25,6 +25,7 @@ anyhow = { workspace = true }
 rmcp = { version = "1.5", features = ["server", "macros", "schemars", "transport-io"] }
 uuid = { workspace = true }
 thiserror = { workspace = true }
+nix = { workspace = true }
 
 [[bin]]
 name = "chronos-mcp"

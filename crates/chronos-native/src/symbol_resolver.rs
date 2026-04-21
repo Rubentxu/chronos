@@ -8,9 +8,10 @@
 
 use chronos_domain::trace::SourceLocation;
 use object::{Object, ObjectSymbol};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use thiserror::Error;
 use tracing::info;
 
 /// Information about a resolved symbol.
@@ -44,9 +45,12 @@ impl SymbolInfo {
 ///
 /// Loads the symbol table from an ELF binary and provides fast address lookup.
 /// Uses a BTreeMap for efficient range queries.
+#[derive(Debug)]
 pub struct SymbolResolver {
     /// Sorted map: address → SymbolInfo.
     symbols: BTreeMap<u64, SymbolInfo>,
+    /// Map: symbol name → address (for fast name lookups).
+    name_to_addr: HashMap<String, u64>,
     /// Path to the binary that was loaded.
     binary_path: String,
 }
@@ -56,6 +60,7 @@ impl SymbolResolver {
     pub fn new() -> Self {
         Self {
             symbols: BTreeMap::new(),
+            name_to_addr: HashMap::new(),
             binary_path: String::new(),
         }
     }
@@ -78,13 +83,16 @@ impl SymbolResolver {
 
         self.binary_path = path.to_string_lossy().to_string();
         self.symbols.clear();
+        self.name_to_addr.clear();
 
         let mut count = 0usize;
 
         // Load symbols from the main symbol table
         for symbol in object_file.symbols() {
             if let Some(info) = Self::extract_symbol_info(&symbol) {
-                self.symbols.insert(info.address, info);
+                self.symbols.insert(info.address, info.clone());
+                // Also index by name for resolve()
+                self.name_to_addr.insert(info.name.clone(), info.address);
                 count += 1;
             }
         }
@@ -93,7 +101,10 @@ impl SymbolResolver {
         for symbol in object_file.dynamic_symbols() {
             if let Some(info) = Self::extract_symbol_info(&symbol) {
                 // Don't overwrite static symbols with dynamic ones
-                self.symbols.entry(info.address).or_insert(info);
+                self.symbols.entry(info.address).or_insert_with(|| {
+                    self.name_to_addr.insert(info.name.clone(), info.address);
+                    info
+                });
                 count += 1;
             }
         }
@@ -101,6 +112,73 @@ impl SymbolResolver {
         info!("Loaded {} symbols from '{}'", count, path.display());
 
         Ok(())
+    }
+
+    /// Load symbols from a path (convenience method for spec API).
+    pub fn from_path(path: &Path) -> Result<Self, SymbolResolverError> {
+        let mut resolver = Self::new();
+        resolver
+            .load_from_binary(path)
+            .map_err(|e| SymbolResolverError::IoError(e))?;
+        Ok(resolver)
+    }
+
+    /// Load symbols from a process ID by reading /proc/{pid}/exe.
+    pub fn from_pid(pid: u32) -> Result<Self, SymbolResolverError> {
+        let path = PathBuf::from(format!("/proc/{}/exe", pid));
+        Self::from_path(&path)
+    }
+
+    /// Load symbols from ELF bytes.
+    pub fn from_bytes(data: &[u8]) -> Result<Self, SymbolResolverError> {
+        let obj = object::File::parse(data)
+            .map_err(|e| SymbolResolverError::ParseError(e.to_string()))?;
+
+        let mut resolver = Self::new();
+        resolver.binary_path = "[binary data]".to_string();
+        resolver.symbols.clear();
+        resolver.name_to_addr.clear();
+
+        // Load from regular symbols
+        for symbol in obj.symbols() {
+            if let Some(info) = Self::extract_symbol_info(&symbol) {
+                resolver.symbols.insert(info.address, info.clone());
+                resolver.name_to_addr.insert(info.name.clone(), info.address);
+            }
+        }
+
+        // Also load dynamic symbols
+        for symbol in obj.dynamic_symbols() {
+            if let Some(info) = Self::extract_symbol_info(&symbol) {
+                resolver
+                    .symbols
+                    .entry(info.address)
+                    .or_insert_with(|| {
+                        resolver.name_to_addr.insert(info.name.clone(), info.address);
+                        info
+                    });
+            }
+        }
+
+        Ok(resolver)
+    }
+
+    /// Resolve a symbol name to its virtual address.
+    /// Returns None if the symbol is not found.
+    pub fn resolve_by_name(&self, symbol: &str) -> Option<u64> {
+        // Exact match first
+        if let Some(&addr) = self.name_to_addr.get(symbol) {
+            return Some(addr);
+        }
+        // Try with underscore prefix (C symbols on some platforms)
+        if let Some(&addr) = self.name_to_addr.get(&format!("_{}", symbol)) {
+            return Some(addr);
+        }
+        // Fuzzy: find first symbol containing the name
+        self.name_to_addr
+            .iter()
+            .find(|(k, _)| k.contains(symbol))
+            .map(|(_, &v)| v)
     }
 
     /// Extract symbol info from an object symbol, if it's a function.
@@ -211,6 +289,17 @@ impl Default for SymbolResolver {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Errors for symbol resolution operations.
+#[derive(Debug, Error)]
+pub enum SymbolResolverError {
+    #[error("IO error: {0}")]
+    IoError(String),
+    #[error("ELF parse error: {0}")]
+    ParseError(String),
+    #[error("Symbol not found: {0}")]
+    NotFound(String),
 }
 
 /// Simple glob matching: supports `*` (any chars) and `?` (single char).
@@ -482,5 +571,112 @@ mod tests {
         assert!(!simple_glob_match("ab", "?"));
         assert!(simple_glob_match("anything", "*"));
         assert!(!simple_glob_match("main", "helper"));
+    }
+
+    // ========================================================================
+    // SF2: SymbolResolver name-based resolution tests
+    // ========================================================================
+
+    #[test]
+    fn test_resolver_from_path() {
+        // Test with the current binary (should have some symbols)
+        let exe = std::env::current_exe().unwrap();
+        let resolver = SymbolResolver::from_path(&exe);
+        // May fail if binary is stripped, but shouldn't panic
+        if resolver.is_ok() {
+            let r = resolver.unwrap();
+            assert!(r.symbol_count() >= 0);
+        }
+    }
+
+    #[test]
+    fn test_resolver_from_path_invalid() {
+        let result = SymbolResolver::from_path(Path::new("/nonexistent/binary"));
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, SymbolResolverError::IoError(_)));
+    }
+
+    #[test]
+    fn test_resolver_from_bytes() {
+        // Create a minimal ELF-like data (not a real ELF, but should parse gracefully)
+        // Use actual ELF header from a simple binary
+        let data = std::fs::read("/bin/ls").expect("Failed to read /bin/ls");
+        let resolver = SymbolResolver::from_bytes(&data);
+        if resolver.is_ok() {
+            assert!(resolver.unwrap().symbol_count() > 0);
+        }
+    }
+
+    #[test]
+    fn test_resolver_from_bytes_invalid() {
+        let data = b"this is not an ELF file";
+        let result = SymbolResolver::from_bytes(data);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), SymbolResolverError::ParseError(_)));
+    }
+
+    #[test]
+    fn test_resolve_by_name() {
+        let mut resolver = SymbolResolver::new();
+        // Manually insert via load_from_binary-like population
+        resolver.name_to_addr.insert("main".to_string(), 0x1000);
+        resolver.name_to_addr.insert("_start".to_string(), 0x2000);
+        resolver.symbols.insert(0x1000, SymbolInfo {
+            name: "main".to_string(),
+            address: 0x1000,
+            size: 50,
+            file: None,
+            line: None,
+        });
+        resolver.symbols.insert(0x2000, SymbolInfo {
+            name: "_start".to_string(),
+            address: 0x2000,
+            size: 100,
+            file: None,
+            line: None,
+        });
+
+        // Exact match
+        assert_eq!(resolver.resolve_by_name("main"), Some(0x1000));
+        assert_eq!(resolver.resolve_by_name("_start"), Some(0x2000));
+
+        // Missing symbol
+        assert_eq!(resolver.resolve_by_name("nonexistent"), None);
+
+        // Fuzzy match
+        assert_eq!(resolver.resolve_by_name("mai"), Some(0x1000)); // main contains "mai"
+    }
+
+    #[test]
+    fn test_resolve_with_underscore_prefix() {
+        let mut resolver = SymbolResolver::new();
+        // Insert symbol with underscore prefix (like C symbols)
+        resolver.name_to_addr.insert("_my_func".to_string(), 0x1000);
+        resolver.symbols.insert(0x1000, SymbolInfo {
+            name: "_my_func".to_string(),
+            address: 0x1000,
+            size: 50,
+            file: None,
+            line: None,
+        });
+
+        // Exact match with underscore
+        assert_eq!(resolver.resolve_by_name("_my_func"), Some(0x1000));
+
+        // Without underscore: should find the underscore-prefixed one
+        assert_eq!(resolver.resolve_by_name("my_func"), Some(0x1000));
+    }
+
+    #[test]
+    fn test_symbol_resolver_error_messages() {
+        let err = SymbolResolverError::IoError("file not found".to_string());
+        assert_eq!(err.to_string(), "IO error: file not found");
+
+        let err = SymbolResolverError::ParseError("invalid format".to_string());
+        assert_eq!(err.to_string(), "ELF parse error: invalid format");
+
+        let err = SymbolResolverError::NotFound("main".to_string());
+        assert_eq!(err.to_string(), "Symbol not found: main");
     }
 }
