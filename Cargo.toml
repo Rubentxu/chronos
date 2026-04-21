@@ -9,6 +9,7 @@ members = [
     "crates/chronos-query",
     "crates/chronos-mcp",
     "crates/chronos-e2e",
+    "crates/chronos-ebpf",
 ]
 
 [workspace.package]
@@ -27,6 +28,7 @@ chronos-index = { path = "crates/chronos-index" }
 chronos-query = { path = "crates/chronos-query" }
 chronos-mcp = { path = "crates/chronos-mcp" }
 chronos-e2e = { path = "crates/chronos-e2e" }
+chronos-ebpf = { path = "crates/chronos-ebpf" }
 
 # External
 tokio = { version = "1", features = ["full"] }

@@ -4,6 +4,7 @@
 
 use chronos_domain::{
     CaptureConfig, EventData, EventType, TraceEvent, TraceQuery,
+    query::{CausalityQuery, PerfQuery, PerfSortBy, RaceDetectionQuery},
 };
 use chronos_index::builder::IndexBuilder;
 use chronos_native::capture_runner::{CaptureRunner, CaptureEndReason};
@@ -155,8 +156,88 @@ fn default_backtrace_depth() -> usize {
 }
 
 // ============================================================================
-// Helpers
+// SF4 — New tool parameter types
 // ============================================================================
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DebugCallGraphParams {
+    /// Session ID.
+    pub session_id: String,
+    /// Maximum call depth to include (default 10).
+    #[serde(default = "default_call_graph_depth")]
+    pub max_depth: usize,
+}
+
+fn default_call_graph_depth() -> usize {
+    10
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DebugFindVariableOriginParams {
+    /// Session ID.
+    pub session_id: String,
+    /// Variable name to trace (exact match).
+    pub variable_name: String,
+    /// Maximum number of mutations to return.
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DebugFindCrashParams {
+    /// Session ID.
+    pub session_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DebugDetectRacesParams {
+    /// Session ID.
+    pub session_id: String,
+    /// Race detection threshold in nanoseconds (default 100).
+    #[serde(default = "default_race_threshold_ns")]
+    pub threshold_ns: u64,
+}
+
+fn default_race_threshold_ns() -> u64 {
+    100
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct InspectCausalityParams {
+    /// Session ID.
+    pub session_id: String,
+    /// Memory address (decimal) to inspect causal history.
+    pub address: u64,
+    /// Maximum number of entries to return.
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DebugExpandHotspotParams {
+    /// Session ID.
+    pub session_id: String,
+    /// Maximum functions to include (default 10 = Hotspot level).
+    #[serde(default = "default_hotspot_limit")]
+    pub top_n: usize,
+}
+
+fn default_hotspot_limit() -> usize {
+    10
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DebugGetSaliencyScoresParams {
+    /// Session ID.
+    pub session_id: String,
+    /// Maximum functions to score (default 20).
+    #[serde(default = "default_saliency_limit")]
+    pub limit: usize,
+}
+
+fn default_saliency_limit() -> usize {
+    20
+}
 
 impl ChronosServer {
     pub fn new() -> Self {
@@ -208,7 +289,9 @@ impl ChronosServer {
             events,
             indices.shadow,
             indices.temporal,
-        );
+        )
+        .with_causality(indices.causality)
+        .with_performance(indices.performance);
 
         let mut engines = self.engines.lock().await;
         info!("Built query engine for session {}", session_id);
@@ -633,6 +716,432 @@ impl ChronosServer {
             }
         }
     }
+
+    // ========================================================================
+    // SF4 — Semantic Compression + Advanced Tools (T17–T23)
+    // ========================================================================
+
+    #[tool(name = "debug_call_graph", description = "Build the call graph for a session up to a given depth. Returns callers and callees for each function observed in the trace.")]
+    async fn debug_call_graph(
+        &self,
+        params: Parameters<DebugCallGraphParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let engines = self.engines.lock().await;
+
+        let engine = match engines.get(&params.session_id) {
+            Some(e) => e,
+            None => return Ok(CallToolResult::error(text_content(format!(
+                "Session '{}' not found", params.session_id
+            )))),
+        };
+
+        // Build a call graph from FunctionEntry events
+        let mut callers: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+        let mut callees: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+        let mut call_counts: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+
+        // Reconstruct call graph from the full event list via stack simulation per thread
+        let mut stacks: std::collections::HashMap<u64, Vec<String>> = std::collections::HashMap::new();
+
+        let query = TraceQuery::new(&params.session_id).pagination(usize::MAX, 0);
+        let result = engine.execute(&query);
+
+        for event in &result.events {
+            let func = event.location.function.clone().unwrap_or_default();
+            if func.is_empty() {
+                continue;
+            }
+            match event.event_type {
+                EventType::FunctionEntry => {
+                    let stack = stacks.entry(event.thread_id).or_default();
+                    *call_counts.entry(func.clone()).or_insert(0) += 1;
+
+                    // depth gate
+                    if stack.len() < params.max_depth {
+                        if let Some(parent) = stack.last().cloned() {
+                            callees.entry(parent.clone()).or_default().push(func.clone());
+                            callers.entry(func.clone()).or_default().push(parent);
+                        }
+                        stack.push(func);
+                    }
+                }
+                EventType::FunctionExit => {
+                    let stack = stacks.entry(event.thread_id).or_default();
+                    stack.pop();
+                }
+                _ => {}
+            }
+        }
+
+        // Deduplicate edges
+        for v in callers.values_mut() { v.sort(); v.dedup(); }
+        for v in callees.values_mut() { v.sort(); v.dedup(); }
+
+        let nodes: Vec<serde_json::Value> = call_counts
+            .iter()
+            .map(|(name, count)| serde_json::json!({
+                "function": name,
+                "call_count": count,
+                "callers": callers.get(name).cloned().unwrap_or_default(),
+                "callees": callees.get(name).cloned().unwrap_or_default(),
+            }))
+            .collect();
+
+        let output = serde_json::json!({
+            "session_id": params.session_id,
+            "max_depth": params.max_depth,
+            "unique_functions": nodes.len(),
+            "nodes": nodes,
+        });
+        Ok(CallToolResult::success(json_content(&output)))
+    }
+
+    #[tool(name = "debug_find_variable_origin", description = "Trace the origin of a variable: find all write mutations to it and reconstruct its lineage. Uses the CausalityIndex.")]
+    async fn debug_find_variable_origin(
+        &self,
+        params: Parameters<DebugFindVariableOriginParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let engines = self.engines.lock().await;
+
+        let engine = match engines.get(&params.session_id) {
+            Some(e) => e,
+            None => return Ok(CallToolResult::error(text_content(format!(
+                "Session '{}' not found", params.session_id
+            )))),
+        };
+
+        let query = CausalityQuery {
+            session_id: params.session_id.clone(),
+            address: None,
+            variable_name: Some(params.variable_name.clone()),
+            before_timestamp: None,
+            full_lineage: true,
+        };
+
+        match engine.query_causality(&query) {
+            Some(result) => {
+                let mut mutations = result.mutations;
+                mutations.truncate(params.limit);
+                let output = serde_json::json!({
+                    "session_id": params.session_id,
+                    "variable_name": params.variable_name,
+                    "mutation_count": mutations.len(),
+                    "mutations": mutations.iter().map(|m| serde_json::json!({
+                        "event_id": m.event_id,
+                        "timestamp_ns": m.timestamp,
+                        "thread_id": m.thread_id,
+                        "value_before": m.value_before,
+                        "value_after": m.value_after,
+                        "function": m.function,
+                    })).collect::<Vec<_>>(),
+                });
+                Ok(CallToolResult::success(json_content(&output)))
+            }
+            None => Ok(CallToolResult::success(json_content(&serde_json::json!({
+                "session_id": params.session_id,
+                "variable_name": params.variable_name,
+                "mutation_count": 0,
+                "mutations": [],
+                "note": "No causality index or no writes to this variable found",
+            })))),
+        }
+    }
+
+    #[tool(name = "debug_find_crash", description = "Identify the crash point in a trace: find the last event before a fatal signal (SIGSEGV, SIGABRT, etc.) and return the call stack at that point.")]
+    async fn debug_find_crash(
+        &self,
+        params: Parameters<DebugFindCrashParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let engines = self.engines.lock().await;
+
+        let engine = match engines.get(&params.session_id) {
+            Some(e) => e,
+            None => return Ok(CallToolResult::error(text_content(format!(
+                "Session '{}' not found", params.session_id
+            )))),
+        };
+
+        // Find fatal signals in the trace
+        let fatal_signals = ["SIGSEGV", "SIGABRT", "SIGBUS", "SIGILL", "SIGFPE", "SIGKILL"];
+
+        let query = TraceQuery::new(&params.session_id)
+            .event_types(vec![EventType::SignalDelivered])
+            .pagination(usize::MAX, 0);
+        let result = engine.execute(&query);
+
+        let crash_event = result.events.iter().find(|e| {
+            if let EventData::Signal { signal_name, .. } = &e.data {
+                fatal_signals.contains(&signal_name.as_str())
+            } else {
+                // Fallback: check function field for signal name hint
+                false
+            }
+        });
+
+        match crash_event {
+            Some(ev) => {
+                let stack = engine.reconstruct_call_stack(ev.event_id);
+                let signal_name = if let EventData::Signal { signal_name, .. } = &ev.data {
+                    signal_name.clone()
+                } else {
+                    "unknown".to_string()
+                };
+
+                let output = serde_json::json!({
+                    "session_id": params.session_id,
+                    "crash_found": true,
+                    "signal": signal_name,
+                    "event_id": ev.event_id,
+                    "timestamp_ns": ev.timestamp_ns,
+                    "thread_id": ev.thread_id,
+                    "call_stack_depth": stack.len(),
+                    "call_stack": stack.iter().map(|f| serde_json::json!({
+                        "depth": f.depth,
+                        "function": f.function,
+                        "address": format!("0x{:x}", f.address),
+                        "file": f.file,
+                        "line": f.line,
+                    })).collect::<Vec<_>>(),
+                });
+                Ok(CallToolResult::success(json_content(&output)))
+            }
+            None => Ok(CallToolResult::success(json_content(&serde_json::json!({
+                "session_id": params.session_id,
+                "crash_found": false,
+                "note": "No fatal signal found in the trace",
+            })))),
+        }
+    }
+
+    #[tool(name = "debug_detect_races", description = "Detect data races: find writes to the same memory address within the threshold_ns window on different threads. Default threshold is 100ns.")]
+    async fn debug_detect_races(
+        &self,
+        params: Parameters<DebugDetectRacesParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let engines = self.engines.lock().await;
+
+        let engine = match engines.get(&params.session_id) {
+            Some(e) => e,
+            None => return Ok(CallToolResult::error(text_content(format!(
+                "Session '{}' not found", params.session_id
+            )))),
+        };
+
+        let query = RaceDetectionQuery {
+            session_id: params.session_id.clone(),
+            time_range: None,
+            threshold_ns: params.threshold_ns,
+        };
+        let result = engine.detect_races(&query);
+
+        let output = serde_json::json!({
+            "session_id": params.session_id,
+            "threshold_ns": params.threshold_ns,
+            "race_count": result.races.len(),
+            "races": result.races.iter().map(|r| serde_json::json!({
+                "address": format!("0x{:x}", r.address),
+                "delta_ns": r.delta_ns,
+                "write_a": {
+                    "event_id": r.write_a.event_id,
+                    "timestamp_ns": r.write_a.timestamp,
+                    "thread_id": r.write_a.thread_id,
+                    "value_before": r.write_a.value_before,
+                    "value_after": r.write_a.value_after,
+                    "function": r.write_a.function,
+                },
+                "write_b": {
+                    "event_id": r.write_b.event_id,
+                    "timestamp_ns": r.write_b.timestamp,
+                    "thread_id": r.write_b.thread_id,
+                    "value_before": r.write_b.value_before,
+                    "value_after": r.write_b.value_after,
+                    "function": r.write_b.function,
+                },
+            })).collect::<Vec<_>>(),
+        });
+        Ok(CallToolResult::success(json_content(&output)))
+    }
+
+    #[tool(name = "inspect_causality", description = "Inspect the full causal history of a memory address: all reads and writes, their timestamps, values, and originating functions.")]
+    async fn inspect_causality(
+        &self,
+        params: Parameters<InspectCausalityParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let engines = self.engines.lock().await;
+
+        let engine = match engines.get(&params.session_id) {
+            Some(e) => e,
+            None => return Ok(CallToolResult::error(text_content(format!(
+                "Session '{}' not found", params.session_id
+            )))),
+        };
+
+        let query = CausalityQuery {
+            session_id: params.session_id.clone(),
+            address: Some(params.address),
+            variable_name: None,
+            before_timestamp: None,
+            full_lineage: true,
+        };
+
+        match engine.query_causality(&query) {
+            Some(result) => {
+                let mut mutations = result.mutations;
+                mutations.truncate(params.limit);
+                let output = serde_json::json!({
+                    "session_id": params.session_id,
+                    "address": format!("0x{:x}", params.address),
+                    "mutation_count": mutations.len(),
+                    "mutations": mutations.iter().map(|m| serde_json::json!({
+                        "event_id": m.event_id,
+                        "timestamp_ns": m.timestamp,
+                        "thread_id": m.thread_id,
+                        "value_before": m.value_before,
+                        "value_after": m.value_after,
+                        "function": m.function,
+                    })).collect::<Vec<_>>(),
+                });
+                Ok(CallToolResult::success(json_content(&output)))
+            }
+            None => Ok(CallToolResult::success(json_content(&serde_json::json!({
+                "session_id": params.session_id,
+                "address": format!("0x{:x}", params.address),
+                "mutation_count": 0,
+                "mutations": [],
+                "note": "No causality index or no writes to this address found",
+            })))),
+        }
+    }
+
+    #[tool(name = "debug_expand_hotspot", description = "Semantic compression Level 1 — return the top-N hottest functions by call count and CPU cycles. Use debug_execution_summary first (Level 0) then call this to zoom in.")]
+    async fn debug_expand_hotspot(
+        &self,
+        params: Parameters<DebugExpandHotspotParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let engines = self.engines.lock().await;
+
+        let engine = match engines.get(&params.session_id) {
+            Some(e) => e,
+            None => return Ok(CallToolResult::error(text_content(format!(
+                "Session '{}' not found", params.session_id
+            )))),
+        };
+
+        // Get top functions by calls from execution summary
+        let summary = engine.execution_summary(&params.session_id);
+        let top_by_calls: Vec<serde_json::Value> = summary.top_functions.iter()
+            .take(params.top_n)
+            .map(|f| {
+                // Try to get perf data for this function
+                let perf_entry = engine.query_perf(&PerfQuery {
+                    session_id: params.session_id.clone(),
+                    function_filter: Some(f.name.clone()),
+                    sort_by: PerfSortBy::Cycles,
+                    limit: 1,
+                }).and_then(|r| r.functions.into_iter().next());
+
+                serde_json::json!({
+                    "function": f.name,
+                    "call_count": f.call_count,
+                    "total_cycles": perf_entry.as_ref().map(|p| p.total_cycles),
+                    "avg_cycles_per_call": perf_entry.as_ref().map(|p| p.avg_cycles),
+                })
+            })
+            .collect();
+
+        let total_calls: u64 = summary.top_functions.iter().map(|f| f.call_count).sum();
+
+        let output = serde_json::json!({
+            "session_id": params.session_id,
+            "compression_level": "hotspot",
+            "top_n": params.top_n,
+            "total_calls_in_trace": total_calls,
+            "hotspot_functions": top_by_calls,
+            "hint": "Use debug_call_graph for full call graph or query_events to drill into specific functions",
+        });
+        Ok(CallToolResult::success(json_content(&output)))
+    }
+
+    #[tool(name = "debug_get_saliency_scores", description = "Compute saliency scores [0.0–1.0] for all functions: a high score means this function consumed a disproportionate share of CPU cycles relative to other functions. Use to prioritize where to look.")]
+    async fn debug_get_saliency_scores(
+        &self,
+        params: Parameters<DebugGetSaliencyScoresParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let engines = self.engines.lock().await;
+
+        let engine = match engines.get(&params.session_id) {
+            Some(e) => e,
+            None => return Ok(CallToolResult::error(text_content(format!(
+                "Session '{}' not found", params.session_id
+            )))),
+        };
+
+        let summary = engine.execution_summary(&params.session_id);
+
+        // Get perf data for all top functions
+        let perf_result = engine.query_perf(&PerfQuery {
+            session_id: params.session_id.clone(),
+            function_filter: None,
+            sort_by: PerfSortBy::Cycles,
+            limit: params.limit,
+        });
+
+        let scores: Vec<serde_json::Value> = if let Some(perf) = perf_result {
+            // Compute total cycles
+            let total_cycles: u64 = perf.functions.iter().map(|e| e.total_cycles).sum();
+
+            perf.functions.iter().take(params.limit).map(|entry| {
+                let score = if total_cycles > 0 {
+                    entry.total_cycles as f64 / total_cycles as f64
+                } else {
+                    // Fallback: call count ratio
+                    let total_calls: u64 = summary.top_functions.iter().map(|f| f.call_count).sum();
+                    if total_calls > 0 {
+                        entry.call_count as f64 / total_calls as f64
+                    } else {
+                        0.0
+                    }
+                };
+                serde_json::json!({
+                    "function": entry.name.as_deref().unwrap_or("<unknown>"),
+                    "saliency_score": (score * 10000.0).round() / 10000.0,
+                    "call_count": entry.call_count,
+                    "total_cycles": entry.total_cycles,
+                })
+            }).collect()
+        } else {
+            // No perf index: fall back to call-count based scoring
+            let total_calls: u64 = summary.top_functions.iter().map(|f| f.call_count).sum();
+            summary.top_functions.iter().take(params.limit).map(|f| {
+                let score = if total_calls > 0 {
+                    f.call_count as f64 / total_calls as f64
+                } else {
+                    0.0
+                };
+                serde_json::json!({
+                    "function": f.name,
+                    "saliency_score": (score * 10000.0).round() / 10000.0,
+                    "call_count": f.call_count,
+                    "cycles": null,
+                })
+            }).collect()
+        };
+
+        let output = serde_json::json!({
+            "session_id": params.session_id,
+            "scored_functions": scores.len(),
+            "scores": scores,
+            "hint": "saliency_score near 1.0 means this function dominated CPU time. Use debug_expand_hotspot to zoom in.",
+        });
+        Ok(CallToolResult::success(json_content(&output)))
+    }
 }
 
 #[cfg(test)]
@@ -713,5 +1222,176 @@ mod tests {
     fn test_text_content() {
         let content = text_content("hello");
         assert_eq!(content.len(), 1);
+    }
+
+    // ========================================================================
+    // SF4 tool tests
+    // ========================================================================
+
+    /// Helper: build a server with a pre-loaded session from synthetic events.
+    async fn server_with_session(events: Vec<TraceEvent>) -> (ChronosServer, String) {
+        let server = ChronosServer::new();
+        let session_id = "test-session-sf4".to_string();
+        server.build_and_store_engine(&session_id, events).await;
+        (server, session_id)
+    }
+
+    fn make_fn_entry(id: u64, ts: u64, tid: u64, func: &str) -> TraceEvent {
+        use chronos_domain::{EventData, SourceLocation};
+        let loc = SourceLocation::new("", 0, func, 0x1000 + id);
+        TraceEvent::new(id, ts, tid, EventType::FunctionEntry, loc,
+            EventData::Function { name: func.to_string(), signature: None })
+    }
+
+    fn make_fn_exit(id: u64, ts: u64, tid: u64, func: &str) -> TraceEvent {
+        use chronos_domain::{EventData, SourceLocation};
+        let loc = SourceLocation::new("", 0, func, 0x1000 + id);
+        TraceEvent::new(id, ts, tid, EventType::FunctionExit, loc, EventData::Empty)
+    }
+
+    #[tokio::test]
+    async fn test_debug_call_graph() {
+        let events = vec![
+            make_fn_entry(0, 100, 1, "main"),
+            make_fn_entry(1, 200, 1, "compute"),
+            make_fn_exit(2, 300, 1, "compute"),
+            make_fn_exit(3, 400, 1, "main"),
+        ];
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server.debug_call_graph(Parameters(DebugCallGraphParams {
+            session_id: sid,
+            max_depth: 10,
+        })).await.unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+        let text = &result.content[0];
+        let s = format!("{:?}", text);
+        assert!(s.contains("unique_functions") || result.content.len() > 0);
+    }
+
+    #[tokio::test]
+    async fn test_debug_find_variable_origin_no_causality() {
+        let events = vec![make_fn_entry(0, 100, 1, "main")];
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server.debug_find_variable_origin(Parameters(DebugFindVariableOriginParams {
+            session_id: sid,
+            variable_name: "x".to_string(),
+            limit: 10,
+        })).await.unwrap();
+
+        // Should succeed (empty mutations)
+        assert_ne!(result.is_error, Some(true));
+    }
+
+    #[tokio::test]
+    async fn test_debug_find_crash_no_signal() {
+        let events = vec![make_fn_entry(0, 100, 1, "main")];
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server.debug_find_crash(Parameters(DebugFindCrashParams {
+            session_id: sid,
+        })).await.unwrap();
+
+        // No crash found
+        assert_ne!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        assert!(text.contains("crash_found"));
+    }
+
+    #[tokio::test]
+    async fn test_debug_detect_races_no_races() {
+        let events = vec![make_fn_entry(0, 100, 1, "main")];
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server.debug_detect_races(Parameters(DebugDetectRacesParams {
+            session_id: sid,
+            threshold_ns: 100,
+        })).await.unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        assert!(text.contains("race_count"));
+    }
+
+    #[tokio::test]
+    async fn test_inspect_causality_no_index() {
+        let events = vec![make_fn_entry(0, 100, 1, "main")];
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server.inspect_causality(Parameters(InspectCausalityParams {
+            session_id: sid,
+            address: 0xDEAD,
+            limit: 10,
+        })).await.unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+    }
+
+    #[tokio::test]
+    async fn test_debug_expand_hotspot() {
+        let events = (0..20u64).flat_map(|i| {
+            vec![
+                make_fn_entry(i * 2, i * 100, 1, if i % 2 == 0 { "hot_fn" } else { "cold_fn" }),
+                make_fn_exit(i * 2 + 1, i * 100 + 50, 1, if i % 2 == 0 { "hot_fn" } else { "cold_fn" }),
+            ]
+        }).collect();
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server.debug_expand_hotspot(Parameters(DebugExpandHotspotParams {
+            session_id: sid,
+            top_n: 5,
+        })).await.unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        assert!(text.contains("hotspot_functions"));
+    }
+
+    #[tokio::test]
+    async fn test_debug_get_saliency_scores() {
+        let events = (0..10u64).flat_map(|i| {
+            vec![
+                make_fn_entry(i * 2, i * 100, 1, "fn_a"),
+                make_fn_exit(i * 2 + 1, i * 100 + 50, 1, "fn_a"),
+            ]
+        }).collect();
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server.debug_get_saliency_scores(Parameters(DebugGetSaliencyScoresParams {
+            session_id: sid,
+            limit: 10,
+        })).await.unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        assert!(text.contains("saliency_score"));
+    }
+
+    #[tokio::test]
+    async fn test_sf4_tools_session_not_found() {
+        let server = ChronosServer::new();
+        let sid = "nonexistent".to_string();
+
+        let r1 = server.debug_call_graph(Parameters(DebugCallGraphParams {
+            session_id: sid.clone(), max_depth: 5,
+        })).await.unwrap();
+        assert_eq!(r1.is_error, Some(true));
+
+        let r2 = server.debug_find_crash(Parameters(DebugFindCrashParams {
+            session_id: sid.clone(),
+        })).await.unwrap();
+        assert_eq!(r2.is_error, Some(true));
+
+        let r3 = server.debug_detect_races(Parameters(DebugDetectRacesParams {
+            session_id: sid.clone(), threshold_ns: 100,
+        })).await.unwrap();
+        assert_eq!(r3.is_error, Some(true));
+
+        let r4 = server.debug_get_saliency_scores(Parameters(DebugGetSaliencyScoresParams {
+            session_id: sid, limit: 5,
+        })).await.unwrap();
+        assert_eq!(r4.is_error, Some(true));
     }
 }

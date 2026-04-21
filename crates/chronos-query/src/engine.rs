@@ -6,9 +6,13 @@
 //! execution summaries.
 
 use chronos_domain::{
-    EventData, EventType, QueryResult, ShadowIndex, TemporalIndex, TraceEvent,
-    TraceQuery,
-    query::{ExecutionSummary, FunctionStats, PotentialIssue, StackFrame, StateChange, StateDiff},
+    CausalityIndex, EventData, EventType, PerformanceIndex, QueryResult, ShadowIndex,
+    TemporalIndex, TraceEvent, TraceQuery,
+    query::{
+        CausalityQuery, CausalityResult, ExecutionSummary, FunctionStats, MutationRecord,
+        PerfEntry, PerfQuery, PerfResult, PerfSortBy, PotentialIssue, PotentialRace,
+        RaceDetectionQuery, RaceDetectionResult, StackFrame, StateChange, StateDiff,
+    },
 };
 use std::collections::HashMap;
 
@@ -20,6 +24,10 @@ pub struct QueryEngine {
     shadow_index: Option<ShadowIndex>,
     /// Temporal index (timestamp → event IDs).
     temporal_index: Option<TemporalIndex>,
+    /// Causality index (address/name → write mutations).
+    causality_index: Option<CausalityIndex>,
+    /// Performance index (function perf stats).
+    performance_index: Option<PerformanceIndex>,
 }
 
 impl QueryEngine {
@@ -29,6 +37,8 @@ impl QueryEngine {
             events,
             shadow_index: None,
             temporal_index: None,
+            causality_index: None,
+            performance_index: None,
         }
     }
 
@@ -42,7 +52,37 @@ impl QueryEngine {
             events,
             shadow_index: Some(shadow_index),
             temporal_index: Some(temporal_index),
+            causality_index: None,
+            performance_index: None,
         }
+    }
+
+    /// Create a query engine with all indices including causality.
+    pub fn with_all_indices(
+        events: Vec<TraceEvent>,
+        shadow_index: ShadowIndex,
+        temporal_index: TemporalIndex,
+        causality_index: CausalityIndex,
+    ) -> Self {
+        Self {
+            events,
+            shadow_index: Some(shadow_index),
+            temporal_index: Some(temporal_index),
+            causality_index: Some(causality_index),
+            performance_index: None,
+        }
+    }
+
+    /// Set or replace the causality index.
+    pub fn with_causality(mut self, causality: CausalityIndex) -> Self {
+        self.causality_index = Some(causality);
+        self
+    }
+
+    /// Set or replace the performance index.
+    pub fn with_performance(mut self, performance: PerformanceIndex) -> Self {
+        self.performance_index = Some(performance);
+        self
     }
 
     /// Get the total number of events.
@@ -350,6 +390,191 @@ impl QueryEngine {
     /// Get the last event (by event_id).
     pub fn last_event(&self) -> Option<&TraceEvent> {
         self.events.last()
+    }
+
+    // ─── Performance queries ──────────────────────────────────────────────────
+
+    /// Query performance index for top functions.
+    ///
+    /// Returns `None` if no performance index is loaded.
+    pub fn query_perf(&self, query: &PerfQuery) -> Option<PerfResult> {
+        let perf = self.performance_index.as_ref()?;
+        let counters = perf.read_counters();
+
+        let functions: Vec<PerfEntry> = match query.sort_by {
+            PerfSortBy::Cycles => perf.top_functions_by_cycles(query.limit),
+            PerfSortBy::CallCount => perf.top_functions_by_calls(query.limit),
+        }
+        .into_iter()
+        .filter(|f| {
+            if let Some(ref filter) = query.function_filter {
+                f.name.as_deref().unwrap_or("").contains(filter.as_str())
+            } else {
+                true
+            }
+        })
+        .map(|f| PerfEntry {
+            address: f.address,
+            name: f.name.clone(),
+            call_count: f.call_count,
+            total_cycles: f.total_cycles,
+            avg_cycles: f.avg_cycles(),
+        })
+        .collect();
+
+        Some(PerfResult {
+            functions,
+            counters_available: counters.has_data(),
+            total_session_cycles: counters.cycles,
+        })
+    }
+
+    /// Convenience wrapper: return top N functions sorted by total_cycles.
+    ///
+    /// Returns an empty vec if no performance index is loaded.
+    pub fn top_functions_by_cycles(&self, limit: usize) -> Vec<PerfEntry> {
+        let query = PerfQuery::new("").top(limit);
+        self.query_perf(&query).map(|r| r.functions).unwrap_or_default()
+    }
+
+    // ─── Causality queries ────────────────────────────────────────────────────
+
+    /// Query causality index for variable/memory write origin.
+    ///
+    /// Returns `None` if no causality index is loaded.
+    pub fn query_causality(&self, query: &CausalityQuery) -> Option<CausalityResult> {
+        let causality = self.causality_index.as_ref()?;
+
+        // Resolve address from query
+        let addr = if let Some(a) = query.address {
+            a
+        } else if let Some(ref name) = query.variable_name {
+            // Use trace_lineage to find any address associated with this name
+            let lineage = causality.trace_lineage(name);
+            if lineage.is_empty() {
+                return Some(CausalityResult {
+                    address: 0,
+                    variable_name: Some(name.clone()),
+                    mutations: vec![],
+                });
+            }
+            lineage[0].event_id // use first entry's event_id as proxy; addr resolved below
+        } else {
+            return None;
+        };
+
+        if query.full_lineage {
+            // Return full lineage by name or by address
+            let entries: Vec<&chronos_domain::CausalityEntry> =
+                if let Some(ref name) = query.variable_name {
+                    causality.trace_lineage(name)
+                } else {
+                    causality.writes_at(addr).iter().collect()
+                };
+
+            let mutations = entries.iter().map(|e| mutation_record_from_entry(e)).collect();
+            Some(CausalityResult {
+                address: addr,
+                variable_name: query.variable_name.clone(),
+                mutations,
+            })
+        } else {
+            // Return only last mutation before timestamp
+            let before_ts = query.before_timestamp.unwrap_or(u64::MAX);
+            let entry = causality.find_last_mutation(addr, before_ts)?;
+            Some(CausalityResult {
+                address: addr,
+                variable_name: query.variable_name.clone(),
+                mutations: vec![mutation_record_from_entry(entry)],
+            })
+        }
+    }
+
+    /// Detect potential data races: concurrent writes to the same address
+    /// from different threads within `threshold_ns` nanoseconds.
+    pub fn detect_races(&self, query: &RaceDetectionQuery) -> RaceDetectionResult {
+        let causality = match &self.causality_index {
+            Some(c) => c,
+            None => return RaceDetectionResult { races: vec![], addresses_checked: 0 },
+        };
+
+        let mut races = Vec::new();
+        let mut addresses_checked = 0;
+
+        // Iterate all addresses in the causality index
+        // We walk events to find VariableWrite/MemoryWrite events grouped by address
+        let mut addr_writes: std::collections::HashMap<u64, Vec<&TraceEvent>> =
+            std::collections::HashMap::new();
+
+        for event in &self.events {
+            if matches!(event.event_type, EventType::VariableWrite | EventType::MemoryWrite) {
+                // Apply time range filter if specified
+                if let Some((start, end)) = query.time_range {
+                    if event.timestamp_ns < start || event.timestamp_ns >= end {
+                        continue;
+                    }
+                }
+                addr_writes.entry(event.location.address).or_default().push(event);
+            }
+        }
+
+        for (addr, writes) in &addr_writes {
+            addresses_checked += 1;
+            // Check all pairs of writes at this address from different threads
+            for i in 0..writes.len() {
+                for j in (i + 1)..writes.len() {
+                    let a = writes[i];
+                    let b = writes[j];
+                    if a.thread_id == b.thread_id {
+                        continue; // same thread — not a race
+                    }
+                    let delta = a.timestamp_ns.abs_diff(b.timestamp_ns);
+                    if delta <= query.threshold_ns {
+                        // Build MutationRecords from causality index
+                        let wa = causality.find_last_mutation(*addr, a.timestamp_ns + 1)
+                            .map(mutation_record_from_entry)
+                            .unwrap_or_else(|| event_to_mutation_record(a));
+                        let wb = causality.find_last_mutation(*addr, b.timestamp_ns + 1)
+                            .map(mutation_record_from_entry)
+                            .unwrap_or_else(|| event_to_mutation_record(b));
+                        races.push(PotentialRace {
+                            address: *addr,
+                            write_a: wa,
+                            write_b: wb,
+                            delta_ns: delta,
+                        });
+                    }
+                }
+            }
+        }
+
+        RaceDetectionResult { races, addresses_checked }
+    }
+}
+
+fn mutation_record_from_entry(e: &chronos_domain::CausalityEntry) -> MutationRecord {
+    MutationRecord {
+        event_id: e.event_id,
+        timestamp: e.timestamp,
+        thread_id: e.thread_id,
+        value_before: e.value_before.clone(),
+        value_after: e.value_after.clone(),
+        function: e.function.clone(),
+        file: e.file.clone(),
+        line: e.line,
+    }
+}
+
+fn event_to_mutation_record(e: &TraceEvent) -> MutationRecord {
+    MutationRecord {
+        event_id: e.event_id,
+        timestamp: e.timestamp_ns,
+        thread_id: e.thread_id,
+        value_before: None,
+        value_after: String::new(),
+        function: e.location.function.clone().unwrap_or_default(),
+        file: e.location.file.clone(),
+        line: e.location.line,
     }
 }
 
@@ -688,4 +913,197 @@ mod tests {
         assert_eq!(result.total_matching, 1);
         assert_eq!(result.events[0].location.function.as_deref(), Some("helper"));
     }
+
+    // ─── Causality tests ──────────────────────────────────────────────────────
+
+    fn make_causality_engine() -> QueryEngine {
+        use chronos_domain::{CausalityEntry, CausalityIndex};
+
+        let addr = 0xA000u64;
+        let mut causality = CausalityIndex::new();
+
+        causality.record_write(addr, CausalityEntry {
+            event_id: 10,
+            timestamp: 100,
+            thread_id: 1,
+            value_before: None,
+            value_after: "0".to_string(),
+            function: "init".to_string(),
+            file: None,
+            line: None,
+        }, Some("counter"));
+
+        causality.record_write(addr, CausalityEntry {
+            event_id: 11,
+            timestamp: 200,
+            thread_id: 1,
+            value_before: Some("0".to_string()),
+            value_after: "1".to_string(),
+            function: "increment".to_string(),
+            file: None,
+            line: None,
+        }, Some("counter"));
+
+        causality.record_write(addr, CausalityEntry {
+            event_id: 12,
+            timestamp: 300,
+            thread_id: 2,
+            value_before: Some("1".to_string()),
+            value_after: "2".to_string(),
+            function: "increment".to_string(),
+            file: None,
+            line: None,
+        }, Some("counter"));
+
+        QueryEngine::new(vec![]).with_causality(causality)
+    }
+
+    #[test]
+    fn test_query_causality_find_last_mutation() {
+        use chronos_domain::query::CausalityQuery;
+
+        let engine = make_causality_engine();
+        let query = CausalityQuery::new("s1")
+            .by_address(0xA000)
+            .before(250);
+
+        let result = engine.query_causality(&query).unwrap();
+        assert_eq!(result.mutations.len(), 1);
+        assert_eq!(result.mutations[0].timestamp, 200);
+        assert_eq!(result.mutations[0].value_after, "1");
+    }
+
+    #[test]
+    fn test_query_causality_trace_lineage() {
+        use chronos_domain::query::CausalityQuery;
+
+        let engine = make_causality_engine();
+        let query = CausalityQuery::new("s1")
+            .by_address(0xA000)
+            .with_full_lineage();
+
+        let result = engine.query_causality(&query).unwrap();
+        assert_eq!(result.mutations.len(), 3);
+        // Ordered by timestamp
+        assert_eq!(result.mutations[0].timestamp, 100);
+        assert_eq!(result.mutations[2].value_after, "2");
+    }
+
+    #[test]
+    fn test_detect_races_100ns_threshold() {
+        use chronos_domain::{CausalityEntry, CausalityIndex, EventType, SourceLocation};
+        use chronos_domain::query::RaceDetectionQuery;
+
+        let addr = 0xB000u64;
+        let mut causality = CausalityIndex::new();
+
+        // Two writes to same address from different threads within 50ns (race)
+        causality.record_write(addr, CausalityEntry {
+            event_id: 1, timestamp: 1000, thread_id: 1,
+            value_before: None, value_after: "x".to_string(),
+            function: "f1".to_string(), file: None, line: None,
+        }, None);
+        causality.record_write(addr, CausalityEntry {
+            event_id: 2, timestamp: 1050, thread_id: 2,
+            value_before: None, value_after: "y".to_string(),
+            function: "f2".to_string(), file: None, line: None,
+        }, None);
+
+        // Events to drive address_writes detection
+        let events = vec![
+            TraceEvent::new(1, 1000, 1, EventType::VariableWrite,
+                SourceLocation::from_address(addr), chronos_domain::EventData::Empty),
+            TraceEvent::new(2, 1050, 2, EventType::VariableWrite,
+                SourceLocation::from_address(addr), chronos_domain::EventData::Empty),
+        ];
+
+        let engine = QueryEngine::new(events).with_causality(causality);
+        let query = RaceDetectionQuery::new("s1"); // threshold = 100ns
+
+        let result = engine.detect_races(&query);
+        assert_eq!(result.races.len(), 1);
+        assert_eq!(result.races[0].address, addr);
+        assert_eq!(result.races[0].delta_ns, 50);
+    }
+
+    // ─── Performance tests ────────────────────────────────────────────────────
+
+    fn make_perf_engine() -> QueryEngine {
+        let mut perf = PerformanceIndex::new();
+        perf.record_call(0x1000, Some("hot_fn".to_string()), Some(9000));
+        perf.record_call(0x1000, Some("hot_fn".to_string()), Some(1000));
+        perf.record_call(0x2000, Some("cold_fn".to_string()), Some(200));
+        perf.record_call(0x3000, Some("medium_fn".to_string()), Some(5000));
+        QueryEngine::new(vec![]).with_performance(perf)
+    }
+
+    #[test]
+    fn test_query_perf_top_by_cycles() {
+        use chronos_domain::query::PerfQuery;
+
+        let engine = make_perf_engine();
+        let query = PerfQuery::new("s1").top(2);
+        let result = engine.query_perf(&query).unwrap();
+
+        assert_eq!(result.functions.len(), 2);
+        // hot_fn has 10000 total cycles
+        assert_eq!(result.functions[0].address, 0x1000);
+        assert_eq!(result.functions[0].total_cycles, 10000);
+        assert_eq!(result.functions[0].call_count, 2);
+        assert!((result.functions[0].avg_cycles - 5000.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_query_perf_sort_by_calls() {
+        use chronos_domain::query::PerfQuery;
+
+        let engine = make_perf_engine();
+        let query = PerfQuery::new("s1").sort_by_calls().top(3);
+        let result = engine.query_perf(&query).unwrap();
+
+        // hot_fn called 2 times, others 1 time
+        assert_eq!(result.functions[0].address, 0x1000);
+        assert_eq!(result.functions[0].call_count, 2);
+    }
+
+    #[test]
+    fn test_query_perf_function_filter() {
+        use chronos_domain::query::PerfQuery;
+
+        let engine = make_perf_engine();
+        let query = PerfQuery::new("s1").filter_function("hot");
+        let result = engine.query_perf(&query).unwrap();
+
+        assert_eq!(result.functions.len(), 1);
+        assert_eq!(result.functions[0].name.as_deref(), Some("hot_fn"));
+    }
+
+    #[test]
+    fn test_query_perf_no_index_returns_none() {
+        use chronos_domain::query::PerfQuery;
+
+        let engine = QueryEngine::new(vec![]);
+        let result = engine.query_perf(&PerfQuery::new("s1"));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_top_functions_by_cycles_convenience() {
+        let engine = make_perf_engine();
+        let top = engine.top_functions_by_cycles(2);
+        assert_eq!(top.len(), 2);
+        assert_eq!(top[0].total_cycles, 10000); // hot_fn
+    }
+
+    #[test]
+    fn test_perf_counters_unavailable() {
+        use chronos_domain::query::PerfQuery;
+
+        // No global counters set → counters_available = false
+        let engine = make_perf_engine();
+        let result = engine.query_perf(&PerfQuery::new("s1")).unwrap();
+        assert!(!result.counters_available);
+        assert!(result.total_session_cycles.is_none());
+    }
 }
+

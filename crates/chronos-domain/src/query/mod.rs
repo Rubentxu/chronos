@@ -261,6 +261,198 @@ pub struct StateChange {
     pub value_b: String,
 }
 
+// ─── Causality queries ────────────────────────────────────────────────────────
+
+/// Query to find the origin of a memory/variable write.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CausalityQuery {
+    /// Session to query.
+    pub session_id: String,
+    /// Memory address to inspect (preferred over variable_name).
+    pub address: Option<u64>,
+    /// Variable name to inspect (exact match).
+    pub variable_name: Option<String>,
+    /// Return only mutations before this timestamp.
+    pub before_timestamp: Option<TimestampNs>,
+    /// If true, return the full lineage; if false, return only the last mutation.
+    pub full_lineage: bool,
+}
+
+impl CausalityQuery {
+    pub fn new(session_id: impl Into<String>) -> Self {
+        Self {
+            session_id: session_id.into(),
+            address: None,
+            variable_name: None,
+            before_timestamp: None,
+            full_lineage: false,
+        }
+    }
+
+    pub fn by_address(mut self, addr: u64) -> Self {
+        self.address = Some(addr);
+        self
+    }
+
+    pub fn by_name(mut self, name: impl Into<String>) -> Self {
+        self.variable_name = Some(name.into());
+        self
+    }
+
+    pub fn before(mut self, ts: TimestampNs) -> Self {
+        self.before_timestamp = Some(ts);
+        self
+    }
+
+    pub fn with_full_lineage(mut self) -> Self {
+        self.full_lineage = true;
+        self
+    }
+}
+
+/// Result of a causality query.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CausalityResult {
+    /// The queried address (resolved from name if needed).
+    pub address: u64,
+    /// Variable name if known.
+    pub variable_name: Option<String>,
+    /// Mutations found (one if last-only, many if full lineage).
+    pub mutations: Vec<MutationRecord>,
+}
+
+/// A single mutation record in a causality result.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MutationRecord {
+    pub event_id: u64,
+    pub timestamp: TimestampNs,
+    pub thread_id: u64,
+    pub value_before: Option<String>,
+    pub value_after: String,
+    pub function: String,
+    pub file: Option<String>,
+    pub line: Option<u32>,
+}
+
+// ─── Race detection query ─────────────────────────────────────────────────────
+
+/// Query to detect potential data races in a trace.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RaceDetectionQuery {
+    pub session_id: String,
+    /// Restrict to this time range (start, end in ns).
+    pub time_range: Option<(TimestampNs, TimestampNs)>,
+    /// Concurrent write threshold in nanoseconds (default: 100).
+    pub threshold_ns: u64,
+}
+
+impl RaceDetectionQuery {
+    pub fn new(session_id: impl Into<String>) -> Self {
+        Self {
+            session_id: session_id.into(),
+            time_range: None,
+            threshold_ns: 100,
+        }
+    }
+}
+
+/// A single potential race condition.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PotentialRace {
+    /// Memory address with concurrent writes.
+    pub address: u64,
+    /// First write event.
+    pub write_a: MutationRecord,
+    /// Second write event (within threshold).
+    pub write_b: MutationRecord,
+    /// Time difference in nanoseconds between the two writes.
+    pub delta_ns: u64,
+}
+
+/// Result of a race detection query.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RaceDetectionResult {
+    pub races: Vec<PotentialRace>,
+    pub addresses_checked: usize,
+}
+
+// ─── Performance queries ──────────────────────────────────────────────────────
+
+/// Query to retrieve performance counter data from a trace session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerfQuery {
+    /// Session to query.
+    pub session_id: String,
+    /// If Some, filter results to functions matching this name substring.
+    pub function_filter: Option<String>,
+    /// Maximum number of results to return (default: 20).
+    pub limit: usize,
+    /// Sort order for results.
+    pub sort_by: PerfSortBy,
+}
+
+/// Sort order for performance query results.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub enum PerfSortBy {
+    /// Sort by total cycles descending.
+    #[default]
+    Cycles,
+    /// Sort by call count descending.
+    CallCount,
+}
+
+impl PerfQuery {
+    pub fn new(session_id: impl Into<String>) -> Self {
+        Self {
+            session_id: session_id.into(),
+            function_filter: None,
+            limit: 20,
+            sort_by: PerfSortBy::Cycles,
+        }
+    }
+
+    pub fn filter_function(mut self, name: impl Into<String>) -> Self {
+        self.function_filter = Some(name.into());
+        self
+    }
+
+    pub fn top(mut self, n: usize) -> Self {
+        self.limit = n;
+        self
+    }
+
+    pub fn sort_by_calls(mut self) -> Self {
+        self.sort_by = PerfSortBy::CallCount;
+        self
+    }
+}
+
+/// A single entry in a performance query result.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PerfEntry {
+    /// Function address.
+    pub address: u64,
+    /// Function name (if known).
+    pub name: Option<String>,
+    /// Number of times this function was called.
+    pub call_count: u64,
+    /// Total estimated CPU cycles.
+    pub total_cycles: u64,
+    /// Average cycles per call.
+    pub avg_cycles: f64,
+}
+
+/// Result of a performance query.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerfResult {
+    /// Top functions according to sort order.
+    pub functions: Vec<PerfEntry>,
+    /// True if hardware counters (perf_event_open) were available.
+    pub counters_available: bool,
+    /// Global cycle count for the session (None if counters unavailable).
+    pub total_session_cycles: Option<u64>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
