@@ -377,9 +377,7 @@ fn test_full_pipeline_simulation() {
 // ============================================================================
 
 /// Test that the capture runner can trace /bin/true (exits immediately).
-/// Run with: cargo test --package chronos-e2e --test e2e -- test_capture_runner_bin_true --nocapture --ignored
 #[test]
-#[ignore]
 fn test_capture_runner_bin_true() {
     use chronos_domain::CaptureConfig;
     use chronos_native::capture_runner::{CaptureEndReason, CaptureRunner};
@@ -412,9 +410,7 @@ fn test_capture_runner_bin_true() {
 }
 
 /// Test capture of a compiled C fixture with symbol resolution.
-/// Run with: cargo test --package chronos-e2e --test e2e -- test_capture_runner_c_fixture --nocapture --ignored
 #[test]
-#[ignore]
 fn test_capture_runner_c_fixture_with_symbols() {
     use chronos_domain::CaptureConfig;
     use chronos_native::capture_runner::{CaptureEndReason, CaptureRunner};
@@ -450,9 +446,9 @@ fn test_capture_runner_c_fixture_with_symbols() {
 }
 
 /// Test capture runner with a crashing program.
-/// Ignored by default — segfault handling needs more work.
+/// Verifies that fatal signals (SIGSEGV) are delivered to the tracee
+/// and the capture terminates cleanly with the correct end reason.
 #[test]
-#[ignore]
 fn test_capture_runner_segfault() {
     use chronos_domain::CaptureConfig;
     use chronos_native::capture_runner::{CaptureEndReason, CaptureRunner};
