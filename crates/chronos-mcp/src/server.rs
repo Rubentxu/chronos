@@ -42,6 +42,9 @@ impl Default for ResourceLimits {
     }
 }
 
+/// Type alias for background session events storage.
+type BackgroundSessionEvents = Arc<std::sync::Mutex<Vec<TraceEvent>>>;
+
 /// The Chronos MCP server state.
 pub struct ChronosServer {
     /// Active capture sessions (session_id → runner).
@@ -53,7 +56,7 @@ pub struct ChronosServer {
     /// Active background sessions: session_id → events vector.
     /// Used for background debug_run sessions that are still running.
     /// Uses std::sync::Mutex because it is accessed from blocking threads.
-    background_sessions: Arc<std::sync::Mutex<HashMap<String, Arc<std::sync::Mutex<Vec<TraceEvent>>>>>>,
+    background_sessions: Arc<std::sync::Mutex<HashMap<String, BackgroundSessionEvents>>>,
     /// Active symbol subscriptions: subscription_id → SubscriptionEntry.
     subscriptions: Arc<Mutex<HashMap<String, SubscriptionEntry>>>,
     /// Stop senders for watch tasks: subscription_id → stop sender.
@@ -71,6 +74,7 @@ struct ActiveSession {
 
 /// An active symbol subscription for hardware watchpoint monitoring.
 #[derive(Clone)]
+#[allow(dead_code)]
 struct SubscriptionEntry {
     /// The debug session this subscription belongs to.
     session_id: String,
@@ -1018,7 +1022,7 @@ impl ChronosServer {
         // 7. Spawn background watch task if PID is available
         let pid = params.pid.unwrap_or(0);
         if pid != 0 {
-            let sub_id = subscription_id.clone();
+            let _sub_id = subscription_id.clone();
             let events_clone = Arc::clone(&events);
 
             tokio::spawn(async move {
@@ -1099,7 +1103,7 @@ impl ChronosServer {
             tokio::time::sleep(remaining.min(Duration::from_millis(10))).await;
         }
 
-        let has_more = entry.events.lock().unwrap().len() > 0;
+        let has_more = !entry.events.lock().unwrap().is_empty();
 
         let result = serde_json::json!({
             "subscription_id": params.subscription_id,

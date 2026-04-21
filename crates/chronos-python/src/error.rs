@@ -16,6 +16,22 @@ pub enum PythonError {
     Io(#[from] std::io::Error),
 }
 
+/// Errors specific to the Python DAP adapter.
+#[derive(Debug, thiserror::Error)]
+pub enum PythonAdapterError {
+    #[error("connection failed: {0}")]
+    ConnectionFailed(String),
+
+    #[error("DAP protocol error: {0}")]
+    ProtocolError(String),
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

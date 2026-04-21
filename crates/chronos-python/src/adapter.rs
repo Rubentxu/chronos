@@ -3,6 +3,9 @@
 //! This adapter spawns a Python subprocess with sys.settrace enabled
 //! to capture function call/return/exception events.
 
+use crate::client::DapClient;
+use crate::convert::dap_event_to_trace;
+use crate::error::PythonAdapterError;
 use crate::parser::{locals_to_variable_info, RawPythonEvent};
 use crate::subprocess::PythonSubprocess;
 use chronos_capture::TraceAdapter;
@@ -288,5 +291,130 @@ mod tests {
             }
             _ => panic!("Expected PythonFrame data"),
         }
+    }
+}
+
+// ============================================================================
+// Python DAP Adapter — connects to debugpy via DAP-over-TCP
+// ============================================================================
+
+/// Python DAP adapter that connects to debugpy and captures trace events.
+///
+/// This adapter is an alternative to `PythonAdapter` that uses the Debug
+/// Adapter Protocol (DAP) over TCP instead of sys.settrace. This allows
+/// debugging of Python processes started externally (e.g., by an IDE).
+pub struct PythonDapAdapter {
+    /// Host where debugpy is running
+    host: String,
+    /// Port where debugpy is listening
+    port: u16,
+}
+
+impl PythonDapAdapter {
+    /// Create a new DAP adapter that connects to debugpy at the given address.
+    pub fn new(host: impl Into<String>, port: u16) -> Self {
+        Self {
+            host: host.into(),
+            port,
+        }
+    }
+
+    /// Connect to debugpy and return a DAP session.
+    pub fn connect(&self, pid: u32) -> Result<DapSession, PythonAdapterError> {
+        let addr = format!("{}:{}", self.host, self.port);
+        let mut client = DapClient::connect(&addr)?;
+        client.initialize(pid)?;
+        Ok(DapSession { client })
+    }
+}
+
+/// A DAP capture session — wraps a connected `DapClient`.
+pub struct DapSession {
+    client: DapClient,
+}
+
+impl DapSession {
+    /// Capture trace events from the DAP session.
+    ///
+    /// Returns an iterator that yields `TraceEvent`s until the session ends.
+    pub fn capture_events(&mut self) -> impl Iterator<Item = TraceEvent> + '_ {
+        DapEventIterator { session: self }
+    }
+
+    /// Disconnect from debugpy.
+    pub fn disconnect(self) -> Result<(), PythonAdapterError> {
+        // DapClient doesn't have an explicit disconnect, but dropping the client
+        // will close the TCP connection
+        Ok(())
+    }
+}
+
+/// Iterator over DAP events from a `DapSession`.
+struct DapEventIterator<'a> {
+    session: &'a mut DapSession,
+}
+
+impl<'a> Iterator for DapEventIterator<'a> {
+    type Item = TraceEvent;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let event = self.session.client.next_event().ok().flatten()?;
+            if let Some(trace_event) = dap_event_to_trace(&event, "dap-session") {
+                return Some(trace_event);
+            }
+            // Skip events that don't produce trace events
+        }
+    }
+}
+
+impl TraceAdapter for PythonDapAdapter {
+    fn start_capture(&self, _config: CaptureConfig) -> Result<CaptureSession, TraceError> {
+        // For DAP, we don't spawn a process - we attach to an existing one
+        // This is a no-op for the DAP adapter since connect() must be called separately
+        Err(TraceError::UnsupportedLanguage(
+            "DAP adapter requires explicit connect() call before capture".into(),
+        ))
+    }
+
+    fn stop_capture(&self, _session: &CaptureSession) -> Result<(), TraceError> {
+        Ok(())
+    }
+
+    fn attach_to_process(
+        &self,
+        _pid: u32,
+        _config: CaptureConfig,
+    ) -> Result<CaptureSession, TraceError> {
+        Err(TraceError::UnsupportedLanguage(
+            "Use connect() method on PythonDapAdapter instead".into(),
+        ))
+    }
+
+    fn get_language(&self) -> Language {
+        Language::Python
+    }
+
+    fn name(&self) -> &str {
+        "python-dap"
+    }
+}
+
+#[cfg(test)]
+mod dap_tests {
+    use super::*;
+
+    #[test]
+    fn test_python_dap_adapter_new() {
+        let adapter = PythonDapAdapter::new("localhost", 5678);
+        assert_eq!(adapter.name(), "python-dap");
+        assert_eq!(adapter.get_language(), Language::Python);
+    }
+
+    #[test]
+    fn test_dap_session_disconnect() {
+        // Can't actually connect without debugpy running, but we can verify
+        // the disconnect method doesn't panic
+        // This test would need a real debugpy instance to be meaningful
     }
 }

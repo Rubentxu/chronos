@@ -245,6 +245,24 @@ pub enum EventData {
         /// Kind of JavaScript event
         event_kind: JsEventKind,
     },
+
+    /// Python stdout/stderr console output.
+    PythonConsoleOutput {
+        /// Output text
+        text: String,
+        /// Output stream: "stdout", "stderr", or "console"
+        category: String,
+    },
+
+    /// JavaScript console API output.
+    JsConsoleOutput {
+        /// Output text
+        text: String,
+        /// Console level: "log", "warn", "error", "info"
+        level: String,
+        /// Serialized arguments
+        args: Vec<String>,
+    },
 }
 
 /// x86_64 CPU register state snapshot.

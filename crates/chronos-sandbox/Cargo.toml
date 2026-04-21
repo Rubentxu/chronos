@@ -11,9 +11,12 @@ chronos-domain = { workspace = true }
 chronos-capture = { workspace = true }
 chronos-query = { workspace = true }
 chronos-native = { workspace = true }
+chronos-python = { workspace = true }
 
 # External
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["net", "io-util", "rt-multi-thread", "macros", "time"] }
+tokio-tungstenite = "0.21"
+futures-util = "0.3"
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }

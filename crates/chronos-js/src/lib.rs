@@ -9,5 +9,5 @@ pub mod debugger;
 pub mod error;
 pub mod subprocess;
 
-pub use adapter::JsAdapter;
+pub use adapter::{CdpSession, JsAdapter, JsCdpAdapter};
 pub use error::JsAdapterError;
