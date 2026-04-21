@@ -4,5 +4,6 @@
 //! using pre-built indices for fast lookups.
 
 pub mod engine;
+pub mod expr_eval;
 
 pub use engine::QueryEngine;

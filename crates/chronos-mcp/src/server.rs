@@ -309,6 +309,38 @@ pub struct CompareSessionsParams {
     pub session_b: String,
 }
 
+// ============================================================================
+// SF6 — Inspection Tools (T4–T7)
+// ============================================================================
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct EvaluateExpressionParams {
+    /// Session ID.
+    pub session_id: String,
+    /// Event ID at which to evaluate the expression.
+    pub event_id: u64,
+    /// Arithmetic expression to evaluate (e.g., "x + y * 2").
+    pub expression: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DebugGetVariablesParams {
+    /// Session ID.
+    pub session_id: String,
+    /// Event ID at which to get variables.
+    pub event_id: u64,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DebugGetMemoryParams {
+    /// Session ID.
+    pub session_id: String,
+    /// Memory address to read.
+    pub address: u64,
+    /// Timestamp in nanoseconds (will return most recent write at or before this time).
+    pub timestamp_ns: u64,
+}
+
 impl ChronosServer {
     pub fn new() -> Self {
         let db_path = std::env::var("CHRONOS_DB_PATH")
@@ -1614,6 +1646,122 @@ impl ChronosServer {
         });
         Ok(CallToolResult::success(json_content(&output)))
     }
+
+    // ========================================================================
+    // SF6 — Inspection Tools (T5–T7)
+    // ========================================================================
+
+    #[tool(
+        name = "evaluate_expression",
+        description = "Evaluate an arithmetic expression using local variables captured at a frame event. Supports +, -, *, /, parentheses, and variable names."
+    )]
+    async fn evaluate_expression(
+        &self,
+        params: Parameters<EvaluateExpressionParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let engines = self.engines.lock().await;
+
+        match engines.get(&params.session_id) {
+            Some(engine) => {
+                match engine.evaluate_expression(params.event_id, &params.expression) {
+                    Ok(result) => {
+                        let output = serde_json::json!({
+                            "event_id": params.event_id,
+                            "expression": params.expression,
+                            "result": result,
+                        });
+                        Ok(CallToolResult::success(json_content(&output)))
+                    }
+                    Err(e) => {
+                        let output = serde_json::json!({
+                            "event_id": params.event_id,
+                            "expression": params.expression,
+                            "error": format!("{:?}", e),
+                        });
+                        Ok(CallToolResult::success(vec![Content::text(
+                            serde_json::to_string_pretty(&output).unwrap_or_default(),
+                        )]))
+                    }
+                }
+            }
+            None => Ok(CallToolResult::error(text_content(format!(
+                "Session '{}' not found",
+                params.session_id
+            )))),
+        }
+    }
+
+    #[tool(
+        name = "debug_get_variables",
+        description = "Get all variables in scope at a specific event. Returns locals from Python/Java/Go frame events or VariableWrite events."
+    )]
+    async fn debug_get_variables(
+        &self,
+        params: Parameters<DebugGetVariablesParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let engines = self.engines.lock().await;
+
+        match engines.get(&params.session_id) {
+            Some(engine) => {
+                let vars = engine.get_variables_at_event(params.event_id);
+                let output = serde_json::json!({
+                    "event_id": params.event_id,
+                    "variables": vars,
+                });
+                Ok(CallToolResult::success(json_content(&output)))
+            }
+            None => Ok(CallToolResult::error(text_content(format!(
+                "Session '{}' not found",
+                params.session_id
+            )))),
+        }
+    }
+
+    #[tool(
+        name = "debug_get_memory",
+        description = "Read raw memory at an address as of a specific timestamp (nanoseconds). Returns the most recent MemoryWrite event at or before the timestamp."
+    )]
+    async fn debug_get_memory(
+        &self,
+        params: Parameters<DebugGetMemoryParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let engines = self.engines.lock().await;
+
+        match engines.get(&params.session_id) {
+            Some(engine) => {
+                match engine.get_memory_at(params.address, params.timestamp_ns) {
+                    Some(mem) => {
+                        let hex = mem
+                            .data
+                            .iter()
+                            .map(|b| format!("{:02x}", b))
+                            .collect::<Vec<_>>()
+                            .join("");
+                        let output = serde_json::json!({
+                            "address": format!("0x{:x}", mem.address),
+                            "timestamp_ns": mem.timestamp_ns,
+                            "event_id": mem.event_id,
+                            "size": mem.size,
+                            "data": mem.data,
+                            "hex": hex,
+                        });
+                        Ok(CallToolResult::success(json_content(&output)))
+                    }
+                    None => Ok(CallToolResult::error(text_content(format!(
+                        "No memory event found at address 0x{:x} before timestamp {}",
+                        params.address, params.timestamp_ns
+                    )))),
+                }
+            }
+            None => Ok(CallToolResult::error(text_content(format!(
+                "Session '{}' not found",
+                params.session_id
+            )))),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2310,5 +2458,246 @@ mod tests {
         .unwrap();
         assert_eq!(params.max_events, Some(500000));
         assert_eq!(params.timeout_secs, Some(30));
+    }
+
+    // ========================================================================
+    // SF6 — Inspection Tools Tests
+    // ========================================================================
+
+    fn make_test_python_frame_with_locals(
+        id: u64,
+        ts: u64,
+        tid: u64,
+        locals: Vec<chronos_domain::VariableInfo>,
+    ) -> TraceEvent {
+        TraceEvent::python_call_with_locals(
+            id,
+            ts,
+            tid,
+            "my_module.my_func",
+            "/path/to/script.py",
+            10,
+            locals,
+        )
+    }
+
+    fn make_test_memory_event(
+        id: u64,
+        ts: u64,
+        tid: u64,
+        address: u64,
+        size: usize,
+        data: Vec<u8>,
+    ) -> TraceEvent {
+        use chronos_domain::{EventData, EventType, SourceLocation};
+        TraceEvent::new(
+            id,
+            ts,
+            tid,
+            EventType::MemoryWrite,
+            SourceLocation::from_address(address),
+            EventData::Memory {
+                address,
+                size,
+                data: Some(data),
+            },
+        )
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_expression_success() {
+        let locals = vec![
+            chronos_domain::VariableInfo::new("x", "10", "i32", 0x1000, chronos_domain::VariableScope::Local),
+            chronos_domain::VariableInfo::new("y", "3", "i32", 0x2000, chronos_domain::VariableScope::Local),
+        ];
+        let events = vec![make_test_python_frame_with_locals(0, 100, 1, locals)];
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server
+            .evaluate_expression(Parameters(EvaluateExpressionParams {
+                session_id: sid,
+                event_id: 0,
+                expression: "x + y * 2".to_string(),
+            }))
+            .await
+            .unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        // Should contain result = 16.0 (10 + 3 * 2)
+        assert!(text.contains("16"));
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_expression_unknown_var() {
+        let locals = vec![
+            chronos_domain::VariableInfo::new("x", "10", "i32", 0x1000, chronos_domain::VariableScope::Local),
+        ];
+        let events = vec![make_test_python_frame_with_locals(0, 100, 1, locals)];
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server
+            .evaluate_expression(Parameters(EvaluateExpressionParams {
+                session_id: sid,
+                event_id: 0,
+                expression: "x + z".to_string(), // z is unknown
+            }))
+            .await
+            .unwrap();
+
+        // Should succeed but with error in content
+        assert_ne!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        assert!(text.contains("error") || text.contains("UnknownVariable"));
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_expression_division_by_zero() {
+        let locals = vec![
+            chronos_domain::VariableInfo::new("n", "0", "i32", 0x1000, chronos_domain::VariableScope::Local),
+        ];
+        let events = vec![make_test_python_frame_with_locals(0, 100, 1, locals)];
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server
+            .evaluate_expression(Parameters(EvaluateExpressionParams {
+                session_id: sid,
+                event_id: 0,
+                expression: "10 / n".to_string(),
+            }))
+            .await
+            .unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        assert!(text.contains("DivisionByZero"));
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_expression_session_not_found() {
+        let server = ChronosServer::new();
+        let result = server
+            .evaluate_expression(Parameters(EvaluateExpressionParams {
+                session_id: "nonexistent".to_string(),
+                event_id: 0,
+                expression: "x + 1".to_string(),
+            }))
+            .await
+            .unwrap();
+
+        assert_eq!(result.is_error, Some(true));
+    }
+
+    #[tokio::test]
+    async fn test_debug_get_variables_python() {
+        let locals = vec![
+            chronos_domain::VariableInfo::new("count", "42", "int", 0x1000, chronos_domain::VariableScope::Local),
+        ];
+        let events = vec![make_test_python_frame_with_locals(0, 100, 1, locals)];
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server
+            .debug_get_variables(Parameters(DebugGetVariablesParams {
+                session_id: sid,
+                event_id: 0,
+            }))
+            .await
+            .unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        assert!(text.contains("count") && text.contains("42"));
+    }
+
+    #[tokio::test]
+    async fn test_debug_get_variables_empty() {
+        // PythonFrame with None locals
+        let event = TraceEvent::python_call(0, 100, 1, "my_module.my_func", "/path/to/script.py", 10);
+        let events = vec![event];
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server
+            .debug_get_variables(Parameters(DebugGetVariablesParams {
+                session_id: sid,
+                event_id: 0,
+            }))
+            .await
+            .unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        assert!(text.contains("variables"));
+    }
+
+    #[tokio::test]
+    async fn test_debug_get_variables_session_not_found() {
+        let server = ChronosServer::new();
+        let result = server
+            .debug_get_variables(Parameters(DebugGetVariablesParams {
+                session_id: "nonexistent".to_string(),
+                event_id: 0,
+            }))
+            .await
+            .unwrap();
+
+        assert_eq!(result.is_error, Some(true));
+    }
+
+    #[tokio::test]
+    async fn test_debug_get_memory_found() {
+        let addr = 0x7FFF0000u64;
+        let events = vec![
+            make_test_memory_event(1, 1000, 1, addr, 4, vec![0x01, 0x02, 0x03, 0x04]),
+            make_test_memory_event(2, 2000, 1, addr, 4, vec![0xFF, 0xFE, 0xFD, 0xFC]),
+        ];
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server
+            .debug_get_memory(Parameters(DebugGetMemoryParams {
+                session_id: sid.clone(),
+                address: addr,
+                timestamp_ns: 1500,
+            }))
+            .await
+            .unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        // Should find the first memory write at timestamp 1000
+        assert!(text.contains("0x7fff0000") || text.contains("7fff0000"));
+    }
+
+    #[tokio::test]
+    async fn test_debug_get_memory_not_found() {
+        let events = vec![
+            make_test_memory_event(1, 1000, 1, 0x7FFF0000, 4, vec![0x01, 0x02, 0x03, 0x04]),
+        ];
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server
+            .debug_get_memory(Parameters(DebugGetMemoryParams {
+                session_id: sid,
+                address: 0x12345678, // Different address
+                timestamp_ns: 2000,
+            }))
+            .await
+            .unwrap();
+
+        assert_eq!(result.is_error, Some(true));
+    }
+
+    #[tokio::test]
+    async fn test_debug_get_memory_session_not_found() {
+        let server = ChronosServer::new();
+        let result = server
+            .debug_get_memory(Parameters(DebugGetMemoryParams {
+                session_id: "nonexistent".to_string(),
+                address: 0x7FFF0000,
+                timestamp_ns: 1000,
+            }))
+            .await
+            .unwrap();
+
+        assert_eq!(result.is_error, Some(true));
     }
 }

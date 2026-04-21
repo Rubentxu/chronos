@@ -16,6 +16,8 @@ use chronos_domain::{
 };
 use std::collections::HashMap;
 
+pub use crate::expr_eval::{EvalError, ExprEvaluator};
+
 /// The query engine — holds trace data and indices for fast queries.
 pub struct QueryEngine {
     /// All events in the trace (ordered by event_id).
@@ -28,6 +30,21 @@ pub struct QueryEngine {
     causality_index: Option<CausalityIndex>,
     /// Performance index (function perf stats).
     performance_index: Option<PerformanceIndex>,
+}
+
+/// Result of a memory read.
+#[derive(Debug, Clone)]
+pub struct MemoryValue {
+    /// Event ID of the memory write.
+    pub event_id: u64,
+    /// Timestamp of the memory write.
+    pub timestamp_ns: u64,
+    /// Memory address.
+    pub address: u64,
+    /// Size in bytes.
+    pub size: usize,
+    /// Raw data bytes.
+    pub data: Vec<u8>,
 }
 
 impl QueryEngine {
@@ -409,6 +426,99 @@ impl QueryEngine {
     /// Get all events as a owned vector.
     pub fn get_all_events(&self) -> Vec<TraceEvent> {
         self.events.clone()
+    }
+
+    // ─── Variable inspection queries ─────────────────────────────────────────────
+
+    /// Get all variables in scope at the given event.
+    ///
+    /// Returns locals from PythonFrame/JavaFrame/GoFrame,
+    /// or the single VariableInfo from VariableWrite events.
+    /// Returns an empty vec if the event is not found or has no variables.
+    pub fn get_variables_at_event(&self, event_id: u64) -> Vec<chronos_domain::VariableInfo> {
+        let event = match self.get_event_by_id(event_id) {
+            Some(e) => e,
+            None => return vec![],
+        };
+
+        match &event.data {
+            EventData::PythonFrame { locals, .. } => locals.clone().unwrap_or_default(),
+            EventData::JavaFrame { locals, .. } => locals.clone().unwrap_or_default(),
+            EventData::GoFrame { locals, .. } => locals.clone().unwrap_or_default(),
+            EventData::Variable(var_info) => vec![var_info.clone()],
+            _ => vec![],
+        }
+    }
+
+    /// Get the most recent memory write at `address` at or before `timestamp_ns`.
+    ///
+    /// Returns `None` if no memory event exists at that address at or before
+    /// the requested timestamp.
+    pub fn get_memory_at(&self, address: u64, timestamp_ns: u64) -> Option<MemoryValue> {
+        // Try shadow index first for O(1) address lookup
+        let candidate_ids: Vec<u64> = if let Some(ref shadow) = self.shadow_index {
+            shadow.get(address).to_vec()
+        } else {
+            // Fallback: linear scan (no index)
+            self.events
+                .iter()
+                .filter(|e| {
+                    if let EventData::Memory { address: addr, .. } = &e.data {
+                        *addr == address
+                    } else {
+                        false
+                    }
+                })
+                .map(|e| e.event_id)
+                .collect()
+        };
+
+        let mut best: Option<MemoryValue> = None;
+        for id in candidate_ids {
+            if let Some(event) = self.get_event_by_id(id) {
+                if event.timestamp_ns <= timestamp_ns {
+                    if let EventData::Memory {
+                        address: addr,
+                        size,
+                        data,
+                    } = &event.data
+                    {
+                        let is_newer = best
+                            .as_ref()
+                            .map(|b| event.timestamp_ns > b.timestamp_ns)
+                            .unwrap_or(true);
+                        if is_newer {
+                            best = Some(MemoryValue {
+                                event_id: event.event_id,
+                                timestamp_ns: event.timestamp_ns,
+                                address: *addr,
+                                size: *size,
+                                data: data.clone().unwrap_or_default(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        best
+    }
+
+    /// Evaluate an arithmetic expression using local variables at the given event.
+    ///
+    /// Uses variables captured at the frame event to resolve variable names in the expression.
+    /// Returns the result of evaluating the expression, or an error if evaluation fails.
+    pub fn evaluate_expression(
+        &self,
+        event_id: u64,
+        expression: &str,
+    ) -> Result<f64, EvalError> {
+        let vars = self.get_variables_at_event(event_id);
+        let locals: HashMap<String, String> = vars
+            .into_iter()
+            .map(|v| (v.name, v.value))
+            .collect();
+        let evaluator = ExprEvaluator::new(locals);
+        evaluator.evaluate(expression)
     }
 
     // ─── Performance queries ──────────────────────────────────────────────────
@@ -1253,5 +1363,293 @@ mod tests {
         // Test boundary cases
         assert!(engine.get_event_by_id(1).is_some());
         assert_eq!(engine.get_event_by_id(1).unwrap().event_id, 1);
+    }
+
+    // ─── Variable inspection tests ─────────────────────────────────────────────
+
+    fn make_python_frame_with_locals(
+        id: u64,
+        ts: u64,
+        tid: u64,
+        locals: Vec<chronos_domain::VariableInfo>,
+    ) -> TraceEvent {
+        TraceEvent::python_call_with_locals(
+            id,
+            ts,
+            tid,
+            "my_module.my_func",
+            "/path/to/script.py",
+            10,
+            locals,
+        )
+    }
+
+    fn make_java_frame_with_locals(
+        id: u64,
+        ts: u64,
+        tid: u64,
+        locals: Vec<chronos_domain::VariableInfo>,
+    ) -> TraceEvent {
+        use chronos_domain::JavaEventKind;
+        TraceEvent::new(
+            id,
+            ts,
+            tid,
+            EventType::FunctionEntry,
+            SourceLocation::new("Test.java", 10, "com.example.Foo.bar", 0x1000 + id),
+            EventData::JavaFrame {
+                class_name: "com.example.Foo".to_string(),
+                method_name: "bar".to_string(),
+                signature: None,
+                file: Some("Test.java".to_string()),
+                line: Some(10),
+                locals: Some(locals),
+                event_kind: JavaEventKind::MethodEntry,
+            },
+        )
+    }
+
+    fn make_go_frame_with_locals(
+        id: u64,
+        ts: u64,
+        tid: u64,
+        locals: Vec<chronos_domain::VariableInfo>,
+    ) -> TraceEvent {
+        use chronos_domain::GoEventKind;
+        TraceEvent::new(
+            id,
+            ts,
+            tid,
+            EventType::BreakpointHit,
+            SourceLocation::new("main.go", 10, "main.foo", 0x1000 + id),
+            EventData::GoFrame {
+                goroutine_id: tid,
+                function_name: "main.foo".to_string(),
+                file: Some("main.go".to_string()),
+                line: Some(10),
+                locals: Some(locals),
+                event_kind: GoEventKind::Breakpoint,
+            },
+        )
+    }
+
+    fn make_variable_write_event(
+        id: u64,
+        ts: u64,
+        tid: u64,
+        var_info: chronos_domain::VariableInfo,
+    ) -> TraceEvent {
+        TraceEvent::new(
+            id,
+            ts,
+            tid,
+            EventType::VariableWrite,
+            SourceLocation::new("test.rs", 10, "main", 0x1000 + id),
+            EventData::Variable(var_info),
+        )
+    }
+
+    fn var_x() -> chronos_domain::VariableInfo {
+        chronos_domain::VariableInfo::new("x", "42", "i32", 0x7FFE1000, chronos_domain::VariableScope::Local)
+    }
+
+    fn var_count() -> chronos_domain::VariableInfo {
+        chronos_domain::VariableInfo::new("count", "100", "i64", 0x7FFE2000, chronos_domain::VariableScope::Local)
+    }
+
+    #[test]
+    fn test_get_variables_python_frame() {
+        let locals = vec![var_x(), var_count()];
+        let events = vec![make_python_frame_with_locals(0, 100, 1, locals)];
+        let engine = QueryEngine::new(events);
+
+        let vars = engine.get_variables_at_event(0);
+        assert_eq!(vars.len(), 2);
+        assert_eq!(vars[0].name, "x");
+        assert_eq!(vars[0].value, "42");
+        assert_eq!(vars[1].name, "count");
+        assert_eq!(vars[1].value, "100");
+    }
+
+    #[test]
+    fn test_get_variables_python_frame_empty_locals() {
+        // PythonFrame with None locals
+        let event = TraceEvent::python_call(0, 100, 1, "my_module.my_func", "/path/to/script.py", 10);
+        let engine = QueryEngine::new(vec![event]);
+
+        let vars = engine.get_variables_at_event(0);
+        assert!(vars.is_empty());
+    }
+
+    #[test]
+    fn test_get_variables_java_frame() {
+        let locals = vec![var_x()];
+        let events = vec![make_java_frame_with_locals(0, 100, 1, locals)];
+        let engine = QueryEngine::new(events);
+
+        let vars = engine.get_variables_at_event(0);
+        assert_eq!(vars.len(), 1);
+        assert_eq!(vars[0].name, "x");
+        assert_eq!(vars[0].value, "42");
+    }
+
+    #[test]
+    fn test_get_variables_go_frame() {
+        let locals = vec![var_count()];
+        let events = vec![make_go_frame_with_locals(0, 100, 1, locals)];
+        let engine = QueryEngine::new(events);
+
+        let vars = engine.get_variables_at_event(0);
+        assert_eq!(vars.len(), 1);
+        assert_eq!(vars[0].name, "count");
+        assert_eq!(vars[0].value, "100");
+    }
+
+    #[test]
+    fn test_get_variables_variable_write() {
+        let var_info = chronos_domain::VariableInfo::new("result", "99", "i32", 0x7FFE3000, chronos_domain::VariableScope::Local);
+        let events = vec![make_variable_write_event(0, 100, 1, var_info.clone())];
+        let engine = QueryEngine::new(events);
+
+        let vars = engine.get_variables_at_event(0);
+        assert_eq!(vars.len(), 1);
+        assert_eq!(vars[0].name, "result");
+        assert_eq!(vars[0].value, "99");
+    }
+
+    #[test]
+    fn test_get_variables_non_frame_empty() {
+        // Regular Function event (not a frame with locals)
+        let events = vec![make_event(0, 100, 1, EventType::FunctionEntry, "main", 0x1000)];
+        let engine = QueryEngine::new(events);
+
+        let vars = engine.get_variables_at_event(0);
+        assert!(vars.is_empty());
+    }
+
+    #[test]
+    fn test_get_variables_event_not_found() {
+        let engine = QueryEngine::new(vec![]);
+        let vars = engine.get_variables_at_event(999);
+        // Returns None from get_event_by_id, so get_variables_at_event returns empty vec
+        assert!(vars.is_empty());
+    }
+
+    // ─── Memory inspection tests ─────────────────────────────────────────────
+
+    fn make_memory_event(
+        id: u64,
+        ts: u64,
+        tid: u64,
+        address: u64,
+        size: usize,
+        data: Vec<u8>,
+    ) -> TraceEvent {
+        TraceEvent::new(
+            id,
+            ts,
+            tid,
+            EventType::MemoryWrite,
+            SourceLocation::from_address(address),
+            EventData::Memory {
+                address,
+                size,
+                data: Some(data),
+            },
+        )
+    }
+
+    #[test]
+    fn test_get_memory_found() {
+        let addr = 0x7FFF0000u64;
+        let events = vec![
+            make_memory_event(1, 1000, 1, addr, 4, vec![0x01, 0x02, 0x03, 0x04]),
+            make_memory_event(2, 2000, 1, addr, 4, vec![0xFF, 0xFE, 0xFD, 0xFC]),
+        ];
+        let engine = QueryEngine::new(events);
+
+        // Get memory at timestamp 1500 - should return first event
+        let result = engine.get_memory_at(addr, 1500);
+        assert!(result.is_some());
+        let mem = result.unwrap();
+        assert_eq!(mem.event_id, 1);
+        assert_eq!(mem.timestamp_ns, 1000);
+        assert_eq!(mem.data, vec![0x01, 0x02, 0x03, 0x04]);
+    }
+
+    #[test]
+    fn test_get_memory_before_timestamp() {
+        let addr = 0x7FFF0000u64;
+        let events = vec![
+            make_memory_event(1, 1000, 1, addr, 4, vec![0x01, 0x02, 0x03, 0x04]),
+            make_memory_event(2, 2000, 1, addr, 4, vec![0xFF, 0xFE, 0xFD, 0xFC]),
+            make_memory_event(3, 3000, 1, addr, 4, vec![0xAA, 0xBB, 0xCC, 0xDD]),
+        ];
+        let engine = QueryEngine::new(events);
+
+        // Get memory at timestamp 2500 - should return second event
+        let result = engine.get_memory_at(addr, 2500);
+        assert!(result.is_some());
+        let mem = result.unwrap();
+        assert_eq!(mem.event_id, 2);
+        assert_eq!(mem.timestamp_ns, 2000);
+        assert_eq!(mem.data, vec![0xFF, 0xFE, 0xFD, 0xFC]);
+    }
+
+    #[test]
+    fn test_get_memory_not_found() {
+        let events = vec![
+            make_memory_event(1, 1000, 1, 0x7FFF0000, 4, vec![0x01, 0x02, 0x03, 0x04]),
+        ];
+        let engine = QueryEngine::new(events);
+
+        // Address doesn't exist
+        let result = engine.get_memory_at(0x12345678, 2000);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_memory_no_index_fallback() {
+        let addr = 0x7FFF0000u64;
+        // Create engine without indices
+        let events = vec![
+            make_memory_event(1, 1000, 1, addr, 4, vec![0x01, 0x02, 0x03, 0x04]),
+            make_memory_event(2, 2000, 1, addr, 4, vec![0xFF, 0xFE, 0xFD, 0xFC]),
+        ];
+        let engine = QueryEngine::new(events); // No indices
+
+        let result = engine.get_memory_at(addr, 1500);
+        assert!(result.is_some());
+        let mem = result.unwrap();
+        assert_eq!(mem.event_id, 1);
+        assert_eq!(mem.timestamp_ns, 1000);
+    }
+
+    #[test]
+    fn test_get_memory_exact_timestamp() {
+        let addr = 0x7FFF0000u64;
+        let events = vec![
+            make_memory_event(1, 1000, 1, addr, 4, vec![0x01, 0x02, 0x03, 0x04]),
+            make_memory_event(2, 2000, 1, addr, 4, vec![0xFF, 0xFE, 0xFD, 0xFC]),
+        ];
+        let engine = QueryEngine::new(events);
+
+        // Get at exactly timestamp 1000 - should return first event
+        let result = engine.get_memory_at(addr, 1000);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().event_id, 1);
+    }
+
+    #[test]
+    fn test_get_memory_before_first_write() {
+        let addr = 0x7FFF0000u64;
+        let events = vec![
+            make_memory_event(1, 1000, 1, addr, 4, vec![0x01, 0x02, 0x03, 0x04]),
+        ];
+        let engine = QueryEngine::new(events);
+
+        // Get before first write - should return None
+        let result = engine.get_memory_at(addr, 500);
+        assert!(result.is_none());
     }
 }
