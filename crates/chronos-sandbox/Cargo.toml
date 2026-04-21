@@ -54,3 +54,7 @@ harness = false
 [[bench]]
 name = "kpi_suite"
 harness = false
+
+[[bench]]
+name = "symbol_resolution_suite"
+harness = false

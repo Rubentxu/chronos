@@ -89,7 +89,7 @@ fn test_throughput_counter() {
     let metrics = counter.metrics();
     assert_eq!(metrics.total_events, 1000);
     assert!(metrics.duration_sec > 0.0);
-    assert!(metrics.raw_events_per_sec >= 0);
+    assert!(metrics.raw_events_per_sec > 0);
 }
 
 /// Tests throughput calculation with multiple events recorded at once.
