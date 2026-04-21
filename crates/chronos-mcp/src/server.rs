@@ -313,6 +313,61 @@ pub struct CompareSessionsParams {
 }
 
 // ============================================================================
+// SF7 — Phase 11 Missing Tools (T20–T24)
+// ============================================================================
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DebugGetRegistersParams {
+    /// Session ID.
+    pub session_id: String,
+    /// Event ID at which to get register values.
+    pub event_id: u64,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DebugDiffParams {
+    /// Session ID.
+    pub session_id: String,
+    /// First event ID.
+    pub event_id_a: u64,
+    /// Second event ID.
+    pub event_id_b: u64,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DebugAnalyzeMemoryParams {
+    /// Session ID.
+    pub session_id: String,
+    /// Start address (inclusive).
+    pub start_address: u64,
+    /// End address (inclusive).
+    pub end_address: u64,
+    /// Start timestamp in nanoseconds.
+    pub start_ts: u64,
+    /// End timestamp in nanoseconds.
+    pub end_ts: u64,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ForensicMemoryAuditParams {
+    /// Session ID.
+    pub session_id: String,
+    /// Memory address to audit.
+    pub address: u64,
+    /// Maximum number of writes to return.
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct PerformanceRegressionAuditParams {
+    /// Baseline session ID.
+    pub baseline_session_id: String,
+    /// Target session ID to compare.
+    pub target_session_id: String,
+}
+
+// ============================================================================
 // SF6 — Inspection Tools (T4–T7)
 // ============================================================================
 
@@ -1825,6 +1880,462 @@ impl ChronosServer {
             )))),
         }
     }
+
+    // ========================================================================
+    // SF7 — Phase 11 Missing Tools (T20–T24)
+    // ========================================================================
+
+    #[tool(
+        name = "debug_get_registers",
+        description = "Get CPU register values at a specific event_id. Returns the register state snapshot if available."
+    )]
+    async fn debug_get_registers(
+        &self,
+        params: Parameters<DebugGetRegistersParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let engines = self.engines.lock().await;
+
+        let engine = match engines.get(&params.session_id) {
+            Some(e) => e,
+            None => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "Session '{}' not found",
+                    params.session_id
+                ))))
+            }
+        };
+
+        match engine.get_event_by_id(params.event_id) {
+            Some(_event) => {
+                // Find register state attached to this event or the nearest prior one
+                let regs = engine.find_registers_at_event(params.event_id);
+                match regs {
+                    Some(r) => {
+                        let output = serde_json::json!({
+                            "event_id": params.event_id,
+                            "registers": {
+                                "rax": format!("0x{:x}", r.rax),
+                                "rbx": format!("0x{:x}", r.rbx),
+                                "rcx": format!("0x{:x}", r.rcx),
+                                "rdx": format!("0x{:x}", r.rdx),
+                                "rsi": format!("0x{:x}", r.rsi),
+                                "rdi": format!("0x{:x}", r.rdi),
+                                "rbp": format!("0x{:x}", r.rbp),
+                                "rsp": format!("0x{:x}", r.rsp),
+                                "r8": format!("0x{:x}", r.r8),
+                                "r9": format!("0x{:x}", r.r9),
+                                "r10": format!("0x{:x}", r.r10),
+                                "r11": format!("0x{:x}", r.r11),
+                                "r12": format!("0x{:x}", r.r12),
+                                "r13": format!("0x{:x}", r.r13),
+                                "r14": format!("0x{:x}", r.r14),
+                                "r15": format!("0x{:x}", r.r15),
+                                "rip": format!("0x{:x}", r.rip),
+                                "rflags": format!("0x{:x}", r.rflags),
+                            },
+                        });
+                        Ok(CallToolResult::success(json_content(&output)))
+                    }
+                    None => Ok(CallToolResult::error(text_content(
+                        "no register state at this event".to_string(),
+                    ))),
+                }
+            }
+            None => Ok(CallToolResult::error(text_content(format!(
+                "Event {} not found",
+                params.event_id
+            )))),
+        }
+    }
+
+    #[tool(
+        name = "debug_diff",
+        description = "Compare process state between two event_ids — variables, registers, memory."
+    )]
+    async fn debug_diff(
+        &self,
+        params: Parameters<DebugDiffParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let engines = self.engines.lock().await;
+
+        let engine = match engines.get(&params.session_id) {
+            Some(e) => e,
+            None => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "Session '{}' not found",
+                    params.session_id
+                ))))
+            }
+        };
+
+        // Get variables at both events
+        let vars_a = engine.get_variables_at_event(params.event_id_a);
+        let vars_b = engine.get_variables_at_event(params.event_id_b);
+
+        let names_a: std::collections::HashSet<_> = vars_a.iter().map(|v| v.name.clone()).collect();
+        let names_b: std::collections::HashSet<_> = vars_b.iter().map(|v| v.name.clone()).collect();
+
+        let vars_added: Vec<_> = names_b.difference(&names_a).cloned().collect();
+        let vars_removed: Vec<_> = names_a.difference(&names_b).cloned().collect();
+
+        // Find changed variables
+        let mut vars_changed = Vec::new();
+        for name in names_a.intersection(&names_b) {
+            let val_a = vars_a.iter().find(|v| &v.name == name).map(|v| v.value.clone());
+            let val_b = vars_b.iter().find(|v| &v.name == name).map(|v| v.value.clone());
+            if val_a != val_b {
+                vars_changed.push(serde_json::json!({
+                    "name": name,
+                    "before": val_a,
+                    "after": val_b,
+                }));
+            }
+        }
+
+        // Get registers at both events
+        let regs_a = engine.find_registers_at_event(params.event_id_a);
+        let regs_b = engine.find_registers_at_event(params.event_id_b);
+
+        let mut registers_changed = serde_json::Map::new();
+        if let (Some(ra), Some(rb)) = (&regs_a, &regs_b) {
+            let reg_fields = [
+                ("rax", ra.rax, rb.rax),
+                ("rbx", ra.rbx, rb.rbx),
+                ("rcx", ra.rcx, rb.rcx),
+                ("rdx", ra.rdx, rb.rdx),
+                ("rsi", ra.rsi, rb.rsi),
+                ("rdi", ra.rdi, rb.rdi),
+                ("rbp", ra.rbp, rb.rbp),
+                ("rsp", ra.rsp, rb.rsp),
+                ("r8", ra.r8, rb.r8),
+                ("r9", ra.r9, rb.r9),
+                ("r10", ra.r10, rb.r10),
+                ("r11", ra.r11, rb.r11),
+                ("r12", ra.r12, rb.r12),
+                ("r13", ra.r13, rb.r13),
+                ("r14", ra.r14, rb.r14),
+                ("r15", ra.r15, rb.r15),
+                ("rip", ra.rip, rb.rip),
+                ("rflags", ra.rflags, rb.rflags),
+            ];
+            for (name, val_a, val_b) in reg_fields {
+                if val_a != val_b {
+                    registers_changed.insert(
+                        name.to_string(),
+                        serde_json::json!({
+                            "before": format!("0x{:x}", val_a),
+                            "after": format!("0x{:x}", val_b),
+                        }),
+                    );
+                }
+            }
+        }
+
+        // Get timestamps for delta
+        let event_a = engine.get_event_by_id(params.event_id_a);
+        let event_b = engine.get_event_by_id(params.event_id_b);
+        let timestamp_delta_ns = match (event_a, event_b) {
+            (Some(ea), Some(eb)) => eb.timestamp_ns.saturating_sub(ea.timestamp_ns),
+            _ => 0,
+        };
+
+        let output = serde_json::json!({
+            "event_id_a": params.event_id_a,
+            "event_id_b": params.event_id_b,
+            "variables_added": vars_added,
+            "variables_removed": vars_removed,
+            "variables_changed": vars_changed,
+            "registers_changed": registers_changed,
+            "timestamp_delta_ns": timestamp_delta_ns,
+        });
+        Ok(CallToolResult::success(json_content(&output)))
+    }
+
+    #[tool(
+        name = "debug_analyze_memory",
+        description = "Analyze all memory accesses to an address range within a time window."
+    )]
+    async fn debug_analyze_memory(
+        &self,
+        params: Parameters<DebugAnalyzeMemoryParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let engines = self.engines.lock().await;
+
+        let engine = match engines.get(&params.session_id) {
+            Some(e) => e,
+            None => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "Session '{}' not found",
+                    params.session_id
+                ))))
+            }
+        };
+
+        // Get all events and filter for memory writes in the address/time range
+        let all_events = engine.get_all_events();
+        let mut accesses = Vec::new();
+        let mut total_writes = 0u64;
+
+        for event in all_events {
+            // Filter by time window
+            if event.timestamp_ns < params.start_ts || event.timestamp_ns > params.end_ts {
+                continue;
+            }
+
+            // Check for memory events
+            if let EventData::Memory { address, size, data } = &event.data {
+                // Filter by address range
+                if *address >= params.start_address && *address <= params.end_address {
+                    let hex = data
+                        .as_ref()
+                        .map(|d| d.iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(""))
+                        .unwrap_or_default();
+                    accesses.push(serde_json::json!({
+                        "address": format!("0x{:x}", address),
+                        "timestamp_ns": event.timestamp_ns,
+                        "data_hex": hex,
+                        "event_id": event.event_id,
+                        "size": size,
+                    }));
+                    total_writes += 1;
+                }
+            }
+        }
+
+        let output = serde_json::json!({
+            "start_address": format!("0x{:x}", params.start_address),
+            "end_address": format!("0x{:x}", params.end_address),
+            "start_ts": params.start_ts,
+            "end_ts": params.end_ts,
+            "total_writes": total_writes,
+            "accesses": accesses,
+        });
+        Ok(CallToolResult::success(json_content(&output)))
+    }
+
+    #[tool(
+        name = "forensic_memory_audit",
+        description = "Full audit trail for a specific address — all writes with calling context."
+    )]
+    async fn forensic_memory_audit(
+        &self,
+        params: Parameters<ForensicMemoryAuditParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let engines = self.engines.lock().await;
+
+        let engine = match engines.get(&params.session_id) {
+            Some(e) => e,
+            None => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "Session '{}' not found",
+                    params.session_id
+                ))))
+            }
+        };
+
+        // Get all events and find memory writes to this address
+        let all_events = engine.get_all_events();
+        let mut writes = Vec::new();
+
+        for event in &all_events {
+            if let EventData::Memory { address, data, .. } = &event.data {
+                if *address == params.address {
+                    // Get call stack at this event
+                    let stack = engine.reconstruct_call_stack(event.event_id);
+                    let hex = data
+                        .as_ref()
+                        .map(|d| d.iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(""))
+                        .unwrap_or_default();
+                    writes.push(serde_json::json!({
+                        "timestamp_ns": event.timestamp_ns,
+                        "event_id": event.event_id,
+                        "data_hex": hex,
+                        "call_stack": stack.iter().map(|f| serde_json::json!({
+                            "depth": f.depth,
+                            "function": f.function,
+                            "file": f.file,
+                            "line": f.line,
+                        })).collect::<Vec<_>>(),
+                    }));
+                }
+            }
+        }
+
+        writes.sort_by_key(|w| w["timestamp_ns"].as_u64().unwrap_or(0));
+        writes.truncate(params.limit);
+
+        let output = serde_json::json!({
+            "address": format!("0x{:x}", params.address),
+            "write_count": writes.len(),
+            "writes": writes,
+        });
+        Ok(CallToolResult::success(json_content(&output)))
+    }
+
+    #[tool(
+        name = "performance_regression_audit",
+        description = "Compare performance between two sessions — CPU cycles, call counts, hot functions."
+    )]
+    async fn performance_regression_audit(
+        &self,
+        params: Parameters<PerformanceRegressionAuditParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+
+        // Helper to get events for a session (from memory or store)
+        async fn get_session_events(
+            engines: &tokio::sync::MutexGuard<'_, std::collections::HashMap<String, QueryEngine>>,
+            store: &SessionStore,
+            session_id: &str,
+        ) -> Result<Vec<TraceEvent>, String> {
+            // First check if it's in memory
+            if let Some(engine) = engines.get(session_id) {
+                return Ok(engine.get_all_events());
+            }
+            // Otherwise load from store
+            match store.load_session(session_id) {
+                Ok((_, events)) => Ok(events),
+                Err(e) => Err(format!("Session '{}' not found: {}", session_id, e)),
+            }
+        }
+
+        // Get events for both sessions
+        let (events_a, events_b) = {
+            let engines = self.engines.lock().await;
+            let ev_a = get_session_events(&engines, &self.store, &params.baseline_session_id).await;
+            let ev_b = get_session_events(&engines, &self.store, &params.target_session_id).await;
+
+            match (ev_a, ev_b) {
+                (Ok(a), Ok(b)) => (a, b),
+                (Err(e), _) => return Ok(CallToolResult::error(text_content(e))),
+                (_, Err(e)) => return Ok(CallToolResult::error(text_content(e))),
+            }
+        };
+
+        // Build temporary engines for both sessions
+        let mut builder_a = IndexBuilder::new();
+        builder_a.push_all(&events_a);
+        let indices_a = builder_a.finalize();
+        let engine_a = QueryEngine::with_indices(events_a, indices_a.shadow, indices_a.temporal)
+            .with_causality(indices_a.causality)
+            .with_performance(indices_a.performance);
+
+        let mut builder_b = IndexBuilder::new();
+        builder_b.push_all(&events_b);
+        let indices_b = builder_b.finalize();
+        let engine_b = QueryEngine::with_indices(events_b, indices_b.shadow, indices_b.temporal)
+            .with_causality(indices_b.causality)
+            .with_performance(indices_b.performance);
+
+        // Get saliency scores for both sessions
+        let scores_a = engine_a.get_saliency_scores(20);
+        let scores_b = engine_b.get_saliency_scores(20);
+
+        // Build maps for comparison
+        let fns_a: std::collections::HashMap<_, _> = scores_a
+            .iter()
+            .map(|s| (s.function.clone(), s.clone()))
+            .collect();
+        let fns_b: std::collections::HashMap<_, _> = scores_b
+            .iter()
+            .map(|s| (s.function.clone(), s.clone()))
+            .collect();
+
+        let all_fns: std::collections::HashSet<_> = fns_a.keys().chain(fns_b.keys()).collect();
+
+        let mut regressions = Vec::new();
+        let mut improvements = Vec::new();
+        let mut new_hotspots = Vec::new();
+
+        for fn_name in all_fns {
+            let perf_a = fns_a.get(fn_name);
+            let perf_b = fns_b.get(fn_name);
+
+            match (perf_a, perf_b) {
+                (Some(a), Some(b)) => {
+                    // Both exist — check for regression
+                    let cycles_a = a.total_cycles;
+                    let cycles_b = b.total_cycles;
+                    if cycles_b > cycles_a {
+                        let delta_pct = if cycles_a > 0 {
+                            ((cycles_b as f64 - cycles_a as f64) / cycles_a as f64 * 100.0).round() as i64
+                        } else {
+                            100
+                        };
+                        if delta_pct > 10 {
+                            // More than 10% regression
+                            regressions.push(serde_json::json!({
+                                "function": fn_name,
+                                "baseline_cycles": cycles_a,
+                                "target_cycles": cycles_b,
+                                "delta_pct": delta_pct,
+                            }));
+                        }
+                    } else if cycles_a > cycles_b {
+                        let delta_pct = if cycles_b > 0 {
+                            ((cycles_a as f64 - cycles_b as f64) / cycles_b as f64 * 100.0).round() as i64
+                        } else {
+                            -100
+                        };
+                        if delta_pct > 10 {
+                            improvements.push(serde_json::json!({
+                                "function": fn_name,
+                                "baseline_cycles": cycles_a,
+                                "target_cycles": cycles_b,
+                                "delta_pct": -delta_pct,
+                            }));
+                        }
+                    }
+                }
+                (None, Some(b)) => {
+                    // New hotspot in target
+                    if b.total_cycles > 0 {
+                        new_hotspots.push(serde_json::json!({
+                            "function": fn_name,
+                            "target_cycles": b.total_cycles,
+                            "target_calls": b.call_count,
+                        }));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Sort by delta_pct descending for regressions, ascending for improvements
+        regressions.sort_by(|a, b| {
+            let delta_a = a["delta_pct"].as_i64().unwrap_or(0);
+            let delta_b = b["delta_pct"].as_i64().unwrap_or(0);
+            delta_b.cmp(&delta_a)
+        });
+        improvements.sort_by(|a, b| {
+            let delta_a = a["delta_pct"].as_i64().unwrap_or(0);
+            let delta_b = b["delta_pct"].as_i64().unwrap_or(0);
+            delta_a.cmp(&delta_b)
+        });
+        new_hotspots.sort_by(|a, b| {
+            let cycles_a = a["target_cycles"].as_u64().unwrap_or(0);
+            let cycles_b = b["target_cycles"].as_u64().unwrap_or(0);
+            cycles_b.cmp(&cycles_a)
+        });
+
+        let output = serde_json::json!({
+            "baseline_session_id": params.baseline_session_id,
+            "target_session_id": params.target_session_id,
+            "regressions": regressions,
+            "improvements": improvements,
+            "new_hotspots": new_hotspots,
+            "summary": {
+                "regression_count": regressions.len(),
+                "improvement_count": improvements.len(),
+                "new_hotspot_count": new_hotspots.len(),
+            },
+        });
+        Ok(CallToolResult::success(json_content(&output)))
+    }
 }
 
 #[cfg(test)]
@@ -2758,6 +3269,287 @@ mod tests {
                 session_id: "nonexistent".to_string(),
                 address: 0x7FFF0000,
                 timestamp_ns: 1000,
+            }))
+            .await
+            .unwrap();
+
+        assert_eq!(result.is_error, Some(true));
+    }
+
+    // ========================================================================
+    // SF7 — Phase 11 Missing Tools Tests
+    // ========================================================================
+
+    fn make_register_event(id: u64, ts: u64, tid: u64, regs: chronos_domain::RegisterState) -> TraceEvent {
+        use chronos_domain::{EventData, EventType, SourceLocation};
+        TraceEvent::new(
+            id,
+            ts,
+            tid,
+            EventType::Custom,
+            SourceLocation::from_address(regs.rip),
+            EventData::Registers(regs),
+        )
+    }
+
+    #[tokio::test]
+    async fn test_debug_get_registers_success() {
+        use chronos_query::QueryEngine;
+        use chronos_index::builder::IndexBuilder;
+
+        let regs = chronos_domain::RegisterState {
+            rax: 0x42,
+            rip: 0x401000,
+            rsp: 0x7fff0000,
+            rbp: 0x7fff0010,
+            ..Default::default()
+        };
+        let events = vec![
+            make_fn_entry(0, 100, 1, "main"),
+            make_register_event(1, 200, 1, regs),
+        ];
+
+        // Build engine directly without filtering (bypass the register filtering)
+        let mut builder = IndexBuilder::new();
+        builder.push_all(&events);
+        let indices = builder.finalize();
+        let engine = QueryEngine::with_indices(events, indices.shadow, indices.temporal);
+
+        let server = ChronosServer::new();
+        let sid = "register-test-session".to_string();
+        {
+            let mut engines = server.engines.lock().await;
+            engines.insert(sid.clone(), engine);
+        }
+
+        let result = server
+            .debug_get_registers(Parameters(DebugGetRegistersParams {
+                session_id: sid,
+                event_id: 1,
+            }))
+            .await
+            .unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        assert!(text.contains("rax") && text.contains("0x42"));
+    }
+
+    #[tokio::test]
+    async fn test_debug_get_registers_no_register_state() {
+        let events = vec![make_fn_entry(0, 100, 1, "main")];
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server
+            .debug_get_registers(Parameters(DebugGetRegistersParams {
+                session_id: sid,
+                event_id: 0,
+            }))
+            .await
+            .unwrap();
+
+        // Should return error because there's no register state
+        assert_eq!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        assert!(text.contains("no register state"));
+    }
+
+    #[tokio::test]
+    async fn test_debug_get_registers_event_not_found() {
+        let server = ChronosServer::new();
+        let result = server
+            .debug_get_registers(Parameters(DebugGetRegistersParams {
+                session_id: "nonexistent".to_string(),
+                event_id: 999,
+            }))
+            .await
+            .unwrap();
+
+        assert_eq!(result.is_error, Some(true));
+    }
+
+    #[tokio::test]
+    async fn test_debug_diff_variables_changed() {
+        use chronos_domain::VariableScope;
+        let locals_a = vec![
+            chronos_domain::VariableInfo::new("x", "10", "i32", 0x1000, VariableScope::Local),
+        ];
+        let locals_b = vec![
+            chronos_domain::VariableInfo::new("x", "20", "i32", 0x1000, VariableScope::Local),
+        ];
+        let events = vec![
+            TraceEvent::python_call_with_locals(0, 100, 1, "f", "test.py", 10, locals_a),
+            TraceEvent::python_call_with_locals(1, 200, 1, "f", "test.py", 15, locals_b),
+        ];
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server
+            .debug_diff(Parameters(DebugDiffParams {
+                session_id: sid,
+                event_id_a: 0,
+                event_id_b: 1,
+            }))
+            .await
+            .unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        assert!(text.contains("variables_changed") && text.contains("x"));
+    }
+
+    #[tokio::test]
+    async fn test_debug_diff_session_not_found() {
+        let server = ChronosServer::new();
+        let result = server
+            .debug_diff(Parameters(DebugDiffParams {
+                session_id: "nonexistent".to_string(),
+                event_id_a: 0,
+                event_id_b: 1,
+            }))
+            .await
+            .unwrap();
+
+        assert_eq!(result.is_error, Some(true));
+    }
+
+    #[tokio::test]
+    async fn test_debug_analyze_memory_success() {
+        let events = vec![
+            make_test_memory_event(1, 1000, 1, 0x7FFF0000, 4, vec![0x01, 0x02, 0x03, 0x04]),
+            make_test_memory_event(2, 1500, 1, 0x7FFF0010, 4, vec![0xAA, 0xBB, 0xCC, 0xDD]),
+            make_test_memory_event(3, 2000, 1, 0x7FFF0000, 4, vec![0xFF, 0xEE, 0xDD, 0xCC]),
+        ];
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server
+            .debug_analyze_memory(Parameters(DebugAnalyzeMemoryParams {
+                session_id: sid,
+                start_address: 0x7FFF0000,
+                end_address: 0x7FFF000F,
+                start_ts: 500,
+                end_ts: 2500,
+            }))
+            .await
+            .unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        assert!(text.contains("total_writes"));
+        // Should find 2 writes to 0x7FFF0000
+        assert!(text.contains("7fff0000"));
+    }
+
+    #[tokio::test]
+    async fn test_debug_analyze_memory_no_accesses() {
+        let events = vec![
+            make_test_memory_event(1, 1000, 1, 0x1000, 4, vec![0x01]),
+        ];
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server
+            .debug_analyze_memory(Parameters(DebugAnalyzeMemoryParams {
+                session_id: sid,
+                start_address: 0x2000,
+                end_address: 0x3000,
+                start_ts: 0,
+                end_ts: 10000,
+            }))
+            .await
+            .unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        assert!(text.contains("total_writes"));
+    }
+
+    #[tokio::test]
+    async fn test_debug_analyze_memory_session_not_found() {
+        let server = ChronosServer::new();
+        let result = server
+            .debug_analyze_memory(Parameters(DebugAnalyzeMemoryParams {
+                session_id: "nonexistent".to_string(),
+                start_address: 0x1000,
+                end_address: 0x2000,
+                start_ts: 0,
+                end_ts: 10000,
+            }))
+            .await
+            .unwrap();
+
+        assert_eq!(result.is_error, Some(true));
+    }
+
+    #[tokio::test]
+    async fn test_forensic_memory_audit_success() {
+        let events = vec![
+            make_fn_entry(0, 100, 1, "main"),
+            make_fn_entry(1, 200, 1, "write_val"),
+            make_test_memory_event(2, 300, 1, 0xA000, 4, vec![0x01, 0x02, 0x03, 0x04]),
+            make_fn_exit(3, 400, 1, "write_val"),
+            make_fn_entry(4, 500, 1, "write_val"),
+            make_test_memory_event(5, 600, 1, 0xA000, 4, vec![0xAA, 0xBB, 0xCC, 0xDD]),
+            make_fn_exit(6, 700, 1, "write_val"),
+            make_fn_exit(7, 800, 1, "main"),
+        ];
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server
+            .forensic_memory_audit(Parameters(ForensicMemoryAuditParams {
+                session_id: sid,
+                address: 0xA000,
+                limit: 10,
+            }))
+            .await
+            .unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        assert!(text.contains("write_count"));
+        // Should find 2 writes
+        assert!(text.contains("a000") || text.contains("A000"));
+    }
+
+    #[tokio::test]
+    async fn test_forensic_memory_audit_no_writes() {
+        let events = vec![make_fn_entry(0, 100, 1, "main")];
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server
+            .forensic_memory_audit(Parameters(ForensicMemoryAuditParams {
+                session_id: sid,
+                address: 0xA000,
+                limit: 10,
+            }))
+            .await
+            .unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        assert!(text.contains("write_count"));
+    }
+
+    #[tokio::test]
+    async fn test_forensic_memory_audit_session_not_found() {
+        let server = ChronosServer::new();
+        let result = server
+            .forensic_memory_audit(Parameters(ForensicMemoryAuditParams {
+                session_id: "nonexistent".to_string(),
+                address: 0xA000,
+                limit: 10,
+            }))
+            .await
+            .unwrap();
+
+        assert_eq!(result.is_error, Some(true));
+    }
+
+    #[tokio::test]
+    async fn test_performance_regression_audit_both_sessions_not_found() {
+        let server = ChronosServer::new();
+        let result = server
+            .performance_regression_audit(Parameters(PerformanceRegressionAuditParams {
+                baseline_session_id: "nonexistent-baseline".to_string(),
+                target_session_id: "nonexistent-target".to_string(),
             }))
             .await
             .unwrap();

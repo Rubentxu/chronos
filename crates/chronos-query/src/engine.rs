@@ -47,6 +47,19 @@ pub struct MemoryValue {
     pub data: Vec<u8>,
 }
 
+/// Saliency score for a function.
+#[derive(Debug, Clone)]
+pub struct FunctionSaliencyScore {
+    /// Function name.
+    pub function: String,
+    /// Saliency score [0.0-1.0].
+    pub saliency_score: f64,
+    /// Call count.
+    pub call_count: u64,
+    /// Total CPU cycles (if available).
+    pub total_cycles: u64,
+}
+
 impl QueryEngine {
     /// Create a new query engine from a vec of events (no indices).
     pub fn new(events: Vec<TraceEvent>) -> Self {
@@ -567,6 +580,73 @@ impl QueryEngine {
         self.query_perf(&query)
             .map(|r| r.functions)
             .unwrap_or_default()
+    }
+
+    /// Find register state at or immediately before a given event.
+    ///
+    /// Uses the event_id to look up the event's timestamp, then finds
+    /// the most recent register snapshot at or before that timestamp.
+    pub fn find_registers_at_event(&self, event_id: u64) -> Option<chronos_domain::RegisterState> {
+        let timestamp = self.get_event_by_id(event_id)?.timestamp_ns;
+        self.find_registers_at(timestamp)
+    }
+
+    /// Get saliency scores for all functions.
+    ///
+    /// Returns a vector of function stats with computed saliency scores.
+    /// Falls back to call-count based scoring if no performance index.
+    pub fn get_saliency_scores(&self, limit: usize) -> Vec<FunctionSaliencyScore> {
+        let summary = self.execution_summary("");
+
+        // Try to get perf data
+        let perf_result = self.query_perf(&PerfQuery {
+            session_id: String::new(),
+            function_filter: None,
+            sort_by: PerfSortBy::Cycles,
+            limit,
+        });
+
+        if let Some(perf) = perf_result {
+            let total_cycles: u64 = perf.functions.iter().map(|e| e.total_cycles).sum();
+            perf.functions
+                .iter()
+                .take(limit)
+                .map(|entry| {
+                    let score = if total_cycles > 0 {
+                        entry.total_cycles as f64 / total_cycles as f64
+                    } else {
+                        0.0
+                    };
+                    FunctionSaliencyScore {
+                        function: entry.name.clone().unwrap_or_default(),
+                        saliency_score: (score * 10000.0).round() / 10000.0,
+                        call_count: entry.call_count,
+                        total_cycles: entry.total_cycles,
+                    }
+                })
+                .collect()
+        } else {
+            // Fallback: call-count based scoring
+            let total_calls: u64 = summary.top_functions.iter().map(|f| f.call_count).sum();
+            summary
+                .top_functions
+                .iter()
+                .take(limit)
+                .map(|f| {
+                    let score = if total_calls > 0 {
+                        f.call_count as f64 / total_calls as f64
+                    } else {
+                        0.0
+                    };
+                    FunctionSaliencyScore {
+                        function: f.name.clone(),
+                        saliency_score: (score * 10000.0).round() / 10000.0,
+                        call_count: f.call_count,
+                        total_cycles: 0,
+                    }
+                })
+                .collect()
+        }
     }
 
     // ─── Causality queries ────────────────────────────────────────────────────
