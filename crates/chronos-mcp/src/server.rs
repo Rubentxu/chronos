@@ -229,7 +229,7 @@ fn text_content(text: impl Into<String>) -> Vec<Content> {
 
 #[rmcp::tool_router(server_handler)]
 impl ChronosServer {
-    #[tool(name = "debug_run", description = "Launch a program under time-travel debugging capture. Returns a session ID for querying.")]
+    #[tool(name = "debug_run", description = "Launch a program under time-travel debugging capture. Runs the program to completion, captures all events, and returns a queryable session ID.")]
     async fn debug_run(
         &self,
         params: Parameters<DebugRunParams>,
@@ -239,37 +239,58 @@ impl ChronosServer {
         let mut config = CaptureConfig::new(&params.program);
         config.args = params.args;
         config.capture_syscalls = params.trace_syscalls;
+        config.capture_stack = true;
         if let Some(cwd) = params.cwd {
             config.cwd = Some(std::path::PathBuf::from(cwd));
         }
 
-        let mut runner = CaptureRunner::new(config);
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let sid_clone = session_id.clone();
 
-        match runner.start() {
-            Ok(pid) => {
-                let session_id = uuid::Uuid::new_v4().to_string();
-                info!("Capture session {} started for PID {}", session_id, pid);
+        // Run capture synchronously in a blocking thread — this avoids the
+        // race condition where the program finishes before the event loop starts.
+        let capture_result = tokio::task::spawn_blocking(move || {
+            let mut runner = CaptureRunner::new(config);
+            runner.run_to_completion()
+        })
+        .await;
 
-                let mut sessions = self.sessions.lock().await;
-                sessions.insert(session_id.clone(), ActiveSession {
-                    pid: pid as u32,
-                    runner,
-                });
+        match capture_result {
+            Ok(Ok(capture)) => {
+                let total_events = capture.total_events;
+                let end_reason_str = match &capture.end_reason {
+                    CaptureEndReason::Exited(code) => format!("exited({})", code),
+                    CaptureEndReason::Signaled { signal_name, .. } => {
+                        format!("signaled({})", signal_name)
+                    }
+                    CaptureEndReason::StoppedByUser => "stopped_by_user".into(),
+                    CaptureEndReason::Failed(e) => format!("failed({})", e),
+                };
+
+                info!(
+                    "Capture {} finished: {} events, reason: {}",
+                    sid_clone, total_events, end_reason_str
+                );
+
+                // Build indices and store engine
+                self.build_and_store_engine(&sid_clone, capture.events).await;
 
                 let result = serde_json::json!({
-                    "session_id": session_id,
-                    "pid": pid,
-                    "status": "active",
-                    "message": format!("Program '{}' launched under trace capture", params.program),
-                    "hint": "Use debug_stop to finalize the session, then query tools to analyze the trace."
+                    "session_id": sid_clone,
+                    "status": "finalized",
+                    "total_events": total_events,
+                    "end_reason": end_reason_str,
+                    "message": format!("Program '{}' captured successfully", params.program),
+                    "hint": "Session is queryable now. Use query_events, get_call_stack, get_execution_summary, etc."
                 });
                 Ok(CallToolResult::success(json_content(&result)))
             }
-            Err(e) => {
-                Ok(CallToolResult::error(text_content(format!(
-                    "Failed to start capture: {}", e
-                ))))
-            }
+            Ok(Err(e)) => Ok(CallToolResult::error(text_content(format!(
+                "Capture failed: {}", e
+            )))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "Internal error: {}", e
+            )))),
         }
     }
 
@@ -287,7 +308,7 @@ impl ChronosServer {
         ))))
     }
 
-    #[tool(name = "debug_stop", description = "Stop an active trace capture session and build query indices.")]
+    #[tool(name = "debug_stop", description = "Stop an active trace capture session and build query indices. Note: debug_run already captures to completion, so this is only needed for future attach/detach workflows.")]
     async fn debug_stop(
         &self,
         params: Parameters<DebugStopParams>,
@@ -346,9 +367,19 @@ impl ChronosServer {
                 result
             }
             None => {
-                Ok(CallToolResult::error(text_content(format!(
-                    "Session '{}' not found", params.session_id
-                ))))
+                // Check if already finalized
+                let engines = self.engines.lock().await;
+                if engines.contains_key(&params.session_id) {
+                    Ok(CallToolResult::success(json_content(&serde_json::json!({
+                        "session_id": params.session_id,
+                        "status": "already_finalized",
+                        "hint": "This session was captured via debug_run (synchronous mode). It's already queryable."
+                    }))))
+                } else {
+                    Ok(CallToolResult::error(text_content(format!(
+                        "Session '{}' not found", params.session_id
+                    ))))
+                }
             }
         }
     }

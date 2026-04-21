@@ -12,6 +12,7 @@ use std::path::Path;
 use tracing::info;
 
 use crate::ptrace_tracer::{PtraceConfig, PtraceEvent, PtraceTracer};
+use crate::syscall_table::resolve_syscall;
 
 /// Native language (C/C++/Rust) trace adapter using ptrace.
 ///
@@ -115,7 +116,7 @@ impl NativeAdapter {
                     event_type,
                     SourceLocation::from_address(0),
                     EventData::Syscall {
-                        name: format!("syscall_{}", syscall_nr),
+                        name: resolve_syscall(*syscall_nr),
                         number: *syscall_nr,
                         args: Vec::new(),
                         return_value: 0,
