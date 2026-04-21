@@ -1,0 +1,14 @@
+version: '3.8'
+services:
+  chronos-mcp:
+    build: .
+    image: chronos-mcp:latest
+    volumes:
+      - chronos-data:/data/chronos
+    environment:
+      - CHRONOS_DB_PATH=/data/chronos/sessions.redb
+      - RUST_LOG=info
+    stdin_open: true
+    tty: true
+volumes:
+  chronos-data:

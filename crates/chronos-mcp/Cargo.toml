@@ -3,6 +3,10 @@ name = "chronos-mcp"
 version.workspace = true
 edition.workspace = true
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dependencies]
 chronos-domain = { workspace = true }
 chronos-capture = { workspace = true }
@@ -20,6 +24,7 @@ tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 rmcp = { version = "1.5", features = ["server", "macros", "schemars", "transport-io"] }
 uuid = { workspace = true }
+thiserror = { workspace = true }
 
 [[bin]]
 name = "chronos-mcp"

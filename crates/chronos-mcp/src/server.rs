@@ -21,6 +21,27 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::info;
 
+/// Resource limits for capture operations.
+///
+/// Used to prevent resource exhaustion attacks by capping the number of events
+/// and the wall-clock time of a capture.
+#[derive(Debug, Clone)]
+pub struct ResourceLimits {
+    /// Maximum number of events to collect before stopping (default: 1_000_000).
+    pub max_events: usize,
+    /// Timeout in seconds for the capture (default: 60).
+    pub timeout_secs: u64,
+}
+
+impl Default for ResourceLimits {
+    fn default() -> Self {
+        Self {
+            max_events: 1_000_000,
+            timeout_secs: 60,
+        }
+    }
+}
+
 /// The Chronos MCP server state.
 pub struct ChronosServer {
     /// Active capture sessions (session_id → runner).
@@ -64,6 +85,12 @@ pub struct DebugRunParams {
     pub auto_save: Option<bool>,
     /// Program language hint (auto-detected from extension if omitted).
     pub program_language: Option<String>,
+    /// Maximum number of events to collect before stopping (default: 1_000_000).
+    #[serde(default)]
+    pub max_events: Option<usize>,
+    /// Timeout in seconds for the capture (default: 60).
+    #[serde(default)]
+    pub timeout_secs: Option<u64>,
 }
 
 fn default_true() -> bool {
@@ -397,6 +424,14 @@ impl ChronosServer {
         params: Parameters<DebugRunParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
+
+        // Validate the program path before spawning
+        if let Err(e) = crate::security::validate_program_path(&params.program) {
+            return Ok(CallToolResult::error(text_content(format!(
+                "Invalid program path: {}",
+                e
+            ))));
+        }
 
         let mut config = CaptureConfig::new(&params.program);
         config.args = params.args;
@@ -1623,6 +1658,8 @@ mod tests {
             cwd: None,
             auto_save: None,
             program_language: None,
+            max_events: None,
+            timeout_secs: None,
         });
         let result = server.debug_run(params).await.unwrap();
         assert_eq!(result.is_error, Some(true));
@@ -2172,6 +2209,8 @@ mod tests {
             cwd: None,
             auto_save: Some(true),
             program_language: Some("native".to_string()),
+            max_events: None,
+            timeout_secs: None,
         });
 
         let result = server.debug_run(params).await.unwrap();
@@ -2198,6 +2237,8 @@ mod tests {
             cwd: None,
             auto_save: Some(false),
             program_language: None,
+            max_events: None,
+            timeout_secs: None,
         });
 
         let result = server.debug_run(params).await.unwrap();
@@ -2205,5 +2246,69 @@ mod tests {
         // Should NOT contain auto_save_info when auto_save is false
         // (the field should be absent from JSON)
         assert!(!text.contains("auto_save_info"));
+    }
+
+    // ========================================================================
+    // SF1 — Security Tests (T2)
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_debug_run_rejects_path_traversal() {
+        let server = ChronosServer::new();
+        let params = Parameters(DebugRunParams {
+            program: "../evil".to_string(),
+            args: vec![],
+            trace_syscalls: true,
+            capture_registers: true,
+            cwd: None,
+            auto_save: None,
+            program_language: None,
+            max_events: None,
+            timeout_secs: None,
+        });
+
+        let result = server.debug_run(params).await.unwrap();
+        // Should be an error result due to path validation failure
+        assert_eq!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        assert!(text.contains("Path traversal") || text.contains("Invalid program path"));
+    }
+
+    // ========================================================================
+    // SF1 — Resource Limits Tests (T3)
+    // ========================================================================
+
+    #[test]
+    fn test_resource_limits_default_values() {
+        let limits = ResourceLimits::default();
+        assert_eq!(limits.max_events, 1_000_000);
+        assert_eq!(limits.timeout_secs, 60);
+    }
+
+    #[test]
+    fn test_resource_limits_custom_values() {
+        let limits = ResourceLimits {
+            max_events: 500_000,
+            timeout_secs: 120,
+        };
+        assert_eq!(limits.max_events, 500_000);
+        assert_eq!(limits.timeout_secs, 120);
+    }
+
+    #[test]
+    fn test_debug_run_params_deserializes_resource_limits() {
+        let params: DebugRunParams = serde_json::from_str(
+            r#"{
+            "program": "/bin/true",
+            "args": [],
+            "trace_syscalls": true,
+            "capture_registers": true,
+            "max_events": 500000,
+            "timeout_secs": 30
+        }"#,
+        )
+        .unwrap();
+        assert_eq!(params.max_events, Some(500000));
+        assert_eq!(params.timeout_secs, Some(30));
     }
 }

@@ -19,6 +19,9 @@ pub enum StoreError {
 
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("Invalid session ID: {0}")]
+    InvalidSessionId(String),
 }
 
 #[cfg(test)]

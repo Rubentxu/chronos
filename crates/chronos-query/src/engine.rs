@@ -90,9 +90,15 @@ impl QueryEngine {
         self.events.len()
     }
 
-    /// Get an event by its ID (linear scan).
+    /// Get an event by its ID using binary search.
+    ///
+    /// Requires events to be sorted by event_id (which is the case when
+    /// events are ingested in order from the tracer).
     pub fn get_event_by_id(&self, event_id: u64) -> Option<&TraceEvent> {
-        self.events.iter().find(|e| e.event_id == event_id)
+        self.events
+            .binary_search_by_key(&event_id, |e| e.event_id)
+            .ok()
+            .map(|i| &self.events[i])
     }
 
     /// Execute a query and return matching events with pagination.
@@ -1211,5 +1217,41 @@ mod tests {
         assert_eq!(all[9].event_id, 9);
         // Verify it's a clone, not a reference
         assert_eq!(all[0].event_id, engine.events[0].event_id);
+    }
+
+    #[test]
+    fn test_get_event_by_id_binary_search_correctness() {
+        // Create 1000 events with sequential IDs
+        let events: Vec<TraceEvent> = (0..1000u64)
+            .map(|i| {
+                TraceEvent::new(
+                    i,
+                    i * 100,
+                    1,
+                    EventType::FunctionEntry,
+                    SourceLocation::new("test.rs", 10, &format!("fn_{}", i), 0x1000 + i),
+                    EventData::Empty,
+                )
+            })
+            .collect();
+        let engine = QueryEngine::new(events);
+
+        // Test retrieving various IDs
+        assert!(engine.get_event_by_id(0).is_some());
+        assert_eq!(engine.get_event_by_id(0).unwrap().event_id, 0);
+
+        assert!(engine.get_event_by_id(500).is_some());
+        assert_eq!(engine.get_event_by_id(500).unwrap().event_id, 500);
+
+        assert!(engine.get_event_by_id(999).is_some());
+        assert_eq!(engine.get_event_by_id(999).unwrap().event_id, 999);
+
+        // Test non-existent ID
+        assert!(engine.get_event_by_id(1000).is_none());
+        assert!(engine.get_event_by_id(123456).is_none());
+
+        // Test boundary cases
+        assert!(engine.get_event_by_id(1).is_some());
+        assert_eq!(engine.get_event_by_id(1).unwrap().event_id, 1);
     }
 }

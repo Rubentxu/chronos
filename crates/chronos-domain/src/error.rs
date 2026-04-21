@@ -60,6 +60,10 @@ pub enum TraceError {
     #[error("Invalid expression: {0}")]
     InvalidExpression(String),
 
+    // --- Input validation errors ---
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+
     // --- Internal errors ---
     #[error("Internal error: {0}")]
     InternalError(String),

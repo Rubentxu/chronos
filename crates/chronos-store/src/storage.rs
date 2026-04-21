@@ -76,6 +76,11 @@ impl SessionStore {
         metadata: SessionMetadata,
         events: &[TraceEvent],
     ) -> Result<Vec<String>, StoreError> {
+        // Validate session_id contains no path separators
+        if metadata.session_id.contains('/') || metadata.session_id.contains('\\') {
+            return Err(StoreError::InvalidSessionId(metadata.session_id.clone()));
+        }
+
         let mut hashes = Vec::with_capacity(events.len());
 
         // Store each event in CAS
@@ -123,6 +128,11 @@ impl SessionStore {
         &self,
         session_id: &str,
     ) -> Result<(SessionMetadata, Vec<TraceEvent>), StoreError> {
+        // Validate session_id contains no path separators
+        if session_id.contains('/') || session_id.contains('\\') {
+            return Err(StoreError::InvalidSessionId(session_id.to_string()));
+        }
+
         // Read metadata
         let meta_bytes = {
             let tx = self
@@ -195,6 +205,11 @@ impl SessionStore {
 
     /// Delete a session and its event references (not CAS entries — they may be shared).
     pub fn delete_session(&self, session_id: &str) -> Result<(), StoreError> {
+        // Validate session_id contains no path separators
+        if session_id.contains('/') || session_id.contains('\\') {
+            return Err(StoreError::InvalidSessionId(session_id.to_string()));
+        }
+
         let tx = self
             .db
             .begin_write()
@@ -336,5 +351,51 @@ mod tests {
             hashes1, hashes2,
             "Identical events should produce same hashes (dedup)"
         );
+    }
+
+    #[test]
+    fn test_session_id_rejects_path_separator() {
+        let store = SessionStore::in_memory().unwrap();
+        let events = vec![make_event(1, "main")];
+
+        // Test save with path separator in session_id
+        let result = store.save_session(session_meta("../../evil"), &events);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            StoreError::InvalidSessionId(_)
+        ));
+
+        // Test load with path separator
+        let result = store.load_session("../../evil");
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            StoreError::InvalidSessionId(_)
+        ));
+
+        // Test delete with path separator
+        let result = store.delete_session("../../evil");
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            StoreError::InvalidSessionId(_)
+        ));
+    }
+
+    #[test]
+    fn test_session_id_accepts_uuid() {
+        let store = SessionStore::in_memory().unwrap();
+        let events = vec![make_event(1, "main")];
+        let uuid = "550e8400-e29b-41d4-a716-446655440000";
+
+        let result = store.save_session(session_meta(uuid), &events);
+        assert!(result.is_ok());
+
+        let result = store.load_session(uuid);
+        assert!(result.is_ok());
+
+        let result = store.delete_session(uuid);
+        assert!(result.is_ok());
     }
 }

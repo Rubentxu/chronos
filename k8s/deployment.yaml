@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chronos-mcp
+  labels:
+    app: chronos-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chronos-mcp
+  template:
+    metadata:
+      labels:
+        app: chronos-mcp
+    spec:
+      containers:
+      - name: chronos-mcp
+        image: chronos-mcp:latest
+        env:
+        - name: CHRONOS_DB_PATH
+          value: /data/chronos/sessions.redb
+        - name: RUST_LOG
+          value: info
+        volumeMounts:
+        - name: chronos-data
+          mountPath: /data/chronos
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+      volumes:
+      - name: chronos-data
+        emptyDir: {}
