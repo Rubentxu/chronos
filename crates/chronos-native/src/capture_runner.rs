@@ -14,6 +14,7 @@
 //! 4. This is 10–100× more efficient than single-stepping
 
 use crate::breakpoint::BreakpointManager;
+use crate::dwarf::DwarfReader;
 use crate::native_adapter::NativeAdapter;
 use crate::ptrace_tracer::{PtraceConfig, PtraceEvent, PtraceTracer};
 use crate::symbol_resolver::SymbolResolver;
@@ -334,6 +335,28 @@ fn run_capture_loop(
 
     info!("Capture started: PID {} for {}", pid, program.display());
 
+    // Try to load DWARF debug info (best-effort - binary may be stripped)
+    // bytes must stay alive for the lifetime of dwarf_reader
+    let dwarf_data: Option<std::borrow::Cow<'_, [u8]>> = std::fs::read(program)
+        .map(std::borrow::Cow::Owned)
+        .ok();
+
+    let dwarf_reader: Option<DwarfReader<'_>> = if let Some(ref data) = dwarf_data {
+        match DwarfReader::new(data) {
+            Ok(reader) => {
+                debug!("DWARF debug info loaded successfully");
+                Some(reader)
+            }
+            Err(e) => {
+                debug!("No DWARF info available ({}): {}", program.display(), e);
+                None
+            }
+        }
+    } else {
+        debug!("Could not read binary for DWARF info");
+        None
+    };
+
     // Install function breakpoints (INT3 at every function entry point)
     let mut bp_tracker: Option<BreakpointTracker> = None;
     if let Some(resolver) = symbol_resolver {
@@ -408,13 +431,24 @@ fn run_capture_loop(
                             bp_addr, func_name, evt_pid
                         );
 
-                        let trace_event = TraceEvent::function_entry(
+                        let mut trace_event = TraceEvent::function_entry(
                             event_id,
                             timestamp_ns,
                             *evt_pid as u64,
                             &func_name,
                             bp_addr,
                         );
+
+                        // Enrich with DWARF source location if available (best-effort)
+                        if let Some(ref reader) = dwarf_reader {
+                            if let Some(dwarf_loc) = reader.source_location(bp_addr) {
+                                trace_event.location.file = dwarf_loc.file;
+                                trace_event.location.line = dwarf_loc.line;
+                                trace_event.location.column = dwarf_loc.column;
+                                // function name already populated from symbol resolver
+                            }
+                        }
+
                         events.push(trace_event);
                         event_id += 1;
                         handled_as_breakpoint = true;

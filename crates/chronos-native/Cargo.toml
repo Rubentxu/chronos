@@ -9,6 +9,8 @@ chronos-capture = { workspace = true }
 nix = { workspace = true }
 gimli = { workspace = true }
 object = { workspace = true }
+addr2line = { workspace = true }
+thiserror = { workspace = true }
 memmap2 = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
