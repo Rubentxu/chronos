@@ -11,6 +11,7 @@ ebpf = ["dep:aya", "dep:aya-log"]
 
 [dependencies]
 chronos-domain = { workspace = true }
+chronos-capture = { workspace = true }
 thiserror.workspace = true
 serde.workspace = true
 tracing.workspace = true

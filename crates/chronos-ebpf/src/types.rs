@@ -151,17 +151,20 @@ impl EbpfEvent {
     pub fn to_trace_event(&self, event_id: u64) -> chronos_domain::TraceEvent {
         use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
 
-        let (event_type, data) = match self.kind {
-            EbpfEventKind::FunctionEntry => (
-                EventType::FunctionEntry,
-                EventData::Function {
-                    name: self.get_function_name().to_string(),
-                    signature: None,
-                },
-            ),
-            EbpfEventKind::FunctionExit => (EventType::FunctionExit, EventData::Empty),
-            EbpfEventKind::VariableWrite => (EventType::VariableWrite, EventData::Empty),
-            EbpfEventKind::MemoryWrite => (EventType::MemoryWrite, EventData::Empty),
+        let is_return = matches!(self.kind, EbpfEventKind::FunctionExit);
+
+        let event_type = match self.kind {
+            EbpfEventKind::FunctionEntry => EventType::FunctionEntry,
+            EbpfEventKind::FunctionExit => EventType::FunctionExit,
+            EbpfEventKind::VariableWrite => EventType::VariableWrite,
+            EbpfEventKind::MemoryWrite => EventType::MemoryWrite,
+        };
+
+        let data = EventData::EbpfUprobeHit {
+            symbol_name: self.get_function_name().to_string(),
+            pid: self.thread_id as u32,
+            timestamp_ns: self.timestamp_ns,
+            is_return,
         };
 
         let location = SourceLocation::new(
@@ -259,12 +262,42 @@ mod tests {
         let ev = EbpfEvent::function_entry(1234, 7, 0x5000, "compute");
         let te = ev.to_trace_event(10);
 
-        use chronos_domain::EventType;
+        use chronos_domain::{EventData, EventType};
         assert_eq!(te.event_id, 10);
         assert_eq!(te.timestamp_ns, 1234);
         assert_eq!(te.thread_id, 7);
         assert_eq!(te.event_type, EventType::FunctionEntry);
         assert_eq!(te.location.address, 0x5000);
+        // Verify EbpfUprobeHit variant is used
+        match &te.data {
+            EventData::EbpfUprobeHit { symbol_name, pid, timestamp_ns, is_return } => {
+                assert_eq!(symbol_name, "compute");
+                assert_eq!(*pid, 7);
+                assert_eq!(*timestamp_ns, 1234);
+                assert!(!*is_return);
+            }
+            _ => panic!("Expected EbpfUprobeHit, got {:?}", te.data),
+        }
+    }
+
+    #[test]
+    fn test_ebpf_event_to_trace_event_exit() {
+        let ev = EbpfEvent::function_exit(5678, 10, 0x6000);
+        let te = ev.to_trace_event(20);
+
+        use chronos_domain::{EventData, EventType};
+        assert_eq!(te.event_id, 20);
+        assert_eq!(te.timestamp_ns, 5678);
+        assert_eq!(te.thread_id, 10);
+        assert_eq!(te.event_type, EventType::FunctionExit);
+        match &te.data {
+            EventData::EbpfUprobeHit { symbol_name: _, pid, timestamp_ns, is_return } => {
+                assert_eq!(*pid, 10);
+                assert_eq!(*timestamp_ns, 5678);
+                assert!(*is_return);
+            }
+            _ => panic!("Expected EbpfUprobeHit, got {:?}", te.data),
+        }
     }
 
     #[test]

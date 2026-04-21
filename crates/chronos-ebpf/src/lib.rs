@@ -19,11 +19,20 @@ pub mod types;
 pub mod uprobe;
 
 use crate::ring_buffer::MockRingBuffer;
-use chronos_domain::{TraceAdapter, TraceError, TraceEvent};
+use chronos_capture::TraceAdapter as CaptureTraceAdapter;
+use chronos_domain::{
+    CaptureConfig, CaptureSession, Language, TraceAdapter as DomainTraceAdapter, TraceError,
+    TraceEvent,
+};
+#[cfg(feature = "ebpf")]
+use std::sync::Mutex;
 use thiserror::Error;
 
 #[cfg(feature = "ebpf")]
 mod ebpf_impl;
+
+#[cfg(feature = "ebpf")]
+pub use ebpf_impl::EbpfAdapterInner;
 
 /// Errors produced by the eBPF adapter.
 #[derive(Debug, Error)]
@@ -58,8 +67,11 @@ pub const MIN_KERNEL_VERSION: (u32, u32, u32) = (5, 8, 0);
 /// [`EbpfError::Unavailable`] gracefully.
 #[derive(Debug)]
 pub struct EbpfAdapter {
+    /// The eBPF adapter inner state, protected by a mutex for interior mutability.
+    /// We use a Mutex because `stop_capture` takes `&self` but `detach_all`
+    /// requires mutable access to the inner state.
     #[cfg(feature = "ebpf")]
-    inner: ebpf_impl::EbpfAdapterInner,
+    inner: Mutex<ebpf_impl::EbpfAdapterInner>,
     #[cfg(not(feature = "ebpf"))]
     _phantom: std::marker::PhantomData<()>,
 }
@@ -74,7 +86,9 @@ impl EbpfAdapter {
     pub fn new() -> Result<Self, EbpfError> {
         #[cfg(feature = "ebpf")]
         {
-            ebpf_impl::EbpfAdapterInner::new().map(|inner| Self { inner })
+            ebpf_impl::EbpfAdapterInner::new().map(|inner| Self {
+                inner: Mutex::new(inner),
+            })
         }
         #[cfg(not(feature = "ebpf"))]
         {
@@ -104,26 +118,147 @@ impl EbpfAdapter {
     pub fn check_kernel_version() -> Result<(), EbpfError> {
         kernel_version_check()
     }
+
+    /// Attach uprobes to the functions specified in the config for a given PID.
+    #[cfg(feature = "ebpf")]
+    fn attach_probes(
+        &self,
+        pid: i32,
+        binary: &str,
+        config: &CaptureConfig,
+    ) -> Result<(), EbpfError> {
+        let inner = self.inner.lock().map_err(|e| EbpfError::LoadError(e.to_string()))?;
+
+        let symbols = config.function_filter.as_deref().unwrap_or(&[]);
+        if symbols.is_empty() {
+            // If no function filter specified, attach to common entry points
+            // For now, we require explicit function names
+            return Err(EbpfError::Uprobe(
+                "function_filter is required for eBPF tracing".to_string(),
+            ));
+        }
+
+        for symbol in symbols {
+            inner.attach_uprobe(Some(pid), binary, symbol)?;
+        }
+        Ok(())
+    }
+
+    /// Detach all uprobes and clean up.
+    #[cfg(feature = "ebpf")]
+    fn detach_probes(&self) -> Result<(), EbpfError> {
+        let mut inner = self.inner.lock().map_err(|e| EbpfError::LoadError(e.to_string()))?;
+        inner.detach_all();
+        Ok(())
+    }
 }
 
-impl TraceAdapter for EbpfAdapter {
-    fn is_available(&self) -> bool {
-        EbpfAdapter::is_available()
-    }
-
-    fn name(&self) -> &str {
-        "ebpf"
-    }
-
-    fn drain_events(&mut self) -> Result<Vec<TraceEvent>, TraceError> {
+impl CaptureTraceAdapter for EbpfAdapter {
+    /// Start capturing a new process.
+    ///
+    /// Forks and execs the target binary, then attaches eBPF uprobes to
+    /// the functions specified in `config.function_filter`.
+    fn start_capture(&self, _config: CaptureConfig) -> Result<CaptureSession, TraceError> {
         #[cfg(feature = "ebpf")]
         {
-            Ok(self.inner.drain_events())
+            use std::process::{Command, Stdio};
+
+            // Check that the target binary exists
+            let target_path = std::path::Path::new(&config.target);
+            if !target_path.exists() {
+                return Err(TraceError::CaptureFailed(format!(
+                    "Target binary not found: {}",
+                    config.target
+                )));
+            }
+
+            // Fork and exec the target
+            let mut child = Command::new(&config.target)
+                .args(&config.args)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .map_err(|e| TraceError::CaptureFailed(format!("Failed to spawn {}: {}", config.target, e)))?;
+
+            let pid = child.id();
+
+            // Attach uprobes to the specified functions
+            self.attach_probes(pid as i32, &config.target, &config)
+                .map_err(|e| TraceError::capture_failed(e))?;
+
+            let session = CaptureSession::new(pid, Language::Ebpf, config);
+            Ok(session)
         }
         #[cfg(not(feature = "ebpf"))]
         {
-            Ok(vec![])
+            Err(TraceError::capture_failed(
+                "eBPF support not compiled in",
+            ))
         }
+    }
+
+    /// Stop an active capture session.
+    ///
+    /// Detaches eBPF uprobes and terminates the traced process.
+    fn stop_capture(&self, _session: &CaptureSession) -> Result<(), TraceError> {
+        #[cfg(feature = "ebpf")]
+        {
+            // Detach all uprobes
+            self.detach_probes().map_err(|e| TraceError::capture_failed(e))?;
+
+            // Try to terminate the process
+            let pid = _session.pid as i32;
+            if pid > 0 {
+                let _ = std::process::Command::new("kill")
+                    .arg("-9")
+                    .arg(pid.to_string())
+                    .output();
+            }
+            Ok(())
+        }
+        #[cfg(not(feature = "ebpf"))]
+        {
+            Err(TraceError::capture_failed(
+                "eBPF support not compiled in",
+            ))
+        }
+    }
+
+    /// Attach to an already running process.
+    ///
+    /// Attaches eBPF uprobes to the functions specified in `config.function_filter`
+    /// on the given process.
+    fn attach_to_process(
+        &self,
+        _pid: u32,
+        _config: CaptureConfig,
+    ) -> Result<CaptureSession, TraceError> {
+        #[cfg(feature = "ebpf")]
+        {
+            // Attach uprobes to the specified functions
+            self.attach_probes(_pid as i32, &_config.target, &_config)
+                .map_err(|e| TraceError::capture_failed(e))?;
+
+            let session = CaptureSession::new(_pid, Language::Ebpf, _config);
+            Ok(session)
+        }
+        #[cfg(not(feature = "ebpf"))]
+        {
+            Err(TraceError::capture_failed(
+                "eBPF support not compiled in",
+            ))
+        }
+    }
+
+    /// Get the language this adapter supports.
+    fn get_language(&self) -> Language {
+        Language::Ebpf
+    }
+
+    /// Get a human-readable name for this adapter.
+    fn name(&self) -> &str {
+        "ebpf"
     }
 }
 
@@ -149,7 +284,7 @@ impl MockEbpfAdapter {
     }
 }
 
-impl TraceAdapter for MockEbpfAdapter {
+impl DomainTraceAdapter for MockEbpfAdapter {
     fn is_available(&self) -> bool {
         true
     }
@@ -273,6 +408,13 @@ mod adapter_tests {
         assert_eq!(events.len(), 3);
         assert_eq!(events[0].event_type, EventType::FunctionEntry);
         assert_eq!(events[2].event_type, EventType::FunctionExit);
+        // Verify the is_return flag via EbpfUprobeHit data
+        match &events[2].data {
+            chronos_domain::EventData::EbpfUprobeHit { is_return, .. } => {
+                assert!(*is_return, "Third event should be a return probe");
+            }
+            _ => panic!("Expected EbpfUprobeHit data"),
+        }
         assert_eq!(events[0].timestamp_ns, 100);
         assert_eq!(events[1].timestamp_ns, 200);
     }

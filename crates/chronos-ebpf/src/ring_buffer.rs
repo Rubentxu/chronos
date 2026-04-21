@@ -22,14 +22,34 @@ pub enum PollResult {
 ///
 /// In a real `ebpf` build this wraps `aya::maps::RingBuf`. Without the
 /// feature it is a stub that always returns `EbpfError::Unavailable`.
-#[derive(Debug)]
 pub struct BpfRingBuffer {
     /// Next event ID to assign when converting to TraceEvent.
     next_event_id: u64,
     #[cfg(feature = "ebpf")]
-    inner: aya::maps::RingBuf<aya::maps::MapData>,
+    inner: BpfRingBufferInner,
     #[cfg(not(feature = "ebpf"))]
     _phantom: std::marker::PhantomData<()>,
+}
+
+/// Inner ring buffer that wraps aya's RingBuf without Debug derive.
+#[cfg(feature = "ebpf")]
+struct BpfRingBufferInner {
+    ring: aya::maps::RingBuf<aya::maps::MapData>,
+}
+
+#[cfg(feature = "ebpf")]
+impl std::fmt::Debug for BpfRingBufferInner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BpfRingBufferInner").finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for BpfRingBuffer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BpfRingBuffer")
+            .field("next_event_id", &self.next_event_id)
+            .finish()
+    }
 }
 
 impl BpfRingBuffer {
@@ -40,7 +60,7 @@ impl BpfRingBuffer {
     pub fn new(ring_buf: aya::maps::RingBuf<aya::maps::MapData>) -> Self {
         Self {
             next_event_id: 0,
-            inner: ring_buf,
+            inner: BpfRingBufferInner { ring: ring_buf },
         }
     }
 
@@ -70,7 +90,7 @@ impl BpfRingBuffer {
         {
             use std::ops::Deref;
             // aya's RingBuf implements Iterator over &[u8] items
-            match self.inner.next() {
+            match self.inner.ring.next() {
                 Some(item) => {
                     let bytes = item.deref();
                     if bytes.len() < std::mem::size_of::<EbpfEvent>() {

@@ -18,6 +18,7 @@ pub enum Language {
     JavaScript,
     Go,
     CSharp,
+    Ebpf,
     Unknown,
 }
 
@@ -62,6 +63,7 @@ impl std::fmt::Display for Language {
             Language::JavaScript => write!(f, "javascript"),
             Language::Go => write!(f, "go"),
             Language::CSharp => write!(f, "csharp"),
+            Language::Ebpf => write!(f, "ebpf"),
             Language::Unknown => write!(f, "unknown"),
         }
     }

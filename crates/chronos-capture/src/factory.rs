@@ -74,6 +74,7 @@ impl AdapterRegistry {
                     || self.has_adapter(Language::C)
                     || self.has_adapter(Language::Cpp)
             }
+            "ebpf" => self.has_adapter(Language::Ebpf),
             _ => false,
         }
     }

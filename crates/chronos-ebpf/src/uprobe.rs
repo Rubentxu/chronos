@@ -144,8 +144,21 @@ impl UprobeManager {
     }
 
     /// Detach all active uprobes.
-    pub fn detach_all(&mut self) {
+    ///
+    /// This always clears the internal state. Returns `Err` only if the ebpf
+    /// feature is not enabled (to notify the caller that no actual detachment happened).
+    pub fn detach_all(&mut self) -> Result<(), EbpfError> {
         self.attached.clear();
+        #[cfg(not(feature = "ebpf"))]
+        {
+            Err(EbpfError::Unavailable {
+                reason: "ebpf feature not enabled".to_string(),
+            })
+        }
+        #[cfg(feature = "ebpf")]
+        {
+            Ok(())
+        }
     }
 }
 

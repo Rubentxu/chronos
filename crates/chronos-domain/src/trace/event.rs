@@ -263,6 +263,18 @@ pub enum EventData {
         /// Serialized arguments
         args: Vec<String>,
     },
+
+    /// eBPF uprobe hit data from the ring buffer.
+    EbpfUprobeHit {
+        /// Symbol name that was hit
+        symbol_name: String,
+        /// Process ID
+        pid: u32,
+        /// Timestamp in nanoseconds
+        timestamp_ns: u64,
+        /// Whether this is a return probe (exit)
+        is_return: bool,
+    },
 }
 
 /// x86_64 CPU register state snapshot.
