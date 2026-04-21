@@ -20,7 +20,7 @@ use crate::ptrace_tracer::{PtraceConfig, PtraceEvent, PtraceTracer};
 use crate::symbol_resolver::SymbolResolver;
 use chronos_domain::{CaptureConfig, SourceLocation, TraceEvent};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
@@ -60,6 +60,19 @@ pub enum CaptureEndReason {
     StoppedByUser,
     /// Capture failed with error.
     Failed(String),
+}
+
+// ---------------------------------------------------------------------------
+// AttachMode
+// ---------------------------------------------------------------------------
+
+/// Describes how the traced process was started.
+#[derive(Debug, Clone)]
+pub enum AttachMode {
+    /// Fork+exec a new process (existing behavior).
+    Spawn { program: PathBuf, args: Vec<String> },
+    /// Attach to an already-running process by PID.
+    Attach(u32), // PID
 }
 
 // ---------------------------------------------------------------------------
@@ -178,6 +191,9 @@ pub struct CaptureRunner {
     stop_flag: Arc<AtomicBool>,
     /// The join handle for the background thread.
     thread_handle: Option<std::thread::JoinHandle<Result<CaptureResult, String>>>,
+    #[allow(dead_code)]
+    /// If set, attach to this PID instead of spawning a new process.
+    attach_pid: Option<u32>,
 }
 
 impl CaptureRunner {
@@ -194,6 +210,24 @@ impl CaptureRunner {
             ptrace_config,
             stop_flag: Arc::new(AtomicBool::new(false)),
             thread_handle: None,
+            attach_pid: None,
+        }
+    }
+
+    /// Create a runner that attaches to an existing process by PID.
+    pub fn attach_to(pid: u32, config: CaptureConfig) -> Self {
+        let ptrace_config = PtraceConfig {
+            trace_syscalls: config.capture_syscalls,
+            capture_registers: true,
+            follow_children: true,
+        };
+
+        Self {
+            config,
+            ptrace_config,
+            stop_flag: Arc::new(AtomicBool::new(false)),
+            thread_handle: None,
+            attach_pid: Some(pid),
         }
     }
 
@@ -227,9 +261,13 @@ impl CaptureRunner {
             }
         };
 
+        let mode = AttachMode::Spawn {
+            program: binary_path,
+            args,
+        };
+
         run_capture_loop(
-            &binary_path,
-            &args,
+            &mode,
             &ptrace_config,
             &stop_flag,
             symbol_resolver.as_ref(),
@@ -270,12 +308,16 @@ impl CaptureRunner {
             }
         };
 
+        let mode = AttachMode::Spawn {
+            program: binary_path,
+            args,
+        };
+
         let thread_handle = std::thread::Builder::new()
             .name("chronos-capture".into())
             .spawn(move || {
                 run_capture_loop(
-                    &binary_path,
-                    &args,
+                    &mode,
                     &ptrace_config,
                     &stop_flag,
                     symbol_resolver.as_ref(),
@@ -289,6 +331,23 @@ impl CaptureRunner {
         std::thread::sleep(std::time::Duration::from_millis(50));
 
         Ok(0) // PID is inside the thread; we return a placeholder
+    }
+
+    /// Run attach-based capture to completion (blocking).
+    ///
+    /// This is for attach mode where the process may not be an ELF binary
+    /// we can symbol-resolve, so symbol_resolver is None.
+    pub fn run_to_completion_attach(pid: u32, config: CaptureConfig) -> Result<CaptureResult, String> {
+        let ptrace_config = PtraceConfig {
+            trace_syscalls: config.capture_syscalls,
+            capture_registers: true,
+            follow_children: true,
+        };
+
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let mode = AttachMode::Attach(pid);
+
+        run_capture_loop(&mode, &ptrace_config, &stop_flag, None)
     }
 
     /// Stop the capture and collect all events.
@@ -312,15 +371,15 @@ impl CaptureRunner {
 /// Main capture loop — runs in the background thread.
 ///
 /// This function:
-/// 1. Forks and execs the target
+/// 1. Forks and execs the target (spawn mode) OR attaches to an existing PID (attach mode)
 /// 2. Installs INT3 breakpoints at function entry points (if symbols available)
 /// 3. Runs the ptrace event loop
 /// 4. Converts PtraceEvents to TraceEvents (with symbol resolution)
 /// 5. Emits `FunctionEntry`/`FunctionExit` events on breakpoint hits
-/// 6. Returns the collected events
+/// 6. Detaches from (spawn mode kills) the target on cleanup
+/// 7. Returns the collected events
 fn run_capture_loop(
-    program: &Path,
-    args: &[String],
+    mode: &AttachMode,
     ptrace_config: &PtraceConfig,
     stop_flag: &AtomicBool,
     symbol_resolver: Option<&SymbolResolver>,
@@ -328,32 +387,42 @@ fn run_capture_loop(
     let mut tracer = PtraceTracer::new(ptrace_config.clone());
     let adapter = NativeAdapter::new();
 
-    // Launch the target
-    let pid = tracer
-        .launch(program, args)
-        .map_err(|e| format!("Launch failed: {}", e))?;
+    // Launch or attach based on mode
+    let (pid, target_info, dwarf_data_opt): (i32, String, Option<std::borrow::Cow<'static, [u8]>>) = match mode {
+        AttachMode::Spawn { program, args } => {
+            let pid = tracer
+                .launch(program, args)
+                .map_err(|e| format!("Launch failed: {}", e))?;
+            info!("Capture started: PID {} for {}", pid, program.display());
 
-    info!("Capture started: PID {} for {}", pid, program.display());
+            // Try to load DWARF debug info (best-effort - binary may be stripped)
+            let dwarf_data: Option<std::borrow::Cow<'static, [u8]>> =
+                std::fs::read(program).map(std::borrow::Cow::Owned).ok();
+            (pid, format!("{}", program.display()), dwarf_data)
+        }
+        AttachMode::Attach(pid) => {
+            tracer
+                .attach(*pid as i32)
+                .map_err(|e| format!("Attach to PID {} failed: {}", pid, e))?;
+            info!("Attached to running process: PID {}", pid);
+            (*pid as i32, format!("PID {}", pid), None)
+        }
+    };
 
-    // Try to load DWARF debug info (best-effort - binary may be stripped)
-    // bytes must stay alive for the lifetime of dwarf_reader
-    let dwarf_data: Option<std::borrow::Cow<'_, [u8]>> = std::fs::read(program)
-        .map(std::borrow::Cow::Owned)
-        .ok();
-
-    let dwarf_reader: Option<DwarfReader<'_>> = if let Some(ref data) = dwarf_data {
+    // DWARF debug info is only available in spawn mode (for the binary we launched)
+    let dwarf_reader: Option<DwarfReader<'_>> = if let Some(ref data) = dwarf_data_opt {
         match DwarfReader::new(data) {
             Ok(reader) => {
                 debug!("DWARF debug info loaded successfully");
                 Some(reader)
             }
             Err(e) => {
-                debug!("No DWARF info available ({}): {}", program.display(), e);
+                debug!("No DWARF info available ({}): {}", target_info, e);
                 None
             }
         }
     } else {
-        debug!("Could not read binary for DWARF info");
+        debug!("No DWARF info available for {}", target_info);
         None
     };
 
@@ -582,6 +651,24 @@ fn run_capture_loop(
     let total = events.len() as u64;
     info!("Capture ended: {} events collected", total);
 
+    // Clean up: detach (attach mode) or kill (spawn mode)
+    match mode {
+        AttachMode::Attach(pid) => {
+            if let Err(e) = tracer.detach(*pid as i32) {
+                warn!("Failed to detach from PID {}: {}", pid, e);
+            } else {
+                info!("Detached from PID {}, process continues", pid);
+            }
+        }
+        AttachMode::Spawn { .. } => {
+            if let Err(e) = tracer.kill(pid) {
+                warn!("Failed to kill PID {}: {}", pid, e);
+            } else {
+                info!("Killed spawned PID {}", pid);
+            }
+        }
+    }
+
     Ok(CaptureResult {
         events,
         end_reason,
@@ -696,5 +783,99 @@ mod tests {
 
         // Clean up compiled binary
         let _ = std::fs::remove_file(&binary);
+    }
+
+    // ========================================================================
+    // Attach mode tests
+    // ========================================================================
+
+    #[test]
+    fn test_attach_mode_enum_spawn() {
+        let mode = AttachMode::Spawn {
+            program: PathBuf::from("/bin/true"),
+            args: vec!["arg1".to_string()],
+        };
+        match mode {
+            AttachMode::Spawn { program, args } => {
+                assert_eq!(program, PathBuf::from("/bin/true"));
+                assert_eq!(args, vec!["arg1"]);
+            }
+            AttachMode::Attach(_) => panic!("Expected Spawn variant"),
+        }
+    }
+
+    #[test]
+    fn test_attach_mode_enum_attach() {
+        let mode = AttachMode::Attach(12345);
+        match mode {
+            AttachMode::Attach(pid) => assert_eq!(pid, 12345),
+            AttachMode::Spawn { .. } => panic!("Expected Attach variant"),
+        }
+    }
+
+    #[test]
+    fn test_capture_runner_attach_to_constructor() {
+        let config = CaptureConfig::new("irrelevant");
+        let runner = CaptureRunner::attach_to(54321, config);
+        // Can't access private field directly, but verify it doesn't panic
+        assert!(!runner.stop_flag.load(Ordering::SeqCst));
+        assert!(runner.thread_handle.is_none());
+    }
+
+    /// Integration test: attach to a `sleep 10` process, verify attach succeeds.
+    /// May fail with permission error in CI environments without CAP_SYS_PTRACE.
+    #[test]
+    fn test_attach_to_sleep_process() {
+        use std::process::Command;
+
+        // Spawn a long-running process
+        let mut child = Command::new("sleep").arg("10").spawn().expect("sleep should spawn");
+        let pid = child.id();
+
+        // Give it a moment to start
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let config = CaptureConfig::new("sleep 10");
+        let result = CaptureRunner::run_to_completion_attach(pid, config);
+
+        // Clean up: kill the sleep process
+        let _ = child.kill();
+        let _ = child.wait();
+
+        match result {
+            Ok(capture) => {
+                // Attach succeeded - we may or may not have events depending on timing
+                info!("Attach succeeded, {} events collected", capture.total_events);
+            }
+            Err(e) if e.contains("Operation not permitted") || e.contains("EPERM") => {
+                // Expected in restricted CI environments without CAP_SYS_PTRACE
+                info!("Expected permission error in restricted environment: {}", e);
+            }
+            Err(e) if e.contains("No such process") || e.contains("ESRCH") => {
+                // Process may have already exited
+                info!("Process already exited: {}", e);
+            }
+            Err(e) => {
+                panic!("Unexpected attach error: {}", e);
+            }
+        }
+    }
+
+    /// Test that attaching to an invalid PID returns an appropriate error.
+    #[test]
+    fn test_attach_invalid_pid() {
+        let config = CaptureConfig::new("nonexistent");
+        // Use a very high PID that is unlikely to exist
+        let result = CaptureRunner::run_to_completion_attach(999999999, config);
+        assert!(
+            result.is_err(),
+            "Expected error for invalid PID"
+        );
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("No such process") || err.contains("ESRCH") || err.contains("Attach"),
+            "Expected ESRCH or attach error, got: {}",
+            err
+        );
     }
 }

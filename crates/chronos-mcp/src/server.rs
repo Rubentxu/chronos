@@ -104,6 +104,9 @@ pub struct DebugAttachParams {
     /// Whether to trace syscalls.
     #[serde(default = "default_true")]
     pub trace_syscalls: bool,
+    /// Whether to capture registers on each stop.
+    #[serde(default = "default_true")]
+    pub capture_registers: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -574,12 +577,76 @@ impl ChronosServer {
         params: Parameters<DebugAttachParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        // Attach-based capture will be supported in a future update.
-        // For now, return an informational message.
-        Ok(CallToolResult::error(text_content(format!(
-            "Attach to PID {} is not yet supported. Use debug_run to launch a program under trace.",
-            params.pid
-        ))))
+        let pid = params.pid;
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let sid_clone = session_id.clone();
+        let start_time = std::time::Instant::now();
+
+        let mut config = CaptureConfig::new(format!("PID {}", pid));
+        config.capture_syscalls = params.trace_syscalls;
+        config.capture_stack = true;
+
+        // Run attach capture synchronously in a blocking thread
+        let capture_result = tokio::task::spawn_blocking(move || {
+            CaptureRunner::run_to_completion_attach(pid, config)
+        })
+        .await;
+
+        match capture_result {
+            Ok(Ok(capture)) => {
+                let total_events = capture.total_events;
+                let end_reason_str = match &capture.end_reason {
+                    CaptureEndReason::Exited(code) => format!("exited({})", code),
+                    CaptureEndReason::Signaled { signal_name, .. } => {
+                        format!("signaled({})", signal_name)
+                    }
+                    CaptureEndReason::StoppedByUser => "stopped_by_user".into(),
+                    CaptureEndReason::Failed(e) => format!("failed({})", e),
+                };
+
+                    info!(
+                    "Attach session {} finished: {} events, reason: {}",
+                    sid_clone, total_events, end_reason_str
+                );
+
+                let events = capture.events;
+                let _elapsed = start_time.elapsed();
+                self.build_and_store_engine(&sid_clone, events.clone())
+                    .await;
+
+                let result = serde_json::json!({
+                    "session_id": sid_clone,
+                    "status": "finalized",
+                    "pid": pid,
+                    "total_events": total_events,
+                    "end_reason": end_reason_str,
+                    "message": format!("Attached to PID {} and captured {} events", pid, total_events),
+                    "hint": "Session is queryable now. Use query_events, get_call_stack, get_execution_summary, etc."
+                });
+                Ok(CallToolResult::success(json_content(&result)))
+            }
+            Ok(Err(e)) => {
+                // Map common errors to user-friendly messages
+                let user_message = if e.contains("No such process") || e.contains("ESRCH") {
+                    format!(
+                        "Process with PID {} not found or not traceable. Ensure the process exists and is owned by your user, or run with CAP_SYS_PTRACE.",
+                        pid
+                    )
+                } else if e.contains("Operation not permitted") || e.contains("EPERM") {
+                    format!(
+                        "Permission denied: cannot attach to PID {}. Required: CAP_SYS_PTRACE capability or same user ID.",
+                        pid
+                    )
+                } else {
+                    format!("Attach to PID {} failed: {}", pid, e)
+                };
+                Ok(CallToolResult::error(text_content(user_message)))
+            }
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "Internal error: {}",
+                e
+            )))),
+        }
     }
 
     #[tool(
@@ -1819,6 +1886,7 @@ mod tests {
         let params = Parameters(DebugAttachParams {
             pid: 999999,
             trace_syscalls: true,
+            capture_registers: true,
         });
         let result = server.debug_attach(params).await.unwrap();
         assert_eq!(result.is_error, Some(true));

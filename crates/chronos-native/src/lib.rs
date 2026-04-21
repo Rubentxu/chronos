@@ -14,7 +14,7 @@ pub mod symbol_resolver;
 pub mod syscall_table;
 
 pub use breakpoint::BreakpointManager;
-pub use capture_runner::{CaptureEndReason, CaptureResult, CaptureRunner, CaptureState};
+pub use capture_runner::{AttachMode, CaptureEndReason, CaptureResult, CaptureRunner, CaptureState};
 pub use dwarf::DwarfReader;
 pub use native_adapter::NativeAdapter;
 pub use ptrace_tracer::{PtraceConfig, PtraceEvent, PtraceTracer};
