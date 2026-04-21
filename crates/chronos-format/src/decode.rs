@@ -35,8 +35,7 @@ pub fn read_event<R: Read>(reader: &mut R) -> io::Result<Option<TraceEvent>> {
     let mut data = vec![0u8; len];
     reader.read_exact(&mut data)?;
 
-    let event = decode_event(&data)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let event = decode_event(&data).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
     Ok(Some(event))
 }

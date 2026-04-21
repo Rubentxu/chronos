@@ -42,8 +42,8 @@ fn compile_fixture(source_name: &str) -> PathBuf {
 
     let output = Command::new("gcc")
         .args([
-            "-g",       // Include debug info
-            "-no-pie",  // Fixed load address for easier testing
+            "-g",      // Include debug info
+            "-no-pie", // Fixed load address for easier testing
             "-o",
         ])
         .arg(&binary_path)
@@ -152,9 +152,12 @@ fn test_get_function_addresses_for_breakpoints() {
     assert!(addrs.len() >= 4, "Should find add, multiply, compute, main");
 
     // All addresses should be non-zero and unique
-    let unique_addrs: std::collections::HashSet<u64> =
-        addrs.iter().map(|(_, a)| *a).collect();
-    assert_eq!(unique_addrs.len(), addrs.len(), "Addresses should be unique");
+    let unique_addrs: std::collections::HashSet<u64> = addrs.iter().map(|(_, a)| *a).collect();
+    assert_eq!(
+        unique_addrs.len(),
+        addrs.len(),
+        "Addresses should be unique"
+    );
 }
 
 // ============================================================================
@@ -224,15 +227,10 @@ fn test_index_and_query_pipeline() {
     let indices = builder.finalize();
 
     // Create query engine with indices
-    let engine = QueryEngine::with_indices(
-        events,
-        indices.shadow,
-        indices.temporal,
-    );
+    let engine = QueryEngine::with_indices(events, indices.shadow, indices.temporal);
 
     // Query all function entries
-    let query = TraceQuery::new("test")
-        .event_types(vec![EventType::FunctionEntry]);
+    let query = TraceQuery::new("test").event_types(vec![EventType::FunctionEntry]);
     let result = engine.execute(&query);
     assert_eq!(result.total_matching, 4);
 
@@ -332,27 +330,20 @@ fn test_full_pipeline_simulation() {
     let indices = builder.finalize();
 
     // Step 5: Query
-    let engine = QueryEngine::with_indices(
-        loaded_events.clone(),
-        indices.shadow,
-        indices.temporal,
-    );
+    let engine = QueryEngine::with_indices(loaded_events.clone(), indices.shadow, indices.temporal);
 
     // Verify queries work
     let all = engine.execute(&TraceQuery::new("test").pagination(100, 0));
     assert_eq!(all.total_matching, 9);
 
     let functions = engine.execute(
-        &TraceQuery::new("test").event_types(vec![
-            EventType::FunctionEntry,
-            EventType::FunctionExit,
-        ])
+        &TraceQuery::new("test")
+            .event_types(vec![EventType::FunctionEntry, EventType::FunctionExit]),
     );
     assert_eq!(functions.total_matching, 8); // All except signal
 
-    let signals = engine.execute(
-        &TraceQuery::new("test").event_types(vec![EventType::SignalDelivered])
-    );
+    let signals =
+        engine.execute(&TraceQuery::new("test").event_types(vec![EventType::SignalDelivered]));
     assert_eq!(signals.total_matching, 1);
 
     // Step 6: Execution summary
@@ -386,7 +377,9 @@ fn test_capture_runner_bin_true() {
     let mut runner = CaptureRunner::new(config);
 
     // Run capture to completion (blocks until process exits)
-    let result = runner.run_to_completion().expect("Should capture /bin/true");
+    let result = runner
+        .run_to_completion()
+        .expect("Should capture /bin/true");
 
     // Should have captured some events
     eprintln!("Captured {} events from /bin/true", result.total_events);
@@ -394,7 +387,8 @@ fn test_capture_runner_bin_true() {
     // Process should have exited with code 0
     assert!(
         matches!(result.end_reason, CaptureEndReason::Exited(0)),
-        "Expected Exited(0), got: {:?}", result.end_reason
+        "Expected Exited(0), got: {:?}",
+        result.end_reason
     );
 
     // We should have at least the initial stop + exit events
@@ -404,8 +398,10 @@ fn test_capture_runner_bin_true() {
     // Print events for debugging
     for (i, evt) in result.events.iter().take(10).enumerate() {
         let func = evt.location.function.as_deref().unwrap_or("???");
-        eprintln!("  Event {}: {:?} at 0x{:x} in {} (thread {})",
-            i, evt.event_type, evt.location.address, func, evt.thread_id);
+        eprintln!(
+            "  Event {}: {:?} at 0x{:x} in {} (thread {})",
+            i, evt.event_type, evt.location.address, func, evt.thread_id
+        );
     }
 }
 
@@ -426,22 +422,31 @@ fn test_capture_runner_c_fixture_with_symbols() {
 
     assert!(
         matches!(result.end_reason, CaptureEndReason::Exited(0)),
-        "test_add should exit with 0, got: {:?}", result.end_reason
+        "test_add should exit with 0, got: {:?}",
+        result.end_reason
     );
 
     assert!(result.total_events > 0, "Should capture events");
 
     // Check that symbol resolution worked
-    let events_with_function: Vec<_> = result.events.iter()
+    let events_with_function: Vec<_> = result
+        .events
+        .iter()
         .filter(|e| e.location.function.is_some())
         .collect();
 
-    eprintln!("Events with function names: {}/{}", events_with_function.len(), result.events.len());
+    eprintln!(
+        "Events with function names: {}/{}",
+        events_with_function.len(),
+        result.events.len()
+    );
 
     for evt in &result.events {
         let func = evt.location.function.as_deref().unwrap_or("???");
-        eprintln!("  {:?} at 0x{:x} in {} (thread {})",
-            evt.event_type, evt.location.address, func, evt.thread_id);
+        eprintln!(
+            "  {:?} at 0x{:x} in {} (thread {})",
+            evt.event_type, evt.location.address, func, evt.thread_id
+        );
     }
 }
 
@@ -458,7 +463,9 @@ fn test_capture_runner_segfault() {
     let config = CaptureConfig::new(binary.to_str().unwrap());
     let mut runner = CaptureRunner::new(config);
 
-    let result = runner.run_to_completion().expect("Should capture test_segfault");
+    let result = runner
+        .run_to_completion()
+        .expect("Should capture test_segfault");
 
     eprintln!("Captured {} events from test_segfault", result.total_events);
 
@@ -467,7 +474,8 @@ fn test_capture_runner_segfault() {
         CaptureEndReason::Signaled { signal_name, .. } => {
             assert!(
                 signal_name.contains("SEGV") || signal_name.contains("KILL"),
-                "Expected SIGSEGV, got: {}", signal_name
+                "Expected SIGSEGV, got: {}",
+                signal_name
             );
         }
         CaptureEndReason::Exited(code) => {
@@ -478,12 +486,17 @@ fn test_capture_runner_segfault() {
         }
     }
 
-    assert!(result.total_events > 0, "Should capture events before crash");
+    assert!(
+        result.total_events > 0,
+        "Should capture events before crash"
+    );
 
     for evt in &result.events {
         let func = evt.location.function.as_deref().unwrap_or("???");
-        eprintln!("  {:?} at 0x{:x} in {} (thread {})",
-            evt.event_type, evt.location.address, func, evt.thread_id);
+        eprintln!(
+            "  {:?} at 0x{:x} in {} (thread {})",
+            evt.event_type, evt.location.address, func, evt.thread_id
+        );
     }
 }
 
@@ -505,19 +518,35 @@ fn test_registry_has_java_and_go_adapters() {
     registry.register(std::sync::Arc::new(chronos_go::GoAdapter::new()));
 
     // Verify Java is registered
-    assert!(registry.has_adapter(Language::Java), "Java adapter should be registered");
-    let java_adapter = registry.get(Language::Java).expect("Java adapter should be retrievable");
+    assert!(
+        registry.has_adapter(Language::Java),
+        "Java adapter should be registered"
+    );
+    let java_adapter = registry
+        .get(Language::Java)
+        .expect("Java adapter should be retrievable");
     assert_eq!(java_adapter.get_language(), Language::Java);
     assert_eq!(java_adapter.name(), "java-jdwp");
 
     // Verify Go is registered
-    assert!(registry.has_adapter(Language::Go), "Go adapter should be registered");
-    let go_adapter = registry.get(Language::Go).expect("Go adapter should be retrievable");
+    assert!(
+        registry.has_adapter(Language::Go),
+        "Go adapter should be registered"
+    );
+    let go_adapter = registry
+        .get(Language::Go)
+        .expect("Go adapter should be retrievable");
     assert_eq!(go_adapter.get_language(), Language::Go);
     assert_eq!(go_adapter.name(), "go-delve");
 
     // Verify both languages are in the registered list
     let langs = registry.registered_languages();
-    assert!(langs.contains(&Language::Java), "Java should be in registered languages");
-    assert!(langs.contains(&Language::Go), "Go should be in registered languages");
+    assert!(
+        langs.contains(&Language::Java),
+        "Java should be in registered languages"
+    );
+    assert!(
+        langs.contains(&Language::Go),
+        "Go should be in registered languages"
+    );
 }

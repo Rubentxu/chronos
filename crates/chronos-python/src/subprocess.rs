@@ -1,7 +1,11 @@
+use crate::{
+    bootstrap,
+    error::PythonError,
+    parser::{parse_line, RawPythonEvent},
+};
 use std::process::Stdio;
-use tokio::process::{Child, Command};
 use tokio::io::{AsyncBufReadExt, BufReader};
-use crate::{bootstrap, error::PythonError, parser::{parse_line, RawPythonEvent}};
+use tokio::process::{Child, Command};
 
 pub struct PythonSubprocess {
     child: Child,
@@ -20,10 +24,13 @@ impl PythonSubprocess {
         if !capture_locals {
             cmd.env("CHRONOS_CAPTURE_LOCALS", "0");
         }
-        let mut child = cmd.spawn().map_err(|e| PythonError::SpawnFailed(e.to_string()))?;
-        let stdout = child.stdout.take().ok_or_else(|| {
-            PythonError::SpawnFailed("Failed to capture stdout".to_string())
-        })?;
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| PythonError::SpawnFailed(e.to_string()))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| PythonError::SpawnFailed("Failed to capture stdout".to_string()))?;
         Ok(Self {
             child,
             stdout: BufReader::new(stdout),
@@ -99,6 +106,9 @@ mod tests {
         }
         // At minimum, we should be able to spawn and read without errors
         // The exact number of events depends on implementation details
-        assert!(events.len() >= 0, "Should be able to read events without error");
+        assert!(
+            events.len() >= 0,
+            "Should be able to read events without error"
+        );
     }
 }

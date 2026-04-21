@@ -399,6 +399,10 @@ mod tests {
     #[test]
     fn test_table_size() {
         let table = syscall_table();
-        assert!(table.len() >= 300, "Expected at least 300 syscalls, got {}", table.len());
+        assert!(
+            table.len() >= 300,
+            "Expected at least 300 syscalls, got {}",
+            table.len()
+        );
     }
 }

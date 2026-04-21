@@ -1,9 +1,9 @@
 //! Integration tests for chronos-java.
 
-use std::sync::Arc;
 use chronos_capture::{AdapterRegistry, TraceAdapter};
 use chronos_domain::Language;
 use chronos_java::JavaAdapter;
+use std::sync::Arc;
 
 #[test]
 fn test_registry_has_java_adapter() {
@@ -34,9 +34,9 @@ fn test_java_adapter_is_available_check() {
 #[tokio::test]
 #[ignore] // requires java + javac on PATH
 async fn test_java_hello_world_capture() {
-    use tempfile::TempDir;
     use std::io::Write;
     use std::process::Command;
+    use tempfile::TempDir;
 
     // Create a temp directory for our test
     let temp_dir = TempDir::new().unwrap();
@@ -69,13 +69,15 @@ public class HelloWorld {
     }
 
     // Verify class file exists
-    assert!(temp_path.join("HelloWorld.class").exists(), "HelloWorld.class should exist");
+    assert!(
+        temp_path.join("HelloWorld.class").exists(),
+        "HelloWorld.class should exist"
+    );
 
     // Create adapter and start capture
     let adapter = JavaAdapter::new();
-    let config = chronos_capture::CaptureConfig::new(
-        temp_path.join("HelloWorld.class").to_str().unwrap()
-    );
+    let config =
+        chronos_capture::CaptureConfig::new(temp_path.join("HelloWorld.class").to_str().unwrap());
 
     let session = adapter.start_capture(config);
     assert!(session.is_ok(), "Should be able to start Java capture");

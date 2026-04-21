@@ -8,8 +8,8 @@ mod temporal;
 
 pub use causality::{CausalityEntry, CausalityIndex};
 pub use compression::{
-    CompressionLevel, CompressedTrace, DetailData, ExecutiveSummary, FunctionDetail,
-    HotspotData, HotspotEntry, MicroscopyData, RawEventEntry,
+    CompressedTrace, CompressionLevel, DetailData, ExecutiveSummary, FunctionDetail, HotspotData,
+    HotspotEntry, MicroscopyData, RawEventEntry,
 };
 pub use performance::{FunctionPerf, PerfCounters, PerformanceIndex};
 pub use shadow::ShadowIndex;

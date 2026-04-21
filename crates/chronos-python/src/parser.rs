@@ -1,7 +1,7 @@
+use crate::error::PythonError;
+use chronos_domain::{VariableInfo, VariableScope};
 use serde::Deserialize;
 use std::collections::HashMap;
-use chronos_domain::{VariableInfo, VariableScope};
-use crate::error::PythonError;
 
 #[derive(Debug, Deserialize)]
 pub struct RawPythonEvent {
@@ -20,9 +20,10 @@ pub fn parse_line(line: &str) -> Result<RawPythonEvent, PythonError> {
 }
 
 pub fn locals_to_variable_info(locals: HashMap<String, String>) -> Vec<VariableInfo> {
-    locals.into_iter().map(|(name, value)| {
-        VariableInfo::new(name, value, String::new(), 0, VariableScope::Local)
-    }).collect()
+    locals
+        .into_iter()
+        .map(|(name, value)| VariableInfo::new(name, value, String::new(), 0, VariableScope::Local))
+        .collect()
 }
 
 #[cfg(test)]

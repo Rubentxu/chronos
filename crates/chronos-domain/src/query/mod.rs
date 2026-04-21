@@ -161,9 +161,7 @@ fn glob_match_inner(text: &[char], pattern: &[char], ti: usize, pi: usize) -> bo
             }
         }
         false
-    } else if ti < text.len()
-        && (pattern[pi] == '?' || pattern[pi] == text[ti])
-    {
+    } else if ti < text.len() && (pattern[pi] == '?' || pattern[pi] == text[ti]) {
         glob_match_inner(text, pattern, ti + 1, pi + 1)
     } else {
         false

@@ -1,10 +1,10 @@
 //! Minimal Delve JSON-RPC 2.0 client over TCP.
 
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::TcpStream;
+use crate::error::GoError;
 use serde::Deserialize;
 use serde_json::Value;
-use crate::error::GoError;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::TcpStream;
 
 /// A Delve DAP client for JSON-RPC 2.0 communication.
 pub struct DelveClient {
@@ -64,7 +64,9 @@ impl DelveClient {
 
     /// RPCServer.ProcessPid — get the process ID.
     pub async fn get_pid(&mut self) -> Result<u64, GoError> {
-        let result = self.call("RPCServer.ProcessPid", serde_json::json!({})).await?;
+        let result = self
+            .call("RPCServer.ProcessPid", serde_json::json!({}))
+            .await?;
         Ok(result.as_i64().unwrap_or(0) as u64)
     }
 
@@ -76,7 +78,11 @@ impl DelveClient {
     }
 
     /// RPCServer.Stacktrace for a goroutine.
-    pub async fn stacktrace(&mut self, goroutine_id: i64, depth: i32) -> Result<Vec<StackFrame>, GoError> {
+    pub async fn stacktrace(
+        &mut self,
+        goroutine_id: i64,
+        depth: i32,
+    ) -> Result<Vec<StackFrame>, GoError> {
         let result = self
             .call(
                 "RPCServer.Stacktrace",
@@ -97,7 +103,9 @@ impl DelveClient {
 
     /// RPCServer.ListGoroutines — list all goroutines.
     pub async fn list_goroutines(&mut self) -> Result<Vec<GoroutineInfo>, GoError> {
-        let result = self.call("RPCServer.ListGoroutines", serde_json::json!({})).await?;
+        let result = self
+            .call("RPCServer.ListGoroutines", serde_json::json!({}))
+            .await?;
         #[derive(Deserialize)]
         struct GoroutinesReply {
             #[serde(rename = "Goroutines")]

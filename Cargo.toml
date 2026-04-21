@@ -8,6 +8,7 @@ members = [
     "crates/chronos-index",
     "crates/chronos-query",
     "crates/chronos-mcp",
+    "crates/chronos-store",
     "crates/chronos-e2e",
     "crates/chronos-ebpf",
     "crates/chronos-python",
@@ -30,6 +31,7 @@ chronos-native = { path = "crates/chronos-native" }
 chronos-index = { path = "crates/chronos-index" }
 chronos-query = { path = "crates/chronos-query" }
 chronos-mcp = { path = "crates/chronos-mcp" }
+chronos-store = { path = "crates/chronos-store" }
 chronos-e2e = { path = "crates/chronos-e2e" }
 chronos-ebpf = { path = "crates/chronos-ebpf" }
 chronos-python = { path = "crates/chronos-python" }
@@ -43,6 +45,7 @@ anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 schemars = "1"
+bincode = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "serde"] }

@@ -34,9 +34,7 @@ impl PerfCounters {
     /// IPC (instructions per cycle), if both counters are available.
     pub fn ipc(&self) -> Option<f64> {
         match (self.instructions, self.cycles) {
-            (Some(instr), Some(cycles)) if cycles > 0 => {
-                Some(instr as f64 / cycles as f64)
-            }
+            (Some(instr), Some(cycles)) if cycles > 0 => Some(instr as f64 / cycles as f64),
             _ => None,
         }
     }
@@ -57,7 +55,12 @@ pub struct FunctionPerf {
 
 impl FunctionPerf {
     pub fn new(address: u64, name: Option<String>) -> Self {
-        Self { address, name, call_count: 0, total_cycles: 0 }
+        Self {
+            address,
+            name,
+            call_count: 0,
+            total_cycles: 0,
+        }
     }
 
     /// Average cycles per call.
@@ -90,7 +93,8 @@ impl PerformanceIndex {
 
     /// Record a function call with optional cycle count.
     pub fn record_call(&mut self, address: u64, name: Option<String>, cycles: Option<u64>) {
-        let entry = self.function_stats
+        let entry = self
+            .function_stats
             .entry(address)
             .or_insert_with(|| FunctionPerf::new(address, name));
         entry.call_count += 1;

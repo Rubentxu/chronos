@@ -5,8 +5,8 @@
 
 use chronos_capture::TraceAdapter;
 use chronos_domain::{
-    CaptureConfig, CaptureSession, EventData, EventType, Language,
-    SourceLocation, TraceError, TraceEvent,
+    CaptureConfig, CaptureSession, EventData, EventType, Language, SourceLocation, TraceError,
+    TraceEvent,
 };
 use std::path::Path;
 use tracing::info;
@@ -39,14 +39,10 @@ impl NativeAdapter {
     }
 
     /// Build a CaptureSession from a successful ptrace launch.
-    fn build_session(
-        &self,
-        pid: i32,
-        config: &CaptureConfig,
-    ) -> CaptureSession {
-        let language = config.language.unwrap_or_else(|| {
-            Language::from_path(&config.target)
-        });
+    fn build_session(&self, pid: i32, config: &CaptureConfig) -> CaptureSession {
+        let language = config
+            .language
+            .unwrap_or_else(|| Language::from_path(&config.target));
 
         let mut session = CaptureSession::new(pid as u32, language, config.clone());
         session.activate();
@@ -71,30 +67,26 @@ impl NativeAdapter {
                 // Map interesting signals to domain events
                 match *signal {
                     // SIGTRAP at non-syscall stops — likely a breakpoint or single-step
-                    5 => {
-                        Some(TraceEvent::new(
-                            event_id,
-                            timestamp_ns,
-                            *pid as u64,
-                            EventType::BreakpointHit,
-                            SourceLocation::from_address(0),
-                            EventData::Breakpoint {
-                                breakpoint_id: 0,
-                                address: 0,
-                            },
-                        ))
-                    }
+                    5 => Some(TraceEvent::new(
+                        event_id,
+                        timestamp_ns,
+                        *pid as u64,
+                        EventType::BreakpointHit,
+                        SourceLocation::from_address(0),
+                        EventData::Breakpoint {
+                            breakpoint_id: 0,
+                            address: 0,
+                        },
+                    )),
                     // Other signals
-                    _ => {
-                        Some(TraceEvent::signal(
-                            event_id,
-                            timestamp_ns,
-                            *pid as u64,
-                            *signal,
-                            signal_name.as_str(),
-                            0,
-                        ))
-                    }
+                    _ => Some(TraceEvent::signal(
+                        event_id,
+                        timestamp_ns,
+                        *pid as u64,
+                        *signal,
+                        signal_name.as_str(),
+                        0,
+                    )),
                 }
             }
 
@@ -169,27 +161,23 @@ impl NativeAdapter {
                 signal,
                 signal_name,
                 core_dumped: _,
-            } => {
-                Some(TraceEvent::signal(
-                    event_id,
-                    timestamp_ns,
-                    *pid as u64,
-                    *signal,
-                    signal_name.as_str(),
-                    0,
-                ))
-            }
+            } => Some(TraceEvent::signal(
+                event_id,
+                timestamp_ns,
+                *pid as u64,
+                *signal,
+                signal_name.as_str(),
+                0,
+            )),
 
-            PtraceEvent::Registers { pid, regs } => {
-                Some(TraceEvent::new(
-                    event_id,
-                    timestamp_ns,
-                    *pid as u64,
-                    EventType::Custom,
-                    SourceLocation::from_address(regs.rip),
-                    EventData::Registers(regs.clone()),
-                ))
-            }
+            PtraceEvent::Registers { pid, regs } => Some(TraceEvent::new(
+                event_id,
+                timestamp_ns,
+                *pid as u64,
+                EventType::Custom,
+                SourceLocation::from_address(regs.rip),
+                EventData::Registers(regs.clone()),
+            )),
         }
     }
 }
@@ -329,7 +317,10 @@ mod tests {
 
         assert_eq!(trace_evt.event_type, EventType::SignalDelivered);
         match &trace_evt.data {
-            EventData::Signal { signal_number, signal_name } => {
+            EventData::Signal {
+                signal_number,
+                signal_name,
+            } => {
                 assert_eq!(*signal_number, 11);
                 assert_eq!(signal_name, "SIGSEGV");
             }

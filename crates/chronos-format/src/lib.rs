@@ -11,7 +11,6 @@ pub use decode::decode_event;
 pub use encode::encode_event;
 pub use trace_file::{TraceFileReader, TraceFileReaderWithMetadata, TraceFileWriter};
 
-
 /// Magic bytes for .chronos files: "CHR1"
 pub const CHRONOS_MAGIC: [u8; 4] = [b'C', b'H', b'R', b'1'];
 

@@ -1,8 +1,6 @@
 //! Trace adapter trait — the interface all language adapters implement.
 
-use chronos_domain::{
-    CaptureConfig, CaptureSession, Language, TraceError, TraceEvent,
-};
+use chronos_domain::{CaptureConfig, CaptureSession, Language, TraceError, TraceEvent};
 
 /// Trait that all trace adapters must implement.
 ///

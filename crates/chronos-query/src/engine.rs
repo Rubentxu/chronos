@@ -6,13 +6,13 @@
 //! execution summaries.
 
 use chronos_domain::{
-    CausalityIndex, EventData, EventType, PerformanceIndex, QueryResult, ShadowIndex,
-    TemporalIndex, TraceEvent, TraceQuery,
     query::{
         CausalityQuery, CausalityResult, ExecutionSummary, FunctionStats, MutationRecord,
         PerfEntry, PerfQuery, PerfResult, PerfSortBy, PotentialIssue, PotentialRace,
         RaceDetectionQuery, RaceDetectionResult, StackFrame, StateChange, StateDiff,
     },
+    CausalityIndex, EventData, EventType, PerformanceIndex, QueryResult, ShadowIndex,
+    TemporalIndex, TraceEvent, TraceQuery,
 };
 use std::collections::HashMap;
 
@@ -98,13 +98,16 @@ impl QueryEngine {
     /// Execute a query and return matching events with pagination.
     pub fn execute(&self, query: &TraceQuery) -> QueryResult {
         // Use temporal index for time-range queries if available
-        let candidate_ids: Option<Vec<u64>> = if let (Some(ref temporal), Some(ts_start), Some(ts_end)) =
-            (&self.temporal_index, query.timestamp_start, query.timestamp_end)
-        {
-            Some(temporal.range(ts_start, ts_end))
-        } else {
-            None
-        };
+        let candidate_ids: Option<Vec<u64>> =
+            if let (Some(ref temporal), Some(ts_start), Some(ts_end)) = (
+                &self.temporal_index,
+                query.timestamp_start,
+                query.timestamp_end,
+            ) {
+                Some(temporal.range(ts_start, ts_end))
+            } else {
+                None
+            };
 
         // Use shadow index for address-range queries if available
         let address_candidate_ids: Option<Vec<u64>> =
@@ -117,31 +120,36 @@ impl QueryEngine {
             };
 
         // Determine which events to scan
-        let matching_events: Vec<&TraceEvent> = if candidate_ids.is_some() || address_candidate_ids.is_some() {
-            // If we have index results, intersect them
-            let mut id_set: Option<std::collections::HashSet<u64>> = None;
+        let matching_events: Vec<&TraceEvent> =
+            if candidate_ids.is_some() || address_candidate_ids.is_some() {
+                // If we have index results, intersect them
+                let mut id_set: Option<std::collections::HashSet<u64>> = None;
 
-            if let Some(ids) = candidate_ids {
-                id_set = Some(ids.into_iter().collect());
-            }
-            if let Some(ids) = address_candidate_ids {
-                match id_set {
-                    None => id_set = Some(ids.into_iter().collect()),
-                    Some(ref mut set) => {
-                        let other: std::collections::HashSet<u64> = ids.into_iter().collect();
-                        *set = set.intersection(&other).copied().collect();
+                if let Some(ids) = candidate_ids {
+                    id_set = Some(ids.into_iter().collect());
+                }
+                if let Some(ids) = address_candidate_ids {
+                    match id_set {
+                        None => id_set = Some(ids.into_iter().collect()),
+                        Some(ref mut set) => {
+                            let other: std::collections::HashSet<u64> = ids.into_iter().collect();
+                            *set = set.intersection(&other).copied().collect();
+                        }
                     }
                 }
-            }
 
-            match id_set {
-                Some(set) => self.events.iter().filter(|e| set.contains(&e.event_id)).collect(),
-                None => self.events.iter().collect(),
-            }
-        } else {
-            // No index hints — scan all events
-            self.events.iter().collect()
-        };
+                match id_set {
+                    Some(set) => self
+                        .events
+                        .iter()
+                        .filter(|e| set.contains(&e.event_id))
+                        .collect(),
+                    None => self.events.iter().collect(),
+                }
+            } else {
+                // No index hints — scan all events
+                self.events.iter().collect()
+            };
 
         // Apply remaining filters
         let filtered: Vec<&TraceEvent> = matching_events
@@ -392,6 +400,11 @@ impl QueryEngine {
         self.events.last()
     }
 
+    /// Get all events as a owned vector.
+    pub fn get_all_events(&self) -> Vec<TraceEvent> {
+        self.events.clone()
+    }
+
     // ─── Performance queries ──────────────────────────────────────────────────
 
     /// Query performance index for top functions.
@@ -434,7 +447,9 @@ impl QueryEngine {
     /// Returns an empty vec if no performance index is loaded.
     pub fn top_functions_by_cycles(&self, limit: usize) -> Vec<PerfEntry> {
         let query = PerfQuery::new("").top(limit);
-        self.query_perf(&query).map(|r| r.functions).unwrap_or_default()
+        self.query_perf(&query)
+            .map(|r| r.functions)
+            .unwrap_or_default()
     }
 
     // ─── Causality queries ────────────────────────────────────────────────────
@@ -472,7 +487,10 @@ impl QueryEngine {
                     causality.writes_at(addr).iter().collect()
                 };
 
-            let mutations = entries.iter().map(|e| mutation_record_from_entry(e)).collect();
+            let mutations = entries
+                .iter()
+                .map(|e| mutation_record_from_entry(e))
+                .collect();
             Some(CausalityResult {
                 address: addr,
                 variable_name: query.variable_name.clone(),
@@ -495,7 +513,12 @@ impl QueryEngine {
     pub fn detect_races(&self, query: &RaceDetectionQuery) -> RaceDetectionResult {
         let causality = match &self.causality_index {
             Some(c) => c,
-            None => return RaceDetectionResult { races: vec![], addresses_checked: 0 },
+            None => {
+                return RaceDetectionResult {
+                    races: vec![],
+                    addresses_checked: 0,
+                }
+            }
         };
 
         let mut races = Vec::new();
@@ -507,14 +530,20 @@ impl QueryEngine {
             std::collections::HashMap::new();
 
         for event in &self.events {
-            if matches!(event.event_type, EventType::VariableWrite | EventType::MemoryWrite) {
+            if matches!(
+                event.event_type,
+                EventType::VariableWrite | EventType::MemoryWrite
+            ) {
                 // Apply time range filter if specified
                 if let Some((start, end)) = query.time_range {
                     if event.timestamp_ns < start || event.timestamp_ns >= end {
                         continue;
                     }
                 }
-                addr_writes.entry(event.location.address).or_default().push(event);
+                addr_writes
+                    .entry(event.location.address)
+                    .or_default()
+                    .push(event);
             }
         }
 
@@ -531,10 +560,12 @@ impl QueryEngine {
                     let delta = a.timestamp_ns.abs_diff(b.timestamp_ns);
                     if delta <= query.threshold_ns {
                         // Build MutationRecords from causality index
-                        let wa = causality.find_last_mutation(*addr, a.timestamp_ns + 1)
+                        let wa = causality
+                            .find_last_mutation(*addr, a.timestamp_ns + 1)
                             .map(mutation_record_from_entry)
                             .unwrap_or_else(|| event_to_mutation_record(a));
-                        let wb = causality.find_last_mutation(*addr, b.timestamp_ns + 1)
+                        let wb = causality
+                            .find_last_mutation(*addr, b.timestamp_ns + 1)
                             .map(mutation_record_from_entry)
                             .unwrap_or_else(|| event_to_mutation_record(b));
                         races.push(PotentialRace {
@@ -548,7 +579,10 @@ impl QueryEngine {
             }
         }
 
-        RaceDetectionResult { races, addresses_checked }
+        RaceDetectionResult {
+            races,
+            addresses_checked,
+        }
     }
 }
 
@@ -581,11 +615,16 @@ fn event_to_mutation_record(e: &TraceEvent) -> MutationRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chronos_domain::{
-        EventData, EventType, RegisterState, SourceLocation, TraceEvent,
-    };
+    use chronos_domain::{EventData, EventType, RegisterState, SourceLocation, TraceEvent};
 
-    fn make_event(id: u64, ts: u64, tid: u64, event_type: EventType, func: &str, addr: u64) -> TraceEvent {
+    fn make_event(
+        id: u64,
+        ts: u64,
+        tid: u64,
+        event_type: EventType,
+        func: &str,
+        addr: u64,
+    ) -> TraceEvent {
         TraceEvent::new(
             id,
             ts,
@@ -754,7 +793,10 @@ mod tests {
 
         // Event 7 is a signal (SIGSEGV would be nice but our test has generic signal)
         assert!(!summary.potential_issues.is_empty());
-        let signal_issue = summary.potential_issues.iter().find(|i| i.issue_type == "signal");
+        let signal_issue = summary
+            .potential_issues
+            .iter()
+            .find(|i| i.issue_type == "signal");
         assert!(signal_issue.is_some());
     }
 
@@ -823,12 +865,20 @@ mod tests {
         assert!(!diff.changes.is_empty());
 
         // rax changed from 42 to 99
-        let rax_change = diff.changes.iter().find(|c| c.field == "registers.rax").unwrap();
+        let rax_change = diff
+            .changes
+            .iter()
+            .find(|c| c.field == "registers.rax")
+            .unwrap();
         assert_eq!(rax_change.value_a, "0x2a");
         assert_eq!(rax_change.value_b, "0x63");
 
         // rip changed
-        let rip_change = diff.changes.iter().find(|c| c.field == "registers.rip").unwrap();
+        let rip_change = diff
+            .changes
+            .iter()
+            .find(|c| c.field == "registers.rip")
+            .unwrap();
         assert_eq!(rip_change.value_a, "0x1000");
         assert_eq!(rip_change.value_b, "0x2000");
     }
@@ -885,7 +935,10 @@ mod tests {
 
         for event in &events {
             temporal.insert(event.timestamp_ns, event.event_id);
-            if matches!(event.event_type, EventType::FunctionEntry | EventType::FunctionExit) {
+            if matches!(
+                event.event_type,
+                EventType::FunctionEntry | EventType::FunctionExit
+            ) {
                 shadow.insert(event.location.address, event.event_id);
             }
         }
@@ -911,7 +964,10 @@ mod tests {
         let result = engine.execute(&query);
         // FunctionEntry events in [200, 600): IDs 1 (helper, ts 200), 5 (process, ts 600 is excluded)
         assert_eq!(result.total_matching, 1);
-        assert_eq!(result.events[0].location.function.as_deref(), Some("helper"));
+        assert_eq!(
+            result.events[0].location.function.as_deref(),
+            Some("helper")
+        );
     }
 
     // ─── Causality tests ──────────────────────────────────────────────────────
@@ -922,38 +978,50 @@ mod tests {
         let addr = 0xA000u64;
         let mut causality = CausalityIndex::new();
 
-        causality.record_write(addr, CausalityEntry {
-            event_id: 10,
-            timestamp: 100,
-            thread_id: 1,
-            value_before: None,
-            value_after: "0".to_string(),
-            function: "init".to_string(),
-            file: None,
-            line: None,
-        }, Some("counter"));
+        causality.record_write(
+            addr,
+            CausalityEntry {
+                event_id: 10,
+                timestamp: 100,
+                thread_id: 1,
+                value_before: None,
+                value_after: "0".to_string(),
+                function: "init".to_string(),
+                file: None,
+                line: None,
+            },
+            Some("counter"),
+        );
 
-        causality.record_write(addr, CausalityEntry {
-            event_id: 11,
-            timestamp: 200,
-            thread_id: 1,
-            value_before: Some("0".to_string()),
-            value_after: "1".to_string(),
-            function: "increment".to_string(),
-            file: None,
-            line: None,
-        }, Some("counter"));
+        causality.record_write(
+            addr,
+            CausalityEntry {
+                event_id: 11,
+                timestamp: 200,
+                thread_id: 1,
+                value_before: Some("0".to_string()),
+                value_after: "1".to_string(),
+                function: "increment".to_string(),
+                file: None,
+                line: None,
+            },
+            Some("counter"),
+        );
 
-        causality.record_write(addr, CausalityEntry {
-            event_id: 12,
-            timestamp: 300,
-            thread_id: 2,
-            value_before: Some("1".to_string()),
-            value_after: "2".to_string(),
-            function: "increment".to_string(),
-            file: None,
-            line: None,
-        }, Some("counter"));
+        causality.record_write(
+            addr,
+            CausalityEntry {
+                event_id: 12,
+                timestamp: 300,
+                thread_id: 2,
+                value_before: Some("1".to_string()),
+                value_after: "2".to_string(),
+                function: "increment".to_string(),
+                file: None,
+                line: None,
+            },
+            Some("counter"),
+        );
 
         QueryEngine::new(vec![]).with_causality(causality)
     }
@@ -963,9 +1031,7 @@ mod tests {
         use chronos_domain::query::CausalityQuery;
 
         let engine = make_causality_engine();
-        let query = CausalityQuery::new("s1")
-            .by_address(0xA000)
-            .before(250);
+        let query = CausalityQuery::new("s1").by_address(0xA000).before(250);
 
         let result = engine.query_causality(&query).unwrap();
         assert_eq!(result.mutations.len(), 1);
@@ -991,30 +1057,60 @@ mod tests {
 
     #[test]
     fn test_detect_races_100ns_threshold() {
-        use chronos_domain::{CausalityEntry, CausalityIndex, EventType, SourceLocation};
         use chronos_domain::query::RaceDetectionQuery;
+        use chronos_domain::{CausalityEntry, CausalityIndex, EventType, SourceLocation};
 
         let addr = 0xB000u64;
         let mut causality = CausalityIndex::new();
 
         // Two writes to same address from different threads within 50ns (race)
-        causality.record_write(addr, CausalityEntry {
-            event_id: 1, timestamp: 1000, thread_id: 1,
-            value_before: None, value_after: "x".to_string(),
-            function: "f1".to_string(), file: None, line: None,
-        }, None);
-        causality.record_write(addr, CausalityEntry {
-            event_id: 2, timestamp: 1050, thread_id: 2,
-            value_before: None, value_after: "y".to_string(),
-            function: "f2".to_string(), file: None, line: None,
-        }, None);
+        causality.record_write(
+            addr,
+            CausalityEntry {
+                event_id: 1,
+                timestamp: 1000,
+                thread_id: 1,
+                value_before: None,
+                value_after: "x".to_string(),
+                function: "f1".to_string(),
+                file: None,
+                line: None,
+            },
+            None,
+        );
+        causality.record_write(
+            addr,
+            CausalityEntry {
+                event_id: 2,
+                timestamp: 1050,
+                thread_id: 2,
+                value_before: None,
+                value_after: "y".to_string(),
+                function: "f2".to_string(),
+                file: None,
+                line: None,
+            },
+            None,
+        );
 
         // Events to drive address_writes detection
         let events = vec![
-            TraceEvent::new(1, 1000, 1, EventType::VariableWrite,
-                SourceLocation::from_address(addr), chronos_domain::EventData::Empty),
-            TraceEvent::new(2, 1050, 2, EventType::VariableWrite,
-                SourceLocation::from_address(addr), chronos_domain::EventData::Empty),
+            TraceEvent::new(
+                1,
+                1000,
+                1,
+                EventType::VariableWrite,
+                SourceLocation::from_address(addr),
+                chronos_domain::EventData::Empty,
+            ),
+            TraceEvent::new(
+                2,
+                1050,
+                2,
+                EventType::VariableWrite,
+                SourceLocation::from_address(addr),
+                chronos_domain::EventData::Empty,
+            ),
         ];
 
         let engine = QueryEngine::new(events).with_causality(causality);
@@ -1105,5 +1201,15 @@ mod tests {
         assert!(!result.counters_available);
         assert!(result.total_session_cycles.is_none());
     }
-}
 
+    #[test]
+    fn test_get_all_events_returns_all() {
+        let engine = QueryEngine::new(sample_events());
+        let all = engine.get_all_events();
+        assert_eq!(all.len(), 10);
+        assert_eq!(all[0].event_id, 0);
+        assert_eq!(all[9].event_id, 9);
+        // Verify it's a clone, not a reference
+        assert_eq!(all[0].event_id, engine.events[0].event_id);
+    }
+}

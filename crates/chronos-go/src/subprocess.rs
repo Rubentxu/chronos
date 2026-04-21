@@ -1,9 +1,9 @@
 //! Spawn Delve DAP server as a subprocess.
 
-use std::process::Stdio;
-use tokio::process::{Child, Command};
-use tokio::io::{AsyncBufReadExt, BufReader};
 use crate::error::GoError;
+use std::process::Stdio;
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::{Child, Command};
 
 /// A spawned Delve DAP server process.
 pub struct DelveSubprocess {
@@ -40,9 +40,10 @@ impl DelveSubprocess {
         })?;
 
         // Read stdout to find the DAP port
-        let stdout = child.stdout.take().ok_or_else(|| {
-            GoError::SpawnFailed("Failed to capture stdout".to_string())
-        })?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| GoError::SpawnFailed("Failed to capture stdout".to_string()))?;
 
         let mut reader = BufReader::new(stdout);
         let mut line = String::new();

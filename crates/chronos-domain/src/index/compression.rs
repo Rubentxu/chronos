@@ -209,12 +209,11 @@ impl CompressedTrace {
     /// is available. Returns `None` otherwise.
     pub fn saliency_score(&self, function: &str) -> Option<f64> {
         let hotspot = self.hotspot.as_ref()?;
-        let total_cycles: u64 = hotspot
+        let total_cycles: u64 = hotspot.top_functions.iter().filter_map(|e| e.cycles).sum();
+        let entry = hotspot
             .top_functions
             .iter()
-            .filter_map(|e| e.cycles)
-            .sum();
-        let entry = hotspot.top_functions.iter().find(|e| e.function == function)?;
+            .find(|e| e.function == function)?;
 
         if total_cycles == 0 {
             // Fall back to call-count ratio
@@ -296,14 +295,12 @@ mod tests {
     #[test]
     fn test_compressed_trace_with_hotspot_sets_level() {
         let hotspot = HotspotData {
-            top_functions: vec![
-                HotspotEntry {
-                    function: "compute".into(),
-                    call_count: 500,
-                    cycles: Some(10_000),
-                    avg_cycles_per_call: Some(20),
-                },
-            ],
+            top_functions: vec![HotspotEntry {
+                function: "compute".into(),
+                call_count: 500,
+                cycles: Some(10_000),
+                avg_cycles_per_call: Some(20),
+            }],
             total_calls: 500,
         };
         let ct = CompressedTrace::new(executive()).with_hotspot(hotspot);

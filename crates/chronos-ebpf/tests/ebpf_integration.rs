@@ -10,16 +10,16 @@
 //! sudo cargo test -p chronos-ebpf --features ebpf -- --ignored
 //! ```
 
-use chronos_ebpf::{EbpfAdapter, MockEbpfAdapter};
 use chronos_domain::TraceAdapter;
+use chronos_ebpf::{EbpfAdapter, MockEbpfAdapter};
 
 /// Verify that the mock adapter works end-to-end as a `TraceAdapter`.
 ///
 /// This test does NOT require kernel support — it tests the mock path.
 #[test]
 fn test_mock_adapter_as_trace_adapter_integration() {
-    use chronos_ebpf::types::EbpfEvent;
     use chronos_domain::EventType;
+    use chronos_ebpf::types::EbpfEvent;
 
     let events = vec![
         EbpfEvent::function_entry(1_000_000, 100, 0xDEAD_BEEF, "entry_point"),

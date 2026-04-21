@@ -60,7 +60,8 @@ impl IndexBuilder {
                 _ => event.location.function.clone(),
             };
             // Cycle counts not available from trace events directly (requires perf_event_open).
-            self.performance.record_call(event.location.address, func_name, None);
+            self.performance
+                .record_call(event.location.address, func_name, None);
         }
 
         // Causality index: record write mutations for VariableWrite and MemoryWrite
@@ -174,7 +175,10 @@ mod tests {
             1,
             EventType::FunctionEntry,
             chronos_domain::SourceLocation::from_address(addr),
-            EventData::Function { name: name.to_string(), signature: None },
+            EventData::Function {
+                name: name.to_string(),
+                signature: None,
+            },
         )
     }
 
@@ -210,7 +214,12 @@ mod tests {
 
         // Insert events across multiple 10ms chunks
         for i in 0..50 {
-            builder.push(&make_event(i, (i as u64) * 1_000_000, EventType::FunctionEntry, 0x1000));
+            builder.push(&make_event(
+                i,
+                (i as u64) * 1_000_000,
+                EventType::FunctionEntry,
+                0x1000,
+            ));
         }
 
         let indices = builder.finalize();

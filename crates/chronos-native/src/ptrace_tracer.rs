@@ -35,10 +35,7 @@ pub enum PtraceEvent {
         is_entry: bool,
     },
     /// Tracee exited normally with an exit code.
-    Exited {
-        pid: i32,
-        exit_code: i32,
-    },
+    Exited { pid: i32, exit_code: i32 },
     /// Tracee was killed by a signal.
     Signaled {
         pid: i32,
@@ -47,15 +44,9 @@ pub enum PtraceEvent {
         core_dumped: bool,
     },
     /// Tracee hit a ptrace event (clone, exec, etc.).
-    PtraceEvent {
-        pid: i32,
-        event_code: i32,
-    },
+    PtraceEvent { pid: i32, event_code: i32 },
     /// Register state snapshot captured for this stop.
-    Registers {
-        pid: i32,
-        regs: RegisterState,
-    },
+    Registers { pid: i32, regs: RegisterState },
 }
 
 impl PtraceEvent {
@@ -147,11 +138,7 @@ impl PtraceTracer {
     /// waits for the initial stop (SIGTRAP from exec).
     ///
     /// Returns the child PID on success.
-    pub fn launch(
-        &mut self,
-        program: &Path,
-        args: &[String],
-    ) -> Result<i32, TraceError> {
+    pub fn launch(&mut self, program: &Path, args: &[String]) -> Result<i32, TraceError> {
         let program_str = program
             .to_str()
             .ok_or_else(|| TraceError::CaptureFailed("Invalid program path".into()))?;
@@ -212,10 +199,7 @@ impl PtraceTracer {
                         )));
                     }
                     Err(e) => {
-                        return Err(TraceError::CaptureFailed(format!(
-                            "waitpid failed: {}",
-                            e
-                        )));
+                        return Err(TraceError::CaptureFailed(format!("waitpid failed: {}", e)));
                     }
                 }
 
@@ -309,10 +293,7 @@ impl PtraceTracer {
                 return Ok(None);
             }
             Err(e) => {
-                return Err(TraceError::CaptureFailed(format!(
-                    "waitpid error: {}",
-                    e
-                )));
+                return Err(TraceError::CaptureFailed(format!("waitpid error: {}", e)));
             }
         };
 
@@ -395,10 +376,7 @@ impl PtraceTracer {
             }
 
             WaitStatus::Signaled(pid, sig, core_dumped) => {
-                warn!(
-                    "PID {} killed by {:?} (core: {})",
-                    pid, sig, core_dumped
-                );
+                warn!("PID {} killed by {:?} (core: {})", pid, sig, core_dumped);
                 self.traced_pids.remove(&pid.as_raw());
                 Some(PtraceEvent::Signaled {
                     pid: pid.as_raw(),
@@ -559,10 +537,7 @@ mod tests {
             rip: 0x400000,
             ..Default::default()
         };
-        let event = PtraceEvent::Registers {
-            pid: 9999,
-            regs,
-        };
+        let event = PtraceEvent::Registers { pid: 9999, regs };
         assert_eq!(event.pid(), 9999);
         if let PtraceEvent::Registers { regs, .. } = event {
             assert_eq!(regs.rax, 42);
@@ -611,10 +586,7 @@ mod tests {
             }
             Some(PtraceEvent::Signaled { signal_name, .. }) => {
                 // Some systems may report signal instead of exit
-                panic!(
-                    "Expected Exited event, got Signaled: {}",
-                    signal_name
-                );
+                panic!("Expected Exited event, got Signaled: {}", signal_name);
             }
             other => panic!("Expected Exited event, got: {:?}", other),
         }

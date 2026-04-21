@@ -1,16 +1,10 @@
 //! Convert JDWP debugger events into Chronos trace events.
 
-use chronos_domain::{
-    EventData, EventType, JavaEventKind, SourceLocation, TraceEvent,
-};
 use crate::protocol::JdwpEvent;
+use chronos_domain::{EventData, EventType, JavaEventKind, SourceLocation, TraceEvent};
 
 /// Convert a JDWP event into a Chronos TraceEvent.
-pub fn jdwp_event_to_trace_event(
-    ev: JdwpEvent,
-    event_id: u64,
-    timestamp_ns: u64,
-) -> TraceEvent {
+pub fn jdwp_event_to_trace_event(ev: JdwpEvent, event_id: u64, timestamp_ns: u64) -> TraceEvent {
     use crate::protocol::event_kind;
 
     let (event_type, java_event_kind) = match ev.kind {
@@ -132,8 +126,17 @@ mod tests {
 
     #[test]
     fn test_normalize_class_signature() {
-        assert_eq!(normalize_class_signature("Lcom/example/Foo;"), "com.example.Foo");
-        assert_eq!(normalize_class_signature("Ljava/lang/String;"), "java.lang.String");
-        assert_eq!(normalize_class_signature("java.lang.Object"), "java.lang.Object");
+        assert_eq!(
+            normalize_class_signature("Lcom/example/Foo;"),
+            "com.example.Foo"
+        );
+        assert_eq!(
+            normalize_class_signature("Ljava/lang/String;"),
+            "java.lang.String"
+        );
+        assert_eq!(
+            normalize_class_signature("java.lang.Object"),
+            "java.lang.Object"
+        );
     }
 }

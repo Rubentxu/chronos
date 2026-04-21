@@ -221,12 +221,8 @@ impl CaptureRunner {
         let symbol_resolver = {
             let mut resolver = SymbolResolver::new();
             match resolver.load_from_binary(&binary_path) {
-                Ok(()) => {
-                    Some(resolver)
-                }
-                Err(_e) => {
-                    None
-                }
+                Ok(()) => Some(resolver),
+                Err(_e) => None,
             }
         };
 
@@ -256,11 +252,18 @@ impl CaptureRunner {
             let mut resolver = SymbolResolver::new();
             match resolver.load_from_binary(&binary_path) {
                 Ok(()) => {
-                    info!("Loaded {} symbols from {}", resolver.symbol_count(), program);
+                    info!(
+                        "Loaded {} symbols from {}",
+                        resolver.symbol_count(),
+                        program
+                    );
                     Some(resolver)
                 }
                 Err(e) => {
-                    warn!("Could not load symbols from {}: {} (addresses won't resolve to names)", program, e);
+                    warn!(
+                        "Could not load symbols from {}: {} (addresses won't resolve to names)",
+                        program, e
+                    );
                     None
                 }
             }
@@ -303,7 +306,6 @@ impl CaptureRunner {
             Err("No capture thread running".into())
         }
     }
-
 }
 
 /// Main capture loop — runs in the background thread.
@@ -340,10 +342,12 @@ fn run_capture_loop(
 
     // Continue after initial SIGTRAP (launch() leaves the process stopped)
     if ptrace_config.trace_syscalls {
-        tracer.syscall_continue(pid)
+        tracer
+            .syscall_continue(pid)
             .map_err(|e| format!("Initial syscall_continue failed: {}", e))?;
     } else {
-        tracer.continue_execution(pid)
+        tracer
+            .continue_execution(pid)
             .map_err(|e| format!("Initial continue failed: {}", e))?;
     }
 
@@ -390,8 +394,14 @@ fn run_capture_loop(
         let mut handled_as_breakpoint = false;
 
         if let Some(ref mut tracker) = bp_tracker {
-            if let PtraceEvent::Stopped { pid: evt_pid, signal, .. } = &ptrace_event {
-                if *signal == 5 { // SIGTRAP
+            if let PtraceEvent::Stopped {
+                pid: evt_pid,
+                signal,
+                ..
+            } = &ptrace_event
+            {
+                if *signal == 5 {
+                    // SIGTRAP
                     if let Some((func_name, bp_addr)) = tracker.handle_hit() {
                         debug!(
                             "Breakpoint ENTRY at 0x{:x}: {} (PID {})",
@@ -433,7 +443,11 @@ fn run_capture_loop(
 
         // Handle syscall entry/exit toggling
         let adjusted_event = match &ptrace_event {
-            PtraceEvent::Syscall { pid, syscall_nr, is_entry: _ } => {
+            PtraceEvent::Syscall {
+                pid,
+                syscall_nr,
+                is_entry: _,
+            } => {
                 let is_entry = syscall_is_entry.entry(*pid).or_insert(true);
                 let current = *is_entry;
                 *is_entry = !current;
@@ -447,11 +461,9 @@ fn run_capture_loop(
         };
 
         // Convert to TraceEvent
-        if let Some(mut trace_event) = adapter.ptrace_event_to_trace_event(
-            &adjusted_event,
-            event_id,
-            timestamp_ns,
-        ) {
+        if let Some(mut trace_event) =
+            adapter.ptrace_event_to_trace_event(&adjusted_event, event_id, timestamp_ns)
+        {
             // Resolve symbol for the address
             if let Some(resolver) = symbol_resolver {
                 let addr = trace_event.location.address;
@@ -476,7 +488,12 @@ fn run_capture_loop(
                 info!("PID {} exited with code {}", ep, exit_code);
                 end_reason = CaptureEndReason::Exited(*exit_code);
             }
-            PtraceEvent::Signaled { pid: ep, signal, signal_name, .. } => {
+            PtraceEvent::Signaled {
+                pid: ep,
+                signal,
+                signal_name,
+                ..
+            } => {
                 info!("PID {} killed by {} ({})", ep, signal_name, signal);
                 end_reason = CaptureEndReason::Signaled {
                     signal: *signal,

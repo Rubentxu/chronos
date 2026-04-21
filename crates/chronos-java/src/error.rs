@@ -23,7 +23,10 @@ mod tests {
     #[test]
     fn test_java_error_display() {
         let err = JavaError::JavaNotFound;
-        assert_eq!(err.to_string(), "Java not found in PATH (need java + javac)");
+        assert_eq!(
+            err.to_string(),
+            "Java not found in PATH (need java + javac)"
+        );
 
         let err = JavaError::SpawnFailed("No such file".to_string());
         assert_eq!(err.to_string(), "Failed to spawn JVM: No such file");

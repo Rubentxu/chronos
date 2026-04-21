@@ -1,9 +1,9 @@
 //! Spawn a JVM with JDWP enabled and parse the assigned port.
 
-use std::process::Stdio;
-use tokio::process::{Child, Command};
-use tokio::io::{AsyncBufReadExt, BufReader};
 use crate::error::JavaError;
+use std::process::Stdio;
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::{Child, Command};
 
 /// A spawned JVM process with JDWP debugging enabled.
 pub struct JavaSubprocess {
@@ -47,9 +47,10 @@ impl JavaSubprocess {
         })?;
 
         // Read stderr to find the JDWP port
-        let stderr = child.stderr.take().ok_or_else(|| {
-            JavaError::SpawnFailed("Failed to capture stderr".to_string())
-        })?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| JavaError::SpawnFailed("Failed to capture stderr".to_string()))?;
 
         let mut reader = BufReader::new(stderr);
         let mut line = String::new();

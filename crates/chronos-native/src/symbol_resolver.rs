@@ -98,25 +98,16 @@ impl SymbolResolver {
             }
         }
 
-        info!(
-            "Loaded {} symbols from '{}'",
-            count,
-            path.display()
-        );
+        info!("Loaded {} symbols from '{}'", count, path.display());
 
         Ok(())
     }
 
     /// Extract symbol info from an object symbol, if it's a function.
-    fn extract_symbol_info(
-        symbol: &object::Symbol<'_, '_>,
-    ) -> Option<SymbolInfo> {
+    fn extract_symbol_info(symbol: &object::Symbol<'_, '_>) -> Option<SymbolInfo> {
         // Only care about functions (Text section symbols)
         let kind = symbol.kind();
-        if !matches!(
-            kind,
-            object::SymbolKind::Text | object::SymbolKind::Label
-        ) {
+        if !matches!(kind, object::SymbolKind::Text | object::SymbolKind::Label) {
             return None;
         }
 
@@ -132,8 +123,8 @@ impl SymbolResolver {
             name,
             address,
             size,
-            file: None,   // MVP: no DWARF file info
-            line: None,    // MVP: no DWARF line info
+            file: None, // MVP: no DWARF file info
+            line: None, // MVP: no DWARF line info
         })
     }
 
@@ -242,9 +233,7 @@ fn glob_match_inner(text: &[char], pattern: &[char], ti: usize, pi: usize) -> bo
             }
         }
         false
-    } else if ti < text.len()
-        && (pattern[pi] == '?' || pattern[pi] == text[ti])
-    {
+    } else if ti < text.len() && (pattern[pi] == '?' || pattern[pi] == text[ti]) {
         glob_match_inner(text, pattern, ti + 1, pi + 1)
     } else {
         false
@@ -339,20 +328,26 @@ mod tests {
         let mut resolver = SymbolResolver::new();
 
         // Manually insert symbols
-        resolver.symbols.insert(0x1000, SymbolInfo {
-            name: "main".into(),
-            address: 0x1000,
-            size: 50,
-            file: None,
-            line: None,
-        });
-        resolver.symbols.insert(0x2000, SymbolInfo {
-            name: "helper".into(),
-            address: 0x2000,
-            size: 100,
-            file: None,
-            line: None,
-        });
+        resolver.symbols.insert(
+            0x1000,
+            SymbolInfo {
+                name: "main".into(),
+                address: 0x1000,
+                size: 50,
+                file: None,
+                line: None,
+            },
+        );
+        resolver.symbols.insert(
+            0x2000,
+            SymbolInfo {
+                name: "helper".into(),
+                address: 0x2000,
+                size: 100,
+                file: None,
+                line: None,
+            },
+        );
 
         // Exact match
         let sym = resolver.resolve(0x1000).unwrap();
@@ -372,13 +367,16 @@ mod tests {
     #[test]
     fn test_resolve_to_source_location() {
         let mut resolver = SymbolResolver::new();
-        resolver.symbols.insert(0x1000, SymbolInfo {
-            name: "process_data".into(),
-            address: 0x1000,
-            size: 200,
-            file: Some("main.rs".into()),
-            line: Some(42),
-        });
+        resolver.symbols.insert(
+            0x1000,
+            SymbolInfo {
+                name: "process_data".into(),
+                address: 0x1000,
+                size: 200,
+                file: Some("main.rs".into()),
+                line: Some(42),
+            },
+        );
 
         let loc = resolver.resolve_to_source_location(0x1050);
         assert_eq!(loc.function.as_deref(), Some("process_data"));
@@ -398,27 +396,36 @@ mod tests {
     #[test]
     fn test_find_by_name() {
         let mut resolver = SymbolResolver::new();
-        resolver.symbols.insert(0x1000, SymbolInfo {
-            name: "main".into(),
-            address: 0x1000,
-            size: 50,
-            file: None,
-            line: None,
-        });
-        resolver.symbols.insert(0x2000, SymbolInfo {
-            name: "helper_one".into(),
-            address: 0x2000,
-            size: 50,
-            file: None,
-            line: None,
-        });
-        resolver.symbols.insert(0x3000, SymbolInfo {
-            name: "helper_two".into(),
-            address: 0x3000,
-            size: 50,
-            file: None,
-            line: None,
-        });
+        resolver.symbols.insert(
+            0x1000,
+            SymbolInfo {
+                name: "main".into(),
+                address: 0x1000,
+                size: 50,
+                file: None,
+                line: None,
+            },
+        );
+        resolver.symbols.insert(
+            0x2000,
+            SymbolInfo {
+                name: "helper_one".into(),
+                address: 0x2000,
+                size: 50,
+                file: None,
+                line: None,
+            },
+        );
+        resolver.symbols.insert(
+            0x3000,
+            SymbolInfo {
+                name: "helper_two".into(),
+                address: 0x3000,
+                size: 50,
+                file: None,
+                line: None,
+            },
+        );
 
         // Exact match
         let results = resolver.find_by_name("main");
@@ -440,20 +447,26 @@ mod tests {
     #[test]
     fn test_get_function_addresses() {
         let mut resolver = SymbolResolver::new();
-        resolver.symbols.insert(0x1000, SymbolInfo {
-            name: "main".into(),
-            address: 0x1000,
-            size: 50,
-            file: None,
-            line: None,
-        });
-        resolver.symbols.insert(0x2000, SymbolInfo {
-            name: "my_func".into(),
-            address: 0x2000,
-            size: 100,
-            file: None,
-            line: None,
-        });
+        resolver.symbols.insert(
+            0x1000,
+            SymbolInfo {
+                name: "main".into(),
+                address: 0x1000,
+                size: 50,
+                file: None,
+                line: None,
+            },
+        );
+        resolver.symbols.insert(
+            0x2000,
+            SymbolInfo {
+                name: "my_func".into(),
+                address: 0x2000,
+                size: 100,
+                file: None,
+                line: None,
+            },
+        );
 
         let addrs = resolver.get_function_addresses("my_*");
         assert_eq!(addrs.len(), 1);

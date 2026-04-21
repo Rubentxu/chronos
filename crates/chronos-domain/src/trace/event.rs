@@ -2,8 +2,8 @@
 
 use crate::trace::SourceLocation;
 use crate::value::VariableInfo;
-use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 /// Unique identifier for events within a session.
 pub type EventId = u64;
@@ -246,11 +246,24 @@ pub struct RegisterState {
 impl Default for RegisterState {
     fn default() -> Self {
         Self {
-            rax: 0, rbx: 0, rcx: 0, rdx: 0,
-            rsi: 0, rdi: 0, rbp: 0, rsp: 0,
-            r8: 0, r9: 0, r10: 0, r11: 0,
-            r12: 0, r13: 0, r14: 0, r15: 0,
-            rip: 0, rflags: 0,
+            rax: 0,
+            rbx: 0,
+            rcx: 0,
+            rdx: 0,
+            rsi: 0,
+            rdi: 0,
+            rbp: 0,
+            rsp: 0,
+            r8: 0,
+            r9: 0,
+            r10: 0,
+            r11: 0,
+            r12: 0,
+            r13: 0,
+            r14: 0,
+            r15: 0,
+            rip: 0,
+            rflags: 0,
         }
     }
 }
@@ -659,7 +672,10 @@ mod tests {
         let event = TraceEvent::signal(5, 9999, 1, 11, "SIGSEGV", 0xDEAD);
         assert_eq!(event.event_type, EventType::SignalDelivered);
         match &event.data {
-            EventData::Signal { signal_number, signal_name } => {
+            EventData::Signal {
+                signal_number,
+                signal_name,
+            } => {
                 assert_eq!(*signal_number, 11);
                 assert_eq!(signal_name, "SIGSEGV");
             }
@@ -743,10 +759,20 @@ mod tests {
         assert_eq!(call_event.event_id, 1);
         assert_eq!(call_event.timestamp_ns, 1000);
         assert_eq!(call_event.thread_id, 42);
-        assert_eq!(call_event.location.file.as_deref(), Some("/path/to/script.py"));
+        assert_eq!(
+            call_event.location.file.as_deref(),
+            Some("/path/to/script.py")
+        );
         assert_eq!(call_event.location.line, Some(42));
         match &call_event.data {
-            EventData::PythonFrame { qualified_name, file, line, is_generator, locals, event_kind } => {
+            EventData::PythonFrame {
+                qualified_name,
+                file,
+                line,
+                is_generator,
+                locals,
+                event_kind,
+            } => {
                 assert_eq!(qualified_name, "my_module.MyClass.my_method");
                 assert_eq!(file, "/path/to/script.py");
                 assert_eq!(*line, 42);
@@ -776,9 +802,13 @@ mod tests {
         }
 
         // Test python_call_with_locals
-        let locals = vec![
-            VariableInfo::new("x", "42", "int", 0x1000, VariableScope::Local),
-        ];
+        let locals = vec![VariableInfo::new(
+            "x",
+            "42",
+            "int",
+            0x1000,
+            VariableScope::Local,
+        )];
         let call_with_locals = TraceEvent::python_call_with_locals(
             3,
             1500,
@@ -789,7 +819,11 @@ mod tests {
             locals.clone(),
         );
         match &call_with_locals.data {
-            EventData::PythonFrame { locals: event_locals, event_kind, .. } => {
+            EventData::PythonFrame {
+                locals: event_locals,
+                event_kind,
+                ..
+            } => {
                 assert!(event_locals.is_some());
                 assert_eq!(event_locals.as_ref().unwrap().len(), 1);
                 assert_eq!(event_kind, &PythonEventKind::Call);
@@ -861,9 +895,13 @@ mod tests {
             signature: Some("(I)V".to_string()),
             file: Some("Foo.java".to_string()),
             line: Some(42),
-            locals: Some(vec![
-                crate::VariableInfo::new("x", "10", "int", 0x1000, VariableScope::Local),
-            ]),
+            locals: Some(vec![crate::VariableInfo::new(
+                "x",
+                "10",
+                "int",
+                0x1000,
+                VariableScope::Local,
+            )]),
             event_kind: JavaEventKind::MethodEntry,
         };
         let json = serde_json::to_string(&java_frame).unwrap();
@@ -895,9 +933,13 @@ mod tests {
             function_name: "main.foo".to_string(),
             file: Some("foo.go".to_string()),
             line: Some(100),
-            locals: Some(vec![
-                crate::VariableInfo::new("count", "42", "int", 0x2000, VariableScope::Local),
-            ]),
+            locals: Some(vec![crate::VariableInfo::new(
+                "count",
+                "42",
+                "int",
+                0x2000,
+                VariableScope::Local,
+            )]),
             event_kind: GoEventKind::Breakpoint,
         };
         let json = serde_json::to_string(&go_frame).unwrap();
@@ -934,7 +976,12 @@ mod tests {
         assert_eq!(event.thread_id, 42);
         assert_eq!(event.event_type, super::EventType::FunctionEntry);
         match &event.data {
-            super::EventData::JavaFrame { class_name, method_name, event_kind, .. } => {
+            super::EventData::JavaFrame {
+                class_name,
+                method_name,
+                event_kind,
+                ..
+            } => {
                 assert_eq!(class_name, "com.example.Foo");
                 assert_eq!(method_name, "bar");
                 assert_eq!(*event_kind, super::JavaEventKind::MethodEntry);
@@ -945,17 +992,16 @@ mod tests {
 
     #[test]
     fn test_java_return_constructor() {
-        let event = super::TraceEvent::java_return(
-            2,
-            2000,
-            42,
-            "com.example.Foo",
-            "bar",
-        );
+        let event = super::TraceEvent::java_return(2, 2000, 42, "com.example.Foo", "bar");
         assert_eq!(event.event_id, 2);
         assert_eq!(event.timestamp_ns, 2000);
         match &event.data {
-            super::EventData::JavaFrame { class_name, method_name, event_kind, .. } => {
+            super::EventData::JavaFrame {
+                class_name,
+                method_name,
+                event_kind,
+                ..
+            } => {
                 assert_eq!(class_name, "com.example.Foo");
                 assert_eq!(method_name, "bar");
                 assert_eq!(*event_kind, super::JavaEventKind::MethodExit);
@@ -978,7 +1024,12 @@ mod tests {
         assert_eq!(event.event_id, 1);
         assert_eq!(event.timestamp_ns, 1000);
         match &event.data {
-            super::EventData::GoFrame { goroutine_id, function_name, event_kind, .. } => {
+            super::EventData::GoFrame {
+                goroutine_id,
+                function_name,
+                event_kind,
+                ..
+            } => {
                 assert_eq!(*goroutine_id, 12345);
                 assert_eq!(function_name, "main.foo");
                 assert_eq!(*event_kind, super::GoEventKind::Breakpoint);

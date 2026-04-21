@@ -26,7 +26,10 @@ impl ShadowIndex {
 
     /// Get all event IDs that accessed a specific address.
     pub fn get(&self, address: u64) -> &[EventId] {
-        self.entries.get(&address).map(|v: &Vec<EventId>| v.as_slice()).unwrap_or(&[])
+        self.entries
+            .get(&address)
+            .map(|v: &Vec<EventId>| v.as_slice())
+            .unwrap_or(&[])
     }
 
     /// Get all event IDs that accessed any address in a range [start, end).

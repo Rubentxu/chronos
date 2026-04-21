@@ -97,8 +97,12 @@ mod tests {
     #[test]
     fn test_registry_register_and_get() {
         let mut registry = AdapterRegistry::new();
-        let rust_adapter = Arc::new(TestAdapter { language: Language::Rust });
-        let c_adapter = Arc::new(TestAdapter { language: Language::C });
+        let rust_adapter = Arc::new(TestAdapter {
+            language: Language::Rust,
+        });
+        let c_adapter = Arc::new(TestAdapter {
+            language: Language::C,
+        });
 
         registry.register(rust_adapter);
         registry.register(c_adapter);

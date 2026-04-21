@@ -46,12 +46,7 @@ impl CausalityIndex {
     /// Record a write mutation at a memory address.
     ///
     /// Optionally associates the address with a variable name for name-based queries.
-    pub fn record_write(
-        &mut self,
-        addr: u64,
-        entry: CausalityEntry,
-        var_name: Option<&str>,
-    ) {
+    pub fn record_write(&mut self, addr: u64, entry: CausalityEntry, var_name: Option<&str>) {
         self.write_events.entry(addr).or_default().push(entry);
 
         if let Some(name) = var_name {
@@ -65,12 +60,10 @@ impl CausalityIndex {
     /// Find the last write to `addr` that occurred strictly before `before_ts`.
     ///
     /// Returns `None` if no writes exist or all writes are at/after `before_ts`.
-    pub fn find_last_mutation(
-        &self,
-        addr: u64,
-        before_ts: TimestampNs,
-    ) -> Option<&CausalityEntry> {
-        self.write_events.get(&addr)?.iter()
+    pub fn find_last_mutation(&self, addr: u64, before_ts: TimestampNs) -> Option<&CausalityEntry> {
+        self.write_events
+            .get(&addr)?
+            .iter()
             .filter(|e| e.timestamp < before_ts)
             .max_by_key(|e| e.timestamp)
     }

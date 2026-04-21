@@ -42,7 +42,8 @@ if _target:
 pub fn bootstrap_code_for_target(target: &str) -> String {
     // Escape backslashes for Windows paths and regular paths
     let escaped_target = target.replace('\\', "\\\\");
-    format!(r#"
+    format!(
+        r#"
 import sys, json, os
 
 _capture_locals = os.environ.get("CHRONOS_CAPTURE_LOCALS", "1") == "1"
@@ -75,7 +76,8 @@ sys.settrace(_chronos_trace)
 with open(r"{escaped_target}", "r") as f:
     script_code = f.read()
 exec(compile(script_code, r"{escaped_target}", "exec"))
-"#)
+"#
+    )
 }
 
 #[cfg(test)]
@@ -85,8 +87,17 @@ mod tests {
     #[test]
     fn test_bootstrap_code_includes_settrace() {
         let code = bootstrap_code();
-        assert!(code.contains("sys.settrace"), "Bootstrap code should call sys.settrace");
-        assert!(code.contains("_chronos_trace"), "Bootstrap code should define _chronos_trace");
-        assert!(code.contains("json.dumps"), "Bootstrap code should output JSON");
+        assert!(
+            code.contains("sys.settrace"),
+            "Bootstrap code should call sys.settrace"
+        );
+        assert!(
+            code.contains("_chronos_trace"),
+            "Bootstrap code should define _chronos_trace"
+        );
+        assert!(
+            code.contains("json.dumps"),
+            "Bootstrap code should output JSON"
+        );
     }
 }

@@ -95,11 +95,17 @@ mod tests {
         let pipeline = CapturePipeline::with_capacity(2);
 
         // Fill the channel
-        assert!(pipeline.try_send(TraceEvent::function_entry(1, 100, 1, "a", 0x1)).unwrap());
-        assert!(pipeline.try_send(TraceEvent::function_entry(2, 200, 1, "b", 0x2)).unwrap());
+        assert!(pipeline
+            .try_send(TraceEvent::function_entry(1, 100, 1, "a", 0x1))
+            .unwrap());
+        assert!(pipeline
+            .try_send(TraceEvent::function_entry(2, 200, 1, "b", 0x2))
+            .unwrap());
 
         // Channel is full, backpressure
-        assert!(!pipeline.try_send(TraceEvent::function_entry(3, 300, 1, "c", 0x3)).unwrap());
+        assert!(!pipeline
+            .try_send(TraceEvent::function_entry(3, 300, 1, "c", 0x3))
+            .unwrap());
     }
 
     #[tokio::test]

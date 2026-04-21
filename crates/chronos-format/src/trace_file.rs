@@ -1,6 +1,6 @@
 //! Trace file reader and writer.
 
-use crate::{TraceHeader, decode, encode};
+use crate::{decode, encode, TraceHeader};
 use chronos_domain::TraceEvent;
 use std::io::{self, BufReader, BufWriter, Read, Seek, Write};
 use std::path::Path;
@@ -122,13 +122,20 @@ impl TraceFileReader {
         if header.magic != crate::CHRONOS_MAGIC {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Invalid magic: expected {:?}, got {:?}", crate::CHRONOS_MAGIC, header.magic),
+                format!(
+                    "Invalid magic: expected {:?}, got {:?}",
+                    crate::CHRONOS_MAGIC,
+                    header.magic
+                ),
             ));
         }
 
         let events_offset = 8 + header_len as u64;
 
-        Ok(Self { header, events_offset })
+        Ok(Self {
+            header,
+            events_offset,
+        })
     }
 
     /// Get the trace header.
@@ -256,7 +263,11 @@ mod tests {
 
         // Debug: check file size
         let file_meta = std::fs::metadata(&path).unwrap();
-        eprintln!("DEBUG: file size = {} bytes, events_offset = {}", file_meta.len(), reader.reader.events_offset);
+        eprintln!(
+            "DEBUG: file size = {} bytes, events_offset = {}",
+            file_meta.len(),
+            reader.reader.events_offset
+        );
 
         let events = reader.read_all_events().unwrap();
         eprintln!("DEBUG: events.len() = {}", events.len());

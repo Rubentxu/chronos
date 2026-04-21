@@ -4,9 +4,9 @@
 //! and a debugger. This module implements the subset needed to receive
 //! method entry/exit and exception events.
 
-use tokio::net::TcpStream;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use crate::error::JavaError;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 
 /// JDWP command packet header size (11 bytes).
 const JDWP_HEADER_SIZE: usize = 11;
@@ -280,8 +280,12 @@ mod tests {
         // Build a command with data
         let data = [0x01, 0x02, 0x03];
         let packet_with_data = build_command_packet(43, 1, 99, &data);
-        let length_with_data =
-            u32::from_be_bytes([packet_with_data[0], packet_with_data[1], packet_with_data[2], packet_with_data[3]]);
+        let length_with_data = u32::from_be_bytes([
+            packet_with_data[0],
+            packet_with_data[1],
+            packet_with_data[2],
+            packet_with_data[3],
+        ]);
         assert_eq!(length_with_data, 14); // 11 header + 3 data
     }
 

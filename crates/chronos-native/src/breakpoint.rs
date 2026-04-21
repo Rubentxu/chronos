@@ -129,7 +129,9 @@ impl BreakpointManager {
     ///
     /// Restores the original byte if the breakpoint is enabled.
     pub fn remove_breakpoint(&mut self, address: u64) -> Result<(), String> {
-        let bp = self.breakpoints.remove(&address)
+        let bp = self
+            .breakpoints
+            .remove(&address)
             .ok_or_else(|| format!("No breakpoint at 0x{:x}", address))?;
 
         if bp.enabled {
@@ -142,7 +144,9 @@ impl BreakpointManager {
 
     /// Remove a breakpoint by its ID.
     pub fn remove_breakpoint_by_id(&mut self, id: u64) -> Result<(), String> {
-        let address = self.breakpoints.values()
+        let address = self
+            .breakpoints
+            .values()
             .find(|bp| bp.id == id)
             .map(|bp| bp.address)
             .ok_or_else(|| format!("No breakpoint with ID {}", id))?;
@@ -153,7 +157,9 @@ impl BreakpointManager {
     /// Disable a breakpoint without removing it (restores original byte).
     pub fn disable_breakpoint(&mut self, address: u64) -> Result<(), String> {
         let original_byte = {
-            let bp = self.breakpoints.get(&address)
+            let bp = self
+                .breakpoints
+                .get(&address)
                 .ok_or_else(|| format!("No breakpoint at 0x{:x}", address))?;
 
             if !bp.enabled {
@@ -182,7 +188,9 @@ impl BreakpointManager {
     /// Re-enable a previously disabled breakpoint.
     pub fn enable_breakpoint(&mut self, address: u64) -> Result<(), String> {
         let is_enabled = {
-            let bp = self.breakpoints.get(&address)
+            let bp = self
+                .breakpoints
+                .get(&address)
                 .ok_or_else(|| format!("No breakpoint at 0x{:x}", address))?;
             bp.enabled
         };
@@ -226,8 +234,8 @@ impl BreakpointManager {
     /// Returns the address of the breakpoint that was hit, or None if not ours.
     pub fn handle_breakpoint_hit(&mut self) -> Result<Option<u64>, String> {
         // Get current RIP
-        let regs = ptrace::getregs(self.pid)
-            .map_err(|e| format!("PTRACE_GETREGS failed: {}", e))?;
+        let regs =
+            ptrace::getregs(self.pid).map_err(|e| format!("PTRACE_GETREGS failed: {}", e))?;
 
         let rip = regs.rip;
         let bp_address = rip - 1;
@@ -249,12 +257,10 @@ impl BreakpointManager {
         // Set RIP back to the breakpoint address
         let mut new_regs = regs;
         new_regs.rip = bp_address;
-        ptrace::setregs(self.pid, new_regs)
-            .map_err(|e| format!("PTRACE_SETREGS failed: {}", e))?;
+        ptrace::setregs(self.pid, new_regs).map_err(|e| format!("PTRACE_SETREGS failed: {}", e))?;
 
         // Single-step over the original instruction
-        ptrace::step(self.pid, None)
-            .map_err(|e| format!("PTRACE_SINGLESTEP failed: {}", e))?;
+        ptrace::step(self.pid, None).map_err(|e| format!("PTRACE_SINGLESTEP failed: {}", e))?;
 
         // Wait for the step to complete
         nix::sys::wait::waitpid(self.pid, None)

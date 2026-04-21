@@ -3,6 +3,8 @@
 //! This adapter spawns a Python subprocess with sys.settrace enabled
 //! to capture function call/return/exception events.
 
+use crate::parser::{locals_to_variable_info, RawPythonEvent};
+use crate::subprocess::PythonSubprocess;
 use chronos_capture::TraceAdapter;
 use chronos_domain::{
     CaptureConfig, CaptureSession, EventData, EventType, Language, PythonEventKind, SourceLocation,
@@ -11,8 +13,6 @@ use chronos_domain::{
 use std::sync::Mutex;
 use std::time::Instant;
 use which::which;
-use crate::parser::{locals_to_variable_info, RawPythonEvent};
-use crate::subprocess::PythonSubprocess;
 
 /// Interior mutable state of the Python adapter.
 struct PythonAdapterState {
@@ -229,7 +229,11 @@ mod tests {
             file: "test.py".to_string(),
             line: 10,
             is_generator: Some(false),
-            locals: Some(vec![("x".to_string(), "42".to_string())].into_iter().collect()),
+            locals: Some(
+                vec![("x".to_string(), "42".to_string())]
+                    .into_iter()
+                    .collect(),
+            ),
         };
 
         let trace_event = PythonAdapter::raw_to_trace_event(&mut state, raw);
@@ -238,7 +242,12 @@ mod tests {
         assert_eq!(trace_event.location.line, Some(10));
         assert_eq!(trace_event.location.function.as_deref(), Some("foo"));
         match &trace_event.data {
-            EventData::PythonFrame { qualified_name, event_kind, locals, .. } => {
+            EventData::PythonFrame {
+                qualified_name,
+                event_kind,
+                locals,
+                ..
+            } => {
                 assert_eq!(qualified_name, "foo");
                 assert_eq!(*event_kind, PythonEventKind::Call);
                 assert!(locals.is_some());
@@ -268,7 +277,11 @@ mod tests {
 
         assert_eq!(trace_event.event_type, EventType::FunctionExit);
         match &trace_event.data {
-            EventData::PythonFrame { qualified_name, event_kind, .. } => {
+            EventData::PythonFrame {
+                qualified_name,
+                event_kind,
+                ..
+            } => {
                 assert_eq!(qualified_name, "bar");
                 assert_eq!(*event_kind, PythonEventKind::Return);
             }

@@ -99,8 +99,8 @@ async fn test_python_nested_calls() {
 #[test]
 fn test_query_events_python_frame_filter() {
     // T17: Verify query_events filter works on Python traces
-    use chronos_domain::{EventData, EventType, PythonEventKind, SourceLocation, TraceEvent};
     use chronos_domain::TraceQuery;
+    use chronos_domain::{EventData, EventType, PythonEventKind, SourceLocation, TraceEvent};
     use chronos_query::QueryEngine;
 
     // Create sample Python trace events
@@ -180,7 +180,8 @@ fn test_query_events_python_frame_filter() {
     assert_eq!(result.events.len(), 2, "Should find 2 FunctionEntry events");
 
     // Verify function names
-    let function_names: Vec<&str> = result.events
+    let function_names: Vec<&str> = result
+        .events
         .iter()
         .filter_map(|e| e.location.function.as_deref())
         .collect();
@@ -296,7 +297,11 @@ fn test_get_call_stack_python_frames() {
     // we verify the events have the right Python frame data
     for event in &result.events {
         match &event.data {
-            EventData::PythonFrame { qualified_name, event_kind, .. } => {
+            EventData::PythonFrame {
+                qualified_name,
+                event_kind,
+                ..
+            } => {
                 assert_eq!(event_kind, &PythonEventKind::Call);
                 assert!(
                     qualified_name == "foo" || qualified_name == "__main__.main",

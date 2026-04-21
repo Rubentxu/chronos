@@ -26,9 +26,15 @@ mod tests {
         assert_eq!(err.to_string(), "Python 3 not found in PATH");
 
         let err = PythonError::SpawnFailed("No such file".to_string());
-        assert_eq!(err.to_string(), "Failed to spawn Python subprocess: No such file");
+        assert_eq!(
+            err.to_string(),
+            "Failed to spawn Python subprocess: No such file"
+        );
 
         let err = PythonError::ProcessExited("exit code: 1".to_string());
-        assert_eq!(err.to_string(), "Python process exited unexpectedly: code=exit code: 1");
+        assert_eq!(
+            err.to_string(),
+            "Python process exited unexpectedly: code=exit code: 1"
+        );
     }
 }

@@ -1,9 +1,9 @@
 //! Integration tests for chronos-go.
 
-use std::sync::Arc;
 use chronos_capture::{AdapterRegistry, TraceAdapter};
 use chronos_domain::Language;
 use chronos_go::GoAdapter;
+use std::sync::Arc;
 
 #[test]
 fn test_registry_has_go_adapter() {
@@ -34,9 +34,9 @@ fn test_go_adapter_is_available_check() {
 #[tokio::test]
 #[ignore] // requires dlv on PATH
 async fn test_go_main_capture() {
-    use tempfile::TempDir;
     use std::fs;
     use std::process::Command;
+    use tempfile::TempDir;
 
     // Create a temp directory for our test
     let temp_dir = TempDir::new().unwrap();
@@ -79,9 +79,7 @@ func main() {
     // for full debugging support, which we don't do here.
     // The test verifies the spawn mechanism works.
     let adapter = GoAdapter::new();
-    let config = chronos_capture::CaptureConfig::new(
-        binary_path.to_str().unwrap()
-    );
+    let config = chronos_capture::CaptureConfig::new(binary_path.to_str().unwrap());
 
     // This may fail because the binary wasn't built for debugging,
     // but it tests that the adapter can attempt to spawn dlv
