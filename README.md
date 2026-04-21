@@ -94,14 +94,14 @@ cargo build --release
 ### Run Tests
 
 ```bash
-# All tests (158 tests)
+# All tests (171 tests, 0 ignored)
 cargo test --workspace
+
+# Ptrace tests require single-threaded execution (fork safety)
+cargo test --workspace -- --test-threads=1
 
 # Integration tests only (compiles C fixtures with gcc)
 cargo test --package chronos-e2e
-
-# Skip ptrace integration tests (require running process)
-cargo test --workspace -- --skip ignored
 ```
 
 ---
@@ -173,18 +173,21 @@ AI: Register RDI (destination pointer) was 0x0 — a null pointer was passed
 
 ## 📊 Project Status
 
-### Phase 1 MVP ✅ (Current)
+### Phase 1 MVP ✅ (v0.2.0 — Current)
 
 - [x] Domain model (events, indices, queries)
 - [x] Binary trace file format (bincode + LZ4 compression)
 - [x] Capture pipeline with backpressure
 - [x] Linux ptrace tracer (fork/exec/attach)
 - [x] ELF symbol resolution (address → function name)
-- [x] INT3 breakpoint manager
+- [x] INT3 breakpoint manager — intercepts every ELF function entry
+- [x] Syscall name table — 340+ x86_64 syscall names (write, mmap, exit…)
+- [x] Signal delivery — SIGSEGV/SIGABRT forwarded cleanly, crashes terminate gracefully
 - [x] In-memory shadow + temporal indices
 - [x] Query engine with call stack reconstruction
-- [x] MCP server with 10 tools
-- [x] End-to-end integration tests
+- [x] MCP server with 10 tools — synchronous capture, no race conditions
+- [x] Noisy event filtering — internal register snapshots excluded from query results
+- [x] End-to-end integration tests (171 tests, 0 ignored)
 - [x] Server binary + MCP config files
 
 ### Phase 2 (Planned)
@@ -217,12 +220,12 @@ AI: Register RDI (destination pointer) was 0x0 — a null pointer was passed
 | chronos-domain | 50 | Core domain types, serialization, indices |
 | chronos-format | 10 | Binary encode/decode, trace file roundtrip |
 | chronos-capture | 8 | Adapter registry, pipeline, backpressure |
-| chronos-native | 42 (+3 ptrace) | Ptrace, ELF symbols, breakpoints |
+| chronos-native | 90 | Ptrace, ELF symbols, breakpoints, syscall table |
 | chronos-index | 5 | Index builder, range queries, temporal chunks |
 | chronos-query | 24 | Query engine, call stack, state diff |
 | chronos-mcp | 9 | Server construction, tool params, error handling |
-| chronos-e2e | 10 | Full pipeline: compile → capture → index → query |
-| **Total** | **158** | All passing, 3 ptrace tests ignored |
+| chronos-e2e | 13 | Full pipeline: compile → capture → index → query |
+| **Total** | **171** | All passing, 0 ignored |
 
 ---
 

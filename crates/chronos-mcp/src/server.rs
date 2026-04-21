@@ -3,7 +3,7 @@
 //! Implements 10 tools for AI-assisted debugging.
 
 use chronos_domain::{
-    CaptureConfig, EventType, TraceEvent, TraceQuery,
+    CaptureConfig, EventData, EventType, TraceEvent, TraceQuery,
 };
 use chronos_index::builder::IndexBuilder;
 use chronos_native::capture_runner::{CaptureRunner, CaptureEndReason};
@@ -27,7 +27,10 @@ pub struct ChronosServer {
 }
 
 /// An active capture session with its runner.
+/// Reserved for future attach/detach workflows.
+#[allow(dead_code)]
 struct ActiveSession {
+    #[allow(dead_code)]
     pid: u32,
     runner: CaptureRunner,
 }
@@ -181,6 +184,22 @@ impl ChronosServer {
     }
 
     async fn build_and_store_engine(&self, session_id: &str, events: Vec<TraceEvent>) {
+        // Filter out internal/noisy events before indexing:
+        // - EventType::Custom with EventData::Registers → ptrace register snapshots (infrastructure noise)
+        // - EventType::Unknown → unclassified ptrace stops
+        // These are implementation details of the tracer, not meaningful for AI analysis.
+        let events: Vec<TraceEvent> = events
+            .into_iter()
+            .filter(|e| {
+                // Keep everything except raw register snapshots and unknowns
+                match (&e.event_type, &e.data) {
+                    (EventType::Custom, EventData::Registers(_)) => false,
+                    (EventType::Unknown, _) => false,
+                    _ => true,
+                }
+            })
+            .collect();
+
         let mut builder = IndexBuilder::new();
         builder.push_all(&events);
         let indices = builder.finalize();

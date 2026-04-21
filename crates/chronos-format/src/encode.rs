@@ -15,6 +15,7 @@ pub fn encode_event(event: &TraceEvent) -> Vec<u8> {
 }
 
 /// Encode a trace event with LZ4 compression.
+#[allow(dead_code)] // Used by future compressed trace format
 pub fn encode_event_compressed(event: &TraceEvent) -> Vec<u8> {
     let raw = encode_event(event);
     lz4_flex::compress_prepend_size(&raw)

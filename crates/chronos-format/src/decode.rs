@@ -15,6 +15,7 @@ pub fn decode_event(data: &[u8]) -> Result<TraceEvent, String> {
 }
 
 /// Decode a compressed event.
+#[allow(dead_code)] // Used by future compressed trace format
 pub fn decode_event_compressed(data: &[u8]) -> Result<TraceEvent, String> {
     let decompressed = lz4_flex::decompress_size_prepended(data)
         .map_err(|e| format!("LZ4 decompression failed: {}", e))?;
