@@ -15,6 +15,7 @@ members = [
     "crates/chronos-java",
     "crates/chronos-go",
     "crates/chronos-js",
+    "crates/chronos-sandbox",
 ]
 
 [workspace.package]
@@ -39,6 +40,7 @@ chronos-python = { path = "crates/chronos-python" }
 chronos-java = { path = "crates/chronos-java" }
 chronos-go = { path = "crates/chronos-go" }
 chronos-js = { path = "crates/chronos-js" }
+chronos-sandbox = { path = "crates/chronos-sandbox" }
 
 # External
 tokio = { version = "1", features = ["full"] }

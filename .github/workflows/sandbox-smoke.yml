@@ -1,0 +1,28 @@
+name: Sandbox Smoke Tests
+on:
+  push:
+    paths:
+      - 'crates/chronos-sandbox/**'
+      - '.github/workflows/sandbox-smoke.yml'
+  pull_request:
+    paths:
+      - 'crates/chronos-sandbox/**'
+
+jobs:
+  smoke:
+    name: Sandbox smoke (no containers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: chronos-sandbox
+      - name: Build sandbox
+        run: cargo build -p chronos-sandbox
+      - name: Clippy
+        run: cargo clippy -p chronos-sandbox -- -D warnings
+      - name: Smoke tests
+        run: cargo test -p chronos-sandbox -- --test-threads=1
+      - name: Build benchmarks
+        run: cargo build -p chronos-sandbox --benches

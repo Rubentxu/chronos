@@ -119,7 +119,7 @@ impl SymbolResolver {
         let mut resolver = Self::new();
         resolver
             .load_from_binary(path)
-            .map_err(|e| SymbolResolverError::IoError(e))?;
+            .map_err(SymbolResolverError::IoError)?;
         Ok(resolver)
     }
 

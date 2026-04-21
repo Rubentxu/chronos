@@ -1,0 +1,25 @@
+name: go-ptrace
+language: go
+image: golang:1.22
+debug_interface: dlv
+ports:
+  - 2345:2345
+caps:
+  - SYS_PTRACE
+security_opt:
+  - seccomp=unconfined
+workload:
+  type: http_server
+  duration_secs: 30
+kpi_thresholds:
+  cpu_overhead_pct: 8.0
+  memory_overhead_mb: 80.0
+  capture_latency_p99_ms: 120.0
+  events_per_sec_min: 800
+scenarios:
+  - name: attach_and_capture
+    description: Attach Delve debugger and capture events
+    timeout_secs: 60
+  - name: breakpoint_hit
+    description: Set breakpoint and verify hit detection
+    timeout_secs: 30

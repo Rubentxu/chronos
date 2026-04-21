@@ -1,0 +1,12 @@
+[Unit]
+Description=Chronos sandbox NodeJS target
+
+[Container]
+Image=node:20
+ContainerName=chronos-sandbox-nodejs
+AddCapability=SYS_PTRACE
+SecurityLabelDisable=true
+Annotation=run.oci.keep_original_groups=1
+
+[Service]
+Restart=no
