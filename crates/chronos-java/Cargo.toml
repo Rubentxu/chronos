@@ -1,0 +1,18 @@
+[package]
+name = "chronos-java"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+chronos-domain = { path = "../chronos-domain" }
+chronos-capture = { path = "../chronos-capture" }
+tokio = { workspace = true, features = ["net", "io-util", "process", "rt-multi-thread", "macros"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+which = "7"
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+tempfile = "3"

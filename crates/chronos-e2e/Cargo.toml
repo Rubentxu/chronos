@@ -12,6 +12,8 @@ chronos-index = { workspace = true }
 chronos-query = { workspace = true }
 chronos-format = { workspace = true }
 chronos-mcp = { workspace = true }
+chronos-java = { workspace = true }
+chronos-go = { workspace = true }
 tokio = { workspace = true }
 rmcp = { version = "1.5", features = ["server", "macros", "schemars", "transport-io"] }
 tempfile = "3"

@@ -90,6 +90,23 @@ pub enum PythonEventKind {
     Exception,
 }
 
+/// Kind of Java trace event.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
+pub enum JavaEventKind {
+    MethodEntry,
+    MethodExit,
+    Exception,
+}
+
+/// Kind of Go trace event.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
+pub enum GoEventKind {
+    Breakpoint,
+    Step,
+    GoroutineStop,
+    Exception,
+}
+
 /// Event-specific data carried by a [`TraceEvent`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum EventData {
@@ -166,6 +183,40 @@ pub enum EventData {
         locals: Option<Vec<VariableInfo>>,
         /// Kind of Python event
         event_kind: PythonEventKind,
+    },
+
+    /// Java method call/return/exception data.
+    JavaFrame {
+        /// Fully qualified class name, e.g. "com.example.Foo"
+        class_name: String,
+        /// Method name, e.g. "bar"
+        method_name: String,
+        /// JVM descriptor, e.g. "(I)V"
+        signature: Option<String>,
+        /// Source file name
+        file: Option<String>,
+        /// Source line number
+        line: Option<u32>,
+        /// Captured local variables
+        locals: Option<Vec<VariableInfo>>,
+        /// Kind of Java event
+        event_kind: JavaEventKind,
+    },
+
+    /// Go breakpoint/step/goroutine stop data.
+    GoFrame {
+        /// Goroutine ID
+        goroutine_id: u64,
+        /// Function name, e.g. "main.foo"
+        function_name: String,
+        /// Source file name
+        file: Option<String>,
+        /// Source line number
+        line: Option<u32>,
+        /// Captured local variables
+        locals: Option<Vec<VariableInfo>>,
+        /// Kind of Go event
+        event_kind: GoEventKind,
     },
 }
 
@@ -439,6 +490,107 @@ impl TraceEvent {
     pub fn function_name(&self) -> Option<&str> {
         self.location.function.as_deref()
     }
+
+    /// Create a Java method entry event.
+    pub fn java_call(
+        event_id: EventId,
+        timestamp_ns: TimestampNs,
+        thread_id: ThreadId,
+        class_name: impl Into<String>,
+        method_name: impl Into<String>,
+        file: Option<String>,
+        line: Option<u32>,
+    ) -> Self {
+        let class_name = class_name.into();
+        let method_name = method_name.into();
+        let qualified_name = format!("{}.{}", class_name, method_name);
+        Self {
+            event_id,
+            timestamp_ns,
+            thread_id,
+            event_type: EventType::FunctionEntry,
+            location: SourceLocation {
+                file: file.clone(),
+                line,
+                function: Some(qualified_name.clone()),
+                ..Default::default()
+            },
+            data: EventData::JavaFrame {
+                class_name,
+                method_name,
+                signature: None,
+                file,
+                line,
+                locals: None,
+                event_kind: JavaEventKind::MethodEntry,
+            },
+        }
+    }
+
+    /// Create a Java method exit event.
+    pub fn java_return(
+        event_id: EventId,
+        timestamp_ns: TimestampNs,
+        thread_id: ThreadId,
+        class_name: impl Into<String>,
+        method_name: impl Into<String>,
+    ) -> Self {
+        let class_name = class_name.into();
+        let method_name = method_name.into();
+        let qualified_name = format!("{}.{}", class_name, method_name);
+        Self {
+            event_id,
+            timestamp_ns,
+            thread_id,
+            event_type: EventType::FunctionExit,
+            location: SourceLocation {
+                function: Some(qualified_name),
+                ..Default::default()
+            },
+            data: EventData::JavaFrame {
+                class_name,
+                method_name,
+                signature: None,
+                file: None,
+                line: None,
+                locals: None,
+                event_kind: JavaEventKind::MethodExit,
+            },
+        }
+    }
+
+    /// Create a Go frame event.
+    pub fn go_frame(
+        event_id: EventId,
+        timestamp_ns: TimestampNs,
+        goroutine_id: u64,
+        function_name: impl Into<String>,
+        file: Option<String>,
+        line: Option<u32>,
+        kind: GoEventKind,
+    ) -> Self {
+        let function_name = function_name.into();
+        Self {
+            event_id,
+            timestamp_ns,
+            thread_id: goroutine_id,
+            event_type: EventType::BreakpointHit,
+            location: SourceLocation {
+                file: file.clone(),
+                line,
+                function: Some(function_name.clone()),
+                ..Default::default()
+            },
+            data: EventData::GoFrame {
+                goroutine_id,
+                function_name,
+                file,
+                line,
+                locals: None,
+                event_kind: kind,
+            },
+        }
+    }
 }
 
 // SourceLocation needs Default for the ..Default::default() pattern
@@ -643,6 +795,195 @@ mod tests {
                 assert_eq!(event_kind, &PythonEventKind::Call);
             }
             _ => panic!("Expected PythonFrame data"),
+        }
+    }
+
+    #[test]
+    fn test_java_event_kind_serialization() {
+        // Test JavaEventKind variants
+        assert_eq!(
+            serde_json::to_string(&super::JavaEventKind::MethodEntry).unwrap(),
+            "\"MethodEntry\""
+        );
+        assert_eq!(
+            serde_json::to_string(&super::JavaEventKind::MethodExit).unwrap(),
+            "\"MethodExit\""
+        );
+        assert_eq!(
+            serde_json::to_string(&super::JavaEventKind::Exception).unwrap(),
+            "\"Exception\""
+        );
+
+        // Test deserialization
+        let parsed: super::JavaEventKind = serde_json::from_str("\"MethodEntry\"").unwrap();
+        assert_eq!(parsed, super::JavaEventKind::MethodEntry);
+        let parsed: super::JavaEventKind = serde_json::from_str("\"MethodExit\"").unwrap();
+        assert_eq!(parsed, super::JavaEventKind::MethodExit);
+        let parsed: super::JavaEventKind = serde_json::from_str("\"Exception\"").unwrap();
+        assert_eq!(parsed, super::JavaEventKind::Exception);
+    }
+
+    #[test]
+    fn test_go_event_kind_serialization() {
+        // Test GoEventKind variants
+        assert_eq!(
+            serde_json::to_string(&super::GoEventKind::Breakpoint).unwrap(),
+            "\"Breakpoint\""
+        );
+        assert_eq!(
+            serde_json::to_string(&super::GoEventKind::Step).unwrap(),
+            "\"Step\""
+        );
+        assert_eq!(
+            serde_json::to_string(&super::GoEventKind::GoroutineStop).unwrap(),
+            "\"GoroutineStop\""
+        );
+        assert_eq!(
+            serde_json::to_string(&super::GoEventKind::Exception).unwrap(),
+            "\"Exception\""
+        );
+
+        // Test deserialization
+        let parsed: super::GoEventKind = serde_json::from_str("\"Breakpoint\"").unwrap();
+        assert_eq!(parsed, super::GoEventKind::Breakpoint);
+        let parsed: super::GoEventKind = serde_json::from_str("\"GoroutineStop\"").unwrap();
+        assert_eq!(parsed, super::GoEventKind::GoroutineStop);
+    }
+
+    #[test]
+    fn test_java_frame_serialization_roundtrip() {
+        use super::{EventData, JavaEventKind};
+        use crate::VariableScope;
+
+        let java_frame = EventData::JavaFrame {
+            class_name: "com.example.Foo".to_string(),
+            method_name: "bar".to_string(),
+            signature: Some("(I)V".to_string()),
+            file: Some("Foo.java".to_string()),
+            line: Some(42),
+            locals: Some(vec![
+                crate::VariableInfo::new("x", "10", "int", 0x1000, VariableScope::Local),
+            ]),
+            event_kind: JavaEventKind::MethodEntry,
+        };
+        let json = serde_json::to_string(&java_frame).unwrap();
+        let deserialized: EventData = serde_json::from_str(&json).unwrap();
+        assert_eq!(java_frame, deserialized);
+
+        // Test without optional fields
+        let java_frame_no_opts = EventData::JavaFrame {
+            class_name: "com.example.Bar".to_string(),
+            method_name: "baz".to_string(),
+            signature: None,
+            file: None,
+            line: None,
+            locals: None,
+            event_kind: JavaEventKind::MethodExit,
+        };
+        let json = serde_json::to_string(&java_frame_no_opts).unwrap();
+        let deserialized: EventData = serde_json::from_str(&json).unwrap();
+        assert_eq!(java_frame_no_opts, deserialized);
+    }
+
+    #[test]
+    fn test_go_frame_serialization_roundtrip() {
+        use super::{EventData, GoEventKind};
+        use crate::VariableScope;
+
+        let go_frame = EventData::GoFrame {
+            goroutine_id: 12345,
+            function_name: "main.foo".to_string(),
+            file: Some("foo.go".to_string()),
+            line: Some(100),
+            locals: Some(vec![
+                crate::VariableInfo::new("count", "42", "int", 0x2000, VariableScope::Local),
+            ]),
+            event_kind: GoEventKind::Breakpoint,
+        };
+        let json = serde_json::to_string(&go_frame).unwrap();
+        let deserialized: EventData = serde_json::from_str(&json).unwrap();
+        assert_eq!(go_frame, deserialized);
+
+        // Test without optional fields
+        let go_frame_no_opts = EventData::GoFrame {
+            goroutine_id: 99,
+            function_name: "runtime.main".to_string(),
+            file: None,
+            line: None,
+            locals: None,
+            event_kind: GoEventKind::GoroutineStop,
+        };
+        let json = serde_json::to_string(&go_frame_no_opts).unwrap();
+        let deserialized: EventData = serde_json::from_str(&json).unwrap();
+        assert_eq!(go_frame_no_opts, deserialized);
+    }
+
+    #[test]
+    fn test_java_call_constructor() {
+        let event = super::TraceEvent::java_call(
+            1,
+            1000,
+            42,
+            "com.example.Foo",
+            "bar",
+            Some("Foo.java".to_string()),
+            Some(10),
+        );
+        assert_eq!(event.event_id, 1);
+        assert_eq!(event.timestamp_ns, 1000);
+        assert_eq!(event.thread_id, 42);
+        assert_eq!(event.event_type, super::EventType::FunctionEntry);
+        match &event.data {
+            super::EventData::JavaFrame { class_name, method_name, event_kind, .. } => {
+                assert_eq!(class_name, "com.example.Foo");
+                assert_eq!(method_name, "bar");
+                assert_eq!(*event_kind, super::JavaEventKind::MethodEntry);
+            }
+            _ => panic!("Expected JavaFrame data"),
+        }
+    }
+
+    #[test]
+    fn test_java_return_constructor() {
+        let event = super::TraceEvent::java_return(
+            2,
+            2000,
+            42,
+            "com.example.Foo",
+            "bar",
+        );
+        assert_eq!(event.event_id, 2);
+        assert_eq!(event.timestamp_ns, 2000);
+        match &event.data {
+            super::EventData::JavaFrame { class_name, method_name, event_kind, .. } => {
+                assert_eq!(class_name, "com.example.Foo");
+                assert_eq!(method_name, "bar");
+                assert_eq!(*event_kind, super::JavaEventKind::MethodExit);
+            }
+            _ => panic!("Expected JavaFrame data"),
+        }
+    }
+
+    #[test]
+    fn test_go_frame_constructor() {
+        let event = super::TraceEvent::go_frame(
+            1,
+            1000,
+            12345,
+            "main.foo",
+            Some("foo.go".to_string()),
+            Some(42),
+            super::GoEventKind::Breakpoint,
+        );
+        assert_eq!(event.event_id, 1);
+        assert_eq!(event.timestamp_ns, 1000);
+        match &event.data {
+            super::EventData::GoFrame { goroutine_id, function_name, event_kind, .. } => {
+                assert_eq!(*goroutine_id, 12345);
+                assert_eq!(function_name, "main.foo");
+                assert_eq!(*event_kind, super::GoEventKind::Breakpoint);
+            }
+            _ => panic!("Expected GoFrame data"),
         }
     }
 }

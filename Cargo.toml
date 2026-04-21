@@ -11,6 +11,8 @@ members = [
     "crates/chronos-e2e",
     "crates/chronos-ebpf",
     "crates/chronos-python",
+    "crates/chronos-java",
+    "crates/chronos-go",
 ]
 
 [workspace.package]
@@ -31,6 +33,8 @@ chronos-mcp = { path = "crates/chronos-mcp" }
 chronos-e2e = { path = "crates/chronos-e2e" }
 chronos-ebpf = { path = "crates/chronos-ebpf" }
 chronos-python = { path = "crates/chronos-python" }
+chronos-java = { path = "crates/chronos-java" }
+chronos-go = { path = "crates/chronos-go" }
 
 # External
 tokio = { version = "1", features = ["full"] }

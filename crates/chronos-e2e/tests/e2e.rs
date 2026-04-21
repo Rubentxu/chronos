@@ -486,3 +486,38 @@ fn test_capture_runner_segfault() {
             evt.event_type, evt.location.address, func, evt.thread_id);
     }
 }
+
+// ============================================================================
+// Java and Go adapter registry tests
+// ============================================================================
+
+use chronos_capture::{AdapterRegistry, TraceAdapter};
+use chronos_domain::Language;
+
+#[test]
+fn test_registry_has_java_and_go_adapters() {
+    let mut registry = AdapterRegistry::new();
+
+    // Register Java adapter
+    registry.register(std::sync::Arc::new(chronos_java::JavaAdapter::new()));
+
+    // Register Go adapter
+    registry.register(std::sync::Arc::new(chronos_go::GoAdapter::new()));
+
+    // Verify Java is registered
+    assert!(registry.has_adapter(Language::Java), "Java adapter should be registered");
+    let java_adapter = registry.get(Language::Java).expect("Java adapter should be retrievable");
+    assert_eq!(java_adapter.get_language(), Language::Java);
+    assert_eq!(java_adapter.name(), "java-jdwp");
+
+    // Verify Go is registered
+    assert!(registry.has_adapter(Language::Go), "Go adapter should be registered");
+    let go_adapter = registry.get(Language::Go).expect("Go adapter should be retrievable");
+    assert_eq!(go_adapter.get_language(), Language::Go);
+    assert_eq!(go_adapter.name(), "go-delve");
+
+    // Verify both languages are in the registered list
+    let langs = registry.registered_languages();
+    assert!(langs.contains(&Language::Java), "Java should be in registered languages");
+    assert!(langs.contains(&Language::Go), "Go should be in registered languages");
+}
