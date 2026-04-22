@@ -17,3 +17,6 @@ tokio-util = "0.7"
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = "3"
+
+[features]
+integration = []

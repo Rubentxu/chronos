@@ -45,6 +45,7 @@ go = []
 python = []
 nodejs = []
 cpp = []
+integration = []
 
 [[bench]]
 name = "overhead"

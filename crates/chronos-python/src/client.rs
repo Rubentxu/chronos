@@ -122,7 +122,7 @@ impl DapClient {
     }
 
     /// Parse Content-Length header value.
-    fn parse_content_length(header: &str) -> Result<usize, PythonAdapterError> {
+    pub fn parse_content_length(header: &str) -> Result<usize, PythonAdapterError> {
         for line in header.lines() {
             if line.starts_with("Content-Length:") {
                 let value = line.trim_start_matches("Content-Length:").trim();
@@ -144,6 +144,30 @@ impl DapClient {
         self.stream.write_all(header.as_bytes())?;
         self.stream.write_all(bytes)?;
         Ok(())
+    }
+
+    /// Evaluate an expression in the debuggee.
+    ///
+    /// Sends a DAP `evaluate` request and returns the result string.
+    /// `frame_id` specifies which stack frame to evaluate in (None = top frame).
+    pub fn evaluate(&mut self, expression: &str, frame_id: Option<u64>) -> Result<String, PythonAdapterError> {
+        let mut args = serde_json::json!({
+            "expression": expression,
+            "context": "repl"
+        });
+        if let Some(fid) = frame_id {
+            args["frameId"] = serde_json::json!(fid);
+        }
+
+        let body = self.send_request("evaluate", args)?;
+
+        // Extract result string from body
+        let result = body
+            .get("result")
+            .and_then(|r| r.as_str())
+            .map(String::from)
+            .unwrap_or_default();
+        Ok(result)
     }
 
     /// Initialize DAP session: send initialize and attach requests.
@@ -242,5 +266,154 @@ mod tests {
         // requires: debugpy running on localhost:5678
         let client = DapClient::connect("localhost:5678");
         assert!(client.is_ok());
+    }
+
+    #[test]
+    fn test_evaluate_returns_result() {
+        // Spin up a mock DAP server that responds to evaluate with "42"
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+
+        let server_handle = std::thread::spawn(move || {
+            let mut stream = listener.incoming().next().unwrap().unwrap();
+            // Read the DAP request (we just need to read it to know the server is working)
+            let mut buf = [0u8; 1024];
+            let _n = stream.read(&mut buf).unwrap();
+            // Send a DAP response for the evaluate request
+            let response = serde_json::json!({
+                "seq": 2,
+                "type": "response",
+                "command": "evaluate",
+                "request_seq": 1,
+                "success": true,
+                "body": {
+                    "result": "42",
+                    "type": "string"
+                }
+            });
+            let json_str = serde_json::to_string(&response).unwrap();
+            let header = format!("Content-Length: {}\r\n\r\n", json_str.len());
+            use std::io::Write;
+            stream.write_all(header.as_bytes()).unwrap();
+            stream.write_all(json_str.as_bytes()).unwrap();
+        });
+
+        // Connect client and call evaluate
+        let mut client = DapClient::connect(&addr).unwrap();
+        let result = client.evaluate("1 + 1", None);
+
+        server_handle.join().unwrap();
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "42");
+    }
+
+    #[test]
+    fn test_evaluate_with_frame_id() {
+        // Test that frame_id is correctly passed in the request
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+
+        let server_handle = std::thread::spawn(move || {
+            let mut stream = listener.incoming().next().unwrap().unwrap();
+
+            // Read raw bytes until we get the complete DAP message
+            let mut all_data = Vec::new();
+            let mut tmp = [0u8; 1024];
+
+            loop {
+                let n = stream.read(&mut tmp).unwrap();
+                if n == 0 {
+                    break;
+                }
+                all_data.extend_from_slice(&tmp[..n]);
+
+                // Check if we have a complete message by looking for Content-Length
+                let s = String::from_utf8_lossy(&all_data);
+                if let Some(pos) = s.find("Content-Length:") {
+                    if let Some(end) = s[pos..].find("\r\n\r\n") {
+                        let header_end = pos + end + 4;
+                        if let Some(len_str) = s[pos..].lines().next() {
+                            if let Some(len) = len_str.trim_start_matches("Content-Length:").trim().parse::<usize>().ok() {
+                                if all_data.len() >= header_end + len {
+                                    // We have a complete message
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Verify request contains frameId
+            let request_str = String::from_utf8_lossy(&all_data);
+            assert!(
+                request_str.contains("\"frameId\":5"),
+                "Request should contain frameId, got: {}",
+                request_str
+            );
+
+            // Send response
+            let response = serde_json::json!({
+                "seq": 2,
+                "type": "response",
+                "command": "evaluate",
+                "request_seq": 1,
+                "success": true,
+                "body": {
+                    "result": "value",
+                    "type": "string"
+                }
+            });
+            let json_str = serde_json::to_string(&response).unwrap();
+            let header = format!("Content-Length: {}\r\n\r\n", json_str.len());
+            use std::io::Write;
+            stream.write_all(header.as_bytes()).unwrap();
+            stream.write_all(json_str.as_bytes()).unwrap();
+        });
+
+        let mut client = DapClient::connect(&addr).unwrap();
+        let result = client.evaluate("x", Some(5));
+
+        server_handle.join().unwrap();
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_evaluate_failure() {
+        // Test that evaluate returns error when DAP returns success=false
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+
+        let server_handle = std::thread::spawn(move || {
+            let mut stream = listener.incoming().next().unwrap().unwrap();
+            let mut buf = [0u8; 1024];
+            let _n = stream.read(&mut buf).unwrap();
+
+            // Send a failure response
+            let response = serde_json::json!({
+                "seq": 2,
+                "type": "response",
+                "command": "evaluate",
+                "request_seq": 1,
+                "success": false,
+                "message": "Variable not found"
+            });
+            let json_str = serde_json::to_string(&response).unwrap();
+            let header = format!("Content-Length: {}\r\n\r\n", json_str.len());
+            use std::io::Write;
+            stream.write_all(header.as_bytes()).unwrap();
+            stream.write_all(json_str.as_bytes()).unwrap();
+        });
+
+        let mut client = DapClient::connect(&addr).unwrap();
+        let result = client.evaluate("undefined_var", None);
+
+        server_handle.join().unwrap();
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, PythonAdapterError::ProtocolError(_)));
     }
 }

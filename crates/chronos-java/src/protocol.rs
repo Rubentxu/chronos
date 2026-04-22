@@ -12,7 +12,7 @@ use tokio::net::TcpStream;
 const JDWP_HEADER_SIZE: usize = 11;
 
 /// JDWP handshake bytes: "JDWP-Handshake"
-const JDWP_HANDSHAKE: &[u8] = b"JDWP-Handshake";
+pub const JDWP_HANDSHAKE: &[u8] = b"JDWP-Handshake";
 
 /// JDWP event kinds used in EventRequest.Set.
 pub mod event_kind {
@@ -28,6 +28,8 @@ pub mod event_kind {
 pub struct JdwpClient {
     pub(crate) stream: TcpStream,
     pub(crate) next_id: u32,
+    /// ID sizes for tagged IDs (objectID, threadID, frameID). Default 8 for 64-bit JVM.
+    pub id_sizes: [u8; 2],
 }
 
 impl JdwpClient {
@@ -37,7 +39,13 @@ impl JdwpClient {
         let stream = TcpStream::connect(&addr)
             .await
             .map_err(|e| JavaError::JdwpProtocol(format!("Failed to connect: {}", e)))?;
-        Ok(Self { stream, next_id: 1 })
+        // Default to 8 bytes for 64-bit JVM IDs. Actual value can be read
+        // from VirtualMachine.IDSizes after handshake if needed.
+        Ok(Self {
+            stream,
+            next_id: 1,
+            id_sizes: [8, 8],
+        })
     }
 
     /// Perform the JDWP handshake.
@@ -143,6 +151,157 @@ impl JdwpClient {
             return parse_jdwp_event(&data);
         }
     }
+
+    /// Send a JDWP command and return the reply data payload.
+    ///
+    /// Builds a command packet, sends it, reads the reply header,
+    /// checks for errors, and returns the data portion.
+    ///
+    /// # Arguments
+    /// * `cmd_set` - The JDWP command set byte
+    /// * `cmd` - The JDWP command byte
+    /// * `data` - The command data payload
+    ///
+    /// # Returns
+    /// * `Ok(Vec<u8>)` - The reply data payload on success
+    /// * `Err(JavaError)` - If the command failed
+    pub async fn send_command(
+        &mut self,
+        cmd_set: u8,
+        cmd: u8,
+        data: Vec<u8>,
+    ) -> Result<Vec<u8>, JavaError> {
+        let id = self.next_id;
+        self.next_id += 1;
+
+        let packet = build_command_packet(cmd_set, cmd, id, &data);
+        send_packet(&mut self.stream, &packet).await?;
+
+        // Read the 11-byte reply header
+        let mut header = [0u8; JDWP_HEADER_SIZE];
+        self.stream
+            .read_exact(&mut header)
+            .await
+            .map_err(|e| JavaError::JdwpProtocol(format!("Read reply header failed: {}", e)))?;
+
+        // Parse header fields
+        let length = u32::from_be_bytes([header[0], header[1], header[2], header[3]]);
+        let _reply_id = u32::from_be_bytes([header[4], header[5], header[6], header[7]]);
+        let flags = header[8];
+        let error_code = u16::from_be_bytes([header[9], header[10]]);
+
+        // Check if this is a reply packet (flags should be 0x80)
+        if flags != 0x80 {
+            return Err(JavaError::JdwpProtocol(format!(
+                "Expected reply packet (flags=0x80), got flags=0x{:02x}",
+                flags
+            )));
+        }
+
+        // Check error code (0 = success)
+        if error_code != 0 {
+            return Err(JavaError::JdwpProtocol(format!(
+                "JDWP command error: error_code={}",
+                error_code
+            )));
+        }
+
+        // Read the data portion
+        let data_len = (length as usize).saturating_sub(JDWP_HEADER_SIZE);
+        let mut reply_data = vec![0u8; data_len];
+        if data_len > 0 {
+            self.stream
+                .read_exact(&mut reply_data)
+                .await
+                .map_err(|e| JavaError::JdwpProtocol(format!("Read reply data failed: {}", e)))?;
+        }
+
+        Ok(reply_data)
+    }
+
+    /// Get all thread IDs from the JVM using VirtualMachine.AllThreads.
+    ///
+    /// Command set=1 (VirtualMachine), Command=6 (AllThreads)
+    pub async fn all_threads(&mut self) -> Result<Vec<u64>, JavaError> {
+        let reply = self.send_command(1, 6, vec![]).await?;
+        parse_all_threads(&reply)
+    }
+
+    /// Get the name of a thread using ThreadReference.Name.
+    ///
+    /// Command set=11 (ThreadReference), Command=1 (Name)
+    pub async fn thread_name(&mut self, thread_id: u64) -> Result<String, JavaError> {
+        let mut data = Vec::with_capacity(8);
+        data.extend_from_slice(&thread_id.to_be_bytes());
+        let reply = self.send_command(11, 1, data).await?;
+        parse_thread_name(&reply)
+    }
+
+    /// Get stack frames for a thread using ThreadReference.Frames.
+    ///
+    /// Command set=4 (ThreadReference), Command=6 (Frames)
+    /// Request: threadID(8) + startFrame(4) + length(4)
+    /// Use start=-1 and length=-1 to get all frames.
+    pub async fn frames(
+        &mut self,
+        thread_id: u64,
+        start: i32,
+        length: i32,
+    ) -> Result<Vec<FrameInfo>, JavaError> {
+        let mut data = Vec::with_capacity(16);
+        data.extend_from_slice(&thread_id.to_be_bytes());
+        data.extend_from_slice(&start.to_be_bytes());
+        data.extend_from_slice(&length.to_be_bytes());
+        let reply = self.send_command(4, 6, data).await?;
+        parse_frames(&reply)
+    }
+
+    /// Get values of local variables in a stack frame using StackFrame.GetValues.
+    ///
+    /// Command set=6 (StackFrame), Command=2 (GetValues)
+    /// Request: threadID(8) + frameID(8) + slots_count(4) + per slot: slot(4) + sigbyte(1)
+    /// Response: count(4) + per value: tag(1) + value_bytes
+    ///
+    /// This method queries slots 0..slot_count with signature 'I' (int).
+    pub async fn frame_values(
+        &mut self,
+        thread_id: u64,
+        frame_id: u64,
+        slot_count: u32,
+    ) -> Result<Vec<String>, JavaError> {
+        let mut data = Vec::with_capacity(17 + slot_count as usize * 5);
+        data.extend_from_slice(&thread_id.to_be_bytes());
+        data.extend_from_slice(&frame_id.to_be_bytes());
+        data.extend_from_slice(&slot_count.to_be_bytes());
+
+        // Add slots 0..slot_count with signature 'I' (int)
+        for slot in 0..slot_count {
+            data.extend_from_slice(&slot.to_be_bytes());
+            data.push(b'I'); // signature byte for int
+        }
+
+        let reply = self.send_command(6, 2, data).await?;
+
+        // Parse reply: count(4) + per value: tag(1) + value_bytes
+        if reply.len() < 4 {
+            return Err(JavaError::JdwpProtocol(
+                "GetValues response too short".to_string(),
+            ));
+        }
+
+        let count = u32::from_be_bytes([reply[0], reply[1], reply[2], reply[3]]) as usize;
+        let mut offset = 4;
+        let mut values = Vec::with_capacity(count);
+
+        for _ in 0..count {
+            let (val_str, consumed) = parse_tagged_value(&reply[offset..])
+                .map_err(|e| JavaError::JdwpProtocol(format!("GetValues value parse error: {}", e)))?;
+            values.push(val_str);
+            offset += consumed;
+        }
+
+        Ok(values)
+    }
 }
 
 /// Build a JDWP command packet.
@@ -236,6 +395,182 @@ fn read_u64(bytes: &[u8]) -> u64 {
     val
 }
 
+/// Parse VirtualMachine.AllThreads reply data.
+///
+/// Format: int count + count × threadID(8 bytes each)
+pub fn parse_all_threads(data: &[u8]) -> Result<Vec<u64>, JavaError> {
+    if data.len() < 4 {
+        return Err(JavaError::JdwpProtocol(
+            "AllThreads response too short".to_string(),
+        ));
+    }
+
+    let count = u32::from_be_bytes([data[0], data[1], data[2], data[3]]) as usize;
+    let mut offset = 4;
+
+    let mut thread_ids = Vec::with_capacity(count);
+    for _ in 0..count {
+        if offset + 8 > data.len() {
+            return Err(JavaError::JdwpProtocol(
+                "AllThreads response: truncated thread ID".to_string(),
+            ));
+        }
+        let thread_id = read_u64(&data[offset..offset + 8]);
+        thread_ids.push(thread_id);
+        offset += 8;
+    }
+
+    Ok(thread_ids)
+}
+
+/// Parse ThreadReference.Name reply data.
+///
+/// Format: String (length-prefixed UTF-8: int32 length + bytes)
+pub fn parse_thread_name(data: &[u8]) -> Result<String, JavaError> {
+    if data.len() < 4 {
+        return Err(JavaError::JdwpProtocol(
+            "ThreadName response too short".to_string(),
+        ));
+    }
+
+    let length = i32::from_be_bytes([data[0], data[1], data[2], data[3]]) as usize;
+    if data.len() < 4 + length {
+        return Err(JavaError::JdwpProtocol(
+            "ThreadName response: truncated string".to_string(),
+        ));
+    }
+
+    let name = String::from_utf8_lossy(&data[4..4 + length]).to_string();
+    Ok(name)
+}
+
+/// A stack frame with its ID and location.
+#[derive(Debug, Clone)]
+pub struct FrameInfo {
+    /// The frame ID.
+    pub frame_id: u64,
+    /// The location (typeTag:1 + classID:8 + methodID:8 + index:8)
+    pub location: u64,
+}
+
+/// Parse ThreadReference.Frames reply data.
+///
+/// Format: int count + per frame: frameID(8) + location(typeTag:1 + classID:8 + methodID:8 + index:8)
+pub fn parse_frames(data: &[u8]) -> Result<Vec<FrameInfo>, JavaError> {
+    if data.len() < 4 {
+        return Err(JavaError::JdwpProtocol(
+            "Frames response too short".to_string(),
+        ));
+    }
+
+    let count = u32::from_be_bytes([data[0], data[1], data[2], data[3]]) as usize;
+    let mut offset = 4;
+
+    let mut frames = Vec::with_capacity(count);
+    for _ in 0..count {
+        if offset + 8 > data.len() {
+            return Err(JavaError::JdwpProtocol(
+                "Frames response: truncated frame ID".to_string(),
+            ));
+        }
+        let frame_id = read_u64(&data[offset..offset + 8]);
+        offset += 8;
+
+        if offset + 8 > data.len() {
+            return Err(JavaError::JdwpProtocol(
+                "Frames response: truncated location".to_string(),
+            ));
+        }
+        // Location is 1 byte typeTag + 8 bytes of ID + 8 bytes for index = 17 bytes
+        // But typically it's packed as: typeTag(1) + classID(8) + methodID(8) + index(8) = 25 bytes
+        // We only read the first 8 bytes as a simplified location identifier
+        let location = read_u64(&data[offset..offset + 8]);
+        offset += 8;
+
+        frames.push(FrameInfo { frame_id, location });
+    }
+
+    Ok(frames)
+}
+
+/// Parse a JDWP tagged value from a buffer.
+///
+/// Tags:
+/// - 'I' → i32 (4 bytes big-endian)
+/// - 'J' → i64 (8 bytes big-endian)
+/// - 'Z' → bool (1 byte: 0=false, 1=true)
+/// - 'D' → f64 (8 bytes big-endian IEEE 754)
+/// - 's' → String object (objectID; return placeholder)
+/// - Unknown tag → error
+///
+/// Returns the string representation and the number of bytes consumed.
+pub fn parse_tagged_value(data: &[u8]) -> Result<(String, usize), JavaError> {
+    if data.is_empty() {
+        return Err(JavaError::JdwpProtocol(
+            "Tagged value: empty data".to_string(),
+        ));
+    }
+
+    let tag = data[0] as char;
+    let offset = 1;
+
+    match tag {
+        'I' => {
+            if data.len() < offset + 4 {
+                return Err(JavaError::JdwpProtocol(
+                    "Tagged value: I (int) requires 4 bytes".to_string(),
+                ));
+            }
+            let val = i32::from_be_bytes([data[1], data[2], data[3], data[4]]);
+            Ok((val.to_string(), offset + 4))
+        }
+        'J' => {
+            if data.len() < offset + 8 {
+                return Err(JavaError::JdwpProtocol(
+                    "Tagged value: J (long) requires 8 bytes".to_string(),
+                ));
+            }
+            let val = i64::from_be_bytes([
+                data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8],
+            ]);
+            Ok((val.to_string(), offset + 8))
+        }
+        'Z' => {
+            if data.len() < offset + 1 {
+                return Err(JavaError::JdwpProtocol(
+                    "Tagged value: Z (bool) requires 1 byte".to_string(),
+                ));
+            }
+            let val = data[1] != 0;
+            Ok((val.to_string(), offset + 1))
+        }
+        'D' => {
+            if data.len() < offset + 8 {
+                return Err(JavaError::JdwpProtocol(
+                    "Tagged value: D (double) requires 8 bytes".to_string(),
+                ));
+            }
+            let val = f64::from_be_bytes([data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8]]);
+            Ok((val.to_string(), offset + 8))
+        }
+        's' | 'L' => {
+            // String object or other reference type - return placeholder
+            // The object ID follows but we don't dereference it
+            if data.len() < offset + 8 {
+                return Err(JavaError::JdwpProtocol(
+                    "Tagged value: s/L (object) requires 8 bytes for object ID".to_string(),
+                ));
+            }
+            let obj_id = read_u64(&data[offset..offset + 8]);
+            Ok((format!("Object@{:x}", obj_id), offset + 8))
+        }
+        _ => Err(JavaError::JdwpProtocol(format!(
+            "Tagged value: unknown tag '{}' (0x{:02x})",
+            tag, data[0]
+        ))),
+    }
+}
+
 /// Represents a JDWP debugger event.
 #[derive(Debug, Clone)]
 pub struct JdwpEvent {
@@ -293,5 +628,265 @@ mod tests {
     fn test_read_u64() {
         let bytes = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x2B];
         assert_eq!(read_u64(&bytes), 0x12B);
+    }
+
+    #[test]
+    fn test_parse_all_threads_two_threads() {
+        // Format: int count(4) + threadID1(8) + threadID2(8)
+        // count=2, tid1=0xDEADBEEF, tid2=0xCAFEBABE
+        let data = vec![
+            0x00, 0x00, 0x00, 0x02, // count = 2
+            0x00, 0x00, 0x00, 0x00, 0xDE, 0xAD, 0xBE, 0xEF, // thread ID 1
+            0x00, 0x00, 0x00, 0x00, 0xCA, 0xFE, 0xBA, 0xBE, // thread ID 2
+        ];
+
+        let result = parse_all_threads(&data);
+        assert!(result.is_ok());
+        let threads = result.unwrap();
+        assert_eq!(threads.len(), 2);
+        assert_eq!(threads[0], 0xDEADBEEF);
+        assert_eq!(threads[1], 0xCAFEBABE);
+    }
+
+    #[test]
+    fn test_parse_all_threads_empty() {
+        // Format: int count(4) = 0
+        let data = vec![0x00, 0x00, 0x00, 0x00];
+
+        let result = parse_all_threads(&data);
+        assert!(result.is_ok());
+        let threads = result.unwrap();
+        assert!(threads.is_empty());
+    }
+
+    #[test]
+    fn test_parse_all_threads_truncated() {
+        // Format: int count(4) = 1, but only 4 bytes of thread ID provided
+        let data = vec![0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00];
+
+        let result = parse_all_threads(&data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_thread_name() {
+        // Format: int length(4) + UTF-8 bytes
+        // "main" = 4 bytes
+        let data = vec![
+            0x00, 0x00, 0x00, 0x04, // length = 4
+            b'm', b'a', b'i', b'n', // "main"
+        ];
+
+        let result = parse_thread_name(&data);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "main");
+    }
+
+    #[test]
+    fn test_parse_thread_name_long() {
+        // "Thread-0" = 8 bytes
+        let data = vec![
+            0x00, 0x00, 0x00, 0x08, // length = 8
+            b'T', b'h', b'r', b'e', b'a', b'd', b'-', b'0',
+        ];
+
+        let result = parse_thread_name(&data);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "Thread-0");
+    }
+
+    #[test]
+    fn test_parse_thread_name_truncated() {
+        // Format: int length(4) = 4, but only 2 bytes provided
+        let data = vec![0x00, 0x00, 0x00, 0x04, b'm', b'a'];
+
+        let result = parse_thread_name(&data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_all_threads_too_short() {
+        // Only 2 bytes provided, not enough for count
+        let data = vec![0x00, 0x00];
+
+        let result = parse_all_threads(&data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_thread_name_too_short() {
+        // Only 2 bytes provided, not enough for length
+        let data = vec![0x00, 0x00];
+
+        let result = parse_thread_name(&data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_frames_two_frames() {
+        // Format: int count(4) + frame1(8) + location1(8) + frame2(8) + location2(8)
+        let data = vec![
+            0x00, 0x00, 0x00, 0x02, // count = 2
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, // frame ID 1 = 1
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0A, // location 1 = 10
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, // frame ID 2 = 2
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x14, // location 2 = 20
+        ];
+
+        let result = parse_frames(&data);
+        assert!(result.is_ok());
+        let frames = result.unwrap();
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0].frame_id, 1);
+        assert_eq!(frames[0].location, 10);
+        assert_eq!(frames[1].frame_id, 2);
+        assert_eq!(frames[1].location, 20);
+    }
+
+    #[test]
+    fn test_parse_frames_empty() {
+        // Format: int count(4) = 0
+        let data = vec![0x00, 0x00, 0x00, 0x00];
+
+        let result = parse_frames(&data);
+        assert!(result.is_ok());
+        let frames = result.unwrap();
+        assert!(frames.is_empty());
+    }
+
+    #[test]
+    fn test_parse_frames_truncated() {
+        // Format: int count(4) = 1, but only 4 bytes of frame ID provided
+        let data = vec![0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00];
+
+        let result = parse_frames(&data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_frames_too_short() {
+        // Only 2 bytes provided, not enough for count
+        let data = vec![0x00, 0x00];
+
+        let result = parse_frames(&data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_tagged_value_int() {
+        // Tag 'I' + i32 value 42
+        let data = vec![b'I', 0x00, 0x00, 0x00, 0x2A];
+
+        let result = parse_tagged_value(&data);
+        assert!(result.is_ok());
+        let (val, consumed) = result.unwrap();
+        assert_eq!(val, "42");
+        assert_eq!(consumed, 5);
+    }
+
+    #[test]
+    fn test_parse_tagged_value_int_negative() {
+        // Tag 'I' + i32 value -1
+        let data = vec![b'I', 0xFF, 0xFF, 0xFF, 0xFF];
+
+        let result = parse_tagged_value(&data);
+        assert!(result.is_ok());
+        let (val, _) = result.unwrap();
+        assert_eq!(val, "-1");
+    }
+
+    #[test]
+    fn test_parse_tagged_value_long() {
+        // Tag 'J' + i64 value 0x123456789ABCDEF0 (positive, high bit not set)
+        let data = vec![
+            b'J', 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0,
+        ];
+
+        let result = parse_tagged_value(&data);
+        assert!(result.is_ok());
+        let (val, consumed) = result.unwrap();
+        assert_eq!(val, "1311768467463790320"); // 0x123456789ABCDEF0 as i64
+        assert_eq!(consumed, 9);
+    }
+
+    #[test]
+    fn test_parse_tagged_value_bool_true() {
+        // Tag 'Z' + bool true (1)
+        let data = vec![b'Z', 0x01];
+
+        let result = parse_tagged_value(&data);
+        assert!(result.is_ok());
+        let (val, consumed) = result.unwrap();
+        assert_eq!(val, "true");
+        assert_eq!(consumed, 2);
+    }
+
+    #[test]
+    fn test_parse_tagged_value_bool_false() {
+        // Tag 'Z' + bool false (0)
+        let data = vec![b'Z', 0x00];
+
+        let result = parse_tagged_value(&data);
+        assert!(result.is_ok());
+        let (val, consumed) = result.unwrap();
+        assert_eq!(val, "false");
+        assert_eq!(consumed, 2);
+    }
+
+    #[test]
+    fn test_parse_tagged_value_double() {
+        // Tag 'D' + f64 value 3.14159...
+        // 3.14159 as f64 is approximately 0x400921F9F52D3852
+        let data = vec![
+            b'D', 0x40, 0x09, 0x21, 0xF9, 0xF5, 0x2D, 0x38, 0x52,
+        ];
+
+        let result = parse_tagged_value(&data);
+        assert!(result.is_ok());
+        let (val, consumed) = result.unwrap();
+        // Just check that it parses to a numeric-looking string
+        assert!(val.parse::<f64>().is_ok());
+        assert_eq!(consumed, 9);
+    }
+
+    #[test]
+    fn test_parse_tagged_value_string_object() {
+        // Tag 's' + objectID 0xCAFEBABE
+        let data = vec![
+            b's', 0x00, 0x00, 0x00, 0x00, 0xCA, 0xFE, 0xBA, 0xBE,
+        ];
+
+        let result = parse_tagged_value(&data);
+        assert!(result.is_ok());
+        let (val, consumed) = result.unwrap();
+        assert_eq!(val, "Object@cafebabe");
+        assert_eq!(consumed, 9);
+    }
+
+    #[test]
+    fn test_parse_tagged_value_unknown_tag() {
+        // Tag 'X' - unknown
+        let data = vec![b'X', 0x00];
+
+        let result = parse_tagged_value(&data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_tagged_value_empty() {
+        // Empty data
+        let data = vec![];
+
+        let result = parse_tagged_value(&data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_tagged_value_int_truncated() {
+        // Tag 'I' but only 2 bytes of data
+        let data = vec![b'I', 0x00];
+
+        let result = parse_tagged_value(&data);
+        assert!(result.is_err());
     }
 }

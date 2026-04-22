@@ -38,11 +38,12 @@ fn test_java_container_options() {
     );
 }
 
-/// Full session test that requires real Podman and a Java container.
-/// This test is ignored by default and only runs with `cargo test -- --ignored`.
+/// Full session test that requires real Podman, Java, and a JVM with JDWP.
+/// This test is ignored by default and only runs with
+/// `cargo test --features integration -- --ignored`.
 #[test]
-#[ignore]
-// requires: podman
+#[cfg_attr(not(feature = "integration"), ignore)]
+// requires: podman, java, javac
 fn test_java_full_session() {
     // This test would:
     // 1. Start a Java container with JDWP agent
@@ -52,7 +53,11 @@ fn test_java_full_session() {
     // 5. Verify breakpoint hit
     // 6. Detach and cleanup
 
+    // TODO: Implement actual JDWP connection and event verification
     let target = JavaTarget::new();
     let result = target.spawn("java", &["-cp", "/app", "Main"]);
     println!("Java full session test result: {:?}", result);
+
+    // Assert: result should be Ok after implementation
+    // assert!(result.is_ok(), "Java session should start successfully");
 }

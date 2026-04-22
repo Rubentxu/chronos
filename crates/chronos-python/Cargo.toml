@@ -17,3 +17,6 @@ tracing = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = "3"
 chronos-query = { workspace = true }
+
+[features]
+integration = []

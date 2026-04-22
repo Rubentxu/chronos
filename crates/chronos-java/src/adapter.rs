@@ -36,6 +36,14 @@ struct JavaAdapterState {
     session_start: Option<Instant>,
     /// The current capture session ID.
     session_id: Option<String>,
+    /// Shared JDWP client for thread/stack/variable queries.
+    /// This is stored here so get_threads, get_stack_trace, get_variables
+    /// can access the client from synchronous code.
+    #[allow(dead_code)]
+    client_arc: Option<Arc<tokio::sync::Mutex<JdwpClient>>>,
+    /// Last thread ID used in get_stack_trace.
+    /// Used by get_variables to know which thread to query.
+    last_thread_id: Option<u64>,
 }
 
 /// Java trace adapter using JDWP.
@@ -59,6 +67,8 @@ impl JavaAdapter {
                 next_event_id: 1,
                 session_start: None,
                 session_id: None,
+                client_arc: None,
+                last_thread_id: None,
             }),
         }
     }
@@ -72,7 +82,7 @@ impl JavaAdapter {
     ///
     /// This is an internal method that can be called from sync code.
     #[allow(dead_code)]
-    fn drain_events_internal(&self) -> Result<Vec<chronos_domain::TraceEvent>, TraceError> {
+    pub fn drain_events_internal(&self) -> Result<Vec<chronos_domain::TraceEvent>, TraceError> {
         // First, collect events from the receiver without holding the lock
         let new_events = {
             let mut state = self.state.lock().unwrap();
@@ -186,6 +196,7 @@ impl TraceAdapter for JavaAdapter {
         state.session_start = Some(Instant::now());
         state.next_event_id = 1;
         state.session_id = Some(config.target.clone());
+        state.client_arc = Some(client_arc);
 
         let session = CaptureSession::new(0, Language::Java, config);
         Ok(session)
@@ -214,6 +225,8 @@ impl TraceAdapter for JavaAdapter {
         state.subprocess = None;
         state.events_rx = None;
         state.event_buffer.clear();
+        state.client_arc = None;
+        state.last_thread_id = None;
 
         Ok(())
     }
@@ -237,23 +250,60 @@ impl TraceAdapter for JavaAdapter {
     }
 
     fn get_threads(&self, session_id: &str) -> Result<Vec<ThreadInfo>, TraceError> {
-        let state = self.state.lock().unwrap();
+        // Get the client arc from state (scope lock to avoid holding across block_on)
+        let client_arc = {
+            let state = self.state.lock().unwrap();
 
-        // Verify session is active
-        if state.session_id.as_deref() != Some(session_id) {
-            return Err(TraceError::session_not_found(session_id));
+            // Verify session is active
+            if state.session_id.as_deref() != Some(session_id) {
+                return Err(TraceError::session_not_found(session_id));
+            }
+
+            // If not connected (no subprocess), return empty list
+            if state.subprocess.is_none() {
+                return Ok(Vec::new());
+            }
+
+            // Clone the Arc to avoid holding the lock across block_on
+            state
+                .client_arc
+                .as_ref()
+                .ok_or_else(|| {
+                    TraceError::UnsupportedOperation("JDWP client not available".to_string())
+                })?
+                .clone()
+        };
+
+        // Use block_on to run async JDWP commands
+        let rt = tokio::runtime::Handle::current();
+        let thread_ids = rt
+            .block_on(async {
+                let mut client = client_arc.lock().await;
+                client.all_threads().await
+            })
+            .map_err(|e| {
+                tracing::warn!("Failed to get threads: {}", e);
+                TraceError::UnsupportedOperation(format!("JDWP error: {}", e))
+            })?;
+
+        // For each thread ID, get its name (sequential to avoid overwhelming the JVM)
+        let mut threads = Vec::with_capacity(thread_ids.len());
+        for tid in thread_ids {
+            let name = rt
+                .block_on(async {
+                    let mut client = client_arc.lock().await;
+                    client.thread_name(tid).await
+                })
+                .unwrap_or_else(|_| format!("Thread-{:x}", tid));
+
+            threads.push(ThreadInfo {
+                thread_id: tid,
+                name,
+                state: chronos_domain::ThreadState::Running,
+            });
         }
 
-        // If not connected (no subprocess), return empty list
-        if state.subprocess.is_none() {
-            return Ok(Vec::new());
-        }
-
-        // For MVP, return an empty vec with a note that JDWP thread enumeration
-        // requires additional protocol implementation
-        // TODO: Implement VirtualMachine.AllThreads JDWP command
-        tracing::debug!("get_threads called but not yet implemented for JDWP");
-        Ok(Vec::new())
+        Ok(threads)
     }
 
     fn get_stack_trace(
@@ -261,24 +311,65 @@ impl TraceAdapter for JavaAdapter {
         session_id: &str,
         thread_id: u64,
     ) -> Result<Vec<StackFrame>, TraceError> {
-        let state = self.state.lock().unwrap();
+        // Get the client arc from state (need to scope the lock carefully)
+        let client_arc = {
+            let state = self.state.lock().unwrap();
 
-        // Verify session is active
-        if state.session_id.as_deref() != Some(session_id) {
-            return Err(TraceError::session_not_found(session_id));
+            // Verify session is active
+            if state.session_id.as_deref() != Some(session_id) {
+                return Err(TraceError::session_not_found(session_id));
+            }
+
+            // If not connected, return empty
+            if state.subprocess.is_none() {
+                return Ok(Vec::new());
+            }
+
+            // Clone the Arc to avoid holding the lock across block_on
+            state
+                .client_arc
+                .as_ref()
+                .ok_or_else(|| {
+                    TraceError::UnsupportedOperation("JDWP client not available".to_string())
+                })?
+                .clone()
+        };
+
+        // Use block_on to run async JDWP commands
+        // Use start=-1, length=-1 to get all frames
+        let rt = tokio::runtime::Handle::current();
+        let frame_infos = rt
+            .block_on(async {
+                let mut client = client_arc.lock().await;
+                client.frames(thread_id, -1, -1).await
+            })
+            .map_err(|e| {
+                tracing::warn!("Failed to get stack trace: {}", e);
+                TraceError::UnsupportedOperation(format!("JDWP error: {}", e))
+            })?;
+
+        // Convert to StackFrame list
+        // For function_name, use format!("frame_{}") since method name lookup
+        // requires additional round-trips (ClassReference.MethodsWithGeneric)
+        let frames: Vec<StackFrame> = frame_infos
+            .iter()
+            .enumerate()
+            .map(|(idx, frame_info)| StackFrame {
+                frame_id: frame_info.frame_id,
+                function_name: format!("frame_{}", idx),
+                source_file: None,
+                line: None,
+                variables: Vec::new(),
+            })
+            .collect();
+
+        // Store the thread_id for use by get_variables
+        {
+            let mut state = self.state.lock().unwrap();
+            state.last_thread_id = Some(thread_id);
         }
 
-        // If not connected, return empty
-        if state.subprocess.is_none() {
-            return Ok(Vec::new());
-        }
-
-        // TODO: Implement ThreadReference.Frames JDWP command
-        tracing::debug!(
-            "get_stack_trace called for thread {} but not yet implemented for JDWP",
-            thread_id
-        );
-        Ok(Vec::new())
+        Ok(frames)
     }
 
     fn get_variables(
@@ -286,24 +377,66 @@ impl TraceAdapter for JavaAdapter {
         session_id: &str,
         frame_id: u64,
     ) -> Result<Vec<VariableInfo>, TraceError> {
-        let state = self.state.lock().unwrap();
+        // Get the client arc and last_thread_id from state
+        let (client_arc, thread_id) = {
+            let state = self.state.lock().unwrap();
 
-        // Verify session is active
-        if state.session_id.as_deref() != Some(session_id) {
-            return Err(TraceError::session_not_found(session_id));
-        }
+            // Verify session is active
+            if state.session_id.as_deref() != Some(session_id) {
+                return Err(TraceError::session_not_found(session_id));
+            }
 
-        // If not connected, return empty
-        if state.subprocess.is_none() {
-            return Ok(Vec::new());
-        }
+            // If not connected, return empty
+            if state.subprocess.is_none() {
+                return Ok(Vec::new());
+            }
 
-        // TODO: Implement StackFrame.GetValues JDWP command
-        tracing::debug!(
-            "get_variables called for frame {} but not yet implemented for JDWP",
-            frame_id
-        );
-        Ok(Vec::new())
+            let client_arc = state
+                .client_arc
+                .as_ref()
+                .ok_or_else(|| {
+                    TraceError::UnsupportedOperation("JDWP client not available".to_string())
+                })?
+                .clone();
+
+            let thread_id = state.last_thread_id.ok_or_else(|| {
+                TraceError::UnsupportedOperation(
+                    "No thread context: call get_stack_trace first".to_string(),
+                )
+            })?;
+
+            (client_arc, thread_id)
+        };
+
+        // Use block_on to run async JDWP commands
+        let rt = tokio::runtime::Handle::current();
+        let values = rt
+            .block_on(async {
+                let mut client = client_arc.lock().await;
+                // Query slots 0-9 for local variables
+                client.frame_values(thread_id, frame_id, 10).await
+            })
+            .map_err(|e| {
+                tracing::warn!("Failed to get variables: {}", e);
+                TraceError::UnsupportedOperation(format!("JDWP error: {}", e))
+            })?;
+
+        // Convert to VariableInfo list
+        // The values returned are for slots 0, 1, 2, ... 9
+        let variables: Vec<VariableInfo> = values
+            .iter()
+            .enumerate()
+            .filter(|(_, val)| !val.is_empty()) // Filter out empty/unknown slots
+            .map(|(slot, val)| VariableInfo {
+                name: format!("slot_{}", slot),
+                value: val.clone(),
+                type_name: "int".to_string(), // We requested 'I' (int) slots
+                address: slot as u64,
+                scope: chronos_domain::VariableScope::Local,
+            })
+            .collect();
+
+        Ok(variables)
     }
 
     fn get_runtime_info(&self, session_id: &str) -> Result<RuntimeInfo, TraceError> {

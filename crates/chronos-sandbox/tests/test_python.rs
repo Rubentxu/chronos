@@ -29,21 +29,26 @@ fn test_python_container_options() {
     );
 }
 
-/// Full session test that requires real Podman and a Python container.
-/// This test is ignored by default and only runs with `cargo test -- --ignored`.
+/// Full session test that requires real Podman, Python, and debugpy.
+/// This test is ignored by default and only runs with
+/// `cargo test --features integration -- --ignored`.
 #[test]
-#[ignore]
-// requires: podman
+#[cfg_attr(not(feature = "integration"), ignore)]
+// requires: podman, python3, debugpy
 fn test_python_full_session() {
     // This test would:
     // 1. Start a Python container with debugpy
     // 2. Launch a Python program with debugpy --listen
-    // 3. Attach via debugpy protocol
+    // 3. Attach via DAP protocol
     // 4. Set a breakpoint
     // 5. Verify breakpoint hit
     // 6. Detach and cleanup
 
+    // TODO: Implement actual debugpy DAP connection and event verification
     let target = PythonTarget::new();
     let result = target.spawn("python", &["-m", "debugpy", "--listen", "5678", "app.py"]);
     println!("Python full session test result: {:?}", result);
+
+    // Assert: result should be Ok after implementation
+    // assert!(result.is_ok(), "Python session should start successfully");
 }

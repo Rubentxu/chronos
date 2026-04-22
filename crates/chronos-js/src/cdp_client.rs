@@ -3,11 +3,13 @@
 use crate::error::JsAdapterError;
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc};
+use std::time::Duration;
+use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{debug, error, warn};
 use serde::Deserialize;
 use serde_json::Value;
+use std::collections::HashMap;
 
 /// CDP message ID counter
 #[allow(dead_code)]
@@ -165,9 +167,10 @@ pub enum CdpEvent {
 
 /// CDP WebSocket client
 pub struct CdpClient {
-    _ws_write: mpsc::Sender<String>,
+    ws_write: mpsc::Sender<String>,
     next_id: Arc<std::sync::atomic::AtomicU64>,
     event_tx: broadcast::Sender<CdpEvent>,
+    pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>,
 }
 
 impl CdpClient {
@@ -183,6 +186,9 @@ impl CdpClient {
         let (event_tx, _event_rx) = broadcast::channel(100);
         let event_tx_clone = event_tx.clone();
         let (ws_write, mut ws_read) = mpsc::channel::<String>(100);
+        let pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let pending_clone = pending.clone();
 
         // Spawn message loop
         tokio::spawn(async move {
@@ -236,6 +242,12 @@ impl CdpClient {
                                                     warn!("Failed to parse CDP event: {}", e);
                                                 }
                                             }
+                                        } else if let Some(id) = json.get("id").and_then(|v| v.as_u64()) {
+                                            // It's a response - check if anyone is waiting
+                                            let mut pending = pending_clone.lock().await;
+                                            if let Some(sender) = pending.remove(&id) {
+                                                let _ = sender.send(json.clone());
+                                            }
                                         }
                                     }
                                     Err(e) => {
@@ -268,9 +280,10 @@ impl CdpClient {
         });
 
         Ok(Self {
-            _ws_write: ws_write,
+            ws_write,
             next_id,
             event_tx,
+            pending,
         })
     }
 
@@ -286,12 +299,40 @@ impl CdpClient {
 
         debug!("CDP send: {} id={}", method, id);
 
-        // For MVP, we assume success and return empty result
-        // Real implementation would wait for the response with matching ID
-        let _ = self._ws_write.send(msg.to_string()).await;
+        // Create a oneshot channel for this request
+        let (tx, rx) = oneshot::channel::<Value>();
 
-        // Return success with empty result for now
-        Ok(serde_json::json!({}))
+        // Register the response handler
+        {
+            let mut pending = self.pending.lock().await;
+            pending.insert(id, tx);
+        }
+
+        // Send the message
+        self.ws_write
+            .send(msg.to_string())
+            .await
+            .map_err(|_| JsAdapterError::CdpProtocol("Failed to send message".into()))?;
+
+        // Wait for response with timeout
+        let response = tokio::time::timeout(Duration::from_secs(5), rx)
+            .await
+            .map_err(|_| JsAdapterError::CdpTimeout { timeout: 5 })?
+            .map_err(|_| JsAdapterError::CdpProtocol("Channel closed".into()))?;
+
+        // Check for CDP error in response
+        if let Some(error_obj) = response.get("error") {
+            let error_msg = error_obj
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("Unknown error");
+            return Err(JsAdapterError::CdpCommandFailed {
+                method: method.to_string(),
+                error: error_msg.to_string(),
+            });
+        }
+
+        Ok(response)
     }
 
     /// Subscribe to CDP events
@@ -452,5 +493,40 @@ mod tests {
             }
             _ => panic!("Expected DebuggerPaused"),
         }
+    }
+
+    #[test]
+    fn test_cdp_response_deserialize_success() {
+        let json = r#"{
+            "id": 42,
+            "result": {
+                "description": "42",
+                "type": "number",
+                "value": 42
+            }
+        }"#;
+
+        let response: CdpResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.id, 42);
+        assert!(response.error.is_none());
+        assert_eq!(response.result.get("description").and_then(|v| v.as_str()), Some("42"));
+    }
+
+    #[test]
+    fn test_cdp_response_deserialize_error() {
+        let json = r#"{
+            "id": 42,
+            "error": {
+                "code": -32601,
+                "message": "Method not found"
+            }
+        }"#;
+
+        let response: CdpResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.id, 42);
+        assert!(response.error.is_some());
+        let error = response.error.unwrap();
+        assert_eq!(error.code, -32601);
+        assert_eq!(error.message, "Method not found");
     }
 }

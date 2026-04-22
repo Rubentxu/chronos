@@ -25,6 +25,9 @@ pub enum PythonAdapterError {
     #[error("DAP protocol error: {0}")]
     ProtocolError(String),
 
+    #[error("evaluate request failed: {0}")]
+    EvaluateFailed(String),
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
