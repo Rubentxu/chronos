@@ -264,6 +264,10 @@ pub struct DebugRunParams {
     /// "pending" status.
     #[serde(default)]
     pub debug_port: Option<u16>,
+    /// If true, poll for connection every 500ms for up to 30 seconds.
+    /// Useful when the target program takes a few seconds to start listening.
+    #[serde(default)]
+    pub wait_for_connection: Option<bool>,
 }
 
 fn default_true() -> bool {
@@ -483,6 +487,12 @@ pub struct CompareSessionsParams {
     pub session_a: String,
     /// Second session ID.
     pub session_b: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DropSessionParams {
+    /// Session ID to drop from memory (without touching persistent storage).
+    pub session_id: String,
 }
 
 // ============================================================================
@@ -832,63 +842,128 @@ impl ChronosServer {
                         return Ok(CallToolResult::error(text_content(serde_json::to_string(&result).unwrap_or_default())));
                     }
                 };
-                let connect_result = std::net::TcpStream::connect_timeout(
-                    &socket_addr,
-                    std::time::Duration::from_secs(1),
-                );
 
-                match connect_result {
-                    Ok(_stream) => {
-                        // Connected successfully, now create the DAP client
-                        match chronos_python::DapClient::connect(&addr) {
-                            Ok(client) => {
-                                // Create backend with connected client
-                                let backend = PythonDapEvalBackend::with_client(client);
-                                let mut dispatcher = self.eval_dispatcher.lock().await;
-                                dispatcher.register(session_id.clone(), Box::new(backend));
+                // Retry logic: 3 attempts with exponential backoff (when not waiting)
+                let max_attempts = 3;
+                let base_delay_ms = 200u64;
+                let wait_for_conn = params.wait_for_connection.unwrap_or(false);
+                let max_wait_secs = 30u64;
+                let poll_interval_ms = 500u64;
 
-                                // Mark session as connected
-                                {
-                                    let mut connected = self.connected_sessions.lock().unwrap();
-                                    connected.insert(session_id.clone());
-                                }
+                let mut attempt = 0;
+                let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(max_wait_secs);
 
-                                let result = serde_json::json!({
-                                    "session_id": session_id,
-                                    "status": "connected",
-                                    "adapter_type": "python-dap",
-                                    "program_language": "python",
-                                    "target": params.program,
-                                    "debug_endpoint": addr,
-                                    "message": format!("Connected to debugpy at {}", addr),
-                                });
-                                return Ok(CallToolResult::success(json_content(&result)));
+                loop {
+                    attempt += 1;
+
+                    if wait_for_conn {
+                        // Poll with 500ms interval until deadline
+                        if attempt > 1 {
+                            let delay = std::time::Duration::from_millis(poll_interval_ms);
+                            if tokio::time::Instant::now() + delay > deadline {
+                                // Would exceed deadline - timeout
+                                break;
                             }
-                            Err(e) => {
+                            tokio::time::sleep(delay).await;
+                        }
+                    } else {
+                        // Exponential backoff: 200ms -> 400ms -> 800ms
+                        if attempt > 1 {
+                            if attempt > max_attempts {
+                                break;
+                            }
+                            let delay_ms = base_delay_ms * (1u64 << (attempt - 2)); // attempt 2 -> 200ms, attempt 3 -> 400ms
+                            let delay = std::time::Duration::from_millis(delay_ms);
+                            if tokio::time::Instant::now() + delay > deadline {
+                                break;
+                            }
+                            tokio::time::sleep(delay).await;
+                        }
+                    }
+
+                    // Attempt TCP connection
+                    match std::net::TcpStream::connect_timeout(
+                        &socket_addr,
+                        std::time::Duration::from_secs(1),
+                    ) {
+                        Ok(_stream) => {
+                            // Connected successfully, now create the DAP client
+                            match chronos_python::DapClient::connect(&addr) {
+                                Ok(client) => {
+                                    // Create backend with connected client
+                                    let backend = PythonDapEvalBackend::with_client(client);
+                                    let mut dispatcher = self.eval_dispatcher.lock().await;
+                                    dispatcher.register(session_id.clone(), Box::new(backend));
+
+                                    // Mark session as connected
+                                    {
+                                        let mut connected = self.connected_sessions.lock().unwrap();
+                                        connected.insert(session_id.clone());
+                                    }
+
+                                    let result = serde_json::json!({
+                                        "session_id": session_id,
+                                        "status": "connected",
+                                        "adapter_type": "python-dap",
+                                        "program_language": "python",
+                                        "target": params.program,
+                                        "debug_endpoint": addr,
+                                        "message": format!("Connected to debugpy at {}", addr),
+                                    });
+                                    return Ok(CallToolResult::success(json_content(&result)));
+                                }
+                                Err(e) => {
+                                    tracing::warn!("Python DAP attempt {} failed: {}", attempt, e);
+                                    if !wait_for_conn && attempt >= max_attempts {
+                                        let result = serde_json::json!({
+                                            "session_id": session_id,
+                                            "status": "error",
+                                            "adapter_type": "python-dap",
+                                            "program_language": "python",
+                                            "target": params.program,
+                                            "error": format!("Failed to connect to debugpy at {} after {} attempts: {}", addr, max_attempts, e),
+                                            "attempts": max_attempts,
+                                        });
+                                        return Ok(CallToolResult::error(text_content(serde_json::to_string(&result).unwrap_or_default())));
+                                    }
+                                    // For wait_for_conn, continue polling
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("Python TCP connection attempt {} failed: {}", attempt, e);
+                            if !wait_for_conn && attempt >= max_attempts {
                                 let result = serde_json::json!({
                                     "session_id": session_id,
                                     "status": "error",
                                     "adapter_type": "python-dap",
                                     "program_language": "python",
                                     "target": params.program,
-                                    "error": format!("Failed to connect to debugpy at {}: {}", addr, e),
+                                    "error": format!("Failed to connect to debugpy at {} after {} attempts: {}. Make sure debugpy is running with --listen.", addr, max_attempts, e),
+                                    "attempts": max_attempts,
                                 });
                                 return Ok(CallToolResult::error(text_content(serde_json::to_string(&result).unwrap_or_default())));
                             }
+                            // For wait_for_conn, continue polling
                         }
                     }
-                    Err(e) => {
-                        let result = serde_json::json!({
-                            "session_id": session_id,
-                            "status": "error",
-                            "adapter_type": "python-dap",
-                            "program_language": "python",
-                            "target": params.program,
-                            "error": format!("Failed to connect to debugpy at {}: {}. Make sure debugpy is running with --listen.", addr, e),
-                        });
-                        return Ok(CallToolResult::error(text_content(serde_json::to_string(&result).unwrap_or_default())));
-                    }
                 }
+
+                // All retries exhausted or timeout
+                let result = serde_json::json!({
+                    "session_id": session_id,
+                    "status": "error",
+                    "adapter_type": "python-dap",
+                    "program_language": "python",
+                    "target": params.program,
+                    "error": if wait_for_conn {
+                        format!("Timeout waiting for debugpy at {} (waited {}s). Make sure debugpy is running with --listen.", addr, max_wait_secs)
+                    } else {
+                        format!("Failed to connect to debugpy at {} after {} attempts.", addr, max_attempts)
+                    },
+                    "attempts": if wait_for_conn { attempt } else { max_attempts },
+                });
+                return Ok(CallToolResult::error(text_content(serde_json::to_string(&result).unwrap_or_default())));
             }
 
             // No debug_port provided - return pending status
@@ -919,60 +994,125 @@ impl ChronosServer {
                 let host = params.debug_host.as_deref().unwrap_or("127.0.0.1");
                 let ws_url = format!("ws://{}:{}", host, port);
 
-                // Attempt async connection with timeout
-                let connect_timeout = tokio::time::timeout(
-                    std::time::Duration::from_secs(1),
-                    chronos_js::cdp_client::CdpClient::connect(&ws_url),
-                );
+                // Retry logic: 3 attempts with exponential backoff (when not waiting)
+                let max_attempts = 3;
+                let base_delay_ms = 200u64;
+                let wait_for_conn = params.wait_for_connection.unwrap_or(false);
+                let max_wait_secs = 30u64;
+                let poll_interval_ms = 500u64;
 
-                match connect_timeout.await {
-                    Ok(Ok(client)) => {
-                        // Connected successfully, create backend and register
-                        let backend = JsCdpEvalBackend::with_client(client);
-                        let mut dispatcher = self.eval_dispatcher.lock().await;
-                        dispatcher.register(session_id.clone(), Box::new(backend));
+                let mut attempt = 0;
+                let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(max_wait_secs);
 
-                        // Mark session as connected
-                        {
-                            let mut connected = self.connected_sessions.lock().unwrap();
-                            connected.insert(session_id.clone());
+                loop {
+                    attempt += 1;
+
+                    if wait_for_conn {
+                        // Poll with 500ms interval until deadline
+                        if attempt > 1 {
+                            let delay = std::time::Duration::from_millis(poll_interval_ms);
+                            if tokio::time::Instant::now() + delay > deadline {
+                                // Would exceed deadline - timeout
+                                break;
+                            }
+                            tokio::time::sleep(delay).await;
                         }
+                    } else {
+                        // Exponential backoff: 200ms -> 400ms -> 800ms
+                        if attempt > 1 {
+                            if attempt > max_attempts {
+                                break;
+                            }
+                            let delay_ms = base_delay_ms * (1u64 << (attempt - 2));
+                            let delay = std::time::Duration::from_millis(delay_ms);
+                            if tokio::time::Instant::now() + delay > deadline {
+                                break;
+                            }
+                            tokio::time::sleep(delay).await;
+                        }
+                    }
 
-                        let result = serde_json::json!({
-                            "session_id": session_id,
-                            "status": "connected",
-                            "adapter_type": "js-cdp",
-                            "program_language": program_language,
-                            "target": params.program,
-                            "debug_endpoint": ws_url,
-                            "message": format!("Connected to Node.js inspector at {}", ws_url),
-                        });
-                        return Ok(CallToolResult::success(json_content(&result)));
-                    }
-                    Ok(Err(e)) => {
-                        let result = serde_json::json!({
-                            "session_id": session_id,
-                            "status": "error",
-                            "adapter_type": "js-cdp",
-                            "program_language": program_language,
-                            "target": params.program,
-                            "error": format!("Failed to connect to Node.js inspector at {}: {}", ws_url, e),
-                        });
-                        return Ok(CallToolResult::error(text_content(serde_json::to_string(&result).unwrap_or_default())));
-                    }
-                    Err(_) => {
-                        // Timeout
-                        let result = serde_json::json!({
-                            "session_id": session_id,
-                            "status": "error",
-                            "adapter_type": "js-cdp",
-                            "program_language": program_language,
-                            "target": params.program,
-                            "error": format!("Connection to Node.js inspector at {} timed out after 1 second. Make sure Node.js is running with --inspect=HOST:PORT.", ws_url),
-                        });
-                        return Ok(CallToolResult::error(text_content(serde_json::to_string(&result).unwrap_or_default())));
+                    // Attempt async connection with timeout
+                    let connect_timeout = tokio::time::timeout(
+                        std::time::Duration::from_secs(1),
+                        chronos_js::cdp_client::CdpClient::connect(&ws_url),
+                    );
+
+                    match connect_timeout.await {
+                        Ok(Ok(client)) => {
+                            // Connected successfully, create backend and register
+                            let backend = JsCdpEvalBackend::with_client(client);
+                            let mut dispatcher = self.eval_dispatcher.lock().await;
+                            dispatcher.register(session_id.clone(), Box::new(backend));
+
+                            // Mark session as connected
+                            {
+                                let mut connected = self.connected_sessions.lock().unwrap();
+                                connected.insert(session_id.clone());
+                            }
+
+                            let result = serde_json::json!({
+                                "session_id": session_id,
+                                "status": "connected",
+                                "adapter_type": "js-cdp",
+                                "program_language": program_language,
+                                "target": params.program,
+                                "debug_endpoint": ws_url,
+                                "message": format!("Connected to Node.js inspector at {}", ws_url),
+                            });
+                            return Ok(CallToolResult::success(json_content(&result)));
+                        }
+                        Ok(Err(e)) => {
+                            tracing::warn!("JS CDP attempt {} failed: {}", attempt, e);
+                            if !wait_for_conn && attempt >= max_attempts {
+                                let result = serde_json::json!({
+                                    "session_id": session_id,
+                                    "status": "error",
+                                    "adapter_type": "js-cdp",
+                                    "program_language": program_language,
+                                    "target": params.program,
+                                    "error": format!("Failed to connect to Node.js inspector at {} after {} attempts: {}", ws_url, max_attempts, e),
+                                    "attempts": max_attempts,
+                                });
+                                return Ok(CallToolResult::error(text_content(serde_json::to_string(&result).unwrap_or_default())));
+                            }
+                            // For wait_for_conn, continue polling
+                        }
+                        Err(_) => {
+                            // Timeout
+                            tracing::warn!("JS CDP attempt {} timed out", attempt);
+                            if !wait_for_conn && attempt >= max_attempts {
+                                let result = serde_json::json!({
+                                    "session_id": session_id,
+                                    "status": "error",
+                                    "adapter_type": "js-cdp",
+                                    "program_language": program_language,
+                                    "target": params.program,
+                                    "error": format!("Connection to Node.js inspector at {} timed out after {} attempts. Make sure Node.js is running with --inspect=HOST:PORT.", ws_url, max_attempts),
+                                    "attempts": max_attempts,
+                                });
+                                return Ok(CallToolResult::error(text_content(serde_json::to_string(&result).unwrap_or_default())));
+                            }
+                            // For wait_for_conn, continue polling
+                        }
                     }
                 }
+
+                // All retries exhausted or timeout
+                let result = serde_json::json!({
+                    "session_id": session_id,
+                    "status": "error",
+                    "adapter_type": "js-cdp",
+                    "program_language": program_language,
+                    "target": params.program,
+                    "error": if wait_for_conn {
+                        format!("Timeout waiting for Node.js inspector at {} (waited {}s). Make sure Node.js is running with --inspect=HOST:PORT.", ws_url, max_wait_secs)
+                    } else {
+                        format!("Failed to connect to Node.js inspector at {} after {} attempts.", ws_url, max_attempts)
+                    },
+                    "attempts": if wait_for_conn { attempt } else { max_attempts },
+                });
+                return Ok(CallToolResult::error(text_content(serde_json::to_string(&result).unwrap_or_default())));
             }
 
             // No debug_port provided - return pending status
@@ -2521,6 +2661,40 @@ impl ChronosServer {
     }
 
     #[tool(
+        name = "drop_session",
+        description = "Remove a session from in-memory state WITHOUT touching persistent storage. Complement to delete_session which removes from store. Returns success even if session was not found in memory (idempotent)."
+    )]
+    async fn drop_session(
+        &self,
+        params: Parameters<DropSessionParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+
+        // Check if session exists in memory
+        let session_existed = self.engines.lock().await.contains_key(&params.session_id);
+
+        // Clean up all in-memory state for this session
+        self.cleanup_session_memory(&params.session_id).await;
+
+        if session_existed {
+            let output = serde_json::json!({
+                "session_id": params.session_id,
+                "status": "dropped",
+                "message": "Session removed from memory. Persistent storage not affected.",
+            });
+            Ok(CallToolResult::success(json_content(&output)))
+        } else {
+            // Idempotent: return success even if not found
+            let output = serde_json::json!({
+                "session_id": params.session_id,
+                "status": "not_found",
+                "message": "Session not found in memory. No action taken.",
+            });
+            Ok(CallToolResult::success(json_content(&output)))
+        }
+    }
+
+    #[tool(
         name = "compare_sessions",
         description = "Compare two saved sessions using hash-based set difference. Returns events unique to each, common count, similarity percentage, and timing delta."
     )]
@@ -3344,6 +3518,7 @@ mod tests {
             background: None,
             debug_host: None,
             debug_port: None,
+            wait_for_connection: None,
         });
         let result = server.debug_run(params).await.unwrap();
         assert_eq!(result.is_error, Some(true));
@@ -3369,6 +3544,7 @@ mod tests {
             background: None,
             debug_host: Some("127.0.0.1".to_string()),
             debug_port: Some(65000), // Port with no server
+            wait_for_connection: None,
         });
 
         let result = server.debug_run(params).await.unwrap();
@@ -3398,6 +3574,7 @@ mod tests {
             background: None,
             debug_host: None,
             debug_port: None,
+            wait_for_connection: None,
         });
 
         let result = server.debug_run(params).await.unwrap();
@@ -3426,6 +3603,7 @@ mod tests {
             background: None,
             debug_host: Some("127.0.0.1".to_string()),
             debug_port: Some(65000), // Port with no server
+            wait_for_connection: None,
         });
 
         let result = server.debug_run(params).await.unwrap();
@@ -3454,6 +3632,7 @@ mod tests {
             background: None,
             debug_host: None,
             debug_port: None,
+            wait_for_connection: None,
         });
 
         let result = server.debug_run(params).await.unwrap();
@@ -4036,6 +4215,7 @@ mod tests {
             background: None,
             debug_host: None,
             debug_port: None,
+            wait_for_connection: None,
         });
 
         let result = server.debug_run(params).await.unwrap();
@@ -4067,6 +4247,7 @@ mod tests {
             background: None,
             debug_host: None,
             debug_port: None,
+            wait_for_connection: None,
         });
 
         let result = server.debug_run(params).await.unwrap();
@@ -4096,6 +4277,7 @@ mod tests {
             background: None,
             debug_host: None,
             debug_port: None,
+            wait_for_connection: None,
         });
 
         let result = server.debug_run(params).await.unwrap();
@@ -4977,5 +5159,158 @@ mod tests {
         assert_eq!(result.is_error, Some(true));
         let text = format!("{:?}", result.content);
         assert!(text.contains("not found") || text.contains("NotFound"));
+    }
+
+    // ========================================================================
+    // Phase 25 — drop_session Tool Tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_drop_session_removes_from_memory() {
+        let server = ChronosServer::new();
+        let sid = "drop-test-session".to_string();
+        let events = vec![make_fn_entry(0, 100, 1, "main")];
+
+        // Build engine (registers in engines + session_languages + eval_dispatcher)
+        server.build_and_store_engine(&sid, events, Language::Python).await;
+
+        // Verify it's registered in memory
+        assert!(server.engines.lock().await.contains_key(&sid));
+        assert!(server.session_languages.lock().await.contains_key(&sid));
+        assert!(server.eval_dispatcher.lock().await.has_session_backend(&sid));
+
+        // Drop the session
+        let result = server
+            .drop_session(Parameters(DropSessionParams { session_id: sid.clone() }))
+            .await
+            .unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        assert!(text.contains("dropped"), "Should contain 'dropped' status");
+        assert!(text.contains("Persistent storage not affected"), "Should mention storage not affected");
+
+        // Verify all in-memory state is gone
+        assert!(!server.engines.lock().await.contains_key(&sid));
+        assert!(!server.session_languages.lock().await.contains_key(&sid));
+        assert!(!server.eval_dispatcher.lock().await.has_session_backend(&sid));
+        assert!(!server.connected_sessions.lock().unwrap().contains(&sid));
+    }
+
+    #[tokio::test]
+    async fn test_drop_session_not_found_is_idempotent() {
+        let server = ChronosServer::new();
+
+        // Drop non-existent session - should return success with not_found status
+        let result = server
+            .drop_session(Parameters(DropSessionParams {
+                session_id: "nonexistent-session".to_string(),
+            }))
+            .await
+            .unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        assert!(text.contains("not_found"), "Should contain 'not_found' status");
+    }
+
+    // ========================================================================
+    // Phase 25 — Retry Logic Tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_debug_run_python_retry_exhausted() {
+        // Test that Python with debug_port on a port that's not listening
+        // results in error with retry info after 3 attempts.
+        // Use port 1 which is always refused (superuser) or unreachable.
+        let server = ChronosServer::new();
+        let params = Parameters(DebugRunParams {
+            program: "/bin/true".to_string(),
+            args: vec![],
+            trace_syscalls: true,
+            capture_registers: true,
+            cwd: None,
+            auto_save: None,
+            program_language: Some("python".to_string()),
+            max_events: None,
+            timeout_secs: None,
+            background: None,
+            debug_host: Some("127.0.0.1".to_string()),
+            debug_port: Some(1), // Port 1 is typically refused/ unreachable
+            wait_for_connection: None,
+        });
+
+        let result = server.debug_run(params).await.unwrap();
+        // Should be an error
+        assert_eq!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        // Should contain retry info
+        assert!(
+            text.contains("attempts") || text.contains("attempt"),
+            "Response should contain retry/attempts info, got: {}", text
+        );
+    }
+
+    #[tokio::test]
+    async fn test_debug_run_js_retry_exhausted() {
+        // Test that JS with debug_port on a port that's not listening
+        // results in error with retry info after 3 attempts.
+        let server = ChronosServer::new();
+        let params = Parameters(DebugRunParams {
+            program: "/bin/true".to_string(),
+            args: vec![],
+            trace_syscalls: true,
+            capture_registers: true,
+            cwd: None,
+            auto_save: None,
+            program_language: Some("javascript".to_string()),
+            max_events: None,
+            timeout_secs: None,
+            background: None,
+            debug_host: Some("127.0.0.1".to_string()),
+            debug_port: Some(1), // Port 1 is typically refused
+            wait_for_connection: None,
+        });
+
+        let result = server.debug_run(params).await.unwrap();
+        // Should be an error
+        assert_eq!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        // Should contain retry info
+        assert!(
+            text.contains("attempts") || text.contains("attempt"),
+            "Response should contain retry/attempts info, got: {}", text
+        );
+    }
+
+    #[tokio::test]
+    async fn test_debug_run_wait_for_connection_times_out() {
+        // Test that wait_for_connection=true on a port that's not listening
+        // results in timeout error (using port 1 for fast failure).
+        let server = ChronosServer::new();
+        let params = Parameters(DebugRunParams {
+            program: "/bin/true".to_string(),
+            args: vec![],
+            trace_syscalls: true,
+            capture_registers: true,
+            cwd: None,
+            auto_save: None,
+            program_language: Some("python".to_string()),
+            max_events: None,
+            timeout_secs: None,
+            background: None,
+            debug_host: Some("127.0.0.1".to_string()),
+            debug_port: Some(1), // Port 1 - connection refused fast
+            wait_for_connection: Some(true),
+        });
+
+        let result = server.debug_run(params).await.unwrap();
+        assert_eq!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        // Should contain timeout info
+        assert!(
+            text.contains("timeout") || text.contains("Timeout") || text.contains("timed out"),
+            "Response should contain timeout error, got: {}", text
+        );
     }
 }
