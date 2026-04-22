@@ -20,7 +20,7 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{broadcast,Mutex,oneshot};
+use tokio::sync::{Mutex};
 use tracing::info;
 
 /// Resource limits for capture operations.
@@ -49,8 +49,6 @@ type BackgroundSessionEvents = Arc<std::sync::Mutex<Vec<TraceEvent>>>;
 
 /// The Chronos MCP server state.
 pub struct ChronosServer {
-    /// Active capture sessions (session_id → runner).
-    sessions: Arc<Mutex<HashMap<String, ActiveSession>>>,
     /// Loaded query engines (session_id → engine).
     engines: Arc<Mutex<HashMap<String, QueryEngine>>>,
     /// Session languages (session_id → language) for routing evaluations.
@@ -61,163 +59,12 @@ pub struct ChronosServer {
     /// Used for background debug_run sessions that are still running.
     /// Uses std::sync::Mutex because it is accessed from blocking threads.
     background_sessions: Arc<std::sync::Mutex<HashMap<String, BackgroundSessionEvents>>>,
-    /// Active symbol subscriptions: subscription_id → SubscriptionEntry.
-    subscriptions: Arc<Mutex<HashMap<String, SubscriptionEntry>>>,
-    /// Stop senders for watch tasks: subscription_id → stop sender.
-    watch_stop_senders: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
     /// Expression evaluation dispatcher for multi-language support.
     /// Uses Mutex for interior mutability since registration happens post-construction.
     eval_dispatcher: Arc<Mutex<SessionEvalDispatcher>>,
     /// Sessions with connected debug clients (Python debugpy or JS Node.js inspector).
     /// Used to track which sessions have active DAP/CDP connections.
     connected_sessions: Arc<std::sync::Mutex<HashSet<String>>>,
-}
-
-/// An active capture session with its runner.
-/// Reserved for future attach/detach workflows.
-#[allow(dead_code)]
-struct ActiveSession {
-    #[allow(dead_code)]
-    pid: u32,
-    runner: CaptureRunner,
-}
-
-/// An active symbol subscription for hardware watchpoint monitoring.
-#[derive(Clone)]
-#[allow(dead_code)]
-struct SubscriptionEntry {
-    /// The debug session this subscription belongs to.
-    session_id: String,
-    /// The symbol name being watched.
-    symbol: String,
-    /// The resolved address being watched.
-    address: u64,
-    /// Broadcast sender for events.
-    sender: broadcast::Sender<TraceEvent>,
-    /// Buffered events (ring buffer of last 1024).
-    events: Arc<std::sync::Mutex<Vec<TraceEvent>>>,
-    /// When this subscription was created.
-    created_at: std::time::Instant,
-}
-
-/// Background task that monitors a hardware watchpoint via ptrace.
-/// Runs in a tokio task, sets up the watchpoint, waits for SIGTRAP events,
-/// and pushes TraceEvents to the subscription's event buffer.
-async fn watch_task(
-    pid: u32,
-    address: u64,
-    condition: chronos_native::WatchpointCondition,
-    _sender: broadcast::Sender<TraceEvent>,
-    mut stop_rx: oneshot::Receiver<()>,
-    events: Arc<std::sync::Mutex<Vec<TraceEvent>>>,
-) {
-    use chronos_native::{HardwareWatchpointManager, WatchpointSize};
-    use nix::sys::wait::{waitpid, WaitStatus};
-    use nix::unistd::Pid;
-
-    // If PID is 0, there's nothing to watch
-    if pid == 0 {
-        return;
-    }
-
-    let nix_pid = Pid::from_raw(pid as i32);
-
-    // Spawn a blocking task to do ptrace operations
-    let handle = tokio::task::spawn_blocking(move || {
-        let mut wpm = HardwareWatchpointManager::new(pid);
-
-        // Try to set the watchpoint
-        let wp = match wpm.set_watchpoint(address, condition, WatchpointSize::Byte8) {
-            Ok(wp) => wp,
-            Err(e) => {
-                tracing::error!("Failed to set watchpoint: {}", e);
-                return;
-            }
-        };
-
-        tracing::info!("Set watchpoint {} at 0x{:x} for PID {}", wp.dr_index, address, pid);
-
-        // Resume process
-        if nix::sys::ptrace::cont(nix_pid, None).is_err() {
-            let _ = wpm.clear_all();
-            return;
-        }
-
-        loop {
-            // Wait for child to stop
-            let result = waitpid(nix_pid, None);
-            match result {
-                Ok(WaitStatus::Stopped(_, nix::sys::signal::Signal::SIGTRAP)) => {
-                    // Check if this is our watchpoint trigger
-                    let dr6_offset = HardwareWatchpointManager::dr_offset(6);
-                    let dr6_val = nix::sys::ptrace::read_user(nix_pid, dr6_offset as *mut std::ffi::c_void)
-                        .map(|v| v as u64)
-                        .unwrap_or(0);
-
-                    if let Some(triggered_idx) = HardwareWatchpointManager::check_dr6(dr6_val) {
-                        if triggered_idx == wp.dr_index {
-                            // Watchpoint triggered!
-                            let timestamp_ns = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_nanos() as u64;
-
-                            let var_info = chronos_domain::VariableInfo::new(
-                                "",  // name unknown
-                                format!("0x{:x}", address),
-                                "u64",
-                                address,
-                                chronos_domain::VariableScope::Global,
-                            );
-
-                            let event = TraceEvent::new(
-                                0, // event_id assigned later
-                                timestamp_ns,
-                                pid as u64,
-                                chronos_domain::EventType::VariableWrite,
-                                chronos_domain::SourceLocation::from_address(address),
-                                chronos_domain::EventData::Variable(var_info),
-                            );
-
-                            // Push to buffer
-                            if let Ok(mut buf) = events.lock() {
-                                buf.push(event);
-                                // Keep buffer bounded to 1024
-                                if buf.len() > 1024 {
-                                    buf.remove(0);
-                                }
-                            }
-                        }
-                    }
-
-                    // Resume
-                    let _ = nix::sys::ptrace::cont(nix_pid, None);
-                }
-                Ok(WaitStatus::Exited(_, _)) | Ok(WaitStatus::Signaled(_, _, _)) => {
-                    break;
-                }
-                _ => {
-                    // Some other wait status, continue
-                    let _ = nix::sys::ptrace::cont(nix_pid, None);
-                }
-            }
-        }
-
-        // Clean up watchpoint
-        let _ = wpm.clear_all();
-    });
-
-    // Wait for either the task to complete or a stop signal
-    tokio::select! {
-        _ = &mut stop_rx => {
-            tracing::info!("Watch task for PID {} received stop signal", pid);
-        }
-        result = handle => {
-            if let Err(e) = result {
-                tracing::error!("Watch task for PID {} panicked: {}", pid, e);
-            }
-        }
-    }
 }
 
 // ============================================================================
@@ -251,7 +98,7 @@ pub struct DebugRunParams {
     #[serde(default)]
     pub timeout_secs: Option<u64>,
     /// If true, run the debug session in the background and return immediately.
-    /// The session can be queried using get_session_status.
+    /// The session can be queried using query_events once complete.
     #[serde(default)]
     pub background: Option<bool>,
     /// Debug server host for Python/JS connection (default: "127.0.0.1").
@@ -284,12 +131,6 @@ pub struct DebugAttachParams {
     /// Whether to capture registers on each stop.
     #[serde(default = "default_true")]
     pub capture_registers: bool,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct DebugStopParams {
-    /// Session ID to stop.
-    pub session_id: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -354,21 +195,6 @@ pub struct StateDiffParams {
 pub struct ListThreadsParams {
     /// Session ID.
     pub session_id: String,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct GetBacktraceParams {
-    /// Session ID.
-    pub session_id: String,
-    /// Event ID at which to get the backtrace.
-    pub event_id: u64,
-    /// Maximum depth of the backtrace.
-    #[serde(default = "default_backtrace_depth")]
-    pub max_depth: usize,
-}
-
-fn default_backtrace_depth() -> usize {
-    50
 }
 
 // ============================================================================
@@ -585,59 +411,6 @@ pub struct DebugGetMemoryParams {
     pub timestamp_ns: u64,
 }
 
-// ============================================================================
-// SF3: Background Session Support (Phase 12)
-// ============================================================================
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct GetSessionStatusParams {
-    /// Session ID to query.
-    pub session_id: String,
-}
-
-// ============================================================================
-// SF4: Symbol Subscription Tools (Phase 12)
-// ============================================================================
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct SubscribeToSymbolParams {
-    /// Session ID for the debug session.
-    pub session_id: String,
-    /// Symbol name or "0x<hex address>" for direct address.
-    pub symbol: String,
-    /// Watch type: "write" (default) | "readwrite" | "execute".
-    #[serde(default = "default_watch_type")]
-    pub watch_type: String,
-    /// PID if known; otherwise looked up from session.
-    pub pid: Option<u32>,
-}
-
-fn default_watch_type() -> String {
-    "write".to_string()
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct GetSubscriptionEventsParams {
-    /// Subscription ID to query.
-    pub subscription_id: String,
-    /// Maximum events to return (default 100).
-    #[serde(default = "default_event_limit")]
-    pub limit: usize,
-    /// Wait up to N ms for events (default 0 = non-blocking).
-    #[serde(default)]
-    pub timeout_ms: Option<u64>,
-}
-
-fn default_event_limit() -> usize {
-    100
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct UnsubscribeParams {
-    /// Subscription ID to remove.
-    pub subscription_id: String,
-}
-
 impl ChronosServer {
     pub fn new() -> Self {
         let db_path = std::env::var("CHRONOS_DB_PATH")
@@ -660,13 +433,10 @@ impl ChronosServer {
         let eval_dispatcher = SessionEvalDispatcher::with_native_evaluator(HashMap::new());
 
         Self {
-            sessions: Arc::new(Mutex::new(HashMap::new())),
             engines: Arc::new(Mutex::new(HashMap::new())),
             session_languages: Arc::new(Mutex::new(HashMap::new())),
             store: Arc::new(store),
             background_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
-            subscriptions: Arc::new(Mutex::new(HashMap::new())),
-            watch_stop_senders: Arc::new(Mutex::new(HashMap::new())),
             eval_dispatcher: Arc::new(Mutex::new(eval_dispatcher)),
             connected_sessions: Arc::new(std::sync::Mutex::new(HashSet::new())),
         }
@@ -1184,7 +954,7 @@ impl ChronosServer {
                 "status": "running",
                 "background": true,
                 "message": format!("Debug session for '{}' started in background", program),
-                "hint": "Use get_session_status to check progress, or wait for status='finalized'"
+                "hint": "Use query_events once complete"
             });
             return Ok(CallToolResult::success(json_content(&result)));
         }
@@ -1277,292 +1047,6 @@ impl ChronosServer {
         }
     }
 
-    // =========================================================================
-    // SF3: Background Session Support
-    // =========================================================================
-
-    #[tool(
-        name = "get_session_status",
-        description = "Get the status of a background debug session. Returns the current state and event count. When status becomes 'finalized', the session is queryable via query_events."
-    )]
-    async fn get_session_status(
-        &self,
-        params: Parameters<GetSessionStatusParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let params = params.0;
-
-        // First check if it's a finalized session in engines
-        {
-            let engines = self.engines.lock().await;
-            if let Some(_engine) = engines.get(&params.session_id) {
-                let result = serde_json::json!({
-                    "session_id": params.session_id,
-                    "status": "finalized",
-                    "background": false,
-                    "message": "Session has been finalized and is queryable"
-                });
-                return Ok(CallToolResult::success(json_content(&result)));
-            }
-        }
-
-        // Check background sessions
-        let bg_sessions = self.background_sessions.lock().unwrap();
-        if let Some(events_arc) = bg_sessions.get(&params.session_id) {
-            let events = events_arc.lock().unwrap();
-            let event_count = events.len();
-            let result = serde_json::json!({
-                "session_id": params.session_id,
-                "status": "running",
-                "background": true,
-                "event_count": event_count,
-                "message": "Background session is still running. Events are being collected."
-            });
-            return Ok(CallToolResult::success(json_content(&result)));
-        }
-
-        // Session not found
-        let result = serde_json::json!({
-            "session_id": params.session_id,
-            "status": "not_found",
-            "background": false,
-            "message": format!("Session '{}' not found", params.session_id)
-        });
-        Ok(CallToolResult::success(json_content(&result)))
-    }
-
-    // =========================================================================
-    // SF4: Symbol Subscription Tools
-    // =========================================================================
-
-    #[tool(
-        name = "subscribe_to_symbol",
-        description = "Subscribe to memory access events for a symbol. Sets a hardware watchpoint on the symbol's address and returns a subscription_id. Use get_subscription_events to retrieve events."
-    )]
-    async fn subscribe_to_symbol(
-        &self,
-        params: Parameters<SubscribeToSymbolParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        use chronos_native::{SymbolResolver, WatchpointCondition};
-
-        let params = params.0;
-
-        // 1. Resolve symbol to address
-        let address = if params.symbol.starts_with("0x") {
-            // Parse as hex address directly
-            match u64::from_str_radix(params.symbol.trim_start_matches("0x"), 16) {
-                Ok(addr) => addr,
-                Err(_) => return Ok(CallToolResult::error(text_content(format!(
-                    "Invalid hex address: {}", params.symbol
-                )))),
-            }
-        } else {
-            // Look up symbol via PID
-            let pid = match params.pid {
-                Some(p) => p,
-                None => {
-                    return Ok(CallToolResult::error(text_content(
-                        "PID not provided. The 'pid' parameter is required when using symbol names.".to_string(),
-                    )));
-                }
-            };
-
-            let resolver = match SymbolResolver::from_pid(pid) {
-                Ok(r) => r,
-                Err(e) => return Ok(CallToolResult::error(text_content(format!(
-                    "Failed to load symbols for PID {}: {}", pid, e
-                )))),
-            };
-
-            match resolver.resolve_by_name(&params.symbol) {
-                Some(addr) => addr,
-                None => return Ok(CallToolResult::error(text_content(format!(
-                    "Symbol '{}' not found in PID {}", params.symbol, pid
-                )))),
-            }
-        };
-
-        // 2. Determine watch condition from watch_type
-        let condition = match params.watch_type.as_str() {
-            "write" => WatchpointCondition::Write,
-            "readwrite" | "both" => WatchpointCondition::ReadWrite,
-            "execute" => WatchpointCondition::Execute,
-            _ => return Ok(CallToolResult::error(text_content(format!(
-                "Invalid watch_type: {}. Use 'write', 'readwrite', or 'execute'", params.watch_type
-            )))),
-        };
-
-        // 3. Create broadcast channel
-        let (tx, _) = broadcast::channel::<TraceEvent>(1024);
-
-        // 4. Create subscription entry
-        let subscription_id = uuid::Uuid::new_v4().to_string();
-        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
-
-        let entry = SubscriptionEntry {
-            session_id: params.session_id.clone(),
-            symbol: params.symbol.clone(),
-            address,
-            sender: tx.clone(),
-            events: Arc::clone(&events),
-            created_at: std::time::Instant::now(),
-        };
-
-        // 5. Store subscription
-        {
-            let mut subs = self.subscriptions.lock().await;
-            subs.insert(subscription_id.clone(), entry);
-        }
-
-        // 6. Create stop sender and store it
-        let (stop_tx, stop_rx) = oneshot::channel::<()>();
-        {
-            let mut senders = self.watch_stop_senders.lock().await;
-            senders.insert(subscription_id.clone(), stop_tx);
-        }
-
-        // 7. Spawn background watch task if PID is available
-        let pid = params.pid.unwrap_or(0);
-        if pid != 0 {
-            let _sub_id = subscription_id.clone();
-            let events_clone = Arc::clone(&events);
-
-            tokio::spawn(async move {
-                watch_task(pid, address, condition, tx, stop_rx, events_clone).await;
-            });
-        }
-        // Note: If pid is 0, the subscription is created but no actual watching happens.
-        // This allows testing the subscription infrastructure without ptrace.
-
-        let result = serde_json::json!({
-            "subscription_id": subscription_id,
-            "symbol": params.symbol,
-            "address_hex": format!("0x{:x}", address),
-            "watch_type": params.watch_type,
-            "message": "Watching symbol. Use get_subscription_events to retrieve events.",
-        });
-        Ok(CallToolResult::success(json_content(&result)))
-    }
-
-    #[tool(
-        name = "get_subscription_events",
-        description = "Get events from a symbol subscription. Returns buffered events from the watchpoint."
-    )]
-    async fn get_subscription_events(
-        &self,
-        params: Parameters<GetSubscriptionEventsParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        use std::time::Duration;
-
-        let params = params.0;
-        let limit = params.limit;
-        let timeout_ms = params.timeout_ms.unwrap_or(0);
-
-        // Look up subscription
-        let entry = {
-            let subs = self.subscriptions.lock().await;
-            subs.get(&params.subscription_id).cloned()
-        };
-
-        let entry = match entry {
-            Some(e) => e,
-            None => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Subscription '{}' not found", params.subscription_id
-                ))));
-            }
-        };
-
-        // Drain events from the buffer
-        let mut events = Vec::new();
-        let deadline = tokio::time::Instant::now() + Duration::from_millis(timeout_ms.max(1));
-
-        loop {
-            // Try to get events from the buffer
-            {
-                let mut buf = entry.events.lock().unwrap();
-                let available = buf.len();
-                if available > 0 {
-                    let to_take = available.min(limit - events.len());
-                    events.extend(buf.drain(..to_take));
-                }
-            }
-
-            if events.len() >= limit {
-                break;
-            }
-
-            // Wait for more events with timeout
-            if timeout_ms == 0 {
-                break;
-            }
-
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            if remaining.is_zero() {
-                break;
-            }
-
-            tokio::time::sleep(remaining.min(Duration::from_millis(10))).await;
-        }
-
-        let has_more = !entry.events.lock().unwrap().is_empty();
-
-        let result = serde_json::json!({
-            "subscription_id": params.subscription_id,
-            "events": events.iter().map(|e| serde_json::json!({
-                "event_id": e.event_id,
-                "timestamp_ns": e.timestamp_ns,
-                "thread_id": e.thread_id,
-                "event_type": e.event_type.to_string(),
-                "address": format!("0x{:x}", e.location.address),
-            })).collect::<Vec<_>>(),
-            "count": events.len(),
-            "has_more": has_more,
-        });
-        Ok(CallToolResult::success(json_content(&result)))
-    }
-
-    #[tool(
-        name = "unsubscribe_from_symbol",
-        description = "Stop watching a symbol and remove the subscription."
-    )]
-    async fn unsubscribe_from_symbol(
-        &self,
-        params: Parameters<UnsubscribeParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let params = params.0;
-
-        // 1. Look up and remove subscription
-        let entry = {
-            let mut subs = self.subscriptions.lock().await;
-            subs.remove(&params.subscription_id)
-        };
-
-        let entry = match entry {
-            Some(e) => e,
-            None => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Subscription '{}' not found", params.subscription_id
-                ))));
-            }
-        };
-
-        // 2. Send stop signal via watch_stop_senders
-        {
-            let mut senders = self.watch_stop_senders.lock().await;
-            if let Some(stop_tx) = senders.remove(&params.subscription_id) {
-                let _ = stop_tx.send(());
-            }
-        }
-
-        let result = serde_json::json!({
-            "subscription_id": params.subscription_id,
-            "symbol": entry.symbol,
-            "address_hex": format!("0x{:x}", entry.address),
-            "message": "Unsubscribed",
-        });
-        Ok(CallToolResult::success(json_content(&result)))
-    }
-
     #[tool(
         name = "debug_attach",
         description = "Attach to a running process for trace capture."
@@ -1642,90 +1126,6 @@ impl ChronosServer {
                 "Internal error: {}",
                 e
             )))),
-        }
-    }
-
-    #[tool(
-        name = "debug_stop",
-        description = "Stop an active trace capture session and build query indices. Note: debug_run already captures to completion, so this is only needed for future attach/detach workflows."
-    )]
-    async fn debug_stop(
-        &self,
-        params: Parameters<DebugStopParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let params = params.0;
-        let mut sessions = self.sessions.lock().await;
-
-        match sessions.remove(&params.session_id) {
-            Some(mut active) => {
-                info!("Stopping capture session {}", params.session_id);
-
-                // Stop the runner and collect events (blocks until event loop finishes)
-                let capture_result =
-                    tokio::task::spawn_blocking(move || active.runner.stop_and_collect()).await;
-
-                let result = match capture_result {
-                    Ok(Ok(capture)) => {
-                        let total_events = capture.total_events;
-                        let end_reason_str = match &capture.end_reason {
-                            CaptureEndReason::Exited(code) => format!("exited({})", code),
-                            CaptureEndReason::Signaled { signal_name, .. } => {
-                                format!("signaled({})", signal_name)
-                            }
-                            CaptureEndReason::StoppedByUser => "stopped_by_user".into(),
-                            CaptureEndReason::Failed(e) => format!("failed({})", e),
-                        };
-
-                        info!(
-                            "Capture {} finished: {} events, reason: {}",
-                            params.session_id, total_events, end_reason_str
-                        );
-
-                        // Build indices and store engine
-                        // Use stored language if available, otherwise default to C (native)
-                        let language = self.session_languages.lock().await
-                            .get(&params.session_id)
-                            .copied()
-                            .unwrap_or(Language::C);
-                        self.build_and_store_engine(&params.session_id, capture.events, language)
-                            .await;
-
-                        let output = serde_json::json!({
-                            "session_id": params.session_id,
-                            "status": "finalized",
-                            "total_events": total_events,
-                            "end_reason": end_reason_str,
-                            "hint": "Session is now queryable. Use query_events, get_call_stack, get_execution_summary, etc."
-                        });
-                        Ok(CallToolResult::success(json_content(&output)))
-                    }
-                    Ok(Err(e)) => Ok(CallToolResult::error(text_content(format!(
-                        "Capture collection failed: {}",
-                        e
-                    )))),
-                    Err(e) => Ok(CallToolResult::error(text_content(format!(
-                        "Capture thread error: {}",
-                        e
-                    )))),
-                };
-                result
-            }
-            None => {
-                // Check if already finalized
-                let engines = self.engines.lock().await;
-                if engines.contains_key(&params.session_id) {
-                    Ok(CallToolResult::success(json_content(&serde_json::json!({
-                        "session_id": params.session_id,
-                        "status": "already_finalized",
-                        "hint": "This session was captured via debug_run (synchronous mode). It's already queryable."
-                    }))))
-                } else {
-                    Ok(CallToolResult::error(text_content(format!(
-                        "Session '{}' not found",
-                        params.session_id
-                    ))))
-                }
-            }
         }
     }
 
@@ -1923,53 +1323,6 @@ impl ChronosServer {
                     "session_id": params.session_id,
                     "thread_count": threads.len(),
                     "thread_ids": threads,
-                });
-                Ok(CallToolResult::success(json_content(&output)))
-            }
-            None => Ok(CallToolResult::error(text_content(format!(
-                "Session '{}' not found",
-                params.session_id
-            )))),
-        }
-    }
-
-    #[tool(
-        name = "get_backtrace",
-        description = "Get the full backtrace at a specific event."
-    )]
-    async fn get_backtrace(
-        &self,
-        params: Parameters<GetBacktraceParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let params = params.0;
-        let engines = self.engines.lock().await;
-
-        match engines.get(&params.session_id) {
-            Some(engine) => {
-                let mut stack = engine.reconstruct_call_stack(params.event_id);
-                stack.truncate(params.max_depth);
-
-                let bt_lines: Vec<String> = stack
-                    .iter()
-                    .enumerate()
-                    .map(|(i, frame)| {
-                        let file_info = match (&frame.file, &frame.line) {
-                            (Some(f), Some(l)) => format!(" at {}:{}", f, l),
-                            (Some(f), None) => format!(" at {}", f),
-                            _ => String::new(),
-                        };
-                        format!(
-                            "#{} 0x{:016x} in {}{}",
-                            i, frame.address, frame.function, file_info
-                        )
-                    })
-                    .collect();
-
-                let output = serde_json::json!({
-                    "session_id": params.session_id,
-                    "at_event_id": params.event_id,
-                    "frame_count": stack.len(),
-                    "backtrace": bt_lines.join("\n"),
                 });
                 Ok(CallToolResult::success(json_content(&output)))
             }
@@ -5026,139 +4379,6 @@ mod tests {
             text.contains("\"top_n\":5") || text.contains("top_n"),
             "Output should reflect top_n parameter"
         );
-    }
-
-    // ========================================================================
-    // SF5 — Symbol Subscription Tests (Phase 12)
-    // ========================================================================
-
-    #[tokio::test]
-    async fn test_subscribe_to_symbol_hex_address() {
-        let server = ChronosServer::new();
-        let result = server
-            .subscribe_to_symbol(Parameters(SubscribeToSymbolParams {
-                session_id: "test-session".to_string(),
-                symbol: "0x401000".to_string(),
-                watch_type: "write".to_string(),
-                pid: Some(1234),
-            }))
-            .await
-            .unwrap();
-
-        assert_ne!(result.is_error, Some(true));
-        let text = format!("{:?}", result.content);
-        // Should return subscription_id
-        assert!(text.contains("subscription_id"));
-        // Should contain the hex address
-        assert!(text.contains("0x401000") || text.contains("401000"));
-    }
-
-    #[tokio::test]
-    async fn test_subscribe_to_symbol_pid_required() {
-        let server = ChronosServer::new();
-        // Subscribe without providing pid - should fail for symbol name
-        let result = server
-            .subscribe_to_symbol(Parameters(SubscribeToSymbolParams {
-                session_id: "test-session".to_string(),
-                symbol: "main".to_string(),  // Not a hex address
-                watch_type: "write".to_string(),
-                pid: None,  // No PID provided
-            }))
-            .await
-            .unwrap();
-
-        // Should be an error because PID is required for symbol names
-        assert_eq!(result.is_error, Some(true));
-    }
-
-    #[tokio::test]
-    async fn test_get_subscription_events_empty() {
-        let server = ChronosServer::new();
-
-        // First create a subscription
-        let sub_result = server
-            .subscribe_to_symbol(Parameters(SubscribeToSymbolParams {
-                session_id: "test-session".to_string(),
-                symbol: "0x401000".to_string(),
-                watch_type: "write".to_string(),
-                pid: Some(0),  // pid=0 means no actual watching, just subscription creation
-            }))
-            .await
-            .unwrap();
-
-        assert_ne!(sub_result.is_error, Some(true));
-        let sub_text = format!("{:?}", sub_result.content);
-
-        // Extract subscription_id from result
-        // The result should contain subscription_id
-        assert!(sub_text.contains("subscription_id"));
-
-        // Now get events from the subscription (should be empty since no pid=0 means no actual watching)
-        // First we need to get the subscription_id from the result
-        // For this test, we'll just verify the tool works by calling with a dummy id
-        // In a real test we'd parse the subscription_id from the result
-    }
-
-    #[tokio::test]
-    async fn test_unsubscribe_removes_subscription() {
-        let server = ChronosServer::new();
-
-        // Create a subscription
-        let sub_result = server
-            .subscribe_to_symbol(Parameters(SubscribeToSymbolParams {
-                session_id: "test-session".to_string(),
-                symbol: "0x401000".to_string(),
-                watch_type: "write".to_string(),
-                pid: Some(0),
-            }))
-            .await
-            .unwrap();
-
-        assert_ne!(sub_result.is_error, Some(true));
-
-        // Try to unsubscribe - we can't easily get the subscription_id from the result
-        // In a real test we'd parse it. For now, test that unsubscribe with a fake id returns error
-        let unsub_result = server
-            .unsubscribe_from_symbol(Parameters(UnsubscribeParams {
-                subscription_id: "fake-id-that-does-not-exist".to_string(),
-            }))
-            .await
-            .unwrap();
-
-        // Should be an error because subscription doesn't exist
-        assert_eq!(unsub_result.is_error, Some(true));
-    }
-
-    #[tokio::test]
-    async fn test_unsubscribe_unknown_id() {
-        let server = ChronosServer::new();
-        let result = server
-            .unsubscribe_from_symbol(Parameters(UnsubscribeParams {
-                subscription_id: "nonexistent-subscription-id".to_string(),
-            }))
-            .await
-            .unwrap();
-
-        assert_eq!(result.is_error, Some(true));
-        let text = format!("{:?}", result.content);
-        assert!(text.contains("not found") || text.contains("NotFound"));
-    }
-
-    #[tokio::test]
-    async fn test_get_subscription_events_unknown_id() {
-        let server = ChronosServer::new();
-        let result = server
-            .get_subscription_events(Parameters(GetSubscriptionEventsParams {
-                subscription_id: "nonexistent-subscription-id".to_string(),
-                limit: 100,
-                timeout_ms: None,
-            }))
-            .await
-            .unwrap();
-
-        assert_eq!(result.is_error, Some(true));
-        let text = format!("{:?}", result.content);
-        assert!(text.contains("not found") || text.contains("NotFound"));
     }
 
     // ========================================================================
