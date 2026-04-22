@@ -302,6 +302,90 @@ impl JdwpClient {
 
         Ok(values)
     }
+
+    /// Get all loaded classes from the JVM using VirtualMachine.AllClasses.
+    ///
+    /// Command set=1 (VirtualMachine), Command=9 (AllClasses)
+    /// Returns a list of class signatures that can be used to look up classes.
+    pub async fn all_classes(&mut self) -> Result<Vec<ClassInfo>, JavaError> {
+        let reply = self.send_command(1, 9, vec![]).await?;
+        parse_all_classes(&reply)
+    }
+
+    /// Get static field values for a reference type using ReferenceType.GetValues.
+    ///
+    /// Command set=2 (ReferenceType), Command=6 (GetValues)
+    /// Request: referenceTypeID(8) + fieldsCount(4) + fieldID(8) * fieldsCount
+    /// Response: valuesCount(4) + tagged-value * valuesCount
+    pub async fn get_static_field_values(
+        &mut self,
+        ref_type_id: u64,
+        field_ids: &[u64],
+    ) -> Result<Vec<String>, JavaError> {
+        let mut data = Vec::with_capacity(12 + field_ids.len() * 8);
+        data.extend_from_slice(&ref_type_id.to_be_bytes());
+        data.extend_from_slice(&(field_ids.len() as u32).to_be_bytes());
+        for field_id in field_ids {
+            data.extend_from_slice(&field_id.to_be_bytes());
+        }
+
+        let reply = self.send_command(2, 6, data).await?;
+
+        // Parse reply: valuesCount(4) + tagged-value * valuesCount
+        if reply.len() < 4 {
+            return Err(JavaError::JdwpProtocol(
+                "GetValues response too short".to_string(),
+            ));
+        }
+
+        let count = u32::from_be_bytes([reply[0], reply[1], reply[2], reply[3]]) as usize;
+        let mut offset = 4;
+        let mut values = Vec::with_capacity(count);
+
+        for _ in 0..count {
+            let (val_str, consumed) = parse_tagged_value(&reply[offset..])
+                .map_err(|e| JavaError::JdwpProtocol(format!("GetValues value parse error: {}", e)))?;
+            values.push(val_str);
+            offset += consumed;
+        }
+
+        Ok(values)
+    }
+
+    /// Get fields for a reference type using ReferenceType.Fields.
+    ///
+    /// Command set=2 (ReferenceType), Command=4 (Fields)
+    /// Request: referenceTypeID(8)
+    /// Response: int count + per field: fieldID(8) + name + signature + genericSignature + modifiers(4) + genericSignature
+    pub async fn reference_type_fields(
+        &mut self,
+        ref_type_id: u64,
+    ) -> Result<Vec<FieldInfo>, JavaError> {
+        let mut data = Vec::with_capacity(8);
+        data.extend_from_slice(&ref_type_id.to_be_bytes());
+        let reply = self.send_command(2, 4, data).await?;
+        parse_fields(&reply)
+    }
+}
+
+/// Information about a loaded class.
+#[derive(Debug, Clone)]
+pub struct ClassInfo {
+    /// The class signature (e.g., "java/lang/String").
+    pub signature: String,
+    /// The class ID in JDWP.
+    pub class_id: u64,
+}
+
+/// Information about a field in a class.
+#[derive(Debug, Clone)]
+pub struct FieldInfo {
+    /// The field ID in JDWP.
+    pub field_id: u64,
+    /// The field name.
+    pub name: String,
+    /// The field signature (e.g., "I" for int, "Ljava/lang/String;" for String).
+    pub signature: String,
 }
 
 /// Build a JDWP command packet.
@@ -569,6 +653,170 @@ pub fn parse_tagged_value(data: &[u8]) -> Result<(String, usize), JavaError> {
             tag, data[0]
         ))),
     }
+}
+
+/// Parse VirtualMachine.AllClasses reply data.
+///
+/// Format: int count + per class: byte typeTag + classID(8) + signature + genericSignature + status
+/// - signature is a string: int length(4) + UTF-8 bytes
+pub fn parse_all_classes(data: &[u8]) -> Result<Vec<ClassInfo>, JavaError> {
+    if data.len() < 4 {
+        return Err(JavaError::JdwpProtocol(
+            "AllClasses response too short".to_string(),
+        ));
+    }
+
+    let count = u32::from_be_bytes([data[0], data[1], data[2], data[3]]) as usize;
+    let mut offset = 4;
+
+    let mut classes = Vec::with_capacity(count);
+    for _ in 0..count {
+        // Read typeTag (1 byte)
+        if offset + 1 > data.len() {
+            return Err(JavaError::JdwpProtocol(
+                "AllClasses response: truncated typeTag".to_string(),
+            ));
+        }
+        let _type_tag = data[offset];
+        offset += 1;
+
+        // Read classID (8 bytes)
+        if offset + 8 > data.len() {
+            return Err(JavaError::JdwpProtocol(
+                "AllClasses response: truncated classID".to_string(),
+            ));
+        }
+        let class_id = read_u64(&data[offset..offset + 8]);
+        offset += 8;
+
+        // Read signature (string: length + bytes)
+        if offset + 4 > data.len() {
+            return Err(JavaError::JdwpProtocol(
+                "AllClasses response: truncated signature length".to_string(),
+            ));
+        }
+        let sig_length = i32::from_be_bytes([data[offset], data[offset + 1], data[offset + 2], data[offset + 3]]) as usize;
+        offset += 4;
+
+        if offset + sig_length > data.len() {
+            return Err(JavaError::JdwpProtocol(
+                "AllClasses response: truncated signature".to_string(),
+            ));
+        }
+        let signature = String::from_utf8_lossy(&data[offset..offset + sig_length]).to_string();
+        offset += sig_length;
+
+        // Skip genericSignature (string) - just read length and skip
+        if offset + 4 > data.len() {
+            return Err(JavaError::JdwpProtocol(
+                "AllClasses response: truncated genericSignature length".to_string(),
+            ));
+        }
+        let gen_sig_length = i32::from_be_bytes([data[offset], data[offset + 1], data[offset + 2], data[offset + 3]]) as usize;
+        offset += 4;
+        offset += gen_sig_length;
+
+        // Skip status (4 bytes)
+        if offset + 4 > data.len() {
+            return Err(JavaError::JdwpProtocol(
+                "AllClasses response: truncated status".to_string(),
+            ));
+        }
+        offset += 4;
+
+        classes.push(ClassInfo {
+            signature,
+            class_id,
+        });
+    }
+
+    Ok(classes)
+}
+
+/// Parse ReferenceType.Fields reply data.
+///
+/// Format: int count + per field: fieldID(8) + name + signature + genericSignature + modifiers(4) + genericSignature
+fn parse_fields(data: &[u8]) -> Result<Vec<FieldInfo>, JavaError> {
+    if data.len() < 4 {
+        return Err(JavaError::JdwpProtocol(
+            "Fields response too short".to_string(),
+        ));
+    }
+
+    let count = u32::from_be_bytes([data[0], data[1], data[2], data[3]]) as usize;
+    let mut offset = 4;
+
+    let mut fields = Vec::with_capacity(count);
+    for _ in 0..count {
+        // Read fieldID (8 bytes)
+        if offset + 8 > data.len() {
+            return Err(JavaError::JdwpProtocol(
+                "Fields response: truncated fieldID".to_string(),
+            ));
+        }
+        let field_id = read_u64(&data[offset..offset + 8]);
+        offset += 8;
+
+        // Read name (string: length + bytes)
+        if offset + 4 > data.len() {
+            return Err(JavaError::JdwpProtocol(
+                "Fields response: truncated name length".to_string(),
+            ));
+        }
+        let name_length = i32::from_be_bytes([data[offset], data[offset + 1], data[offset + 2], data[offset + 3]]) as usize;
+        offset += 4;
+
+        if offset + name_length > data.len() {
+            return Err(JavaError::JdwpProtocol(
+                "Fields response: truncated name".to_string(),
+            ));
+        }
+        let name = String::from_utf8_lossy(&data[offset..offset + name_length]).to_string();
+        offset += name_length;
+
+        // Read signature (string: length + bytes)
+        if offset + 4 > data.len() {
+            return Err(JavaError::JdwpProtocol(
+                "Fields response: truncated signature length".to_string(),
+            ));
+        }
+        let sig_length = i32::from_be_bytes([data[offset], data[offset + 1], data[offset + 2], data[offset + 3]]) as usize;
+        offset += 4;
+
+        if offset + sig_length > data.len() {
+            return Err(JavaError::JdwpProtocol(
+                "Fields response: truncated signature".to_string(),
+            ));
+        }
+        let signature = String::from_utf8_lossy(&data[offset..offset + sig_length]).to_string();
+        offset += sig_length;
+
+        // Skip genericSignature (string: length + bytes)
+        if offset + 4 > data.len() {
+            return Err(JavaError::JdwpProtocol(
+                "Fields response: truncated genericSignature length".to_string(),
+            ));
+        }
+        let gen_sig_length = i32::from_be_bytes([data[offset], data[offset + 1], data[offset + 2], data[offset + 3]]) as usize;
+        offset += 4;
+        offset += gen_sig_length;
+
+        // Skip modifiers (4 bytes)
+        if offset + 4 > data.len() {
+            return Err(JavaError::JdwpProtocol(
+                "Fields response: truncated modifiers".to_string(),
+            ));
+        }
+        offset += 4;
+
+        fields.push(FieldInfo {
+            field_id,
+            name,
+            signature,
+        });
+    }
+
+    Ok(fields)
 }
 
 /// Represents a JDWP debugger event.

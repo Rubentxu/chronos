@@ -8,9 +8,9 @@ use std::time::Instant;
 use which::which;
 
 use chronos_capture::{CaptureConfig, TraceAdapter};
-use chronos_domain::{CaptureSession, Language, TraceError};
+use chronos_domain::{CaptureSession, Language, StackFrame as ChronosStackFrame, ThreadInfo, TraceError, VariableInfo};
 
-use crate::event_loop::{run_delve_event_loop, AtomicCancel, DelveRpcClient};
+use crate::event_loop::{run_delve_event_loop, AtomicCancel, DelveRpcClient, delve_stack_to_chronos_frames, goroutines_to_thread_info};
 use crate::event_parser::stack_frame_to_trace_event;
 use crate::rpc::{DelveClient, StackFrame};
 use crate::subprocess::DelveSubprocess;
@@ -29,6 +29,13 @@ struct GoAdapterState {
     join_handle: Option<tokio::task::JoinHandle<()>>,
     /// Receiver for events produced by the loop.
     events_rx: Option<tokio::sync::mpsc::Receiver<chronos_domain::TraceEvent>>,
+    /// Shared Delve RPC client for thread/stack/variable queries.
+    rpc: Option<Arc<DelveRpcClient>>,
+    /// The current capture session ID.
+    session_id: Option<String>,
+    /// Last goroutine ID used in get_stack_trace.
+    /// Used by get_variables to know which goroutine to query.
+    last_goroutine_id: Option<i64>,
 }
 
 /// Go trace adapter using Delve debugger.
@@ -50,6 +57,9 @@ impl GoAdapter {
                 cancel: None,
                 join_handle: None,
                 events_rx: None,
+                rpc: None,
+                session_id: None,
+                last_goroutine_id: None,
             }),
         }
     }
@@ -133,6 +143,9 @@ impl TraceAdapter for GoAdapter {
             }
         });
 
+        let session = CaptureSession::new(0, Language::Go, config);
+        let session_id = session.session_id.clone();
+
         let mut state = self.state.lock().unwrap();
         state.subprocess = Some(subprocess);
         state.session_start = Some(Instant::now());
@@ -140,8 +153,8 @@ impl TraceAdapter for GoAdapter {
         state.cancel = Some(cancel);
         state.join_handle = Some(join_handle);
         state.events_rx = Some(events_rx);
-
-        let session = CaptureSession::new(0, Language::Go, config);
+        state.rpc = Some(rpc);
+        state.session_id = Some(session_id);
         Ok(session)
     }
 
@@ -157,6 +170,9 @@ impl TraceAdapter for GoAdapter {
         }
         state.subprocess = None;
         state.events_rx = None;
+        state.rpc = None;
+        state.session_id = None;
+        state.last_goroutine_id = None;
         Ok(())
     }
 
@@ -176,6 +192,176 @@ impl TraceAdapter for GoAdapter {
 
     fn name(&self) -> &str {
         "go-delve"
+    }
+
+    fn get_threads(&self, session_id: &str) -> Result<Vec<ThreadInfo>, TraceError> {
+        // Get the RPC client from state (scope lock to avoid holding across block_on)
+        let rpc = {
+            let state = self.state.lock().unwrap();
+
+            // Verify session is active
+            if state.session_id.as_deref() != Some(session_id) {
+                return Err(TraceError::session_not_found(session_id));
+            }
+
+            // If not connected (no subprocess), return empty list
+            if state.subprocess.is_none() {
+                return Ok(Vec::new());
+            }
+
+            // Clone the Arc to avoid holding the lock across block_on
+            state
+                .rpc
+                .as_ref()
+                .ok_or_else(|| {
+                    TraceError::UnsupportedOperation("Delve client not available".to_string())
+                })?
+                .clone()
+        };
+
+        // Use block_on to run async Delve RPC calls
+        let rt = tokio::runtime::Handle::current();
+        let goroutines = rt
+            .block_on(async {
+                let mut client = rpc.lock().await;
+                client.list_goroutines().await
+            })
+            .map_err(|e| {
+                tracing::warn!("Failed to get goroutines: {}", e);
+                TraceError::UnsupportedOperation(format!("Delve RPC error: {}", e))
+            })?;
+
+        // Convert goroutines to ThreadInfo
+        let threads = goroutines_to_thread_info(&goroutines);
+        Ok(threads)
+    }
+
+    fn get_stack_trace(
+        &self,
+        session_id: &str,
+        thread_id: u64,
+    ) -> Result<Vec<ChronosStackFrame>, TraceError> {
+        // Get the RPC client from state
+        let rpc = {
+            let state = self.state.lock().unwrap();
+
+            // Verify session is active
+            if state.session_id.as_deref() != Some(session_id) {
+                return Err(TraceError::session_not_found(session_id));
+            }
+
+            // If not connected, return empty
+            if state.subprocess.is_none() {
+                return Ok(Vec::new());
+            }
+
+            // Clone the Arc to avoid holding the lock across block_on
+            state
+                .rpc
+                .as_ref()
+                .ok_or_else(|| {
+                    TraceError::UnsupportedOperation("Delve client not available".to_string())
+                })?
+                .clone()
+        };
+
+        // Use block_on to run async Delve RPC calls
+        // Use depth=100 to get a reasonable number of frames
+        let rt = tokio::runtime::Handle::current();
+        let frames = rt
+            .block_on(async {
+                let mut client = rpc.lock().await;
+                client.stacktrace(thread_id as i64, 100).await
+            })
+            .map_err(|e| {
+                tracing::warn!("Failed to get stack trace: {}", e);
+                TraceError::UnsupportedOperation(format!("Delve RPC error: {}", e))
+            })?;
+
+        // Store the thread_id for use by get_variables
+        {
+            let mut state = self.state.lock().unwrap();
+            state.last_goroutine_id = Some(thread_id as i64);
+        }
+
+        // Convert Delve frames to Chronos frames
+        let chronos_frames = delve_stack_to_chronos_frames(&frames, 0);
+        Ok(chronos_frames)
+    }
+
+    fn get_variables(
+        &self,
+        session_id: &str,
+        frame_id: u64,
+    ) -> Result<Vec<VariableInfo>, TraceError> {
+        // Get the RPC client and last_goroutine_id from state
+        let (rpc, goroutine_id) = {
+            let state = self.state.lock().unwrap();
+
+            // Verify session is active
+            if state.session_id.as_deref() != Some(session_id) {
+                return Err(TraceError::session_not_found(session_id));
+            }
+
+            // If not connected, return empty
+            if state.subprocess.is_none() {
+                return Ok(Vec::new());
+            }
+
+            let rpc = state
+                .rpc
+                .as_ref()
+                .ok_or_else(|| {
+                    TraceError::UnsupportedOperation("Delve client not available".to_string())
+                })?
+                .clone();
+
+            let goroutine_id = state.last_goroutine_id.ok_or_else(|| {
+                TraceError::UnsupportedOperation(
+                    "No goroutine context: call get_stack_trace first".to_string(),
+                )
+            })?;
+
+            (rpc, goroutine_id)
+        };
+
+        // Use block_on to run async Delve RPC calls
+        let rt = tokio::runtime::Handle::current();
+        let frames = rt
+            .block_on(async {
+                let mut client = rpc.lock().await;
+                client.stacktrace(goroutine_id, 100).await
+            })
+            .map_err(|e| {
+                tracing::warn!("Failed to get frames for variables: {}", e);
+                TraceError::UnsupportedOperation(format!("Delve RPC error: {}", e))
+            })?;
+
+        // Get the specific frame (frame_id is the depth index)
+        let frame = frames
+            .get(frame_id as usize)
+            .ok_or_else(|| {
+                TraceError::UnsupportedOperation(format!("Frame {} not found", frame_id))
+            })?;
+
+        // Convert locals to VariableInfo
+        let variables = match &frame.locals {
+            Some(locals) => locals
+                .iter()
+                .map(|v| {
+                    VariableInfo::new(
+                        &v.name,
+                        &v.value,
+                        "unknown", // type_name not available in Delve basic response
+                        0,         // address not available
+                        chronos_domain::VariableScope::Local,
+                    )
+                })
+                .collect(),
+            None => Vec::new(),
+        };
+
+        Ok(variables)
     }
 }
 
@@ -221,5 +407,78 @@ mod tests {
         });
         let result = adapter.stop_capture(&session);
         assert!(result.is_ok());
+    }
+
+    // Tests for get_threads
+    #[test]
+    fn test_go_adapter_get_threads_without_start_returns_error() {
+        // get_threads without starting returns error because session_id doesn't match
+        let adapter = GoAdapter::new();
+        let session = CaptureSession::new(0, Language::Go, CaptureConfig::new("/dev/null"));
+        // Session was never started, so adapter's session_id is None
+        // The session_id check fails before we even check for subprocess
+        let result = adapter.get_threads(&session.session_id);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_go_adapter_get_threads_wrong_session_returns_error() {
+        // get_threads with wrong session_id should return error
+        let adapter = GoAdapter::new();
+        let _session = CaptureSession::new(0, Language::Go, CaptureConfig::new("/dev/null"));
+        let result = adapter.get_threads("wrong-session-id");
+        assert!(result.is_err());
+    }
+
+    // Tests for get_stack_trace
+    #[test]
+    fn test_go_adapter_get_stack_trace_without_start_returns_error() {
+        // get_stack_trace without starting returns error because session_id doesn't match
+        let adapter = GoAdapter::new();
+        let session = CaptureSession::new(0, Language::Go, CaptureConfig::new("/dev/null"));
+        let result = adapter.get_stack_trace(&session.session_id, 1);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_go_adapter_get_stack_trace_wrong_session_returns_error() {
+        // get_stack_trace with wrong session_id should return error
+        let adapter = GoAdapter::new();
+        let _session = CaptureSession::new(0, Language::Go, CaptureConfig::new("/dev/null"));
+        let result = adapter.get_stack_trace("wrong-session-id", 1);
+        assert!(result.is_err());
+    }
+
+    // Tests for get_variables
+    #[test]
+    fn test_go_adapter_get_variables_without_start_returns_error() {
+        // get_variables without starting returns error because session_id doesn't match
+        let adapter = GoAdapter::new();
+        let session = CaptureSession::new(0, Language::Go, CaptureConfig::new("/dev/null"));
+        let result = adapter.get_variables(&session.session_id, 0);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_go_adapter_get_variables_wrong_session_returns_error() {
+        // get_variables with wrong session_id should return error
+        let adapter = GoAdapter::new();
+        let _session = CaptureSession::new(0, Language::Go, CaptureConfig::new("/dev/null"));
+        let result = adapter.get_variables("wrong-session-id", 0);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_go_adapter_get_variables_without_stack_trace_returns_error() {
+        // get_variables without calling get_stack_trace first should return error
+        let adapter = GoAdapter::new();
+        let session = CaptureSession::new(0, Language::Go, CaptureConfig::new("/dev/null"));
+
+        // Directly call get_variables without get_stack_trace - should fail
+        // because last_goroutine_id is not set
+        let result = adapter.get_variables(&session.session_id, 0);
+        // Without calling get_stack_trace first, we get UnsupportedOperation
+        // because the adapter was never started
+        assert!(result.is_err());
     }
 }

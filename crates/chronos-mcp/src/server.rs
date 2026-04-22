@@ -4,11 +4,11 @@
 
 use chronos_domain::{
     query::{CausalityQuery, PerfQuery, PerfSortBy, RaceDetectionQuery},
-    CaptureConfig, EventData, EventType, TraceEvent, TraceQuery,
+    CaptureConfig, EventData, EventType, Language, TraceEvent, TraceQuery,
 };
 use chronos_index::builder::IndexBuilder;
 use chronos_native::capture_runner::{CaptureEndReason, CaptureRunner};
-use chronos_query::QueryEngine;
+use chronos_query::{QueryEngine, SessionEvalDispatcher};
 use chronos_store::{SessionMetadata, SessionStore, TraceDiff};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, Content};
@@ -51,6 +51,8 @@ pub struct ChronosServer {
     sessions: Arc<Mutex<HashMap<String, ActiveSession>>>,
     /// Loaded query engines (session_id → engine).
     engines: Arc<Mutex<HashMap<String, QueryEngine>>>,
+    /// Session languages (session_id → language) for routing evaluations.
+    session_languages: Arc<Mutex<HashMap<String, chronos_domain::Language>>>,
     /// Persistent session store.
     store: Arc<SessionStore>,
     /// Active background sessions: session_id → events vector.
@@ -61,6 +63,9 @@ pub struct ChronosServer {
     subscriptions: Arc<Mutex<HashMap<String, SubscriptionEntry>>>,
     /// Stop senders for watch tasks: subscription_id → stop sender.
     watch_stop_senders: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
+    /// Expression evaluation dispatcher for multi-language support.
+    #[allow(dead_code)]
+    eval_dispatcher: Arc<SessionEvalDispatcher>,
 }
 
 /// An active capture session with its runner.
@@ -622,13 +627,19 @@ impl ChronosServer {
 
         let store = SessionStore::open(&db_path).expect("Failed to open session store");
 
+        // Initialize the expression evaluation dispatcher with native language support.
+        // This provides arithmetic expression evaluation for C, C++, Rust, and eBPF sessions.
+        let eval_dispatcher = SessionEvalDispatcher::with_native_evaluator(HashMap::new());
+
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             engines: Arc::new(Mutex::new(HashMap::new())),
+            session_languages: Arc::new(Mutex::new(HashMap::new())),
             store: Arc::new(store),
             background_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
             subscriptions: Arc::new(Mutex::new(HashMap::new())),
             watch_stop_senders: Arc::new(Mutex::new(HashMap::new())),
+            eval_dispatcher: Arc::new(eval_dispatcher),
         }
     }
 
@@ -649,7 +660,7 @@ impl ChronosServer {
         }
     }
 
-    async fn build_and_store_engine(&self, session_id: &str, events: Vec<TraceEvent>) {
+    async fn build_and_store_engine(&self, session_id: &str, events: Vec<TraceEvent>, language: Language) {
         // Filter out internal/noisy events before indexing:
         // - EventType::Custom with EventData::Registers → ptrace register snapshots (infrastructure noise)
         // - EventType::Unknown → unclassified ptrace stops
@@ -670,9 +681,12 @@ impl ChronosServer {
             .with_causality(indices.causality)
             .with_performance(indices.performance);
 
+        // Store engine and language for later use
         let mut engines = self.engines.lock().await;
-        info!("Built query engine for session {}", session_id);
+        let mut session_languages = self.session_languages.lock().await;
+        info!("Built query engine for session {} (language: {:?})", session_id, language);
         engines.insert(session_id.to_string(), engine);
+        session_languages.insert(session_id.to_string(), language);
     }
 
     /// Run the server on stdio.
@@ -864,7 +878,8 @@ impl ChronosServer {
                 // Build indices and store engine
                 let events = capture.events;
                 let elapsed = start_time.elapsed();
-                self.build_and_store_engine(&sid_clone, events.clone())
+                let language = Language::from_path(&params.program);
+                self.build_and_store_engine(&sid_clone, events.clone(), language)
                     .await;
 
                 // Auto-save if requested
@@ -1253,7 +1268,8 @@ impl ChronosServer {
 
                 let events = capture.events;
                 let _elapsed = start_time.elapsed();
-                self.build_and_store_engine(&sid_clone, events.clone())
+                // debug_attach uses native ptrace, so language is C
+                self.build_and_store_engine(&sid_clone, events.clone(), Language::C)
                     .await;
 
                 let result = serde_json::json!({
@@ -1328,7 +1344,12 @@ impl ChronosServer {
                         );
 
                         // Build indices and store engine
-                        self.build_and_store_engine(&params.session_id, capture.events)
+                        // Use stored language if available, otherwise default to C (native)
+                        let language = self.session_languages.lock().await
+                            .get(&params.session_id)
+                            .copied()
+                            .unwrap_or(Language::C);
+                        self.build_and_store_engine(&params.session_id, capture.events, language)
                             .await;
 
                         let output = serde_json::json!({
@@ -3032,7 +3053,7 @@ mod tests {
     async fn server_with_session(events: Vec<TraceEvent>) -> (ChronosServer, String) {
         let server = ChronosServer::new();
         let session_id = "test-session-sf4".to_string();
-        server.build_and_store_engine(&session_id, events).await;
+        server.build_and_store_engine(&session_id, events, Language::C).await;
         (server, session_id)
     }
 
@@ -3289,7 +3310,7 @@ mod tests {
         ];
 
         // Build engine manually
-        server.build_and_store_engine(&sid, events.clone()).await;
+        server.build_and_store_engine(&sid, events.clone(), Language::C).await;
 
         // Save session
         let save_result = server
@@ -3326,8 +3347,8 @@ mod tests {
         let events = vec![make_fn_event(0, 100, 1, "main")];
 
         // Save two sessions
-        server.build_and_store_engine(&sid1, events.clone()).await;
-        server.build_and_store_engine(&sid2, events.clone()).await;
+        server.build_and_store_engine(&sid1, events.clone(), Language::C).await;
+        server.build_and_store_engine(&sid2, events.clone(), Language::C).await;
 
         server
             .save_session(Parameters(SaveSessionParams {
@@ -3365,8 +3386,8 @@ mod tests {
         ];
 
         // Build and save two identical sessions
-        server.build_and_store_engine(&sid1, events.clone()).await;
-        server.build_and_store_engine(&sid2, events.clone()).await;
+        server.build_and_store_engine(&sid1, events.clone(), Language::C).await;
+        server.build_and_store_engine(&sid2, events.clone(), Language::C).await;
 
         server
             .save_session(Parameters(SaveSessionParams {
@@ -3410,8 +3431,8 @@ mod tests {
         let events1 = vec![make_fn_event(0, 100, 1, "func_a")];
         let events2 = vec![make_fn_event(0, 100, 1, "func_b")];
 
-        server.build_and_store_engine(&sid1, events1).await;
-        server.build_and_store_engine(&sid2, events2).await;
+        server.build_and_store_engine(&sid1, events1, Language::C).await;
+        server.build_and_store_engine(&sid2, events2, Language::C).await;
 
         server
             .save_session(Parameters(SaveSessionParams {
@@ -3889,7 +3910,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_debug_get_registers_success() {
-        use chronos_query::QueryEngine;
+use chronos_query::{QueryEngine, SessionEvalDispatcher};
         use chronos_index::builder::IndexBuilder;
 
         let regs = chronos_domain::RegisterState {

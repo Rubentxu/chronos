@@ -467,29 +467,174 @@ impl TraceAdapter for JavaAdapter {
     fn evaluate_expression(
         &self,
         session_id: &str,
-        _expr: &str,
+        expr: &str,
         _frame_id: u64,
     ) -> Result<String, TraceError> {
-        let state = self.state.lock().unwrap();
+        // Get the client arc from state
+        let client_arc = {
+            let state = self.state.lock().unwrap();
 
-        // Verify session is active
-        if state.session_id.as_deref() != Some(session_id) {
-            return Err(TraceError::session_not_found(session_id));
+            // Verify session is active
+            if state.session_id.as_deref() != Some(session_id) {
+                return Err(TraceError::session_not_found(session_id));
+            }
+
+            // If not connected, return error
+            if state.subprocess.is_none() {
+                return Err(TraceError::UnsupportedOperation(
+                    "evaluate_expression not available".to_string(),
+                ));
+            }
+
+            state
+                .client_arc
+                .as_ref()
+                .ok_or_else(|| {
+                    TraceError::UnsupportedOperation("JDWP client not available".to_string())
+                })?
+                .clone()
+        };
+
+        // Parse expression for ClassName.fieldName pattern
+        // Pattern: identifier.identifier (e.g., "System.out", "Math.PI", "MyClass.myField")
+        if let Some((class_name, field_name)) = parse_static_field_expression(expr) {
+            // Try to evaluate via JDWP using block_on
+            let rt = tokio::runtime::Handle::current();
+            match rt.block_on(evaluate_static_field_via_jdwp(
+                &client_arc,
+                &class_name,
+                &field_name,
+            )) {
+                Ok(value) => return Ok(value),
+                Err(e) => {
+                    tracing::debug!("JDWP field lookup failed, falling back: {}", e);
+                    // Fall through to arithmetic evaluator
+                }
+            }
         }
 
-        // If not connected, return error
-        if state.subprocess.is_none() {
-            return Err(TraceError::UnsupportedOperation(
-                "evaluate_expression not available".to_string(),
-            ));
-        }
-
-        // TODO: Implement JDWP expression evaluation
-        // This requires implementing the JDWPevaluate command
-        Err(TraceError::UnsupportedOperation(
-            "evaluate_expression not yet implemented for Java".to_string(),
-        ))
+        // Fall back to arithmetic evaluator
+        // Use empty locals since we don't have variable context here
+        let evaluator = chronos_query::expr_eval::ExprEvaluator::new(std::collections::HashMap::new());
+        evaluator
+            .evaluate(expr)
+            .map(|v| v.to_string())
+            .map_err(|e| TraceError::InvalidExpression(format!("{:?}", e)))
     }
+}
+
+/// Parse a static field expression like "ClassName.fieldName".
+///
+/// Returns (class_name, field_name) if the expression matches the pattern.
+fn parse_static_field_expression(expr: &str) -> Option<(String, String)> {
+    let parts: Vec<&str> = expr.split('.').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+
+    let class_name = parts[0];
+    let field_name = parts[1];
+
+    // Class name should start with uppercase (Java convention)
+    if class_name.is_empty()
+        || !class_name.chars().next().unwrap().is_uppercase()
+    {
+        return None;
+    }
+
+    // Field name should start with lowercase (Java convention)
+    if field_name.is_empty()
+        || !field_name.chars().next().unwrap().is_lowercase()
+    {
+        return None;
+    }
+
+    // Both should be valid identifiers
+    if !is_valid_identifier(class_name) || !is_valid_identifier(field_name) {
+        return None;
+    }
+
+    Some((class_name.to_string(), field_name.to_string()))
+}
+
+/// Check if a string is a valid Java identifier.
+fn is_valid_identifier(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+
+    let mut chars = s.chars();
+    // First character must be letter, underscore, or dollar sign
+    let first = chars.next().unwrap();
+    if !first.is_alphabetic() && first != '_' && first != '$' {
+        return false;
+    }
+
+    // Remaining characters must be letters, digits, underscores, or dollar signs
+    for c in chars {
+        if !c.is_alphanumeric() && c != '_' && c != '$' {
+            return false;
+        }
+    }
+
+    true
+}
+
+/// Evaluate a static field lookup via JDWP.
+async fn evaluate_static_field_via_jdwp(
+    client_arc: &Arc<tokio::sync::Mutex<crate::protocol::JdwpClient>>,
+    class_name: &str,
+    field_name: &str,
+) -> Result<String, TraceError> {
+    use crate::protocol::ClassInfo;
+
+    let mut client = client_arc.lock().await;
+
+    // Get all classes
+    let classes = client
+        .all_classes()
+        .await
+        .map_err(|e| TraceError::UnsupportedOperation(format!("JDWP error: {}", e)))?;
+
+    // Find the class matching class_name
+    // class_name might be "System" but signature is "java/lang/System"
+    let class_info: ClassInfo = classes
+        .into_iter()
+        .find(|c| {
+            // Check if the signature ends with the class name
+            // e.g., signature "java/lang/System" should match "System"
+            c.signature.ends_with(&format!("/{}", class_name))
+                || c.signature.ends_with(&format!(".{}", class_name))
+                || c.signature == class_name
+        })
+        .ok_or_else(|| {
+            TraceError::UnsupportedOperation(format!("Class not found: {}", class_name))
+        })?;
+
+    // Get fields for this class
+    let fields = client
+        .reference_type_fields(class_info.class_id)
+        .await
+        .map_err(|e| TraceError::UnsupportedOperation(format!("JDWP error: {}", e)))?;
+
+    // Find the field
+    let field_info = fields
+        .into_iter()
+        .find(|f| f.name == field_name)
+        .ok_or_else(|| {
+            TraceError::UnsupportedOperation(format!("Field not found: {}", field_name))
+        })?;
+
+    // Get the field value
+    let values = client
+        .get_static_field_values(class_info.class_id, &[field_info.field_id])
+        .await
+        .map_err(|e| TraceError::UnsupportedOperation(format!("JDWP error: {}", e)))?;
+
+    values
+        .into_iter()
+        .next()
+        .ok_or_else(|| TraceError::UnsupportedOperation("No value returned".to_string()))
 }
 
 #[cfg(test)]
@@ -521,5 +666,73 @@ mod tests {
         let result = adapter.drain_events_internal();
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
+    }
+
+    // Tests for parse_static_field_expression
+    #[test]
+    fn test_parse_static_field_expression_valid() {
+        // Valid patterns - class starts uppercase, field starts lowercase
+        assert_eq!(
+            parse_static_field_expression("System.out"),
+            Some(("System".to_string(), "out".to_string()))
+        );
+        assert_eq!(
+            parse_static_field_expression("MyClass.myField"),
+            Some(("MyClass".to_string(), "myField".to_string()))
+        );
+        assert_eq!(
+            parse_static_field_expression("Thread.currentThread"),
+            Some(("Thread".to_string(), "currentThread".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_static_field_expression_constants() {
+        // Constants like Math.PI won't match our pattern because PI is uppercase
+        // This is a known limitation - the pattern requires field to start lowercase
+        assert_eq!(parse_static_field_expression("Math.PI"), None);
+    }
+
+    #[test]
+    fn test_parse_static_field_expression_invalid() {
+        // Invalid patterns - class name starts with lowercase
+        assert_eq!(parse_static_field_expression("system.out"), None);
+        // Invalid patterns - field name starts with uppercase
+        assert_eq!(parse_static_field_expression("System.Out"), None);
+        // Invalid patterns - not two parts
+        assert_eq!(parse_static_field_expression("System"), None);
+        assert_eq!(parse_static_field_expression("System.out.println"), None);
+        assert_eq!(parse_static_field_expression(""), None);
+        // Invalid patterns - empty parts
+        assert_eq!(parse_static_field_expression(".out"), None);
+        assert_eq!(parse_static_field_expression("System."), None);
+    }
+
+    #[test]
+    fn test_is_valid_identifier_valid() {
+        assert!(is_valid_identifier("x"));
+        assert!(is_valid_identifier("myVariable"));
+        assert!(is_valid_identifier("MyClass"));
+        assert!(is_valid_identifier("_private"));
+        assert!(is_valid_identifier("$special"));
+        assert!(is_valid_identifier("x1"));
+        assert!(is_valid_identifier("my2"));
+    }
+
+    #[test]
+    fn test_is_valid_identifier_invalid() {
+        assert!(!is_valid_identifier(""));
+        assert!(!is_valid_identifier("1variable"));
+        assert!(!is_valid_identifier("my-var"));
+        assert!(!is_valid_identifier("my.var"));
+        assert!(!is_valid_identifier("my var"));
+    }
+
+    #[test]
+    fn test_evaluate_expression_without_start_returns_error() {
+        let adapter = JavaAdapter::new();
+        let session = CaptureSession::new(0, Language::Java, CaptureConfig::new("/dev/null"));
+        let result = adapter.evaluate_expression(&session.session_id, "x + 1", 0);
+        assert!(result.is_err());
     }
 }
