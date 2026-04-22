@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 chronos-domain = { workspace = true }
 chronos-capture = { workspace = true }
+chronos-query = { path = "../chronos-query" }
 tokio = { workspace = true, features = ["net", "io-util", "process", "rt-multi-thread", "macros"] }
 tokio-tungstenite = "0.21"
 futures-util = "0.3"

@@ -13,6 +13,8 @@ chronos-capture = { workspace = true }
 chronos-native = { workspace = true }
 chronos-index = { workspace = true }
 chronos-query = { workspace = true }
+chronos-python = { workspace = true }
+chronos-js = { workspace = true }
 chronos-store = { workspace = true }
 chronos-format = { workspace = true }
 tokio = { workspace = true }

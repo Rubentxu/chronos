@@ -3,6 +3,7 @@ pub mod bootstrap;
 pub mod client;
 pub mod convert;
 pub mod error;
+pub mod eval_backend;
 pub mod parser;
 pub mod subprocess;
 
@@ -10,3 +11,4 @@ pub use adapter::{DapSession, PythonAdapter, PythonDapAdapter};
 pub use client::DapClient;
 pub use convert::dap_event_to_trace;
 pub use error::{PythonAdapterError, PythonError};
+pub use eval_backend::PythonDapEvalBackend;

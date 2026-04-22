@@ -7,7 +7,9 @@ pub mod adapter;
 pub mod cdp_client;
 pub mod debugger;
 pub mod error;
+pub mod eval_backend;
 pub mod subprocess;
 
 pub use adapter::{CdpSession, JsAdapter, JsCdpAdapter};
 pub use error::JsAdapterError;
+pub use eval_backend::JsCdpEvalBackend;

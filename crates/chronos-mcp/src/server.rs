@@ -9,6 +9,8 @@ use chronos_domain::{
 use chronos_index::builder::IndexBuilder;
 use chronos_native::capture_runner::{CaptureEndReason, CaptureRunner};
 use chronos_query::{QueryEngine, SessionEvalDispatcher};
+use chronos_python::PythonDapEvalBackend;
+use chronos_js::JsCdpEvalBackend;
 use chronos_store::{SessionMetadata, SessionStore, TraceDiff};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, Content};
@@ -690,16 +692,30 @@ impl ChronosServer {
 
         // Register this session with the eval dispatcher.
         // For languages that have native backends (C, Cpp, Rust, Ebpf), the backends
-        // are already registered in with_native_evaluator(). For other languages
-        // (Python, Java, JavaScript, etc.), we register a no-op backend since
-        // no DAP/CDP adapter is connected in this context.
-        let needs_noop = !matches!(
-            language,
-            Language::C | Language::Cpp | Language::Rust | Language::Ebpf
-        );
-        if needs_noop {
-            let mut dispatcher = self.eval_dispatcher.lock().await;
-            dispatcher.register_noop(session_id.to_string());
+        // are already registered in with_native_evaluator(). For Python and JavaScript,
+        // we register real backends (PythonDapEvalBackend and JsCdpEvalBackend) that
+        // delegate to DAP/CDP clients when connected. For Java and Go, we still
+        // use noop since those languages use adapter-level evaluate_expression.
+        let mut dispatcher = self.eval_dispatcher.lock().await;
+        match language {
+            Language::Python => {
+                // Register Python DAP backend (returns UnsupportedOperation if no client connected)
+                dispatcher.register(session_id.to_string(), Box::new(PythonDapEvalBackend::new()));
+            }
+            Language::JavaScript => {
+                // Register JavaScript CDP backend (returns UnsupportedOperation if no client connected)
+                dispatcher.register(session_id.to_string(), Box::new(JsCdpEvalBackend::new()));
+            }
+            Language::Java | Language::Go | Language::Kotlin | Language::Scala | Language::CSharp => {
+                // These languages use adapter-level evaluate_expression, not dispatcher
+                dispatcher.register_noop(session_id.to_string());
+            }
+            Language::C | Language::Cpp | Language::Rust | Language::Ebpf => {
+                // Native languages have backends registered in with_native_evaluator()
+            }
+            Language::Unknown => {
+                dispatcher.register_noop(session_id.to_string());
+            }
         }
     }
 
@@ -3114,6 +3130,40 @@ mod tests {
     fn test_text_content() {
         let content = text_content("hello");
         assert_eq!(content.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_python_session_uses_dap_eval_backend() {
+        let server = ChronosServer::new();
+        let session_id = "python-test-session".to_string();
+        let events = vec![];
+
+        // Build engine for Python session
+        server.build_and_store_engine(&session_id, events, Language::Python).await;
+
+        // Verify that eval_dispatcher has a session backend for this session
+        let dispatcher = server.eval_dispatcher.lock().await;
+        assert!(
+            dispatcher.has_session_backend(&session_id),
+            "Python session should have a registered eval backend"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_js_session_uses_cdp_eval_backend() {
+        let server = ChronosServer::new();
+        let session_id = "js-test-session".to_string();
+        let events = vec![];
+
+        // Build engine for JavaScript session
+        server.build_and_store_engine(&session_id, events, Language::JavaScript).await;
+
+        // Verify that eval_dispatcher has a session backend for this session
+        let dispatcher = server.eval_dispatcher.lock().await;
+        assert!(
+            dispatcher.has_session_backend(&session_id),
+            "JavaScript session should have a registered eval backend"
+        );
     }
 
     // ========================================================================

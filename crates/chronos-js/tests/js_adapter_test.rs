@@ -2,7 +2,7 @@
 //!
 //! Tests the JsCdpAdapter and CdpSession types.
 
-use chronos_js::{CdpSession, JsCdpAdapter};
+use chronos_js::JsCdpAdapter;
 
 #[test]
 fn test_js_adapter_creation() {
