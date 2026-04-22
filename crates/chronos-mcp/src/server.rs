@@ -679,6 +679,15 @@ impl ChronosServer {
         }
     }
 
+    /// Remove all in-memory state for a session: query engine, language tag,
+    /// eval-dispatcher backend, and connected-session marker.
+    async fn cleanup_session_memory(&self, session_id: &str) {
+        self.engines.lock().await.remove(session_id);
+        self.session_languages.lock().await.remove(session_id);
+        self.eval_dispatcher.lock().await.unregister(session_id);
+        self.connected_sessions.lock().unwrap().remove(session_id);
+    }
+
     async fn build_and_store_engine(&self, session_id: &str, events: Vec<TraceEvent>, language: Language) {
         // Filter out internal/noisy events before indexing:
         // - EventType::Custom with EventData::Registers → ptrace register snapshots (infrastructure noise)
@@ -2494,10 +2503,13 @@ impl ChronosServer {
 
         match self.store.delete_session(&params.session_id) {
             Ok(()) => {
+                // Also purge all in-memory state for this session.
+                self.cleanup_session_memory(&params.session_id).await;
+
                 let output = serde_json::json!({
                     "session_id": params.session_id,
                     "status": "deleted",
-                    "message": format!("Session '{}' deleted from persistent storage.", params.session_id),
+                    "message": format!("Session '{}' deleted from persistent storage and memory.", params.session_id),
                 });
                 Ok(CallToolResult::success(json_content(&output)))
             }
@@ -3740,6 +3752,77 @@ mod tests {
         assert_ne!(load_result.is_error, Some(true));
         let text = format!("{:?}", load_result.content);
         assert!(text.contains("loaded") || text.contains("event_count"));
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_session_memory_removes_all_state() {
+        let server = ChronosServer::new();
+        let sid = "cleanup-test-session".to_string();
+        let events = vec![make_fn_event(0, 100, 1, "main")];
+
+        // Build engine (registers in engines + session_languages + eval_dispatcher)
+        server.build_and_store_engine(&sid, events, Language::Python).await;
+
+        // Verify it's registered
+        assert!(server.engines.lock().await.contains_key(&sid));
+        assert!(server.session_languages.lock().await.contains_key(&sid));
+        assert!(server.eval_dispatcher.lock().await.has_session_backend(&sid));
+
+        // Cleanup
+        server.cleanup_session_memory(&sid).await;
+
+        // Verify all in-memory state is gone
+        assert!(!server.engines.lock().await.contains_key(&sid));
+        assert!(!server.session_languages.lock().await.contains_key(&sid));
+        assert!(!server.eval_dispatcher.lock().await.has_session_backend(&sid));
+        assert!(!server.connected_sessions.lock().unwrap().contains(&sid));
+    }
+
+    #[tokio::test]
+    async fn test_delete_session_also_cleans_memory() {
+        let server = ChronosServer::new();
+        let sid = "delete-cleanup-session".to_string();
+        let events = vec![make_fn_event(0, 100, 1, "main")];
+
+        // Build and save session
+        server.build_and_store_engine(&sid, events, Language::C).await;
+        server
+            .save_session(Parameters(SaveSessionParams {
+                session_id: sid.clone(),
+                language: "native".to_string(),
+                target: "/bin/test".to_string(),
+            }))
+            .await
+            .unwrap();
+
+        // Engine should be in memory
+        assert!(server.engines.lock().await.contains_key(&sid));
+
+        // Delete from store
+        let result = server
+            .delete_session(Parameters(DeleteSessionParams {
+                session_id: sid.clone(),
+            }))
+            .await
+            .unwrap();
+        assert_ne!(result.is_error, Some(true));
+
+        // Memory should be cleaned up too
+        assert!(!server.engines.lock().await.contains_key(&sid));
+        assert!(!server.session_languages.lock().await.contains_key(&sid));
+    }
+
+    #[tokio::test]
+    async fn test_eval_dispatcher_unregister() {
+        use chronos_query::SessionEvalDispatcher;
+        let mut dispatcher = SessionEvalDispatcher::with_native_evaluator(std::collections::HashMap::new());
+        let sid = "unregister-test".to_string();
+
+        dispatcher.register_noop(sid.clone());
+        assert!(dispatcher.has_session_backend(&sid));
+
+        dispatcher.unregister(&sid);
+        assert!(!dispatcher.has_session_backend(&sid));
     }
 
     #[tokio::test]

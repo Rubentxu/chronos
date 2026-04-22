@@ -115,6 +115,11 @@ impl SessionEvalDispatcher {
         self.session_backends.insert(session_id, Box::new(NoOpEvalBackend));
     }
 
+    /// Remove a session backend (called on session cleanup/drop).
+    pub fn unregister(&mut self, session_id: &str) {
+        self.session_backends.remove(session_id);
+    }
+
     /// Check if a session has a registered backend.
     pub fn has_session_backend(&self, session_id: &str) -> bool {
         self.session_backends.contains_key(session_id)
