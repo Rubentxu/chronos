@@ -265,6 +265,13 @@ async fn test_mcp_server_lifecycle() {
         trace_syscalls: true,
         capture_registers: true,
         cwd: None,
+        auto_save: None,
+        program_language: None,
+        max_events: None,
+        timeout_secs: None,
+        background: None,
+        debug_host: None,
+        debug_port: None,
     });
 
     let result = server.debug_run(params).await.unwrap();

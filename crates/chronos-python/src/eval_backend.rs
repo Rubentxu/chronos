@@ -37,6 +37,7 @@ impl PythonDapEvalBackend {
     }
 
     /// Create a new PythonDapEvalBackend wrapping the given DAP client.
+    /// Takes ownership of the client directly.
     pub fn with_client(client: DapClient) -> Self {
         Self {
             client: Arc::new(std::sync::Mutex::new(Some(client))),
@@ -260,5 +261,26 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err, TraceError::UnsupportedOperation(msg) if msg.contains("not connected")));
+    }
+
+    #[test]
+    fn test_python_eval_backend_with_client_evaluates() {
+        // Test that with_client() constructor properly connects and evaluates
+        // This test verifies the requirement: "with_client() constructor, mock client returns '42'"
+        let addr = spawn_mock_dap_server(
+            serde_json::json!({
+                "result": "42",
+                "type": "string"
+            }),
+            true,
+        );
+
+        let client = DapClient::connect(&addr).unwrap();
+        let backend = PythonDapEvalBackend::with_client(client);
+
+        // Verify the backend can evaluate and returns the expected value
+        let result = backend.evaluate_sync("1 + 1", None);
+        assert!(result.is_ok(), "Evaluation should succeed");
+        assert_eq!(result.unwrap(), "42", "Mock client should return '42'");
     }
 }

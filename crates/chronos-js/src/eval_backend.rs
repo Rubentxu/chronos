@@ -42,6 +42,8 @@ impl JsCdpEvalBackend {
     }
 
     /// Create a new JsCdpEvalBackend wrapping the given CDP client.
+    /// Since CdpClient::connect is async, this is typically called after
+    /// the connection is established in an async context.
     pub fn with_client(client: CdpClient) -> Self {
         Self {
             client: Arc::new(tokio::sync::Mutex::new(Some(client))),
