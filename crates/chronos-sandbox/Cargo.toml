@@ -62,3 +62,7 @@ harness = false
 [[bench]]
 name = "symbol_resolution_suite"
 harness = false
+
+[[bench]]
+name = "session_suite"
+harness = false
