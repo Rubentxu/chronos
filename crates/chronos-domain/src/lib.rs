@@ -23,6 +23,7 @@ pub use query::{
 };
 pub use trace::{
     CaptureConfig, CaptureSession, EventData, EventType, GoEventKind, JavaEventKind, JsEventKind,
-    Language, PythonEventKind, RegisterState, SessionState, SourceLocation, TraceEvent,
+    Language, PythonEventKind, RegisterState, RuntimeInfo, SessionState, SourceLocation,
+    StackFrame, ThreadInfo, ThreadState, TraceEvent,
 };
 pub use value::{TypedValue, VariableInfo, VariableScope};

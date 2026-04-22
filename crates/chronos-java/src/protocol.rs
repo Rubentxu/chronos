@@ -26,8 +26,8 @@ pub mod event_kind {
 
 /// A connected JDWP client session.
 pub struct JdwpClient {
-    stream: TcpStream,
-    next_id: u32,
+    pub(crate) stream: TcpStream,
+    pub(crate) next_id: u32,
 }
 
 impl JdwpClient {

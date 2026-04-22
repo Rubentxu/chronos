@@ -140,7 +140,7 @@ func main() {
         std::fs::write(&file_path, main_content).unwrap();
 
         // Try to spawn dlv dap on the temp file
-        let result = DelveSubprocess::spawn(file_path.to_str().unwrap()).await;
+        let _result = DelveSubprocess::spawn(file_path.to_str().unwrap()).await;
         // This might fail due to compilation issues, but we're testing the spawn mechanism
         // We just verify it doesn't panic
     }

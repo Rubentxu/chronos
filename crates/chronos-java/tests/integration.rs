@@ -34,7 +34,6 @@ fn test_java_adapter_is_available_check() {
 #[tokio::test]
 #[ignore] // requires java + javac on PATH
 async fn test_java_hello_world_capture() {
-    use std::io::Write;
     use std::process::Command;
     use tempfile::TempDir;
 

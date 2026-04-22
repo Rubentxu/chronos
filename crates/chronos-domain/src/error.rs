@@ -64,6 +64,10 @@ pub enum TraceError {
     #[error("Invalid input: {0}")]
     InvalidInput(String),
 
+    // --- Unsupported operations ---
+    #[error("Unsupported operation: {0}")]
+    UnsupportedOperation(String),
+
     // --- Internal errors ---
     #[error("Internal error: {0}")]
     InternalError(String),

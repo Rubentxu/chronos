@@ -4,11 +4,17 @@
 //! method entry/exit and exception events via the debug wire protocol.
 
 use chronos_capture::{CaptureConfig, TraceAdapter};
-use chronos_domain::{CaptureSession, Language, TraceError};
-use std::sync::Mutex;
+use chronos_domain::{
+    CaptureSession, Language, RuntimeInfo, StackFrame, ThreadInfo, TraceError,
+    VariableInfo,
+};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 use which::which;
 
+use crate::event_loop::run_jdwp_event_loop;
 use crate::protocol::JdwpClient;
 use crate::subprocess::JavaSubprocess;
 
@@ -16,12 +22,20 @@ use crate::subprocess::JavaSubprocess;
 struct JavaAdapterState {
     /// The spawned JVM subprocess.
     subprocess: Option<JavaSubprocess>,
-    /// The JDWP client connected to the JVM.
-    client: Option<JdwpClient>,
+    /// Cancellation token to stop the event loop.
+    cancel_token: Option<CancellationToken>,
+    /// JoinHandle for the event loop task.
+    join_handle: Option<tokio::task::JoinHandle<()>>,
+    /// Receiver channel for trace events from the event loop.
+    events_rx: Option<mpsc::Receiver<chronos_domain::TraceEvent>>,
+    /// Buffered trace events.
+    event_buffer: Vec<chronos_domain::TraceEvent>,
     /// Next event ID to assign.
     next_event_id: u64,
     /// When the capture session started.
     session_start: Option<Instant>,
+    /// The current capture session ID.
+    session_id: Option<String>,
 }
 
 /// Java trace adapter using JDWP.
@@ -38,9 +52,13 @@ impl JavaAdapter {
         Self {
             state: Mutex::new(JavaAdapterState {
                 subprocess: None,
-                client: None,
+                cancel_token: None,
+                join_handle: None,
+                events_rx: None,
+                event_buffer: Vec::new(),
                 next_event_id: 1,
                 session_start: None,
+                session_id: None,
             }),
         }
     }
@@ -48,6 +66,42 @@ impl JavaAdapter {
     /// Check if Java (java + javac) is available on the system.
     pub fn is_available() -> bool {
         which("java").is_ok()
+    }
+
+    /// Drain all buffered events that arrived since the last call.
+    ///
+    /// This is an internal method that can be called from sync code.
+    #[allow(dead_code)]
+    fn drain_events_internal(&self) -> Result<Vec<chronos_domain::TraceEvent>, TraceError> {
+        // First, collect events from the receiver without holding the lock
+        let new_events = {
+            let mut state = self.state.lock().unwrap();
+            if let Some(rx) = state.events_rx.as_mut() {
+                let mut events = Vec::new();
+                while let Ok(event) = rx.try_recv() {
+                    events.push(event);
+                }
+                events
+            } else {
+                Vec::new()
+            }
+        };
+
+        // Now process with minimal lock time
+        let mut state = self.state.lock().unwrap();
+        state.event_buffer.extend(new_events);
+
+        // Assign event IDs and return buffered events
+        // First, collect into a separate vec to avoid borrow issues
+        let events_to_process: Vec<_> = state.event_buffer.drain(..).collect();
+        let mut events = Vec::new();
+        for mut event in events_to_process {
+            event.event_id = state.next_event_id;
+            state.next_event_id += 1;
+            events.push(event);
+        }
+
+        Ok(events)
     }
 }
 
@@ -72,15 +126,66 @@ impl TraceAdapter for JavaAdapter {
             .map_err(|e| TraceError::CaptureFailed(format!("Failed to spawn JVM: {}", e)))?;
 
         // Connect JDWP client
-        let client = tokio::runtime::Handle::current()
+        let mut client = tokio::runtime::Handle::current()
             .block_on(JdwpClient::connect(subprocess.jdwp_port))
             .map_err(|e| TraceError::CaptureFailed(format!("JDWP connect failed: {}", e)))?;
 
+        // Perform JDWP handshake
+        tokio::runtime::Handle::current()
+            .block_on(client.handshake())
+            .map_err(|e| TraceError::CaptureFailed(format!("JDWP handshake failed: {}", e)))?;
+
+        // Set event requests for method entry, exit, breakpoint, and exception
+        let event_kinds = [
+            crate::protocol::event_kind::METHOD_ENTRY,
+            crate::protocol::event_kind::METHOD_EXIT,
+            crate::protocol::event_kind::BREAKPOINT,
+            crate::protocol::event_kind::EXCEPTION,
+        ];
+        for kind in event_kinds {
+            if let Err(e) = tokio::runtime::Handle::current().block_on(client.set_event_request(kind))
+            {
+                tracing::warn!("Failed to set event request for kind {}: {}", kind, e);
+            }
+        }
+
+        // Resume the JVM to start receiving events
+        if let Err(e) = tokio::runtime::Handle::current().block_on(client.resume()) {
+            tracing::warn!("Failed to resume JVM: {}", e);
+        }
+
+        // Create channels for event communication
+        let (events_tx, events_rx) = mpsc::channel(1000);
+
+        // Create cancellation token
+        let cancel_token = CancellationToken::new();
+
+        // Wrap client in Arc<Mutex<...>> for shared access with event loop
+        // We move client into this Arc, so we don't store it in state separately
+        let client_arc: Arc<tokio::sync::Mutex<JdwpClient>> =
+            Arc::new(tokio::sync::Mutex::new(client));
+
+        // Spawn the event loop task
+        let client_for_task = Arc::clone(&client_arc);
+        let events_tx_clone = events_tx.clone();
+        let cancel_clone = cancel_token.clone();
+
+        let join_handle = tokio::spawn(async move {
+            if let Err(e) = run_jdwp_event_loop(client_for_task, events_tx_clone, cancel_clone)
+                .await
+            {
+                tracing::error!("JDWP event loop error: {}", e);
+            }
+        });
+
         let mut state = self.state.lock().unwrap();
         state.subprocess = Some(subprocess);
-        state.client = Some(client);
+        state.cancel_token = Some(cancel_token);
+        state.join_handle = Some(join_handle);
+        state.events_rx = Some(events_rx);
         state.session_start = Some(Instant::now());
         state.next_event_id = 1;
+        state.session_id = Some(config.target.clone());
 
         let session = CaptureSession::new(0, Language::Java, config);
         Ok(session)
@@ -88,8 +193,28 @@ impl TraceAdapter for JavaAdapter {
 
     fn stop_capture(&self, _session: &CaptureSession) -> Result<(), TraceError> {
         let mut state = self.state.lock().unwrap();
+
+        // Signal cancellation to stop the event loop
+        if let Some(cancel) = state.cancel_token.take() {
+            cancel.cancel();
+        }
+
+        // Take and await the join handle
+        if let Some(handle) = state.join_handle.take() {
+            // Use block_on to wait for the task
+            let rt = tokio::runtime::Handle::current();
+            rt.block_on(async {
+                if let Err(e) = handle.await {
+                    tracing::warn!("Event loop join error: {}", e);
+                }
+            });
+        }
+
+        // Clear the JVM subprocess and channels
         state.subprocess = None;
-        state.client = None;
+        state.events_rx = None;
+        state.event_buffer.clear();
+
         Ok(())
     }
 
@@ -109,6 +234,128 @@ impl TraceAdapter for JavaAdapter {
 
     fn name(&self) -> &str {
         "java-jdwp"
+    }
+
+    fn get_threads(&self, session_id: &str) -> Result<Vec<ThreadInfo>, TraceError> {
+        let state = self.state.lock().unwrap();
+
+        // Verify session is active
+        if state.session_id.as_deref() != Some(session_id) {
+            return Err(TraceError::session_not_found(session_id));
+        }
+
+        // If not connected (no subprocess), return empty list
+        if state.subprocess.is_none() {
+            return Ok(Vec::new());
+        }
+
+        // For MVP, return an empty vec with a note that JDWP thread enumeration
+        // requires additional protocol implementation
+        // TODO: Implement VirtualMachine.AllThreads JDWP command
+        tracing::debug!("get_threads called but not yet implemented for JDWP");
+        Ok(Vec::new())
+    }
+
+    fn get_stack_trace(
+        &self,
+        session_id: &str,
+        thread_id: u64,
+    ) -> Result<Vec<StackFrame>, TraceError> {
+        let state = self.state.lock().unwrap();
+
+        // Verify session is active
+        if state.session_id.as_deref() != Some(session_id) {
+            return Err(TraceError::session_not_found(session_id));
+        }
+
+        // If not connected, return empty
+        if state.subprocess.is_none() {
+            return Ok(Vec::new());
+        }
+
+        // TODO: Implement ThreadReference.Frames JDWP command
+        tracing::debug!(
+            "get_stack_trace called for thread {} but not yet implemented for JDWP",
+            thread_id
+        );
+        Ok(Vec::new())
+    }
+
+    fn get_variables(
+        &self,
+        session_id: &str,
+        frame_id: u64,
+    ) -> Result<Vec<VariableInfo>, TraceError> {
+        let state = self.state.lock().unwrap();
+
+        // Verify session is active
+        if state.session_id.as_deref() != Some(session_id) {
+            return Err(TraceError::session_not_found(session_id));
+        }
+
+        // If not connected, return empty
+        if state.subprocess.is_none() {
+            return Ok(Vec::new());
+        }
+
+        // TODO: Implement StackFrame.GetValues JDWP command
+        tracing::debug!(
+            "get_variables called for frame {} but not yet implemented for JDWP",
+            frame_id
+        );
+        Ok(Vec::new())
+    }
+
+    fn get_runtime_info(&self, session_id: &str) -> Result<RuntimeInfo, TraceError> {
+        let state = self.state.lock().unwrap();
+
+        // Verify session is active
+        if state.session_id.as_deref() != Some(session_id) {
+            return Err(TraceError::session_not_found(session_id));
+        }
+
+        let uptime_ms = state
+            .session_start
+            .map(|s| s.elapsed().as_millis() as u64)
+            .unwrap_or(0);
+
+        Ok(RuntimeInfo {
+            language: "Java".to_string(),
+            runtime_version: "JVM".to_string(), // Could extract from system properties
+            pid: state
+                .subprocess
+                .as_ref()
+                .and_then(|s| s.child.id())
+                .unwrap_or(0),
+            uptime_ms,
+        })
+    }
+
+    fn evaluate_expression(
+        &self,
+        session_id: &str,
+        _expr: &str,
+        _frame_id: u64,
+    ) -> Result<String, TraceError> {
+        let state = self.state.lock().unwrap();
+
+        // Verify session is active
+        if state.session_id.as_deref() != Some(session_id) {
+            return Err(TraceError::session_not_found(session_id));
+        }
+
+        // If not connected, return error
+        if state.subprocess.is_none() {
+            return Err(TraceError::UnsupportedOperation(
+                "evaluate_expression not available".to_string(),
+            ));
+        }
+
+        // TODO: Implement JDWP expression evaluation
+        // This requires implementing the JDWPevaluate command
+        Err(TraceError::UnsupportedOperation(
+            "evaluate_expression not yet implemented for Java".to_string(),
+        ))
     }
 }
 
@@ -133,5 +380,13 @@ mod tests {
         // Result depends on whether java is on PATH
         let available = JavaAdapter::is_available();
         assert!(available || !available); // Always passes — checks method doesn't panic
+    }
+
+    #[test]
+    fn test_drain_events_returns_empty_when_not_started() {
+        let adapter = JavaAdapter::new();
+        let result = adapter.drain_events_internal();
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
     }
 }
