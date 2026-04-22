@@ -16,6 +16,7 @@ pub type ThreadId = u64;
 
 /// The type of a trace event.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
 #[repr(u8)]
 pub enum EventType {
     // Syscalls
@@ -44,6 +45,23 @@ pub enum EventType {
 
     // Exceptions
     ExceptionThrown = 10,
+
+    // Variables (read side)
+    VariableRead = 11,
+
+    // Memory (alloc/free/read)
+    MemoryAlloc = 12,
+    MemoryFree = 13,
+    MemoryRead = 14,
+
+    // Thread context switch
+    ThreadSwitch = 15,
+
+    // Watchpoint triggered
+    WatchTrigger = 16,
+
+    // Exception caught (counterpart to ExceptionThrown)
+    ExceptionCaught = 17,
 
     // Custom / Unknown
     Custom = 254,
@@ -76,6 +94,13 @@ impl std::fmt::Display for EventType {
             EventType::ThreadCreate => write!(f, "thread_create"),
             EventType::ThreadExit => write!(f, "thread_exit"),
             EventType::ExceptionThrown => write!(f, "exception_thrown"),
+            EventType::VariableRead => write!(f, "variable_read"),
+            EventType::MemoryAlloc => write!(f, "memory_alloc"),
+            EventType::MemoryFree => write!(f, "memory_free"),
+            EventType::MemoryRead => write!(f, "memory_read"),
+            EventType::ThreadSwitch => write!(f, "thread_switch"),
+            EventType::WatchTrigger => write!(f, "watch_trigger"),
+            EventType::ExceptionCaught => write!(f, "exception_caught"),
             EventType::Custom => write!(f, "custom"),
             EventType::Unknown => write!(f, "unknown"),
         }

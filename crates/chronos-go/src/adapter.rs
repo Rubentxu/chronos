@@ -3,13 +3,14 @@
 //! This adapter spawns a Go program under Delve DAP and captures
 //! breakpoint/step events via the Delve JSON-RPC API.
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use which::which;
 
 use chronos_capture::{CaptureConfig, TraceAdapter};
 use chronos_domain::{CaptureSession, Language, TraceError};
 
+use crate::event_loop::{run_delve_event_loop, AtomicCancel, DelveRpcClient};
 use crate::event_parser::stack_frame_to_trace_event;
 use crate::rpc::{DelveClient, StackFrame};
 use crate::subprocess::DelveSubprocess;
@@ -18,12 +19,16 @@ use crate::subprocess::DelveSubprocess;
 struct GoAdapterState {
     /// The spawned Delve subprocess.
     subprocess: Option<DelveSubprocess>,
-    /// The Delve RPC client connected to the DAP server.
-    client: Option<DelveClient>,
     /// Next event ID to assign.
     next_event_id: u64,
     /// When the capture session started.
     session_start: Option<Instant>,
+    /// Cancellation flag for the event loop.
+    cancel: Option<Arc<AtomicCancel>>,
+    /// Join handle for the event loop task.
+    join_handle: Option<tokio::task::JoinHandle<()>>,
+    /// Receiver for events produced by the loop.
+    events_rx: Option<tokio::sync::mpsc::Receiver<chronos_domain::TraceEvent>>,
 }
 
 /// Go trace adapter using Delve debugger.
@@ -40,9 +45,11 @@ impl GoAdapter {
         Self {
             state: Mutex::new(GoAdapterState {
                 subprocess: None,
-                client: None,
                 next_event_id: 1,
                 session_start: None,
+                cancel: None,
+                join_handle: None,
+                events_rx: None,
             }),
         }
     }
@@ -113,11 +120,26 @@ impl TraceAdapter for GoAdapter {
             .block_on(DelveClient::connect(subprocess.port))
             .map_err(|e| TraceError::CaptureFailed(format!("Delve connect failed: {}", e)))?;
 
+        // Set up the event loop: channel for events + cancellation token
+        let (events_tx, events_rx) = tokio::sync::mpsc::channel(1024);
+        let cancel = Arc::new(AtomicCancel::new());
+        let rpc: Arc<DelveRpcClient> = Arc::new(tokio::sync::Mutex::new(client));
+        let rpc_clone = Arc::clone(&rpc);
+        let cancel_clone = Arc::clone(&cancel);
+
+        let join_handle = tokio::spawn(async move {
+            if let Err(e) = run_delve_event_loop(rpc_clone, events_tx, cancel_clone).await {
+                tracing::warn!("Delve event loop ended: {}", e);
+            }
+        });
+
         let mut state = self.state.lock().unwrap();
         state.subprocess = Some(subprocess);
-        state.client = Some(client);
         state.session_start = Some(Instant::now());
         state.next_event_id = 1;
+        state.cancel = Some(cancel);
+        state.join_handle = Some(join_handle);
+        state.events_rx = Some(events_rx);
 
         let session = CaptureSession::new(0, Language::Go, config);
         Ok(session)
@@ -125,8 +147,16 @@ impl TraceAdapter for GoAdapter {
 
     fn stop_capture(&self, _session: &CaptureSession) -> Result<(), TraceError> {
         let mut state = self.state.lock().unwrap();
+        // Signal cancellation
+        if let Some(cancel) = state.cancel.take() {
+            cancel.cancel();
+        }
+        // Abort the task (non-blocking — stop_capture is sync, can't await)
+        if let Some(handle) = state.join_handle.take() {
+            handle.abort();
+        }
         state.subprocess = None;
-        state.client = None;
+        state.events_rx = None;
         Ok(())
     }
 
@@ -170,5 +200,26 @@ mod tests {
         // Result depends on whether dlv is on PATH
         let available = GoAdapter::is_available();
         assert!(available || !available); // Always passes — checks method doesn't panic
+    }
+
+    #[test]
+    fn test_go_adapter_stop_without_start_is_safe() {
+        // Stopping without starting should not panic
+        let adapter = GoAdapter::new();
+        let session = CaptureSession::new(0, Language::Go, CaptureConfig {
+            target: "/dev/null".into(),
+            args: vec![],
+            env: None,
+            cwd: None,
+            language: None,
+            capture_syscalls: false,
+            capture_variables: false,
+            capture_stack: false,
+            capture_memory: false,
+            function_filter: None,
+            max_duration_ms: None,
+        });
+        let result = adapter.stop_capture(&session);
+        assert!(result.is_ok());
     }
 }
