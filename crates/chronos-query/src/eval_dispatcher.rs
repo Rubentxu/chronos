@@ -41,16 +41,35 @@ impl EvalBackend for SimpleEvalBackend {
     }
 }
 
+/// No-op backend that returns UnsupportedOperation.
+/// Used when no actual debugger adapter is connected.
+pub struct NoOpEvalBackend;
+
+impl EvalBackend for NoOpEvalBackend {
+    fn evaluate_sync(&self, _expr: &str, _frame_id: Option<u64>) -> EvalResult {
+        Err(TraceError::UnsupportedOperation(
+            "No evaluation backend available for this language".to_string(),
+        ))
+    }
+}
+
 /// SessionEvalDispatcher routes evaluate requests to the appropriate backend
 /// based on the session's language.
 pub struct SessionEvalDispatcher {
+    /// Backends registered per language.
     backends: HashMap<Language, Box<dyn EvalBackend>>,
+    /// Per-session backend overrides (session_id → backend).
+    /// These take precedence over language-based backends.
+    session_backends: HashMap<String, Box<dyn EvalBackend>>,
 }
 
 impl SessionEvalDispatcher {
     /// Create a new dispatcher with the given backends.
     pub fn new(backends: HashMap<Language, Box<dyn EvalBackend>>) -> Self {
-        Self { backends }
+        Self {
+            backends,
+            session_backends: HashMap::new(),
+        }
     }
 
     /// Create a dispatcher with only the native evaluator (no DAP/CDP backends).
@@ -64,7 +83,10 @@ impl SessionEvalDispatcher {
         backends.insert(Language::Cpp, Box::new(SimpleEvalBackend::new(locals.clone())) as Box<dyn EvalBackend>);
         backends.insert(Language::Rust, Box::new(SimpleEvalBackend::new(locals.clone())) as Box<dyn EvalBackend>);
         backends.insert(Language::Ebpf, Box::new(SimpleEvalBackend::new(locals)) as Box<dyn EvalBackend>);
-        Self { backends }
+        Self {
+            backends,
+            session_backends: HashMap::new(),
+        }
     }
 
     /// Add a backend for a specific language.
@@ -73,13 +95,61 @@ impl SessionEvalDispatcher {
         self
     }
 
+    /// Register an EvalBackend for a specific session.
+    ///
+    /// This allows per-session evaluation backends, such as DAP-based
+    /// evaluation for Python sessions or CDP-based evaluation for JS sessions.
+    ///
+    /// # Arguments
+    /// * `session_id` - The unique session identifier
+    /// * `backend` - The evaluation backend to use for this session
+    pub fn register(&mut self, session_id: String, backend: Box<dyn EvalBackend>) {
+        self.session_backends.insert(session_id, backend);
+    }
+
+    /// Register a no-op backend for a session with an unsupported language.
+    ///
+    /// This is used when a session is created for a language that doesn't
+    /// have an active debugger adapter connected.
+    pub fn register_noop(&mut self, session_id: String) {
+        self.session_backends.insert(session_id, Box::new(NoOpEvalBackend));
+    }
+
+    /// Check if a session has a registered backend.
+    pub fn has_session_backend(&self, session_id: &str) -> bool {
+        self.session_backends.contains_key(session_id)
+    }
+
+    /// Synchronous evaluate for testing purposes.
+    ///
+    /// This provides a synchronous interface to the dispatcher by borrowing
+    /// the internal state. It's intended for testing only.
+    pub fn blocking_evaluate(&self, session: &CaptureSession, expr: &str) -> EvalResult {
+        let language = session.language;
+        let session_id = session.session_id.to_string();
+
+        // Check for per-session backend first
+        if let Some(backend) = self.session_backends.get(&session_id) {
+            return backend.evaluate_sync(expr, None);
+        }
+
+        // Check language-specific backends
+        if let Some(backend) = self.backends.get(&language) {
+            return backend.evaluate_sync(expr, None);
+        }
+
+        Err(TraceError::UnsupportedOperation(format!(
+            "No evaluator backend available for {}",
+            language
+        )))
+    }
+
     /// Evaluate an expression for the given session.
     ///
-    /// Routes based on session language:
-    /// - `Language::Python` → uses DAP backend if available
-    /// - `Language::JavaScript` → uses CDP backend if available
-    /// - Native languages (C, C++, Rust) and eBPF → uses ExprEvaluator fallback
-    /// - Other languages → returns `UnsupportedOperation`
+    /// Routes based on session:
+    /// 1. First checks if there's a per-session backend registered (takes precedence)
+    /// 2. Then checks language-specific backends
+    /// 3. Falls back to UnsupportedOperation if no backend found
     pub async fn evaluate(
         &self,
         session: &CaptureSession,
@@ -87,6 +157,12 @@ impl SessionEvalDispatcher {
         frame_id: Option<u64>,
     ) -> EvalResult {
         let language = session.language;
+        let session_id = session.session_id.to_string();
+
+        // Check for per-session backend first (takes precedence)
+        if let Some(backend) = self.session_backends.get(&session_id) {
+            return backend.evaluate_sync(expr, frame_id);
+        }
 
         // Languages that use DAP/CDP backends
         if language == Language::Python || language == Language::JavaScript {
@@ -206,5 +282,82 @@ mod tests {
         // Python should NOT have a backend in the native-only dispatcher
         let backend = dispatcher.backends.get(&Language::Python);
         assert!(backend.is_none());
+    }
+
+    #[test]
+    fn test_register_session_backend() {
+        struct MockBackend;
+        impl EvalBackend for MockBackend {
+            fn evaluate_sync(&self, expr: &str, _frame_id: Option<u64>) -> EvalResult {
+                Ok(format!("session_backend:{}", expr))
+            }
+        }
+
+        let locals = HashMap::new();
+        let mut dispatcher = SessionEvalDispatcher::with_native_evaluator(locals);
+
+        // Register a session-specific backend
+        dispatcher.register("session-123".to_string(), Box::new(MockBackend));
+
+        // Check that session backend is registered
+        assert!(dispatcher.has_session_backend("session-123"));
+        assert!(!dispatcher.has_session_backend("session-456"));
+    }
+
+    #[test]
+    fn test_register_noop_backend() {
+        let locals = HashMap::new();
+        let mut dispatcher = SessionEvalDispatcher::with_native_evaluator(locals);
+
+        // Register a no-op backend for unsupported language
+        dispatcher.register_noop("python-session".to_string());
+
+        // Check that session backend is registered
+        assert!(dispatcher.has_session_backend("python-session"));
+    }
+
+    #[test]
+    fn test_session_backend_takes_precedence() {
+        struct CustomBackend;
+        impl EvalBackend for CustomBackend {
+            fn evaluate_sync(&self, expr: &str, _frame_id: Option<u64>) -> EvalResult {
+                Ok(format!("custom:{}", expr))
+            }
+        }
+
+        let locals = HashMap::from([("x".to_string(), "10".to_string())]);
+        let mut dispatcher = SessionEvalDispatcher::with_native_evaluator(locals);
+
+        // Register a custom backend for a Python session
+        dispatcher.register("py-session".to_string(), Box::new(CustomBackend));
+
+        // Create a minimal capture session
+        let session = chronos_domain::CaptureSession::minimal(
+            "py-session".to_string(),
+            Language::Python,
+        );
+
+        // The custom backend should be used, not the native Python (which doesn't exist anyway)
+        let result = dispatcher.blocking_evaluate(&session, "x + 1");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "custom:x + 1");
+    }
+
+    #[test]
+    fn test_noop_backend_returns_unsupported() {
+        let locals = HashMap::new();
+        let mut dispatcher = SessionEvalDispatcher::with_native_evaluator(locals);
+
+        // Register a no-op backend
+        dispatcher.register_noop("unknown-session".to_string());
+
+        let session = chronos_domain::CaptureSession::minimal(
+            "unknown-session".to_string(),
+            Language::Unknown,
+        );
+
+        let result = dispatcher.blocking_evaluate(&session, "x + 1");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), chronos_domain::TraceError::UnsupportedOperation(_)));
     }
 }

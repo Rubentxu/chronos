@@ -166,6 +166,21 @@ impl CaptureSession {
         }
     }
 
+    /// Create a minimal capture session with only session_id and language.
+    ///
+    /// This is useful for evaluation purposes where only the language is needed.
+    /// Other fields are set to dummy values that are sufficient for routing.
+    pub fn minimal(session_id: String, language: Language) -> Self {
+        Self {
+            session_id,
+            pid: 0,
+            language,
+            started_at: Instant::now(),
+            config: CaptureConfig::new(""),
+            state: SessionState::Finalized,
+        }
+    }
+
     /// Transition the session to active state.
     pub fn activate(&mut self) {
         self.state = SessionState::Active;

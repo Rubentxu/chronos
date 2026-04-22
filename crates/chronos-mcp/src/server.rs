@@ -64,8 +64,8 @@ pub struct ChronosServer {
     /// Stop senders for watch tasks: subscription_id → stop sender.
     watch_stop_senders: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
     /// Expression evaluation dispatcher for multi-language support.
-    #[allow(dead_code)]
-    eval_dispatcher: Arc<SessionEvalDispatcher>,
+    /// Uses Mutex for interior mutability since registration happens post-construction.
+    eval_dispatcher: Arc<Mutex<SessionEvalDispatcher>>,
 }
 
 /// An active capture session with its runner.
@@ -639,7 +639,7 @@ impl ChronosServer {
             background_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
             subscriptions: Arc::new(Mutex::new(HashMap::new())),
             watch_stop_senders: Arc::new(Mutex::new(HashMap::new())),
-            eval_dispatcher: Arc::new(eval_dispatcher),
+            eval_dispatcher: Arc::new(Mutex::new(eval_dispatcher)),
         }
     }
 
@@ -687,6 +687,20 @@ impl ChronosServer {
         info!("Built query engine for session {} (language: {:?})", session_id, language);
         engines.insert(session_id.to_string(), engine);
         session_languages.insert(session_id.to_string(), language);
+
+        // Register this session with the eval dispatcher.
+        // For languages that have native backends (C, Cpp, Rust, Ebpf), the backends
+        // are already registered in with_native_evaluator(). For other languages
+        // (Python, Java, JavaScript, etc.), we register a no-op backend since
+        // no DAP/CDP adapter is connected in this context.
+        let needs_noop = !matches!(
+            language,
+            Language::C | Language::Cpp | Language::Rust | Language::Ebpf
+        );
+        if needs_noop {
+            let mut dispatcher = self.eval_dispatcher.lock().await;
+            dispatcher.register_noop(session_id.to_string());
+        }
     }
 
     /// Run the server on stdio.
@@ -2389,9 +2403,65 @@ impl ChronosServer {
         &self,
         params: Parameters<EvaluateExpressionParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let params = params.0;
-        let engines = self.engines.lock().await;
+        use chronos_domain::CaptureSession;
 
+        let params = params.0;
+
+        // First, try the eval dispatcher (language-aware evaluation)
+        // Get the language for this session
+        let language = {
+            let session_languages = self.session_languages.lock().await;
+            session_languages.get(&params.session_id).copied()
+        };
+
+        if let Some(lang) = language {
+            // Construct a minimal CaptureSession for the dispatcher
+            let session = CaptureSession::minimal(
+                params.session_id.clone(),
+                lang,
+            );
+
+            // Try dispatcher evaluation
+            let dispatcher_result = {
+                let dispatcher = self.eval_dispatcher.lock().await;
+                dispatcher.evaluate(&session, &params.expression, Some(params.event_id)).await
+            };
+
+            match dispatcher_result {
+                Ok(result) => {
+                    let output = serde_json::json!({
+                        "event_id": params.event_id,
+                        "expression": params.expression,
+                        "result": result,
+                        "evaluated_by": "dispatcher",
+                    });
+                    return Ok(CallToolResult::success(json_content(&output)));
+                }
+                Err(e) => {
+                    // Fall back to QueryEngine if:
+                    // 1. UnsupportedOperation - dispatcher has no backend for this language
+                    // 2. InvalidExpression - dispatcher backend doesn't have session variables
+                    //   (this happens for native languages whose dispatcher backends have empty locals)
+                    if matches!(e, chronos_domain::TraceError::UnsupportedOperation(_)
+                        | chronos_domain::TraceError::InvalidExpression(_)) {
+                        // Fall through to QueryEngine fallback
+                    } else {
+                        // Other error - return it
+                        let output = serde_json::json!({
+                            "event_id": params.event_id,
+                            "expression": params.expression,
+                            "error": format!("{:?}", e),
+                        });
+                        return Ok(CallToolResult::success(vec![Content::text(
+                            serde_json::to_string_pretty(&output).unwrap_or_default(),
+                        )]));
+                    }
+                }
+            }
+        }
+
+        // Fallback to QueryEngine arithmetic evaluation
+        let engines = self.engines.lock().await;
         match engines.get(&params.session_id) {
             Some(engine) => {
                 match engine.evaluate_expression(params.event_id, &params.expression) {
@@ -2400,6 +2470,7 @@ impl ChronosServer {
                             "event_id": params.event_id,
                             "expression": params.expression,
                             "result": result,
+                            "evaluated_by": "query_engine",
                         });
                         Ok(CallToolResult::success(json_content(&output)))
                     }
@@ -3277,13 +3348,6 @@ mod tests {
     // SF5 Persistence Tool Tests (T16)
     // ========================================================================
 
-    async fn server_with_persistent_store() -> ChronosServer {
-        // Use in-memory for testing to avoid file system dependencies
-        // Create a fresh server and replace its store with an in-memory one
-        let server = ChronosServer::new();
-        server
-    }
-
     fn make_fn_event(id: u64, ts: u64, tid: u64, func: &str) -> TraceEvent {
         use chronos_domain::{EventData, EventType, SourceLocation};
         let loc = SourceLocation::new("", 0, func, 0x1000 + id);
@@ -3780,6 +3844,80 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_evaluate_expression_falls_back_to_query_engine() {
+        // Test that evaluate_expression falls back to QueryEngine when
+        // the dispatcher backend doesn't have session-specific variables.
+        // This uses Language::C which has a native backend in the dispatcher
+        // but with empty locals, so it should fall back to QueryEngine.
+        let locals = vec![
+            chronos_domain::VariableInfo::new("a", "5", "i32", 0x1000, chronos_domain::VariableScope::Local),
+            chronos_domain::VariableInfo::new("b", "3", "i32", 0x2000, chronos_domain::VariableScope::Local),
+        ];
+        let events = vec![make_test_python_frame_with_locals(0, 100, 1, locals)];
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server
+            .evaluate_expression(Parameters(EvaluateExpressionParams {
+                session_id: sid,
+                event_id: 0,
+                expression: "a + b".to_string(),
+            }))
+            .await
+            .unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        // Should fall back to query_engine and evaluate successfully
+        assert!(text.contains("query_engine"));
+        assert!(text.contains("8")); // 5 + 3 = 8
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_expression_with_dispatcher_backend() {
+        // Test that when a session-specific dispatcher backend is registered,
+        // it takes precedence over QueryEngine.
+        use chronos_query::eval_dispatcher::{EvalBackend, EvalResult};
+
+        struct MockEvalBackend;
+        impl EvalBackend for MockEvalBackend {
+            fn evaluate_sync(&self, expr: &str, _frame_id: Option<u64>) -> EvalResult {
+                Ok(format!("dispatched:{}", expr))
+            }
+        }
+
+        let server = ChronosServer::new();
+        let sid = "test-dispatcher-session".to_string();
+
+        // Manually insert an engine first (with empty events)
+        // This must be done BEFORE registering the dispatcher backend
+        // so that build_and_store_engine doesn't overwrite it with a no-op
+        let events = vec![make_fn_entry(0, 100, 1, "main")];
+        server.build_and_store_engine(&sid, events, chronos_domain::Language::Python).await;
+
+        // Now register a mock backend AFTER build_and_store_engine
+        // so it doesn't get overwritten
+        {
+            let mut dispatcher = server.eval_dispatcher.lock().await;
+            dispatcher.register(sid.clone(), Box::new(MockEvalBackend));
+        }
+
+        let result = server
+            .evaluate_expression(Parameters(EvaluateExpressionParams {
+                session_id: sid.clone(),
+                event_id: 0,
+                expression: "x + y".to_string(),
+            }))
+            .await
+            .unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        // Should use the dispatcher backend
+        assert!(text.contains("dispatcher"));
+        assert!(text.contains("dispatched:x + y"));
+    }
+
+    #[tokio::test]
     async fn test_debug_get_variables_python() {
         let locals = vec![
             chronos_domain::VariableInfo::new("count", "42", "int", 0x1000, chronos_domain::VariableScope::Local),
@@ -3910,7 +4048,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_debug_get_registers_success() {
-use chronos_query::{QueryEngine, SessionEvalDispatcher};
+        use chronos_query::QueryEngine;
         use chronos_index::builder::IndexBuilder;
 
         let regs = chronos_domain::RegisterState {
