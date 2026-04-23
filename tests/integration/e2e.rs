@@ -14,7 +14,7 @@ use chronos_domain::{
 use chronos_format::TraceFileWriter;
 use chronos_index::IndexBuilder;
 use chronos_native::{
-    BreakpointManager, NativeAdapter, PtraceConfig, PtraceTracer, SymbolResolver,
+    NativeAdapter, PtraceConfig, PtraceTracer, SymbolResolver,
 };
 use chronos_query::QueryEngine;
 use std::io::Write;
@@ -276,25 +276,6 @@ async fn test_mcp_server_lifecycle() {
 
     let result = server.debug_run(params).await.unwrap();
     assert_eq!(result.is_error, Some(true));
-}
-
-// ============================================================================
-// Breakpoint manager unit tests (no ptrace needed)
-// ============================================================================
-
-#[test]
-fn test_breakpoint_manager_creation() {
-    let mgr = BreakpointManager::new(1234);
-    assert_eq!(mgr.pid(), 1234);
-    assert_eq!(mgr.breakpoint_count(), 0);
-    assert!(!mgr.is_breakpoint(0x1000));
-}
-
-#[test]
-fn test_breakpoint_manager_remove_nonexistent() {
-    let mut mgr = BreakpointManager::new(9999);
-    assert!(mgr.remove_breakpoint(0x1000).is_err());
-    assert!(mgr.remove_breakpoint_by_id(0).is_err());
 }
 
 // ============================================================================

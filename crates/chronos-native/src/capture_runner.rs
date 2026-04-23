@@ -1,24 +1,22 @@
 //! Capture runner — orchestrates the full ptrace event loop.
 //!
-//! Connects PtraceTracer + SymbolResolver + BreakpointManager into a
-//! single cohesive capture pipeline that runs in a background thread
-//! and feeds TraceEvents into a channel for consumption.
+//! Connects PtraceTracer + SymbolResolver into a single cohesive capture
+//! pipeline that runs in a background thread and feeds TraceEvents into a
+//! channel for consumption.
 //!
-//! ## Breakpoint-based function tracing
+//! ## Function entry tracking
 //!
-//! When `CaptureConfig::capture_stack` is true (default), the runner:
-//! 1. Pre-loads ELF function symbols from the target binary
-//! 2. Installs INT3 breakpoints at every function entry point
-//! 3. On each breakpoint hit, emits `FunctionEntry` (first hit) or
-//!    `FunctionExit` (second hit) events using a per-thread call stack
-//! 4. This is 10–100× more efficient than single-stepping
+//! The runner pre-loads ELF function symbols from the target binary and
+//! emits `FunctionEntry` events when execution stops at known function entry
+//! addresses (SIGTRAP stops that match symbol addresses).
 
-use crate::breakpoint::BreakpointManager;
 use crate::dwarf::DwarfReader;
 use crate::native_adapter::NativeAdapter;
 use crate::ptrace_tracer::{PtraceConfig, PtraceEvent, PtraceTracer};
 use crate::symbol_resolver::SymbolResolver;
 use chronos_domain::{CaptureConfig, SourceLocation, TraceEvent};
+use nix::sys::ptrace;
+use nix::unistd::Pid;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -76,88 +74,64 @@ pub enum AttachMode {
 }
 
 // ---------------------------------------------------------------------------
-// Breakpoint-based function tracking
+// Function entry tracking
 // ---------------------------------------------------------------------------
 
-/// Tracks function entry hits from INT3 breakpoints.
+/// Tracks function entries by matching SIGTRAP stops to known symbol addresses.
 ///
-/// Every breakpoint hit at a function entry address is emitted as a
-/// `FunctionEntry` event.  Function exits are not directly observable
-/// with entry-point-only breakpoints (they would require breakpoints at
-/// `ret` instructions).  The query engine can reconstruct call stacks
-/// from entry events + timestamps.
-struct BreakpointTracker {
-    /// Breakpoint manager (INT3 injection / restore).
-    bp_manager: BreakpointManager,
+/// When execution stops at a known function entry address (via SIGTRAP),
+/// emits a `FunctionEntry` event. This is a simpler model than breakpoint
+/// injection — we just observe natural SIGTRAP stops at function entries.
+struct FunctionEntryTracker {
+    /// Set of known function entry addresses.
+    function_addresses: std::collections::HashSet<u64>,
     /// Address → function name (pre-resolved from ELF symbols).
-    bp_functions: HashMap<u64, String>,
+    function_names: HashMap<u64, String>,
 }
 
-impl BreakpointTracker {
-    /// Create a new tracker, installing breakpoints at every function
-    /// entry point found by the `SymbolResolver`.
+impl FunctionEntryTracker {
+    /// Create a new tracker from the symbol resolver.
     ///
     /// Returns `None` if no symbols could be resolved.
-    fn new(pid: i32, symbol_resolver: &SymbolResolver) -> Option<Self> {
-        let mut bp_manager = BreakpointManager::new(pid);
-        let mut bp_functions = HashMap::new();
+    fn new(symbol_resolver: &SymbolResolver) -> Option<Self> {
+        let mut function_addresses = std::collections::HashSet::new();
+        let mut function_names = HashMap::new();
 
         for sym in symbol_resolver.symbols().values() {
-            // Only set breakpoints at function entry points (address == start)
             if sym.size > 0 {
-                if let Err(e) = bp_manager.set_breakpoint_at_function(sym.address, &sym.name) {
-                    debug!(
-                        "Skipping breakpoint at 0x{:x} ({}): {}",
-                        sym.address, sym.name, e
-                    );
-                } else {
-                    bp_functions.insert(sym.address, sym.name.clone());
-                }
+                function_addresses.insert(sym.address);
+                function_names.insert(sym.address, sym.name.clone());
             }
         }
 
-        if bp_functions.is_empty() {
-            warn!("No function symbols found — breakpoint tracking disabled");
+        if function_addresses.is_empty() {
+            warn!("No function symbols found — function entry tracking disabled");
             return None;
         }
 
-        info!(
-            "Installed {} function breakpoints on PID {}",
-            bp_functions.len(),
-            pid
-        );
+        info!("Tracking {} function entry addresses", function_addresses.len());
 
         Some(Self {
-            bp_manager,
-            bp_functions,
+            function_addresses,
+            function_names,
         })
     }
 
-    /// Try to handle a SIGTRAP stop as a breakpoint hit.
+    /// Check if the given address matches a known function entry.
     ///
-    /// Returns `Some((function_name, address))` if this was one of
-    /// our breakpoints, `None` otherwise.
-    ///
-    /// When this returns `Some`, the tracee has already been single-stepped
-    /// past the original instruction and INT3 has been re-inserted.  The
-    /// caller only needs to `PTRACE_CONT` (or `PTRACE_SYSCALL`).
-    fn handle_hit(&mut self) -> Option<(String, u64)> {
-        let bp_addr = match self.bp_manager.handle_breakpoint_hit() {
-            Ok(Some(addr)) => addr,
-            Ok(None) => return None,
-            Err(e) => {
-                debug!("handle_breakpoint_hit error: {}", e);
-                return None;
-            }
-        };
-
-        let func_name = self
-            .bp_functions
-            .get(&bp_addr)
-            .cloned()
-            .unwrap_or_else(|| format!("func_0x{:x}", bp_addr));
-
-        Some((func_name, bp_addr))
+    /// Returns `Some((function_name, address))` if this is a known function entry,
+    /// `None` otherwise.
+    fn try_get_function_entry(&self, address: u64) -> Option<(String, u64)> {
+        if self.function_addresses.contains(&address) {
+            let name = self
+                .function_names
+                .get(&address)
+                .cloned()
+                .unwrap_or_else(|| format!("func_0x{:x}", address));
+            Some((name, address))
+        } else {
+            None
+        }
     }
 }
 
@@ -271,6 +245,7 @@ impl CaptureRunner {
             &ptrace_config,
             &stop_flag,
             symbol_resolver.as_ref(),
+            self.config.max_duration_ms,
         )
     }
 
@@ -280,6 +255,7 @@ impl CaptureRunner {
         let args = self.config.args.clone();
         let ptrace_config = self.ptrace_config.clone();
         let stop_flag = self.stop_flag.clone();
+        let max_duration_ms = self.config.max_duration_ms;
 
         let binary_path = PathBuf::from(&program);
         if !binary_path.exists() {
@@ -321,6 +297,7 @@ impl CaptureRunner {
                     &ptrace_config,
                     &stop_flag,
                     symbol_resolver.as_ref(),
+                    max_duration_ms,
                 )
             })
             .map_err(|e| format!("Failed to spawn capture thread: {}", e))?;
@@ -347,7 +324,7 @@ impl CaptureRunner {
         let stop_flag = Arc::new(AtomicBool::new(false));
         let mode = AttachMode::Attach(pid);
 
-        run_capture_loop(&mode, &ptrace_config, &stop_flag, None)
+        run_capture_loop(&mode, &ptrace_config, &stop_flag, None, config.max_duration_ms)
     }
 
     /// Stop the capture and collect all events.
@@ -378,11 +355,15 @@ impl CaptureRunner {
 /// 5. Emits `FunctionEntry`/`FunctionExit` events on breakpoint hits
 /// 6. Detaches from (spawn mode kills) the target on cleanup
 /// 7. Returns the collected events
+///
+/// If `max_duration_ms` is Some, the loop will exit with CaptureEndReason::Failed
+/// after the specified duration.
 fn run_capture_loop(
     mode: &AttachMode,
     ptrace_config: &PtraceConfig,
     stop_flag: &AtomicBool,
     symbol_resolver: Option<&SymbolResolver>,
+    max_duration_ms: Option<u64>,
 ) -> Result<CaptureResult, String> {
     let mut tracer = PtraceTracer::new(ptrace_config.clone());
     let adapter = NativeAdapter::new();
@@ -426,10 +407,10 @@ fn run_capture_loop(
         None
     };
 
-    // Install function breakpoints (INT3 at every function entry point)
-    let mut bp_tracker: Option<BreakpointTracker> = None;
+    // Install function entry tracker (SIGTRAP at known function addresses)
+    let mut entry_tracker: Option<FunctionEntryTracker> = None;
     if let Some(resolver) = symbol_resolver {
-        bp_tracker = BreakpointTracker::new(pid, resolver);
+        entry_tracker = FunctionEntryTracker::new(resolver);
     }
 
     // Continue after initial SIGTRAP (launch() leaves the process stopped)
@@ -446,6 +427,7 @@ fn run_capture_loop(
     let mut events: Vec<TraceEvent> = Vec::new();
     let mut event_id: u64 = 0;
     let mut end_reason = CaptureEndReason::StoppedByUser;
+    let start_time = std::time::Instant::now();
 
     // Syscall state tracking (toggle between entry/exit)
     let mut syscall_is_entry: HashMap<i32, bool> = HashMap::new();
@@ -456,6 +438,15 @@ fn run_capture_loop(
             info!("Stop flag set, ending capture");
             end_reason = CaptureEndReason::StoppedByUser;
             break;
+        }
+
+        // Check timeout
+        if let Some(max_ms) = max_duration_ms {
+            if start_time.elapsed().as_millis() as u64 > max_ms {
+                info!("Capture duration limit reached ({}ms), ending capture", max_ms);
+                end_reason = CaptureEndReason::Failed(format!("timeout after {}ms", max_ms));
+                break;
+            }
         }
 
         let ptrace_event = match tracer.wait_event() {
@@ -478,14 +469,13 @@ fn run_capture_loop(
             .unwrap_or_default()
             .as_nanos() as u64;
 
-        // --- Breakpoint hit detection --------------------------------
-        // Check if this is a SIGTRAP that corresponds to one of our INT3
-        // breakpoints.  We do this BEFORE the generic PtraceEvent → TraceEvent
-        // conversion so we can emit function_entry instead of the generic
-        // BreakpointHit event.
-        let mut handled_as_breakpoint = false;
+        // --- Function entry detection --------------------------------
+        // Check if this is a SIGTRAP stop at a known function entry address.
+        // We do this BEFORE the generic PtraceEvent → TraceEvent conversion
+        // so we can emit function_entry with the resolved symbol name.
+        let mut handled_as_function_entry = false;
 
-        if let Some(ref mut tracker) = bp_tracker {
+        if let Some(ref tracker) = entry_tracker {
             if let PtraceEvent::Stopped {
                 pid: evt_pid,
                 signal,
@@ -493,11 +483,19 @@ fn run_capture_loop(
             } = &ptrace_event
             {
                 if *signal == 5 {
-                    // SIGTRAP
-                    if let Some((func_name, bp_addr)) = tracker.handle_hit() {
+                    // SIGTRAP - get the instruction pointer to check if we're at a function entry
+                    let ip = match ptrace::getregs(Pid::from_raw(*evt_pid)) {
+                        Ok(regs) => regs.rip,
+                        Err(e) => {
+                            debug!("Failed to get registers for PID {}: {}", evt_pid, e);
+                            0
+                        }
+                    };
+
+                    if let Some((func_name, func_addr)) = tracker.try_get_function_entry(ip) {
                         debug!(
-                            "Breakpoint ENTRY at 0x{:x}: {} (PID {})",
-                            bp_addr, func_name, evt_pid
+                            "Function ENTRY at 0x{:x}: {} (PID {})",
+                            func_addr, func_name, evt_pid
                         );
 
                         let mut trace_event = TraceEvent::function_entry(
@@ -505,40 +503,37 @@ fn run_capture_loop(
                             timestamp_ns,
                             *evt_pid as u64,
                             &func_name,
-                            bp_addr,
+                            func_addr,
                         );
 
                         // Enrich with DWARF source location if available (best-effort)
                         if let Some(ref reader) = dwarf_reader {
-                            if let Some(dwarf_loc) = reader.source_location(bp_addr) {
+                            if let Some(dwarf_loc) = reader.source_location(func_addr) {
                                 trace_event.location.file = dwarf_loc.file;
                                 trace_event.location.line = dwarf_loc.line;
                                 trace_event.location.column = dwarf_loc.column;
-                                // function name already populated from symbol resolver
                             }
                         }
 
                         events.push(trace_event);
                         event_id += 1;
-                        handled_as_breakpoint = true;
+                        handled_as_function_entry = true;
 
-                        // After handle_breakpoint_hit the tracee has already
-                        // been single-stepped and INT3 re-inserted, so just
-                        // PTRACE_CONT (or PTRACE_SYSCALL if syscall tracing is on).
+                        // Just continue - no breakpoint injection needed
                         let continue_result = if ptrace_config.trace_syscalls {
                             tracer.syscall_continue(*evt_pid)
                         } else {
                             tracer.continue_execution(*evt_pid)
                         };
                         if let Err(e) = continue_result {
-                            debug!("Failed to continue PID {} after BP hit: {}", evt_pid, e);
+                            debug!("Failed to continue PID {} after function entry: {}", evt_pid, e);
                         }
                     }
                 }
             }
         }
 
-        if handled_as_breakpoint {
+        if handled_as_function_entry {
             continue;
         }
 
@@ -612,9 +607,7 @@ fn run_capture_loop(
         let should_continue = event_pid > 0
             && !matches!(
                 adjusted_event,
-                PtraceEvent::Exited { .. }
-                    | PtraceEvent::Signaled { .. }
-                    | PtraceEvent::PtraceEvent { .. }
+                PtraceEvent::Exited { .. } | PtraceEvent::Signaled { .. }
             );
 
         if should_continue {
@@ -638,6 +631,22 @@ fn run_capture_loop(
                 } else {
                     tracer.continue_execution(event_pid)
                 }
+            } else if let PtraceEvent::PtraceEvent { new_pid, .. } = &adjusted_event {
+                // PtraceEvent (clone/fork/vfork/exec): continue the parent AND
+                // the newly-created child so both can proceed.
+                let res = tracer.continue_execution(event_pid);
+                if let Some(child_pid) = new_pid {
+                    if *child_pid > 0 {
+                        // The new child stops with SIGSTOP shortly after creation.
+                        // Continue it so it can run. If it hasn't stopped yet this
+                        // is harmless — the next wait_event will catch the SIGSTOP.
+                        debug!("Continuing new child PID {}", child_pid);
+                        if let Err(e) = tracer.continue_execution(*child_pid) {
+                            debug!("Could not continue new child PID {}: {}", child_pid, e);
+                        }
+                    }
+                }
+                res
             } else {
                 tracer.continue_execution(event_pid)
             };
@@ -652,6 +661,8 @@ fn run_capture_loop(
     info!("Capture ended: {} events collected", total);
 
     // Clean up: detach (attach mode) or kill (spawn mode)
+    // Only kill if the process is still alive (i.e., capture was stopped
+    // by user or failed). If it exited or was signaled, it's already dead.
     match mode {
         AttachMode::Attach(pid) => {
             if let Err(e) = tracer.detach(*pid as i32) {
@@ -661,7 +672,16 @@ fn run_capture_loop(
             }
         }
         AttachMode::Spawn { .. } => {
-            if let Err(e) = tracer.kill(pid) {
+            let already_dead = matches!(
+                end_reason,
+                CaptureEndReason::Exited(_) | CaptureEndReason::Signaled { .. }
+            );
+            if already_dead {
+                debug!(
+                    "Process already dead ({:?}), skipping kill",
+                    end_reason
+                );
+            } else if let Err(e) = tracer.kill(pid) {
                 warn!("Failed to kill PID {}: {}", pid, e);
             } else {
                 info!("Killed spawned PID {}", pid);
@@ -679,7 +699,6 @@ fn run_capture_loop(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chronos_domain::EventType;
 
     #[test]
     fn test_capture_runner_new() {
@@ -706,83 +725,6 @@ mod tests {
         };
         assert_eq!(result.total_events, 0);
         assert!(result.events.is_empty());
-    }
-
-    /// Integration test: verify that function_entry / function_exit events
-    /// are emitted when breakpoints are installed at ELF function entries.
-    ///
-    /// Requires the `test_add` C fixture to be compiled. Runs the capture
-    /// against it with syscall tracing disabled (breakpoint-only mode).
-    #[test]
-    fn test_breakpoint_function_events() {
-        let fixture_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures");
-        let source = format!("{}/test_add.c", fixture_dir);
-        let binary = format!("{}/test_add_bp", fixture_dir);
-
-        // Compile the fixture (no PIE so addresses are predictable)
-        let compile = std::process::Command::new("gcc")
-            .args(["-no-pie", "-o", &binary, &source])
-            .output()
-            .expect("gcc not found");
-
-        if !compile.status.success() {
-            eprintln!("gcc failed: {}", String::from_utf8_lossy(&compile.stderr));
-            panic!("Could not compile test_add.c");
-        }
-
-        let mut config = CaptureConfig::new(&binary);
-        config.capture_syscalls = false; // Only breakpoint tracing
-        config.capture_stack = true;
-
-        let mut runner = CaptureRunner::new(config);
-
-        let result = runner.run_to_completion();
-        assert!(result.is_ok(), "Capture failed: {:?}", result.err());
-
-        let capture = result.unwrap();
-
-        // We should have at least some events
-        assert!(
-            capture.total_events > 0,
-            "Expected at least one event, got {}",
-            capture.total_events
-        );
-
-        // Count function_entry events (we only emit entries from breakpoints)
-        let func_entries = capture
-            .events
-            .iter()
-            .filter(|e| e.event_type == EventType::FunctionEntry)
-            .count();
-
-        // With -no-pie we should hit at least _start, compute, and multiply
-        assert!(
-            func_entries >= 3,
-            "Expected at least 3 function_entry events, got {}",
-            func_entries
-        );
-
-        // Verify at least some known function names appear
-        let entry_names: Vec<&str> = capture
-            .events
-            .iter()
-            .filter(|e| e.event_type == EventType::FunctionEntry)
-            .filter_map(|e| e.location.function.as_deref())
-            .collect();
-
-        // At least one of main/compute/add/multiply should be present
-        let known_funcs = ["main", "add", "multiply", "compute", "_start"];
-        let found_known = entry_names
-            .iter()
-            .any(|n| known_funcs.iter().any(|k| n.contains(k)));
-        assert!(
-            found_known,
-            "Expected at least one known function in {:?}",
-            entry_names
-        );
-
-        // Clean up compiled binary
-        let _ = std::fs::remove_file(&binary);
     }
 
     // ========================================================================

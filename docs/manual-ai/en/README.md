@@ -1,133 +1,127 @@
-# Chronos MCP — AI Agent Manual
+# Chronos MCP — AI-Native Time-Travel Debugging Manual
 
-**Chronos** is a time-travel debugging (TTD) platform exposed via the Model Context Protocol (MCP). It enables AI agents to capture, replay, and analyze program execution traces across multiple languages and runtimes.
+## What Is Chronos?
 
----
+Chronos is a time-travel debugging system exposed as MCP (Model Context Protocol) tools, designed from the ground up for AI agents — not humans. It captures a complete, frozen trace of program execution in a single shot, then allows unlimited parallel queries against that trace.
 
-## Architecture Overview
-
-```
-User / AI Agent
-      │
-      ▼  MCP (JSON-RPC 2.0)
-┌─────────────────┐
-│  ChronosServer  │  ← chronos-mcp crate
-│  (35 tools)     │
-└────────┬────────┘
-         │
-   ┌─────┴──────┐
-   │            │
-QueryEngine  SessionStore
-(in-memory)  (redb on disk)
-   │
-   ├── ptrace  (C/C++/Rust/eBPF)
-   ├── JDWP    (Java)
-   ├── DAP     (Python / Go Delve)
-   └── CDP     (JavaScript/Node.js)
-```
-
-### Session States
+## The Core Paradigm
 
 ```
-[capture] ──debug_run──► [in-memory] ──save_session──► [persisted]
-                              │                              │
-                         drop_session                  load_session
-                              │                              │
-                           (gone)                    [in-memory again]
+Traditional (human) debugging:
+  set breakpoint → run → pause → inspect → step → repeat → repeat → repeat
+
+AI-native (Chronos) debugging:
+  debug_run() → ONE frozen session → query EVERYTHING in parallel → done
 ```
 
----
+This difference is not cosmetic. It changes how you think about debugging entirely.
 
-## Tool Reference Index
+A human debugger works interactively because humans can only hold a few things in mind at once. An AI agent can issue dozens of analysis queries simultaneously and synthesize all results in one pass. Chronos is built for this model.
 
-### Capture & Session Lifecycle (10 tools)
+## The "One Capture, N Analyses" Pattern
 
-| Tool | Description |
-|------|-------------|
-| [`debug_run`](01-getting-started.md#debug_run) | Launch a program under time-travel capture |
-| [`debug_attach`](02-session-lifecycle.md#debug_attach) | Attach to a running process by PID |
-| [`debug_stop`](02-session-lifecycle.md#debug_stop) | Stop an active capture session |
-| [`get_session_status`](02-session-lifecycle.md#get_session_status) | Query status of a background session |
-| [`drop_session`](02-session-lifecycle.md#drop_session) | Remove session from memory (idempotent, no storage impact) |
-| [`delete_session`](02-session-lifecycle.md#delete_session) | Remove session from both storage and memory |
-| [`save_session`](02-session-lifecycle.md#save_session) | Persist in-memory session to disk store |
-| [`load_session`](02-session-lifecycle.md#load_session) | Load a persisted session into memory |
-| [`list_sessions`](02-session-lifecycle.md#list_sessions) | List all persisted sessions |
-| [`compare_sessions`](02-session-lifecycle.md#compare_sessions) | Hash-based diff between two sessions |
+```
+                    ┌─────────────────┐
+                    │   debug_run()   │
+                    │  (one capture)  │
+                    └────────┬────────┘
+                             │ session_id
+              ┌──────────────┼──────────────┐
+              │              │              │
+              ▼              ▼              ▼
+   get_execution_    debug_get_      list_threads()
+      summary()    saliency_scores()
+              │              │              │
+              └──────────────┼──────────────┘
+                             │ orientation done
+              ┌──────────────┼──────────────┐
+              │              │              │
+              ▼              ▼              ▼
+   debug_find_crash() debug_detect_  debug_expand_
+                        races()       hotspot()
+              │              │              │
+              └──────────────┼──────────────┘
+                             │ bulk analysis done
+                    (drill into findings)
+```
 
-### Query & Inspection (7 tools)
+All queries at the same level run in parallel. The session is immutable — no query modifies it.
 
-| Tool | Description |
-|------|-------------|
-| [`query_events`](03-query-inspection.md#query_events) | Query trace events with filters |
-| [`get_event`](03-query-inspection.md#get_event) | Retrieve a single event by ID |
-| [`get_call_stack`](03-query-inspection.md#get_call_stack) | Reconstruct call stack at an event |
-| [`get_execution_summary`](03-query-inspection.md#get_execution_summary) | Summary: counts, top functions, issues |
-| [`get_backtrace`](03-query-inspection.md#get_backtrace) | Full backtrace at an event (depth ≤ 50) |
-| [`list_threads`](03-query-inspection.md#list_threads) | List all thread IDs in the trace |
-| [`state_diff`](03-query-inspection.md#state_diff) | Compare CPU register state between two timestamps |
+## Quick Start
 
-### Advanced Analysis (15 tools)
+### 1. Capture a trace
 
-| Tool | Description |
-|------|-------------|
-| [`debug_call_graph`](04-advanced-analysis.md#debug_call_graph) | Build the full call graph |
-| [`debug_find_variable_origin`](04-advanced-analysis.md#debug_find_variable_origin) | Trace all mutations to a variable |
-| [`debug_find_crash`](04-advanced-analysis.md#debug_find_crash) | Identify crash point and stack at fatal signal |
-| [`debug_detect_races`](04-advanced-analysis.md#debug_detect_races) | Detect concurrent write races |
-| [`inspect_causality`](04-advanced-analysis.md#inspect_causality) | Causal history of a memory address |
-| [`debug_expand_hotspot`](04-advanced-analysis.md#debug_expand_hotspot) | Top-N hottest functions by call count/CPU |
-| [`debug_get_saliency_scores`](04-advanced-analysis.md#debug_get_saliency_scores) | Saliency scores [0–1] per function |
-| [`debug_diff`](04-advanced-analysis.md#debug_diff) | Compare program state between two event IDs |
-| [`debug_analyze_memory`](04-advanced-analysis.md#debug_analyze_memory) | Analyze memory accesses in a time window |
-| [`debug_get_variables`](04-advanced-analysis.md#debug_get_variables) | Variables in scope at an event |
-| [`debug_get_memory`](04-advanced-analysis.md#debug_get_memory) | Raw memory value at a timestamp |
-| [`debug_get_registers`](04-advanced-analysis.md#debug_get_registers) | CPU register values at an event |
-| [`forensic_memory_audit`](04-advanced-analysis.md#forensic_memory_audit) | Complete audit trail of all writes to an address |
-| [`performance_regression_audit`](04-advanced-analysis.md#performance_regression_audit) | Cross-session regression scoring |
-| [`evaluate_expression`](04-advanced-analysis.md#evaluate_expression) | Evaluate arithmetic expression with local variables |
+```json
+{
+  "tool": "debug_run",
+  "params": {
+    "program": "/path/to/my-binary",
+    "args": ["--config", "app.toml"],
+    "trace_syscalls": true,
+    "capture_registers": true
+  }
+}
+```
 
-### Watchpoints / Subscriptions (3 tools)
+Response includes `session_id` (e.g. `"sess_a1b2c3"`).
 
-| Tool | Description |
-|------|-------------|
-| [`subscribe_to_symbol`](05-watchpoints.md#subscribe_to_symbol) | Set hardware watchpoint on symbol or address |
-| [`get_subscription_events`](05-watchpoints.md#get_subscription_events) | Poll watchpoint events |
-| [`unsubscribe_from_symbol`](05-watchpoints.md#unsubscribe_from_symbol) | Remove a watchpoint |
+### 2. Run orientation tools IN PARALLEL
 
----
+```json
+[
+  { "tool": "get_execution_summary",      "params": { "session_id": "sess_a1b2c3" } },
+  { "tool": "debug_get_saliency_scores",  "params": { "session_id": "sess_a1b2c3" } },
+  { "tool": "list_threads",               "params": { "session_id": "sess_a1b2c3" } }
+]
+```
 
-## Document Map
+### 3. Run bulk analysis IN PARALLEL based on symptoms
 
-| File | Contents |
-|------|----------|
-| [01-getting-started.md](01-getting-started.md) | Installation, `debug_run`, first trace |
-| [02-session-lifecycle.md](02-session-lifecycle.md) | All 9 lifecycle tools |
-| [03-query-inspection.md](03-query-inspection.md) | All 7 query/inspection tools |
-| [04-advanced-analysis.md](04-advanced-analysis.md) | All 15 analysis tools |
-| [05-watchpoints.md](05-watchpoints.md) | All 3 watchpoint tools |
-| [06-multi-language.md](06-multi-language.md) | Language-specific setup (Python, JS, Java, Go, eBPF) |
-| [07-prompt-examples.md](07-prompt-examples.md) | 20+ complete workflow examples |
+```json
+[
+  { "tool": "debug_find_crash",    "params": { "session_id": "sess_a1b2c3" } },
+  { "tool": "debug_detect_races",  "params": { "session_id": "sess_a1b2c3" } },
+  { "tool": "debug_call_graph",    "params": { "session_id": "sess_a1b2c3" } }
+]
+```
 
----
+### 4. Drill down into specific findings
 
-## Quick Reference: Common Event Types
+Use `query_events`, `get_call_stack`, `debug_get_variables`, etc. — only after you know what to look for.
 
-| Value | Meaning |
-|-------|---------|
-| `function_entry` | Function call start |
-| `function_exit` | Function call return |
-| `syscall_enter` | System call invocation |
-| `syscall_exit` | System call return |
-| `memory_read` | Memory read access |
-| `memory_write` | Memory write access |
-| `variable_write` | Variable mutation |
-| `signal` | OS signal received |
+## Tool Layers at a Glance
 
----
+| Layer | Tools | When |
+|-------|-------|------|
+| **Capture** | `debug_run`, `debug_attach` | Always first |
+| **Orientation** | `get_execution_summary`, `debug_get_saliency_scores`, `list_threads` | Immediately after capture, always in parallel |
+| **Bulk analysis** | `debug_find_crash`, `debug_detect_races`, `debug_expand_hotspot`, `performance_regression_audit`, `debug_call_graph` | After orientation, in parallel based on symptom |
+| **Forensics** | `forensic_memory_audit`, `inspect_causality`, `debug_find_variable_origin` | After bulk identifies suspicious address/variable |
+| **Drill-down** | `query_events`, `get_call_stack`, `evaluate_expression`, `debug_get_variables`, `state_diff`, `debug_diff`, `get_event` | After forensics/bulk narrows scope |
+| **Raw access** | `debug_get_memory`, `debug_get_registers`, `debug_analyze_memory` | Rarely — only for hardware-level investigation |
+| **Session mgmt** | `save_session`, `load_session`, `list_sessions`, `delete_session`, `drop_session`, `compare_sessions` | CI/CD, multi-agent, persistence |
 
-## Environment Variables
+## Supported Languages
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CHRONOS_DB_PATH` | `~/.local/share/chronos/sessions.redb` | Path to the redb session store |
+| Language | Capture mechanism |
+|----------|-------------------|
+| Native / C / C++ / Rust | ptrace |
+| Java | JDWP |
+| Python | DAP / debugpy |
+| JavaScript / Node.js | CDP (Chrome DevTools Protocol) |
+| Go | Delve DAP |
+| eBPF | aya uprobes |
+
+## Manual Structure
+
+- **[01-core-pattern.md](01-core-pattern.md)** — Deep explanation of the AI-native paradigm
+- **[02-capture.md](02-capture.md)** — debug_run and debug_attach in full detail
+- **[03-orientation.md](03-orientation.md)** — Mandatory first-pass tools
+- **[04-bulk-analysis.md](04-bulk-analysis.md)** — Bulk answer tools
+- **[05-forensics.md](05-forensics.md)** — Causal investigation tools
+- **[06-drill-down.md](06-drill-down.md)** — Targeted inspection tools
+- **[07-raw-access.md](07-raw-access.md)** — Low-level memory and register access
+- **[08-session-management.md](08-session-management.md)** — Persistence, CI/CD, multi-agent
+- **[09-multi-language.md](09-multi-language.md)** — Language-specific setup and gotchas
+- **[10-anti-patterns.md](10-anti-patterns.md)** — What NOT to do
+- **[11-prompt-examples.md](11-prompt-examples.md)** — 20+ complete agent workflow examples

@@ -10,7 +10,8 @@
 //! sudo cargo test -p chronos-ebpf --features ebpf -- --ignored
 //! ```
 
-use chronos_domain::TraceAdapter;
+use chronos_domain::ProbeBackend;
+use chronos_domain::semantic::SemanticEventKind;
 use chronos_ebpf::{EbpfAdapter, MockEbpfAdapter};
 
 /// Verify that the mock adapter works end-to-end as a `TraceAdapter`.
@@ -18,7 +19,6 @@ use chronos_ebpf::{EbpfAdapter, MockEbpfAdapter};
 /// This test does NOT require kernel support — it tests the mock path.
 #[test]
 fn test_mock_adapter_as_trace_adapter_integration() {
-    use chronos_domain::EventType;
     use chronos_ebpf::types::EbpfEvent;
 
     let events = vec![
@@ -28,7 +28,7 @@ fn test_mock_adapter_as_trace_adapter_integration() {
         EbpfEvent::function_exit(4_000_000, 100, 0xDEAD_BEEF),
     ];
 
-    let mut adapter: Box<dyn TraceAdapter> = Box::new(MockEbpfAdapter::new(events));
+    let mut adapter: Box<dyn ProbeBackend> = Box::new(MockEbpfAdapter::new(events));
 
     assert!(adapter.is_available());
     assert_eq!(adapter.name(), "ebpf-mock");
@@ -36,11 +36,13 @@ fn test_mock_adapter_as_trace_adapter_integration() {
     let drained = adapter.drain_events().expect("drain should succeed");
     assert_eq!(drained.len(), 4);
 
-    assert_eq!(drained[0].event_type, EventType::FunctionEntry);
+    assert!(matches!(&drained[0].kind, SemanticEventKind::FunctionCalled { function, .. } if function == "entry_point"));
     assert_eq!(drained[0].timestamp_ns, 1_000_000);
 
-    assert_eq!(drained[2].event_type, EventType::FunctionExit);
-    assert_eq!(drained[3].event_type, EventType::FunctionExit);
+    // Exit events: function name may be empty since EbpfEvent::function_exit doesn't store a name
+    // (the name is resolved from address via to_trace_event -> location.function)
+    assert!(matches!(&drained[2].kind, SemanticEventKind::FunctionReturned { .. }));
+    assert!(matches!(&drained[3].kind, SemanticEventKind::FunctionReturned { .. }));
 
     // Second drain returns nothing
     let empty = adapter.drain_events().expect("second drain ok");
@@ -104,7 +106,7 @@ fn test_mock_adapter_event_id_sequencing() {
 
     assert_eq!(drained.len(), 10);
     for (i, ev) in drained.iter().enumerate() {
-        assert_eq!(ev.event_id, i as u64, "event_id should be sequential");
+        assert_eq!(ev.source_event_id, i as u64, "source_event_id should be sequential");
         assert_eq!(ev.timestamp_ns, i as u64 * 1000);
     }
 }

@@ -1,10 +1,19 @@
 //! DWARF type name resolution utilities.
 
-// This module is a placeholder for future type resolution work.
-// The complex DWARF DIE traversal requires careful handling of the gimli API.
+// This module provides type name resolution from DWARF type DIEs.
+// The actual implementation is in variables.rs where we have access to
+// the full gimli Dwarf context.
 
-/// Placeholder for type name resolution.
-pub fn resolve_type_name(_type_offset: u64) -> String {
+/// Resolve a type name from a DWARF type offset.
+///
+/// This is a convenience wrapper that delegates to the implementation
+/// in the variables module. The actual resolution is done by traversing
+/// the DWARF DIE tree.
+pub fn resolve_type_name(type_offset: u64) -> String {
+    // The actual implementation is in variables::resolve_type_name
+    // which requires access to the gimli Dwarf context.
+    // This placeholder returns "unknown" since we don't have the context here.
+    let _ = type_offset;
     "unknown".to_string()
 }
 

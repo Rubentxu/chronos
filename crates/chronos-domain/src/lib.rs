@@ -4,14 +4,18 @@
 //! the Chronos MCP server. It has zero external I/O dependencies.
 
 pub mod adapter;
+pub mod bus;
 pub mod error;
 pub mod index;
 pub mod query;
+pub mod semantic;
 pub mod trace;
+pub mod tripwire;
 pub mod value;
 
 // Re-exports for convenience
-pub use adapter::TraceAdapter;
+pub use adapter::ProbeBackend;
+pub use bus::{BusMetrics, EventBus, EventBusHandle};
 pub use error::TraceError;
 pub use index::{
     CausalityEntry, CausalityIndex, CompressedTrace, CompressionLevel, DetailData,

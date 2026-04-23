@@ -2,7 +2,6 @@
 resolver = "2"
 members = [
     "crates/chronos-domain",
-    "crates/chronos-format",
     "crates/chronos-capture",
     "crates/chronos-native",
     "crates/chronos-index",
@@ -15,7 +14,6 @@ members = [
     "crates/chronos-java",
     "crates/chronos-go",
     "crates/chronos-js",
-    "crates/chronos-sandbox",
 ]
 
 [workspace.package]
@@ -27,7 +25,6 @@ rust-version = "1.75"
 [workspace.dependencies]
 # Internal crates
 chronos-domain = { path = "crates/chronos-domain" }
-chronos-format = { path = "crates/chronos-format" }
 chronos-capture = { path = "crates/chronos-capture" }
 chronos-native = { path = "crates/chronos-native" }
 chronos-index = { path = "crates/chronos-index" }
@@ -40,7 +37,6 @@ chronos-python = { path = "crates/chronos-python" }
 chronos-java = { path = "crates/chronos-java" }
 chronos-go = { path = "crates/chronos-go" }
 chronos-js = { path = "crates/chronos-js" }
-chronos-sandbox = { path = "crates/chronos-sandbox" }
 
 # External
 tokio = { version = "1", features = ["full"] }

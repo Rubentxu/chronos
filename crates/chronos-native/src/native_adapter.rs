@@ -116,7 +116,7 @@ impl NativeAdapter {
                 ))
             }
 
-            PtraceEvent::PtraceEvent { pid, event_code } => {
+            PtraceEvent::PtraceEvent { pid, event_code, .. } => {
                 // Map ptrace events to thread events for clone/fork
                 let event_type = match *event_code {
                     // PTRACE_EVENT_CLONE = 3
@@ -400,6 +400,7 @@ mod tests {
         let ptrace_evt = PtraceEvent::PtraceEvent {
             pid: 5555,
             event_code: 3, // PTRACE_EVENT_CLONE
+            new_pid: None,
         };
 
         let trace_evt = adapter

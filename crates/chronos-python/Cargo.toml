@@ -6,7 +6,6 @@ edition.workspace = true
 [dependencies]
 chronos-domain = { path = "../chronos-domain" }
 chronos-capture = { path = "../chronos-capture" }
-chronos-query = { path = "../chronos-query" }
 tokio = { workspace = true, features = ["process", "io-util", "rt-multi-thread", "macros"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -17,7 +16,7 @@ tracing = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = "3"
-chronos-query = { workspace = true }
+chronos-query = { path = "../chronos-query" }
 
 [features]
 integration = []

@@ -59,6 +59,69 @@ impl SessionStore {
         Ok(Self { db, cas })
     }
 
+    /// Try to open an existing session store, with graceful handling of lock conflicts.
+    /// If the database is locked by another process, returns a special error.
+    /// If the database appears corrupted, attempts recovery.
+    #[allow(clippy::result_large_err)]
+    pub fn try_open(path: &Path) -> Result<Self, StoreError> {
+        // Ensure parent directory exists
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        // Try to open existing database
+        match redb::Database::open(path) {
+            Ok(db) => {
+                let db = Arc::new(db);
+                let cas = ContentStore::new(db.clone());
+                return Ok(Self { db, cas });
+            }
+            Err(e) => {
+                // Check if it's a lock error
+                let error_str = e.to_string();
+                if error_str.contains("DatabaseAlreadyOpen") || error_str.contains("lock") {
+                    tracing::warn!(
+                        "Database at {:?} is locked by another process, trying to recover...",
+                        path
+                    );
+
+                    // Try to remove stale lock files and retry once
+                    Self::cleanup_stale_locks(path);
+
+                    // Retry opening
+                    if let Ok(db) = redb::Database::open(path) {
+                        let db = Arc::new(db);
+                        let cas = ContentStore::new(db.clone());
+                        return Ok(Self { db, cas });
+                    }
+                }
+
+                // If still failing, try creating a fresh database
+                tracing::warn!(
+                    "Could not open existing database at {:?}: {}, creating fresh database",
+                    path,
+                    e
+                );
+                return Self::open(path);
+            }
+        }
+    }
+
+    /// Clean up stale lock files that may be left by crashed processes.
+    fn cleanup_stale_locks(path: &Path) {
+        if let Some(parent) = path.parent() {
+            // Look for common lock file patterns and remove them
+            let lock_patterns = ["sessions.redb.lock", ".sessions.redb.lock", "sessions.lock"];
+            for pattern in lock_patterns {
+                let lock_path = parent.join(pattern);
+                if lock_path.exists() {
+                    tracing::info!("Removing stale lock file: {:?}", lock_path);
+                    let _ = std::fs::remove_file(&lock_path);
+                }
+            }
+        }
+    }
+
     /// Create an in-memory session store (for testing).
     #[allow(clippy::result_large_err)]
     pub fn in_memory() -> Result<Self, StoreError> {

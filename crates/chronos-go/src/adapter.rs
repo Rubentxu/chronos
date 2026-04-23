@@ -402,6 +402,7 @@ mod tests {
             capture_variables: false,
             capture_stack: false,
             capture_memory: false,
+            capture_function_exit: false,
             function_filter: None,
             max_duration_ms: None,
         });

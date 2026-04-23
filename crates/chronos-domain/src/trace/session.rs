@@ -105,6 +105,8 @@ pub struct CaptureConfig {
     pub capture_stack: bool,
     /// Whether to capture memory writes (expensive).
     pub capture_memory: bool,
+    /// Whether to capture function exit events (returns).
+    pub capture_function_exit: bool,
     /// Only trace functions matching these patterns (None = all).
     pub function_filter: Option<Vec<String>>,
     /// Maximum capture duration in milliseconds (None = unlimited).
@@ -130,6 +132,7 @@ impl CaptureConfig {
             capture_variables: true,
             capture_stack: true,
             capture_memory: false,
+            capture_function_exit: false,
             function_filter: None,
             max_duration_ms: None,
         }
@@ -240,6 +243,7 @@ mod tests {
         assert!(config.args.is_empty());
         assert!(config.capture_syscalls);
         assert!(!config.capture_memory);
+        assert!(!config.capture_function_exit);
         // Auto-detect should return Unknown for no extension
         assert!(config.language.is_none());
     }

@@ -43,8 +43,13 @@ pub enum PtraceEvent {
         signal_name: String,
         core_dumped: bool,
     },
-    /// Tracee hit a ptrace event (clone, exec, etc.).
-    PtraceEvent { pid: i32, event_code: i32 },
+    /// Tracee hit a ptrace event (clone, fork, exec, etc.).
+    /// `new_pid` contains the PID of the newly created child (if applicable).
+    PtraceEvent {
+        pid: i32,
+        event_code: i32,
+        new_pid: Option<i32>,
+    },
     /// Register state snapshot captured for this stop.
     Registers { pid: i32, regs: RegisterState },
 }
@@ -360,9 +365,41 @@ impl PtraceTracer {
 
             WaitStatus::PtraceEvent(pid, _sig, event_code) => {
                 debug!("PID {} ptrace event {}", pid, event_code);
+
+                // For clone/fork/vfork events, retrieve the new child PID
+                let new_pid = if matches!(
+                    event_code,
+                    nix::libc::PTRACE_EVENT_CLONE
+                        | nix::libc::PTRACE_EVENT_FORK
+                        | nix::libc::PTRACE_EVENT_VFORK
+                ) {
+                    match ptrace::getevent(pid) {
+                        Ok(data) => {
+                            // getevent returns unsigned long; the new child PID
+                            // is stored in the lower 32 bits for clone/fork events
+                            let child_pid = data as i32;
+                            if child_pid > 0 {
+                                debug!(
+                                    "PID {} created new child PID {} (event {})",
+                                    pid, child_pid, event_code
+                                );
+                                self.traced_pids.insert(child_pid);
+                            }
+                            Some(child_pid)
+                        }
+                        Err(e) => {
+                            warn!("PTRACE_GETEVENTMSG failed for PID {}: {}", pid, e);
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+
                 Some(PtraceEvent::PtraceEvent {
                     pid: pid.as_raw(),
                     event_code,
+                    new_pid,
                 })
             }
 

@@ -28,6 +28,7 @@ pub enum DwarfError {
 /// debug sections (`.debug_line`, `.debug_info`).
 pub struct DwarfReader<'data> {
     ctx: Option<addr2line::Context<gimli::EndianSlice<'data, gimli::RunTimeEndian>>>,
+    elf_bytes: &'data [u8],
 }
 
 impl<'data> DwarfReader<'data> {
@@ -36,7 +37,7 @@ impl<'data> DwarfReader<'data> {
     /// Returns `Err(DwarfError::NoDwarf)` if the binary has no DWARF sections.
     /// Returns `Err(DwarfError::Elf)` if the bytes are not a valid ELF file.
     pub fn new(elf_bytes: &'data [u8]) -> Result<Self, DwarfError> {
-        // Try to build addr2line context from .debug_line sections
+        // Build addr2line context from .debug_line sections
         let ctx = Self::build_addr2line_context(elf_bytes);
 
         // If context is None, return NoDwarf
@@ -44,7 +45,7 @@ impl<'data> DwarfReader<'data> {
             return Err(DwarfError::NoDwarf);
         }
 
-        Ok(Self { ctx })
+        Ok(Self { ctx, elf_bytes })
     }
 
     fn build_addr2line_context(
@@ -74,9 +75,33 @@ impl<'data> DwarfReader<'data> {
         let dwarf = gimli::Dwarf::load(&load_section).ok()?;
 
         // Create addr2line context
-        let ctx = addr2line::Context::from_dwarf(dwarf).ok()?;
+        addr2line::Context::from_dwarf(dwarf).ok()
+    }
 
-        Some(ctx)
+    /// Build gimli Dwarf from stored ELF bytes.
+    fn build_dwarf(&self) -> Option<gimli::Dwarf<gimli::EndianSlice<'data, gimli::RunTimeEndian>>> {
+        use object::{Object, ObjectSection};
+
+        // Parse as object file
+        let obj = object::File::parse(self.elf_bytes).ok()?;
+
+        // Determine endianness
+        let endian = if obj.is_little_endian() {
+            gimli::RunTimeEndian::Little
+        } else {
+            gimli::RunTimeEndian::Big
+        };
+
+        // Create a Dwarf struct using addr2line's gimli
+        let load_section = |id: gimli::SectionId| -> Result<gimli::EndianSlice<'data, gimli::RunTimeEndian>, std::convert::Infallible> {
+            let data = obj
+                .section_by_name(id.name())
+                .and_then(|s| s.data().ok())
+                .unwrap_or(&[]);
+            Ok(gimli::EndianSlice::new(data, endian))
+        };
+
+        gimli::Dwarf::load(&load_section).ok()
     }
 
     /// Get source location for a program counter address.
@@ -92,10 +117,12 @@ impl<'data> DwarfReader<'data> {
     ///
     /// Returns an empty vector if no variables are found or if DWARF
     /// data is not available.
-    pub fn variables_in_scope(&self, _pc: u64) -> Vec<chronos_domain::value::VariableInfo> {
-        // Variable extraction from DWARF DIEs is complex and deferred to future work
-        // The addr2line crate doesn't expose this functionality directly
-        Vec::new()
+    pub fn variables_in_scope(&self, pc: u64) -> Vec<chronos_domain::value::VariableInfo> {
+        // Rebuild dwarf from stored bytes and delegate to variables module
+        match self.build_dwarf() {
+            Some(dwarf) => variables::variables_in_scope(&dwarf, pc),
+            None => Vec::new(),
+        }
     }
 }
 

@@ -99,14 +99,18 @@ impl EbpfAdapterInner {
         // Load the eBPF program from the embedded object file
         let bpf = Self::load_bpf_program()?;
 
-        Ok(Self {
+        let adapter = Self {
             bpf: Mutex::new(Some(bpf)),
             uprobe_links: Mutex::new(Vec::new()),
             uprobe_manager: UprobeManager::new(),
             ring_reader: Mutex::new(None),
             next_event_id: Mutex::new(0),
             config,
-        })
+        };
+
+        adapter.init_ring_reader()?;
+
+        Ok(adapter)
     }
 
     /// Check if eBPF is available on this system.
@@ -261,8 +265,8 @@ impl EbpfAdapterInner {
         let mut result = Vec::with_capacity(self.config.max_events_per_poll);
         let mut poll_count = 0;
 
-        // SAFETY: The SendPtr wraps a valid pointer that is only used while
-        // the bpf mutex is held. This is ensured by the API contract.
+        // SAFETY: The SendPtr wraps a valid pointer to a RingBuf that is owned by `self`.
+        // The bpf map itself remains alive as long as `self.bpf` is alive.
         let ring = unsafe { &mut *send_ptr.0 };
         while poll_count < self.config.max_events_per_poll {
             match ring.next() {

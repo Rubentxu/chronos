@@ -5,6 +5,7 @@ pub mod convert;
 pub mod error;
 pub mod eval_backend;
 pub mod parser;
+pub mod semantic_resolver;
 pub mod subprocess;
 
 pub use adapter::{DapSession, PythonAdapter, PythonDapAdapter};
@@ -12,3 +13,4 @@ pub use client::DapClient;
 pub use convert::dap_event_to_trace;
 pub use error::{PythonAdapterError, PythonError};
 pub use eval_backend::PythonDapEvalBackend;
+pub use semantic_resolver::PythonSemanticResolver;

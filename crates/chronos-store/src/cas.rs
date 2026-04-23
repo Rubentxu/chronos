@@ -45,6 +45,11 @@ impl ContentStore {
     ///
     /// If the event was already stored, returns the existing hash (dedup).
     /// Uses BLAKE3 for content addressing and LZ4 for compression.
+    ///
+    /// # Concurrency
+    /// This operation is atomic - uses a single write transaction with internal
+    /// deduplication check. Concurrent calls with identical content will serialize
+    /// at the redb write lock, ensuring exactly one compression + store per unique event.
     #[allow(clippy::result_large_err)]
     pub fn put(&self, event: &TraceEvent) -> Result<ContentHash, StoreError> {
         // Serialize with bincode
@@ -58,44 +63,30 @@ impl ContentStore {
         let hash_hex = hash(&compressed).to_hex().to_string();
         let hash_bytes = hash_hex.as_bytes();
 
-        // Check if already stored (read transaction)
-        let exists = {
-            let tx = self
-                .db
-                .begin_read()
-                .map_err(|e| StoreError::Database(e.into()))?;
-            match tx.open_table(CAS_TABLE) {
-                Ok(table) => table
-                    .get(hash_bytes)
-                    .map_err(|e| StoreError::Database(e.into()))?
-                    .is_some(),
-                Err(_) => false, // Table doesn't exist yet
-            }
-        };
+        // Single atomic write transaction: check-and-insert in one locked operation.
+        // This avoids TOCTOU race conditions from separate read/write transactions.
+        // redb's write lock ensures concurrent writers to the same hash serialize.
+        let mut tx = self
+            .db
+            .begin_write()
+            .map_err(|e| StoreError::Database(e.into()))?;
+        self.ensure_table(&mut tx)?;
+        let mut table = tx
+            .open_table(CAS_TABLE)
+            .map_err(|e| StoreError::Database(e.into()))?;
 
-        if !exists {
-            let mut tx = self
-                .db
-                .begin_write()
+        // Only insert if not already present (deduplication)
+        if table
+            .get(hash_bytes)
+            .map_err(|e| StoreError::Database(e.into()))?
+            .is_none()
+        {
+            table
+                .insert(hash_bytes, compressed.as_slice())
                 .map_err(|e| StoreError::Database(e.into()))?;
-            // Ensure table exists (creates if new)
-            self.ensure_table(&mut tx)?;
-            let mut table = tx
-                .open_table(CAS_TABLE)
-                .map_err(|e| StoreError::Database(e.into()))?;
-            // Check again in write transaction
-            if table
-                .get(hash_bytes)
-                .map_err(|e| StoreError::Database(e.into()))?
-                .is_none()
-            {
-                table
-                    .insert(hash_bytes, compressed.as_slice())
-                    .map_err(|e| StoreError::Database(e.into()))?;
-            }
-            drop(table);
-            tx.commit().map_err(|e| StoreError::Database(e.into()))?;
         }
+        drop(table);
+        tx.commit().map_err(|e| StoreError::Database(e.into()))?;
 
         Ok(hash_hex)
     }

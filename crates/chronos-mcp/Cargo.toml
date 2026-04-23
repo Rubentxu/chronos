@@ -16,7 +16,7 @@ chronos-query = { workspace = true }
 chronos-python = { workspace = true }
 chronos-js = { workspace = true }
 chronos-store = { workspace = true }
-chronos-format = { workspace = true }
+chronos-ebpf = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

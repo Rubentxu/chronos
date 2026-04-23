@@ -20,9 +20,9 @@ pub mod uprobe;
 
 use crate::ring_buffer::MockRingBuffer;
 use chronos_capture::TraceAdapter as CaptureTraceAdapter;
+use chronos_domain::semantic::{SemanticEvent, SemanticEventKind};
 use chronos_domain::{
-    CaptureConfig, CaptureSession, Language, TraceAdapter as DomainTraceAdapter, TraceError,
-    TraceEvent,
+    CaptureConfig, CaptureSession, Language, ProbeBackend, TraceError,
 };
 #[cfg(feature = "ebpf")]
 use std::sync::Mutex;
@@ -144,12 +144,80 @@ impl EbpfAdapter {
         Ok(())
     }
 
+    /// Attach a uprobe to a specific symbol in a running process.
+    ///
+    /// Requires CAP_BPF or root. The binary must have a symbol table
+    /// or debug info for the symbol to be resolved.
+    pub fn attach_uprobe(&self, pid: u32, binary: &str, symbol: &str) -> Result<(), EbpfError> {
+        #[cfg(feature = "ebpf")]
+        {
+            let inner = self.inner.lock().map_err(|e| EbpfError::LoadError(e.to_string()))?;
+            inner.attach_uprobe(Some(pid as i32), binary, symbol)
+        }
+        #[cfg(not(feature = "ebpf"))]
+        {
+            let _ = (pid, binary, symbol);
+            Err(EbpfError::Unavailable {
+                reason: "chronos-ebpf compiled without `ebpf` feature".to_string(),
+            })
+        }
+    }
+
     /// Detach all uprobes and clean up.
     #[cfg(feature = "ebpf")]
     fn detach_probes(&self) -> Result<(), EbpfError> {
         let mut inner = self.inner.lock().map_err(|e| EbpfError::LoadError(e.to_string()))?;
         inner.detach_all();
         Ok(())
+    }
+}
+
+impl ProbeBackend for EbpfAdapter {
+    fn is_available(&self) -> bool {
+        Self::is_available()
+    }
+
+    fn name(&self) -> &str {
+        "ebpf"
+    }
+
+    fn drain_events(&mut self) -> Result<Vec<SemanticEvent>, TraceError> {
+        #[cfg(feature = "ebpf")]
+        {
+            use chronos_domain::{EventData, EventType};
+            let inner = self.inner.lock().map_err(|e| TraceError::CaptureFailed(e.to_string()))?;
+            let raw_events = inner.drain_events();
+            Ok(raw_events.into_iter().map(|e| {
+                let fn_name = match &e.data {
+                    EventData::EbpfUprobeHit { symbol_name, .. } => symbol_name.clone(),
+                    _ => e.location.function.clone(),
+                };
+                let kind = match e.event_type {
+                    EventType::FunctionEntry => SemanticEventKind::FunctionCalled {
+                        function: fn_name.clone(),
+                        module: None,
+                        arguments: vec![],
+                    },
+                    EventType::FunctionExit => SemanticEventKind::FunctionReturned {
+                        function: fn_name.clone(),
+                        return_value: None,
+                    },
+                    _ => SemanticEventKind::Unresolved,
+                };
+                SemanticEvent {
+                    source_event_id: e.event_id,
+                    timestamp_ns: e.timestamp_ns,
+                    thread_id: e.thread_id,
+                    language: Language::Ebpf,
+                    kind,
+                    description: format!("{:?} @ {}", e.event_type, fn_name),
+                }
+            }).collect())
+        }
+        #[cfg(not(feature = "ebpf"))]
+        {
+            Err(TraceError::capture_failed("eBPF support not compiled in"))
+        }
     }
 }
 
@@ -284,7 +352,7 @@ impl MockEbpfAdapter {
     }
 }
 
-impl DomainTraceAdapter for MockEbpfAdapter {
+impl ProbeBackend for MockEbpfAdapter {
     fn is_available(&self) -> bool {
         true
     }
@@ -293,8 +361,35 @@ impl DomainTraceAdapter for MockEbpfAdapter {
         "ebpf-mock"
     }
 
-    fn drain_events(&mut self) -> Result<Vec<TraceEvent>, TraceError> {
-        Ok(self.buffer.drain_all())
+    fn drain_events(&mut self) -> Result<Vec<SemanticEvent>, TraceError> {
+        use chronos_domain::{EventData, EventType};
+        let raw_events = self.buffer.drain_all();
+        Ok(raw_events.into_iter().map(|e| {
+            let fn_name = match &e.data {
+                EventData::EbpfUprobeHit { symbol_name, .. } => symbol_name.clone(),
+                _ => e.location.function.clone().unwrap_or_default(),
+            };
+            let kind = match e.event_type {
+                EventType::FunctionEntry => SemanticEventKind::FunctionCalled {
+                    function: fn_name.clone(),
+                    module: None,
+                    arguments: vec![],
+                },
+                EventType::FunctionExit => SemanticEventKind::FunctionReturned {
+                    function: fn_name.clone(),
+                    return_value: None,
+                },
+                _ => SemanticEventKind::Unresolved,
+            };
+            SemanticEvent {
+                source_event_id: e.event_id,
+                timestamp_ns: e.timestamp_ns,
+                thread_id: e.thread_id,
+                language: Language::Ebpf,
+                kind,
+                description: format!("{:?} @ {}", e.event_type, fn_name),
+            }
+        }).collect())
     }
 }
 
@@ -374,7 +469,8 @@ mod tests {
 mod adapter_tests {
     use super::*;
     use crate::types::EbpfEvent;
-    use chronos_domain::{EventType, TraceAdapter};
+    use chronos_domain::ProbeBackend;
+    use chronos_domain::semantic::SemanticEventKind;
 
     #[test]
     fn test_mock_ebpf_adapter_name() {
@@ -406,17 +502,20 @@ mod adapter_tests {
 
         let events = adapter.drain_events().unwrap();
         assert_eq!(events.len(), 3);
-        assert_eq!(events[0].event_type, EventType::FunctionEntry);
-        assert_eq!(events[2].event_type, EventType::FunctionExit);
-        // Verify the is_return flag via EbpfUprobeHit data
-        match &events[2].data {
-            chronos_domain::EventData::EbpfUprobeHit { is_return, .. } => {
-                assert!(*is_return, "Third event should be a return probe");
-            }
-            _ => panic!("Expected EbpfUprobeHit data"),
-        }
+        // Events are now properly mapped to semantic kinds
+        assert!(matches!(&events[0].kind, SemanticEventKind::FunctionCalled { function, .. } if function == "alpha"));
+        assert!(matches!(&events[1].kind, SemanticEventKind::FunctionCalled { function, .. } if function == "beta"));
+        assert!(matches!(&events[2].kind, SemanticEventKind::FunctionReturned { .. }));
+        // Check metadata via source_event_id and timestamp_ns
+        assert_eq!(events[0].source_event_id, 0);
+        assert_eq!(events[1].source_event_id, 1);
+        assert_eq!(events[2].source_event_id, 2);
         assert_eq!(events[0].timestamp_ns, 100);
         assert_eq!(events[1].timestamp_ns, 200);
+        assert_eq!(events[2].timestamp_ns, 300);
+        // Check description contains event type info
+        assert!(events[0].description.contains("FunctionEntry"));
+        assert!(events[2].description.contains("FunctionExit"));
     }
 
     #[test]
@@ -433,7 +532,7 @@ mod adapter_tests {
 
     #[test]
     fn test_ebpf_adapter_name_via_trait_object() {
-        let adapter: Box<dyn TraceAdapter> = Box::new(MockEbpfAdapter::empty());
+        let adapter: Box<dyn ProbeBackend> = Box::new(MockEbpfAdapter::empty());
         assert_eq!(adapter.name(), "ebpf-mock");
     }
 }

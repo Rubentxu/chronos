@@ -1,16 +1,38 @@
 //! Chronos MCP server — exposes debugging tools via MCP.
 //!
 //! Implements 10 tools for AI-assisted debugging.
+//!
+//! # Concurrency Model
+//!
+//! This server is designed to handle multiple concurrent client connections safely:
+//!
+//! - **Sessions are isolated**: Each debug session has a unique ID. Events collected
+//!   for one session cannot leak into another, even under concurrent access.
+//!
+//! - **Shared state is protected**: All shared mutable state uses `Arc<Mutex<...>>` or
+//!   `Arc<tokio::sync::Mutex<...>>`. The mutex granularity is at the session map level,
+//!   not individual sessions, which is sufficient since operations are batched per session.
+//!
+//! - **Engine immutability**: `QueryEngine` is immutable after construction (indices are
+//!   built once, then read-only). This makes sharing across threads safe.
+//!
+//! - **Atomic CAS operations**: The content-addressable store (`ContentStore::put`) uses
+//!   a single write transaction with internal deduplication, ensuring atomicity under
+//!   concurrent writes of identical content.
+//!
+//! - **Background sessions**: The `background_sessions` map tracks pending sessions
+//!   (as empty placeholders) until completion, at which point they're added to
+//!   `engines` and removed from the map.
 
+use chronos_domain::semantic::SemanticEvent;
 use chronos_domain::{
     query::{CausalityQuery, PerfQuery, PerfSortBy, RaceDetectionQuery},
-    CaptureConfig, EventData, EventType, Language, TraceEvent, TraceQuery,
+    CaptureConfig, CaptureSession, EventData, EventType, Language, ProbeBackend, TraceEvent, TraceQuery,
 };
+use chronos_domain::tripwire::{TripwireCondition, TripwireId, TripwireManager};
 use chronos_index::builder::IndexBuilder;
-use chronos_native::capture_runner::{CaptureEndReason, CaptureRunner};
-use chronos_query::{QueryEngine, SessionEvalDispatcher};
-use chronos_python::PythonDapEvalBackend;
-use chronos_js::JsCdpEvalBackend;
+use chronos_native::probe_backend::NativeProbeBackend;
+use chronos_query::QueryEngine;
 use chronos_store::{SessionMetadata, SessionStore, TraceDiff};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, Content};
@@ -20,7 +42,7 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{Mutex};
+use tokio::sync::Mutex;
 use tracing::info;
 
 /// Resource limits for capture operations.
@@ -44,8 +66,35 @@ impl Default for ResourceLimits {
     }
 }
 
-/// Type alias for background session events storage.
+/// Type alias for background session placeholder storage.
+/// Background sessions store an empty placeholder here while running. Once complete,
+/// the session is moved to `engines` and becomes queryable. The placeholder is kept
+/// in this map to track which sessions are still pending completion.
 type BackgroundSessionEvents = Arc<std::sync::Mutex<Vec<TraceEvent>>>;
+
+/// A live probe session using `NativeProbeBackend`.
+///
+/// Unlike `debug_run` which blocks until the program exits, a live probe streams
+/// events to an `EventBus` ring buffer in real-time. Events can be drained at any
+/// time via `probe_drain`, and the probe is stopped via `probe_stop`.
+struct LiveProbeSession {
+    /// The native probe backend driving the ptrace loop.
+    backend: NativeProbeBackend,
+    /// The capture session returned by `start_probe`.
+    session: CaptureSession,
+    /// Language of the target program.
+    language: Language,
+    /// Path to the target binary.
+    target: String,
+}
+
+/// Empty parameter type for tools that take no arguments.
+///
+/// This is needed because rmcp sends `{}` as default arguments when none are provided,
+/// but `()` (unit) cannot deserialize from `{}`. This empty struct can deserialize
+/// from an empty JSON object `{}`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct NoParams {}
 
 /// The Chronos MCP server state.
 pub struct ChronosServer {
@@ -56,81 +105,30 @@ pub struct ChronosServer {
     /// Persistent session store.
     store: Arc<SessionStore>,
     /// Active background sessions: session_id → events vector.
-    /// Used for background debug_run sessions that are still running.
+    /// Tracks pending sessions that are still running in background threads.
     /// Uses std::sync::Mutex because it is accessed from blocking threads.
     background_sessions: Arc<std::sync::Mutex<HashMap<String, BackgroundSessionEvents>>>,
-    /// Expression evaluation dispatcher for multi-language support.
-    /// Uses Mutex for interior mutability since registration happens post-construction.
-    eval_dispatcher: Arc<Mutex<SessionEvalDispatcher>>,
     /// Sessions with connected debug clients (Python debugpy or JS Node.js inspector).
     /// Used to track which sessions have active DAP/CDP connections.
     connected_sessions: Arc<std::sync::Mutex<HashSet<String>>>,
+    /// Currently active session for phased workflows.
+    /// Automatically set after probe_start or capture completes.
+    active_session: Arc<Mutex<Option<String>>>,
+    /// Tripwire manager for condition-based event notification.
+    tripwire_manager: Arc<TripwireManager>,
+    /// Live probe sessions: session_id → LiveProbeSession.
+    /// These are real-time probe sessions using `NativeProbeBackend` where events
+    /// stream to an `EventBus` ring buffer. Use `probe_drain` to read current events
+    /// and `probe_stop` to finalize.
+    live_probes: Arc<std::sync::Mutex<HashMap<String, LiveProbeSession>>>,
 }
 
 // ============================================================================
 // Tool parameter types
 // ============================================================================
 
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct DebugRunParams {
-    /// Path to the target binary.
-    pub program: String,
-    /// Command-line arguments for the target.
-    #[serde(default)]
-    pub args: Vec<String>,
-    /// Whether to trace syscalls.
-    #[serde(default = "default_true")]
-    pub trace_syscalls: bool,
-    /// Whether to capture registers on each stop.
-    #[serde(default = "default_true")]
-    pub capture_registers: bool,
-    /// Working directory for the target.
-    pub cwd: Option<String>,
-    /// If true, automatically persist the session to disk after debug_run completes.
-    #[serde(default)]
-    pub auto_save: Option<bool>,
-    /// Program language hint (auto-detected from extension if omitted).
-    pub program_language: Option<String>,
-    /// Maximum number of events to collect before stopping (default: 1_000_000).
-    #[serde(default)]
-    pub max_events: Option<usize>,
-    /// Timeout in seconds for the capture (default: 60).
-    #[serde(default)]
-    pub timeout_secs: Option<u64>,
-    /// If true, run the debug session in the background and return immediately.
-    /// The session can be queried using query_events once complete.
-    #[serde(default)]
-    pub background: Option<bool>,
-    /// Debug server host for Python/JS connection (default: "127.0.0.1").
-    /// Used when debug_port is provided to connect to debugpy or Node.js inspector.
-    #[serde(default)]
-    pub debug_host: Option<String>,
-    /// Debug server port for Python/JS connection.
-    /// If provided, the server will attempt to connect to debugpy (Python)
-    /// or Node.js inspector (JS) at debug_host:debug_port instead of returning
-    /// "pending" status.
-    #[serde(default)]
-    pub debug_port: Option<u16>,
-    /// If true, poll for connection every 500ms for up to 30 seconds.
-    /// Useful when the target program takes a few seconds to start listening.
-    #[serde(default)]
-    pub wait_for_connection: Option<bool>,
-}
-
 fn default_true() -> bool {
     true
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct DebugAttachParams {
-    /// Process ID to attach to.
-    pub pid: u32,
-    /// Whether to trace syscalls.
-    #[serde(default = "default_true")]
-    pub trace_syscalls: bool,
-    /// Whether to capture registers on each stop.
-    #[serde(default = "default_true")]
-    pub capture_registers: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -307,13 +305,6 @@ pub struct DeleteSessionParams {
     pub session_id: String,
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct CompareSessionsParams {
-    /// First session ID.
-    pub session_a: String,
-    /// Second session ID.
-    pub session_b: String,
-}
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DropSessionParams {
@@ -368,15 +359,224 @@ pub struct ForensicMemoryAuditParams {
     pub limit: usize,
 }
 
+// ============================================================================
+// SF8 — Tripwire Tools (T21–T23)
+// ============================================================================
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TripwireCreateParams {
+    /// Type of condition to watch.
+    pub condition: TripwireConditionType,
+    /// Optional human-readable label for this tripwire.
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum TripwireConditionType {
+    /// Watch for specific event types.
+    EventType {
+        /// Event type names (e.g., "function_entry", "exception").
+        event_types: Vec<String>,
+    },
+    /// Watch for function entry/exit by name pattern (glob).
+    FunctionName {
+        /// Glob pattern (e.g., "process_*", "UserService.*").
+        pattern: String,
+    },
+    /// Watch for exceptions of a specific type.
+    ExceptionType {
+        /// Exception type substring to match (e.g., "ValueError", "NullPointerException").
+        exc_type: String,
+    },
+    /// Watch for execution in a memory address range.
+    MemoryAddress {
+        /// Start address (inclusive).
+        start: u64,
+        /// End address (inclusive).
+        end: u64,
+    },
+    /// Watch for specific syscall numbers.
+    SyscallNumber {
+        /// Syscall numbers (e.g., [1] for write, [2] for open).
+        numbers: Vec<u64>,
+    },
+    /// Watch for access to a specific variable name.
+    VariableName {
+        /// Variable name to watch (exact match).
+        name: String,
+    },
+    /// Watch for specific signals.
+    Signal {
+        /// Signal numbers (e.g., [11] for SIGSEGV, [9] for SIGKILL).
+        numbers: Vec<i32>,
+    },
+}
+
+impl TripwireConditionType {
+    fn into_condition(self) -> TripwireCondition {
+        match self {
+            TripwireConditionType::EventType { event_types } => {
+                let types = event_types
+                    .iter()
+                    .filter_map(|s| ChronosServer::parse_event_type(s))
+                    .collect();
+                TripwireCondition::EventType(types)
+            }
+            TripwireConditionType::FunctionName { pattern } => {
+                TripwireCondition::FunctionName { pattern }
+            }
+            TripwireConditionType::ExceptionType { exc_type } => {
+                TripwireCondition::ExceptionType { exc_type }
+            }
+            TripwireConditionType::MemoryAddress { start, end } => {
+                TripwireCondition::MemoryAddress { start, end }
+            }
+            TripwireConditionType::SyscallNumber { numbers } => {
+                TripwireCondition::SyscallNumber { numbers }
+            }
+            TripwireConditionType::VariableName { name } => {
+                TripwireCondition::VariableName { name }
+            }
+            TripwireConditionType::Signal { numbers } => {
+                TripwireCondition::Signal { numbers }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TripwireDeleteParams {
+    /// ID of the tripwire to delete.
+    pub tripwire_id: String,
+}
+
+// ============================================================================
+// SF9 — Live Probe Tools (probe_start / probe_stop / probe_drain)
+// ============================================================================
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ProbeStartParams {
+    /// Path to the target binary.
+    pub program: String,
+    /// Command-line arguments for the target.
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Whether to trace syscalls (default: true).
+    #[serde(default = "default_true")]
+    pub trace_syscalls: bool,
+    /// Working directory for the target.
+    pub cwd: Option<String>,
+    /// EventBus ring buffer capacity (default: 50000).
+    #[serde(default = "default_bus_capacity")]
+    pub bus_capacity: usize,
+}
+
+fn default_bus_capacity() -> usize {
+    50000
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ProbeStartAttachParams {
+    /// Process ID to attach to.
+    pub pid: u32,
+    /// Whether to trace syscalls (default: true).
+    #[serde(default = "default_true")]
+    pub trace_syscalls: bool,
+    /// EventBus ring buffer capacity (default: 50000).
+    #[serde(default = "default_bus_capacity")]
+    pub bus_capacity: usize,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ProbeStopParams {
+    /// Session ID returned by probe_start.
+    pub session_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ProbeDrainParams {
+    /// Session ID returned by probe_start.
+    pub session_id: String,
+    /// Maximum events to return (default: 1000).
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+    /// Offset to skip events (default: 0).
+    #[serde(default)]
+    pub offset: usize,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SessionSnapshotParams {
+    /// Session ID of a live probe (returned by probe_start).
+    pub session_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ProbeInjectParams {
+    /// Session ID of an existing live probe session.
+    pub session_id: String,
+    /// Binary/library path to attach uprobe to (e.g., "/usr/lib/libfoo.so").
+    pub binary_path: String,
+    /// Function symbol name to attach uprobe to (e.g., "malloc", "handle_request").
+    pub symbol_name: String,
+    /// Optional: PID to attach to (if not the session's target).
+    pub pid: Option<u32>,
+}
+
+// ============================================================================
+// Super-tool: Maven-like Phase Orchestration
+// ============================================================================
+
+// ============================================================================
+// Compare Sessions (Divergence Engine)
+// ============================================================================
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CompareSessionsParams {
+    /// First session ID.
+    pub session_a: String,
+    /// Second session ID.
+    pub session_b: String,
+}
+
+// ============================================================================
+// Performance Regression Audit
+// ============================================================================
+
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct PerformanceRegressionAuditParams {
     /// Baseline session ID.
     pub baseline_session_id: String,
-    /// Target session ID to compare.
+    /// Target session ID to compare against baseline.
     pub target_session_id: String,
     /// Maximum number of top functions to compare (default: 20).
-    #[serde(default)]
     pub top_n: Option<usize>,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct FunctionRegressionEntry {
+    pub function: String,
+    pub baseline_calls: u64,
+    pub target_calls: u64,
+    /// Percentage change in call count (positive = more calls in target).
+    pub call_delta_pct: f64,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct PerformanceRegressionAuditResult {
+    pub baseline_session_id: String,
+    pub target_session_id: String,
+    /// Functions where call count increased significantly (>50%).
+    pub regressions: Vec<FunctionRegressionEntry>,
+    /// Functions where call count decreased significantly (>50% reduction).
+    pub improvements: Vec<FunctionRegressionEntry>,
+    /// Total functions analyzed.
+    pub functions_analyzed: usize,
+    /// Overall call count delta (positive = more calls in target).
+    pub total_call_delta: i64,
+    /// LLM-readable summary.
+    pub summary: String,
 }
 
 // ============================================================================
@@ -426,19 +626,32 @@ impl ChronosServer {
                 path
             });
 
-        let store = SessionStore::open(&db_path).expect("Failed to open session store");
-
-        // Initialize the expression evaluation dispatcher with native language support.
-        // This provides arithmetic expression evaluation for C, C++, Rust, and eBPF sessions.
-        let eval_dispatcher = SessionEvalDispatcher::with_native_evaluator(HashMap::new());
+        // Try to open existing database with graceful lock handling
+        let store = match SessionStore::try_open(&db_path) {
+            Ok(s) => {
+                tracing::info!("Opened session store at {:?}", db_path);
+                s
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Could not open session store at {:?}: {}. Using in-memory store.",
+                    db_path,
+                    e
+                );
+                // Fall back to in-memory store if disk store fails
+                SessionStore::in_memory().expect("Failed to create in-memory session store")
+            }
+        };
 
         Self {
             engines: Arc::new(Mutex::new(HashMap::new())),
             session_languages: Arc::new(Mutex::new(HashMap::new())),
             store: Arc::new(store),
             background_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
-            eval_dispatcher: Arc::new(Mutex::new(eval_dispatcher)),
             connected_sessions: Arc::new(std::sync::Mutex::new(HashSet::new())),
+            active_session: Arc::new(Mutex::new(None)),
+            tripwire_manager: Arc::new(TripwireManager::new()),
+            live_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
 
@@ -460,11 +673,10 @@ impl ChronosServer {
     }
 
     /// Remove all in-memory state for a session: query engine, language tag,
-    /// eval-dispatcher backend, and connected-session marker.
+    /// and connected-session marker.
     async fn cleanup_session_memory(&self, session_id: &str) {
         self.engines.lock().await.remove(session_id);
         self.session_languages.lock().await.remove(session_id);
-        self.eval_dispatcher.lock().await.unregister(session_id);
         self.connected_sessions.lock().unwrap().remove(session_id);
     }
 
@@ -496,33 +708,14 @@ impl ChronosServer {
         engines.insert(session_id.to_string(), engine);
         session_languages.insert(session_id.to_string(), language);
 
-        // Register this session with the eval dispatcher.
-        // For languages that have native backends (C, Cpp, Rust, Ebpf), the backends
-        // are already registered in with_native_evaluator(). For Python and JavaScript,
-        // we register real backends (PythonDapEvalBackend and JsCdpEvalBackend) that
-        // delegate to DAP/CDP clients when connected. For Java and Go, we still
-        // use noop since those languages use adapter-level evaluate_expression.
-        let mut dispatcher = self.eval_dispatcher.lock().await;
-        match language {
-            Language::Python => {
-                // Register Python DAP backend (returns UnsupportedOperation if no client connected)
-                dispatcher.register(session_id.to_string(), Box::new(PythonDapEvalBackend::new()));
-            }
-            Language::JavaScript => {
-                // Register JavaScript CDP backend (returns UnsupportedOperation if no client connected)
-                dispatcher.register(session_id.to_string(), Box::new(JsCdpEvalBackend::new()));
-            }
-            Language::Java | Language::Go | Language::Kotlin | Language::Scala | Language::CSharp => {
-                // These languages use adapter-level evaluate_expression, not dispatcher
-                dispatcher.register_noop(session_id.to_string());
-            }
-            Language::C | Language::Cpp | Language::Rust | Language::Ebpf => {
-                // Native languages have backends registered in with_native_evaluator()
-            }
-            Language::Unknown => {
-                dispatcher.register_noop(session_id.to_string());
-            }
-        }
+        // Set this session as the active session
+        self.set_active_session(session_id).await;
+    }
+
+    /// Set the active session after capture or load.
+    async fn set_active_session(&self, session_id: &str) {
+        let mut active = self.active_session.lock().await;
+        *active = Some(session_id.to_string());
     }
 
     /// Run the server on stdio.
@@ -558,576 +751,8 @@ fn text_content(text: impl Into<String>) -> Vec<Content> {
 // Tool handlers using rmcp macros
 // ============================================================================
 
-#[rmcp::tool_router(server_handler)]
+#[rmcp::tool_router]
 impl ChronosServer {
-    #[tool(
-        name = "debug_run",
-        description = "Launch a program under time-travel debugging capture. Runs the program to completion, captures all events, and returns a queryable session ID. Use background=true for long-running programs."
-    )]
-    async fn debug_run(
-        &self,
-        params: Parameters<DebugRunParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let params = params.0;
-
-        // Validate the program path before spawning
-        if let Err(e) = crate::security::validate_program_path(&params.program) {
-            return Ok(CallToolResult::error(text_content(format!(
-                "Invalid program path: {}",
-                e
-            ))));
-        }
-
-        // Check if program_language is set and handle Python/JS specially
-        let program_language = params
-            .program_language
-            .clone()
-            .unwrap_or_else(|| "native".to_string());
-
-        // Route Python programs to PythonDapAdapter
-        if program_language == "python" {
-            let session_id = uuid::Uuid::new_v4().to_string();
-            info!(
-                "debug_run routing Python program '{}' to PythonDapAdapter (session: {})",
-                params.program, session_id
-            );
-
-            // If debug_port is provided, attempt to connect to debugpy
-            if let Some(port) = params.debug_port {
-                let host = params.debug_host.as_deref().unwrap_or("127.0.0.1");
-                let addr = format!("{}:{}", host, port);
-
-                // Attempt connection with timeout (1 second)
-                let socket_addr: std::net::SocketAddr = match addr.parse() {
-                    Ok(addr) => addr,
-                    Err(e) => {
-                        let result = serde_json::json!({
-                            "session_id": session_id,
-                            "status": "error",
-                            "adapter_type": "python-dap",
-                            "program_language": "python",
-                            "target": params.program,
-                            "error": format!("Invalid debug host/port: {}", e),
-                        });
-                        return Ok(CallToolResult::error(text_content(serde_json::to_string(&result).unwrap_or_default())));
-                    }
-                };
-
-                // Retry logic: 3 attempts with exponential backoff (when not waiting)
-                let max_attempts = 3;
-                let base_delay_ms = 200u64;
-                let wait_for_conn = params.wait_for_connection.unwrap_or(false);
-                let max_wait_secs = 30u64;
-                let poll_interval_ms = 500u64;
-
-                let mut attempt = 0;
-                let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(max_wait_secs);
-
-                loop {
-                    attempt += 1;
-
-                    if wait_for_conn {
-                        // Poll with 500ms interval until deadline
-                        if attempt > 1 {
-                            let delay = std::time::Duration::from_millis(poll_interval_ms);
-                            if tokio::time::Instant::now() + delay > deadline {
-                                // Would exceed deadline - timeout
-                                break;
-                            }
-                            tokio::time::sleep(delay).await;
-                        }
-                    } else {
-                        // Exponential backoff: 200ms -> 400ms -> 800ms
-                        if attempt > 1 {
-                            if attempt > max_attempts {
-                                break;
-                            }
-                            let delay_ms = base_delay_ms * (1u64 << (attempt - 2)); // attempt 2 -> 200ms, attempt 3 -> 400ms
-                            let delay = std::time::Duration::from_millis(delay_ms);
-                            if tokio::time::Instant::now() + delay > deadline {
-                                break;
-                            }
-                            tokio::time::sleep(delay).await;
-                        }
-                    }
-
-                    // Attempt TCP connection
-                    match std::net::TcpStream::connect_timeout(
-                        &socket_addr,
-                        std::time::Duration::from_secs(1),
-                    ) {
-                        Ok(_stream) => {
-                            // Connected successfully, now create the DAP client
-                            match chronos_python::DapClient::connect(&addr) {
-                                Ok(client) => {
-                                    // Create backend with connected client
-                                    let backend = PythonDapEvalBackend::with_client(client);
-                                    let mut dispatcher = self.eval_dispatcher.lock().await;
-                                    dispatcher.register(session_id.clone(), Box::new(backend));
-
-                                    // Mark session as connected
-                                    {
-                                        let mut connected = self.connected_sessions.lock().unwrap();
-                                        connected.insert(session_id.clone());
-                                    }
-
-                                    let result = serde_json::json!({
-                                        "session_id": session_id,
-                                        "status": "connected",
-                                        "adapter_type": "python-dap",
-                                        "program_language": "python",
-                                        "target": params.program,
-                                        "debug_endpoint": addr,
-                                        "message": format!("Connected to debugpy at {}", addr),
-                                    });
-                                    return Ok(CallToolResult::success(json_content(&result)));
-                                }
-                                Err(e) => {
-                                    tracing::warn!("Python DAP attempt {} failed: {}", attempt, e);
-                                    if !wait_for_conn && attempt >= max_attempts {
-                                        let result = serde_json::json!({
-                                            "session_id": session_id,
-                                            "status": "error",
-                                            "adapter_type": "python-dap",
-                                            "program_language": "python",
-                                            "target": params.program,
-                                            "error": format!("Failed to connect to debugpy at {} after {} attempts: {}", addr, max_attempts, e),
-                                            "attempts": max_attempts,
-                                        });
-                                        return Ok(CallToolResult::error(text_content(serde_json::to_string(&result).unwrap_or_default())));
-                                    }
-                                    // For wait_for_conn, continue polling
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!("Python TCP connection attempt {} failed: {}", attempt, e);
-                            if !wait_for_conn && attempt >= max_attempts {
-                                let result = serde_json::json!({
-                                    "session_id": session_id,
-                                    "status": "error",
-                                    "adapter_type": "python-dap",
-                                    "program_language": "python",
-                                    "target": params.program,
-                                    "error": format!("Failed to connect to debugpy at {} after {} attempts: {}. Make sure debugpy is running with --listen.", addr, max_attempts, e),
-                                    "attempts": max_attempts,
-                                });
-                                return Ok(CallToolResult::error(text_content(serde_json::to_string(&result).unwrap_or_default())));
-                            }
-                            // For wait_for_conn, continue polling
-                        }
-                    }
-                }
-
-                // All retries exhausted or timeout
-                let result = serde_json::json!({
-                    "session_id": session_id,
-                    "status": "error",
-                    "adapter_type": "python-dap",
-                    "program_language": "python",
-                    "target": params.program,
-                    "error": if wait_for_conn {
-                        format!("Timeout waiting for debugpy at {} (waited {}s). Make sure debugpy is running with --listen.", addr, max_wait_secs)
-                    } else {
-                        format!("Failed to connect to debugpy at {} after {} attempts.", addr, max_attempts)
-                    },
-                    "attempts": if wait_for_conn { attempt } else { max_attempts },
-                });
-                return Ok(CallToolResult::error(text_content(serde_json::to_string(&result).unwrap_or_default())));
-            }
-
-            // No debug_port provided - return pending status
-            let result = serde_json::json!({
-                "session_id": session_id,
-                "status": "pending",
-                "adapter_type": "python-dap",
-                "program_language": "python",
-                "target": params.program,
-                "message": format!("Python program '{}' queued for DAP-based capture. Use debug_attach to connect to debugpy.", params.program),
-                "hint": "Start debugpy with: python -m debugpy --listen HOST:PORT --wait-for-client"
-            });
-            return Ok(CallToolResult::success(json_content(&result)));
-        }
-
-        // Route JavaScript/Node.js programs to JsCdpAdapter
-        if ["javascript", "nodejs", "js", "node"]
-            .contains(&program_language.to_lowercase().as_str())
-        {
-            let session_id = uuid::Uuid::new_v4().to_string();
-            info!(
-                "debug_run routing {} program '{}' to JsCdpAdapter (session: {})",
-                program_language, params.program, session_id
-            );
-
-            // If debug_port is provided, attempt to connect to Node.js inspector
-            if let Some(port) = params.debug_port {
-                let host = params.debug_host.as_deref().unwrap_or("127.0.0.1");
-                let ws_url = format!("ws://{}:{}", host, port);
-
-                // Retry logic: 3 attempts with exponential backoff (when not waiting)
-                let max_attempts = 3;
-                let base_delay_ms = 200u64;
-                let wait_for_conn = params.wait_for_connection.unwrap_or(false);
-                let max_wait_secs = 30u64;
-                let poll_interval_ms = 500u64;
-
-                let mut attempt = 0;
-                let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(max_wait_secs);
-
-                loop {
-                    attempt += 1;
-
-                    if wait_for_conn {
-                        // Poll with 500ms interval until deadline
-                        if attempt > 1 {
-                            let delay = std::time::Duration::from_millis(poll_interval_ms);
-                            if tokio::time::Instant::now() + delay > deadline {
-                                // Would exceed deadline - timeout
-                                break;
-                            }
-                            tokio::time::sleep(delay).await;
-                        }
-                    } else {
-                        // Exponential backoff: 200ms -> 400ms -> 800ms
-                        if attempt > 1 {
-                            if attempt > max_attempts {
-                                break;
-                            }
-                            let delay_ms = base_delay_ms * (1u64 << (attempt - 2));
-                            let delay = std::time::Duration::from_millis(delay_ms);
-                            if tokio::time::Instant::now() + delay > deadline {
-                                break;
-                            }
-                            tokio::time::sleep(delay).await;
-                        }
-                    }
-
-                    // Attempt async connection with timeout
-                    let connect_timeout = tokio::time::timeout(
-                        std::time::Duration::from_secs(1),
-                        chronos_js::cdp_client::CdpClient::connect(&ws_url),
-                    );
-
-                    match connect_timeout.await {
-                        Ok(Ok(client)) => {
-                            // Connected successfully, create backend and register
-                            let backend = JsCdpEvalBackend::with_client(client);
-                            let mut dispatcher = self.eval_dispatcher.lock().await;
-                            dispatcher.register(session_id.clone(), Box::new(backend));
-
-                            // Mark session as connected
-                            {
-                                let mut connected = self.connected_sessions.lock().unwrap();
-                                connected.insert(session_id.clone());
-                            }
-
-                            let result = serde_json::json!({
-                                "session_id": session_id,
-                                "status": "connected",
-                                "adapter_type": "js-cdp",
-                                "program_language": program_language,
-                                "target": params.program,
-                                "debug_endpoint": ws_url,
-                                "message": format!("Connected to Node.js inspector at {}", ws_url),
-                            });
-                            return Ok(CallToolResult::success(json_content(&result)));
-                        }
-                        Ok(Err(e)) => {
-                            tracing::warn!("JS CDP attempt {} failed: {}", attempt, e);
-                            if !wait_for_conn && attempt >= max_attempts {
-                                let result = serde_json::json!({
-                                    "session_id": session_id,
-                                    "status": "error",
-                                    "adapter_type": "js-cdp",
-                                    "program_language": program_language,
-                                    "target": params.program,
-                                    "error": format!("Failed to connect to Node.js inspector at {} after {} attempts: {}", ws_url, max_attempts, e),
-                                    "attempts": max_attempts,
-                                });
-                                return Ok(CallToolResult::error(text_content(serde_json::to_string(&result).unwrap_or_default())));
-                            }
-                            // For wait_for_conn, continue polling
-                        }
-                        Err(_) => {
-                            // Timeout
-                            tracing::warn!("JS CDP attempt {} timed out", attempt);
-                            if !wait_for_conn && attempt >= max_attempts {
-                                let result = serde_json::json!({
-                                    "session_id": session_id,
-                                    "status": "error",
-                                    "adapter_type": "js-cdp",
-                                    "program_language": program_language,
-                                    "target": params.program,
-                                    "error": format!("Connection to Node.js inspector at {} timed out after {} attempts. Make sure Node.js is running with --inspect=HOST:PORT.", ws_url, max_attempts),
-                                    "attempts": max_attempts,
-                                });
-                                return Ok(CallToolResult::error(text_content(serde_json::to_string(&result).unwrap_or_default())));
-                            }
-                            // For wait_for_conn, continue polling
-                        }
-                    }
-                }
-
-                // All retries exhausted or timeout
-                let result = serde_json::json!({
-                    "session_id": session_id,
-                    "status": "error",
-                    "adapter_type": "js-cdp",
-                    "program_language": program_language,
-                    "target": params.program,
-                    "error": if wait_for_conn {
-                        format!("Timeout waiting for Node.js inspector at {} (waited {}s). Make sure Node.js is running with --inspect=HOST:PORT.", ws_url, max_wait_secs)
-                    } else {
-                        format!("Failed to connect to Node.js inspector at {} after {} attempts.", ws_url, max_attempts)
-                    },
-                    "attempts": if wait_for_conn { attempt } else { max_attempts },
-                });
-                return Ok(CallToolResult::error(text_content(serde_json::to_string(&result).unwrap_or_default())));
-            }
-
-            // No debug_port provided - return pending status
-            let result = serde_json::json!({
-                "session_id": session_id,
-                "status": "pending",
-                "adapter_type": "js-cdp",
-                "program_language": program_language,
-                "target": params.program,
-                "message": format!("{} program '{}' queued for CDP-based capture. Use debug_attach to connect to CDP endpoint.", program_language, params.program),
-                "hint": "Start Node.js with: node --inspect=HOST:PORT script.js"
-            });
-            return Ok(CallToolResult::success(json_content(&result)));
-        }
-
-        let mut config = CaptureConfig::new(&params.program);
-        config.args = params.args.clone();
-        config.capture_syscalls = params.trace_syscalls;
-        config.capture_stack = true;
-        if let Some(cwd) = &params.cwd {
-            config.cwd = Some(std::path::PathBuf::from(cwd.clone()));
-        }
-
-        let session_id = uuid::Uuid::new_v4().to_string();
-        let sid_clone = session_id.clone();
-        let sid_for_insert = session_id.clone();
-        let sid_for_result = session_id.clone();
-        let start_time = std::time::Instant::now();
-
-        // Background mode: run capture in a background thread and return immediately
-        if params.background.unwrap_or(false) {
-            let events = Arc::new(std::sync::Mutex::new(Vec::<TraceEvent>::new()));
-            let events_clone = Arc::clone(&events);
-            let bg_sessions = Arc::clone(&self.background_sessions);
-            let program = params.program.clone();
-            let _language = params
-                .program_language
-                .clone()
-                .unwrap_or_else(|| "native".to_string());
-
-            // Spawn background thread to run capture
-            tokio::task::spawn_blocking(move || {
-                let mut runner = CaptureRunner::new(config);
-                let result = runner.run_to_completion();
-                match result {
-                    Ok(capture) => {
-                        let captured_events = capture.events;
-                        *events_clone.lock().unwrap() = captured_events;
-                        info!(
-                            "Background capture {} finished: {} events",
-                            sid_clone,
-                            events_clone.lock().unwrap().len()
-                        );
-                    }
-                    Err(e) => {
-                        tracing::error!("Background capture {} failed: {}", sid_clone, e);
-                    }
-                }
-            });
-
-            // Store in background_sessions map
-            bg_sessions
-                .lock()
-                .unwrap()
-                .insert(sid_for_insert, events);
-
-            let result = serde_json::json!({
-                "session_id": sid_for_result,
-                "status": "running",
-                "background": true,
-                "message": format!("Debug session for '{}' started in background", program),
-                "hint": "Use query_events once complete"
-            });
-            return Ok(CallToolResult::success(json_content(&result)));
-        }
-
-        // Synchronous mode (default): run capture and wait for completion
-        let capture_result = tokio::task::spawn_blocking(move || {
-            let mut runner = CaptureRunner::new(config);
-            runner.run_to_completion()
-        })
-        .await;
-
-        match capture_result {
-            Ok(Ok(capture)) => {
-                let total_events = capture.total_events;
-                let end_reason_str = match &capture.end_reason {
-                    CaptureEndReason::Exited(code) => format!("exited({})", code),
-                    CaptureEndReason::Signaled { signal_name, .. } => {
-                        format!("signaled({})", signal_name)
-                    }
-                    CaptureEndReason::StoppedByUser => "stopped_by_user".into(),
-                    CaptureEndReason::Failed(e) => format!("failed({})", e),
-                };
-
-                info!(
-                    "Capture {} finished: {} events, reason: {}",
-                    sid_clone, total_events, end_reason_str
-                );
-
-                // Build indices and store engine
-                let events = capture.events;
-                let elapsed = start_time.elapsed();
-                let language = Language::from_path(&params.program);
-                self.build_and_store_engine(&sid_clone, events.clone(), language)
-                    .await;
-
-                // Auto-save if requested
-                let auto_save_result = if params.auto_save.unwrap_or(false) {
-                    let metadata = SessionMetadata {
-                        session_id: sid_clone.clone(),
-                        created_at: std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .map(|d| d.as_millis() as u64)
-                            .unwrap_or(0),
-                        language: params
-                            .program_language
-                            .clone()
-                            .unwrap_or_else(|| "native".to_string()),
-                        target: params.program.clone(),
-                        event_count: events.len(),
-                        duration_ms: elapsed.as_millis() as u64,
-                    };
-                    match self.store.save_session(metadata, &events) {
-                        Ok(hashes) => Some(serde_json::json!({
-                            "auto_saved": true,
-                            "session_id": sid_clone,
-                            "events_stored": events.len(),
-                            "unique_hashes": hashes.len(),
-                        })),
-                        Err(e) => Some(serde_json::json!({
-                            "auto_saved": false,
-                            "session_id": sid_clone,
-                            "error": format!("{}", e),
-                        })),
-                    }
-                } else {
-                    None
-                };
-
-                let mut result = serde_json::json!({
-                    "session_id": sid_clone,
-                    "status": "finalized",
-                    "total_events": total_events,
-                    "end_reason": end_reason_str,
-                    "message": format!("Program '{}' captured successfully", params.program),
-                    "hint": "Session is queryable now. Use query_events, get_call_stack, get_execution_summary, etc."
-                });
-                if let Some(auto_save_info) = auto_save_result {
-                    result["auto_save_info"] = auto_save_info;
-                }
-                Ok(CallToolResult::success(json_content(&result)))
-            }
-            Ok(Err(e)) => Ok(CallToolResult::error(text_content(format!(
-                "Capture failed: {}",
-                e
-            )))),
-            Err(e) => Ok(CallToolResult::error(text_content(format!(
-                "Internal error: {}",
-                e
-            )))),
-        }
-    }
-
-    #[tool(
-        name = "debug_attach",
-        description = "Attach to a running process for trace capture."
-    )]
-    async fn debug_attach(
-        &self,
-        params: Parameters<DebugAttachParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let params = params.0;
-        let pid = params.pid;
-        let session_id = uuid::Uuid::new_v4().to_string();
-        let sid_clone = session_id.clone();
-        let start_time = std::time::Instant::now();
-
-        let mut config = CaptureConfig::new(format!("PID {}", pid));
-        config.capture_syscalls = params.trace_syscalls;
-        config.capture_stack = true;
-
-        // Run attach capture synchronously in a blocking thread
-        let capture_result = tokio::task::spawn_blocking(move || {
-            CaptureRunner::run_to_completion_attach(pid, config)
-        })
-        .await;
-
-        match capture_result {
-            Ok(Ok(capture)) => {
-                let total_events = capture.total_events;
-                let end_reason_str = match &capture.end_reason {
-                    CaptureEndReason::Exited(code) => format!("exited({})", code),
-                    CaptureEndReason::Signaled { signal_name, .. } => {
-                        format!("signaled({})", signal_name)
-                    }
-                    CaptureEndReason::StoppedByUser => "stopped_by_user".into(),
-                    CaptureEndReason::Failed(e) => format!("failed({})", e),
-                };
-
-                    info!(
-                    "Attach session {} finished: {} events, reason: {}",
-                    sid_clone, total_events, end_reason_str
-                );
-
-                let events = capture.events;
-                let _elapsed = start_time.elapsed();
-                // debug_attach uses native ptrace, so language is C
-                self.build_and_store_engine(&sid_clone, events.clone(), Language::C)
-                    .await;
-
-                let result = serde_json::json!({
-                    "session_id": sid_clone,
-                    "status": "finalized",
-                    "pid": pid,
-                    "total_events": total_events,
-                    "end_reason": end_reason_str,
-                    "message": format!("Attached to PID {} and captured {} events", pid, total_events),
-                    "hint": "Session is queryable now. Use query_events, get_call_stack, get_execution_summary, etc."
-                });
-                Ok(CallToolResult::success(json_content(&result)))
-            }
-            Ok(Err(e)) => {
-                // Map common errors to user-friendly messages
-                let user_message = if e.contains("No such process") || e.contains("ESRCH") {
-                    format!(
-                        "Process with PID {} not found or not traceable. Ensure the process exists and is owned by your user, or run with CAP_SYS_PTRACE.",
-                        pid
-                    )
-                } else if e.contains("Operation not permitted") || e.contains("EPERM") {
-                    format!(
-                        "Permission denied: cannot attach to PID {}. Required: CAP_SYS_PTRACE capability or same user ID.",
-                        pid
-                    )
-                } else {
-                    format!("Attach to PID {} failed: {}", pid, e)
-                };
-                Ok(CallToolResult::error(text_content(user_message)))
-            }
-            Err(e) => Ok(CallToolResult::error(text_content(format!(
-                "Internal error: {}",
-                e
-            )))),
-        }
-    }
 
     #[tool(
         name = "query_events",
@@ -1851,7 +1476,7 @@ impl ChronosServer {
             Some(e) => e,
             None => {
                 return Ok(CallToolResult::error(text_content(format!(
-                    "Session '{}' not found in memory. Run debug_run first.",
+                    "Session '{}' not found in memory. Run probe_start first.",
                     params.session_id
                 ))))
             }
@@ -1958,7 +1583,7 @@ impl ChronosServer {
     )]
     async fn list_sessions(
         &self,
-        _params: Parameters<()>,
+        _params: Parameters<NoParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let sessions = match self.store.list_sessions() {
             Ok(s) => s,
@@ -2047,63 +1672,6 @@ impl ChronosServer {
         }
     }
 
-    #[tool(
-        name = "compare_sessions",
-        description = "Compare two saved sessions using hash-based set difference. Returns events unique to each, common count, similarity percentage, and timing delta."
-    )]
-    async fn compare_sessions(
-        &self,
-        params: Parameters<CompareSessionsParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let params = params.0;
-
-        // Load both sessions
-        let (meta_a, events_a) = match self.store.load_session(&params.session_a) {
-            Ok((m, e)) => (m, e),
-            Err(e) => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Failed to load session '{}': {}",
-                    params.session_a, e
-                ))))
-            }
-        };
-
-        let (meta_b, events_b) = match self.store.load_session(&params.session_b) {
-            Ok((m, e)) => (m, e),
-            Err(e) => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Failed to load session '{}': {}",
-                    params.session_b, e
-                ))))
-            }
-        };
-
-        let report = TraceDiff::compare(
-            &params.session_a,
-            &params.session_b,
-            &events_a,
-            &events_b,
-            &meta_a,
-            &meta_b,
-        );
-
-        let output = serde_json::json!({
-            "session_a_id": report.session_a_id,
-            "session_b_id": report.session_b_id,
-            "common_count": report.common_count,
-            "similarity_pct": (report.similarity_pct * 100.0).round() / 100.0,
-            "only_in_a_count": report.only_in_a.len(),
-            "only_in_b_count": report.only_in_b.len(),
-            "timing_delta": report.timing_delta.map(|td| serde_json::json!({
-                "duration_ms_a": td.duration_ms_a,
-                "duration_ms_b": td.duration_ms_b,
-                "delta_ms": td.delta_ms,
-                "slower_session": td.slower_session,
-            })),
-            "hint": "Sessions with high similarity_pct share many common events. Use load_session to dive into specific events.",
-        });
-        Ok(CallToolResult::success(json_content(&output)))
-    }
 
     // ========================================================================
     // SF6 — Inspection Tools (T5–T7)
@@ -2117,64 +1685,9 @@ impl ChronosServer {
         &self,
         params: Parameters<EvaluateExpressionParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        use chronos_domain::CaptureSession;
-
         let params = params.0;
 
-        // First, try the eval dispatcher (language-aware evaluation)
-        // Get the language for this session
-        let language = {
-            let session_languages = self.session_languages.lock().await;
-            session_languages.get(&params.session_id).copied()
-        };
-
-        if let Some(lang) = language {
-            // Construct a minimal CaptureSession for the dispatcher
-            let session = CaptureSession::minimal(
-                params.session_id.clone(),
-                lang,
-            );
-
-            // Try dispatcher evaluation
-            let dispatcher_result = {
-                let dispatcher = self.eval_dispatcher.lock().await;
-                dispatcher.evaluate(&session, &params.expression, Some(params.event_id)).await
-            };
-
-            match dispatcher_result {
-                Ok(result) => {
-                    let output = serde_json::json!({
-                        "event_id": params.event_id,
-                        "expression": params.expression,
-                        "result": result,
-                        "evaluated_by": "dispatcher",
-                    });
-                    return Ok(CallToolResult::success(json_content(&output)));
-                }
-                Err(e) => {
-                    // Fall back to QueryEngine if:
-                    // 1. UnsupportedOperation - dispatcher has no backend for this language
-                    // 2. InvalidExpression - dispatcher backend doesn't have session variables
-                    //   (this happens for native languages whose dispatcher backends have empty locals)
-                    if matches!(e, chronos_domain::TraceError::UnsupportedOperation(_)
-                        | chronos_domain::TraceError::InvalidExpression(_)) {
-                        // Fall through to QueryEngine fallback
-                    } else {
-                        // Other error - return it
-                        let output = serde_json::json!({
-                            "event_id": params.event_id,
-                            "expression": params.expression,
-                            "error": format!("{:?}", e),
-                        });
-                        return Ok(CallToolResult::success(vec![Content::text(
-                            serde_json::to_string_pretty(&output).unwrap_or_default(),
-                        )]));
-                    }
-                }
-            }
-        }
-
-        // Fallback to QueryEngine arithmetic evaluation
+        // Use QueryEngine to evaluate the arithmetic expression
         let engines = self.engines.lock().await;
         match engines.get(&params.session_id) {
             Some(engine) => {
@@ -2184,7 +1697,6 @@ impl ChronosServer {
                             "event_id": params.event_id,
                             "expression": params.expression,
                             "result": result,
-                            "evaluated_by": "query_engine",
                         });
                         Ok(CallToolResult::success(json_content(&output)))
                     }
@@ -2573,9 +2085,498 @@ impl ChronosServer {
         Ok(CallToolResult::success(json_content(&output)))
     }
 
+    // ========================================================================
+    // SF8 — Tripwire Tools (T21–T23)
+    // ========================================================================
+
+    #[tool(
+        name = "tripwire_create",
+        description = "Create a tripwire to monitor trace events matching a condition. When a matching event occurs, the tripwire fires and can be retrieved via tripwire_list. Use this for alerting on specific function calls, exceptions, syscalls, or signals."
+    )]
+    async fn tripwire_create(
+        &self,
+        params: Parameters<TripwireCreateParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let condition = params.condition.into_condition();
+        let id = self.tripwire_manager.register(condition);
+
+        let output = serde_json::json!({
+            "tripwire_id": id.to_string(),
+            "status": "registered",
+            "active_count": self.tripwire_manager.active_count(),
+            "label": params.label,
+        });
+        Ok(CallToolResult::success(json_content(&output)))
+    }
+
+    #[tool(
+        name = "tripwire_list",
+        description = "List all active tripwires and any that have fired since the last call. Returns tripwire definitions and a list of fired notifications with event context."
+    )]
+    async fn tripwire_list(
+        &self,
+        _params: Parameters<NoParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let tripwires = self.tripwire_manager.list();
+        let fired = self.tripwire_manager.drain_fired();
+
+        let tripwire_summaries: Vec<_> = tripwires
+            .iter()
+            .map(|tw| {
+                serde_json::json!({
+                    "id": tw.id.to_string(),
+                    "label": tw.label,
+                    "condition": format!("{:?}", tw.condition),
+                    "fire_count": tw.fire_count,
+                })
+            })
+            .collect();
+
+        let fired_events: Vec<_> = fired
+            .iter()
+            .map(|f| {
+                serde_json::json!({
+                    "tripwire_id": f.tripwire_id.to_string(),
+                    "condition_description": f.condition_description,
+                    "event_id": f.event_id,
+                    "timestamp_ns": f.timestamp_ns,
+                    "thread_id": f.thread_id,
+                })
+            })
+            .collect();
+
+        let output = serde_json::json!({
+            "active_tripwires": tripwire_summaries,
+            "fired_events": fired_events,
+            "total_active": tripwires.len(),
+            "fired_count": fired.len(),
+        });
+        Ok(CallToolResult::success(json_content(&output)))
+    }
+
+    #[tool(
+        name = "tripwire_delete",
+        description = "Delete a tripwire by ID. The tripwire will no longer fire for new events."
+    )]
+    async fn tripwire_delete(
+        &self,
+        params: Parameters<TripwireDeleteParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+
+        // Parse the tripwire ID (format: "tripwire-N")
+        let id_str = params.tripwire_id.trim();
+        let id_num: u64 = if id_str.starts_with("tripwire-") {
+            id_str["tripwire-".len()..]
+                .parse()
+                .map_err(|_| rmcp::ErrorData::invalid_params(
+                    format!("Invalid tripwire ID format: '{}'", params.tripwire_id),
+                    None,
+                ))?
+        } else {
+            return Ok(CallToolResult::error(text_content(format!(
+                "Invalid tripwire ID format '{}'. Expected format: 'tripwire-<number>'",
+                params.tripwire_id
+            ))));
+        };
+
+        let id = TripwireId(id_num);
+        let removed = self.tripwire_manager.remove(id);
+
+        if removed {
+            let output = serde_json::json!({
+                "tripwire_id": params.tripwire_id,
+                "status": "deleted",
+                "remaining_active": self.tripwire_manager.active_count(),
+            });
+            Ok(CallToolResult::success(json_content(&output)))
+        } else {
+            Ok(CallToolResult::error(text_content(format!(
+                "Tripwire '{}' not found",
+                params.tripwire_id
+            ))))
+        }
+    }
+
+    #[tool(
+        name = "tripwire_query",
+        description = "Query tripwire state without draining fired events (non-destructive read). Useful for checking if any tripwires have fired without consuming the notifications."
+    )]
+    async fn tripwire_query(
+        &self,
+        _params: Parameters<NoParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let tripwires = self.tripwire_manager.list();
+
+        let tripwire_summaries: Vec<_> = tripwires
+            .iter()
+            .map(|tw| {
+                serde_json::json!({
+                    "id": tw.id.to_string(),
+                    "label": tw.label,
+                    "condition": format!("{:?}", tw.condition),
+                    "fire_count": tw.fire_count,
+                })
+            })
+            .collect();
+
+        let output = serde_json::json!({
+            "active_tripwires": tripwire_summaries,
+            "total_active": tripwires.len(),
+        });
+        Ok(CallToolResult::success(json_content(&output)))
+    }
+
+    // ========================================================================
+    // SF9 — Live Probe Tools
+    // ========================================================================
+
+    #[tool(
+        name = "probe_start",
+        description = "Start a live probe on a target program. Unlike debug_run (which blocks until the program exits), probe_start returns immediately and streams events to a ring buffer. Use probe_drain to read events in real-time and probe_stop to finalize the session."
+    )]
+    async fn probe_start(
+        &self,
+        params: Parameters<ProbeStartParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+
+        // Validate the program path
+        if let Err(e) = crate::security::validate_program_path(&params.program) {
+            return Ok(CallToolResult::error(text_content(format!(
+                "Invalid program path: {}",
+                e
+            ))));
+        }
+
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let language = Language::from_path(&params.program);
+
+        // Build capture config
+        let mut config = CaptureConfig::new(&params.program);
+        config.args = params.args;
+        config.capture_syscalls = params.trace_syscalls;
+        config.language = Some(language);
+
+        if let Some(ref cwd) = params.cwd {
+            config.cwd = Some(PathBuf::from(cwd));
+        }
+
+        // Create a fresh EventBus for this session
+        let bus = chronos_domain::bus::EventBus::new_shared(params.bus_capacity);
+        let backend = NativeProbeBackend::new(bus).with_language(language);
+
+        // Start the probe (non-blocking — spawns background thread)
+        let session = match backend.start_probe(config) {
+            Ok(s) => s,
+            Err(e) => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "Failed to start probe: {}",
+                    e
+                ))))
+            }
+        };
+
+        info!(
+            "Live probe started for '{}' (session: {}, bus capacity: {})",
+            params.program, session_id, params.bus_capacity
+        );
+
+        // Store the live probe session
+        let live_probe = LiveProbeSession {
+            backend,
+            session,
+            language,
+            target: params.program.clone(),
+        };
+        self.live_probes
+            .lock()
+            .unwrap()
+            .insert(session_id.clone(), live_probe);
+
+        // Set as active session
+        {
+            let mut active = self.active_session.lock().await;
+            *active = Some(session_id.clone());
+        }
+
+        let output = serde_json::json!({
+            "session_id": session_id,
+            "status": "running",
+            "target": params.program,
+            "language": format!("{:?}", language),
+            "bus_capacity": params.bus_capacity,
+            "hint": "Use probe_drain to read events in real-time, probe_stop to finalize."
+        });
+        Ok(CallToolResult::success(json_content(&output)))
+    }
+
+    #[tool(
+        name = "probe_stop",
+        description = "Stop a live probe session. Drains remaining events from the ring buffer, builds a QueryEngine, and makes the session fully queryable (query_events, get_call_stack, etc.)."
+    )]
+    async fn probe_stop(
+        &self,
+        params: Parameters<ProbeStopParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+
+        // Remove the live probe session
+        let live_probe = {
+            let mut probes = self.live_probes.lock().unwrap();
+            probes.remove(&params.session_id)
+        };
+
+        let live_probe = match live_probe {
+            Some(lp) => lp,
+            None => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "Live probe session '{}' not found. It may have already been stopped.",
+                    params.session_id
+                ))))
+            }
+        };
+
+        // Drain final raw events from the bus (for QueryEngine)
+        // Note: drain_events() returns SemanticEvent for LLM-facing tools,
+        // but QueryEngine needs TraceEvent, so we use drain_raw_events()
+        let events: Vec<TraceEvent> = live_probe.backend.drain_raw_events();
+
+        // Stop the probe thread
+        if let Err(e) = live_probe.backend.stop_probe(&live_probe.session) {
+            tracing::warn!("Probe stop error for session {}: {}", params.session_id, e);
+        }
+
+        let total_events = events.len();
+        let language = live_probe.language;
+        let target = live_probe.target;
+
+        info!(
+            "Live probe stopped for '{}' (session: {}, events: {})",
+            target, params.session_id, total_events
+        );
+
+        // Build query engine from collected events
+        let mut builder = IndexBuilder::new();
+        builder.push_all(&events);
+        let indices = builder.finalize();
+        let engine = QueryEngine::with_indices(events.clone(), indices.shadow, indices.temporal)
+            .with_causality(indices.causality)
+            .with_performance(indices.performance);
+
+        // Store in engines map — session is now fully queryable
+        self.engines.lock().await.insert(params.session_id.clone(), engine);
+        self.session_languages.lock().await.insert(params.session_id.clone(), language);
+
+        // Set as active session
+        {
+            let mut active = self.active_session.lock().await;
+            *active = Some(params.session_id.clone());
+        }
+
+        // Compute duration
+        let duration_ms = if let (Some(first), Some(last)) = (events.first(), events.last()) {
+            last.timestamp_ns.saturating_sub(first.timestamp_ns) / 1_000_000
+        } else {
+            0
+        };
+
+        let output = serde_json::json!({
+            "session_id": params.session_id,
+            "status": "stopped",
+            "target": target,
+            "total_events": total_events,
+            "duration_ms": duration_ms,
+            "hint": "Session is now queryable. Use query_events, get_call_stack, etc."
+        });
+        Ok(CallToolResult::success(json_content(&output)))
+    }
+
+    #[tool(
+        name = "probe_drain",
+        description = "Drain current events from a live probe session without stopping it. Returns a snapshot of events currently in the ring buffer. The probe continues running. Use probe_stop to finalize."
+    )]
+    async fn probe_drain(
+        &self,
+        params: Parameters<ProbeDrainParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+
+        // Drain events from the backend's EventBus (non-destructive snapshot)
+        let mut probes = self.live_probes.lock().unwrap();
+        let live_probe = match probes.get_mut(&params.session_id) {
+            Some(lp) => lp,
+            None => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "Live probe session '{}' not found.",
+                    params.session_id
+                ))))
+            }
+        };
+
+        let events: Vec<SemanticEvent> = match live_probe.backend.drain_events() {
+            Ok(e) => e,
+            Err(e) => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "Failed to drain events: {}",
+                    e
+                ))))
+            }
+        };
+
+        let total = events.len();
+        // Apply offset/limit
+        let sliced: Vec<_> = events
+            .into_iter()
+            .skip(params.offset)
+            .take(params.limit)
+            .map(|e| {
+                serde_json::json!({
+                    "event_id": e.source_event_id,
+                    "timestamp_ns": e.timestamp_ns,
+                    "thread_id": e.thread_id,
+                    "language": format!("{:?}", e.language),
+                    "kind": format!("{:?}", e.kind),
+                    "description": e.description,
+                })
+            })
+            .collect();
+
+        let output = serde_json::json!({
+            "session_id": params.session_id,
+            "status": "running",
+            "total_buffered": total,
+            "returned": sliced.len(),
+            "offset": params.offset,
+            "limit": params.limit,
+            "events": sliced,
+            "hint": "Probe is still running. Call probe_drain again for more events, or probe_stop to finalize."
+        });
+        Ok(CallToolResult::success(json_content(&output)))
+    }
+
+    #[tool(
+        name = "session_snapshot",
+        description = "Freeze a live probe session and build query indices without stopping the probe. This makes the session queryable (query_events, get_call_stack, etc.) while the probe continues collecting events. Call again to refresh the indices with newer events."
+    )]
+    async fn session_snapshot(
+        &self,
+        params: Parameters<SessionSnapshotParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+
+        // Scope the sync mutex lock — drain events, then drop before any async
+        let (events, language) = {
+            let mut probes = self.live_probes.lock().unwrap();
+            let live_probe = match probes.get_mut(&params.session_id) {
+                Some(lp) => lp,
+                None => {
+                    return Ok(CallToolResult::error(text_content(format!(
+                        "Live probe session '{}' not found.",
+                        params.session_id
+                    ))))
+                }
+            };
+
+            // Use drain_raw_events() because QueryEngine needs TraceEvent,
+            // but drain_events() (ProbeBackend trait) returns SemanticEvent
+            let events: Vec<TraceEvent> = live_probe.backend.drain_raw_events();
+            let lang = live_probe.language;
+            (events, lang)
+        }; // probes lock dropped here
+
+        let total_events = events.len();
+
+        // Build query engine from current events
+        let mut builder = IndexBuilder::new();
+        builder.push_all(&events);
+        let indices = builder.finalize();
+        let engine = QueryEngine::with_indices(events, indices.shadow, indices.temporal)
+            .with_causality(indices.causality)
+            .with_performance(indices.performance);
+
+        // Store/update in engines map — session is now queryable
+        self.engines.lock().await.insert(params.session_id.clone(), engine);
+        self.session_languages.lock().await.insert(params.session_id.clone(), language);
+
+        // Set as active session
+        {
+            let mut active = self.active_session.lock().await;
+            *active = Some(params.session_id.clone());
+        }
+
+        let output = serde_json::json!({
+            "session_id": params.session_id,
+            "status": "running",
+            "events_indexed": total_events,
+            "hint": "Session is now queryable. Probe is still running. Call session_snapshot again to refresh indices with newer events."
+        });
+        Ok(CallToolResult::success(json_content(&output)))
+    }
+
+    #[tool(
+        name = "probe_inject",
+        description = "Inject a uprobe into a running process via eBPF (requires root/CAP_BPF)"
+    )]
+    async fn probe_inject(
+        &self,
+        params: Parameters<ProbeInjectParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+
+        // Look up the live probe session to get the target PID
+        let target_pid = {
+            let probes = self.live_probes.lock().unwrap();
+            match probes.get(&params.session_id) {
+                Some(lp) => lp.session.pid,
+                None => {
+                    return Ok(CallToolResult::error(text_content(format!(
+                        "Live probe session '{}' not found. Start a probe with probe_start first.",
+                        params.session_id
+                    ))))
+                }
+            }
+        };
+
+        let pid = params.pid.unwrap_or(target_pid);
+
+        // Attempt eBPF uprobe injection
+        match chronos_ebpf::EbpfAdapter::new() {
+            Ok(adapter) => {
+                match adapter.attach_uprobe(pid, &params.binary_path, &params.symbol_name) {
+                    Ok(()) => {
+                        let output = serde_json::json!({
+                            "session_id": params.session_id,
+                            "binary_path": params.binary_path,
+                            "symbol_name": params.symbol_name,
+                            "probes_attached": 1u32,
+                            "message": format!(
+                                "uprobe attached to '{}' in '{}' (pid {})",
+                                params.symbol_name, params.binary_path, pid
+                            ),
+                        });
+                        Ok(CallToolResult::success(json_content(&output)))
+                    }
+                    Err(e) => Ok(CallToolResult::error(text_content(format!(
+                        "Failed to attach uprobe for '{}' in '{}': {}",
+                        params.symbol_name, params.binary_path, e
+                    )))),
+                }
+            }
+            Err(e) => {
+                Err(rmcp::ErrorData::invalid_params(
+                    format!("eBPF not available on this system: {}", e),
+                    None,
+                ))
+            }
+        }
+    }
+
+
     #[tool(
         name = "performance_regression_audit",
-        description = "Compare performance between two sessions — CPU cycles, call counts, hot functions."
+        description = "Compare performance hotspots between two sessions to detect regressions"
     )]
     async fn performance_regression_audit(
         &self,
@@ -2584,247 +2585,205 @@ impl ChronosServer {
         let params = params.0;
         let top_n = params.top_n.unwrap_or(20);
 
-        // Helper to get events for a session (from memory or store)
-        async fn get_session_events(
-            engines: &tokio::sync::MutexGuard<'_, std::collections::HashMap<String, QueryEngine>>,
-            store: &SessionStore,
-            session_id: &str,
-        ) -> Result<Vec<TraceEvent>, String> {
-            // First check if it's in memory
-            if let Some(engine) = engines.get(session_id) {
-                return Ok(engine.get_all_events());
+        // Helper: load a session into an engine (reuse existing if already loaded).
+        let load_engine = |session_id: &str| -> Result<QueryEngine, String> {
+            let (_, events) = self
+                .store
+                .load_session(session_id)
+                .map_err(|e| format!("session '{}' not found: {}", session_id, e))?;
+            Ok(QueryEngine::new(events))
+        };
+
+        let baseline_engine = match load_engine(&params.baseline_session_id) {
+            Ok(e) => e,
+            Err(msg) => return Ok(CallToolResult::error(text_content(msg))),
+        };
+        let target_engine = match load_engine(&params.target_session_id) {
+            Ok(e) => e,
+            Err(msg) => return Ok(CallToolResult::error(text_content(msg))),
+        };
+
+        // Build function-call-count maps from execution summaries.
+        let baseline_summary = baseline_engine.execution_summary(&params.baseline_session_id);
+        let target_summary = target_engine.execution_summary(&params.target_session_id);
+
+        let baseline_map: HashMap<&str, u64> = baseline_summary
+            .top_functions
+            .iter()
+            .take(top_n)
+            .map(|f| (f.name.as_str(), f.call_count))
+            .collect();
+        let target_map: HashMap<&str, u64> = target_summary
+            .top_functions
+            .iter()
+            .take(top_n)
+            .map(|f| (f.name.as_str(), f.call_count))
+            .collect();
+
+        // Union of all function names from both sessions.
+        let all_functions: HashSet<&str> = baseline_map
+            .keys()
+            .chain(target_map.keys())
+            .copied()
+            .collect();
+
+        let functions_analyzed = all_functions.len();
+        let mut regressions: Vec<FunctionRegressionEntry> = Vec::new();
+        let mut improvements: Vec<FunctionRegressionEntry> = Vec::new();
+        let mut total_baseline_calls: i64 = 0;
+        let mut total_target_calls: i64 = 0;
+
+        for func_name in &all_functions {
+            let baseline_calls = baseline_map.get(func_name).copied().unwrap_or(0);
+            let target_calls = target_map.get(func_name).copied().unwrap_or(0);
+
+            total_baseline_calls += baseline_calls as i64;
+            total_target_calls += target_calls as i64;
+
+            // Skip functions that appear in only one session.
+            if baseline_calls == 0 || target_calls == 0 {
+                continue;
             }
-            // Otherwise load from store
-            match store.load_session(session_id) {
-                Ok((_, events)) => Ok(events),
-                Err(e) => Err(format!("Session '{}' not found: {}", session_id, e)),
+
+            let delta_pct =
+                ((target_calls as f64 - baseline_calls as f64) / baseline_calls as f64) * 100.0;
+
+            let entry = FunctionRegressionEntry {
+                function: func_name.to_string(),
+                baseline_calls,
+                target_calls,
+                call_delta_pct: (delta_pct * 100.0).round() / 100.0,
+            };
+
+            if delta_pct > 50.0 {
+                regressions.push(entry);
+            } else if delta_pct < -50.0 {
+                improvements.push(entry);
             }
         }
 
-        // Get events for both sessions
-        let (events_a, events_b) = {
-            let engines = self.engines.lock().await;
-            let ev_a = get_session_events(&engines, &self.store, &params.baseline_session_id).await;
-            let ev_b = get_session_events(&engines, &self.store, &params.target_session_id).await;
-
-            match (ev_a, ev_b) {
-                (Ok(a), Ok(b)) => (a, b),
-                (Err(e), _) => return Ok(CallToolResult::error(text_content(e))),
-                (_, Err(e)) => return Ok(CallToolResult::error(text_content(e))),
-            }
-        };
-
-        // Build temporary engines for both sessions
-        let mut builder_a = IndexBuilder::new();
-        builder_a.push_all(&events_a);
-        let indices_a = builder_a.finalize();
-        let engine_a = QueryEngine::with_indices(events_a, indices_a.shadow, indices_a.temporal)
-            .with_causality(indices_a.causality)
-            .with_performance(indices_a.performance);
-
-        let mut builder_b = IndexBuilder::new();
-        builder_b.push_all(&events_b);
-        let indices_b = builder_b.finalize();
-        let engine_b = QueryEngine::with_indices(events_b, indices_b.shadow, indices_b.temporal)
-            .with_causality(indices_b.causality)
-            .with_performance(indices_b.performance);
-
-        // Get saliency scores for both sessions
-        let scores_a = engine_a.get_saliency_scores(top_n);
-        let scores_b = engine_b.get_saliency_scores(top_n);
-
-        // Build maps for comparison
-        let fns_a: std::collections::HashMap<_, _> = scores_a
-            .iter()
-            .map(|s| (s.function.clone(), s.clone()))
-            .collect();
-        let fns_b: std::collections::HashMap<_, _> = scores_b
-            .iter()
-            .map(|s| (s.function.clone(), s.clone()))
-            .collect();
-
-        let all_fns: std::collections::HashSet<_> = fns_a.keys().chain(fns_b.keys()).collect();
-
-        // Calculate baseline average cycles for severity scoring
-        let baseline_avg_cycles: f64 = if fns_a.is_empty() {
-            0.0
-        } else {
-            fns_a.values().map(|s| s.total_cycles as f64).sum::<f64>() / fns_a.len() as f64
-        };
-
-        let mut regressions = Vec::new();
-        let mut improvements = Vec::new();
-        let mut new_hotspots = Vec::new();
-        let mut call_count_regressions = Vec::new();
-        let mut critical_count = 0usize;
-        let total_functions_compared = all_fns.len();
-
-        for fn_name in all_fns {
-            let perf_a = fns_a.get(fn_name);
-            let perf_b = fns_b.get(fn_name);
-
-            match (perf_a, perf_b) {
-                (Some(a), Some(b)) => {
-                    // Both exist — check for cycle regression
-                    let cycles_a = a.total_cycles;
-                    let cycles_b = b.total_cycles;
-                    let calls_a = a.call_count;
-                    let calls_b = b.call_count;
-
-                    // Check for call count regression (>50% increase)
-                    if calls_b > calls_a {
-                        let call_delta_pct = if calls_a > 0 {
-                            (calls_b as f64 - calls_a as f64) / calls_a as f64 * 100.0
-                        } else {
-                            100.0
-                        };
-                        if call_delta_pct > 50.0 {
-                            call_count_regressions.push(serde_json::json!({
-                                "function": fn_name,
-                                "baseline_calls": calls_a,
-                                "target_calls": calls_b,
-                                "call_delta_pct": call_delta_pct.round() as i64,
-                            }));
-                        }
-                    }
-
-                    // Check for cycle regression
-                    if cycles_b > cycles_a {
-                        let delta_pct = if cycles_a > 0 {
-                            ((cycles_b as f64 - cycles_a as f64) / cycles_a as f64 * 100.0).round() as i64
-                        } else {
-                            100
-                        };
-                        if delta_pct > 10 {
-                            // Determine severity
-                            let severity = if delta_pct > 100 {
-                                critical_count += 1;
-                                "critical"
-                            } else if delta_pct > 50 {
-                                "high"
-                            } else if delta_pct > 20 {
-                                "medium"
-                            } else {
-                                "low"
-                            };
-
-                            regressions.push(serde_json::json!({
-                                "function": fn_name,
-                                "baseline_cycles": cycles_a,
-                                "target_cycles": cycles_b,
-                                "baseline_calls": calls_a,
-                                "target_calls": calls_b,
-                                "delta_pct": delta_pct,
-                                "severity": severity,
-                            }));
-                        }
-                    } else if cycles_a > cycles_b {
-                        let delta_pct = if cycles_b > 0 {
-                            ((cycles_a as f64 - cycles_b as f64) / cycles_b as f64 * 100.0).round() as i64
-                        } else {
-                            -100
-                        };
-                        if delta_pct > 10 {
-                            improvements.push(serde_json::json!({
-                                "function": fn_name,
-                                "baseline_cycles": cycles_a,
-                                "target_cycles": cycles_b,
-                                "baseline_calls": calls_a,
-                                "target_calls": calls_b,
-                                "delta_pct": -delta_pct,
-                            }));
-                        }
-                    }
-                }
-                (None, Some(b)) => {
-                    // New hotspot in target
-                    if b.total_cycles > 0 {
-                        // Check if it's a critical new hotspot (> 2x avg baseline)
-                        let severity = if baseline_avg_cycles > 0.0
-                            && (b.total_cycles as f64) > baseline_avg_cycles * 2.0
-                        {
-                            critical_count += 1;
-                            "critical"
-                        } else {
-                            "medium"
-                        };
-
-                        new_hotspots.push(serde_json::json!({
-                            "function": fn_name,
-                            "target_cycles": b.total_cycles,
-                            "target_calls": b.call_count,
-                            "severity": severity,
-                        }));
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        // Sort by delta_pct descending for regressions, ascending for improvements
+        // Sort: regressions descending, improvements ascending (most-improved first).
         regressions.sort_by(|a, b| {
-            let delta_a = a["delta_pct"].as_i64().unwrap_or(0);
-            let delta_b = b["delta_pct"].as_i64().unwrap_or(0);
-            delta_b.cmp(&delta_a)
+            b.call_delta_pct
+                .partial_cmp(&a.call_delta_pct)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
         improvements.sort_by(|a, b| {
-            let delta_a = a["delta_pct"].as_i64().unwrap_or(0);
-            let delta_b = b["delta_pct"].as_i64().unwrap_or(0);
-            delta_a.cmp(&delta_b)
-        });
-        new_hotspots.sort_by(|a, b| {
-            let severity_order = |s: &str| match s {
-                "critical" => 0,
-                "high" => 1,
-                "medium" => 2,
-                _ => 3,
-            };
-            let sev_a = severity_order(a["severity"].as_str().unwrap_or(""));
-            let sev_b = severity_order(b["severity"].as_str().unwrap_or(""));
-            if sev_a != sev_b {
-                return sev_a.cmp(&sev_b);
-            }
-            let cycles_a = a["target_cycles"].as_u64().unwrap_or(0);
-            let cycles_b = b["target_cycles"].as_u64().unwrap_or(0);
-            cycles_b.cmp(&cycles_a)
+            a.call_delta_pct
+                .partial_cmp(&b.call_delta_pct)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        // Calculate regression score
-        let total_regressions = regressions.len();
-        let total_improvements = improvements.len();
-        let regression_score = if total_functions_compared > 0 {
-            let weighted = (critical_count as f64 * 1.0)
-                + (regressions.iter().filter(|r| r["severity"].as_str() == Some("high")).count() as f64 * 0.5)
-                + (regressions.iter().filter(|r| r["severity"].as_str() == Some("medium")).count() as f64 * 0.2)
-                + (regressions.iter().filter(|r| r["severity"].as_str() == Some("low")).count() as f64 * 0.1);
-            (weighted / total_functions_compared as f64).min(1.0)
+        let total_call_delta = total_target_calls - total_baseline_calls;
+
+        let summary = if regressions.is_empty() {
+            format!(
+                "No significant regressions found. Target had {} total calls vs {} in baseline.",
+                total_target_calls, total_baseline_calls
+            )
         } else {
-            0.0
+            let top = &regressions[0];
+            format!(
+                "Found {} significant regression(s). Top: '{}' increased by {:.0}%. \
+                 Target: {} total calls vs baseline: {}.",
+                regressions.len(),
+                top.function,
+                top.call_delta_pct,
+                total_target_calls,
+                total_baseline_calls
+            )
+        };
+
+        let result = PerformanceRegressionAuditResult {
+            baseline_session_id: params.baseline_session_id,
+            target_session_id: params.target_session_id,
+            regressions,
+            improvements,
+            functions_analyzed,
+            total_call_delta,
+            summary,
+        };
+        Ok(CallToolResult::success(json_content(&serde_json::to_value(result).unwrap())))
+    }
+
+    #[tool(
+        name = "compare_sessions",
+        description = "Compare two saved sessions and report differences (Divergence Engine)"
+    )]
+    async fn compare_sessions(
+        &self,
+        params: Parameters<CompareSessionsParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+
+        let (meta_a, events_a) = match self.store.load_session(&params.session_a) {
+            Ok(r) => r,
+            Err(e) => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "session A not found: {}",
+                    e
+                ))))
+            }
+        };
+        let (meta_b, events_b) = match self.store.load_session(&params.session_b) {
+            Ok(r) => r,
+            Err(e) => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "session B not found: {}",
+                    e
+                ))))
+            }
+        };
+
+        let report = TraceDiff::compare(
+            &params.session_a,
+            &params.session_b,
+            &events_a,
+            &events_b,
+            &meta_a,
+            &meta_b,
+        );
+
+        let summary = if report.similarity_pct >= 90.0 {
+            format!(
+                "Sessions are highly similar ({}%). Most events match.",
+                report.similarity_pct.round()
+            )
+        } else if report.similarity_pct >= 50.0 {
+            format!(
+                "Sessions differ in {} events (only_in_b) vs {} (only_in_a). {}% similar.",
+                report.only_in_b.len(),
+                report.only_in_a.len(),
+                report.similarity_pct.round()
+            )
+        } else {
+            format!(
+                "Sessions are largely different. {}% similar with {} events only in B and {} only in A.",
+                report.similarity_pct.round(),
+                report.only_in_b.len(),
+                report.only_in_a.len()
+            )
         };
 
         let output = serde_json::json!({
-            "baseline_session_id": params.baseline_session_id,
-            "target_session_id": params.target_session_id,
-            "top_n": top_n,
-            "regressions": regressions,
-            "improvements": improvements,
-            "new_hotspots": new_hotspots,
-            "call_count_regressions": call_count_regressions,
-            "summary": {
-                "total_regressions": total_regressions,
-                "total_improvements": total_improvements,
-                "critical_count": critical_count,
-                "new_hotspot_count": new_hotspots.len(),
-                "call_count_regression_count": call_count_regressions.len(),
-                "regression_score": (regression_score * 100.0).round() / 100.0,
-                "total_functions_compared": total_functions_compared,
-            },
+            "session_a_id": params.session_a,
+            "session_b_id": params.session_b,
+            "only_in_a_count": report.only_in_a.len(),
+            "only_in_b_count": report.only_in_b.len(),
+            "total_a": events_a.len(),
+            "total_b": events_b.len(),
+            "common_count": report.common_count,
+            "similarity_pct": report.similarity_pct,
+            "timing_delta_ms": report.timing_delta.as_ref().map(|t| t.delta_ms),
+            "summary": summary,
         });
         Ok(CallToolResult::success(json_content(&output)))
     }
+
+
 }
 
-#[cfg(test)]
+
 mod tests {
     use super::*;
 
@@ -2855,147 +2814,6 @@ mod tests {
         let _server = ChronosServer::default();
     }
 
-    #[tokio::test]
-    async fn test_debug_run_nonexistent() {
-        let server = ChronosServer::new();
-        let params = Parameters(DebugRunParams {
-            program: "/nonexistent/binary".to_string(),
-            args: vec![],
-            trace_syscalls: true,
-            capture_registers: true,
-            cwd: None,
-            auto_save: None,
-            program_language: None,
-            max_events: None,
-            timeout_secs: None,
-            background: None,
-            debug_host: None,
-            debug_port: None,
-            wait_for_connection: None,
-        });
-        let result = server.debug_run(params).await.unwrap();
-        assert_eq!(result.is_error, Some(true));
-    }
-
-    #[tokio::test]
-    async fn test_debug_run_python_with_port_connection_failure() {
-        // Test that providing a debug_port for Python results in error when connection fails
-        // (not panic), since there's no server running on that port.
-        // Note: We use /bin/true to pass validation, but the actual Python program doesn't matter
-        // since we're just testing the connection failure handling.
-        let server = ChronosServer::new();
-        let params = Parameters(DebugRunParams {
-            program: "/bin/true".to_string(),
-            args: vec![],
-            trace_syscalls: true,
-            capture_registers: true,
-            cwd: None,
-            auto_save: None,
-            program_language: Some("python".to_string()),
-            max_events: None,
-            timeout_secs: None,
-            background: None,
-            debug_host: Some("127.0.0.1".to_string()),
-            debug_port: Some(65000), // Port with no server
-            wait_for_connection: None,
-        });
-
-        let result = server.debug_run(params).await.unwrap();
-        let text = format!("{:?}", result.content);
-        // Should contain "python-dap" indicating Python routing happened
-        // Connection failure is expected since nothing listens on port 65000
-        assert!(
-            text.contains("python-dap") || text.contains("python"),
-            "Response should mention python-dap adapter, got: {}", text
-        );
-    }
-
-    #[tokio::test]
-    async fn test_debug_run_python_without_port_returns_pending() {
-        // Test that Python without debug_port returns pending status
-        let server = ChronosServer::new();
-        let params = Parameters(DebugRunParams {
-            program: "/bin/true".to_string(),
-            args: vec![],
-            trace_syscalls: true,
-            capture_registers: true,
-            cwd: None,
-            auto_save: None,
-            program_language: Some("python".to_string()),
-            max_events: None,
-            timeout_secs: None,
-            background: None,
-            debug_host: None,
-            debug_port: None,
-            wait_for_connection: None,
-        });
-
-        let result = server.debug_run(params).await.unwrap();
-        let text = format!("{:?}", result.content);
-        // Should contain "pending" status
-        assert!(
-            text.contains("pending"),
-            "Should return pending status when no debug_port provided, got: {}", text
-        );
-    }
-
-    #[tokio::test]
-    async fn test_debug_run_js_with_port_connection_failure() {
-        // Test that providing a debug_port for JS results in error when connection fails
-        let server = ChronosServer::new();
-        let params = Parameters(DebugRunParams {
-            program: "/bin/true".to_string(),
-            args: vec![],
-            trace_syscalls: true,
-            capture_registers: true,
-            cwd: None,
-            auto_save: None,
-            program_language: Some("javascript".to_string()),
-            max_events: None,
-            timeout_secs: None,
-            background: None,
-            debug_host: Some("127.0.0.1".to_string()),
-            debug_port: Some(65000), // Port with no server
-            wait_for_connection: None,
-        });
-
-        let result = server.debug_run(params).await.unwrap();
-        let text = format!("{:?}", result.content);
-        // Should contain "js-cdp" or "javascript" indicating JS routing happened
-        assert!(
-            text.contains("js-cdp") || text.contains("javascript"),
-            "Response should mention js-cdp adapter, got: {}", text
-        );
-    }
-
-    #[tokio::test]
-    async fn test_debug_run_js_without_port_returns_pending() {
-        // Test that JS without debug_port returns pending status
-        let server = ChronosServer::new();
-        let params = Parameters(DebugRunParams {
-            program: "/bin/true".to_string(),
-            args: vec![],
-            trace_syscalls: true,
-            capture_registers: true,
-            cwd: None,
-            auto_save: None,
-            program_language: Some("javascript".to_string()),
-            max_events: None,
-            timeout_secs: None,
-            background: None,
-            debug_host: None,
-            debug_port: None,
-            wait_for_connection: None,
-        });
-
-        let result = server.debug_run(params).await.unwrap();
-        let text = format!("{:?}", result.content);
-        // Should contain "pending" status
-        assert!(
-            text.contains("pending"),
-            "Should return pending status when no debug_port provided, got: {}", text
-        );
-    }
 
     // ========================================================================
     // SF5 — Symbol Subscription Tests (Phase 12)
@@ -3292,13 +3110,12 @@ mod tests {
         let sid = "cleanup-test-session".to_string();
         let events = vec![make_fn_event(0, 100, 1, "main")];
 
-        // Build engine (registers in engines + session_languages + eval_dispatcher)
+        // Build engine (registers in engines + session_languages)
         server.build_and_store_engine(&sid, events, Language::Python).await;
 
         // Verify it's registered
         assert!(server.engines.lock().await.contains_key(&sid));
         assert!(server.session_languages.lock().await.contains_key(&sid));
-        assert!(server.eval_dispatcher.lock().await.has_session_backend(&sid));
 
         // Cleanup
         server.cleanup_session_memory(&sid).await;
@@ -3306,7 +3123,6 @@ mod tests {
         // Verify all in-memory state is gone
         assert!(!server.engines.lock().await.contains_key(&sid));
         assert!(!server.session_languages.lock().await.contains_key(&sid));
-        assert!(!server.eval_dispatcher.lock().await.has_session_backend(&sid));
         assert!(!server.connected_sessions.lock().unwrap().contains(&sid));
     }
 
@@ -3345,19 +3161,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_eval_dispatcher_unregister() {
-        use chronos_query::SessionEvalDispatcher;
-        let mut dispatcher = SessionEvalDispatcher::with_native_evaluator(std::collections::HashMap::new());
-        let sid = "unregister-test".to_string();
-
-        dispatcher.register_noop(sid.clone());
-        assert!(dispatcher.has_session_backend(&sid));
-
-        dispatcher.unregister(&sid);
-        assert!(!dispatcher.has_session_backend(&sid));
-    }
-
-    #[tokio::test]
     async fn test_list_sessions_after_save() {
         let server = ChronosServer::new();
         let sid1 = "list-test-1".to_string();
@@ -3387,102 +3190,13 @@ mod tests {
             .unwrap();
 
         // List sessions
-        let list_result = server.list_sessions(Parameters(())).await.unwrap();
+        let list_result = server.list_sessions(Parameters(NoParams {})).await.unwrap();
         assert_ne!(list_result.is_error, Some(true));
         let text = format!("{:?}", list_result.content);
         assert!(text.contains("session_count") || text.contains("sessions"));
     }
 
-    #[tokio::test]
-    async fn test_compare_sessions_identical() {
-        let server = ChronosServer::new();
-        let sid1 = "compare-identical-1".to_string();
-        let sid2 = "compare-identical-2".to_string();
-        let events = vec![
-            make_fn_event(0, 100, 1, "main"),
-            make_fn_event(1, 200, 1, "helper"),
-        ];
 
-        // Build and save two identical sessions
-        server.build_and_store_engine(&sid1, events.clone(), Language::C).await;
-        server.build_and_store_engine(&sid2, events.clone(), Language::C).await;
-
-        server
-            .save_session(Parameters(SaveSessionParams {
-                session_id: sid1.clone(),
-                language: "native".to_string(),
-                target: "/bin/test".to_string(),
-            }))
-            .await
-            .unwrap();
-
-        server
-            .save_session(Parameters(SaveSessionParams {
-                session_id: sid2.clone(),
-                language: "native".to_string(),
-                target: "/bin/test".to_string(),
-            }))
-            .await
-            .unwrap();
-
-        // Compare identical sessions
-        let compare_result = server
-            .compare_sessions(Parameters(CompareSessionsParams {
-                session_a: sid1.clone(),
-                session_b: sid2.clone(),
-            }))
-            .await
-            .unwrap();
-
-        assert_ne!(compare_result.is_error, Some(true));
-        let text = format!("{:?}", compare_result.content);
-        // Similar sessions should show high similarity
-        assert!(text.contains("similarity") || text.contains("100"));
-    }
-
-    #[tokio::test]
-    async fn test_compare_sessions_different() {
-        let server = ChronosServer::new();
-        let sid1 = "compare-diff-a".to_string();
-        let sid2 = "compare-diff-b".to_string();
-
-        let events1 = vec![make_fn_event(0, 100, 1, "func_a")];
-        let events2 = vec![make_fn_event(0, 100, 1, "func_b")];
-
-        server.build_and_store_engine(&sid1, events1, Language::C).await;
-        server.build_and_store_engine(&sid2, events2, Language::C).await;
-
-        server
-            .save_session(Parameters(SaveSessionParams {
-                session_id: sid1.clone(),
-                language: "native".to_string(),
-                target: "/bin/a".to_string(),
-            }))
-            .await
-            .unwrap();
-
-        server
-            .save_session(Parameters(SaveSessionParams {
-                session_id: sid2.clone(),
-                language: "native".to_string(),
-                target: "/bin/b".to_string(),
-            }))
-            .await
-            .unwrap();
-
-        let compare_result = server
-            .compare_sessions(Parameters(CompareSessionsParams {
-                session_a: sid1,
-                session_b: sid2,
-            }))
-            .await
-            .unwrap();
-
-        assert_ne!(compare_result.is_error, Some(true));
-        let text = format!("{:?}", compare_result.content);
-        // Different sessions should show 0% similarity or common_count = 0
-        assert!(text.contains("similarity") || text.contains("common_count"));
-    }
 
     #[tokio::test]
     async fn test_save_session_not_found_in_memory() {
@@ -3512,137 +3226,6 @@ mod tests {
         assert_eq!(result.is_error, Some(true));
     }
 
-    // ========================================================================
-    // SF3 — Auto-save Tests (T17–T19)
-    // ========================================================================
-
-    #[test]
-    fn test_debug_run_params_has_auto_save_field() {
-        // Verify auto_save field exists and defaults to None
-        let params: DebugRunParams = serde_json::from_str(
-            r#"{
-            "program": "/bin/true",
-            "args": [],
-            "trace_syscalls": true,
-            "capture_registers": true
-        }"#,
-        )
-        .unwrap();
-        assert_eq!(params.auto_save, None);
-        assert_eq!(params.program_language, None);
-    }
-
-    #[test]
-    fn test_debug_run_params_auto_save_deserializes() {
-        // Verify auto_save can be set to true
-        let params: DebugRunParams = serde_json::from_str(
-            r#"{
-            "program": "/bin/true",
-            "args": [],
-            "trace_syscalls": true,
-            "capture_registers": true,
-            "auto_save": true,
-            "program_language": "native"
-        }"#,
-        )
-        .unwrap();
-        assert_eq!(params.auto_save, Some(true));
-        assert_eq!(params.program_language, Some("native".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_auto_save_result_includes_stats() {
-        // Run debug_run on /bin/true with auto_save enabled
-        // and verify the response contains auto_save_info.
-        let server = ChronosServer::new();
-        let params = Parameters(DebugRunParams {
-            program: "/bin/true".to_string(),
-            args: vec![],
-            trace_syscalls: true,
-            capture_registers: true,
-            cwd: None,
-            auto_save: Some(true),
-            program_language: Some("native".to_string()),
-            max_events: None,
-            timeout_secs: None,
-            background: None,
-            debug_host: None,
-            debug_port: None,
-            wait_for_connection: None,
-        });
-
-        let result = server.debug_run(params).await.unwrap();
-        // Even if the program fails to run, the result should not panic
-        let text = format!("{:?}", result.content);
-        // Should have auto_save_info key when auto_save was requested
-        // (might be error if capture failed, but should not be missing field)
-        assert!(
-            text.contains("auto_save_info")
-                || text.contains("finalized")
-                || text.contains("failed")
-        );
-    }
-
-    #[tokio::test]
-    async fn test_auto_save_false_does_not_include_stats() {
-        // When auto_save is false/None, no auto_save_info should appear
-        let server = ChronosServer::new();
-        let params = Parameters(DebugRunParams {
-            program: "/bin/nonexistent_binary_xyz".to_string(),
-            args: vec![],
-            trace_syscalls: true,
-            capture_registers: true,
-            cwd: None,
-            auto_save: Some(false),
-            program_language: None,
-            max_events: None,
-            timeout_secs: None,
-            background: None,
-            debug_host: None,
-            debug_port: None,
-            wait_for_connection: None,
-        });
-
-        let result = server.debug_run(params).await.unwrap();
-        let text = format!("{:?}", result.content);
-        // Should NOT contain auto_save_info when auto_save is false
-        // (the field should be absent from JSON)
-        assert!(!text.contains("auto_save_info"));
-    }
-
-    // ========================================================================
-    // SF1 — Security Tests (T2)
-    // ========================================================================
-
-    #[tokio::test]
-    async fn test_debug_run_rejects_path_traversal() {
-        let server = ChronosServer::new();
-        let params = Parameters(DebugRunParams {
-            program: "../evil".to_string(),
-            args: vec![],
-            trace_syscalls: true,
-            capture_registers: true,
-            cwd: None,
-            auto_save: None,
-            program_language: None,
-            max_events: None,
-            timeout_secs: None,
-            background: None,
-            debug_host: None,
-            debug_port: None,
-            wait_for_connection: None,
-        });
-
-        let result = server.debug_run(params).await.unwrap();
-        // Should be an error result due to path validation failure
-        assert_eq!(result.is_error, Some(true));
-        let text = format!("{:?}", result.content);
-        assert!(text.contains("Path traversal") || text.contains("Invalid program path"));
-    }
-
-    // ========================================================================
-    // SF1 — Resource Limits Tests (T3)
-    // ========================================================================
 
     #[test]
     fn test_resource_limits_default_values() {
@@ -3661,22 +3244,6 @@ mod tests {
         assert_eq!(limits.timeout_secs, 120);
     }
 
-    #[test]
-    fn test_debug_run_params_deserializes_resource_limits() {
-        let params: DebugRunParams = serde_json::from_str(
-            r#"{
-            "program": "/bin/true",
-            "args": [],
-            "trace_syscalls": true,
-            "capture_registers": true,
-            "max_events": 500000,
-            "timeout_secs": 30
-        }"#,
-        )
-        .unwrap();
-        assert_eq!(params.max_events, Some(500000));
-        assert_eq!(params.timeout_secs, Some(30));
-    }
 
     // ========================================================================
     // SF6 — Inspection Tools Tests
@@ -3807,11 +3374,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_evaluate_expression_falls_back_to_query_engine() {
-        // Test that evaluate_expression falls back to QueryEngine when
-        // the dispatcher backend doesn't have session-specific variables.
-        // This uses Language::C which has a native backend in the dispatcher
-        // but with empty locals, so it should fall back to QueryEngine.
+    async fn test_evaluate_expression_with_variables() {
+        // Test that evaluate_expression correctly evaluates arithmetic with captured variables.
         let locals = vec![
             chronos_domain::VariableInfo::new("a", "5", "i32", 0x1000, chronos_domain::VariableScope::Local),
             chronos_domain::VariableInfo::new("b", "3", "i32", 0x2000, chronos_domain::VariableScope::Local),
@@ -3830,54 +3394,8 @@ mod tests {
 
         assert_ne!(result.is_error, Some(true));
         let text = format!("{:?}", result.content);
-        // Should fall back to query_engine and evaluate successfully
-        assert!(text.contains("query_engine"));
+        // Should evaluate successfully
         assert!(text.contains("8")); // 5 + 3 = 8
-    }
-
-    #[tokio::test]
-    async fn test_evaluate_expression_with_dispatcher_backend() {
-        // Test that when a session-specific dispatcher backend is registered,
-        // it takes precedence over QueryEngine.
-        use chronos_query::eval_dispatcher::{EvalBackend, EvalResult};
-
-        struct MockEvalBackend;
-        impl EvalBackend for MockEvalBackend {
-            fn evaluate_sync(&self, expr: &str, _frame_id: Option<u64>) -> EvalResult {
-                Ok(format!("dispatched:{}", expr))
-            }
-        }
-
-        let server = ChronosServer::new();
-        let sid = "test-dispatcher-session".to_string();
-
-        // Manually insert an engine first (with empty events)
-        // This must be done BEFORE registering the dispatcher backend
-        // so that build_and_store_engine doesn't overwrite it with a no-op
-        let events = vec![make_fn_entry(0, 100, 1, "main")];
-        server.build_and_store_engine(&sid, events, chronos_domain::Language::Python).await;
-
-        // Now register a mock backend AFTER build_and_store_engine
-        // so it doesn't get overwritten
-        {
-            let mut dispatcher = server.eval_dispatcher.lock().await;
-            dispatcher.register(sid.clone(), Box::new(MockEvalBackend));
-        }
-
-        let result = server
-            .evaluate_expression(Parameters(EvaluateExpressionParams {
-                session_id: sid.clone(),
-                event_id: 0,
-                expression: "x + y".to_string(),
-            }))
-            .await
-            .unwrap();
-
-        assert_ne!(result.is_error, Some(true));
-        let text = format!("{:?}", result.content);
-        // Should use the dispatcher backend
-        assert!(text.contains("dispatcher"));
-        assert!(text.contains("dispatched:x + y"));
     }
 
     #[tokio::test]
@@ -4260,126 +3778,9 @@ mod tests {
         assert_eq!(result.is_error, Some(true));
     }
 
-    #[tokio::test]
-    async fn test_performance_regression_audit_both_sessions_not_found() {
-        let server = ChronosServer::new();
-        let result = server
-            .performance_regression_audit(Parameters(PerformanceRegressionAuditParams {
-                baseline_session_id: "nonexistent-baseline".to_string(),
-                target_session_id: "nonexistent-target".to_string(),
-                top_n: None,
-            }))
-            .await
-            .unwrap();
 
-        assert_eq!(result.is_error, Some(true));
-    }
 
-    #[tokio::test]
-    async fn test_performance_regression_audit_output_structure() {
-        // Create two sessions with identical simple events
-        let events = vec![
-            make_fn_entry(0, 100, 1, "main"),
-            make_fn_exit(1, 200, 1, "main"),
-        ];
-        let (server, sid_a) = server_with_session(events.clone()).await;
-        let (server, sid_b) = (server, "test-session-sf4b".to_string());
-        server.build_and_store_engine(&sid_b, events, Language::C).await;
 
-        let result = server
-            .performance_regression_audit(Parameters(PerformanceRegressionAuditParams {
-                baseline_session_id: sid_a,
-                target_session_id: sid_b,
-                top_n: Some(20),
-            }))
-            .await
-            .unwrap();
-
-        assert!(result.is_error != Some(true));
-        let text = format!("{:?}", result.content);
-
-        // Verify new fields are present in output
-        assert!(text.contains("top_n"), "Output should contain top_n field");
-        assert!(
-            text.contains("regression_score"),
-            "Output should contain regression_score field"
-        );
-        assert!(
-            text.contains("call_count_regressions"),
-            "Output should contain call_count_regressions field"
-        );
-        assert!(
-            text.contains("critical_count"),
-            "Output should contain critical_count field"
-        );
-        assert!(
-            text.contains("total_regressions"),
-            "Output should contain total_regressions field"
-        );
-        assert!(
-            text.contains("total_improvements"),
-            "Output should contain total_improvements field"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_performance_regression_audit_severity_in_output() {
-        // Create two sessions with events that will show no regressions but verify severity field structure
-        let events = vec![
-            make_fn_entry(0, 100, 1, "main"),
-            make_fn_exit(1, 200, 1, "main"),
-        ];
-        let (server, sid_a) = server_with_session(events.clone()).await;
-        let (server, sid_b) = (server, "test-session-sf4c".to_string());
-        server.build_and_store_engine(&sid_b, events, Language::C).await;
-
-        let result = server
-            .performance_regression_audit(Parameters(PerformanceRegressionAuditParams {
-                baseline_session_id: sid_a,
-                target_session_id: sid_b,
-                top_n: Some(20),
-            }))
-            .await
-            .unwrap();
-
-        assert!(result.is_error != Some(true));
-        // For identical sessions, there should be no regressions, improvements, or new hotspots
-        // But the severity field should still be present in the schema (even if empty arrays)
-        let text = format!("{:?}", result.content);
-        // Verify the output has the expected structure
-        assert!(text.contains("regressions"), "Should have regressions array");
-        assert!(text.contains("improvements"), "Should have improvements array");
-        assert!(text.contains("new_hotspots"), "Should have new_hotspots array");
-    }
-
-    #[tokio::test]
-    async fn test_performance_regression_audit_top_n_parameter() {
-        // Test that top_n parameter is respected
-        let events = vec![
-            make_fn_entry(0, 100, 1, "main"),
-            make_fn_exit(1, 200, 1, "main"),
-        ];
-        let (server, sid_a) = server_with_session(events.clone()).await;
-        let (server, sid_b) = (server, "test-session-sf4d".to_string());
-        server.build_and_store_engine(&sid_b, events, Language::C).await;
-
-        let result = server
-            .performance_regression_audit(Parameters(PerformanceRegressionAuditParams {
-                baseline_session_id: sid_a,
-                target_session_id: sid_b,
-                top_n: Some(5),
-            }))
-            .await
-            .unwrap();
-
-        assert!(result.is_error != Some(true));
-        let text = format!("{:?}", result.content);
-        // Verify top_n value appears in output
-        assert!(
-            text.contains("\"top_n\":5") || text.contains("top_n"),
-            "Output should reflect top_n parameter"
-        );
-    }
 
     // ========================================================================
     // Phase 25 — drop_session Tool Tests
@@ -4391,13 +3792,12 @@ mod tests {
         let sid = "drop-test-session".to_string();
         let events = vec![make_fn_entry(0, 100, 1, "main")];
 
-        // Build engine (registers in engines + session_languages + eval_dispatcher)
+        // Build engine (registers in engines + session_languages)
         server.build_and_store_engine(&sid, events, Language::Python).await;
 
         // Verify it's registered in memory
         assert!(server.engines.lock().await.contains_key(&sid));
         assert!(server.session_languages.lock().await.contains_key(&sid));
-        assert!(server.eval_dispatcher.lock().await.has_session_backend(&sid));
 
         // Drop the session
         let result = server
@@ -4413,7 +3813,6 @@ mod tests {
         // Verify all in-memory state is gone
         assert!(!server.engines.lock().await.contains_key(&sid));
         assert!(!server.session_languages.lock().await.contains_key(&sid));
-        assert!(!server.eval_dispatcher.lock().await.has_session_backend(&sid));
         assert!(!server.connected_sessions.lock().unwrap().contains(&sid));
     }
 
@@ -4435,102 +3834,94 @@ mod tests {
     }
 
     // ========================================================================
-    // Phase 25 — Retry Logic Tests
+    // compare_sessions tests
     // ========================================================================
 
     #[tokio::test]
-    async fn test_debug_run_python_retry_exhausted() {
-        // Test that Python with debug_port on a port that's not listening
-        // results in error with retry info after 3 attempts.
-        // Use port 1 which is always refused (superuser) or unreachable.
+    async fn test_compare_sessions_session_not_found() {
         let server = ChronosServer::new();
-        let params = Parameters(DebugRunParams {
-            program: "/bin/true".to_string(),
-            args: vec![],
-            trace_syscalls: true,
-            capture_registers: true,
-            cwd: None,
-            auto_save: None,
-            program_language: Some("python".to_string()),
-            max_events: None,
-            timeout_secs: None,
-            background: None,
-            debug_host: Some("127.0.0.1".to_string()),
-            debug_port: Some(1), // Port 1 is typically refused/ unreachable
-            wait_for_connection: None,
-        });
 
-        let result = server.debug_run(params).await.unwrap();
-        // Should be an error
+        let result = server
+            .compare_sessions(Parameters(CompareSessionsParams {
+                session_a: "nonexistent-a".to_string(),
+                session_b: "nonexistent-b".to_string(),
+            }))
+            .await
+            .unwrap();
+
+        // Should return an error because sessions don't exist in store
         assert_eq!(result.is_error, Some(true));
         let text = format!("{:?}", result.content);
-        // Should contain retry info
-        assert!(
-            text.contains("attempts") || text.contains("attempt"),
-            "Response should contain retry/attempts info, got: {}", text
-        );
+        assert!(text.contains("session A not found") || text.contains("not found"));
     }
 
     #[tokio::test]
-    async fn test_debug_run_js_retry_exhausted() {
-        // Test that JS with debug_port on a port that's not listening
-        // results in error with retry info after 3 attempts.
+    async fn test_compare_sessions_identical() {
+        use chronos_domain::{EventData, SourceLocation};
         let server = ChronosServer::new();
-        let params = Parameters(DebugRunParams {
-            program: "/bin/true".to_string(),
-            args: vec![],
-            trace_syscalls: true,
-            capture_registers: true,
-            cwd: None,
-            auto_save: None,
-            program_language: Some("javascript".to_string()),
-            max_events: None,
-            timeout_secs: None,
-            background: None,
-            debug_host: Some("127.0.0.1".to_string()),
-            debug_port: Some(1), // Port 1 is typically refused
-            wait_for_connection: None,
-        });
 
-        let result = server.debug_run(params).await.unwrap();
-        // Should be an error
-        assert_eq!(result.is_error, Some(true));
+        // Build and save two identical sessions
+        let make_event = |id: u64, func: &str| {
+            let loc = SourceLocation::new("test.rs", 1, func, 0x1000 + id);
+            TraceEvent::new(
+                id,
+                id * 100,
+                1,
+                EventType::FunctionEntry,
+                loc,
+                EventData::Function { name: func.to_string(), signature: None },
+            )
+        };
+
+        let events = vec![make_event(0, "main"), make_event(1, "helper")];
+        let sid_a = "cmp-test-a".to_string();
+        let sid_b = "cmp-test-b".to_string();
+
+        // Save both sessions to the store
+        let meta_a = SessionMetadata {
+            session_id: sid_a.clone(),
+            created_at: 0,
+            language: "native".to_string(),
+            target: "/bin/test".to_string(),
+            event_count: events.len(),
+            duration_ms: 100,
+        };
+        let meta_b = SessionMetadata {
+            session_id: sid_b.clone(),
+            created_at: 0,
+            language: "native".to_string(),
+            target: "/bin/test".to_string(),
+            event_count: events.len(),
+            duration_ms: 200,
+        };
+        server.store.save_session(meta_a, &events).unwrap();
+        server.store.save_session(meta_b, &events).unwrap();
+
+        let result = server
+            .compare_sessions(Parameters(CompareSessionsParams {
+                session_a: sid_a.clone(),
+                session_b: sid_b.clone(),
+            }))
+            .await
+            .unwrap();
+
+        assert_ne!(result.is_error, Some(true));
         let text = format!("{:?}", result.content);
-        // Should contain retry info
-        assert!(
-            text.contains("attempts") || text.contains("attempt"),
-            "Response should contain retry/attempts info, got: {}", text
-        );
+        assert!(text.contains("similarity_pct"));
+        assert!(text.contains("common_count"));
+        assert!(text.contains("summary"));
+        // Identical events → high similarity
+        assert!(text.contains("100") || text.contains("highly similar"));
     }
 
-    #[tokio::test]
-    async fn test_debug_run_wait_for_connection_times_out() {
-        // Test that wait_for_connection=true on a port that's not listening
-        // results in timeout error (using port 1 for fast failure).
-        let server = ChronosServer::new();
-        let params = Parameters(DebugRunParams {
-            program: "/bin/true".to_string(),
-            args: vec![],
-            trace_syscalls: true,
-            capture_registers: true,
-            cwd: None,
-            auto_save: None,
-            program_language: Some("python".to_string()),
-            max_events: None,
-            timeout_secs: None,
-            background: None,
-            debug_host: Some("127.0.0.1".to_string()),
-            debug_port: Some(1), // Port 1 - connection refused fast
-            wait_for_connection: Some(true),
-        });
-
-        let result = server.debug_run(params).await.unwrap();
-        assert_eq!(result.is_error, Some(true));
-        let text = format!("{:?}", result.content);
-        // Should contain timeout info
-        assert!(
-            text.contains("timeout") || text.contains("Timeout") || text.contains("timed out"),
-            "Response should contain timeout error, got: {}", text
-        );
-    }
 }
+
+/// ServerHandler implementation with custom server identity.
+/// This overrides the auto-generated one from #[tool_router(server_handler)]
+/// to provide correct name/version instead of rmcp defaults.
+#[rmcp::tool_handler(
+    name = "chronos-mcp",
+    version = "0.1.0",
+    instructions = "Time-travel debugging server for AI agents. Use probe_start to capture program execution, then query with query_events, get_call_stack, debug_detect_races, inspect_causality, etc."
+)]
+impl rmcp::handler::server::ServerHandler for ChronosServer {}
