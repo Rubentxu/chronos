@@ -13,7 +13,6 @@ use chronos_domain::{
     CaptureConfig, CaptureSession, Language, ProbeBackend, SourceLocation, TraceError,
     TraceEvent,
 };
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -32,8 +31,6 @@ pub struct NativeProbeBackend {
     running: Arc<AtomicBool>,
     /// Handle to the polling thread (if running).
     thread_handle: std::sync::Mutex<Option<thread::JoinHandle<()>>>,
-    /// Session ID to PID mapping for cleanup (used by stop_probe for PID tracking).
-    session_pids: std::sync::Arc<std::sync::Mutex<HashMap<String, u32>>>,
     /// The PID of the currently traced process (for stop_probe to kill).
     traced_pid: std::sync::Arc<std::sync::Mutex<Option<i32>>>,
 }
@@ -47,7 +44,6 @@ impl NativeProbeBackend {
             resolver_pipeline: ResolverPipeline::new(),
             running: Arc::new(AtomicBool::new(false)),
             thread_handle: std::sync::Mutex::new(None),
-            session_pids: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             traced_pid: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
@@ -121,13 +117,13 @@ impl NativeProbeBackend {
         };
 
         // Spawn background thread to run the event loop
-        running.store(true, Ordering::SeqCst);
-
         let target = config.target.clone();
         let args = config.args.clone();
 
         // Shared slot so the thread can publish its PID back for stop_probe to kill.
         let traced_pid_thread = self.traced_pid.clone();
+        // Clone for the closure - original `running` stays available for error handling
+        let running_clone = running.clone();
 
         let handle = thread::Builder::new()
             .name("chronos-native-probe".into())
@@ -136,7 +132,7 @@ impl NativeProbeBackend {
                     &target,
                     args,
                     &ptrace_config,
-                    &running,
+                    &running_clone,
                     symbol_resolver.as_ref(),
                     event_bus,
                     resolver_pipeline,
@@ -146,7 +142,13 @@ impl NativeProbeBackend {
                     },
                 );
             })
-            .map_err(|e| TraceError::CaptureFailed(format!("Failed to spawn probe thread: {}", e)))?;
+            .map_err(|e| {
+                // CRITICAL-1: Reset running flag on spawn failure
+                running.store(false, Ordering::SeqCst);
+                TraceError::CaptureFailed(format!("Failed to spawn probe thread: {}", e))
+            })?;
+
+        running.store(true, Ordering::SeqCst);
 
         // Store the handle - we need to get the PID first
         // Since the thread manages its own PID, we'll store a placeholder for now
@@ -156,9 +158,6 @@ impl NativeProbeBackend {
         // Build and return the session (non-blocking)
         // Note: PID will be 0 for spawned processes since the thread manages it
         let session = CaptureSession::new(0, language, config);
-
-        // Note: actual PID will be tracked via session_pids when the thread starts
-        // For now we return the session - the background thread has the real PID
 
         Ok(session)
     }
@@ -179,22 +178,35 @@ impl NativeProbeBackend {
             follow_children: true,
         };
 
-        // Spawn background thread to run the event loop in attach mode
-        running.store(true, Ordering::SeqCst);
+        // Shared slot so the thread can publish its PID back for stop_probe to kill.
+        let traced_pid_thread = self.traced_pid.clone();
+        let pid = pid; // shadow for use in closure
+        // Clone for the closure - original `running` stays available for error handling
+        let running_clone = running.clone();
 
+        // Spawn background thread to run the event loop in attach mode
         let handle = thread::Builder::new()
             .name("chronos-native-probe-attach".into())
             .spawn(move || {
+                // CRITICAL-2: Set traced_pid at START of thread (before attaching),
+                // since we know the PID upfront for attach.
+                *traced_pid_thread.lock().unwrap() = Some(pid as i32);
                 Self::run_probe_loop_attach(
                     pid,
                     &ptrace_config,
-                    &running,
+                    &running_clone,
                     event_bus,
                     resolver_pipeline,
                     language,
                 );
             })
-            .map_err(|e| TraceError::CaptureFailed(format!("Failed to spawn probe thread: {}", e)))?;
+            .map_err(|e| {
+                // CRITICAL-1: Reset running flag on spawn failure
+                running.store(false, Ordering::SeqCst);
+                TraceError::CaptureFailed(format!("Failed to spawn probe thread: {}", e))
+            })?;
+
+        running.store(true, Ordering::SeqCst);
 
         *self.thread_handle.lock().unwrap() = Some(handle);
 
@@ -213,8 +225,23 @@ impl NativeProbeBackend {
         // Signal the thread to stop
         self.running.store(false, Ordering::SeqCst);
 
+        // CRITICAL-3: Wait briefly for the thread to publish its PID (race window).
+        // The thread sets traced_pid at startup, but stop_probe may be called
+        // before that happens (~100ms window).
+        let pid_to_kill = {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(200);
+            loop {
+                if let Some(pid) = self.traced_pid.lock().unwrap().take() {
+                    break Some(pid);
+                }
+                if std::time::Instant::now() >= deadline {
+                    break None;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        };
+
         // Kill the traced process to interrupt blocking waitpid.
-        let pid_to_kill = self.traced_pid.lock().unwrap().take();
         if let Some(pid) = pid_to_kill {
             info!("Killing traced process PID {} to stop probe", pid);
             let _ = nix::sys::signal::kill(
@@ -253,31 +280,29 @@ impl NativeProbeBackend {
         on_pid_launched: impl FnOnce(i32),
     ) {
         Self::run_probe_loop(
-            Some((program_path, vec![])),
-            ptrace_config,
             program_path,
             args,
+            ptrace_config,
             running,
             symbol_resolver,
             event_bus,
             resolver_pipeline,
             language,
-            Some(on_pid_launched),
+            on_pid_launched,
         );
     }
 
     /// Internal: Run the probe event loop for a spawned process.
     fn run_probe_loop(
-        target: Option<(&str, Vec<String>)>,
-        ptrace_config: &PtraceConfig,
         program_path: &str,
         args: Vec<String>,
+        ptrace_config: &PtraceConfig,
         running: &Arc<AtomicBool>,
         symbol_resolver: Option<&SymbolResolver>,
         event_bus: EventBusHandle,
         resolver_pipeline: ResolverPipeline,
         _language: Language,
-        on_pid_launched: Option<impl FnOnce(i32)>,
+        on_pid_launched: impl FnOnce(i32),
     ) {
         let mut tracer = PtraceTracer::new(ptrace_config.clone());
         let adapter = NativeAdapter::new();
@@ -288,24 +313,15 @@ impl NativeProbeBackend {
         }
 
         // Launch the target process
-        let pid = match target {
-            Some(_) => {
-                match tracer.launch(PathBuf::from(program_path).as_path(), &args) {
-                    Ok(p) => {
-                        info!("Probe started for PID {}", p);
-                        // Notify caller of the launched PID so stop_probe can kill it.
-                        if let Some(cb) = on_pid_launched {
-                            cb(p);
-                        }
-                        p
-                    }
-                    Err(e) => {
-                        error!("Failed to launch {}: {}", program_path, e);
-                        return;
-                    }
-                }
+        let pid = match tracer.launch(PathBuf::from(program_path).as_path(), &args) {
+            Ok(p) => {
+                info!("Probe started for PID {}", p);
+                // Notify caller of the launched PID so stop_probe can kill it.
+                on_pid_launched(p);
+                p
             }
-            None => {
+            Err(e) => {
+                error!("Failed to launch {}: {}", program_path, e);
                 return;
             }
         };

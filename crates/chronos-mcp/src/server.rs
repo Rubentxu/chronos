@@ -106,7 +106,10 @@ pub struct ChronosServer {
     store: Arc<SessionStore>,
     /// Active background sessions: session_id → events vector.
     /// Tracks pending sessions that are still running in background threads.
-    /// Uses std::sync::Mutex because it is accessed from blocking threads.
+    /// Uses `std::sync::Mutex` (not tokio) intentionally: all lock holders are
+    /// sync, locks are held only for short non-blocking operations, and std Mutex
+    /// is faster than tokio Mutex for sub-microsecond critical sections.
+    /// INVARIANT: Never hold this lock across an `.await` point.
     background_sessions: Arc<std::sync::Mutex<HashMap<String, BackgroundSessionEvents>>>,
     /// Sessions with connected debug clients (Python debugpy or JS Node.js inspector).
     /// Used to track which sessions have active DAP/CDP connections.
@@ -677,7 +680,9 @@ impl ChronosServer {
     async fn cleanup_session_memory(&self, session_id: &str) {
         self.engines.lock().await.remove(session_id);
         self.session_languages.lock().await.remove(session_id);
-        self.connected_sessions.lock().unwrap().remove(session_id);
+        if let Ok(mut sessions) = self.connected_sessions.lock() {
+            sessions.remove(session_id);
+        }
     }
 
     async fn build_and_store_engine(&self, session_id: &str, events: Vec<TraceEvent>, language: Language) {
@@ -2290,6 +2295,8 @@ impl ChronosServer {
             language,
             target: params.program.clone(),
         };
+        // Insert first so the session is immediately queryable, then mark as active.
+        // Brief inconsistency window is benign in single-client MCP usage.
         self.live_probes
             .lock()
             .unwrap()
@@ -2341,6 +2348,7 @@ impl ChronosServer {
         // Drain final raw events from the bus (for QueryEngine)
         // Note: drain_events() returns SemanticEvent for LLM-facing tools,
         // but QueryEngine needs TraceEvent, so we use drain_raw_events()
+        // Order matters: drain BEFORE stop_probe to avoid losing events if stop has side effects.
         let events: Vec<TraceEvent> = live_probe.backend.drain_raw_events();
 
         // Stop the probe thread
@@ -2403,27 +2411,29 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        // Drain events from the backend's EventBus (non-destructive snapshot)
-        let mut probes = self.live_probes.lock().unwrap();
-        let live_probe = match probes.get_mut(&params.session_id) {
-            Some(lp) => lp,
-            None => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Live probe session '{}' not found.",
-                    params.session_id
-                ))))
+        // Narrow lock scope: extract events inside scoped block, then drop lock before processing.
+        // This avoids holding std::sync::Mutex across non-trivial event processing.
+        let events: Vec<SemanticEvent> = {
+            let mut probes = self.live_probes.lock().unwrap();
+            let live_probe = match probes.get_mut(&params.session_id) {
+                Some(lp) => lp,
+                None => {
+                    return Ok(CallToolResult::error(text_content(format!(
+                        "Live probe session '{}' not found.",
+                        params.session_id
+                    ))))
+                }
+            };
+            match live_probe.backend.drain_events() {
+                Ok(e) => e,
+                Err(e) => {
+                    return Ok(CallToolResult::error(text_content(format!(
+                        "Failed to drain events: {}",
+                        e
+                    ))))
+                }
             }
-        };
-
-        let events: Vec<SemanticEvent> = match live_probe.backend.drain_events() {
-            Ok(e) => e,
-            Err(e) => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Failed to drain events: {}",
-                    e
-                ))))
-            }
-        };
+        }; // lock dropped here — process events without holding mutex
 
         let total = events.len();
         // Apply offset/limit
@@ -2703,7 +2713,10 @@ impl ChronosServer {
             total_call_delta,
             summary,
         };
-        Ok(CallToolResult::success(json_content(&serde_json::to_value(result).unwrap())))
+        match serde_json::to_value(result) {
+            Ok(v) => Ok(CallToolResult::success(json_content(&v))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!("Serialization error: {}", e)))),
+        }
     }
 
     #[tool(

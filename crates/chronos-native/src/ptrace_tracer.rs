@@ -192,12 +192,10 @@ impl PtraceTracer {
                 }
 
                 // Request tracing by parent
-                ptrace::traceme()
-                    .map_err(|e| {
-                        eprintln!("chronos: PTRACE_TRACEME failed: {}", e);
-                        std::process::exit(1);
-                    })
-                    .ok();
+                if let Err(e) = ptrace::traceme() {
+                    eprintln!("chronos: PTRACE_TRACEME failed: {}", e);
+                    std::process::exit(1);
+                }
 
                 // Raise SIGSTOP so parent can set options before we exec
                 // Actually, PTRACE_TRACEME + exec will deliver SIGTRAP to parent
