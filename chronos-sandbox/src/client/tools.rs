@@ -81,10 +81,22 @@ impl McpSession {
     ///
     /// Sends `{"method": "probe_start", "params": {...}}` and returns the session_id.
     pub async fn probe_start(&mut self, target: &str) -> Result<String, McpSandboxError> {
+        self.probe_start_with_params(target, true, 50000).await
+    }
+
+    /// Probe start with custom parameters — begins capturing execution of a target program.
+    ///
+    /// This variant allows overriding trace_syscalls and bus_capacity for testing edge cases.
+    pub async fn probe_start_with_params(
+        &mut self,
+        program: &str,
+        trace_syscalls: bool,
+        bus_capacity: usize,
+    ) -> Result<String, McpSandboxError> {
         let params = serde_json::json!({
-            "program": target,
-            "trace_syscalls": true,
-            "bus_capacity": 50000
+            "program": program,
+            "trace_syscalls": trace_syscalls,
+            "bus_capacity": bus_capacity
         });
 
         let response = self.rpc_client.call_tool("probe_start", params).await?;
@@ -93,6 +105,22 @@ impl McpSession {
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
 
         Ok(result.session_id)
+    }
+
+    /// Probe start raw — returns the raw JSON response for edge case testing.
+    ///
+    /// Use this when you need to inspect the full response including error cases.
+    pub async fn probe_start_raw(
+        &mut self,
+        program: &str,
+    ) -> Result<serde_json::Value, McpSandboxError> {
+        let params = serde_json::json!({
+            "program": program,
+            "trace_syscalls": true,
+            "bus_capacity": 50000
+        });
+
+        self.rpc_client.call_tool("probe_start", params).await
     }
 
     /// Probe stop — ends a probe session.
@@ -123,6 +151,22 @@ impl McpSession {
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
 
         Ok(result.events)
+    }
+
+    /// Probe drain raw — returns the full ProbeDrainResponse for edge case inspection.
+    pub async fn probe_drain_raw(&mut self, session_id: &str) -> Result<ProbeDrainResponse, McpSandboxError> {
+        let params = serde_json::json!({
+            "session_id": session_id,
+            "limit": 1000,
+            "offset": 0
+        });
+
+        let response = self.rpc_client.call_tool("probe_drain", params).await?;
+
+        let result: ProbeDrainResponse = serde_json::from_value(response)
+            .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
+
+        Ok(result)
     }
 
     /// Probe inject — inject a uprobe into a running process.
@@ -494,10 +538,20 @@ impl McpSession {
         session_id: &str,
         name: &str,
     ) -> Result<SaveSessionResponse, McpSandboxError> {
+        self.save_session_with_language(session_id, "native", name).await
+    }
+
+    /// Save session with custom language tag — saves an in-memory session with specified language.
+    pub async fn save_session_with_language(
+        &mut self,
+        session_id: &str,
+        language: &str,
+        target: &str,
+    ) -> Result<SaveSessionResponse, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id,
-            "language": "native",
-            "target": name
+            "language": language,
+            "target": target
         });
 
         let response = self.rpc_client.call_tool("save_session", params).await?;

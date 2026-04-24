@@ -11,6 +11,10 @@ fn main() {
         "test_crash_thread",
         "test_fork",
         "test_many_threads",
+        "test_exit_immediate",
+        "test_divide_by_zero",
+        "test_abort",
+        "test_infinite_loop",
     ];
 
     for prog in &programs {
