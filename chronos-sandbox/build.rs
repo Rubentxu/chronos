@@ -7,6 +7,10 @@ fn main() {
         "test_busyloop",
         "test_segfault",
         "test_threads",
+        "test_clone",
+        "test_crash_thread",
+        "test_fork",
+        "test_many_threads",
     ];
 
     for prog in &programs {
