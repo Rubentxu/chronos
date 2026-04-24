@@ -14,3 +14,13 @@ thiserror = { workspace = true }
 memmap2 = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+
+# For perf_event_open syscall (optional - required for perf_counters feature)
+libc = { version = "0.2", optional = true }
+
+[features]
+default = []
+# Enable perf_event_open hardware counter support
+perf_counters = ["dep:libc"]
+# Enable ASLR-aware address normalization
+address_normalization = []

@@ -107,6 +107,9 @@ pub struct PtraceTracer {
     initialized: bool,
     /// Buffered events from a previous wait_event that produced multiple events.
     pending_events: Vec<PtraceEvent>,
+    /// Performance counter handles (feature-gated).
+    #[cfg(feature = "perf_counters")]
+    perf_handles: Vec<super::perf::PerfCounterHandle>,
 }
 
 impl PtraceTracer {
@@ -118,6 +121,8 @@ impl PtraceTracer {
             config,
             initialized: false,
             pending_events: Vec::new(),
+            #[cfg(feature = "perf_counters")]
+            perf_handles: Vec::new(),
         }
     }
 
@@ -287,21 +292,94 @@ impl PtraceTracer {
             return Ok(Some(self.pending_events.remove(0)));
         }
 
-        // Wait for any child (pid -1 means any)
-        let wait_flags = WaitPidFlag::__WALL;
-
-        let status = match waitpid(Pid::from_raw(-1), Some(wait_flags)) {
-            Ok(s) => s,
-            Err(nix::errno::Errno::ECHILD) => {
-                // No more children — all traced processes exited
-                info!("No more traced processes");
-                return Ok(None);
-            }
-            Err(e) => {
-                return Err(TraceError::CaptureFailed(format!("waitpid error: {}", e)));
+        // Wait for the specific main traced PID.
+        // This avoids issues with waitpid(-1, ...) potentially missing events
+        // when the child exits without generating ptrace stop events.
+        let pid = match self.main_pid {
+            Some(p) => p,
+            None => {
+                // Fallback: wait for any child with __WALL
+                let status = match waitpid(Pid::from_raw(-1), Some(WaitPidFlag::__WALL)) {
+                    Ok(s) => s,
+                    Err(nix::errno::Errno::ECHILD) => {
+                        info!("No more traced processes");
+                        return Ok(None);
+                    }
+                    Err(e) => {
+                        return Err(TraceError::CaptureFailed(format!("waitpid error: {}", e)));
+                    }
+                };
+                // Process the status inline
+                return self.process_wait_status_impl(status);
             }
         };
 
+        // Wait for the specific PID using non-blocking poll with timeout.
+        // This approach is more robust in environments where blocking waitpid
+        // may not return even when the child has exited.
+        eprintln!("[PTRACE DIAG] main_pid={:?}, pid={:?}, traced_pids={:?}",
+                 self.main_pid, pid, self.traced_pids);
+        
+        use nix::sys::signal::kill;
+        let start = std::time::Instant::now();
+        
+        let status = loop {
+            // Check if process still exists
+            let alive = kill(pid, None).is_ok();
+            if !alive {
+                eprintln!("[PTRACE DIAG] Process {} no longer exists", pid.as_raw());
+                return Ok(None);
+            }
+            
+            // Try to wait with WNOHANG
+            match waitpid(pid, Some(WaitPidFlag::WNOHANG)) {
+                Ok(s) if s == WaitStatus::StillAlive => {
+                    // Child still running or zombie - check timeout
+                    if start.elapsed().as_secs() > 5 {
+                        // Timeout! Try to continue the child with PTRACE_CONT.
+                        // If ESRCH (process already exited), try to reap with blocking waitpid.
+                        eprintln!("[PTRACE DIAG] waitpid timeout - forcing PTRACE_CONT");
+                        match ptrace::cont(pid, None) {
+                            Ok(()) => {
+                                // Child continued - wait for it to run
+                                std::thread::sleep(std::time::Duration::from_millis(100));
+                                continue;
+                            }
+                            Err(nix::errno::Errno::ESRCH) => {
+                                // ESRCH = no such process. The child exited (or pid was reused by a different
+                                // process). Since we can't reliably reap with the reused pid, just return.
+                                // The probe will stop naturally.
+                                eprintln!("[PTRACE DIAG] PTRACE_CONT ESRCH - child gone (exit or pid reuse), returning None");
+                                return Ok(None);
+                            }
+                            Err(e) => {
+                                eprintln!("[PTRACE DIAG] PTRACE_CONT failed: {:?}", e);
+                                return Ok(None);
+                            }
+                        }
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                Ok(s) => {
+                    eprintln!("[PTRACE DIAG] waitpid({}) WNOHANG returned: {:?}", pid, s);
+                    break s;
+                }
+                Err(nix::errno::Errno::ECHILD) => {
+                    eprintln!("[PTRACE DIAG] waitpid({}) ECHILD", pid.as_raw());
+                    return Ok(None);
+                }
+                Err(e) => {
+                    eprintln!("[PTRACE DIAG] waitpid({}) error: {}", pid.as_raw(), e);
+                    return Err(TraceError::CaptureFailed(format!("waitpid error: {}", e)));
+                }
+            }
+        };
+
+        self.process_wait_status_impl(status)
+    }
+
+    /// Process a wait status and convert it to a PtraceEvent.
+    fn process_wait_status_impl(&mut self, status: nix::sys::wait::WaitStatus) -> Result<Option<PtraceEvent>, TraceError> {
         let event = match status {
             WaitStatus::Stopped(pid, sig) => {
                 debug!("PID {} stopped by {:?}", pid, sig);
@@ -327,11 +405,10 @@ impl PtraceTracer {
                 if !self.traced_pids.contains(&pid_raw) {
                     debug!("New traced PID: {}", pid_raw);
                     self.traced_pids.insert(pid_raw);
-                    // Set up options for this new child too
                     let _ = self.setup_ptrace_options(pid);
                 }
 
-                // Buffer registers event if captured; will be returned on next wait_event() call
+                // Buffer registers event if captured
                 if let Some(re) = regs_event {
                     self.pending_events.push(re);
                 }
@@ -349,24 +426,16 @@ impl PtraceTracer {
                 } else {
                     None
                 };
-
-                // Determine if this is entry or exit by checking RAX
-                // On syscall entry, orig_rax has the syscall number
-                // On syscall exit, rax has the return value
-                // For simplicity, we toggle — first syscall stop is entry, next is exit
                 let syscall_nr = regs.as_ref().map(|r| r.rax).unwrap_or(0);
-
                 Some(PtraceEvent::Syscall {
                     pid: pid.as_raw(),
                     syscall_nr,
-                    is_entry: true, // simplified — would need state tracking for accuracy
+                    is_entry: true,
                 })
             }
 
             WaitStatus::PtraceEvent(pid, _sig, event_code) => {
                 debug!("PID {} ptrace event {}", pid, event_code);
-
-                // For clone/fork/vfork events, retrieve the new child PID
                 let new_pid = if matches!(
                     event_code,
                     nix::libc::PTRACE_EVENT_CLONE
@@ -375,14 +444,9 @@ impl PtraceTracer {
                 ) {
                     match ptrace::getevent(pid) {
                         Ok(data) => {
-                            // getevent returns unsigned long; the new child PID
-                            // is stored in the lower 32 bits for clone/fork events
                             let child_pid = data as i32;
                             if child_pid > 0 {
-                                debug!(
-                                    "PID {} created new child PID {} (event {})",
-                                    pid, child_pid, event_code
-                                );
+                                debug!("PID {} created new child PID {} (event {})", pid, child_pid, event_code);
                                 self.traced_pids.insert(child_pid);
                             }
                             Some(child_pid)
@@ -395,7 +459,6 @@ impl PtraceTracer {
                 } else {
                     None
                 };
-
                 Some(PtraceEvent::PtraceEvent {
                     pid: pid.as_raw(),
                     event_code,
@@ -434,8 +497,9 @@ impl PtraceTracer {
 
     /// Continue execution of a traced process.
     pub fn continue_execution(&self, pid: i32) -> Result<(), TraceError> {
-        ptrace::cont(Pid::from_raw(pid), None)
-            .map_err(|e| TraceError::CaptureFailed(format!("PTRACE_CONT failed: {}", e)))
+        let result = ptrace::cont(Pid::from_raw(pid), None);
+        eprintln!("[PTRACE DIAG] PTRACE_CONT({}) result: {:?}", pid, result);
+        result.map_err(|e| TraceError::CaptureFailed(format!("PTRACE_CONT failed: {}", e)))
     }
 
     /// Continue execution, delivering a specific signal.
@@ -481,6 +545,117 @@ impl PtraceTracer {
             rip: regs.rip,
             rflags: regs.eflags,
         })
+    }
+
+    /// Open performance counter file descriptors for the traced process.
+    ///
+    /// This is called automatically during `launch()` when the `perf_counters`
+    /// feature is enabled. Opens HW_CPU_CYCLES and HW_INSTRUCTIONS counters.
+    #[cfg(feature = "perf_counters")]
+    pub fn open_perf_counters(&mut self, pid: Pid) -> Result<(), TraceError> {
+        use super::perf::{PerfCounterConfig, PerfCounterType};
+
+        // Open cycle counter
+        let cycle_config = PerfCounterConfig::new(PerfCounterType::Cycle);
+        match self.open_single_counter(pid, cycle_config) {
+            Ok(handle) => {
+                debug!("Opened perf counter for cycles");
+                self.perf_handles.push(handle);
+            }
+            Err(e) => {
+                warn!("Failed to open cycle counter (perf_event_open unavailable): {}", e);
+                // Continue without counters - graceful degradation
+            }
+        }
+
+        // Open instruction counter
+        let instr_config = PerfCounterConfig::new(PerfCounterType::Instruction);
+        match self.open_single_counter(pid, instr_config) {
+            Ok(handle) => {
+                debug!("Opened perf counter for instructions");
+                self.perf_handles.push(handle);
+            }
+            Err(e) => {
+                warn!("Failed to open instruction counter: {}", e);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Open a single perf counter for a PID.
+    #[cfg(feature = "perf_counters")]
+    fn open_single_counter(
+        &mut self,
+        pid: Pid,
+        config: super::perf::PerfCounterConfig,
+    ) -> Result<super::perf::PerfCounterHandle, TraceError> {
+        use super::perf::counters::{perf_event_open, PERF_HW_BRANCH_MISSES, PERF_HW_CACHE_MISSES,
+            PERF_HW_CPU_CYCLES, PERF_TYPE_HARDWARE, PERF_TYPE_SOFTWARE, PERF_SW_CPU_CLOCK, PerfCounterType};
+
+        let (type_, config_val) = match config.counter_type {
+            PerfCounterType::Cycle => (
+                PERF_TYPE_HARDWARE,
+                PERF_HW_CPU_CYCLES,
+            ),
+            PerfCounterType::Instruction => (
+                PERF_TYPE_SOFTWARE,
+                PERF_SW_CPU_CLOCK, // Software clock for instruction counting approximation
+            ),
+            PerfCounterType::CacheMiss => (
+                PERF_TYPE_HARDWARE,
+                PERF_HW_CACHE_MISSES,
+            ),
+            PerfCounterType::BranchMiss => (
+                PERF_TYPE_HARDWARE,
+                PERF_HW_BRANCH_MISSES,
+            ),
+        };
+
+        let fd = perf_event_open(type_, config_val, pid.as_raw(), -1, None)
+            .map_err(|e| TraceError::CaptureFailed(format!("perf_event_open failed: {}", e)))?;
+
+        Ok(super::perf::PerfCounterHandle::from_fd(fd, config.counter_type))
+    }
+
+    /// Read all performance counters and return a snapshot.
+    ///
+    /// Returns a snapshot with all counter values, or `None` if counters
+    /// could not be read (e.g., counters were not opened due to permission denied).
+    #[cfg(feature = "perf_counters")]
+    pub fn read_perf_counters(&self) -> Result<super::perf::PerfCountersSnapshot, TraceError> {
+        use super::perf::PerfCountersSnapshot;
+
+        let mut cycles = None;
+        let mut instructions = None;
+
+        for handle in &self.perf_handles {
+            match handle.read() {
+                Ok(value) => {
+                    match handle.counter_type() {
+                        super::perf::PerfCounterType::Cycle => cycles = Some(value),
+                        super::perf::PerfCounterType::Instruction => instructions = Some(value),
+                        _ => {}
+                    }
+                }
+                Err(e) => {
+                    debug!("Failed to read perf counter: {}", e);
+                }
+            }
+        }
+
+        Ok(PerfCountersSnapshot {
+            cycles,
+            instructions,
+            cache_misses: None,
+            branch_misses: None,
+        })
+    }
+
+    /// Check if performance counters are available.
+    #[cfg(feature = "perf_counters")]
+    pub fn has_perf_counters(&self) -> bool {
+        !self.perf_handles.is_empty()
     }
 
     /// Detach from a traced process, allowing it to continue freely.

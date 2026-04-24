@@ -13,10 +13,12 @@ use tracing_subscriber::EnvFilter;
 #[tokio::main]
 async fn main() {
     // Initialize logging with env filter (RUST_LOG=info by default)
+    // Write logs to stderr so stdout is clean for JSON-RPC communication
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
+        .with_writer(std::io::stderr)
         .init();
 
     tracing::info!("Starting Chronos MCP Server v{}", env!("CARGO_PKG_VERSION"));

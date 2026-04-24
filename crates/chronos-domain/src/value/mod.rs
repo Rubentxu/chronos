@@ -2,4 +2,4 @@
 
 mod typed;
 
-pub use typed::{TypedValue, VariableInfo, VariableScope};
+pub use typed::{DwarfValue, RegisterSnapshot, TypedValue, VariableInfo, VariableScope};

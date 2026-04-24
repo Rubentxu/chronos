@@ -30,4 +30,4 @@ pub use trace::{
     Language, PythonEventKind, RegisterState, RuntimeInfo, SessionState, SourceLocation,
     StackFrame, ThreadInfo, ThreadState, TraceEvent,
 };
-pub use value::{TypedValue, VariableInfo, VariableScope};
+pub use value::{DwarfValue, RegisterSnapshot, TypedValue, VariableInfo, VariableScope};

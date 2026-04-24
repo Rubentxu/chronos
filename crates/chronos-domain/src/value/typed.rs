@@ -1,6 +1,7 @@
 //! Variable types and scopes.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Scope of a variable.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -126,6 +127,108 @@ impl TypedValue {
             is_null: false,
             members: Some(members),
         }
+    }
+}
+
+/// A DWARF location expression result.
+///
+/// Represents where a variable is located: in a register, in memory,
+/// or as an immediate value.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum DwarfValue {
+    /// Variable lives in a named register.
+    Register(String),
+    /// Variable lives at a memory address.
+    Memory { address: u64, size: u32 },
+    /// Immediate value (constant).
+    Immediate(i64),
+}
+
+impl DwarfValue {
+    /// Get the memory address if this is a memory location.
+    pub fn memory_address(&self) -> Option<u64> {
+        match self {
+            DwarfValue::Memory { address, .. } => Some(*address),
+            _ => None,
+        }
+    }
+
+    /// Get the register name if this is a register location.
+    pub fn register_name(&self) -> Option<&str> {
+        match self {
+            DwarfValue::Register(name) => Some(name),
+            _ => None,
+        }
+    }
+
+    /// Get the immediate value if this is an immediate.
+    pub fn immediate(&self) -> Option<i64> {
+        match self {
+            DwarfValue::Immediate(val) => Some(*val),
+            _ => None,
+        }
+    }
+
+    /// Format as a string for display.
+    pub fn format(&self) -> String {
+        match self {
+            DwarfValue::Register(name) => format!("register({})", name),
+            DwarfValue::Memory { address, size } => format!("memory(0x{:x}, {} bytes)", address, size),
+            DwarfValue::Immediate(val) => format!("immediate({})", val),
+        }
+    }
+}
+
+/// A snapshot of register values at a point in time.
+///
+/// Used by the DWARF location evaluator to resolve variables.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RegisterSnapshot {
+    /// Program counter (instruction pointer).
+    pub pc: u64,
+    /// Stack pointer.
+    pub sp: u64,
+    /// Frame pointer.
+    pub fp: u64,
+    /// General-purpose registers (name → value).
+    pub regs: HashMap<String, u64>,
+}
+
+impl RegisterSnapshot {
+    /// Create a new register snapshot.
+    pub fn new(pc: u64, sp: u64, fp: u64) -> Self {
+        Self {
+            pc,
+            sp,
+            fp,
+            regs: HashMap::new(),
+        }
+    }
+
+    /// Add a register value.
+    pub fn with_reg(mut self, name: impl Into<String>, value: u64) -> Self {
+        self.regs.insert(name.into(), value);
+        self
+    }
+
+    /// Get a register value by name.
+    pub fn get(&self, name: &str) -> Option<u64> {
+        self.regs.get(name).copied()
+    }
+
+    /// Get the program counter.
+    pub fn pc(&self) -> u64 {
+        self.pc
+    }
+
+    /// Get the stack pointer.
+    pub fn sp(&self) -> u64 {
+        self.sp
+    }
+
+    /// Get the frame pointer.
+    pub fn fp(&self) -> u64 {
+        self.fp
     }
 }
 

@@ -10,6 +10,12 @@ thiserror = { workspace = true }
 serde = { workspace = true }
 uuid = { workspace = true }
 schemars = { workspace = true }
+url = { workspace = true }
+reqwest = { workspace = true, features = ["json"], optional = true }
+
+[features]
+default = []
+webhook = ["dep:reqwest"]
 
 [dev-dependencies]
 serde_json = { workspace = true }

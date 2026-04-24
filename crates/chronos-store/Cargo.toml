@@ -14,6 +14,13 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 bincode = { workspace = true }
 
+# For address normalization (optional)
+chronos-native = { path = "../chronos-native", optional = true }
+
+[features]
+default = []
+address_normalization = ["dep:chronos-native"]
+
 [dev-dependencies]
 tempfile = "3"
 tokio = { workspace = true, features = ["rt", "macros"] }

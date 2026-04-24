@@ -2,8 +2,13 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use thiserror::Error;
 
 use crate::{EventData, EventType, TraceEvent};
+
+// Webhook delivery module
+#[cfg(feature = "webhook")]
+pub mod webhook;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct TripwireId(pub u64);
@@ -109,6 +114,113 @@ impl Tripwire {
             thread_id: event.thread_id,
         }
     }
+}
+
+/// A tripwire subscription with optional webhook callback.
+///
+/// Represents a registered tripwire with its delivery configuration.
+#[derive(Debug, Clone)]
+pub struct TripwireSubscription {
+    /// Unique identifier for this tripwire.
+    pub id: TripwireId,
+    /// The condition that triggers this tripwire.
+    pub condition: TripwireCondition,
+    /// Optional label for human readability.
+    pub label: Option<String>,
+    /// Optional callback URL for webhook delivery.
+    /// If `None`, the tripwire operates in polling mode.
+    pub callback_url: Option<url::Url>,
+    /// When this subscription was created.
+    pub created_at: std::time::SystemTime,
+    /// Number of times this tripwire has fired.
+    pub fire_count: u64,
+}
+
+impl TripwireSubscription {
+    /// Create a new subscription.
+    pub fn new(
+        condition: TripwireCondition,
+        callback_url: Option<url::Url>,
+    ) -> Self {
+        Self {
+            id: next_tripwire_id(),
+            condition,
+            label: None,
+            callback_url,
+            created_at: std::time::SystemTime::now(),
+            fire_count: 0,
+        }
+    }
+
+    /// Create a new subscription with a label.
+    pub fn with_label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    /// Check if this subscription has a webhook callback.
+    pub fn has_webhook(&self) -> bool {
+        self.callback_url.is_some()
+    }
+
+    /// Get the callback URL if set.
+    pub fn callback_url(&self) -> Option<&url::Url> {
+        self.callback_url.as_ref()
+    }
+
+    /// Check if a trace event matches this subscription's condition.
+    pub fn matches(&self, event: &TraceEvent) -> bool {
+        self.condition.matches(event)
+    }
+
+    /// Create a `TripwireFired` event for this subscription.
+    pub fn fire(&self, event: &TraceEvent) -> TripwireFired {
+        TripwireFired {
+            tripwire_id: self.id,
+            condition_description: format!("{:?}", self.condition),
+            event_id: event.event_id,
+            timestamp_ns: event.timestamp_ns,
+            thread_id: event.thread_id,
+        }
+    }
+}
+
+/// Errors that can occur during tripwire operations.
+#[derive(Debug, Error)]
+pub enum TripwireError {
+    #[error("Invalid callback URL: must use https://")]
+    InvalidCallbackUrl,
+
+    #[error("Port numbers not allowed in callback URL")]
+    UrlPortNotAllowed,
+
+    #[error("Webhook delivery failed after 3 attempts")]
+    DeliveryFailed,
+
+    #[error("URL parse error: {0}")]
+    UrlParseError(String),
+}
+
+/// Validate a callback URL for webhook delivery.
+///
+/// Returns `Ok(Url)` if valid, `Err(TripwireError)` otherwise.
+///
+/// Validation rules:
+/// - Must use HTTPS scheme
+/// - Must not have a port number
+pub fn validate_callback_url(url_str: &str) -> Result<url::Url, TripwireError> {
+    let parsed = url::Url::parse(url_str)
+        .map_err(|e| TripwireError::UrlParseError(e.to_string()))?;
+
+    if parsed.scheme() != "https" {
+        return Err(TripwireError::InvalidCallbackUrl);
+    }
+
+    if parsed.port().is_some() {
+        return Err(TripwireError::UrlPortNotAllowed);
+    }
+
+    Ok(parsed)
 }
 
 #[derive(Debug, Default)]

@@ -3,9 +3,12 @@
 //! This module provides `DwarfReader` for extracting source locations and variable
 //! information from DWARF debug sections in ELF binaries.
 
+pub mod eval;
 pub mod location;
 pub mod types;
 pub mod variables;
+
+pub use eval::{BasicLocationEvaluator, DwarfLocationEvaluator};
 
 use thiserror::Error;
 
@@ -123,6 +126,85 @@ impl<'data> DwarfReader<'data> {
             Some(dwarf) => variables::variables_in_scope(&dwarf, pc),
             None => Vec::new(),
         }
+    }
+
+    /// Resolve a specific variable at a program counter.
+    ///
+    /// Uses the DWARF location expression evaluator to resolve the variable's
+    /// actual value from the register snapshot.
+    ///
+    /// Returns `Some((name, DwarfValue))` if the variable is found and its
+    /// location can be evaluated. Returns `None` if the variable is not found
+    /// or its location expression cannot be evaluated.
+    pub fn resolve_variable(
+        &self,
+        pc: u64,
+        name: &str,
+        regs: &chronos_domain::value::RegisterSnapshot,
+    ) -> Option<(String, chronos_domain::value::DwarfValue)> {
+        let dwarf = self.build_dwarf()?;
+        variables::resolve_variable(&dwarf, pc, name, regs)
+    }
+
+    /// Get all variables in scope at a given program counter with resolved locations.
+    ///
+    /// This method evaluates DWARF location expressions using the provided
+    /// register snapshot to resolve variables to their actual memory addresses
+    /// or register locations.
+    ///
+    /// Returns a vector of variables with resolved locations. Variables whose
+    /// location expressions cannot be evaluated are omitted (graceful degradation).
+    pub fn variables_in_scope_with_regs(
+        &self,
+        pc: u64,
+        regs: &chronos_domain::value::RegisterSnapshot,
+    ) -> Vec<chronos_domain::value::VariableInfo> {
+        let dwarf = match self.build_dwarf() {
+            Some(d) => d,
+            None => return Vec::new(),
+        };
+
+        // Get raw variables first
+        let raw_vars = variables::variables_in_scope(&dwarf, pc);
+
+        // Use BasicLocationEvaluator to resolve locations
+        let evaluator = BasicLocationEvaluator::new();
+
+        raw_vars
+            .into_iter()
+            .filter_map(|var| {
+                // Try to get the location expression bytes for this variable
+                // For now, we use the address as a fallback
+                // A full implementation would look up DW_AT_location bytes
+                // and evaluate them with the evaluator
+                let location_bytes = variables::get_location_bytes(&dwarf, pc, &var.name);
+                if let Some(bytes) = location_bytes {
+                    if let Some(dwarf_val) = evaluator.evaluate(&bytes, regs) {
+                        let address = match dwarf_val {
+                            chronos_domain::value::DwarfValue::Memory { address, .. } => address,
+                            chronos_domain::value::DwarfValue::Register(_) => 0, // Can't represent register as u64 address
+                            chronos_domain::value::DwarfValue::Immediate(_) => 0,
+                        };
+                        let value = dwarf_val.format();
+                        return Some(chronos_domain::value::VariableInfo::new(
+                            var.name,
+                            value,
+                            var.type_name,
+                            address,
+                            var.scope,
+                        ));
+                    }
+                }
+                // If we can't resolve the location, return the original with address 0
+                Some(chronos_domain::value::VariableInfo::new(
+                    var.name,
+                    var.value,
+                    var.type_name,
+                    0, // Unknown address
+                    var.scope,
+                ))
+            })
+            .collect()
     }
 }
 

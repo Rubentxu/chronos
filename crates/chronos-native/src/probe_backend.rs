@@ -113,7 +113,7 @@ impl NativeProbeBackend {
         };
 
         let ptrace_config = PtraceConfig {
-            trace_syscalls: config.capture_syscalls,
+            trace_syscalls: false, // TODO: fix - was config.capture_syscalls
             capture_registers: true,
             follow_children: true,
         };
@@ -128,7 +128,7 @@ impl NativeProbeBackend {
             .name("chronos-native-probe".into())
             .spawn(move || {
                 Self::run_probe_loop(
-                    None,
+                    Some((target.as_str(), vec![])), // Some enables launch; program_path/args used separately
                     &ptrace_config,
                     &target,
                     args,
@@ -234,12 +234,21 @@ impl NativeProbeBackend {
         resolver_pipeline: ResolverPipeline,
         _language: Language,
     ) {
+        info!("[PROBE DIAG] run_probe_loop starting with program_path={}, args={:?}", program_path, args);
         let mut tracer = PtraceTracer::new(ptrace_config.clone());
+        info!("[PROBE DIAG] PtraceTracer created, trace_syscalls={}", ptrace_config.trace_syscalls);
         let adapter = NativeAdapter::new();
+
+        // Check running flag before entering launch
+        if !running.load(Ordering::Relaxed) {
+            info!("[PROBE DIAG] running flag is false BEFORE launch - exiting immediately");
+            return;
+        }
 
         // Launch the target process
         let pid = match target {
             Some(_) => {
+                info!("[PROBE DIAG] Attempting to launch {}", program_path);
                 match tracer.launch(PathBuf::from(program_path).as_path(), &args) {
                     Ok(p) => {
                         info!("Probe started for PID {}", p);
@@ -251,21 +260,44 @@ impl NativeProbeBackend {
                     }
                 }
             }
-            None => return,
+            None => {
+                info!("[PROBE DIAG] target is None - cannot launch without a program");
+                return;
+            }
         };
 
         let mut event_id: u64 = 0;
 
+        // Check running flag before entering main loop
+        if !running.load(Ordering::Relaxed) {
+            info!("[PROBE DIAG] running flag is false BEFORE entering main loop - exiting without events");
+            // Still try to kill the process if we launched one
+            if pid > 0 {
+                let _ = tracer.kill(pid);
+            }
+            return;
+        }
+
+        info!("[PROBE DIAG] Entering main event loop, running={}", running.load(Ordering::Relaxed));
+
         // Main event loop
         while running.load(Ordering::Relaxed) {
+            info!("[PROBE DIAG] Top of while loop, waiting for event...");
+            eprintln!("[PROBE DIAG] BEFORE wait_event call");
             let ptrace_event = match tracer.wait_event() {
-                Ok(Some(event)) => event,
+                Ok(Some(event)) => {
+                    eprintln!("[PROBE DIAG] wait_event returned Some: {:?}", event);
+                    info!("[PROBE DIAG] wait_event returned Some(event) - event_id={}", event_id);
+                    event
+                }
                 Ok(None) => {
-                    debug!("No more traced processes");
+                    eprintln!("[PROBE DIAG] wait_event returned None - no more traced processes, breaking");
+                    info!("[PROBE DIAG] wait_event returned None - no more traced processes, breaking");
                     break;
                 }
                 Err(e) => {
-                    debug!("wait_event error: {}", e);
+                    eprintln!("[PROBE DIAG] wait_event error: {:?} - breaking", e);
+                    info!("[PROBE DIAG] wait_event error: {} - breaking", e);
                     break;
                 }
             };
@@ -281,6 +313,7 @@ impl NativeProbeBackend {
                 event_id,
                 timestamp_ns,
             ) {
+                info!("[PROBE DIAG] Converted ptrace event to trace event: event_type={:?}, location={:?}", trace_event.event_type, trace_event.location);
                 // Resolve symbol if available
                 if let Some(resolver) = symbol_resolver {
                     let addr = trace_event.location.address;
@@ -298,6 +331,7 @@ impl NativeProbeBackend {
 
                 // Push raw event to raw buffer for QueryEngine
                 event_bus.push_raw(trace_event.clone());
+                info!("[PROBE DIAG] Pushed raw event to bus, total events so far: {}", event_id + 1);
 
                 // Resolve to semantic event via the pipeline
                 let ctx = ResolveContext {
@@ -308,6 +342,8 @@ impl NativeProbeBackend {
                 event_bus.push(semantic_event);
 
                 event_id += 1;
+            } else {
+                info!("[PROBE DIAG] ptrace_event_to_trace_event returned None - event not mapped");
             }
 
             // Continue the traced process

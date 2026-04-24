@@ -23,6 +23,14 @@ pub struct DiffReport {
     pub similarity_pct: f64,
     /// Timing delta between sessions, if computable.
     pub timing_delta: Option<TimingDelta>,
+    /// Normalized hash (when address normalization is enabled).
+    pub normalized_hash: Option<String>,
+    /// Number of addresses that were successfully normalized.
+    pub addresses_normalized: usize,
+    /// Number of addresses that could not be normalized.
+    pub addresses_raw: usize,
+    /// Warnings about normalization failures.
+    pub warnings: Vec<String>,
 }
 
 /// Timing comparison between two sessions.
@@ -45,12 +53,200 @@ pub struct TimingDelta {
 /// enabling efficient deduplication-aware comparison.
 pub struct TraceDiff;
 
+/// Address normalizer trait for ASLR-aware comparison.
+#[cfg(feature = "address_normalization")]
+pub trait AddressNormalizer: Send + Sync {
+    /// Normalize an address to symbol+offset form.
+    fn normalize(&self, pc: u64, binary_path: &std::path::Path) -> Option<SymbolOffset>;
+}
+
+/// Symbol offset representation.
+#[cfg(feature = "address_normalization")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SymbolOffset {
+    pub symbol_name: String,
+    pub offset: u64,
+}
+
+/// Normalized address result.
+#[cfg(feature = "address_normalization")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct NormalizedAddress(pub u64, pub Option<String>);
+
 impl TraceDiff {
     /// Compare two sets of events using BLAKE3 hash-based symmetric difference.
     ///
     /// Events are hashed and compared as sets. Events present in both = common.
     /// Events in only one = difference.
+    ///
+    /// If `normalizer` is provided and the `address_normalization` feature is enabled,
+    /// addresses are normalized to symbol+offset form before hashing, enabling
+    /// consistent comparison across ASLR-enabled processes.
+    #[cfg(feature = "address_normalization")]
+    pub fn compare<N: AddressNormalizer>(
+        session_a_id: &str,
+        session_b_id: &str,
+        events_a: &[TraceEvent],
+        events_b: &[TraceEvent],
+        meta_a: &SessionMetadata,
+        meta_b: &SessionMetadata,
+        normalizer: Option<&N>,
+    ) -> DiffReport {
+        Self::compare_impl(
+            session_a_id,
+            session_b_id,
+            events_a,
+            events_b,
+            meta_a,
+            meta_b,
+            normalizer,
+        )
+    }
+
+    /// Implementation without generic normalizer parameter for non-feature-gated build.
+    #[cfg(not(feature = "address_normalization"))]
     pub fn compare(
+        session_a_id: &str,
+        session_b_id: &str,
+        events_a: &[TraceEvent],
+        events_b: &[TraceEvent],
+        meta_a: &SessionMetadata,
+        meta_b: &SessionMetadata,
+    ) -> DiffReport {
+        Self::compare_impl(
+            session_a_id,
+            session_b_id,
+            events_a,
+            events_b,
+            meta_a,
+            meta_b,
+        )
+    }
+
+    /// Core compare implementation.
+    #[cfg(feature = "address_normalization")]
+    fn compare_impl<N: AddressNormalizer>(
+        session_a_id: &str,
+        session_b_id: &str,
+        events_a: &[TraceEvent],
+        events_b: &[TraceEvent],
+        meta_a: &SessionMetadata,
+        meta_b: &SessionMetadata,
+        normalizer: Option<&N>,
+    ) -> DiffReport {
+        let mut warnings = Vec::new();
+        let mut addresses_normalized = 0usize;
+        let mut addresses_raw = 0usize;
+
+        // Hash all events, optionally with normalization
+        let hashes_a: std::collections::HashSet<String> = events_a
+            .iter()
+            .map(|e| {
+                let hash = if let Some(n) = normalizer {
+                    hash_event_normalized(e, n, &mut warnings, &mut addresses_normalized, &mut addresses_raw)
+                } else {
+                    hash_event(e)
+                };
+                hash
+            })
+            .collect();
+
+        let hashes_b: std::collections::HashSet<String> = events_b
+            .iter()
+            .map(|e| {
+                let hash = if let Some(n) = normalizer {
+                    hash_event_normalized(e, n, &mut warnings, &mut addresses_normalized, &mut addresses_raw)
+                } else {
+                    hash_event(e)
+                };
+                hash
+            })
+            .collect();
+
+        let hashes_a: Vec<String> = hashes_a.into_iter().collect();
+        let hashes_b: Vec<String> = hashes_b.into_iter().collect();
+
+        let set_a: std::collections::HashSet<_> = hashes_a.iter().collect();
+        let set_b: std::collections::HashSet<_> = hashes_b.iter().collect();
+
+        // Symmetric difference
+        let only_in_a: Vec<String> = set_a.difference(&set_b).copied().cloned().collect();
+        let only_in_b: Vec<String> = set_b.difference(&set_a).copied().cloned().collect();
+        let common_count = set_a.intersection(&set_b).count();
+
+        // Build hash → event maps for reconstruction
+        let map_a: std::collections::HashMap<_, _> = events_a
+            .iter()
+            .map(|e| (hash_event(e), e.clone()))
+            .collect();
+        let map_b: std::collections::HashMap<_, _> = events_b
+            .iter()
+            .map(|e| (hash_event(e), e.clone()))
+            .collect();
+
+        let only_a_events: Vec<TraceEvent> = only_in_a
+            .iter()
+            .filter_map(|h| map_a.get(h).cloned())
+            .collect();
+        let only_b_events: Vec<TraceEvent> = only_in_b
+            .iter()
+            .filter_map(|h| map_b.get(h).cloned())
+            .collect();
+
+        // Compute similarity
+        let total_unique = only_in_a.len() + only_in_b.len() + common_count;
+        let similarity_pct = if total_unique > 0 {
+            (common_count as f64 / total_unique as f64) * 100.0
+        } else {
+            100.0
+        };
+
+        // Timing delta
+        let timing_delta = Some(TimingDelta {
+            duration_ms_a: meta_a.duration_ms,
+            duration_ms_b: meta_b.duration_ms,
+            delta_ms: meta_b.duration_ms as i64 - meta_a.duration_ms as i64,
+            slower_session: if meta_b.duration_ms > meta_a.duration_ms {
+                Some(meta_b.session_id.clone())
+            } else if meta_a.duration_ms > meta_b.duration_ms {
+                Some(meta_a.session_id.clone())
+            } else {
+                None
+            },
+        });
+
+        // Compute normalized hash if normalizer was provided
+        let normalized_hash = if normalizer.is_some() {
+            let all_hashes: Vec<String> = hashes_a
+                .iter()
+                .chain(hashes_b.iter())
+                .cloned()
+                .collect();
+            let combined = all_hashes.join(":");
+            let hash = hash(&combined.into_bytes()).to_hex().to_string();
+            Some(hash)
+        } else {
+            None
+        };
+
+        DiffReport {
+            session_a_id: session_a_id.to_string(),
+            session_b_id: session_b_id.to_string(),
+            only_in_a: only_a_events,
+            only_in_b: only_b_events,
+            common_count,
+            similarity_pct,
+            timing_delta,
+            normalized_hash,
+            addresses_normalized,
+            addresses_raw,
+            warnings,
+        }
+    }
+
+    /// Core compare implementation for non-feature-gated build.
+    #[cfg(not(feature = "address_normalization"))]
+    fn compare_impl(
         session_a_id: &str,
         session_b_id: &str,
         events_a: &[TraceEvent],
@@ -125,6 +321,10 @@ impl TraceDiff {
             common_count,
             similarity_pct,
             timing_delta,
+            normalized_hash: None,
+            addresses_normalized: 0,
+            addresses_raw: 0,
+            warnings: Vec::new(),
         }
     }
 }
@@ -134,6 +334,41 @@ fn hash_event(event: &TraceEvent) -> String {
     let serialized = bincode::serialize(event).unwrap_or_default();
     let compressed = compress_prepend_size(&serialized);
     hash(&compressed).to_hex().to_string()
+}
+
+/// Hash an event with address normalization.
+#[cfg(feature = "address_normalization")]
+fn hash_event_normalized<N: AddressNormalizer>(
+    event: &TraceEvent,
+    normalizer: &N,
+    warnings: &mut Vec<String>,
+    addresses_normalized: &mut usize,
+    addresses_raw: &mut usize,
+) -> String {
+    use std::path::Path;
+
+    let serialized = bincode::serialize(event).unwrap_or_default();
+
+    // Try to normalize the address
+    let file_path = event.location.file.as_deref().map(Path::new);
+    if let Some(offset) = file_path.and_then(|p| normalizer.normalize(event.location.address, p)) {
+        *addresses_normalized += 1;
+        // Create a normalized representation
+        let normalized = format!("{}:{:x}", offset.symbol_name, offset.offset);
+        let combined = (serialized, normalized);
+        let compressed = compress_prepend_size(&bincode::serialize(&combined).unwrap_or_default());
+        hash(&compressed).to_hex().to_string()
+    } else {
+        *addresses_raw += 1;
+        if event.location.address > 0 {
+            warnings.push(format!(
+                "Address 0x{:x} could not be normalized (no symbol info)",
+                event.location.address
+            ));
+        }
+        // Fall back to raw address hash
+        hash_event(event)
+    }
 }
 
 #[cfg(test)]

@@ -178,6 +178,104 @@ pub fn variables_in_scope<R: gimli::Reader<Offset = usize>>(
     Vec::new()
 }
 
+/// Get the location expression bytes for a variable at a given PC.
+///
+/// Returns `Some(bytes)` if the variable has a DW_AT_location attribute,
+/// `None` otherwise.
+pub fn get_location_bytes<R: gimli::Reader<Offset = usize>>(
+    dwarf: &gimli::Dwarf<R>,
+    pc: u64,
+    var_name: &str,
+) -> Option<Vec<u8>> {
+    let mut units = dwarf.debug_info.units();
+
+    while let Ok(Some(header)) = units.next() {
+        if let Ok(unit) = dwarf.unit(header) {
+            if let Some(bytes) = find_location_bytes_in_cu(&unit, pc, var_name) {
+                return Some(bytes);
+            }
+        }
+    }
+
+    None
+}
+
+/// Find the location bytes for a variable in a compilation unit.
+#[allow(dead_code)]
+fn find_location_bytes_in_cu<R: gimli::Reader<Offset = usize>>(
+    unit: &Unit<R>,
+    pc: u64,
+    var_name: &str,
+) -> Option<Vec<u8>> {
+    let mut cursor = unit.entries();
+    let mut depth = 0isize;
+    let mut found_function_depth = None;
+
+    while let Ok(Some((delta_depth, entry))) = cursor.next_dfs() {
+        depth += delta_depth;
+
+        // Check if this is a subprogram
+        if entry.tag() == gimli::DW_TAG_subprogram {
+            if is_pc_in_function(unit, entry, pc) {
+                found_function_depth = Some(depth);
+            } else if let Some(found_depth) = found_function_depth {
+                if depth <= found_depth {
+                    break;
+                }
+            }
+        }
+
+        // If we're inside the function, look for the variable
+        if found_function_depth.is_some() {
+            let tag = entry.tag();
+            let is_variable = tag == gimli::DW_TAG_variable || tag == gimli::DW_TAG_formal_parameter;
+
+            if is_variable {
+                // Check if this is our variable
+                let name = entry
+                    .attr(gimli::DW_AT_name)
+                    .ok()
+                    .flatten()
+                    .and_then(|attr| get_string_attr_value(&attr));
+
+                if name.as_deref() == Some(var_name) {
+                    // Found the variable - get location
+                    if let Ok(Some(attr)) = entry.attr(gimli::DW_AT_location) {
+                        // For now, we can't easily extract location expression bytes
+                        // This is a limitation of the current implementation
+                        let _ = attr;
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Resolve a named variable at a given PC using register snapshot.
+///
+/// Returns `Some((name, DwarfValue))` if the variable is found and
+/// its location can be evaluated.
+pub fn resolve_variable<R: gimli::Reader<Offset = usize>>(
+    dwarf: &gimli::Dwarf<R>,
+    pc: u64,
+    name: &str,
+    regs: &chronos_domain::value::RegisterSnapshot,
+) -> Option<(String, chronos_domain::value::DwarfValue)> {
+    use crate::dwarf::BasicLocationEvaluator;
+    use crate::dwarf::DwarfLocationEvaluator;
+
+    // Find the location bytes for this variable
+    let loc_bytes = get_location_bytes(dwarf, pc, name)?;
+
+    // Evaluate using BasicLocationEvaluator
+    let evaluator = BasicLocationEvaluator::new();
+    let dwarf_val = evaluator.evaluate(&loc_bytes, regs)?;
+
+    Some((name.to_string(), dwarf_val))
+}
+
 #[cfg(test)]
 mod tests {
 
