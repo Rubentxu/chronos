@@ -30,8 +30,13 @@ pub struct McpProcess {
 impl McpProcess {
     /// Spawn a new MCP server process from the given path.
     pub async fn spawn(mcp_path: &Path) -> Result<Self, McpSandboxError> {
-        let mut child = tokio::process::Command::new(mcp_path)
-            .env("RUST_LOG", "debug")
+        let mut cmd = tokio::process::Command::new(mcp_path);
+        cmd.env("RUST_LOG", "debug");
+        // Pass through CHRONOS_DB_PATH if set, so sessions can persist across server restarts
+        if let Ok(db_path) = std::env::var("CHRONOS_DB_PATH") {
+            cmd.env("CHRONOS_DB_PATH", db_path);
+        }
+        let mut child = cmd
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -144,6 +149,26 @@ impl McpProcess {
         let _ = self.child.kill().await;
 
         Ok(())
+    }
+}
+
+/// Ensure proper cleanup when McpProcess is dropped.
+impl Drop for McpProcess {
+    fn drop(&mut self) {
+        // Drop stdin/stdout to close the pipes
+        self.stdin = None;
+        self.stdout = None;
+
+        // Force kill the child process like shutdown() does (SIGKILL)
+        // This is necessary because the server might not respond to SIGTERM
+        if let Some(pid) = self.child.id() {
+            let _ = std::process::Command::new("kill")
+                .arg("-9")
+                .arg(pid.to_string())
+                .output();
+        }
+
+        // The Child struct will be dropped here - tokio's Child::drop waits for the process
     }
 }
 

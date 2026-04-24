@@ -2,12 +2,13 @@
 //!
 //! Provides typed wrappers around all MCP tool methods exposed by the Chronos server.
 
+use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::time::sleep;
 
 use super::error::McpSandboxError;
-use super::process::{McpReader, McpWriter};
+use super::process::{McpProcess, McpReader, McpWriter};
 use super::rpc::RpcClient;
 use super::types::*;
 
@@ -1074,7 +1075,14 @@ pub struct RegressionReport {
 /// Test client for MCP sandbox.
 ///
 /// Provides a high-level API for spawning MCP servers and creating sessions.
-pub struct McpTestClient;
+/// This struct holds BOTH the session and the process handle, ensuring proper
+/// cleanup when shut down.
+pub struct McpTestClient {
+    /// The MCP server process handle (used for proper shutdown)
+    process: Option<McpProcess>,
+    /// The MCP session for communicating with the server
+    session: Option<McpSession>,
+}
 
 impl McpTestClient {
     /// Start a new MCP test session by spawning the server.
@@ -1083,7 +1091,7 @@ impl McpTestClient {
     /// 1. CARGO_BIN_EXE_chronos-mcp env var (set by cargo test when using dev-dependency)
     /// 2. ../../target/debug/chronos-mcp relative to test binary (test binaries are in target/debug/deps/)
     /// 3. "chronos-mcp" in PATH
-    pub async fn start() -> Result<McpSession, McpSandboxError> {
+    pub async fn start() -> Result<Self, McpSandboxError> {
         let mcp_path = std::env::var("CHRONOS_MCP_PATH")
             .map(PathBuf::from)
             .unwrap_or_else(|_| {
@@ -1113,10 +1121,48 @@ impl McpTestClient {
     }
 
     /// Start a new MCP test session by spawning the server at the given path.
-    pub async fn start_path(mcp_path: &Path) -> Result<McpSession, McpSandboxError> {
-        let (_process, stdin, reader) = crate::client::process::factory::start(mcp_path).await?;
+    pub async fn start_path(mcp_path: &Path) -> Result<Self, McpSandboxError> {
+        let (process, stdin, reader) = crate::client::process::factory::start(mcp_path).await?;
         let session = McpSession::new(stdin, reader).await?;
-        Ok(session)
+        Ok(Self {
+            process: Some(process),
+            session: Some(session),
+        })
+    }
+
+    /// Get a reference to the underlying session.
+    pub fn session(&self) -> &McpSession {
+        self.session.as_ref().expect("session already dropped")
+    }
+}
+
+impl McpTestClient {
+    /// Shutdown the server by dropping the session and killing the process.
+    pub async fn shutdown(mut self) -> Result<(), McpSandboxError> {
+        // Take and drop the session first (closes stdin, signaling server to exit)
+        let _ = self.session.take();
+
+        // Then kill the process if we have a handle to it
+        if let Some(mut process) = self.process.take() {
+            let _ = process.shutdown().await;
+        }
+        Ok(())
+    }
+}
+
+/// Deref implementation to allow `McpTestClient` to be used like `McpSession`.
+impl Deref for McpTestClient {
+    type Target = McpSession;
+
+    fn deref(&self) -> &Self::Target {
+        self.session.as_ref().expect("session already dropped")
+    }
+}
+
+/// DerefMut implementation to allow `McpTestClient` to be used like `McpSession`.
+impl DerefMut for McpTestClient {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.session.as_mut().expect("session already dropped")
     }
 }
 
@@ -1150,6 +1196,6 @@ mod tests {
     async fn test_client_creation() {
         // This test verifies that the types can be instantiated
         // Actual server spawning requires a real MCP binary
-        let _client = McpTestClient;
+        let _client: Option<McpTestClient> = None;
     }
 }
