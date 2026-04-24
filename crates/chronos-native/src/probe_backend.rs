@@ -113,7 +113,7 @@ impl NativeProbeBackend {
         };
 
         let ptrace_config = PtraceConfig {
-            trace_syscalls: false, // TODO: fix - was config.capture_syscalls
+            trace_syscalls: config.capture_syscalls,
             capture_registers: true,
             follow_children: true,
         };

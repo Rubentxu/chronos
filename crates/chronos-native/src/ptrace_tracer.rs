@@ -220,6 +220,20 @@ impl PtraceTracer {
                 self.traced_pids.insert(child.as_raw());
                 self.initialized = true;
 
+                // Resume the child — the SIGTRAP stop was consumed by waitpid above.
+                // Without this, wait_event() will never see a stop because the initial
+                // SIGTRAP was already reaped. Use PTRACE_SYSCALL if trace_syscalls=true
+                // so the child stops at the next syscall entry/exit.
+                if self.config.trace_syscalls {
+                    ptrace::syscall(child, None)
+                        .map_err(|e| TraceError::CaptureFailed(format!("PTRACE_SYSCALL failed: {}", e)))?;
+                    debug!("Child {} resumed with PTRACE_SYSCALL", child);
+                } else {
+                    ptrace::cont(child, None)
+                        .map_err(|e| TraceError::CaptureFailed(format!("PTRACE_CONT failed: {}", e)))?;
+                    debug!("Child {} resumed with PTRACE_CONT", child);
+                }
+
                 Ok(child.as_raw())
             }
         }
@@ -785,8 +799,8 @@ mod tests {
         assert!(pid > 0);
         assert_eq!(tracer.main_pid(), Some(pid));
 
-        // Continue the child (it's stopped after exec)
-        tracer.continue_execution(pid).expect("cont should work");
+        // Note: launch() now resumes the child with PTRACE_CONT, so we don't
+        // need to call continue_execution() here. Just wait for the exit event.
 
         // Wait for exit event
         let event = tracer.wait_event().expect("wait_event should work");
@@ -817,8 +831,7 @@ mod tests {
             .launch(Path::new("/bin/true"), &[])
             .expect("launch should work");
 
-        // Continue the child (it's stopped after exec)
-        tracer.continue_execution(pid).expect("cont should work");
+        // Note: launch() now resumes the child with PTRACE_CONT.
 
         // Collect events until exit
         let mut got_exit = false;
@@ -852,8 +865,7 @@ mod tests {
             .launch(Path::new("/bin/true"), &[])
             .expect("launch should work");
 
-        // Continue with syscall tracing
-        tracer.syscall_continue(pid).expect("syscall should work");
+        // Note: launch() now resumes the child with PTRACE_SYSCALL.
 
         let mut syscall_count = 0;
         let mut got_exit = false;
