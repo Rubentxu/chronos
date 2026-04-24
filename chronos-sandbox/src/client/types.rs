@@ -118,6 +118,21 @@ pub struct ProbeInjectResponse {
     pub message: String,
 }
 
+/// Parameters for session_snapshot.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionSnapshotParams {
+    pub session_id: String,
+}
+
+/// Response from session_snapshot.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionSnapshotResponse {
+    pub session_id: String,
+    pub status: String,
+    pub events_indexed: usize,
+    pub hint: Option<String>,
+}
+
 // ============================================================================
 // Tripwire Tools
 // ============================================================================

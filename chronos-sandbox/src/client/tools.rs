@@ -187,6 +187,55 @@ impl McpSession {
         Ok(())
     }
 
+    /// Probe inject raw — returns the full JSON response for edge case inspection.
+    ///
+    /// Use this when you need to inspect the full response including error cases.
+    pub async fn probe_inject_raw(
+        &mut self,
+        session_id: &str,
+        binary_path: &str,
+        symbol_name: &str,
+    ) -> Result<serde_json::Value, McpSandboxError> {
+        let params = serde_json::json!({
+            "session_id": session_id,
+            "binary_path": binary_path,
+            "symbol_name": symbol_name
+        });
+
+        self.rpc_client.call_tool("probe_inject", params).await
+    }
+
+    /// Session snapshot — freeze a live probe and build query indices without stopping it.
+    ///
+    /// This makes the session queryable while the probe continues collecting events.
+    pub async fn session_snapshot(
+        &mut self,
+        session_id: &str,
+    ) -> Result<SessionSnapshotResponse, McpSandboxError> {
+        let params = serde_json::json!({
+            "session_id": session_id
+        });
+
+        let response = self.rpc_client.call_tool("session_snapshot", params).await?;
+
+        let result: SessionSnapshotResponse = serde_json::from_value(response)
+            .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
+
+        Ok(result)
+    }
+
+    /// Session snapshot raw — returns the full JSON response for edge case inspection.
+    pub async fn session_snapshot_raw(
+        &mut self,
+        session_id: &str,
+    ) -> Result<serde_json::Value, McpSandboxError> {
+        let params = serde_json::json!({
+            "session_id": session_id
+        });
+
+        self.rpc_client.call_tool("session_snapshot", params).await
+    }
+
     // =========================================================================
     // Tripwire Tools (Task 2.2)
     // =========================================================================
