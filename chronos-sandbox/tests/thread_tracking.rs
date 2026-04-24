@@ -17,17 +17,7 @@ async fn test_thread_tracking() {
         .expect("probe_start failed");
 
     // Wait for threads to run
-    tokio::time::sleep(Duration::from_secs(2)).await;
-
-    // Drain events
-    let events = client.probe_drain(&session_id).await
-        .expect("probe_drain failed");
-
-    // Debug: check thread_ids in events
-    let event_threads: std::collections::HashSet<u64> = events.iter()
-        .map(|e| e.thread_id)
-        .collect();
-    println!("Thread IDs in drained events: {:?}", event_threads);
+    tokio::time::sleep(Duration::from_secs(3)).await;
 
     // Stop probe - builds query engine
     let stop = client.probe_stop(&session_id).await
@@ -38,30 +28,20 @@ async fn test_thread_tracking() {
     // Give query engine time to build
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Query all events to see thread distribution
-    use chronos_sandbox::client::types::QueryFilter;
-    let all_events = client.query_events(&session_id, QueryFilter { limit: 10000, ..Default::default() }).await
-        .expect("query_events failed");
-    let all_threads: std::collections::HashSet<u64> = all_events.iter()
-        .map(|e| e.thread_id)
-        .collect();
-    println!("Thread IDs in query_events ({} events): {:?}", all_events.len(), all_threads);
-
     // List threads
     let threads = client.list_threads(&session_id).await
         .expect("list_threads failed");
 
-    println!("Raw list_threads response: {:?}", threads);
+    println!("Detected {} threads: {:?}", threads.len(), threads);
 
     // === Assertions ===
-    // BUG: Currently only main thread is detected (child threads via pthread_create not tracked).
-    // This is a known issue with ptrace thread tracking.
-    // test_threads creates 4 threads (main + 3 workers) but only 1 is detected.
-    println!("NOTE: Only {} thread(s) detected - child thread tracking is buggy", threads.len());
-    assert!(!threads.is_empty(), "Should detect at least the main thread");
-    assert!(threads.len() == 1, "BUG: Only main thread detected, child threads not tracked");
+    assert!(!threads.is_empty(), "Should detect at least 1 thread");
 
-    println!("✓ Thread tracking works for main thread (child threads - known issue)");
+    // test_threads creates 3 worker threads + main thread = 4 threads
+    // pthread_create uses clone() which is tracked via PTRACE_O_TRACECLONE
+    assert!(threads.len() >= 2, "Should detect main + worker threads, got {}", threads.len());
+
+    println!("✓ Thread tracking works: {} threads detected", threads.len());
 
     client.shutdown().await.ok();
 }

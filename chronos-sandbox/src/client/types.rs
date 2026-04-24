@@ -52,8 +52,11 @@ pub struct ProbeStopParams {
 pub struct ProbeStopResponse {
     pub session_id: String,
     pub status: String,
+    #[serde(default)]
     pub target: String,
+    #[serde(default)]
     pub total_events: usize,
+    #[serde(default)]
     pub duration_ms: u64,
     pub hint: Option<String>,
 }
@@ -263,9 +266,13 @@ pub struct TraceEvent {
 /// Response from query_events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryEventsResponse {
+    #[serde(default)]
     pub total_matching: usize,
+    #[serde(default)]
     pub returned_count: usize,
+    #[serde(default)]
     pub next_offset: Option<usize>,
+    #[serde(default)]
     pub events: Vec<TraceEvent>,
 }
 

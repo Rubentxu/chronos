@@ -32,9 +32,10 @@ pub struct NativeProbeBackend {
     running: Arc<AtomicBool>,
     /// Handle to the polling thread (if running).
     thread_handle: std::sync::Mutex<Option<thread::JoinHandle<()>>>,
-    #[allow(dead_code)]
     /// Session ID to PID mapping for cleanup (used by stop_probe for PID tracking).
-    session_pids: std::sync::Mutex<HashMap<String, u32>>,
+    session_pids: std::sync::Arc<std::sync::Mutex<HashMap<String, u32>>>,
+    /// The PID of the currently traced process (for stop_probe to kill).
+    traced_pid: std::sync::Arc<std::sync::Mutex<Option<i32>>>,
 }
 
 impl NativeProbeBackend {
@@ -46,7 +47,8 @@ impl NativeProbeBackend {
             resolver_pipeline: ResolverPipeline::new(),
             running: Arc::new(AtomicBool::new(false)),
             thread_handle: std::sync::Mutex::new(None),
-            session_pids: std::sync::Mutex::new(HashMap::new()),
+            session_pids: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
+            traced_pid: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -124,19 +126,24 @@ impl NativeProbeBackend {
         let target = config.target.clone();
         let args = config.args.clone();
 
+        // Shared slot so the thread can publish its PID back for stop_probe to kill.
+        let traced_pid_thread = self.traced_pid.clone();
+
         let handle = thread::Builder::new()
             .name("chronos-native-probe".into())
             .spawn(move || {
-                Self::run_probe_loop(
-                    Some((target.as_str(), vec![])), // Some enables launch; program_path/args used separately
-                    &ptrace_config,
+                Self::run_probe_loop_with_pid_cb(
                     &target,
                     args,
+                    &ptrace_config,
                     &running,
                     symbol_resolver.as_ref(),
                     event_bus,
                     resolver_pipeline,
                     language,
+                    move |pid: i32| {
+                        *traced_pid_thread.lock().unwrap() = Some(pid);
+                    },
                 );
             })
             .map_err(|e| TraceError::CaptureFailed(format!("Failed to spawn probe thread: {}", e)))?;
@@ -199,27 +206,64 @@ impl NativeProbeBackend {
 
     /// Stop an active probe session.
     ///
-    /// Sets the running flag to false, causing the background thread to exit.
-    /// Optionally sends SIGKILL to the traced process.
+    /// Sets the running flag to false and kills the traced process to
+    /// interrupt any blocking waitpid. Returns immediately without waiting
+    /// for the probe thread to exit (non-blocking).
     pub fn stop_probe(&self, session: &CaptureSession) -> Result<(), TraceError> {
         // Signal the thread to stop
         self.running.store(false, Ordering::SeqCst);
 
-        // Wait for the thread to finish
-        if let Some(handle) = self.thread_handle.lock().unwrap().take() {
-            match handle.join() {
-                Ok(()) => info!("Probe thread exited cleanly for session {}", session.session_id),
-                Err(_) => warn!("Probe thread panicked during shutdown"),
-            }
+        // Kill the traced process to interrupt blocking waitpid.
+        let pid_to_kill = self.traced_pid.lock().unwrap().take();
+        if let Some(pid) = pid_to_kill {
+            info!("Killing traced process PID {} to stop probe", pid);
+            let _ = nix::sys::signal::kill(
+                nix::unistd::Pid::from_raw(pid),
+                nix::sys::signal::Signal::SIGKILL,
+            );
         }
 
-        // If we have a PID, try to kill the process
-        if session.pid > 0 {
-            // The tracer will handle cleanup when the thread exits
-            info!("Stopping probe for PID {}", session.pid);
+        // Detach the thread handle without joining — the probe thread will exit
+        // on its own once it sees running=false and/or the process is dead.
+        // We do NOT join here to avoid blocking the MCP server's response path.
+        if let Some(handle) = self.thread_handle.lock().unwrap().take() {
+            // Spawn a background thread just to join and log the result.
+            let session_id = session.session_id.clone();
+            std::thread::spawn(move || {
+                match handle.join() {
+                    Ok(()) => info!("Probe thread exited cleanly for session {}", session_id),
+                    Err(_) => warn!("Probe thread panicked during shutdown for {}", session_id),
+                }
+            });
         }
 
         Ok(())
+    }
+
+    /// Internal wrapper: calls run_probe_loop with a PID callback.
+    fn run_probe_loop_with_pid_cb(
+        program_path: &str,
+        args: Vec<String>,
+        ptrace_config: &PtraceConfig,
+        running: &Arc<AtomicBool>,
+        symbol_resolver: Option<&SymbolResolver>,
+        event_bus: EventBusHandle,
+        resolver_pipeline: ResolverPipeline,
+        language: Language,
+        on_pid_launched: impl FnOnce(i32),
+    ) {
+        Self::run_probe_loop(
+            Some((program_path, vec![])),
+            ptrace_config,
+            program_path,
+            args,
+            running,
+            symbol_resolver,
+            event_bus,
+            resolver_pipeline,
+            language,
+            Some(on_pid_launched),
+        );
     }
 
     /// Internal: Run the probe event loop for a spawned process.
@@ -233,25 +277,26 @@ impl NativeProbeBackend {
         event_bus: EventBusHandle,
         resolver_pipeline: ResolverPipeline,
         _language: Language,
+        on_pid_launched: Option<impl FnOnce(i32)>,
     ) {
-        info!("[PROBE DIAG] run_probe_loop starting with program_path={}, args={:?}", program_path, args);
         let mut tracer = PtraceTracer::new(ptrace_config.clone());
-        info!("[PROBE DIAG] PtraceTracer created, trace_syscalls={}", ptrace_config.trace_syscalls);
         let adapter = NativeAdapter::new();
 
         // Check running flag before entering launch
         if !running.load(Ordering::Relaxed) {
-            info!("[PROBE DIAG] running flag is false BEFORE launch - exiting immediately");
             return;
         }
 
         // Launch the target process
         let pid = match target {
             Some(_) => {
-                info!("[PROBE DIAG] Attempting to launch {}", program_path);
                 match tracer.launch(PathBuf::from(program_path).as_path(), &args) {
                     Ok(p) => {
                         info!("Probe started for PID {}", p);
+                        // Notify caller of the launched PID so stop_probe can kill it.
+                        if let Some(cb) = on_pid_launched {
+                            cb(p);
+                        }
                         p
                     }
                     Err(e) => {
@@ -261,7 +306,6 @@ impl NativeProbeBackend {
                 }
             }
             None => {
-                info!("[PROBE DIAG] target is None - cannot launch without a program");
                 return;
             }
         };
@@ -270,34 +314,24 @@ impl NativeProbeBackend {
 
         // Check running flag before entering main loop
         if !running.load(Ordering::Relaxed) {
-            info!("[PROBE DIAG] running flag is false BEFORE entering main loop - exiting without events");
-            // Still try to kill the process if we launched one
             if pid > 0 {
                 let _ = tracer.kill(pid);
             }
             return;
         }
 
-        info!("[PROBE DIAG] Entering main event loop, running={}", running.load(Ordering::Relaxed));
-
         // Main event loop
         while running.load(Ordering::Relaxed) {
-            info!("[PROBE DIAG] Top of while loop, waiting for event...");
-            eprintln!("[PROBE DIAG] BEFORE wait_event call");
             let ptrace_event = match tracer.wait_event() {
-                Ok(Some(event)) => {
-                    eprintln!("[PROBE DIAG] wait_event returned Some: {:?}", event);
-                    info!("[PROBE DIAG] wait_event returned Some(event) - event_id={}", event_id);
-                    event
-                }
+                Ok(Some(event)) => event,
                 Ok(None) => {
-                    eprintln!("[PROBE DIAG] wait_event returned None - no more traced processes, breaking");
-                    info!("[PROBE DIAG] wait_event returned None - no more traced processes, breaking");
+                    // None from blocking waitpid means ECHILD (no more children) OR
+                    // the process was killed/exited. Either way, stop the loop.
+                    debug!("Probe: no more traced processes, exiting event loop");
                     break;
                 }
                 Err(e) => {
-                    eprintln!("[PROBE DIAG] wait_event error: {:?} - breaking", e);
-                    info!("[PROBE DIAG] wait_event error: {} - breaking", e);
+                    debug!("wait_event error: {}", e);
                     break;
                 }
             };
@@ -313,7 +347,6 @@ impl NativeProbeBackend {
                 event_id,
                 timestamp_ns,
             ) {
-                info!("[PROBE DIAG] Converted ptrace event to trace event: event_type={:?}, location={:?}", trace_event.event_type, trace_event.location);
                 // Resolve symbol if available
                 if let Some(resolver) = symbol_resolver {
                     let addr = trace_event.location.address;
@@ -331,7 +364,6 @@ impl NativeProbeBackend {
 
                 // Push raw event to raw buffer for QueryEngine
                 event_bus.push_raw(trace_event.clone());
-                info!("[PROBE DIAG] Pushed raw event to bus, total events so far: {}", event_id + 1);
 
                 // Resolve to semantic event via the pipeline
                 let ctx = ResolveContext {
@@ -342,8 +374,6 @@ impl NativeProbeBackend {
                 event_bus.push(semantic_event);
 
                 event_id += 1;
-            } else {
-                info!("[PROBE DIAG] ptrace_event_to_trace_event returned None - event not mapped");
             }
 
             // Continue the traced process

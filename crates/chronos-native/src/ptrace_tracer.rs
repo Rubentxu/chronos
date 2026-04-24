@@ -168,7 +168,30 @@ impl PtraceTracer {
 
         match pid {
             ForkResult::Child => {
-                // Child process: request tracing by parent
+                // Child process: close inherited file descriptors to prevent leaking
+                // the parent's MCP stdio pipes into the traced program. This prevents
+                // the parent (MCP server) from dying when the child exits.
+                unsafe {
+                    // Redirect stdin/stdout to /dev/null (keep stderr for debug output)
+                    let devnull_path = b"/dev/null\0";
+                    let devnull = nix::libc::open(
+                        devnull_path.as_ptr() as *const nix::libc::c_char,
+                        nix::libc::O_RDWR,
+                    );
+                    if devnull >= 0 {
+                        nix::libc::dup2(devnull, 0);
+                        nix::libc::dup2(devnull, 1);
+                        if devnull > 2 {
+                            nix::libc::close(devnull);
+                        }
+                    }
+                    // Close extra inherited fds (3..256) to prevent pipe leaks
+                    for fd in 3..256i32 {
+                        nix::libc::close(fd);
+                    }
+                }
+
+                // Request tracing by parent
                 ptrace::traceme()
                     .map_err(|e| {
                         eprintln!("chronos: PTRACE_TRACEME failed: {}", e);
@@ -281,8 +304,6 @@ impl PtraceTracer {
         }
 
         if self.config.trace_syscalls {
-            // PTRACE_O_TRACESYSGOOD makes syscall-stops distinguishable
-            // by delivering SIGTRAP | 0x80
             options |= ptrace::Options::PTRACE_O_TRACESYSGOOD;
         }
 
@@ -300,90 +321,78 @@ impl PtraceTracer {
     /// Returns the event and associated data. Blocks until an event occurs.
     /// If capture_registers is enabled, register snapshots are yielded as
     /// separate events before the stop event that triggered them.
+    ///
+    /// When `follow_children` is enabled and multiple PIDs are being traced,
+    /// uses `waitpid(-1, __WALL)` to catch events from all threads/processes.
+    /// Otherwise, waits on the main PID only.
     pub fn wait_event(&mut self) -> Result<Option<PtraceEvent>, TraceError> {
         // Return buffered events first
         if !self.pending_events.is_empty() {
             return Ok(Some(self.pending_events.remove(0)));
         }
 
-        // Wait for the specific main traced PID.
-        // This avoids issues with waitpid(-1, ...) potentially missing events
-        // when the child exits without generating ptrace stop events.
+        // Decide whether to wait on any child or a specific PID.
+        // When follow_children is enabled, use waitpid(-1, __WALL) to catch
+        // clone/fork events from any traced process.
+        if self.config.follow_children || self.main_pid.is_none() {
+            // Use BLOCKING waitpid for reliability — clone events are delivered
+            // immediately and we don't want to miss them with polling.
+            // The caller must ensure probe_stop interrupts us (e.g., by killing
+            // the traced process or sending PTRACE_INTERRUPT).
+            let status = match waitpid(Pid::from_raw(-1), Some(WaitPidFlag::__WALL)) {
+                Ok(s) => s,
+                Err(nix::errno::Errno::ECHILD) => {
+                    debug!("No more traced processes");
+                    return Ok(None);
+                }
+                Err(e) => {
+                    return Err(TraceError::CaptureFailed(format!("waitpid(-1, __WALL) error: {}", e)));
+                }
+            };
+            return self.process_wait_status_impl(status);
+        }
+
+        // No follow_children: wait on the main PID specifically.
         let pid = match self.main_pid {
             Some(p) => p,
-            None => {
-                // Fallback: wait for any child with __WALL
-                let status = match waitpid(Pid::from_raw(-1), Some(WaitPidFlag::__WALL)) {
-                    Ok(s) => s,
-                    Err(nix::errno::Errno::ECHILD) => {
-                        info!("No more traced processes");
-                        return Ok(None);
-                    }
-                    Err(e) => {
-                        return Err(TraceError::CaptureFailed(format!("waitpid error: {}", e)));
-                    }
-                };
-                // Process the status inline
-                return self.process_wait_status_impl(status);
-            }
+            None => return Ok(None),
         };
 
-        // Wait for the specific PID using non-blocking poll with timeout.
-        // This approach is more robust in environments where blocking waitpid
-        // may not return even when the child has exited.
-        eprintln!("[PTRACE DIAG] main_pid={:?}, pid={:?}, traced_pids={:?}",
-                 self.main_pid, pid, self.traced_pids);
-        
         use nix::sys::signal::kill;
         let start = std::time::Instant::now();
-        
+
         let status = loop {
-            // Check if process still exists
-            let alive = kill(pid, None).is_ok();
-            if !alive {
-                eprintln!("[PTRACE DIAG] Process {} no longer exists", pid.as_raw());
+            if kill(pid, None).is_err() {
+                debug!("Process {} no longer exists", pid);
                 return Ok(None);
             }
-            
-            // Try to wait with WNOHANG
+
             match waitpid(pid, Some(WaitPidFlag::WNOHANG)) {
                 Ok(s) if s == WaitStatus::StillAlive => {
-                    // Child still running or zombie - check timeout
                     if start.elapsed().as_secs() > 5 {
-                        // Timeout! Try to continue the child with PTRACE_CONT.
-                        // If ESRCH (process already exited), try to reap with blocking waitpid.
-                        eprintln!("[PTRACE DIAG] waitpid timeout - forcing PTRACE_CONT");
                         match ptrace::cont(pid, None) {
                             Ok(()) => {
-                                // Child continued - wait for it to run
                                 std::thread::sleep(std::time::Duration::from_millis(100));
                                 continue;
                             }
                             Err(nix::errno::Errno::ESRCH) => {
-                                // ESRCH = no such process. The child exited (or pid was reused by a different
-                                // process). Since we can't reliably reap with the reused pid, just return.
-                                // The probe will stop naturally.
-                                eprintln!("[PTRACE DIAG] PTRACE_CONT ESRCH - child gone (exit or pid reuse), returning None");
+                                debug!("PTRACE_CONT ESRCH — child gone");
                                 return Ok(None);
                             }
                             Err(e) => {
-                                eprintln!("[PTRACE DIAG] PTRACE_CONT failed: {:?}", e);
+                                debug!("PTRACE_CONT failed: {}", e);
                                 return Ok(None);
                             }
                         }
                     }
-                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    std::thread::sleep(std::time::Duration::from_millis(10));
                 }
-                Ok(s) => {
-                    eprintln!("[PTRACE DIAG] waitpid({}) WNOHANG returned: {:?}", pid, s);
-                    break s;
-                }
+                Ok(s) => break s,
                 Err(nix::errno::Errno::ECHILD) => {
-                    eprintln!("[PTRACE DIAG] waitpid({}) ECHILD", pid.as_raw());
+                    debug!("waitpid({}) ECHILD", pid.as_raw());
                     return Ok(None);
                 }
                 Err(e) => {
-                    eprintln!("[PTRACE DIAG] waitpid({}) error: {}", pid.as_raw(), e);
                     return Err(TraceError::CaptureFailed(format!("waitpid error: {}", e)));
                 }
             }
@@ -414,7 +423,7 @@ impl PtraceTracer {
                     None
                 };
 
-                // If we haven't seen this PID, add it to traced set
+                // If we haven't seen this PID, add it to traced set and configure it
                 let pid_raw = pid.as_raw();
                 if !self.traced_pids.contains(&pid_raw) {
                     debug!("New traced PID: {}", pid_raw);
@@ -449,7 +458,7 @@ impl PtraceTracer {
             }
 
             WaitStatus::PtraceEvent(pid, _sig, event_code) => {
-                debug!("PID {} ptrace event {}", pid, event_code);
+                debug!("PID {} ptrace event {} (clone/fork/vfork/exec)", pid, event_code);
                 let new_pid = if matches!(
                     event_code,
                     nix::libc::PTRACE_EVENT_CLONE
@@ -462,6 +471,23 @@ impl PtraceTracer {
                             if child_pid > 0 {
                                 debug!("PID {} created new child PID {} (event {})", pid, child_pid, event_code);
                                 self.traced_pids.insert(child_pid);
+
+                                // Set ptrace options on the new child so we get its events
+                                let child_nix_pid = Pid::from_raw(child_pid);
+                                if let Err(e) = self.setup_ptrace_options(child_nix_pid) {
+                                    warn!("Failed to set ptrace options on child PID {}: {}", child_pid, e);
+                                }
+
+                                // Resume the new child — it's born in a stopped state.
+                                // Use PTRACE_SYSCALL if syscall tracing is on, else PTRACE_CONT.
+                                let resume_result = if self.config.trace_syscalls {
+                                    ptrace::syscall(child_nix_pid, None)
+                                } else {
+                                    ptrace::cont(child_nix_pid, None)
+                                };
+                                if let Err(e) = resume_result {
+                                    warn!("Failed to resume child PID {}: {}", child_pid, e);
+                                }
                             }
                             Some(child_pid)
                         }
@@ -511,9 +537,8 @@ impl PtraceTracer {
 
     /// Continue execution of a traced process.
     pub fn continue_execution(&self, pid: i32) -> Result<(), TraceError> {
-        let result = ptrace::cont(Pid::from_raw(pid), None);
-        eprintln!("[PTRACE DIAG] PTRACE_CONT({}) result: {:?}", pid, result);
-        result.map_err(|e| TraceError::CaptureFailed(format!("PTRACE_CONT failed: {}", e)))
+        ptrace::cont(Pid::from_raw(pid), None)
+            .map_err(|e| TraceError::CaptureFailed(format!("PTRACE_CONT failed: {}", e)))
     }
 
     /// Continue execution, delivering a specific signal.
