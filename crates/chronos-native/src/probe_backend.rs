@@ -74,6 +74,13 @@ impl NativeProbeBackend {
     ///
     /// Returns a `CaptureSession` immediately (non-blocking).
     pub fn start_probe(&self, config: CaptureConfig) -> Result<CaptureSession, TraceError> {
+        // HIGH-4: Guard against double-start
+        if self.running.load(Ordering::SeqCst) {
+            return Err(TraceError::CaptureFailed(
+                "A probe is already running on this backend. Call stop_probe first.".into(),
+            ));
+        }
+
         let program_path = PathBuf::from(&config.target);
 
         if !program_path.exists() {
@@ -125,6 +132,9 @@ impl NativeProbeBackend {
         // Clone for the closure - original `running` stays available for error handling
         let running_clone = running.clone();
 
+        // CRIT-1: Set running=true BEFORE spawn so the thread never sees a stale false
+        running.store(true, Ordering::SeqCst);
+
         let handle = thread::Builder::new()
             .name("chronos-native-probe".into())
             .spawn(move || {
@@ -138,22 +148,20 @@ impl NativeProbeBackend {
                     resolver_pipeline,
                     language,
                     move |pid: i32| {
-                        *traced_pid_thread.lock().unwrap() = Some(pid);
+                        *traced_pid_thread.lock().unwrap_or_else(|e| e.into_inner()) = Some(pid);
                     },
                 );
             })
             .map_err(|e| {
-                // CRITICAL-1: Reset running flag on spawn failure
+                // CRIT-1: Reset running flag on spawn failure
                 running.store(false, Ordering::SeqCst);
                 TraceError::CaptureFailed(format!("Failed to spawn probe thread: {}", e))
             })?;
 
-        running.store(true, Ordering::SeqCst);
-
         // Store the handle - we need to get the PID first
         // Since the thread manages its own PID, we'll store a placeholder for now
         // The actual PID tracking happens inside the thread
-        *self.thread_handle.lock().unwrap() = Some(handle);
+        *self.thread_handle.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
 
         // Build and return the session (non-blocking)
         // Note: PID will be 0 for spawned processes since the thread manages it
@@ -167,6 +175,13 @@ impl NativeProbeBackend {
     /// Similar to `start_probe` but uses `PtraceTracer::attach()` instead of `launch()`
     /// to attach to an already-running process.
     pub fn attach_probe(&self, pid: u32, config: CaptureConfig) -> Result<CaptureSession, TraceError> {
+        // HIGH-4: Guard against double-start
+        if self.running.load(Ordering::SeqCst) {
+            return Err(TraceError::CaptureFailed(
+                "A probe is already running on this backend. Call stop_probe first.".into(),
+            ));
+        }
+
         let language = config.language.unwrap_or(Language::C);
         let event_bus = self.event_bus.clone();
         let running = self.running.clone();
@@ -180,17 +195,19 @@ impl NativeProbeBackend {
 
         // Shared slot so the thread can publish its PID back for stop_probe to kill.
         let traced_pid_thread = self.traced_pid.clone();
-        let pid = pid; // shadow for use in closure
         // Clone for the closure - original `running` stays available for error handling
         let running_clone = running.clone();
+
+        // CRIT-1: Set running=true BEFORE spawn so the thread never sees a stale false
+        running.store(true, Ordering::SeqCst);
 
         // Spawn background thread to run the event loop in attach mode
         let handle = thread::Builder::new()
             .name("chronos-native-probe-attach".into())
             .spawn(move || {
-                // CRITICAL-2: Set traced_pid at START of thread (before attaching),
+                // Set traced_pid at START of thread (before attaching),
                 // since we know the PID upfront for attach.
-                *traced_pid_thread.lock().unwrap() = Some(pid as i32);
+                *traced_pid_thread.lock().unwrap_or_else(|e| e.into_inner()) = Some(pid as i32);
                 Self::run_probe_loop_attach(
                     pid,
                     &ptrace_config,
@@ -201,14 +218,12 @@ impl NativeProbeBackend {
                 );
             })
             .map_err(|e| {
-                // CRITICAL-1: Reset running flag on spawn failure
+                // CRIT-1: Reset running flag on spawn failure
                 running.store(false, Ordering::SeqCst);
                 TraceError::CaptureFailed(format!("Failed to spawn probe thread: {}", e))
             })?;
 
-        running.store(true, Ordering::SeqCst);
-
-        *self.thread_handle.lock().unwrap() = Some(handle);
+        *self.thread_handle.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
 
         let mut session = CaptureSession::new(pid, language, config);
         session.activate();
@@ -222,44 +237,58 @@ impl NativeProbeBackend {
     /// interrupt any blocking waitpid. Returns immediately without waiting
     /// for the probe thread to exit (non-blocking).
     pub fn stop_probe(&self, session: &CaptureSession) -> Result<(), TraceError> {
-        // Signal the thread to stop
+        // CRIT-2: Signal the thread to stop (no spin-wait — the thread will exit
+        // naturally when it checks running=false after the next wait_event returns).
         self.running.store(false, Ordering::SeqCst);
 
-        // CRITICAL-3: Wait briefly for the thread to publish its PID (race window).
-        // The thread sets traced_pid at startup, but stop_probe may be called
-        // before that happens (~100ms window).
-        let pid_to_kill = {
-            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(200);
-            loop {
-                if let Some(pid) = self.traced_pid.lock().unwrap().take() {
-                    break Some(pid);
-                }
-                if std::time::Instant::now() >= deadline {
-                    break None;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(5));
-            }
-        };
-
-        // Kill the traced process to interrupt blocking waitpid.
+        // Best-effort: kill the traced process to unblock waitpid.
+        // If the PID isn't published yet, the thread will exit when it checks
+        // running=false after launch.
+        let pid_to_kill = self
+            .traced_pid
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
         if let Some(pid) = pid_to_kill {
             info!("Killing traced process PID {} to stop probe", pid);
             let _ = nix::sys::signal::kill(
                 nix::unistd::Pid::from_raw(pid),
                 nix::sys::signal::Signal::SIGKILL,
             );
+        } else {
+            debug!(
+                "stop_probe: traced_pid not yet set, relying on running=false to stop thread"
+            );
         }
 
         // Detach the thread handle without joining — the probe thread will exit
         // on its own once it sees running=false and/or the process is dead.
         // We do NOT join here to avoid blocking the MCP server's response path.
-        if let Some(handle) = self.thread_handle.lock().unwrap().take() {
-            // Spawn a background thread just to join and log the result.
+        if let Some(handle) = self
+            .thread_handle
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+        {
+            // HIGH-5: Use a channel to implement join-with-timeout so we don't
+            // leak if the probe thread is stuck in waitpid.
             let session_id = session.session_id.clone();
             std::thread::spawn(move || {
-                match handle.join() {
-                    Ok(()) => info!("Probe thread exited cleanly for session {}", session_id),
-                    Err(_) => warn!("Probe thread panicked during shutdown for {}", session_id),
+                let (tx, rx) = std::sync::mpsc::channel::<()>();
+                std::thread::spawn(move || {
+                    let _ = handle.join();
+                    let _ = tx.send(());
+                });
+                match rx.recv_timeout(std::time::Duration::from_secs(10)) {
+                    Ok(()) => {
+                        info!("Probe thread exited cleanly for session {}", session_id)
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                        warn!("Probe thread did not exit within 10s for session {} — abandoning", session_id);
+                    }
+                    Err(_) => {
+                        warn!("Probe thread panicked during shutdown for {}", session_id)
+                    }
                 }
             });
         }
@@ -394,7 +423,10 @@ impl NativeProbeBackend {
 
             // Continue the traced process
             let event_pid = ptrace_event.pid();
-            if event_pid > 0 && !matches!(ptrace_event, crate::ptrace_tracer::PtraceEvent::Exited { .. }) {
+            if event_pid > 0
+                && !matches!(ptrace_event, crate::ptrace_tracer::PtraceEvent::Exited { .. })
+                && !matches!(ptrace_event, crate::ptrace_tracer::PtraceEvent::Signaled { .. })
+            {
                 let continue_result = if ptrace_config.trace_syscalls {
                     tracer.syscall_continue(event_pid)
                 } else {
@@ -407,8 +439,23 @@ impl NativeProbeBackend {
         }
 
         // Cleanup
+        // CRIT-3: Kill ALL traced PIDs (root + clone children) to prevent zombies
+        // when follow_children=true.
+        for &child_pid in tracer.traced_pids().iter() {
+            if child_pid != pid {
+                let _ = nix::sys::signal::kill(
+                    nix::unistd::Pid::from_raw(child_pid),
+                    nix::sys::signal::Signal::SIGKILL,
+                );
+                // Reap the zombie
+                let _ = nix::sys::wait::waitpid(
+                    nix::unistd::Pid::from_raw(child_pid),
+                    Some(nix::sys::wait::WaitPidFlag::WNOHANG),
+                );
+            }
+        }
         if let Err(e) = tracer.kill(pid) {
-            debug!("Failed to kill PID {}: {}", pid, e);
+            debug!("Failed to kill root PID {}: {}", pid, e);
         }
 
         info!("Probe loop ended for PID {}", pid);
@@ -476,7 +523,10 @@ impl NativeProbeBackend {
 
             // Continue the traced process
             let event_pid = ptrace_event.pid();
-            if event_pid > 0 && !matches!(ptrace_event, crate::ptrace_tracer::PtraceEvent::Exited { .. }) {
+            if event_pid > 0
+                && !matches!(ptrace_event, crate::ptrace_tracer::PtraceEvent::Exited { .. })
+                && !matches!(ptrace_event, crate::ptrace_tracer::PtraceEvent::Signaled { .. })
+            {
                 let continue_result = if ptrace_config.trace_syscalls {
                     tracer.syscall_continue(event_pid)
                 } else {
@@ -509,8 +559,16 @@ impl ProbeBackend for NativeProbeBackend {
     }
 
     /// Drain all buffered semantic events from the event bus.
-    fn drain_events(&mut self) -> Result<Vec<SemanticEvent>, TraceError> {
+    fn drain_events(&self) -> Result<Vec<SemanticEvent>, TraceError> {
         Ok(self.event_bus.snapshot())
+    }
+
+    fn stop_probe(&self, session: &CaptureSession) -> Result<(), TraceError> {
+        self.stop_probe(session)
+    }
+
+    fn drain_raw_events(&self) -> Vec<TraceEvent> {
+        self.drain_raw_events()
     }
 }
 
@@ -521,6 +579,15 @@ impl NativeProbeBackend {
     /// which requires the original TraceEvent data.
     pub fn drain_raw_events(&self) -> Vec<TraceEvent> {
         self.event_bus.snapshot_raw()
+    }
+
+    /// Get the PID of the currently traced process.
+    ///
+    /// Returns `None` if the probe hasn't started yet or has already stopped.
+    /// For spawned probes, this is set once the child process is launched.
+    /// For attached probes, this is set immediately before the event loop starts.
+    pub fn get_traced_pid(&self) -> Option<i32> {
+        self.traced_pid.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 }
 

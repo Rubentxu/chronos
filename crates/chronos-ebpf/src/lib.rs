@@ -22,7 +22,7 @@ use crate::ring_buffer::MockRingBuffer;
 use chronos_capture::TraceAdapter as CaptureTraceAdapter;
 use chronos_domain::semantic::{SemanticEvent, SemanticEventKind};
 use chronos_domain::{
-    CaptureConfig, CaptureSession, Language, ProbeBackend, TraceError,
+    CaptureConfig, CaptureSession, Language, ProbeBackend, TraceError, TraceEvent,
 };
 #[cfg(feature = "ebpf")]
 use std::sync::Mutex;
@@ -181,7 +181,7 @@ impl ProbeBackend for EbpfAdapter {
         "ebpf"
     }
 
-    fn drain_events(&mut self) -> Result<Vec<SemanticEvent>, TraceError> {
+    fn drain_events(&self) -> Result<Vec<SemanticEvent>, TraceError> {
         #[cfg(feature = "ebpf")]
         {
             use chronos_domain::{EventData, EventType};
@@ -217,6 +217,37 @@ impl ProbeBackend for EbpfAdapter {
         #[cfg(not(feature = "ebpf"))]
         {
             Err(TraceError::capture_failed("eBPF support not compiled in"))
+        }
+    }
+
+    fn stop_probe(&self, _session: &CaptureSession) -> Result<(), TraceError> {
+        #[cfg(feature = "ebpf")]
+        {
+            let mut inner = self.inner.lock().map_err(|e| TraceError::CaptureFailed(e.to_string()))?;
+            inner.detach_all();
+            Ok(())
+        }
+        #[cfg(not(feature = "ebpf"))]
+        {
+            Err(TraceError::capture_failed("eBPF support not compiled in"))
+        }
+    }
+
+    fn drain_raw_events(&self) -> Vec<TraceEvent> {
+        #[cfg(feature = "ebpf")]
+        {
+            let inner = match self.inner.lock() {
+                Ok(i) => i,
+                Err(e) => {
+                    tracing::error!("failed to lock inner: {}", e);
+                    return Vec::new();
+                }
+            };
+            inner.drain_events()
+        }
+        #[cfg(not(feature = "ebpf"))]
+        {
+            Vec::new()
         }
     }
 }
@@ -361,7 +392,7 @@ impl ProbeBackend for MockEbpfAdapter {
         "ebpf-mock"
     }
 
-    fn drain_events(&mut self) -> Result<Vec<SemanticEvent>, TraceError> {
+    fn drain_events(&self) -> Result<Vec<SemanticEvent>, TraceError> {
         use chronos_domain::{EventData, EventType};
         let raw_events = self.buffer.drain_all();
         Ok(raw_events.into_iter().map(|e| {
@@ -390,6 +421,15 @@ impl ProbeBackend for MockEbpfAdapter {
                 description: format!("{:?} @ {}", e.event_type, fn_name),
             }
         }).collect())
+    }
+
+    fn stop_probe(&self, _session: &CaptureSession) -> Result<(), TraceError> {
+        // Mock adapter: nothing to stop
+        Ok(())
+    }
+
+    fn drain_raw_events(&self) -> Vec<TraceEvent> {
+        self.buffer.drain_all()
     }
 }
 

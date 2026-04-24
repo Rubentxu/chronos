@@ -15,6 +15,7 @@ use nix::sys::ptrace;
 use nix::sys::signal::Signal;
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{execvp, fork, ForkResult, Pid};
+use std::collections::VecDeque;
 use std::ffi::CString;
 use std::path::Path;
 use tracing::{debug, info, warn};
@@ -106,7 +107,11 @@ pub struct PtraceTracer {
     /// Whether initial setup (setoptions) has been done.
     initialized: bool,
     /// Buffered events from a previous wait_event that produced multiple events.
-    pending_events: Vec<PtraceEvent>,
+    pending_events: VecDeque<PtraceEvent>,
+    /// Tracks which PIDs are currently at syscall-entry state (vs exit).
+    /// With PTRACE_O_TRACESYSGOOD, ptrace alternates entry/exit stops per PID.
+    /// This set toggles on each PtraceSyscall event to track the state.
+    syscall_entry_pids: std::collections::HashSet<i32>,
     /// Performance counter handles (feature-gated).
     #[cfg(feature = "perf_counters")]
     perf_handles: Vec<super::perf::PerfCounterHandle>,
@@ -120,7 +125,8 @@ impl PtraceTracer {
             traced_pids: std::collections::HashSet::new(),
             config,
             initialized: false,
-            pending_events: Vec::new(),
+            pending_events: VecDeque::new(),
+            syscall_entry_pids: std::collections::HashSet::new(),
             #[cfg(feature = "perf_counters")]
             perf_handles: Vec::new(),
         }
@@ -185,9 +191,27 @@ impl PtraceTracer {
                             nix::libc::close(devnull);
                         }
                     }
-                    // Close extra inherited fds (3..256) to prevent pipe leaks
-                    for fd in 3..256i32 {
-                        nix::libc::close(fd);
+                    // Close extra inherited fds to prevent pipe leaks.
+                    // Try close_range (Linux 5.9+) first, fall back to getrlimit+loop.
+                    let close_result = unsafe {
+                        nix::libc::syscall(
+                            nix::libc::SYS_close_range,
+                            3i32,
+                            u32::MAX,
+                            0u32,
+                        )
+                    };
+                    if close_result != 0 {
+                        // Fallback: close up to RLIMIT_NOFILE
+                        let mut rl = nix::libc::rlimit {
+                            rlim_cur: 0,
+                            rlim_max: 0,
+                        };
+                        nix::libc::getrlimit(nix::libc::RLIMIT_NOFILE, &mut rl);
+                        let max_fd = rl.rlim_cur.min(65536) as i32;
+                        for fd in 3..max_fd {
+                            nix::libc::close(fd);
+                        }
                     }
                 }
 
@@ -326,7 +350,7 @@ impl PtraceTracer {
     pub fn wait_event(&mut self) -> Result<Option<PtraceEvent>, TraceError> {
         // Return buffered events first
         if !self.pending_events.is_empty() {
-            return Ok(Some(self.pending_events.remove(0)));
+            return Ok(Some(self.pending_events.pop_front().unwrap()));
         }
 
         // Decide whether to wait on any child or a specific PID.
@@ -431,7 +455,7 @@ impl PtraceTracer {
 
                 // Buffer registers event if captured
                 if let Some(re) = regs_event {
-                    self.pending_events.push(re);
+                    self.pending_events.push_back(re);
                 }
 
                 Some(PtraceEvent::Stopped {
@@ -442,6 +466,14 @@ impl PtraceTracer {
             }
 
             WaitStatus::PtraceSyscall(pid) => {
+                let pid_raw = pid.as_raw();
+                // Toggle: if currently in entry state → this is exit; after, flip to entry
+                let is_entry = !self.syscall_entry_pids.contains(&pid_raw);
+                if is_entry {
+                    self.syscall_entry_pids.insert(pid_raw);
+                } else {
+                    self.syscall_entry_pids.remove(&pid_raw);
+                }
                 let regs = if self.config.capture_registers {
                     self.read_registers(pid).ok()
                 } else {
@@ -449,9 +481,9 @@ impl PtraceTracer {
                 };
                 let syscall_nr = regs.as_ref().map(|r| r.rax).unwrap_or(0);
                 Some(PtraceEvent::Syscall {
-                    pid: pid.as_raw(),
+                    pid: pid_raw,
                     syscall_nr,
-                    is_entry: true,
+                    is_entry,
                 })
             }
 
@@ -507,6 +539,7 @@ impl PtraceTracer {
             WaitStatus::Exited(pid, exit_code) => {
                 info!("PID {} exited with code {}", pid, exit_code);
                 self.traced_pids.remove(&pid.as_raw());
+                self.syscall_entry_pids.remove(&pid.as_raw());
                 Some(PtraceEvent::Exited {
                     pid: pid.as_raw(),
                     exit_code,
@@ -516,6 +549,7 @@ impl PtraceTracer {
             WaitStatus::Signaled(pid, sig, core_dumped) => {
                 warn!("PID {} killed by {:?} (core: {})", pid, sig, core_dumped);
                 self.traced_pids.remove(&pid.as_raw());
+                self.syscall_entry_pids.remove(&pid.as_raw());
                 Some(PtraceEvent::Signaled {
                     pid: pid.as_raw(),
                     signal: sig as i32,
@@ -703,8 +737,12 @@ impl PtraceTracer {
 
     /// Kill a traced process.
     pub fn kill(&self, pid: i32) -> Result<(), TraceError> {
-        ptrace::kill(Pid::from_raw(pid))
-            .map_err(|e| TraceError::CaptureFailed(format!("PTRACE_KILL failed: {}", e)))
+        let nix_pid = Pid::from_raw(pid);
+        nix::sys::signal::kill(nix_pid, nix::sys::signal::Signal::SIGKILL)
+            .map_err(|e| TraceError::CaptureFailed(format!("Failed to SIGKILL PID {}: {}", pid, e)))?;
+        // Reap the process to prevent zombie
+        let _ = nix::sys::wait::waitpid(nix_pid, Some(nix::sys::wait::WaitPidFlag::WNOHANG));
+        Ok(())
     }
 }
 

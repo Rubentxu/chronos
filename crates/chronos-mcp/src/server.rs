@@ -2360,35 +2360,20 @@ impl ChronosServer {
         let language = live_probe.language;
         let target = live_probe.target;
 
-        info!(
-            "Live probe stopped for '{}' (session: {}, events: {})",
-            target, params.session_id, total_events
-        );
-
-        // Build query engine from collected events
-        let mut builder = IndexBuilder::new();
-        builder.push_all(&events);
-        let indices = builder.finalize();
-        let engine = QueryEngine::with_indices(events.clone(), indices.shadow, indices.temporal)
-            .with_causality(indices.causality)
-            .with_performance(indices.performance);
-
-        // Store in engines map — session is now fully queryable
-        self.engines.lock().await.insert(params.session_id.clone(), engine);
-        self.session_languages.lock().await.insert(params.session_id.clone(), language);
-
-        // Set as active session
-        {
-            let mut active = self.active_session.lock().await;
-            *active = Some(params.session_id.clone());
-        }
-
-        // Compute duration
+        // Compute duration before moving events
         let duration_ms = if let (Some(first), Some(last)) = (events.first(), events.last()) {
             last.timestamp_ns.saturating_sub(first.timestamp_ns) / 1_000_000
         } else {
             0
         };
+
+        info!(
+            "Live probe stopped for '{}' (session: {}, events: {})",
+            target, params.session_id, total_events
+        );
+
+        // Build and store the query engine with proper noise filtering
+        self.build_and_store_engine(&params.session_id, events, language).await;
 
         let output = serde_json::json!({
             "session_id": params.session_id,
@@ -2414,8 +2399,8 @@ impl ChronosServer {
         // Narrow lock scope: extract events inside scoped block, then drop lock before processing.
         // This avoids holding std::sync::Mutex across non-trivial event processing.
         let events: Vec<SemanticEvent> = {
-            let mut probes = self.live_probes.lock().unwrap();
-            let live_probe = match probes.get_mut(&params.session_id) {
+            let probes = self.live_probes.lock().unwrap();
+            let live_probe = match probes.get(&params.session_id) {
                 Some(lp) => lp,
                 None => {
                     return Ok(CallToolResult::error(text_content(format!(
@@ -2478,8 +2463,8 @@ impl ChronosServer {
 
         // Scope the sync mutex lock — drain events, then drop before any async
         let (events, language) = {
-            let mut probes = self.live_probes.lock().unwrap();
-            let live_probe = match probes.get_mut(&params.session_id) {
+            let probes = self.live_probes.lock().unwrap();
+            let live_probe = match probes.get(&params.session_id) {
                 Some(lp) => lp,
                 None => {
                     return Ok(CallToolResult::error(text_content(format!(
@@ -2498,17 +2483,8 @@ impl ChronosServer {
 
         let total_events = events.len();
 
-        // Build query engine from current events
-        let mut builder = IndexBuilder::new();
-        builder.push_all(&events);
-        let indices = builder.finalize();
-        let engine = QueryEngine::with_indices(events, indices.shadow, indices.temporal)
-            .with_causality(indices.causality)
-            .with_performance(indices.performance);
-
-        // Store/update in engines map — session is now queryable
-        self.engines.lock().await.insert(params.session_id.clone(), engine);
-        self.session_languages.lock().await.insert(params.session_id.clone(), language);
+        // Build and store the query engine with proper noise filtering
+        self.build_and_store_engine(&params.session_id, events, language).await;
 
         // Set as active session
         {
@@ -2539,7 +2515,12 @@ impl ChronosServer {
         let target_pid = {
             let probes = self.live_probes.lock().unwrap();
             match probes.get(&params.session_id) {
-                Some(lp) => lp.session.pid,
+                Some(lp) => {
+                    // For spawned probes, lp.session.pid is 0. Use the actual traced PID.
+                    lp.backend.get_traced_pid()
+                        .map(|p| p as u32)
+                        .unwrap_or(lp.session.pid)
+                }
                 None => {
                     return Ok(CallToolResult::error(text_content(format!(
                         "Live probe session '{}' not found. Start a probe with probe_start first.",
@@ -2550,6 +2531,12 @@ impl ChronosServer {
         };
 
         let pid = params.pid.unwrap_or(target_pid);
+
+        if pid == 0 {
+            return Ok(CallToolResult::error(text_content(
+                "Cannot inject: probe is still starting up (PID not yet known). Retry in a moment."
+            )));
+        }
 
         // Attempt eBPF uprobe injection
         match chronos_ebpf::EbpfAdapter::new() {

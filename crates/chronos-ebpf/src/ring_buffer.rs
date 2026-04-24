@@ -137,37 +137,37 @@ impl BpfRingBuffer {
 /// Available regardless of the `ebpf` feature for unit-testing consumers
 /// without a real kernel.
 pub struct MockRingBuffer {
-    events: std::collections::VecDeque<EbpfEvent>,
-    next_event_id: u64,
+    events: std::cell::RefCell<std::collections::VecDeque<EbpfEvent>>,
+    next_event_id: std::cell::RefCell<u64>,
 }
 
 impl MockRingBuffer {
     /// Create a mock with a predefined list of events.
     pub fn new(events: Vec<EbpfEvent>) -> Self {
         Self {
-            events: events.into(),
-            next_event_id: 0,
+            events: std::cell::RefCell::new(events.into()),
+            next_event_id: std::cell::RefCell::new(0),
         }
     }
 
     /// Non-blocking poll — returns the next queued event or Empty.
-    pub fn poll(&mut self) -> PollResult {
-        match self.events.pop_front() {
+    pub fn poll(&self) -> PollResult {
+        match self.events.borrow_mut().pop_front() {
             Some(ev) => PollResult::Event(ev),
             None => PollResult::Empty,
         }
     }
 
     /// Pop and convert to TraceEvent.
-    pub fn next_trace_event(&mut self) -> Option<TraceEvent> {
-        let ev = self.events.pop_front()?;
-        let id = self.next_event_id;
-        self.next_event_id += 1;
+    pub fn next_trace_event(&self) -> Option<TraceEvent> {
+        let ev = self.events.borrow_mut().pop_front()?;
+        let id = *self.next_event_id.borrow();
+        *self.next_event_id.borrow_mut() += 1;
         Some(ev.to_trace_event(id))
     }
 
     /// Drain all queued events.
-    pub fn drain_all(&mut self) -> Vec<TraceEvent> {
+    pub fn drain_all(&self) -> Vec<TraceEvent> {
         let mut result = Vec::new();
         while let Some(te) = self.next_trace_event() {
             result.push(te);
@@ -177,7 +177,7 @@ impl MockRingBuffer {
 
     /// Number of events still in the queue.
     pub fn pending(&self) -> usize {
-        self.events.len()
+        self.events.borrow().len()
     }
 }
 

@@ -4,7 +4,7 @@
 //! to provide a uniform interface for the query engine and MCP server.
 
 use crate::semantic::SemanticEvent;
-use crate::{TraceError, TraceEvent};
+use crate::{CaptureSession, TraceError, TraceEvent};
 
 // ============================================================================
 // ProbeBackend — query-side trait (pull, non-blocking drain)
@@ -32,7 +32,19 @@ pub trait ProbeBackend: Send {
     /// Drain all buffered semantic events that arrived since the last call.
     ///
     /// Returns an empty vec if no events are ready (non-blocking).
-    fn drain_events(&mut self) -> Result<Vec<SemanticEvent>, TraceError>;
+    /// Uses interior mutability (Arc<EventBus>), so `&self` is sufficient.
+    fn drain_events(&self) -> Result<Vec<SemanticEvent>, TraceError>;
+
+    /// Stop the probe and release all resources.
+    ///
+    /// This is non-blocking: it signals the probe thread to stop and returns immediately.
+    fn stop_probe(&self, session: &CaptureSession) -> Result<(), TraceError>;
+
+    /// Drain all raw trace events (for QueryEngine construction).
+    ///
+    /// Unlike `drain_events()` which returns semantic events for LLM consumption,
+    /// this returns the underlying `TraceEvent` for index building.
+    fn drain_raw_events(&self) -> Vec<TraceEvent>;
 }
 
 // ============================================================================
