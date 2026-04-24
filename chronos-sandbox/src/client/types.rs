@@ -575,14 +575,65 @@ pub struct TopFunction {
     pub call_count: u64,
 }
 
+/// Event count by type entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventCountByType {
+    pub event_type: String,
+    pub count: u64,
+}
+
+/// A potential issue detected in the trace.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PotentialIssue {
+    pub issue_type: String,
+    pub confidence: f32,
+    pub description: String,
+}
+
 /// Response from get_execution_summary.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionSummaryResponse {
     pub session_id: String,
-    pub total_events: usize,
-    pub unique_functions: usize,
+    pub duration_ns: u64,
+    pub total_events: u64,
+    pub event_counts_by_type: Vec<EventCountByType>,
     pub top_functions: Vec<TopFunction>,
-    pub thread_count: usize,
+    pub thread_count: u64,
+    pub potential_issues: Vec<PotentialIssue>,
+}
+
+/// A node in the call graph.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallGraphNode {
+    pub function: String,
+    pub call_count: u64,
+    pub callers: Vec<String>,
+    pub callees: Vec<String>,
+}
+
+/// Response from debug_call_graph.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallGraphResponse {
+    pub session_id: String,
+    pub max_depth: usize,
+    pub unique_functions: usize,
+    pub nodes: Vec<CallGraphNode>,
+}
+
+/// A state change between two timestamps.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateChange {
+    pub field: String,
+    pub value_a: String,
+    pub value_b: String,
+}
+
+/// Response from state_diff.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateDiffResponse {
+    pub timestamp_a: u64,
+    pub timestamp_b: u64,
+    pub changes: Vec<StateChange>,
 }
 
 // ============================================================================
@@ -621,7 +672,6 @@ pub struct VariableInfo {
 /// Response from debug_get_variables.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DebugGetVariablesResponse {
-    pub session_id: String,
     pub event_id: u64,
     pub variables: Vec<VariableInfo>,
 }

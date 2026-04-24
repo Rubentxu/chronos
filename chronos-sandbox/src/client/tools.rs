@@ -293,6 +293,63 @@ impl McpSession {
         Ok(threads)
     }
 
+    /// Get execution summary — top-level execution overview.
+    pub async fn get_execution_summary(
+        &mut self,
+        session_id: &str,
+    ) -> Result<ExecutionSummaryResponse, McpSandboxError> {
+        let params = serde_json::json!({
+            "session_id": session_id
+        });
+
+        let response = self.rpc_client.call_tool("get_execution_summary", params).await?;
+
+        let result: ExecutionSummaryResponse = serde_json::from_value(response)
+            .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
+
+        Ok(result)
+    }
+
+    /// Debug call graph — build call graph for a session.
+    pub async fn debug_call_graph(
+        &mut self,
+        session_id: &str,
+        max_depth: usize,
+    ) -> Result<CallGraphResponse, McpSandboxError> {
+        let params = serde_json::json!({
+            "session_id": session_id,
+            "max_depth": max_depth
+        });
+
+        let response = self.rpc_client.call_tool("debug_call_graph", params).await?;
+
+        let result: CallGraphResponse = serde_json::from_value(response)
+            .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
+
+        Ok(result)
+    }
+
+    /// State diff — compare program state between two timestamps.
+    pub async fn state_diff(
+        &mut self,
+        session_id: &str,
+        timestamp_a: u64,
+        timestamp_b: u64,
+    ) -> Result<StateDiffResponse, McpSandboxError> {
+        let params = serde_json::json!({
+            "session_id": session_id,
+            "timestamp_a": timestamp_a,
+            "timestamp_b": timestamp_b
+        });
+
+        let response = self.rpc_client.call_tool("state_diff", params).await?;
+
+        let result: StateDiffResponse = serde_json::from_value(response)
+            .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
+
+        Ok(result)
+    }
+
     // =========================================================================
     // Debug/Analysis Tools (Task 2.4)
     // =========================================================================
@@ -609,11 +666,11 @@ impl McpSession {
     pub async fn debug_get_variables(
         &mut self,
         session_id: &str,
-        frame_id: u64,
+        event_id: u64,
     ) -> Result<Vec<VariableInfo>, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id,
-            "frame_id": frame_id
+            "event_id": event_id
         });
 
         let response = self.rpc_client.call_tool("debug_get_variables", params).await?;
