@@ -7,6 +7,16 @@ use chronos_sandbox::McpTestClient;
 /// This test verifies that two sessions running the same program produce
 /// similar results with no divergences.
 ///
+/// NOTE: This test is fundamentally blocked because `probe_start` requires an
+/// absolute path to the fixture binary (the server validates program paths via
+/// security::validate_program_path). Using just "test_add" as the program name
+/// will fail with a path validation error. A proper fix would require passing
+/// the actual fixture path, but even then the comparison may fail due to
+/// non-deterministic syscall events between runs.
+///
+/// A working version of this test exists in tripwire_tools.rs::test_compare_sessions
+/// which uses the correct fixture path approach.
+///
 /// Run with: cargo test -p chronos-sandbox -- --ignored
 #[tokio::test]
 #[ignore]
@@ -14,6 +24,7 @@ async fn test_compare_sessions() {
     let mut client = McpTestClient::start().await.unwrap();
 
     // Start first session with test_add
+    // NOTE: This will fail because probe_start requires an absolute path
     let session_a = client.probe_start("test_add").await.unwrap();
 
     // Give it time to collect events

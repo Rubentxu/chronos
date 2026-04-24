@@ -641,11 +641,11 @@ impl McpSession {
     pub async fn debug_get_registers(
         &mut self,
         session_id: &str,
-        thread_id: u64,
+        event_id: u64,
     ) -> Result<Registers, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id,
-            "thread_id": thread_id
+            "event_id": event_id
         });
 
         let response = self.rpc_client.call_tool("debug_get_registers", params).await?;
@@ -654,11 +654,9 @@ impl McpSession {
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
 
         Ok(Registers {
-            session_id: result.session_id,
-            thread_id: result.thread_id,
+            session_id: session_id.to_string(),
             event_id: result.event_id,
-            timestamp_ns: result.timestamp_ns,
-            values: result.registers,
+            registers: result.registers,
         })
     }
 
@@ -747,6 +745,91 @@ impl McpSession {
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
 
         Ok(result.result)
+    }
+
+    // =========================================================================
+    // Tier 2 Tools
+    // =========================================================================
+
+    /// Debug analyze memory — analyze all memory accesses to an address range.
+    pub async fn debug_analyze_memory(
+        &mut self,
+        session_id: &str,
+        start_address: u64,
+        end_address: u64,
+        start_ts: u64,
+        end_ts: u64,
+    ) -> Result<DebugAnalyzeMemoryResponse, McpSandboxError> {
+        let params = serde_json::json!({
+            "session_id": session_id,
+            "start_address": start_address,
+            "end_address": end_address,
+            "start_ts": start_ts,
+            "end_ts": end_ts
+        });
+
+        let response = self.rpc_client.call_tool("debug_analyze_memory", params).await?;
+
+        let result: DebugAnalyzeMemoryResponse = serde_json::from_value(response)
+            .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
+
+        Ok(result)
+    }
+
+    /// Forensic memory audit — full audit trail for a specific address.
+    pub async fn forensic_memory_audit(
+        &mut self,
+        session_id: &str,
+        address: u64,
+        limit: usize,
+    ) -> Result<ForensicMemoryAuditResponse, McpSandboxError> {
+        let params = serde_json::json!({
+            "session_id": session_id,
+            "address": address,
+            "limit": limit
+        });
+
+        let response = self.rpc_client.call_tool("forensic_memory_audit", params).await?;
+
+        let result: ForensicMemoryAuditResponse = serde_json::from_value(response)
+            .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
+
+        Ok(result)
+    }
+
+    /// Debug find variable origin — trace writes to a variable.
+    pub async fn debug_find_variable_origin(
+        &mut self,
+        session_id: &str,
+        variable_name: &str,
+        limit: usize,
+    ) -> Result<DebugFindVariableOriginResponse, McpSandboxError> {
+        let params = serde_json::json!({
+            "session_id": session_id,
+            "variable_name": variable_name,
+            "limit": limit
+        });
+
+        let response = self.rpc_client.call_tool("debug_find_variable_origin", params).await?;
+
+        let result: DebugFindVariableOriginResponse = serde_json::from_value(response)
+            .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
+
+        Ok(result)
+    }
+
+    /// Drop session — remove a session from memory without affecting persistent storage.
+    pub async fn drop_session(&mut self, session_id: &str) -> Result<DropSessionResponse, McpSandboxError> {
+        let params = serde_json::json!({
+            "session_id": session_id
+        });
+
+        let response = self.rpc_client.call_tool("drop_session", params).await?;
+
+        let result: DropSessionResponse = serde_json::from_value(response)
+            .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
+
+        Ok(result)
     }
 
     // =========================================================================

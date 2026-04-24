@@ -644,20 +644,15 @@ pub struct StateDiffResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Registers {
     pub session_id: String,
-    pub thread_id: u64,
     pub event_id: u64,
-    pub timestamp_ns: u64,
-    pub values: std::collections::HashMap<String, u64>,
+    pub registers: std::collections::HashMap<String, String>,
 }
 
 /// Response from debug_get_registers.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DebugGetRegistersResponse {
-    pub session_id: String,
-    pub thread_id: u64,
     pub event_id: u64,
-    pub timestamp_ns: u64,
-    pub registers: std::collections::HashMap<String, u64>,
+    pub registers: std::collections::HashMap<String, String>,
 }
 
 /// Variable information at a frame.
@@ -730,4 +725,75 @@ pub struct HealthCheckResponse {
     pub status: String,
     pub version: Option<String>,
     pub uptime_ms: Option<u64>,
+}
+
+// ============================================================================
+// Tier 2 Tools Types
+// ============================================================================
+
+/// Response from debug_analyze_memory.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DebugAnalyzeMemoryResponse {
+    pub start_address: String,
+    pub end_address: String,
+    pub start_ts: u64,
+    pub end_ts: u64,
+    pub total_writes: u64,
+    pub accesses: Vec<MemoryAccess>,
+}
+
+/// A memory access entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryAccess {
+    pub address: String,
+    pub timestamp_ns: u64,
+    pub data_hex: String,
+    pub event_id: u64,
+    pub size: usize,
+}
+
+/// Response from forensic_memory_audit.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ForensicMemoryAuditResponse {
+    pub address: String,
+    pub write_count: usize,
+    pub writes: Vec<ForensicWrite>,
+}
+
+/// A write entry in forensic audit.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ForensicWrite {
+    pub timestamp_ns: u64,
+    pub event_id: u64,
+    pub data_hex: String,
+    pub call_stack: Vec<StackFrame>,
+}
+
+/// Response from debug_find_variable_origin.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DebugFindVariableOriginResponse {
+    pub session_id: String,
+    pub variable_name: String,
+    pub mutation_count: usize,
+    pub mutations: Vec<VariableMutation>,
+    pub note: Option<String>,
+}
+
+/// A mutation entry for variable origin tracking.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VariableMutation {
+    pub event_id: u64,
+    pub timestamp_ns: u64,
+    pub thread_id: u64,
+    pub value_before: Option<String>,
+    pub value_after: Option<String>,
+    pub function: Option<String>,
+}
+
+/// Response from drop_session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DropSessionResponse {
+    pub session_id: String,
+    pub status: String,
+    pub message: String,
 }
