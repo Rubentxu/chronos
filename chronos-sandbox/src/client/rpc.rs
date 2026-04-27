@@ -133,6 +133,21 @@ impl RpcClient {
             return Err(McpSandboxError::RpcError("content array is empty".to_string()));
         }
 
+        // Check if the response is an error
+        if let Some(is_error) = result_obj.get("isError").and_then(|v| v.as_bool()) {
+            if is_error {
+                // Extract error message from content
+                let first_content = &content_array[0];
+                let text = first_content
+                    .get("text")
+                    .ok_or_else(|| McpSandboxError::RpcError("Missing text in error content".to_string()))?;
+                let text_str = text
+                    .as_str()
+                    .ok_or_else(|| McpSandboxError::RpcError("text is not a string".to_string()))?;
+                return Err(McpSandboxError::RpcError(text_str.to_string()));
+            }
+        }
+
         let first_content = &content_array[0];
         let text = first_content
             .get("text")
