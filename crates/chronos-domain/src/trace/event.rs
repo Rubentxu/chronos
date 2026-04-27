@@ -141,6 +141,17 @@ pub enum JsEventKind {
     Other(String),
 }
 
+/// Kind of WebAssembly trace event.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
+pub enum WasmEventKind {
+    Entry,
+    Return,
+    Breakpoint,
+    Step,
+    Exception,
+    Other(String),
+}
+
 /// Event-specific data carried by a [`TraceEvent`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum EventData {
@@ -271,6 +282,22 @@ pub enum EventData {
         event_kind: JsEventKind,
     },
 
+    /// WebAssembly frame data.
+    WasmFrame {
+        /// WebAssembly function index
+        function_index: u32,
+        /// Function name if available
+        function_name: Option<String>,
+        /// Bytecode offset within the function body
+        body_offset: u32,
+        /// URL of the module
+        module_url: Option<String>,
+        /// Captured local variables
+        locals: Option<Vec<VariableInfo>>,
+        /// Kind of WebAssembly event
+        event_kind: WasmEventKind,
+    },
+
     /// Python stdout/stderr console output.
     PythonConsoleOutput {
         /// Output text
@@ -323,6 +350,36 @@ pub struct RegisterState {
     pub r15: u64,
     pub rip: u64,
     pub rflags: u64,
+}
+
+/// WebAssembly module information.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WasmModuleInfo {
+    /// Unique script identifier.
+    pub script_id: String,
+    /// URL of the module if available.
+    pub url: Option<String>,
+    /// Module hash.
+    pub hash: String,
+    /// Build ID if available.
+    pub build_id: Option<String>,
+    /// Functions defined in this module.
+    pub functions: Vec<WasmFunctionInfo>,
+}
+
+/// WebAssembly function information.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WasmFunctionInfo {
+    /// Function index within the module.
+    pub function_index: usize,
+    /// Function name if available.
+    pub name: Option<String>,
+    /// Start offset of the function body.
+    pub body_start: u32,
+    /// End offset of the function body.
+    pub body_end: u32,
+    /// Breakpoint ID if a breakpoint is set.
+    pub breakpoint_id: Option<String>,
 }
 
 /// A single trace event — the fundamental unit of recorded execution.
@@ -694,6 +751,38 @@ impl TraceEvent {
                 column_number: column,
                 locals: None,
                 scope_chain: Vec::new(),
+                event_kind: kind,
+            },
+        }
+    }
+
+    /// Create a WebAssembly frame event.
+    pub fn wasm_frame(
+        event_id: EventId,
+        timestamp_ns: TimestampNs,
+        thread_id: ThreadId,
+        function_index: u32,
+        function_name: Option<String>,
+        body_offset: u32,
+        module_url: Option<String>,
+        kind: WasmEventKind,
+    ) -> Self {
+        Self {
+            event_id,
+            timestamp_ns,
+            thread_id,
+            event_type: EventType::BreakpointHit,
+            location: SourceLocation {
+                file: module_url.clone(),
+                function: function_name.clone(),
+                ..Default::default()
+            },
+            data: EventData::WasmFrame {
+                function_index,
+                function_name,
+                body_offset,
+                module_url,
+                locals: None,
                 event_kind: kind,
             },
         }

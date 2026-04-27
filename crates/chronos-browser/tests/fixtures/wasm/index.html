@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html><body>
+<script>
+WebAssembly.instantiateStreaming(fetch('add.wasm'))
+  .then(({instance}) => {
+    console.log('add(3,4)=', instance.exports.add(3,4));
+    console.log('multiply(3,4)=', instance.exports.multiply(3,4));
+    console.log('fibonacci(10)=', instance.exports.fibonacci(10));
+  });
+</script>
+</body></html>

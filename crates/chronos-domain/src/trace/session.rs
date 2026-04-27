@@ -19,6 +19,7 @@ pub enum Language {
     Go,
     CSharp,
     Ebpf,
+    WebAssembly,
     Unknown,
 }
 
@@ -36,6 +37,7 @@ impl Language {
             "js" | "mjs" | "cjs" => Language::JavaScript,
             "go" => Language::Go,
             "cs" => Language::CSharp,
+            "wasm" => Language::WebAssembly,
             _ => Language::Unknown,
         }
     }
@@ -47,6 +49,25 @@ impl Language {
             .and_then(|e| e.to_str())
             .map(Language::from_extension)
             .unwrap_or(Language::Unknown)
+    }
+
+    /// Detect language from a string name.
+    pub fn from_string(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "c" => Language::C,
+            "cpp" | "c++" | "cc" | "cxx" => Language::Cpp,
+            "rust" | "rs" => Language::Rust,
+            "java" => Language::Java,
+            "kotlin" | "kt" | "kts" => Language::Kotlin,
+            "scala" | "sc" => Language::Scala,
+            "python" | "py" | "pyw" => Language::Python,
+            "javascript" | "js" | "mjs" | "cjs" => Language::JavaScript,
+            "go" => Language::Go,
+            "csharp" | "cs" | "c#" => Language::CSharp,
+            "ebpf" | "bpf" => Language::Ebpf,
+            "wasm" | "webassembly" | "wasm-bytecode" => Language::WebAssembly,
+            _ => Language::Unknown,
+        }
     }
 }
 
@@ -64,6 +85,7 @@ impl std::fmt::Display for Language {
             Language::Go => write!(f, "go"),
             Language::CSharp => write!(f, "csharp"),
             Language::Ebpf => write!(f, "ebpf"),
+            Language::WebAssembly => write!(f, "WebAssembly"),
             Language::Unknown => write!(f, "unknown"),
         }
     }

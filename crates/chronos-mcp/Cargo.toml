@@ -17,6 +17,7 @@ chronos-python = { workspace = true }
 chronos-js = { workspace = true }
 chronos-store = { workspace = true }
 chronos-ebpf = { workspace = true }
+chronos-browser = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

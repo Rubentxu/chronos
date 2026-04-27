@@ -30,6 +30,8 @@ use chronos_domain::{
     CaptureConfig, CaptureSession, EventData, EventType, Language, ProbeBackend, TraceEvent, TraceQuery,
 };
 use chronos_domain::tripwire::{TripwireCondition, TripwireId, TripwireManager};
+use chronos_browser::BrowserAdapter;
+use chronos_capture::adapter::TraceAdapter;
 use chronos_index::builder::IndexBuilder;
 use chronos_native::probe_backend::NativeProbeBackend;
 use chronos_query::QueryEngine;
@@ -88,6 +90,20 @@ struct LiveProbeSession {
     target: String,
 }
 
+/// A live browser probe session using `BrowserAdapter`.
+///
+/// Streams WASM debugging events from Chrome CDP in real-time.
+struct BrowserProbeSession {
+    /// The browser adapter driving the CDP session.
+    adapter: Arc<BrowserAdapter>,
+    /// The capture session returned by start_capture.
+    session: CaptureSession,
+    /// Session ID for this browser probe.
+    session_id: String,
+    /// Target URL being debugged.
+    url: String,
+}
+
 /// Empty parameter type for tools that take no arguments.
 ///
 /// This is needed because rmcp sends `{}` as default arguments when none are provided,
@@ -124,6 +140,10 @@ pub struct ChronosServer {
     /// stream to an `EventBus` ring buffer. Use `probe_drain` to read current events
     /// and `probe_stop` to finalize.
     live_probes: Arc<std::sync::Mutex<HashMap<String, LiveProbeSession>>>,
+    /// Live browser probe sessions: session_id → BrowserProbeSession.
+    /// These are real-time WASM debugging sessions via Chrome CDP.
+    /// Use `browser_probe_drain` to read events and `browser_probe_stop` to finalize.
+    live_browser_probes: Arc<std::sync::Mutex<HashMap<String, BrowserProbeSession>>>,
 }
 
 // ============================================================================
@@ -528,6 +548,41 @@ pub struct ProbeInjectParams {
 }
 
 // ============================================================================
+// SF10 — Browser/WASM Probe Tools (T15–T16)
+// ============================================================================
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct BrowserProbeStartParams {
+    /// URL to navigate to.
+    pub url: String,
+    /// Whether to run Chrome headless (default: true).
+    #[serde(default = "default_true")]
+    pub headless: bool,
+    /// Path to Chrome binary (auto-detected if omitted).
+    pub chrome_path: Option<String>,
+    /// Only probe these functions (default: all).
+    pub function_filter: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct BrowserProbeStopParams {
+    /// Session ID returned by browser_probe_start.
+    pub session_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct BrowserProbeDrainParams {
+    /// Session ID returned by browser_probe_start.
+    pub session_id: String,
+    /// Maximum events to return (default: 1000).
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+    /// Offset to skip events (default: 0).
+    #[serde(default)]
+    pub offset: usize,
+}
+
+// ============================================================================
 // Super-tool: Maven-like Phase Orchestration
 // ============================================================================
 
@@ -655,6 +710,7 @@ impl ChronosServer {
             active_session: Arc::new(Mutex::new(None)),
             tripwire_manager: Arc::new(TripwireManager::new()),
             live_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            live_browser_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
 
@@ -2568,6 +2624,198 @@ impl ChronosServer {
                 ))
             }
         }
+    }
+
+    // ========================================================================
+    // SF10 — Browser/WASM Probe Tools (T15–T16)
+    // ========================================================================
+
+    #[tool(
+        name = "browser_probe_start",
+        description = "Start a browser debugging session. Launches Chrome headless, connects via CDP, detects WASM modules, and sets breakpoints. Use browser_probe_drain to read events and browser_probe_stop to finalize."
+    )]
+    async fn browser_probe_start(
+        &self,
+        params: Parameters<BrowserProbeStartParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+
+        // Check if Chrome is available
+        if !BrowserAdapter::is_chrome_available() {
+            return Ok(CallToolResult::error(text_content(
+                "Chrome is not available. Please ensure Chrome or Chromium is installed and accessible.".to_string(),
+            )));
+        }
+
+        let session_id = uuid::Uuid::new_v4().to_string();
+
+        // Create browser adapter and start capture
+        let adapter = Arc::new(BrowserAdapter::new());
+
+        let config = CaptureConfig::new(&params.url);
+        let session = match adapter.start_capture(config) {
+            Ok(s) => s,
+            Err(e) => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "Failed to start browser probe: {}",
+                    e
+                ))))
+            }
+        };
+
+        info!(
+            "Browser probe started for '{}' (session: {})",
+            params.url, session_id
+        );
+
+        // Store the browser probe session
+        let browser_probe = BrowserProbeSession {
+            adapter: adapter.clone(),
+            session,
+            session_id: session_id.clone(),
+            url: params.url.clone(),
+        };
+        self.live_browser_probes
+            .lock()
+            .unwrap()
+            .insert(session_id.clone(), browser_probe);
+
+        // Set as active session
+        {
+            let mut active = self.active_session.lock().await;
+            *active = Some(session_id.clone());
+        }
+
+        let output = serde_json::json!({
+            "session_id": session_id,
+            "status": "running",
+            "url": params.url,
+            "hint": "Use browser_probe_drain to read WASM events, browser_probe_stop to finalize."
+        });
+        Ok(CallToolResult::success(json_content(&output)))
+    }
+
+    #[tool(
+        name = "browser_probe_stop",
+        description = "Stop a browser probe session. Drains remaining events, disconnects CDP, and kills Chrome process."
+    )]
+    async fn browser_probe_stop(
+        &self,
+        params: Parameters<BrowserProbeStopParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+
+        // Remove the browser probe session
+        let browser_probe = {
+            let mut probes = self.live_browser_probes.lock().unwrap();
+            probes.remove(&params.session_id)
+        };
+
+        let browser_probe = match browser_probe {
+            Some(bp) => bp,
+            None => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "Browser probe session '{}' not found. It may have already been stopped.",
+                    params.session_id
+                ))))
+            }
+        };
+
+        // Drain raw events from the adapter
+        let events: Vec<TraceEvent> = browser_probe.adapter.drain_raw_events();
+        let total_events = events.len();
+        let language = Language::WebAssembly;
+        let url = browser_probe.url.clone();
+
+        // Stop the browser probe
+        if let Err(e) = browser_probe.adapter.stop_probe(&browser_probe.session) {
+            tracing::warn!("Browser probe stop error for session {}: {}", params.session_id, e);
+        }
+
+        info!(
+            "Browser probe stopped for '{}' (session: {}, events: {})",
+            url, params.session_id, total_events
+        );
+
+        // Build and store the query engine if we have events
+        if total_events > 0 {
+            self.build_and_store_engine(&params.session_id, events, language).await;
+        }
+
+        let output = serde_json::json!({
+            "session_id": params.session_id,
+            "status": "stopped",
+            "url": url,
+            "total_events": total_events,
+            "hint": "Session is now queryable. Use query_events, get_call_stack, etc."
+        });
+        Ok(CallToolResult::success(json_content(&output)))
+    }
+
+    #[tool(
+        name = "browser_probe_drain",
+        description = "Drain current events from a browser probe session without stopping it. Returns a snapshot of events currently buffered. The probe continues running."
+    )]
+    async fn browser_probe_drain(
+        &self,
+        params: Parameters<BrowserProbeDrainParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+
+        // Look up the browser probe session
+        let adapter = {
+            let probes = self.live_browser_probes.lock().unwrap();
+            match probes.get(&params.session_id) {
+                Some(bp) => bp.adapter.clone(),
+                None => {
+                    return Ok(CallToolResult::error(text_content(format!(
+                        "Browser probe session '{}' not found.",
+                        params.session_id
+                    ))))
+                }
+            }
+        };
+
+        // Drain semantic events from the adapter
+        let events = match adapter.drain_events() {
+            Ok(e) => e,
+            Err(e) => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "Failed to drain browser events: {}",
+                    e
+                ))))
+            }
+        };
+
+        let total = events.len();
+        // Apply offset/limit
+        let sliced: Vec<_> = events
+            .into_iter()
+            .skip(params.offset)
+            .take(params.limit)
+            .map(|e| {
+                serde_json::json!({
+                    "event_id": e.source_event_id,
+                    "timestamp_ns": e.timestamp_ns,
+                    "thread_id": e.thread_id,
+                    "language": format!("{:?}", e.language),
+                    "kind": format!("{:?}", e.kind),
+                    "description": e.description,
+                })
+            })
+            .collect();
+
+        let output = serde_json::json!({
+            "session_id": params.session_id,
+            "status": "running",
+            "total_buffered": total,
+            "returned": sliced.len(),
+            "offset": params.offset,
+            "limit": params.limit,
+            "events": sliced,
+            "hint": "Browser probe is still running. Call browser_probe_drain again for more events, or browser_probe_stop to finalize."
+        });
+        Ok(CallToolResult::success(json_content(&output)))
     }
 
 
