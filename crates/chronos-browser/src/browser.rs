@@ -57,6 +57,8 @@ impl ChromeProcess {
         if headless {
             args.push("--headless".to_string());
             args.push("--disable-gpu".to_string());
+            // Docker compatibility: prevents /dev/shm size issues
+            args.push("--disable-dev-shm-usage".to_string());
         }
 
         // Launch Chrome
@@ -166,10 +168,21 @@ impl ChromeProcess {
         self.ws_url = ws_url;
     }
 
-    /// Kill the Chrome process
+    /// Kill the Chrome process with timeout
+    ///
+    /// Waits up to 5 seconds for the process to exit after sending SIGKILL.
     pub fn kill(&mut self) -> Result<(), BrowserError> {
         if let Some(ref mut child) = self.process {
             child.kill().map_err(|e| BrowserError::ProcessError(format!("Failed to kill Chrome: {}", e)))?;
+
+            // Wait with timeout for process to exit
+            let start = std::time::Instant::now();
+            while start.elapsed() < std::time::Duration::from_secs(5) {
+                if let Ok(Some(_)) = child.try_wait() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
         }
         self.process = None;
         Ok(())

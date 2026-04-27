@@ -1,4 +1,4 @@
-//! End-to-end tests for browser/WASM debugging.
+//! End-to-end tests for browser WASM debugging.
 //!
 //! These tests are conditional and only run when:
 //! 1. Chrome is found on the system
@@ -10,11 +10,23 @@ use chronos_browser::adapter::BrowserAdapter;
 use chronos_capture::adapter::TraceAdapter;
 use chronos_domain::ProbeBackend;
 use std::env;
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
+use std::thread;
 
-/// Check if E2E tests should run
-fn should_run_e2e_tests() -> bool {
-    env::var("CHRONOS_E2E").as_deref().unwrap_or("") == "1"
+/// WASM test fixtures
+mod fixtures;
+use fixtures::wasm::ensure_add_wasm;
+
+/// Gate: only run E2E tests when CHRONOS_E2E=1
+fn e2e_enabled() -> bool {
+    env::var("CHRONOS_E2E").as_deref() == Ok("1")
+}
+
+/// Check if Chrome is available
+fn chrome_available() -> bool {
+    BrowserAdapter::is_chrome_available()
 }
 
 /// Get the path to the test fixtures
@@ -25,17 +37,81 @@ fn test_fixtures_path() -> PathBuf {
         .join("wasm")
 }
 
-/// Check if Chrome is available for testing
-fn is_chrome_available() -> bool {
-    BrowserAdapter::is_chrome_available()
+/// Simple HTTP file server for test fixtures
+struct TestHttpServer {
+    listener: TcpListener,
+    port: u16,
 }
 
+impl TestHttpServer {
+    fn start(root_dir: &str) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let root = root_dir.to_string();
+
+        let server_listener = listener.try_clone().unwrap();
+        thread::spawn(move || {
+            for stream in server_listener.incoming() {
+                if let Ok(mut stream) = stream {
+                    let mut buf = [0u8; 1024];
+                    let _ = stream.read(&mut buf);
+                    let request = String::from_utf8_lossy(&buf);
+
+                    // Parse GET path
+                    let path = if let Some(line) = request.lines().next() {
+                        let parts: Vec<&str> = line.split_whitespace().collect();
+                        if parts.len() >= 2 {
+                            parts[1].to_string()
+                        } else {
+                            "/".to_string()
+                        }
+                    } else {
+                        "/".to_string()
+                    };
+
+                    let file_path = if path == "/" || path == "/index.html" {
+                        format!("{}/index.html", root)
+                    } else if path == "/add.wasm" {
+                        format!("{}/add.wasm", root)
+                    } else {
+                        continue;
+                    };
+
+                    if let Ok(content) = std::fs::read(&file_path) {
+                        let mime = if file_path.ends_with(".wasm") {
+                            "application/wasm"
+                        } else {
+                            "text/html"
+                        };
+                        let response = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\n\r\n",
+                            mime,
+                            content.len()
+                        );
+                        let _ = stream.write_all(response.as_bytes());
+                        let _ = stream.write_all(&content);
+                    } else {
+                        let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\n\r\n");
+                    }
+                }
+            }
+        });
+
+        Self { listener, port }
+    }
+
+    fn url(&self) -> String {
+        format!("http://127.0.0.1:{}", self.port)
+    }
+}
+
+/// Test Chrome detection - always runs but is ignored by default
 #[test]
 #[ignore]
 fn test_e2e_chrome_detection() {
     // This test always runs but is ignored by default
     // It just verifies Chrome detection works
-    let available = is_chrome_available();
+    let available = chrome_available();
     println!("Chrome available: {}", available);
 }
 
@@ -44,23 +120,30 @@ fn test_e2e_chrome_detection() {
 #[ignore]
 async fn test_e2e_browser_probe_wasm_detection() {
     // Skip if E2E not enabled
-    if !should_run_e2e_tests() {
+    if !e2e_enabled() {
         eprintln!("E2E tests skipped: CHRONOS_E2E=1 not set");
         return;
     }
 
     // Skip if Chrome not available
-    if !is_chrome_available() {
+    if !chrome_available() {
         eprintln!("E2E tests skipped: Chrome not available");
         return;
     }
 
+    // Ensure WASM fixture exists
+    let wasm_path = ensure_add_wasm();
+    println!("Using WASM fixture at: {:?}", wasm_path);
+
+    // Start HTTP server to serve fixtures
+    let fixtures = test_fixtures_path();
+    let server = TestHttpServer::start(fixtures.to_str().unwrap());
+    let url = format!("{}/index.html", server.url());
+    println!("Serving fixtures at: {}", url);
+
     let adapter = BrowserAdapter::new();
 
-    // Start capture with a local file URL
-    let fixtures = test_fixtures_path();
-    let url = format!("file://{}/index.html", fixtures.display());
-
+    // Start capture with local HTTP URL
     let config = chronos_domain::CaptureConfig::new(&url);
     let session = adapter.start_capture(config);
 
@@ -95,21 +178,26 @@ async fn test_e2e_browser_probe_wasm_detection() {
 #[tokio::test]
 #[ignore]
 async fn test_e2e_wasm_module_detection() {
-    if !should_run_e2e_tests() {
+    if !e2e_enabled() {
         eprintln!("E2E tests skipped: CHRONOS_E2E=1 not set");
         return;
     }
 
-    if !is_chrome_available() {
+    if !chrome_available() {
         eprintln!("E2E tests skipped: Chrome not available");
         return;
     }
 
+    // Ensure WASM fixture exists
+    let _wasm_path = ensure_add_wasm();
+
     let adapter = BrowserAdapter::new();
 
-    // Use a known WASM URL
-    // This is a simple public WASM module for testing
-    let url = "https://webassembly.org/".to_string();
+    // Start HTTP server to serve fixtures
+    let fixtures = test_fixtures_path();
+    let server = TestHttpServer::start(fixtures.to_str().unwrap());
+    let url = format!("{}/index.html", server.url());
+    println!("Serving fixtures at: {}", url);
 
     let config = chronos_domain::CaptureConfig::new(&url);
     let session = adapter.start_capture(config);
@@ -130,4 +218,18 @@ async fn test_e2e_wasm_module_detection() {
             println!("Browser probe failed (expected in some environments): {}", e);
         }
     }
+}
+
+/// Test that fixtures module works correctly
+#[test]
+fn test_e2e_wasm_fixtures() {
+    let path = ensure_add_wasm();
+    assert!(path.exists(), "WASM fixture should exist at {:?}", path);
+
+    // Verify the file is a valid WASM binary (starts with \0asm)
+    let content = std::fs::read(&path).expect("Should be able to read WASM file");
+    assert!(
+        content.starts_with(&[0x00, 0x61, 0x73, 0x6d]),
+        "WASM file should start with magic bytes"
+    );
 }

@@ -56,6 +56,62 @@ impl BrowserAdapter {
         ChromeProcess::attach_port(9222).is_ok()
     }
 
+    /// Quick probe: start, wait for events, stop.
+    ///
+    /// This is a convenience method that:
+    /// 1. Creates a new adapter
+    /// 2. Starts a probe session
+    /// 3. Waits for the specified duration
+    /// 4. Drains all captured events
+    /// 5. Stops the probe and cleans up
+    ///
+    /// Returns all semantic events captured during the probe window.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - URL to load in Chrome
+    /// * `duration_ms` - How long to wait before draining events
+    /// * `headless` - Whether to run Chrome in headless mode
+    /// * `chrome_path` - Optional path to Chrome binary
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let events = BrowserAdapter::quick_probe(
+    ///     "http://example.com/wasm.html",
+    ///     5000,  // wait 5 seconds
+    ///     true,   // headless
+    ///     None,   // auto-detect Chrome
+    /// ).await?;
+    /// ```
+    pub async fn quick_probe(
+        url: &str,
+        duration_ms: u64,
+        headless: bool,
+        chrome_path: Option<&str>,
+    ) -> Result<Vec<SemanticEvent>, BrowserError> {
+        let adapter = Self::new();
+        let config = CaptureConfig::new(url);
+        let session = adapter
+            .start_probe_async(config, headless, chrome_path)
+            .await?;
+
+        // Wait for the specified duration
+        tokio::time::sleep(std::time::Duration::from_millis(duration_ms)).await;
+
+        // Drain events (convert TraceError to BrowserError)
+        let events = adapter
+            .drain_events()
+            .map_err(|e| BrowserError::CdpConnectionFailed(e.to_string()))?;
+
+        // Stop probe (cleanup Chrome)
+        adapter
+            .stop_probe(&session)
+            .map_err(|e| BrowserError::CdpConnectionFailed(e.to_string()))?;
+
+        Ok(events)
+    }
+
     /// Async version of start_capture for use from async contexts (MCP server).
     /// This does all the async work properly without creating nested runtimes.
     ///
@@ -207,6 +263,34 @@ impl BrowserAdapter {
 impl Default for BrowserAdapter {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Drop implementation to ensure Chrome is killed when adapter is dropped.
+///
+/// This provides safety against leaked Chrome processes if stop_probe() is not called.
+impl Drop for BrowserAdapter {
+    fn drop(&mut self) {
+        // Kill Chrome if it's still running
+        {
+            let mut chrome_guard = self.chrome.lock().unwrap();
+            if let Some(ref mut chrome) = *chrome_guard {
+                let _ = chrome.kill();
+            }
+            *chrome_guard = None;
+        }
+
+        // Clear event buffer
+        {
+            let mut buffer = self.event_buffer.lock().unwrap();
+            buffer.clear();
+        }
+
+        // Signal stopped
+        {
+            let mut running = self.running.lock().unwrap();
+            *running = false;
+        }
     }
 }
 

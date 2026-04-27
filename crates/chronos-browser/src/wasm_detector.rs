@@ -1,6 +1,27 @@
-//! WASM module detection via CDP events.
+//! Standalone WASM module detector.
 //!
-//! Listens for `Debugger.scriptParsed` events and filters for WebAssembly modules.
+//! This module provides a standalone WASM module detector that can be used
+//! independently from `BrowserAdapter` for module discovery. It listens for
+//! `Debugger.scriptParsed` events and maintains a registry of WebAssembly modules.
+//!
+//! # Example
+//!
+//! ```ignore
+//! use chronos_browser::{BrowserCdpClient, WasmModuleDetector};
+//! use std::sync::Arc;
+//!
+//! async fn detect_modules(cdp: BrowserCdpClient) {
+//!     let detector = WasmModuleDetector::new(Arc::new(tokio::sync::Mutex::new(cdp)));
+//!     let mut detector = detector;
+//!     let events_rx = /* ... */;
+//!     detector.start(events_rx).await.ok();
+//!     for (id, module) in detector.get_modules() {
+//!         println!("WASM module: {} at {:?}", id, module.url);
+//!     }
+//! }
+//! ```
+//!
+//! The detector can also run in the background via [`detect_in_background`].
 
 use crate::cdp_client::{BrowserCdpClient, CdpEvent};
 use crate::error::BrowserError;
@@ -121,6 +142,43 @@ impl WasmModuleDetector {
     /// Check if any WASM modules have been detected
     pub fn has_modules(&self) -> bool {
         !self.modules.is_empty()
+    }
+
+    /// Spawn a background task that detects WASM modules.
+    ///
+    /// Returns a `JoinHandle` that can be used to await the result.
+    /// The detector will listen for WASM module events and collect them.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let cdp = Arc::new(tokio::sync::Mutex::new(cdp_client));
+    /// let handle = WasmModuleDetector::detect_in_background(cdp.clone());
+    ///
+    /// // ... use Chrome to load WASM modules ...
+    ///
+    /// let modules = handle.await.ok();
+    /// ```
+    pub fn detect_in_background(
+        cdp: Arc<tokio::sync::Mutex<BrowserCdpClient>>,
+    ) -> tokio::task::JoinHandle<HashMap<String, WasmModuleInfo>> {
+        let cdp_for_detector = cdp.clone();
+        tokio::spawn(async move {
+            // First subscribe to get the receiver
+            let events_rx = {
+                let cdp = cdp_for_detector.lock().await;
+                cdp.subscribe()
+            };
+
+            // Create detector with the CDP client
+            let mut detector = WasmModuleDetector::new(cdp_for_detector);
+
+            // Run detection
+            let _ = detector.start(events_rx).await;
+
+            // Return detected modules
+            detector.get_modules().clone()
+        })
     }
 
     /// Get all function info across all modules
