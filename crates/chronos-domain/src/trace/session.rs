@@ -85,7 +85,7 @@ impl std::fmt::Display for Language {
             Language::Go => write!(f, "go"),
             Language::CSharp => write!(f, "csharp"),
             Language::Ebpf => write!(f, "ebpf"),
-            Language::WebAssembly => write!(f, "WebAssembly"),
+            Language::WebAssembly => write!(f, "webassembly"),
             Language::Unknown => write!(f, "unknown"),
         }
     }
@@ -242,6 +242,8 @@ mod tests {
         assert_eq!(Language::from_extension("rs"), Language::Rust);
         assert_eq!(Language::from_extension("py"), Language::Python);
         assert_eq!(Language::from_extension("go"), Language::Go);
+        assert_eq!(Language::from_extension("wasm"), Language::WebAssembly);
+        assert_eq!(Language::from_extension("WASM"), Language::WebAssembly);
         assert_eq!(Language::from_extension("xyz"), Language::Unknown);
     }
 
@@ -256,6 +258,7 @@ mod tests {
     fn test_language_display() {
         assert_eq!(Language::Rust.to_string(), "rust");
         assert_eq!(Language::C.to_string(), "c");
+        assert_eq!(Language::WebAssembly.to_string(), "webassembly");
     }
 
     #[test]

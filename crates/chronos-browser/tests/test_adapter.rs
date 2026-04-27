@@ -7,14 +7,14 @@ use chronos_domain::{ProbeBackend, Language};
 #[test]
 fn test_browser_adapter_creation() {
     let adapter = BrowserAdapter::new();
-    assert_eq!(TraceAdapter::name(&adapter), "browser-cdp");
+    assert_eq!(TraceAdapter::name(&adapter), "browser-wasm");
     assert_eq!(adapter.get_language(), Language::WebAssembly);
 }
 
 #[test]
 fn test_browser_adapter_default() {
     let adapter = BrowserAdapter::default();
-    assert_eq!(TraceAdapter::name(&adapter), "browser-cdp");
+    assert_eq!(TraceAdapter::name(&adapter), "browser-wasm");
 }
 
 #[test]
@@ -33,7 +33,7 @@ fn test_browser_adapter_language() {
 #[test]
 fn test_browser_adapter_name() {
     let adapter = BrowserAdapter::new();
-    assert_eq!(TraceAdapter::name(&adapter), "browser-cdp");
+    assert_eq!(TraceAdapter::name(&adapter), "browser-wasm");
 }
 
 // Note: These tests use mock data since we can't actually connect to Chrome in unit tests

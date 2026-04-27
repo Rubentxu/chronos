@@ -1311,4 +1311,81 @@ mod tests {
             _ => panic!("Expected JsFrame data"),
         }
     }
+
+    #[test]
+    fn test_wasm_event_kind_serialization() {
+        // Test WasmEventKind variants
+        assert_eq!(
+            serde_json::to_string(&super::WasmEventKind::Entry).unwrap(),
+            "\"Entry\""
+        );
+        assert_eq!(
+            serde_json::to_string(&super::WasmEventKind::Return).unwrap(),
+            "\"Return\""
+        );
+        assert_eq!(
+            serde_json::to_string(&super::WasmEventKind::Breakpoint).unwrap(),
+            "\"Breakpoint\""
+        );
+        assert_eq!(
+            serde_json::to_string(&super::WasmEventKind::Step).unwrap(),
+            "\"Step\""
+        );
+        assert_eq!(
+            serde_json::to_string(&super::WasmEventKind::Exception).unwrap(),
+            "\"Exception\""
+        );
+
+        // Other variant serializes as JSON object
+        let other_json = serde_json::to_string(&super::WasmEventKind::Other("Custom".to_string())).unwrap();
+        assert_eq!(other_json, "{\"Other\":\"Custom\"}");
+
+        // Test deserialization
+        let parsed: super::WasmEventKind = serde_json::from_str("\"Entry\"").unwrap();
+        assert_eq!(parsed, super::WasmEventKind::Entry);
+        let parsed: super::WasmEventKind = serde_json::from_str("\"Return\"").unwrap();
+        assert_eq!(parsed, super::WasmEventKind::Return);
+        let parsed: super::WasmEventKind = serde_json::from_str("\"Breakpoint\"").unwrap();
+        assert_eq!(parsed, super::WasmEventKind::Breakpoint);
+        let parsed: super::WasmEventKind = serde_json::from_str("\"Step\"").unwrap();
+        assert_eq!(parsed, super::WasmEventKind::Step);
+        let parsed: super::WasmEventKind = serde_json::from_str("\"Exception\"").unwrap();
+        assert_eq!(parsed, super::WasmEventKind::Exception);
+    }
+
+    #[test]
+    fn test_wasm_frame_serialization_roundtrip() {
+        use crate::VariableScope;
+
+        let wasm_frame = super::EventData::WasmFrame {
+            function_index: 42,
+            function_name: Some("add".to_string()),
+            body_offset: 100,
+            module_url: Some("http://localhost/module.wasm".to_string()),
+            locals: Some(vec![crate::VariableInfo::new(
+                "a",
+                "1",
+                "i32",
+                0x1000,
+                VariableScope::Local,
+            )]),
+            event_kind: super::WasmEventKind::Entry,
+        };
+        let json = serde_json::to_string(&wasm_frame).unwrap();
+        let deserialized: super::EventData = serde_json::from_str(&json).unwrap();
+        assert_eq!(wasm_frame, deserialized);
+
+        // Test without optional fields
+        let wasm_frame_no_opts = super::EventData::WasmFrame {
+            function_index: 0,
+            function_name: None,
+            body_offset: 0,
+            module_url: None,
+            locals: None,
+            event_kind: super::WasmEventKind::Return,
+        };
+        let json = serde_json::to_string(&wasm_frame_no_opts).unwrap();
+        let deserialized: super::EventData = serde_json::from_str(&json).unwrap();
+        assert_eq!(wasm_frame_no_opts, deserialized);
+    }
 }

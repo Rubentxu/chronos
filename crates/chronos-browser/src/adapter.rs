@@ -277,7 +277,7 @@ impl TraceAdapter for BrowserAdapter {
     }
 
     fn name(&self) -> &str {
-        "browser-cdp"
+        "browser-wasm"
     }
 }
 
@@ -287,7 +287,7 @@ impl ProbeBackend for BrowserAdapter {
     }
 
     fn name(&self) -> &str {
-        "browser-cdp"
+        "browser-wasm"
     }
 
     fn drain_events(&self) -> Result<Vec<SemanticEvent>, TraceError> {
@@ -344,7 +344,7 @@ mod tests {
     fn test_browser_adapter_name() {
         let adapter = BrowserAdapter::new();
         // Disambiguate between TraceAdapter::name and ProbeBackend::name
-        assert_eq!(chronos_capture::TraceAdapter::name(&adapter), "browser-cdp");
+        assert_eq!(chronos_capture::TraceAdapter::name(&adapter), "browser-wasm");
     }
 
     #[test]
@@ -364,6 +364,6 @@ mod tests {
     fn test_browser_adapter_default() {
         let adapter = BrowserAdapter::default();
         // Disambiguate between TraceAdapter::name and ProbeBackend::name
-        assert_eq!(chronos_capture::TraceAdapter::name(&adapter), "browser-cdp");
+        assert_eq!(chronos_capture::TraceAdapter::name(&adapter), "browser-wasm");
     }
 }
