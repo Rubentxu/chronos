@@ -71,6 +71,15 @@ impl WasmBreakpointManager {
     /// Probe a single WASM function
     ///
     /// Sets a breakpoint at the function body's start offset.
+    ///
+    /// # WASM Byte Offset Encoding
+    ///
+    /// CDP uses a special encoding for WASM offsets: the `line_number` in location
+    /// represents the byte offset within the WASM module's code section, NOT a
+    /// source line number. This is why we set breakpoints using `body_start` as
+    /// the line number and 0 as the column — CDP interprets this as:
+    /// - line_number = byte offset in WASM code section
+    /// - column_number = 0 (always, for WASM)
     pub async fn probe_function(
         &mut self,
         script_id: &str,

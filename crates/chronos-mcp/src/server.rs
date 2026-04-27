@@ -2653,7 +2653,8 @@ impl ChronosServer {
         let adapter = Arc::new(BrowserAdapter::new());
 
         let config = CaptureConfig::new(&params.url);
-        let session = match adapter.start_capture(config) {
+        // SIG 9: Pass params.headless and params.chrome_path to start_probe_async
+        let session = match adapter.start_probe_async(config, params.headless, params.chrome_path.as_deref()).await {
             Ok(s) => s,
             Err(e) => {
                 return Ok(CallToolResult::error(text_content(format!(

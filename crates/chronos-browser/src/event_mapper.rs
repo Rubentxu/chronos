@@ -197,10 +197,13 @@ fn extract_wasm_locals(scope_chain: &[CdpScope]) -> Option<Vec<chronos_domain::v
                 for (i, item) in arr.iter().enumerate() {
                     let name = format!("local_{}", i);
                     let value_str = item.to_string();
+                    // Use type from the object if available, otherwise default to "unknown"
+                    // WASM byte offset values on the expression stack don't have explicit types
+                    let type_str = &object.type_;
                     locals.push(chronos_domain::value::VariableInfo::new(
                         &name,
                         &value_str,
-                        "i32", // WASM locals are typically i32/i64/f32/f64
+                        type_str,
                         0,
                         chronos_domain::value::VariableScope::Local,
                     ));

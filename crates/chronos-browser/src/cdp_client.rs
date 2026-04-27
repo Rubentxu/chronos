@@ -13,13 +13,6 @@ use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{debug, error, warn};
 
-/// CDP message ID counter
-static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-
-fn next_id() -> u64 {
-    NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-}
-
 // ============================================================================
 // CDP Event Types
 // ============================================================================
@@ -148,6 +141,32 @@ pub struct CdpError {
     pub message: String,
 }
 
+impl From<WasmCallFrame> for crate::event_mapper::CdpCallFrame {
+    fn from(frame: WasmCallFrame) -> Self {
+        Self {
+            function_name: frame.function_name,
+            location: crate::event_mapper::CdpLocation {
+                script_id: frame.function_location.as_ref().map(|l| l.script_id.clone()).unwrap_or_default(),
+                line_number: frame.function_location.as_ref().map(|l| l.line_number as i64).unwrap_or(0),
+                column_number: frame.function_location.as_ref().and_then(|l| l.column_number.map(|c| c as i64)),
+            },
+            scope_chain: frame.scope_chain.into_iter().map(|s| {
+                crate::event_mapper::CdpScope {
+                    scope_type: s.type_,
+                    object: Some(crate::event_mapper::CdpRemoteObject {
+                        type_: s.object.type_,
+                        subtype: s.object.subtype,
+                        class_name: s.object.class_name,
+                        value: s.object.value,
+                        description: s.object.description,
+                        object_id: s.object.object_id,
+                    }),
+                }
+            }).collect(),
+        }
+    }
+}
+
 /// Wrapper around CDP event for our use
 #[derive(Debug, Clone)]
 pub enum CdpEvent {
@@ -195,7 +214,7 @@ impl BrowserCdpClient {
         let (mut write, mut read) = ws_stream.split();
 
         let next_id = Arc::new(std::sync::atomic::AtomicU64::new(1));
-        let (event_tx, _event_rx) = broadcast::channel(100);
+        let (event_tx, _) = broadcast::channel(100);
         let event_tx_clone = event_tx.clone();
         let (ws_write, mut ws_read) = mpsc::channel::<String>(100);
         let pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>> =

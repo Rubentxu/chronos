@@ -16,23 +16,33 @@ const DEFAULT_DEBUG_PORT: u16 = 9222;
 /// Chrome process manager
 pub struct ChromeProcess {
     process: Option<Child>,
+    debug_port: u16,
     debug_url: String,
     ws_url: String,
+    /// Keep temp dir alive for session isolation (SIG 6)
+    _user_data_dir: tempfile::TempDir,
 }
 
 impl ChromeProcess {
-    /// Spawn a new Chrome process with remote debugging enabled
-    pub fn spawn(headless: bool) -> Result<Self, BrowserError> {
-        let chrome_path = find_chrome_binary()?;
+    /// Spawn Chrome and return immediately (non-blocking).
+    /// Call `wait_for_ready` afterwards to get the WS URL.
+    pub fn spawn(headless: bool, chrome_path: Option<&str>) -> Result<Self, BrowserError> {
+        let chrome_path = match chrome_path {
+            Some(p) => p.to_string(),
+            None => find_chrome_binary()?,
+        };
 
         let debug_port = DEFAULT_DEBUG_PORT;
-        let user_data_dir = std::env::temp_dir();
+
+        // Use a unique temp directory for session isolation (SIG 6)
+        let user_data_dir = tempfile::TempDir::new()
+            .map_err(|e| BrowserError::ProcessError(format!("Failed to create temp dir: {}", e)))?;
+        let user_data_path = user_data_dir.path().to_path_buf();
 
         let mut args = vec![
             format!("--remote-debugging-port={}", debug_port),
-            format!("--user-data-dir={}", user_data_dir.display()),
-            "--no-first-run".to_string(),
-            "--no-default-browser-check".to_string(),
+            format!("--user-data-dir={}", user_data_path.display()),
+            "--no-default-browser-check".to_string(),  // Remove duplicate --no-first-run (SIG 8)
             "--disable-extensions".to_string(),
             "--disable-popup-blocking".to_string(),
             "--disable-translate".to_string(),
@@ -40,8 +50,8 @@ impl ChromeProcess {
             "--disable-sync".to_string(),
             "--disable-default-apps".to_string(),
             "--mute-audio".to_string(),
-            "--no-first-run".to_string(),
-            "--save-prefdrafts".to_string(),
+            // Remove --save-prefdrafts (SIG 7 - typo, doesn't exist)
+            // Remove duplicate --no-first-run (SIG 8)
         ];
 
         if headless {
@@ -63,14 +73,18 @@ impl ChromeProcess {
                 }
             })?;
 
-        // Wait for Chrome to be ready
-        let ws_url = wait_for_chrome_ready(debug_port)?;
-
         Ok(Self {
             process: Some(child),
+            debug_port,
             debug_url: format!("http://localhost:{}", debug_port),
-            ws_url,
+            ws_url: String::new(), // Set after wait_for_ready
+            _user_data_dir: user_data_dir,
         })
+    }
+
+    /// Get the debug port
+    pub fn port(&self) -> u16 {
+        self.debug_port
     }
 
     /// Attach to an existing Chrome process via WebSocket URL
@@ -84,8 +98,10 @@ impl ChromeProcess {
 
         Ok(Self {
             process: None,
+            debug_port: DEFAULT_DEBUG_PORT,
             debug_url: String::new(),
             ws_url: ws_url.to_string(),
+            _user_data_dir: tempfile::TempDir::new().unwrap(),
         })
     }
 
@@ -94,8 +110,10 @@ impl ChromeProcess {
         let ws_url = format!("ws://localhost:{}/devtools/browser", port);
         Ok(Self {
             process: None,
+            debug_port: port,
             debug_url: format!("http://localhost:{}", port),
             ws_url,
+            _user_data_dir: tempfile::TempDir::new().unwrap(),
         })
     }
 
@@ -107,6 +125,45 @@ impl ChromeProcess {
     /// Get the HTTP debugging URL
     pub fn debug_url(&self) -> &str {
         &self.debug_url
+    }
+
+    /// Wait for Chrome's CDP endpoint to be ready. Returns WS URL.
+    /// This is an async method that polls the CDP JSON endpoint.
+    pub async fn wait_for_ready(port: u16) -> Result<String, BrowserError> {
+        let target = format!("http://localhost:{}/json", port);
+        let timeout = std::time::Duration::from_secs(30);
+        let start = std::time::Instant::now();
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .map_err(|e| BrowserError::ProcessError(format!("Failed to create HTTP client: {}", e)))?;
+
+        while start.elapsed() < timeout {
+            match client.get(&target).send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    if let Ok(json) = resp.json::<serde_json::Value>().await {
+                        // Extract webSocketDebuggerUrl from first target
+                        if let Some(url) = json.as_array()
+                            .and_then(|t| t.first())
+                            .and_then(|t| t.get("webSocketDebuggerUrl"))
+                            .and_then(|u| u.as_str())
+                        {
+                            return Ok(url.to_string());
+                        }
+                    }
+                }
+                _ => {}
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+
+        Err(BrowserError::Timeout("Timed out waiting for Chrome CDP".into()))
+    }
+
+    /// Set the WS URL after wait_for_ready completes
+    pub fn set_ws_url(&mut self, ws_url: String) {
+        self.ws_url = ws_url;
     }
 
     /// Kill the Chrome process
@@ -177,45 +234,6 @@ fn find_chrome_binary() -> Result<String, BrowserError> {
     ))
 }
 
-/// Wait for Chrome to be ready and return the WebSocket URL
-fn wait_for_chrome_ready(port: u16) -> Result<String, BrowserError> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| BrowserError::ProcessError(format!("Failed to create HTTP client: {}", e)))?;
-
-    let timeout = std::time::Duration::from_secs(30);
-    let start = std::time::Instant::now();
-    let target = format!("http://localhost:{}/json", port);
-
-    while start.elapsed() < timeout {
-        match client.get(&target).send() {
-            Ok(resp) if resp.status().is_success() => {
-                // Get the first target's webSocketDebuggerUrl
-                if let Ok(json) = resp.json::<serde_json::Value>() {
-                    if let Some(targets) = json.as_array() {
-                        if let Some(first) = targets.first() {
-                            if let Some(ws_url) = first.get("webSocketDebuggerUrl") {
-                                if let Some(url_str) = ws_url.as_str() {
-                                    return Ok(url_str.to_string());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            _ => {
-                // Connection failed or not ready yet
-            }
-        }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
-
-    Err(BrowserError::Timeout(
-        "Timed out waiting for Chrome to be ready".into(),
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,12 +251,16 @@ mod tests {
     #[test]
     fn test_chrome_process_creation() {
         // This test just verifies the struct can be created
+        let user_data_dir = tempfile::TempDir::new().unwrap();
         let process = ChromeProcess {
             process: None,
+            debug_port: 9222,
             debug_url: "http://localhost:9222".to_string(),
             ws_url: "ws://localhost:9222/devtools/browser".to_string(),
+            _user_data_dir: user_data_dir,
         };
         assert_eq!(process.debug_url, "http://localhost:9222");
+        assert_eq!(process.port(), 9222);
         assert!(!process.is_running());
     }
 }
