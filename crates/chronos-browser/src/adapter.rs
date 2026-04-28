@@ -427,4 +427,89 @@ mod tests {
         // Disambiguate between TraceAdapter::name and ProbeBackend::name
         assert_eq!(chronos_capture::TraceAdapter::name(&adapter), "browser-wasm");
     }
+
+    #[test]
+    fn test_stop_probe_no_panic_without_chrome() {
+        // Verify stop_probe doesn't panic when called on a fresh adapter (no Chrome)
+        let adapter = BrowserAdapter::new();
+        let session = CaptureSession::new(0, Language::WebAssembly, CaptureConfig::new("about:blank"));
+        let result = adapter.stop_probe(&session);
+        assert!(result.is_ok(), "stop_probe should succeed even without Chrome");
+    }
+
+    #[test]
+    fn test_stop_capture_no_panic_without_chrome() {
+        // Verify stop_capture doesn't panic on fresh adapter (CRIT-001: scoped locks)
+        let adapter = BrowserAdapter::new();
+        let session = CaptureSession::new(0, Language::WebAssembly, CaptureConfig::new("about:blank"));
+        let result = adapter.stop_capture(&session);
+        assert!(result.is_ok(), "stop_capture should succeed even without Chrome");
+    }
+
+    #[test]
+    fn test_attach_to_process_unsupported() {
+        let adapter = BrowserAdapter::new();
+        let config = CaptureConfig::new("about:blank");
+        let result = adapter.attach_to_process(1234, config);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            TraceError::UnsupportedLanguage(msg) => {
+                assert!(msg.contains("not supported"));
+            }
+            other => panic!("Expected UnsupportedLanguage, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_drain_events_clears_buffer() {
+        // Verify drain_events uses std::mem::take (buffer is cleared after drain)
+        let adapter = BrowserAdapter::new();
+
+        // First drain should be empty
+        let first = adapter.drain_events().unwrap();
+        assert!(first.is_empty());
+
+        // Second drain should also be empty (buffer was cleared)
+        let second = adapter.drain_events().unwrap();
+        assert!(second.is_empty());
+    }
+
+    #[test]
+    fn test_drain_raw_events_clears_buffer() {
+        let adapter = BrowserAdapter::new();
+
+        let first = adapter.drain_raw_events();
+        assert!(first.is_empty());
+
+        let second = adapter.drain_raw_events();
+        assert!(second.is_empty());
+    }
+
+    #[test]
+    fn test_drop_does_not_panic() {
+        // Verify Drop impl doesn't panic when adapter is dropped without stop_probe
+        let adapter = BrowserAdapter::new();
+        drop(adapter); // Should not panic
+    }
+
+    #[test]
+    fn test_probe_backend_name() {
+        let adapter = BrowserAdapter::new();
+        assert_eq!(ProbeBackend::name(&adapter), "browser-wasm");
+    }
+
+    #[test]
+    fn test_multiple_stop_probe_calls() {
+        // Verify stop_probe can be called multiple times without panic
+        let adapter = BrowserAdapter::new();
+        let session = CaptureSession::new(0, Language::WebAssembly, CaptureConfig::new("about:blank"));
+
+        let r1 = adapter.stop_probe(&session);
+        let r2 = adapter.stop_probe(&session);
+        let r3 = adapter.stop_probe(&session);
+
+        assert!(r1.is_ok());
+        assert!(r2.is_ok());
+        assert!(r3.is_ok());
+    }
 }

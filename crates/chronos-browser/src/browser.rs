@@ -281,4 +281,59 @@ mod tests {
         assert_eq!(process.port(), 9222);
         assert!(!process.is_running());
     }
+
+    #[test]
+    fn test_attach_valid_ws_url() {
+        // CRIT-002 fix: attach() should succeed with valid ws:// URL and create TempDir
+        let result = ChromeProcess::attach("ws://localhost:9222/devtools/browser");
+        assert!(result.is_ok(), "attach() should succeed with valid ws:// URL");
+        let process = result.unwrap();
+        assert_eq!(process.ws_url(), "ws://localhost:9222/devtools/browser");
+        assert!(!process.is_running());
+    }
+
+    #[test]
+    fn test_attach_valid_wss_url() {
+        // CRIT-002 fix: attach() should succeed with valid wss:// URL
+        let result = ChromeProcess::attach("wss://remote:9222/devtools/browser");
+        assert!(result.is_ok(), "attach() should succeed with valid wss:// URL");
+        let process = result.unwrap();
+        assert_eq!(process.ws_url(), "wss://remote:9222/devtools/browser");
+    }
+
+    #[test]
+    fn test_attach_invalid_url() {
+        // CRIT-002 fix: attach() should reject non-ws URLs
+        let result = ChromeProcess::attach("http://localhost:9222");
+        assert!(result.is_err());
+        match result {
+            Err(BrowserError::CdpConnectionFailed(msg)) => {
+                assert!(msg.contains("Invalid WebSocket URL"), "Expected 'Invalid WebSocket URL' error, got: {}", msg);
+            }
+            Err(other) => panic!("Expected CdpConnectionFailed, got: {:?}", other),
+            Ok(_) => panic!("Expected error, got success"),
+        }
+    }
+
+    #[test]
+    fn test_attach_port_creates_process() {
+        // CRIT-003 fix: attach_port() should succeed and create a proper process
+        let result = ChromeProcess::attach_port(9222);
+        assert!(result.is_ok(), "attach_port() should succeed");
+        let process = result.unwrap();
+        assert_eq!(process.port(), 9222);
+        assert_eq!(process.debug_url(), "http://localhost:9222");
+        assert!(process.ws_url().contains("9222"));
+        assert!(process.ws_url().contains("devtools/browser"));
+        assert!(!process.is_running());
+    }
+
+    #[test]
+    fn test_attach_port_different_port() {
+        // Verify port is correctly set
+        let process = ChromeProcess::attach_port(9333).unwrap();
+        assert_eq!(process.port(), 9333);
+        assert_eq!(process.debug_url(), "http://localhost:9333");
+        assert!(process.ws_url().contains("9333"));
+    }
 }
