@@ -69,12 +69,10 @@ impl SemanticResolver for WasmSemanticResolver {
                     } else {
                         format!("{}()", func_name)
                     }
+                } else if let Some(url) = module_url {
+                    format!("{}({}) in {}", func_name, args.join(", "), url)
                 } else {
-                    if let Some(url) = module_url {
-                        format!("{}({}) in {}", func_name, args.join(", "), url)
-                    } else {
-                        format!("{}({})", func_name, args.join(", "))
-                    }
+                    format!("{}({})", func_name, args.join(", "))
                 }
             }
             _ => return None,

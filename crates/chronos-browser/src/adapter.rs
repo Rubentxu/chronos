@@ -224,9 +224,9 @@ impl BrowserAdapter {
                         }
                     }
                     Ok(CdpEvent::DebuggerResumed) => {
-                        let mut r = running.lock().unwrap();
-                        *r = false;
-                        break;
+                        // Debugger resumed after a breakpoint hit — this is normal.
+                        // Do NOT stop the event loop; we keep listening for the next hit.
+                        tracing::trace!("Debugger resumed — continuing event loop");
                     }
                     Ok(CdpEvent::InspectorDetached) => {
                         let mut r = running.lock().unwrap();

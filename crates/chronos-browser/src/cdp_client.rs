@@ -275,6 +275,8 @@ impl BrowserCdpClient {
                                             // It's a response - check if anyone is waiting
                                             let mut pending = pending_clone.lock().await;
                                             if let Some(sender) = pending.remove(&id) {
+                                                // If the receiver was already dropped (timeout),
+                                                // send() fails silently — that's fine, entry is cleaned up.
                                                 let _ = sender.send(json.clone());
                                             }
                                         }
@@ -286,10 +288,24 @@ impl BrowserCdpClient {
                             }
                             Some(Ok(Message::Close(_))) | None => {
                                 debug!("CDP WebSocket closed");
+                                // Clean up any orphaned pending requests
+                                let mut pending = pending_clone.lock().await;
+                                let orphaned = pending.len();
+                                if orphaned > 0 {
+                                    warn!("Cleaning up {} orphaned pending CDP requests on disconnect", orphaned);
+                                    pending.clear();
+                                }
                                 break;
                             }
                             Some(Err(e)) => {
                                 error!("CDP WebSocket error: {}", e);
+                                // Clean up pending requests on error too
+                                let mut pending = pending_clone.lock().await;
+                                let orphaned = pending.len();
+                                if orphaned > 0 {
+                                    warn!("Cleaning up {} orphaned pending CDP requests on error", orphaned);
+                                    pending.clear();
+                                }
                                 break;
                             }
                             _ => {}
@@ -300,6 +316,9 @@ impl BrowserCdpClient {
                         if let Some(text) = msg {
                             if let Err(e) = write.send(Message::Text(text)).await {
                                 error!("Failed to send CDP message: {}", e);
+                                // Clean up pending requests on send failure
+                                let mut pending = pending_clone.lock().await;
+                                pending.clear();
                                 break;
                             }
                         }
@@ -346,7 +365,16 @@ impl BrowserCdpClient {
         // Wait for response with timeout
         let response = tokio::time::timeout(Duration::from_secs(5), rx)
             .await
-            .map_err(|_| BrowserError::Timeout("CDP command timeout".into()))?
+            .map_err(|_| {
+                // Timeout: remove the orphaned entry from the pending map
+                // (the oneshot sender was already dropped, but the HashMap entry remains)
+                let pending = self.pending.clone();
+                tokio::spawn(async move {
+                    let mut pending = pending.lock().await;
+                    pending.remove(&id);
+                });
+                BrowserError::Timeout("CDP command timeout".into())
+            })?
             .map_err(|_| BrowserError::CdpConnectionFailed("Channel closed".into()))?;
 
         // Check for CDP error in response

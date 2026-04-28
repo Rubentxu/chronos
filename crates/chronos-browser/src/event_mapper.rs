@@ -97,7 +97,7 @@ pub fn paused_to_wasm_events(
                 // it's an entry breakpoint; otherwise it might be a return
                 if let Some(probe) = breakpoint_manager.get_function_for_breakpoint(hit_bp) {
                     // Check if this is a return probe by looking at the function info
-                    if probe.function.name.as_ref().map_or(false, |n| n.starts_with("__return__")) {
+                    if probe.function.name.as_ref().is_some_and(|n| n.starts_with("__return__")) {
                         WasmEventKind::Return
                     } else {
                         WasmEventKind::Entry

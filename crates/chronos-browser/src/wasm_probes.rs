@@ -123,7 +123,7 @@ impl WasmBreakpointManager {
     pub async fn remove_all(&mut self) -> Result<(), BrowserError> {
         if let Some(cdp) = &self.cdp {
             let cdp = cdp.lock().await;
-            for (breakpoint_id, _) in &self.breakpoints {
+            for breakpoint_id in self.breakpoints.keys() {
                 cdp.remove_breakpoint(breakpoint_id).await?;
             }
         }

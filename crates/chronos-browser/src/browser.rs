@@ -98,24 +98,29 @@ impl ChromeProcess {
             ));
         }
 
+        let user_data_dir = tempfile::TempDir::new()
+            .map_err(|e| BrowserError::ProcessError(format!("Failed to create temp dir: {}", e)))?;
+
         Ok(Self {
             process: None,
             debug_port: DEFAULT_DEBUG_PORT,
             debug_url: String::new(),
             ws_url: ws_url.to_string(),
-            _user_data_dir: tempfile::TempDir::new().unwrap(),
+            _user_data_dir: user_data_dir,
         })
     }
 
     /// Attach to Chrome via the debugging port
     pub fn attach_port(port: u16) -> Result<Self, BrowserError> {
-        let ws_url = format!("ws://localhost:{}/devtools/browser", port);
+        let user_data_dir = tempfile::TempDir::new()
+            .map_err(|e| BrowserError::ProcessError(format!("Failed to create temp dir: {}", e)))?;
+
         Ok(Self {
             process: None,
             debug_port: port,
             debug_url: format!("http://localhost:{}", port),
-            ws_url,
-            _user_data_dir: tempfile::TempDir::new().unwrap(),
+            ws_url: format!("ws://localhost:{}/devtools/browser", port),
+            _user_data_dir: user_data_dir,
         })
     }
 
@@ -190,7 +195,7 @@ impl ChromeProcess {
 
     /// Check if the process is still running
     pub fn is_running(&self) -> bool {
-        self.process.as_ref().map_or(false, |c| c.id() != 0)
+        self.process.as_ref().is_some_and(|c| c.id() != 0)
     }
 }
 
