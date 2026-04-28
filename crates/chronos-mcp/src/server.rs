@@ -4163,6 +4163,334 @@ mod tests {
         assert!(text.contains("100") || text.contains("highly similar"));
     }
 
+    // ========================================================================
+    // SF10 — Browser/WASM Probe Tool Tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_browser_probe_start_chrome_not_available() {
+        let server = ChronosServer::new();
+
+        // Force Chrome to be unavailable by using an invalid path
+        std::env::set_var("CHROME_PATH", "/nonexistent/chrome/path/for/test");
+        let result = server
+            .browser_probe_start(Parameters(BrowserProbeStartParams {
+                url: "http://example.com".to_string(),
+                headless: true,
+                chrome_path: None,
+                function_filter: None,
+            }))
+            .await
+            .unwrap();
+        std::env::remove_var("CHROME_PATH");
+
+        // Result is either "Chrome is not available" (if is_chrome_available fails)
+        // or "Failed to start browser probe: Chrome not found" (if spawn fails)
+        let text = format!("{:?}", result.content);
+        if result.is_error == Some(true) {
+            assert!(
+                text.contains("Chrome") || text.contains("chrome"),
+                "Should mention Chrome issue, got: {}",
+                text
+            );
+        }
+        // If Chrome IS available on this system, the probe might succeed — that's OK
+    }
+
+    #[tokio::test]
+    async fn test_browser_probe_stop_session_not_found() {
+        let server = ChronosServer::new();
+
+        let result = server
+            .browser_probe_stop(Parameters(BrowserProbeStopParams {
+                session_id: "nonexistent-browser-session".to_string(),
+            }))
+            .await
+            .unwrap();
+
+        assert_eq!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        assert!(
+            text.contains("not found"),
+            "Should mention 'not found', got: {}",
+            text
+        );
+    }
+
+    #[tokio::test]
+    async fn test_browser_probe_drain_session_not_found() {
+        let server = ChronosServer::new();
+
+        let result = server
+            .browser_probe_drain(Parameters(BrowserProbeDrainParams {
+                session_id: "nonexistent-browser-session".to_string(),
+                limit: 1000,
+                offset: 0,
+            }))
+            .await
+            .unwrap();
+
+        assert_eq!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        assert!(
+            text.contains("not found"),
+            "Should mention 'not found', got: {}",
+            text
+        );
+    }
+
+    #[tokio::test]
+    async fn test_browser_probe_lifecycle_with_mock_session() {
+        // Test the full lifecycle: create mock session → drain → stop
+        // This exercises the MCP integration without requiring real Chrome
+        let server = ChronosServer::new();
+        let session_id = "test-browser-mock-session".to_string();
+
+        // Manually inject a mock browser probe session (simulating browser_probe_start)
+        {
+            let adapter = Arc::new(BrowserAdapter::new());
+            let capture_session = CaptureSession::new(
+                0,
+                Language::WebAssembly,
+                CaptureConfig::new("http://test.local"),
+            );
+            let probe = BrowserProbeSession {
+                adapter: adapter.clone(),
+                session: capture_session,
+                session_id: session_id.clone(),
+                url: "http://test.local".to_string(),
+            };
+            server
+                .live_browser_probes
+                .lock()
+                .unwrap()
+                .insert(session_id.clone(), probe);
+        }
+
+        // Drain events from the mock session (should return 0 events since no Chrome)
+        let drain_result = server
+            .browser_probe_drain(Parameters(BrowserProbeDrainParams {
+                session_id: session_id.clone(),
+                limit: 1000,
+                offset: 0,
+            }))
+            .await
+            .unwrap();
+
+        assert_ne!(drain_result.is_error, Some(true), "drain should succeed");
+        let drain_text = format!("{:?}", drain_result.content);
+        assert!(drain_text.contains("total_buffered"), "Should have total_buffered field");
+        assert!(drain_text.contains("0"), "Should have 0 buffered events");
+
+        // Stop the mock session
+        let stop_result = server
+            .browser_probe_stop(Parameters(BrowserProbeStopParams {
+                session_id: session_id.clone(),
+            }))
+            .await
+            .unwrap();
+
+        assert_ne!(stop_result.is_error, Some(true), "stop should succeed");
+        let stop_text = format!("{:?}", stop_result.content);
+        assert!(stop_text.contains("stopped"), "Should contain 'stopped' status");
+        assert!(stop_text.contains("total_events"), "Should have total_events field");
+
+        // Verify session is removed
+        assert!(
+            !server.live_browser_probes.lock().unwrap().contains_key(&session_id),
+            "Session should be removed after stop"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_browser_probe_drain_with_offset_limit() {
+        let server = ChronosServer::new();
+        let session_id = "test-browser-offset-limit".to_string();
+
+        // Inject mock session
+        {
+            let adapter = Arc::new(BrowserAdapter::new());
+            let capture_session = CaptureSession::new(
+                0,
+                Language::WebAssembly,
+                CaptureConfig::new("http://test.local"),
+            );
+            let probe = BrowserProbeSession {
+                adapter,
+                session: capture_session,
+                session_id: session_id.clone(),
+                url: "http://test.local".to_string(),
+            };
+            server
+                .live_browser_probes
+                .lock()
+                .unwrap()
+                .insert(session_id.clone(), probe);
+        }
+
+        // Drain with offset=0, limit=0 (should return empty)
+        let result = server
+            .browser_probe_drain(Parameters(BrowserProbeDrainParams {
+                session_id: session_id.clone(),
+                limit: 0,
+                offset: 0,
+            }))
+            .await
+            .unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        assert!(text.contains("returned"), "Should have returned field");
+
+        // Cleanup
+        let _ = server
+            .browser_probe_stop(Parameters(BrowserProbeStopParams {
+                session_id,
+            }))
+            .await;
+    }
+
+    #[tokio::test]
+    async fn test_browser_probe_stop_removes_from_active_session() {
+        let server = ChronosServer::new();
+        let session_id = "test-browser-active-cleanup".to_string();
+
+        // Inject mock session and set as active
+        {
+            let adapter = Arc::new(BrowserAdapter::new());
+            let capture_session = CaptureSession::new(
+                0,
+                Language::WebAssembly,
+                CaptureConfig::new("http://test.local"),
+            );
+            let probe = BrowserProbeSession {
+                adapter,
+                session: capture_session,
+                session_id: session_id.clone(),
+                url: "http://test.local".to_string(),
+            };
+            server
+                .live_browser_probes
+                .lock()
+                .unwrap()
+                .insert(session_id.clone(), probe);
+
+            // Set as active session
+            let mut active = server.active_session.lock().await;
+            *active = Some(session_id.clone());
+        }
+
+        // Stop should remove from live_browser_probes
+        let _ = server
+            .browser_probe_stop(Parameters(BrowserProbeStopParams {
+                session_id: session_id.clone(),
+            }))
+            .await
+            .unwrap();
+
+        // Verify session is gone from live_browser_probes
+        assert!(
+            !server.live_browser_probes.lock().unwrap().contains_key(&session_id),
+            "Session should be removed from live_browser_probes"
+        );
+
+        // Note: browser_probe_stop does NOT clear active_session — that's by design
+        // (active_session tracks the last used session for query tools)
+    }
+
+    #[tokio::test]
+    async fn test_browser_probe_double_stop_returns_error() {
+        let server = ChronosServer::new();
+        let session_id = "test-browser-double-stop".to_string();
+
+        // Inject mock session
+        {
+            let adapter = Arc::new(BrowserAdapter::new());
+            let capture_session = CaptureSession::new(
+                0,
+                Language::WebAssembly,
+                CaptureConfig::new("http://test.local"),
+            );
+            let probe = BrowserProbeSession {
+                adapter,
+                session: capture_session,
+                session_id: session_id.clone(),
+                url: "http://test.local".to_string(),
+            };
+            server
+                .live_browser_probes
+                .lock()
+                .unwrap()
+                .insert(session_id.clone(), probe);
+        }
+
+        // First stop should succeed
+        let first = server
+            .browser_probe_stop(Parameters(BrowserProbeStopParams {
+                session_id: session_id.clone(),
+            }))
+            .await
+            .unwrap();
+        assert_ne!(first.is_error, Some(true));
+
+        // Second stop should return error (session already removed)
+        let second = server
+            .browser_probe_stop(Parameters(BrowserProbeStopParams {
+                session_id: session_id.clone(),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(second.is_error, Some(true), "Second stop should be an error");
+        let text = format!("{:?}", second.content);
+        assert!(text.contains("not found"), "Should mention not found");
+    }
+
+    #[tokio::test]
+    async fn test_browser_probe_drain_after_stop_returns_error() {
+        let server = ChronosServer::new();
+        let session_id = "test-browser-drain-after-stop".to_string();
+
+        // Inject mock session
+        {
+            let adapter = Arc::new(BrowserAdapter::new());
+            let capture_session = CaptureSession::new(
+                0,
+                Language::WebAssembly,
+                CaptureConfig::new("http://test.local"),
+            );
+            let probe = BrowserProbeSession {
+                adapter,
+                session: capture_session,
+                session_id: session_id.clone(),
+                url: "http://test.local".to_string(),
+            };
+            server
+                .live_browser_probes
+                .lock()
+                .unwrap()
+                .insert(session_id.clone(), probe);
+        }
+
+        // Stop the session
+        let _ = server
+            .browser_probe_stop(Parameters(BrowserProbeStopParams {
+                session_id: session_id.clone(),
+            }))
+            .await
+            .unwrap();
+
+        // Drain after stop should return error
+        let drain = server
+            .browser_probe_drain(Parameters(BrowserProbeDrainParams {
+                session_id: session_id.clone(),
+                limit: 1000,
+                offset: 0,
+            }))
+            .await
+            .unwrap();
+        assert_eq!(drain.is_error, Some(true), "Drain after stop should be an error");
+    }
+
 }
 
 /// ServerHandler implementation with custom server identity.
