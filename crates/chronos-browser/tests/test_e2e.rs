@@ -145,7 +145,7 @@ async fn test_e2e_browser_probe_wasm_detection() {
 
     // Start capture with local HTTP URL
     let config = chronos_domain::CaptureConfig::new(&url);
-    let session = adapter.start_capture(config);
+    let session = adapter.start_probe_async(config, true, None).await;
 
     match session {
         Ok(_session) => {
@@ -200,7 +200,7 @@ async fn test_e2e_wasm_module_detection() {
     println!("Serving fixtures at: {}", url);
 
     let config = chronos_domain::CaptureConfig::new(&url);
-    let session = adapter.start_capture(config);
+    let session = adapter.start_probe_async(config, true, None).await;
 
     match session {
         Ok(_session) => {

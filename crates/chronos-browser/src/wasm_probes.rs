@@ -25,6 +25,7 @@ pub struct WasmFunctionProbe {
 /// WASM breakpoint manager
 ///
 /// Manages breakpoints for WASM functions across all loaded modules.
+#[derive(Clone)]
 pub struct WasmBreakpointManager {
     /// Map of breakpoint_id -> function probe info
     breakpoints: HashMap<String, WasmFunctionProbe>,

@@ -87,6 +87,12 @@ pub fn paused_to_wasm_events(
 ) -> Vec<TraceEvent> {
     let mut events = Vec::new();
 
+    // Extract body_offset from the first call frame for position-based return detection
+    let first_body_offset = paused
+        .call_frames
+        .first()
+        .map(|f| f.location.line_number as u32);
+
     // Determine the WASM event kind based on the paused reason
     let event_kind = match paused.reason.as_str() {
         "breakpoint" => {
@@ -96,8 +102,33 @@ pub fn paused_to_wasm_events(
                 // If the breakpoint is in the function_breakpoints map,
                 // it's an entry breakpoint; otherwise it might be a return
                 if let Some(probe) = breakpoint_manager.get_function_for_breakpoint(hit_bp) {
-                    // Check if this is a return probe by looking at the function info
-                    if probe.function.name.as_ref().is_some_and(|n| n.starts_with("__return__")) {
+                    // Agent-first: detect return/entry by breakpoint position,
+                    // not by toolchain-specific __return__ naming convention.
+                    //
+                    // For the first call frame, use body_offset proximity:
+                    //   - Near body_end   → Return breakpoint
+                    //   - Near body_start → Entry breakpoint
+                    //
+                    // Fallback: __return__ prefix for legacy toolchains.
+                    let body_len = probe.function.body_end.saturating_sub(probe.function.body_start);
+                    let threshold = (body_len as f64 * 0.03) as u32; // 3% proximity
+                    let body_offset = first_body_offset.unwrap_or(0);
+                    let is_return = if body_len > 0 {
+                        let dist_to_end = probe.function.body_end.saturating_sub(body_offset);
+                        let dist_to_start = body_offset.saturating_sub(probe.function.body_start);
+                        dist_to_end <= threshold.max(1) && dist_to_end < dist_to_start
+                    } else {
+                        false
+                    };
+
+                    if is_return {
+                        WasmEventKind::Return
+                    } else if probe.function.name.as_ref().is_some_and(|n| n.starts_with("__return__")) {
+                        // Legacy fallback: Emscripten __return__ prefix
+                        tracing::debug!(
+                            "Using legacy __return__ detection for function {:?} — consider recompiling with position metadata",
+                            probe.function.name
+                        );
                         WasmEventKind::Return
                     } else {
                         WasmEventKind::Entry

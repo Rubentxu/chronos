@@ -1,6 +1,8 @@
-//! Browser adapter implementing TraceAdapter and ProbeBackend for WASM debugging.
+//! Browser adapter implementing ProbeBackend for agent-first WASM trace capture.
 //!
-//! This adapter connects to Chrome via CDP to debug WebAssembly modules.
+//! This adapter connects to Chrome via CDP to capture ALL WebAssembly events.
+//! AI agents capture everything first, then query semantically after — no selective
+//! breakpoints, no human-style filtering. The agent is the consumer, not a human debugger.
 
 use crate::browser::ChromeProcess;
 use crate::cdp_client::{BrowserCdpClient, CdpEvent};
@@ -8,46 +10,99 @@ use crate::error::BrowserError;
 use crate::event_mapper::paused_to_wasm_events;
 use crate::wasm_probes::WasmBreakpointManager;
 use crate::wasm_resolver::WasmSemanticResolver;
-use chronos_capture::TraceAdapter;
 use chronos_domain::adapter::ProbeBackend;
 use chronos_domain::semantic::{ResolveContext, SemanticEvent, SemanticResolver};
-use chronos_domain::{CaptureConfig, CaptureSession, Language, TraceError, TraceEvent};
-use std::collections::HashMap;
+use chronos_domain::{
+    CaptureConfig, CaptureSession, Language, TraceError, TraceEvent,
+};
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
+use tokio_util::sync::CancellationToken;
+
+/// Maximum events in the capture buffer before dropping oldest.
+pub const DEFAULT_BUFFER_CAPACITY: usize = 100_000;
+
+/// Shared mutable state for the browser adapter.
+///
+/// All adapter state lives here, behind a single `Arc<Mutex<>>`.
+/// This replaces the previous 7 separate `Arc<Mutex<T>>` fields,
+/// reducing lock overhead and simplifying the code.
+pub struct SharedState {
+    /// Chrome process (if spawned by us)
+    pub chrome: Option<ChromeProcess>,
+    /// WASM modules detected during this session
+    pub modules: HashMap<String, chronos_domain::trace::WasmModuleInfo>,
+    /// Buffered trace events (ring-buffer semantics)
+    pub event_buffer: VecDeque<TraceEvent>,
+    /// Maximum buffer capacity
+    pub buffer_capacity: usize,
+    /// Events dropped due to buffer overflow
+    pub dropped_events: u64,
+    /// Next event ID
+    pub next_event_id: u64,
+    /// Whether capture is running
+    pub running: bool,
+    /// Session start time
+    pub session_start: Option<Instant>,
+    /// WASM breakpoint manager
+    pub breakpoint_manager: WasmBreakpointManager,
+    /// Cancellation token for graceful shutdown of background event loop
+    pub cancel_token: Option<CancellationToken>,
+}
+
+impl Default for SharedState {
+    fn default() -> Self {
+        Self {
+            chrome: None,
+            modules: HashMap::new(),
+            event_buffer: VecDeque::with_capacity(DEFAULT_BUFFER_CAPACITY),
+            buffer_capacity: DEFAULT_BUFFER_CAPACITY,
+            dropped_events: 0,
+            next_event_id: 1,
+            running: false,
+            session_start: None,
+            breakpoint_manager: WasmBreakpointManager::new_dummy(),
+            cancel_token: None,
+        }
+    }
+}
 
 /// Browser adapter for WebAssembly debugging via Chrome DevTools Protocol.
+///
+/// **Agent-first design**: capture ALL WASM function entries and returns.
+/// No selective breakpoints, no pre-filtering. AI agents query the complete
+/// trace after capture using the Chronos query engine.
 pub struct BrowserAdapter {
-    /// Chrome process (if spawned by us)
-    chrome: Arc<Mutex<Option<ChromeProcess>>>,
-    /// WASM modules detected during this session
-    modules: Arc<Mutex<HashMap<String, chronos_domain::trace::WasmModuleInfo>>>,
-    /// Buffered trace events
-    event_buffer: Arc<Mutex<Vec<TraceEvent>>>,
-    /// Next event ID
-    next_event_id: Arc<Mutex<u64>>,
-    /// Whether capture is running
-    running: Arc<Mutex<bool>>,
-    /// Session start time
-    session_start: Arc<Mutex<Option<Instant>>>,
-    /// Semantic resolver for WASM events
+    /// All mutable state behind a single lock
+    state: Arc<Mutex<SharedState>>,
+    /// Semantic resolver for WASM events (read-only after construction)
     resolver: WasmSemanticResolver,
-    /// WASM breakpoint manager (SIG 11)
-    breakpoint_manager: Arc<Mutex<WasmBreakpointManager>>,
 }
 
 impl BrowserAdapter {
-    /// Create a new browser adapter.
+    /// Create a new browser adapter with default buffer capacity (100K events).
     pub fn new() -> Self {
+        Self::with_capacity(DEFAULT_BUFFER_CAPACITY)
+    }
+
+    /// Create a new browser adapter with a specific buffer capacity.
+    pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            chrome: Arc::new(Mutex::new(None)),
-            modules: Arc::new(Mutex::new(HashMap::new())),
-            event_buffer: Arc::new(Mutex::new(Vec::new())),
-            next_event_id: Arc::new(Mutex::new(1)),
-            running: Arc::new(Mutex::new(false)),
-            session_start: Arc::new(Mutex::new(None)),
+            state: Arc::new(Mutex::new(SharedState {
+                buffer_capacity: capacity,
+                event_buffer: VecDeque::with_capacity(capacity),
+                ..Default::default()
+            })),
             resolver: WasmSemanticResolver::new(),
-            breakpoint_manager: Arc::new(Mutex::new(WasmBreakpointManager::new_dummy())),
+        }
+    }
+
+    /// Create a new adapter with a custom semantic resolver.
+    pub fn with_resolver(resolver: WasmSemanticResolver) -> Self {
+        Self {
+            state: Arc::new(Mutex::new(SharedState::default())),
+            resolver,
         }
     }
 
@@ -73,17 +128,6 @@ impl BrowserAdapter {
     /// * `duration_ms` - How long to wait before draining events
     /// * `headless` - Whether to run Chrome in headless mode
     /// * `chrome_path` - Optional path to Chrome binary
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let events = BrowserAdapter::quick_probe(
-    ///     "http://example.com/wasm.html",
-    ///     5000,  // wait 5 seconds
-    ///     true,   // headless
-    ///     None,   // auto-detect Chrome
-    /// ).await?;
-    /// ```
     pub async fn quick_probe(
         url: &str,
         duration_ms: u64,
@@ -112,14 +156,22 @@ impl BrowserAdapter {
         Ok(events)
     }
 
-    /// Async version of start_capture for use from async contexts (MCP server).
-    /// This does all the async work properly without creating nested runtimes.
+    /// Start a browser probe session (async, agent-first: capture ALL functions).
+    ///
+    /// Launches Chrome headless, connects via CDP, and begins capturing
+    /// ALL WASM function entries and returns in the background. No selective
+    /// breakpoints — AI agents query the complete trace after capture.
     ///
     /// # Arguments
-    /// * `config` - Capture configuration
+    /// * `config` - Capture configuration (URL to load)
     /// * `headless` - Whether to run Chrome in headless mode
     /// * `chrome_path` - Optional path to Chrome binary
-    pub async fn start_probe_async(&self, config: CaptureConfig, headless: bool, chrome_path: Option<&str>) -> Result<CaptureSession, BrowserError> {
+    pub async fn start_probe_async(
+        &self,
+        config: CaptureConfig,
+        headless: bool,
+        chrome_path: Option<&str>,
+    ) -> Result<CaptureSession, BrowserError> {
         // Spawn Chrome (sync, fast)
         let mut chrome = ChromeProcess::spawn(headless, chrome_path)?;
 
@@ -131,126 +183,142 @@ impl BrowserAdapter {
         let cdp = BrowserCdpClient::connect(chrome.ws_url()).await?;
         cdp.debugger_enable().await?;
 
-        // Initialize state
+        // Initialize state with a single lock acquisition
         {
-            let mut running = self.running.lock().unwrap();
-            *running = true;
-
-            let mut session_start = self.session_start.lock().unwrap();
-            *session_start = Some(Instant::now());
-
-            let mut next_event_id = self.next_event_id.lock().unwrap();
-            *next_event_id = 1;
-
-            let mut event_buffer = self.event_buffer.lock().unwrap();
-            event_buffer.clear();
-
-            let mut modules = self.modules.lock().unwrap();
-            modules.clear();
-
-            let mut chrome_guard = self.chrome.lock().unwrap();
-            *chrome_guard = Some(chrome);
+            let mut s = self.state.lock().unwrap();
+            s.running = true;
+            s.session_start = Some(Instant::now());
+            s.next_event_id = 1;
+            s.event_buffer.clear();
+            s.modules.clear();
+            s.dropped_events = 0;
+            s.chrome = Some(chrome);
         }
 
-        // Clone arcs for background task
-        let event_buffer = self.event_buffer.clone();
-        let running = self.running.clone();
-        let next_event_id = self.next_event_id.clone();
-        let session_start = self.session_start.clone();
-        let modules = self.modules.clone();
-        let breakpoint_manager = self.breakpoint_manager.clone();
+        // Set up cancellation for graceful shutdown
+        let cancel = CancellationToken::new();
+        {
+            let mut s = self.state.lock().unwrap();
+            s.cancel_token = Some(cancel.clone());
+        }
 
-        // Spawn background task (NO new runtime needed — we're already in one)
+        // Clone what we need for the background task
+        let state = self.state.clone();
+        let cancel_clone = cancel.clone();
+
+        // Spawn background event loop
         tokio::spawn(async move {
             let mut event_rx = cdp.subscribe();
 
             loop {
-                match event_rx.recv().await {
-                    Ok(CdpEvent::DebuggerPaused {
-                        reason,
-                        call_frames,
-                        hit_breakpoints,
-                    }) => {
-                        let timestamp_ns = {
-                            let ss = session_start.lock().unwrap();
-                            ss.map(|s| s.elapsed().as_nanos() as u64).unwrap_or(0)
-                        };
+                tokio::select! {
+                    event = event_rx.recv() => {
+                        match event {
+                            Ok(CdpEvent::DebuggerPaused {
+                                reason,
+                                call_frames,
+                                hit_breakpoints,
+                            }) => {
+                                let timestamp_ns;
+                                let is_running;
+                                let next_id;
+                                {
+                                    let s = state.lock().unwrap();
+                                    timestamp_ns = s.session_start
+                                        .map(|st| st.elapsed().as_nanos() as u64)
+                                        .unwrap_or(0);
+                                    is_running = s.running;
+                                    next_id = s.next_event_id;
+                                }
 
-                        let is_running = {
-                            let r = running.lock().unwrap();
-                            *r
-                        };
+                                if is_running {
+                                    use crate::event_mapper::CdpDebuggerPaused;
 
-                        if is_running {
-                            // Use From impl to convert call frames (SIG 10)
-                            use crate::event_mapper::CdpDebuggerPaused;
+                                    let paused = CdpDebuggerPaused {
+                                        call_frames: call_frames
+                                            .into_iter()
+                                            .map(|f| f.into())
+                                            .collect(),
+                                        reason: reason.clone(),
+                                        hit_breakpoints: hit_breakpoints.clone(),
+                                    };
 
-                            let paused = CdpDebuggerPaused {
-                                call_frames: call_frames.into_iter().map(|f| f.into()).collect(),
-                                reason: reason.clone(),
-                                hit_breakpoints: hit_breakpoints.clone(),
-                            };
+                                    let modules_ref: HashMap<String, chronos_domain::trace::WasmModuleInfo> = {
+                                        let s = state.lock().unwrap();
+                                        s.modules.clone()
+                                    };
 
-                            let modules_ref: HashMap<String, chronos_domain::trace::WasmModuleInfo> = {
-                                let m = modules.lock().unwrap();
-                                m.clone()
-                            };
+                                    let mut next = next_id;
 
-                            let mut next_id = {
-                                let id = next_event_id.lock().unwrap();
-                                *id
-                            };
+                                    let bp_manager_ref = {
+                                        let s = state.lock().unwrap();
+                                        s.breakpoint_manager.clone()
+                                    };
 
-                            // Use the real breakpoint manager (SIG 11)
-                            let bp_manager = breakpoint_manager.lock().unwrap();
+                                    let events = paused_to_wasm_events(
+                                        &paused,
+                                        &modules_ref,
+                                        &bp_manager_ref,
+                                        timestamp_ns,
+                                        &mut next,
+                                    );
 
-                            let events = paused_to_wasm_events(
-                                &paused,
-                                &modules_ref,
-                                &bp_manager,
-                                timestamp_ns,
-                                &mut next_id,
-                            );
-
-                            {
-                                let mut id = next_event_id.lock().unwrap();
-                                *id = next_id;
+                                    {
+                                        let mut s = state.lock().unwrap();
+                                        s.next_event_id = next;
+                                        for evt in events {
+                                            if s.event_buffer.len() >= s.buffer_capacity {
+                                                s.event_buffer.pop_front();
+                                                s.dropped_events += 1;
+                                            }
+                                            s.event_buffer.push_back(evt);
+                                        }
+                                    }
+                                }
                             }
-
-                            if !events.is_empty() {
-                                let mut buffer = event_buffer.lock().unwrap();
-                                buffer.extend(events);
+                            Ok(CdpEvent::DebuggerResumed) => {
+                                // Normal — CDP sends Resumed after every breakpoint hit.
+                                // We keep listening for the next hit.
+                                tracing::trace!("Debugger resumed — continuing event loop");
                             }
+                            Ok(CdpEvent::InspectorDetached) => {
+                                let mut s = state.lock().unwrap();
+                                s.running = false;
+                                break;
+                            }
+                            Ok(CdpEvent::DebuggerScriptParsed {
+                                script_id,
+                                url,
+                                script_language,
+                                hash,
+                                build_id: _,
+                            }) => {
+                                if script_language.as_deref() == Some("WebAssembly") {
+                                    tracing::debug!(
+                                        "WASM module detected: {} ({})",
+                                        script_id,
+                                        url.as_deref().unwrap_or("unknown")
+                                    );
+
+                                    let mut s = state.lock().unwrap();
+                                    let module_info = chronos_domain::trace::WasmModuleInfo {
+                                        script_id: script_id.clone(),
+                                        url: url.clone(),
+                                        hash: hash.unwrap_or_default(),
+                                        build_id: None,
+                                        functions: Vec::new(),
+                                    };
+                                    s.modules.insert(script_id, module_info);
+                                }
+                            }
+                            Err(_) => break,
+                            _ => {}
                         }
                     }
-                    Ok(CdpEvent::DebuggerResumed) => {
-                        // Debugger resumed after a breakpoint hit — this is normal.
-                        // Do NOT stop the event loop; we keep listening for the next hit.
-                        tracing::trace!("Debugger resumed — continuing event loop");
-                    }
-                    Ok(CdpEvent::InspectorDetached) => {
-                        let mut r = running.lock().unwrap();
-                        *r = false;
+                    _ = cancel_clone.cancelled() => {
+                        tracing::info!("Event loop cancelled — graceful shutdown");
                         break;
                     }
-                    Ok(CdpEvent::DebuggerScriptParsed { script_id, url, script_language, hash, build_id: _ }) => {
-                        if script_language.as_deref() == Some("WebAssembly") {
-                            tracing::debug!("WASM module detected: {} ({})", script_id, url.as_deref().unwrap_or("unknown"));
-
-                            // Store the module info
-                            let mut m = modules.lock().unwrap();
-                            let module_info = chronos_domain::trace::WasmModuleInfo {
-                                script_id: script_id.clone(),
-                                url: url.clone(),
-                                hash: hash.unwrap_or_default(),
-                                build_id: None,
-                                functions: Vec::new(),
-                            };
-                            m.insert(script_id, module_info);
-                        }
-                    }
-                    Err(_) => break,
-                    _ => {}
                 }
             }
         });
@@ -267,76 +335,26 @@ impl Default for BrowserAdapter {
 }
 
 /// Drop implementation to ensure Chrome is killed when adapter is dropped.
-///
-/// This provides safety against leaked Chrome processes if stop_probe() is not called.
 impl Drop for BrowserAdapter {
     fn drop(&mut self) {
-        // Kill Chrome if it's still running
-        {
-            let mut chrome_guard = self.chrome.lock().unwrap();
-            if let Some(ref mut chrome) = *chrome_guard {
-                let _ = chrome.kill();
-            }
-            *chrome_guard = None;
+        let mut s = self.state.lock().unwrap();
+
+        // Cancel background task if running
+        if let Some(ref token) = s.cancel_token {
+            token.cancel();
         }
+
+        // Kill Chrome if still running
+        if let Some(ref mut chrome) = s.chrome {
+            let _ = chrome.kill();
+        }
+        s.chrome = None;
 
         // Clear event buffer
-        {
-            let mut buffer = self.event_buffer.lock().unwrap();
-            buffer.clear();
-        }
+        s.event_buffer.clear();
 
         // Signal stopped
-        {
-            let mut running = self.running.lock().unwrap();
-            *running = false;
-        }
-    }
-}
-
-impl TraceAdapter for BrowserAdapter {
-    fn start_capture(&self, config: CaptureConfig) -> Result<CaptureSession, TraceError> {
-        // Use block_in_place to escape the current runtime and call async code
-        // This works when called from an async context (like MCP server)
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                self.start_probe_async(config, true, None)
-                    .await
-                    .map_err(|e: BrowserError| TraceError::CaptureFailed(e.to_string()))
-            })
-        })
-    }
-
-    fn stop_capture(&self, _session: &CaptureSession) -> Result<(), TraceError> {
-        {
-            let mut running = self.running.lock().unwrap();
-            *running = false;
-        }
-
-        // Kill Chrome if we spawned it
-        {
-            let mut chrome_guard = self.chrome.lock().unwrap();
-            if let Some(ref mut chrome) = *chrome_guard {
-                chrome.kill().map_err(|e| TraceError::CaptureFailed(e.to_string()))?;
-            }
-            *chrome_guard = None;
-        }
-
-        Ok(())
-    }
-
-    fn attach_to_process(&self, _pid: u32, _config: CaptureConfig) -> Result<CaptureSession, TraceError> {
-        Err(TraceError::UnsupportedLanguage(
-            "attach_to_process not supported for browser debugging".to_string(),
-        ))
-    }
-
-    fn get_language(&self) -> Language {
-        Language::WebAssembly
-    }
-
-    fn name(&self) -> &str {
-        "browser-wasm"
+        s.running = false;
     }
 }
 
@@ -350,9 +368,18 @@ impl ProbeBackend for BrowserAdapter {
     }
 
     fn drain_events(&self) -> Result<Vec<SemanticEvent>, TraceError> {
-        // SIG 3: Clear the buffer after reading
-        let mut buffer = self.event_buffer.lock().unwrap();
-        let raw_events: Vec<TraceEvent> = std::mem::take(&mut *buffer);
+        let mut s = self.state.lock().unwrap();
+        let raw_events: Vec<TraceEvent> = s.event_buffer.drain(..).collect();
+
+        // If events were dropped, emit a warning log
+        if s.dropped_events > 0 {
+            tracing::warn!(
+                "{} events were dropped due to buffer overflow (capacity: {})",
+                s.dropped_events,
+                s.buffer_capacity
+            );
+            s.dropped_events = 0;
+        }
 
         let ctx = ResolveContext {
             pid: 0,
@@ -368,30 +395,27 @@ impl ProbeBackend for BrowserAdapter {
     }
 
     fn drain_raw_events(&self) -> Vec<TraceEvent> {
-        let mut buffer = self.event_buffer.lock().unwrap();
-        std::mem::take(&mut *buffer)
+        let mut s = self.state.lock().unwrap();
+        s.event_buffer.drain(..).collect()
     }
 
     fn stop_probe(&self, _session: &CaptureSession) -> Result<(), TraceError> {
-        {
-            let mut running = self.running.lock().unwrap();
-            *running = false;
+        let mut s = self.state.lock().unwrap();
+
+        // Signal background loop to stop
+        s.running = false;
+        if let Some(ref token) = s.cancel_token {
+            token.cancel();
         }
 
         // Kill Chrome if we spawned it
-        {
-            let mut chrome_guard = self.chrome.lock().unwrap();
-            if let Some(ref mut chrome) = *chrome_guard {
-                let _ = chrome.kill();
-            }
-            *chrome_guard = None;
+        if let Some(ref mut chrome) = s.chrome {
+            let _ = chrome.kill();
         }
+        s.chrome = None;
 
         // Clear event buffer
-        {
-            let mut buffer = self.event_buffer.lock().unwrap();
-            buffer.clear();
-        }
+        s.event_buffer.clear();
 
         Ok(())
     }
@@ -404,72 +428,39 @@ mod tests {
     #[test]
     fn test_browser_adapter_name() {
         let adapter = BrowserAdapter::new();
-        // Disambiguate between TraceAdapter::name and ProbeBackend::name
-        assert_eq!(chronos_capture::TraceAdapter::name(&adapter), "browser-wasm");
-    }
-
-    #[test]
-    fn test_browser_adapter_language() {
-        let adapter = BrowserAdapter::new();
-        assert_eq!(adapter.get_language(), Language::WebAssembly);
+        assert_eq!(ProbeBackend::name(&adapter), "browser-wasm");
     }
 
     #[test]
     fn test_browser_adapter_is_available() {
         // Just verify the method works - actual availability depends on Chrome
         let _available = BrowserAdapter::is_chrome_available();
-        // Can't assert true/false as Chrome may or may not be installed
     }
 
     #[test]
     fn test_browser_adapter_default() {
         let adapter = BrowserAdapter::default();
-        // Disambiguate between TraceAdapter::name and ProbeBackend::name
-        assert_eq!(chronos_capture::TraceAdapter::name(&adapter), "browser-wasm");
+        assert_eq!(ProbeBackend::name(&adapter), "browser-wasm");
     }
 
     #[test]
     fn test_stop_probe_no_panic_without_chrome() {
         // Verify stop_probe doesn't panic when called on a fresh adapter (no Chrome)
         let adapter = BrowserAdapter::new();
-        let session = CaptureSession::new(0, Language::WebAssembly, CaptureConfig::new("about:blank"));
+        let session =
+            CaptureSession::new(0, Language::WebAssembly, CaptureConfig::new("about:blank"));
         let result = adapter.stop_probe(&session);
         assert!(result.is_ok(), "stop_probe should succeed even without Chrome");
     }
 
     #[test]
-    fn test_stop_capture_no_panic_without_chrome() {
-        // Verify stop_capture doesn't panic on fresh adapter (CRIT-001: scoped locks)
-        let adapter = BrowserAdapter::new();
-        let session = CaptureSession::new(0, Language::WebAssembly, CaptureConfig::new("about:blank"));
-        let result = adapter.stop_capture(&session);
-        assert!(result.is_ok(), "stop_capture should succeed even without Chrome");
-    }
-
-    #[test]
-    fn test_attach_to_process_unsupported() {
-        let adapter = BrowserAdapter::new();
-        let config = CaptureConfig::new("about:blank");
-        let result = adapter.attach_to_process(1234, config);
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            TraceError::UnsupportedLanguage(msg) => {
-                assert!(msg.contains("not supported"));
-            }
-            other => panic!("Expected UnsupportedLanguage, got: {:?}", other),
-        }
-    }
-
-    #[test]
     fn test_drain_events_clears_buffer() {
-        // Verify drain_events uses std::mem::take (buffer is cleared after drain)
+        // Verify drain_events clears the buffer after reading
         let adapter = BrowserAdapter::new();
 
-        // First drain should be empty
         let first = adapter.drain_events().unwrap();
         assert!(first.is_empty());
 
-        // Second drain should also be empty (buffer was cleared)
         let second = adapter.drain_events().unwrap();
         assert!(second.is_empty());
     }
@@ -489,7 +480,7 @@ mod tests {
     fn test_drop_does_not_panic() {
         // Verify Drop impl doesn't panic when adapter is dropped without stop_probe
         let adapter = BrowserAdapter::new();
-        drop(adapter); // Should not panic
+        drop(adapter);
     }
 
     #[test]
@@ -502,7 +493,8 @@ mod tests {
     fn test_multiple_stop_probe_calls() {
         // Verify stop_probe can be called multiple times without panic
         let adapter = BrowserAdapter::new();
-        let session = CaptureSession::new(0, Language::WebAssembly, CaptureConfig::new("about:blank"));
+        let session =
+            CaptureSession::new(0, Language::WebAssembly, CaptureConfig::new("about:blank"));
 
         let r1 = adapter.stop_probe(&session);
         let r2 = adapter.stop_probe(&session);

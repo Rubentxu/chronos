@@ -1,20 +1,18 @@
 //! Integration tests for BrowserAdapter with mock CDP.
 
 use chronos_browser::adapter::BrowserAdapter;
-use chronos_capture::adapter::TraceAdapter;
-use chronos_domain::{ProbeBackend, Language};
+use chronos_domain::ProbeBackend;
 
 #[test]
 fn test_browser_adapter_creation() {
     let adapter = BrowserAdapter::new();
-    assert_eq!(TraceAdapter::name(&adapter), "browser-wasm");
-    assert_eq!(adapter.get_language(), Language::WebAssembly);
+    assert_eq!(ProbeBackend::name(&adapter), "browser-wasm");
 }
 
 #[test]
 fn test_browser_adapter_default() {
     let adapter = BrowserAdapter::default();
-    assert_eq!(TraceAdapter::name(&adapter), "browser-wasm");
+    assert_eq!(ProbeBackend::name(&adapter), "browser-wasm");
 }
 
 #[test]
@@ -25,19 +23,10 @@ fn test_browser_adapter_is_available() {
 }
 
 #[test]
-fn test_browser_adapter_language() {
-    let adapter = BrowserAdapter::new();
-    assert_eq!(adapter.get_language(), Language::WebAssembly);
-}
-
-#[test]
 fn test_browser_adapter_name() {
     let adapter = BrowserAdapter::new();
-    assert_eq!(TraceAdapter::name(&adapter), "browser-wasm");
+    assert_eq!(ProbeBackend::name(&adapter), "browser-wasm");
 }
-
-// Note: These tests use mock data since we can't actually connect to Chrome in unit tests
-// The real integration tests (test_e2e.rs) test actual Chrome connections
 
 #[test]
 fn test_browser_adapter_drain_events_empty() {

@@ -31,7 +31,6 @@ use chronos_domain::{
 };
 use chronos_domain::tripwire::{TripwireCondition, TripwireId, TripwireManager};
 use chronos_browser::BrowserAdapter;
-use chronos_capture::adapter::TraceAdapter;
 use chronos_index::builder::IndexBuilder;
 use chronos_native::probe_backend::NativeProbeBackend;
 use chronos_query::QueryEngine;
@@ -560,8 +559,6 @@ pub struct BrowserProbeStartParams {
     pub headless: bool,
     /// Path to Chrome binary (auto-detected if omitted).
     pub chrome_path: Option<String>,
-    /// Only probe these functions (default: all).
-    pub function_filter: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -4178,7 +4175,6 @@ mod tests {
                 url: "http://example.com".to_string(),
                 headless: true,
                 chrome_path: None,
-                function_filter: None,
             }))
             .await
             .unwrap();
