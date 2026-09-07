@@ -1411,7 +1411,7 @@ mod tests {
                     i * 100,
                     1,
                     EventType::FunctionEntry,
-                    SourceLocation::new("test.rs", 10, &format!("fn_{}", i), 0x1000 + i),
+                    SourceLocation::new("test.rs", 10, format!("fn_{}", i), 0x1000 + i),
                     EventData::Empty,
                 )
             })

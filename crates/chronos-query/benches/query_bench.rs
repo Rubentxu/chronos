@@ -12,7 +12,7 @@ fn bench_get_event_by_id(c: &mut Criterion) {
                 i * 100,
                 i % 4,
                 EventType::FunctionEntry,
-                SourceLocation::new("test.rs", 10, &format!("fn_{}", i), 0x1000 + i),
+                SourceLocation::new("test.rs", 10, format!("fn_{}", i), 0x1000 + i),
                 EventData::Empty,
             )
         })
@@ -32,7 +32,7 @@ fn bench_execute_query(c: &mut Criterion) {
                 i * 100,
                 i % 8,
                 EventType::FunctionEntry,
-                SourceLocation::new("test.rs", 10, &format!("fn_{}", i % 100), 0x1000 + i),
+                SourceLocation::new("test.rs", 10, format!("fn_{}", i % 100), 0x1000 + i),
                 EventData::Empty,
             )
         })
@@ -53,7 +53,7 @@ fn bench_execute_query_with_pagination(c: &mut Criterion) {
                 i * 100,
                 i % 8,
                 EventType::FunctionEntry,
-                SourceLocation::new("test.rs", 10, &format!("fn_{}", i % 100), 0x1000 + i),
+                SourceLocation::new("test.rs", 10, format!("fn_{}", i % 100), 0x1000 + i),
                 EventData::Empty,
             )
         })
@@ -132,7 +132,7 @@ fn bench_session_event_lookup(c: &mut Criterion) {
                 i * 100,
                 i % 4,
                 EventType::FunctionEntry,
-                SourceLocation::new("test.rs", 10, &format!("fn_{}", i), 0x1000 + i),
+                SourceLocation::new("test.rs", 10, format!("fn_{}", i), 0x1000 + i),
                 EventData::Empty,
             )
         })

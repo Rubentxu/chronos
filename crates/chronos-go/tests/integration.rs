@@ -23,6 +23,11 @@ fn test_registry_has_go_adapter() {
 }
 
 #[test]
+// The assertion 'available || !available' is intentionally tautological:
+// this test verifies that the is_available() call does not panic. Both
+// branches must complete without side effects. The lint's suggestion to
+// collapse to `true` is correct but defeats the panic-checking intent.
+#[allow(clippy::overly_complex_bool_expr, clippy::nonminimal_bool)]
 fn test_go_adapter_is_available_check() {
     // Just verify the is_available method works
     let available = GoAdapter::is_available();
@@ -60,7 +65,7 @@ func main() {
     // Build the Go program (create a temporary binary)
     let binary_path = temp_path.join("test_program");
     let build_result = Command::new("go")
-        .args(&["build", "-o", binary_path.to_str().unwrap()])
+        .args(["build", "-o", binary_path.to_str().unwrap()])
         .current_dir(temp_path)
         .output()
         .expect("Failed to build Go file");

@@ -98,6 +98,7 @@ impl RpcClient {
     /// Send an RPC call and wait for response with default 30-second timeout.
     ///
     /// Note: For MCP tools, use `call_tool` instead.
+    #[allow(dead_code)]
     pub async fn call(
         &mut self,
         method: &str,

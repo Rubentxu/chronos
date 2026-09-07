@@ -177,7 +177,7 @@ async fn test_inspect_causality_valid_address() {
     // Wait for it to complete
     tokio::time::sleep(Duration::from_secs(1)).await;
 
-    let drained = client
+    let _drained = client
         .probe_drain(&session_id)
         .await
         .expect("probe_drain failed");

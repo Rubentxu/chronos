@@ -1210,7 +1210,7 @@ impl McpTestClient {
         let _ = self.session.take();
 
         // Then kill the process if we have a handle to it
-        if let Some(mut process) = self.process.take() {
+        if let Some(process) = self.process.take() {
             let _ = process.shutdown().await;
         }
         Ok(())

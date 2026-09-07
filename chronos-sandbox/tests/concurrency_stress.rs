@@ -102,7 +102,7 @@ async fn test_concurrent_rapid_start_stop_cycles() {
             .expect("probe_stop failed");
 
         println!("Cycle {}: {} events", i, stop.total_events);
-        assert!(stop.total_events >= 0, "Should get valid event count");
+        // u64 is always >= 0; this assertion was a placeholder; the println is the actual check.
     }
 
     println!("✓ Completed 5 rapid start/stop cycles");

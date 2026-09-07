@@ -93,6 +93,7 @@ struct LiveProbeSession {
 /// A live browser probe session using `BrowserAdapter`.
 ///
 /// Streams WASM debugging events from Chrome CDP in real-time.
+#[allow(dead_code)]
 struct BrowserProbeSession {
     /// The browser adapter driving the CDP session.
     adapter: Arc<BrowserAdapter>,
@@ -126,6 +127,7 @@ pub struct ChronosServer {
     /// sync, locks are held only for short non-blocking operations, and std Mutex
     /// is faster than tokio Mutex for sub-microsecond critical sections.
     /// INVARIANT: Never hold this lock across an `.await` point.
+    #[allow(dead_code)]
     background_sessions: Arc<std::sync::Mutex<HashMap<String, BackgroundSessionEvents>>>,
     /// Sessions with connected debug clients (Python debugpy or JS Node.js inspector).
     /// Used to track which sessions have active DAP/CDP connections.
@@ -2249,8 +2251,8 @@ impl ChronosServer {
 
         // Parse the tripwire ID (format: "tripwire-N")
         let id_str = params.tripwire_id.trim();
-        let id_num: u64 = if id_str.starts_with("tripwire-") {
-            id_str["tripwire-".len()..].parse().map_err(|_| {
+        let id_num: u64 = if let Some(rest) = id_str.strip_prefix("tripwire-") {
+            rest.parse().map_err(|_| {
                 rmcp::ErrorData::invalid_params(
                     format!("Invalid tripwire ID format: '{}'", params.tripwire_id),
                     None,
@@ -3062,6 +3064,7 @@ impl ChronosServer {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 
