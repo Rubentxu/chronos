@@ -171,6 +171,24 @@ unclean tree:
 
 ---
 
+## 6.5. Known pre-existing flakes
+
+These tests fail intermittently on `main` without any cycle change. They are
+tracked here so we do not chase them as regressions in every cycle:
+
+| Test | Crate | When it flakes | Reproduction |
+|---|---|---|---|
+| `ptrace_tracer::tests::test_launch_with_syscall_tracing` | `chronos-native` | ~50% when run with full `cargo test --lib`; passes 3/3 in isolation | Same on `main` (c76b1096) and on every `feat/*` cycle |
+
+If a new "flake" appears, first verify it reproduces on `main`:
+
+```bash
+git checkout main && cargo test -p <crate> --lib --no-fail-fast
+```
+
+If it does, treat it as pre-existing and file an M1+ follow-up. If it does
+not, it is a real regression and must be fixed in the current cycle.
+
 ## 7. Quick reference
 
 ```bash
