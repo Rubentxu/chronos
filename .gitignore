@@ -38,3 +38,7 @@ perf.data
 perf.data.old
 .cognicode/
 *.bak
+
+# Python
+__pycache__/
+*.pyc
