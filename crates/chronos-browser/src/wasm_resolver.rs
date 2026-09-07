@@ -273,8 +273,6 @@ mod tests {
 
     #[test]
     fn test_wasm_semantic_resolver_non_wasm_event() {
-        use chronos_domain::EventData;
-
         let resolver = WasmSemanticResolver::new();
         let event = TraceEvent::function_entry(1, 1000, 1, "main", 0x1000);
 

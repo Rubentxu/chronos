@@ -434,10 +434,10 @@ mod tests {
     }
 
     // The literal 3.14 is intentionally a 2-decimal approximation, NOT the
-// mathematical constant PI (≈3.14159...). Clippy's approx_constant lint
-// is suppressed because we are asserting the literal evaluation equals
-// the same literal.
-#[allow(clippy::approx_constant)]
+    // mathematical constant PI (≈3.14159...). Clippy's approx_constant lint
+    // is suppressed because we are asserting the literal evaluation equals
+    // the same literal.
+    #[allow(clippy::approx_constant)]
     #[test]
     fn test_eval_literal_numbers() {
         let eval = make_evaluator(&[]);

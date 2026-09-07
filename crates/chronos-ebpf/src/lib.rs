@@ -541,7 +541,7 @@ mod adapter_tests {
 
     #[test]
     fn test_mock_ebpf_adapter_drain_empty() {
-        let mut adapter = MockEbpfAdapter::empty();
+        let adapter = MockEbpfAdapter::empty();
         let events = adapter.drain_events().unwrap();
         assert!(events.is_empty());
     }
@@ -553,7 +553,7 @@ mod adapter_tests {
             EbpfEvent::function_entry(200, 2, 0x2000, "beta"),
             EbpfEvent::function_exit(300, 1, 0x1000),
         ];
-        let mut adapter = MockEbpfAdapter::new(raw_events);
+        let adapter = MockEbpfAdapter::new(raw_events);
 
         let events = adapter.drain_events().unwrap();
         assert_eq!(events.len(), 3);
@@ -583,7 +583,7 @@ mod adapter_tests {
     #[test]
     fn test_mock_ebpf_adapter_drain_twice_returns_empty() {
         let raw_events = vec![EbpfEvent::function_entry(1, 1, 0x1, "f")];
-        let mut adapter = MockEbpfAdapter::new(raw_events);
+        let adapter = MockEbpfAdapter::new(raw_events);
 
         let first = adapter.drain_events().unwrap();
         assert_eq!(first.len(), 1);

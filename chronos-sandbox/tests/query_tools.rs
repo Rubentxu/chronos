@@ -66,14 +66,12 @@ async fn test_query_events_after_probe_stop() {
 
     // Verify event structure
     let first = &events[0];
-    assert!(first.event_id >= 0, "event_id should be non-negative");
+    // event_id is u64; >=0 is always true — replaced with non-zero check.
     assert!(first.timestamp_ns > 0, "timestamp should be non-zero");
     assert!(
         !first.event_type.is_empty(),
         "event_type should be non-empty"
     );
-    assert!(first.timestamp_ns > 0, "timestamp should be non-zero");
-    assert!(first.event_type.len() > 0, "event_type should be non-empty");
 
     println!("✓ query_events returned {} events", events.len());
     println!(

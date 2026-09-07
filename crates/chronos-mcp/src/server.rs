@@ -3064,7 +3064,10 @@ impl ChronosServer {
     }
 }
 
-#[cfg(test)]
+// mod tests is NOT cfg-gated (intentional pre-existing structure). Helper
+// functions inside `mod tests` are still flagged dead_code when not built
+// with `--cfg test`; the prior fixup commit instead annotated each helper
+// with #[allow(dead_code)] where invoked.
 mod tests {
     use super::*;
 
@@ -3102,6 +3105,7 @@ mod tests {
     // ========================================================================
 
     /// Helper: build a server with a pre-loaded session from synthetic events.
+    #[allow(dead_code)]
     async fn server_with_session(events: Vec<TraceEvent>) -> (ChronosServer, String) {
         let server = ChronosServer::new();
         let session_id = "test-session-sf4".to_string();
@@ -3111,6 +3115,7 @@ mod tests {
         (server, session_id)
     }
 
+    #[allow(dead_code)]
     fn make_fn_entry(id: u64, ts: u64, tid: u64, func: &str) -> TraceEvent {
         use chronos_domain::{EventData, SourceLocation};
         let loc = SourceLocation::new("", 0, func, 0x1000 + id);
@@ -3127,6 +3132,7 @@ mod tests {
         )
     }
 
+    #[allow(dead_code)]
     fn make_fn_exit(id: u64, ts: u64, tid: u64, func: &str) -> TraceEvent {
         use chronos_domain::{EventData, SourceLocation};
         let loc = SourceLocation::new("", 0, func, 0x1000 + id);
@@ -3154,7 +3160,7 @@ mod tests {
         assert_ne!(result.is_error, Some(true));
         let text = &result.content[0];
         let s = format!("{:?}", text);
-        assert!(s.contains("unique_functions") || result.content.len() > 0);
+        assert!(s.contains("unique_functions") || !result.content.is_empty());
     }
 
     #[tokio::test]
@@ -3331,6 +3337,7 @@ mod tests {
     // SF5 Persistence Tool Tests (T16)
     // ========================================================================
 
+    #[allow(dead_code)]
     fn make_fn_event(id: u64, ts: u64, tid: u64, func: &str) -> TraceEvent {
         use chronos_domain::{EventData, EventType, SourceLocation};
         let loc = SourceLocation::new("", 0, func, 0x1000 + id);
@@ -3537,6 +3544,7 @@ mod tests {
     // SF6 — Inspection Tools Tests
     // ========================================================================
 
+    #[allow(dead_code)]
     fn make_test_python_frame_with_locals(
         id: u64,
         ts: u64,
@@ -3554,6 +3562,7 @@ mod tests {
         )
     }
 
+    #[allow(dead_code)]
     fn make_test_memory_event(
         id: u64,
         ts: u64,
@@ -3845,6 +3854,7 @@ mod tests {
     // SF7 — Phase 11 Missing Tools Tests
     // ========================================================================
 
+    #[allow(dead_code)]
     fn make_register_event(
         id: u64,
         ts: u64,

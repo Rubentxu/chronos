@@ -88,7 +88,7 @@ async fn test_busyloop_has_events() {
     println!("query_events returned: {} events", events.len());
 
     assert!(
-        events.len() > 0,
+        !events.is_empty(),
         "Should capture events from test_busyloop, got {}",
         events.len()
     );
@@ -335,14 +335,14 @@ async fn test_add_program_has_expected_function_entries() {
     // For C programs, event types are typically syscall_enter/exit
     // Verify we captured some events
     assert!(
-        all_events.len() > 0,
+        !all_events.is_empty(),
         "Should capture events from test_add, got {}",
         all_events.len()
     );
 
     // Verify we have event types captured
     assert!(
-        summary.event_counts_by_type.len() > 0,
+        !summary.event_counts_by_type.is_empty(),
         "Should have event counts by type"
     );
 

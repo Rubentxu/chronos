@@ -229,7 +229,7 @@ mod tests {
         let mut index = TemporalIndex::new();
         // Insert events across multiple 10ms chunks
         for i in 0..25 {
-            index.insert((i as u64) * 5_000_000, i); // every 5ms
+            index.insert(i * 5_000_000, i); // every 5ms
         }
         index.build_chunks();
 
@@ -256,7 +256,7 @@ mod tests {
         assert_eq!(index.len(), 0);
 
         for i in 0..100 {
-            index.insert(i as u64 * 1000, i);
+            index.insert(i * 1000, i);
         }
         assert_eq!(index.len(), 100);
     }

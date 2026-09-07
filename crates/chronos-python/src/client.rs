@@ -338,11 +338,10 @@ mod tests {
                     if let Some(end) = s[pos..].find("\r\n\r\n") {
                         let header_end = pos + end + 4;
                         if let Some(len_str) = s[pos..].lines().next() {
-                            if let Some(len) = len_str
+                            if let Ok(len) = len_str
                                 .trim_start_matches("Content-Length:")
                                 .trim()
                                 .parse::<usize>()
-                                .ok()
                             {
                                 if all_data.len() >= header_end + len {
                                     // We have a complete message

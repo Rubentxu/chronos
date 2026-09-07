@@ -76,7 +76,6 @@ impl Default for CapturePipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chronos_domain::EventType;
 
     #[tokio::test]
     async fn test_pipeline_send_receive() {

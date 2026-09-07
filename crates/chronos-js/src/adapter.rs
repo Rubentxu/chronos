@@ -277,7 +277,7 @@ mod tests {
     fn test_is_node_available() {
         // Just verify the method works
         let available = JsAdapter::is_node_available();
-        assert!(available || !available);
+        let _ = available;
     }
 
     #[test]

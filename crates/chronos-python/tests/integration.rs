@@ -32,6 +32,7 @@ fn test_dap_message_framing() {
 
 #[test]
 #[cfg_attr(not(feature = "integration"), ignore)]
+#[allow(clippy::zombie_processes)]
 fn test_python_debugpy_capture() {
     // Check python3 is on PATH
     if Command::new("python3").arg("--version").output().is_err() {
@@ -41,15 +42,18 @@ fn test_python_debugpy_capture() {
 
     // Check debugpy is installed: python3 -m debugpy --version
     let debugpy_check = Command::new("python3")
-        .args(&["-m", "debugpy", "--version"])
+        .args(["-m", "debugpy", "--version"])
         .output();
 
-    if debugpy_check.is_err() {
-        eprintln!("debugpy not found — skipping integration test");
-        return;
-    }
+    let debugpy_check = match debugpy_check {
+        Ok(out) => out,
+        Err(_) => {
+            eprintln!("debugpy not found — skipping integration test");
+            return;
+        }
+    };
 
-    if !debugpy_check.unwrap().status.success() {
+    if !debugpy_check.status.success() {
         eprintln!("debugpy check failed — skipping integration test");
         return;
     }
@@ -70,7 +74,7 @@ print(f"Result: {result}")
     // Spawn debugpy server
     // debugpy --listen 127.0.0.1:5679 --wait-for-client <script>
     let mut debugpy_child = std::process::Command::new("python3")
-        .args(&[
+        .args([
             "-m",
             "debugpy",
             "--listen",

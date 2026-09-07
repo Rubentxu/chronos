@@ -43,7 +43,7 @@ async fn test_fork_captures_multiple_processes() {
         .expect("list_threads failed");
 
     println!("✓ list_threads: {} threads", threads.len());
-    assert!(threads.len() >= 1, "Should have at least 1 thread");
+    assert!(!threads.is_empty(), "Should have at least 1 thread");
 
     // Query events
     let filter = QueryFilter {
@@ -57,7 +57,7 @@ async fn test_fork_captures_multiple_processes() {
         .expect("query_events failed");
 
     println!("  events captured: {}", events.len());
-    assert!(events.len() > 0, "Should have captured events");
+    assert!(!events.is_empty(), "Should have captured events");
 
     client.shutdown().await.ok();
 }
@@ -112,7 +112,7 @@ async fn test_clone_thread_creation_visible() {
         .expect("query_events failed");
 
     println!("  events captured: {}", events.len());
-    assert!(events.len() > 0, "Should have captured events");
+    assert!(!events.is_empty(), "Should have captured events");
 
     println!("✓ Clone thread creation visible in trace");
 
@@ -439,7 +439,7 @@ async fn test_infinite_loop_stopped_by_probe_stop() {
         .expect("query_events failed");
 
     println!("✓ query_events: {} events captured", events.len());
-    assert!(events.len() > 0, "Should have captured events");
+    assert!(!events.is_empty(), "Should have captured events");
 
     client.shutdown().await.ok();
 }

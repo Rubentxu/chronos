@@ -32,11 +32,11 @@ fn bench_session_store_save_single_event(c: &mut Criterion) {
         b.iter(|| {
             // Wrap in .ok() so the closure returns Option<_>, not Result<_, LargeErr>.
             // This avoids clippy::result_large_err while preserving benchmark correctness.
-            black_box(store.save_session(
-                metadata.clone(),
-                std::slice::from_ref(&event),
+            black_box(
+                store
+                    .save_session(metadata.clone(), std::slice::from_ref(&event))
+                    .ok(),
             )
-            .ok())
         })
     });
 }
@@ -97,9 +97,7 @@ fn bench_session_store_load(c: &mut Criterion) {
     store.save_session(metadata.clone(), &[event]).unwrap();
 
     c.bench_function("session_store_load_single_event", |b| {
-        b.iter(|| {
-            black_box(store.load_session(black_box("load-bench-session")).ok())
-        })
+        b.iter(|| black_box(store.load_session(black_box("load-bench-session")).ok()))
     });
 }
 

@@ -127,6 +127,6 @@ mod tests {
         // This test passes if node is on the system PATH
         let available = is_node_available();
         // Just verify the method works - actual result depends on system
-        assert!(available || !available);
+        let _ = available;
     }
 }

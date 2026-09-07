@@ -4,7 +4,8 @@
 
 use chronos_sandbox::client::tools::McpTestClient;
 use chronos_sandbox::client::types::{TripwireConditionType, TripwireCreateParams};
-use chronos_sandbox::McpSession;
+// McpSession import removed: was unused; tripwire depth tests use only
+// McpTestClient helpers. Lint: clippy::unused_imports.
 
 /// TD1: tripwire_query is idempotent — does not consume fired events.
 /// Create a tripwire watching for function_entry.

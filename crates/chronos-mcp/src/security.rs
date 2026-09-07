@@ -113,9 +113,8 @@ mod tests {
     #[test]
     fn test_validate_program_path_accepts_absolute() {
         // /bin/ls should exist on Linux systems
-        let result = validate_program_path("/bin/ls");
-        if result.is_ok() {
-            assert!(result.unwrap().is_absolute());
+        if let Ok(path) = validate_program_path("/bin/ls") {
+            assert!(path.is_absolute());
         }
         // If ls doesn't exist (e.g., musl container), skip
     }

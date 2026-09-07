@@ -429,10 +429,20 @@ pub struct MockCdpClient {
 #[cfg(test)]
 impl MockCdpClient {
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[cfg(test)]
+impl Default for MockCdpClient {
+    fn default() -> Self {
         let (events, _) = broadcast::channel(100);
         Self { events }
     }
+}
 
+#[cfg(test)]
+impl MockCdpClient {
     pub fn emit_paused(
         &self,
         reason: String,

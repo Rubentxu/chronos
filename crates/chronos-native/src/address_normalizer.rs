@@ -224,7 +224,7 @@ mod tests {
         let exe = std::env::current_exe().unwrap();
 
         // Try with address 0 (should generally not have a symbol)
-        let result = normalizer.normalize(0, &exe);
+        let _result = normalizer.normalize(0, &exe);
         // Address 0 typically doesn't map to a symbol
 
         // Try with a reasonable address - use the text segment base

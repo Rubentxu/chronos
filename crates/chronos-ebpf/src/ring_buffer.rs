@@ -207,7 +207,7 @@ mod tests {
             make_entry_event(100, 1, 0x1000, "main"),
             make_entry_event(200, 1, 0x2000, "helper"),
         ];
-        let mut buf = MockRingBuffer::new(events);
+        let buf = MockRingBuffer::new(events);
 
         assert_eq!(buf.pending(), 2);
 
@@ -232,7 +232,7 @@ mod tests {
         let events = (0..5)
             .map(|i| make_entry_event(i * 100, 1, 0x1000 + i, "fn"))
             .collect();
-        let mut buf = MockRingBuffer::new(events);
+        let buf = MockRingBuffer::new(events);
 
         let trace_events = buf.drain_all();
         assert_eq!(trace_events.len(), 5);
@@ -247,7 +247,7 @@ mod tests {
     #[test]
     fn test_mock_ring_buffer_next_trace_event_converts_correctly() {
         let ev = make_entry_event(999, 7, 0xABCD, "my_func");
-        let mut buf = MockRingBuffer::new(vec![ev]);
+        let buf = MockRingBuffer::new(vec![ev]);
 
         let te = buf.next_trace_event().unwrap();
         assert_eq!(te.timestamp_ns, 999);
@@ -261,7 +261,7 @@ mod tests {
 
     #[test]
     fn test_mock_ring_buffer_empty_from_start() {
-        let mut buf = MockRingBuffer::new(vec![]);
+        let buf = MockRingBuffer::new(vec![]);
         assert_eq!(buf.pending(), 0);
         assert!(buf.next_trace_event().is_none());
         assert_eq!(buf.drain_all().len(), 0);

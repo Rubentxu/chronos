@@ -243,7 +243,7 @@ mod tests {
         mgr.attached
             .insert(key.clone(), UprobeInfo { key, offset: 0 });
         assert_eq!(mgr.attachment_count(), 1);
-        mgr.detach_all();
+        mgr.detach_all().ok();
         assert_eq!(mgr.attachment_count(), 0);
     }
 

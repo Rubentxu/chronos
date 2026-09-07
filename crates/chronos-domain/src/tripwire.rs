@@ -305,7 +305,6 @@ pub type TripwireManagerHandle = Arc<TripwireManager>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{EventData, SourceLocation};
 
     fn make_signal_event(id: u64, signal: i32) -> TraceEvent {
         TraceEvent::signal(id, id * 1000, 1, signal, "SIGTEST", 0)

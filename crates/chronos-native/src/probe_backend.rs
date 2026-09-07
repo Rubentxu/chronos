@@ -600,10 +600,7 @@ impl NativeProbeBackend {
     /// For spawned probes, this is set once the child process is launched.
     /// For attached probes, this is set immediately before the event loop starts.
     pub fn get_traced_pid(&self) -> Option<i32> {
-        *self
-            .traced_pid
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
+        *self.traced_pid.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 

@@ -357,7 +357,7 @@ mod tests {
             let _vars = reader.variables_in_scope(loc.address);
             // Should return some variables if we're in a function with debug info
             // or empty if not
-            assert!(true); // Just verify it doesn't panic
+            // Just verify it doesn't panic
         }
     }
 }

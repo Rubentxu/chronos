@@ -299,7 +299,7 @@ async fn test_save_drop_load_roundtrip() {
     println!("query_events after load: {} events", events.len());
 
     assert!(
-        events.len() > 0,
+        !events.is_empty(),
         "Should have events after load from storage"
     );
 
@@ -412,7 +412,7 @@ async fn test_load_session_twice() {
         .expect("query_events should work after loading");
 
     println!("query_events after double load: {} events", events.len());
-    assert!(events.len() > 0, "Should have events after load");
+    assert!(!events.is_empty(), "Should have events after load");
 
     client.shutdown().await.ok();
 }

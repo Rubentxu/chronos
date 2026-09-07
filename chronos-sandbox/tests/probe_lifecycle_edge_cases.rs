@@ -355,7 +355,7 @@ async fn test_probe_busyloop_midflight_drain() {
 
     println!("Mid-flight drain: {} events", mid_events.len());
     assert!(
-        mid_events.len() > 0,
+        !mid_events.is_empty(),
         "Should capture events during execution"
     );
 
@@ -381,7 +381,7 @@ async fn test_probe_busyloop_midflight_drain() {
         .expect("query_events failed after stop");
 
     println!("Final query_events: {} events", final_events.len());
-    assert!(final_events.len() > 0, "Should have events after stop");
+    assert!(!final_events.is_empty(), "Should have events after stop");
 
     client.shutdown().await.ok();
 }

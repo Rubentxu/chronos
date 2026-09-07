@@ -654,7 +654,7 @@ mod tests {
     fn test_java_adapter_is_available() {
         // Result depends on whether java is on PATH
         let available = JavaAdapter::is_available();
-        assert!(available || !available); // Always passes — checks method doesn't panic
+        let _ = available; // Always passes — checks method doesn't panic
     }
 
     #[test]
