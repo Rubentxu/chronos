@@ -30,7 +30,7 @@ tests/fixtures/test_add
 tests/fixtures/test_segfault
 
 # Architecture specs (internal)
-specs/
+^/specs/
 
 # Profiling
 flamegraph.svg
