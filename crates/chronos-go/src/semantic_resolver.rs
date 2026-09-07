@@ -1,5 +1,7 @@
+use chronos_domain::semantic::{
+    ResolveContext, SemanticEvent, SemanticEventKind, SemanticResolver,
+};
 use chronos_domain::{EventData, EventType, GoEventKind, Language, TraceEvent};
-use chronos_domain::semantic::{ResolveContext, SemanticEvent, SemanticEventKind, SemanticResolver};
 
 /// SemanticResolver for Go that enriches GoFrame events from Delve debugger.
 #[derive(Debug)]
@@ -40,7 +42,9 @@ impl SemanticResolver for GoSemanticResolver {
         };
 
         let file_str = file.as_deref().unwrap_or("?");
-        let line_str = line.map(|l| l.to_string()).unwrap_or_else(|| "?".to_string());
+        let line_str = line
+            .map(|l| l.to_string())
+            .unwrap_or_else(|| "?".to_string());
 
         let description = match event.event_type {
             EventType::FunctionEntry | EventType::BreakpointHit => {
@@ -102,10 +106,7 @@ impl SemanticResolver for GoSemanticResolver {
             GoEventKind::Exception => SemanticEventKind::Exception {
                 type_name: "panic".to_string(),
                 message: format!("{} at {}:{}", function_name, file_str, line_str),
-                stack_trace: vec![format!(
-                    "{} at {}:{}",
-                    function_name, file_str, line_str
-                )],
+                stack_trace: vec![format!("{} at {}:{}", function_name, file_str, line_str)],
             },
         };
 

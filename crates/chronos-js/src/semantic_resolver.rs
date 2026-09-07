@@ -1,5 +1,7 @@
+use chronos_domain::semantic::{
+    ResolveContext, SemanticEvent, SemanticEventKind, SemanticResolver,
+};
 use chronos_domain::{EventData, EventType, JsEventKind, Language, TraceEvent};
-use chronos_domain::semantic::{ResolveContext, SemanticEvent, SemanticEventKind, SemanticResolver};
 
 /// SemanticResolver for JavaScript that enriches JsFrame events from V8 inspector.
 #[derive(Debug)]
@@ -36,11 +38,27 @@ impl SemanticResolver for JsSemanticResolver {
                 locals,
                 scope_chain,
                 event_kind,
-            } => (function_name, script_url, line_number, column_number, locals, scope_chain, event_kind),
+            } => (
+                function_name,
+                script_url,
+                line_number,
+                column_number,
+                locals,
+                scope_chain,
+                event_kind,
+            ),
             _ => return None,
         };
 
-        let (function_name, script_url, line_number, _column_number, locals, _scope_chain, event_kind) = frame;
+        let (
+            function_name,
+            script_url,
+            line_number,
+            _column_number,
+            locals,
+            _scope_chain,
+            event_kind,
+        ) = frame;
 
         let description = match event.event_type {
             EventType::FunctionEntry | EventType::BreakpointHit => {

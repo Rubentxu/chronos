@@ -125,3 +125,9 @@ Usar `query_events`, `get_call_stack`, `debug_get_variables`, etc. — solo desp
 - **[09-multi-lenguaje.md](09-multi-lenguaje.md)** — Configuración específica por lenguaje
 - **[10-anti-patrones.md](10-anti-patrones.md)** — Qué NO hacer
 - **[11-ejemplos-prompts.md](11-ejemplos-prompts.md)** — 20+ ejemplos completos de workflows de agente
+
+## Debugging del Interior de Chronos
+
+Al desarrollar o hacer debugging de Chronos mismo, las siguientes herramientas son útiles:
+
+- **[tokio-console-setup.md](../../../tokio-console-setup.md)** — Debug async task behavior en Chronos usando `tokio-console`. Útil para investigar operaciones lentas de probe, problemas de gestión de sesiones y contención de recursos async.

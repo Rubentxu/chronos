@@ -4,8 +4,8 @@
 //! The header is `Content-Length: <N>\r\n\r\n` followed by N bytes of JSON.
 
 use crate::error::PythonAdapterError;
-use std::io::Read;
 use serde_json::Value;
+use std::io::Read;
 
 /// DAP message sequence number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,13 +76,13 @@ impl DapClient {
         // Read response
         let response: Value = self.read_message()?;
         if response.get("success").and_then(|s| s.as_bool()) == Some(false) {
-            let msg = response.get("message").and_then(|m| m.as_str()).unwrap_or("unknown");
+            let msg = response
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("unknown");
             return Err(PythonAdapterError::ProtocolError(msg.to_string()));
         }
-        let result = response
-            .get("body")
-            .cloned()
-            .unwrap_or(Value::Null);
+        let result = response.get("body").cloned().unwrap_or(Value::Null);
         Ok(result)
     }
 
@@ -126,9 +126,9 @@ impl DapClient {
         for line in header.lines() {
             if line.starts_with("Content-Length:") {
                 let value = line.trim_start_matches("Content-Length:").trim();
-                return value
-                    .parse::<usize>()
-                    .map_err(|_| PythonAdapterError::ProtocolError("Invalid Content-Length".into()));
+                return value.parse::<usize>().map_err(|_| {
+                    PythonAdapterError::ProtocolError("Invalid Content-Length".into())
+                });
             }
         }
         Err(PythonAdapterError::ProtocolError(
@@ -150,7 +150,11 @@ impl DapClient {
     ///
     /// Sends a DAP `evaluate` request and returns the result string.
     /// `frame_id` specifies which stack frame to evaluate in (None = top frame).
-    pub fn evaluate(&mut self, expression: &str, frame_id: Option<u64>) -> Result<String, PythonAdapterError> {
+    pub fn evaluate(
+        &mut self,
+        expression: &str,
+        frame_id: Option<u64>,
+    ) -> Result<String, PythonAdapterError> {
         let mut args = serde_json::json!({
             "expression": expression,
             "context": "repl"
@@ -334,7 +338,11 @@ mod tests {
                     if let Some(end) = s[pos..].find("\r\n\r\n") {
                         let header_end = pos + end + 4;
                         if let Some(len_str) = s[pos..].lines().next() {
-                            if let Some(len) = len_str.trim_start_matches("Content-Length:").trim().parse::<usize>().ok() {
+                            if let Ok(len) = len_str
+                                .trim_start_matches("Content-Length:")
+                                .trim()
+                                .parse::<usize>()
+                            {
                                 if all_data.len() >= header_end + len {
                                     // We have a complete message
                                     break;

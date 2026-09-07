@@ -27,7 +27,9 @@ impl fmt::Display for McpSandboxError {
         match self {
             McpSandboxError::SpawnFailed(msg) => write!(f, "Failed to spawn MCP server: {}", msg),
             McpSandboxError::RpcError(msg) => write!(f, "RPC error: {}", msg),
-            McpSandboxError::TimeoutError(msg, dur) => write!(f, "Operation timed out after {:?}: {}", dur, msg),
+            McpSandboxError::TimeoutError(msg, dur) => {
+                write!(f, "Operation timed out after {:?}: {}", dur, msg)
+            }
             McpSandboxError::ServerCrashed(msg) => write!(f, "Server crashed: {}", msg),
             McpSandboxError::UnexpectedOutput(msg) => write!(f, "Unexpected output: {}", msg),
             McpSandboxError::RetryExhausted(msg) => write!(f, "Retry exhausted: {}", msg),

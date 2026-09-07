@@ -106,7 +106,7 @@ mod tests {
     fn test_many_addresses() {
         let mut index = ShadowIndex::new();
         for i in 0..1000 {
-            index.insert(i as u64 * 8, i);
+            index.insert(i * 8, i);
         }
         assert_eq!(index.unique_addresses(), 1000);
         assert_eq!(index.len(), 1000);

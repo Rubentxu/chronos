@@ -1,5 +1,7 @@
+use chronos_domain::semantic::{
+    ResolveContext, SemanticEvent, SemanticEventKind, SemanticResolver,
+};
 use chronos_domain::{EventData, EventType, JavaEventKind, Language, TraceEvent};
-use chronos_domain::semantic::{ResolveContext, SemanticEvent, SemanticEventKind, SemanticResolver};
 
 /// SemanticResolver for Java that enriches JavaFrame events.
 #[derive(Debug)]
@@ -27,7 +29,8 @@ impl SemanticResolver for JavaSemanticResolver {
     }
 
     fn resolve(&self, event: &TraceEvent, _ctx: &ResolveContext) -> Option<SemanticEvent> {
-        let (class_name, method_name, signature, file, line, locals, event_kind) = match &event.data {
+        let (class_name, method_name, signature, file, line, locals, event_kind) = match &event.data
+        {
             EventData::JavaFrame {
                 class_name,
                 method_name,
@@ -36,14 +39,24 @@ impl SemanticResolver for JavaSemanticResolver {
                 line,
                 locals,
                 event_kind,
-            } => (class_name, method_name, signature, file, line, locals, event_kind),
+            } => (
+                class_name,
+                method_name,
+                signature,
+                file,
+                line,
+                locals,
+                event_kind,
+            ),
             _ => return None,
         };
 
         let qualified_name = format!("{}.{}", class_name, method_name);
 
         let file_str = file.as_deref().unwrap_or("?");
-        let line_str = line.map(|l| l.to_string()).unwrap_or_else(|| "?".to_string());
+        let line_str = line
+            .map(|l| l.to_string())
+            .unwrap_or_else(|| "?".to_string());
 
         let description = match event.event_type {
             EventType::FunctionEntry => {
@@ -71,7 +84,10 @@ impl SemanticResolver for JavaSemanticResolver {
                 }
             }
             EventType::FunctionExit => {
-                format!("return {}.{} @ {}:{}", class_name, method_name, file_str, line_str)
+                format!(
+                    "return {}.{} @ {}:{}",
+                    class_name, method_name, file_str, line_str
+                )
             }
             EventType::ExceptionThrown => {
                 format!(

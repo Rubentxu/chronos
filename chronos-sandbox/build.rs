@@ -24,7 +24,7 @@ fn main() {
         Command::new("gcc")
             .args(["-g", "-O0", "-pthread", &src, "-o", &out])
             .status()
-            .expect(&format!("Failed to compile {}", prog));
+            .unwrap_or_else(|_| panic!("Failed to compile {}", prog));
 
         // Tell cargo to rerun if source changes
         println!("cargo:rerun-if-changed={}", src);

@@ -68,7 +68,10 @@ pub fn remote_object_to_variable_info(
         .map(|v| serde_json::to_string(v).unwrap_or_default())
         .unwrap_or_else(|| remote.description.clone().unwrap_or_default());
 
-    let type_name = remote.subtype.clone().unwrap_or_else(|| remote.type_.clone());
+    let type_name = remote
+        .subtype
+        .clone()
+        .unwrap_or_else(|| remote.type_.clone());
 
     let address = remote
         .object_id

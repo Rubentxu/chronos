@@ -89,5 +89,9 @@ fn test_connect_to_debugpy() {
     // Run with: debugpy --listen 5678 --wait-for-client
     let adapter = PythonDapAdapter::new("localhost", 5678);
     let result = adapter.connect(0);
-    assert!(result.is_ok(), "Failed to connect to debugpy: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to connect to debugpy: {:?}",
+        result.err()
+    );
 }

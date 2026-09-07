@@ -17,9 +17,7 @@ fn main() {
     let compile_success = compile_bpf_program(&ebpf_dir, &bpf_o_path);
 
     if !compile_success {
-        eprintln!(
-            "warning: Failed to compile eBPF program, creating stub object file"
-        );
+        eprintln!("warning: Failed to compile eBPF program, creating stub object file");
         // Create a minimal stub object file using gcc
         create_stub_object(&bpf_o_path);
     }
@@ -159,11 +157,7 @@ fn find_clang() -> Option<String> {
 
 fn find_bpf_include_path() -> Option<String> {
     // Look for BPF headers in common locations
-    let candidates = vec![
-        "/usr/include/bpf",
-        "/usr/local/include/bpf",
-        "/usr/lib/bpf",
-    ];
+    let candidates = vec!["/usr/include/bpf", "/usr/local/include/bpf", "/usr/lib/bpf"];
 
     for candidate in candidates {
         let path = Path::new(candidate);

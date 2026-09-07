@@ -56,9 +56,9 @@ impl PerfCounterType {
     /// Get the Linux `perf_event_open` type constant for this counter.
     pub fn perf_type(&self) -> u32 {
         match self {
-            PerfCounterType::Cycle => 0,  // PERF_TYPE_HARDWARE
+            PerfCounterType::Cycle => 0,       // PERF_TYPE_HARDWARE
             PerfCounterType::Instruction => 1, // PERF_TYPE_SOFTWARE (we use SW for instructions)
-            PerfCounterType::CacheMiss => 0,  // PERF_TYPE_HARDWARE
+            PerfCounterType::CacheMiss => 0,   // PERF_TYPE_HARDWARE
             PerfCounterType::BranchMiss => 0,  // PERF_TYPE_HARDWARE
         }
     }
@@ -175,9 +175,7 @@ impl PerfCounterHandle {
         let ptr = &mut value as *mut u64 as *mut libc::c_void;
 
         // Use read() syscall to get current count
-        let ret = unsafe {
-            libc::read(self.fd.as_raw_fd(), ptr, size)
-        };
+        let ret = unsafe { libc::read(self.fd.as_raw_fd(), ptr, size) };
 
         if ret < 0 {
             let err = std::io::Error::last_os_error();
@@ -200,7 +198,11 @@ impl PerfCounterHandle {
     /// Uses `ioctl` with `PERF_EVENT_IOC_RESET`.
     pub fn reset(&self) -> Result<(), PerfCounterError> {
         let ret = unsafe {
-            libc::ioctl(self.fd.as_raw_fd(), PERF_EVENT_IOC_RESET as libc::c_ulong, 0)
+            libc::ioctl(
+                self.fd.as_raw_fd(),
+                PERF_EVENT_IOC_RESET as libc::c_ulong,
+                0,
+            )
         };
 
         if ret < 0 {
@@ -216,7 +218,11 @@ impl PerfCounterHandle {
     /// Uses `ioctl` with `PERF_EVENT_IOC_ENABLE`.
     pub fn enable(&self) -> Result<(), PerfCounterError> {
         let ret = unsafe {
-            libc::ioctl(self.fd.as_raw_fd(), PERF_EVENT_IOC_ENABLE as libc::c_ulong, 0)
+            libc::ioctl(
+                self.fd.as_raw_fd(),
+                PERF_EVENT_IOC_ENABLE as libc::c_ulong,
+                0,
+            )
         };
 
         if ret < 0 {
@@ -232,7 +238,11 @@ impl PerfCounterHandle {
     /// Uses `ioctl` with `PERF_EVENT_IOC_DISABLE`.
     pub fn disable(&self) -> Result<(), PerfCounterError> {
         let ret = unsafe {
-            libc::ioctl(self.fd.as_raw_fd(), PERF_EVENT_IOC_DISABLE as libc::c_ulong, 0)
+            libc::ioctl(
+                self.fd.as_raw_fd(),
+                PERF_EVENT_IOC_DISABLE as libc::c_ulong,
+                0,
+            )
         };
 
         if ret < 0 {
@@ -274,9 +284,7 @@ impl PerfCountersSnapshot {
     /// Create a snapshot from a slice of counter handles and values.
     ///
     /// The slice should contain (handle, value) pairs.
-    pub fn from_counters(
-        handles: &[(PerfCounterHandle, u64)],
-    ) -> Self {
+    pub fn from_counters(handles: &[(PerfCounterHandle, u64)]) -> Self {
         let mut snapshot = Self::new();
 
         for (handle, value) in handles {
@@ -324,10 +332,10 @@ pub fn perf_event_open(
         libc::syscall(
             libc::SYS_perf_event_open,
             &attr as *const _,
-            pid,    // pid: 0 means current process
-            cpu,    // cpu: -1 means any CPU
-            -1i32,  // group_fd: -1 means no group
-            0u64,   // flags: 0
+            pid,   // pid: 0 means current process
+            cpu,   // cpu: -1 means any CPU
+            -1i32, // group_fd: -1 means no group
+            0u64,  // flags: 0
         )
     };
 
@@ -337,7 +345,9 @@ pub fn perf_event_open(
         return Err(match errno {
             libc::EPERM | libc::EACCES => PerfCounterError::PermissionDenied,
             libc::ENODEV | libc::ENOENT => PerfCounterError::NotSupported,
-            libc::EINVAL => PerfCounterError::InvalidConfig("Invalid perf_event_open parameters".into()),
+            libc::EINVAL => {
+                PerfCounterError::InvalidConfig("Invalid perf_event_open parameters".into())
+            }
             _ => PerfCounterError::ReadFailed(err.to_string()),
         });
     }

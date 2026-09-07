@@ -1,8 +1,8 @@
+use chronos_domain::semantic::{ResolveContext, SemanticEventKind, SemanticResolver};
 use chronos_domain::{
     EventData, EventType, Language, PythonEventKind, SourceLocation, TraceEvent, VariableInfo,
     VariableScope,
 };
-use chronos_domain::semantic::{ResolveContext, SemanticEventKind, SemanticResolver};
 use chronos_python::semantic_resolver::PythonSemanticResolver;
 
 fn make_python_call_event() -> TraceEvent {

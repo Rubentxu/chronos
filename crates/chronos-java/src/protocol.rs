@@ -294,8 +294,9 @@ impl JdwpClient {
         let mut values = Vec::with_capacity(count);
 
         for _ in 0..count {
-            let (val_str, consumed) = parse_tagged_value(&reply[offset..])
-                .map_err(|e| JavaError::JdwpProtocol(format!("GetValues value parse error: {}", e)))?;
+            let (val_str, consumed) = parse_tagged_value(&reply[offset..]).map_err(|e| {
+                JavaError::JdwpProtocol(format!("GetValues value parse error: {}", e))
+            })?;
             values.push(val_str);
             offset += consumed;
         }
@@ -343,8 +344,9 @@ impl JdwpClient {
         let mut values = Vec::with_capacity(count);
 
         for _ in 0..count {
-            let (val_str, consumed) = parse_tagged_value(&reply[offset..])
-                .map_err(|e| JavaError::JdwpProtocol(format!("GetValues value parse error: {}", e)))?;
+            let (val_str, consumed) = parse_tagged_value(&reply[offset..]).map_err(|e| {
+                JavaError::JdwpProtocol(format!("GetValues value parse error: {}", e))
+            })?;
             values.push(val_str);
             offset += consumed;
         }
@@ -634,7 +636,9 @@ pub fn parse_tagged_value(data: &[u8]) -> Result<(String, usize), JavaError> {
                     "Tagged value: D (double) requires 8 bytes".to_string(),
                 ));
             }
-            let val = f64::from_be_bytes([data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8]]);
+            let val = f64::from_be_bytes([
+                data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8],
+            ]);
             Ok((val.to_string(), offset + 8))
         }
         's' | 'L' => {
@@ -695,7 +699,12 @@ pub fn parse_all_classes(data: &[u8]) -> Result<Vec<ClassInfo>, JavaError> {
                 "AllClasses response: truncated signature length".to_string(),
             ));
         }
-        let sig_length = i32::from_be_bytes([data[offset], data[offset + 1], data[offset + 2], data[offset + 3]]) as usize;
+        let sig_length = i32::from_be_bytes([
+            data[offset],
+            data[offset + 1],
+            data[offset + 2],
+            data[offset + 3],
+        ]) as usize;
         offset += 4;
 
         if offset + sig_length > data.len() {
@@ -712,7 +721,12 @@ pub fn parse_all_classes(data: &[u8]) -> Result<Vec<ClassInfo>, JavaError> {
                 "AllClasses response: truncated genericSignature length".to_string(),
             ));
         }
-        let gen_sig_length = i32::from_be_bytes([data[offset], data[offset + 1], data[offset + 2], data[offset + 3]]) as usize;
+        let gen_sig_length = i32::from_be_bytes([
+            data[offset],
+            data[offset + 1],
+            data[offset + 2],
+            data[offset + 3],
+        ]) as usize;
         offset += 4;
         offset += gen_sig_length;
 
@@ -763,7 +777,12 @@ fn parse_fields(data: &[u8]) -> Result<Vec<FieldInfo>, JavaError> {
                 "Fields response: truncated name length".to_string(),
             ));
         }
-        let name_length = i32::from_be_bytes([data[offset], data[offset + 1], data[offset + 2], data[offset + 3]]) as usize;
+        let name_length = i32::from_be_bytes([
+            data[offset],
+            data[offset + 1],
+            data[offset + 2],
+            data[offset + 3],
+        ]) as usize;
         offset += 4;
 
         if offset + name_length > data.len() {
@@ -780,7 +799,12 @@ fn parse_fields(data: &[u8]) -> Result<Vec<FieldInfo>, JavaError> {
                 "Fields response: truncated signature length".to_string(),
             ));
         }
-        let sig_length = i32::from_be_bytes([data[offset], data[offset + 1], data[offset + 2], data[offset + 3]]) as usize;
+        let sig_length = i32::from_be_bytes([
+            data[offset],
+            data[offset + 1],
+            data[offset + 2],
+            data[offset + 3],
+        ]) as usize;
         offset += 4;
 
         if offset + sig_length > data.len() {
@@ -797,7 +821,12 @@ fn parse_fields(data: &[u8]) -> Result<Vec<FieldInfo>, JavaError> {
                 "Fields response: truncated genericSignature length".to_string(),
             ));
         }
-        let gen_sig_length = i32::from_be_bytes([data[offset], data[offset + 1], data[offset + 2], data[offset + 3]]) as usize;
+        let gen_sig_length = i32::from_be_bytes([
+            data[offset],
+            data[offset + 1],
+            data[offset + 2],
+            data[offset + 3],
+        ]) as usize;
         offset += 4;
         offset += gen_sig_length;
 
@@ -1046,9 +1075,7 @@ mod tests {
     #[test]
     fn test_parse_tagged_value_long() {
         // Tag 'J' + i64 value 0x123456789ABCDEF0 (positive, high bit not set)
-        let data = vec![
-            b'J', 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0,
-        ];
+        let data = vec![b'J', 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
 
         let result = parse_tagged_value(&data);
         assert!(result.is_ok());
@@ -1085,9 +1112,7 @@ mod tests {
     fn test_parse_tagged_value_double() {
         // Tag 'D' + f64 value 3.14159...
         // 3.14159 as f64 is approximately 0x400921F9F52D3852
-        let data = vec![
-            b'D', 0x40, 0x09, 0x21, 0xF9, 0xF5, 0x2D, 0x38, 0x52,
-        ];
+        let data = vec![b'D', 0x40, 0x09, 0x21, 0xF9, 0xF5, 0x2D, 0x38, 0x52];
 
         let result = parse_tagged_value(&data);
         assert!(result.is_ok());
@@ -1100,9 +1125,7 @@ mod tests {
     #[test]
     fn test_parse_tagged_value_string_object() {
         // Tag 's' + objectID 0xCAFEBABE
-        let data = vec![
-            b's', 0x00, 0x00, 0x00, 0x00, 0xCA, 0xFE, 0xBA, 0xBE,
-        ];
+        let data = vec![b's', 0x00, 0x00, 0x00, 0x00, 0xCA, 0xFE, 0xBA, 0xBE];
 
         let result = parse_tagged_value(&data);
         assert!(result.is_ok());

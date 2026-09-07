@@ -1,6 +1,6 @@
 //! JavaScript adapter implementing TraceAdapter for Node.js via CDP.
 
-use crate::cdp_client::{CdpClient, CdpEvent, CallFrame};
+use crate::cdp_client::{CallFrame, CdpClient, CdpEvent};
 use crate::debugger::JsDebugger;
 use crate::error::JsAdapterError;
 use crate::subprocess::NodeProcess;
@@ -78,11 +78,8 @@ impl JsAdapter {
             };
 
             // Collect scope chain
-            let scope_chain: Vec<String> = frame
-                .scope_chain
-                .iter()
-                .map(|s| s.type_.clone())
-                .collect();
+            let scope_chain: Vec<String> =
+                frame.scope_chain.iter().map(|s| s.type_.clone()).collect();
 
             // Note: In a full implementation, we'd fetch locals via get_properties
             // For MVP, we create the event without locals
@@ -135,18 +132,20 @@ impl TraceAdapter for JsAdapter {
         let rt = tokio::runtime::Runtime::new().unwrap();
 
         // Wait for CDP to be ready
-        let ws_url = rt.block_on(async {
-            tokio::time::timeout(
-                std::time::Duration::from_secs(30),
-                process.wait_for_cdp_ready(30),
-            )
-            .await
-        })
-        .map_err(|_| TraceError::CaptureFailed("CDP timeout waiting for Node.js".to_string()))?
-        .map_err(|e| TraceError::CaptureFailed(format!("CDP error: {}", e)))?;
+        let ws_url = rt
+            .block_on(async {
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(30),
+                    process.wait_for_cdp_ready(30),
+                )
+                .await
+            })
+            .map_err(|_| TraceError::CaptureFailed("CDP timeout waiting for Node.js".to_string()))?
+            .map_err(|e| TraceError::CaptureFailed(format!("CDP error: {}", e)))?;
 
         // Connect to CDP
-        let client = rt.block_on(async { CdpClient::connect(&ws_url).await })
+        let client = rt
+            .block_on(async { CdpClient::connect(&ws_url).await })
             .map_err(|e| TraceError::CaptureFailed(format!("WebSocket error: {}", e)))?;
 
         let client = Arc::new(client);
@@ -154,8 +153,14 @@ impl TraceAdapter for JsAdapter {
 
         // Enable debugger and runtime domains
         rt.block_on(async {
-            debugger.enable().await.map_err(|e| TraceError::CaptureFailed(e.to_string()))?;
-            debugger.enable_runtime().await.map_err(|e| TraceError::CaptureFailed(e.to_string()))?;
+            debugger
+                .enable()
+                .await
+                .map_err(|e| TraceError::CaptureFailed(e.to_string()))?;
+            debugger
+                .enable_runtime()
+                .await
+                .map_err(|e| TraceError::CaptureFailed(e.to_string()))?;
             Ok::<(), TraceError>(())
         })?;
 
@@ -183,7 +188,8 @@ impl TraceAdapter for JsAdapter {
                         if !state.running {
                             break;
                         }
-                        state.session_start
+                        state
+                            .session_start
                             .map(|s: Instant| s.elapsed().as_nanos() as u64)
                             .unwrap_or(0)
                     };
@@ -271,7 +277,7 @@ mod tests {
     fn test_is_node_available() {
         // Just verify the method works
         let available = JsAdapter::is_node_available();
-        assert!(available || !available);
+        let _ = available;
     }
 
     #[test]
@@ -295,12 +301,7 @@ mod tests {
             session_start: Some(Instant::now()),
         };
 
-        let events = JsAdapter::paused_to_trace_events(
-            &mut state,
-            call_frames,
-            "breakpoint",
-            1000,
-        );
+        let events = JsAdapter::paused_to_trace_events(&mut state, call_frames, "breakpoint", 1000);
 
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].location.function.as_deref(), Some("testFunc"));
@@ -346,12 +347,8 @@ mod tests {
         };
 
         // Test breakpoint
-        let events = JsAdapter::paused_to_trace_events(
-            &mut state,
-            call_frames.clone(),
-            "breakpoint",
-            1000,
-        );
+        let events =
+            JsAdapter::paused_to_trace_events(&mut state, call_frames.clone(), "breakpoint", 1000);
         match &events[0].data {
             EventData::JsFrame { event_kind, .. } => {
                 assert_eq!(*event_kind, JsEventKind::Breakpoint);
@@ -360,12 +357,8 @@ mod tests {
         }
 
         // Test exception
-        let events = JsAdapter::paused_to_trace_events(
-            &mut state,
-            call_frames.clone(),
-            "exception",
-            2000,
-        );
+        let events =
+            JsAdapter::paused_to_trace_events(&mut state, call_frames.clone(), "exception", 2000);
         match &events[0].data {
             EventData::JsFrame { event_kind, .. } => {
                 assert_eq!(*event_kind, JsEventKind::Exception);
@@ -374,12 +367,8 @@ mod tests {
         }
 
         // Test step
-        let events = JsAdapter::paused_to_trace_events(
-            &mut state,
-            call_frames.clone(),
-            "step",
-            3000,
-        );
+        let events =
+            JsAdapter::paused_to_trace_events(&mut state, call_frames.clone(), "step", 3000);
         match &events[0].data {
             EventData::JsFrame { event_kind, .. } => {
                 assert_eq!(*event_kind, JsEventKind::Step);
@@ -388,12 +377,7 @@ mod tests {
         }
 
         // Test unknown reason maps to Other
-        let events = JsAdapter::paused_to_trace_events(
-            &mut state,
-            call_frames,
-            "pause",
-            4000,
-        );
+        let events = JsAdapter::paused_to_trace_events(&mut state, call_frames, "pause", 4000);
         match &events[0].data {
             EventData::JsFrame { event_kind, .. } => {
                 assert_eq!(*event_kind, JsEventKind::Other("pause".to_string()));
@@ -518,7 +502,14 @@ fn cdp_event_to_trace_event(event: CdpEvent) -> TraceEvent {
 
             let first_frame = call_frames.first();
             let (function_name, url, line_number, column_number) = first_frame
-                .map(|f| (f.function_name.clone(), f.url.clone(), f.line_number, f.column_number))
+                .map(|f| {
+                    (
+                        f.function_name.clone(),
+                        f.url.clone(),
+                        f.line_number,
+                        f.column_number,
+                    )
+                })
                 .unwrap_or_else(|| ("<unknown>".to_string(), "<unknown>".to_string(), 0, 0));
 
             let location = SourceLocation {
@@ -562,10 +553,7 @@ fn cdp_event_to_trace_event(event: CdpEvent) -> TraceEvent {
                 .filter_map(|a| a.description.clone())
                 .collect::<Vec<_>>()
                 .join(" ");
-            let args_serialized = args
-                .iter()
-                .filter_map(|a| a.description.clone())
-                .collect();
+            let args_serialized = args.iter().filter_map(|a| a.description.clone()).collect();
 
             let timestamp_ns = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

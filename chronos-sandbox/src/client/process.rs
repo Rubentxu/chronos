@@ -43,17 +43,20 @@ impl McpProcess {
             .spawn()
             .map_err(|e| McpSandboxError::SpawnFailed(e.to_string()))?;
 
-        let stdin = child.stdin.take().ok_or_else(|| {
-            McpSandboxError::SpawnFailed("Failed to take stdin".to_string())
-        })?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| McpSandboxError::SpawnFailed("Failed to take stdin".to_string()))?;
 
-        let stdout = child.stdout.take().ok_or_else(|| {
-            McpSandboxError::SpawnFailed("Failed to take stdout".to_string())
-        })?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| McpSandboxError::SpawnFailed("Failed to take stdout".to_string()))?;
 
-        let stderr = child.stderr.take().ok_or_else(|| {
-            McpSandboxError::SpawnFailed("Failed to take stderr".to_string())
-        })?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| McpSandboxError::SpawnFailed("Failed to take stderr".to_string()))?;
 
         let crashed = Arc::new(AtomicBool::new(false));
         let crashed_clone = crashed.clone();
@@ -184,7 +187,9 @@ pub mod factory {
 
     /// Spawn and return a new MCP process along with its stdio handles.
     /// Returns the process handle and the stdio wrappers.
-    pub async fn start(mcp_path: &Path) -> Result<(McpProcess, McpWriter, McpReader), McpSandboxError> {
+    pub async fn start(
+        mcp_path: &Path,
+    ) -> Result<(McpProcess, McpWriter, McpReader), McpSandboxError> {
         let mut process = McpProcess::spawn(mcp_path).await?;
 
         // Take the handles from the process

@@ -12,17 +12,24 @@ async fn test_query_events_filter_by_event_type_function_entry() {
     let fixture = McpSession::fixture_path("test_busyloop")
         .expect("test_busyloop fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
     println!("Probe stopped: {} total events", stop.total_events);
 
@@ -35,10 +42,15 @@ async fn test_query_events_filter_by_event_type_function_entry() {
         ..Default::default()
     };
 
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events failed");
 
-    println!("query_events returned {} function_entry events", events.len());
+    println!(
+        "query_events returned {} function_entry events",
+        events.len()
+    );
 
     // Assert: all returned events have event_type == "function_entry"
     for (i, event) in events.iter().enumerate() {
@@ -49,7 +61,10 @@ async fn test_query_events_filter_by_event_type_function_entry() {
         );
     }
 
-    println!("✓ All {} events have event_type == 'function_entry'", events.len());
+    println!(
+        "✓ All {} events have event_type == 'function_entry'",
+        events.len()
+    );
     client.shutdown().await.ok();
 }
 
@@ -60,17 +75,24 @@ async fn test_query_events_filter_by_event_type_syscall() {
     let fixture = McpSession::fixture_path("test_busyloop")
         .expect("test_busyloop fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
     println!("Probe stopped: {} total events", stop.total_events);
 
@@ -83,10 +105,15 @@ async fn test_query_events_filter_by_event_type_syscall() {
         ..Default::default()
     };
 
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events failed");
 
-    println!("query_events returned {} syscall_enter events", events.len());
+    println!(
+        "query_events returned {} syscall_enter events",
+        events.len()
+    );
 
     // Assert: all events have event_type == "syscall_enter" OR events is empty
     for (i, event) in events.iter().enumerate() {
@@ -97,7 +124,10 @@ async fn test_query_events_filter_by_event_type_syscall() {
         );
     }
 
-    println!("✓ All {} events have event_type == 'syscall_enter' (or empty)", events.len());
+    println!(
+        "✓ All {} events have event_type == 'syscall_enter' (or empty)",
+        events.len()
+    );
     client.shutdown().await.ok();
 }
 
@@ -108,24 +138,33 @@ async fn test_query_events_filter_by_thread_id() {
     let fixture = McpSession::fixture_path("test_threads")
         .expect("test_threads fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(3)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
     println!("Probe stopped: {} total events", stop.total_events);
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Get threads
-    let threads = client.list_threads(&session_id).await
+    let threads = client
+        .list_threads(&session_id)
+        .await
         .expect("list_threads failed");
 
     assert!(!threads.is_empty(), "Should have at least one thread");
@@ -139,10 +178,16 @@ async fn test_query_events_filter_by_thread_id() {
         ..Default::default()
     };
 
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events failed");
 
-    println!("query_events returned {} events for thread_id={}", events.len(), target_tid);
+    println!(
+        "query_events returned {} events for thread_id={}",
+        events.len(),
+        target_tid
+    );
 
     // Assert: all events have thread_id == target_tid
     for (i, event) in events.iter().enumerate() {
@@ -153,7 +198,11 @@ async fn test_query_events_filter_by_thread_id() {
         );
     }
 
-    println!("✓ All {} events have thread_id == {}", events.len(), target_tid);
+    println!(
+        "✓ All {} events have thread_id == {}",
+        events.len(),
+        target_tid
+    );
     client.shutdown().await.ok();
 }
 
@@ -164,17 +213,24 @@ async fn test_query_events_function_pattern_glob() {
     let fixture = McpSession::fixture_path("test_busyloop")
         .expect("test_busyloop fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
     println!("Probe stopped: {} total events", stop.total_events);
 
@@ -187,11 +243,16 @@ async fn test_query_events_function_pattern_glob() {
         ..Default::default()
     };
 
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events failed");
 
     // Assert: response is valid (array, no crash) - events may be empty if no matching functions
-    println!("query_events with function_pattern='*loop*' returned {} events", events.len());
+    println!(
+        "query_events with function_pattern='*loop*' returned {} events",
+        events.len()
+    );
     println!("✓ Response is valid (no crash, valid array)");
 
     client.shutdown().await.ok();
@@ -205,17 +266,24 @@ async fn test_query_events_offset_pagination() {
     let fixture = McpSession::fixture_path("test_busyloop")
         .expect("test_busyloop fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
     println!("Probe stopped: {} total events", stop.total_events);
 
@@ -227,7 +295,9 @@ async fn test_query_events_offset_pagination() {
         offset: 0,
         ..Default::default()
     };
-    let page1 = client.query_events(&session_id, filter_page1).await
+    let page1 = client
+        .query_events(&session_id, filter_page1)
+        .await
         .expect("query_events page1 failed");
 
     // Page 2
@@ -236,10 +306,16 @@ async fn test_query_events_offset_pagination() {
         offset: 10,
         ..Default::default()
     };
-    let page2 = client.query_events(&session_id, filter_page2).await
+    let page2 = client
+        .query_events(&session_id, filter_page2)
+        .await
         .expect("query_events page2 failed");
 
-    println!("Page 1: {} events, Page 2: {} events", page1.len(), page2.len());
+    println!(
+        "Page 1: {} events, Page 2: {} events",
+        page1.len(),
+        page2.len()
+    );
 
     // Collect event_ids from each page
     let page1_ids: Vec<u64> = page1.iter().map(|e| e.event_id).collect();
@@ -250,7 +326,8 @@ async fn test_query_events_offset_pagination() {
         assert!(
             !page2_ids.contains(id),
             "Page1 event_id {} at index {} found in page2 (overlap)",
-            id, i
+            id,
+            i
         );
     }
 
@@ -274,17 +351,24 @@ async fn test_query_events_offset_beyond_total() {
     let fixture = McpSession::fixture_path("test_add")
         .expect("test_add fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
     println!("Probe stopped: {} total events", stop.total_events);
 
@@ -296,7 +380,9 @@ async fn test_query_events_offset_beyond_total() {
         offset: 0,
         ..Default::default()
     };
-    let all_events = client.query_events(&session_id, all_filter).await
+    let all_events = client
+        .query_events(&session_id, all_filter)
+        .await
         .expect("query_events all failed");
     let total_count = all_events.len();
     println!("Total events: {}", total_count);
@@ -307,7 +393,9 @@ async fn test_query_events_offset_beyond_total() {
         offset: total_count + 1000,
         ..Default::default()
     };
-    let beyond_events = client.query_events(&session_id, beyond_filter).await
+    let beyond_events = client
+        .query_events(&session_id, beyond_filter)
+        .await
         .expect("query_events beyond total failed");
 
     // Assert: returns empty array
@@ -329,24 +417,33 @@ async fn test_query_events_combined_filters() {
     let fixture = McpSession::fixture_path("test_threads")
         .expect("test_threads fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(3)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
     println!("Probe stopped: {} total events", stop.total_events);
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Get a thread_id
-    let threads = client.list_threads(&session_id).await
+    let threads = client
+        .list_threads(&session_id)
+        .await
         .expect("list_threads failed");
     assert!(!threads.is_empty(), "Should have at least one thread");
     let target_tid = threads[0].thread_id;
@@ -359,7 +456,9 @@ async fn test_query_events_combined_filters() {
         ..Default::default()
     };
 
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events combined failed");
 
     println!("Combined filter returned {} events", events.len());
@@ -378,8 +477,11 @@ async fn test_query_events_combined_filters() {
         );
     }
 
-    println!("✓ All {} events match both thread_id={} and event_type='function_entry'",
-        events.len(), target_tid);
+    println!(
+        "✓ All {} events match both thread_id={} and event_type='function_entry'",
+        events.len(),
+        target_tid
+    );
     client.shutdown().await.ok();
 }
 
@@ -391,17 +493,24 @@ async fn test_query_events_limit_exact_pagination() {
     let fixture = McpSession::fixture_path("test_busyloop")
         .expect("test_busyloop fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
     println!("Probe stopped: {} total events", stop.total_events);
 
@@ -413,7 +522,9 @@ async fn test_query_events_limit_exact_pagination() {
         offset: 0,
         ..Default::default()
     };
-    let page1 = client.query_events(&session_id, page1_filter).await
+    let page1 = client
+        .query_events(&session_id, page1_filter)
+        .await
         .expect("query_events page1 failed");
 
     // Page 2: offset=5, limit=5
@@ -422,10 +533,16 @@ async fn test_query_events_limit_exact_pagination() {
         offset: 5,
         ..Default::default()
     };
-    let page2 = client.query_events(&session_id, page2_filter).await
+    let page2 = client
+        .query_events(&session_id, page2_filter)
+        .await
         .expect("query_events page2 failed");
 
-    println!("Page 1: {} events, Page 2: {} events", page1.len(), page2.len());
+    println!(
+        "Page 1: {} events, Page 2: {} events",
+        page1.len(),
+        page2.len()
+    );
 
     // Assert: page1 has exactly 5 events (or fewer if total < 5)
     assert!(
@@ -458,17 +575,24 @@ async fn test_get_event_at_first_and_last() {
     let fixture = McpSession::fixture_path("test_add")
         .expect("test_add fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
     println!("Probe stopped: {} total events", stop.total_events);
 
@@ -480,7 +604,9 @@ async fn test_get_event_at_first_and_last() {
         offset: 0,
         ..Default::default()
     };
-    let all_events = client.query_events(&session_id, all_filter).await
+    let all_events = client
+        .query_events(&session_id, all_filter)
+        .await
         .expect("query_events all failed");
     let total = all_events.len();
 
@@ -492,22 +618,34 @@ async fn test_get_event_at_first_and_last() {
 
     // First event
     let first_event_id = all_events[0].event_id;
-    let first_detail = client.get_event(&session_id, first_event_id).await
+    let first_detail = client
+        .get_event(&session_id, first_event_id)
+        .await
         .expect("get_event for first event failed");
 
-    assert!(first_detail.get("event_id").is_some(), "First event should have event_id");
+    assert!(
+        first_detail.get("event_id").is_some(),
+        "First event should have event_id"
+    );
     println!("✓ get_event first event_id={} works", first_event_id);
 
     // Last event (offset = total - 1)
     let last_event_id = all_events[total - 1].event_id;
-    let last_detail = client.get_event(&session_id, last_event_id).await
+    let last_detail = client
+        .get_event(&session_id, last_event_id)
+        .await
         .expect("get_event for last event failed");
 
-    assert!(last_detail.get("event_id").is_some(), "Last event should have event_id");
+    assert!(
+        last_detail.get("event_id").is_some(),
+        "Last event should have event_id"
+    );
     println!("✓ get_event last event_id={} works", last_event_id);
 
-    println!("✓ get_event works for first (id={}) and last (id={}) events",
-        first_event_id, last_event_id);
+    println!(
+        "✓ get_event works for first (id={}) and last (id={}) events",
+        first_event_id, last_event_id
+    );
 
     client.shutdown().await.ok();
 }

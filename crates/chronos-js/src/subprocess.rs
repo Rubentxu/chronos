@@ -82,8 +82,12 @@ impl NodeProcess {
 
         match result {
             Ok(Some(url)) => Ok(url),
-            Ok(None) => Err(JsAdapterError::CdpTimeout { timeout: timeout_secs }),
-            Err(_) => Err(JsAdapterError::CdpTimeout { timeout: timeout_secs }),
+            Ok(None) => Err(JsAdapterError::CdpTimeout {
+                timeout: timeout_secs,
+            }),
+            Err(_) => Err(JsAdapterError::CdpTimeout {
+                timeout: timeout_secs,
+            }),
         }
     }
 
@@ -123,6 +127,6 @@ mod tests {
         // This test passes if node is on the system PATH
         let available = is_node_available();
         // Just verify the method works - actual result depends on system
-        assert!(available || !available);
+        let _ = available;
     }
 }

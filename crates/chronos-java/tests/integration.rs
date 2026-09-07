@@ -27,6 +27,11 @@ fn test_registry_has_java_adapter() {
 }
 
 #[test]
+// The assertion 'available || !available' is intentionally tautological:
+// this test verifies that the is_available() call does not panic. Both
+// branches must complete without side effects. The lint's suggestion to
+// collapse to `true` is correct but defeats the panic-checking intent.
+#[allow(clippy::overly_complex_bool_expr, clippy::nonminimal_bool)]
 fn test_java_adapter_is_available_check() {
     // Just verify the is_available method works
     let available = JavaAdapter::is_available();

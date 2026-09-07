@@ -1,0 +1,376 @@
+//! End-to-end tests for language adapters (Python, Java, Go, Browser/WASM).
+//!
+//! These tests verify that the adapters can capture traces from real programs
+//! and produce events that can be queried via the QueryEngine.
+//!
+//! # Running these tests
+//!
+//! For Python tests: ensure `python3` is in PATH.
+//! For Java tests: ensure `java` and `javac` are in PATH.
+//! For Go tests: ensure `dlv` (Delve) is in PATH.
+//! For Browser tests: ensure Chrome/Chromium is installed and `CHRONOS_E2E=1` is set.
+//!
+//! ```bash
+//! # Run all language adapter tests
+//! cargo test -p chronos-sandbox --test language_adapters_e2e
+//!
+//! # Run only Python tests
+//! cargo test -p chronos-sandbox --test language_adapters_e2e python
+//!
+//! # Run with browser tests (requires CHRONOS_E2E=1)
+//! CHRONOS_E2E=1 cargo test -p chronos-sandbox --test language_adapters_e2e -- browser
+//! ```
+
+use std::path::Path;
+
+// =============================================================================
+// PYTHON TESTS
+// =============================================================================
+
+mod python_tests {
+    use super::*;
+
+    /// PY1: Capture nested Python function calls and verify call stack.
+    #[tokio::test]
+    async fn test_python_nested_calls_capture() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("programs/python/nested_calls.py");
+
+        if !fixture.exists() {
+            eprintln!("SKIP: nested_calls.py not found at {:?}", fixture);
+            return;
+        }
+
+        // Use PythonSubprocess directly to capture the script
+        let mut proc = chronos_python::subprocess::PythonSubprocess::spawn(
+            fixture.to_str().unwrap(),
+            true, // capture_locals
+        )
+        .expect("Should be able to spawn python subprocess");
+
+        // Collect events until process exits
+        let mut events = Vec::new();
+        let mut call_count = 0;
+        let mut return_count = 0;
+
+        for _ in 0..500 {
+            match proc.next_event().await {
+                Ok(Some(event)) => {
+                    if event.event == "call" {
+                        call_count += 1;
+                    } else if event.event == "return" {
+                        return_count += 1;
+                    }
+                    events.push(event);
+                }
+                Ok(None) => break,
+                Err(e) => {
+                    eprintln!("Error reading event: {}", e);
+                    break;
+                }
+            }
+        }
+
+        println!(
+            "✓ Python nested_calls: {} events, {} calls, {} returns",
+            events.len(),
+            call_count,
+            return_count
+        );
+
+        // Verify we captured function entry/exit events
+        assert!(
+            call_count >= 5,
+            "Should capture at least 5 function calls (main + 5 levels)"
+        );
+        assert!(
+            return_count >= 5,
+            "Should capture at least 5 function returns"
+        );
+
+        // Verify we captured some named functions (names may be fully qualified like __main__.main)
+        let named_functions: Vec<_> = events.iter().filter(|e| !e.name.is_empty()).collect();
+        assert!(!named_functions.is_empty(), "Should capture function names");
+    }
+
+    /// PY2: Capture Python exception chain and verify exception events.
+    #[tokio::test]
+    async fn test_python_exception_chain_capture() {
+        let fixture =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("programs/python/exception_chain.py");
+
+        if !fixture.exists() {
+            eprintln!("SKIP: exception_chain.py not found at {:?}", fixture);
+            return;
+        }
+
+        let mut proc =
+            chronos_python::subprocess::PythonSubprocess::spawn(fixture.to_str().unwrap(), false)
+                .expect("Should be able to spawn python subprocess");
+
+        let mut events = Vec::new();
+        let mut exception_count = 0;
+
+        for _ in 0..500 {
+            match proc.next_event().await {
+                Ok(Some(event)) => {
+                    if event.event == "exception" {
+                        exception_count += 1;
+                    }
+                    events.push(event);
+                }
+                Ok(None) => break,
+                Err(e) => {
+                    eprintln!("Error reading event: {}", e);
+                    break;
+                }
+            }
+        }
+
+        println!(
+            "✓ Python exception_chain: {} events, {} exceptions",
+            events.len(),
+            exception_count
+        );
+
+        // Exception chain should produce at least one exception event
+        // (Even if the script handles it, we should capture the throw)
+        assert!(events.len() > 0, "Should capture at least some events");
+    }
+
+    /// PY3: Verify QueryEngine can filter Python events by function name.
+    #[test]
+    fn test_python_query_engine_filter() {
+        use chronos_domain::{EventData, EventType, PythonEventKind, SourceLocation, TraceEvent};
+        use chronos_query::QueryEngine;
+
+        // Create sample Python trace events matching the nested_calls pattern
+        let events = vec![
+            TraceEvent::python_call(1, 1000, 1, "__main__.main", "nested_calls.py", 1),
+            TraceEvent::python_call(2, 2000, 1, "level1", "nested_calls.py", 10),
+            TraceEvent::python_call(3, 3000, 1, "level2", "nested_calls.py", 15),
+            TraceEvent::python_call(4, 4000, 1, "level3", "nested_calls.py", 20),
+            TraceEvent::python_return(5, 5000, 1, "level3", "nested_calls.py", 22),
+            TraceEvent::python_return(6, 6000, 1, "level2", "nested_calls.py", 17),
+        ];
+
+        let engine = QueryEngine::new(events);
+
+        // Query for function entries
+        let query = chronos_domain::TraceQuery::new("test-session")
+            .event_types(vec![EventType::FunctionEntry]);
+
+        let result = engine.execute(&query);
+
+        assert_eq!(result.events.len(), 4, "Should find 4 function entries");
+        println!(
+            "✓ QueryEngine filtered to {} Python function entries",
+            result.events.len()
+        );
+    }
+}
+
+// =============================================================================
+// JAVA TESTS
+// =============================================================================
+
+mod java_tests {
+    use super::*;
+
+    /// JA1: Verify Java adapter is available on this system.
+    #[test]
+    fn test_java_adapter_availability() {
+        let available = chronos_java::JavaAdapter::is_available();
+        if !available {
+            eprintln!("SKIP: Java not available (javac not in PATH)");
+        }
+        println!("✓ Java adapter available: {}", available);
+    }
+}
+
+// =============================================================================
+// GO TESTS
+// =============================================================================
+
+mod go_tests {
+    use super::*;
+
+    /// GO1: Verify Go adapter is available on this system.
+    #[test]
+    fn test_go_adapter_availability() {
+        let available = chronos_go::GoAdapter::is_available();
+        if !available {
+            eprintln!("SKIP: Go not available (dlv not in PATH)");
+        }
+        println!("✓ Go adapter available: {}", available);
+    }
+}
+
+// =============================================================================
+// BROWSER/WASM TESTS
+// =============================================================================
+
+mod browser_tests {
+    use super::*;
+    use chronos_domain::ProbeBackend;
+
+    /// BR1: Browser probe with WASM detection (requires CHRONOS_E2E=1).
+    #[tokio::test]
+    async fn test_browser_probe_wasm_detection() {
+        // This test requires CHRONOS_E2E=1 and Chrome installed
+        if std::env::var("CHRONOS_E2E").is_err() {
+            eprintln!("SKIP: CHRONOS_E2E=1 not set");
+            return;
+        }
+
+        if !chronos_browser::BrowserAdapter::is_chrome_available() {
+            eprintln!("SKIP: Chrome not available");
+            return;
+        }
+
+        let adapter = chronos_browser::BrowserAdapter::new();
+        let config = chronos_domain::CaptureConfig::new("data:text/html,<h1>Test</h1>");
+
+        let session = match adapter.start_probe_async(config, true, None).await {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("SKIP: Browser probe failed to start: {}", e);
+                return;
+            }
+        };
+
+        // Wait a bit for events to accumulate
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+        // Drain events using ProbeBackend trait
+        let raw_events = adapter.drain_raw_events();
+        let semantic_events = adapter.drain_events().unwrap_or_default();
+
+        println!(
+            "✓ Browser probe: {} raw events, {} semantic events",
+            raw_events.len(),
+            semantic_events.len()
+        );
+
+        // We should have captured some events
+        assert!(
+            raw_events.len() > 0 || semantic_events.len() > 0,
+            "Should capture at least some browser events"
+        );
+    }
+
+    /// BR2: Verify browser adapter creation.
+    #[test]
+    fn test_browser_adapter_creation() {
+        let adapter = chronos_browser::BrowserAdapter::new();
+        let name = adapter.name();
+        println!("✓ Browser adapter name: {}", name);
+        assert_eq!(name, "browser-wasm");
+    }
+}
+
+// =============================================================================
+// INTEGRATION TESTS
+// =============================================================================
+
+/// INT1: Full QueryEngine workflow with Python-like trace events.
+/// This test verifies the complete pipeline: capture -> events -> QueryEngine.
+#[test]
+fn test_query_engine_python_events() {
+    use chronos_domain::{EventType, TraceEvent, VariableInfo};
+    use chronos_query::QueryEngine;
+
+    // Simulate Python nested calls trace
+    let events = vec![
+        TraceEvent::python_call_with_locals(
+            1,
+            1000,
+            1,
+            "__main__.main",
+            "nested_calls.py",
+            1,
+            vec![VariableInfo::local("n", "100", "int", 0x1000)],
+        ),
+        TraceEvent::python_call(2, 1500, 1, "level1", "nested_calls.py", 10),
+        TraceEvent::python_call(3, 2000, 1, "level2", "nested_calls.py", 15),
+        TraceEvent::python_call(4, 2500, 1, "level3", "nested_calls.py", 20),
+        TraceEvent::python_call(5, 3000, 1, "level4", "nested_calls.py", 25),
+        TraceEvent::python_call(6, 3500, 1, "level5", "nested_calls.py", 30),
+        TraceEvent::python_return(7, 4000, 1, "level5", "nested_calls.py", 31),
+        TraceEvent::python_return(8, 4500, 1, "level4", "nested_calls.py", 26),
+        TraceEvent::python_return(9, 5000, 1, "level3", "nested_calls.py", 21),
+        TraceEvent::python_return(10, 5500, 1, "level2", "nested_calls.py", 16),
+        TraceEvent::python_return(11, 6000, 1, "level1", "nested_calls.py", 11),
+        TraceEvent::python_return(12, 6500, 1, "main", "nested_calls.py", 3),
+    ];
+
+    let engine = QueryEngine::new(events);
+
+    // Test 1: Get call stack at level3
+    let stack = engine.reconstruct_call_stack(5); // During level4 call
+    println!("Call stack at event 5 (level4):");
+    for frame in &stack {
+        println!("  {}: {}", frame.depth, frame.function);
+    }
+    assert!(!stack.is_empty(), "Should have non-empty call stack");
+
+    // Test 2: Get variables at a Python call
+    let vars = engine.get_variables_at_event(1);
+    assert!(!vars.is_empty(), "Should have captured local variables");
+    assert_eq!(vars[0].name, "n", "Should have 'n' variable");
+
+    // Test 3: Filter by event type
+    let query = chronos_domain::TraceQuery::new("session")
+        .event_types(vec![EventType::FunctionEntry, EventType::FunctionExit]);
+    let result = engine.execute(&query);
+    assert_eq!(
+        result.total_matching, 12,
+        "Should have 12 call/return events"
+    );
+
+    // Test 4: Saliency scores
+    let scores = engine.get_saliency_scores(5);
+    println!("Top 5 salient functions:");
+    for score in &scores {
+        println!("  {}: {:.4}", score.function, score.saliency_score);
+    }
+    assert!(!scores.is_empty(), "Should compute saliency scores");
+
+    println!("✓ QueryEngine Python integration test passed");
+}
+
+/// INT2: Test that QueryEngine correctly isolates concurrent sessions.
+#[test]
+fn test_concurrent_language_sessions() {
+    use chronos_domain::{EventType, TraceEvent};
+    use chronos_query::QueryEngine;
+
+    // Create two "sessions" worth of events
+    let session1_events = vec![
+        TraceEvent::python_call(1, 1000, 1, "func_a", "script1.py", 10),
+        TraceEvent::python_return(2, 2000, 1, "func_a", "script1.py", 12),
+    ];
+
+    let session2_events = vec![
+        TraceEvent::python_call(1, 1000, 1, "func_b", "script2.py", 20),
+        TraceEvent::python_return(2, 2000, 1, "func_b", "script2.py", 22),
+    ];
+
+    let engine1 = QueryEngine::new(session1_events);
+    let engine2 = QueryEngine::new(session2_events);
+
+    // Query both engines independently (simulating concurrent sessions)
+    let result1 = engine1.execute(&chronos_domain::TraceQuery::new("session1"));
+    let result2 = engine2.execute(&chronos_domain::TraceQuery::new("session2"));
+
+    assert_eq!(result1.total_matching, 2, "Session 1 should have 2 events");
+    assert_eq!(result2.total_matching, 2, "Session 2 should have 2 events");
+
+    // Verify function names are isolated
+    let func1 = result1.events[0].location.function.as_deref();
+    let func2 = result2.events[0].location.function.as_deref();
+
+    assert_eq!(func1, Some("func_a"), "Session 1 should have func_a");
+    assert_eq!(func2, Some("func_b"), "Session 2 should have func_b");
+
+    println!("✓ Concurrent sessions isolation test passed");
+}

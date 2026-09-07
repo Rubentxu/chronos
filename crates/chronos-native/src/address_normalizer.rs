@@ -80,8 +80,6 @@ impl SymbolOffsetNormalizer {
     /// Uses the ELF symbol tables (.symtab for full symbols, .dynsym for dynamic)
     /// to find the symbol containing the given address.
     fn resolve_symbol(&self, pc: u64, binary_path: &Path) -> Option<SymbolOffset> {
-        use object::Object;
-
         let data = std::fs::read(binary_path).ok()?;
         let obj = object::File::parse(data.as_slice()).ok()?;
 
@@ -226,7 +224,7 @@ mod tests {
         let exe = std::env::current_exe().unwrap();
 
         // Try with address 0 (should generally not have a symbol)
-        let result = normalizer.normalize(0, &exe);
+        let _result = normalizer.normalize(0, &exe);
         // Address 0 typically doesn't map to a symbol
 
         // Try with a reasonable address - use the text segment base

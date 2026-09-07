@@ -167,14 +167,16 @@ impl EbpfEvent {
             is_return,
         };
 
-        let location = SourceLocation::new(
-            "",
-            0,
-            self.get_function_name(),
-            self.address,
-        );
+        let location = SourceLocation::new("", 0, self.get_function_name(), self.address);
 
-        TraceEvent::new(event_id, self.timestamp_ns, self.thread_id, event_type, location, data)
+        TraceEvent::new(
+            event_id,
+            self.timestamp_ns,
+            self.thread_id,
+            event_type,
+            location,
+            data,
+        )
     }
 }
 
@@ -270,7 +272,12 @@ mod tests {
         assert_eq!(te.location.address, 0x5000);
         // Verify EbpfUprobeHit variant is used
         match &te.data {
-            EventData::EbpfUprobeHit { symbol_name, pid, timestamp_ns, is_return } => {
+            EventData::EbpfUprobeHit {
+                symbol_name,
+                pid,
+                timestamp_ns,
+                is_return,
+            } => {
                 assert_eq!(symbol_name, "compute");
                 assert_eq!(*pid, 7);
                 assert_eq!(*timestamp_ns, 1234);
@@ -291,7 +298,12 @@ mod tests {
         assert_eq!(te.thread_id, 10);
         assert_eq!(te.event_type, EventType::FunctionExit);
         match &te.data {
-            EventData::EbpfUprobeHit { symbol_name: _, pid, timestamp_ns, is_return } => {
+            EventData::EbpfUprobeHit {
+                symbol_name: _,
+                pid,
+                timestamp_ns,
+                is_return,
+            } => {
                 assert_eq!(*pid, 10);
                 assert_eq!(*timestamp_ns, 5678);
                 assert!(*is_return);

@@ -10,8 +10,8 @@
 //! sudo cargo test -p chronos-ebpf --features ebpf -- --ignored
 //! ```
 
-use chronos_domain::ProbeBackend;
 use chronos_domain::semantic::SemanticEventKind;
+use chronos_domain::ProbeBackend;
 use chronos_ebpf::{EbpfAdapter, MockEbpfAdapter};
 
 /// Verify that the mock adapter works end-to-end as a `TraceAdapter`.
@@ -28,7 +28,7 @@ fn test_mock_adapter_as_trace_adapter_integration() {
         EbpfEvent::function_exit(4_000_000, 100, 0xDEAD_BEEF),
     ];
 
-    let mut adapter: Box<dyn ProbeBackend> = Box::new(MockEbpfAdapter::new(events));
+    let adapter: Box<dyn ProbeBackend> = Box::new(MockEbpfAdapter::new(events));
 
     assert!(adapter.is_available());
     assert_eq!(adapter.name(), "ebpf-mock");
@@ -36,13 +36,21 @@ fn test_mock_adapter_as_trace_adapter_integration() {
     let drained = adapter.drain_events().expect("drain should succeed");
     assert_eq!(drained.len(), 4);
 
-    assert!(matches!(&drained[0].kind, SemanticEventKind::FunctionCalled { function, .. } if function == "entry_point"));
+    assert!(
+        matches!(&drained[0].kind, SemanticEventKind::FunctionCalled { function, .. } if function == "entry_point")
+    );
     assert_eq!(drained[0].timestamp_ns, 1_000_000);
 
     // Exit events: function name may be empty since EbpfEvent::function_exit doesn't store a name
     // (the name is resolved from address via to_trace_event -> location.function)
-    assert!(matches!(&drained[2].kind, SemanticEventKind::FunctionReturned { .. }));
-    assert!(matches!(&drained[3].kind, SemanticEventKind::FunctionReturned { .. }));
+    assert!(matches!(
+        &drained[2].kind,
+        SemanticEventKind::FunctionReturned { .. }
+    ));
+    assert!(matches!(
+        &drained[3].kind,
+        SemanticEventKind::FunctionReturned { .. }
+    ));
 
     // Second drain returns nothing
     let empty = adapter.drain_events().expect("second drain ok");
@@ -101,12 +109,15 @@ fn test_mock_adapter_event_id_sequencing() {
         .map(|i| EbpfEvent::function_entry(i * 1000, 1, 0x1000 + i, "fn"))
         .collect();
 
-    let mut adapter = MockEbpfAdapter::new(events);
+    let adapter = MockEbpfAdapter::new(events);
     let drained = adapter.drain_events().unwrap();
 
     assert_eq!(drained.len(), 10);
     for (i, ev) in drained.iter().enumerate() {
-        assert_eq!(ev.source_event_id, i as u64, "source_event_id should be sequential");
+        assert_eq!(
+            ev.source_event_id, i as u64,
+            "source_event_id should be sequential"
+        );
         assert_eq!(ev.timestamp_ns, i as u64 * 1000);
     }
 }

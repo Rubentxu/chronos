@@ -1,8 +1,8 @@
-use chronos_domain::{
-    EventData, EventType, GoEventKind, Language, VariableInfo, VariableScope,
-    SourceLocation, TraceEvent,
-};
 use chronos_domain::semantic::{ResolveContext, SemanticEventKind, SemanticResolver};
+use chronos_domain::{
+    EventData, EventType, GoEventKind, Language, SourceLocation, TraceEvent, VariableInfo,
+    VariableScope,
+};
 use chronos_go::semantic_resolver::GoSemanticResolver;
 
 fn make_go_call_event() -> TraceEvent {
@@ -51,7 +51,10 @@ fn test_resolve_breakpoint() {
     let se = resolver
         .resolve(
             &make_go_call_event(),
-            &ResolveContext { pid: 1234, binary_path: None },
+            &ResolveContext {
+                pid: 1234,
+                binary_path: None,
+            },
         )
         .unwrap();
     assert!(matches!(se.kind, SemanticEventKind::FunctionCalled { .. }));
@@ -64,7 +67,10 @@ fn test_resolve_extracts_function_name() {
     let se = resolver
         .resolve(
             &make_go_call_event(),
-            &ResolveContext { pid: 1234, binary_path: None },
+            &ResolveContext {
+                pid: 1234,
+                binary_path: None,
+            },
         )
         .unwrap();
     match se.kind {
@@ -87,7 +93,13 @@ fn test_resolve_non_go_returns_none() {
         EventData::Empty,
     );
     assert!(resolver
-        .resolve(&event, &ResolveContext { pid: 1234, binary_path: None })
+        .resolve(
+            &event,
+            &ResolveContext {
+                pid: 1234,
+                binary_path: None
+            }
+        )
         .is_none());
 }
 
@@ -97,7 +109,10 @@ fn test_description_contains_function_and_goroutine_id() {
     let se = resolver
         .resolve(
             &make_go_call_event(),
-            &ResolveContext { pid: 1234, binary_path: None },
+            &ResolveContext {
+                pid: 1234,
+                binary_path: None,
+            },
         )
         .unwrap();
     assert!(se.description.contains("main.processOrder"));

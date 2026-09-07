@@ -55,7 +55,9 @@ pub trait TraceAdapter: Send + Sync {
         _session_id: &str,
         _thread_id: u64,
     ) -> Result<Vec<StackFrame>, TraceError> {
-        Err(TraceError::UnsupportedOperation("get_stack_trace".to_string()))
+        Err(TraceError::UnsupportedOperation(
+            "get_stack_trace".to_string(),
+        ))
     }
 
     /// Get variables visible at a specific stack frame.
@@ -66,14 +68,18 @@ pub trait TraceAdapter: Send + Sync {
         _session_id: &str,
         _frame_id: u64,
     ) -> Result<Vec<VariableInfo>, TraceError> {
-        Err(TraceError::UnsupportedOperation("get_variables".to_string()))
+        Err(TraceError::UnsupportedOperation(
+            "get_variables".to_string(),
+        ))
     }
 
     /// Get runtime metadata for the target process.
     ///
     /// Returns RuntimeInfo with language, version, pid, and uptime.
     fn get_runtime_info(&self, _session_id: &str) -> Result<RuntimeInfo, TraceError> {
-        Err(TraceError::UnsupportedOperation("get_runtime_info".to_string()))
+        Err(TraceError::UnsupportedOperation(
+            "get_runtime_info".to_string(),
+        ))
     }
 
     /// Evaluate an expression in the context of a stack frame.
@@ -85,7 +91,9 @@ pub trait TraceAdapter: Send + Sync {
         _expr: &str,
         _frame_id: u64,
     ) -> Result<String, TraceError> {
-        Err(TraceError::UnsupportedOperation("evaluate_expression".to_string()))
+        Err(TraceError::UnsupportedOperation(
+            "evaluate_expression".to_string(),
+        ))
     }
 }
 

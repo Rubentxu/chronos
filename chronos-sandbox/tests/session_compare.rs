@@ -43,10 +43,16 @@ async fn test_compare_sessions() {
     let _events_b = client.probe_drain(&session_b).await.unwrap();
 
     // Compare — they should be similar (same program, same fixture)
-    let report = client.compare_sessions(&session_a, &session_b).await.unwrap();
+    let report = client
+        .compare_sessions(&session_a, &session_b)
+        .await
+        .unwrap();
 
     // Verify the report indicates similarity
-    assert!(!report.has_divergences(), "Sessions should not have divergences for same program");
+    assert!(
+        !report.has_divergences(),
+        "Sessions should not have divergences for same program"
+    );
 
     // Clean up
     client.probe_stop(&session_a).await.unwrap();

@@ -7,11 +7,10 @@
 //! To run these tests: CHRONOS_E2E=1 cargo test -p chronos-browser test_e2e
 
 use chronos_browser::adapter::BrowserAdapter;
-use chronos_capture::adapter::TraceAdapter;
 use chronos_domain::ProbeBackend;
 use std::env;
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpListener;
 use std::path::PathBuf;
 use std::thread;
 
@@ -39,6 +38,7 @@ fn test_fixtures_path() -> PathBuf {
 
 /// Simple HTTP file server for test fixtures
 struct TestHttpServer {
+    #[allow(dead_code)]
     listener: TcpListener,
     port: u16,
 }
@@ -51,48 +51,46 @@ impl TestHttpServer {
 
         let server_listener = listener.try_clone().unwrap();
         thread::spawn(move || {
-            for stream in server_listener.incoming() {
-                if let Ok(mut stream) = stream {
-                    let mut buf = [0u8; 1024];
-                    let _ = stream.read(&mut buf);
-                    let request = String::from_utf8_lossy(&buf);
+            for mut stream in server_listener.incoming().flatten() {
+                let mut buf = [0u8; 1024];
+                let _ = stream.read(&mut buf);
+                let request = String::from_utf8_lossy(&buf);
 
-                    // Parse GET path
-                    let path = if let Some(line) = request.lines().next() {
-                        let parts: Vec<&str> = line.split_whitespace().collect();
-                        if parts.len() >= 2 {
-                            parts[1].to_string()
-                        } else {
-                            "/".to_string()
-                        }
+                // Parse GET path
+                let path = if let Some(line) = request.lines().next() {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2 {
+                        parts[1].to_string()
                     } else {
                         "/".to_string()
-                    };
-
-                    let file_path = if path == "/" || path == "/index.html" {
-                        format!("{}/index.html", root)
-                    } else if path == "/add.wasm" {
-                        format!("{}/add.wasm", root)
-                    } else {
-                        continue;
-                    };
-
-                    if let Ok(content) = std::fs::read(&file_path) {
-                        let mime = if file_path.ends_with(".wasm") {
-                            "application/wasm"
-                        } else {
-                            "text/html"
-                        };
-                        let response = format!(
-                            "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\n\r\n",
-                            mime,
-                            content.len()
-                        );
-                        let _ = stream.write_all(response.as_bytes());
-                        let _ = stream.write_all(&content);
-                    } else {
-                        let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\n\r\n");
                     }
+                } else {
+                    "/".to_string()
+                };
+
+                let file_path = if path == "/" || path == "/index.html" {
+                    format!("{}/index.html", root)
+                } else if path == "/add.wasm" {
+                    format!("{}/add.wasm", root)
+                } else {
+                    continue;
+                };
+
+                if let Ok(content) = std::fs::read(&file_path) {
+                    let mime = if file_path.ends_with(".wasm") {
+                        "application/wasm"
+                    } else {
+                        "text/html"
+                    };
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\n\r\n",
+                        mime,
+                        content.len()
+                    );
+                    let _ = stream.write_all(response.as_bytes());
+                    let _ = stream.write_all(&content);
+                } else {
+                    let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\n\r\n");
                 }
             }
         });
@@ -215,7 +213,10 @@ async fn test_e2e_wasm_module_detection() {
         }
         Err(e) => {
             // E2E test might fail due to network or CORS issues - that's OK
-            println!("Browser probe failed (expected in some environments): {}", e);
+            println!(
+                "Browser probe failed (expected in some environments): {}",
+                e
+            );
         }
     }
 }

@@ -8,4 +8,4 @@
 pub mod client;
 pub mod programs;
 
-pub use client::{McpTestClient, McpSession};
+pub use client::{McpSession, McpTestClient};

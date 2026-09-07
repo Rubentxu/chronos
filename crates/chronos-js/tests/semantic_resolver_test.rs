@@ -1,10 +1,10 @@
+use chronos_domain::semantic::SemanticResolver;
+use chronos_domain::semantic::{ResolveContext, SemanticEventKind};
 use chronos_domain::{
     EventData, EventType, JsEventKind, Language, SourceLocation, TraceEvent, VariableInfo,
     VariableScope,
 };
-use chronos_domain::semantic::{ResolveContext, SemanticEventKind};
 use chronos_js::semantic_resolver::JsSemanticResolver;
-use chronos_domain::semantic::SemanticResolver;
 
 fn make_js_call_event() -> TraceEvent {
     TraceEvent::new(

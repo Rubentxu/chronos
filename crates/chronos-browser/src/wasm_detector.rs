@@ -52,7 +52,10 @@ impl WasmModuleDetector {
     }
 
     /// Process CDP events and collect WASM modules
-    pub async fn start(&mut self, mut events_rx: broadcast::Receiver<CdpEvent>) -> Result<(), BrowserError> {
+    pub async fn start(
+        &mut self,
+        mut events_rx: broadcast::Receiver<CdpEvent>,
+    ) -> Result<(), BrowserError> {
         loop {
             match events_rx.recv().await {
                 Ok(event) => {
@@ -66,7 +69,11 @@ impl WasmModuleDetector {
                         } => {
                             // Check if this is a WebAssembly module
                             if script_language.as_deref() == Some("WebAssembly") {
-                                info!("Detected WASM module: {} ({})", script_id, url.as_deref().unwrap_or("unknown"));
+                                info!(
+                                    "Detected WASM module: {} ({})",
+                                    script_id,
+                                    url.as_deref().unwrap_or("unknown")
+                                );
 
                                 let mut module_info = WasmModuleInfo {
                                     script_id: script_id.clone(),
@@ -105,8 +112,16 @@ impl WasmModuleDetector {
     }
 
     /// Disassemble a WASM module to get function information
-    async fn disassemble_module(&self, script_id: &str) -> Result<Vec<WasmFunctionInfo>, BrowserError> {
-        let cdp = self.cdp.as_ref().ok_or_else(|| BrowserError::CdpConnectionFailed("No CDP connection".into()))?.lock().await;
+    async fn disassemble_module(
+        &self,
+        script_id: &str,
+    ) -> Result<Vec<WasmFunctionInfo>, BrowserError> {
+        let cdp = self
+            .cdp
+            .as_ref()
+            .ok_or_else(|| BrowserError::CdpConnectionFailed("No CDP connection".into()))?
+            .lock()
+            .await;
         let entries = cdp.disassemble_wasm_module(script_id).await?;
 
         let functions: Vec<WasmFunctionInfo> = entries

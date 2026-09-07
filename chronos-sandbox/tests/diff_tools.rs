@@ -10,19 +10,26 @@ async fn test_state_diff_after_probe_stop() {
     let fixture = McpSession::fixture_path("test_add")
         .expect("test_add fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait for it to complete
     tokio::time::sleep(Duration::from_secs(1)).await;
 
-    let drained = client.probe_drain(&session_id).await
+    let drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     println!("Probe stopped: {} total events", stop.total_events);
@@ -40,15 +47,25 @@ async fn test_state_diff_after_probe_stop() {
 
         match diff {
             Ok(result) => {
-                println!("✓ state_diff between {} and {}: {} changes",
-                    ts_a, ts_b, result.changes.len());
+                println!(
+                    "✓ state_diff between {} and {}: {} changes",
+                    ts_a,
+                    ts_b,
+                    result.changes.len()
+                );
                 for change in result.changes.iter().take(5) {
-                    println!("  {}: {} -> {}", change.field, change.value_a, change.value_b);
+                    println!(
+                        "  {}: {} -> {}",
+                        change.field, change.value_a, change.value_b
+                    );
                 }
             }
             Err(e) => {
                 // state_diff might fail if there's no state to compare
-                println!("state_diff returned error (expected for simple programs): {:?}", e);
+                println!(
+                    "state_diff returned error (expected for simple programs): {:?}",
+                    e
+                );
             }
         }
     } else {
@@ -74,19 +91,26 @@ async fn test_state_diff_same_timestamp() {
     let fixture = McpSession::fixture_path("test_add")
         .expect("test_add fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait for it to complete
     tokio::time::sleep(Duration::from_secs(1)).await;
 
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     println!("Probe stopped: {} total events", stop.total_events);
@@ -99,7 +123,10 @@ async fn test_state_diff_same_timestamp() {
     match diff {
         Ok(result) => {
             // Same timestamp = no changes expected
-            println!("✓ state_diff (same timestamp): {} changes", result.changes.len());
+            println!(
+                "✓ state_diff (same timestamp): {} changes",
+                result.changes.len()
+            );
         }
         Err(e) => {
             println!("state_diff returned error: {:?}", e);
@@ -115,19 +142,26 @@ async fn test_debug_diff_after_probe_stop() {
     let fixture = McpSession::fixture_path("test_add")
         .expect("test_add fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait for it to complete
     tokio::time::sleep(Duration::from_secs(1)).await;
 
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     println!("Probe stopped: {} total events", stop.total_events);
@@ -151,7 +185,10 @@ async fn test_debug_diff_after_probe_stop() {
         }
         Err(e) => {
             // debug_diff might fail if the events don't have state
-            println!("debug_diff returned error (expected for simple C programs): {:?}", e);
+            println!(
+                "debug_diff returned error (expected for simple C programs): {:?}",
+                e
+            );
         }
     }
 
@@ -164,19 +201,26 @@ async fn test_debug_diff_out_of_range_events() {
     let fixture = McpSession::fixture_path("test_add")
         .expect("test_add fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait for it to complete
     tokio::time::sleep(Duration::from_secs(1)).await;
 
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     println!("Probe stopped: {} total events", stop.total_events);

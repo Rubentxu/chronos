@@ -4,14 +4,16 @@
 
 use chronos_sandbox::client::tools::McpTestClient;
 use chronos_sandbox::client::types::{TripwireConditionType, TripwireCreateParams};
-use chronos_sandbox::McpSession;
+// McpSession import removed: was unused; tripwire depth tests use only
+// McpTestClient helpers. Lint: clippy::unused_imports.
 
 /// TD1: tripwire_query is idempotent — does not consume fired events.
 /// Create a tripwire watching for function_entry.
 /// Call tripwire_query twice — fired_count should be the same both times.
 #[tokio::test]
 async fn test_tripwire_query_does_not_consume() {
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
     // Create a tripwire watching for function entries
@@ -28,28 +30,40 @@ async fn test_tripwire_query_does_not_consume() {
     println!("✓ Created tripwire: {}", tripwire_id);
 
     // First tripwire_query
-    let tripwires_1 = client.tripwire_query().await
+    let tripwires_1 = client
+        .tripwire_query()
+        .await
         .expect("tripwire_query (1) failed");
 
     let found_1 = tripwires_1.iter().find(|t| t.id == tripwire_id);
-    assert!(found_1.is_some(), "Created tripwire should be in query result");
+    assert!(
+        found_1.is_some(),
+        "Created tripwire should be in query result"
+    );
     let fire_count_1 = found_1.unwrap().fire_count;
 
     println!("First query: fire_count = {}", fire_count_1);
 
     // Second tripwire_query — should return same fire_count (not consumed)
-    let tripwires_2 = client.tripwire_query().await
+    let tripwires_2 = client
+        .tripwire_query()
+        .await
         .expect("tripwire_query (2) failed");
 
     let found_2 = tripwires_2.iter().find(|t| t.id == tripwire_id);
-    assert!(found_2.is_some(), "Created tripwire should still be in query result");
+    assert!(
+        found_2.is_some(),
+        "Created tripwire should still be in query result"
+    );
     let fire_count_2 = found_2.unwrap().fire_count;
 
     println!("Second query: fire_count = {}", fire_count_2);
 
     // Assert: fire_count should be identical (not consumed by query)
-    assert_eq!(fire_count_1, fire_count_2,
-        "tripwire_query should not consume fired events (idempotent)");
+    assert_eq!(
+        fire_count_1, fire_count_2,
+        "tripwire_query should not consume fired events (idempotent)"
+    );
 
     client.shutdown().await.ok();
 }
@@ -60,7 +74,8 @@ async fn test_tripwire_query_does_not_consume() {
 /// Assert: count_after == count_before - 1.
 #[tokio::test]
 async fn test_tripwire_count_after_delete() {
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
     // Create 3 tripwires
@@ -97,30 +112,37 @@ async fn test_tripwire_count_after_delete() {
     println!("✓ Created 3 tripwires: {:?}", ids);
 
     // List tripwires — count should be >= 3
-    let list_before = client.tripwire_list().await
-        .expect("tripwire_list failed");
+    let list_before = client.tripwire_list().await.expect("tripwire_list failed");
     let count_before = list_before.len();
     println!("Count before delete: {}", count_before);
     assert!(count_before >= 3, "Should have at least 3 tripwires");
 
     // Delete the middle one
     let id_to_delete = &ids[1];
-    client.tripwire_delete(id_to_delete).await
+    client
+        .tripwire_delete(id_to_delete)
+        .await
         .expect("tripwire_delete failed");
     println!("✓ Deleted tripwire: {}", id_to_delete);
 
     // List again — count should be one less
-    let list_after = client.tripwire_list().await
-        .expect("tripwire_list failed");
+    let list_after = client.tripwire_list().await.expect("tripwire_list failed");
     let count_after = list_after.len();
     println!("Count after delete: {}", count_after);
 
-    assert_eq!(count_after, count_before - 1,
-        "count_after ({}) should == count_before ({}) - 1", count_after, count_before);
+    assert_eq!(
+        count_after,
+        count_before - 1,
+        "count_after ({}) should == count_before ({}) - 1",
+        count_after,
+        count_before
+    );
 
     // Verify the deleted one is gone
-    assert!(!list_after.iter().any(|t| t.id == *id_to_delete),
-        "Deleted tripwire should not appear in list");
+    assert!(
+        !list_after.iter().any(|t| t.id == *id_to_delete),
+        "Deleted tripwire should not appear in list"
+    );
 
     client.shutdown().await.ok();
 }
@@ -129,7 +151,8 @@ async fn test_tripwire_count_after_delete() {
 /// Send a malformed or empty condition — server should not crash.
 #[tokio::test]
 async fn test_tripwire_create_invalid_condition_graceful() {
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
     // Try to create a tripwire with an empty condition.
@@ -151,7 +174,10 @@ async fn test_tripwire_create_invalid_condition_graceful() {
         }
         Err(e) => {
             // Error is also acceptable — graceful handling
-            println!("✓ tripwire_create with empty condition returned error: {:?}", e);
+            println!(
+                "✓ tripwire_create with empty condition returned error: {:?}",
+                e
+            );
         }
     }
 
@@ -165,7 +191,8 @@ async fn test_tripwire_create_invalid_condition_graceful() {
 /// Clean up: delete both.
 #[tokio::test]
 async fn test_tripwire_multiple_types() {
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
     // Create tripwire for function_entry (using FunctionName pattern)
@@ -194,8 +221,7 @@ async fn test_tripwire_multiple_types() {
     println!("✓ Created syscall tripwire: {}", id_syscall);
 
     // List tripwires — should have at least 2
-    let list = client.tripwire_list().await
-        .expect("tripwire_list failed");
+    let list = client.tripwire_list().await.expect("tripwire_list failed");
 
     println!("Total tripwires: {}", list.len());
     assert!(list.len() >= 2, "Should have at least 2 tripwires");
@@ -207,9 +233,13 @@ async fn test_tripwire_multiple_types() {
     assert!(has_syscall, "Syscall tripwire should be in list");
 
     // Clean up: delete both
-    client.tripwire_delete(&id_func).await
+    client
+        .tripwire_delete(&id_func)
+        .await
         .expect("tripwire_delete (func) failed");
-    client.tripwire_delete(&id_syscall).await
+    client
+        .tripwire_delete(&id_syscall)
+        .await
         .expect("tripwire_delete (syscall) failed");
 
     println!("✓ Both tripwires deleted");
@@ -222,7 +252,8 @@ async fn test_tripwire_multiple_types() {
 /// Assert: graceful response (error or success, not crash).
 #[tokio::test]
 async fn test_tripwire_delete_nonexistent_idempotent() {
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
     // Try to delete a non-existent tripwire
@@ -247,7 +278,8 @@ async fn test_tripwire_delete_nonexistent_idempotent() {
 /// Assert: id_2 is valid, tripwire works.
 #[tokio::test]
 async fn test_tripwire_create_delete_recreate() {
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
     // Create tripwire
@@ -264,7 +296,9 @@ async fn test_tripwire_create_delete_recreate() {
     println!("✓ Created tripwire: {}", id_1);
 
     // Delete it
-    client.tripwire_delete(&id_1).await
+    client
+        .tripwire_delete(&id_1)
+        .await
         .expect("tripwire_delete failed");
     println!("✓ Deleted tripwire: {}", id_1);
 
@@ -282,15 +316,20 @@ async fn test_tripwire_create_delete_recreate() {
     println!("✓ Recreated tripwire: {}", id_2);
 
     // Assert: new ID is valid and tripwire is listable
-    let list = client.tripwire_list().await
-        .expect("tripwire_list failed");
+    let list = client.tripwire_list().await.expect("tripwire_list failed");
 
     let found = list.iter().find(|t| t.id == id_2);
-    assert!(found.is_some(), "Recreated tripwire {} should be in list", id_2);
+    assert!(
+        found.is_some(),
+        "Recreated tripwire {} should be in list",
+        id_2
+    );
     println!("✓ Tripwire {} is valid and queryable", id_2);
 
     // Clean up
-    client.tripwire_delete(&id_2).await
+    client
+        .tripwire_delete(&id_2)
+        .await
         .expect("tripwire_delete (cleanup) failed");
 
     client.shutdown().await.ok();

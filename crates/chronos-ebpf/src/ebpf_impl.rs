@@ -145,9 +145,8 @@ impl EbpfAdapterInner {
                     "eBPF object file not compiled (stub used)".to_string(),
                 ));
             }
-            let bpf = Ebpf::load(data).map_err(|e| {
-                EbpfError::LoadError(format!("failed to load eBPF program: {}", e))
-            })?;
+            let bpf = Ebpf::load(data)
+                .map_err(|e| EbpfError::LoadError(format!("failed to load eBPF program: {}", e)))?;
 
             // Log the loaded maps
             for (name, map) in bpf.maps() {
@@ -278,7 +277,8 @@ impl EbpfAdapterInner {
                     }
                     // SAFETY: EbpfEvent is repr(C), bytes come from the kernel
                     // and are aligned to the ring buffer page boundary.
-                    let ev = unsafe { std::ptr::read_unaligned(bytes.as_ptr() as *const EbpfEvent) };
+                    let ev =
+                        unsafe { std::ptr::read_unaligned(bytes.as_ptr() as *const EbpfEvent) };
 
                     let mut id_guard = match self.next_event_id.lock() {
                         Ok(g) => g,
@@ -321,9 +321,8 @@ impl EbpfAdapterInner {
 
         // Create RingBuf from the map reference
         // RingBuf::try_from(&mut Map) returns RingBuf<&mut MapData>
-        let rb: RingBuf<&mut aya::maps::MapData> = RingBuf::try_from(map).map_err(|e| {
-            EbpfError::RingBuffer(format!("wrong map type: {:?}", e))
-        })?;
+        let rb: RingBuf<&mut aya::maps::MapData> = RingBuf::try_from(map)
+            .map_err(|e| EbpfError::RingBuffer(format!("wrong map type: {:?}", e)))?;
 
         // We need to convert RingBuf<&mut MapData> to RingBuf<MapData>.
         // Since RingBuf stores the map by value, we can't directly convert.

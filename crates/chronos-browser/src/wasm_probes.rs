@@ -87,12 +87,20 @@ impl WasmBreakpointManager {
         func: &WasmFunctionInfo,
     ) -> Result<String, BrowserError> {
         // Check if we already have a breakpoint for this function
-        let script_breakpoints = self.function_breakpoints.entry(script_id.to_string()).or_default();
+        let script_breakpoints = self
+            .function_breakpoints
+            .entry(script_id.to_string())
+            .or_default();
         if let Some(existing_bp) = script_breakpoints.get(&func.function_index) {
             return Ok(existing_bp.clone());
         }
 
-        let cdp = self.cdp.as_ref().ok_or_else(|| BrowserError::BreakpointError("No CDP connection".into()))?.lock().await;
+        let cdp = self
+            .cdp
+            .as_ref()
+            .ok_or_else(|| BrowserError::BreakpointError("No CDP connection".into()))?
+            .lock()
+            .await;
 
         // Set breakpoint at the function body's start
         // For WASM, we use line 0 with the function body offset as column
@@ -112,9 +120,7 @@ impl WasmBreakpointManager {
 
         info!(
             "Set breakpoint {} for function {} in script {}",
-            breakpoint_id,
-            func.function_index,
-            script_id
+            breakpoint_id, func.function_index, script_id
         );
 
         Ok(breakpoint_id)

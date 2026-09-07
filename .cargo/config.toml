@@ -1,0 +1,6 @@
+[build]
+# Required for tokio-console tracing
+rustflags = ["--cfg", "tokio_unstable"]
+
+[term]
+verbose = true

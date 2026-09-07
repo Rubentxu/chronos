@@ -12,9 +12,7 @@ use crate::wasm_probes::WasmBreakpointManager;
 use crate::wasm_resolver::WasmSemanticResolver;
 use chronos_domain::adapter::ProbeBackend;
 use chronos_domain::semantic::{ResolveContext, SemanticEvent, SemanticResolver};
-use chronos_domain::{
-    CaptureConfig, CaptureSession, Language, TraceError, TraceEvent,
-};
+use chronos_domain::{CaptureConfig, CaptureSession, Language, TraceError, TraceEvent};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -450,7 +448,10 @@ mod tests {
         let session =
             CaptureSession::new(0, Language::WebAssembly, CaptureConfig::new("about:blank"));
         let result = adapter.stop_probe(&session);
-        assert!(result.is_ok(), "stop_probe should succeed even without Chrome");
+        assert!(
+            result.is_ok(),
+            "stop_probe should succeed even without Chrome"
+        );
     }
 
     #[test]

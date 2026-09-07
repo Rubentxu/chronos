@@ -16,6 +16,5 @@
 pub mod counters;
 
 pub use counters::{
-    PerfCounterConfig, PerfCounterError, PerfCounterHandle, PerfCounterType,
-    PerfCountersSnapshot,
+    PerfCounterConfig, PerfCounterError, PerfCounterHandle, PerfCounterType, PerfCountersSnapshot,
 };

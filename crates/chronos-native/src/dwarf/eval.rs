@@ -23,16 +23,16 @@ pub trait DwarfLocationEvaluator: Send + Sync {
 /// This mapping converts DWARF register numbers to our register names.
 const DWARF_REGISTER_MAP: &[(u8, &str)] = &[
     // General purpose registers (DWARF numbers match System V ABI)
-    (0, "rax"),   // Return value / syscall return
-    (1, "rdx"),   // 3rd arg / syscall return
-    (2, "rcx"),   // 4th arg / counter
-    (3, "rbx"),   // base pointer
-    (4, "rsi"),   // 2nd arg / source
-    (5, "rdi"),   // 1st arg / destination
-    (6, "rbp"),   // frame pointer
-    (7, "rsp"),   // stack pointer
-    (8, "r8"),    // 5th arg
-    (9, "r9"),    // 6th arg
+    (0, "rax"), // Return value / syscall return
+    (1, "rdx"), // 3rd arg / syscall return
+    (2, "rcx"), // 4th arg / counter
+    (3, "rbx"), // base pointer
+    (4, "rsi"), // 2nd arg / source
+    (5, "rdi"), // 1st arg / destination
+    (6, "rbp"), // frame pointer
+    (7, "rsp"), // stack pointer
+    (8, "r8"),  // 5th arg
+    (9, "r9"),  // 6th arg
     (10, "r10"),
     (11, "r11"),
     (12, "r12"),
@@ -93,7 +93,10 @@ impl BasicLocationEvaluator {
         // Frame base is usually RBP, but we check FP first
         let base = regs.fp();
         let addr = (base as i64 + offset) as u64;
-        Some(DwarfValue::Memory { address: addr, size: 8 })
+        Some(DwarfValue::Memory {
+            address: addr,
+            size: 8,
+        })
     }
 
     /// Evaluate DW_OP_bregN (register-based offset).
@@ -103,7 +106,10 @@ impl BasicLocationEvaluator {
         let name = self.dwarf_reg_to_name(dwarf_reg)?;
         let reg_value = regs.get(name)?;
         let addr = (reg_value as i64 + offset) as u64;
-        Some(DwarfValue::Memory { address: addr, size: 8 })
+        Some(DwarfValue::Memory {
+            address: addr,
+            size: 8,
+        })
     }
 
     /// Evaluate DW_OP_plus_uconst (unsigned addition).
@@ -139,8 +145,9 @@ impl BasicLocationEvaluator {
                 // DW_OP_fbreg: Frame base register offset + signedLEB128
                 0x91 => {
                     let (offset, consumed) = read_sleb128(expr, i);
-                    if consumed == 0 { return None; }
-                    i += consumed;
+                    if consumed == 0 {
+                        return None;
+                    }
                     return self.eval_fbreg(offset, regs);
                 }
 
@@ -148,19 +155,20 @@ impl BasicLocationEvaluator {
                 0x70..=0x8f => {
                     let dwarf_reg = op - 0x70;
                     let (offset, consumed) = read_sleb128(expr, i);
-                    if consumed == 0 { return None; }
-                    i += consumed;
+                    if consumed == 0 {
+                        return None;
+                    }
                     return self.eval_breg(dwarf_reg, offset, regs);
                 }
 
                 // DW_OP_plus_uconst: Unsigned addition
                 0x22 => {
                     let (addend, consumed) = read_uleb128(expr, i);
-                    if consumed == 0 { return None; }
-                    i += consumed;
-                    if Self::eval_plus_uconst(&mut stack, addend).is_none() {
+                    if consumed == 0 {
                         return None;
                     }
+                    i += consumed;
+                    Self::eval_plus_uconst(&mut stack, addend)?;
                 }
 
                 // DW_OP_stack_value: Value is on the stack (immediate)
@@ -178,11 +186,19 @@ impl BasicLocationEvaluator {
                         return None;
                     }
                     let addr = u64::from_le_bytes([
-                        expr[i], expr[i + 1], expr[i + 2], expr[i + 3],
-                        expr[i + 4], expr[i + 5], expr[i + 6], expr[i + 7],
+                        expr[i],
+                        expr[i + 1],
+                        expr[i + 2],
+                        expr[i + 3],
+                        expr[i + 4],
+                        expr[i + 5],
+                        expr[i + 6],
+                        expr[i + 7],
                     ]);
-                    i += 8;
-                    return Some(DwarfValue::Memory { address: addr, size: 8 });
+                    return Some(DwarfValue::Memory {
+                        address: addr,
+                        size: 8,
+                    });
                 }
 
                 // DW_OP_deref: Memory dereference (NOT SUPPORTED - would need to read memory)
@@ -199,9 +215,7 @@ impl BasicLocationEvaluator {
 
                 // DW_OP_drop: Remove stack top
                 0x13 => {
-                    if stack.pop().is_none() {
-                        return None;
-                    }
+                    stack.pop()?;
                 }
 
                 // DW_OP_over: Copy second stack item to top
@@ -240,14 +254,16 @@ impl BasicLocationEvaluator {
                 }
 
                 // DW_OP_and, DW_OP_or, DW_OP_xor (binary ops)
-                0x1b | 0x1c | 0x1d => {
-                    if stack.len() < 2 { return None; }
+                0x1b..=0x1d => {
+                    if stack.len() < 2 {
+                        return None;
+                    }
                     let a = stack.pop()?;
                     let b = stack.pop()?;
                     let result = match op {
-                        0x1b => a & b,  // and
-                        0x1c => a | b,  // or
-                        0x1d => a ^ b,  // xor
+                        0x1b => a & b, // and
+                        0x1c => a | b, // or
+                        0x1d => a ^ b, // xor
                         _ => unreachable!(),
                     };
                     stack.push(result);
@@ -255,16 +271,18 @@ impl BasicLocationEvaluator {
 
                 // DW_OP_plus, DW_OP_minus, DW_OP_mul, DW_OP_div, DW_OP_mod, DW_OP_minus
                 0x1e..=0x23 => {
-                    if stack.len() < 2 { return None; }
+                    if stack.len() < 2 {
+                        return None;
+                    }
                     let a = stack.pop()?;
                     let b = stack.pop()?;
                     let result = match op {
-                        0x1e => b.wrapping_add(a),  // plus
-                        0x1f => b.wrapping_sub(a),  // minus
-                        0x20 => b.wrapping_mul(a),  // mul
-                        0x21 => b.wrapping_div(a),  // div
-                        0x22 => b.wrapping_rem(a),  // mod
-                        0x23 => b.wrapping_shl(a as u32),  // shl
+                        0x1e => b.wrapping_add(a),        // plus
+                        0x1f => b.wrapping_sub(a),        // minus
+                        0x20 => b.wrapping_mul(a),        // mul
+                        0x21 => b.wrapping_div(a),        // div
+                        0x22 => b.wrapping_rem(a),        // mod
+                        0x23 => b.wrapping_shl(a as u32), // shl
                         _ => unreachable!(),
                     };
                     stack.push(result);
@@ -272,15 +290,47 @@ impl BasicLocationEvaluator {
 
                 // DW_OP_ge, DW_OP_gt, DW_OP_le, DW_OP_lt, DW_OP_eq
                 0x28..=0x2c => {
-                    if stack.len() < 2 { return None; }
+                    if stack.len() < 2 {
+                        return None;
+                    }
                     let a = stack.pop()?;
                     let b = stack.pop()?;
                     let result: u64 = match op {
-                        0x28 => if b >= a { 1 } else { 0 },  // ge
-                        0x29 => if b > a { 1 } else { 0 },   // gt
-                        0x2a => if b <= a { 1 } else { 0 },  // le
-                        0x2b => if b < a { 1 } else { 0 },   // lt
-                        0x2c => if b == a { 1 } else { 0 },  // eq
+                        0x28 => {
+                            if b >= a {
+                                1
+                            } else {
+                                0
+                            }
+                        } // ge
+                        0x29 => {
+                            if b > a {
+                                1
+                            } else {
+                                0
+                            }
+                        } // gt
+                        0x2a => {
+                            if b <= a {
+                                1
+                            } else {
+                                0
+                            }
+                        } // le
+                        0x2b => {
+                            if b < a {
+                                1
+                            } else {
+                                0
+                            }
+                        } // lt
+                        0x2c => {
+                            if b == a {
+                                1
+                            } else {
+                                0
+                            }
+                        } // eq
                         _ => unreachable!(),
                     };
                     stack.push(result);
@@ -288,7 +338,9 @@ impl BasicLocationEvaluator {
 
                 // DW_OP_ne
                 0x2d => {
-                    if stack.len() < 2 { return None; }
+                    if stack.len() < 2 {
+                        return None;
+                    }
                     let a = stack.pop()?;
                     let b = stack.pop()?;
                     stack.push(if b != a { 1 } else { 0 });
@@ -308,7 +360,7 @@ impl BasicLocationEvaluator {
         // resulted in a value on the stack
         if !stack.is_empty() {
             // Return the top of stack as immediate
-            return Some(DwarfValue::Immediate(stack.last().unwrap().clone() as i64));
+            return Some(DwarfValue::Immediate(*stack.last().unwrap() as i64));
         }
 
         None
@@ -437,7 +489,9 @@ mod tests {
         // -8 in SLEB128 is 0x78 (continuation bit set, value bits = 8)
         let expr = vec![0x91, 0x78];
         let result = evaluator.evaluate(&expr, &regs);
-        assert!(matches!(result, Some(DwarfValue::Memory { address, size: 8 }) if address == 0x7fff7ff8));
+        assert!(
+            matches!(result, Some(DwarfValue::Memory { address, size: 8 }) if address == 0x7fff7ff8)
+        );
     }
 
     #[test]
@@ -451,7 +505,9 @@ mod tests {
         // 16 in SLEB128 is 0x10 (no continuation)
         let expr = vec![0x70, 0x10];
         let result = evaluator.evaluate(&expr, &regs);
-        assert!(matches!(result, Some(DwarfValue::Memory { address, size: 8 }) if address == 0x1010));
+        assert!(
+            matches!(result, Some(DwarfValue::Memory { address, size: 8 }) if address == 0x1010)
+        );
     }
 
     #[test]
@@ -487,7 +543,13 @@ mod tests {
         // DW_OP_addr 0x1000 (little-endian: 0x00 0x10 0x00 0x00 0x00 0x00 0x00 0x00)
         let expr = vec![0x03, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
         let result = evaluator.evaluate(&expr, &regs);
-        assert!(matches!(result, Some(DwarfValue::Memory { address: 0x1000, size: 8 })));
+        assert!(matches!(
+            result,
+            Some(DwarfValue::Memory {
+                address: 0x1000,
+                size: 8
+            })
+        ));
     }
 
     #[test]

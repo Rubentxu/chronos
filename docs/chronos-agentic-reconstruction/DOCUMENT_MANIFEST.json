@@ -1,0 +1,202 @@
+[
+  {
+    "path": "INTEGRATION_NOTES.md",
+    "bytes": 322,
+    "sha256": "daba16e39d9707022ebe8bab5d9a425c4d0993b4fcd69a416a0cab5af2d85e43"
+  },
+  {
+    "path": "README.md",
+    "bytes": 6213,
+    "sha256": "1e64a7e5f829374facb1d5f2919dc1f1c78998e4fd4f81a91fdb97ab7098a22b"
+  },
+  {
+    "path": "docs/README.md",
+    "bytes": 964,
+    "sha256": "a20806bb850ad68a1db790f80e5fbd56aab158fe7383d23ea8cd74577f72ea6a"
+  },
+  {
+    "path": "docs/adr/0001-agent-first-product.md",
+    "bytes": 707,
+    "sha256": "e81be6ffda1751f940f6c2008a3451ec43a89ade8915d7ec63e96f116a22e130"
+  },
+  {
+    "path": "docs/adr/0002-execution-log-source-of-truth.md",
+    "bytes": 526,
+    "sha256": "0fe929b2d4bda3ee6eaf5e6124c5a323d68213faeff3767537e9e257d90d646a"
+  },
+  {
+    "path": "docs/adr/0003-projections-not-primary-storage.md",
+    "bytes": 503,
+    "sha256": "0bc767e1d5d8bbb90dea01041ca47f8c1a0b55ab7099418eef5bdbce7ef65ea4"
+  },
+  {
+    "path": "docs/adr/0004-no-silent-lies.md",
+    "bytes": 410,
+    "sha256": "41bbaa6ce8e5afc545d194308db4870ecceec6276ddf9aca8ba399d1cd926ad4"
+  },
+  {
+    "path": "docs/adr/0005-adaptive-instrumentation.md",
+    "bytes": 488,
+    "sha256": "54c88c0dcdd8166c14054b9824af91192ba02b906ed2245893b0abcf34519a5b"
+  },
+  {
+    "path": "docs/adr/0006-opentelemetry-reuse-first.md",
+    "bytes": 595,
+    "sha256": "8ededdd69031a431ce08968713267131e7f3d5be19a7581cbbd9b78f89e6c7f2"
+  },
+  {
+    "path": "docs/adr/0007-semantic-probe-compiler.md",
+    "bytes": 594,
+    "sha256": "144ebec632651f51d2dc820e77f572c521f7fc9bf193591281c278adccfd8e50"
+  },
+  {
+    "path": "docs/adr/0008-breakpoints-internal-only.md",
+    "bytes": 433,
+    "sha256": "c78df7321cfbb62fe4a5a3ab6b821bdfc6361fb50192496f38dcdf79b16771d4"
+  },
+  {
+    "path": "docs/adr/0009-mcp-thin-driving-adapter.md",
+    "bytes": 368,
+    "sha256": "c7edb89784aec69b85f89e1d22c0d9e0c624dcb0100419e2cdcbd63dd24ad990"
+  },
+  {
+    "path": "docs/adr/0010-sandbox-as-uat.md",
+    "bytes": 520,
+    "sha256": "92b710010aab85146c8cc0f912b249c1eef63d12bfdef2dfaa0737678fb6f0c8"
+  },
+  {
+    "path": "docs/adr/0011-local-persistence-segments-checkpoints.md",
+    "bytes": 464,
+    "sha256": "f247641f25967aa9956995632844d7f108b90af0cb8b30d707d58d1195eb7611"
+  },
+  {
+    "path": "docs/adr/0012-go-and-rust-reference-backends.md",
+    "bytes": 512,
+    "sha256": "f9ef2dd2083c23a2191b599904d2ee179575798308cd7243355550488df7f47f"
+  },
+  {
+    "path": "docs/adr/0013-activegraph-patterns-without-dependency.md",
+    "bytes": 781,
+    "sha256": "1135a960a847300b05dd2139070a142ed46c15f6938eb563774ba721c2a82417"
+  },
+  {
+    "path": "docs/adr/README.md",
+    "bytes": 1261,
+    "sha256": "450bf6807086e957f9deaf456032ba444bdb8aa7831ade24faac4abe7de5b39d"
+  },
+  {
+    "path": "docs/architecture/TARGET_ARCHITECTURE.md",
+    "bytes": 3285,
+    "sha256": "3df9fd069d1b3d3a949b2f3b60b535f9b66e3ca747056632388bd9dea51514db"
+  },
+  {
+    "path": "docs/gui/EXECUTION_EXPLORER.md",
+    "bytes": 1305,
+    "sha256": "b50bd306148f3407f556795dad28ff916a4e8f62ae213ae5b566889ad83328a5"
+  },
+  {
+    "path": "docs/migration/CURRENT_TO_TARGET.md",
+    "bytes": 3899,
+    "sha256": "d6e33997bd5ef0150c8a76a6c0c582071af761bba53a05b96b130d3f5f6979bc"
+  },
+  {
+    "path": "docs/migration/LEGACY_DOCS_DISPOSITION.md",
+    "bytes": 1603,
+    "sha256": "8a596b2502ea9f385eb2518627abb4630f229fc76ade004e0d5b31ef19ac70e5"
+  },
+  {
+    "path": "docs/migration/PATCH_MANIFEST.md",
+    "bytes": 824,
+    "sha256": "35b153030f9458af393e224a6366b1f75d443400d752c4c71f615e2cb883d496"
+  },
+  {
+    "path": "docs/propuestas/04_RECONSTRUCCION_AGENTIC.md",
+    "bytes": 983,
+    "sha256": "fb39fc85e0fb495f0fd355e2155a156fa1b22502d6f0bf24039d8b48f09fe75d"
+  },
+  {
+    "path": "docs/reconstruction/00_RECONSTRUCTION_OVERVIEW.md",
+    "bytes": 4402,
+    "sha256": "4df3440b718b468d8ea4e9872c4e7c6e95f4cd31db66f539b1c137933a9840da"
+  },
+  {
+    "path": "docs/reconstruction/01_CURRENT_FINDINGS.md",
+    "bytes": 6294,
+    "sha256": "fad5c18d7b247f43a92a42a4d6d0884dc60039fa6c1d2a91191906a2eb710521"
+  },
+  {
+    "path": "docs/research/TECHNOLOGY_BASELINE.md",
+    "bytes": 3296,
+    "sha256": "c54fc1e053185aaa3618e868b10bc856453ec97fb2cb7ed41adb0abb3bb04307"
+  },
+  {
+    "path": "docs/roadmap/IMPLEMENTATION_BACKLOG.md",
+    "bytes": 4612,
+    "sha256": "f3e91c6830968210d7a45a551a6f44fd204bd995062a0ebf27546ce4672e90e8"
+  },
+  {
+    "path": "docs/roadmap/MILESTONE_ACCEPTANCE.md",
+    "bytes": 3220,
+    "sha256": "aa80533132e00f12b19a32621bc041b3906af89d6e6579244aaead2c957dbc91"
+  },
+  {
+    "path": "docs/roadmap/ROADMAP.md",
+    "bytes": 6096,
+    "sha256": "224e1318726b44481e38636ab267a99d0854ec539669957124d7ef02e700d4d9"
+  },
+  {
+    "path": "docs/specs/ADAPTIVE_INSTRUMENTATION.md",
+    "bytes": 3751,
+    "sha256": "2180cfffa2505898547b89dfdf7294db22c783fadba24a955a3faeb8c15db4eb"
+  },
+  {
+    "path": "docs/specs/AGENT_API_V2.md",
+    "bytes": 2147,
+    "sha256": "9cce5e2326fb45d45a7e2675516f5ad06993a74f4073664cd4d6ee975cb60de4"
+  },
+  {
+    "path": "docs/specs/EVIDENCE_AND_TRUST.md",
+    "bytes": 2214,
+    "sha256": "f0fa87b659caa98602bb74a0bca145d799cb009a906d36f61fa5f1b194489059"
+  },
+  {
+    "path": "docs/specs/EXECUTION_LOG.md",
+    "bytes": 3741,
+    "sha256": "186f9f6778ae87ab32c02efb844ad43705f4c60e3ed3fb98f45011df01f8eb61"
+  },
+  {
+    "path": "docs/specs/LANGUAGE_BACKENDS.md",
+    "bytes": 2244,
+    "sha256": "85785a553365034a82497cc82479d046071df279f6a45c6269574502ef857c9a"
+  },
+  {
+    "path": "docs/specs/LOCAL_PERSISTENCE_AND_DEBUG_MEMORY.md",
+    "bytes": 2992,
+    "sha256": "fef71541115f5060228ff72bdcaaaffe3fbfadf022e0c60e12f316ea94314d7e"
+  },
+  {
+    "path": "docs/specs/RUNTIME_PROPERTIES_AND_SLICING.md",
+    "bytes": 1660,
+    "sha256": "b174ef0daf669444690d2b7ced6bddab29eadd2fb48544931a6122d0ec6d22c2"
+  },
+  {
+    "path": "docs/spikes/SPIKE_BACKLOG.md",
+    "bytes": 2354,
+    "sha256": "2bf070008df515c84c28a871bcd09880b3d5cce2b05485fc6c1de140fe370f19"
+  },
+  {
+    "path": "docs/testing/SANDBOX_BUG_CORPUS.md",
+    "bytes": 2224,
+    "sha256": "2e72be551cdc53bfa8a4029347a2ba89e7a9ee5162c1b6f1b8052c88ba10343d"
+  },
+  {
+    "path": "docs/testing/TEST_MATRIX.md",
+    "bytes": 1090,
+    "sha256": "6d67700474a6129a33a7f33fc4950c5b2b7636b16a020ba22747a19150dbb255"
+  },
+  {
+    "path": "docs/testing/UAT_STRATEGY.md",
+    "bytes": 2577,
+    "sha256": "89a1180c29e869d5886dbc83523e8bc5369f47e99cf1f06a705eddfb8f99f290"
+  }
+]

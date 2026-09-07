@@ -182,15 +182,9 @@ pub struct ResolveContext {
 ///
 /// Events are dispatched to the first resolver that claims them.
 /// If no resolver handles an event, it gets `SemanticEventKind::Unresolved`.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ResolverPipeline {
     resolvers: Vec<std::sync::Arc<dyn SemanticResolver>>,
-}
-
-impl Default for ResolverPipeline {
-    fn default() -> Self {
-        Self { resolvers: Vec::new() }
-    }
 }
 
 impl std::fmt::Debug for ResolverPipeline {
@@ -283,7 +277,10 @@ mod tests {
                         module: event.location.file.clone(),
                         arguments: vec![],
                     },
-                    description: format!("Called {}", event.location.function.as_deref().unwrap_or("??")),
+                    description: format!(
+                        "Called {}",
+                        event.location.function.as_deref().unwrap_or("??")
+                    ),
                 }),
                 _ => None,
             }
@@ -306,12 +303,18 @@ mod tests {
         pipeline.add_resolver(Box::new(TestResolver));
 
         let event = make_event(1, EventType::FunctionEntry, "main");
-        let result = pipeline.resolve(&event, &ResolveContext {
-            pid: 1234,
-            binary_path: None,
-        });
+        let result = pipeline.resolve(
+            &event,
+            &ResolveContext {
+                pid: 1234,
+                binary_path: None,
+            },
+        );
 
-        assert!(matches!(result.kind, SemanticEventKind::FunctionCalled { .. }));
+        assert!(matches!(
+            result.kind,
+            SemanticEventKind::FunctionCalled { .. }
+        ));
         assert_eq!(result.source_event_id, 1);
         assert_eq!(result.language, Language::Rust);
     }
@@ -322,10 +325,13 @@ mod tests {
         pipeline.add_resolver(Box::new(TestResolver));
 
         let event = make_event(2, EventType::SyscallEnter, "");
-        let result = pipeline.resolve(&event, &ResolveContext {
-            pid: 1234,
-            binary_path: None,
-        });
+        let result = pipeline.resolve(
+            &event,
+            &ResolveContext {
+                pid: 1234,
+                binary_path: None,
+            },
+        );
 
         assert!(matches!(result.kind, SemanticEventKind::Unresolved));
     }
@@ -335,10 +341,13 @@ mod tests {
         let pipeline = ResolverPipeline::new();
 
         let event = make_event(1, EventType::FunctionEntry, "main");
-        let result = pipeline.resolve(&event, &ResolveContext {
-            pid: 1234,
-            binary_path: None,
-        });
+        let result = pipeline.resolve(
+            &event,
+            &ResolveContext {
+                pid: 1234,
+                binary_path: None,
+            },
+        );
 
         assert!(matches!(result.kind, SemanticEventKind::Unresolved));
         assert_eq!(pipeline.resolver_count(), 0);
@@ -355,15 +364,24 @@ mod tests {
             make_event(3, EventType::FunctionEntry, "beta"),
         ];
 
-        let results = pipeline.resolve_batch(&events, &ResolveContext {
-            pid: 1234,
-            binary_path: None,
-        });
+        let results = pipeline.resolve_batch(
+            &events,
+            &ResolveContext {
+                pid: 1234,
+                binary_path: None,
+            },
+        );
 
         assert_eq!(results.len(), 3);
-        assert!(matches!(results[0].kind, SemanticEventKind::FunctionCalled { .. }));
+        assert!(matches!(
+            results[0].kind,
+            SemanticEventKind::FunctionCalled { .. }
+        ));
         assert!(matches!(results[1].kind, SemanticEventKind::Unresolved));
-        assert!(matches!(results[2].kind, SemanticEventKind::FunctionCalled { .. }));
+        assert!(matches!(
+            results[2].kind,
+            SemanticEventKind::FunctionCalled { .. }
+        ));
     }
 
     #[test]

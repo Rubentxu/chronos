@@ -143,7 +143,13 @@ impl TraceDiff {
             .iter()
             .map(|e| {
                 let hash = if let Some(n) = normalizer {
-                    hash_event_normalized(e, n, &mut warnings, &mut addresses_normalized, &mut addresses_raw)
+                    hash_event_normalized(
+                        e,
+                        n,
+                        &mut warnings,
+                        &mut addresses_normalized,
+                        &mut addresses_raw,
+                    )
                 } else {
                     hash_event(e)
                 };
@@ -155,7 +161,13 @@ impl TraceDiff {
             .iter()
             .map(|e| {
                 let hash = if let Some(n) = normalizer {
-                    hash_event_normalized(e, n, &mut warnings, &mut addresses_normalized, &mut addresses_raw)
+                    hash_event_normalized(
+                        e,
+                        n,
+                        &mut warnings,
+                        &mut addresses_normalized,
+                        &mut addresses_raw,
+                    )
                 } else {
                     hash_event(e)
                 };
@@ -217,11 +229,7 @@ impl TraceDiff {
 
         // Compute normalized hash if normalizer was provided
         let normalized_hash = if normalizer.is_some() {
-            let all_hashes: Vec<String> = hashes_a
-                .iter()
-                .chain(hashes_b.iter())
-                .cloned()
-                .collect();
+            let all_hashes: Vec<String> = hashes_a.iter().chain(hashes_b.iter()).cloned().collect();
             let combined = all_hashes.join(":");
             let hash = hash(&combined.into_bytes()).to_hex().to_string();
             Some(hash)
@@ -255,11 +263,9 @@ impl TraceDiff {
         meta_b: &SessionMetadata,
     ) -> DiffReport {
         // Hash all events
-        let hashes_a: std::collections::HashSet<String> =
-            events_a.iter().map(hash_event).collect();
+        let hashes_a: std::collections::HashSet<String> = events_a.iter().map(hash_event).collect();
 
-        let hashes_b: std::collections::HashSet<String> =
-            events_b.iter().map(hash_event).collect();
+        let hashes_b: std::collections::HashSet<String> = events_b.iter().map(hash_event).collect();
 
         let hashes_a: Vec<String> = hashes_a.into_iter().collect();
         let hashes_b: Vec<String> = hashes_b.into_iter().collect();

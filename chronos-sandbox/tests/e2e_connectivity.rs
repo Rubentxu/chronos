@@ -5,7 +5,11 @@ use chronos_sandbox::client::tools::McpTestClient;
 #[tokio::test]
 async fn test_mcp_server_starts_and_responds() {
     let client = McpTestClient::start().await;
-    assert!(client.is_ok(), "Failed to start MCP server: {:?}", client.err());
+    assert!(
+        client.is_ok(),
+        "Failed to start MCP server: {:?}",
+        client.err()
+    );
 
     let mut session = client.unwrap();
 

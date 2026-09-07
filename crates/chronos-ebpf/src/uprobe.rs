@@ -100,10 +100,8 @@ impl UprobeManager {
             // Resolve offset via symbol lookup (stubbed — real impl uses `object` crate).
             let offset = resolve_symbol_offset(binary.as_ref(), &sym)?;
 
-            self.attached.insert(
-                key.clone(),
-                UprobeInfo { key, offset },
-            );
+            self.attached
+                .insert(key.clone(), UprobeInfo { key, offset });
             tracing::info!(symbol = %sym, offset = offset, "uprobe attached");
             Ok(())
         }
@@ -178,17 +176,12 @@ impl Default for UprobeManager {
 fn resolve_symbol_offset(binary: &Path, symbol: &str) -> Result<u64, EbpfError> {
     // Read the binary
     let data = std::fs::read(binary).map_err(|e| {
-        EbpfError::Uprobe(format!(
-            "cannot read binary '{}': {}",
-            binary.display(),
-            e
-        ))
+        EbpfError::Uprobe(format!("cannot read binary '{}': {}", binary.display(), e))
     })?;
 
     use object::{Object, ObjectSymbol};
-    let file = object::File::parse(data.as_slice()).map_err(|e| {
-        EbpfError::Uprobe(format!("ELF parse error: {}", e))
-    })?;
+    let file = object::File::parse(data.as_slice())
+        .map_err(|e| EbpfError::Uprobe(format!("ELF parse error: {}", e)))?;
 
     // Search exported symbols
     for sym in file.symbols().chain(file.dynamic_symbols()) {
@@ -247,9 +240,10 @@ mod tests {
         let mut mgr = UprobeManager::new();
         // Manually insert a fake entry to test detach_all
         let key = UprobeKey::new("/fake/binary", "fake_fn");
-        mgr.attached.insert(key.clone(), UprobeInfo { key, offset: 0 });
+        mgr.attached
+            .insert(key.clone(), UprobeInfo { key, offset: 0 });
         assert_eq!(mgr.attachment_count(), 1);
-        mgr.detach_all();
+        mgr.detach_all().ok();
         assert_eq!(mgr.attachment_count(), 0);
     }
 

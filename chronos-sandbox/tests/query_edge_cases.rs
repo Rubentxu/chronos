@@ -15,20 +15,26 @@ use std::time::Duration;
 /// QE1: query_events with offset far beyond total events returns empty.
 #[tokio::test]
 async fn test_query_events_offset_beyond_total() {
-    let fixture = McpSession::fixture_path("test_add")
-        .expect("test_add fixture not found");
+    let fixture = McpSession::fixture_path("test_add").expect("test_add fixture not found");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let _stop = client.probe_stop(&session_id).await
+    let _stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -40,11 +46,19 @@ async fn test_query_events_offset_beyond_total() {
         ..Default::default()
     };
 
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events should handle large offset gracefully");
 
-    println!("✓ query_events with offset=1_000_000 returned {} events (expected 0)", events.len());
-    assert!(events.is_empty(), "Should return empty for offset beyond total");
+    println!(
+        "✓ query_events with offset=1_000_000 returned {} events (expected 0)",
+        events.len()
+    );
+    assert!(
+        events.is_empty(),
+        "Should return empty for offset beyond total"
+    );
 
     client.shutdown().await.ok();
 }
@@ -52,20 +66,26 @@ async fn test_query_events_offset_beyond_total() {
 /// QE2: query_events with limit = 0 returns empty.
 #[tokio::test]
 async fn test_query_events_limit_zero() {
-    let fixture = McpSession::fixture_path("test_add")
-        .expect("test_add fixture not found");
+    let fixture = McpSession::fixture_path("test_add").expect("test_add fixture not found");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let _stop = client.probe_stop(&session_id).await
+    let _stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -77,10 +97,15 @@ async fn test_query_events_limit_zero() {
         ..Default::default()
     };
 
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events should handle limit=0 gracefully");
 
-    println!("✓ query_events with limit=0 returned {} events", events.len());
+    println!(
+        "✓ query_events with limit=0 returned {} events",
+        events.len()
+    );
 
     client.shutdown().await.ok();
 }
@@ -88,20 +113,27 @@ async fn test_query_events_limit_zero() {
 /// QE3: query_events with very large limit returns all available events.
 #[tokio::test]
 async fn test_query_events_limit_very_large() {
-    let fixture = McpSession::fixture_path("test_busyloop")
-        .expect("test_busyloop fixture not found");
+    let fixture =
+        McpSession::fixture_path("test_busyloop").expect("test_busyloop fixture not found");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -113,12 +145,20 @@ async fn test_query_events_limit_very_large() {
         ..Default::default()
     };
 
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events should handle u32::MAX limit");
 
-    println!("✓ query_events with limit=u32::MAX returned {} events", events.len());
+    println!(
+        "✓ query_events with limit=u32::MAX returned {} events",
+        events.len()
+    );
     println!("  Total events from stop: {}", stop.total_events);
-    assert!(events.len() <= stop.total_events as usize, "Should not return more than total");
+    assert!(
+        events.len() <= stop.total_events as usize,
+        "Should not return more than total"
+    );
 
     client.shutdown().await.ok();
 }
@@ -126,34 +166,48 @@ async fn test_query_events_limit_very_large() {
 /// QE4: query_events with invalid session_id returns error or empty.
 #[tokio::test]
 async fn test_query_events_invalid_session() {
-    let fixture = McpSession::fixture_path("test_add")
-        .expect("test_add fixture not found");
+    let fixture = McpSession::fixture_path("test_add").expect("test_add fixture not found");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(1)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
-    let _stop = client.probe_stop(&session_id).await
+    let _stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Query with completely invalid session ID
     let filter = QueryFilter::default();
-    let result = client.query_events("this-session-does-not-exist-12345", filter).await;
+    let result = client
+        .query_events("this-session-does-not-exist-12345", filter)
+        .await;
 
     match result {
         Ok(events) => {
             // Some implementations might return empty instead of error
-            println!("✓ query_events with invalid session returned {} events (empty instead of error)", events.len());
+            println!(
+                "✓ query_events with invalid session returned {} events (empty instead of error)",
+                events.len()
+            );
         }
         Err(e) => {
-            println!("✓ query_events correctly returned error for invalid session: {:?}", e);
+            println!(
+                "✓ query_events correctly returned error for invalid session: {:?}",
+                e
+            );
         }
     }
 
@@ -163,19 +217,25 @@ async fn test_query_events_invalid_session() {
 /// QE5: query_events with thread_id filter that matches nothing.
 #[tokio::test]
 async fn test_query_events_thread_filter_no_match() {
-    let fixture = McpSession::fixture_path("test_add")
-        .expect("test_add fixture not found");
+    let fixture = McpSession::fixture_path("test_add").expect("test_add fixture not found");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
-    let _stop = client.probe_stop(&session_id).await
+    let _stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -188,11 +248,19 @@ async fn test_query_events_thread_filter_no_match() {
         ..Default::default()
     };
 
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events should handle non-matching thread_id");
 
-    println!("✓ query_events with thread_id=999_999_999 returned {} events (expected 0)", events.len());
-    assert!(events.is_empty(), "Should return empty for non-matching thread_id");
+    println!(
+        "✓ query_events with thread_id=999_999_999 returned {} events (expected 0)",
+        events.len()
+    );
+    assert!(
+        events.is_empty(),
+        "Should return empty for non-matching thread_id"
+    );
 
     client.shutdown().await.ok();
 }
@@ -200,19 +268,25 @@ async fn test_query_events_thread_filter_no_match() {
 /// QE6: query_events with timestamp range in the past (before program ran).
 #[tokio::test]
 async fn test_query_events_timestamp_before_program() {
-    let fixture = McpSession::fixture_path("test_add")
-        .expect("test_add fixture not found");
+    let fixture = McpSession::fixture_path("test_add").expect("test_add fixture not found");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(1)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
-    let _stop = client.probe_stop(&session_id).await
+    let _stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -226,10 +300,15 @@ async fn test_query_events_timestamp_before_program() {
         ..Default::default()
     };
 
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events should handle pre-program timestamp range");
 
-    println!("✓ query_events with timestamp range [0, 1ms] returned {} events", events.len());
+    println!(
+        "✓ query_events with timestamp range [0, 1ms] returned {} events",
+        events.len()
+    );
 
     client.shutdown().await.ok();
 }
@@ -239,19 +318,25 @@ async fn test_query_events_timestamp_before_program() {
 /// This is a design choice - unknown types are filtered out but don't cause 0 results.
 #[tokio::test]
 async fn test_query_events_event_type_filter_no_match() {
-    let fixture = McpSession::fixture_path("test_add")
-        .expect("test_add fixture not found");
+    let fixture = McpSession::fixture_path("test_add").expect("test_add fixture not found");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
-    let _stop = client.probe_stop(&session_id).await
+    let _stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -264,10 +349,15 @@ async fn test_query_events_event_type_filter_no_match() {
         ..Default::default()
     };
 
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events should handle invalid event_type");
 
-    println!("✓ query_events with event_types=['nonexistent'] returned {} events", events.len());
+    println!(
+        "✓ query_events with event_types=['nonexistent'] returned {} events",
+        events.len()
+    );
     // Note: Server ignores unknown types, so this returns all events
     // This behavior should be documented or changed to return 0 events for unknown types
 
@@ -277,19 +367,25 @@ async fn test_query_events_event_type_filter_no_match() {
 /// QE8: query_events with combined filters that result in no matches.
 #[tokio::test]
 async fn test_query_events_combined_filters_no_match() {
-    let fixture = McpSession::fixture_path("test_add")
-        .expect("test_add fixture not found");
+    let fixture = McpSession::fixture_path("test_add").expect("test_add fixture not found");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
-    let _stop = client.probe_stop(&session_id).await
+    let _stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -306,11 +402,19 @@ async fn test_query_events_combined_filters_no_match() {
         ..Default::default()
     };
 
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events should handle impossible combined filters");
 
-    println!("✓ query_events with impossible combined filters returned {} events", events.len());
-    assert!(events.is_empty(), "Should return empty for impossible filter combination");
+    println!(
+        "✓ query_events with impossible combined filters returned {} events",
+        events.len()
+    );
+    assert!(
+        events.is_empty(),
+        "Should return empty for impossible filter combination"
+    );
 
     client.shutdown().await.ok();
 }
@@ -318,19 +422,26 @@ async fn test_query_events_combined_filters_no_match() {
 /// QE9: pagination through all events with varying offsets.
 #[tokio::test]
 async fn test_query_events_pagination_all_events() {
-    let fixture = McpSession::fixture_path("test_busyloop")
-        .expect("test_busyloop fixture not found");
+    let fixture =
+        McpSession::fixture_path("test_busyloop").expect("test_busyloop fixture not found");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(3)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -347,13 +458,20 @@ async fn test_query_events_pagination_all_events() {
             ..Default::default()
         };
 
-        let events = client.query_events(&session_id, filter).await
+        let events = client
+            .query_events(&session_id, filter)
+            .await
             .expect("query_events should handle pagination");
 
         let count = events.len();
         total_events += count;
 
-        println!("  Page {} (offset {}): {} events", page, page * page_size, count);
+        println!(
+            "  Page {} (offset {}): {} events",
+            page,
+            page * page_size,
+            count
+        );
 
         if count < page_size {
             break; // No more events
@@ -368,11 +486,18 @@ async fn test_query_events_pagination_all_events() {
         }
     }
 
-    println!("✓ Pagination test: fetched {} total events in {} pages", total_events, page + 1);
+    println!(
+        "✓ Pagination test: fetched {} total events in {} pages",
+        total_events,
+        page + 1
+    );
     println!("  Total from stop: {}", stop.total_events);
 
     // Allow some tolerance for events generated during pagination
-    assert!(total_events <= (stop.total_events + 50) as usize, "Should not exceed total events significantly");
+    assert!(
+        total_events <= (stop.total_events + 50) as usize,
+        "Should not exceed total events significantly"
+    );
 
     client.shutdown().await.ok();
 }
@@ -380,19 +505,26 @@ async fn test_query_events_pagination_all_events() {
 /// QE10: sequential rapid queries don't cause issues.
 #[tokio::test]
 async fn test_query_events_rapid_sequential_queries() {
-    let fixture = McpSession::fixture_path("test_busyloop")
-        .expect("test_busyloop fixture not found");
+    let fixture =
+        McpSession::fixture_path("test_busyloop").expect("test_busyloop fixture not found");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
-    let _stop = client.probe_stop(&session_id).await
+    let _stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     tokio::time::sleep(Duration::from_millis(200)).await;

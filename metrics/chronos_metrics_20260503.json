@@ -1,0 +1,12 @@
+{
+  "date": "2026-05-03",
+  "clippy": {
+    "errors": 0,
+    "warnings": 44
+  },
+  "unsafe_count": 16,
+  "test_count": 847,
+  "benchmarks": {},
+  "coverage": null,
+  "complexity": null
+}

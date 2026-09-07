@@ -173,7 +173,9 @@ impl DwarfValue {
     pub fn format(&self) -> String {
         match self {
             DwarfValue::Register(name) => format!("register({})", name),
-            DwarfValue::Memory { address, size } => format!("memory(0x{:x}, {} bytes)", address, size),
+            DwarfValue::Memory { address, size } => {
+                format!("memory(0x{:x}, {} bytes)", address, size)
+            }
             DwarfValue::Immediate(val) => format!("immediate({})", val),
         }
     }

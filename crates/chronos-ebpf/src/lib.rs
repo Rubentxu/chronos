@@ -127,7 +127,10 @@ impl EbpfAdapter {
         binary: &str,
         config: &CaptureConfig,
     ) -> Result<(), EbpfError> {
-        let inner = self.inner.lock().map_err(|e| EbpfError::LoadError(e.to_string()))?;
+        let inner = self
+            .inner
+            .lock()
+            .map_err(|e| EbpfError::LoadError(e.to_string()))?;
 
         let symbols = config.function_filter.as_deref().unwrap_or(&[]);
         if symbols.is_empty() {
@@ -151,7 +154,10 @@ impl EbpfAdapter {
     pub fn attach_uprobe(&self, pid: u32, binary: &str, symbol: &str) -> Result<(), EbpfError> {
         #[cfg(feature = "ebpf")]
         {
-            let inner = self.inner.lock().map_err(|e| EbpfError::LoadError(e.to_string()))?;
+            let inner = self
+                .inner
+                .lock()
+                .map_err(|e| EbpfError::LoadError(e.to_string()))?;
             inner.attach_uprobe(Some(pid as i32), binary, symbol)
         }
         #[cfg(not(feature = "ebpf"))]
@@ -166,7 +172,10 @@ impl EbpfAdapter {
     /// Detach all uprobes and clean up.
     #[cfg(feature = "ebpf")]
     fn detach_probes(&self) -> Result<(), EbpfError> {
-        let mut inner = self.inner.lock().map_err(|e| EbpfError::LoadError(e.to_string()))?;
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|e| EbpfError::LoadError(e.to_string()))?;
         inner.detach_all();
         Ok(())
     }
@@ -185,34 +194,40 @@ impl ProbeBackend for EbpfAdapter {
         #[cfg(feature = "ebpf")]
         {
             use chronos_domain::{EventData, EventType};
-            let inner = self.inner.lock().map_err(|e| TraceError::CaptureFailed(e.to_string()))?;
+            let inner = self
+                .inner
+                .lock()
+                .map_err(|e| TraceError::CaptureFailed(e.to_string()))?;
             let raw_events = inner.drain_events();
-            Ok(raw_events.into_iter().map(|e| {
-                let fn_name = match &e.data {
-                    EventData::EbpfUprobeHit { symbol_name, .. } => symbol_name.clone(),
-                    _ => e.location.function.clone(),
-                };
-                let kind = match e.event_type {
-                    EventType::FunctionEntry => SemanticEventKind::FunctionCalled {
-                        function: fn_name.clone(),
-                        module: None,
-                        arguments: vec![],
-                    },
-                    EventType::FunctionExit => SemanticEventKind::FunctionReturned {
-                        function: fn_name.clone(),
-                        return_value: None,
-                    },
-                    _ => SemanticEventKind::Unresolved,
-                };
-                SemanticEvent {
-                    source_event_id: e.event_id,
-                    timestamp_ns: e.timestamp_ns,
-                    thread_id: e.thread_id,
-                    language: Language::Ebpf,
-                    kind,
-                    description: format!("{:?} @ {}", e.event_type, fn_name),
-                }
-            }).collect())
+            Ok(raw_events
+                .into_iter()
+                .map(|e| {
+                    let fn_name = match &e.data {
+                        EventData::EbpfUprobeHit { symbol_name, .. } => symbol_name.clone(),
+                        _ => e.location.function.clone(),
+                    };
+                    let kind = match e.event_type {
+                        EventType::FunctionEntry => SemanticEventKind::FunctionCalled {
+                            function: fn_name.clone(),
+                            module: None,
+                            arguments: vec![],
+                        },
+                        EventType::FunctionExit => SemanticEventKind::FunctionReturned {
+                            function: fn_name.clone(),
+                            return_value: None,
+                        },
+                        _ => SemanticEventKind::Unresolved,
+                    };
+                    SemanticEvent {
+                        source_event_id: e.event_id,
+                        timestamp_ns: e.timestamp_ns,
+                        thread_id: e.thread_id,
+                        language: Language::Ebpf,
+                        kind,
+                        description: format!("{:?} @ {}", e.event_type, fn_name),
+                    }
+                })
+                .collect())
         }
         #[cfg(not(feature = "ebpf"))]
         {
@@ -223,7 +238,10 @@ impl ProbeBackend for EbpfAdapter {
     fn stop_probe(&self, _session: &CaptureSession) -> Result<(), TraceError> {
         #[cfg(feature = "ebpf")]
         {
-            let mut inner = self.inner.lock().map_err(|e| TraceError::CaptureFailed(e.to_string()))?;
+            let mut inner = self
+                .inner
+                .lock()
+                .map_err(|e| TraceError::CaptureFailed(e.to_string()))?;
             inner.detach_all();
             Ok(())
         }
@@ -278,7 +296,9 @@ impl CaptureTraceAdapter for EbpfAdapter {
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .spawn()
-                .map_err(|e| TraceError::CaptureFailed(format!("Failed to spawn {}: {}", config.target, e)))?;
+                .map_err(|e| {
+                    TraceError::CaptureFailed(format!("Failed to spawn {}: {}", config.target, e))
+                })?;
 
             let pid = child.id();
 
@@ -291,9 +311,7 @@ impl CaptureTraceAdapter for EbpfAdapter {
         }
         #[cfg(not(feature = "ebpf"))]
         {
-            Err(TraceError::capture_failed(
-                "eBPF support not compiled in",
-            ))
+            Err(TraceError::capture_failed("eBPF support not compiled in"))
         }
     }
 
@@ -304,7 +322,8 @@ impl CaptureTraceAdapter for EbpfAdapter {
         #[cfg(feature = "ebpf")]
         {
             // Detach all uprobes
-            self.detach_probes().map_err(|e| TraceError::capture_failed(e))?;
+            self.detach_probes()
+                .map_err(|e| TraceError::capture_failed(e))?;
 
             // Try to terminate the process
             let pid = _session.pid as i32;
@@ -318,9 +337,7 @@ impl CaptureTraceAdapter for EbpfAdapter {
         }
         #[cfg(not(feature = "ebpf"))]
         {
-            Err(TraceError::capture_failed(
-                "eBPF support not compiled in",
-            ))
+            Err(TraceError::capture_failed("eBPF support not compiled in"))
         }
     }
 
@@ -344,9 +361,7 @@ impl CaptureTraceAdapter for EbpfAdapter {
         }
         #[cfg(not(feature = "ebpf"))]
         {
-            Err(TraceError::capture_failed(
-                "eBPF support not compiled in",
-            ))
+            Err(TraceError::capture_failed("eBPF support not compiled in"))
         }
     }
 
@@ -395,32 +410,35 @@ impl ProbeBackend for MockEbpfAdapter {
     fn drain_events(&self) -> Result<Vec<SemanticEvent>, TraceError> {
         use chronos_domain::{EventData, EventType};
         let raw_events = self.buffer.drain_all();
-        Ok(raw_events.into_iter().map(|e| {
-            let fn_name = match &e.data {
-                EventData::EbpfUprobeHit { symbol_name, .. } => symbol_name.clone(),
-                _ => e.location.function.clone().unwrap_or_default(),
-            };
-            let kind = match e.event_type {
-                EventType::FunctionEntry => SemanticEventKind::FunctionCalled {
-                    function: fn_name.clone(),
-                    module: None,
-                    arguments: vec![],
-                },
-                EventType::FunctionExit => SemanticEventKind::FunctionReturned {
-                    function: fn_name.clone(),
-                    return_value: None,
-                },
-                _ => SemanticEventKind::Unresolved,
-            };
-            SemanticEvent {
-                source_event_id: e.event_id,
-                timestamp_ns: e.timestamp_ns,
-                thread_id: e.thread_id,
-                language: Language::Ebpf,
-                kind,
-                description: format!("{:?} @ {}", e.event_type, fn_name),
-            }
-        }).collect())
+        Ok(raw_events
+            .into_iter()
+            .map(|e| {
+                let fn_name = match &e.data {
+                    EventData::EbpfUprobeHit { symbol_name, .. } => symbol_name.clone(),
+                    _ => e.location.function.clone().unwrap_or_default(),
+                };
+                let kind = match e.event_type {
+                    EventType::FunctionEntry => SemanticEventKind::FunctionCalled {
+                        function: fn_name.clone(),
+                        module: None,
+                        arguments: vec![],
+                    },
+                    EventType::FunctionExit => SemanticEventKind::FunctionReturned {
+                        function: fn_name.clone(),
+                        return_value: None,
+                    },
+                    _ => SemanticEventKind::Unresolved,
+                };
+                SemanticEvent {
+                    source_event_id: e.event_id,
+                    timestamp_ns: e.timestamp_ns,
+                    thread_id: e.thread_id,
+                    language: Language::Ebpf,
+                    kind,
+                    description: format!("{:?} @ {}", e.event_type, fn_name),
+                }
+            })
+            .collect())
     }
 
     fn stop_probe(&self, _session: &CaptureSession) -> Result<(), TraceError> {
@@ -438,10 +456,7 @@ pub(crate) fn kernel_version_check() -> Result<(), EbpfError> {
     let proc_version = std::fs::read_to_string("/proc/version").unwrap_or_default();
 
     // Extract the kernel version string (e.g. "5.15.0-91-generic")
-    let version_str = proc_version
-        .split_whitespace()
-        .nth(2)
-        .unwrap_or("0.0.0");
+    let version_str = proc_version.split_whitespace().nth(2).unwrap_or("0.0.0");
 
     let parts: Vec<u32> = version_str
         .split('.')
@@ -509,8 +524,8 @@ mod tests {
 mod adapter_tests {
     use super::*;
     use crate::types::EbpfEvent;
-    use chronos_domain::ProbeBackend;
     use chronos_domain::semantic::SemanticEventKind;
+    use chronos_domain::ProbeBackend;
 
     #[test]
     fn test_mock_ebpf_adapter_name() {
@@ -526,7 +541,7 @@ mod adapter_tests {
 
     #[test]
     fn test_mock_ebpf_adapter_drain_empty() {
-        let mut adapter = MockEbpfAdapter::empty();
+        let adapter = MockEbpfAdapter::empty();
         let events = adapter.drain_events().unwrap();
         assert!(events.is_empty());
     }
@@ -538,14 +553,21 @@ mod adapter_tests {
             EbpfEvent::function_entry(200, 2, 0x2000, "beta"),
             EbpfEvent::function_exit(300, 1, 0x1000),
         ];
-        let mut adapter = MockEbpfAdapter::new(raw_events);
+        let adapter = MockEbpfAdapter::new(raw_events);
 
         let events = adapter.drain_events().unwrap();
         assert_eq!(events.len(), 3);
         // Events are now properly mapped to semantic kinds
-        assert!(matches!(&events[0].kind, SemanticEventKind::FunctionCalled { function, .. } if function == "alpha"));
-        assert!(matches!(&events[1].kind, SemanticEventKind::FunctionCalled { function, .. } if function == "beta"));
-        assert!(matches!(&events[2].kind, SemanticEventKind::FunctionReturned { .. }));
+        assert!(
+            matches!(&events[0].kind, SemanticEventKind::FunctionCalled { function, .. } if function == "alpha")
+        );
+        assert!(
+            matches!(&events[1].kind, SemanticEventKind::FunctionCalled { function, .. } if function == "beta")
+        );
+        assert!(matches!(
+            &events[2].kind,
+            SemanticEventKind::FunctionReturned { .. }
+        ));
         // Check metadata via source_event_id and timestamp_ns
         assert_eq!(events[0].source_event_id, 0);
         assert_eq!(events[1].source_event_id, 1);
@@ -561,7 +583,7 @@ mod adapter_tests {
     #[test]
     fn test_mock_ebpf_adapter_drain_twice_returns_empty() {
         let raw_events = vec![EbpfEvent::function_entry(1, 1, 0x1, "f")];
-        let mut adapter = MockEbpfAdapter::new(raw_events);
+        let adapter = MockEbpfAdapter::new(raw_events);
 
         let first = adapter.drain_events().unwrap();
         assert_eq!(first.len(), 1);

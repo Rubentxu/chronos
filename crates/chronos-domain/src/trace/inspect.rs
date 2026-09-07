@@ -110,10 +110,22 @@ mod tests {
 
     #[test]
     fn test_thread_state_serialization() {
-        assert_eq!(serde_json::to_string(&ThreadState::Running).unwrap(), "\"Running\"");
-        assert_eq!(serde_json::to_string(&ThreadState::Blocked).unwrap(), "\"Blocked\"");
-        assert_eq!(serde_json::to_string(&ThreadState::Waiting).unwrap(), "\"Waiting\"");
-        assert_eq!(serde_json::to_string(&ThreadState::Sleeping).unwrap(), "\"Sleeping\"");
+        assert_eq!(
+            serde_json::to_string(&ThreadState::Running).unwrap(),
+            "\"Running\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ThreadState::Blocked).unwrap(),
+            "\"Blocked\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ThreadState::Waiting).unwrap(),
+            "\"Waiting\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ThreadState::Sleeping).unwrap(),
+            "\"Sleeping\""
+        );
 
         let parsed: ThreadState = serde_json::from_str("\"Running\"").unwrap();
         assert_eq!(parsed, ThreadState::Running);
@@ -140,7 +152,11 @@ mod tests {
             source_file: Some("app.rs".to_string()),
             line: Some(42),
             variables: vec![crate::VariableInfo::new(
-                "x", "10", "i32", 0x1000, crate::VariableScope::Local,
+                "x",
+                "10",
+                "i32",
+                0x1000,
+                crate::VariableScope::Local,
             )],
         };
         let json = serde_json::to_string(&frame).unwrap();

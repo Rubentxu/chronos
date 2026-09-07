@@ -67,7 +67,10 @@ impl<'data> DwarfReader<'data> {
         };
 
         // Create a Dwarf struct using addr2line's gimli
-        let load_section = |id: gimli::SectionId| -> Result<gimli::EndianSlice<'data, gimli::RunTimeEndian>, std::convert::Infallible> {
+        let load_section = |id: gimli::SectionId| -> Result<
+            gimli::EndianSlice<'data, gimli::RunTimeEndian>,
+            std::convert::Infallible,
+        > {
             let data = obj
                 .section_by_name(id.name())
                 .and_then(|s| s.data().ok())
@@ -96,7 +99,10 @@ impl<'data> DwarfReader<'data> {
         };
 
         // Create a Dwarf struct using addr2line's gimli
-        let load_section = |id: gimli::SectionId| -> Result<gimli::EndianSlice<'data, gimli::RunTimeEndian>, std::convert::Infallible> {
+        let load_section = |id: gimli::SectionId| -> Result<
+            gimli::EndianSlice<'data, gimli::RunTimeEndian>,
+            std::convert::Infallible,
+        > {
             let data = obj
                 .section_by_name(id.name())
                 .and_then(|s| s.data().ok())
@@ -172,7 +178,7 @@ impl<'data> DwarfReader<'data> {
 
         raw_vars
             .into_iter()
-            .filter_map(|var| {
+            .map(|var| {
                 // Try to get the location expression bytes for this variable
                 // For now, we use the address as a fallback
                 // A full implementation would look up DW_AT_location bytes
@@ -186,23 +192,23 @@ impl<'data> DwarfReader<'data> {
                             chronos_domain::value::DwarfValue::Immediate(_) => 0,
                         };
                         let value = dwarf_val.format();
-                        return Some(chronos_domain::value::VariableInfo::new(
+                        return chronos_domain::value::VariableInfo::new(
                             var.name,
                             value,
                             var.type_name,
                             address,
                             var.scope,
-                        ));
+                        );
                     }
                 }
                 // If we can't resolve the location, return the original with address 0
-                Some(chronos_domain::value::VariableInfo::new(
+                chronos_domain::value::VariableInfo::new(
                     var.name,
                     var.value,
                     var.type_name,
                     0, // Unknown address
                     var.scope,
-                ))
+                )
             })
             .collect()
     }

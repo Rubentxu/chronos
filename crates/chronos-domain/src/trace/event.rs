@@ -757,6 +757,7 @@ impl TraceEvent {
     }
 
     /// Create a WebAssembly frame event.
+    #[allow(clippy::too_many_arguments)]
     pub fn wasm_frame(
         event_id: EventId,
         timestamp_ns: TimestampNs,
@@ -1225,7 +1226,8 @@ mod tests {
         );
 
         // Other variant serializes as JSON object
-        let other_json = serde_json::to_string(&super::JsEventKind::Other("Pause".to_string())).unwrap();
+        let other_json =
+            serde_json::to_string(&super::JsEventKind::Other("Pause".to_string())).unwrap();
         assert_eq!(other_json, "{\"Other\":\"Pause\"}");
 
         // Test deserialization
@@ -1337,7 +1339,8 @@ mod tests {
         );
 
         // Other variant serializes as JSON object
-        let other_json = serde_json::to_string(&super::WasmEventKind::Other("Custom".to_string())).unwrap();
+        let other_json =
+            serde_json::to_string(&super::WasmEventKind::Other("Custom".to_string())).unwrap();
         assert_eq!(other_json, "{\"Other\":\"Custom\"}");
 
         // Test deserialization

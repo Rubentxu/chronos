@@ -216,7 +216,7 @@ mod tests {
         for i in 0..50 {
             builder.push(&make_event(
                 i,
-                (i as u64) * 1_000_000,
+                i * 1_000_000,
                 EventType::FunctionEntry,
                 0x1000,
             ));

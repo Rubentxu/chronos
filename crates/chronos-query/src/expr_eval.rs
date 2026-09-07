@@ -216,7 +216,10 @@ impl<'a> Parser<'a> {
                     ))
                 }
             }
-            _ => Err(EvalError::InvalidNumber(format!("Unexpected token: {}", token))),
+            _ => Err(EvalError::InvalidNumber(format!(
+                "Unexpected token: {}",
+                token
+            ))),
         }
     }
 
@@ -283,31 +286,40 @@ mod tests {
     fn test_tokenize_operators() {
         let eval = make_evaluator(&[]);
         let tokens = eval.tokenize("a + b").unwrap();
-        assert_eq!(tokens, vec![
-            Token::Variable("a".to_string()),
-            Token::Plus,
-            Token::Variable("b".to_string()),
-        ]);
+        assert_eq!(
+            tokens,
+            vec![
+                Token::Variable("a".to_string()),
+                Token::Plus,
+                Token::Variable("b".to_string()),
+            ]
+        );
 
         let tokens = eval.tokenize("x - y * z").unwrap();
-        assert_eq!(tokens, vec![
-            Token::Variable("x".to_string()),
-            Token::Minus,
-            Token::Variable("y".to_string()),
-            Token::Mul,
-            Token::Variable("z".to_string()),
-        ]);
+        assert_eq!(
+            tokens,
+            vec![
+                Token::Variable("x".to_string()),
+                Token::Minus,
+                Token::Variable("y".to_string()),
+                Token::Mul,
+                Token::Variable("z".to_string()),
+            ]
+        );
     }
 
     #[test]
     fn test_tokenize_whitespace() {
         let eval = make_evaluator(&[]);
         let tokens = eval.tokenize("  x   +   y  ").unwrap();
-        assert_eq!(tokens, vec![
-            Token::Variable("x".to_string()),
-            Token::Plus,
-            Token::Variable("y".to_string()),
-        ]);
+        assert_eq!(
+            tokens,
+            vec![
+                Token::Variable("x".to_string()),
+                Token::Plus,
+                Token::Variable("y".to_string()),
+            ]
+        );
     }
 
     #[test]
@@ -384,7 +396,10 @@ mod tests {
         eprintln!("x + error: {:?}", err);
         // "x +" should produce an error - either ExtraTokens or EmptyExpression
         // depending on how the incomplete expression is handled
-        assert!(matches!(err, EvalError::ExtraTokens(_) | EvalError::EmptyExpression));
+        assert!(matches!(
+            err,
+            EvalError::ExtraTokens(_) | EvalError::EmptyExpression
+        ));
     }
 
     #[test]
@@ -418,6 +433,11 @@ mod tests {
         assert_eq!(eval.evaluate("(((x)))").unwrap(), 2.0);
     }
 
+    // The literal 3.14 is intentionally a 2-decimal approximation, NOT the
+    // mathematical constant PI (≈3.14159...). Clippy's approx_constant lint
+    // is suppressed because we are asserting the literal evaluation equals
+    // the same literal.
+    #[allow(clippy::approx_constant)]
     #[test]
     fn test_eval_literal_numbers() {
         let eval = make_evaluator(&[]);
@@ -449,6 +469,8 @@ mod tests {
         let eval = make_evaluator(&[("x", "5")]);
         let result = eval.evaluate("(x + 3");
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), EvalError::InvalidNumber(ref s) if s.contains("parenthesis")));
+        assert!(
+            matches!(result.unwrap_err(), EvalError::InvalidNumber(ref s) if s.contains("parenthesis"))
+        );
     }
 }

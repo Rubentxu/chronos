@@ -182,7 +182,7 @@ mod tests {
         // This test passes if python3 is on the system PATH
         let available = PythonAdapter::is_python_available();
         // We just verify the method works - actual result depends on system
-        assert!(available || !available); // Always passes, checks method doesn't panic
+        let _ = available; // Always passes, checks method doesn't panic
     }
 
     #[tokio::test]

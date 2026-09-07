@@ -39,16 +39,13 @@ fn resolve_type_name<R: gimli::Reader<Offset = usize>>(
     };
 
     // First entry is the type itself
-    match cursor.next_dfs() {
-        Ok(Some((_, entry))) => {
-            // Get DW_AT_name from this type DIE
-            if let Ok(Some(attr)) = entry.attr(gimli::DW_AT_name) {
-                if let Some(name) = get_string_attr_value(&attr) {
-                    return name;
-                }
+    if let Ok(Some((_, entry))) = cursor.next_dfs() {
+        // Get DW_AT_name from this type DIE
+        if let Ok(Some(attr)) = entry.attr(gimli::DW_AT_name) {
+            if let Some(name) = get_string_attr_value(&attr) {
+                return name;
             }
         }
-        _ => {}
     }
 
     "unknown".to_string()
@@ -228,7 +225,8 @@ fn find_location_bytes_in_cu<R: gimli::Reader<Offset = usize>>(
         // If we're inside the function, look for the variable
         if found_function_depth.is_some() {
             let tag = entry.tag();
-            let is_variable = tag == gimli::DW_TAG_variable || tag == gimli::DW_TAG_formal_parameter;
+            let is_variable =
+                tag == gimli::DW_TAG_variable || tag == gimli::DW_TAG_formal_parameter;
 
             if is_variable {
                 // Check if this is our variable
@@ -359,7 +357,7 @@ mod tests {
             let _vars = reader.variables_in_scope(loc.address);
             // Should return some variables if we're in a function with debug info
             // or empty if not
-            assert!(true); // Just verify it doesn't panic
+            // Just verify it doesn't panic
         }
     }
 }

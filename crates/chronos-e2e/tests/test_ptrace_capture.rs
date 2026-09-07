@@ -91,9 +91,8 @@ fn run_capture_with_timeout(
                 .map_err(|e| format!("Capture thread panicked: {:?}", e))?
                 .map_err(|e| format!("Capture failed: {}", e))
         }
-        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-            Err(format!(
-                "CAPTURE TIMED OUT after {:.1}s for binary '{}'\n\
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Err(format!(
+            "CAPTURE TIMED OUT after {:.1}s for binary '{}'\n\
                  This likely means the ptrace event loop hung.\n\
                  Possible causes:\n\
                  - PtraceEvent::PtraceEvent not continued after clone/fork/vfork\n\
@@ -101,16 +100,13 @@ fn run_capture_with_timeout(
                  - waitpid blocking on zombie traced processes\n\
                  - Breakpoint INT3 hit by non-main thread not handled\n\
                  Check capture_runner.rs should_continue logic.",
-                timeout.as_secs_f64(),
-                binary_for_err.display()
-            ))
-        }
-        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-            capture_thread
-                .join()
-                .map_err(|e| format!("Capture thread panicked: {:?}", e))?
-                .map_err(|e| format!("Capture failed: {}", e))
-        }
+            timeout.as_secs_f64(),
+            binary_for_err.display()
+        )),
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => capture_thread
+            .join()
+            .map_err(|e| format!("Capture thread panicked: {:?}", e))?
+            .map_err(|e| format!("Capture failed: {}", e)),
     }
 }
 
@@ -132,7 +128,9 @@ fn print_diagnostic_report(
     let mut thread_ids: std::collections::HashSet<u64> = std::collections::HashSet::new();
 
     for evt in &result.events {
-        *type_counts.entry(format!("{:?}", evt.event_type)).or_insert(0) += 1;
+        *type_counts
+            .entry(format!("{:?}", evt.event_type))
+            .or_insert(0) += 1;
         thread_ids.insert(evt.thread_id);
     }
 
@@ -162,25 +160,24 @@ fn print_diagnostic_report(
         let func = evt.location.function.as_deref().unwrap_or("???");
         eprintln!(
             "  [{}] {:?} tid={} addr=0x{:x} func={}",
-            start + i, evt.event_type, evt.thread_id, evt.location.address, func
+            start + i,
+            evt.event_type,
+            evt.thread_id,
+            evt.location.address,
+            func
         );
     }
     eprintln!("=== End Report ===\n");
 }
 
 /// Full capture test: compile fixture, capture, verify, diagnose.
-fn full_capture_test(
-    source: &str,
-    expected_exit: Option<i32>,
-    min_events: u64,
-) {
+fn full_capture_test(source: &str, expected_exit: Option<i32>, min_events: u64) {
     let binary = compile_fixture(source);
     let started = Instant::now();
 
-    let result =
-        run_capture_with_timeout(&binary, DEFAULT_TIMEOUT).unwrap_or_else(|e| {
-            panic!("{}", e);
-        });
+    let result = run_capture_with_timeout(&binary, DEFAULT_TIMEOUT).unwrap_or_else(|e| {
+        panic!("{}", e);
+    });
 
     let elapsed = started.elapsed();
 
@@ -248,10 +245,9 @@ fn crash_capture_test(source: &str) {
     let binary = compile_fixture(source);
     let started = Instant::now();
 
-    let result =
-        run_capture_with_timeout(&binary, DEFAULT_TIMEOUT).unwrap_or_else(|e| {
-            panic!("{}", e);
-        });
+    let result = run_capture_with_timeout(&binary, DEFAULT_TIMEOUT).unwrap_or_else(|e| {
+        panic!("{}", e);
+    });
 
     let elapsed = started.elapsed();
 
@@ -303,7 +299,9 @@ fn test_ptrace_bin_true() {
     let config = CaptureConfig::new("/bin/true");
     let mut runner = CaptureRunner::new(config);
 
-    let result = runner.run_to_completion().expect("Should capture /bin/true");
+    let result = runner
+        .run_to_completion()
+        .expect("Should capture /bin/true");
     let elapsed = started.elapsed();
 
     print_diagnostic_report(&binary, &result, elapsed);
@@ -313,10 +311,7 @@ fn test_ptrace_bin_true() {
         "Expected Exited(0), got: {:?}",
         result.end_reason
     );
-    assert!(
-        result.total_events > 0,
-        "Should capture at least 1 event"
-    );
+    assert!(result.total_events > 0, "Should capture at least 1 event");
     assert!(
         elapsed < Duration::from_secs(5),
         "Should complete in <5s, took {:.1}s",
@@ -331,7 +326,9 @@ fn test_ptrace_bin_echo() {
     let config = CaptureConfig::new("/bin/echo");
     let mut runner = CaptureRunner::new(config);
 
-    let result = runner.run_to_completion().expect("Should capture /bin/echo");
+    let result = runner
+        .run_to_completion()
+        .expect("Should capture /bin/echo");
     let elapsed = started.elapsed();
 
     print_diagnostic_report(&binary, &result, elapsed);
@@ -425,12 +422,7 @@ fn test_ptrace_verifies_clone_events_seen() {
     let thread_creates: Vec<_> = result
         .events
         .iter()
-        .filter(|e| {
-            matches!(
-                e.event_type,
-                chronos_domain::EventType::ThreadCreate
-            )
-        })
+        .filter(|e| matches!(e.event_type, chronos_domain::EventType::ThreadCreate))
         .collect();
 
     assert!(
@@ -535,10 +527,9 @@ fn test_regression_ptrace_event_not_continued() {
     let binary = compile_fixture("test_threads.c");
     let started = Instant::now();
 
-    let result = run_capture_with_timeout(&binary, Duration::from_secs(10))
-        .unwrap_or_else(|e| {
-            panic!(
-                "REGRESSION: The PtraceEvent continuation bug is BACK!\n\
+    let result = run_capture_with_timeout(&binary, Duration::from_secs(10)).unwrap_or_else(|e| {
+        panic!(
+            "REGRESSION: The PtraceEvent continuation bug is BACK!\n\
                  Multi-threaded capture timed out, meaning PtraceEvent::PtraceEvent\n\
                  is not being continued after clone/fork/vfork events.\n\
                  \n\
@@ -546,9 +537,9 @@ fn test_regression_ptrace_event_not_continued() {
                  PtraceEvent::PtraceEvent from PTRACE_CONT.\n\
                  \n\
                  Error: {}",
-                e
-            );
-        });
+            e
+        );
+    });
 
     let elapsed = started.elapsed();
 
@@ -565,9 +556,10 @@ fn test_regression_ptrace_event_not_continued() {
     );
 
     // Must see at least one ThreadCreate event (from clone)
-    let has_thread_create = result.events.iter().any(|e| {
-        matches!(e.event_type, chronos_domain::EventType::ThreadCreate)
-    });
+    let has_thread_create = result
+        .events
+        .iter()
+        .any(|e| matches!(e.event_type, chronos_domain::EventType::ThreadCreate));
     assert!(
         has_thread_create,
         "REGRESSION: No ThreadCreate events seen — clone events not being processed"

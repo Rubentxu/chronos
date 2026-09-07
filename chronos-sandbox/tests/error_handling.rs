@@ -29,9 +29,9 @@ async fn test_probe_stop_nonexistent_session() {
             // If it succeeds, the status should indicate error
             println!("probe_stop returned OK with status: {}", response.status);
             assert!(
-                response.status.to_lowercase().contains("error") ||
-                response.status.to_lowercase().contains("not found") ||
-                response.status.to_lowercase().contains("stopped"),
+                response.status.to_lowercase().contains("error")
+                    || response.status.to_lowercase().contains("not found")
+                    || response.status.to_lowercase().contains("stopped"),
                 "Expected error status, got: {}",
                 response.status
             );
@@ -65,9 +65,9 @@ async fn test_probe_drain_nonexistent_session() {
             println!("probe_drain returned OK with status: {}", response.status);
             // Session not found should be reflected in the response
             assert!(
-                response.status.to_lowercase().contains("error") ||
-                response.status.to_lowercase().contains("not found") ||
-                response.status.to_lowercase().contains("running"),
+                response.status.to_lowercase().contains("error")
+                    || response.status.to_lowercase().contains("not found")
+                    || response.status.to_lowercase().contains("running"),
                 "Expected error or 'running' status (session not found), got: {}",
                 response.status
             );
@@ -97,7 +97,10 @@ async fn test_query_events_invalid_session() {
     match result {
         Ok(events) => {
             // Empty result is acceptable - session doesn't exist so no events
-            println!("query_events returned {} events (empty is OK for invalid session)", events.len());
+            println!(
+                "query_events returned {} events (empty is OK for invalid session)",
+                events.len()
+            );
         }
         Err(e) => {
             // Error is also acceptable - server properly rejected invalid session
@@ -122,18 +125,24 @@ async fn test_get_event_out_of_range() {
         .expect("Failed to start MCP server");
 
     // Start probe on a real program
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait for some events
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     // Drain events
-    let _events = client.probe_drain(&session_id).await
+    let _events = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
     // Stop the probe to finalize the session
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     println!("Probe stopped with {} events", stop.total_events);
@@ -151,15 +160,18 @@ async fn test_get_event_out_of_range() {
             println!("get_event returned: {}", value_str);
             // Should contain "not found" or "not found" in the error message
             assert!(
-                value_str.to_lowercase().contains("not found") ||
-                value_str.to_lowercase().contains("error"),
+                value_str.to_lowercase().contains("not found")
+                    || value_str.to_lowercase().contains("error"),
                 "Expected 'not found' or 'error' in response, got: {}",
                 value_str
             );
         }
         Err(e) => {
             // Error is also acceptable
-            println!("get_event correctly returned error for out-of-range ID: {}", e);
+            println!(
+                "get_event correctly returned error for out-of-range ID: {}",
+                e
+            );
         }
     }
 
@@ -180,18 +192,24 @@ async fn test_save_then_delete_then_load() {
         .expect("Failed to start MCP server");
 
     // Start probe
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait for some events
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     // Drain events
-    let _events = client.probe_drain(&session_id).await
+    let _events = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
     // Stop the probe
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     println!("Probe stopped with {} events", stop.total_events);
@@ -201,12 +219,16 @@ async fn test_save_then_delete_then_load() {
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Save the session
-    let save_result = client.save_session(&session_id, "test_save_delete_load").await
+    let save_result = client
+        .save_session(&session_id, "test_save_delete_load")
+        .await
         .expect("save_session failed");
     println!("Session saved: {} events", save_result.event_count);
 
     // Delete the session
-    client.delete_session(&session_id).await
+    client
+        .delete_session(&session_id)
+        .await
         .expect("delete_session failed");
     println!("Session deleted");
 
@@ -276,10 +298,10 @@ async fn test_probe_start_empty_path() {
             println!("probe_start with empty path returned: {}", value_str);
             // Should contain error indication
             assert!(
-                value_str.to_lowercase().contains("error") ||
-                value_str.to_lowercase().contains("invalid") ||
-                value_str.to_lowercase().contains("not found") ||
-                value_str.to_lowercase().contains("path"),
+                value_str.to_lowercase().contains("error")
+                    || value_str.to_lowercase().contains("invalid")
+                    || value_str.to_lowercase().contains("not found")
+                    || value_str.to_lowercase().contains("path"),
                 "Expected error about invalid path, got: {}",
                 value_str
             );
@@ -313,17 +335,20 @@ async fn test_probe_start_nonexistent_path() {
             println!("probe_start with nonexistent path returned: {}", value_str);
             // Should contain error indication
             assert!(
-                value_str.to_lowercase().contains("error") ||
-                value_str.to_lowercase().contains("invalid") ||
-                value_str.to_lowercase().contains("not found") ||
-                value_str.to_lowercase().contains("failed"),
+                value_str.to_lowercase().contains("error")
+                    || value_str.to_lowercase().contains("invalid")
+                    || value_str.to_lowercase().contains("not found")
+                    || value_str.to_lowercase().contains("failed"),
                 "Expected error about nonexistent path, got: {}",
                 value_str
             );
         }
         Err(e) => {
             // Error is also acceptable - server may reject at RPC level
-            println!("probe_start correctly returned error for nonexistent path: {}", e);
+            println!(
+                "probe_start correctly returned error for nonexistent path: {}",
+                e
+            );
         }
     }
 

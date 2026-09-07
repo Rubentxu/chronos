@@ -30,7 +30,7 @@ tests/fixtures/test_add
 tests/fixtures/test_segfault
 
 # Architecture specs (internal)
-specs/
+^/specs/
 
 # Profiling
 flamegraph.svg
@@ -38,3 +38,7 @@ perf.data
 perf.data.old
 .cognicode/
 *.bak
+
+# Python
+__pycache__/
+*.pyc

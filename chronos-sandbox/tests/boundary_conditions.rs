@@ -27,7 +27,9 @@ async fn test_probe_start_program_exits_immediately() {
         .expect("Failed to start MCP server");
 
     // Start probe on program that exits immediately
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait 300ms for the program to exit
@@ -38,8 +40,10 @@ async fn test_probe_start_program_exits_immediately() {
 
     match stop_result {
         Ok(stop) => {
-            println!("probe_stop succeeded: {} events, {}ms",
-                stop.total_events, stop.duration_ms);
+            println!(
+                "probe_stop succeeded: {} events, {}ms",
+                stop.total_events, stop.duration_ms
+            );
         }
         Err(e) => {
             // This is also acceptable - program may have already exited
@@ -52,7 +56,9 @@ async fn test_probe_start_program_exits_immediately() {
 
     // query_events should return a valid response (array, maybe empty)
     let filter = QueryFilter::default();
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events should return valid response, not crash");
 
     println!("query_events returned {} events", events.len());
@@ -74,7 +80,9 @@ async fn test_probe_start_program_crashes_sigsegv() {
         .expect("Failed to start MCP server");
 
     // Start probe on program that will crash with SIGSEGV
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait 500ms for the crash to happen
@@ -85,11 +93,16 @@ async fn test_probe_start_program_crashes_sigsegv() {
 
     match stop_result {
         Ok(stop) => {
-            println!("probe_stop succeeded: {} events, {}ms",
-                stop.total_events, stop.duration_ms);
+            println!(
+                "probe_stop succeeded: {} events, {}ms",
+                stop.total_events, stop.duration_ms
+            );
         }
         Err(e) => {
-            println!("probe_stop returned error (program may have crashed): {}", e);
+            println!(
+                "probe_stop returned error (program may have crashed): {}",
+                e
+            );
         }
     }
 
@@ -98,18 +111,24 @@ async fn test_probe_start_program_crashes_sigsegv() {
 
     // query_events should return a valid response
     let filter = QueryFilter::default();
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events should return valid response");
 
     println!("query_events returned {} events", events.len());
 
     // debug_find_crash should detect the SIGSEGV
-    let crash_result = client.debug_find_crash(&session_id).await
+    let crash_result = client
+        .debug_find_crash(&session_id)
+        .await
         .expect("debug_find_crash should not crash");
 
     if let Some(crash) = crash_result {
-        println!("✓ Crash detected: signal={:?}, event_id={:?}",
-            crash.signal, crash.event_id);
+        println!(
+            "✓ Crash detected: signal={:?}, event_id={:?}",
+            crash.signal, crash.event_id
+        );
         assert!(crash.crash_found, "crash_found should be true");
     } else {
         println!("Note: No crash detected (crash may have happened after probe stopped)");
@@ -132,23 +151,32 @@ async fn test_probe_start_many_threads() {
         .expect("Failed to start MCP server");
 
     // Start probe on multi-threaded program
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait 2s for threads to spawn
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     // Stop the probe
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
-    println!("Probe stopped: {} events, {}ms", stop.total_events, stop.duration_ms);
+    println!(
+        "Probe stopped: {} events, {}ms",
+        stop.total_events, stop.duration_ms
+    );
 
     // Give query engine time to build
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // list_threads should show multiple threads (main + workers)
-    let threads = client.list_threads(&session_id).await
+    let threads = client
+        .list_threads(&session_id)
+        .await
         .expect("list_threads failed");
 
     println!("list_threads returned {} threads", threads.len());
@@ -157,8 +185,11 @@ async fn test_probe_start_many_threads() {
     }
 
     // We expect at least 3 threads (main + at least 2 worker threads)
-    assert!(threads.len() >= 3,
-        "Expected at least 3 threads (main + workers), got {}", threads.len());
+    assert!(
+        threads.len() >= 3,
+        "Expected at least 3 threads (main + workers), got {}",
+        threads.len()
+    );
 
     client.shutdown().await.ok();
 }
@@ -176,14 +207,18 @@ async fn test_query_events_limit_zero() {
         .expect("Failed to start MCP server");
 
     // Start probe
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait for events
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     // Stop the probe
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     println!("Probe stopped: {} events", stop.total_events);
@@ -197,7 +232,9 @@ async fn test_query_events_limit_zero() {
         ..Default::default()
     };
 
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events with limit=0 should return valid response, not error");
 
     println!("query_events with limit=0 returned {} events", events.len());
@@ -221,14 +258,18 @@ async fn test_query_events_limit_one() {
         .expect("Failed to start MCP server");
 
     // Start probe
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait for events
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     // Stop the probe
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     println!("Probe stopped: {} events", stop.total_events);
@@ -242,7 +283,9 @@ async fn test_query_events_limit_one() {
         ..Default::default()
     };
 
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events with limit=1 should succeed");
 
     println!("query_events with limit=1 returned {} events", events.len());
@@ -267,14 +310,18 @@ async fn test_query_events_timestamp_start_greater_than_end() {
         .expect("Failed to start MCP server");
 
     // Start probe
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait for events
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     // Stop the probe
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     println!("Probe stopped: {} events", stop.total_events);
@@ -294,11 +341,17 @@ async fn test_query_events_timestamp_start_greater_than_end() {
     match result {
         Ok(events) => {
             // Empty events is acceptable - inverted range means no matches
-            println!("query_events with inverted range returned {} events (empty OK)", events.len());
+            println!(
+                "query_events with inverted range returned {} events (empty OK)",
+                events.len()
+            );
         }
         Err(e) => {
             // Error is also acceptable - invalid timestamp range
-            println!("query_events with inverted range returned error (acceptable): {}", e);
+            println!(
+                "query_events with inverted range returned error (acceptable): {}",
+                e
+            );
         }
     }
 
@@ -319,14 +372,18 @@ async fn test_state_diff_same_timestamp_twice() {
         .expect("Failed to start MCP server");
 
     // Start probe
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait for events
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     // Stop the probe
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     println!("Probe stopped: {} events", stop.total_events);
@@ -335,7 +392,9 @@ async fn test_state_diff_same_timestamp_twice() {
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Get execution summary to find a valid timestamp
-    let summary = client.get_execution_summary(&session_id).await
+    let summary = client
+        .get_execution_summary(&session_id)
+        .await
         .expect("get_execution_summary failed");
 
     // Use the duration_ns as a timestamp for the diff
@@ -349,7 +408,10 @@ async fn test_state_diff_same_timestamp_twice() {
     match diff_result {
         Ok(diff) => {
             // Same timestamp should produce empty changes
-            println!("state_diff with same timestamp: {} changes", diff.changes.len());
+            println!(
+                "state_diff with same timestamp: {} changes",
+                diff.changes.len()
+            );
         }
         Err(e) => {
             // Error is also acceptable
@@ -374,14 +436,18 @@ async fn test_debug_analyze_memory_start_equals_end() {
         .expect("Failed to start MCP server");
 
     // Start probe
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait for events
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     // Stop the probe
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     println!("Probe stopped: {} events", stop.total_events);
@@ -390,23 +456,30 @@ async fn test_debug_analyze_memory_start_equals_end() {
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Call debug_analyze_memory with same address for start and end
-    let result = client.debug_analyze_memory(
-        &session_id,
-        0x1000,    // start_address
-        0x1000,    // end_address (same as start)
-        0,         // start_ts
-        u64::MAX,  // end_ts
-    ).await;
+    let result = client
+        .debug_analyze_memory(
+            &session_id,
+            0x1000,   // start_address
+            0x1000,   // end_address (same as start)
+            0,        // start_ts
+            u64::MAX, // end_ts
+        )
+        .await;
 
     match result {
         Ok(resp) => {
             // Should return valid response (possibly empty)
-            println!("debug_analyze_memory with same address: {} total_writes",
-                resp.total_writes);
+            println!(
+                "debug_analyze_memory with same address: {} total_writes",
+                resp.total_writes
+            );
         }
         Err(e) => {
             // Error is also acceptable
-            println!("debug_analyze_memory with same address returned error: {}", e);
+            println!(
+                "debug_analyze_memory with same address returned error: {}",
+                e
+            );
         }
     }
 
@@ -427,14 +500,18 @@ async fn test_forensic_memory_audit_limit_zero() {
         .expect("Failed to start MCP server");
 
     // Start probe
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait for events
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     // Stop the probe
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     println!("Probe stopped: {} events", stop.total_events);
@@ -448,8 +525,14 @@ async fn test_forensic_memory_audit_limit_zero() {
     match result {
         Ok(resp) => {
             // Should return valid response with empty writes
-            println!("forensic_memory_audit with limit=0: {} writes", resp.write_count);
-            assert!(resp.writes.is_empty(), "limit=0 should return empty writes array");
+            println!(
+                "forensic_memory_audit with limit=0: {} writes",
+                resp.write_count
+            );
+            assert!(
+                resp.writes.is_empty(),
+                "limit=0 should return empty writes array"
+            );
         }
         Err(e) => {
             // Error is also acceptable for limit=0
