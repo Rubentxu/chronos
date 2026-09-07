@@ -43,7 +43,7 @@ impl TripwireCondition {
                 .location
                 .function
                 .as_ref()
-                .map_or(false, |n| glob_match(pattern, n)),
+                .is_some_and(|n| glob_match(pattern, n)),
             TripwireCondition::ExceptionType { exc_type } => {
                 matches!(&event.data, EventData::Exception { type_name, .. } if type_name.contains(exc_type))
             }
@@ -51,7 +51,7 @@ impl TripwireCondition {
                 event.location.address >= *start && event.location.address <= *end
             }
             TripwireCondition::SyscallNumber { numbers } => {
-                matches!(&event.data, EventData::Syscall { number, .. } if numbers.contains(&(*number as u64)))
+                matches!(&event.data, EventData::Syscall { number, .. } if numbers.contains(&{ *number }))
             }
             TripwireCondition::VariableName { name } => {
                 matches!(&event.data, EventData::Variable(info) if info.name == *name)

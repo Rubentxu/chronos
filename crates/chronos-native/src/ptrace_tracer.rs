@@ -193,9 +193,8 @@ impl PtraceTracer {
                     }
                     // Close extra inherited fds to prevent pipe leaks.
                     // Try close_range (Linux 5.9+) first, fall back to getrlimit+loop.
-                    let close_result = unsafe {
-                        nix::libc::syscall(nix::libc::SYS_close_range, 3i32, u32::MAX, 0u32)
-                    };
+                    let close_result =
+                        nix::libc::syscall(nix::libc::SYS_close_range, 3i32, u32::MAX, 0u32);
                     if close_result != 0 {
                         // Fallback: close up to RLIMIT_NOFILE
                         let mut rl = nix::libc::rlimit {
@@ -390,7 +389,7 @@ impl PtraceTracer {
             }
 
             match waitpid(pid, Some(WaitPidFlag::WNOHANG)) {
-                Ok(s) if s == WaitStatus::StillAlive => {
+                Ok(WaitStatus::StillAlive) => {
                     if start.elapsed().as_secs() > 5 {
                         match ptrace::cont(pid, None) {
                             Ok(()) => {

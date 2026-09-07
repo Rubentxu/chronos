@@ -80,8 +80,6 @@ impl SymbolOffsetNormalizer {
     /// Uses the ELF symbol tables (.symtab for full symbols, .dynsym for dynamic)
     /// to find the symbol containing the given address.
     fn resolve_symbol(&self, pc: u64, binary_path: &Path) -> Option<SymbolOffset> {
-        use object::Object;
-
         let data = std::fs::read(binary_path).ok()?;
         let obj = object::File::parse(data.as_slice()).ok()?;
 

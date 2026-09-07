@@ -74,7 +74,7 @@ impl SessionStore {
             Ok(db) => {
                 let db = Arc::new(db);
                 let cas = ContentStore::new(db.clone());
-                return Ok(Self { db, cas });
+                Ok(Self { db, cas })
             }
             Err(e) => {
                 // Check if it's a lock error
@@ -102,7 +102,7 @@ impl SessionStore {
                     path,
                     e
                 );
-                return Self::open(path);
+                Self::open(path)
             }
         }
     }

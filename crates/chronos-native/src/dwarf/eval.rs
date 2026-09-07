@@ -148,7 +148,6 @@ impl BasicLocationEvaluator {
                     if consumed == 0 {
                         return None;
                     }
-                    i += consumed;
                     return self.eval_fbreg(offset, regs);
                 }
 
@@ -159,7 +158,6 @@ impl BasicLocationEvaluator {
                     if consumed == 0 {
                         return None;
                     }
-                    i += consumed;
                     return self.eval_breg(dwarf_reg, offset, regs);
                 }
 
@@ -170,9 +168,7 @@ impl BasicLocationEvaluator {
                         return None;
                     }
                     i += consumed;
-                    if Self::eval_plus_uconst(&mut stack, addend).is_none() {
-                        return None;
-                    }
+                    Self::eval_plus_uconst(&mut stack, addend)?;
                 }
 
                 // DW_OP_stack_value: Value is on the stack (immediate)
@@ -199,7 +195,6 @@ impl BasicLocationEvaluator {
                         expr[i + 6],
                         expr[i + 7],
                     ]);
-                    i += 8;
                     return Some(DwarfValue::Memory {
                         address: addr,
                         size: 8,
@@ -220,9 +215,7 @@ impl BasicLocationEvaluator {
 
                 // DW_OP_drop: Remove stack top
                 0x13 => {
-                    if stack.pop().is_none() {
-                        return None;
-                    }
+                    stack.pop()?;
                 }
 
                 // DW_OP_over: Copy second stack item to top
@@ -261,7 +254,7 @@ impl BasicLocationEvaluator {
                 }
 
                 // DW_OP_and, DW_OP_or, DW_OP_xor (binary ops)
-                0x1b | 0x1c | 0x1d => {
+                0x1b..=0x1d => {
                     if stack.len() < 2 {
                         return None;
                     }
@@ -367,7 +360,7 @@ impl BasicLocationEvaluator {
         // resulted in a value on the stack
         if !stack.is_empty() {
             // Return the top of stack as immediate
-            return Some(DwarfValue::Immediate(stack.last().unwrap().clone() as i64));
+            return Some(DwarfValue::Immediate(*stack.last().unwrap() as i64));
         }
 
         None

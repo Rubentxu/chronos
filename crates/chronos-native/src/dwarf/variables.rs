@@ -39,16 +39,13 @@ fn resolve_type_name<R: gimli::Reader<Offset = usize>>(
     };
 
     // First entry is the type itself
-    match cursor.next_dfs() {
-        Ok(Some((_, entry))) => {
-            // Get DW_AT_name from this type DIE
-            if let Ok(Some(attr)) = entry.attr(gimli::DW_AT_name) {
-                if let Some(name) = get_string_attr_value(&attr) {
-                    return name;
-                }
+    if let Ok(Some((_, entry))) = cursor.next_dfs() {
+        // Get DW_AT_name from this type DIE
+        if let Ok(Some(attr)) = entry.attr(gimli::DW_AT_name) {
+            if let Some(name) = get_string_attr_value(&attr) {
+                return name;
             }
         }
-        _ => {}
     }
 
     "unknown".to_string()

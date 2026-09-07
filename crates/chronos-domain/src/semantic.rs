@@ -182,17 +182,9 @@ pub struct ResolveContext {
 ///
 /// Events are dispatched to the first resolver that claims them.
 /// If no resolver handles an event, it gets `SemanticEventKind::Unresolved`.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ResolverPipeline {
     resolvers: Vec<std::sync::Arc<dyn SemanticResolver>>,
-}
-
-impl Default for ResolverPipeline {
-    fn default() -> Self {
-        Self {
-            resolvers: Vec::new(),
-        }
-    }
 }
 
 impl std::fmt::Debug for ResolverPipeline {

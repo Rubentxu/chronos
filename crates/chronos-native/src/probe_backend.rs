@@ -300,6 +300,7 @@ impl NativeProbeBackend {
     }
 
     /// Internal wrapper: calls run_probe_loop with a PID callback.
+    #[allow(clippy::too_many_arguments)]
     fn run_probe_loop_with_pid_cb(
         program_path: &str,
         args: Vec<String>,
@@ -325,6 +326,7 @@ impl NativeProbeBackend {
     }
 
     /// Internal: Run the probe event loop for a spawned process.
+    #[allow(clippy::too_many_arguments)]
     fn run_probe_loop(
         program_path: &str,
         args: Vec<String>,
@@ -598,10 +600,10 @@ impl NativeProbeBackend {
     /// For spawned probes, this is set once the child process is launched.
     /// For attached probes, this is set immediately before the event loop starts.
     pub fn get_traced_pid(&self) -> Option<i32> {
-        self.traced_pid
+        *self
+            .traced_pid
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .clone()
     }
 }
 

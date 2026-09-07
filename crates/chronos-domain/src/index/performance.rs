@@ -121,7 +121,7 @@ impl PerformanceIndex {
     /// Return all function stats sorted by call count descending.
     pub fn top_functions_by_calls(&self, limit: usize) -> Vec<&FunctionPerf> {
         let mut sorted: Vec<&FunctionPerf> = self.function_stats.values().collect();
-        sorted.sort_by(|a, b| b.call_count.cmp(&a.call_count));
+        sorted.sort_by_key(|a| std::cmp::Reverse(a.call_count));
         sorted.truncate(limit);
         sorted
     }
@@ -129,7 +129,7 @@ impl PerformanceIndex {
     /// Return all function stats sorted by total cycles descending.
     pub fn top_functions_by_cycles(&self, limit: usize) -> Vec<&FunctionPerf> {
         let mut sorted: Vec<&FunctionPerf> = self.function_stats.values().collect();
-        sorted.sort_by(|a, b| b.total_cycles.cmp(&a.total_cycles));
+        sorted.sort_by_key(|a| std::cmp::Reverse(a.total_cycles));
         sorted.truncate(limit);
         sorted
     }

@@ -757,6 +757,7 @@ impl TraceEvent {
     }
 
     /// Create a WebAssembly frame event.
+    #[allow(clippy::too_many_arguments)]
     pub fn wasm_frame(
         event_id: EventId,
         timestamp_ns: TimestampNs,

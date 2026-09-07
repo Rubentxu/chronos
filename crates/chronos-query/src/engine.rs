@@ -271,7 +271,7 @@ impl QueryEngine {
             .into_iter()
             .map(|(name, call_count)| FunctionStats { name, call_count })
             .collect();
-        top_functions.sort_by(|a, b| b.call_count.cmp(&a.call_count));
+        top_functions.sort_by_key(|a| std::cmp::Reverse(a.call_count));
         top_functions.truncate(20); // Top 20
 
         // Sort event counts by count descending
@@ -279,7 +279,7 @@ impl QueryEngine {
             .into_iter()
             .map(|(et, count)| (et.to_string(), count))
             .collect();
-        event_counts_by_type.sort_by(|a, b| b.1.cmp(&a.1));
+        event_counts_by_type.sort_by_key(|a| std::cmp::Reverse(a.1));
 
         ExecutionSummary {
             session_id: session_id.into(),
@@ -332,11 +332,9 @@ impl QueryEngine {
                     });
                     depth += 1;
                 }
-                EventType::FunctionExit => {
-                    if depth > 0 {
-                        depth -= 1;
-                        stack.pop();
-                    }
+                EventType::FunctionExit if depth > 0 => {
+                    depth -= 1;
+                    stack.pop();
                 }
                 _ => {}
             }
