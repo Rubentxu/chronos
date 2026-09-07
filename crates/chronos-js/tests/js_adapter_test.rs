@@ -40,7 +40,7 @@ fn test_js_console_output_conversion() {
 
 #[test]
 fn test_cdp_event_debugger_paused_conversion() {
-    use chronos_js::cdp_client::{CdpEvent, CallFrame};
+    use chronos_js::cdp_client::{CallFrame, CdpEvent};
 
     let call_frames = vec![CallFrame {
         call_frame_id: "1".to_string(),
@@ -59,7 +59,11 @@ fn test_cdp_event_debugger_paused_conversion() {
     };
 
     match event {
-        CdpEvent::DebuggerPaused { reason, call_frames, .. } => {
+        CdpEvent::DebuggerPaused {
+            reason,
+            call_frames,
+            ..
+        } => {
             assert_eq!(reason, "breakpoint");
             assert_eq!(call_frames.len(), 1);
             assert_eq!(call_frames[0].function_name, "testFunc");
@@ -75,5 +79,9 @@ fn test_connect_to_cdp() {
     // Run with: node --inspect=localhost:9229 script.js
     let adapter = JsCdpAdapter::new("localhost", 9229);
     let result = adapter.connect();
-    assert!(result.is_ok(), "Failed to connect to CDP: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to connect to CDP: {:?}",
+        result.err()
+    );
 }

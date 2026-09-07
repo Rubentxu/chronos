@@ -94,7 +94,10 @@ mod tests {
     fn test_validate_program_path_rejects_dotdot() {
         let result = validate_program_path("../etc/passwd");
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), SecurityError::PathTraversal(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            SecurityError::PathTraversal(_)
+        ));
     }
 
     #[test]
@@ -149,10 +152,7 @@ mod tests {
     fn test_sanitize_session_id_accepts_uuid() {
         let result = sanitize_session_id("550e8400-e29b-41d4-a716-446655440000");
         assert!(result.is_ok());
-        assert_eq!(
-            result.unwrap(),
-            "550e8400-e29b-41d4-a716-446655440000"
-        );
+        assert_eq!(result.unwrap(), "550e8400-e29b-41d4-a716-446655440000");
     }
 
     #[test]
@@ -167,7 +167,10 @@ mod tests {
         let long_id = "a".repeat(129);
         let result = sanitize_session_id(&long_id);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), SecurityError::SessionIdTooLong));
+        assert!(matches!(
+            result.unwrap_err(),
+            SecurityError::SessionIdTooLong
+        ));
     }
 
     #[test]

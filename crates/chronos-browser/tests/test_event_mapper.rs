@@ -4,8 +4,8 @@
 //! in its implementation. The tests here are designed to minimize exposure to that.
 //! Full testing requires fixing the underlying dummy constructor.
 
-use chronos_browser::event_mapper::{CdpDebuggerPaused, CdpCallFrame, CdpLocation};
-use chronos_domain::trace::{WasmModuleInfo, WasmFunctionInfo};
+use chronos_browser::event_mapper::{CdpCallFrame, CdpDebuggerPaused, CdpLocation};
+use chronos_domain::trace::{WasmFunctionInfo, WasmModuleInfo};
 use std::collections::HashMap;
 
 fn make_test_module() -> HashMap<String, WasmModuleInfo> {
@@ -79,7 +79,10 @@ fn test_find_function_by_offset() {
     let module = modules.get("wasm-123").unwrap();
 
     // Find function by offset
-    let add_func = module.functions.iter().find(|f| f.name.as_deref() == Some("add"));
+    let add_func = module
+        .functions
+        .iter()
+        .find(|f| f.name.as_deref() == Some("add"));
     assert!(add_func.is_some());
     let add_func = add_func.unwrap();
 
@@ -116,15 +119,13 @@ fn test_wasm_module_info_serialization() {
         url: Some("test.wasm".to_string()),
         hash: "def456".to_string(),
         build_id: Some("build-123".to_string()),
-        functions: vec![
-            WasmFunctionInfo {
-                function_index: 0,
-                name: Some("test".to_string()),
-                body_start: 0,
-                body_end: 50,
-                breakpoint_id: Some("bp-1".to_string()),
-            },
-        ],
+        functions: vec![WasmFunctionInfo {
+            function_index: 0,
+            name: Some("test".to_string()),
+            body_start: 0,
+            body_end: 50,
+            breakpoint_id: Some("bp-1".to_string()),
+        }],
     };
 
     // Test round-trip through JSON

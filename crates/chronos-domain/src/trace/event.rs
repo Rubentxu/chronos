@@ -1225,7 +1225,8 @@ mod tests {
         );
 
         // Other variant serializes as JSON object
-        let other_json = serde_json::to_string(&super::JsEventKind::Other("Pause".to_string())).unwrap();
+        let other_json =
+            serde_json::to_string(&super::JsEventKind::Other("Pause".to_string())).unwrap();
         assert_eq!(other_json, "{\"Other\":\"Pause\"}");
 
         // Test deserialization
@@ -1337,7 +1338,8 @@ mod tests {
         );
 
         // Other variant serializes as JSON object
-        let other_json = serde_json::to_string(&super::WasmEventKind::Other("Custom".to_string())).unwrap();
+        let other_json =
+            serde_json::to_string(&super::WasmEventKind::Other("Custom".to_string())).unwrap();
         assert_eq!(other_json, "{\"Other\":\"Custom\"}");
 
         // Test deserialization

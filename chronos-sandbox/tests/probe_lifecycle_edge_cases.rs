@@ -23,7 +23,9 @@ async fn test_probe_start_immediate_stop() {
         .expect("Failed to start MCP server");
 
     // Start probe
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait a very short time (100ms)
@@ -31,17 +33,25 @@ async fn test_probe_start_immediate_stop() {
 
     // Stop immediately
     let stop_result = client.probe_stop(&session_id).await;
-    assert!(stop_result.is_ok(), "probe_stop should succeed even with immediate stop");
+    assert!(
+        stop_result.is_ok(),
+        "probe_stop should succeed even with immediate stop"
+    );
 
     let stop = stop_result.unwrap();
-    println!("Immediate stop: {} events, {}ms", stop.total_events, stop.duration_ms);
+    println!(
+        "Immediate stop: {} events, {}ms",
+        stop.total_events, stop.duration_ms
+    );
 
     // Give query engine time to build
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // query_events should return an array (possibly empty)
     let filter = chronos_sandbox::client::types::QueryFilter::default();
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events should succeed after probe_stop");
 
     println!("query_events returned {} events", events.len());
@@ -63,21 +73,30 @@ async fn test_probe_drain_then_stop_then_drain_again() {
         .expect("Failed to start MCP server");
 
     // Start probe
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait for some events to accumulate
     tokio::time::sleep(Duration::from_millis(1500)).await;
 
     // First drain - should return some events
-    let drain1 = client.probe_drain_raw(&session_id).await
+    let drain1 = client
+        .probe_drain_raw(&session_id)
+        .await
         .expect("first probe_drain failed");
 
     println!("First drain: {} events", drain1.total_buffered);
-    assert!(drain1.total_buffered > 0, "Should have captured some events after 1.5s");
+    assert!(
+        drain1.total_buffered > 0,
+        "Should have captured some events after 1.5s"
+    );
 
     // Stop the probe
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     println!("Probe stopped: {} total events", stop.total_events);
@@ -88,12 +107,14 @@ async fn test_probe_drain_then_stop_then_drain_again() {
     match drain2 {
         Ok(response) => {
             // If it returns OK, should have 0 events or error status
-            println!("Second drain after stop: status={}, events={}",
-                response.status, response.total_buffered);
+            println!(
+                "Second drain after stop: status={}, events={}",
+                response.status, response.total_buffered
+            );
             // After stop, the session should be gone
             assert!(
-                response.status.to_lowercase().contains("not found") ||
-                response.total_buffered == 0,
+                response.status.to_lowercase().contains("not found")
+                    || response.total_buffered == 0,
                 "Expected 'not found' or 0 events after stop, got status={}",
                 response.status
             );
@@ -118,7 +139,9 @@ async fn test_probe_start_nonexistent_binary() {
         .expect("Failed to start MCP server");
 
     // Call probe_start with a path to a nonexistent binary
-    let result = client.probe_start_raw("/tmp/this_binary_does_not_exist_chronos_test").await;
+    let result = client
+        .probe_start_raw("/tmp/this_binary_does_not_exist_chronos_test")
+        .await;
 
     match result {
         Ok(value) => {
@@ -126,10 +149,10 @@ async fn test_probe_start_nonexistent_binary() {
             let value_str = serde_json::to_string(&value).unwrap_or_default();
             println!("probe_start for nonexistent binary returned: {}", value_str);
             assert!(
-                value_str.to_lowercase().contains("error") ||
-                value_str.to_lowercase().contains("failed") ||
-                value_str.to_lowercase().contains("not found") ||
-                value_str.to_lowercase().contains("invalid"),
+                value_str.to_lowercase().contains("error")
+                    || value_str.to_lowercase().contains("failed")
+                    || value_str.to_lowercase().contains("not found")
+                    || value_str.to_lowercase().contains("invalid"),
                 "Expected error for nonexistent binary, got: {}",
                 value_str
             );
@@ -157,14 +180,18 @@ async fn test_probe_stop_twice() {
         .expect("Failed to start MCP server");
 
     // Start probe
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait for some events
     tokio::time::sleep(Duration::from_secs(1)).await;
 
     // First stop - should succeed
-    let stop1 = client.probe_stop(&session_id).await
+    let stop1 = client
+        .probe_stop(&session_id)
+        .await
         .expect("first probe_stop failed");
 
     println!("First stop succeeded: {} events", stop1.total_events);
@@ -177,9 +204,9 @@ async fn test_probe_stop_twice() {
             // If it returns OK, check the status
             println!("Second stop returned status: {}", response.status);
             assert!(
-                response.status.to_lowercase().contains("not found") ||
-                response.status.to_lowercase().contains("error") ||
-                response.status.to_lowercase().contains("already stopped"),
+                response.status.to_lowercase().contains("not found")
+                    || response.status.to_lowercase().contains("error")
+                    || response.status.to_lowercase().contains("already stopped"),
                 "Expected error status for stopping twice, got: {}",
                 response.status
             );
@@ -207,7 +234,9 @@ async fn test_probe_start_exits_immediately() {
         .expect("Failed to start MCP server");
 
     // Start probe on program that exits immediately
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait a bit for the probe to handle the exit
@@ -219,10 +248,16 @@ async fn test_probe_start_exits_immediately() {
     // May succeed or fail depending on implementation
     match stop_result {
         Ok(stop) => {
-            println!("probe_stop on immediately-exiting program: {} events", stop.total_events);
+            println!(
+                "probe_stop on immediately-exiting program: {} events",
+                stop.total_events
+            );
         }
         Err(e) => {
-            println!("probe_stop on immediately-exiting program returned error: {}", e);
+            println!(
+                "probe_stop on immediately-exiting program returned error: {}",
+                e
+            );
         }
     }
 
@@ -231,7 +266,9 @@ async fn test_probe_start_exits_immediately() {
 
     // query_events should return an array (may be empty but no crash)
     let filter = chronos_sandbox::client::types::QueryFilter::default();
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events should not crash for valid session");
 
     println!("query_events returned {} events", events.len());
@@ -253,7 +290,9 @@ async fn test_probe_drain_empty_buffer_immediately() {
         .expect("Failed to start MCP server");
 
     // Start probe
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Drain immediately without waiting
@@ -265,8 +304,8 @@ async fn test_probe_drain_empty_buffer_immediately() {
             // Should succeed with 0 or more events
             // (0 events is OK - nothing captured yet)
             assert!(
-                response.status.to_lowercase().contains("running") ||
-                response.status.to_lowercase().contains("stopped"),
+                response.status.to_lowercase().contains("running")
+                    || response.status.to_lowercase().contains("stopped"),
                 "Expected 'running' or 'stopped' status, got: {}",
                 response.status
             );
@@ -278,7 +317,9 @@ async fn test_probe_drain_empty_buffer_immediately() {
     }
 
     // Now stop the probe
-    client.probe_stop(&session_id).await
+    client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     client.shutdown().await.ok();
@@ -298,24 +339,33 @@ async fn test_probe_busyloop_midflight_drain() {
         .expect("Failed to start MCP server");
 
     // Start probe
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait for events to accumulate
     tokio::time::sleep(Duration::from_millis(1500)).await;
 
     // Mid-flight drain - should get some events
-    let mid_events = client.probe_drain(&session_id).await
+    let mid_events = client
+        .probe_drain(&session_id)
+        .await
         .expect("mid-flight probe_drain failed");
 
     println!("Mid-flight drain: {} events", mid_events.len());
-    assert!(mid_events.len() > 0, "Should capture events during execution");
+    assert!(
+        mid_events.len() > 0,
+        "Should capture events during execution"
+    );
 
     // Wait a bit more
     tokio::time::sleep(Duration::from_secs(1)).await;
 
     // Stop the probe
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     println!("Probe stopped: {} total events", stop.total_events);
@@ -325,7 +375,9 @@ async fn test_probe_busyloop_midflight_drain() {
 
     // Final query_events should have events (from both drains and stop)
     let filter = chronos_sandbox::client::types::QueryFilter::default();
-    let final_events = client.query_events(&session_id, filter).await
+    let final_events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events failed after stop");
 
     println!("Final query_events: {} events", final_events.len());

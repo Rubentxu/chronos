@@ -67,7 +67,10 @@ impl<'data> DwarfReader<'data> {
         };
 
         // Create a Dwarf struct using addr2line's gimli
-        let load_section = |id: gimli::SectionId| -> Result<gimli::EndianSlice<'data, gimli::RunTimeEndian>, std::convert::Infallible> {
+        let load_section = |id: gimli::SectionId| -> Result<
+            gimli::EndianSlice<'data, gimli::RunTimeEndian>,
+            std::convert::Infallible,
+        > {
             let data = obj
                 .section_by_name(id.name())
                 .and_then(|s| s.data().ok())
@@ -96,7 +99,10 @@ impl<'data> DwarfReader<'data> {
         };
 
         // Create a Dwarf struct using addr2line's gimli
-        let load_section = |id: gimli::SectionId| -> Result<gimli::EndianSlice<'data, gimli::RunTimeEndian>, std::convert::Infallible> {
+        let load_section = |id: gimli::SectionId| -> Result<
+            gimli::EndianSlice<'data, gimli::RunTimeEndian>,
+            std::convert::Infallible,
+        > {
             let data = obj
                 .section_by_name(id.name())
                 .and_then(|s| s.data().ok())

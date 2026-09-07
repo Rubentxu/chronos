@@ -19,7 +19,9 @@ pub mod syscall_table;
 pub mod perf;
 
 pub use address_normalizer::{AddressNormalizer, SymbolOffset, SymbolOffsetNormalizer};
-pub use capture_runner::{AttachMode, CaptureEndReason, CaptureResult, CaptureRunner, CaptureState};
+pub use capture_runner::{
+    AttachMode, CaptureEndReason, CaptureResult, CaptureRunner, CaptureState,
+};
 pub use dwarf::{BasicLocationEvaluator, DwarfLocationEvaluator, DwarfReader};
 pub use native_adapter::NativeAdapter;
 pub use probe_backend::NativeProbeBackend;

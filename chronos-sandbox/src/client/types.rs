@@ -141,28 +141,13 @@ pub struct SessionSnapshotResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TripwireConditionType {
-    EventType {
-        event_types: Vec<String>,
-    },
-    FunctionName {
-        pattern: String,
-    },
-    ExceptionType {
-        exc_type: String,
-    },
-    MemoryAddress {
-        start: u64,
-        end: u64,
-    },
-    SyscallNumber {
-        numbers: Vec<u64>,
-    },
-    VariableName {
-        name: String,
-    },
-    Signal {
-        numbers: Vec<i32>,
-    },
+    EventType { event_types: Vec<String> },
+    FunctionName { pattern: String },
+    ExceptionType { exc_type: String },
+    MemoryAddress { start: u64, end: u64 },
+    SyscallNumber { numbers: Vec<u64> },
+    VariableName { name: String },
+    Signal { numbers: Vec<i32> },
 }
 
 /// Parameters for tripwire_create.

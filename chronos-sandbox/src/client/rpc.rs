@@ -62,14 +62,24 @@ impl RpcClient {
         // Read the response to initialize request
         let response = timeout(Duration::from_secs(30), self.read_response())
             .await
-            .map_err(|_| McpSandboxError::TimeoutError("initialize response".to_string(), Duration::from_secs(30)))??;
+            .map_err(|_| {
+                McpSandboxError::TimeoutError(
+                    "initialize response".to_string(),
+                    Duration::from_secs(30),
+                )
+            })??;
 
         tracing::debug!(response = ?response, "Received initialize response");
 
         // Read and discard the "initialized" notification from server
         // This is a JSON-RPC notification (no id) that the server sends after initialize
         let mut notification_line = String::new();
-        match timeout(Duration::from_secs(5), self.reader.read_line(&mut notification_line)).await {
+        match timeout(
+            Duration::from_secs(5),
+            self.reader.read_line(&mut notification_line),
+        )
+        .await
+        {
             Ok(Ok(_)) => {
                 tracing::debug!(line = %notification_line.trim(), "Received MCP initialized notification");
             }
@@ -93,7 +103,8 @@ impl RpcClient {
         method: &str,
         params: serde_json::Value,
     ) -> Result<serde_json::Value, McpSandboxError> {
-        self.call_with_timeout(method, params, Duration::from_secs(30)).await
+        self.call_with_timeout(method, params, Duration::from_secs(30))
+            .await
     }
 
     /// Call an MCP tool using the tools/call protocol.
@@ -112,25 +123,29 @@ impl RpcClient {
             "name": tool_name,
             "arguments": arguments
         });
-        let response = self.call_with_timeout("tools/call", params, Duration::from_secs(30)).await?;
+        let response = self
+            .call_with_timeout("tools/call", params, Duration::from_secs(30))
+            .await?;
 
         // The tools/call response has the form:
         // {"result": {"content": [{"type": "text", "text": "..."}], "isError": false}}
         // We need to extract the text and parse it as JSON
-        let result_obj = response
-            .get("result")
-            .ok_or_else(|| McpSandboxError::RpcError("Missing result in tool response".to_string()))?;
+        let result_obj = response.get("result").ok_or_else(|| {
+            McpSandboxError::RpcError("Missing result in tool response".to_string())
+        })?;
 
-        let content = result_obj
-            .get("content")
-            .ok_or_else(|| McpSandboxError::RpcError("Missing content in tool response".to_string()))?;
+        let content = result_obj.get("content").ok_or_else(|| {
+            McpSandboxError::RpcError("Missing content in tool response".to_string())
+        })?;
 
         let content_array = content
             .as_array()
             .ok_or_else(|| McpSandboxError::RpcError("content is not an array".to_string()))?;
 
         if content_array.is_empty() {
-            return Err(McpSandboxError::RpcError("content array is empty".to_string()));
+            return Err(McpSandboxError::RpcError(
+                "content array is empty".to_string(),
+            ));
         }
 
         // Check if the response is an error
@@ -138,9 +153,9 @@ impl RpcClient {
             if is_error {
                 // Extract error message from content
                 let first_content = &content_array[0];
-                let text = first_content
-                    .get("text")
-                    .ok_or_else(|| McpSandboxError::RpcError("Missing text in error content".to_string()))?;
+                let text = first_content.get("text").ok_or_else(|| {
+                    McpSandboxError::RpcError("Missing text in error content".to_string())
+                })?;
                 let text_str = text
                     .as_str()
                     .ok_or_else(|| McpSandboxError::RpcError("text is not a string".to_string()))?;
@@ -158,8 +173,9 @@ impl RpcClient {
             .ok_or_else(|| McpSandboxError::RpcError("text is not a string".to_string()))?;
 
         // Parse the inner JSON string
-        let inner_value: serde_json::Value = serde_json::from_str(text_str)
-            .map_err(|e| McpSandboxError::RpcError(format!("Failed to parse tool result: {}", e)))?;
+        let inner_value: serde_json::Value = serde_json::from_str(text_str).map_err(|e| {
+            McpSandboxError::RpcError(format!("Failed to parse tool result: {}", e))
+        })?;
 
         Ok(inner_value)
     }
@@ -199,7 +215,9 @@ impl RpcClient {
         // Read the response with custom timeout
         let response = timeout(timeout_duration, self.read_response())
             .await
-            .map_err(|_| McpSandboxError::TimeoutError(format!("method={}", method), timeout_duration))??;
+            .map_err(|_| {
+                McpSandboxError::TimeoutError(format!("method={}", method), timeout_duration)
+            })??;
 
         tracing::debug!(method = method, "Received RPC response");
 
@@ -215,11 +233,13 @@ impl RpcClient {
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
 
         if line.is_empty() {
-            return Err(McpSandboxError::UnexpectedOutput("Empty response".to_string()));
+            return Err(McpSandboxError::UnexpectedOutput(
+                "Empty response".to_string(),
+            ));
         }
 
-        let response: serde_json::Value = serde_json::from_str(&line)
-            .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
+        let response: serde_json::Value =
+            serde_json::from_str(&line).map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
 
         // Check for error responses
         if let Some(error) = response.get("error") {

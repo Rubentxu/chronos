@@ -8,9 +8,14 @@ use std::time::Instant;
 use which::which;
 
 use chronos_capture::{CaptureConfig, TraceAdapter};
-use chronos_domain::{CaptureSession, Language, StackFrame as ChronosStackFrame, ThreadInfo, TraceError, VariableInfo};
+use chronos_domain::{
+    CaptureSession, Language, StackFrame as ChronosStackFrame, ThreadInfo, TraceError, VariableInfo,
+};
 
-use crate::event_loop::{run_delve_event_loop, AtomicCancel, DelveRpcClient, delve_stack_to_chronos_frames, goroutines_to_thread_info};
+use crate::event_loop::{
+    delve_stack_to_chronos_frames, goroutines_to_thread_info, run_delve_event_loop, AtomicCancel,
+    DelveRpcClient,
+};
 use crate::event_parser::stack_frame_to_trace_event;
 use crate::rpc::{DelveClient, StackFrame};
 use crate::subprocess::DelveSubprocess;
@@ -338,11 +343,9 @@ impl TraceAdapter for GoAdapter {
             })?;
 
         // Get the specific frame (frame_id is the depth index)
-        let frame = frames
-            .get(frame_id as usize)
-            .ok_or_else(|| {
-                TraceError::UnsupportedOperation(format!("Frame {} not found", frame_id))
-            })?;
+        let frame = frames.get(frame_id as usize).ok_or_else(|| {
+            TraceError::UnsupportedOperation(format!("Frame {} not found", frame_id))
+        })?;
 
         // Convert locals to VariableInfo
         let variables = match &frame.locals {
@@ -392,20 +395,24 @@ mod tests {
     fn test_go_adapter_stop_without_start_is_safe() {
         // Stopping without starting should not panic
         let adapter = GoAdapter::new();
-        let session = CaptureSession::new(0, Language::Go, CaptureConfig {
-            target: "/dev/null".into(),
-            args: vec![],
-            env: None,
-            cwd: None,
-            language: None,
-            capture_syscalls: false,
-            capture_variables: false,
-            capture_stack: false,
-            capture_memory: false,
-            capture_function_exit: false,
-            function_filter: None,
-            max_duration_ms: None,
-        });
+        let session = CaptureSession::new(
+            0,
+            Language::Go,
+            CaptureConfig {
+                target: "/dev/null".into(),
+                args: vec![],
+                env: None,
+                cwd: None,
+                language: None,
+                capture_syscalls: false,
+                capture_variables: false,
+                capture_stack: false,
+                capture_memory: false,
+                capture_function_exit: false,
+                function_filter: None,
+                max_duration_ms: None,
+            },
+        );
         let result = adapter.stop_capture(&session);
         assert!(result.is_ok());
     }

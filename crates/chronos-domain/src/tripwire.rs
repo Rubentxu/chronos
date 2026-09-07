@@ -20,7 +20,9 @@ impl std::fmt::Display for TripwireId {
 }
 
 static NEXT_TRIPWIRE_ID: AtomicU64 = AtomicU64::new(1);
-fn next_tripwire_id() -> TripwireId { TripwireId(NEXT_TRIPWIRE_ID.fetch_add(1, Ordering::Relaxed)) }
+fn next_tripwire_id() -> TripwireId {
+    TripwireId(NEXT_TRIPWIRE_ID.fetch_add(1, Ordering::Relaxed))
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum TripwireCondition {
@@ -37,13 +39,17 @@ impl TripwireCondition {
     pub fn matches(&self, event: &TraceEvent) -> bool {
         match self {
             TripwireCondition::EventType(types) => types.contains(&event.event_type),
-            TripwireCondition::FunctionName { pattern } => {
-                event.location.function.as_ref().map_or(false, |n| glob_match(pattern, n))
-            }
+            TripwireCondition::FunctionName { pattern } => event
+                .location
+                .function
+                .as_ref()
+                .map_or(false, |n| glob_match(pattern, n)),
             TripwireCondition::ExceptionType { exc_type } => {
                 matches!(&event.data, EventData::Exception { type_name, .. } if type_name.contains(exc_type))
             }
-            TripwireCondition::MemoryAddress { start, end } => event.location.address >= *start && event.location.address <= *end,
+            TripwireCondition::MemoryAddress { start, end } => {
+                event.location.address >= *start && event.location.address <= *end
+            }
             TripwireCondition::SyscallNumber { numbers } => {
                 matches!(&event.data, EventData::Syscall { number, .. } if numbers.contains(&(*number as u64)))
             }
@@ -64,15 +70,23 @@ fn glob_match(pattern: &str, text: &str) -> bool {
 }
 
 fn glob_inner(p: &[char], t: &[char], pi: usize, ti: usize) -> bool {
-    if pi == p.len() { return ti == t.len(); }
+    if pi == p.len() {
+        return ti == t.len();
+    }
     if p[pi] == '*' {
         for skip in ti..=t.len() {
-            if glob_inner(p, t, pi + 1, skip) { return true; }
+            if glob_inner(p, t, pi + 1, skip) {
+                return true;
+            }
         }
         return false;
     }
-    if ti >= t.len() { return false; }
-    if p[pi] == '?' || p[pi] == t[ti] { return glob_inner(p, t, pi + 1, ti + 1); }
+    if ti >= t.len() {
+        return false;
+    }
+    if p[pi] == '?' || p[pi] == t[ti] {
+        return glob_inner(p, t, pi + 1, ti + 1);
+    }
     false
 }
 
@@ -95,7 +109,12 @@ pub struct Tripwire {
 
 impl Tripwire {
     pub fn new(condition: TripwireCondition) -> Self {
-        Self { id: next_tripwire_id(), condition, label: None, fire_count: 0 }
+        Self {
+            id: next_tripwire_id(),
+            condition,
+            label: None,
+            fire_count: 0,
+        }
     }
 
     pub fn with_label(mut self, label: impl Into<String>) -> Self {
@@ -103,7 +122,9 @@ impl Tripwire {
         self
     }
 
-    pub fn matches(&self, event: &TraceEvent) -> bool { self.condition.matches(event) }
+    pub fn matches(&self, event: &TraceEvent) -> bool {
+        self.condition.matches(event)
+    }
 
     pub fn fire(&self, event: &TraceEvent) -> TripwireFired {
         TripwireFired {
@@ -138,10 +159,7 @@ pub struct TripwireSubscription {
 
 impl TripwireSubscription {
     /// Create a new subscription.
-    pub fn new(
-        condition: TripwireCondition,
-        callback_url: Option<url::Url>,
-    ) -> Self {
+    pub fn new(condition: TripwireCondition, callback_url: Option<url::Url>) -> Self {
         Self {
             id: next_tripwire_id(),
             condition,
@@ -209,8 +227,8 @@ pub enum TripwireError {
 /// - Must use HTTPS scheme
 /// - Must not have a port number
 pub fn validate_callback_url(url_str: &str) -> Result<url::Url, TripwireError> {
-    let parsed = url::Url::parse(url_str)
-        .map_err(|e| TripwireError::UrlParseError(e.to_string()))?;
+    let parsed =
+        url::Url::parse(url_str).map_err(|e| TripwireError::UrlParseError(e.to_string()))?;
 
     if parsed.scheme() != "https" {
         return Err(TripwireError::InvalidCallbackUrl);
@@ -230,7 +248,9 @@ pub struct TripwireManager {
 }
 
 impl TripwireManager {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     pub fn register(&self, condition: TripwireCondition) -> TripwireId {
         let tw = Tripwire::new(condition);
@@ -246,11 +266,17 @@ impl TripwireManager {
         tws.len() < before
     }
 
-    pub fn list(&self) -> Vec<Tripwire> { self.tripwires.read().unwrap().clone() }
+    pub fn list(&self) -> Vec<Tripwire> {
+        self.tripwires.read().unwrap().clone()
+    }
 
     pub fn evaluate(&self, event: &TraceEvent) -> Vec<TripwireFired> {
         let tws = self.tripwires.read().unwrap();
-        let fired: Vec<_> = tws.iter().filter(|tw| tw.matches(event)).map(|tw| tw.fire(event)).collect();
+        let fired: Vec<_> = tws
+            .iter()
+            .filter(|tw| tw.matches(event))
+            .map(|tw| tw.fire(event))
+            .collect();
         drop(tws);
         if !fired.is_empty() {
             let mut buf = self.fired_buffer.write().unwrap();
@@ -269,7 +295,9 @@ impl TripwireManager {
         std::mem::take(&mut *self.fired_buffer.write().unwrap())
     }
 
-    pub fn active_count(&self) -> usize { self.tripwires.read().unwrap().len() }
+    pub fn active_count(&self) -> usize {
+        self.tripwires.read().unwrap().len()
+    }
 }
 
 pub type TripwireManagerHandle = Arc<TripwireManager>;

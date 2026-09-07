@@ -215,7 +215,10 @@ async fn test_e2e_wasm_module_detection() {
         }
         Err(e) => {
             // E2E test might fail due to network or CORS issues - that's OK
-            println!("Browser probe failed (expected in some environments): {}", e);
+            println!(
+                "Browser probe failed (expected in some environments): {}",
+                e
+            );
         }
     }
 }

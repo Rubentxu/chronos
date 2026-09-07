@@ -82,8 +82,12 @@ impl NodeProcess {
 
         match result {
             Ok(Some(url)) => Ok(url),
-            Ok(None) => Err(JsAdapterError::CdpTimeout { timeout: timeout_secs }),
-            Err(_) => Err(JsAdapterError::CdpTimeout { timeout: timeout_secs }),
+            Ok(None) => Err(JsAdapterError::CdpTimeout {
+                timeout: timeout_secs,
+            }),
+            Err(_) => Err(JsAdapterError::CdpTimeout {
+                timeout: timeout_secs,
+            }),
         }
     }
 

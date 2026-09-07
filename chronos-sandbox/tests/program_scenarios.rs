@@ -12,25 +12,34 @@ async fn test_fork_captures_multiple_processes() {
     let fixture = McpSession::fixture_path("test_fork")
         .expect("test_fork fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait for fork to complete
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
     println!("Probe stopped: {} total events", stop.total_events);
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // List threads
-    let threads = client.list_threads(&session_id).await
+    let threads = client
+        .list_threads(&session_id)
+        .await
         .expect("list_threads failed");
 
     println!("✓ list_threads: {} threads", threads.len());
@@ -42,7 +51,9 @@ async fn test_fork_captures_multiple_processes() {
         offset: 0,
         ..Default::default()
     };
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events failed");
 
     println!("  events captured: {}", events.len());
@@ -58,24 +69,33 @@ async fn test_clone_thread_creation_visible() {
     let fixture = McpSession::fixture_path("test_clone")
         .expect("test_clone fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
     println!("Probe stopped: {} total events", stop.total_events);
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // List threads
-    let threads = client.list_threads(&session_id).await
+    let threads = client
+        .list_threads(&session_id)
+        .await
         .expect("list_threads failed");
 
     println!("✓ list_threads: {} threads", threads.len());
@@ -86,7 +106,9 @@ async fn test_clone_thread_creation_visible() {
         offset: 0,
         ..Default::default()
     };
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events failed");
 
     println!("  events captured: {}", events.len());
@@ -104,28 +126,41 @@ async fn test_many_threads_count() {
     let fixture = McpSession::fixture_path("test_many_threads")
         .expect("test_many_threads fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(4)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
     println!("Probe stopped: {} total events", stop.total_events);
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // List threads
-    let threads = client.list_threads(&session_id).await
+    let threads = client
+        .list_threads(&session_id)
+        .await
         .expect("list_threads failed");
 
     println!("✓ list_threads: {} threads", threads.len());
-    assert!(threads.len() >= 3, "Should have at least 3 threads visible, got {}", threads.len());
+    assert!(
+        threads.len() >= 3,
+        "Should have at least 3 threads visible, got {}",
+        threads.len()
+    );
 
     client.shutdown().await.ok();
 }
@@ -137,24 +172,31 @@ async fn test_divide_by_zero_crash_detected() {
     let fixture = McpSession::fixture_path("test_divide_by_zero")
         .expect("test_divide_by_zero fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Program exits fast, give it time then stop
     tokio::time::sleep(Duration::from_millis(500)).await;
     let _drained = client.probe_drain(&session_id).await;
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
     println!("Probe stopped: {} total events", stop.total_events);
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Find crash
-    let crash = client.debug_find_crash(&session_id).await
+    let crash = client
+        .debug_find_crash(&session_id)
+        .await
         .expect("debug_find_crash failed");
 
     match crash {
@@ -184,24 +226,31 @@ async fn test_abort_crash_detected_sigabrt() {
     let fixture = McpSession::fixture_path("test_abort")
         .expect("test_abort fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Program exits fast, give it time then stop
     tokio::time::sleep(Duration::from_millis(500)).await;
     let _drained = client.probe_drain(&session_id).await;
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
     println!("Probe stopped: {} total events", stop.total_events);
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Find crash
-    let crash = client.debug_find_crash(&session_id).await
+    let crash = client
+        .debug_find_crash(&session_id)
+        .await
         .expect("debug_find_crash failed");
 
     match crash {
@@ -231,24 +280,33 @@ async fn test_crash_thread_crash_in_non_main_thread() {
     let fixture = McpSession::fixture_path("test_crash_thread")
         .expect("test_crash_thread fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
     println!("Probe stopped: {} total events", stop.total_events);
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Find crash
-    let crash = client.debug_find_crash(&session_id).await
+    let crash = client
+        .debug_find_crash(&session_id)
+        .await
         .expect("debug_find_crash failed");
 
     match crash {
@@ -276,22 +334,29 @@ async fn test_trace_syscalls_false_still_captures_events() {
     let fixture = McpSession::fixture_path("test_add")
         .expect("test_add fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
     // Start probe with trace_syscalls=false using probe_start_with_params
-    let session_id = client.probe_start_with_params(
-        fixture.to_str().unwrap(),
-        false, // trace_syscalls = false
-        50000,
-    ).await
+    let session_id = client
+        .probe_start_with_params(
+            fixture.to_str().unwrap(),
+            false, // trace_syscalls = false
+            50000,
+        )
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
     println!("Probe stopped: {} total events", stop.total_events);
 
@@ -303,19 +368,29 @@ async fn test_trace_syscalls_false_still_captures_events() {
         offset: 0,
         ..Default::default()
     };
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events failed");
 
-    println!("✓ query_events with trace_syscalls=false: {} events", events.len());
+    println!(
+        "✓ query_events with trace_syscalls=false: {} events",
+        events.len()
+    );
     // Events may be empty if ptrace relies on syscalls for function detection
     // Just verify the response is valid
     println!("  Response is valid (events array exists)");
 
     // Get execution summary
-    let summary = client.get_execution_summary(&session_id).await
+    let summary = client
+        .get_execution_summary(&session_id)
+        .await
         .expect("get_execution_summary failed");
 
-    println!("✓ get_execution_summary: total_events={}", summary.total_events);
+    println!(
+        "✓ get_execution_summary: total_events={}",
+        summary.total_events
+    );
     println!("  Response is valid");
 
     client.shutdown().await.ok();
@@ -329,17 +404,22 @@ async fn test_infinite_loop_stopped_by_probe_stop() {
     let fixture = McpSession::fixture_path("test_busyloop")
         .expect("test_busyloop fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait 1.5 seconds
     tokio::time::sleep(Duration::from_millis(1500)).await;
 
     // Stop the probe
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     println!("✓ probe_stop succeeded: {} total events", stop.total_events);
@@ -353,7 +433,9 @@ async fn test_infinite_loop_stopped_by_probe_stop() {
         offset: 0,
         ..Default::default()
     };
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events failed");
 
     println!("✓ query_events: {} events captured", events.len());

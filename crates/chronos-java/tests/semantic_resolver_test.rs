@@ -1,8 +1,8 @@
+use chronos_domain::semantic::{ResolveContext, SemanticEventKind, SemanticResolver};
 use chronos_domain::{
     EventData, EventType, JavaEventKind, Language, SourceLocation, TraceEvent, VariableInfo,
     VariableScope,
 };
-use chronos_domain::semantic::{ResolveContext, SemanticEventKind, SemanticResolver};
 use chronos_java::semantic_resolver::JavaSemanticResolver;
 
 fn make_java_call_event() -> TraceEvent {
@@ -52,7 +52,10 @@ fn test_resolve_method_entry() {
     let se = resolver
         .resolve(
             &make_java_call_event(),
-            &ResolveContext { pid: 1234, binary_path: None },
+            &ResolveContext {
+                pid: 1234,
+                binary_path: None,
+            },
         )
         .unwrap();
     assert!(matches!(se.kind, SemanticEventKind::FunctionCalled { .. }));
@@ -65,7 +68,10 @@ fn test_resolve_method_entry_extracts_qualified_name() {
     let se = resolver
         .resolve(
             &make_java_call_event(),
-            &ResolveContext { pid: 1234, binary_path: None },
+            &ResolveContext {
+                pid: 1234,
+                binary_path: None,
+            },
         )
         .unwrap();
     match se.kind {
@@ -88,7 +94,13 @@ fn test_resolve_non_java_returns_none() {
         EventData::Empty,
     );
     assert!(resolver
-        .resolve(&event, &ResolveContext { pid: 1234, binary_path: None })
+        .resolve(
+            &event,
+            &ResolveContext {
+                pid: 1234,
+                binary_path: None
+            }
+        )
         .is_none());
 }
 
@@ -98,7 +110,10 @@ fn test_description_contains_class_and_method() {
     let se = resolver
         .resolve(
             &make_java_call_event(),
-            &ResolveContext { pid: 1234, binary_path: None },
+            &ResolveContext {
+                pid: 1234,
+                binary_path: None,
+            },
         )
         .unwrap();
     assert!(se.description.contains("com.example.MyService"));

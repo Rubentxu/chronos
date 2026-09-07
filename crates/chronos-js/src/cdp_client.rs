@@ -2,14 +2,14 @@
 
 use crate::error::JsAdapterError;
 use futures_util::{SinkExt, StreamExt};
+use serde::Deserialize;
+use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{debug, error, warn};
-use serde::Deserialize;
-use serde_json::Value;
-use std::collections::HashMap;
 
 /// CDP message ID counter
 #[allow(dead_code)]
@@ -289,7 +289,9 @@ impl CdpClient {
 
     /// Send a CDP command and wait for response
     pub async fn send_command(&self, method: &str, params: Value) -> Result<Value, JsAdapterError> {
-        let id = self.next_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let id = self
+            .next_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         let msg = serde_json::json!({
             "id": id,
@@ -383,18 +385,26 @@ impl CdpClient {
     }
 
     /// Get properties of a remote object
-    pub async fn runtime_get_properties(&self, object_id: &str) -> Result<Vec<Property>, JsAdapterError> {
-        let result = self.send_command(
-            "Runtime.getProperties",
-            serde_json::json!({
-                "objectId": object_id,
-                "ownProperties": true,
-                "generatePreview": true
-            }),
-        )
-        .await?;
+    pub async fn runtime_get_properties(
+        &self,
+        object_id: &str,
+    ) -> Result<Vec<Property>, JsAdapterError> {
+        let result = self
+            .send_command(
+                "Runtime.getProperties",
+                serde_json::json!({
+                    "objectId": object_id,
+                    "ownProperties": true,
+                    "generatePreview": true
+                }),
+            )
+            .await?;
 
-        let descriptors = result.get("result").and_then(|r| r.as_array()).cloned().unwrap_or_default();
+        let descriptors = result
+            .get("result")
+            .and_then(|r| r.as_array())
+            .cloned()
+            .unwrap_or_default();
         let properties: Vec<Property> = descriptors
             .into_iter()
             .filter_map(|d| serde_json::from_value(d).ok())
@@ -423,7 +433,12 @@ impl MockCdpClient {
         Self { events }
     }
 
-    pub fn emit_paused(&self, reason: String, call_frames: Vec<CallFrame>, hit_breakpoints: Vec<String>) {
+    pub fn emit_paused(
+        &self,
+        reason: String,
+        call_frames: Vec<CallFrame>,
+        hit_breakpoints: Vec<String>,
+    ) {
         let _ = self.events.send(CdpEvent::DebuggerPaused {
             reason,
             call_frames,
@@ -487,7 +502,11 @@ mod tests {
         mock.emit_paused("breakpoint".to_string(), frames.clone(), vec![]);
 
         match rx.recv().await {
-            Ok(CdpEvent::DebuggerPaused { reason, call_frames, .. }) => {
+            Ok(CdpEvent::DebuggerPaused {
+                reason,
+                call_frames,
+                ..
+            }) => {
                 assert_eq!(reason, "breakpoint");
                 assert_eq!(call_frames.len(), 1);
             }
@@ -509,7 +528,10 @@ mod tests {
         let response: CdpResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.id, 42);
         assert!(response.error.is_none());
-        assert_eq!(response.result.get("description").and_then(|v| v.as_str()), Some("42"));
+        assert_eq!(
+            response.result.get("description").and_then(|v| v.as_str()),
+            Some("42")
+        );
     }
 
     #[test]

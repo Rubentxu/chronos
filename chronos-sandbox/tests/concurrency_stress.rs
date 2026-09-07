@@ -15,37 +15,55 @@ use std::time::Duration;
 /// CS1: Start 3 probe sessions sequentially, drain and stop each.
 #[tokio::test]
 async fn test_concurrent_multiple_probes_sequential_start() {
-    let fixture_add = McpSession::fixture_path("test_add")
-        .expect("test_add fixture not found");
-    let fixture_busyloop = McpSession::fixture_path("test_busyloop")
-        .expect("test_busyloop fixture not found");
-    let fixture_threads = McpSession::fixture_path("test_threads")
-        .expect("test_threads fixture not found");
+    let fixture_add = McpSession::fixture_path("test_add").expect("test_add fixture not found");
+    let fixture_busyloop =
+        McpSession::fixture_path("test_busyloop").expect("test_busyloop fixture not found");
+    let fixture_threads =
+        McpSession::fixture_path("test_threads").expect("test_threads fixture not found");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
     // Start and stop 3 probes sequentially
-    let sid1 = client.probe_start(fixture_add.to_str().unwrap()).await
+    let sid1 = client
+        .probe_start(fixture_add.to_str().unwrap())
+        .await
         .expect("probe 1 failed");
     tokio::time::sleep(Duration::from_secs(1)).await;
     let d1 = client.probe_drain(&sid1).await.expect("drain 1 failed");
     let s1 = client.probe_stop(&sid1).await.expect("stop 1 failed");
-    println!("Session 1 (add): {} drained, {} total", d1.len(), s1.total_events);
+    println!(
+        "Session 1 (add): {} drained, {} total",
+        d1.len(),
+        s1.total_events
+    );
 
-    let sid2 = client.probe_start(fixture_busyloop.to_str().unwrap()).await
+    let sid2 = client
+        .probe_start(fixture_busyloop.to_str().unwrap())
+        .await
         .expect("probe 2 failed");
     tokio::time::sleep(Duration::from_secs(1)).await;
     let d2 = client.probe_drain(&sid2).await.expect("drain 2 failed");
     let s2 = client.probe_stop(&sid2).await.expect("stop 2 failed");
-    println!("Session 2 (busyloop): {} drained, {} total", d2.len(), s2.total_events);
+    println!(
+        "Session 2 (busyloop): {} drained, {} total",
+        d2.len(),
+        s2.total_events
+    );
 
-    let sid3 = client.probe_start(fixture_threads.to_str().unwrap()).await
+    let sid3 = client
+        .probe_start(fixture_threads.to_str().unwrap())
+        .await
         .expect("probe 3 failed");
     tokio::time::sleep(Duration::from_secs(1)).await;
     let d3 = client.probe_drain(&sid3).await.expect("drain 3 failed");
     let s3 = client.probe_stop(&sid3).await.expect("stop 3 failed");
-    println!("Session 3 (threads): {} drained, {} total", d3.len(), s3.total_events);
+    println!(
+        "Session 3 (threads): {} drained, {} total",
+        d3.len(),
+        s3.total_events
+    );
 
     let total = s1.total_events + s2.total_events + s3.total_events;
     println!("✓ 3 sessions completed: {} total events", total);
@@ -58,23 +76,29 @@ async fn test_concurrent_multiple_probes_sequential_start() {
 /// CS2: Rapid start/stop cycles on same session.
 #[tokio::test]
 async fn test_concurrent_rapid_start_stop_cycles() {
-    let fixture = McpSession::fixture_path("test_add")
-        .expect("test_add fixture not found");
+    let fixture = McpSession::fixture_path("test_add").expect("test_add fixture not found");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
     // Run 5 rapid start/stop cycles
     for i in 0..5 {
-        let session_id = client.probe_start(fixture.to_str().unwrap()).await
+        let session_id = client
+            .probe_start(fixture.to_str().unwrap())
+            .await
             .expect("probe_start failed");
 
         tokio::time::sleep(Duration::from_millis(200)).await;
 
-        let _drained = client.probe_drain(&session_id).await
+        let _drained = client
+            .probe_drain(&session_id)
+            .await
             .expect("probe_drain failed");
 
-        let stop = client.probe_stop(&session_id).await
+        let stop = client
+            .probe_stop(&session_id)
+            .await
             .expect("probe_stop failed");
 
         println!("Cycle {}: {} events", i, stop.total_events);
@@ -89,19 +113,26 @@ async fn test_concurrent_rapid_start_stop_cycles() {
 /// CS3: Multiple queries on same stopped session sequentially.
 #[tokio::test]
 async fn test_concurrent_sequential_queries_same_session() {
-    let fixture = McpSession::fixture_path("test_busyloop")
-        .expect("test_busyloop fixture not found");
+    let fixture =
+        McpSession::fixture_path("test_busyloop").expect("test_busyloop fixture not found");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -138,31 +169,39 @@ async fn test_concurrent_sequential_queries_same_session() {
 /// CS4: Create many sessions and list them.
 #[tokio::test]
 async fn test_concurrent_many_sessions_list() {
-    let fixture = McpSession::fixture_path("test_add")
-        .expect("test_add fixture not found");
+    let fixture = McpSession::fixture_path("test_add").expect("test_add fixture not found");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
     // Start and immediately stop 10 sessions
     let mut session_ids = Vec::new();
 
     for i in 0..10 {
-        let session_id = client.probe_start(fixture.to_str().unwrap()).await
+        let session_id = client
+            .probe_start(fixture.to_str().unwrap())
+            .await
             .expect("probe_start failed");
 
         tokio::time::sleep(Duration::from_millis(100)).await;
 
-        let _drained = client.probe_drain(&session_id).await
+        let _drained = client
+            .probe_drain(&session_id)
+            .await
             .expect("probe_drain failed");
 
-        let stop = client.probe_stop(&session_id).await
+        let stop = client
+            .probe_stop(&session_id)
+            .await
             .expect("probe_stop failed");
 
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         // Save to persist
-        let _save = client.save_session(&session_id, &format!("session_{}", i)).await;
+        let _save = client
+            .save_session(&session_id, &format!("session_{}", i))
+            .await;
         println!("Session {}: {} events saved", i, stop.total_events);
 
         session_ids.push(session_id);
@@ -171,8 +210,7 @@ async fn test_concurrent_many_sessions_list() {
     println!("✓ Created {} sessions", session_ids.len());
 
     // List all sessions
-    let sessions = client.list_sessions().await
-        .expect("list_sessions failed");
+    let sessions = client.list_sessions().await.expect("list_sessions failed");
 
     println!("✓ list_sessions returned {} sessions", sessions.len());
     assert!(sessions.len() >= 10, "Should have at least 10 sessions");
@@ -188,28 +226,37 @@ async fn test_concurrent_many_sessions_list() {
 /// CS5: Save and load cycle for multiple sessions.
 #[tokio::test]
 async fn test_concurrent_save_load_cycle_multiple_sessions() {
-    let fixture = McpSession::fixture_path("test_busyloop")
-        .expect("test_busyloop fixture not found");
+    let fixture =
+        McpSession::fixture_path("test_busyloop").expect("test_busyloop fixture not found");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
     // Create 3 sessions
     let mut session_ids = Vec::new();
     for i in 0..3 {
-        let session_id = client.probe_start(fixture.to_str().unwrap()).await
+        let session_id = client
+            .probe_start(fixture.to_str().unwrap())
+            .await
             .expect("probe_start failed");
 
         tokio::time::sleep(Duration::from_millis(500)).await;
-        let _drained = client.probe_drain(&session_id).await
+        let _drained = client
+            .probe_drain(&session_id)
+            .await
             .expect("probe_drain failed");
-        let _stop = client.probe_stop(&session_id).await
+        let _stop = client
+            .probe_stop(&session_id)
+            .await
             .expect("probe_stop failed");
 
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         // Save immediately
-        let save = client.save_session(&session_id, &format!("concurrent_{}", i)).await
+        let save = client
+            .save_session(&session_id, &format!("concurrent_{}", i))
+            .await
             .expect("save failed");
         println!("Saved {} with {} events", session_id, save.event_count);
 
@@ -218,11 +265,12 @@ async fn test_concurrent_save_load_cycle_multiple_sessions() {
 
     // Now load them back
     for (sid, expected_count) in session_ids.iter() {
-        let loaded = client.load_session(sid).await
-            .expect("load failed");
+        let loaded = client.load_session(sid).await.expect("load failed");
         println!("Loaded {} with {} events", sid, loaded.event_count);
-        assert_eq!(loaded.event_count, *expected_count,
-            "Loaded count should match saved count");
+        assert_eq!(
+            loaded.event_count, *expected_count,
+            "Loaded count should match saved count"
+        );
     }
 
     println!("✓ Save/load cycle completed successfully");
@@ -235,16 +283,20 @@ async fn test_concurrent_save_load_cycle_multiple_sessions() {
 /// This test verifies that pattern works correctly.
 #[tokio::test]
 async fn test_concurrent_interleaved_operations() {
-    let fixture = McpSession::fixture_path("test_add")
-        .expect("test_add fixture not found");
+    let fixture = McpSession::fixture_path("test_add").expect("test_add fixture not found");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
     // Create multiple sessions and interleave their operations
-    let sid1 = client.probe_start(fixture.to_str().unwrap()).await
+    let sid1 = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
-    let sid2 = client.probe_start(fixture.to_str().unwrap()).await
+    let sid2 = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait for events
@@ -264,7 +316,9 @@ async fn test_concurrent_interleaved_operations() {
         offset: 0,
         ..Default::default()
     };
-    let events1 = client.query_events(&sid1, filter.clone()).await
+    let events1 = client
+        .query_events(&sid1, filter.clone())
+        .await
         .expect("query 1 failed");
     println!("Query sid1: {} events", events1.len());
 
@@ -272,11 +326,16 @@ async fn test_concurrent_interleaved_operations() {
     let s2 = client.probe_stop(&sid2).await.expect("stop 2 failed");
 
     // Now query second session
-    let events2 = client.query_events(&sid2, filter).await
+    let events2 = client
+        .query_events(&sid2, filter)
+        .await
         .expect("query 2 failed");
     println!("Query sid2: {} events", events2.len());
 
-    println!("✓ Interleaved operations: {} + {} total events", s1.total_events, s2.total_events);
+    println!(
+        "✓ Interleaved operations: {} + {} total events",
+        s1.total_events, s2.total_events
+    );
 
     client.shutdown().await.ok();
 }
@@ -284,37 +343,58 @@ async fn test_concurrent_interleaved_operations() {
 /// CS7: Multiple probes with different durations, verify event ordering.
 #[tokio::test]
 async fn test_concurrent_probes_different_durations() {
-    let fixture = McpSession::fixture_path("test_busyloop")
-        .expect("test_busyloop fixture not found");
+    let fixture =
+        McpSession::fixture_path("test_busyloop").expect("test_busyloop fixture not found");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
     // Start 3 probes with different wait times before drain
-    let sid1 = client.probe_start(fixture.to_str().unwrap()).await
+    let sid1 = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start 1 failed");
     tokio::time::sleep(Duration::from_millis(100)).await; // Short wait
     let drain1 = client.probe_drain(&sid1).await.expect("drain 1 failed");
     let stop1 = client.probe_stop(&sid1).await.expect("stop 1 failed");
-    println!("Short wait: {} drained, {} total", drain1.len(), stop1.total_events);
+    println!(
+        "Short wait: {} drained, {} total",
+        drain1.len(),
+        stop1.total_events
+    );
 
-    let sid2 = client.probe_start(fixture.to_str().unwrap()).await
+    let sid2 = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start 2 failed");
     tokio::time::sleep(Duration::from_millis(500)).await; // Medium wait
     let drain2 = client.probe_drain(&sid2).await.expect("drain 2 failed");
     let stop2 = client.probe_stop(&sid2).await.expect("stop 2 failed");
-    println!("Medium wait: {} drained, {} total", drain2.len(), stop2.total_events);
+    println!(
+        "Medium wait: {} drained, {} total",
+        drain2.len(),
+        stop2.total_events
+    );
 
-    let sid3 = client.probe_start(fixture.to_str().unwrap()).await
+    let sid3 = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start 3 failed");
     tokio::time::sleep(Duration::from_secs(1)).await; // Long wait
     let drain3 = client.probe_drain(&sid3).await.expect("drain 3 failed");
     let stop3 = client.probe_stop(&sid3).await.expect("stop 3 failed");
-    println!("Long wait: {} drained, {} total", drain3.len(), stop3.total_events);
+    println!(
+        "Long wait: {} drained, {} total",
+        drain3.len(),
+        stop3.total_events
+    );
 
     // Longer waits should generally capture more events
-    assert!(drain3.len() >= drain1.len(),
-        "Longer wait should capture >= events than shorter wait");
+    assert!(
+        drain3.len() >= drain1.len(),
+        "Longer wait should capture >= events than shorter wait"
+    );
 
     println!("✓ Probes with different durations completed successfully");
 
@@ -324,19 +404,26 @@ async fn test_concurrent_probes_different_durations() {
 /// CS8: High-frequency sequential queries to stress test.
 #[tokio::test]
 async fn test_concurrent_high_frequency_queries() {
-    let fixture = McpSession::fixture_path("test_busyloop")
-        .expect("test_busyloop fixture not found");
+    let fixture =
+        McpSession::fixture_path("test_busyloop").expect("test_busyloop fixture not found");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
-    let _stop = client.probe_stop(&session_id).await
+    let _stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -358,7 +445,10 @@ async fn test_concurrent_high_frequency_queries() {
         }
     }
 
-    println!("✓ High-frequency query test: {} success, {} failures", success, failures);
+    println!(
+        "✓ High-frequency query test: {} success, {} failures",
+        success, failures
+    );
     assert!(success >= 95, "Should have at least 95% success rate");
 
     client.shutdown().await.ok();
@@ -367,40 +457,55 @@ async fn test_concurrent_high_frequency_queries() {
 /// CS9: Session lifecycle stress - create, drain, stop, save, delete, repeat.
 #[tokio::test]
 async fn test_concurrent_session_lifecycle_stress() {
-    let fixture = McpSession::fixture_path("test_busyloop")
-        .expect("test_busyloop fixture not found");
+    let fixture =
+        McpSession::fixture_path("test_busyloop").expect("test_busyloop fixture not found");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
     for i in 0..5 {
-        let session_id = client.probe_start(fixture.to_str().unwrap()).await
+        let session_id = client
+            .probe_start(fixture.to_str().unwrap())
+            .await
             .expect("probe_start failed");
 
         tokio::time::sleep(Duration::from_millis(300)).await;
 
-        let drained = client.probe_drain(&session_id).await
-            .expect("drain failed");
+        let drained = client.probe_drain(&session_id).await.expect("drain failed");
 
-        let stop = client.probe_stop(&session_id).await
+        let stop = client
+            .probe_stop(&session_id)
+            .await
             .expect("probe_stop failed");
 
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         // Save session
-        let saved = client.save_session(&session_id, &format!("lifecycle_{}", i)).await
+        let saved = client
+            .save_session(&session_id, &format!("lifecycle_{}", i))
+            .await
             .expect("save failed");
 
-        println!("Cycle {}: {} drained, {} stop, {} saved",
-            i, drained.len(), stop.total_events, saved.event_count);
+        println!(
+            "Cycle {}: {} drained, {} stop, {} saved",
+            i,
+            drained.len(),
+            stop.total_events,
+            saved.event_count
+        );
 
         // Load it back
-        let loaded = client.load_session(&session_id).await
-            .expect("load failed");
-        assert_eq!(loaded.event_count, saved.event_count, "Loaded should match saved");
+        let loaded = client.load_session(&session_id).await.expect("load failed");
+        assert_eq!(
+            loaded.event_count, saved.event_count,
+            "Loaded should match saved"
+        );
 
         // Delete it
-        client.delete_session(&session_id).await
+        client
+            .delete_session(&session_id)
+            .await
             .expect("delete failed");
 
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -414,45 +519,54 @@ async fn test_concurrent_session_lifecycle_stress() {
 /// CS10: Rapid fire tool calls - mix of different operations.
 #[tokio::test]
 async fn test_concurrent_rapid_fire_mixed_operations() {
-    let fixture = McpSession::fixture_path("test_add")
-        .expect("test_add fixture not found");
+    let fixture = McpSession::fixture_path("test_add").expect("test_add fixture not found");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(1)).await;
 
     // Mix of operations
-    let operations = ["probe_drain", "query_events", "list_threads", "get_execution_summary"];
+    let operations = [
+        "probe_drain",
+        "query_events",
+        "list_threads",
+        "get_execution_summary",
+    ];
 
     for i in 0..20 {
         let op = operations[i % operations.len()];
         let result = match op {
-            "probe_drain" => {
-                client.probe_drain(&session_id).await
-                    .map(|r| format!("{} events", r.len()))
-            }
+            "probe_drain" => client
+                .probe_drain(&session_id)
+                .await
+                .map(|r| format!("{} events", r.len())),
             "query_events" => {
                 let filter = chronos_sandbox::client::types::QueryFilter {
                     limit: 5,
                     offset: 0,
                     ..Default::default()
                 };
-                client.query_events(&session_id, filter).await
+                client
+                    .query_events(&session_id, filter)
+                    .await
                     .map(|r| format!("{} events", r.len()))
             }
-            "list_threads" => {
-                client.list_threads(&session_id).await
-                    .map(|r| format!("{} threads", r.len()))
-            }
-            "get_execution_summary" => {
-                client.get_execution_summary(&session_id).await
-                    .map(|r| format!("{} total events", r.total_events))
-            }
-            _ => unreachable!()
+            "list_threads" => client
+                .list_threads(&session_id)
+                .await
+                .map(|r| format!("{} threads", r.len())),
+            "get_execution_summary" => client
+                .get_execution_summary(&session_id)
+                .await
+                .map(|r| format!("{} total events", r.total_events)),
+            _ => unreachable!(),
         };
 
         match result {
@@ -467,7 +581,9 @@ async fn test_concurrent_rapid_fire_mixed_operations() {
         }
     }
 
-    let _stop = client.probe_stop(&session_id).await
+    let _stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     println!("✓ Rapid fire mixed operations completed");

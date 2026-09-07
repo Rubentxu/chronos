@@ -194,12 +194,7 @@ impl PtraceTracer {
                     // Close extra inherited fds to prevent pipe leaks.
                     // Try close_range (Linux 5.9+) first, fall back to getrlimit+loop.
                     let close_result = unsafe {
-                        nix::libc::syscall(
-                            nix::libc::SYS_close_range,
-                            3i32,
-                            u32::MAX,
-                            0u32,
-                        )
+                        nix::libc::syscall(nix::libc::SYS_close_range, 3i32, u32::MAX, 0u32)
                     };
                     if close_result != 0 {
                         // Fallback: close up to RLIMIT_NOFILE
@@ -270,12 +265,14 @@ impl PtraceTracer {
                 // SIGTRAP was already reaped. Use PTRACE_SYSCALL if trace_syscalls=true
                 // so the child stops at the next syscall entry/exit.
                 if self.config.trace_syscalls {
-                    ptrace::syscall(child, None)
-                        .map_err(|e| TraceError::CaptureFailed(format!("PTRACE_SYSCALL failed: {}", e)))?;
+                    ptrace::syscall(child, None).map_err(|e| {
+                        TraceError::CaptureFailed(format!("PTRACE_SYSCALL failed: {}", e))
+                    })?;
                     debug!("Child {} resumed with PTRACE_SYSCALL", child);
                 } else {
-                    ptrace::cont(child, None)
-                        .map_err(|e| TraceError::CaptureFailed(format!("PTRACE_CONT failed: {}", e)))?;
+                    ptrace::cont(child, None).map_err(|e| {
+                        TraceError::CaptureFailed(format!("PTRACE_CONT failed: {}", e))
+                    })?;
                     debug!("Child {} resumed with PTRACE_CONT", child);
                 }
 
@@ -368,7 +365,10 @@ impl PtraceTracer {
                     return Ok(None);
                 }
                 Err(e) => {
-                    return Err(TraceError::CaptureFailed(format!("waitpid(-1, __WALL) error: {}", e)));
+                    return Err(TraceError::CaptureFailed(format!(
+                        "waitpid(-1, __WALL) error: {}",
+                        e
+                    )));
                 }
             };
             return self.process_wait_status_impl(status);
@@ -424,7 +424,10 @@ impl PtraceTracer {
     }
 
     /// Process a wait status and convert it to a PtraceEvent.
-    fn process_wait_status_impl(&mut self, status: nix::sys::wait::WaitStatus) -> Result<Option<PtraceEvent>, TraceError> {
+    fn process_wait_status_impl(
+        &mut self,
+        status: nix::sys::wait::WaitStatus,
+    ) -> Result<Option<PtraceEvent>, TraceError> {
         let event = match status {
             WaitStatus::Stopped(pid, sig) => {
                 debug!("PID {} stopped by {:?}", pid, sig);
@@ -488,7 +491,10 @@ impl PtraceTracer {
             }
 
             WaitStatus::PtraceEvent(pid, _sig, event_code) => {
-                debug!("PID {} ptrace event {} (clone/fork/vfork/exec)", pid, event_code);
+                debug!(
+                    "PID {} ptrace event {} (clone/fork/vfork/exec)",
+                    pid, event_code
+                );
                 let new_pid = if matches!(
                     event_code,
                     nix::libc::PTRACE_EVENT_CLONE
@@ -499,13 +505,19 @@ impl PtraceTracer {
                         Ok(data) => {
                             let child_pid = data as i32;
                             if child_pid > 0 {
-                                debug!("PID {} created new child PID {} (event {})", pid, child_pid, event_code);
+                                debug!(
+                                    "PID {} created new child PID {} (event {})",
+                                    pid, child_pid, event_code
+                                );
                                 self.traced_pids.insert(child_pid);
 
                                 // Set ptrace options on the new child so we get its events
                                 let child_nix_pid = Pid::from_raw(child_pid);
                                 if let Err(e) = self.setup_ptrace_options(child_nix_pid) {
-                                    warn!("Failed to set ptrace options on child PID {}: {}", child_pid, e);
+                                    warn!(
+                                        "Failed to set ptrace options on child PID {}: {}",
+                                        child_pid, e
+                                    );
                                 }
 
                                 // Resume the new child — it's born in a stopped state.
@@ -634,7 +646,10 @@ impl PtraceTracer {
                 self.perf_handles.push(handle);
             }
             Err(e) => {
-                warn!("Failed to open cycle counter (perf_event_open unavailable): {}", e);
+                warn!(
+                    "Failed to open cycle counter (perf_event_open unavailable): {}",
+                    e
+                );
                 // Continue without counters - graceful degradation
             }
         }
@@ -661,32 +676,28 @@ impl PtraceTracer {
         pid: Pid,
         config: super::perf::PerfCounterConfig,
     ) -> Result<super::perf::PerfCounterHandle, TraceError> {
-        use super::perf::counters::{perf_event_open, PERF_HW_BRANCH_MISSES, PERF_HW_CACHE_MISSES,
-            PERF_HW_CPU_CYCLES, PERF_TYPE_HARDWARE, PERF_TYPE_SOFTWARE, PERF_SW_CPU_CLOCK, PerfCounterType};
+        use super::perf::counters::{
+            perf_event_open, PerfCounterType, PERF_HW_BRANCH_MISSES, PERF_HW_CACHE_MISSES,
+            PERF_HW_CPU_CYCLES, PERF_SW_CPU_CLOCK, PERF_TYPE_HARDWARE, PERF_TYPE_SOFTWARE,
+        };
 
         let (type_, config_val) = match config.counter_type {
-            PerfCounterType::Cycle => (
-                PERF_TYPE_HARDWARE,
-                PERF_HW_CPU_CYCLES,
-            ),
+            PerfCounterType::Cycle => (PERF_TYPE_HARDWARE, PERF_HW_CPU_CYCLES),
             PerfCounterType::Instruction => (
                 PERF_TYPE_SOFTWARE,
                 PERF_SW_CPU_CLOCK, // Software clock for instruction counting approximation
             ),
-            PerfCounterType::CacheMiss => (
-                PERF_TYPE_HARDWARE,
-                PERF_HW_CACHE_MISSES,
-            ),
-            PerfCounterType::BranchMiss => (
-                PERF_TYPE_HARDWARE,
-                PERF_HW_BRANCH_MISSES,
-            ),
+            PerfCounterType::CacheMiss => (PERF_TYPE_HARDWARE, PERF_HW_CACHE_MISSES),
+            PerfCounterType::BranchMiss => (PERF_TYPE_HARDWARE, PERF_HW_BRANCH_MISSES),
         };
 
         let fd = perf_event_open(type_, config_val, pid.as_raw(), -1, None)
             .map_err(|e| TraceError::CaptureFailed(format!("perf_event_open failed: {}", e)))?;
 
-        Ok(super::perf::PerfCounterHandle::from_fd(fd, config.counter_type))
+        Ok(super::perf::PerfCounterHandle::from_fd(
+            fd,
+            config.counter_type,
+        ))
     }
 
     /// Read all performance counters and return a snapshot.
@@ -702,13 +713,11 @@ impl PtraceTracer {
 
         for handle in &self.perf_handles {
             match handle.read() {
-                Ok(value) => {
-                    match handle.counter_type() {
-                        super::perf::PerfCounterType::Cycle => cycles = Some(value),
-                        super::perf::PerfCounterType::Instruction => instructions = Some(value),
-                        _ => {}
-                    }
-                }
+                Ok(value) => match handle.counter_type() {
+                    super::perf::PerfCounterType::Cycle => cycles = Some(value),
+                    super::perf::PerfCounterType::Instruction => instructions = Some(value),
+                    _ => {}
+                },
                 Err(e) => {
                     debug!("Failed to read perf counter: {}", e);
                 }
@@ -738,8 +747,9 @@ impl PtraceTracer {
     /// Kill a traced process.
     pub fn kill(&self, pid: i32) -> Result<(), TraceError> {
         let nix_pid = Pid::from_raw(pid);
-        nix::sys::signal::kill(nix_pid, nix::sys::signal::Signal::SIGKILL)
-            .map_err(|e| TraceError::CaptureFailed(format!("Failed to SIGKILL PID {}: {}", pid, e)))?;
+        nix::sys::signal::kill(nix_pid, nix::sys::signal::Signal::SIGKILL).map_err(|e| {
+            TraceError::CaptureFailed(format!("Failed to SIGKILL PID {}: {}", pid, e))
+        })?;
         // Reap the process to prevent zombie
         let _ = nix::sys::wait::waitpid(nix_pid, Some(nix::sys::wait::WaitPidFlag::WNOHANG));
         Ok(())

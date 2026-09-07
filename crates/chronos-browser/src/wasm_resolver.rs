@@ -3,7 +3,9 @@
 //! Translates WASM TraceEvents into high-level SemanticEvents following the
 //! pattern established in chronos-js/src/semantic_resolver.rs.
 
-use chronos_domain::semantic::{ResolveContext, SemanticEvent, SemanticEventKind, SemanticResolver};
+use chronos_domain::semantic::{
+    ResolveContext, SemanticEvent, SemanticEventKind, SemanticResolver,
+};
 use chronos_domain::trace::{EventData, EventType, Language, TraceEvent, WasmEventKind};
 
 /// SemanticResolver for WebAssembly that enriches WASM frame events.
@@ -41,7 +43,14 @@ impl SemanticResolver for WasmSemanticResolver {
                 module_url,
                 locals,
                 event_kind,
-            } => (function_index, function_name, body_offset, module_url, locals, event_kind),
+            } => (
+                function_index,
+                function_name,
+                body_offset,
+                module_url,
+                locals,
+                event_kind,
+            ),
             _ => return None,
         };
 
@@ -108,11 +117,7 @@ impl SemanticResolver for WasmSemanticResolver {
                     func_name,
                     module_url.as_deref().unwrap_or("unknown")
                 ),
-                stack_trace: vec![format!(
-                    "{} at offset {}",
-                    func_name,
-                    _body_offset
-                )],
+                stack_trace: vec![format!("{} at offset {}", func_name, _body_offset)],
             },
             WasmEventKind::Other(tag) => SemanticEventKind::Generic {
                 summary: format!(
@@ -123,11 +128,7 @@ impl SemanticResolver for WasmSemanticResolver {
                 ),
             },
             WasmEventKind::Step => SemanticEventKind::Generic {
-                summary: format!(
-                    "WASM step in {} at offset {}",
-                    func_name,
-                    _body_offset
-                ),
+                summary: format!("WASM step in {} at offset {}", func_name, _body_offset),
             },
         };
 
@@ -173,10 +174,13 @@ mod tests {
         let resolver = WasmSemanticResolver::new();
         let event = make_wasm_frame(0, Some("add".to_string()), 0, WasmEventKind::Entry);
 
-        let semantic = resolver.resolve(&event, &ResolveContext {
-            pid: 1,
-            binary_path: None,
-        });
+        let semantic = resolver.resolve(
+            &event,
+            &ResolveContext {
+                pid: 1,
+                binary_path: None,
+            },
+        );
 
         assert!(semantic.is_some());
         let semantic = semantic.unwrap();
@@ -193,10 +197,13 @@ mod tests {
         let resolver = WasmSemanticResolver::new();
         let event = make_wasm_frame(0, Some("add".to_string()), 0, WasmEventKind::Return);
 
-        let semantic = resolver.resolve(&event, &ResolveContext {
-            pid: 1,
-            binary_path: None,
-        });
+        let semantic = resolver.resolve(
+            &event,
+            &ResolveContext {
+                pid: 1,
+                binary_path: None,
+            },
+        );
 
         assert!(semantic.is_some());
         let semantic = semantic.unwrap();
@@ -213,10 +220,13 @@ mod tests {
         let resolver = WasmSemanticResolver::new();
         let event = make_wasm_frame(0, Some("add".to_string()), 0, WasmEventKind::Exception);
 
-        let semantic = resolver.resolve(&event, &ResolveContext {
-            pid: 1,
-            binary_path: None,
-        });
+        let semantic = resolver.resolve(
+            &event,
+            &ResolveContext {
+                pid: 1,
+                binary_path: None,
+            },
+        );
 
         assert!(semantic.is_some());
         let semantic = semantic.unwrap();
@@ -243,10 +253,13 @@ mod tests {
         let resolver = WasmSemanticResolver::new();
         let event = make_wasm_frame(5, None, 100, WasmEventKind::Breakpoint);
 
-        let semantic = resolver.resolve(&event, &ResolveContext {
-            pid: 1,
-            binary_path: None,
-        });
+        let semantic = resolver.resolve(
+            &event,
+            &ResolveContext {
+                pid: 1,
+                binary_path: None,
+            },
+        );
 
         assert!(semantic.is_some());
         let semantic = semantic.unwrap();
@@ -265,10 +278,13 @@ mod tests {
         let resolver = WasmSemanticResolver::new();
         let event = TraceEvent::function_entry(1, 1000, 1, "main", 0x1000);
 
-        let semantic = resolver.resolve(&event, &ResolveContext {
-            pid: 1,
-            binary_path: None,
-        });
+        let semantic = resolver.resolve(
+            &event,
+            &ResolveContext {
+                pid: 1,
+                binary_path: None,
+            },
+        );
 
         assert!(semantic.is_none());
     }

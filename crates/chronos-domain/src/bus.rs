@@ -179,7 +179,9 @@ impl EventBus {
         let result: Vec<SemanticEvent> = ring.drain(..drain_count).collect();
 
         if !result.is_empty() {
-            self.metrics.current_len.fetch_sub(result.len(), Ordering::Relaxed);
+            self.metrics
+                .current_len
+                .fetch_sub(result.len(), Ordering::Relaxed);
         }
 
         result
@@ -198,7 +200,9 @@ impl EventBus {
         drop(ring);
 
         if cleared > 0 {
-            self.metrics.current_len.fetch_sub(cleared, Ordering::Relaxed);
+            self.metrics
+                .current_len
+                .fetch_sub(cleared, Ordering::Relaxed);
         }
 
         // Clear raw ring
@@ -209,18 +213,12 @@ impl EventBus {
 
     /// Get the current number of semantic events in the buffer.
     pub fn len(&self) -> usize {
-        self.semantic_ring
-            .read()
-            .map(|e| e.len())
-            .unwrap_or(0)
+        self.semantic_ring.read().map(|e| e.len()).unwrap_or(0)
     }
 
     /// Get the current number of raw trace events in the buffer.
     pub fn raw_len(&self) -> usize {
-        self.raw_ring
-            .read()
-            .map(|e| e.len())
-            .unwrap_or(0)
+        self.raw_ring.read().map(|e| e.len()).unwrap_or(0)
     }
 
     /// Check if the buffer is empty.

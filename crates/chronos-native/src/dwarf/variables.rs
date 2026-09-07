@@ -228,7 +228,8 @@ fn find_location_bytes_in_cu<R: gimli::Reader<Offset = usize>>(
         // If we're inside the function, look for the variable
         if found_function_depth.is_some() {
             let tag = entry.tag();
-            let is_variable = tag == gimli::DW_TAG_variable || tag == gimli::DW_TAG_formal_parameter;
+            let is_variable =
+                tag == gimli::DW_TAG_variable || tag == gimli::DW_TAG_formal_parameter;
 
             if is_variable {
                 // Check if this is our variable

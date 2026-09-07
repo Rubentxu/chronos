@@ -91,11 +91,7 @@ pub async fn deliver_webhook_with_retry(
                 );
             }
             Err(e) => {
-                tracing::warn!(
-                    "Webhook POST failed on attempt {}: {}",
-                    attempt + 1,
-                    e
-                );
+                tracing::warn!("Webhook POST failed on attempt {}: {}", attempt + 1, e);
             }
         }
 
@@ -119,11 +115,7 @@ pub async fn deliver_webhook_with_retry(
 /// * `url` - The callback URL to POST to
 /// * `tripwire_id` - ID of the tripwire that fired
 /// * `condition` - Description of the condition
-pub fn spawn_webhook_delivery(
-    url: url::Url,
-    tripwire_id: String,
-    condition: String,
-) {
+pub fn spawn_webhook_delivery(url: url::Url, tripwire_id: String, condition: String) {
     tokio::spawn(async move {
         if let Err(e) = deliver_webhook_with_retry(url, tripwire_id, condition).await {
             tracing::error!("Async webhook delivery failed: {}", e);
@@ -137,10 +129,8 @@ mod tests {
 
     #[test]
     fn test_webhook_payload_creation() {
-        let payload = WebhookPayload::from_fired(
-            "tripwire-42".to_string(),
-            "Signal(11)".to_string(),
-        );
+        let payload =
+            WebhookPayload::from_fired("tripwire-42".to_string(), "Signal(11)".to_string());
         assert_eq!(payload.tripwire_id, "tripwire-42");
         assert_eq!(payload.condition, "Signal(11)");
         assert!(payload.current_value.is_none());

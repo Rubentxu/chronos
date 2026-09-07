@@ -521,16 +521,9 @@ impl QueryEngine {
     ///
     /// Uses variables captured at the frame event to resolve variable names in the expression.
     /// Returns the result of evaluating the expression, or an error if evaluation fails.
-    pub fn evaluate_expression(
-        &self,
-        event_id: u64,
-        expression: &str,
-    ) -> Result<f64, EvalError> {
+    pub fn evaluate_expression(&self, event_id: u64, expression: &str) -> Result<f64, EvalError> {
         let vars = self.get_variables_at_event(event_id);
-        let locals: HashMap<String, String> = vars
-            .into_iter()
-            .map(|v| (v.name, v.value))
-            .collect();
+        let locals: HashMap<String, String> = vars.into_iter().map(|v| (v.name, v.value)).collect();
         let evaluator = ExprEvaluator::new(locals);
         evaluator.evaluate(expression)
     }
@@ -1556,11 +1549,23 @@ mod tests {
     }
 
     fn var_x() -> chronos_domain::VariableInfo {
-        chronos_domain::VariableInfo::new("x", "42", "i32", 0x7FFE1000, chronos_domain::VariableScope::Local)
+        chronos_domain::VariableInfo::new(
+            "x",
+            "42",
+            "i32",
+            0x7FFE1000,
+            chronos_domain::VariableScope::Local,
+        )
     }
 
     fn var_count() -> chronos_domain::VariableInfo {
-        chronos_domain::VariableInfo::new("count", "100", "i64", 0x7FFE2000, chronos_domain::VariableScope::Local)
+        chronos_domain::VariableInfo::new(
+            "count",
+            "100",
+            "i64",
+            0x7FFE2000,
+            chronos_domain::VariableScope::Local,
+        )
     }
 
     #[test]
@@ -1580,7 +1585,8 @@ mod tests {
     #[test]
     fn test_get_variables_python_frame_empty_locals() {
         // PythonFrame with None locals
-        let event = TraceEvent::python_call(0, 100, 1, "my_module.my_func", "/path/to/script.py", 10);
+        let event =
+            TraceEvent::python_call(0, 100, 1, "my_module.my_func", "/path/to/script.py", 10);
         let engine = QueryEngine::new(vec![event]);
 
         let vars = engine.get_variables_at_event(0);
@@ -1644,7 +1650,13 @@ mod tests {
 
     #[test]
     fn test_get_variables_variable_write() {
-        let var_info = chronos_domain::VariableInfo::new("result", "99", "i32", 0x7FFE3000, chronos_domain::VariableScope::Local);
+        let var_info = chronos_domain::VariableInfo::new(
+            "result",
+            "99",
+            "i32",
+            0x7FFE3000,
+            chronos_domain::VariableScope::Local,
+        );
         let events = vec![make_variable_write_event(0, 100, 1, var_info.clone())];
         let engine = QueryEngine::new(events);
 
@@ -1657,7 +1669,14 @@ mod tests {
     #[test]
     fn test_get_variables_non_frame_empty() {
         // Regular Function event (not a frame with locals)
-        let events = vec![make_event(0, 100, 1, EventType::FunctionEntry, "main", 0x1000)];
+        let events = vec![make_event(
+            0,
+            100,
+            1,
+            EventType::FunctionEntry,
+            "main",
+            0x1000,
+        )];
         let engine = QueryEngine::new(events);
 
         let vars = engine.get_variables_at_event(0);
@@ -1735,9 +1754,14 @@ mod tests {
 
     #[test]
     fn test_get_memory_not_found() {
-        let events = vec![
-            make_memory_event(1, 1000, 1, 0x7FFF0000, 4, vec![0x01, 0x02, 0x03, 0x04]),
-        ];
+        let events = vec![make_memory_event(
+            1,
+            1000,
+            1,
+            0x7FFF0000,
+            4,
+            vec![0x01, 0x02, 0x03, 0x04],
+        )];
         let engine = QueryEngine::new(events);
 
         // Address doesn't exist
@@ -1780,9 +1804,14 @@ mod tests {
     #[test]
     fn test_get_memory_before_first_write() {
         let addr = 0x7FFF0000u64;
-        let events = vec![
-            make_memory_event(1, 1000, 1, addr, 4, vec![0x01, 0x02, 0x03, 0x04]),
-        ];
+        let events = vec![make_memory_event(
+            1,
+            1000,
+            1,
+            addr,
+            4,
+            vec![0x01, 0x02, 0x03, 0x04],
+        )];
         let engine = QueryEngine::new(events);
 
         // Get before first write - should return None

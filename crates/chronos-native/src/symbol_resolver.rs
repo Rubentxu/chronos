@@ -143,20 +143,21 @@ impl SymbolResolver {
         for symbol in obj.symbols() {
             if let Some(info) = Self::extract_symbol_info(&symbol) {
                 resolver.symbols.insert(info.address, info.clone());
-                resolver.name_to_addr.insert(info.name.clone(), info.address);
+                resolver
+                    .name_to_addr
+                    .insert(info.name.clone(), info.address);
             }
         }
 
         // Also load dynamic symbols
         for symbol in obj.dynamic_symbols() {
             if let Some(info) = Self::extract_symbol_info(&symbol) {
-                resolver
-                    .symbols
-                    .entry(info.address)
-                    .or_insert_with(|| {
-                        resolver.name_to_addr.insert(info.name.clone(), info.address);
-                        info
-                    });
+                resolver.symbols.entry(info.address).or_insert_with(|| {
+                    resolver
+                        .name_to_addr
+                        .insert(info.name.clone(), info.address);
+                    info
+                });
             }
         }
 
@@ -613,7 +614,10 @@ mod tests {
         let data = b"this is not an ELF file";
         let result = SymbolResolver::from_bytes(data);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), SymbolResolverError::ParseError(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            SymbolResolverError::ParseError(_)
+        ));
     }
 
     #[test]
@@ -622,20 +626,26 @@ mod tests {
         // Manually insert via load_from_binary-like population
         resolver.name_to_addr.insert("main".to_string(), 0x1000);
         resolver.name_to_addr.insert("_start".to_string(), 0x2000);
-        resolver.symbols.insert(0x1000, SymbolInfo {
-            name: "main".to_string(),
-            address: 0x1000,
-            size: 50,
-            file: None,
-            line: None,
-        });
-        resolver.symbols.insert(0x2000, SymbolInfo {
-            name: "_start".to_string(),
-            address: 0x2000,
-            size: 100,
-            file: None,
-            line: None,
-        });
+        resolver.symbols.insert(
+            0x1000,
+            SymbolInfo {
+                name: "main".to_string(),
+                address: 0x1000,
+                size: 50,
+                file: None,
+                line: None,
+            },
+        );
+        resolver.symbols.insert(
+            0x2000,
+            SymbolInfo {
+                name: "_start".to_string(),
+                address: 0x2000,
+                size: 100,
+                file: None,
+                line: None,
+            },
+        );
 
         // Exact match
         assert_eq!(resolver.resolve_by_name("main"), Some(0x1000));
@@ -653,13 +663,16 @@ mod tests {
         let mut resolver = SymbolResolver::new();
         // Insert symbol with underscore prefix (like C symbols)
         resolver.name_to_addr.insert("_my_func".to_string(), 0x1000);
-        resolver.symbols.insert(0x1000, SymbolInfo {
-            name: "_my_func".to_string(),
-            address: 0x1000,
-            size: 50,
-            file: None,
-            line: None,
-        });
+        resolver.symbols.insert(
+            0x1000,
+            SymbolInfo {
+                name: "_my_func".to_string(),
+                address: 0x1000,
+                size: 50,
+                file: None,
+                line: None,
+            },
+        );
 
         // Exact match with underscore
         assert_eq!(resolver.resolve_by_name("_my_func"), Some(0x1000));

@@ -24,13 +24,14 @@
 //!   (as empty placeholders) until completion, at which point they're added to
 //!   `engines` and removed from the map.
 
+use chronos_browser::BrowserAdapter;
 use chronos_domain::semantic::SemanticEvent;
+use chronos_domain::tripwire::{TripwireCondition, TripwireId, TripwireManager};
 use chronos_domain::{
     query::{CausalityQuery, PerfQuery, PerfSortBy, RaceDetectionQuery},
-    CaptureConfig, CaptureSession, EventData, EventType, Language, ProbeBackend, TraceEvent, TraceQuery,
+    CaptureConfig, CaptureSession, EventData, EventType, Language, ProbeBackend, TraceEvent,
+    TraceQuery,
 };
-use chronos_domain::tripwire::{TripwireCondition, TripwireId, TripwireManager};
-use chronos_browser::BrowserAdapter;
 use chronos_index::builder::IndexBuilder;
 use chronos_native::probe_backend::NativeProbeBackend;
 use chronos_query::QueryEngine;
@@ -327,7 +328,6 @@ pub struct DeleteSessionParams {
     pub session_id: String,
 }
 
-
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DropSessionParams {
     /// Session ID to drop from memory (without touching persistent storage).
@@ -460,9 +460,7 @@ impl TripwireConditionType {
             TripwireConditionType::VariableName { name } => {
                 TripwireCondition::VariableName { name }
             }
-            TripwireConditionType::Signal { numbers } => {
-                TripwireCondition::Signal { numbers }
-            }
+            TripwireConditionType::Signal { numbers } => TripwireCondition::Signal { numbers },
         }
     }
 }
@@ -738,7 +736,12 @@ impl ChronosServer {
         }
     }
 
-    async fn build_and_store_engine(&self, session_id: &str, events: Vec<TraceEvent>, language: Language) {
+    async fn build_and_store_engine(
+        &self,
+        session_id: &str,
+        events: Vec<TraceEvent>,
+        language: Language,
+    ) {
         // Filter out internal/noisy events before indexing:
         // - EventType::Custom with EventData::Registers → ptrace register snapshots (infrastructure noise)
         // - EventType::Unknown → unclassified ptrace stops
@@ -747,7 +750,10 @@ impl ChronosServer {
             .into_iter()
             .filter(|e| {
                 // Keep everything except raw register snapshots and unknowns
-                !matches!((&e.event_type, &e.data), (EventType::Custom, EventData::Registers(_)) | (EventType::Unknown, _))
+                !matches!(
+                    (&e.event_type, &e.data),
+                    (EventType::Custom, EventData::Registers(_)) | (EventType::Unknown, _)
+                )
             })
             .collect();
 
@@ -762,7 +768,10 @@ impl ChronosServer {
         // Store engine and language for later use
         let mut engines = self.engines.lock().await;
         let mut session_languages = self.session_languages.lock().await;
-        info!("Built query engine for session {} (language: {:?})", session_id, language);
+        info!(
+            "Built query engine for session {} (language: {:?})",
+            session_id, language
+        );
         engines.insert(session_id.to_string(), engine);
         session_languages.insert(session_id.to_string(), language);
 
@@ -811,7 +820,6 @@ fn text_content(text: impl Into<String>) -> Vec<Content> {
 
 #[rmcp::tool_router]
 impl ChronosServer {
-
     #[tool(
         name = "query_events",
         description = "Query trace events with filters. Returns paginated results."
@@ -1730,7 +1738,6 @@ impl ChronosServer {
         }
     }
 
-
     // ========================================================================
     // SF6 — Inspection Tools (T5–T7)
     // ========================================================================
@@ -1748,28 +1755,26 @@ impl ChronosServer {
         // Use QueryEngine to evaluate the arithmetic expression
         let engines = self.engines.lock().await;
         match engines.get(&params.session_id) {
-            Some(engine) => {
-                match engine.evaluate_expression(params.event_id, &params.expression) {
-                    Ok(result) => {
-                        let output = serde_json::json!({
-                            "event_id": params.event_id,
-                            "expression": params.expression,
-                            "result": result,
-                        });
-                        Ok(CallToolResult::success(json_content(&output)))
-                    }
-                    Err(e) => {
-                        let output = serde_json::json!({
-                            "event_id": params.event_id,
-                            "expression": params.expression,
-                            "error": format!("{:?}", e),
-                        });
-                        Ok(CallToolResult::success(vec![Content::text(
-                            serde_json::to_string_pretty(&output).unwrap_or_default(),
-                        )]))
-                    }
+            Some(engine) => match engine.evaluate_expression(params.event_id, &params.expression) {
+                Ok(result) => {
+                    let output = serde_json::json!({
+                        "event_id": params.event_id,
+                        "expression": params.expression,
+                        "result": result,
+                    });
+                    Ok(CallToolResult::success(json_content(&output)))
                 }
-            }
+                Err(e) => {
+                    let output = serde_json::json!({
+                        "event_id": params.event_id,
+                        "expression": params.expression,
+                        "error": format!("{:?}", e),
+                    });
+                    Ok(CallToolResult::success(vec![Content::text(
+                        serde_json::to_string_pretty(&output).unwrap_or_default(),
+                    )]))
+                }
+            },
             None => Ok(CallToolResult::error(text_content(format!(
                 "Session '{}' not found",
                 params.session_id
@@ -1816,31 +1821,29 @@ impl ChronosServer {
         let engines = self.engines.lock().await;
 
         match engines.get(&params.session_id) {
-            Some(engine) => {
-                match engine.get_memory_at(params.address, params.timestamp_ns) {
-                    Some(mem) => {
-                        let hex = mem
-                            .data
-                            .iter()
-                            .map(|b| format!("{:02x}", b))
-                            .collect::<Vec<_>>()
-                            .join("");
-                        let output = serde_json::json!({
-                            "address": format!("0x{:x}", mem.address),
-                            "timestamp_ns": mem.timestamp_ns,
-                            "event_id": mem.event_id,
-                            "size": mem.size,
-                            "data": mem.data,
-                            "hex": hex,
-                        });
-                        Ok(CallToolResult::success(json_content(&output)))
-                    }
-                    None => Ok(CallToolResult::error(text_content(format!(
-                        "No memory event found at address 0x{:x} before timestamp {}",
-                        params.address, params.timestamp_ns
-                    )))),
+            Some(engine) => match engine.get_memory_at(params.address, params.timestamp_ns) {
+                Some(mem) => {
+                    let hex = mem
+                        .data
+                        .iter()
+                        .map(|b| format!("{:02x}", b))
+                        .collect::<Vec<_>>()
+                        .join("");
+                    let output = serde_json::json!({
+                        "address": format!("0x{:x}", mem.address),
+                        "timestamp_ns": mem.timestamp_ns,
+                        "event_id": mem.event_id,
+                        "size": mem.size,
+                        "data": mem.data,
+                        "hex": hex,
+                    });
+                    Ok(CallToolResult::success(json_content(&output)))
                 }
-            }
+                None => Ok(CallToolResult::error(text_content(format!(
+                    "No memory event found at address 0x{:x} before timestamp {}",
+                    params.address, params.timestamp_ns
+                )))),
+            },
             None => Ok(CallToolResult::error(text_content(format!(
                 "Session '{}' not found",
                 params.session_id
@@ -1950,8 +1953,14 @@ impl ChronosServer {
         // Find changed variables
         let mut vars_changed = Vec::new();
         for name in names_a.intersection(&names_b) {
-            let val_a = vars_a.iter().find(|v| &v.name == name).map(|v| v.value.clone());
-            let val_b = vars_b.iter().find(|v| &v.name == name).map(|v| v.value.clone());
+            let val_a = vars_a
+                .iter()
+                .find(|v| &v.name == name)
+                .map(|v| v.value.clone());
+            let val_b = vars_b
+                .iter()
+                .find(|v| &v.name == name)
+                .map(|v| v.value.clone());
             if val_a != val_b {
                 vars_changed.push(serde_json::json!({
                     "name": name,
@@ -2053,12 +2062,22 @@ impl ChronosServer {
             }
 
             // Check for memory events
-            if let EventData::Memory { address, size, data } = &event.data {
+            if let EventData::Memory {
+                address,
+                size,
+                data,
+            } = &event.data
+            {
                 // Filter by address range
                 if *address >= params.start_address && *address <= params.end_address {
                     let hex = data
                         .as_ref()
-                        .map(|d| d.iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(""))
+                        .map(|d| {
+                            d.iter()
+                                .map(|b| format!("{:02x}", b))
+                                .collect::<Vec<_>>()
+                                .join("")
+                        })
                         .unwrap_or_default();
                     accesses.push(serde_json::json!({
                         "address": format!("0x{:x}", address),
@@ -2115,7 +2134,12 @@ impl ChronosServer {
                     let stack = engine.reconstruct_call_stack(event.event_id);
                     let hex = data
                         .as_ref()
-                        .map(|d| d.iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(""))
+                        .map(|d| {
+                            d.iter()
+                                .map(|b| format!("{:02x}", b))
+                                .collect::<Vec<_>>()
+                                .join("")
+                        })
                         .unwrap_or_default();
                     writes.push(serde_json::json!({
                         "timestamp_ns": event.timestamp_ns,
@@ -2226,12 +2250,12 @@ impl ChronosServer {
         // Parse the tripwire ID (format: "tripwire-N")
         let id_str = params.tripwire_id.trim();
         let id_num: u64 = if id_str.starts_with("tripwire-") {
-            id_str["tripwire-".len()..]
-                .parse()
-                .map_err(|_| rmcp::ErrorData::invalid_params(
+            id_str["tripwire-".len()..].parse().map_err(|_| {
+                rmcp::ErrorData::invalid_params(
                     format!("Invalid tripwire ID format: '{}'", params.tripwire_id),
                     None,
-                ))?
+                )
+            })?
         } else {
             return Ok(CallToolResult::error(text_content(format!(
                 "Invalid tripwire ID format '{}'. Expected format: 'tripwire-<number>'",
@@ -2426,7 +2450,8 @@ impl ChronosServer {
         );
 
         // Build and store the query engine with proper noise filtering
-        self.build_and_store_engine(&params.session_id, events, language).await;
+        self.build_and_store_engine(&params.session_id, events, language)
+            .await;
 
         let output = serde_json::json!({
             "session_id": params.session_id,
@@ -2537,7 +2562,8 @@ impl ChronosServer {
         let total_events = events.len();
 
         // Build and store the query engine with proper noise filtering
-        self.build_and_store_engine(&params.session_id, events, language).await;
+        self.build_and_store_engine(&params.session_id, events, language)
+            .await;
 
         // Set as active session
         {
@@ -2570,7 +2596,8 @@ impl ChronosServer {
             match probes.get(&params.session_id) {
                 Some(lp) => {
                     // For spawned probes, lp.session.pid is 0. Use the actual traced PID.
-                    lp.backend.get_traced_pid()
+                    lp.backend
+                        .get_traced_pid()
                         .map(|p| p as u32)
                         .unwrap_or(lp.session.pid)
                 }
@@ -2587,7 +2614,7 @@ impl ChronosServer {
 
         if pid == 0 {
             return Ok(CallToolResult::error(text_content(
-                "Cannot inject: probe is still starting up (PID not yet known). Retry in a moment."
+                "Cannot inject: probe is still starting up (PID not yet known). Retry in a moment.",
             )));
         }
 
@@ -2614,12 +2641,10 @@ impl ChronosServer {
                     )))),
                 }
             }
-            Err(e) => {
-                Err(rmcp::ErrorData::invalid_params(
-                    format!("eBPF not available on this system: {}", e),
-                    None,
-                ))
-            }
+            Err(e) => Err(rmcp::ErrorData::invalid_params(
+                format!("eBPF not available on this system: {}", e),
+                None,
+            )),
         }
     }
 
@@ -2651,7 +2676,10 @@ impl ChronosServer {
 
         let config = CaptureConfig::new(&params.url);
         // SIG 9: Pass params.headless and params.chrome_path to start_probe_async
-        let session = match adapter.start_probe_async(config, params.headless, params.chrome_path.as_deref()).await {
+        let session = match adapter
+            .start_probe_async(config, params.headless, params.chrome_path.as_deref())
+            .await
+        {
             Ok(s) => s,
             Err(e) => {
                 return Ok(CallToolResult::error(text_content(format!(
@@ -2727,7 +2755,11 @@ impl ChronosServer {
 
         // Stop the browser probe
         if let Err(e) = browser_probe.adapter.stop_probe(&browser_probe.session) {
-            tracing::warn!("Browser probe stop error for session {}: {}", params.session_id, e);
+            tracing::warn!(
+                "Browser probe stop error for session {}: {}",
+                params.session_id,
+                e
+            );
         }
 
         info!(
@@ -2737,7 +2769,8 @@ impl ChronosServer {
 
         // Build and store the query engine if we have events
         if total_events > 0 {
-            self.build_and_store_engine(&params.session_id, events, language).await;
+            self.build_and_store_engine(&params.session_id, events, language)
+                .await;
         }
 
         let output = serde_json::json!({
@@ -2815,7 +2848,6 @@ impl ChronosServer {
         });
         Ok(CallToolResult::success(json_content(&output)))
     }
-
 
     #[tool(
         name = "performance_regression_audit",
@@ -2948,7 +2980,10 @@ impl ChronosServer {
         };
         match serde_json::to_value(result) {
             Ok(v) => Ok(CallToolResult::success(json_content(&v))),
-            Err(e) => Ok(CallToolResult::error(text_content(format!("Serialization error: {}", e)))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "Serialization error: {}",
+                e
+            )))),
         }
     }
 
@@ -3025,10 +3060,7 @@ impl ChronosServer {
         });
         Ok(CallToolResult::success(json_content(&output)))
     }
-
-
 }
-
 
 mod tests {
     use super::*;
@@ -3060,7 +3092,6 @@ mod tests {
         let _server = ChronosServer::default();
     }
 
-
     // ========================================================================
     // SF5 — Symbol Subscription Tests (Phase 12)
     // ========================================================================
@@ -3071,7 +3102,9 @@ mod tests {
     async fn server_with_session(events: Vec<TraceEvent>) -> (ChronosServer, String) {
         let server = ChronosServer::new();
         let session_id = "test-session-sf4".to_string();
-        server.build_and_store_engine(&session_id, events, Language::C).await;
+        server
+            .build_and_store_engine(&session_id, events, Language::C)
+            .await;
         (server, session_id)
     }
 
@@ -3321,7 +3354,9 @@ mod tests {
         ];
 
         // Build engine manually
-        server.build_and_store_engine(&sid, events.clone(), Language::C).await;
+        server
+            .build_and_store_engine(&sid, events.clone(), Language::C)
+            .await;
 
         // Save session
         let save_result = server
@@ -3357,7 +3392,9 @@ mod tests {
         let events = vec![make_fn_event(0, 100, 1, "main")];
 
         // Build engine (registers in engines + session_languages)
-        server.build_and_store_engine(&sid, events, Language::Python).await;
+        server
+            .build_and_store_engine(&sid, events, Language::Python)
+            .await;
 
         // Verify it's registered
         assert!(server.engines.lock().await.contains_key(&sid));
@@ -3379,7 +3416,9 @@ mod tests {
         let events = vec![make_fn_event(0, 100, 1, "main")];
 
         // Build and save session
-        server.build_and_store_engine(&sid, events, Language::C).await;
+        server
+            .build_and_store_engine(&sid, events, Language::C)
+            .await;
         server
             .save_session(Parameters(SaveSessionParams {
                 session_id: sid.clone(),
@@ -3414,8 +3453,12 @@ mod tests {
         let events = vec![make_fn_event(0, 100, 1, "main")];
 
         // Save two sessions
-        server.build_and_store_engine(&sid1, events.clone(), Language::C).await;
-        server.build_and_store_engine(&sid2, events.clone(), Language::C).await;
+        server
+            .build_and_store_engine(&sid1, events.clone(), Language::C)
+            .await;
+        server
+            .build_and_store_engine(&sid2, events.clone(), Language::C)
+            .await;
 
         server
             .save_session(Parameters(SaveSessionParams {
@@ -3441,8 +3484,6 @@ mod tests {
         let text = format!("{:?}", list_result.content);
         assert!(text.contains("session_count") || text.contains("sessions"));
     }
-
-
 
     #[tokio::test]
     async fn test_save_session_not_found_in_memory() {
@@ -3472,7 +3513,6 @@ mod tests {
         assert_eq!(result.is_error, Some(true));
     }
 
-
     #[test]
     fn test_resource_limits_default_values() {
         let limits = ResourceLimits::default();
@@ -3489,7 +3529,6 @@ mod tests {
         assert_eq!(limits.max_events, 500_000);
         assert_eq!(limits.timeout_secs, 120);
     }
-
 
     // ========================================================================
     // SF6 — Inspection Tools Tests
@@ -3538,8 +3577,20 @@ mod tests {
     #[tokio::test]
     async fn test_evaluate_expression_success() {
         let locals = vec![
-            chronos_domain::VariableInfo::new("x", "10", "i32", 0x1000, chronos_domain::VariableScope::Local),
-            chronos_domain::VariableInfo::new("y", "3", "i32", 0x2000, chronos_domain::VariableScope::Local),
+            chronos_domain::VariableInfo::new(
+                "x",
+                "10",
+                "i32",
+                0x1000,
+                chronos_domain::VariableScope::Local,
+            ),
+            chronos_domain::VariableInfo::new(
+                "y",
+                "3",
+                "i32",
+                0x2000,
+                chronos_domain::VariableScope::Local,
+            ),
         ];
         let events = vec![make_test_python_frame_with_locals(0, 100, 1, locals)];
         let (server, sid) = server_with_session(events).await;
@@ -3561,9 +3612,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_evaluate_expression_unknown_var() {
-        let locals = vec![
-            chronos_domain::VariableInfo::new("x", "10", "i32", 0x1000, chronos_domain::VariableScope::Local),
-        ];
+        let locals = vec![chronos_domain::VariableInfo::new(
+            "x",
+            "10",
+            "i32",
+            0x1000,
+            chronos_domain::VariableScope::Local,
+        )];
         let events = vec![make_test_python_frame_with_locals(0, 100, 1, locals)];
         let (server, sid) = server_with_session(events).await;
 
@@ -3584,9 +3639,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_evaluate_expression_division_by_zero() {
-        let locals = vec![
-            chronos_domain::VariableInfo::new("n", "0", "i32", 0x1000, chronos_domain::VariableScope::Local),
-        ];
+        let locals = vec![chronos_domain::VariableInfo::new(
+            "n",
+            "0",
+            "i32",
+            0x1000,
+            chronos_domain::VariableScope::Local,
+        )];
         let events = vec![make_test_python_frame_with_locals(0, 100, 1, locals)];
         let (server, sid) = server_with_session(events).await;
 
@@ -3623,8 +3682,20 @@ mod tests {
     async fn test_evaluate_expression_with_variables() {
         // Test that evaluate_expression correctly evaluates arithmetic with captured variables.
         let locals = vec![
-            chronos_domain::VariableInfo::new("a", "5", "i32", 0x1000, chronos_domain::VariableScope::Local),
-            chronos_domain::VariableInfo::new("b", "3", "i32", 0x2000, chronos_domain::VariableScope::Local),
+            chronos_domain::VariableInfo::new(
+                "a",
+                "5",
+                "i32",
+                0x1000,
+                chronos_domain::VariableScope::Local,
+            ),
+            chronos_domain::VariableInfo::new(
+                "b",
+                "3",
+                "i32",
+                0x2000,
+                chronos_domain::VariableScope::Local,
+            ),
         ];
         let events = vec![make_test_python_frame_with_locals(0, 100, 1, locals)];
         let (server, sid) = server_with_session(events).await;
@@ -3646,9 +3717,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_debug_get_variables_python() {
-        let locals = vec![
-            chronos_domain::VariableInfo::new("count", "42", "int", 0x1000, chronos_domain::VariableScope::Local),
-        ];
+        let locals = vec![chronos_domain::VariableInfo::new(
+            "count",
+            "42",
+            "int",
+            0x1000,
+            chronos_domain::VariableScope::Local,
+        )];
         let events = vec![make_test_python_frame_with_locals(0, 100, 1, locals)];
         let (server, sid) = server_with_session(events).await;
 
@@ -3668,7 +3743,8 @@ mod tests {
     #[tokio::test]
     async fn test_debug_get_variables_empty() {
         // PythonFrame with None locals
-        let event = TraceEvent::python_call(0, 100, 1, "my_module.my_func", "/path/to/script.py", 10);
+        let event =
+            TraceEvent::python_call(0, 100, 1, "my_module.my_func", "/path/to/script.py", 10);
         let events = vec![event];
         let (server, sid) = server_with_session(events).await;
 
@@ -3725,9 +3801,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_debug_get_memory_not_found() {
-        let events = vec![
-            make_test_memory_event(1, 1000, 1, 0x7FFF0000, 4, vec![0x01, 0x02, 0x03, 0x04]),
-        ];
+        let events = vec![make_test_memory_event(
+            1,
+            1000,
+            1,
+            0x7FFF0000,
+            4,
+            vec![0x01, 0x02, 0x03, 0x04],
+        )];
         let (server, sid) = server_with_session(events).await;
 
         let result = server
@@ -3761,7 +3842,12 @@ mod tests {
     // SF7 — Phase 11 Missing Tools Tests
     // ========================================================================
 
-    fn make_register_event(id: u64, ts: u64, tid: u64, regs: chronos_domain::RegisterState) -> TraceEvent {
+    fn make_register_event(
+        id: u64,
+        ts: u64,
+        tid: u64,
+        regs: chronos_domain::RegisterState,
+    ) -> TraceEvent {
         use chronos_domain::{EventData, EventType, SourceLocation};
         TraceEvent::new(
             id,
@@ -3775,8 +3861,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_debug_get_registers_success() {
-        use chronos_query::QueryEngine;
         use chronos_index::builder::IndexBuilder;
+        use chronos_query::QueryEngine;
 
         let regs = chronos_domain::RegisterState {
             rax: 0x42,
@@ -3852,12 +3938,20 @@ mod tests {
     #[tokio::test]
     async fn test_debug_diff_variables_changed() {
         use chronos_domain::VariableScope;
-        let locals_a = vec![
-            chronos_domain::VariableInfo::new("x", "10", "i32", 0x1000, VariableScope::Local),
-        ];
-        let locals_b = vec![
-            chronos_domain::VariableInfo::new("x", "20", "i32", 0x1000, VariableScope::Local),
-        ];
+        let locals_a = vec![chronos_domain::VariableInfo::new(
+            "x",
+            "10",
+            "i32",
+            0x1000,
+            VariableScope::Local,
+        )];
+        let locals_b = vec![chronos_domain::VariableInfo::new(
+            "x",
+            "20",
+            "i32",
+            0x1000,
+            VariableScope::Local,
+        )];
         let events = vec![
             TraceEvent::python_call_with_locals(0, 100, 1, "f", "test.py", 10, locals_a),
             TraceEvent::python_call_with_locals(1, 200, 1, "f", "test.py", 15, locals_b),
@@ -3922,9 +4016,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_debug_analyze_memory_no_accesses() {
-        let events = vec![
-            make_test_memory_event(1, 1000, 1, 0x1000, 4, vec![0x01]),
-        ];
+        let events = vec![make_test_memory_event(1, 1000, 1, 0x1000, 4, vec![0x01])];
         let (server, sid) = server_with_session(events).await;
 
         let result = server
@@ -4024,10 +4116,6 @@ mod tests {
         assert_eq!(result.is_error, Some(true));
     }
 
-
-
-
-
     // ========================================================================
     // Phase 25 — drop_session Tool Tests
     // ========================================================================
@@ -4039,7 +4127,9 @@ mod tests {
         let events = vec![make_fn_entry(0, 100, 1, "main")];
 
         // Build engine (registers in engines + session_languages)
-        server.build_and_store_engine(&sid, events, Language::Python).await;
+        server
+            .build_and_store_engine(&sid, events, Language::Python)
+            .await;
 
         // Verify it's registered in memory
         assert!(server.engines.lock().await.contains_key(&sid));
@@ -4047,14 +4137,19 @@ mod tests {
 
         // Drop the session
         let result = server
-            .drop_session(Parameters(DropSessionParams { session_id: sid.clone() }))
+            .drop_session(Parameters(DropSessionParams {
+                session_id: sid.clone(),
+            }))
             .await
             .unwrap();
 
         assert_ne!(result.is_error, Some(true));
         let text = format!("{:?}", result.content);
         assert!(text.contains("dropped"), "Should contain 'dropped' status");
-        assert!(text.contains("Persistent storage not affected"), "Should mention storage not affected");
+        assert!(
+            text.contains("Persistent storage not affected"),
+            "Should mention storage not affected"
+        );
 
         // Verify all in-memory state is gone
         assert!(!server.engines.lock().await.contains_key(&sid));
@@ -4076,7 +4171,10 @@ mod tests {
 
         assert_ne!(result.is_error, Some(true));
         let text = format!("{:?}", result.content);
-        assert!(text.contains("not_found"), "Should contain 'not_found' status");
+        assert!(
+            text.contains("not_found"),
+            "Should contain 'not_found' status"
+        );
     }
 
     // ========================================================================
@@ -4115,7 +4213,10 @@ mod tests {
                 1,
                 EventType::FunctionEntry,
                 loc,
-                EventData::Function { name: func.to_string(), signature: None },
+                EventData::Function {
+                    name: func.to_string(),
+                    signature: None,
+                },
             )
         };
 
@@ -4275,7 +4376,10 @@ mod tests {
 
         assert_ne!(drain_result.is_error, Some(true), "drain should succeed");
         let drain_text = format!("{:?}", drain_result.content);
-        assert!(drain_text.contains("total_buffered"), "Should have total_buffered field");
+        assert!(
+            drain_text.contains("total_buffered"),
+            "Should have total_buffered field"
+        );
         assert!(drain_text.contains("0"), "Should have 0 buffered events");
 
         // Stop the mock session
@@ -4288,12 +4392,22 @@ mod tests {
 
         assert_ne!(stop_result.is_error, Some(true), "stop should succeed");
         let stop_text = format!("{:?}", stop_result.content);
-        assert!(stop_text.contains("stopped"), "Should contain 'stopped' status");
-        assert!(stop_text.contains("total_events"), "Should have total_events field");
+        assert!(
+            stop_text.contains("stopped"),
+            "Should contain 'stopped' status"
+        );
+        assert!(
+            stop_text.contains("total_events"),
+            "Should have total_events field"
+        );
 
         // Verify session is removed
         assert!(
-            !server.live_browser_probes.lock().unwrap().contains_key(&session_id),
+            !server
+                .live_browser_probes
+                .lock()
+                .unwrap()
+                .contains_key(&session_id),
             "Session should be removed after stop"
         );
     }
@@ -4340,9 +4454,7 @@ mod tests {
 
         // Cleanup
         let _ = server
-            .browser_probe_stop(Parameters(BrowserProbeStopParams {
-                session_id,
-            }))
+            .browser_probe_stop(Parameters(BrowserProbeStopParams { session_id }))
             .await;
     }
 
@@ -4386,7 +4498,11 @@ mod tests {
 
         // Verify session is gone from live_browser_probes
         assert!(
-            !server.live_browser_probes.lock().unwrap().contains_key(&session_id),
+            !server
+                .live_browser_probes
+                .lock()
+                .unwrap()
+                .contains_key(&session_id),
             "Session should be removed from live_browser_probes"
         );
 
@@ -4436,7 +4552,11 @@ mod tests {
             }))
             .await
             .unwrap();
-        assert_eq!(second.is_error, Some(true), "Second stop should be an error");
+        assert_eq!(
+            second.is_error,
+            Some(true),
+            "Second stop should be an error"
+        );
         let text = format!("{:?}", second.content);
         assert!(text.contains("not found"), "Should mention not found");
     }
@@ -4484,9 +4604,12 @@ mod tests {
             }))
             .await
             .unwrap();
-        assert_eq!(drain.is_error, Some(true), "Drain after stop should be an error");
+        assert_eq!(
+            drain.is_error,
+            Some(true),
+            "Drain after stop should be an error"
+        );
     }
-
 }
 
 /// ServerHandler implementation with custom server identity.

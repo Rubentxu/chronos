@@ -5,8 +5,7 @@
 
 use chronos_capture::{CaptureConfig, TraceAdapter};
 use chronos_domain::{
-    CaptureSession, Language, RuntimeInfo, StackFrame, ThreadInfo, TraceError,
-    VariableInfo,
+    CaptureSession, Language, RuntimeInfo, StackFrame, ThreadInfo, TraceError, VariableInfo,
 };
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -153,7 +152,8 @@ impl TraceAdapter for JavaAdapter {
             crate::protocol::event_kind::EXCEPTION,
         ];
         for kind in event_kinds {
-            if let Err(e) = tokio::runtime::Handle::current().block_on(client.set_event_request(kind))
+            if let Err(e) =
+                tokio::runtime::Handle::current().block_on(client.set_event_request(kind))
             {
                 tracing::warn!("Failed to set event request for kind {}: {}", kind, e);
             }
@@ -181,8 +181,8 @@ impl TraceAdapter for JavaAdapter {
         let cancel_clone = cancel_token.clone();
 
         let join_handle = tokio::spawn(async move {
-            if let Err(e) = run_jdwp_event_loop(client_for_task, events_tx_clone, cancel_clone)
-                .await
+            if let Err(e) =
+                run_jdwp_event_loop(client_for_task, events_tx_clone, cancel_clone).await
             {
                 tracing::error!("JDWP event loop error: {}", e);
             }
@@ -515,7 +515,8 @@ impl TraceAdapter for JavaAdapter {
 
         // Fall back to arithmetic evaluator
         // Use empty locals since we don't have variable context here
-        let evaluator = chronos_query::expr_eval::ExprEvaluator::new(std::collections::HashMap::new());
+        let evaluator =
+            chronos_query::expr_eval::ExprEvaluator::new(std::collections::HashMap::new());
         evaluator
             .evaluate(expr)
             .map(|v| v.to_string())
@@ -536,16 +537,12 @@ fn parse_static_field_expression(expr: &str) -> Option<(String, String)> {
     let field_name = parts[1];
 
     // Class name should start with uppercase (Java convention)
-    if class_name.is_empty()
-        || !class_name.chars().next().unwrap().is_uppercase()
-    {
+    if class_name.is_empty() || !class_name.chars().next().unwrap().is_uppercase() {
         return None;
     }
 
     // Field name should start with lowercase (Java convention)
-    if field_name.is_empty()
-        || !field_name.chars().next().unwrap().is_lowercase()
-    {
+    if field_name.is_empty() || !field_name.chars().next().unwrap().is_lowercase() {
         return None;
     }
 

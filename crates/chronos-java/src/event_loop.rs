@@ -142,10 +142,7 @@ mod tests {
 
         let trace = jdwp_event_to_trace(jdwp_event, 3, 3000);
 
-        assert_eq!(
-            trace.event_type,
-            chronos_domain::EventType::ExceptionThrown
-        );
+        assert_eq!(trace.event_type, chronos_domain::EventType::ExceptionThrown);
     }
 
     #[test]

@@ -65,8 +65,7 @@ def foo():
 result = foo()
 print(f"Result: {result}")
 "#;
-    std::fs::write(&script_path, script_content)
-        .expect("Failed to write hello.py");
+    std::fs::write(&script_path, script_content).expect("Failed to write hello.py");
 
     // Spawn debugpy server
     // debugpy --listen 127.0.0.1:5679 --wait-for-client <script>

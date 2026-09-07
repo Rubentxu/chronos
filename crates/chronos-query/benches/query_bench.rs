@@ -1,6 +1,8 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent, TraceQuery, VariableInfo, VariableScope};
+use chronos_domain::{
+    EventData, EventType, SourceLocation, TraceEvent, TraceQuery, VariableInfo, VariableScope,
+};
 use chronos_query::QueryEngine;
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 fn bench_get_event_by_id(c: &mut Criterion) {
     let events: Vec<TraceEvent> = (0..10_000u64)
@@ -30,12 +32,7 @@ fn bench_execute_query(c: &mut Criterion) {
                 i * 100,
                 i % 8,
                 EventType::FunctionEntry,
-                SourceLocation::new(
-                    "test.rs",
-                    10,
-                    &format!("fn_{}", i % 100),
-                    0x1000 + i,
-                ),
+                SourceLocation::new("test.rs", 10, &format!("fn_{}", i % 100), 0x1000 + i),
                 EventData::Empty,
             )
         })
@@ -56,12 +53,7 @@ fn bench_execute_query_with_pagination(c: &mut Criterion) {
                 i * 100,
                 i % 8,
                 EventType::FunctionEntry,
-                SourceLocation::new(
-                    "test.rs",
-                    10,
-                    &format!("fn_{}", i % 100),
-                    0x1000 + i,
-                ),
+                SourceLocation::new("test.rs", 10, &format!("fn_{}", i % 100), 0x1000 + i),
                 EventData::Empty,
             )
         })
@@ -149,8 +141,7 @@ fn bench_session_event_lookup(c: &mut Criterion) {
 
     c.bench_function("session_event_lookup_1000_by_timestamp_range", |b| {
         // Query a timestamp range that should return ~100 events (timestamps 25000 to 75000)
-        let query = TraceQuery::new("bench")
-            .time_range(black_box(25000), black_box(75000));
+        let query = TraceQuery::new("bench").time_range(black_box(25000), black_box(75000));
         b.iter(|| engine.execute(black_box(&query)))
     });
 }

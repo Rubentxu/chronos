@@ -16,7 +16,10 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use chronos_domain::{EventData, GoEventKind, SourceLocation, StackFrame as ChronosStackFrame, ThreadInfo, ThreadState, TraceEvent, VariableInfo};
+use chronos_domain::{
+    EventData, GoEventKind, SourceLocation, StackFrame as ChronosStackFrame, ThreadInfo,
+    ThreadState, TraceEvent, VariableInfo,
+};
 use tokio::sync::{mpsc, Mutex as TokioMutex};
 
 use crate::error::GoError;
@@ -98,9 +101,7 @@ pub async fn run_delve_event_loop(
         };
 
         let goroutine_id = current_thread.goroutineID;
-        let timestamp_ns = Instant::now()
-            .elapsed()
-            .as_nanos() as u64;
+        let timestamp_ns = Instant::now().elapsed().as_nanos() as u64;
 
         // Check if goroutine changed (scheduler switch)
         let event_kind = if last_goroutine_id != Some(goroutine_id) {
@@ -178,8 +179,7 @@ impl AtomicCancel {
     }
 
     pub fn cancel(&self) {
-        self.0
-            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.0.store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     pub fn is_cancelled(&self) -> bool {
@@ -245,7 +245,12 @@ async fn get_goroutine_locals(
     goroutine_id: i64,
     depth: i32,
 ) -> Option<Vec<VariableInfo>> {
-    let frames = rpc.lock().await.stacktrace(goroutine_id, depth).await.ok()?;
+    let frames = rpc
+        .lock()
+        .await
+        .stacktrace(goroutine_id, depth)
+        .await
+        .ok()?;
 
     // Get locals from the top frame (depth 0)
     let top_frame = frames.first()?;
@@ -282,19 +287,23 @@ pub fn delve_stack_to_chronos_frames(
                 .map(|fn_| fn_.name.clone())
                 .unwrap_or_default();
 
-            let variables = f.locals.as_ref().map(|vars| {
-                vars.iter()
-                    .map(|v| {
-                        VariableInfo::new(
-                            &v.name,
-                            &v.value,
-                            "unknown",
-                            0,
-                            chronos_domain::VariableScope::Local,
-                        )
-                    })
-                    .collect()
-            }).unwrap_or_default();
+            let variables = f
+                .locals
+                .as_ref()
+                .map(|vars| {
+                    vars.iter()
+                        .map(|v| {
+                            VariableInfo::new(
+                                &v.name,
+                                &v.value,
+                                "unknown",
+                                0,
+                                chronos_domain::VariableScope::Local,
+                            )
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
 
             ChronosStackFrame {
                 frame_id: start_frame_id + i as u64,

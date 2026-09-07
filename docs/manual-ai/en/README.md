@@ -125,3 +125,9 @@ Use `query_events`, `get_call_stack`, `debug_get_variables`, etc. — only after
 - **[09-multi-language.md](09-multi-language.md)** — Language-specific setup and gotchas
 - **[10-anti-patterns.md](10-anti-patterns.md)** — What NOT to do
 - **[11-prompt-examples.md](11-prompt-examples.md)** — 20+ complete agent workflow examples
+
+## Debugging Chronos Internals
+
+When developing or debugging Chronos itself, the following tools are useful:
+
+- **[tokio-console-setup.md](../../../tokio-console-setup.md)** — Debug async task behavior in Chronos using `tokio-console`. Useful for investigating slow probe operations, session management issues, and async resource contention.

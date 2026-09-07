@@ -12,19 +12,26 @@ async fn test_debug_get_variables_empty_session() {
     let fixture = McpSession::fixture_path("test_add")
         .expect("test_add fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait for it to complete
     tokio::time::sleep(Duration::from_secs(1)).await;
 
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     println!("Probe stopped: {} total events", stop.total_events);
@@ -33,16 +40,26 @@ async fn test_debug_get_variables_empty_session() {
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Try to get variables at event 0 - will be empty for C programs
-    let variables = client.debug_get_variables(&session_id, 0).await
+    let variables = client
+        .debug_get_variables(&session_id, 0)
+        .await
         .expect("debug_get_variables failed");
 
     // === Assertions ===
     // C programs don't have Python-style frame events with local variables,
     // so we expect empty results - but the call should succeed
-    println!("✓ debug_get_variables at event 0: {} variables (expected empty for C)", variables.len());
+    println!(
+        "✓ debug_get_variables at event 0: {} variables (expected empty for C)",
+        variables.len()
+    );
 
     for var in variables.iter() {
-        println!("  {} = {} ({})", var.name, var.value, var.var_type.as_deref().unwrap_or("?"));
+        println!(
+            "  {} = {} ({})",
+            var.name,
+            var.value,
+            var.var_type.as_deref().unwrap_or("?")
+        );
     }
 
     client.shutdown().await.ok();
@@ -54,19 +71,26 @@ async fn test_debug_get_variables_out_of_range() {
     let fixture = McpSession::fixture_path("test_add")
         .expect("test_add fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait for it to complete
     tokio::time::sleep(Duration::from_secs(1)).await;
 
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     println!("Probe stopped: {} total events", stop.total_events);
@@ -75,11 +99,16 @@ async fn test_debug_get_variables_out_of_range() {
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Try to get variables at a high event ID that doesn't exist
-    let variables = client.debug_get_variables(&session_id, 999999).await
+    let variables = client
+        .debug_get_variables(&session_id, 999999)
+        .await
         .expect("debug_get_variables failed");
 
     // Should return empty - the event doesn't exist
-    println!("✓ debug_get_variables at event 999999: {} variables", variables.len());
+    println!(
+        "✓ debug_get_variables at event 999999: {} variables",
+        variables.len()
+    );
 
     client.shutdown().await.ok();
 }
@@ -91,19 +120,26 @@ async fn test_evaluate_expression_empty_session() {
     let fixture = McpSession::fixture_path("test_add")
         .expect("test_add fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait for it to complete
     tokio::time::sleep(Duration::from_secs(1)).await;
 
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     println!("Probe stopped: {} total events", stop.total_events);
@@ -121,7 +157,10 @@ async fn test_evaluate_expression_empty_session() {
         }
         Err(e) => {
             // Expected: C programs don't have Python-style variables
-            println!("✓ evaluate_expression failed as expected for C program: {:?}", e);
+            println!(
+                "✓ evaluate_expression failed as expected for C program: {:?}",
+                e
+            );
         }
     }
 
@@ -134,19 +173,26 @@ async fn test_evaluate_expression_invalid_expression() {
     let fixture = McpSession::fixture_path("test_add")
         .expect("test_add fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait for it to complete
     tokio::time::sleep(Duration::from_secs(1)).await;
 
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     println!("Probe stopped: {} total events", stop.total_events);

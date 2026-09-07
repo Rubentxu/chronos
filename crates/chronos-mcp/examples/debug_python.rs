@@ -14,10 +14,20 @@ fn main() {
     println!();
     println!("Available MCP tools:");
     let tools = vec![
-        "debug_run", "query_events", "get_event", "reconstruct_call_stack",
-        "detect_races", "query_causality", "find_variable_origin",
-        "get_execution_summary", "expand_hotspot", "get_saliency_scores",
-        "save_session", "load_session", "list_sessions", "compare_sessions",
+        "debug_run",
+        "query_events",
+        "get_event",
+        "reconstruct_call_stack",
+        "detect_races",
+        "query_causality",
+        "find_variable_origin",
+        "get_execution_summary",
+        "expand_hotspot",
+        "get_saliency_scores",
+        "save_session",
+        "load_session",
+        "list_sessions",
+        "compare_sessions",
     ];
     for tool in tools {
         println!("  - {}", tool);

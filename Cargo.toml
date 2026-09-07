@@ -61,10 +61,5 @@ memmap2 = "0.9"
 url = "2"
 reqwest = { version = "0.12", features = ["json"] }
 
-[profile.release]
-opt-level = 3
-lto = true
-
-[profile.dev]
-opt-level = 0
-debug = true
+# Profile configuration is inherited from ~/.cargo/config.toml
+# to share settings across all Rust projects and avoid redundant definitions.

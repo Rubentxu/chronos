@@ -32,19 +32,14 @@ pub fn create_minimal_wasm_bytes() -> Vec<u8> {
     vec![
         0x00, 0x61, 0x73, 0x6d, // magic: \0asm
         0x01, 0x00, 0x00, 0x00, // version: 1
-
         // Type section (1 type): (func (param i32 i32) (result i32))
         0x01, 0x07, 0x01, // section id, size, count
         0x60, 0x02, 0x7f, 0x7f, 0x01, 0x7f, // functype
-
         // Function section (1 function): type index 0
-        0x03, 0x02, 0x01, 0x00,
-
-        // Export section (1 export): "add" -> func index 0
+        0x03, 0x02, 0x01, 0x00, // Export section (1 export): "add" -> func index 0
         0x07, 0x07, 0x01, // section id, size, count
         0x03, 0x61, 0x64, 0x64, // "add"
         0x00, 0x00, // export kind: function, index 0
-
         // Code section (1 body)
         0x0a, 0x09, 0x01, // section id, size, count
         0x07, 0x00, // body size, local count

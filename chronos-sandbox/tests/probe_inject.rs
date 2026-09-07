@@ -24,22 +24,27 @@ async fn test_probe_inject_without_root_returns_error() {
     let fixture = McpSession::fixture_path("test_busyloop")
         .expect("test_busyloop fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
     // Start probe
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait for process to start and get a PID
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     // Attempt probe_inject (should fail without root/eBPF)
-    let result = client.probe_inject_raw(
-        &session_id,
-        "",  // empty binary_path
-        "main",  // symbol
-    ).await;
+    let result = client
+        .probe_inject_raw(
+            &session_id,
+            "",     // empty binary_path
+            "main", // symbol
+        )
+        .await;
 
     // Should not crash - either returns Ok with error in response, or Err
     match result {
@@ -54,9 +59,11 @@ async fn test_probe_inject_without_root_returns_error() {
                 || response_text.contains("not supported")
                 || response_text.contains("CAP_BPF")
                 || response_text.contains("EPERM");
-            assert!(is_graceful_error,
+            assert!(
+                is_graceful_error,
                 "probe_inject should return graceful error without root/eBPF, got: {}",
-                response_text);
+                response_text
+            );
         }
         Err(_) => {
             // Err is also acceptable - means the MCP layer returned an error
@@ -64,7 +71,9 @@ async fn test_probe_inject_without_root_returns_error() {
     }
 
     // Stop probe
-    client.probe_stop(&session_id).await
+    client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     client.shutdown().await.ok();
@@ -77,15 +86,14 @@ async fn test_probe_inject_without_root_returns_error() {
 /// Test I2: probe_inject on nonexistent session returns graceful error.
 #[tokio::test]
 async fn test_probe_inject_nonexistent_session() {
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
     // Call probe_inject on nonexistent session
-    let result = client.probe_inject_raw(
-        "nonexistent-session-xyz",
-        "/some/path.so",
-        "foo",
-    ).await;
+    let result = client
+        .probe_inject_raw("nonexistent-session-xyz", "/some/path.so", "foo")
+        .await;
 
     // Should not crash - should return an error
     match result {
@@ -94,9 +102,11 @@ async fn test_probe_inject_nonexistent_session() {
             let is_graceful_error = response_text.contains("not found")
                 || response_text.contains("not found")
                 || response_text.contains("Start a probe");
-            assert!(is_graceful_error,
+            assert!(
+                is_graceful_error,
                 "probe_inject on nonexistent session should return graceful error, got: {}",
-                response_text);
+                response_text
+            );
         }
         Err(_) => {
             // Err is also acceptable
@@ -121,22 +131,27 @@ async fn test_probe_inject_invalid_symbol() {
     let fixture = McpSession::fixture_path("test_busyloop")
         .expect("test_busyloop fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
     // Start probe
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Wait for process to start
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     // Attempt probe_inject with empty symbol
-    let result = client.probe_inject_raw(
-        &session_id,
-        fixture.to_str().unwrap(),
-        "",  // empty symbol - invalid
-    ).await;
+    let result = client
+        .probe_inject_raw(
+            &session_id,
+            fixture.to_str().unwrap(),
+            "", // empty symbol - invalid
+        )
+        .await;
 
     // Should not crash
     match result {
@@ -148,9 +163,11 @@ async fn test_probe_inject_invalid_symbol() {
                 || response_text.contains("failed")
                 || response_text.contains("Failed")
                 || response_text.contains("not found");
-            assert!(is_error,
+            assert!(
+                is_error,
                 "probe_inject with empty symbol should return error, got: {}",
-                response_text);
+                response_text
+            );
         }
         Err(_) => {
             // Err is also acceptable
@@ -158,7 +175,9 @@ async fn test_probe_inject_invalid_symbol() {
     }
 
     // Stop probe
-    client.probe_stop(&session_id).await
+    client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     client.shutdown().await.ok();
@@ -177,19 +196,20 @@ async fn test_probe_inject_before_pid_known() {
     let fixture = McpSession::fixture_path("test_busyloop")
         .expect("test_busyloop fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
     // Start probe
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     // Immediately try probe_inject without waiting (PID may not be known yet)
-    let result = client.probe_inject_raw(
-        &session_id,
-        fixture.to_str().unwrap(),
-        "main",
-    ).await;
+    let result = client
+        .probe_inject_raw(&session_id, fixture.to_str().unwrap(), "main")
+        .await;
 
     // Should not crash - should get either PID retry message or eBPF error
     match result {
@@ -214,7 +234,9 @@ async fn test_probe_inject_before_pid_known() {
     }
 
     // Stop probe
-    client.probe_stop(&session_id).await
+    client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
 
     client.shutdown().await.ok();

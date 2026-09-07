@@ -42,7 +42,7 @@ impl ChromeProcess {
         let mut args = vec![
             format!("--remote-debugging-port={}", debug_port),
             format!("--user-data-dir={}", user_data_path.display()),
-            "--no-default-browser-check".to_string(),  // Remove duplicate --no-first-run (SIG 8)
+            "--no-default-browser-check".to_string(), // Remove duplicate --no-first-run (SIG 8)
             "--disable-extensions".to_string(),
             "--disable-popup-blocking".to_string(),
             "--disable-translate".to_string(),
@@ -144,14 +144,17 @@ impl ChromeProcess {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(5))
             .build()
-            .map_err(|e| BrowserError::ProcessError(format!("Failed to create HTTP client: {}", e)))?;
+            .map_err(|e| {
+                BrowserError::ProcessError(format!("Failed to create HTTP client: {}", e))
+            })?;
 
         while start.elapsed() < timeout {
             match client.get(&target).send().await {
                 Ok(resp) if resp.status().is_success() => {
                     if let Ok(json) = resp.json::<serde_json::Value>().await {
                         // Extract webSocketDebuggerUrl from first target
-                        if let Some(url) = json.as_array()
+                        if let Some(url) = json
+                            .as_array()
                             .and_then(|t| t.first())
                             .and_then(|t| t.get("webSocketDebuggerUrl"))
                             .and_then(|u| u.as_str())
@@ -165,7 +168,9 @@ impl ChromeProcess {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
 
-        Err(BrowserError::Timeout("Timed out waiting for Chrome CDP".into()))
+        Err(BrowserError::Timeout(
+            "Timed out waiting for Chrome CDP".into(),
+        ))
     }
 
     /// Set the WS URL after wait_for_ready completes
@@ -178,7 +183,9 @@ impl ChromeProcess {
     /// Waits up to 5 seconds for the process to exit after sending SIGKILL.
     pub fn kill(&mut self) -> Result<(), BrowserError> {
         if let Some(ref mut child) = self.process {
-            child.kill().map_err(|e| BrowserError::ProcessError(format!("Failed to kill Chrome: {}", e)))?;
+            child
+                .kill()
+                .map_err(|e| BrowserError::ProcessError(format!("Failed to kill Chrome: {}", e)))?;
 
             // Wait with timeout for process to exit
             let start = std::time::Instant::now();
@@ -286,7 +293,10 @@ mod tests {
     fn test_attach_valid_ws_url() {
         // CRIT-002 fix: attach() should succeed with valid ws:// URL and create TempDir
         let result = ChromeProcess::attach("ws://localhost:9222/devtools/browser");
-        assert!(result.is_ok(), "attach() should succeed with valid ws:// URL");
+        assert!(
+            result.is_ok(),
+            "attach() should succeed with valid ws:// URL"
+        );
         let process = result.unwrap();
         assert_eq!(process.ws_url(), "ws://localhost:9222/devtools/browser");
         assert!(!process.is_running());
@@ -296,7 +306,10 @@ mod tests {
     fn test_attach_valid_wss_url() {
         // CRIT-002 fix: attach() should succeed with valid wss:// URL
         let result = ChromeProcess::attach("wss://remote:9222/devtools/browser");
-        assert!(result.is_ok(), "attach() should succeed with valid wss:// URL");
+        assert!(
+            result.is_ok(),
+            "attach() should succeed with valid wss:// URL"
+        );
         let process = result.unwrap();
         assert_eq!(process.ws_url(), "wss://remote:9222/devtools/browser");
     }
@@ -308,7 +321,11 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(BrowserError::CdpConnectionFailed(msg)) => {
-                assert!(msg.contains("Invalid WebSocket URL"), "Expected 'Invalid WebSocket URL' error, got: {}", msg);
+                assert!(
+                    msg.contains("Invalid WebSocket URL"),
+                    "Expected 'Invalid WebSocket URL' error, got: {}",
+                    msg
+                );
             }
             Err(other) => panic!("Expected CdpConnectionFailed, got: {:?}", other),
             Ok(_) => panic!("Expected error, got success"),

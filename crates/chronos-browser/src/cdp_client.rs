@@ -147,12 +147,25 @@ impl From<WasmCallFrame> for crate::event_mapper::CdpCallFrame {
         Self {
             function_name: frame.function_name,
             location: crate::event_mapper::CdpLocation {
-                script_id: frame.function_location.as_ref().map(|l| l.script_id.clone()).unwrap_or_default(),
-                line_number: frame.function_location.as_ref().map(|l| l.line_number as i64).unwrap_or(0),
-                column_number: frame.function_location.as_ref().and_then(|l| l.column_number.map(|c| c as i64)),
+                script_id: frame
+                    .function_location
+                    .as_ref()
+                    .map(|l| l.script_id.clone())
+                    .unwrap_or_default(),
+                line_number: frame
+                    .function_location
+                    .as_ref()
+                    .map(|l| l.line_number as i64)
+                    .unwrap_or(0),
+                column_number: frame
+                    .function_location
+                    .as_ref()
+                    .and_then(|l| l.column_number.map(|c| c as i64)),
             },
-            scope_chain: frame.scope_chain.into_iter().map(|s| {
-                crate::event_mapper::CdpScope {
+            scope_chain: frame
+                .scope_chain
+                .into_iter()
+                .map(|s| crate::event_mapper::CdpScope {
                     scope_type: s.type_,
                     object: Some(crate::event_mapper::CdpRemoteObject {
                         type_: s.object.type_,
@@ -162,8 +175,8 @@ impl From<WasmCallFrame> for crate::event_mapper::CdpCallFrame {
                         description: s.object.description,
                         object_id: s.object.object_id,
                     }),
-                }
-            }).collect(),
+                })
+                .collect(),
         }
     }
 }
@@ -338,7 +351,9 @@ impl BrowserCdpClient {
 
     /// Send a CDP command and wait for response
     pub async fn send_command(&self, method: &str, params: Value) -> Result<Value, BrowserError> {
-        let id = self.next_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let id = self
+            .next_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         let msg = serde_json::json!({
             "id": id,
@@ -473,9 +488,9 @@ impl BrowserCdpClient {
             )
             .await?;
 
-        let result = response
-            .get("result")
-            .ok_or_else(|| BrowserError::BreakpointError("No result in disassembly response".into()))?;
+        let result = response.get("result").ok_or_else(|| {
+            BrowserError::BreakpointError("No result in disassembly response".into())
+        })?;
 
         // Parse the function body offsets from the response
         // Format: { functionBodyOffsets: [start1, end1, start2, end2, ...], ... }
@@ -521,10 +536,7 @@ impl BrowserCdpClient {
     }
 
     /// Evaluate expression in runtime context
-    pub async fn runtime_evaluate(
-        &self,
-        expression: &str,
-    ) -> Result<RemoteObject, BrowserError> {
+    pub async fn runtime_evaluate(&self, expression: &str) -> Result<RemoteObject, BrowserError> {
         let response = self
             .send_command(
                 "Runtime.evaluate",
@@ -669,7 +681,10 @@ mod tests {
         let json = r#"{"method": "Network.requestWillBeSent", "params": {}}"#;
         // This will fail to deserialize because serde can't put a map into a unit variant
         let result: Result<CdpEventType, _> = serde_json::from_str(json);
-        assert!(result.is_err(), "Expected serde to fail for unknown method with params");
+        assert!(
+            result.is_err(),
+            "Expected serde to fail for unknown method with params"
+        );
     }
 
     #[test]
@@ -784,7 +799,10 @@ mod tests {
                 assert_eq!(frame.scope_chain.len(), 1);
                 assert_eq!(frame.scope_chain[0].type_, "local");
                 assert_eq!(frame.scope_chain[0].object.type_, "object");
-                assert_eq!(frame.scope_chain[0].object.class_name, Some("Object".to_string()));
+                assert_eq!(
+                    frame.scope_chain[0].object.class_name,
+                    Some("Object".to_string())
+                );
             }
             _ => panic!("Expected DebuggerPaused"),
         }

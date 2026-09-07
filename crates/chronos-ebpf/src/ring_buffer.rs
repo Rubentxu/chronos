@@ -101,9 +101,8 @@ impl BpfRingBuffer {
                     }
                     // SAFETY: EbpfEvent is repr(C), bytes come from the kernel
                     // and are aligned to the ring buffer page boundary.
-                    let event = unsafe {
-                        std::ptr::read_unaligned(bytes.as_ptr() as *const EbpfEvent)
-                    };
+                    let event =
+                        unsafe { std::ptr::read_unaligned(bytes.as_ptr() as *const EbpfEvent) };
                     Ok(PollResult::Event(event))
                 }
                 None => Ok(PollResult::Empty),
@@ -198,10 +197,7 @@ mod tests {
             // BpfRingBuffer::unavailable() returns an error
             let result = BpfRingBuffer::unavailable();
             assert!(result.is_err());
-            assert!(matches!(
-                result.unwrap_err(),
-                EbpfError::Unavailable { .. }
-            ));
+            assert!(matches!(result.unwrap_err(), EbpfError::Unavailable { .. }));
         }
     }
 
@@ -233,7 +229,9 @@ mod tests {
 
     #[test]
     fn test_mock_ring_buffer_drain_all() {
-        let events = (0..5).map(|i| make_entry_event(i * 100, 1, 0x1000 + i, "fn")).collect();
+        let events = (0..5)
+            .map(|i| make_entry_event(i * 100, 1, 0x1000 + i, "fn"))
+            .collect();
         let mut buf = MockRingBuffer::new(events);
 
         let trace_events = buf.drain_all();

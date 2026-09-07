@@ -125,7 +125,10 @@ impl McpSession {
     }
 
     /// Probe stop — ends a probe session.
-    pub async fn probe_stop(&mut self, session_id: &str) -> Result<ProbeStopResponse, McpSandboxError> {
+    pub async fn probe_stop(
+        &mut self,
+        session_id: &str,
+    ) -> Result<ProbeStopResponse, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id
         });
@@ -139,7 +142,10 @@ impl McpSession {
     }
 
     /// Probe drain — retrieves events collected since last drain.
-    pub async fn probe_drain(&mut self, session_id: &str) -> Result<Vec<SemanticEvent>, McpSandboxError> {
+    pub async fn probe_drain(
+        &mut self,
+        session_id: &str,
+    ) -> Result<Vec<SemanticEvent>, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id,
             "limit": 1000,
@@ -155,7 +161,10 @@ impl McpSession {
     }
 
     /// Probe drain raw — returns the full ProbeDrainResponse for edge case inspection.
-    pub async fn probe_drain_raw(&mut self, session_id: &str) -> Result<ProbeDrainResponse, McpSandboxError> {
+    pub async fn probe_drain_raw(
+        &mut self,
+        session_id: &str,
+    ) -> Result<ProbeDrainResponse, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id,
             "limit": 1000,
@@ -217,7 +226,10 @@ impl McpSession {
             "session_id": session_id
         });
 
-        let response = self.rpc_client.call_tool("session_snapshot", params).await?;
+        let response = self
+            .rpc_client
+            .call_tool("session_snapshot", params)
+            .await?;
 
         let result: SessionSnapshotResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
@@ -246,8 +258,8 @@ impl McpSession {
         &mut self,
         config: TripwireCreateParams,
     ) -> Result<String, McpSandboxError> {
-        let params = serde_json::to_value(config)
-            .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
+        let params =
+            serde_json::to_value(config).map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
 
         let response = self.rpc_client.call_tool("tripwire_create", params).await?;
 
@@ -368,7 +380,10 @@ impl McpSession {
     }
 
     /// List threads — lists all thread IDs in the trace.
-    pub async fn list_threads(&mut self, session_id: &str) -> Result<Vec<ThreadInfo>, McpSandboxError> {
+    pub async fn list_threads(
+        &mut self,
+        session_id: &str,
+    ) -> Result<Vec<ThreadInfo>, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id
         });
@@ -396,7 +411,10 @@ impl McpSession {
             "session_id": session_id
         });
 
-        let response = self.rpc_client.call_tool("get_execution_summary", params).await?;
+        let response = self
+            .rpc_client
+            .call_tool("get_execution_summary", params)
+            .await?;
 
         let result: ExecutionSummaryResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
@@ -415,7 +433,10 @@ impl McpSession {
             "max_depth": max_depth
         });
 
-        let response = self.rpc_client.call_tool("debug_call_graph", params).await?;
+        let response = self
+            .rpc_client
+            .call_tool("debug_call_graph", params)
+            .await?;
 
         let result: CallGraphResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
@@ -457,7 +478,10 @@ impl McpSession {
             "session_id": session_id
         });
 
-        let response = self.rpc_client.call_tool("debug_find_crash", params).await?;
+        let response = self
+            .rpc_client
+            .call_tool("debug_find_crash", params)
+            .await?;
 
         let result: DebugFindCrashResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
@@ -489,7 +513,10 @@ impl McpSession {
             "threshold_ns": 100
         });
 
-        let response = self.rpc_client.call_tool("debug_detect_races", params).await?;
+        let response = self
+            .rpc_client
+            .call_tool("debug_detect_races", params)
+            .await?;
 
         let result: DebugDetectRacesResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
@@ -509,7 +536,10 @@ impl McpSession {
             "limit": 100
         });
 
-        let response = self.rpc_client.call_tool("inspect_causality", params).await?;
+        let response = self
+            .rpc_client
+            .call_tool("inspect_causality", params)
+            .await?;
 
         let result: InspectCausalityResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
@@ -536,7 +566,10 @@ impl McpSession {
             "limit": limit
         });
 
-        let response = self.rpc_client.call_tool("debug_get_saliency_scores", params).await?;
+        let response = self
+            .rpc_client
+            .call_tool("debug_get_saliency_scores", params)
+            .await?;
 
         let result: DebugGetSaliencyScoresResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
@@ -555,7 +588,10 @@ impl McpSession {
             "top_n": top_n
         });
 
-        let response = self.rpc_client.call_tool("debug_expand_hotspot", params).await?;
+        let response = self
+            .rpc_client
+            .call_tool("debug_expand_hotspot", params)
+            .await?;
 
         // The response contains a hotspot_functions array, we return the first one
         // or aggregate them
@@ -588,7 +624,8 @@ impl McpSession {
         session_id: &str,
         name: &str,
     ) -> Result<SaveSessionResponse, McpSandboxError> {
-        self.save_session_with_language(session_id, "native", name).await
+        self.save_session_with_language(session_id, "native", name)
+            .await
     }
 
     /// Save session with custom language tag — saves an in-memory session with specified language.
@@ -613,10 +650,7 @@ impl McpSession {
     }
 
     /// Load session — loads a session from persistent storage.
-    pub async fn load_session(
-        &mut self,
-        session_id: &str,
-    ) -> Result<SessionInfo, McpSandboxError> {
+    pub async fn load_session(&mut self, session_id: &str) -> Result<SessionInfo, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id
         });
@@ -686,7 +720,10 @@ impl McpSession {
             "session_b": session_b
         });
 
-        let response = self.rpc_client.call_tool("compare_sessions", params).await?;
+        let response = self
+            .rpc_client
+            .call_tool("compare_sessions", params)
+            .await?;
 
         let result: CompareSessionsResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
@@ -719,7 +756,10 @@ impl McpSession {
             "top_n": 20
         });
 
-        let response = self.rpc_client.call_tool("performance_regression_audit", params).await?;
+        let response = self
+            .rpc_client
+            .call_tool("performance_regression_audit", params)
+            .await?;
 
         let result: PerformanceRegressionAuditResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
@@ -752,7 +792,10 @@ impl McpSession {
             "event_id": event_id
         });
 
-        let response = self.rpc_client.call_tool("debug_get_registers", params).await?;
+        let response = self
+            .rpc_client
+            .call_tool("debug_get_registers", params)
+            .await?;
 
         let result: DebugGetRegistersResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
@@ -775,7 +818,10 @@ impl McpSession {
             "event_id": event_id
         });
 
-        let response = self.rpc_client.call_tool("debug_get_variables", params).await?;
+        let response = self
+            .rpc_client
+            .call_tool("debug_get_variables", params)
+            .await?;
 
         let result: DebugGetVariablesResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
@@ -796,7 +842,10 @@ impl McpSession {
             "size": size
         });
 
-        let response = self.rpc_client.call_tool("debug_get_memory", params).await?;
+        let response = self
+            .rpc_client
+            .call_tool("debug_get_memory", params)
+            .await?;
 
         let result: DebugGetMemoryResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
@@ -843,7 +892,10 @@ impl McpSession {
             "expression": expression
         });
 
-        let response = self.rpc_client.call_tool("evaluate_expression", params).await?;
+        let response = self
+            .rpc_client
+            .call_tool("evaluate_expression", params)
+            .await?;
 
         let result: EvaluateExpressionResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
@@ -872,7 +924,10 @@ impl McpSession {
             "end_ts": end_ts
         });
 
-        let response = self.rpc_client.call_tool("debug_analyze_memory", params).await?;
+        let response = self
+            .rpc_client
+            .call_tool("debug_analyze_memory", params)
+            .await?;
 
         let result: DebugAnalyzeMemoryResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
@@ -893,7 +948,10 @@ impl McpSession {
             "limit": limit
         });
 
-        let response = self.rpc_client.call_tool("forensic_memory_audit", params).await?;
+        let response = self
+            .rpc_client
+            .call_tool("forensic_memory_audit", params)
+            .await?;
 
         let result: ForensicMemoryAuditResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
@@ -914,7 +972,10 @@ impl McpSession {
             "limit": limit
         });
 
-        let response = self.rpc_client.call_tool("debug_find_variable_origin", params).await?;
+        let response = self
+            .rpc_client
+            .call_tool("debug_find_variable_origin", params)
+            .await?;
 
         let result: DebugFindVariableOriginResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
@@ -923,7 +984,10 @@ impl McpSession {
     }
 
     /// Drop session — remove a session from memory without affecting persistent storage.
-    pub async fn drop_session(&mut self, session_id: &str) -> Result<DropSessionResponse, McpSandboxError> {
+    pub async fn drop_session(
+        &mut self,
+        session_id: &str,
+    ) -> Result<DropSessionResponse, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id
         });
@@ -973,7 +1037,10 @@ impl McpSession {
         });
 
         loop {
-            let response = self.rpc_client.call_tool("probe_drain", params.clone()).await?;
+            let response = self
+                .rpc_client
+                .call_tool("probe_drain", params.clone())
+                .await?;
 
             let result: ProbeDrainResponse = serde_json::from_value(response)
                 .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;

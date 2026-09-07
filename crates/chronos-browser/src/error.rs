@@ -12,10 +12,7 @@ pub enum BrowserError {
     CdpConnectionFailed(String),
 
     #[error("CDP command error: {method} - {message}")]
-    CdpCommandError {
-        method: String,
-        message: String,
-    },
+    CdpCommandError { method: String, message: String },
 
     #[error("WASM module not found: {0}")]
     WasmModuleNotFound(String),

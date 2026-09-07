@@ -10,8 +10,7 @@ use crate::symbol_resolver::SymbolResolver;
 use chronos_domain::bus::EventBusHandle;
 use chronos_domain::semantic::{ResolveContext, ResolverPipeline, SemanticEvent, SemanticResolver};
 use chronos_domain::{
-    CaptureConfig, CaptureSession, Language, ProbeBackend, SourceLocation, TraceError,
-    TraceEvent,
+    CaptureConfig, CaptureSession, Language, ProbeBackend, SourceLocation, TraceError, TraceEvent,
 };
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -90,7 +89,9 @@ impl NativeProbeBackend {
             )));
         }
 
-        let language = config.language.unwrap_or_else(|| Language::from_path(&config.target));
+        let language = config
+            .language
+            .unwrap_or_else(|| Language::from_path(&config.target));
         let event_bus = self.event_bus.clone();
         let running = self.running.clone();
         let resolver_pipeline = self.resolver_pipeline.clone();
@@ -108,10 +109,7 @@ impl NativeProbeBackend {
                     Some(resolver)
                 }
                 Err(e) => {
-                    warn!(
-                        "Could not load symbols from {}: {}",
-                        config.target, e
-                    );
+                    warn!("Could not load symbols from {}: {}", config.target, e);
                     None
                 }
             }
@@ -174,7 +172,11 @@ impl NativeProbeBackend {
     ///
     /// Similar to `start_probe` but uses `PtraceTracer::attach()` instead of `launch()`
     /// to attach to an already-running process.
-    pub fn attach_probe(&self, pid: u32, config: CaptureConfig) -> Result<CaptureSession, TraceError> {
+    pub fn attach_probe(
+        &self,
+        pid: u32,
+        config: CaptureConfig,
+    ) -> Result<CaptureSession, TraceError> {
         // HIGH-4: Guard against double-start
         if self.running.load(Ordering::SeqCst) {
             return Err(TraceError::CaptureFailed(
@@ -256,9 +258,7 @@ impl NativeProbeBackend {
                 nix::sys::signal::Signal::SIGKILL,
             );
         } else {
-            debug!(
-                "stop_probe: traced_pid not yet set, relying on running=false to stop thread"
-            );
+            debug!("stop_probe: traced_pid not yet set, relying on running=false to stop thread");
         }
 
         // Detach the thread handle without joining — the probe thread will exit
@@ -284,7 +284,10 @@ impl NativeProbeBackend {
                         info!("Probe thread exited cleanly for session {}", session_id)
                     }
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                        warn!("Probe thread did not exit within 10s for session {} — abandoning", session_id);
+                        warn!(
+                            "Probe thread did not exit within 10s for session {} — abandoning",
+                            session_id
+                        );
                     }
                     Err(_) => {
                         warn!("Probe thread panicked during shutdown for {}", session_id)
@@ -387,11 +390,9 @@ impl NativeProbeBackend {
                 .as_nanos() as u64;
 
             // Convert to TraceEvent and push to bus
-            if let Some(mut trace_event) = adapter.ptrace_event_to_trace_event(
-                &ptrace_event,
-                event_id,
-                timestamp_ns,
-            ) {
+            if let Some(mut trace_event) =
+                adapter.ptrace_event_to_trace_event(&ptrace_event, event_id, timestamp_ns)
+            {
                 // Resolve symbol if available
                 if let Some(resolver) = symbol_resolver {
                     let addr = trace_event.location.address;
@@ -424,8 +425,14 @@ impl NativeProbeBackend {
             // Continue the traced process
             let event_pid = ptrace_event.pid();
             if event_pid > 0
-                && !matches!(ptrace_event, crate::ptrace_tracer::PtraceEvent::Exited { .. })
-                && !matches!(ptrace_event, crate::ptrace_tracer::PtraceEvent::Signaled { .. })
+                && !matches!(
+                    ptrace_event,
+                    crate::ptrace_tracer::PtraceEvent::Exited { .. }
+                )
+                && !matches!(
+                    ptrace_event,
+                    crate::ptrace_tracer::PtraceEvent::Signaled { .. }
+                )
             {
                 let continue_result = if ptrace_config.trace_syscalls {
                     tracer.syscall_continue(event_pid)
@@ -502,11 +509,9 @@ impl NativeProbeBackend {
                 .as_nanos() as u64;
 
             // Convert to TraceEvent and push to bus
-            if let Some(trace_event) = adapter.ptrace_event_to_trace_event(
-                &ptrace_event,
-                event_id,
-                timestamp_ns,
-            ) {
+            if let Some(trace_event) =
+                adapter.ptrace_event_to_trace_event(&ptrace_event, event_id, timestamp_ns)
+            {
                 // Push raw event to raw buffer for QueryEngine
                 event_bus.push_raw(trace_event.clone());
 
@@ -524,8 +529,14 @@ impl NativeProbeBackend {
             // Continue the traced process
             let event_pid = ptrace_event.pid();
             if event_pid > 0
-                && !matches!(ptrace_event, crate::ptrace_tracer::PtraceEvent::Exited { .. })
-                && !matches!(ptrace_event, crate::ptrace_tracer::PtraceEvent::Signaled { .. })
+                && !matches!(
+                    ptrace_event,
+                    crate::ptrace_tracer::PtraceEvent::Exited { .. }
+                )
+                && !matches!(
+                    ptrace_event,
+                    crate::ptrace_tracer::PtraceEvent::Signaled { .. }
+                )
             {
                 let continue_result = if ptrace_config.trace_syscalls {
                     tracer.syscall_continue(event_pid)
@@ -587,7 +598,10 @@ impl NativeProbeBackend {
     /// For spawned probes, this is set once the child process is launched.
     /// For attached probes, this is set immediately before the event loop starts.
     pub fn get_traced_pid(&self) -> Option<i32> {
-        self.traced_pid.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.traced_pid
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 }
 
@@ -614,8 +628,7 @@ mod tests {
     #[test]
     fn test_native_probe_backend_with_language() {
         let bus = chronos_domain::bus::EventBus::new_shared(100);
-        let backend = NativeProbeBackend::new(bus)
-            .with_language(Language::Rust);
+        let backend = NativeProbeBackend::new(bus).with_language(Language::Rust);
         assert!(backend.is_available());
     }
 }

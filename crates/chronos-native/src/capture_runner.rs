@@ -109,7 +109,10 @@ impl FunctionEntryTracker {
             return None;
         }
 
-        info!("Tracking {} function entry addresses", function_addresses.len());
+        info!(
+            "Tracking {} function entry addresses",
+            function_addresses.len()
+        );
 
         Some(Self {
             function_addresses,
@@ -314,7 +317,10 @@ impl CaptureRunner {
     ///
     /// This is for attach mode where the process may not be an ELF binary
     /// we can symbol-resolve, so symbol_resolver is None.
-    pub fn run_to_completion_attach(pid: u32, config: CaptureConfig) -> Result<CaptureResult, String> {
+    pub fn run_to_completion_attach(
+        pid: u32,
+        config: CaptureConfig,
+    ) -> Result<CaptureResult, String> {
         let ptrace_config = PtraceConfig {
             trace_syscalls: config.capture_syscalls,
             capture_registers: true,
@@ -324,7 +330,13 @@ impl CaptureRunner {
         let stop_flag = Arc::new(AtomicBool::new(false));
         let mode = AttachMode::Attach(pid);
 
-        run_capture_loop(&mode, &ptrace_config, &stop_flag, None, config.max_duration_ms)
+        run_capture_loop(
+            &mode,
+            &ptrace_config,
+            &stop_flag,
+            None,
+            config.max_duration_ms,
+        )
     }
 
     /// Stop the capture and collect all events.
@@ -369,26 +381,27 @@ fn run_capture_loop(
     let adapter = NativeAdapter::new();
 
     // Launch or attach based on mode
-    let (pid, target_info, dwarf_data_opt): (i32, String, Option<std::borrow::Cow<'static, [u8]>>) = match mode {
-        AttachMode::Spawn { program, args } => {
-            let pid = tracer
-                .launch(program, args)
-                .map_err(|e| format!("Launch failed: {}", e))?;
-            info!("Capture started: PID {} for {}", pid, program.display());
+    let (pid, target_info, dwarf_data_opt): (i32, String, Option<std::borrow::Cow<'static, [u8]>>) =
+        match mode {
+            AttachMode::Spawn { program, args } => {
+                let pid = tracer
+                    .launch(program, args)
+                    .map_err(|e| format!("Launch failed: {}", e))?;
+                info!("Capture started: PID {} for {}", pid, program.display());
 
-            // Try to load DWARF debug info (best-effort - binary may be stripped)
-            let dwarf_data: Option<std::borrow::Cow<'static, [u8]>> =
-                std::fs::read(program).map(std::borrow::Cow::Owned).ok();
-            (pid, format!("{}", program.display()), dwarf_data)
-        }
-        AttachMode::Attach(pid) => {
-            tracer
-                .attach(*pid as i32)
-                .map_err(|e| format!("Attach to PID {} failed: {}", pid, e))?;
-            info!("Attached to running process: PID {}", pid);
-            (*pid as i32, format!("PID {}", pid), None)
-        }
-    };
+                // Try to load DWARF debug info (best-effort - binary may be stripped)
+                let dwarf_data: Option<std::borrow::Cow<'static, [u8]>> =
+                    std::fs::read(program).map(std::borrow::Cow::Owned).ok();
+                (pid, format!("{}", program.display()), dwarf_data)
+            }
+            AttachMode::Attach(pid) => {
+                tracer
+                    .attach(*pid as i32)
+                    .map_err(|e| format!("Attach to PID {} failed: {}", pid, e))?;
+                info!("Attached to running process: PID {}", pid);
+                (*pid as i32, format!("PID {}", pid), None)
+            }
+        };
 
     // DWARF debug info is only available in spawn mode (for the binary we launched)
     let dwarf_reader: Option<DwarfReader<'_>> = if let Some(ref data) = dwarf_data_opt {
@@ -443,7 +456,10 @@ fn run_capture_loop(
         // Check timeout
         if let Some(max_ms) = max_duration_ms {
             if start_time.elapsed().as_millis() as u64 > max_ms {
-                info!("Capture duration limit reached ({}ms), ending capture", max_ms);
+                info!(
+                    "Capture duration limit reached ({}ms), ending capture",
+                    max_ms
+                );
                 end_reason = CaptureEndReason::Failed(format!("timeout after {}ms", max_ms));
                 break;
             }
@@ -526,7 +542,10 @@ fn run_capture_loop(
                             tracer.continue_execution(*evt_pid)
                         };
                         if let Err(e) = continue_result {
-                            debug!("Failed to continue PID {} after function entry: {}", evt_pid, e);
+                            debug!(
+                                "Failed to continue PID {} after function entry: {}",
+                                evt_pid, e
+                            );
                         }
                     }
                 }
@@ -677,10 +696,7 @@ fn run_capture_loop(
                 CaptureEndReason::Exited(_) | CaptureEndReason::Signaled { .. }
             );
             if already_dead {
-                debug!(
-                    "Process already dead ({:?}), skipping kill",
-                    end_reason
-                );
+                debug!("Process already dead ({:?}), skipping kill", end_reason);
             } else if let Err(e) = tracer.kill(pid) {
                 warn!("Failed to kill PID {}: {}", pid, e);
             } else {
@@ -771,7 +787,10 @@ mod tests {
         use std::process::Command;
 
         // Spawn a long-running process
-        let mut child = Command::new("sleep").arg("10").spawn().expect("sleep should spawn");
+        let mut child = Command::new("sleep")
+            .arg("10")
+            .spawn()
+            .expect("sleep should spawn");
         let pid = child.id();
 
         // Give it a moment to start
@@ -787,7 +806,10 @@ mod tests {
         match result {
             Ok(capture) => {
                 // Attach succeeded - we may or may not have events depending on timing
-                info!("Attach succeeded, {} events collected", capture.total_events);
+                info!(
+                    "Attach succeeded, {} events collected",
+                    capture.total_events
+                );
             }
             Err(e) if e.contains("Operation not permitted") || e.contains("EPERM") => {
                 // Expected in restricted CI environments without CAP_SYS_PTRACE
@@ -809,10 +831,7 @@ mod tests {
         let config = CaptureConfig::new("nonexistent");
         // Use a very high PID that is unlikely to exist
         let result = CaptureRunner::run_to_completion_attach(999999999, config);
-        assert!(
-            result.is_err(),
-            "Expected error for invalid PID"
-        );
+        assert!(result.is_err(), "Expected error for invalid PID");
         let err = result.unwrap_err();
         assert!(
             err.contains("No such process") || err.contains("ESRCH") || err.contains("Attach"),

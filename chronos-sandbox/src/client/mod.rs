@@ -6,4 +6,4 @@ pub mod rpc;
 pub mod tools;
 pub mod types;
 
-pub use crate::client::tools::{McpTestClient, McpSession};
+pub use crate::client::tools::{McpSession, McpTestClient};

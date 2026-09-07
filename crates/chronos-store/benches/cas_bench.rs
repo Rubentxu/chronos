@@ -1,6 +1,6 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
 use chronos_store::{SessionMetadata, SessionStore, TraceDiff};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use tempfile::tempdir;
 
 fn bench_session_store_save_single_event(c: &mut Criterion) {
@@ -29,9 +29,7 @@ fn bench_session_store_save_single_event(c: &mut Criterion) {
     };
 
     c.bench_function("session_store_save_single_event", |b| {
-        b.iter(|| {
-            store.save_session(black_box(metadata.clone()), black_box(&[event.clone()]))
-        })
+        b.iter(|| store.save_session(black_box(metadata.clone()), black_box(&[event.clone()])))
     });
 }
 
@@ -85,9 +83,7 @@ fn bench_session_store_load(c: &mut Criterion) {
         duration_ms: 100,
     };
 
-    store
-        .save_session(metadata.clone(), &[event])
-        .unwrap();
+    store.save_session(metadata.clone(), &[event]).unwrap();
 
     c.bench_function("session_store_load_single_event", |b| {
         b.iter(|| store.load_session(black_box("load-bench-session")))
@@ -111,7 +107,16 @@ fn bench_trace_diff(c: &mut Criterion) {
     };
     let meta_b = meta_a.clone();
     c.bench_function("trace_diff_1k_50pct_overlap", |b| {
-        b.iter(|| TraceDiff::compare("a", "b", black_box(&events_a), black_box(&events_b), &meta_a, &meta_b))
+        b.iter(|| {
+            TraceDiff::compare(
+                "a",
+                "b",
+                black_box(&events_a),
+                black_box(&events_b),
+                &meta_a,
+                &meta_b,
+            )
+        })
     });
 }
 

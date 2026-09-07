@@ -12,17 +12,24 @@ async fn test_debug_get_registers_at_first_event() {
     let fixture = McpSession::fixture_path("test_busyloop")
         .expect("test_busyloop fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
     println!("Probe stopped: {} total events", stop.total_events);
 
@@ -34,7 +41,9 @@ async fn test_debug_get_registers_at_first_event() {
         offset: 0,
         ..Default::default()
     };
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events failed");
 
     if events.is_empty() {
@@ -47,18 +56,26 @@ async fn test_debug_get_registers_at_first_event() {
     println!("First event_id: {}", first_event_id);
 
     // Get registers at first event
-    let registers = client.debug_get_registers(&session_id, first_event_id).await;
+    let registers = client
+        .debug_get_registers(&session_id, first_event_id)
+        .await;
 
     match registers {
         Ok(reg) => {
-            println!("✓ debug_get_registers at event {}: {} registers",
-                first_event_id, reg.registers.len());
+            println!(
+                "✓ debug_get_registers at event {}: {} registers",
+                first_event_id,
+                reg.registers.len()
+            );
             // Registers map may be empty for events without register capture
             println!("  Registers: {:?}", reg.registers);
         }
         Err(e) => {
             // This is acceptable - not all events have register state
-            println!("✓ debug_get_registers returned error (expected for some events): {:?}", e);
+            println!(
+                "✓ debug_get_registers returned error (expected for some events): {:?}",
+                e
+            );
         }
     }
 
@@ -72,17 +89,24 @@ async fn test_debug_diff_consecutive_events() {
     let fixture = McpSession::fixture_path("test_busyloop")
         .expect("test_busyloop fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
     println!("Probe stopped: {} total events", stop.total_events);
 
@@ -94,7 +118,9 @@ async fn test_debug_diff_consecutive_events() {
         offset: 0,
         ..Default::default()
     };
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events failed");
 
     if events.len() < 3 {
@@ -103,16 +129,22 @@ async fn test_debug_diff_consecutive_events() {
         return;
     }
 
-    println!("Events: id={}, id={}, id={}",
-        events[0].event_id, events[1].event_id, events[2].event_id);
+    println!(
+        "Events: id={}, id={}, id={}",
+        events[0].event_id, events[1].event_id, events[2].event_id
+    );
 
     // Diff between event 0 and 2
-    let diff = client.debug_diff(&session_id, events[0].event_id, events[2].event_id).await;
+    let diff = client
+        .debug_diff(&session_id, events[0].event_id, events[2].event_id)
+        .await;
 
     match diff {
         Ok(result) => {
-            println!("✓ debug_diff between event {} and {}:",
-                events[0].event_id, events[2].event_id);
+            println!(
+                "✓ debug_diff between event {} and {}:",
+                events[0].event_id, events[2].event_id
+            );
             println!("  Session: {}", result.session_id);
             println!("  Summary: {}", result.summary);
             // Changes arrays exist, may be empty
@@ -120,7 +152,10 @@ async fn test_debug_diff_consecutive_events() {
         }
         Err(e) => {
             // Acceptable for simple programs without state changes
-            println!("✓ debug_diff returned error (expected for simple programs): {:?}", e);
+            println!(
+                "✓ debug_diff returned error (expected for simple programs): {:?}",
+                e
+            );
         }
     }
 
@@ -134,17 +169,24 @@ async fn test_state_diff_first_and_last_timestamps() {
     let fixture = McpSession::fixture_path("test_busyloop")
         .expect("test_busyloop fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
     println!("Probe stopped: {} total events", stop.total_events);
 
@@ -156,7 +198,9 @@ async fn test_state_diff_first_and_last_timestamps() {
         offset: 0,
         ..Default::default()
     };
-    let first_events = client.query_events(&session_id, filter_first).await
+    let first_events = client
+        .query_events(&session_id, filter_first)
+        .await
         .expect("query_events for first failed");
 
     if first_events.is_empty() {
@@ -174,7 +218,9 @@ async fn test_state_diff_first_and_last_timestamps() {
         offset: 10000, // Try high offset to get last
         ..Default::default()
     };
-    let last_events = client.query_events(&session_id, filter_last).await
+    let last_events = client
+        .query_events(&session_id, filter_last)
+        .await
         .expect("query_events for last failed");
 
     // If high offset returns empty, try offset 0 with total_events
@@ -191,13 +237,20 @@ async fn test_state_diff_first_and_last_timestamps() {
 
     match diff {
         Ok(result) => {
-            println!("✓ state_diff between {} and {}: {} changes",
-                ts_first, ts_last, result.changes.len());
+            println!(
+                "✓ state_diff between {} and {}: {} changes",
+                ts_first,
+                ts_last,
+                result.changes.len()
+            );
             println!("  Response has valid structure");
         }
         Err(e) => {
             // Acceptable - simple programs may not have state to diff
-            println!("✓ state_diff returned error (expected for simple programs): {:?}", e);
+            println!(
+                "✓ state_diff returned error (expected for simple programs): {:?}",
+                e
+            );
         }
     }
 
@@ -211,17 +264,24 @@ async fn test_debug_get_variables_at_valid_event() {
     let fixture = McpSession::fixture_path("test_add")
         .expect("test_add fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
     println!("Probe stopped: {} total events", stop.total_events);
 
@@ -233,23 +293,33 @@ async fn test_debug_get_variables_at_valid_event() {
         offset: 0,
         ..Default::default()
     };
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events failed");
 
     println!("Got {} events", events.len());
 
     // Try debug_get_variables on each event
     for event in &events {
-        let vars = client.debug_get_variables(&session_id, event.event_id).await;
+        let vars = client
+            .debug_get_variables(&session_id, event.event_id)
+            .await;
 
         match vars {
             Ok(variables) => {
-                println!("✓ debug_get_variables at event {}: {} vars",
-                    event.event_id, variables.len());
+                println!(
+                    "✓ debug_get_variables at event {}: {} vars",
+                    event.event_id,
+                    variables.len()
+                );
             }
             Err(e) => {
                 // Acceptable - not all events have variables
-                println!("  debug_get_variables at event {} returned: {:?}", event.event_id, e);
+                println!(
+                    "  debug_get_variables at event {} returned: {:?}",
+                    event.event_id, e
+                );
             }
         }
     }
@@ -266,17 +336,24 @@ async fn test_evaluate_expression_simple_arithmetic() {
     let fixture = McpSession::fixture_path("test_add")
         .expect("test_add fixture not found - run cargo build first");
 
-    let mut client = McpTestClient::start().await
+    let mut client = McpTestClient::start()
+        .await
         .expect("Failed to start MCP server");
 
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
         .expect("probe_start failed");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let _drained = client.probe_drain(&session_id).await
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
         .expect("probe_drain failed");
 
-    let stop = client.probe_stop(&session_id).await
+    let stop = client
+        .probe_stop(&session_id)
+        .await
         .expect("probe_stop failed");
     println!("Probe stopped: {} total events", stop.total_events);
 
@@ -288,7 +365,9 @@ async fn test_evaluate_expression_simple_arithmetic() {
         offset: 0,
         ..Default::default()
     };
-    let events = client.query_events(&session_id, filter).await
+    let events = client
+        .query_events(&session_id, filter)
+        .await
         .expect("query_events failed");
 
     if events.is_empty() {
@@ -307,11 +386,9 @@ async fn test_evaluate_expression_simple_arithmetic() {
         "expression": "1 + 2 * 3"
     });
 
-    let result = client.call_with_timeout(
-        "evaluate_expression",
-        params,
-        Duration::from_secs(5),
-    ).await;
+    let result = client
+        .call_with_timeout("evaluate_expression", params, Duration::from_secs(5))
+        .await;
 
     match result {
         Ok(json) => {
@@ -325,7 +402,10 @@ async fn test_evaluate_expression_simple_arithmetic() {
         }
         Err(e) => {
             // Acceptable - expression evaluation may not work for all events
-            println!("✓ evaluate_expression returned error (expected for some events): {:?}", e);
+            println!(
+                "✓ evaluate_expression returned error (expected for some events): {:?}",
+                e
+            );
         }
     }
 

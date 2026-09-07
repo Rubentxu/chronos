@@ -31,10 +31,13 @@ fn test_wasm_semantic_resolver_entry() {
     let resolver = WasmSemanticResolver::new();
     let event = make_wasm_frame(0, Some("add".to_string()), 0, WasmEventKind::Entry);
 
-    let semantic = resolver.resolve(&event, &ResolveContext {
-        pid: 1,
-        binary_path: None,
-    });
+    let semantic = resolver.resolve(
+        &event,
+        &ResolveContext {
+            pid: 1,
+            binary_path: None,
+        },
+    );
 
     assert!(semantic.is_some());
     let semantic = semantic.unwrap();
@@ -51,10 +54,13 @@ fn test_wasm_semantic_resolver_return() {
     let resolver = WasmSemanticResolver::new();
     let event = make_wasm_frame(0, Some("add".to_string()), 0, WasmEventKind::Return);
 
-    let semantic = resolver.resolve(&event, &ResolveContext {
-        pid: 1,
-        binary_path: None,
-    });
+    let semantic = resolver.resolve(
+        &event,
+        &ResolveContext {
+            pid: 1,
+            binary_path: None,
+        },
+    );
 
     assert!(semantic.is_some());
     let semantic = semantic.unwrap();
@@ -71,10 +77,13 @@ fn test_wasm_semantic_resolver_exception() {
     let resolver = WasmSemanticResolver::new();
     let event = make_wasm_frame(0, Some("add".to_string()), 0, WasmEventKind::Exception);
 
-    let semantic = resolver.resolve(&event, &ResolveContext {
-        pid: 1,
-        binary_path: None,
-    });
+    let semantic = resolver.resolve(
+        &event,
+        &ResolveContext {
+            pid: 1,
+            binary_path: None,
+        },
+    );
 
     assert!(semantic.is_some());
     let semantic = semantic.unwrap();
@@ -89,10 +98,13 @@ fn test_wasm_semantic_resolver_non_wasm_event() {
     let resolver = WasmSemanticResolver::new();
     let event = TraceEvent::function_entry(1, 1000, 1, "main", 0x1000);
 
-    let semantic = resolver.resolve(&event, &ResolveContext {
-        pid: 1,
-        binary_path: None,
-    });
+    let semantic = resolver.resolve(
+        &event,
+        &ResolveContext {
+            pid: 1,
+            binary_path: None,
+        },
+    );
 
     // Non-WasmFrame events should return None
     assert!(semantic.is_none());
@@ -103,10 +115,13 @@ fn test_wasm_semantic_resolver_breakpoint() {
     let resolver = WasmSemanticResolver::new();
     let event = make_wasm_frame(0, Some("add".to_string()), 0, WasmEventKind::Breakpoint);
 
-    let semantic = resolver.resolve(&event, &ResolveContext {
-        pid: 1,
-        binary_path: None,
-    });
+    let semantic = resolver.resolve(
+        &event,
+        &ResolveContext {
+            pid: 1,
+            binary_path: None,
+        },
+    );
 
     assert!(semantic.is_some());
     let semantic = semantic.unwrap();
@@ -123,10 +138,13 @@ fn test_wasm_semantic_resolver_step() {
     let resolver = WasmSemanticResolver::new();
     let event = make_wasm_frame(0, Some("add".to_string()), 10, WasmEventKind::Step);
 
-    let semantic = resolver.resolve(&event, &ResolveContext {
-        pid: 1,
-        binary_path: None,
-    });
+    let semantic = resolver.resolve(
+        &event,
+        &ResolveContext {
+            pid: 1,
+            binary_path: None,
+        },
+    );
 
     assert!(semantic.is_some());
     let semantic = semantic.unwrap();
@@ -139,12 +157,20 @@ fn test_wasm_semantic_resolver_step() {
 #[test]
 fn test_wasm_semantic_resolver_other() {
     let resolver = WasmSemanticResolver::new();
-    let event = make_wasm_frame(0, Some("add".to_string()), 0, WasmEventKind::Other("debug".to_string()));
+    let event = make_wasm_frame(
+        0,
+        Some("add".to_string()),
+        0,
+        WasmEventKind::Other("debug".to_string()),
+    );
 
-    let semantic = resolver.resolve(&event, &ResolveContext {
-        pid: 1,
-        binary_path: None,
-    });
+    let semantic = resolver.resolve(
+        &event,
+        &ResolveContext {
+            pid: 1,
+            binary_path: None,
+        },
+    );
 
     assert!(semantic.is_some());
     let semantic = semantic.unwrap();
@@ -159,10 +185,13 @@ fn test_wasm_semantic_resolver_no_function_name() {
     let resolver = WasmSemanticResolver::new();
     let event = make_wasm_frame(5, None, 100, WasmEventKind::Entry);
 
-    let semantic = resolver.resolve(&event, &ResolveContext {
-        pid: 1,
-        binary_path: None,
-    });
+    let semantic = resolver.resolve(
+        &event,
+        &ResolveContext {
+            pid: 1,
+            binary_path: None,
+        },
+    );
 
     assert!(semantic.is_some());
     let semantic = semantic.unwrap();
@@ -191,10 +220,13 @@ fn test_wasm_semantic_resolver_timestamp_preserved() {
     let resolver = WasmSemanticResolver::new();
     let event = make_wasm_frame(0, Some("add".to_string()), 0, WasmEventKind::Entry);
 
-    let semantic = resolver.resolve(&event, &ResolveContext {
-        pid: 1,
-        binary_path: None,
-    });
+    let semantic = resolver.resolve(
+        &event,
+        &ResolveContext {
+            pid: 1,
+            binary_path: None,
+        },
+    );
 
     assert!(semantic.is_some());
     assert_eq!(semantic.unwrap().timestamp_ns, 1000);
@@ -205,10 +237,13 @@ fn test_wasm_semantic_resolver_thread_id_preserved() {
     let resolver = WasmSemanticResolver::new();
     let event = make_wasm_frame(0, Some("add".to_string()), 0, WasmEventKind::Entry);
 
-    let semantic = resolver.resolve(&event, &ResolveContext {
-        pid: 1,
-        binary_path: None,
-    });
+    let semantic = resolver.resolve(
+        &event,
+        &ResolveContext {
+            pid: 1,
+            binary_path: None,
+        },
+    );
 
     assert!(semantic.is_some());
     assert_eq!(semantic.unwrap().thread_id, 1);
@@ -220,10 +255,13 @@ fn test_wasm_semantic_resolver_source_event_id_preserved() {
     let event = make_wasm_frame(0, Some("add".to_string()), 0, WasmEventKind::Entry);
     // event_id is set to 1 in make_wasm_frame
 
-    let semantic = resolver.resolve(&event, &ResolveContext {
-        pid: 1,
-        binary_path: None,
-    });
+    let semantic = resolver.resolve(
+        &event,
+        &ResolveContext {
+            pid: 1,
+            binary_path: None,
+        },
+    );
 
     assert!(semantic.is_some());
     assert_eq!(semantic.unwrap().source_event_id, 1);

@@ -1,5 +1,7 @@
+use chronos_domain::semantic::{
+    ResolveContext, SemanticEvent, SemanticEventKind, SemanticResolver,
+};
 use chronos_domain::{EventData, EventType, Language, TraceEvent};
-use chronos_domain::semantic::{ResolveContext, SemanticEvent, SemanticEventKind, SemanticResolver};
 
 /// SemanticResolver for Python that enriches PythonFrame events.
 #[derive(Debug)]
@@ -54,7 +56,13 @@ impl SemanticResolver for PythonSemanticResolver {
                 if args.is_empty() {
                     format!("{}() @ {}:{}", qualified_name, file, line)
                 } else {
-                    format!("{}({}) @ {}:{}", qualified_name, args.join(", "), file, line)
+                    format!(
+                        "{}({}) @ {}:{}",
+                        qualified_name,
+                        args.join(", "),
+                        file,
+                        line
+                    )
                 }
             }
             EventType::FunctionExit => {

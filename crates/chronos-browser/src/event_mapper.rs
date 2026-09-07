@@ -4,7 +4,10 @@
 //! pattern established in chronos-js/src/adapter.rs.
 
 use crate::wasm_probes::WasmBreakpointManager;
-use chronos_domain::trace::{EventData, EventType, SourceLocation, TraceEvent, WasmEventKind, WasmFunctionInfo, WasmModuleInfo};
+use chronos_domain::trace::{
+    EventData, EventType, SourceLocation, TraceEvent, WasmEventKind, WasmFunctionInfo,
+    WasmModuleInfo,
+};
 use serde::Deserialize;
 use std::collections::HashMap;
 
@@ -110,7 +113,10 @@ pub fn paused_to_wasm_events(
                     //   - Near body_start → Entry breakpoint
                     //
                     // Fallback: __return__ prefix for legacy toolchains.
-                    let body_len = probe.function.body_end.saturating_sub(probe.function.body_start);
+                    let body_len = probe
+                        .function
+                        .body_end
+                        .saturating_sub(probe.function.body_start);
                     let threshold = (body_len as f64 * 0.03) as u32; // 3% proximity
                     let body_offset = first_body_offset.unwrap_or(0);
                     let is_return = if body_len > 0 {
@@ -123,7 +129,12 @@ pub fn paused_to_wasm_events(
 
                     if is_return {
                         WasmEventKind::Return
-                    } else if probe.function.name.as_ref().is_some_and(|n| n.starts_with("__return__")) {
+                    } else if probe
+                        .function
+                        .name
+                        .as_ref()
+                        .is_some_and(|n| n.starts_with("__return__"))
+                    {
                         // Legacy fallback: Emscripten __return__ prefix
                         tracing::debug!(
                             "Using legacy __return__ detection for function {:?} — consider recompiling with position metadata",
@@ -160,19 +171,15 @@ pub fn paused_to_wasm_events(
         let body_offset = frame.location.line_number as u32;
         let function_info = find_function_by_offset(module, body_offset);
 
-        let function_index = function_info
-            .map(|f| f.function_index as u32)
-            .unwrap_or(0);
+        let function_index = function_info.map(|f| f.function_index as u32).unwrap_or(0);
 
-        let function_name = function_info
-            .and_then(|f| f.name.clone())
-            .or_else(|| {
-                if frame.function_name.is_empty() {
-                    None
-                } else {
-                    Some(frame.function_name.clone())
-                }
-            });
+        let function_name = function_info.and_then(|f| f.name.clone()).or_else(|| {
+            if frame.function_name.is_empty() {
+                None
+            } else {
+                Some(frame.function_name.clone())
+            }
+        });
 
         // Extract locals from scope chain where type == "wasm-expression-stack"
         let locals = extract_wasm_locals(&frame.scope_chain);
@@ -210,15 +217,20 @@ pub fn paused_to_wasm_events(
 
 /// Find a function in the module by its body offset.
 fn find_function_by_offset(module: &WasmModuleInfo, offset: u32) -> Option<&WasmFunctionInfo> {
-    module.functions.iter().find(|f| {
-        offset >= f.body_start && offset < f.body_end
-    })
+    module
+        .functions
+        .iter()
+        .find(|f| offset >= f.body_start && offset < f.body_end)
 }
 
 /// Extract local variables from WASM expression stack scope.
-fn extract_wasm_locals(scope_chain: &[CdpScope]) -> Option<Vec<chronos_domain::value::VariableInfo>> {
+fn extract_wasm_locals(
+    scope_chain: &[CdpScope],
+) -> Option<Vec<chronos_domain::value::VariableInfo>> {
     // Look for wasm-expression-stack scope type
-    let wasm_scope = scope_chain.iter().find(|s| s.scope_type == "wasm-expression-stack")?;
+    let wasm_scope = scope_chain
+        .iter()
+        .find(|s| s.scope_type == "wasm-expression-stack")?;
 
     let mut locals = Vec::new();
 
@@ -318,7 +330,10 @@ mod tests {
             Some("add")
         );
         assert_eq!(
-            find_function_by_offset(&module, 15).unwrap().name.as_deref(),
+            find_function_by_offset(&module, 15)
+                .unwrap()
+                .name
+                .as_deref(),
             Some("sub")
         );
         assert!(find_function_by_offset(&module, 25).is_none());
