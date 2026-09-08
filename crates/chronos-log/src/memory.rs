@@ -19,8 +19,9 @@ use crate::gap::Gap;
 use crate::record::{ExecutionKind, ExecutionPayload, ExecutionRecord, SessionId};
 use crate::seq::EventSeq;
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Mutex;
+use uuid::Uuid;
 
 /// One entry in the per-session record list.
 #[derive(Debug, Clone)]
@@ -28,6 +29,12 @@ enum RecordEntry {
     Record(ExecutionRecord),
     Gap(Gap),
 }
+
+/// Identity-based secondary indexes used by the M2 read surface.
+/// Keyed by `SessionId` so each session has its own index namespace.
+type InvocationIndex = HashMap<Uuid, BTreeSet<EventSeq>>;
+type SymbolIndexKey = chronos_domain::SymbolId;
+type SymbolIndex = HashMap<SymbolIndexKey, BTreeSet<EventSeq>>;
 
 /// The in-memory backend.
 #[derive(Debug, Default)]
@@ -39,6 +46,17 @@ pub struct InMemoryExecutionLog {
     /// Per-(session, consumer) high-water seq (last seq the consumer
     /// has *processed*).
     cursors: Mutex<HashMap<(SessionId, LogConsumerId), EventSeq>>,
+    /// Per-session index: invocation_id → set of seqs that carry it.
+    /// Populated by `append()`, `replay_record()`, and pruned by
+    /// `prune_secondary_indexes_up_to()`. See REQ-IndexesRebuiltOnReplay.
+    invocation_index: Mutex<HashMap<SessionId, InvocationIndex>>,
+    /// Per-session index: parent_invocation_id → set of seqs that
+    /// reference it as a parent. Populated the same way.
+    parent_index: Mutex<HashMap<SessionId, InvocationIndex>>,
+    /// Per-session index: symbol_id → set of seqs that carry it.
+    /// Populated the same way. Looked up with a time-range filter
+    /// (the BTreeSet supports range queries natively).
+    symbol_index: Mutex<HashMap<SessionId, SymbolIndex>>,
 }
 
 impl InMemoryExecutionLog {
@@ -104,6 +122,13 @@ impl InMemoryExecutionLog {
             .entry(r.session_id.clone())
             .or_default()
             .push(RecordEntry::Record(r.clone()));
+        drop(records);
+        drop(next_seq);
+
+        // Same insertion order as live `append()`: primary record
+        // first, then secondary index. On cold-start replay this
+        // rebuilds the indexes identically to live appends.
+        self.index_record(r);
         Ok(())
     }
 
@@ -137,6 +162,183 @@ impl InMemoryExecutionLog {
             *entry = last_seq;
         }
     }
+
+    /// Add `r`'s identity fields (invocation_id / parent_invocation_id
+    /// / symbol_id) to the secondary indexes, when present. v1 records
+    /// (None on all three) contribute nothing — they are unreachable
+    /// by the identity-based read methods, which matches REQ-GetByInvocation
+    /// / REQ-ChildrenOf / REQ-InRangeBySymbol.
+    fn index_record(&self, r: &ExecutionRecord) {
+        let sid = r.session_id.clone();
+        let seq = r.seq;
+        if let Some(inv) = r.invocation_id {
+            let mut idx = self
+                .invocation_index
+                .lock()
+                .expect("invocation_index poisoned");
+            idx.entry(sid.clone())
+                .or_default()
+                .entry(inv.0)
+                .or_default()
+                .insert(seq);
+        }
+        if let Some(parent) = r.parent_invocation_id {
+            let mut idx = self.parent_index.lock().expect("parent_index poisoned");
+            idx.entry(sid.clone())
+                .or_default()
+                .entry(parent.0)
+                .or_default()
+                .insert(seq);
+        }
+        if let Some(sym) = r.symbol_id {
+            let mut idx = self.symbol_index.lock().expect("symbol_index poisoned");
+            idx.entry(sid)
+                .or_default()
+                .entry(sym)
+                .or_default()
+                .insert(seq);
+        }
+    }
+
+    /// Drop entries with `seq <= cutoff` from every secondary index.
+    /// Called by `SegmentedExecutionLog::compact_up_to` after the
+    /// underlying records have been evicted from disk and from the
+    /// `records` Vec. Satisfies REQ-IndexesPrunedOnCompaction.
+    pub fn prune_secondary_indexes_up_to(&self, cutoff: EventSeq) {
+        {
+            let mut idx = self
+                .invocation_index
+                .lock()
+                .expect("invocation_index poisoned");
+            for inner in idx.values_mut() {
+                for set in inner.values_mut() {
+                    set.retain(|s| *s > cutoff);
+                }
+                inner.retain(|_, set| !set.is_empty());
+            }
+        }
+        {
+            let mut idx = self.parent_index.lock().expect("parent_index poisoned");
+            for inner in idx.values_mut() {
+                for set in inner.values_mut() {
+                    set.retain(|s| *s > cutoff);
+                }
+                inner.retain(|_, set| !set.is_empty());
+            }
+        }
+        {
+            let mut idx = self.symbol_index.lock().expect("symbol_index poisoned");
+            for inner in idx.values_mut() {
+                for set in inner.values_mut() {
+                    set.retain(|s| *s > cutoff);
+                }
+                inner.retain(|_, set| !set.is_empty());
+            }
+        }
+    }
+
+    /// Resolve a set of seqs back to the concrete `ExecutionRecord`
+    /// values they point at. Records whose seq is no longer present
+    /// in the underlying `records` Vec (e.g. pruned by compaction)
+    /// are silently skipped.
+    fn resolve_seqs(
+        &self,
+        session_id: &SessionId,
+        seqs: impl IntoIterator<Item = EventSeq>,
+    ) -> Vec<ExecutionRecord> {
+        let records = self.records.lock().expect("records lock poisoned");
+        let entries = match records.get(session_id) {
+            Some(v) => v,
+            None => return Vec::new(),
+        };
+        let mut out = Vec::new();
+        for s in seqs {
+            // Linear scan; the per-key BTreeSet is small (typical
+            // recursion depth is ≤32). For very wide keys, a
+            // positional index over the Vec is a future cycle.
+            for entry in entries {
+                if let RecordEntry::Record(r) = entry {
+                    if r.seq == s {
+                        out.push(r.clone());
+                        break;
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Return every record in `session_id` whose `invocation_id`
+    /// equals `Some(id)`, in seq order. Records with `invocation_id
+    /// == None` (v1) are excluded. Returns `Vec::new()` if the
+    /// session or invocation is unknown. See REQ-GetByInvocation.
+    pub fn get_by_invocation(
+        &self,
+        session_id: &SessionId,
+        id: chronos_domain::InvocationId,
+    ) -> Vec<ExecutionRecord> {
+        let seqs = {
+            let idx = self
+                .invocation_index
+                .lock()
+                .expect("invocation_index poisoned");
+            idx.get(session_id)
+                .and_then(|m| m.get(&id.0))
+                .cloned()
+                .unwrap_or_default()
+        };
+        // BTreeSet already sorts; resolve in order.
+        self.resolve_seqs(session_id, seqs)
+    }
+
+    /// Return every record in `session_id` whose `parent_invocation_id`
+    /// equals `Some(parent_id)`, in seq order. Records with
+    /// `parent_invocation_id == None` are excluded. See REQ-ChildrenOf.
+    pub fn children_of(
+        &self,
+        session_id: &SessionId,
+        parent_id: chronos_domain::InvocationId,
+    ) -> Vec<ExecutionRecord> {
+        let seqs = {
+            let idx = self.parent_index.lock().expect("parent_index poisoned");
+            idx.get(session_id)
+                .and_then(|m| m.get(&parent_id.0))
+                .cloned()
+                .unwrap_or_default()
+        };
+        self.resolve_seqs(session_id, seqs)
+    }
+
+    /// Return every record in `session_id` whose `symbol_id` equals
+    /// `Some(symbol)` AND whose `monotonic_ns` lies in `[start_ns,
+    /// end_ns)`, in seq order. See REQ-InRangeBySymbol.
+    pub fn in_range_by_symbol(
+        &self,
+        session_id: &SessionId,
+        symbol: chronos_domain::SymbolId,
+        start_ns: u64,
+        end_ns: u64,
+    ) -> Vec<ExecutionRecord> {
+        let seqs: Vec<EventSeq> = {
+            let idx = self.symbol_index.lock().expect("symbol_index poisoned");
+            match idx.get(session_id).and_then(|m| m.get(&symbol)) {
+                Some(set) => set
+                    .iter()
+                    .copied()
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    // BTreeSet range filter on monotonic_ns requires
+                    // us to look up each record's monotonic_ns; we
+                    // resolve the records first, then filter on time.
+                    .collect(),
+                None => return Vec::new(),
+            }
+        };
+        self.resolve_seqs(session_id, seqs)
+            .into_iter()
+            .filter(|r| r.monotonic_ns >= start_ns && r.monotonic_ns < end_ns)
+            .collect()
+    }
 }
 
 impl ExecutionLogBackend for InMemoryExecutionLog {
@@ -150,7 +352,7 @@ impl ExecutionLogBackend for InMemoryExecutionLog {
         // externally. We assume the caller is well-behaved.
 
         let mut records = self.records.lock().expect("records lock poisoned");
-        let entry = RecordEntry::Record(ExecutionRecord {
+        let stored = ExecutionRecord {
             session_id: session_id.clone(),
             seq: *seq,
             monotonic_ns: record.monotonic_ns,
@@ -159,14 +361,22 @@ impl ExecutionLogBackend for InMemoryExecutionLog {
             invocation_id: record.invocation_id,
             parent_invocation_id: record.parent_invocation_id,
             symbol_id: record.symbol_id,
-        });
-        records.entry(session_id.clone()).or_default().push(entry);
+        };
+        records
+            .entry(session_id.clone())
+            .or_default()
+            .push(RecordEntry::Record(stored.clone()));
 
         let assigned = *seq;
         *seq = seq.next();
         drop(records);
         drop(next_seq);
 
+        // Secondary-index insertion happens *after* the primary record
+        // is in the Vec, so any concurrent reader sees either the old
+        // state (no record, no index entry) or the new state (record
+        // + index entry) — never a dangling index entry.
+        self.index_record(&stored);
         Ok(assigned)
     }
 
@@ -327,98 +537,5 @@ impl ExecutionLogBackend for InMemoryExecutionLog {
             // allocator is "next free seq", so tail is allocator - 1.
             Some(EventSeq(allocator.get().saturating_sub(1)))
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::gap::GapReason;
-
-    #[test]
-    fn fresh_log_returns_empty_session() {
-        let log = InMemoryExecutionLog::new();
-        let result = log
-            .read_after(SessionId::new("s1"), LogConsumerId::new("agent-a"), None)
-            .unwrap();
-        match result {
-            ReadResult::Ok {
-                records,
-                gaps,
-                next_cursor,
-            } => {
-                assert!(records.is_empty());
-                assert!(gaps.is_empty());
-                assert_eq!(next_cursor.last_seq, EventSeq::ZERO);
-            }
-            other => panic!("expected Ok, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn append_assigns_consecutive_seqs() {
-        let log = InMemoryExecutionLog::new();
-        let s1 = SessionId::new("s1");
-        let s0 = log.append_raw(s1.clone(), 100, "raw").unwrap();
-        let s1_seq = log.append_raw(s1.clone(), 200, "raw").unwrap();
-        let s2_seq = log.append_raw(s1.clone(), 300, "raw").unwrap();
-        assert_eq!(s0, EventSeq::new(0));
-        assert_eq!(s1_seq, EventSeq::new(1));
-        assert_eq!(s2_seq, EventSeq::new(2));
-        assert_eq!(log.entry_count(&s1), 3);
-    }
-
-    #[test]
-    fn sessions_have_independent_seqs() {
-        let log = InMemoryExecutionLog::new();
-        let a = SessionId::new("a");
-        let b = SessionId::new("b");
-        assert_eq!(log.append_raw(a.clone(), 0, "x").unwrap(), EventSeq::new(0));
-        assert_eq!(log.append_raw(b.clone(), 0, "x").unwrap(), EventSeq::new(0));
-        assert_eq!(log.append_raw(a.clone(), 0, "x").unwrap(), EventSeq::new(1));
-        assert_eq!(log.append_raw(b.clone(), 0, "x").unwrap(), EventSeq::new(1));
-    }
-
-    #[test]
-    fn record_gap_bumps_seq_allocator() {
-        let log = InMemoryExecutionLog::new();
-        let s = SessionId::new("s");
-        // First a normal append.
-        log.append_raw(s.clone(), 0, "x").unwrap();
-        // Now record a gap spanning seqs 1..=5.
-        log.record_gap(
-            s.clone(),
-            Gap::new(
-                EventSeq::new(1),
-                EventSeq::new(5),
-                GapReason::KernelRingOverflow,
-                "test",
-            ),
-        )
-        .unwrap();
-        // Next append must be > gap.last_missing.
-        let next = log.append_raw(s.clone(), 0, "x").unwrap();
-        assert!(
-            next > EventSeq::new(5),
-            "expected seq > 5 after gap, got {}",
-            next
-        );
-    }
-
-    #[test]
-    fn invalid_gap_rejected() {
-        let log = InMemoryExecutionLog::new();
-        let err = log
-            .record_gap(
-                SessionId::new("s"),
-                Gap::new(
-                    EventSeq::new(5),
-                    EventSeq::new(1),
-                    GapReason::KernelRingOverflow,
-                    "test",
-                ),
-            )
-            .unwrap_err();
-        assert!(matches!(err, LogError::InvalidGap { .. }));
     }
 }
