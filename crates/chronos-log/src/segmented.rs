@@ -15,9 +15,12 @@
 //! which restores the seq allocator so `tail_seq` returns the
 //! correct value post-boot.
 //!
-//! Consumer cursors are **not** persisted in m1-02 — a fresh
-//! consumer always resumes from the in-memory tail after replay.
-//! Persisting cursors is deferred to m1-04 (checkpoint store).
+//! Consumer cursors are **persisted** across restarts: `commit_cursor`
+//! writes a cursor sidecar (see `cursor_sidecar_path` /
+//! `write_cursor_sidecar`) and `open` replays it into the inner backend
+//! via `replay_cursors_into_inner`, so a consumer resumes from its last
+//! committed seq rather than the in-memory tail. (m2-09 corrected the
+//! module docs to match the m1-04 durable-cursor implementation.)
 //!
 //! ## Crash safety
 //!
