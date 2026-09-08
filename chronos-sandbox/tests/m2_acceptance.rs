@@ -200,3 +200,65 @@ fn m2_02_identity_reads_via_segmented_log_impl() {
 
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn m2_03_analytics_via_segmented_log_impl() {
+    // End-to-end through SegmentedExecutionLog: build a deep chain,
+    // then assert call_frequency, recursion_depth, and
+    // reconstruct_call_tree return the right values.
+    use chronos_log::NewExecutionRecord;
+    let session = SessionId::new("m2-03-uat");
+    let dir = std::env::temp_dir().join(format!("chronos-m2-03-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut cfg = SegmentedConfig::with_dir(&dir);
+    cfg.flush_threshold = NonZeroUsize::new(64).unwrap();
+    let log = SegmentedExecutionLog::open(session.clone(), cfg).unwrap();
+
+    // Build a chain root -> a -> b (3 records, 2 with parents).
+    let root = InvocationId::now();
+    let a = InvocationId::now();
+    let b = InvocationId::now();
+    let sym_root = SymbolId::new("root", None, Language::C);
+    let sym_a = SymbolId::new("a", None, Language::C);
+    let sym_b = SymbolId::new("b", None, Language::C);
+
+    let mk = |monotonic_ns: u64, inv, parent, sym| NewExecutionRecord {
+        session_id: session.clone(),
+        monotonic_ns,
+        payload: ExecutionPayload::new(Vec::new(), "ev"),
+        invocation_id: Some(inv),
+        parent_invocation_id: parent,
+        symbol_id: Some(sym),
+    };
+    log.append(mk(10, root, None, sym_root)).unwrap();
+    log.append(mk(20, a, Some(root), sym_a)).unwrap();
+    log.append(mk(30, b, Some(a), sym_b)).unwrap();
+    // Plus a sibling call to sym_a at the top level (no parent).
+    log.append(mk(40, InvocationId::now(), None, sym_a))
+        .unwrap();
+    log.flush().ok();
+
+    // call_frequency: sym_a was called twice (a + the sibling), sym_b
+    // once, sym_root once.
+    assert_eq!(log.call_frequency(sym_a), 2);
+    assert_eq!(log.call_frequency(sym_b), 1);
+    assert_eq!(log.call_frequency(sym_root), 1);
+
+    // call_frequency_in_range: only the a→root call (ns=20) is in [15, 25).
+    assert_eq!(log.call_frequency_in_range(sym_a, 15, 25), 1);
+
+    // recursion_depth: longest chain is root→a→b (3 records).
+    assert_eq!(log.recursion_depth(), 3);
+
+    // reconstruct_call_tree from root.
+    let tree = log.reconstruct_call_tree(root).unwrap();
+    assert_eq!(tree.invocation_id, root);
+    assert_eq!(tree.children.len(), 1, "root has only a as direct child");
+    let a_node = &tree.children[0];
+    assert_eq!(a_node.invocation_id, a);
+    assert_eq!(a_node.children.len(), 1, "a has only b as direct child");
+    assert_eq!(a_node.children[0].invocation_id, b);
+    assert!(a_node.children[0].children.is_empty());
+
+    std::fs::remove_dir_all(&dir).ok();
+}

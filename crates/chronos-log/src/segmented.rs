@@ -224,6 +224,87 @@ impl SegmentedExecutionLog {
             .in_range_by_symbol(&self.session_id, symbol, start_ns, end_ns)
     }
 
+    // ----------------------------------------------------------------
+    // Analytics delegation (m2-03).
+    //
+    // We can't expose &InMemoryExecutionLog because the inner mutex
+    // is held only for the duration of a method call — there's no
+    // way to hand out a borrowed reference that outlives the guard.
+    // So each analytics function gets its own delegation that locks,
+    // computes, and returns a value type (no borrows).
+    // ----------------------------------------------------------------
+
+    /// Number of records on this session whose `symbol_id ==
+    /// Some(symbol)`. Mirrors
+    /// `chronos_log::analytics::call_frequency`.
+    pub fn call_frequency(&self, symbol: chronos_domain::SymbolId) -> u64 {
+        let inner = self.inner.lock().expect("poisoned");
+        let count = inner
+            .backend
+            .in_range_by_symbol(&self.session_id, symbol, 0, u64::MAX)
+            .len();
+        count as u64
+    }
+
+    /// Time-bounded call frequency. Mirrors
+    /// `chronos_log::analytics::call_frequency_in_range`.
+    pub fn call_frequency_in_range(
+        &self,
+        symbol: chronos_domain::SymbolId,
+        start_ns: u64,
+        end_ns: u64,
+    ) -> u64 {
+        let inner = self.inner.lock().expect("poisoned");
+        let count = inner
+            .backend
+            .in_range_by_symbol(&self.session_id, symbol, start_ns, end_ns)
+            .len();
+        count as u64
+    }
+
+    /// Maximum parent-chain length on this session. Mirrors
+    /// `chronos_log::analytics::recursion_depth`.
+    pub fn recursion_depth(&self) -> usize {
+        let snapshot: Vec<crate::record::ExecutionRecord> = {
+            let inner = self.inner.lock().expect("poisoned");
+            use crate::backend::ExecutionLogBackend;
+            use crate::cursor::LogConsumerId;
+            let consumer = LogConsumerId::new("__analytics_depth_seg__");
+            match inner
+                .backend
+                .read_after(self.session_id.clone(), consumer, None)
+                .ok()
+            {
+                Some(crate::cursor::ReadResult::Ok { records, .. }) => records,
+                _ => Vec::new(),
+            }
+        };
+        let mut max_depth = 0usize;
+        let mut seen: std::collections::HashSet<chronos_domain::InvocationId> =
+            std::collections::HashSet::new();
+        for r in &snapshot {
+            let Some(inv) = r.invocation_id else { continue };
+            if !seen.insert(inv) {
+                continue;
+            }
+            let depth = crate::analytics::chain_depth(&snapshot, inv);
+            if depth > max_depth {
+                max_depth = depth;
+            }
+        }
+        max_depth
+    }
+
+    /// Reconstruct the call tree rooted at `root_id`. Mirrors
+    /// `chronos_log::analytics::reconstruct_call_tree`.
+    pub fn reconstruct_call_tree(
+        &self,
+        root_id: chronos_domain::InvocationId,
+    ) -> Option<crate::analytics::CallTreeNode> {
+        let inner = self.inner.lock().expect("poisoned");
+        crate::analytics::reconstruct_call_tree(&inner.backend, &self.session_id, root_id)
+    }
+
     /// Append a record. Returns the assigned seq. May transparently
     /// record a gap if `memory_budget_bytes` is configured and the
     /// projected bytes exceed it.
