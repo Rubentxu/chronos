@@ -578,3 +578,94 @@ fn m1_04_execution_log_durable_cursors_and_decoders_impl() {
 
     let _ = std::fs::remove_dir_all(&dir2);
 }
+
+/// m1-05 — Segment compaction acceptance.
+///
+/// Drives the new `compact_up_to` / `compactable_segments_up_to` /
+/// `min_consumer_cursor` API end-to-end through the public
+/// surface. The pattern: produce several flushes, commit a
+/// cursor, compact up to the cursor's `last_seq`, verify the
+/// segment files are gone from disk and the bookkeeping is
+/// updated.
+#[test]
+fn m1_05_execution_log_segment_compaction_impl() {
+    use chronos_log::{EventSeq, SegmentedConfig, SegmentedExecutionLog};
+
+    let dir = tempdir("m1-05");
+    let session = chronos_log::SessionId::new("m1-05-uat");
+
+    let mut cfg = SegmentedConfig::with_dir(&dir);
+    cfg.flush_threshold = std::num::NonZeroUsize::new(2).unwrap();
+    let log = SegmentedExecutionLog::open(session.clone(), cfg).expect("open");
+
+    // Eight records → four segments on disk.
+    for i in 0..8u64 {
+        log.append(chronos_log::NewExecutionRecord {
+            session_id: session.clone(),
+            monotonic_ns: i * 10,
+            payload: chronos_log::ExecutionPayload::new(
+                serde_json::json!({"i": i}).to_string().into_bytes(),
+                "step",
+            ),
+        })
+        .expect("append");
+    }
+    log.flush().expect("flush");
+    let pre = log.flushed_segments();
+    assert_eq!(pre.len(), 4, "four segments on disk before compaction");
+
+    // Commit a cursor at seq 3 → agent-a has read up through
+    // segment[1] (which ends at seq 3).
+    log.commit_cursor(
+        &chronos_log::LogConsumerId::new("agent-a"),
+        EventSeq::new(3),
+    )
+    .expect("commit");
+
+    // min_consumer_cursor agrees.
+    assert_eq!(
+        log.min_consumer_cursor(),
+        Some(EventSeq::new(3)),
+        "min cursor is 3"
+    );
+
+    // compactable_segments_up_to(3) lists the first two.
+    let compactable = log.compactable_segments_up_to(EventSeq::new(3));
+    assert_eq!(compactable.len(), 2);
+    assert_eq!(compactable[0].1, EventSeq::new(1));
+    assert_eq!(compactable[1].1, EventSeq::new(3));
+
+    // Compact.
+    let removed = log.compact_up_to(EventSeq::new(3)).expect("compact");
+    assert_eq!(removed.len(), 2);
+    for path in &removed {
+        assert!(!path.exists(), "{:?} still on disk", path);
+    }
+
+    // The survivors are visible via flushed_segments.
+    let post = log.flushed_segments();
+    assert_eq!(post.len(), 2, "two survivors remain");
+    assert!(post[0].2.exists());
+    assert!(post[1].2.exists());
+
+    // In-memory tail_seq still reports the high-water mark.
+    assert_eq!(log.tail_seq(), Some(EventSeq::new(7)));
+
+    // Reads still work via the in-memory backend.
+    let consumer = chronos_log::LogConsumerId::new("agent-b");
+    let read = log.read_after(&consumer, None).expect("read");
+    let total = match read {
+        chronos_log::ReadResult::Ok { records, .. } => records.len(),
+        other => panic!("expected Ok, got {:?}", other),
+    };
+    assert_eq!(total, 8, "all 8 records readable post-compaction");
+
+    // Idempotent: another compact_up_to(3) is a no-op.
+    let removed_again = log.compact_up_to(EventSeq::new(3)).expect("compact 2");
+    assert!(
+        removed_again.is_empty(),
+        "second compact with same cutoff is a no-op"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
