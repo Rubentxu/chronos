@@ -8,6 +8,7 @@
 pub mod address_normalizer;
 pub mod capture_runner;
 pub mod dwarf;
+pub mod int3_injector;
 pub mod invocation_tracker;
 pub mod native_adapter;
 pub mod probe_backend;
@@ -24,6 +25,7 @@ pub use capture_runner::{
     AttachMode, CaptureEndReason, CaptureResult, CaptureRunner, CaptureState,
 };
 pub use dwarf::{BasicLocationEvaluator, DwarfLocationEvaluator, DwarfReader};
+pub use int3_injector::{InstalledBreakpoint, Int3Injector, INT3};
 pub use native_adapter::NativeAdapter;
 pub use probe_backend::NativeProbeBackend;
 pub use ptrace_tracer::{PtraceConfig, PtraceEvent, PtraceTracer};

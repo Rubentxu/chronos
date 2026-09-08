@@ -11,14 +11,16 @@
 //! addresses (SIGTRAP stops that match symbol addresses).
 
 use crate::dwarf::DwarfReader;
+use crate::int3_injector::Int3Injector;
+use crate::invocation_tracker::InvocationTracker;
 use crate::native_adapter::NativeAdapter;
 use crate::ptrace_tracer::{PtraceConfig, PtraceEvent, PtraceTracer};
 use crate::symbol_resolver::SymbolResolver;
-use chronos_domain::{CaptureConfig, SourceLocation, TraceEvent};
+use chronos_domain::{CaptureConfig, Language, SourceLocation, SymbolId, TraceEvent};
 use nix::sys::ptrace;
 use nix::unistd::Pid;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
@@ -429,6 +431,50 @@ fn run_capture_loop(
         entry_tracker = FunctionEntryTracker::new(resolver);
     }
 
+    // Real function-frame capture (m2 native): when frame tracking is on we
+    // paused the child at exec in `launch()`. Plant INT3 at the relocated
+    // function entries and run a dedicated capture loop that restores +
+    // single-steps + re-injects on each hit and feeds the `InvocationTracker`
+    // so entries carry symbol/invocation identity. Attach mode cannot pause
+    // at exec, so it falls back to the legacy observe-only loop.
+    if ptrace_config.track_function_frames {
+        match mode {
+            AttachMode::Spawn { program, .. } => match symbol_resolver {
+                Some(resolver) => {
+                    info!(
+                        "Function-frame capture: pausing {} for INT3 injection",
+                        program.display()
+                    );
+                    return run_function_frame_capture(
+                        &mut tracer,
+                        pid,
+                        program,
+                        resolver,
+                        stop_flag,
+                        max_duration_ms,
+                    );
+                }
+                None => {
+                    // launch() paused the child at exec because frame tracking
+                    // was requested, but we have no symbols to instrument.
+                    // Resume it and fall through to the observe-only loop.
+                    warn!(
+                        "track_function_frames requested but no symbols loaded for {} — \
+                         resuming without frame injection",
+                        program.display()
+                    );
+                    let _ = tracer.continue_execution(pid);
+                }
+            },
+            AttachMode::Attach(_) => {
+                warn!(
+                    "track_function_frames requested on attach mode — falling back to \
+                     observe-only capture (no exec-pause window)"
+                );
+            }
+        }
+    }
+
     // Continue after initial SIGTRAP. Only Attach leaves the tracee stopped
     // (`attach()` does not resume); Spawn's `launch()` already resumed the child
     // before returning, so an extra resume here would be a double-resume that
@@ -718,6 +764,254 @@ fn run_capture_loop(
         end_reason,
         total_events: total,
     })
+}
+
+/// Dedicated capture loop for real function-frame tracking.
+///
+/// Reached from [`run_capture_loop`] when a spawn capture runs with
+/// `track_function_frames=true`. `launch()` left the child stopped at exec,
+/// so this function:
+///
+/// 1. Computes the ASLR load bias and plants INT3 at every relocated
+///    function-entry address (see [`Int3Injector`]).
+/// 2. Resumes the child and waits for stops.
+/// 3. When a stop is a breakpoint hit at an instrumented entry, feeds the
+///    [`InvocationTracker`] (which emits a real `FunctionEntry` carrying
+///    `symbol_id` / `invocation_id` / `parent_invocation_id`), restores the
+///    original first byte, rewinds `RIP`, single-steps over the real
+///    instruction, re-injects the INT3, and continues — so recursive calls to
+///    the same function produce distinct invocations.
+/// 4. Ends on process exit. If the child is killed while frames are active,
+///    remaining invocations flush as `InvocationIncomplete` (LIFO).
+#[allow(clippy::too_many_arguments)]
+fn run_function_frame_capture(
+    tracer: &mut PtraceTracer,
+    pid: i32,
+    program: &Path,
+    resolver: &SymbolResolver,
+    stop_flag: &AtomicBool,
+    max_duration_ms: Option<u64>,
+) -> Result<CaptureResult, String> {
+    let pid_pid = Pid::from_raw(pid);
+
+    // (1) Relocate entry addresses and plant INT3. The InvocationTracker is
+    // keyed by *runtime* address so its lookups match the IPs we trap at.
+    let setup: Result<(Int3Injector, InvocationTracker), String> = (|| {
+        let bias = Int3Injector::compute_load_bias(pid, program)
+            .ok_or_else(|| format!("could not compute load bias for pid {}", pid))?;
+        let mut injector = Int3Injector::new();
+        let installed = injector.install(pid_pid, resolver, bias)?;
+        if installed == 0 {
+            return Err("no function entries were instrumented".into());
+        }
+        let mut symbol_map = HashMap::new();
+        for sym in resolver.symbols().values() {
+            if sym.size > 0 && sym.address > 0 {
+                let sid = SymbolId::new(&sym.name, None, Language::Unknown);
+                symbol_map.insert(sym.address.wrapping_add(bias), (sid, sym.name.clone()));
+            }
+        }
+        info!(
+            "Function-frame capture: installed {} INT3 entries (bias 0x{:x})",
+            installed, bias
+        );
+        Ok((injector, InvocationTracker::from_symbols(symbol_map)))
+    })();
+    let (mut injector, mut tracker) = match setup {
+        Ok(x) => x,
+        Err(e) => {
+            let _ = tracer.kill(pid);
+            return Err(format!("function-frame injection failed: {}", e));
+        }
+    };
+
+    // (2) Resume the child, which is still stopped at exec.
+    tracer
+        .continue_execution(pid)
+        .map_err(|e| format!("resume after injection failed: {}", e))?;
+
+    let mut events: Vec<TraceEvent> = Vec::new();
+    let mut end_reason = CaptureEndReason::StoppedByUser;
+    let start_time = std::time::Instant::now();
+
+    // When set, we restored a breakpoint and single-stepped; the next SIGTRAP
+    // is that step completing and we must re-inject before continuing.
+    let mut step_pending: Option<u64> = None;
+
+    loop {
+        if stop_flag.load(Ordering::SeqCst) {
+            info!("Stop flag set, ending function-frame capture");
+            end_reason = CaptureEndReason::StoppedByUser;
+            break;
+        }
+        if let Some(max_ms) = max_duration_ms {
+            if start_time.elapsed().as_millis() as u64 > max_ms {
+                info!("Function-frame capture timed out after {}ms", max_ms);
+                end_reason = CaptureEndReason::Failed(format!("timeout after {}ms", max_ms));
+                break;
+            }
+        }
+
+        let ptrace_event = match tracer.wait_event() {
+            Ok(Some(event)) => event,
+            Ok(None) => {
+                debug!("Function-frame capture: no more traced processes");
+                if matches!(end_reason, CaptureEndReason::StoppedByUser) {
+                    end_reason = CaptureEndReason::Exited(0);
+                }
+                break;
+            }
+            Err(e) => {
+                warn!("Function-frame capture wait_event error: {}", e);
+                end_reason = CaptureEndReason::Failed(format!("wait_event: {}", e));
+                break;
+            }
+        };
+
+        match &ptrace_event {
+            PtraceEvent::Stopped { pid: p, signal, .. } => {
+                if *signal == 5 {
+                    // SIGTRAP
+                    if let Some(addr) = step_pending.take() {
+                        // Single-step over the restored first instruction done.
+                        if let Err(e) = injector.reinstall_byte(pid_pid, addr) {
+                            warn!("Failed to re-inject INT3 @0x{:x}: {}", addr, e);
+                        }
+                        let _ = tracer.continue_execution(*p);
+                        continue;
+                    }
+
+                    // Is this a breakpoint hit at an instrumented entry?
+                    let ip = match ptrace::getregs(pid_pid) {
+                        Ok(r) => r.rip,
+                        Err(e) => {
+                            debug!("Function-frame: getregs failed: {}", e);
+                            0
+                        }
+                    };
+                    let hit_address = injector.hit_at_rip(ip).map(|bp| bp.address);
+                    if let Some(entry_addr) = hit_address {
+                        let now = timestamp_ns_now();
+                        if let Some(entry) = tracker.on_sigtrap(*p as u64, entry_addr, now) {
+                            events.push(entry);
+                        }
+                        // Remove the trap byte, run the real instruction once,
+                        // then put the trap back so the next (recursive) call
+                        // is also observed.
+                        if let Err(e) = injector.restore_byte(pid_pid, entry_addr) {
+                            warn!("Failed to restore byte @0x{:x}: {}", entry_addr, e);
+                        }
+                        let _ = rewind_rip(pid_pid, entry_addr);
+                        match tracer.step(*p) {
+                            Ok(()) => step_pending = Some(entry_addr),
+                            Err(e) => {
+                                warn!("Function-frame: single-step failed: {}", e);
+                                // Fall back to a plain continue so the tracee
+                                // is never left stopped waiting forever.
+                                let _ = tracer.continue_execution(*p);
+                            }
+                        }
+                    } else {
+                        // Stray SIGTRAP not from our breakpoints (e.g. an exec
+                        // or user-introduced one) — just continue.
+                        let _ = tracer.continue_execution(*p);
+                    }
+                } else {
+                    // Deliver non-SIGTRAP signals so fatal ones (SIGSEGV,
+                    // SIGABRT, …) propagate and the process dies cleanly.
+                    match nix::sys::signal::Signal::try_from(*signal) {
+                        Ok(sig) => {
+                            let _ = tracer.continue_with_signal(*p, sig);
+                        }
+                        Err(_) => {
+                            let _ = tracer.continue_execution(*p);
+                        }
+                    }
+                }
+            }
+            PtraceEvent::PtraceEvent {
+                pid: p, new_pid, ..
+            } => {
+                // Clone/fork/exec events: keep the parent (and any new child)
+                // moving. Child breakpoints are handled once they stop.
+                let _ = tracer.continue_execution(*p);
+                if let Some(cp) = new_pid {
+                    if *cp > 0 {
+                        let _ = tracer.continue_execution(*cp);
+                    }
+                }
+            }
+            PtraceEvent::Syscall { .. } => {
+                // Syscall tracing is not expected in this loop; if present,
+                // resume and move on.
+                let _ = tracer.continue_execution(ptrace_event.pid());
+            }
+            PtraceEvent::Registers { .. } => {
+                // Register snapshots are buffered ahead of the stop that
+                // produced them; we never resume on them (the stop itself is
+                // handled separately) to avoid stepping past a breakpoint.
+            }
+            PtraceEvent::Exited { pid: p, exit_code } => {
+                info!("Function-frame: PID {} exited with code {}", p, exit_code);
+                end_reason = CaptureEndReason::Exited(*exit_code);
+                break;
+            }
+            PtraceEvent::Signaled {
+                pid: p,
+                signal,
+                signal_name,
+                ..
+            } => {
+                info!("Function-frame: PID {} killed by {}", p, signal_name);
+                // Frames still active when the process is killed surface as
+                // InvocationIncomplete (LIFO) per the m2 contract.
+                for ev in tracker.flush_incomplete_on_exit() {
+                    events.push(ev);
+                }
+                end_reason = CaptureEndReason::Signaled {
+                    signal: *signal,
+                    signal_name: signal_name.clone(),
+                };
+                break;
+            }
+        }
+    }
+
+    // (3) Cleanup: if the child is still alive (stopped by user or timeout),
+    // kill it so we do not leak a traced process.
+    let already_dead = matches!(
+        end_reason,
+        CaptureEndReason::Exited(_) | CaptureEndReason::Signaled { .. }
+    );
+    if !already_dead {
+        let _ = tracer.kill(pid);
+    }
+
+    let total = events.len() as u64;
+    info!("Function-frame capture ended: {} events", total);
+    Ok(CaptureResult {
+        events,
+        end_reason,
+        total_events: total,
+    })
+}
+
+/// Monotonic-ish nanosecond timestamp used as the event id / timestamp for
+/// function entries (matches the wall-clock basis used elsewhere in the
+/// pipeline; uniqueness is what matters for ids here).
+fn timestamp_ns_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64
+}
+
+/// Rewind a traced process's `RIP` to `address` (used before single-stepping
+/// over a restored breakpoint byte). Best-effort.
+fn rewind_rip(pid: Pid, address: u64) -> Result<(), String> {
+    let mut regs = ptrace::getregs(pid).map_err(|e| format!("getregs: {}", e))?;
+    regs.rip = address;
+    ptrace::setregs(pid, regs).map_err(|e| format!("setregs: {}", e))
 }
 
 #[cfg(test)]
