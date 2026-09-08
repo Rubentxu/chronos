@@ -2596,6 +2596,20 @@ impl ChronosServer {
         }; // lock dropped here
 
         let total = events.len();
+        // Evaluate tripwires against every drained semantic event so live
+        // evidence reaches the tripwire subsystem without waiting for stop.
+        // UAT-M0-03 wire-tripwires-to-live-evidence.
+        let mut fired: Vec<chronos_domain::TripwireFired> = Vec::new();
+        if !events.is_empty() {
+            let mgr = Arc::clone(&self.tripwire_manager);
+            for ev in &events {
+                let local = mgr.evaluate_semantic(ev);
+                if !local.is_empty() {
+                    fired.extend(local);
+                }
+            }
+        }
+        let fired_count = fired.len();
         // Apply offset/limit
         let sliced: Vec<_> = events
             .into_iter()
@@ -2625,6 +2639,7 @@ impl ChronosServer {
                 "snapshot_len": new_cursor.snapshot_len,
             },
             "cursor_stale": cursor_stale,
+            "tripwires_fired": fired_count,
             "events": sliced,
             "hint": "Probe is still running. Call probe_drain again for more events, or probe_stop to finalize."
         });
