@@ -454,31 +454,34 @@ pub enum TripwireConditionType {
 }
 
 impl TripwireConditionType {
-    fn into_condition(self) -> TripwireCondition {
+    fn into_condition(self) -> Result<TripwireCondition, String> {
         match self {
             TripwireConditionType::EventType { event_types } => {
-                let types = event_types
-                    .iter()
-                    .filter_map(|s| ChronosServer::parse_event_type(s))
-                    .collect();
-                TripwireCondition::EventType(types)
+                let mut types = Vec::with_capacity(event_types.len());
+                for s in &event_types {
+                    match ChronosServer::parse_event_type(s) {
+                        Some(t) => types.push(t),
+                        None => return Err(s.clone()),
+                    }
+                }
+                Ok(TripwireCondition::EventType(types))
             }
             TripwireConditionType::FunctionName { pattern } => {
-                TripwireCondition::FunctionName { pattern }
+                Ok(TripwireCondition::FunctionName { pattern })
             }
             TripwireConditionType::ExceptionType { exc_type } => {
-                TripwireCondition::ExceptionType { exc_type }
+                Ok(TripwireCondition::ExceptionType { exc_type })
             }
             TripwireConditionType::MemoryAddress { start, end } => {
-                TripwireCondition::MemoryAddress { start, end }
+                Ok(TripwireCondition::MemoryAddress { start, end })
             }
             TripwireConditionType::SyscallNumber { numbers } => {
-                TripwireCondition::SyscallNumber { numbers }
+                Ok(TripwireCondition::SyscallNumber { numbers })
             }
             TripwireConditionType::VariableName { name } => {
-                TripwireCondition::VariableName { name }
+                Ok(TripwireCondition::VariableName { name })
             }
-            TripwireConditionType::Signal { numbers } => TripwireCondition::Signal { numbers },
+            TripwireConditionType::Signal { numbers } => Ok(TripwireCondition::Signal { numbers }),
         }
     }
 }
@@ -907,10 +910,18 @@ impl ChronosServer {
         let mut query = TraceQuery::new(&params.session_id).pagination(params.limit, params.offset);
 
         if let Some(ref types) = params.event_types {
-            let event_types: Vec<EventType> = types
-                .iter()
-                .filter_map(|t| Self::parse_event_type(t))
-                .collect();
+            let mut event_types: Vec<EventType> = Vec::with_capacity(types.len());
+            for t in types {
+                match Self::parse_event_type(t) {
+                    Some(et) => event_types.push(et),
+                    None => {
+                        return Ok(CallToolResult::error(text_content(format!(
+                            "query_events: unknown event_type '{}'. Valid types: syscall_enter, syscall_exit, function_entry, function_exit, variable_write, memory_write, signal_delivered, breakpoint_hit, thread_create, thread_exit, exception_thrown.",
+                            t
+                        ))));
+                    }
+                }
+            }
             if !event_types.is_empty() {
                 query = query.event_types(event_types);
             }
@@ -2243,7 +2254,15 @@ impl ChronosServer {
         params: Parameters<TripwireCreateParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let condition = params.condition.into_condition();
+        let condition = match params.condition.into_condition() {
+            Ok(c) => c,
+            Err(bad) => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "tripwire_create: unknown event_type '{}'. Valid types: syscall_enter, syscall_exit, function_entry, function_exit, variable_write, memory_write, signal_delivered, breakpoint_hit, thread_create, thread_exit, exception_thrown.",
+                    bad
+                ))));
+            }
+        };
         let id = self.tripwire_manager.register(condition);
 
         let output = serde_json::json!({
