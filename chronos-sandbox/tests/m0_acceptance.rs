@@ -527,10 +527,180 @@ fn m0_09_race_heuristic_is_renamed() {
     // and the unit test pins both the new name and the deprecated alias.
 }
 
+/// m0-10 — Sandbox M0 acceptance suite meta-test.
+///
+/// This is the *gate* for the whole M0 layer. It runs the canonical M0
+/// acceptance tests (`m0_NN_*_impl` for N=02..07 live UATs and m0-08 /
+/// m0-09 in-tree unit tests) inside the same compiled `m0_acceptance`
+/// binary as a subprocess and asserts every one of them reports a pass.
+///
+/// Why a subprocess instead of in-process orchestration? Two reasons:
+///
+/// 1. The live UATs already each spin up their own `McpTestClient` and
+///    tear it down. Running them sequentially inside a single test
+///    function would require sharing client state or refactoring all
+///    six `_impl` functions to return `Result<(), anyhow::Error>`. The
+///    subprocess approach re-uses the existing `_*_impl` bodies
+///    unmodified.
+/// 2. The subprocess approach matches the meta-test pattern already
+///    used elsewhere in this repo (`chronos-native`'s ptrace tests,
+///    see AGENTS.md §6.5): the test driver is itself a sandbox test,
+///    and the gate is the exit code.
+///
+/// What this test does:
+///
+/// 1. Locates the just-built `m0_acceptance-<hash>` binary via
+///    `CARGO_BIN_EXE_m0_acceptance` (set by cargo when running tests
+///    that have themselves been compiled as a test binary; falls back
+///    to `CARGO_TARGET_DIR` / `target/` if needed).
+/// 2. Re-invokes the binary with the seven `_impl` test names and
+///    `--include-ignored --test-threads=1`. `--include-ignored` is
+///    required because the `_impl` tests carry `#[ignore = ...]`
+///    attributes that mark them as "implemented in cycle m0-NN";
+///    without it cargo would skip them.
+/// 3. Asserts the subprocess exits 0 and that the captured stdout
+///    contains one `test result: ok.` line per requested test with
+///    `0 failed`.
 #[test]
-#[ignore = "implemented in cycle m0-10"]
 fn m0_10_sandbox_m0_acceptance_suite_passes() {
-    unimplemented!("See vault/cycles/m0-truth-first-foundation/m0-10.md");
+    use std::path::PathBuf;
+    use std::process::Command;
+
+    // Locate the test binary.
+    let test_bin = std::env::var("CARGO_BIN_EXE_m0_acceptance")
+        .map(PathBuf::from)
+        .ok()
+        .or_else(|| {
+            // Fallback: <CARGO_TARGET_DIR>/debug/deps/m0_acceptance-<hex>
+            // We pick the most recently modified executable to follow
+            // whatever cargo just built.
+            let target_dir = std::env::var("CARGO_TARGET_DIR")
+                .unwrap_or_else(|_| "target".to_string());
+            let deps = PathBuf::from(&target_dir).join("debug").join("deps");
+            let mut candidates: Vec<PathBuf> = std::fs::read_dir(&deps)
+                .ok()
+                .into_iter()
+                .flatten()
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| {
+                    let name_ok = p
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|n| n.starts_with("m0_acceptance-"))
+                        .unwrap_or(false);
+                    if !name_ok {
+                        return false;
+                    }
+                    // Exclude cargo dep-info files (*.d) and pick only
+                    // the executable test binary.
+                    let s = p.to_string_lossy();
+                    !s.ends_with(".d") && std::fs::metadata(p).map(|m| m.is_file()).unwrap_or(false)
+                })
+                .collect();
+            // Prefer the newest executable: cargo leaves behind old
+            // `m0_acceptance-<hex>` binaries across rebuilds, and we
+            // want whichever one was just produced.
+            candidates.sort_by_key(|p| {
+                std::fs::metadata(p)
+                    .and_then(|m| m.modified())
+                    .ok()
+            });
+            // Newest executable wins; fall back to newest of anything.
+            let newest_exec = candidates
+                .iter()
+                .rev()
+                .find(|p| {
+                    std::fs::metadata(p)
+                        .map(|m| {
+                            use std::os::unix::fs::PermissionsExt;
+                            m.permissions().mode() & 0o111 != 0
+                        })
+                        .unwrap_or(false)
+                })
+                .cloned();
+            newest_exec.or_else(|| candidates.pop())
+        })
+        .expect("m0-10: could not locate compiled m0_acceptance test binary \
+                 (tried CARGO_BIN_EXE_m0_acceptance, then CARGO_TARGET_DIR/debug/deps/m0_acceptance-*)");
+
+    assert!(
+        test_bin.exists(),
+        "m0-10: test binary not found at {:?}",
+        test_bin
+    );
+
+    // The seven M0 acceptance tests we want to gate on.
+    // m0-01 is a legacy `#[ignore]` stub that predates the
+    // m0-truth-first-foundation cycles; it was not part of m0-02..m0-09
+    // and there is no `_impl` body for it. m0-08 and m0-09 are type-level
+    // renames (uat_gate: n/a on the tickets) — their contracts are
+    // covered by unit tests inside the chronos-domain crate, not by
+    // sandbox UATs.
+    let suite = [
+        "m0_02_session_snapshot_is_cumulative_impl",
+        "m0_03_ebpf_probe_lifecycle_impl",
+        "m0_04_tripwires_evaluated_on_canonical_flow_impl",
+        "m0_05_typed_event_filters_reject_unknown_impl",
+        "m0_06_state_diff_preserves_register_evidence_impl",
+        "m0_07_query_returns_not_found_when_target_missing_impl",
+    ];
+
+    // libtest accepts exactly one `--exact <name>`, so run the suite
+    // one test per subprocess. Each subprocess gets a clean chronos-mcp
+    // lifecycle, and the meta-test aggregates the per-test verdicts.
+    let mut all_passed = true;
+    let mut details: Vec<String> = Vec::new();
+    for name in &suite {
+        let mut single = Command::new(&test_bin);
+        single
+            .arg("--include-ignored")
+            .arg("--test-threads=1")
+            .arg("--exact")
+            .arg(name);
+        if let Ok(p) = std::env::var("CHRONOS_MCP_PATH") {
+            if !p.is_empty() {
+                single.env("CHRONOS_MCP_PATH", p);
+            }
+        }
+
+        let output = match single.output() {
+            Ok(o) => o,
+            Err(e) => panic!("m0-10: failed to spawn {:?} for {}: {}", test_bin, name, e),
+        };
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        let passed = output.status.success() && stdout.contains(&format!("test {} ... ok", name));
+        if !passed {
+            all_passed = false;
+            details.push(format!(
+                "=== {} === exit={:?}\n--- stderr (first 80 lines) ---\n{}\n--- stdout (last 60 lines) ---\n{}",
+                name,
+                output.status.code(),
+                stderr.lines().take(80).collect::<Vec<_>>().join("\n"),
+                stdout
+                    .lines()
+                    .rev()
+                    .take(60)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ));
+        } else {
+            details.push(format!("=== {} === ok", name));
+        }
+    }
+
+    assert!(
+        all_passed,
+        "m0-10: acceptance suite FAILED. The M0 layer is not green.\n\n{}",
+        details.join("\n\n"),
+    );
+
+    eprintln!("m0-10: acceptance suite passed ({} tests).", suite.len(),);
 }
 
 /// m0-03 — Session-owned eBPF probe lifecycle (UAT-M0-04).
