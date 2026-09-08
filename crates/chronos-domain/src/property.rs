@@ -124,6 +124,49 @@ pub enum PropertySequenceOutcome {
     UnsupportedByRecordedEvidence { index: usize, reason: String },
 }
 
+/// Display-level actor evidence for a state mutation.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct MutationActor {
+    pub name: String,
+    /// Capture-time invocation reference rendered as a string.
+    pub invocation: Option<String>,
+    /// file:line source label.
+    pub source: Option<String>,
+}
+
+/// A value change of a target from `before` to `after` at a sequence position,
+/// caused by an optional actor.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct StateTransition {
+    pub target: String,
+    pub before: Option<PropertyValue>,
+    pub after: PropertyValue,
+    pub index: usize,
+    pub actor: Option<MutationActor>,
+}
+
+impl StateTransition {
+    /// Render the Mutation-Lens transition form.
+    pub fn display(&self) -> String {
+        let mut s = String::new();
+        s.push_str(&self.target);
+        match &self.before {
+            Some(before) => s.push_str(&format!("\n{before} -> {}", self.after)),
+            None => s.push_str(&format!("\n-> {}", self.after)),
+        }
+        if let Some(actor) = &self.actor {
+            s.push_str(&format!("\nby: {}", actor.name));
+            if let Some(inv) = &actor.invocation {
+                s.push_str(&format!("#{inv}"));
+            }
+            if let Some(src) = &actor.source {
+                s.push_str(&format!("\nsource: {src}"));
+            }
+        }
+        s
+    }
+}
+
 fn same_variant(a: &PropertyValue, b: &PropertyValue) -> bool {
     matches!(
         (a, b),
@@ -316,6 +359,30 @@ impl Property {
             }
         }
         PropertySequenceOutcome::Pass
+    }
+
+    /// Map a `Violation` from `evaluate_sequence` into a `StateTransition`
+    /// evidence record. Returns `None` for `Pass`/`UnsupportedByRecordedEvidence`.
+    pub fn violation_transition(
+        &self,
+        outcome: &PropertySequenceOutcome,
+    ) -> Option<StateTransition> {
+        match outcome {
+            PropertySequenceOutcome::Violation {
+                index,
+                before,
+                after,
+                ..
+            } => Some(StateTransition {
+                target: self.observe.clone(),
+                before: before.clone(),
+                after: after.clone(),
+                index: *index,
+                actor: None,
+            }),
+            PropertySequenceOutcome::Pass
+            | PropertySequenceOutcome::UnsupportedByRecordedEvidence { .. } => None,
+        }
     }
 }
 
@@ -562,5 +629,66 @@ mod tests {
             }
             other => panic!("expected Unsupported at index 0, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn transition_line_renders_mutation_lens_form() {
+        let t = StateTransition {
+            target: "Order.total".to_string(),
+            before: Some(PropertyValue::Number(100.0)),
+            after: PropertyValue::Number(-50.0),
+            index: 7,
+            actor: Some(MutationActor {
+                name: "Discount.apply".to_string(),
+                invocation: Some("inv-8281".to_string()),
+                source: Some("discount.rs:118".to_string()),
+            }),
+        };
+        let s = t.display();
+        assert!(s.contains("Order.total"), "got: {s}");
+        assert!(s.contains("-> -50"), "got: {s}");
+        assert!(s.contains("Discount.apply"), "got: {s}");
+        assert!(s.contains("inv-8281"), "got: {s}");
+        assert!(s.contains("discount.rs:118"), "got: {s}");
+    }
+
+    #[test]
+    fn state_transition_serializes_round_trip() {
+        let t = StateTransition {
+            target: "Order.total".to_string(),
+            before: Some(PropertyValue::Number(59.0)),
+            after: PropertyValue::Number(-35.0),
+            index: 2,
+            actor: None,
+        };
+        let json = serde_json::to_string(&t).unwrap();
+        let back: StateTransition = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, t);
+    }
+
+    #[test]
+    fn violation_transition_maps_replay_violation() {
+        let p = order_total_property();
+        let seq = p.evaluate_sequence(&[
+            PropertyValue::Number(59.0),
+            PropertyValue::Number(0.0),
+            PropertyValue::Number(-35.0),
+        ]);
+        let t = p.violation_transition(&seq).expect("expected a transition");
+        assert_eq!(t.target, "Order.total");
+        assert_eq!(t.before, Some(PropertyValue::Number(0.0)));
+        assert_eq!(t.after, PropertyValue::Number(-35.0));
+        assert_eq!(t.index, 2);
+        assert_eq!(t.actor, None);
+    }
+
+    #[test]
+    fn violation_transition_non_violation_is_none() {
+        let p = order_total_property();
+        let pass = p.evaluate_sequence(&[PropertyValue::Number(59.0), PropertyValue::Number(10.0)]);
+        assert_eq!(pass, PropertySequenceOutcome::Pass);
+        assert!(p.violation_transition(&pass).is_none());
+        let short = p.evaluate_sequence(&[PropertyValue::Number(59.0)]);
+        assert!(p.violation_transition(&short).is_none());
     }
 }
