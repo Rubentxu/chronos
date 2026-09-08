@@ -511,9 +511,11 @@ async fn m0_07_query_returns_not_found_when_target_missing_impl() {
 }
 
 #[test]
-#[ignore = "implemented in cycle m0-08"]
+#[ignore = "implemented in cycle m0-08: CaptureSession exposes both monotonic and wall-clock start timestamps (no live UAT required per ticket)"]
 fn m0_08_timestamp_contract_is_separated() {
-    unimplemented!("See vault/cycles/m0-truth-first-foundation/m0-08.md");
+    // m0-08 contract is enforced by the chronos-domain unit test
+    // test_capture_session_exposes_both_clocks. No live UAT is required
+    // (uat_gate: n/a in the ticket); the in-tree unit test is the gate.
 }
 
 #[test]
