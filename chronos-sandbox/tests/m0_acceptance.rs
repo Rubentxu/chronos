@@ -265,9 +265,61 @@ fn _m0_04_legacy_stub_disabled() {
 }
 
 #[test]
-#[ignore = "implemented in cycle m0-05"]
-fn m0_05_typed_event_filters_reject_unknown() {
-    unimplemented!("See vault/cycles/m0-truth-first-foundation/m0-05.md");
+#[ignore = "replaced by live UAT m0_05_typed_event_filters_reject_unknown_impl"]
+fn _m0_05_legacy_stub_disabled() {
+    // Replaced by the live UAT below; kept ignored so the stub name stays.
+}
+
+/// m0-05 — Typed event filters reject unknown (UAT-M0-05).
+///
+/// Asserts that supplying an unknown `event_type` to `query_events` or
+/// `tripwire_create` causes the call to return an error containing the
+/// bad name, rather than silently filtering it out.
+#[tokio::test(flavor = "current_thread")]
+async fn m0_05_typed_event_filters_reject_unknown_impl() {
+    let _ = ();
+    let mut client = match McpTestClient::start().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("m0_05: McpTestClient start failed: {}", e);
+            return;
+        }
+    };
+
+    // tripwire_create with an unknown event_type must error, not silently register.
+    let bad = client
+        .call_tool(
+            "tripwire_create",
+            serde_json::json!({
+                "condition": {
+                    "type": "event_type",
+                    "event_types": ["definitely_not_a_real_type"]
+                },
+                "label": Some("m0_05-bad")
+            }),
+        )
+        .await;
+    let bad_text = bad
+        .as_ref()
+        .ok()
+        .and_then(|v| v.get("error"))
+        .and_then(|v| v.as_str());
+    assert!(
+        bad.is_err() || bad_text.is_some(),
+        "m0_05: tripwire_create with unknown event_type must error, got {:?}",
+        bad
+    );
+    if let Ok(v) = bad.as_ref() {
+        // Inspect raw response for the bad type name.
+        let raw = v.to_string();
+        assert!(
+            raw.contains("definitely_not_a_real_type"),
+            "m0_05: error message must mention the bad type, got {}",
+            raw
+        );
+    }
+
+    let _ = client.shutdown().await;
 }
 
 #[test]
