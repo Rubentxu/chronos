@@ -48,6 +48,7 @@ fn spec_case_05_overflow_records_gap_not_record() {
             session_id: session.clone(),
             monotonic_ns: 0,
             payload: chronos_log::ExecutionPayload::new(vec![1, 2, 3], "small"),
+            ..Default::default()
         })
         .unwrap();
 
@@ -59,6 +60,7 @@ fn spec_case_05_overflow_records_gap_not_record() {
                 session_id: session.clone(),
                 monotonic_ns: i * 10,
                 payload: chronos_log::ExecutionPayload::new(vec![0u8; 256], "big"),
+                ..Default::default()
             })
             .unwrap();
         assert!(seq.0 >= 1, "seqs must keep advancing");
@@ -100,12 +102,14 @@ fn spec_case_06_crash_safe_segments() {
         session_id: session.clone(),
         monotonic_ns: 0,
         payload: chronos_log::ExecutionPayload::new(vec![1], "a"),
+        ..Default::default()
     })
     .unwrap();
     log.append(chronos_log::NewExecutionRecord {
         session_id: session.clone(),
         monotonic_ns: 10,
         payload: chronos_log::ExecutionPayload::new(vec![2], "b"),
+        ..Default::default()
     })
     .unwrap();
     log.flush().unwrap();
@@ -114,6 +118,7 @@ fn spec_case_06_crash_safe_segments() {
         session_id: session.clone(),
         monotonic_ns: 20,
         payload: chronos_log::ExecutionPayload::new(vec![3], "c"),
+        ..Default::default()
     })
     .unwrap();
     log.flush().unwrap();
@@ -167,6 +172,7 @@ fn spec_case_07_checkpoint_plus_delta_equals_full_replay() {
                 session_id: session.clone(),
                 monotonic_ns: i * 10,
                 payload: chronos_log::ExecutionPayload::new(vec![i as u8], "r"),
+                ..Default::default()
             })
             .unwrap();
         }
@@ -215,6 +221,7 @@ fn spec_case_08_deterministic_replay() {
                 session_id: s1.clone(),
                 monotonic_ns: i * 7,
                 payload: chronos_log::ExecutionPayload::new(vec![(i & 0xFF) as u8], "t"),
+                ..Default::default()
             })
             .unwrap();
         }
@@ -228,6 +235,7 @@ fn spec_case_08_deterministic_replay() {
                 session_id: s2.clone(),
                 monotonic_ns: i * 7,
                 payload: chronos_log::ExecutionPayload::new(vec![(i & 0xFF) as u8], "t"),
+                ..Default::default()
             })
             .unwrap();
         }
@@ -259,6 +267,7 @@ fn checkpoint_method_flushes_even_when_buffer_is_partial() {
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(vec![1], "z"),
+            ..Default::default()
         })
         .unwrap();
     }
@@ -287,6 +296,7 @@ fn gap_replaying_preserves_consumer_cursor_view() {
         session_id: session.clone(),
         monotonic_ns: 0,
         payload: chronos_log::ExecutionPayload::new(vec![1], "a"),
+        ..Default::default()
     })
     .unwrap();
     let seq = log
@@ -294,6 +304,7 @@ fn gap_replaying_preserves_consumer_cursor_view() {
             session_id: session.clone(),
             monotonic_ns: 10,
             payload: chronos_log::ExecutionPayload::new(vec![2], "b"),
+            ..Default::default()
         })
         .unwrap();
     log.record_gap(chronos_log::Gap::new(

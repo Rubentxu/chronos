@@ -446,6 +446,9 @@ fn bincode_decode_record(mut body: &[u8]) -> Result<ExecutionRecord, LogError> {
         monotonic_ns,
         kind,
         payload: ExecutionPayload::new(bytes, tag),
+        invocation_id: None,
+        parent_invocation_id: None,
+        symbol_id: None,
     })
 }
 
@@ -521,6 +524,9 @@ mod tests {
             monotonic_ns: seq * 100,
             kind: ExecutionKind::Raw,
             payload: ExecutionPayload::new(vec![1, 2, 3], tag),
+            invocation_id: None,
+            parent_invocation_id: None,
+            symbol_id: None,
         })
     }
 

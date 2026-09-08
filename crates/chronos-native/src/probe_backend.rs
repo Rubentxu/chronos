@@ -43,6 +43,9 @@ fn trace_event_to_log_record(
         session_id: chronos_log::SessionId::new(session_id),
         monotonic_ns,
         payload: ExecutionPayload::new(payload_bytes, format!("{:?}", event.event_type)),
+        invocation_id: None,
+        parent_invocation_id: None,
+        symbol_id: None,
     }
 }
 

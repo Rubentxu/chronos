@@ -154,6 +154,7 @@ fn read_after_commit_cursor_skips_processed_records() {
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(vec![i as u8], "x"),
+            ..Default::default()
         })
         .unwrap();
     }
@@ -212,6 +213,7 @@ fn fresh_consumer_after_commit_still_returns_everything() {
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(vec![i as u8], "y"),
+            ..Default::default()
         })
         .unwrap();
     }

@@ -50,6 +50,7 @@ fn compactable_lists_segments_below_cutoff() {
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(vec![i as u8], "x"),
+            ..Default::default()
         })
         .unwrap();
     }
@@ -80,6 +81,7 @@ fn compact_removes_segments_below_cutoff_and_updates_bookkeeping() {
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(vec![i as u8], "x"),
+            ..Default::default()
         })
         .unwrap();
     }
@@ -125,6 +127,7 @@ fn compact_is_idempotent() {
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(vec![i as u8], "x"),
+            ..Default::default()
         })
         .unwrap();
     }
@@ -157,6 +160,7 @@ fn compact_keeps_in_memory_records_readable() {
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(vec![i as u8], "x"),
+            ..Default::default()
         })
         .unwrap();
     }
@@ -214,6 +218,7 @@ fn compact_concurrent_delete_does_not_error() {
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(vec![i as u8], "x"),
+            ..Default::default()
         })
         .unwrap();
     }
@@ -248,6 +253,7 @@ fn compact_after_compact_keeps_survivors_intact() {
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(vec![i as u8], "x"),
+            ..Default::default()
         })
         .unwrap();
     }
@@ -308,6 +314,7 @@ fn compaction_metrics_track_runs_segments_and_bytes() {
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(vec![i as u8], "x"),
+            ..Default::default()
         })
         .unwrap();
     }
@@ -363,6 +370,7 @@ fn maybe_compact_uses_min_consumer_cursor() {
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(vec![i as u8], "x"),
+            ..Default::default()
         })
         .unwrap();
     }
@@ -415,6 +423,7 @@ fn maybe_compact_returns_empty_when_no_cursors() {
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(vec![i as u8], "x"),
+            ..Default::default()
         })
         .unwrap();
     }

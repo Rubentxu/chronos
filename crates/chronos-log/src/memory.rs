@@ -64,6 +64,9 @@ impl InMemoryExecutionLog {
             session_id,
             monotonic_ns,
             payload,
+            invocation_id: None,
+            parent_invocation_id: None,
+            symbol_id: None,
         })
     }
 
@@ -153,6 +156,9 @@ impl ExecutionLogBackend for InMemoryExecutionLog {
             monotonic_ns: record.monotonic_ns,
             kind: ExecutionKind::Raw,
             payload: record.payload,
+            invocation_id: record.invocation_id,
+            parent_invocation_id: record.parent_invocation_id,
+            symbol_id: record.symbol_id,
         });
         records.entry(session_id.clone()).or_default().push(entry);
 

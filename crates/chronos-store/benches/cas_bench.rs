@@ -16,6 +16,9 @@ fn bench_session_store_save_single_event(c: &mut Criterion) {
         EventData::Function {
             name: "bench_fn".to_string(),
             signature: None,
+            symbol_id: None,
+            invocation_id: None,
+            parent_invocation_id: None,
         },
     );
 
@@ -58,6 +61,9 @@ fn bench_content_store_put(c: &mut Criterion) {
         EventData::Function {
             name: "bench_fn".to_string(),
             signature: None,
+            symbol_id: None,
+            invocation_id: None,
+            parent_invocation_id: None,
         },
     );
 
@@ -82,6 +88,9 @@ fn bench_session_store_load(c: &mut Criterion) {
         EventData::Function {
             name: "bench_fn".to_string(),
             signature: None,
+            symbol_id: None,
+            invocation_id: None,
+            parent_invocation_id: None,
         },
     );
 

@@ -27,9 +27,9 @@ pub use query::{
 };
 pub use semantic::{SemanticEvent, SemanticEventKind};
 pub use trace::{
-    CaptureConfig, CaptureSession, EventData, EventType, GoEventKind, JavaEventKind, JsEventKind,
-    Language, PythonEventKind, RegisterState, RuntimeInfo, SessionState, SourceLocation,
-    StackFrame, ThreadInfo, ThreadState, TraceEvent,
+    CaptureConfig, CaptureSession, EventData, EventType, GoEventKind, InvocationId, JavaEventKind,
+    JsEventKind, Language, PythonEventKind, RegisterState, RuntimeInfo, SessionState,
+    SourceLocation, StackFrame, SymbolId, ThreadInfo, ThreadState, TraceEvent,
 };
 pub use tripwire::{Tripwire, TripwireCondition, TripwireFired, TripwireId, TripwireManager};
 pub use value::{DwarfValue, RegisterSnapshot, TypedValue, VariableInfo, VariableScope};

@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 /// `McpSessionId` used in `chronos-mcp`; one Chronos session may
 /// produce multiple `SessionId`s if it covers multiple targets,
 /// and one capture may span multiple processes.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub struct SessionId(pub String);
 
 impl SessionId {
@@ -48,6 +48,12 @@ impl From<String> for SessionId {
 /// `seq` is assigned by the backend on `append`; callers pass
 /// `NewExecutionRecord` (same shape minus `seq`) and receive the
 /// assigned `EventSeq` back.
+///
+/// The `invocation_id`, `parent_invocation_id`, and `symbol_id` fields
+/// are populated by producers that run with `track_function_frames=true`
+/// (M2+); m0/m1 producers leave them as `None`. Readers MUST tolerate
+/// both v1 (no fields) and v2 (fields populated) records — serde's
+/// default behaviour treats missing fields as `None`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExecutionRecord {
     pub session_id: SessionId,
@@ -55,6 +61,34 @@ pub struct ExecutionRecord {
     pub monotonic_ns: u64,
     pub kind: ExecutionKind,
     pub payload: ExecutionPayload,
+    /// Invocation-level identity when the producer ran with
+    /// `track_function_frames=true`. `None` for v1 records.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invocation_id: Option<chronos_domain::InvocationId>,
+    /// Identity of the calling frame on the same thread. `None` for the
+    /// root frame or v1 records.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_invocation_id: Option<chronos_domain::InvocationId>,
+    /// Stable symbol identity for the function the event pertains to.
+    /// `None` for v1 records or events without a function context.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbol_id: Option<chronos_domain::SymbolId>,
+}
+
+impl ExecutionRecord {
+    /// Logical schema version of the record. `"chronos_exec_v1"` when
+    /// the invocation/symbol fields are all `None`; `"chronos_exec_v2"`
+    /// when any of them is populated.
+    pub fn schema_version(&self) -> &'static str {
+        if self.invocation_id.is_some()
+            || self.parent_invocation_id.is_some()
+            || self.symbol_id.is_some()
+        {
+            "chronos_exec_v2"
+        } else {
+            "chronos_exec_v1"
+        }
+    }
 }
 
 /// Type tag for an execution record. The full `ExecutionKind` shape
@@ -75,7 +109,7 @@ pub enum ExecutionKind {
 /// Opaque record payload for m1-01. The full payload shape grows
 /// across m1-01..m1-03 as more producers are migrated; for now we
 /// just carry bytes plus a string tag for diagnostics.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct ExecutionPayload {
     /// Opaque bytes for m1-01. The full payload shape (with
     /// `EventData`, `SourceLocation`, etc.) grows across later

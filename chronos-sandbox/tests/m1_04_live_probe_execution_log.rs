@@ -235,6 +235,7 @@ fn decoder_counters_surface_unparseable_payloads() {
             session_id: SessionId::new(session_id),
             monotonic_ns: i * 100,
             payload: chronos_log::ExecutionPayload::new(bytes, "noise"),
+            ..Default::default()
         })
         .expect("append noise");
     }

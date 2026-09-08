@@ -10,11 +10,19 @@ use crate::seq::EventSeq;
 ///
 /// The backend assigns the seq on `append` so the invariant
 /// "strictly monotonic within one session" is enforced centrally.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NewExecutionRecord {
     pub session_id: SessionId,
     pub monotonic_ns: u64,
     pub payload: crate::record::ExecutionPayload,
+    /// Invocation-level identity for M2+ producers running with
+    /// `track_function_frames=true`. Defaults to `None` for v1
+    /// producers.
+    pub invocation_id: Option<chronos_domain::InvocationId>,
+    /// Identity of the calling frame on the same thread.
+    pub parent_invocation_id: Option<chronos_domain::InvocationId>,
+    /// Stable symbol identity for the function the event pertains to.
+    pub symbol_id: Option<chronos_domain::SymbolId>,
 }
 
 /// Backend trait for the append-only execution log.
@@ -102,6 +110,9 @@ impl<B: ExecutionLogBackend + ?Sized> ExecutionLog<B> {
             session_id,
             monotonic_ns,
             payload,
+            invocation_id: None,
+            parent_invocation_id: None,
+            symbol_id: None,
         })
     }
 

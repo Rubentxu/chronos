@@ -77,6 +77,9 @@ fn dual_write_records_to_eventbus_and_executionlog() {
             data: EventData::Function {
                 name: format!("fn-{}", i),
                 signature: None,
+                symbol_id: None,
+                invocation_id: None,
+                parent_invocation_id: None,
             },
         };
         let bytes = serde_json::to_vec(&ev).expect("encode");
@@ -84,6 +87,7 @@ fn dual_write_records_to_eventbus_and_executionlog() {
             session_id: chronos_log::SessionId::new(&log_session_id),
             monotonic_ns: i * 100,
             payload: chronos_log::ExecutionPayload::new(bytes, "FunctionEntry"),
+            ..Default::default()
         })
         .expect("append log");
     }
@@ -136,6 +140,7 @@ fn read_execution_log_records_returns_seq_bounded_slice() {
                 serde_json::json!({"i": i}).to_string().into_bytes(),
                 "step",
             ),
+            ..Default::default()
         })
         .expect("append");
     }

@@ -11,5 +11,7 @@ serde_json = { version = "1.0" }
 blake3 = { version = "1.5" }
 lz4_flex = { version = "0.11" }
 hex = { version = "0.4" }
+chronos-domain = { path = "../chronos-domain" }
+uuid = { workspace = true }
 
 [dev-dependencies]
