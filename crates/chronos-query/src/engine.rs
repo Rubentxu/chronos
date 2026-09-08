@@ -8,8 +8,8 @@
 use chronos_domain::{
     query::{
         CausalityQuery, CausalityResult, ExecutionSummary, FunctionStats, MutationRecord,
-        PerfEntry, PerfQuery, PerfResult, PerfSortBy, PotentialIssue, PotentialRace,
-        RaceDetectionQuery, RaceDetectionResult, StackFrame, StateChange, StateDiff,
+        PerfEntry, PerfQuery, PerfResult, PerfSortBy, PotentialIssue, RaceDetectionQuery,
+        RaceDetectionResult, StackFrame, StateChange, StateDiff, SuspiciousConcurrentAccess,
     },
     CausalityIndex, EventData, EventType, PerformanceIndex, QueryResult, ShadowIndex,
     TemporalIndex, TraceEvent, TraceQuery,
@@ -755,20 +755,24 @@ impl QueryEngine {
         }
     }
 
-    /// Detect potential data races: concurrent writes to the same address
-    /// from different threads within `threshold_ns` nanoseconds.
-    pub fn detect_races(&self, query: &RaceDetectionQuery) -> RaceDetectionResult {
+    /// Detect suspicious concurrent accesses: two writes to the same
+    /// memory address from different threads within `threshold_ns`
+    /// nanoseconds. m0-09: this used to be called `detect_races` — the
+    /// new name makes the heuristic's epistemic status explicit (we do
+    /// not run happens-before analysis, so this is a triage signal, not
+    /// a verdict).
+    pub fn detect_concurrent_access(&self, query: &RaceDetectionQuery) -> RaceDetectionResult {
         let causality = match &self.causality_index {
             Some(c) => c,
             None => {
                 return RaceDetectionResult {
-                    races: vec![],
+                    accesses: vec![],
                     addresses_checked: 0,
                 }
             }
         };
 
-        let mut races = Vec::new();
+        let mut accesses = Vec::new();
         let mut addresses_checked = 0;
 
         // Iterate all addresses in the causality index
@@ -802,7 +806,7 @@ impl QueryEngine {
                     let a = writes[i];
                     let b = writes[j];
                     if a.thread_id == b.thread_id {
-                        continue; // same thread — not a race
+                        continue; // same thread — not a suspicious concurrent access
                     }
                     let delta = a.timestamp_ns.abs_diff(b.timestamp_ns);
                     if delta <= query.threshold_ns {
@@ -815,7 +819,7 @@ impl QueryEngine {
                             .find_last_mutation(*addr, b.timestamp_ns + 1)
                             .map(mutation_record_from_entry)
                             .unwrap_or_else(|| event_to_mutation_record(b));
-                        races.push(PotentialRace {
+                        accesses.push(SuspiciousConcurrentAccess {
                             address: *addr,
                             write_a: wa,
                             write_b: wb,
@@ -827,7 +831,7 @@ impl QueryEngine {
         }
 
         RaceDetectionResult {
-            races,
+            accesses,
             addresses_checked,
         }
     }
@@ -1349,14 +1353,15 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_races_100ns_threshold() {
+    fn test_detect_concurrent_access_100ns_threshold() {
         use chronos_domain::query::RaceDetectionQuery;
         use chronos_domain::{CausalityEntry, CausalityIndex, EventType, SourceLocation};
 
         let addr = 0xB000u64;
         let mut causality = CausalityIndex::new();
 
-        // Two writes to same address from different threads within 50ns (race)
+        // Two writes to same address from different threads within 50ns
+        // (suspicious concurrent access).
         causality.record_write(
             addr,
             CausalityEntry {
@@ -1409,10 +1414,10 @@ mod tests {
         let engine = QueryEngine::new(events).with_causality(causality);
         let query = RaceDetectionQuery::new("s1"); // threshold = 100ns
 
-        let result = engine.detect_races(&query);
-        assert_eq!(result.races.len(), 1);
-        assert_eq!(result.races[0].address, addr);
-        assert_eq!(result.races[0].delta_ns, 50);
+        let result = engine.detect_concurrent_access(&query);
+        assert_eq!(result.accesses.len(), 1);
+        assert_eq!(result.accesses[0].address, addr);
+        assert_eq!(result.accesses[0].delta_ns, 50);
     }
 
     // ─── Performance tests ────────────────────────────────────────────────────

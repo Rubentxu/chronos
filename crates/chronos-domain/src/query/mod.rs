@@ -343,9 +343,16 @@ pub struct MutationRecord {
     pub line: Option<u32>,
 }
 
-// ─── Race detection query ─────────────────────────────────────────────────────
+// ─── Suspicious concurrent access detection query ────────────────────────────
+//
+// m0-09: this heuristic used to be called "race detection" — that name
+// overstates what it actually does. It looks for two writes to the same
+// memory address from different threads within a small time window. That
+// is **suspicious concurrent access**: it *could* be a true data race,
+// but we are not doing a happens-before analysis, so we cannot prove it.
+// Renamed to make the epistemic status visible in the type name.
 
-/// Query to detect potential data races in a trace.
+/// Query to detect suspicious concurrent accesses in a trace.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RaceDetectionQuery {
     pub session_id: String,
@@ -365,9 +372,13 @@ impl RaceDetectionQuery {
     }
 }
 
-/// A single potential race condition.
+/// A single suspicious concurrent access (old name: `PotentialRace`).
+///
+/// Two writes to the same address from different threads within
+/// `threshold_ns`. **Not** a proven data race — we have not done
+/// happens-before analysis. Use this as a triage signal, not a verdict.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PotentialRace {
+pub struct SuspiciousConcurrentAccess {
     /// Memory address with concurrent writes.
     pub address: u64,
     /// First write event.
@@ -378,10 +389,17 @@ pub struct PotentialRace {
     pub delta_ns: u64,
 }
 
-/// Result of a race detection query.
+/// Backwards-compatible alias for `SuspiciousConcurrentAccess` (m0-09).
+#[deprecated(
+    note = "renamed to SuspiciousConcurrentAccess — `race` overstated what the heuristic detects"
+)]
+pub type PotentialRace = SuspiciousConcurrentAccess;
+
+/// Result of a suspicious concurrent access query.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RaceDetectionResult {
-    pub races: Vec<PotentialRace>,
+    /// Suspicious concurrent accesses found.
+    pub accesses: Vec<SuspiciousConcurrentAccess>,
     pub addresses_checked: usize,
 }
 
@@ -563,5 +581,47 @@ mod tests {
         assert_eq!(result.total_matching, 1000);
         assert_eq!(result.events.len(), 1);
         assert_eq!(result.next_offset, Some(100));
+    }
+
+    /// m0-09: `SuspiciousConcurrentAccess` is the canonical name for the
+    /// race-shaped detection result, and `PotentialRace` is kept only as a
+    /// deprecated alias. The result struct now exposes `accesses`, not
+    /// `races`. This test pins both the rename and the alias.
+    #[test]
+    fn test_m0_09_concurrent_access_rename() {
+        // The alias resolves to the same type.
+        #[allow(deprecated)]
+        let _: PotentialRace = SuspiciousConcurrentAccess {
+            address: 0,
+            write_a: MutationRecord {
+                event_id: 0,
+                timestamp: 0,
+                thread_id: 0,
+                value_before: None,
+                value_after: String::new(),
+                function: String::new(),
+                file: None,
+                line: None,
+            },
+            write_b: MutationRecord {
+                event_id: 0,
+                timestamp: 0,
+                thread_id: 0,
+                value_before: None,
+                value_after: String::new(),
+                function: String::new(),
+                file: None,
+                line: None,
+            },
+            delta_ns: 0,
+        };
+
+        // The result struct uses the new field name.
+        let result = RaceDetectionResult {
+            accesses: vec![],
+            addresses_checked: 0,
+        };
+        assert_eq!(result.accesses.len(), 0);
+        assert_eq!(result.addresses_checked, 0);
     }
 }

@@ -519,9 +519,12 @@ fn m0_08_timestamp_contract_is_separated() {
 }
 
 #[test]
-#[ignore = "implemented in cycle m0-09"]
+#[ignore = "implemented in cycle m0-09: race heuristic renamed to suspicious-concurrent-access"]
 fn m0_09_race_heuristic_is_renamed() {
-    unimplemented!("See vault/cycles/m0-truth-first-foundation/m0-09.md");
+    // m0-09 contract is enforced by the in-tree unit test
+    // chronos_domain::query::tests::test_m0_09_concurrent_access_rename.
+    // No live UAT is required (uat_gate: n/a); the rename is type-level
+    // and the unit test pins both the new name and the deprecated alias.
 }
 
 #[test]
