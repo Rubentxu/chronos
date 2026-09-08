@@ -162,6 +162,7 @@ fn m1_02_execution_log_persistence_impl() {
             session_id: session.clone(),
             monotonic_ns: 0,
             payload: chronos_log::ExecutionPayload::new(vec![1u8], "small"),
+            ..Default::default()
         })
         .unwrap();
         // Big record pushes the in-memory estimate over the 64
@@ -170,6 +171,7 @@ fn m1_02_execution_log_persistence_impl() {
             session_id: session.clone(),
             monotonic_ns: 10,
             payload: chronos_log::ExecutionPayload::new(vec![0u8; 256], "big"),
+            ..Default::default()
         })
         .unwrap();
         log.flush().unwrap();
@@ -201,6 +203,7 @@ fn m1_02_execution_log_persistence_impl() {
                 session_id: session.clone(),
                 monotonic_ns: i * 10,
                 payload: chronos_log::ExecutionPayload::new(vec![i as u8], "rec"),
+                ..Default::default()
             })
             .unwrap();
         }
@@ -237,6 +240,7 @@ fn m1_02_execution_log_persistence_impl() {
                 session_id: session.clone(),
                 monotonic_ns: i,
                 payload: chronos_log::ExecutionPayload::new(vec![i as u8], "d"),
+                ..Default::default()
             })
             .unwrap();
         }
@@ -265,12 +269,14 @@ fn m1_02_execution_log_persistence_impl() {
                 session_id: session.clone(),
                 monotonic_ns: i,
                 payload: chronos_log::ExecutionPayload::new(vec![(i & 0xFF) as u8], "d"),
+                ..Default::default()
             })
             .unwrap();
             l2.append(chronos_log::NewExecutionRecord {
                 session_id: session.clone(),
                 monotonic_ns: i,
                 payload: chronos_log::ExecutionPayload::new(vec![(i & 0xFF) as u8], "d"),
+                ..Default::default()
             })
             .unwrap();
         }
@@ -293,6 +299,7 @@ fn m1_02_execution_log_persistence_impl() {
             session_id: session.clone(),
             monotonic_ns: 0,
             payload: chronos_log::ExecutionPayload::new(vec![1], "a"),
+            ..Default::default()
         })
         .unwrap();
         log.record_gap(Gap::new(
@@ -405,6 +412,9 @@ fn m1_03_execution_log_migration_impl() {
             data: chronos_domain::EventData::Function {
                 name: format!("fn-{}", i),
                 signature: None,
+                symbol_id: None,
+                invocation_id: None,
+                parent_invocation_id: None,
             },
         })
         .collect();
@@ -494,6 +504,7 @@ fn m1_04_execution_log_durable_cursors_and_decoders_impl() {
                 serde_json::json!({"i": i}).to_string().into_bytes(),
                 "step",
             ),
+            ..Default::default()
         })
         .expect("append");
     }
@@ -563,6 +574,7 @@ fn m1_04_execution_log_durable_cursors_and_decoders_impl() {
         session_id: chronos_log::SessionId::new("native-m1-04-uat-counters"),
         monotonic_ns: 100,
         payload: chronos_log::ExecutionPayload::new(b"\xff\xfe\xfd not-json".to_vec(), "noise"),
+        ..Default::default()
     })
     .expect("append noise");
     log.flush().expect("flush");
@@ -607,6 +619,7 @@ fn m1_05_execution_log_segment_compaction_impl() {
                 serde_json::json!({"i": i}).to_string().into_bytes(),
                 "step",
             ),
+            ..Default::default()
         })
         .expect("append");
     }

@@ -221,6 +221,9 @@ impl SegmentedExecutionLog {
             monotonic_ns: record.monotonic_ns,
             kind: ExecutionKind::Raw,
             payload: record.payload,
+            invocation_id: record.invocation_id,
+            parent_invocation_id: record.parent_invocation_id,
+            symbol_id: record.symbol_id,
         };
         inner.buffer.push(SegmentEntry::Record(full));
         inner.pending += 1;
@@ -741,6 +744,9 @@ impl NewExecutionRecord {
             session_id: r.session_id.clone(),
             monotonic_ns: r.monotonic_ns,
             payload: ExecutionPayload::new(r.payload.bytes.clone(), r.payload.tag.clone()),
+            invocation_id: r.invocation_id,
+            parent_invocation_id: r.parent_invocation_id,
+            symbol_id: r.symbol_id,
         }
     }
 }
@@ -782,6 +788,9 @@ mod tests {
             session_id: s.clone(),
             monotonic_ns: ns,
             payload: ExecutionPayload::new(vec![1, 2, 3], tag),
+            invocation_id: None,
+            parent_invocation_id: None,
+            symbol_id: None,
         }
     }
 
@@ -827,6 +836,9 @@ mod tests {
                 session_id: session.clone(),
                 monotonic_ns: i * 10,
                 payload: ExecutionPayload::new(vec![0u8; 128], "big"),
+                invocation_id: None,
+                parent_invocation_id: None,
+                symbol_id: None,
             })
             .unwrap();
         }

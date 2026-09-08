@@ -43,6 +43,9 @@ fn trace_event_to_log_record(
         session_id: chronos_log::SessionId::new(session_id),
         monotonic_ns,
         payload: ExecutionPayload::new(payload_bytes, format!("{:?}", event.event_type)),
+        invocation_id: None,
+        parent_invocation_id: None,
+        symbol_id: None,
     }
 }
 
@@ -335,6 +338,7 @@ impl NativeProbeBackend {
             trace_syscalls: config.capture_syscalls,
             capture_registers: true,
             follow_children: true,
+            track_function_frames: false,
         };
 
         // Build the (placeholder) session up front so we have a
@@ -449,6 +453,7 @@ impl NativeProbeBackend {
             trace_syscalls: config.capture_syscalls,
             capture_registers: true,
             follow_children: true,
+            track_function_frames: false,
         };
 
         // Shared slot so the thread can publish its PID back for stop_probe to kill.

@@ -178,6 +178,9 @@ mod tests {
             EventData::Function {
                 name: name.to_string(),
                 signature: None,
+                symbol_id: None,
+                invocation_id: None,
+                parent_invocation_id: None,
             },
         )
     }

@@ -121,6 +121,9 @@ fn compaction_metrics_reflects_real_compaction_runs() {
             data: EventData::Function {
                 name: format!("fn-{}", i),
                 signature: None,
+                symbol_id: None,
+                invocation_id: None,
+                parent_invocation_id: None,
             },
         };
         let bytes = serde_json::to_vec(&ev).expect("encode");
@@ -128,6 +131,7 @@ fn compaction_metrics_reflects_real_compaction_runs() {
             session_id: SessionId::new(log_session),
             monotonic_ns: i * 10,
             payload: ExecutionPayload::new(bytes, "FunctionEntry"),
+            ..Default::default()
         })
         .expect("append");
     }

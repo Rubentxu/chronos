@@ -121,6 +121,7 @@ fn live_ptrace_events_flow_into_execution_log() {
         trace_syscalls: false,
         capture_registers: true,
         follow_children: false,
+        track_function_frames: false,
     });
     let pid = tracer
         .launch(std::path::Path::new("/bin/true"), &[])
@@ -235,6 +236,7 @@ fn decoder_counters_surface_unparseable_payloads() {
             session_id: SessionId::new(session_id),
             monotonic_ns: i * 100,
             payload: chronos_log::ExecutionPayload::new(bytes, "noise"),
+            ..Default::default()
         })
         .expect("append noise");
     }

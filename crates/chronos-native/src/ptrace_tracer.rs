@@ -78,6 +78,13 @@ pub struct PtraceConfig {
     pub capture_registers: bool,
     /// Whether to follow clone/fork children (multi-threaded programs).
     pub follow_children: bool,
+    /// Whether to track function invocations. When `true`, the capture
+    /// pipeline maintains a per-thread call stack and emits events
+    /// pre-populated with `invocation_id`, `parent_invocation_id`, and
+    /// `symbol_id`; the on-disk `ExecutionRecord` then carries these
+    /// fields and reads as `chronos_exec_v2`. Default: `false` so the
+    /// M0/M1 perf and v1 segment shape are preserved.
+    pub track_function_frames: bool,
 }
 
 impl Default for PtraceConfig {
@@ -86,6 +93,7 @@ impl Default for PtraceConfig {
             trace_syscalls: false,
             capture_registers: true,
             follow_children: true,
+            track_function_frames: false,
         }
     }
 }
@@ -847,6 +855,7 @@ mod tests {
             trace_syscalls: true,
             capture_registers: false,
             follow_children: false,
+            track_function_frames: false,
         };
         assert!(config.trace_syscalls);
         assert!(!config.capture_registers);
@@ -861,6 +870,7 @@ mod tests {
             trace_syscalls: false,
             capture_registers: true,
             follow_children: false,
+            track_function_frames: false,
         });
 
         let pid = tracer
@@ -895,6 +905,7 @@ mod tests {
             trace_syscalls: false,
             capture_registers: true,
             follow_children: false,
+            track_function_frames: false,
         });
 
         let pid = tracer
@@ -929,6 +940,7 @@ mod tests {
             trace_syscalls: true,
             capture_registers: true,
             follow_children: false,
+            track_function_frames: false,
         });
 
         let pid = tracer

@@ -3643,6 +3643,9 @@ mod tests {
             EventData::Function {
                 name: func.to_string(),
                 signature: None,
+                symbol_id: None,
+                invocation_id: None,
+                parent_invocation_id: None,
             },
         )
     }
@@ -3868,6 +3871,9 @@ mod tests {
             EventData::Function {
                 name: func.to_string(),
                 signature: None,
+                symbol_id: None,
+                invocation_id: None,
+                parent_invocation_id: None,
             },
         )
     }
@@ -4747,6 +4753,9 @@ mod tests {
                 EventData::Function {
                     name: func.to_string(),
                     signature: None,
+                    symbol_id: None,
+                    invocation_id: None,
+                    parent_invocation_id: None,
                 },
             )
         };

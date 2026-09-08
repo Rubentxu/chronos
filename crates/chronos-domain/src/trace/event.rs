@@ -1,9 +1,10 @@
 //! Trace event types.
 
-use crate::trace::SourceLocation;
+use crate::trace::{Language, SourceLocation};
 use crate::value::VariableInfo;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 /// Unique identifier for events within a session.
 pub type EventId = u64;
@@ -63,6 +64,11 @@ pub enum EventType {
     // Exception caught (counterpart to ExceptionThrown)
     ExceptionCaught = 17,
 
+    // Function frame: the probe was killed mid-invocation (SIGKILL,
+    // process exit without paired FunctionExit). Carries the
+    // InvocationId of the still-active frame.
+    InvocationIncomplete = 18,
+
     // Custom / Unknown
     Custom = 254,
     Unknown = 255,
@@ -101,10 +107,79 @@ impl std::fmt::Display for EventType {
             EventType::ThreadSwitch => write!(f, "thread_switch"),
             EventType::WatchTrigger => write!(f, "watch_trigger"),
             EventType::ExceptionCaught => write!(f, "exception_caught"),
+            EventType::InvocationIncomplete => write!(f, "invocation_incomplete"),
             EventType::Custom => write!(f, "custom"),
             EventType::Unknown => write!(f, "unknown"),
         }
     }
+}
+
+/// Stable identity for a function symbol (name + signature + language).
+///
+/// Two binaries compiled from the same source produce the same
+/// `SymbolId` so cross-binary symbol tables can be reconciled without
+/// string comparisons. The `language` tag is preserved so a Python
+/// `factorial` and a C `factorial` cannot collide on the hash blend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct SymbolId {
+    /// 64-bit FNV-1a-style hash of the function name (UTF-8 bytes).
+    pub name_hash: u64,
+    /// 64-bit FNV-1a-style hash of the language-specific signature
+    /// string (e.g. `(I)I` for Java, or the raw C signature). `0`
+    /// when the language has no canonical signature (e.g. C).
+    pub signature_hash: u64,
+    /// Language tag preventing collisions across languages.
+    pub language: Language,
+}
+
+impl SymbolId {
+    /// Construct a `SymbolId` from a function name, optional signature,
+    /// and language. Hashes are computed with FNV-1a 64-bit.
+    pub fn new(name: &str, signature: Option<&str>, language: Language) -> Self {
+        Self {
+            name_hash: fnv1a_64(name.as_bytes()),
+            signature_hash: signature.map(fnv1a_64_str).unwrap_or(0),
+            language,
+        }
+    }
+}
+
+/// Stable identity for a single function invocation.
+///
+/// Globally unique across processes (UUID v7 is timestamp-prefixed +
+/// random tail), sortable by capture time. Two distinct recursive calls
+/// of the same function carry distinct `InvocationId`s.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct InvocationId(pub Uuid);
+
+impl InvocationId {
+    /// Mint a new `InvocationId` from the current wall-clock time
+    /// (UUID v7 — time-ordered, globally unique).
+    pub fn now() -> Self {
+        Self(Uuid::now_v7())
+    }
+}
+
+impl std::fmt::Display for InvocationId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// 64-bit FNV-1a hash. Used to compute `SymbolId` hashes. Stable
+/// across runs and platforms (no Rust `Hash` involvement).
+fn fnv1a_64(bytes: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in bytes {
+        hash ^= *b as u64;
+        hash = hash.wrapping_mul(0x100_0000_01b3);
+    }
+    hash
+}
+
+fn fnv1a_64_str(s: &str) -> u64 {
+    fnv1a_64(s.as_bytes())
 }
 
 /// Kind of Python trace event.
@@ -169,6 +244,17 @@ pub enum EventData {
     Function {
         name: String,
         signature: Option<String>,
+        /// Stable identity for the function symbol the IP landed in.
+        /// `None` when the producer did not run with
+        /// `track_function_frames=true` (m0/m1 default behaviour).
+        symbol_id: Option<SymbolId>,
+        /// Stable identity for this particular invocation of the
+        /// function. Distinct between recursive calls. `None` when
+        /// frame tracking is disabled.
+        invocation_id: Option<InvocationId>,
+        /// Identity of the calling frame on the same thread at the
+        /// moment this invocation began. `None` for the root frame.
+        parent_invocation_id: Option<InvocationId>,
     },
 
     /// Variable write data.
@@ -440,6 +526,9 @@ impl TraceEvent {
             data: EventData::Function {
                 name: String::new(), // populated from location
                 signature: None,
+                symbol_id: None,
+                invocation_id: None,
+                parent_invocation_id: None,
             },
         }
     }
