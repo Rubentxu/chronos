@@ -120,6 +120,42 @@ impl QueryEngine {
         self.events.len()
     }
 
+    /// Borrow all events in the engine (in insertion order).
+    pub fn events(&self) -> &[TraceEvent] {
+        &self.events
+    }
+
+    /// Merge new events into the engine and rebuild all indices.
+    ///
+    /// New events are appended after the existing set. Events whose
+    /// `event_id` already exists in the engine are deduplicated (the
+    /// existing entry wins). After appending, the shadow, temporal,
+    /// causality, and performance indices are fully rebuilt so queries
+    /// reflect the union of old + new events.
+    pub fn merge(&mut self, new_events: Vec<TraceEvent>) {
+        if new_events.is_empty() {
+            return;
+        }
+        let mut existing_ids: std::collections::HashSet<u64> =
+            self.events.iter().map(|e| e.event_id).collect();
+        self.events.extend(
+            new_events
+                .into_iter()
+                .filter(|e| existing_ids.insert(e.event_id)),
+        );
+        self.rebuild_indices();
+    }
+
+    fn rebuild_indices(&mut self) {
+        let mut builder = chronos_index::builder::IndexBuilder::new();
+        builder.push_all(&self.events);
+        let indices = builder.finalize();
+        self.shadow_index = Some(indices.shadow);
+        self.temporal_index = Some(indices.temporal);
+        self.causality_index = Some(indices.causality);
+        self.performance_index = Some(indices.performance);
+    }
+
     /// Get an event by its ID using binary search.
     ///
     /// Requires events to be sorted by event_id (which is the case when
@@ -1815,5 +1851,51 @@ mod tests {
         // Get before first write - should return None
         let result = engine.get_memory_at(addr, 500);
         assert!(result.is_none());
+    }
+
+    // m0-02-make-snapshots-cumulative (UAT-M0-02)
+    #[test]
+    fn test_engine_merge_appends_new_events() {
+        let mut engine = QueryEngine::new(sample_events());
+        assert_eq!(engine.event_count(), 10);
+
+        let new_events = vec![
+            make_event(10, 1100, 1, EventType::FunctionEntry, "second_main", 0x5000),
+            make_event(11, 1200, 1, EventType::FunctionExit, "second_main", 0x5000),
+        ];
+        engine.merge(new_events);
+
+        assert_eq!(engine.event_count(), 12);
+        assert_eq!(engine.first_event().unwrap().event_id, 0);
+        assert_eq!(engine.last_event().unwrap().event_id, 11);
+    }
+
+    #[test]
+    fn test_engine_merge_dedupes_overlapping_ids() {
+        let mut engine = QueryEngine::new(sample_events());
+
+        // Re-add event_id 5 (already present) plus a new event_id 10.
+        let new_events = vec![
+            make_event(5, 999, 99, EventType::FunctionEntry, "duplicate", 0x9999),
+            make_event(10, 1100, 1, EventType::FunctionEntry, "fresh", 0x5000),
+        ];
+        engine.merge(new_events);
+
+        // Total goes from 10 to 11 (1 dup dropped, 1 new appended).
+        assert_eq!(engine.event_count(), 11);
+        // The duplicate event_id 5 keeps its original metadata
+        // (timestamp_ns=600 in sample_events), not the new one (ts=999).
+        let ev5 = engine.get_event_by_id(5).unwrap();
+        assert_eq!(ev5.timestamp_ns, 600);
+        assert_eq!(ev5.thread_id, 1);
+    }
+
+    #[test]
+    fn test_engine_merge_empty_is_noop() {
+        let mut engine = QueryEngine::new(sample_events());
+        let before = engine.events().to_vec();
+        engine.merge(vec![]);
+        let after = engine.events().to_vec();
+        assert_eq!(before, after);
     }
 }
