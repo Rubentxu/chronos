@@ -35,7 +35,7 @@ use crate::record::{ExecutionRecord, SessionId};
 use std::collections::HashMap;
 
 /// One directed, weighted symbol-level call edge.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CallGraphEdge {
     /// Symbol of the calling frame, or `None` for a root call (a record
     /// with no `parent_invocation_id`, or whose parent invocation is not
@@ -52,7 +52,7 @@ pub struct CallGraphEdge {
 /// Edges and node lists are returned in deterministic order (sorted by
 /// `(name_hash, signature_hash, language)`), so callers and tests can
 /// rely on stable iteration.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CallGraph {
     /// Directed edges, sorted deterministically (roots first, then by
     /// caller key then callee key).
