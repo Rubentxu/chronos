@@ -5,6 +5,7 @@
 
 pub mod adapter;
 pub mod bus;
+pub mod causal_slice;
 pub mod error;
 pub mod index;
 pub mod property;
@@ -17,6 +18,7 @@ pub mod value;
 // Re-exports for convenience
 pub use adapter::ProbeBackend;
 pub use bus::{BusMetrics, CursorStatus, EventBus, EventBusHandle, EventCursor, ReadResult};
+pub use causal_slice::{slice_from, CausalEdge, CausalSlice, EvidenceNode, EvidenceNodeId};
 pub use error::TraceError;
 pub use index::{
     CausalityEntry, CausalityIndex, CompressedTrace, CompressionLevel, DetailData,
