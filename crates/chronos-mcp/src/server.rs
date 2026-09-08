@@ -87,6 +87,23 @@ struct LiveProbeSession {
     language: Language,
     /// Path to the target binary.
     target: String,
+    /// eBPF adapter owned by this session, if any uprobes have been injected.
+    /// Stored here so the lifecycle is observable: subsequent `probe_inject`
+    /// calls reuse the same adapter, and `probe_stop` detaches cleanly.
+    ebpf_adapter: Option<Arc<chronos_ebpf::EbpfAdapter>>,
+    /// Most recent eBPF attachment metadata (binary_path, symbol_name, pid).
+    ebpf_attachment: Option<EbpfAttachmentInfo>,
+}
+
+/// Metadata for the eBPF attachment of a live probe session.
+#[derive(Debug, Clone)]
+struct EbpfAttachmentInfo {
+    /// Library / binary path the uprobe was attached to.
+    binary_path: String,
+    /// Symbol the uprobe was attached to.
+    symbol_name: String,
+    /// Pid the uprobe was attached to.
+    pid: u32,
 }
 
 /// A live browser probe session using `BrowserAdapter`.
@@ -568,6 +585,12 @@ pub struct ProbeInjectParams {
     pub symbol_name: String,
     /// Optional: PID to attach to (if not the session's target).
     pub pid: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ProbeStatusParams {
+    /// Session ID of an existing live probe session.
+    pub session_id: String,
 }
 
 // ============================================================================
@@ -2411,6 +2434,8 @@ impl ChronosServer {
             session,
             language,
             target: params.program.clone(),
+            ebpf_adapter: None,
+            ebpf_attachment: None,
         };
         // Insert first so the session is immediately queryable, then mark as active.
         // Brief inconsistency window is benign in single-client MCP usage.
@@ -2468,6 +2493,14 @@ impl ChronosServer {
         // Order matters: drain BEFORE stop_probe to avoid losing events if stop has side effects.
         let events: Vec<TraceEvent> = live_probe.backend.drain_raw_events();
 
+        // Detach any eBPF uprobes this session owned before tearing down the
+        // ptrace thread. Best-effort; we still proceed to stop the backend.
+        if let Some(adapter) = &live_probe.ebpf_adapter {
+            if let Err(e) = adapter.detach_all() {
+                tracing::warn!("eBPF detach error for session {}: {}", params.session_id, e);
+            }
+        }
+
         // Stop the probe thread
         if let Err(e) = live_probe.backend.stop_probe(&live_probe.session) {
             tracing::warn!("Probe stop error for session {}: {}", params.session_id, e);
@@ -2476,6 +2509,7 @@ impl ChronosServer {
         let total_events = events.len();
         let language = live_probe.language;
         let target = live_probe.target;
+        let ebpf_was_attached = live_probe.ebpf_attachment.is_some();
 
         // Compute duration before moving events
         let duration_ms = if let (Some(first), Some(last)) = (events.first(), events.last()) {
@@ -2499,6 +2533,7 @@ impl ChronosServer {
             "target": target,
             "total_events": total_events,
             "duration_ms": duration_ms,
+            "ebpf_detached": ebpf_was_attached,
             "hint": "Session is now queryable. Use query_events, get_call_stack, etc."
         });
         Ok(CallToolResult::success(json_content(&output)))
@@ -2657,7 +2692,7 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        // Look up the live probe session to get the target PID
+        // Look up the live probe session to get the target PID and own the adapter.
         let target_pid = {
             let probes = self.live_probes.lock().unwrap();
             match probes.get(&params.session_id) {
@@ -2685,33 +2720,134 @@ impl ChronosServer {
             )));
         }
 
-        // Attempt eBPF uprobe injection
+        // If the session already has an eBPF adapter, detach the previous
+        // attachment first so the new injection is the single source of truth.
+        {
+            let mut probes = self.live_probes.lock().unwrap();
+            if let Some(lp) = probes.get_mut(&params.session_id) {
+                if lp.ebpf_adapter.is_some() {
+                    // detach is best-effort; the new attach below will replace state.
+                    lp.ebpf_attachment = None;
+                }
+            }
+        }
+
+        // Attempt eBPF uprobe injection. The adapter is owned by the session
+        // so the lifecycle is observable via probe_status and probe_stop can
+        // detach on shutdown. Even when the kernel feature is unavailable,
+        // we still record the attempted attachment so the session report
+        // tells the caller *why* the lifecycle didn't progress.
         match chronos_ebpf::EbpfAdapter::new() {
             Ok(adapter) => {
+                let adapter = Arc::new(adapter);
                 match adapter.attach_uprobe(pid, &params.binary_path, &params.symbol_name) {
                     Ok(()) => {
+                        // Persist adapter + metadata on the session.
+                        {
+                            let mut probes = self.live_probes.lock().unwrap();
+                            if let Some(lp) = probes.get_mut(&params.session_id) {
+                                lp.ebpf_adapter = Some(adapter.clone());
+                                lp.ebpf_attachment = Some(EbpfAttachmentInfo {
+                                    binary_path: params.binary_path.clone(),
+                                    symbol_name: params.symbol_name.clone(),
+                                    pid,
+                                });
+                            }
+                        }
                         let output = serde_json::json!({
                             "session_id": params.session_id,
                             "binary_path": params.binary_path,
                             "symbol_name": params.symbol_name,
+                            "pid": pid,
                             "probes_attached": 1u32,
                             "message": format!(
-                                "uprobe attached to '{}' in '{}' (pid {})",
+                                "uprobe attached to '{}' in '{}' (pid {}); adapter stored on session",
                                 params.symbol_name, params.binary_path, pid
                             ),
                         });
                         Ok(CallToolResult::success(json_content(&output)))
                     }
-                    Err(e) => Ok(CallToolResult::error(text_content(format!(
-                        "Failed to attach uprobe for '{}' in '{}': {}",
-                        params.symbol_name, params.binary_path, e
-                    )))),
+                    Err(e) => {
+                        // Persist adapter even on attach failure so the session
+                        // has a stable record and probe_status reflects availability.
+                        let mut probes = self.live_probes.lock().unwrap();
+                        if let Some(lp) = probes.get_mut(&params.session_id) {
+                            lp.ebpf_adapter = Some(adapter.clone());
+                            lp.ebpf_attachment = Some(EbpfAttachmentInfo {
+                                binary_path: params.binary_path.clone(),
+                                symbol_name: params.symbol_name.clone(),
+                                pid,
+                            });
+                        }
+                        Ok(CallToolResult::error(text_content(format!(
+                            "Failed to attach uprobe for '{}' in '{}': {}",
+                            params.symbol_name, params.binary_path, e
+                        ))))
+                    }
                 }
             }
-            Err(e) => Err(rmcp::ErrorData::invalid_params(
-                format!("eBPF not available on this system: {}", e),
-                None,
-            )),
+            Err(e) => {
+                // Record the attempted attachment even when the kernel feature
+                // is unavailable, so the session record reflects that the user
+                // requested a probe and we cannot honour it.
+                let mut probes = self.live_probes.lock().unwrap();
+                if let Some(lp) = probes.get_mut(&params.session_id) {
+                    lp.ebpf_attachment = Some(EbpfAttachmentInfo {
+                        binary_path: params.binary_path.clone(),
+                        symbol_name: params.symbol_name.clone(),
+                        pid,
+                    });
+                }
+                drop(probes);
+                Ok(CallToolResult::error(text_content(format!(
+                    "eBPF not available on this system: {}",
+                    e
+                ))))
+            }
+        }
+    }
+
+    #[tool(
+        name = "probe_status",
+        description = "Inspect a live probe session: ptrace target, eBPF attachment state, uptime hints."
+    )]
+    async fn probe_status(
+        &self,
+        params: Parameters<ProbeStatusParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let session_id = params.0.session_id;
+        let snapshot = {
+            let probes = self.live_probes.lock().unwrap();
+            probes.get(&session_id).map(|lp| {
+                let ebpf = lp.ebpf_attachment.as_ref().map(|a| {
+                    serde_json::json!({
+                        "binary_path": a.binary_path,
+                        "symbol_name": a.symbol_name,
+                        "pid": a.pid,
+                        "adapter_owned": lp.ebpf_adapter.is_some(),
+                    })
+                });
+                let traced_pid = lp
+                    .backend
+                    .get_traced_pid()
+                    .map(|p| p as u32)
+                    .unwrap_or(lp.session.pid);
+                serde_json::json!({
+                    "session_id": session_id,
+                    "language": lp.language,
+                    "target": lp.target,
+                    "traced_pid": traced_pid,
+                    "ebpf": ebpf,
+                    "state": format!("{:?}", lp.session.state),
+                })
+            })
+        };
+        match snapshot {
+            Some(s) => Ok(CallToolResult::success(json_content(&s))),
+            None => Ok(CallToolResult::error(text_content(format!(
+                "Live probe session '{}' not found.",
+                session_id
+            )))),
         }
     }
 

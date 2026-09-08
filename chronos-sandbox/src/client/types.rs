@@ -58,6 +58,8 @@ pub struct ProbeStopResponse {
     pub total_events: usize,
     #[serde(default)]
     pub duration_ms: u64,
+    #[serde(default)]
+    pub ebpf_detached: bool,
     pub hint: Option<String>,
 }
 

@@ -41,6 +41,16 @@ impl McpSession {
         Ok(())
     }
 
+    /// Forward a raw `call_tool` to the underlying RPC client. Useful when the
+    /// sandbox test needs to invoke a tool that does not have a dedicated helper.
+    pub async fn call_tool(
+        &mut self,
+        tool_name: &str,
+        arguments: serde_json::Value,
+    ) -> Result<serde_json::Value, McpSandboxError> {
+        self.rpc_client.call_tool(tool_name, arguments).await
+    }
+
     /// Get the path to a compiled C fixture binary.
     ///
     /// Searches in the following order:
