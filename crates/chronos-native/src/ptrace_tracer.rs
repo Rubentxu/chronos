@@ -78,12 +78,15 @@ pub struct PtraceConfig {
     pub capture_registers: bool,
     /// Whether to follow clone/fork children (multi-threaded programs).
     pub follow_children: bool,
-    /// Whether to track function invocations. When `true`, the capture
-    /// pipeline maintains a per-thread call stack and emits events
-    /// pre-populated with `invocation_id`, `parent_invocation_id`, and
-    /// `symbol_id`; the on-disk `ExecutionRecord` then carries these
-    /// fields and reads as `chronos_exec_v2`. Default: `false` so the
-    /// M0/M1 perf and v1 segment shape are preserved.
+    /// Whether to capture real function frames. When `true`, `launch()`
+    /// pauses the child at exec so the capture pipeline can plant INT3
+    /// breakpoints at the relocated function-entry addresses; each hit is
+    /// classified as a `FunctionEntry` and the M2 `InvocationTracker`
+    /// pre-populates the emitted events with `invocation_id`,
+    /// `parent_invocation_id`, and `symbol_id`. The on-disk `ExecutionRecord`
+    /// then carries these fields and reads as `chronos_exec_v2`. Default:
+    /// `false` so the M0/M1 perf and v1 segment shape are preserved (and the
+    /// child resumes immediately after exec, as before).
     pub track_function_frames: bool,
 }
 
@@ -266,6 +269,20 @@ impl PtraceTracer {
                 self.main_pid = Some(child);
                 self.traced_pids.insert(child.as_raw());
                 self.initialized = true;
+
+                // Real function-frame capture (track_function_frames=true)
+                // needs a window to plant INT3 breakpoints at the relocated
+                // function-entry addresses before any program code runs, so
+                // we leave the child stopped at this post-exec SIGTRAP and let
+                // the capture pipeline resume it after injection. All other
+                // modes resume here exactly as before (no behavioural change).
+                if self.config.track_function_frames {
+                    debug!(
+                        "Child {} left paused at exec for breakpoint injection",
+                        child
+                    );
+                    return Ok(child.as_raw());
+                }
 
                 // Resume the child — the SIGTRAP stop was consumed by waitpid above.
                 // Without this, wait_event() will never see a stop because the initial
