@@ -183,6 +183,47 @@ pub fn property_violation_on_session<B: ExecutionLogBackend + ?Sized>(
     Ok(property.evaluate_violation(&values))
 }
 
+/// Result of evaluating one property over a session observation feed.
+#[derive(Debug, Clone)]
+pub struct PropertyEvaluation {
+    pub property: Property,
+    pub outcome: PropertySequenceOutcome,
+    pub violation: Option<PropertyViolation>,
+}
+
+/// Evaluate every `property` over the session feed, in input order.
+pub fn report_properties_on_session<B: ExecutionLogBackend + ?Sized>(
+    log: &ExecutionLog<B>,
+    session: &SessionId,
+    properties: &[Property],
+) -> Result<Vec<PropertyEvaluation>, PersistError> {
+    let mut out = Vec::with_capacity(properties.len());
+    for property in properties {
+        let outcome = evaluate_property_on_session(log, session, property)?;
+        let violation = property_violation_on_session(log, session, property)?;
+        out.push(PropertyEvaluation {
+            property: property.clone(),
+            outcome,
+            violation,
+        });
+    }
+    Ok(out)
+}
+
+/// Parse each DSL text with `Property::from_dsl` (first parse error surfaces as
+/// `Err`) then evaluate them all over the session feed.
+pub fn report_dsl_properties_on_session<B: ExecutionLogBackend + ?Sized>(
+    log: &ExecutionLog<B>,
+    session: &SessionId,
+    dsl_texts: &[&str],
+) -> Result<Vec<PropertyEvaluation>, String> {
+    let mut properties = Vec::with_capacity(dsl_texts.len());
+    for text in dsl_texts {
+        properties.push(Property::from_dsl(text)?);
+    }
+    report_properties_on_session(log, session, &properties).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -316,5 +357,55 @@ mod tests {
         assert!(property_violation_on_session(&log, &session, &property)
             .unwrap()
             .is_none());
+    }
+
+    const DSL_NON_NEGATIVE: &str = "property order_total_non_negative {\n  observe: Order.total\n  when: after Order.apply_discount\n  id: 1\n  version: 1\n  invariant: >= 0\n}\n";
+    const DSL_DELTA_CAP: &str = "property total_step_le_100 {\n  observe: Order.total\n  when: after Order.apply_discount\n  id: 2\n  version: 1\n  invariant: delta(<= 100)\n}\n";
+
+    #[test]
+    fn batch_report_two_declared_properties_over_violating_session() {
+        let backend = Arc::new(InMemoryExecutionLog::new());
+        let log = Arc::new(ExecutionLog::new(backend));
+        let session = SessionId::new("s1");
+        let mut writer = ObservationLogWriter::new(log.clone(), session.clone());
+        for v in [59.0, 0.0, -35.0] {
+            writer
+                .record("Order.total", PropertyValue::Number(v))
+                .unwrap();
+        }
+
+        let report =
+            report_dsl_properties_on_session(&log, &session, &[DSL_NON_NEGATIVE, DSL_DELTA_CAP])
+                .unwrap();
+        assert_eq!(report.len(), 2);
+        // First property violates (>= 0 at -35).
+        assert!(matches!(
+            report[0].outcome,
+            chronos_domain::PropertySequenceOutcome::Violation { index: 2, .. }
+        ));
+        assert!(report[0].violation.is_some());
+        // Second property (delta <= 100) passes.
+        assert_eq!(
+            report[1].outcome,
+            chronos_domain::PropertySequenceOutcome::Pass
+        );
+        assert!(report[1].violation.is_none());
+    }
+
+    #[test]
+    fn batch_report_unsupported_target_is_never_pass() {
+        let backend = Arc::new(InMemoryExecutionLog::new());
+        let log = Arc::new(ExecutionLog::new(backend));
+        let session = SessionId::new("s2");
+        let mut writer = ObservationLogWriter::new(log.clone(), session.clone());
+        writer.record("Other", PropertyValue::Bool(true)).unwrap();
+
+        let report = report_dsl_properties_on_session(&log, &session, &[DSL_NON_NEGATIVE]).unwrap();
+        assert_eq!(report.len(), 1);
+        assert!(matches!(
+            report[0].outcome,
+            chronos_domain::PropertySequenceOutcome::UnsupportedByRecordedEvidence { .. }
+        ));
+        assert!(report[0].violation.is_none());
     }
 }
