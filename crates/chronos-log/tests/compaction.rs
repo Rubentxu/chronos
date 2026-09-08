@@ -15,7 +15,9 @@
 //!   - Files that are already gone (concurrent delete) don't
 //!     surface as an error.
 
-use chronos_log::{EventSeq, LogConsumerId, SegmentedConfig, SegmentedExecutionLog, SessionId};
+use chronos_log::{
+    CompactionMetrics, EventSeq, LogConsumerId, SegmentedConfig, SegmentedExecutionLog, SessionId,
+};
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
@@ -267,6 +269,162 @@ fn compact_after_compact_keeps_survivors_intact() {
 
     // last_flushed_tail tracks the survivor.
     assert_eq!(log.last_flushed_tail(), Some(EventSeq::new(7)));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ---------------------------------------------------------------------------
+// m1-06 — compaction metrics + maybe_compact.
+//
+// These tests cover the new `compaction_metrics()` accessor and the
+// `maybe_compact()` convenience wrapper.
+// ---------------------------------------------------------------------------
+
+/// Metrics are zero on a freshly opened log.
+#[test]
+fn compaction_metrics_initial_state_is_zero() {
+    let dir = tempdir();
+    let cfg = SegmentedConfig::with_dir(&dir);
+    let log = SegmentedExecutionLog::open(SessionId::new("m1-06-metrics-zero"), cfg).unwrap();
+
+    assert_eq!(log.compaction_metrics(), CompactionMetrics::default());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `compact_up_to` increments all three counters exactly once per
+/// successful run. A second call with the same cutoff is a no-op and
+/// must NOT re-increment.
+#[test]
+fn compaction_metrics_track_runs_segments_and_bytes() {
+    let dir = tempdir();
+    let session = SessionId::new("m1-06-metrics-track");
+    let mut cfg = SegmentedConfig::with_dir(&dir);
+    cfg.flush_threshold = NonZeroUsize::new(2).unwrap();
+    let log = SegmentedExecutionLog::open(session.clone(), cfg).expect("open");
+
+    // Three flushes ⇒ three segments [0..1], [2..3], [4..5].
+    for i in 0..6u64 {
+        log.append(chronos_log::NewExecutionRecord {
+            session_id: session.clone(),
+            monotonic_ns: i * 10,
+            payload: chronos_log::ExecutionPayload::new(vec![i as u8], "x"),
+        })
+        .unwrap();
+    }
+    log.flush().unwrap();
+    assert_eq!(log.flushed_segments().len(), 3);
+
+    let consumer = LogConsumerId::new("c1");
+    log.commit_cursor(&consumer, EventSeq::new(3)).unwrap();
+
+    // Cutoff = seq 3 ⇒ segments [0..1] and [2..3] (end_seq=1 and
+    // end_seq=3) both qualify.
+    let removed = log.compact_up_to(EventSeq::new(3)).unwrap();
+    assert_eq!(removed.len(), 2);
+    let m1 = log.compaction_metrics();
+    assert_eq!(m1.compaction_runs_total, 1);
+    assert_eq!(m1.segments_removed_total, 2);
+    assert!(m1.bytes_reclaimed_total > 0, "size should be >0");
+
+    // Second call with the same cutoff is a no-op.
+    let removed_again = log.compact_up_to(EventSeq::new(3)).unwrap();
+    assert!(removed_again.is_empty());
+    let m2 = log.compaction_metrics();
+    assert_eq!(m2.compaction_runs_total, 1, "no new run on no-op");
+    assert_eq!(m2.segments_removed_total, 2);
+    assert_eq!(
+        m2.bytes_reclaimed_total, m1.bytes_reclaimed_total,
+        "bytes should not change"
+    );
+
+    // Third call with a stricter cutoff that nothing satisfies
+    // (only one segment left, end_seq=5) ⇒ still no-op.
+    let removed_3 = log.compact_up_to(EventSeq::new(0)).unwrap();
+    assert!(removed_3.is_empty());
+    let m3 = log.compaction_metrics();
+    assert_eq!(m3.compaction_runs_total, 1);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `maybe_compact` uses `min_consumer_cursor()` automatically. Two
+/// consumers with different positions ⇒ the slower one determines
+/// the cutoff.
+#[test]
+fn maybe_compact_uses_min_consumer_cursor() {
+    let dir = tempdir();
+    let session = SessionId::new("m1-06-maybe");
+    let mut cfg = SegmentedConfig::with_dir(&dir);
+    cfg.flush_threshold = NonZeroUsize::new(2).unwrap();
+    let log = SegmentedExecutionLog::open(session.clone(), cfg).expect("open");
+
+    for i in 0..6u64 {
+        log.append(chronos_log::NewExecutionRecord {
+            session_id: session.clone(),
+            monotonic_ns: i * 10,
+            payload: chronos_log::ExecutionPayload::new(vec![i as u8], "x"),
+        })
+        .unwrap();
+    }
+    log.flush().unwrap();
+    assert_eq!(log.flushed_segments().len(), 3);
+
+    // The "slow" consumer has only read 1 record (seq 0). The
+    // "fast" consumer has read through seq 4. Min cursor = 0 ⇒
+    // nothing compactable (end_seq=1 > 0).
+    let slow = LogConsumerId::new("slow");
+    let fast = LogConsumerId::new("fast");
+    log.commit_cursor(&slow, EventSeq::new(0)).unwrap();
+    log.commit_cursor(&fast, EventSeq::new(4)).unwrap();
+
+    let removed = log.maybe_compact().unwrap();
+    assert!(
+        removed.is_empty(),
+        "slow consumer blocks compaction (min cursor too low)"
+    );
+
+    // Now advance slow to seq 3 — min cursor becomes min(3, 4) = 3.
+    log.commit_cursor(&slow, EventSeq::new(3)).unwrap();
+    let removed = log.maybe_compact().unwrap();
+    assert_eq!(
+        removed.len(),
+        2,
+        "segments with end_seq <= 3 are removed ([0..1] and [2..3])"
+    );
+
+    let m = log.compaction_metrics();
+    assert_eq!(m.compaction_runs_total, 1);
+    assert_eq!(m.segments_removed_total, 2);
+    assert!(m.bytes_reclaimed_total > 0);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `maybe_compact` is a no-op when no consumer has committed a
+/// cursor.
+#[test]
+fn maybe_compact_returns_empty_when_no_cursors() {
+    let dir = tempdir();
+    let session = SessionId::new("m1-06-no-cursor");
+    let mut cfg = SegmentedConfig::with_dir(&dir);
+    cfg.flush_threshold = NonZeroUsize::new(2).unwrap();
+    let log = SegmentedExecutionLog::open(session.clone(), cfg).expect("open");
+
+    for i in 0..4u64 {
+        log.append(chronos_log::NewExecutionRecord {
+            session_id: session.clone(),
+            monotonic_ns: i * 10,
+            payload: chronos_log::ExecutionPayload::new(vec![i as u8], "x"),
+        })
+        .unwrap();
+    }
+    log.flush().unwrap();
+
+    let removed = log.maybe_compact().unwrap();
+    assert!(removed.is_empty(), "no consumer ⇒ no compaction");
+    let m = log.compaction_metrics();
+    assert_eq!(m.compaction_runs_total, 0);
+    assert_eq!(m.segments_removed_total, 0);
 
     let _ = std::fs::remove_dir_all(&dir);
 }
