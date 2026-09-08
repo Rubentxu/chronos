@@ -16,8 +16,8 @@
 //!     records ≤ `last_seq`.
 
 use chronos_log::{
-    segment::sanitize_session, EventSeq, LogConsumerId, SegmentedConfig,
-    SegmentedExecutionLog, SessionId,
+    segment::sanitize_session, EventSeq, LogConsumerId, SegmentedConfig, SegmentedExecutionLog,
+    SessionId,
 };
 use std::num::NonZeroUsize;
 use std::path::PathBuf;

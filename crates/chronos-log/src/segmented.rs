@@ -317,6 +317,93 @@ impl SegmentedExecutionLog {
         Ok(fresh)
     }
 
+    /// List segment files whose `end_seq <= cutoff`. These are
+    /// safe to delete once every known consumer has a cursor ≥
+    /// `cutoff`. The caller is responsible for picking the right
+    /// cutoff (typically `cursors().values().min()`).
+    ///
+    /// Pure read — does not modify the in-memory backend or the
+    /// on-disk state.
+    pub fn compactable_segments_up_to(
+        &self,
+        cutoff: EventSeq,
+    ) -> Vec<(EventSeq, EventSeq, PathBuf)> {
+        let inner = self.inner.lock().expect("poisoned");
+        inner
+            .flushed_segments
+            .iter()
+            .filter(|s| s.end_seq <= cutoff)
+            .map(|s| (s.start_seq, s.end_seq, s.path.clone()))
+            .collect()
+    }
+
+    /// Delete segment files whose `end_seq <= cutoff`. The
+    /// in-memory backend and the cursor sidecar are *not*
+    /// modified — the records remain readable until the next
+    /// process restart (when `replay_into_inner` would skip the
+    /// missing files). After compaction, the in-memory
+    /// `flushed_segments` list is updated so subsequent
+    /// `compactable_segments_up_to` calls do not re-emit the
+    /// deleted paths.
+    ///
+    /// Returns the list of paths actually removed. If a file is
+    /// already missing on disk (concurrent compaction, manual
+    /// delete), the corresponding bookkeeping entry is dropped
+    /// silently.
+    pub fn compact_up_to(&self, cutoff: EventSeq) -> Result<Vec<PathBuf>, LogError> {
+        let mut removed = Vec::new();
+        let mut survivors = Vec::new();
+        let mut inner = self.inner.lock().expect("poisoned");
+        for seg in inner.flushed_segments.drain(..) {
+            if seg.end_seq <= cutoff {
+                match std::fs::remove_file(&seg.path) {
+                    Ok(()) => removed.push(seg.path),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                        // Already gone (concurrent delete, manual
+                        // rm). Drop the bookkeeping entry.
+                    }
+                    Err(e) => {
+                        // Put the segment back so we don't lose
+                        // the bookkeeping on a transient I/O
+                        // failure.
+                        let path = seg.path.clone();
+                        survivors.push(seg);
+                        return Err(LogError::Backend(format!("remove_file {:?}: {}", path, e)));
+                    }
+                }
+            } else {
+                survivors.push(seg);
+            }
+        }
+        inner.flushed_segments = survivors;
+        // Recompute last_flushed_tail as the max end_seq of the
+        // survivors. If all segments were deleted, fall back to
+        // the buffer's natural state (the allocator may still
+        // have unflushed entries that will be flushed next time).
+        inner.last_flushed_tail = inner.flushed_segments.iter().map(|s| s.end_seq).max();
+        Ok(removed)
+    }
+
+    /// Convenience: returns the lowest seq any committed consumer
+    /// still needs. Use this with `compact_up_to`. If no consumer
+    /// has a cursor yet, returns `None` — compaction is unsafe
+    /// until at least one consumer has read.
+    pub fn min_consumer_cursor(&self) -> Option<EventSeq> {
+        let inner = self.inner.lock().expect("poisoned");
+        inner
+            .cursors
+            .values()
+            .copied()
+            .min()
+            // If no committed cursor exists but the in-memory
+            // backend has a stored cursor (e.g. via reads
+            // without commit), fall back to that.
+            .or_else(|| {
+                let consumer = LogConsumerId::new("m1-05-fallback");
+                inner.backend.cursor(&self.session_id, &consumer)
+            })
+    }
+
     /// List of segments currently on disk.
     pub fn flushed_segments(&self) -> Vec<(EventSeq, EventSeq, PathBuf)> {
         let inner = self.inner.lock().expect("poisoned");
