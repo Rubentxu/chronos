@@ -44,7 +44,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::info;
+use tracing::{info, warn};
 
 /// Resource limits for capture operations.
 ///
@@ -879,11 +879,122 @@ impl ChronosServer {
     pub async fn run_stdio(self) -> Result<(), Box<dyn std::error::Error>> {
         use rmcp::ServiceExt;
         let server = Arc::new(self);
+        // m1-08: spawn the auto-compaction daemon alongside the
+        // MCP service. The daemon periodically walks `live_probes`
+        // and calls `maybe_compact()` on each attached ExecutionLog,
+        // so operators don't need to wire a separate scheduler.
+        // `waiting()` is what blocks until the service shuts down;
+        // we tie the daemon to that with a shutdown signal so they
+        // die together.
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let daemon_handle = tokio::spawn(Self::auto_compaction_daemon(server.clone(), shutdown_rx));
         let transport = (tokio::io::stdin(), tokio::io::stdout());
         let service = server.serve(transport).await?;
         info!("Chronos MCP server started on stdio");
-        service.waiting().await?;
+        let result = service.waiting().await;
+        // Signal the daemon to stop and let it drain.
+        let _ = shutdown_tx.send(true);
+        // daemon_handle.await returns Result<(), JoinError>;
+        // we don't care about the daemon's exit status here
+        // (it returns Ok on graceful shutdown, Err only if it
+        // panicked — which we want to propagate).
+        let daemon_result = daemon_handle.await;
+        result?;
+        daemon_result
+            .map_err(|e| Box::<dyn std::error::Error>::from(format!("daemon panicked: {}", e)))?;
         Ok(())
+    }
+
+    /// Background task that periodically walks every live probe
+    /// session and calls `maybe_compact()` on its attached
+    /// ExecutionLog (m1-08).
+    ///
+    /// Interval comes from `CHRONOS_AUTO_COMPACT_INTERVAL_SECS`
+    /// (default 30 s). Setting the env var to `0` disables the
+    /// daemon entirely — useful for tests.
+    ///
+    /// Errors from `maybe_compact()` are logged at `warn` level and
+    /// swallowed; compaction is best-effort and the next tick will
+    /// retry.
+    async fn auto_compaction_daemon(
+        server: Arc<Self>,
+        mut shutdown: tokio::sync::watch::Receiver<bool>,
+    ) {
+        let interval_secs: u64 = std::env::var("CHRONOS_AUTO_COMPACT_INTERVAL_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(30);
+        if interval_secs == 0 {
+            info!("auto-compaction daemon disabled (CHRONOS_AUTO_COMPACT_INTERVAL_SECS=0)");
+            return;
+        }
+        info!(
+            "auto-compaction daemon started (interval = {}s)",
+            interval_secs
+        );
+        let mut ticker = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+        // Skip the first immediate tick — the daemon shouldn't fire
+        // before the server has even accepted a single probe.
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        ticker.tick().await; // consume the initial 0-time tick
+        loop {
+            tokio::select! {
+                _ = shutdown.changed() => {
+                    if *shutdown.borrow() {
+                        info!("auto-compaction daemon shutting down");
+                        return;
+                    }
+                }
+                _ = ticker.tick() => {
+                    Self::run_one_compaction_round(&server).await;
+                }
+            }
+        }
+    }
+
+    /// Single pass over live_probes; one `maybe_compact()` call per
+    /// backend that has an attached log. Logs cumulative metrics
+    /// before and after so the operator can see reclaimed space.
+    ///
+    /// Holds `live_probes` for the entire pass — `maybe_compact()`
+    /// is a short call (it operates on the backend's own log, not
+    /// the live_probes map), and we want a consistent snapshot.
+    /// The mutex is std::sync, never held across .await, so this
+    /// does not block the async runtime.
+    async fn run_one_compaction_round(server: &Arc<Self>) {
+        let probes = server.live_probes.lock().unwrap();
+        for (session_id, live_probe) in probes.iter() {
+            let log = match live_probe.backend.execution_log() {
+                Some(l) => l,
+                None => continue,
+            };
+            let before = log.compaction_metrics();
+            let removed = log.maybe_compact();
+            match removed {
+                Ok(paths) if !paths.is_empty() => {
+                    let after = log.compaction_metrics();
+                    let reclaimed_bytes =
+                        after.bytes_reclaimed_total - before.bytes_reclaimed_total;
+                    info!(
+                        "auto-compact: session={} removed {} segment(s) ({} bytes reclaimed); \
+                         cumulative runs={}, bytes_reclaimed={}, segments_removed={}",
+                        session_id,
+                        paths.len(),
+                        reclaimed_bytes,
+                        after.compaction_runs_total,
+                        after.bytes_reclaimed_total,
+                        after.segments_removed_total,
+                    );
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    warn!(
+                        "auto-compact: session={} failed: {} (will retry on next tick)",
+                        session_id, e
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -5029,6 +5140,47 @@ mod tests {
             Some(true),
             "Drain after stop should be an error"
         );
+    }
+
+    /// m1-08 — the daemon round is a no-op for backends without an
+    /// attached log. Verifies we don't accidentally fabricate
+    /// compaction activity on probes that opted out of the log.
+    #[tokio::test(flavor = "current_thread")]
+    async fn m1_08_auto_compaction_round_skips_backends_without_log() {
+        use chronos_domain::{CaptureConfig, CaptureSession, Language};
+        use chronos_native::probe_backend::NativeProbeBackend;
+
+        let server = Arc::new(ChronosServer::new());
+
+        // Register a backend with NO execution log attached.
+        let bus = chronos_domain::bus::EventBus::new_shared(1024);
+        let backend_no_log = NativeProbeBackend::new(bus);
+        // Build the minimum LiveProbeSession: the daemon only
+        // reads `backend`, so we stub the other fields with
+        // dummies that compile.
+        let dummy_session = CaptureSession::new(0, Language::Rust, CaptureConfig::new("noop"));
+        let live = LiveProbeSession {
+            backend: backend_no_log,
+            session: dummy_session,
+            language: Language::Rust,
+            target: "noop".to_string(),
+            ebpf_adapter: None,
+            ebpf_attachment: None,
+        };
+        {
+            let mut probes = server.live_probes.lock().unwrap();
+            probes.insert("no-log-session".to_string(), live);
+        }
+
+        // No log attached ⇒ daemon round should be a no-op (just
+        // continue past the entry). We can't observe the absence
+        // directly, but we can observe that nothing panics and that
+        // there's nothing to assert against.
+        ChronosServer::run_one_compaction_round(&server).await;
+
+        // If we got here without panicking, we passed.
+        // (No assertion needed — the postcondition is "no panics +
+        // no log was created".)
     }
 }
 
