@@ -2869,6 +2869,12 @@ impl ChronosServer {
                         "line": r.location.line,
                         "function": r.location.function,
                     },
+                    // m2-08: surface the event payload so consumers can see
+                    // the identity fields (EventData::Function carries
+                    // symbol_id / invocation_id / parent_invocation_id) that
+                    // the m2 projection layer consumes. Flat fields above
+                    // remain for backward compatibility.
+                    "data": serde_json::to_value(&r.data).unwrap_or(serde_json::Value::Null),
                 })
             })
             .collect();
@@ -5190,6 +5196,126 @@ mod tests {
         // If we got here without panicking, we passed.
         // (No assertion needed — the postcondition is "no panics +
         // no log was created".)
+    }
+
+    /// m2-08 — `probe_drain_log` surfaces each event's `data` (which carries
+    /// the `EventData::Function` identity fields) in the JSON output, without
+    /// dropping the existing flat projection. Uses the in-process slot seam to
+    /// attach a real `SegmentedExecutionLog` holding an identity-bearing
+    /// record, so no ptrace is needed.
+    #[tokio::test(flavor = "current_thread")]
+    async fn m2_08_probe_drain_log_surfaces_event_data_identity() {
+        use chronos_domain::{CaptureConfig, CaptureSession, SourceLocation};
+        use chronos_log::{
+            ExecutionPayload, NewExecutionRecord, SegmentedConfig, SegmentedExecutionLog,
+            SessionId as LogSessionId,
+        };
+        use chronos_native::probe_backend::NativeProbeBackend;
+        use std::sync::Arc;
+
+        let session_key = "sess-drain-identity".to_string();
+
+        // Build the log session id the backend expects ("native-<key>").
+        let log_session_id = format!("native-{}", session_key);
+        let dir = std::env::temp_dir().join(format!(
+            "chronos-m2-08-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let sym = chronos_domain::SymbolId::new("main", None, chronos_domain::Language::C);
+        let inv = chronos_domain::InvocationId::now();
+        let parent = chronos_domain::InvocationId::now();
+        let ev = TraceEvent::new(
+            7,
+            700,
+            1,
+            EventType::FunctionEntry,
+            SourceLocation::new("main.c", 3, "main", 0x1000),
+            EventData::Function {
+                name: "main".to_string(),
+                signature: None,
+                symbol_id: Some(sym),
+                invocation_id: Some(inv),
+                parent_invocation_id: Some(parent),
+            },
+        );
+
+        // Open a log, attach it to the backend slot, and append the record.
+        let bus = chronos_domain::bus::EventBus::new_shared(1024);
+        let backend = NativeProbeBackend::new(bus);
+        let log = Arc::new(
+            SegmentedExecutionLog::open(
+                LogSessionId::new(&log_session_id),
+                SegmentedConfig::with_dir(&dir),
+            )
+            .unwrap(),
+        );
+        log.append(NewExecutionRecord {
+            session_id: LogSessionId::new(&log_session_id),
+            monotonic_ns: 700,
+            payload: ExecutionPayload::new(serde_json::to_vec(&ev).unwrap(), "trace_event"),
+            invocation_id: Some(inv),
+            parent_invocation_id: Some(parent),
+            symbol_id: Some(sym),
+        })
+        .unwrap();
+        log.flush().ok();
+        {
+            let mut slot = backend
+                .execution_log_slot_for_test()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            *slot = Some(log.clone());
+        }
+
+        // Register the backend as a live probe session.
+        let server = Arc::new(ChronosServer::new());
+        let dummy_session =
+            CaptureSession::new(0, chronos_domain::Language::C, CaptureConfig::new("noop"));
+        let live = LiveProbeSession {
+            backend,
+            session: dummy_session,
+            language: chronos_domain::Language::C,
+            target: "noop".to_string(),
+            ebpf_adapter: None,
+            ebpf_attachment: None,
+        };
+        server
+            .live_probes
+            .lock()
+            .unwrap()
+            .insert(session_key.clone(), live);
+
+        let result = server
+            .probe_drain_log(Parameters(ProbeDrainLogParams {
+                session_id: session_key,
+                since: None,
+                limit: 256,
+            }))
+            .await
+            .unwrap();
+        assert_ne!(result.is_error, Some(true));
+        let s = format!("{:?}", &result.content[0]);
+        // Flat projection preserved.
+        assert!(s.contains("event_id"), "flat event_id missing: {s}");
+        assert!(s.contains("FunctionEntry"), "kind missing: {s}");
+        // New: data object surfaced with identity.
+        assert!(s.contains("data"), "data field missing: {s}");
+        assert!(s.contains("invocation_id"), "invocation_id missing: {s}");
+        assert!(
+            s.contains(&inv.to_string()),
+            "invocation_id value missing: {s}"
+        );
+        assert!(s.contains("parent_invocation_id"), "parent missing: {s}");
+        assert!(s.contains("symbol_id"), "symbol_id missing: {s}");
+        assert!(s.contains("main"), "function name missing: {s}");
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
 
