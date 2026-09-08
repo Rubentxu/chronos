@@ -76,6 +76,8 @@ pub enum InvariantCheck {
     Changed,
     /// The observed value equals the previous observation.
     Unchanged,
+    /// The signed change `after - before` compared against a threshold.
+    Delta { op: ComparisonOp, threshold: f64 },
 }
 
 /// A declarative runtime property: observe a target when a trigger fires and
@@ -104,6 +106,22 @@ pub enum PropertyOutcome {
     UnsupportedByRecordedEvidence {
         reason: String,
     },
+}
+
+/// Result of evaluating a property over an ordered sequence of observations.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum PropertySequenceOutcome {
+    /// Every position in the sequence satisfied the invariant.
+    Pass,
+    /// First position where the invariant was violated.
+    Violation {
+        index: usize,
+        before: Option<PropertyValue>,
+        after: PropertyValue,
+        message: String,
+    },
+    /// First position whose required evidence the sequence does not provide.
+    UnsupportedByRecordedEvidence { index: usize, reason: String },
 }
 
 fn same_variant(a: &PropertyValue, b: &PropertyValue) -> bool {
@@ -208,8 +226,101 @@ impl Property {
                 let holds = compare(*op, obs, constant);
                 outcome_for(holds, None, obs, self.observe.as_str())
             }
+            InvariantCheck::Delta { op, threshold } => {
+                let (Some(prev), Some(obs)) = (previous, observed) else {
+                    return PropertyOutcome::UnsupportedByRecordedEvidence {
+                        reason: format!(
+                            "delta() requires a previous and current observation of `{}`",
+                            self.observe
+                        ),
+                    };
+                };
+                let (PropertyValue::Number(prev_n), PropertyValue::Number(obs_n)) = (prev, obs)
+                else {
+                    return PropertyOutcome::UnsupportedByRecordedEvidence {
+                        reason: format!(
+                            "delta() requires numeric observations of `{}`",
+                            self.observe
+                        ),
+                    };
+                };
+                let change = obs_n - prev_n;
+                let holds = compare_num(*op, change, *threshold);
+                outcome_for(holds, Some(prev), obs, self.observe.as_str())
+            }
         }
     }
+
+    /// Evaluate this property over an ordered sequence of observations.
+    ///
+    /// Single-observation invariants (`Comparison`, `Exists`) check every
+    /// position. Pair invariants (`Changed`, `Unchanged`, `Delta`) check each
+    /// transition from observation `i-1` to `i`, and require at least two
+    /// observations; a shorter sequence yields
+    /// `UnsupportedByRecordedEvidence` (never a false `Pass`).
+    pub fn evaluate_sequence(&self, observations: &[PropertyValue]) -> PropertySequenceOutcome {
+        match &self.invariant {
+            InvariantCheck::Comparison { .. } | InvariantCheck::Exists => {
+                for (i, obs) in observations.iter().enumerate() {
+                    match self.evaluate(Some(obs), None) {
+                        PropertyOutcome::Pass => {}
+                        PropertyOutcome::Violation { after, message, .. } => {
+                            return PropertySequenceOutcome::Violation {
+                                index: i,
+                                before: previous_at(observations, i),
+                                after,
+                                message,
+                            };
+                        }
+                        PropertyOutcome::UnsupportedByRecordedEvidence { reason } => {
+                            return PropertySequenceOutcome::UnsupportedByRecordedEvidence {
+                                index: i,
+                                reason,
+                            };
+                        }
+                    }
+                }
+            }
+            InvariantCheck::Changed | InvariantCheck::Unchanged | InvariantCheck::Delta { .. } => {
+                if observations.len() < 2 {
+                    return PropertySequenceOutcome::UnsupportedByRecordedEvidence {
+                        index: 0,
+                        reason: format!(
+                            "property `{}` requires at least two observations to \
+                             evaluate a change",
+                            self.observe
+                        ),
+                    };
+                }
+                for i in 1..observations.len() {
+                    let prev = &observations[i - 1];
+                    let obs = &observations[i];
+                    match self.evaluate(Some(obs), Some(prev)) {
+                        PropertyOutcome::Pass => {}
+                        PropertyOutcome::Violation { after, message, .. } => {
+                            return PropertySequenceOutcome::Violation {
+                                index: i,
+                                before: Some(prev.clone()),
+                                after,
+                                message,
+                            };
+                        }
+                        PropertyOutcome::UnsupportedByRecordedEvidence { reason } => {
+                            return PropertySequenceOutcome::UnsupportedByRecordedEvidence {
+                                index: i,
+                                reason,
+                            };
+                        }
+                    }
+                }
+            }
+        }
+        PropertySequenceOutcome::Pass
+    }
+}
+
+fn previous_at(observations: &[PropertyValue], i: usize) -> Option<PropertyValue> {
+    i.checked_sub(1).and_then(|p| observations.get(p).cloned())
 }
 
 fn outcome_for(
@@ -342,5 +453,114 @@ mod tests {
             Some(&PropertyValue::Number(1.0)),
         );
         assert!(matches!(changed_same, PropertyOutcome::Violation { .. }));
+    }
+
+    #[test]
+    fn delta_cap_pass_and_violation() {
+        let cap = Property {
+            invariant: InvariantCheck::Delta {
+                op: ComparisonOp::Le,
+                threshold: 10.0,
+            },
+            ..order_total_property()
+        };
+        // change = -50 - 100 = -150 <= 10 -> Pass.
+        assert_eq!(
+            cap.evaluate(
+                Some(&PropertyValue::Number(-50.0)),
+                Some(&PropertyValue::Number(100.0))
+            ),
+            PropertyOutcome::Pass
+        );
+        // change = 25 - 5 = 20 > 10 -> Violation.
+        let violation = cap.evaluate(
+            Some(&PropertyValue::Number(25.0)),
+            Some(&PropertyValue::Number(5.0)),
+        );
+        match violation {
+            PropertyOutcome::Violation { before, after, .. } => {
+                assert_eq!(before, Some(PropertyValue::Number(5.0)));
+                assert_eq!(after, PropertyValue::Number(25.0));
+            }
+            other => panic!("expected Violation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn delta_with_missing_or_non_number_is_unsupported() {
+        let cap = Property {
+            invariant: InvariantCheck::Delta {
+                op: ComparisonOp::Le,
+                threshold: 10.0,
+            },
+            ..order_total_property()
+        };
+        // missing previous
+        let missing = cap.evaluate(Some(&PropertyValue::Number(5.0)), None);
+        assert!(matches!(
+            missing,
+            PropertyOutcome::UnsupportedByRecordedEvidence { .. }
+        ));
+        // non-number observed
+        let non_num = cap.evaluate(
+            Some(&PropertyValue::Text("high".into())),
+            Some(&PropertyValue::Number(5.0)),
+        );
+        assert!(matches!(
+            non_num,
+            PropertyOutcome::UnsupportedByRecordedEvidence { .. }
+        ));
+    }
+
+    #[test]
+    fn sequence_detects_violating_transition_with_before() {
+        let p = order_total_property();
+        let out = p.evaluate_sequence(&[
+            PropertyValue::Number(59.0),
+            PropertyValue::Number(0.0),
+            PropertyValue::Number(-35.0),
+        ]);
+        match out {
+            PropertySequenceOutcome::Violation {
+                index,
+                before,
+                after,
+                ..
+            } => {
+                assert_eq!(index, 2);
+                assert_eq!(before, Some(PropertyValue::Number(0.0)));
+                assert_eq!(after, PropertyValue::Number(-35.0));
+            }
+            other => panic!("expected Violation at index 2, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn sequence_all_pass() {
+        let p = order_total_property();
+        let out = p.evaluate_sequence(&[
+            PropertyValue::Number(59.0),
+            PropertyValue::Number(10.0),
+            PropertyValue::Number(0.0),
+        ]);
+        assert_eq!(out, PropertySequenceOutcome::Pass);
+    }
+
+    #[test]
+    fn sequence_delta_short_is_unsupported_never_pass() {
+        let cap = Property {
+            invariant: InvariantCheck::Delta {
+                op: ComparisonOp::Le,
+                threshold: 10.0,
+            },
+            ..order_total_property()
+        };
+        let out = cap.evaluate_sequence(&[PropertyValue::Number(5.0)]);
+        match out {
+            PropertySequenceOutcome::UnsupportedByRecordedEvidence { index, .. } => {
+                assert_eq!(index, 0);
+            }
+            other => panic!("expected Unsupported at index 0, got {other:?}"),
+        }
     }
 }
