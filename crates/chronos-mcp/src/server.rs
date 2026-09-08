@@ -941,7 +941,21 @@ impl ChronosServer {
 
         let result = engine.execute(&query);
 
+        // m0-07: explicit query absence semantics. When the session is
+        // queryable but no events match the filter, surface a `not_found`
+        // flag and a `reason` so callers can distinguish "empty result"
+        // (legitimate) from "I asked for something that isn't there".
+        let not_found = result.events.is_empty();
+        let reason = if not_found {
+            Some("no_matching_events".to_string())
+        } else {
+            None
+        };
+
         let output = serde_json::json!({
+            "session_id": params.session_id,
+            "not_found": not_found,
+            "reason": reason,
             "total_matching": result.total_matching,
             "returned_count": result.events.len(),
             "next_offset": result.next_offset,

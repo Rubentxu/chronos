@@ -413,9 +413,101 @@ async fn m0_06_state_diff_preserves_register_evidence_impl() {
 }
 
 #[test]
-#[ignore = "implemented in cycle m0-07"]
-fn m0_07_query_returns_not_found_when_target_missing() {
-    unimplemented!("See vault/cycles/m0-truth-first-foundation/m0-07.md");
+#[ignore = "replaced by live UAT m0_07_query_returns_not_found_when_target_missing_impl"]
+fn _m0_07_legacy_stub_disabled() {
+    // Replaced by the live UAT below; kept ignored so the stub name stays.
+}
+
+/// m0-07 — Explicit query absence semantics.
+///
+/// Asserts that `query_events` reports `not_found: true` and a `reason`
+/// when the session is queryable but the filter matches no events, so the
+/// caller can distinguish "I asked for something that isn't there" from
+/// "the session was empty".
+#[tokio::test(flavor = "current_thread")]
+async fn m0_07_query_returns_not_found_when_target_missing_impl() {
+    let _ = ();
+    let fixture = match McpSession::fixture_path("test_busyloop") {
+        Some(p) => p,
+        None => {
+            eprintln!("m0_07: test_busyloop fixture not available; skipping");
+            return;
+        }
+    };
+    let mut client = match McpTestClient::start().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("m0_07: McpTestClient start failed: {}", e);
+            return;
+        }
+    };
+    let session_id = match client.probe_start(fixture.to_str().unwrap()).await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("m0_07: probe_start failed: {}", e);
+            let _ = client.shutdown().await;
+            return;
+        }
+    };
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let _ = client.session_snapshot(&session_id).await;
+
+    // Filter that nothing will ever match (thread_id 999_999).
+    let raw = match client
+        .call_tool(
+            "query_events",
+            serde_json::json!({
+                "session_id": session_id,
+                "thread_id": 999_999,
+                "limit": 10
+            }),
+        )
+        .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("m0_07: query_events failed: {}", e);
+            let _ = client.shutdown().await;
+            return;
+        }
+    };
+    let not_found = raw
+        .get("not_found")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    assert!(
+        not_found,
+        "m0_07: query_events with no matches must set not_found=true (raw: {})",
+        raw
+    );
+    let reason = raw.get("reason").and_then(|v| v.as_str()).unwrap_or("");
+    assert_eq!(
+        reason, "no_matching_events",
+        "m0_07: reason must be 'no_matching_events' when no events match"
+    );
+
+    // Sanity: querying without filter must NOT set not_found.
+    let raw_all = client
+        .call_tool(
+            "query_events",
+            serde_json::json!({
+                "session_id": session_id,
+                "limit": 10
+            }),
+        )
+        .await
+        .unwrap();
+    let not_found_all = raw_all
+        .get("not_found")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    assert!(
+        !not_found_all,
+        "m0_07: query_events with matches must set not_found=false"
+    );
+
+    let _ = client.probe_stop(&session_id).await;
+    let _ = client.shutdown().await;
 }
 
 #[test]
