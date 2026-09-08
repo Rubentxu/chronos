@@ -25,7 +25,6 @@
 //!   `engines` and removed from the map.
 
 use chronos_browser::BrowserAdapter;
-use chronos_domain::semantic::SemanticEvent;
 use chronos_domain::tripwire::{TripwireCondition, TripwireId, TripwireManager};
 use chronos_domain::{
     query::{CausalityQuery, PerfQuery, PerfSortBy, RaceDetectionQuery},
@@ -526,6 +525,31 @@ pub struct ProbeDrainParams {
     /// Offset to skip events (default: 0).
     #[serde(default)]
     pub offset: usize,
+    /// Optional cursor returned by a previous `probe_drain` call. When set,
+    /// the server anchors the read to the cursor's position so it can return
+    /// the events that arrived since the cursor was issued.
+    #[serde(default)]
+    pub cursor: Option<CursorDto>,
+}
+
+/// Wire format for [`chronos_domain::EventCursor`] in MCP JSON payloads.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct CursorDto {
+    #[serde(default)]
+    pub total_pushed: Option<u64>,
+    #[serde(default)]
+    pub snapshot_len: Option<u64>,
+}
+
+impl CursorDto {
+    /// Convert to the domain cursor, returning `None` if the payload is
+    /// malformed (e.g., negative fields or missing required values).
+    pub fn to_domain(&self) -> Option<chronos_domain::EventCursor> {
+        Some(chronos_domain::EventCursor {
+            total_pushed: self.total_pushed?,
+            snapshot_len: self.snapshot_len?,
+        })
+    }
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -2476,9 +2500,22 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        // Narrow lock scope: extract events inside scoped block, then drop lock before processing.
-        // This avoids holding std::sync::Mutex across non-trivial event processing.
-        let events: Vec<SemanticEvent> = {
+        // Parse incoming cursor (if any) before locking — cheap and fail-fast.
+        let cursor = match params.cursor.as_ref() {
+            None => None,
+            Some(dto) => match dto.to_domain() {
+                Some(c) => Some(c),
+                None => {
+                    return Ok(CallToolResult::error(text_content(
+                        "Invalid cursor payload: 'total_pushed' and 'snapshot_len' are required when 'cursor' is provided.".to_string(),
+                    )))
+                }
+            },
+        };
+
+        // Narrow lock scope: read events inside scoped block, then drop lock.
+        // Uses non-destructive read_since (m0-01-live-pagination).
+        let (events, new_cursor, cursor_stale) = {
             let probes = self.live_probes.lock().unwrap();
             let live_probe = match probes.get(&params.session_id) {
                 Some(lp) => lp,
@@ -2489,8 +2526,17 @@ impl ChronosServer {
                     ))))
                 }
             };
-            match live_probe.backend.drain_events() {
-                Ok(e) => e,
+            match live_probe.backend.read_since(cursor) {
+                Ok((events, new_cursor, status)) => {
+                    let stale = matches!(status, chronos_domain::CursorStatus::Stale);
+                    (events, new_cursor, stale)
+                }
+                Err(chronos_domain::TraceError::CursorStale { .. }) => {
+                    return Ok(CallToolResult::error(text_content(
+                        "Cursor is stale; re-anchor with a fresh probe_drain (no cursor)."
+                            .to_string(),
+                    )))
+                }
                 Err(e) => {
                     return Ok(CallToolResult::error(text_content(format!(
                         "Failed to drain events: {}",
@@ -2498,7 +2544,7 @@ impl ChronosServer {
                     ))))
                 }
             }
-        }; // lock dropped here — process events without holding mutex
+        }; // lock dropped here
 
         let total = events.len();
         // Apply offset/limit
@@ -2525,6 +2571,11 @@ impl ChronosServer {
             "returned": sliced.len(),
             "offset": params.offset,
             "limit": params.limit,
+            "cursor": {
+                "total_pushed": new_cursor.total_pushed,
+                "snapshot_len": new_cursor.snapshot_len,
+            },
+            "cursor_stale": cursor_stale,
             "events": sliced,
             "hint": "Probe is still running. Call probe_drain again for more events, or probe_stop to finalize."
         });

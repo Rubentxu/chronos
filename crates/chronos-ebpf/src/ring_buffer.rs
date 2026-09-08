@@ -174,6 +174,17 @@ impl MockRingBuffer {
         result
     }
 
+    /// Non-destructive snapshot of all queued events (cloned, not drained).
+    ///
+    /// Returns `(events, total_pushed)` where `total_pushed` is a monotonic
+    /// counter across all `poll()`/`next_trace_event()` calls. Two snapshots
+    /// with the same `total_pushed` value return identical event sets.
+    pub fn peek_all(&self) -> (Vec<crate::types::EbpfEvent>, u64) {
+        let events: Vec<crate::types::EbpfEvent> = self.events.borrow().iter().cloned().collect();
+        let total_pushed = *self.next_event_id.borrow();
+        (events, total_pushed)
+    }
+
     /// Number of events still in the queue.
     pub fn pending(&self) -> usize {
         self.events.borrow().len()
@@ -265,5 +276,29 @@ mod tests {
         assert_eq!(buf.pending(), 0);
         assert!(buf.next_trace_event().is_none());
         assert_eq!(buf.drain_all().len(), 0);
+    }
+
+    #[test]
+    fn test_mock_ring_buffer_peek_all_is_non_destructive() {
+        let events = vec![
+            make_entry_event(100, 1, 0x1000, "main"),
+            make_entry_event(200, 1, 0x2000, "helper"),
+            make_entry_event(300, 1, 0x3000, "tail"),
+        ];
+        let buf = MockRingBuffer::new(events);
+
+        let (snap1, total1) = buf.peek_all();
+        assert_eq!(snap1.len(), 3);
+        assert_eq!(total1, 0);
+        assert_eq!(buf.pending(), 3); // still untouched
+
+        let (snap2, total2) = buf.peek_all();
+        assert_eq!(snap1.len(), snap2.len());
+        assert_eq!(total1, total2);
+        for (a, b) in snap1.iter().zip(snap2.iter()) {
+            assert_eq!(a.timestamp_ns, b.timestamp_ns);
+            assert_eq!(a.thread_id, b.thread_id);
+        }
+        assert_eq!(buf.pending(), 3); // still untouched after second peek
     }
 }

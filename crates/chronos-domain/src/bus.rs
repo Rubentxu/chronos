@@ -8,11 +8,49 @@
 //! - `semantic_ring`: stores `SemanticEvent` for LLM-facing tools (probe_drain)
 //! - `raw_ring`: stores `TraceEvent` for QueryEngine-facing operations (probe_stop, session_snapshot)
 
+use crate::error::TraceError;
 use crate::semantic::SemanticEvent;
 use crate::TraceEvent;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
+
+/// Cursor for non-destructive reads of the semantic event ring.
+///
+/// `total_pushed` is the monotonic count of events ever pushed to the bus.
+/// `snapshot_len` is the bus length at the time the cursor was issued.
+///
+/// Two reads with the same `(total_pushed, snapshot_len)` cursor will return
+/// the same event set, provided no events were evicted in the meantime.
+/// If `total_pushed` has advanced, the cursor is stale (the caller should
+/// re-anchor from scratch).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EventCursor {
+    /// Monotonic count of events ever pushed (used to detect staleness).
+    pub total_pushed: u64,
+    /// Length of the ring buffer at cursor-issue time.
+    pub snapshot_len: u64,
+}
+
+/// Status of a non-destructive read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CursorStatus {
+    /// Cursor was fresh and matched the live ring.
+    Fresh,
+    /// Cursor's `total_pushed` no longer matches the bus; caller should re-anchor.
+    Stale,
+    /// Read returned an empty event set (either ring empty or cursor past the tail).
+    Empty,
+}
+
+/// A non-destructive, cursor-based read of the live semantic event ring.
+///
+/// Reading the same cursor twice returns the same event set (provided the bus
+/// has not evicted the referenced events). The bus contents are NOT modified.
+///
+/// `cursor == None` returns all currently buffered events with a fresh cursor.
+pub type ReadResult =
+    std::result::Result<(Vec<SemanticEvent>, EventCursor, CursorStatus), TraceError>;
 
 /// Thread-safe event bus that collects semantic events in a ring buffer.
 pub struct EventBus {
@@ -231,6 +269,75 @@ impl EventBus {
         self.capacity
     }
 
+    /// Non-destructive, cursor-based read of the semantic ring.
+    ///
+    /// Returns `(events, cursor, status)` where `cursor` captures the
+    /// current position in the ring and `status` indicates whether the read
+    /// was fresh, stale, or empty. The ring buffer is NEVER modified.
+    ///
+    /// Behavior:
+    /// - `cursor == None`: return all currently buffered events, with a
+    ///   fresh cursor pointing to the current head.
+    /// - `cursor.snapshot_len > current ring len`: the cursor's tail has
+    ///   been evicted; return `CursorStatus::Stale` and an empty vec.
+    /// - `cursor.total_pushed != bus.total_pushed`: return
+    ///   `CursorStatus::Stale` and an empty vec (caller should re-anchor).
+    pub fn read_since(&self, cursor: Option<EventCursor>) -> ReadResult {
+        // Snapshot current bus state under a read lock.
+        let (events_clone, current_len, current_total_pushed) = {
+            let ring = self
+                .semantic_ring
+                .read()
+                .map_err(|e| TraceError::CursorInvalid(format!("ring lock poisoned: {}", e)))?;
+            let ring_len = ring.len();
+            let total = self.metrics.total_pushed.load(Ordering::Relaxed);
+            (ring.iter().cloned().collect::<Vec<_>>(), ring_len, total)
+        };
+
+        match cursor {
+            None => {
+                let new_cursor = EventCursor {
+                    total_pushed: current_total_pushed as u64,
+                    snapshot_len: current_len as u64,
+                };
+                let status = if events_clone.is_empty() {
+                    CursorStatus::Empty
+                } else {
+                    CursorStatus::Fresh
+                };
+                Ok((events_clone, new_cursor, status))
+            }
+            Some(c) => {
+                // Staleness only matters when the cursor's tail has been
+                // evicted from the ring (snapshot_len > current_len).
+                // `total_pushed` mismatch is informational, not fatal — the
+                // bus may have grown between reads without losing the
+                // events the cursor points at.
+                if (c.snapshot_len as usize) > current_len {
+                    Err(TraceError::CursorStale {
+                        expected: c.snapshot_len,
+                        current: current_len as u64,
+                    })
+                } else {
+                    let sliced: Vec<SemanticEvent> = events_clone
+                        .into_iter()
+                        .skip(c.snapshot_len as usize)
+                        .collect();
+                    let new_cursor = EventCursor {
+                        total_pushed: current_total_pushed as u64,
+                        snapshot_len: current_len as u64,
+                    };
+                    let status = if sliced.is_empty() {
+                        CursorStatus::Empty
+                    } else {
+                        CursorStatus::Fresh
+                    };
+                    Ok((sliced, new_cursor, status))
+                }
+            }
+        }
+    }
+
     /// Get a reference to the bus metrics.
     pub fn metrics(&self) -> &BusMetrics {
         &self.metrics
@@ -412,5 +519,112 @@ mod tests {
         let raw_events = bus.snapshot_raw();
         assert_eq!(raw_events.len(), 2);
         assert_eq!(bus.raw_len(), 0);
+    }
+
+    #[test]
+    fn test_event_bus_read_since_none_returns_all() {
+        let bus = EventBus::new(10);
+        for i in 1..=5 {
+            bus.push(make_test_semantic_event(i));
+        }
+
+        let (events, cursor, status) = bus.read_since(None).unwrap();
+        assert_eq!(events.len(), 5);
+        assert_eq!(cursor.total_pushed, 5);
+        assert_eq!(cursor.snapshot_len, 5);
+        assert_eq!(status, CursorStatus::Fresh);
+
+        // Non-destructive: ring still has all events
+        assert_eq!(bus.len(), 5);
+    }
+
+    #[test]
+    fn test_event_bus_read_since_replay() {
+        let bus = EventBus::new(10);
+        for i in 1..=5 {
+            bus.push(make_test_semantic_event(i));
+        }
+
+        let (_events, cursor, _) = bus.read_since(None).unwrap();
+        // Replay with the same cursor must return empty (already at head)
+        let (replay, cursor2, _) = bus.read_since(Some(cursor)).unwrap();
+        assert_eq!(replay.len(), 0);
+        assert_eq!(cursor, cursor2);
+        assert_eq!(bus.len(), 5); // still non-destructive
+    }
+
+    #[test]
+    fn test_event_bus_read_since_stale_after_ring_overflow() {
+        // Staleness triggers when the cursor's tail has been evicted
+        // from the ring (snapshot_len > current_len). Force this by
+        // constructing a synthetic cursor pointing past the live tail.
+        let bus = EventBus::new(3);
+        for i in 1..=3 {
+            bus.push(make_test_semantic_event(i));
+        }
+
+        let stale_cursor = EventCursor {
+            total_pushed: 3,
+            snapshot_len: 4, // beyond the ring's current head
+        };
+
+        let result = bus.read_since(Some(stale_cursor));
+        assert!(matches!(result, Err(TraceError::CursorStale { .. })));
+    }
+
+    #[test]
+    fn test_event_bus_read_since_returns_new_events_after_pushes() {
+        // total_pushed mismatch alone is NOT stale — we return whatever
+        // new events arrived since the cursor's snapshot_len.
+        let bus = EventBus::new(10);
+        for i in 1..=3 {
+            bus.push(make_test_semantic_event(i));
+        }
+
+        let (_, cursor, _) = bus.read_since(None).unwrap();
+        bus.push(make_test_semantic_event(4));
+        bus.push(make_test_semantic_event(5));
+
+        let (events, _, status) = bus.read_since(Some(cursor)).unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].source_event_id, 4);
+        assert_eq!(events[1].source_event_id, 5);
+        assert_eq!(status, CursorStatus::Fresh);
+        assert_eq!(bus.len(), 5);
+    }
+
+    #[test]
+    fn test_event_bus_read_since_advances_with_cursor() {
+        let bus = EventBus::new(10);
+        for i in 1..=5 {
+            bus.push(make_test_semantic_event(i));
+        }
+
+        let (_, cursor_after_first_read, _) = bus.read_since(None).unwrap();
+        assert_eq!(cursor_after_first_read.snapshot_len, 5);
+
+        // Re-issue from a synthetic cursor at offset 2 and capture only new events.
+        let partial_cursor = EventCursor {
+            total_pushed: 5,
+            snapshot_len: 2,
+        };
+        let (events, new_cursor, status) = bus.read_since(Some(partial_cursor)).unwrap();
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0].source_event_id, 3);
+        assert_eq!(status, CursorStatus::Fresh);
+        assert_eq!(new_cursor.snapshot_len, 5);
+
+        // Non-destructive: ring still has 5 events.
+        assert_eq!(bus.len(), 5);
+    }
+
+    #[test]
+    fn test_event_bus_read_since_empty_bus() {
+        let bus = EventBus::new(10);
+        let (events, cursor, status) = bus.read_since(None).unwrap();
+        assert!(events.is_empty());
+        assert_eq!(cursor.total_pushed, 0);
+        assert_eq!(cursor.snapshot_len, 0);
+        assert_eq!(status, CursorStatus::Empty);
     }
 }

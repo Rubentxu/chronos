@@ -4,7 +4,7 @@
 //! to provide a uniform interface for the query engine and MCP server.
 
 use crate::semantic::SemanticEvent;
-use crate::{CaptureSession, TraceError, TraceEvent};
+use crate::{CaptureSession, EventCursor, ReadResult, TraceError, TraceEvent};
 
 // ============================================================================
 // ProbeBackend — query-side trait (pull, non-blocking drain)
@@ -31,9 +31,23 @@ pub trait ProbeBackend: Send {
 
     /// Drain all buffered semantic events that arrived since the last call.
     ///
+    /// **DESTRUCTIVE**: this empties the underlying buffer. Reserved for
+    /// `session_snapshot` / `probe_stop`, where the intent is to consume
+    /// every buffered event. Live read paths MUST use `read_since` instead.
+    ///
     /// Returns an empty vec if no events are ready (non-blocking).
     /// Uses interior mutability (Arc<EventBus>), so `&self` is sufficient.
     fn drain_events(&self) -> Result<Vec<SemanticEvent>, TraceError>;
+
+    /// **Non-destructive**, cursor-based read of buffered semantic events.
+    ///
+    /// Reading the same cursor twice returns the same event set (provided
+    /// the bus has not evicted the referenced events). The bus contents
+    /// are NOT modified by this call.
+    ///
+    /// Implementations should delegate to `EventBus::read_since` when backed
+    /// by one, or to a backend-native snapshot when not.
+    fn read_since(&self, cursor: Option<EventCursor>) -> ReadResult;
 
     /// Stop the probe and release all resources.
     ///

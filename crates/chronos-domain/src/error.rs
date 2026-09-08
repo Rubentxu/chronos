@@ -64,6 +64,13 @@ pub enum TraceError {
     #[error("Invalid input: {0}")]
     InvalidInput(String),
 
+    // --- Cursor errors (m0-01-live-pagination) ---
+    #[error("Cursor is stale: expected total_pushed={expected}, current={current}")]
+    CursorStale { expected: u64, current: u64 },
+
+    #[error("Cursor is invalid: {0}")]
+    CursorInvalid(String),
+
     // --- Unsupported operations ---
     #[error("Unsupported operation: {0}")]
     UnsupportedOperation(String),

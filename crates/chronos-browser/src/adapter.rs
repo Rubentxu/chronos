@@ -392,6 +392,53 @@ impl ProbeBackend for BrowserAdapter {
         Ok(semantic_events)
     }
 
+    /// Non-destructive read for the BrowserAdapter (m0-01-live-pagination).
+    ///
+    /// The browser event buffer is a `VecDeque` consumed by `drain_events` /
+    /// `drain_raw_events`. Until we wire a full non-destructive backend, this
+    /// returns `CursorStatus::Stale` whenever a cursor is provided so the
+    /// MCP layer falls back to the destructive read path.
+    fn read_since(
+        &self,
+        cursor: Option<chronos_domain::EventCursor>,
+    ) -> chronos_domain::ReadResult {
+        use chronos_domain::CursorStatus;
+        let s = self.state.lock().unwrap();
+        let total = s.event_buffer.len() as u64;
+        if cursor.is_some() {
+            return Err(chronos_domain::TraceError::CursorStale {
+                expected: 0,
+                current: total,
+            });
+        }
+        // No cursor: snapshot a clone (still non-destructive because we don't
+        // consume from the buffer here). The destructive `drain_events` path
+        // remains available for callers that explicitly want eviction.
+        let raw_events: Vec<TraceEvent> = s.event_buffer.iter().cloned().collect();
+        drop(s);
+        let ctx = ResolveContext {
+            pid: 0,
+            binary_path: None,
+        };
+        let semantic: Vec<SemanticEvent> = raw_events
+            .iter()
+            .filter_map(|e| self.resolver.resolve(e, &ctx))
+            .collect();
+        let status = if semantic.is_empty() {
+            CursorStatus::Empty
+        } else {
+            CursorStatus::Fresh
+        };
+        Ok((
+            semantic,
+            chronos_domain::EventCursor {
+                total_pushed: total,
+                snapshot_len: total,
+            },
+            status,
+        ))
+    }
+
     fn drain_raw_events(&self) -> Vec<TraceEvent> {
         let mut s = self.state.lock().unwrap();
         s.event_buffer.drain(..).collect()
