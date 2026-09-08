@@ -6,7 +6,7 @@
 //! ```text
 //! +-------------------+  <- header (96 bytes, little-endian)
 //! | magic    (u32)    |   0x4348_5347 ("CHSG")
-//! | version  (u32)    |   currently 1
+//! | version  (u32)    |   currently 2
 //! | flags    (u32)    |   reserved
 //! | reserved (u32)    |
 //! | start_seq (u64)   |   first EventSeq in the segment (inclusive)
@@ -25,7 +25,11 @@
 //!
 //! Records inside the payload are encoded with bincode (length-prefixed
 //! records: `[u32 len][bytes]` for each `ExecutionRecord` or `[u32
-//! len][bytes]` for each `Gap`). Records appear in append order.
+//! len][bytes]` for each `Gap`). Records appear in append order. Since
+//! segment version 2, each `ExecutionRecord` body also carries the v2
+//! identity fields (`invocation_id`, `parent_invocation_id`,
+//! `symbol_id`) as `presence(u8) + serde_json` so projections survive
+//! reopen/replay.
 //!
 //! Crash safety: a segment is "complete" iff its file ends with the
 //! expected compressed payload size AND its BLAKE3 checksum matches.
@@ -43,7 +47,7 @@ use std::path::{Path, PathBuf};
 
 /// File magic: "CHSG" little-endian.
 const SEGMENT_MAGIC: u32 = 0x4348_5347;
-const SEGMENT_VERSION: u32 = 1;
+const SEGMENT_VERSION: u32 = 2;
 const HEADER_SIZE: usize = 96;
 const CHECKSUM_SIZE: usize = 32;
 
@@ -197,7 +201,7 @@ pub fn write_segment(
     header[16..24].copy_from_slice(&start_seq.0.to_le_bytes());
     header[24..32].copy_from_slice(&end_seq.0.to_le_bytes());
     header[32..40].copy_from_slice(&record_count.to_le_bytes());
-    let schema_version: u32 = 1;
+    let schema_version: u32 = 2;
     header[40..44].copy_from_slice(&schema_version.to_le_bytes());
     // header[44..64] reserved (already zero — 20 bytes)
     // header[64..96] reserved (already zero — 32 bytes)
@@ -379,7 +383,54 @@ fn bincode_encode_record(r: &ExecutionRecord) -> Result<Vec<u8>, LogError> {
     let tag_bytes = r.payload.tag.as_bytes();
     out.extend_from_slice(&tag_bytes.len().to_le_bytes());
     out.extend_from_slice(tag_bytes);
+    // v2 identity fields, appended after the payload tag.
+    write_opt_ident(&mut out, &r.invocation_id)?;
+    write_opt_ident(&mut out, &r.parent_invocation_id)?;
+    write_opt_ident(&mut out, &r.symbol_id)?;
     Ok(out)
+}
+
+/// Append an optional serde value as `presence(u8)`, then (when present)
+/// a `u32` length-prefixed `serde_json` body.
+fn write_opt_ident<T: serde::Serialize>(
+    out: &mut Vec<u8>,
+    value: &Option<T>,
+) -> Result<(), LogError> {
+    match value {
+        Some(v) => {
+            out.push(1);
+            let bytes = serde_json::to_vec(v)
+                .map_err(|e| LogError::Backend(format!("serialize identity field: {}", e)))?;
+            let len = u32::try_from(bytes.len())
+                .map_err(|_| LogError::Backend("identity field too large".into()))?;
+            out.extend_from_slice(&len.to_le_bytes());
+            out.extend_from_slice(&bytes);
+        }
+        None => out.push(0),
+    }
+    Ok(())
+}
+
+/// Read an optional serde value written by `write_opt_ident`.
+fn read_opt_ident<T: serde::de::DeserializeOwned>(body: &mut &[u8]) -> Result<Option<T>, LogError> {
+    let mut present = [0u8; 1];
+    body.read_exact(&mut present)
+        .map_err(|e| LogError::Backend(format!("identity presence byte: {}", e)))?;
+    if present[0] == 0 {
+        return Ok(None);
+    }
+    let mut len_buf = [0u8; 4];
+    body.read_exact(&mut len_buf)
+        .map_err(|e| LogError::Backend(format!("identity length: {}", e)))?;
+    let len = u32::from_le_bytes(len_buf) as usize;
+    if body.len() < len {
+        return Err(LogError::Backend("truncated identity field body".into()));
+    }
+    let bytes = &body[..len];
+    *body = &body[len..];
+    let value = serde_json::from_slice(bytes)
+        .map_err(|e| LogError::Backend(format!("deserialize identity field: {}", e)))?;
+    Ok(Some(value))
 }
 
 fn bincode_encode_gap(g: &Gap) -> Result<Vec<u8>, LogError> {
@@ -440,15 +491,19 @@ fn bincode_decode_record(mut body: &[u8]) -> Result<ExecutionRecord, LogError> {
         .map_err(|e| LogError::Backend(format!("record tag body: {}", e)))?;
     let tag = String::from_utf8(tag_bytes)
         .map_err(|e| LogError::Backend(format!("record tag utf8: {}", e)))?;
+    // v2 identity fields (segment version 2).
+    let invocation_id = read_opt_ident(&mut body)?;
+    let parent_invocation_id = read_opt_ident(&mut body)?;
+    let symbol_id = read_opt_ident(&mut body)?;
     Ok(ExecutionRecord {
         session_id,
         seq,
         monotonic_ns,
         kind,
         payload: ExecutionPayload::new(bytes, tag),
-        invocation_id: None,
-        parent_invocation_id: None,
-        symbol_id: None,
+        invocation_id,
+        parent_invocation_id,
+        symbol_id,
     })
 }
 
@@ -555,6 +610,48 @@ mod tests {
         let payload = encode_payload(&entries).unwrap();
         let decoded = decode_payload(&payload).unwrap();
         assert_eq!(decoded, entries);
+    }
+
+    #[test]
+    fn identity_fields_survive_payload_round_trip() {
+        use chronos_domain::{InvocationId, Language, SymbolId};
+        let sym = |name: &str| SymbolId::new(name, None, Language::Rust);
+        let inv = InvocationId::now();
+        let parent = InvocationId::now();
+        let entries = vec![
+            SegmentEntry::Record(ExecutionRecord {
+                session_id: SessionId::new("v2"),
+                seq: EventSeq::new(0),
+                monotonic_ns: 10,
+                kind: ExecutionKind::Raw,
+                payload: ExecutionPayload::new(vec![1], "ev"),
+                invocation_id: Some(inv),
+                parent_invocation_id: Some(parent),
+                symbol_id: Some(sym("main")),
+            }),
+            SegmentEntry::Record(ExecutionRecord {
+                session_id: SessionId::new("v2"),
+                seq: EventSeq::new(1),
+                monotonic_ns: 20,
+                kind: ExecutionKind::Raw,
+                payload: ExecutionPayload::new(vec![2], "ev"),
+                invocation_id: Some(InvocationId::now()),
+                parent_invocation_id: Some(inv),
+                symbol_id: Some(sym("alpha")),
+            }),
+            // v1-style record (no identity) must still decode as None.
+            record(2, "plain"),
+        ];
+        let payload = encode_payload(&entries).unwrap();
+        let decoded = decode_payload(&payload).unwrap();
+        assert_eq!(decoded, entries);
+        assert!(matches!(
+            decoded[0],
+            SegmentEntry::Record(ExecutionRecord {
+                symbol_id: Some(_),
+                ..
+            })
+        ));
     }
 
     #[test]
