@@ -20,6 +20,11 @@ impl LogConsumerId {
     pub fn new(value: impl Into<String>) -> Self {
         Self(value.into())
     }
+
+    /// Borrow the underlying consumer id as a string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 impl std::fmt::Display for LogConsumerId {

@@ -103,6 +103,37 @@ impl InMemoryExecutionLog {
             .push(RecordEntry::Record(r.clone()));
         Ok(())
     }
+
+    /// Look up the stored cursor for `consumer` on `session_id`.
+    /// `None` means the consumer has never read from this session.
+    pub fn cursor(&self, session_id: &SessionId, consumer: &LogConsumerId) -> Option<EventSeq> {
+        let cursors = self.cursors.lock().expect("cursors lock poisoned");
+        cursors
+            .get(&(session_id.clone(), consumer.clone()))
+            .copied()
+    }
+
+    /// Seed the cursor for `(session_id, consumer)` from disk on
+    /// cold boot. If a cursor already exists for this consumer,
+    /// the higher of the two is kept — this protects against an
+    /// in-flight read-after-replay from rolling the cursor
+    /// backwards. If `last_seq` is `None`, this is a no-op (used
+    /// when the sidecar lists the consumer but the cursor is
+    /// absent).
+    pub fn seed_cursor(
+        &self,
+        session_id: &SessionId,
+        consumer: &LogConsumerId,
+        last_seq: EventSeq,
+    ) {
+        let mut cursors = self.cursors.lock().expect("cursors lock poisoned");
+        let entry = cursors
+            .entry((session_id.clone(), consumer.clone()))
+            .or_insert(last_seq);
+        if last_seq > *entry {
+            *entry = last_seq;
+        }
+    }
 }
 
 impl ExecutionLogBackend for InMemoryExecutionLog {

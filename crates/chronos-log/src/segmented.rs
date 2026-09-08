@@ -95,6 +95,11 @@ struct Inner {
     flushed_segments: Vec<FlushedSegment>,
     last_flushed_tail: Option<EventSeq>,
     overflow_pending: bool,
+    /// Cached snapshot of the cursor sidecar, kept in lock-step
+    /// with the backend's cursor map. The sidecar is the durable
+    /// source of truth; this map lets us skip reading the file on
+    /// every commit.
+    cursors: std::collections::BTreeMap<String, EventSeq>,
 }
 
 #[derive(Debug, Clone)]
@@ -126,6 +131,7 @@ impl SegmentedExecutionLog {
             flushed_segments: Vec::new(),
             last_flushed_tail: None,
             overflow_pending: false,
+            cursors: std::collections::BTreeMap::new(),
         };
         let this = Self {
             inner: Arc::new(Mutex::new(inner)),
@@ -134,6 +140,7 @@ impl SegmentedExecutionLog {
         };
         if this.config.replay_on_open {
             this.replay_into_inner()?;
+            this.replay_cursors_into_inner()?;
         }
         Ok(this)
     }
@@ -357,6 +364,138 @@ impl SegmentedExecutionLog {
         out.sort_by_key(|m| m.start_seq.0);
         Ok(out)
     }
+
+    /// Path to the per-consumer cursor sidecar. The file lives next
+    /// to the `.seg` files in `segment_dir` and contains a JSON map
+    /// of `consumer_id → last_seq`. Updates are atomic via
+    /// `<file>.tmp` → rename.
+    fn cursor_sidecar_path(&self) -> PathBuf {
+        let safe = sanitize_session(&self.session_id);
+        self.config
+            .segment_dir
+            .join(format!("{}.cursors.json", safe))
+    }
+
+    /// Snapshot of all consumer cursors known to this log. Keys
+    /// are `LogConsumerId` strings; values are the stored
+    /// `last_seq`. Reads from the in-memory cache, which is in
+    /// lock-step with the on-disk sidecar.
+    pub fn cursors(&self) -> std::collections::BTreeMap<String, EventSeq> {
+        self.inner.lock().expect("poisoned").cursors.clone()
+    }
+
+    /// Look up the cursor for `consumer`. Returns `None` if the
+    /// consumer has never read from this log.
+    pub fn last_cursor(&self, consumer: &LogConsumerId) -> Option<EventSeq> {
+        let inner = self.inner.lock().expect("poisoned");
+        // Prefer the durable sidecar view (which is what survives
+        // a restart); fall back to the in-memory backend cursor
+        // for the same consumer.
+        inner
+            .cursors
+            .get(consumer.as_str())
+            .copied()
+            .or_else(|| inner.backend.cursor(&self.session_id, consumer))
+    }
+
+    /// Persist the cursor for `consumer`. Updates the in-memory
+    /// backend first (so the next `read_after` skips records ≤
+    /// `last_seq`), then writes the sidecar to disk so the cursor
+    /// survives a process restart. Concurrent commits for
+    /// different consumers are serialized through the inner
+    /// mutex.
+    pub fn commit_cursor(
+        &self,
+        consumer: &LogConsumerId,
+        last_seq: EventSeq,
+    ) -> Result<(), LogError> {
+        let snapshot = {
+            let mut inner = self.inner.lock().expect("poisoned");
+            inner
+                .backend
+                .seed_cursor(&self.session_id, consumer, last_seq);
+            // Merge with the higher of any prior stored value so
+            // a stale commit never rolls the cursor backwards.
+            let key = consumer.as_str().to_string();
+            match inner.cursors.get(&key) {
+                Some(prev) if *prev >= last_seq => {}
+                _ => {
+                    inner.cursors.insert(key, last_seq);
+                }
+            }
+            inner.cursors.clone()
+        };
+        write_cursor_sidecar(&self.cursor_sidecar_path(), &snapshot)
+    }
+
+    /// Called by `open()` to seed the inner backend's cursor map
+    /// from the on-disk sidecar. Skips silently if no sidecar
+    /// exists.
+    fn replay_cursors_into_inner(&self) -> Result<(), LogError> {
+        let path = self.cursor_sidecar_path();
+        if !path.exists() {
+            return Ok(());
+        }
+        let map = read_cursor_sidecar(&path)?;
+        let mut inner = self.inner.lock().expect("poisoned");
+        for (consumer_str, last_seq) in &map {
+            inner.backend.seed_cursor(
+                &self.session_id,
+                &LogConsumerId::new(consumer_str),
+                *last_seq,
+            );
+        }
+        // Cache the sidecar contents so `cursors()` returns the
+        // exact same view the inner backend sees.
+        inner.cursors = map;
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Cursor sidecar I/O. Lives at file scope so it can be unit-tested
+// in isolation from the rest of `SegmentedExecutionLog`.
+// ---------------------------------------------------------------------------
+
+/// Read a cursor sidecar JSON file. Returns an empty map if the
+/// file does not exist. Returns an error if the file is corrupt
+/// JSON or has the wrong shape.
+fn read_cursor_sidecar(
+    path: &std::path::Path,
+) -> Result<std::collections::BTreeMap<String, EventSeq>, LogError> {
+    if !path.exists() {
+        return Ok(std::collections::BTreeMap::new());
+    }
+    let bytes =
+        std::fs::read(path).map_err(|e| LogError::Backend(format!("read {:?}: {}", path, e)))?;
+    if bytes.is_empty() {
+        return Ok(std::collections::BTreeMap::new());
+    }
+    let raw: std::collections::BTreeMap<String, u64> = serde_json::from_slice(&bytes)
+        .map_err(|e| LogError::Backend(format!("parse cursor sidecar {:?}: {}", path, e)))?;
+    Ok(raw
+        .into_iter()
+        .map(|(k, v)| (k, EventSeq::new(v)))
+        .collect())
+}
+
+/// Write a cursor sidecar atomically (`*.tmp` → rename). On
+/// failure the partial file is left for forensic inspection but
+/// the durable file (if any) remains untouched.
+fn write_cursor_sidecar(
+    path: &std::path::Path,
+    snapshot: &std::collections::BTreeMap<String, EventSeq>,
+) -> Result<(), LogError> {
+    let raw: std::collections::BTreeMap<String, u64> =
+        snapshot.iter().map(|(k, v)| (k.clone(), v.0)).collect();
+    let bytes = serde_json::to_vec(&raw)
+        .map_err(|e| LogError::Backend(format!("encode cursor sidecar: {}", e)))?;
+    let tmp = path.with_extension("cursors.json.tmp");
+    std::fs::write(&tmp, &bytes)
+        .map_err(|e| LogError::Backend(format!("write {:?}: {}", tmp, e)))?;
+    std::fs::rename(&tmp, path)
+        .map_err(|e| LogError::Backend(format!("rename {:?}: {}", tmp, e)))?;
+    Ok(())
 }
 
 fn in_memory_bytes(inner: &Inner) -> u64 {

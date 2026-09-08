@@ -2714,7 +2714,7 @@ impl ChronosServer {
         params: Parameters<ProbeDrainLogParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let (records, tail_seq) = {
+        let (records, tail_seq, unparseable_payload_count, total_records_seen) = {
             let probes = self.live_probes.lock().unwrap();
             let live_probe = match probes.get(&params.session_id) {
                 Some(lp) => lp,
@@ -2727,7 +2727,7 @@ impl ChronosServer {
             };
             match live_probe
                 .backend
-                .read_execution_log_records(params.since, params.limit)
+                .read_execution_log_records_with_stats(params.since, params.limit)
             {
                 Ok(out) => out,
                 Err(e) => {
@@ -2760,8 +2760,14 @@ impl ChronosServer {
             "returned": events.len(),
             "since": params.since,
             "tail_seq": tail_seq,
+            "total_records_seen": total_records_seen,
+            "unparseable_payload_count": unparseable_payload_count,
             "events": events,
-            "hint": "m1-03: ExecutionLog query path. Records are persisted in segment files; see chronos_log::SegmentedExecutionLog."
+            "hint": "m1-04: ExecutionLog query path with decoder counters. \
+                     `unparseable_payload_count` is the number of records whose JSON \
+                     payload did not decode as a TraceEvent — these are still durable on \
+                     disk; the counter is the signal that another producer (or schema \
+                     drift) wrote to the same log. `total_records_seen` includes them.",
         });
         Ok(CallToolResult::success(json_content(&output)))
     }
