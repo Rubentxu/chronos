@@ -25,7 +25,7 @@ pub use index::{
 };
 pub use property::{
     ComparisonOp, InvariantCheck, MutationActor, Property, PropertyId, PropertyOutcome,
-    PropertySequenceOutcome, PropertyValue, StateTransition,
+    PropertySequenceOutcome, PropertyValue, PropertyViolation, StateTransition,
 };
 pub use query::{
     EventFilter, PerfEntry, PerfQuery, PerfResult, PerfSortBy, QueryResult, TraceQuery,
