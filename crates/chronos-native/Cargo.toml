@@ -6,6 +6,8 @@ edition.workspace = true
 [dependencies]
 chronos-domain = { workspace = true }
 chronos-capture = { workspace = true }
+chronos-log = { path = "../chronos-log" }
+serde_json = { workspace = true }
 nix = { workspace = true }
 gimli = { workspace = true }
 object = { workspace = true }

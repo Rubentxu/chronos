@@ -3,6 +3,15 @@
 //! This backend replaces the "record everything then analyze" model of `CaptureRunner`
 //! with a live event bus model. Events are pushed to an `EventBus` ring buffer
 //! as they occur, allowing real-time monitoring and querying.
+//!
+//! ## m1-03: dual-write to `ExecutionLog`
+//!
+//! When a segment-log directory is configured via
+//! [`NativeProbeBackend::with_execution_log_dir`], every `TraceEvent`
+//! is also pushed to a per-session `SegmentedExecutionLog`. The
+//! legacy EventBus path stays intact for callers that have not
+//! opted into the new persistence backend (m1-01 / m0-01 UATs
+//! continue to pass).
 
 use crate::native_adapter::NativeAdapter;
 use crate::ptrace_tracer::{PtraceConfig, PtraceTracer};
@@ -12,11 +21,43 @@ use chronos_domain::semantic::{ResolveContext, ResolverPipeline, SemanticEvent, 
 use chronos_domain::{
     CaptureConfig, CaptureSession, Language, ProbeBackend, SourceLocation, TraceError, TraceEvent,
 };
+use chronos_log::{ExecutionPayload, NewExecutionRecord, SegmentedConfig, SegmentedExecutionLog};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use tracing::{debug, error, info, warn};
+
+/// Serialize a `TraceEvent` into a `NewExecutionRecord` suitable for
+/// `SegmentedExecutionLog::append`. The `tag` is set to
+/// `trace_event.category` so consumers can filter by trace type.
+fn trace_event_to_log_record(
+    session_id: &str,
+    monotonic_ns: u64,
+    event: &TraceEvent,
+) -> NewExecutionRecord {
+    // Use serde_json as the body format — TraceEvent already derives
+    // Serialize via chronos-domain's schemars feature.
+    let payload_bytes = serde_json::to_vec(event).unwrap_or_default();
+    NewExecutionRecord {
+        session_id: chronos_log::SessionId::new(session_id),
+        monotonic_ns,
+        payload: ExecutionPayload::new(payload_bytes, format!("{:?}", event.event_type)),
+    }
+}
+
+/// Public re-export so integration tests can exercise the
+/// `TraceEvent → NewExecutionRecord` mapping the producer uses.
+/// Mirrors the private helper used by `dual_push`; stays in lock-step
+/// because both call sites live in this module.
+#[doc(hidden)]
+pub fn trace_event_to_log_record_for_test(
+    session_id: &str,
+    monotonic_ns: u64,
+    event: &TraceEvent,
+) -> NewExecutionRecord {
+    trace_event_to_log_record(session_id, monotonic_ns, event)
+}
 
 /// Native ptrace probe backend for real-time event bus feeding.
 pub struct NativeProbeBackend {
@@ -32,6 +73,14 @@ pub struct NativeProbeBackend {
     thread_handle: std::sync::Mutex<Option<thread::JoinHandle<()>>>,
     /// The PID of the currently traced process (for stop_probe to kill).
     traced_pid: std::sync::Arc<std::sync::Mutex<Option<i32>>>,
+    /// Optional `ExecutionLog` for the running session. Populated by
+    /// `start_probe` so the ptrace thread can record events to a
+    /// durable, segmented log alongside the legacy EventBus.
+    /// m1-03 migration: read path is dual — see `read_since`.
+    execution_log: std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<SegmentedExecutionLog>>>>,
+    /// Directory where segment files are written. `None` means the
+    /// `ExecutionLog` is disabled (only the legacy EventBus is used).
+    execution_log_dir: std::sync::Arc<std::sync::Mutex<Option<PathBuf>>>,
 }
 
 impl NativeProbeBackend {
@@ -44,6 +93,129 @@ impl NativeProbeBackend {
             running: Arc::new(AtomicBool::new(false)),
             thread_handle: std::sync::Mutex::new(None),
             traced_pid: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            execution_log: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            execution_log_dir: std::sync::Arc::new(std::sync::Mutex::new(None)),
+        }
+    }
+
+    /// Configure a directory where `ExecutionLog` segment files
+    /// will be written for each new session. Pass `None` to disable
+    /// the dual-write to the log.
+    pub fn with_execution_log_dir(self, dir: Option<PathBuf>) -> Self {
+        if let Some(d) = dir {
+            *self
+                .execution_log_dir
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = Some(d);
+        } else {
+            *self
+                .execution_log_dir
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = None;
+        }
+        self
+    }
+
+    /// Currently-attached `ExecutionLog`, if any.
+    pub fn execution_log(&self) -> Option<std::sync::Arc<SegmentedExecutionLog>> {
+        self.execution_log
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    /// Test-only accessor that returns the underlying `Arc<Mutex<…>>`
+    /// holding the optional `ExecutionLog`. Lets integration tests
+    /// attach a pre-built log so they can exercise
+    /// `read_execution_log_records` without spawning a real probe
+    /// (which would need root + a target binary). Marked
+    /// `#[doc(hidden)]` because it exposes internal mutable state.
+    #[doc(hidden)]
+    pub fn execution_log_slot_for_test(
+        &self,
+    ) -> &std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<SegmentedExecutionLog>>>> {
+        &self.execution_log
+    }
+
+    /// Read a snapshot of the on-disk log and decode the
+    /// `TraceEvent`s it contains. Requires a configured log
+    /// directory (see `with_execution_log_dir`).
+    ///
+    /// On success returns `(records, tail_seq)` where `records` is
+    /// a `Vec<TraceEvent>` (deserialized from the log's payload)
+    /// and `tail_seq` is the seq counter of the latest record. The
+    /// optional `since` arg filters to records with seq strictly
+    /// greater than the given value (m1-03 incremental read
+    /// support).
+    pub fn read_execution_log_records(
+        &self,
+        since: Option<u64>,
+        limit: usize,
+    ) -> Result<(Vec<TraceEvent>, Option<u64>), TraceError> {
+        let log = self
+            .execution_log
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        let log = match log {
+            Some(l) => l,
+            None => {
+                return Err(TraceError::CaptureFailed(
+                    "ExecutionLog not configured for this backend".into(),
+                ));
+            }
+        };
+
+        // Read all records from the log via read_after on a
+        // fresh consumer. We carry a tiny tag-format skipper
+        // because the log payload is JSON-encoded TraceEvent.
+        let consumer = chronos_log::LogConsumerId::new("m1-03-query");
+        let read = log
+            .read_after(&consumer, None)
+            .map_err(|e| TraceError::CaptureFailed(format!("log read: {}", e)))?;
+        let mut out = Vec::new();
+        let mut max_seq: Option<u64> = None;
+        if let chronos_log::ReadResult::Ok { records, .. } = read {
+            for r in records {
+                if let Some(since) = since {
+                    if r.seq.0 <= since {
+                        continue;
+                    }
+                }
+                if let Some(prev) = max_seq {
+                    if r.seq.0 > prev {
+                        max_seq = Some(r.seq.0);
+                    }
+                } else {
+                    max_seq = Some(r.seq.0);
+                }
+                if let Ok(ev) = serde_json::from_slice::<TraceEvent>(&r.payload.bytes) {
+                    out.push(ev);
+                }
+                if out.len() >= limit {
+                    break;
+                }
+            }
+        }
+        Ok((out, max_seq))
+    }
+
+    /// Push a `TraceEvent` to the legacy EventBus and, if an
+    /// ExecutionLog is attached, also to it. Errors from the log
+    /// path are logged but never abort the probe loop.
+    fn dual_push(
+        event_bus: &EventBusHandle,
+        log: Option<&SegmentedExecutionLog>,
+        session_log_id: &str,
+        trace_event: &TraceEvent,
+        timestamp_ns: u64,
+    ) {
+        event_bus.push_raw(trace_event.clone());
+        if let Some(log) = log {
+            let rec = trace_event_to_log_record(session_log_id, timestamp_ns, trace_event);
+            if let Err(e) = log.append(rec) {
+                debug!("m1-03: ExecutionLog append failed (continuing): {}", e);
+            }
         }
     }
 
@@ -121,6 +293,48 @@ impl NativeProbeBackend {
             follow_children: true,
         };
 
+        // Build the (placeholder) session up front so we have a
+        // stable id for the ExecutionLog directory.
+        let session = CaptureSession::new(0, language, config.clone());
+
+        // m1-03: open the ExecutionLog first so the spawned thread
+        // can move a clone of the Arc into the closure.
+        let log_session_id = format!("native-{}", session.session_id);
+        let log_for_thread: Option<std::sync::Arc<SegmentedExecutionLog>> = match self
+            .execution_log_dir
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+        {
+            Some(base_dir) => {
+                let log_dir = base_dir.join(&log_session_id);
+                match SegmentedExecutionLog::open(
+                    chronos_log::SessionId::new(&log_session_id),
+                    SegmentedConfig::with_dir(&log_dir),
+                ) {
+                    Ok(log) => {
+                        let arc = std::sync::Arc::new(log);
+                        *self.execution_log.lock().unwrap_or_else(|e| e.into_inner()) =
+                            Some(arc.clone());
+                        info!(
+                            "m1-03: ExecutionLog attached at {:?} for session {}",
+                            log_dir, log_session_id
+                        );
+                        Some(arc)
+                    }
+                    Err(e) => {
+                        warn!(
+                            "m1-03: failed to open ExecutionLog at {:?}: {}. \
+                             Continuing with legacy EventBus only.",
+                            log_dir, e
+                        );
+                        None
+                    }
+                }
+            }
+            None => None,
+        };
+
         // Spawn background thread to run the event loop
         let target = config.target.clone();
         let args = config.args.clone();
@@ -145,6 +359,8 @@ impl NativeProbeBackend {
                     event_bus,
                     resolver_pipeline,
                     language,
+                    log_for_thread,
+                    log_session_id,
                     move |pid: i32| {
                         *traced_pid_thread.lock().unwrap_or_else(|e| e.into_inner()) = Some(pid);
                     },
@@ -160,10 +376,6 @@ impl NativeProbeBackend {
         // Since the thread manages its own PID, we'll store a placeholder for now
         // The actual PID tracking happens inside the thread
         *self.thread_handle.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
-
-        // Build and return the session (non-blocking)
-        // Note: PID will be 0 for spawned processes since the thread manages it
-        let session = CaptureSession::new(0, language, config);
 
         Ok(session)
     }
@@ -310,6 +522,8 @@ impl NativeProbeBackend {
         event_bus: EventBusHandle,
         resolver_pipeline: ResolverPipeline,
         language: Language,
+        execution_log: Option<std::sync::Arc<SegmentedExecutionLog>>,
+        log_session_id: String,
         on_pid_launched: impl FnOnce(i32),
     ) {
         Self::run_probe_loop(
@@ -321,6 +535,8 @@ impl NativeProbeBackend {
             event_bus,
             resolver_pipeline,
             language,
+            execution_log,
+            log_session_id,
             on_pid_launched,
         );
     }
@@ -336,6 +552,8 @@ impl NativeProbeBackend {
         event_bus: EventBusHandle,
         resolver_pipeline: ResolverPipeline,
         _language: Language,
+        execution_log: Option<std::sync::Arc<SegmentedExecutionLog>>,
+        log_session_id: String,
         on_pid_launched: impl FnOnce(i32),
     ) {
         let mut tracer = PtraceTracer::new(ptrace_config.clone());
@@ -410,8 +628,18 @@ impl NativeProbeBackend {
                     }
                 }
 
-                // Push raw event to raw buffer for QueryEngine
-                event_bus.push_raw(trace_event.clone());
+                // Push raw event to raw buffer for QueryEngine AND to the
+                // m1-03 ExecutionLog if one was attached. dual_push
+                // is no-op on the log side when no log is
+                // configured, so the EventBus path stays intact
+                // for callers that opt out.
+                Self::dual_push(
+                    &event_bus,
+                    execution_log.as_deref(),
+                    &log_session_id,
+                    &trace_event,
+                    timestamp_ns,
+                );
 
                 // Resolve to semantic event via the pipeline
                 let ctx = ResolveContext {

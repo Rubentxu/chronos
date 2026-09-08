@@ -335,13 +335,119 @@ fn tempdir(label: &str) -> std::path::PathBuf {
     p
 }
 
-/// Legacy stub for future m1-03 (live probe migration: one producer
-/// + one query path). Marked ignored until that ticket lands.
+/// m1-03 — Migrate one producer (`chronos-native::probe_backend`)
+/// and one query path (`chronos-mcp::probe_drain_log`) to write
+/// to / read from `chronos_log::SegmentedExecutionLog`.
+///
+/// This UAT exercises both ends end-to-end through the public
+/// surfaces added in m1-03:
+///   * producer: `trace_event_to_log_record` (re-exported via
+///     `trace_event_to_log_record_for_test`) writes the same
+///     `NewExecutionRecord` shape `dual_push` would write,
+///   * consumer: `NativeProbeBackend::read_execution_log_records`
+///     reads back the same records and decodes the JSON payload
+///     into the original `TraceEvent`s.
+///
+/// We do not spin up a real ptrace session here (that needs root);
+/// instead we drive the producer's record-shape directly and the
+/// consumer through the same `SegmentedExecutionLog` instance the
+/// ptrace thread would have used. The full MCP round-trip lives in
+/// `chronos-sandbox/tests/probe_drain_log_smoke.rs` (added in this
+/// cycle).
 #[test]
-#[ignore = "implemented in cycle m1-03: chronos-native::probe_backend writes to ExecutionLog; chronos-mcp::probe_drain reads via ExecutionLog"]
-fn m1_03_execution_log_migrates_one_producer_and_query_path() {
-    // m1-03 migrates `probe_drain` to consume from ExecutionLog
-    // instead of the legacy EventBus; the live UAT lives in the
-    // sandbox test that exercises probe_drain through the MCP
-    // server, not here.
+fn m1_03_execution_log_migration_impl() {
+    use chronos_log::{SegmentedConfig, SegmentedExecutionLog};
+    use chronos_native::probe_backend::{trace_event_to_log_record_for_test, NativeProbeBackend};
+    use std::sync::Arc;
+
+    let dir = tempdir("m1-03");
+    let bus = chronos_domain::bus::EventBus::new_shared(1024);
+    let backend = NativeProbeBackend::new(bus).with_execution_log_dir(Some(dir.clone()));
+
+    // -- 1. Producer path: simulate what `dual_push` writes. ------
+    // Build a SegmentedExecutionLog the same way `start_probe` would.
+    let session_log_id = "native-uat-session".to_string();
+    let log_dir = dir.join(&session_log_id);
+    let log = Arc::new(
+        SegmentedExecutionLog::open(
+            chronos_log::SessionId::new(&session_log_id),
+            SegmentedConfig::with_dir(&log_dir),
+        )
+        .expect("open log"),
+    );
+    // Attach it to the backend so `read_execution_log_records` can
+    // see the same records. We do this by going through the same
+    // method `start_probe` uses internally: store the Arc on the
+    // backend, then the query path picks it up.
+    {
+        let mut slot = backend
+            .execution_log_slot_for_test()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        *slot = Some(log.clone());
+    }
+
+    // Build 5 synthetic TraceEvents and push them via the producer's
+    // record-shape (the same shape `dual_push` produces).
+    let synth_events: Vec<chronos_domain::TraceEvent> = (0..5u64)
+        .map(|i| chronos_domain::TraceEvent {
+            event_id: i,
+            timestamp_ns: i * 1000,
+            thread_id: 42,
+            event_type: chronos_domain::EventType::FunctionEntry,
+            location: chronos_domain::SourceLocation {
+                file: None,
+                line: None,
+                column: None,
+                function: Some(format!("fn-{}", i)),
+                address: 0,
+            },
+            data: chronos_domain::EventData::Function {
+                name: format!("fn-{}", i),
+                signature: None,
+            },
+        })
+        .collect();
+    for (i, ev) in synth_events.iter().enumerate() {
+        let rec = trace_event_to_log_record_for_test(&session_log_id, i as u64 * 1000, ev);
+        log.append(rec).expect("append");
+    }
+    log.flush().expect("flush");
+
+    // -- 2. Consumer path: query via `read_execution_log_records`. -
+    let (decoded, tail_seq) = backend
+        .read_execution_log_records(None, 100)
+        .expect("query");
+    assert_eq!(
+        decoded.len(),
+        5,
+        "all 5 producer records must round-trip through ExecutionLog"
+    );
+    assert_eq!(
+        tail_seq,
+        Some(4),
+        "tail_seq is the max seq seen (0-indexed)"
+    );
+
+    // The JSON payload round-trips: compare the original event_id
+    // and timestamp_ns against what was recovered from the log.
+    for (i, ev_back) in decoded.iter().enumerate() {
+        assert_eq!(ev_back.event_id, i as u64);
+        assert_eq!(ev_back.timestamp_ns, i as u64 * 1000);
+        assert_eq!(ev_back.event_type, synth_events[i].event_type);
+    }
+
+    // -- 3. Incremental read (`since` cursor). --------------------
+    let (decoded2, _) = backend
+        .read_execution_log_records(Some(2), 100)
+        .expect("query since=2");
+    assert_eq!(
+        decoded2.len(),
+        2,
+        "since=2 must return only seq > 2 (so records with seq 3 and 4)"
+    );
+    assert_eq!(decoded2[0].event_id, 3);
+    assert_eq!(decoded2[1].event_id, 4);
+
+    let _ = std::fs::remove_dir_all(&dir);
 }

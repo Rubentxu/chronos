@@ -552,6 +552,23 @@ pub struct ProbeDrainParams {
     pub cursor: Option<CursorDto>,
 }
 
+/// m1-03: parameters for `probe_drain_log`. Cursor is a seq number
+/// rather than the EventBus cursor DTO.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ProbeDrainLogParams {
+    pub session_id: String,
+    /// Optional seq used as a strict lower bound. Records with
+    /// seq strictly greater than `since` are returned.
+    #[serde(default)]
+    pub since: Option<u64>,
+    #[serde(default = "default_log_limit")]
+    pub limit: usize,
+}
+
+fn default_log_limit() -> usize {
+    256
+}
+
 /// Wire format for [`chronos_domain::EventCursor`] in MCP JSON payloads.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct CursorDto {
@@ -2675,6 +2692,76 @@ impl ChronosServer {
             "tripwires_fired": fired_count,
             "events": sliced,
             "hint": "Probe is still running. Call probe_drain again for more events, or probe_stop to finalize."
+        });
+        Ok(CallToolResult::success(json_content(&output)))
+    }
+
+    /// m1-03: MCP query path that reads `TraceEvent`s from the
+    /// `ExecutionLog` (segmented, persistent) of a live probe
+    /// session. Available only when the native backend was
+    /// configured with `with_execution_log_dir`.
+    ///
+    /// Cursor is a non-destructive seq-based filter: passing `None`
+    /// returns every record appended so far; passing a value returns
+    /// records with seq strictly greater. The returned `tail_seq`
+    /// can be passed back as `since` for the next call.
+    #[tool(
+        name = "probe_drain_log",
+        description = "m1-03 ExecutionLog-backed query path. Reads TraceEvents from the durable ExecutionLog attached to a live probe session, instead of the legacy in-memory EventBus. Cursor is a seq number (None for fresh). Returns 0 records when the probe is not configured with an ExecutionLog directory."
+    )]
+    async fn probe_drain_log(
+        &self,
+        params: Parameters<ProbeDrainLogParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let (records, tail_seq) = {
+            let probes = self.live_probes.lock().unwrap();
+            let live_probe = match probes.get(&params.session_id) {
+                Some(lp) => lp,
+                None => {
+                    return Ok(CallToolResult::error(text_content(format!(
+                        "Live probe session '{}' not found.",
+                        params.session_id
+                    ))))
+                }
+            };
+            match live_probe
+                .backend
+                .read_execution_log_records(params.since, params.limit)
+            {
+                Ok(out) => out,
+                Err(e) => {
+                    return Ok(CallToolResult::error(text_content(format!(
+                        "Failed to read ExecutionLog: {}",
+                        e
+                    ))))
+                }
+            }
+        };
+        let events: Vec<serde_json::Value> = records
+            .iter()
+            .map(|r| {
+                serde_json::json!({
+                    "event_id": r.event_id,
+                    "timestamp_ns": r.timestamp_ns,
+                    "thread_id": r.thread_id,
+                    "kind": format!("{:?}", r.event_type),
+                    "location": {
+                        "file": r.location.file,
+                        "line": r.location.line,
+                        "function": r.location.function,
+                    },
+                })
+            })
+            .collect();
+        let output = serde_json::json!({
+            "session_id": params.session_id,
+            "source": "chronos-log::SegmentedExecutionLog",
+            "returned": events.len(),
+            "since": params.since,
+            "tail_seq": tail_seq,
+            "events": events,
+            "hint": "m1-03: ExecutionLog query path. Records are persisted in segment files; see chronos_log::SegmentedExecutionLog."
         });
         Ok(CallToolResult::success(json_content(&output)))
     }

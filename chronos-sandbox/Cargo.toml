@@ -21,3 +21,6 @@ chronos-java = { path = "../crates/chronos-java" }
 chronos-go = { path = "../crates/chronos-go" }
 chronos-browser = { path = "../crates/chronos-browser" }
 chronos-log = { path = "../crates/chronos-log" }
+# m1-03: sandbox UAT exercises the producer-side migration in
+# chronos-native (probe_backend → ExecutionLog).
+chronos-native = { path = "../crates/chronos-native" }
