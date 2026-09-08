@@ -78,6 +78,10 @@ pub enum InvariantCheck {
     Unchanged,
     /// The signed change `after - before` compared against a threshold.
     Delta { op: ComparisonOp, threshold: f64 },
+    /// Any recorded `Text` contains `needle` (sequence predicate).
+    Contains { needle: String },
+    /// Any recorded `Text` matches `glob` (`*` wildcard) (sequence predicate).
+    Matches { glob: String },
 }
 
 /// A declarative runtime property: observe a target when a trigger fires and
@@ -302,6 +306,18 @@ impl Property {
                 let holds = compare_num(*op, change, *threshold);
                 outcome_for(holds, Some(prev), obs, self.observe.as_str())
             }
+            InvariantCheck::Contains { .. } | InvariantCheck::Matches { .. } => {
+                PropertyOutcome::UnsupportedByRecordedEvidence {
+                    reason: format!(
+                        "{} requires the full recorded sequence of `{}`",
+                        match &self.invariant {
+                            InvariantCheck::Contains { .. } => "contains()",
+                            _ => "matches()",
+                        },
+                        self.observe
+                    ),
+                }
+            }
         }
     }
 
@@ -367,6 +383,40 @@ impl Property {
                         }
                     }
                 }
+            }
+            InvariantCheck::Contains { needle } | InvariantCheck::Matches { glob: needle } => {
+                if observations.is_empty() {
+                    return PropertySequenceOutcome::UnsupportedByRecordedEvidence {
+                        index: 0,
+                        reason: format!("no recorded observations for `{}`", self.observe),
+                    };
+                }
+                let matched = match &self.invariant {
+                    InvariantCheck::Contains { needle } => observations.iter().any(
+                        |v| matches!(v, PropertyValue::Text(s) if s.contains(needle.as_str())),
+                    ),
+                    _ => observations
+                        .iter()
+                        .any(|v| matches!(v, PropertyValue::Text(s) if glob_match(needle, s))),
+                };
+                let index = observations.len() - 1;
+                return if matched {
+                    PropertySequenceOutcome::Pass
+                } else {
+                    PropertySequenceOutcome::Violation {
+                        index,
+                        before: None,
+                        after: observations.last().cloned().unwrap(),
+                        message: format!(
+                            "no recorded value for `{}` satisfied {} on `{needle}`",
+                            self.observe,
+                            match &self.invariant {
+                                InvariantCheck::Contains { .. } => "contains()",
+                                _ => "matches()",
+                            }
+                        ),
+                    }
+                };
             }
         }
         PropertySequenceOutcome::Pass
@@ -512,6 +562,18 @@ fn invariant_text(check: &InvariantCheck) -> String {
         InvariantCheck::Delta { op, threshold } => {
             format!("delta({op} {threshold})")
         }
+        InvariantCheck::Contains { needle } => {
+            format!(
+                "contains({})",
+                value_text(&PropertyValue::Text(needle.clone()))
+            )
+        }
+        InvariantCheck::Matches { glob } => {
+            format!(
+                "matches({})",
+                value_text(&PropertyValue::Text(glob.clone()))
+            )
+        }
     }
 }
 
@@ -522,6 +584,21 @@ fn parse_invariant(text: &str) -> Result<InvariantCheck, String> {
         "changed()" => return Ok(InvariantCheck::Changed),
         "unchanged()" => return Ok(InvariantCheck::Unchanged),
         _ => {}
+    }
+    if let Some(inner) = t
+        .strip_prefix("contains(")
+        .and_then(|s| s.strip_suffix(')'))
+    {
+        return match parse_value(inner)? {
+            PropertyValue::Text(needle) => Ok(InvariantCheck::Contains { needle }),
+            _ => Err("contains() needs a quoted string".to_string()),
+        };
+    }
+    if let Some(inner) = t.strip_prefix("matches(").and_then(|s| s.strip_suffix(')')) {
+        return match parse_value(inner)? {
+            PropertyValue::Text(glob) => Ok(InvariantCheck::Matches { glob }),
+            _ => Err("matches() needs a quoted glob".to_string()),
+        };
     }
     if let Some(inner) = t.strip_prefix("delta(").and_then(|s| s.strip_suffix(')')) {
         let mut parts = inner.splitn(2, char::is_whitespace);
@@ -609,6 +686,22 @@ fn unescape(s: &str) -> String {
         }
     }
     out
+}
+
+fn glob_match(glob: &str, text: &str) -> bool {
+    let g: Vec<char> = glob.chars().collect();
+    let t: Vec<char> = text.chars().collect();
+    fn rec(g: &[char], t: &[char]) -> bool {
+        if g.is_empty() {
+            return t.is_empty();
+        }
+        if g[0] == '*' {
+            (0..=t.len()).any(|k| rec(&g[1..], &t[k..]))
+        } else {
+            !t.is_empty() && t[0] == g[0] && rec(&g[1..], &t[1..])
+        }
+    }
+    rec(&g, &t)
 }
 
 fn previous_at(observations: &[PropertyValue], i: usize) -> Option<PropertyValue> {
@@ -1028,5 +1121,80 @@ mod tests {
         // missing closing brace
         let no_close = text.trim_end_matches('}');
         assert!(Property::from_dsl(no_close).is_err());
+    }
+
+    #[test]
+    fn contains_matches_over_text_feed() {
+        let contains = Property {
+            invariant: InvariantCheck::Contains {
+                needle: "error".to_string(),
+            },
+            ..order_total_property()
+        };
+        assert_eq!(
+            contains.evaluate_sequence(&[
+                PropertyValue::Text("no problem".to_string()),
+                PropertyValue::Text("an error occurred".to_string()),
+            ]),
+            PropertySequenceOutcome::Pass
+        );
+        assert!(matches!(
+            contains.evaluate_sequence(&[PropertyValue::Text("no problem".to_string())]),
+            PropertySequenceOutcome::Violation { .. }
+        ));
+
+        let matches = Property {
+            invariant: InvariantCheck::Matches {
+                glob: "discount_*".to_string(),
+            },
+            ..order_total_property()
+        };
+        assert_eq!(
+            matches.evaluate_sequence(&[
+                PropertyValue::Text("order_total".to_string()),
+                PropertyValue::Text("discount_applied".to_string()),
+            ]),
+            PropertySequenceOutcome::Pass
+        );
+    }
+
+    #[test]
+    fn string_predicates_empty_and_single_are_unsupported() {
+        let contains = Property {
+            invariant: InvariantCheck::Contains {
+                needle: "x".to_string(),
+            },
+            ..order_total_property()
+        };
+        assert!(matches!(
+            contains.evaluate_sequence(&[]),
+            PropertySequenceOutcome::UnsupportedByRecordedEvidence { .. }
+        ));
+        assert!(matches!(
+            contains.evaluate(Some(&PropertyValue::Text("xx".to_string())), None),
+            PropertyOutcome::UnsupportedByRecordedEvidence { .. }
+        ));
+    }
+
+    #[test]
+    fn contains_matches_dsl_round_trip() {
+        for p in [
+            Property {
+                invariant: InvariantCheck::Contains {
+                    needle: "order".to_string(),
+                },
+                ..order_total_property()
+            },
+            Property {
+                invariant: InvariantCheck::Matches {
+                    glob: "Order.*".to_string(),
+                },
+                ..order_total_property()
+            },
+        ] {
+            let text = p.to_dsl();
+            let back = Property::from_dsl(&text).expect("parse failed");
+            assert_eq!(back, p, "round-trip failed:\n{text}");
+        }
     }
 }
