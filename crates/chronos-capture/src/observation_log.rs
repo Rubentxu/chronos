@@ -8,7 +8,7 @@
 
 use std::sync::Arc;
 
-use chronos_domain::PropertyValue;
+use chronos_domain::{Property, PropertySequenceOutcome, PropertyValue, PropertyViolation};
 use chronos_log::{
     ExecutionLog, ExecutionLogBackend, LogConsumerId, LogError, ReadResult, SessionId,
 };
@@ -151,6 +151,38 @@ pub fn replay_target<B: ExecutionLogBackend + ?Sized>(
         .collect())
 }
 
+/// Evaluate `property` over the values recorded for `property.observe` in a
+/// session. A session with no values for that target yields
+/// `UnsupportedByRecordedEvidence` (never a false `Pass`).
+pub fn evaluate_property_on_session<B: ExecutionLogBackend + ?Sized>(
+    log: &ExecutionLog<B>,
+    session: &SessionId,
+    property: &Property,
+) -> Result<PropertySequenceOutcome, PersistError> {
+    let values = replay_target(log, session, &property.observe)?;
+    if values.is_empty() {
+        return Ok(PropertySequenceOutcome::UnsupportedByRecordedEvidence {
+            index: 0,
+            reason: format!("no recorded observations for `{}`", property.observe),
+        });
+    }
+    Ok(property.evaluate_sequence(&values))
+}
+
+/// Return the persisted violation bundle when `property` is violated by the
+/// values recorded for its target in a session, else `None`.
+pub fn property_violation_on_session<B: ExecutionLogBackend + ?Sized>(
+    log: &ExecutionLog<B>,
+    session: &SessionId,
+    property: &Property,
+) -> Result<Option<PropertyViolation>, PersistError> {
+    let values = replay_target(log, session, &property.observe)?;
+    if values.is_empty() {
+        return Ok(None);
+    }
+    Ok(property.evaluate_violation(&values))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,5 +266,55 @@ mod tests {
         let session = SessionId::new("never-written");
         let replayed = replay_target(&log, &session, "Order.total").unwrap();
         assert!(replayed.is_empty());
+    }
+
+    #[test]
+    fn session_evaluation_detects_violation_on_replay() {
+        let backend = Arc::new(InMemoryExecutionLog::new());
+        let log = Arc::new(ExecutionLog::new(backend));
+        let session = SessionId::new("s1");
+        let mut writer = ObservationLogWriter::new(log.clone(), session.clone());
+        for v in [59.0, 0.0, -35.0] {
+            writer
+                .record("Order.total", PropertyValue::Number(v))
+                .unwrap();
+        }
+
+        let property = order_total_property();
+        let outcome = evaluate_property_on_session(&log, &session, &property).unwrap();
+        match outcome {
+            chronos_domain::PropertySequenceOutcome::Violation { index, after, .. } => {
+                assert_eq!(index, 2);
+                assert_eq!(after, PropertyValue::Number(-35.0));
+            }
+            other => panic!("expected a violation, got {other:?}"),
+        }
+        let bundle = property_violation_on_session(&log, &session, &property)
+            .unwrap()
+            .expect("expected a bundle");
+        assert_eq!(bundle.transition.after, PropertyValue::Number(-35.0));
+        assert_eq!(bundle.total_observations, 3);
+    }
+
+    #[test]
+    fn session_evaluation_empty_target_feed_is_unsupported() {
+        let backend = Arc::new(InMemoryExecutionLog::new());
+        let log = Arc::new(ExecutionLog::new(backend));
+        let session = SessionId::new("s2");
+        let mut writer = ObservationLogWriter::new(log.clone(), session.clone());
+        writer.record("Other", PropertyValue::Bool(true)).unwrap();
+
+        let property = order_total_property();
+        let outcome = evaluate_property_on_session(&log, &session, &property).unwrap();
+        assert!(
+            matches!(
+                outcome,
+                chronos_domain::PropertySequenceOutcome::UnsupportedByRecordedEvidence { .. }
+            ),
+            "empty target feed must be Unsupported, got {outcome:?}"
+        );
+        assert!(property_violation_on_session(&log, &session, &property)
+            .unwrap()
+            .is_none());
     }
 }
