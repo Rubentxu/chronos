@@ -180,6 +180,7 @@ impl CaptureRunner {
             trace_syscalls: config.capture_syscalls,
             capture_registers: true,
             follow_children: true,
+            track_function_frames: false,
         };
 
         Self {
@@ -197,6 +198,7 @@ impl CaptureRunner {
             trace_syscalls: config.capture_syscalls,
             capture_registers: true,
             follow_children: true,
+            track_function_frames: false,
         };
 
         Self {
@@ -325,6 +327,7 @@ impl CaptureRunner {
             trace_syscalls: config.capture_syscalls,
             capture_registers: true,
             follow_children: true,
+            track_function_frames: false,
         };
 
         let stop_flag = Arc::new(AtomicBool::new(false));

@@ -8,6 +8,7 @@
 pub mod address_normalizer;
 pub mod capture_runner;
 pub mod dwarf;
+pub mod invocation_tracker;
 pub mod native_adapter;
 pub mod probe_backend;
 pub mod ptrace_tracer;

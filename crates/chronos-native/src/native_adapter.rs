@@ -268,6 +268,7 @@ mod tests {
             trace_syscalls: true,
             capture_registers: false,
             follow_children: false,
+            track_function_frames: false,
         };
         let adapter = NativeAdapter::with_config(config);
         assert_eq!(adapter.name(), "native-ptrace");

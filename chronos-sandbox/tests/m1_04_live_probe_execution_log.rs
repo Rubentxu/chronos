@@ -121,6 +121,7 @@ fn live_ptrace_events_flow_into_execution_log() {
         trace_syscalls: false,
         capture_registers: true,
         follow_children: false,
+        track_function_frames: false,
     });
     let pid = tracer
         .launch(std::path::Path::new("/bin/true"), &[])
