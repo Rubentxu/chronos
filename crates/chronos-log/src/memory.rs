@@ -66,6 +66,43 @@ impl InMemoryExecutionLog {
             payload,
         })
     }
+
+    /// Allocate the next seq on `session_id` without inserting a
+    /// record. Used by `SegmentedExecutionLog` to reserve a seq
+    /// for an overflow-driven gap before the gap is recorded.
+    pub fn allocate_seq_for_gap(&self, session_id: &SessionId) -> Result<EventSeq, LogError> {
+        let mut next_seq = self.next_seq.lock().expect("next_seq lock poisoned");
+        let seq = next_seq.entry(session_id.clone()).or_insert(EventSeq::ZERO);
+        let assigned = *seq;
+        *seq = seq.next();
+        Ok(assigned)
+    }
+
+    /// Append a record using the seq **already on the
+    /// `ExecutionRecord`** instead of allocating a fresh one. Used
+    /// by the segment replay path: the segment stores seqs
+    /// already assigned by the original backend, so the allocator
+    /// must advance *past* them. Asserts seqs are monotonically
+    /// non-decreasing.
+    pub fn replay_record(&self, r: &ExecutionRecord) -> Result<(), LogError> {
+        let mut next_seq = self.next_seq.lock().expect("next_seq lock poisoned");
+        let allocator = next_seq
+            .entry(r.session_id.clone())
+            .or_insert(EventSeq::ZERO);
+        assert!(
+            r.seq >= *allocator,
+            "replay_record: seq {} was below current allocator {}",
+            r.seq.0,
+            allocator.0
+        );
+        *allocator = r.seq.next();
+        let mut records = self.records.lock().expect("records lock poisoned");
+        records
+            .entry(r.session_id.clone())
+            .or_default()
+            .push(RecordEntry::Record(r.clone()));
+        Ok(())
+    }
 }
 
 impl ExecutionLogBackend for InMemoryExecutionLog {
