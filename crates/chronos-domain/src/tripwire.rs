@@ -135,6 +135,34 @@ impl Tripwire {
             thread_id: event.thread_id,
         }
     }
+
+    /// Fire this tripwire against a semantic event. The tripwire id,
+    /// condition description, timestamp, and thread_id are populated;
+    /// `event_id` is `0` because [`SemanticEvent`](crate::SemanticEvent)
+    /// does not carry the source event id.
+    pub fn fire_semantic(&self, event: &crate::SemanticEvent) -> TripwireFired {
+        TripwireFired {
+            tripwire_id: self.id,
+            condition_description: format!("{:?}", self.condition),
+            event_id: 0,
+            timestamp_ns: event.timestamp_ns,
+            thread_id: event.thread_id,
+        }
+    }
+}
+
+/// Extract a function-name candidate from a [`SemanticEvent`](crate::SemanticEvent).
+fn function_from_semantic(event: &crate::SemanticEvent) -> Option<String> {
+    use crate::SemanticEventKind;
+    match &event.kind {
+        SemanticEventKind::FunctionCalled { function, .. }
+        | SemanticEventKind::FunctionReturned { function, .. } => Some(function.clone()),
+        // Syscalls (e.g., "open", "read") also expose a name; treat the name
+        // as a function-name candidate so `TripwireCondition::FunctionName`
+        // can match against syscall traffic.
+        SemanticEventKind::Syscall { name, .. } => Some(name.clone()),
+        _ => None,
+    }
 }
 
 /// A tripwire subscription with optional webhook callback.
@@ -278,17 +306,55 @@ impl TripwireManager {
             .map(|tw| tw.fire(event))
             .collect();
         drop(tws);
-        if !fired.is_empty() {
-            let mut buf = self.fired_buffer.write().unwrap();
-            let new_count = fired.len();
-            let buf_len = buf.len();
-            if buf_len + new_count > 1000 {
-                let drain_count = buf_len + new_count - 1000;
-                buf.drain(..drain_count);
-            }
-            buf.extend(fired.clone());
-        }
+        self.record_fired(&fired);
         fired
+    }
+
+    /// Evaluate all tripwires against a semantic event.
+    ///
+    /// This is a subset of [`evaluate`](Self::evaluate): only conditions
+    /// that can be matched purely from a [`SemanticEvent`](crate::SemanticEvent)
+    /// (currently `FunctionName`, via the `description` and the function
+    /// field of [`SemanticEventKind`](crate::SemanticEventKind)) are honoured.
+    /// Other conditions silently do not match — semantic events do not
+    /// carry the address/type fields those need.
+    pub fn evaluate_semantic(&self, event: &crate::SemanticEvent) -> Vec<TripwireFired> {
+        let tws = self.tripwires.read().unwrap();
+        let fired: Vec<_> = tws
+            .iter()
+            .filter_map(|tw| {
+                if let TripwireCondition::FunctionName { pattern } = &tw.condition {
+                    // Try the canonical function-name field first; fall back
+                    // to the description so wire-level events (where kind
+                    // is `Unresolved` and the function name is encoded in
+                    // the description, e.g. "SyscallEnter"/"FunctionCalled")
+                    // still match.
+                    let candidate =
+                        function_from_semantic(event).unwrap_or_else(|| event.description.clone());
+                    if glob_match(pattern, &candidate) {
+                        return Some(tw.fire_semantic(event));
+                    }
+                }
+                None
+            })
+            .collect();
+        drop(tws);
+        self.record_fired(&fired);
+        fired
+    }
+
+    fn record_fired(&self, fired: &[TripwireFired]) {
+        if fired.is_empty() {
+            return;
+        }
+        let mut buf = self.fired_buffer.write().unwrap();
+        let new_count = fired.len();
+        let buf_len = buf.len();
+        if buf_len + new_count > 1000 {
+            let drain_count = buf_len + new_count - 1000;
+            buf.drain(..drain_count);
+        }
+        buf.extend(fired.iter().cloned());
     }
 
     pub fn drain_fired(&self) -> Vec<TripwireFired> {
@@ -340,5 +406,52 @@ mod tests {
         mgr.evaluate(&make_signal_event(2, 11));
         assert_eq!(mgr.drain_fired().len(), 2);
         assert!(mgr.drain_fired().is_empty());
+    }
+
+    #[test]
+    fn test_evaluate_semantic_matches_description_fallback() {
+        // Live probes emit wire-level SemanticEvents where the kind is
+        // `Unresolved` and the function/syscall name lives in `description`.
+        // evaluate_semantic must match against that fallback path so live
+        // evidence flows into the tripwire subsystem.
+        let mgr = TripwireManager::new();
+        mgr.register(TripwireCondition::FunctionName {
+            pattern: "SyscallEnter".to_string(),
+        });
+        let event = crate::SemanticEvent {
+            source_event_id: 42,
+            timestamp_ns: 0,
+            thread_id: 1,
+            language: crate::Language::Unknown,
+            kind: crate::SemanticEventKind::Unresolved,
+            description: "SyscallEnter".to_string(),
+        };
+        let fired = mgr.evaluate_semantic(&event);
+        assert_eq!(fired.len(), 1, "SyscallEnter tripwire must fire");
+        assert_eq!(fired[0].tripwire_id.0, 1);
+    }
+
+    #[test]
+    fn test_evaluate_semantic_uses_function_field_when_present() {
+        // When the SemanticEvent already has a function field (typed
+        // FunctionCalled), the tripwire must match against it directly.
+        let mgr = TripwireManager::new();
+        mgr.register(TripwireCondition::FunctionName {
+            pattern: "do_work".to_string(),
+        });
+        let event = crate::SemanticEvent {
+            source_event_id: 1,
+            timestamp_ns: 0,
+            thread_id: 1,
+            language: crate::Language::C,
+            kind: crate::SemanticEventKind::FunctionCalled {
+                function: "do_work".to_string(),
+                module: None,
+                arguments: vec![],
+            },
+            description: "ignored".to_string(),
+        };
+        let fired = mgr.evaluate_semantic(&event);
+        assert_eq!(fired.len(), 1);
     }
 }

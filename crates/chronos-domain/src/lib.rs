@@ -25,9 +25,11 @@ pub use index::{
 pub use query::{
     EventFilter, PerfEntry, PerfQuery, PerfResult, PerfSortBy, QueryResult, TraceQuery,
 };
+pub use semantic::{SemanticEvent, SemanticEventKind};
 pub use trace::{
     CaptureConfig, CaptureSession, EventData, EventType, GoEventKind, JavaEventKind, JsEventKind,
     Language, PythonEventKind, RegisterState, RuntimeInfo, SessionState, SourceLocation,
     StackFrame, ThreadInfo, ThreadState, TraceEvent,
 };
+pub use tripwire::{Tripwire, TripwireCondition, TripwireFired, TripwireId, TripwireManager};
 pub use value::{DwarfValue, RegisterSnapshot, TypedValue, VariableInfo, VariableScope};

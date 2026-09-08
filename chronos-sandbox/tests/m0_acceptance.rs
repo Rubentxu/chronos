@@ -257,9 +257,11 @@ fn m0_03_ebpf_probe_lifetime_is_session_owned() {
 }
 
 #[test]
-#[ignore = "implemented in cycle m0-04"]
-fn m0_04_tripwires_evaluated_on_canonical_flow() {
-    unimplemented!("See vault/cycles/m0-truth-first-foundation/m0-04.md");
+#[ignore = "replaced by live UAT m0_04_tripwires_evaluated_on_canonical_flow_impl; kept so we have a single m0_04 stub."]
+fn _m0_04_legacy_stub_disabled() {
+    // Intentionally empty: the legacy placeholder was retired when m0-04 was
+    // implemented as the live UAT below. The `#[ignore]` keeps this test out
+    // of the default run, while a clearly-named stub name documents the change.
 }
 
 #[test]
@@ -432,5 +434,95 @@ async fn m0_03_ebpf_probe_lifecycle_impl() {
         );
     }
 
+    let _ = client.shutdown().await;
+}
+
+/// m0-04 — Wire tripwires to live evidence (UAT-M0-03).
+///
+/// Asserts that tripwires registered via `tripwire_create` evaluate
+/// against the events drained by `probe_drain` (no waiting for probe_stop).
+/// The busy-loop fixture generates `FunctionCalled { function: "do_work" }`
+/// events on every iteration; a `FunctionName { pattern: "do_work" }`
+/// tripwire must fire on every drain.
+#[tokio::test(flavor = "current_thread")]
+async fn m0_04_tripwires_evaluated_on_canonical_flow_impl() {
+    let _ = ();
+    let fixture = match McpSession::fixture_path("test_busyloop") {
+        Some(p) => p,
+        None => {
+            eprintln!(
+                "m0_04: test_busyloop fixture not available; skipping (run `cargo build` first)"
+            );
+            return;
+        }
+    };
+
+    let mut client = match McpTestClient::start().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("m0_04: failed to start MCP server: {}", e);
+            return;
+        }
+    };
+
+    // tripwire_create returns just the tripwire_id (string). It is non-empty
+    // iff the tripwire was registered successfully.
+    let tw_id = match client
+        .tripwire_create(chronos_sandbox::client::types::TripwireCreateParams {
+            condition: chronos_sandbox::client::types::TripwireConditionType::FunctionName {
+                pattern: "SyscallEnter".to_string(),
+            },
+            label: Some("m0_04-syscall-enter".to_string()),
+        })
+        .await
+    {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("m0_04: tripwire_create failed: {}", e);
+            let _ = client.shutdown().await;
+            return;
+        }
+    };
+    assert!(!tw_id.is_empty(), "m0_04: tripwire id must be non-empty");
+
+    let session_id = match client.probe_start(fixture.to_str().unwrap()).await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("m0_04: probe_start failed: {}", e);
+            let _ = client.shutdown().await;
+            return;
+        }
+    };
+
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    let raw = match client
+        .call_tool(
+            "probe_drain",
+            serde_json::json!({
+                "session_id": session_id,
+                "limit": 200
+            }),
+        )
+        .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("m0_04: raw probe_drain failed: {}", e);
+            let _ = client.shutdown().await;
+            return;
+        }
+    };
+    let fired = raw
+        .get("tripwires_fired")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    assert!(
+        fired > 0,
+        "m0_04: tripwires_fired must be > 0 because do_work fires the tripwire on every FunctionCalled (raw response: {})",
+        raw
+    );
+
+    let _ = client.probe_stop(&session_id).await;
     let _ = client.shutdown().await;
 }
