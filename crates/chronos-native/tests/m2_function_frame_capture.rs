@@ -227,3 +227,62 @@ fn real_function_entries_round_trip_into_execution_log_v2() {
         other => panic!("expected Ok read, got {:?}", other),
     }
 }
+
+#[test]
+fn real_function_frame_capture_persists_durable_execution_log_v2() {
+    let Some(exe) = compile_fixture() else {
+        return;
+    };
+
+    let result = capture_frames(&exe);
+    let entries: Vec<&TraceEvent> = result
+        .events
+        .iter()
+        .filter(|ev| function_entry_name_and_invocation(ev).is_some())
+        .collect();
+    assert!(
+        !entries.is_empty(),
+        "no identity-bearing FunctionEntry captured"
+    );
+
+    // Production seam: persist the whole captured stream through the real
+    // producer (NOT the `_for_test` helper) into a durable ExecutionLog v2.
+    let session_id = "native-m2native-durable";
+    let base_dir = scratch_dir("durable-log");
+    let appended = chronos_native::probe_backend::persist_events_to_execution_log(
+        session_id,
+        &base_dir,
+        &result.events,
+    )
+    .expect("persist real frame capture to a durable ExecutionLog");
+
+    // Re-open the same log and confirm every persisted record is readable and
+    // the identity-bearing FunctionEntry frames survived the durable round-trip.
+    let log = SegmentedExecutionLog::open(
+        chronos_log::SessionId::new(session_id),
+        SegmentedConfig::with_dir(base_dir.join(session_id)),
+    )
+    .expect("reopen persisted ExecutionLog");
+
+    let consumer = LogConsumerId::new("m2native-durable-query");
+    match log.read_after(&consumer, None).expect("read_after") {
+        ReadResult::Ok { records, .. } => {
+            assert_eq!(
+                records.len(),
+                appended,
+                "all persisted records must be readable back"
+            );
+            let identity_frames = records
+                .iter()
+                .filter(|r| r.symbol_id.is_some() && r.invocation_id.is_some())
+                .count();
+            assert_eq!(
+                identity_frames,
+                entries.len(),
+                "identity-bearing FunctionEntry frames must survive the \
+                 durable ExecutionLog round-trip"
+            );
+        }
+        other => panic!("expected Ok read, got {:?}", other),
+    }
+}

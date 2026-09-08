@@ -22,7 +22,7 @@ use chronos_domain::{
     CaptureConfig, CaptureSession, Language, ProbeBackend, SourceLocation, TraceError, TraceEvent,
 };
 use chronos_log::{ExecutionPayload, NewExecutionRecord, SegmentedConfig, SegmentedExecutionLog};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -77,6 +77,44 @@ pub fn trace_event_to_log_record_for_test(
     event: &TraceEvent,
 ) -> NewExecutionRecord {
     trace_event_to_log_record(session_id, monotonic_ns, event)
+}
+
+/// Persist a slice of captured trace events into a durable `SegmentedExecutionLog`
+/// v2 (segment files written under `base_dir/session_id`), using the **same**
+/// producer mapping the live-probe dual-write uses (`trace_event_to_log_record`).
+///
+/// This is the production seam that turns a real INT3 function-frame capture
+/// (`CaptureRunner` + `PtraceConfig::track_function_frames = true`) into a
+/// queryable ExecutionLog: `FunctionEntry` events keep their `symbol_id` /
+/// `invocation_id` / `parent_invocation_id` on the v2 records. The blockingly
+/// captured events from a `run_to_completion` are not timestamped, so the
+/// in-log ordering is the event index (monotonic_ns = `index`).
+///
+/// Returns the number of records appended, after a flush makes them durable.
+pub fn persist_events_to_execution_log(
+    session_id: &str,
+    base_dir: &Path,
+    events: &[TraceEvent],
+) -> Result<usize, String> {
+    let log_dir = base_dir.join(session_id);
+    std::fs::create_dir_all(&log_dir)
+        .map_err(|e| format!("create ExecutionLog dir {}: {e:?}", log_dir.display()))?;
+    let log = SegmentedExecutionLog::open(
+        chronos_log::SessionId::new(session_id),
+        SegmentedConfig::with_dir(&log_dir),
+    )
+    .map_err(|e| format!("open ExecutionLog for {session_id}: {e:?}"))?;
+
+    let mut appended = 0usize;
+    for (idx, event) in events.iter().enumerate() {
+        let record = trace_event_to_log_record(session_id, idx as u64, event);
+        log.append(record)
+            .map_err(|e| format!("append record {idx}: {e:?}"))?;
+        appended += 1;
+    }
+    log.flush()
+        .map_err(|e| format!("flush ExecutionLog for {session_id}: {e:?}"))?;
+    Ok(appended)
 }
 
 /// Native ptrace probe backend for real-time event bus feeding.
