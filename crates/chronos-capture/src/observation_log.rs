@@ -224,6 +224,39 @@ pub fn report_dsl_properties_on_session<B: ExecutionLogBackend + ?Sized>(
     report_properties_on_session(log, session, &properties).map_err(|e| e.to_string())
 }
 
+/// Render a property batch report to concise, evidence-bound text. One block per
+/// property (`property <name> (observe <observe>): <outcome>`); a `Violation`
+/// entry additionally includes the indented `StateTransition::display()`
+/// Mutation-Lens lines.
+pub fn render_property_report(entries: &[PropertyEvaluation]) -> String {
+    let blocks: Vec<String> = entries
+        .iter()
+        .map(|e| {
+            let outcome = match &e.outcome {
+                PropertySequenceOutcome::Pass => "Pass".to_string(),
+                PropertySequenceOutcome::Violation { .. } => "Violation".to_string(),
+                PropertySequenceOutcome::UnsupportedByRecordedEvidence { reason, .. } => {
+                    format!("Unsupported ({reason})")
+                }
+            };
+            let mut block = format!(
+                "property {} (observe {}): {}",
+                e.property.name, e.property.observe, outcome
+            );
+            if matches!(e.outcome, PropertySequenceOutcome::Violation { .. }) {
+                if let Some(v) = &e.violation {
+                    for line in v.transition.display().lines() {
+                        block.push_str("\n  ");
+                        block.push_str(line);
+                    }
+                }
+            }
+            block
+        })
+        .collect();
+    blocks.join("\n\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -407,5 +440,44 @@ mod tests {
             chronos_domain::PropertySequenceOutcome::UnsupportedByRecordedEvidence { .. }
         ));
         assert!(report[0].violation.is_none());
+    }
+
+    #[test]
+    fn render_report_shows_violation_transition() {
+        let backend = Arc::new(InMemoryExecutionLog::new());
+        let log = Arc::new(ExecutionLog::new(backend));
+        let session = SessionId::new("s1");
+        let mut writer = ObservationLogWriter::new(log.clone(), session.clone());
+        for v in [59.0, 0.0, -35.0] {
+            writer
+                .record("Order.total", PropertyValue::Number(v))
+                .unwrap();
+        }
+        let report =
+            report_dsl_properties_on_session(&log, &session, &[DSL_NON_NEGATIVE, DSL_DELTA_CAP])
+                .unwrap();
+        let text = render_property_report(&report);
+        assert!(
+            text.contains("order_total_non_negative (observe Order.total): Violation"),
+            "got:\n{text}"
+        );
+        assert!(text.contains("-> -35"), "got:\n{text}");
+        assert!(
+            text.contains("total_step_le_100 (observe Order.total): Pass"),
+            "got:\n{text}"
+        );
+    }
+
+    #[test]
+    fn render_unsupported_never_says_pass() {
+        let backend = Arc::new(InMemoryExecutionLog::new());
+        let log = Arc::new(ExecutionLog::new(backend));
+        let session = SessionId::new("s2");
+        let mut writer = ObservationLogWriter::new(log.clone(), session.clone());
+        writer.record("Other", PropertyValue::Bool(true)).unwrap();
+        let report = report_dsl_properties_on_session(&log, &session, &[DSL_NON_NEGATIVE]).unwrap();
+        let text = render_property_report(&report);
+        assert!(text.contains("Unsupported"), "got:\n{text}");
+        assert!(!text.contains(": Pass"), "got:\n{text}");
     }
 }
