@@ -100,6 +100,42 @@ struct Inner {
     /// source of truth; this map lets us skip reading the file on
     /// every commit.
     cursors: std::collections::BTreeMap<String, EventSeq>,
+    /// Compaction metrics (m1-06). Atomic counters so callers can
+    /// read them without holding the inner lock.
+    metrics: CompactionMetricsInner,
+}
+
+/// Atomic counters for compaction metrics (m1-06). Exposed via
+/// `CompactionMetrics` (a snapshot type).
+struct CompactionMetricsInner {
+    segments_removed: std::sync::atomic::AtomicU64,
+    bytes_reclaimed: std::sync::atomic::AtomicU64,
+    compaction_runs: std::sync::atomic::AtomicU64,
+}
+
+impl Default for CompactionMetricsInner {
+    fn default() -> Self {
+        Self {
+            segments_removed: std::sync::atomic::AtomicU64::new(0),
+            bytes_reclaimed: std::sync::atomic::AtomicU64::new(0),
+            compaction_runs: std::sync::atomic::AtomicU64::new(0),
+        }
+    }
+}
+
+/// Snapshot of compaction counters, returned by
+/// `SegmentedExecutionLog::compaction_metrics()`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CompactionMetrics {
+    /// Total number of segment files removed by all compaction
+    /// runs on this log since it was opened.
+    pub segments_removed_total: u64,
+    /// Total bytes reclaimed (sum of file sizes at the moment of
+    /// deletion).
+    pub bytes_reclaimed_total: u64,
+    /// Number of times `compact_up_to` (or `maybe_compact`)
+    /// successfully removed at least one segment.
+    pub compaction_runs_total: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -132,6 +168,7 @@ impl SegmentedExecutionLog {
             last_flushed_tail: None,
             overflow_pending: false,
             cursors: std::collections::BTreeMap::new(),
+            metrics: CompactionMetricsInner::default(),
         };
         let this = Self {
             inner: Arc::new(Mutex::new(inner)),
@@ -350,14 +387,24 @@ impl SegmentedExecutionLog {
     /// already missing on disk (concurrent compaction, manual
     /// delete), the corresponding bookkeeping entry is dropped
     /// silently.
+    ///
+    /// Updates `compaction_metrics`: `compaction_runs_total`
+    /// increments once per call that removed at least one file;
+    /// `segments_removed_total` and `bytes_reclaimed_total`
+    /// accumulate across runs.
     pub fn compact_up_to(&self, cutoff: EventSeq) -> Result<Vec<PathBuf>, LogError> {
         let mut removed = Vec::new();
+        let mut removed_bytes = 0u64;
         let mut survivors = Vec::new();
         let mut inner = self.inner.lock().expect("poisoned");
         for seg in inner.flushed_segments.drain(..) {
             if seg.end_seq <= cutoff {
+                let size = std::fs::metadata(&seg.path).map(|m| m.len()).unwrap_or(0);
                 match std::fs::remove_file(&seg.path) {
-                    Ok(()) => removed.push(seg.path),
+                    Ok(()) => {
+                        removed.push(seg.path);
+                        removed_bytes += size;
+                    }
                     Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                         // Already gone (concurrent delete, manual
                         // rm). Drop the bookkeeping entry.
@@ -381,7 +428,44 @@ impl SegmentedExecutionLog {
         // the buffer's natural state (the allocator may still
         // have unflushed entries that will be flushed next time).
         inner.last_flushed_tail = inner.flushed_segments.iter().map(|s| s.end_seq).max();
+        // Update metrics (atomic so they survive the lock drop).
+        if !removed.is_empty() {
+            use std::sync::atomic::Ordering;
+            inner
+                .metrics
+                .compaction_runs
+                .fetch_add(1, Ordering::Relaxed);
+            inner
+                .metrics
+                .segments_removed
+                .fetch_add(removed.len() as u64, Ordering::Relaxed);
+            inner
+                .metrics
+                .bytes_reclaimed
+                .fetch_add(removed_bytes, Ordering::Relaxed);
+        }
         Ok(removed)
+    }
+
+    /// Convenience: pick the cutoff from `min_consumer_cursor()`
+    /// and run `compact_up_to` if a cursor exists. If no consumer
+    /// has read yet, returns an empty list (compaction is unsafe).
+    pub fn maybe_compact(&self) -> Result<Vec<PathBuf>, LogError> {
+        match self.min_consumer_cursor() {
+            Some(cutoff) => self.compact_up_to(cutoff),
+            None => Ok(Vec::new()),
+        }
+    }
+
+    /// Snapshot of compaction counters for this log.
+    pub fn compaction_metrics(&self) -> CompactionMetrics {
+        use std::sync::atomic::Ordering;
+        let inner = self.inner.lock().expect("poisoned");
+        CompactionMetrics {
+            segments_removed_total: inner.metrics.segments_removed.load(Ordering::Relaxed),
+            bytes_reclaimed_total: inner.metrics.bytes_reclaimed.load(Ordering::Relaxed),
+            compaction_runs_total: inner.metrics.compaction_runs.load(Ordering::Relaxed),
+        }
     }
 
     /// Convenience: returns the lowest seq any committed consumer

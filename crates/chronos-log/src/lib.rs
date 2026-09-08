@@ -32,5 +32,5 @@ pub use gap::{Gap, GapReason};
 pub use memory::InMemoryExecutionLog;
 pub use record::{ExecutionKind, ExecutionPayload, ExecutionRecord, SessionId};
 pub use segment::{segment_path, write_segment, DecodedSegment, SegmentEntry, SegmentMetadata};
-pub use segmented::{SegmentedConfig, SegmentedExecutionLog};
+pub use segmented::{CompactionMetrics, SegmentedConfig, SegmentedExecutionLog};
 pub use seq::EventSeq;
