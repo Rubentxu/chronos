@@ -24,7 +24,8 @@ pub use index::{
     PerfCounters, PerformanceIndex, RawEventEntry, ShadowIndex, TemporalIndex,
 };
 pub use property::{
-    ComparisonOp, InvariantCheck, Property, PropertyId, PropertyOutcome, PropertyValue,
+    ComparisonOp, InvariantCheck, Property, PropertyId, PropertyOutcome, PropertySequenceOutcome,
+    PropertyValue,
 };
 pub use query::{
     EventFilter, PerfEntry, PerfQuery, PerfResult, PerfSortBy, QueryResult, TraceQuery,
