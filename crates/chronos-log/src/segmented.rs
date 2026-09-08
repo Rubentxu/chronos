@@ -186,6 +186,44 @@ impl SegmentedExecutionLog {
         &self.session_id
     }
 
+    /// Identity-based read: every record on this session whose
+    /// `invocation_id` equals `Some(id)`, in seq order.
+    /// Delegates to the in-memory backend. See REQ-GetByInvocation.
+    pub fn get_by_invocation(
+        &self,
+        id: chronos_domain::InvocationId,
+    ) -> Vec<crate::record::ExecutionRecord> {
+        let inner = self.inner.lock().expect("poisoned");
+        inner.backend.get_by_invocation(&self.session_id, id)
+    }
+
+    /// Identity-based read: every record on this session whose
+    /// `parent_invocation_id` equals `Some(parent_id)`, in seq order.
+    /// Delegates to the in-memory backend. See REQ-ChildrenOf.
+    pub fn children_of(
+        &self,
+        parent_id: chronos_domain::InvocationId,
+    ) -> Vec<crate::record::ExecutionRecord> {
+        let inner = self.inner.lock().expect("poisoned");
+        inner.backend.children_of(&self.session_id, parent_id)
+    }
+
+    /// Identity-based read: every record on this session whose
+    /// `symbol_id` equals `Some(symbol)` AND whose `monotonic_ns`
+    /// lies in `[start_ns, end_ns)`, in seq order.
+    /// Delegates to the in-memory backend. See REQ-InRangeBySymbol.
+    pub fn in_range_by_symbol(
+        &self,
+        symbol: chronos_domain::SymbolId,
+        start_ns: u64,
+        end_ns: u64,
+    ) -> Vec<crate::record::ExecutionRecord> {
+        let inner = self.inner.lock().expect("poisoned");
+        inner
+            .backend
+            .in_range_by_symbol(&self.session_id, symbol, start_ns, end_ns)
+    }
+
     /// Append a record. Returns the assigned seq. May transparently
     /// record a gap if `memory_budget_bytes` is configured and the
     /// projected bytes exceed it.
@@ -446,6 +484,11 @@ impl SegmentedExecutionLog {
                 .metrics
                 .bytes_reclaimed
                 .fetch_add(removed_bytes, Ordering::Relaxed);
+            // Drop the in-memory identity-index entries for the
+            // evicted seqs so subsequent reads don't try to
+            // resolve seqs that no longer have a backing record.
+            // Satisfies REQ-IndexesPrunedOnCompaction.
+            inner.backend.prune_secondary_indexes_up_to(cutoff);
         }
         Ok(removed)
     }

@@ -141,3 +141,62 @@ fn m2_01_active_invocation_carries_parent() {
     assert_eq!(active.invocation_id, inner);
     assert_eq!(active.entry_ip, 0xdead_beef);
 }
+
+#[test]
+fn m2_02_identity_reads_via_segmented_log_impl() {
+    // End-to-end through SegmentedExecutionLog: drive a small call
+    // tree, then assert the three identity-based read methods return
+    // the right slices.
+    use chronos_log::NewExecutionRecord;
+    let session = SessionId::new("m2-02-uat");
+    let dir = std::env::temp_dir().join(format!("chronos-m2-02-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut cfg = SegmentedConfig::with_dir(&dir);
+    cfg.flush_threshold = NonZeroUsize::new(64).unwrap();
+    let log = SegmentedExecutionLog::open(session.clone(), cfg).unwrap();
+
+    let root = InvocationId::now();
+    let child_a = InvocationId::now();
+    let child_b = InvocationId::now();
+    let sym_root = SymbolId::new("root", None, Language::C);
+    let sym_a = SymbolId::new("a", None, Language::C);
+    let sym_b = SymbolId::new("b", None, Language::C);
+
+    let mk = |monotonic_ns: u64, inv, parent, sym| NewExecutionRecord {
+        session_id: session.clone(),
+        monotonic_ns,
+        payload: ExecutionPayload::new(Vec::new(), "ev"),
+        invocation_id: Some(inv),
+        parent_invocation_id: parent,
+        symbol_id: Some(sym),
+    };
+    log.append(mk(10, root, None, sym_root)).unwrap();
+    log.append(mk(20, child_a, Some(root), sym_a)).unwrap();
+    log.append(mk(30, child_b, Some(root), sym_b)).unwrap();
+    log.append(mk(40, child_a, Some(root), sym_a)).unwrap();
+    log.append(mk(50, child_b, Some(root), sym_b)).unwrap();
+    log.flush().ok();
+
+    // get_by_invocation: only the root entry.
+    let by_root = log.get_by_invocation(root);
+    assert_eq!(by_root.len(), 1);
+    assert_eq!(by_root[0].monotonic_ns, 10);
+
+    // children_of(root): child_a twice + child_b twice = 4 records.
+    let kids = log.children_of(root);
+    assert_eq!(kids.len(), 4);
+    // Sorted by seq (monotonic_ns in this test).
+    let ns: Vec<u64> = kids.iter().map(|r| r.monotonic_ns).collect();
+    assert_eq!(ns, vec![20, 30, 40, 50]);
+
+    // in_range_by_symbol: sym_a at ns 20, 40 (both in [20, 50)).
+    let a_in_range = log.in_range_by_symbol(sym_a, 20, 50);
+    assert_eq!(a_in_range.len(), 2);
+    let ns_a: Vec<u64> = a_in_range.iter().map(|r| r.monotonic_ns).collect();
+    assert_eq!(ns_a, vec![20, 40]);
+
+    // Empty range returns nothing.
+    assert!(log.in_range_by_symbol(sym_a, 1000, 2000).is_empty());
+
+    std::fs::remove_dir_all(&dir).ok();
+}
