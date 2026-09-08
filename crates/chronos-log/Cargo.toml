@@ -7,5 +7,8 @@ description = "Append-only execution log: one authoritative evidence stream with
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
+blake3 = { version = "1.5" }
+lz4_flex = { version = "0.11" }
+hex = { version = "0.4" }
 
 [dev-dependencies]

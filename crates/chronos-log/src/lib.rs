@@ -21,6 +21,8 @@ pub mod error;
 pub mod gap;
 pub mod memory;
 pub mod record;
+pub mod segment;
+pub mod segmented;
 pub mod seq;
 
 pub use backend::{ExecutionLog, ExecutionLogBackend, NewExecutionRecord};
@@ -29,4 +31,6 @@ pub use error::LogError;
 pub use gap::{Gap, GapReason};
 pub use memory::InMemoryExecutionLog;
 pub use record::{ExecutionKind, ExecutionPayload, ExecutionRecord, SessionId};
+pub use segment::{segment_path, write_segment, DecodedSegment, SegmentEntry, SegmentMetadata};
+pub use segmented::{SegmentedConfig, SegmentedExecutionLog};
 pub use seq::EventSeq;

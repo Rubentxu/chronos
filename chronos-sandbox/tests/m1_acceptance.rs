@@ -139,15 +139,200 @@ async fn m1_01_execution_log_core_impl() {
     assert_eq!(read.1[0].reason, GapReason::KernelRingOverflow);
 }
 
-/// Legacy stub for future m1-02 (required test cases 5–8 from the
-/// ExecutionLog spec). Marked ignored until that ticket lands.
+/// m1-02 — ExecutionLog persistence acceptance (UAT-M1-02).
+///
+/// Drives spec cases 5–8 (overflow → gap, crash-safe segments,
+/// checkpoint+delta = full replay, deterministic replay) through
+/// the public API of `chronos_log::SegmentedExecutionLog`.
 #[test]
-#[ignore = "implemented in cycle m1-02: spec cases 5-8 (overflow -> gap, crash-safe segments, checkpoint+delta replay, deterministic replay)"]
-fn m1_02_execution_log_persistence_cases() {
-    // m1-02 contract is enforced by the in-tree unit tests in
-    // `chronos-log::tests` once persistence lands. No live UAT is
-    // required (the persistence backend is library-level; the MCP
-    // surface is unchanged).
+fn m1_02_execution_log_persistence_impl() {
+    use chronos_log::{Gap, GapReason, SegmentedConfig, SegmentedExecutionLog};
+    use std::num::NonZeroUsize;
+
+    // -- Case 5: overflow → gap (soft memory budget) ----------
+    {
+        let dir = tempdir("m1-02-case5");
+        let session = SessionId::new("m1-02-uat-5");
+        let mut cfg = SegmentedConfig::with_dir(&dir);
+        cfg.flush_threshold = NonZeroUsize::new(8).unwrap();
+        cfg.memory_budget_bytes = Some(300);
+        let log = SegmentedExecutionLog::open(session.clone(), cfg).expect("open");
+        // Small record first (under budget).
+        log.append(chronos_log::NewExecutionRecord {
+            session_id: session.clone(),
+            monotonic_ns: 0,
+            payload: chronos_log::ExecutionPayload::new(vec![1u8], "small"),
+        })
+        .unwrap();
+        // Big record pushes the in-memory estimate over the 64
+        // byte budget, forcing the gap path.
+        log.append(chronos_log::NewExecutionRecord {
+            session_id: session.clone(),
+            monotonic_ns: 10,
+            payload: chronos_log::ExecutionPayload::new(vec![0u8; 256], "big"),
+        })
+        .unwrap();
+        log.flush().unwrap();
+        let consumer = LogConsumerId::new("u1");
+        let read = log.read_after(&consumer, None).expect("read");
+        match read {
+            ReadResult::Ok { records, gaps, .. } => {
+                assert_eq!(records.len(), 1, "small record preserved");
+                assert!(
+                    !gaps.is_empty(),
+                    "memory-budget overflow must produce at least one gap"
+                );
+            }
+            other => panic!("expected Ok, got {:?}", other),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // -- Case 6: crash-safe segments (truncate one; verify replay
+    //    skips it and the surviving segment is fully replayed). ----
+    {
+        let dir = tempdir("m1-02-case6");
+        let session = SessionId::new("m1-02-uat-6");
+        let mut cfg = SegmentedConfig::with_dir(&dir);
+        cfg.flush_threshold = NonZeroUsize::new(2).unwrap();
+        let log = SegmentedExecutionLog::open(session.clone(), cfg.clone()).expect("open");
+        for i in 0..3u64 {
+            log.append(chronos_log::NewExecutionRecord {
+                session_id: session.clone(),
+                monotonic_ns: i * 10,
+                payload: chronos_log::ExecutionPayload::new(vec![i as u8], "rec"),
+            })
+            .unwrap();
+        }
+        log.flush().unwrap();
+        let segments = log.flushed_segments();
+        assert_eq!(segments.len(), 2, "two segments flushed");
+        // Truncate the first segment by 8 bytes to corrupt its
+        // BLAKE3 checksum.
+        let path = segments[0].2.clone();
+        let len = std::fs::metadata(&path).unwrap().len();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(len - 8)
+            .unwrap();
+        drop(log);
+
+        let log2 = SegmentedExecutionLog::open(session.clone(), cfg).expect("reopen");
+        // First segment is skipped; second segment still recovers.
+        assert_eq!(log2.tail_seq(), Some(EventSeq::new(2)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // -- Case 7: checkpoint + delta = full replay. -------------------
+    {
+        let dir = tempdir("m1-02-case7");
+        let session = SessionId::new("m1-02-uat-7");
+        let mut cfg = SegmentedConfig::with_dir(&dir);
+        cfg.flush_threshold = NonZeroUsize::new(2).unwrap();
+        let log = SegmentedExecutionLog::open(session.clone(), cfg.clone()).expect("open");
+        for i in 0..6u64 {
+            log.append(chronos_log::NewExecutionRecord {
+                session_id: session.clone(),
+                monotonic_ns: i,
+                payload: chronos_log::ExecutionPayload::new(vec![i as u8], "d"),
+            })
+            .unwrap();
+        }
+        log.flush().unwrap();
+        let pre_tail = log.tail_seq();
+        drop(log);
+
+        cfg.replay_on_open = true;
+        let log2 = SegmentedExecutionLog::open(session.clone(), cfg).expect("replay");
+        assert_eq!(log2.tail_seq(), pre_tail);
+        assert_eq!(pre_tail, Some(EventSeq::new(5)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // -- Case 8: deterministic replay (two logs same input). ---------
+    {
+        let dir1 = tempdir("m1-02-case8-a");
+        let dir2 = tempdir("m1-02-case8-b");
+        let session = SessionId::new("m1-02-uat-8");
+        let l1 = SegmentedExecutionLog::open(session.clone(), SegmentedConfig::with_dir(&dir1))
+            .expect("open a");
+        let l2 = SegmentedExecutionLog::open(session.clone(), SegmentedConfig::with_dir(&dir2))
+            .expect("open b");
+        for i in 0..16u64 {
+            l1.append(chronos_log::NewExecutionRecord {
+                session_id: session.clone(),
+                monotonic_ns: i,
+                payload: chronos_log::ExecutionPayload::new(vec![(i & 0xFF) as u8], "d"),
+            })
+            .unwrap();
+            l2.append(chronos_log::NewExecutionRecord {
+                session_id: session.clone(),
+                monotonic_ns: i,
+                payload: chronos_log::ExecutionPayload::new(vec![(i & 0xFF) as u8], "d"),
+            })
+            .unwrap();
+        }
+        l1.flush().unwrap();
+        l2.flush().unwrap();
+        assert_eq!(l1.tail_seq(), l2.tail_seq());
+        assert_eq!(l1.tail_seq(), Some(EventSeq::new(15)));
+        let _ = std::fs::remove_dir_all(&dir1);
+        let _ = std::fs::remove_dir_all(&dir2);
+    }
+
+    // -- Bonus: gap replaying preserves the consumer-cursor view. ----
+    {
+        let dir = tempdir("m1-02-gap");
+        let session = SessionId::new("m1-02-uat-gap");
+        let mut cfg = SegmentedConfig::with_dir(&dir);
+        cfg.flush_threshold = NonZeroUsize::new(1).unwrap();
+        let log = SegmentedExecutionLog::open(session.clone(), cfg).expect("open");
+        log.append(chronos_log::NewExecutionRecord {
+            session_id: session.clone(),
+            monotonic_ns: 0,
+            payload: chronos_log::ExecutionPayload::new(vec![1], "a"),
+        })
+        .unwrap();
+        log.record_gap(Gap::new(
+            EventSeq::new(1),
+            EventSeq::new(3),
+            GapReason::AdapterBufferOverflow,
+            "uat",
+        ))
+        .unwrap();
+        log.flush().unwrap();
+
+        let consumer = LogConsumerId::new("c");
+        let read = log.read_after(&consumer, None).expect("read");
+        match read {
+            ReadResult::Ok { gaps, records, .. } => {
+                assert_eq!(gaps.len(), 1);
+                assert_eq!(gaps[0].reason, GapReason::AdapterBufferOverflow);
+                assert!(!records.is_empty(), "pre-gap record is preserved");
+            }
+            other => panic!("expected Ok, got {:?}", other),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+/// Local helper for sandbox UATs that need a tempdir.
+fn tempdir(label: &str) -> std::path::PathBuf {
+    let base = std::env::temp_dir();
+    let unique = format!(
+        "chronos-{}-{}-{}",
+        label,
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    let p = base.join(unique);
+    std::fs::create_dir_all(&p).unwrap();
+    p
 }
 
 /// Legacy stub for future m1-03 (live probe migration: one producer
