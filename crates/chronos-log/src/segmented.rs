@@ -305,6 +305,15 @@ impl SegmentedExecutionLog {
         crate::analytics::reconstruct_call_tree(&inner.backend, &self.session_id, root_id)
     }
 
+    /// Derive the symbol-level call graph for this session's current
+    /// in-memory view. Mirrors `chronos_log::call_graph::call_graph`.
+    ///
+    /// See REQ-CallGraphSegmented.
+    pub fn call_graph(&self) -> crate::call_graph::CallGraph {
+        let inner = self.inner.lock().expect("poisoned");
+        crate::call_graph::call_graph(&inner.backend, &self.session_id)
+    }
+
     /// Append a record. Returns the assigned seq. May transparently
     /// record a gap if `memory_budget_bytes` is configured and the
     /// projected bytes exceed it.

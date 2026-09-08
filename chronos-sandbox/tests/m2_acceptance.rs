@@ -262,3 +262,65 @@ fn m2_03_analytics_via_segmented_log_impl() {
 
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn m2_04_call_graph_via_segmented_log_impl() {
+    // Build a small session graph through SegmentedExecutionLog: a
+    // root `a` calls `b` and `c`, plus a self-recursive `g`. Assert the
+    // derived CallGraph exposes edges, callers_of, callees_of, roots,
+    // and recursive.
+    use chronos_log::NewExecutionRecord;
+    let session = SessionId::new("m2-04-uat");
+    let dir = std::env::temp_dir().join(format!("chronos-m2-04-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut cfg = SegmentedConfig::with_dir(&dir);
+    cfg.flush_threshold = NonZeroUsize::new(64).unwrap();
+    let log = SegmentedExecutionLog::open(session.clone(), cfg).unwrap();
+
+    let a = InvocationId::now();
+    let b = InvocationId::now();
+    let c = InvocationId::now();
+    let g1 = InvocationId::now();
+    let g2 = InvocationId::now();
+    let sym_a = SymbolId::new("a", None, Language::C);
+    let sym_b = SymbolId::new("b", None, Language::C);
+    let sym_c = SymbolId::new("c", None, Language::C);
+    let sym_g = SymbolId::new("g", None, Language::C);
+
+    let mk = |monotonic_ns: u64, inv, parent, sym| NewExecutionRecord {
+        session_id: session.clone(),
+        monotonic_ns,
+        payload: ExecutionPayload::new(Vec::new(), "ev"),
+        invocation_id: Some(inv),
+        parent_invocation_id: parent,
+        symbol_id: Some(sym),
+    };
+    // a(root) -> b, a(root) -> c, g(root) -> g(self, recursion).
+    log.append(mk(10, a, None, sym_a)).unwrap();
+    log.append(mk(20, b, Some(a), sym_b)).unwrap();
+    log.append(mk(30, c, Some(a), sym_c)).unwrap();
+    log.append(mk(40, g1, None, sym_g)).unwrap();
+    log.append(mk(50, g2, Some(g1), sym_g)).unwrap();
+    log.flush().ok();
+
+    let graph = log.call_graph();
+    assert!(graph.roots().contains(&sym_a));
+    assert!(graph.roots().contains(&sym_g));
+    assert_eq!(graph.callers_of(sym_b), vec![sym_a]);
+    // callees_of(a) == {b, c} regardless of hash order.
+    let mut callees = graph.callees_of(sym_a);
+    callees.sort_by_key(|s| (s.name_hash, s.signature_hash, s.language as u8));
+    let mut expect = vec![sym_b, sym_c];
+    expect.sort_by_key(|s| (s.name_hash, s.signature_hash, s.language as u8));
+    assert_eq!(callees, expect);
+    // g is directly recursive.
+    assert!(graph.recursive().contains(&sym_g));
+    // Per-callee totals: a=1, b=1, c=1, g=2 (root + recursive).
+    assert_eq!(graph.call_count(sym_a), 1);
+    assert_eq!(graph.call_count(sym_b), 1);
+    assert_eq!(graph.call_count(sym_g), 2);
+    // Re-run for determinism (stable iteration).
+    assert_eq!(graph, log.call_graph());
+
+    std::fs::remove_dir_all(&dir).ok();
+}
