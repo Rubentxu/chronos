@@ -20,3 +20,4 @@ chronos-python = { path = "../crates/chronos-python" }
 chronos-java = { path = "../crates/chronos-java" }
 chronos-go = { path = "../crates/chronos-go" }
 chronos-browser = { path = "../crates/chronos-browser" }
+chronos-log = { path = "../crates/chronos-log" }
