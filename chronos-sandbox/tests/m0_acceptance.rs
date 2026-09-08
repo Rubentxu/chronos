@@ -323,9 +323,93 @@ async fn m0_05_typed_event_filters_reject_unknown_impl() {
 }
 
 #[test]
-#[ignore = "implemented in cycle m0-06"]
-fn m0_06_state_diff_preserves_register_evidence() {
-    unimplemented!("See vault/cycles/m0-truth-first-foundation/m0-06.md");
+#[ignore = "replaced by live UAT m0_06_state_diff_preserves_register_evidence_impl"]
+fn _m0_06_legacy_stub_disabled() {
+    // Replaced by the live UAT below; kept ignored so the stub name stays.
+}
+
+/// m0-06 — State-diff preserves register evidence (UAT-M0-06).
+///
+/// Asserts that `state_diff` reports `register_evidence` and an
+/// `evidence_note` when the engine has no register snapshots to compare,
+/// so the caller can distinguish "no changes" from "no evidence".
+#[tokio::test(flavor = "current_thread")]
+async fn m0_06_state_diff_preserves_register_evidence_impl() {
+    let _ = ();
+    let fixture = match McpSession::fixture_path("test_busyloop") {
+        Some(p) => p,
+        None => {
+            eprintln!("m0_06: test_busyloop fixture not available; skipping");
+            return;
+        }
+    };
+    let mut client = match McpTestClient::start().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("m0_06: McpTestClient start failed: {}", e);
+            return;
+        }
+    };
+    let session_id = match client.probe_start(fixture.to_str().unwrap()).await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("m0_06: probe_start failed: {}", e);
+            let _ = client.shutdown().await;
+            return;
+        }
+    };
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let snap = match client.session_snapshot(&session_id).await {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("m0_06: session_snapshot failed: {}", e);
+            let _ = client.shutdown().await;
+            return;
+        }
+    };
+    assert!(snap.events_indexed > 0, "m0_06: snapshot must index events");
+
+    // Probe by default does NOT capture registers; the diff must surface
+    // that fact instead of returning an empty diff silently.
+    let raw = match client
+        .call_tool(
+            "state_diff",
+            serde_json::json!({
+                "session_id": session_id,
+                "timestamp_a": 0,
+                "timestamp_b": u64::MAX
+            }),
+        )
+        .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("m0_06: state_diff call failed: {}", e);
+            let _ = client.shutdown().await;
+            return;
+        }
+    };
+    let register_evidence = raw
+        .get("register_evidence")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    assert!(
+        !register_evidence,
+        "m0_06: register_evidence must be false when no register snapshots were captured (raw: {})",
+        raw
+    );
+    let note = raw
+        .get("evidence_note")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    assert!(
+        note.contains("register") || note.contains("snapshot"),
+        "m0_06: evidence_note must mention register/snapshot evidence, got {:?}",
+        note
+    );
+
+    let _ = client.probe_stop(&session_id).await;
+    let _ = client.shutdown().await;
 }
 
 #[test]

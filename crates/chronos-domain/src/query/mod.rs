@@ -246,6 +246,17 @@ pub struct StateDiff {
     pub timestamp_b: TimestampNs,
     /// List of changes.
     pub changes: Vec<StateChange>,
+    /// Optional human-readable note that explains why the diff is empty or
+    /// partial. Set when the engine cannot find register snapshots in the
+    /// requested window, or when one of the two anchors has no evidence.
+    /// Lets callers distinguish "no changes" from "no register evidence".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_note: Option<String>,
+    /// True if at least one register snapshot was located on either side
+    /// of the diff. False when the diff has zero evidence and `changes` is
+    /// empty because no snapshots were captured.
+    #[serde(default)]
+    pub register_evidence: bool,
 }
 
 /// A single state change.
