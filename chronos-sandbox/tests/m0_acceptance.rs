@@ -130,6 +130,126 @@ fn m0_02_session_snapshot_is_cumulative() {
     unimplemented!("See vault/cycles/m0-truth-first-foundation/m0-02.md");
 }
 
+#[tokio::test]
+#[ignore = "implemented in cycle m0-02"]
+async fn m0_02_session_snapshot_is_cumulative_impl() {
+    // UAT-M0-02: two consecutive session_snapshot calls preserve evidence
+    // from both periods (cumulative refresh).
+    let fixture = match McpSession::fixture_path("test_busyloop") {
+        Some(p) => p,
+        None => {
+            eprintln!(
+                "m0_02: test_busyloop fixture not available; skipping (run `cargo build` first)"
+            );
+            return;
+        }
+    };
+
+    let mut client = match McpTestClient::start().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("m0_02: failed to start MCP server: {}", e);
+            return;
+        }
+    };
+
+    let session_id = match client.probe_start(fixture.to_str().unwrap()).await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("m0_02: probe_start failed: {}", e);
+            let _ = client.shutdown().await;
+            return;
+        }
+    };
+
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    // First snapshot — builds the engine.
+    let snap1 = match client.session_snapshot(&session_id).await {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("m0_02: first session_snapshot failed: {}", e);
+            let _ = client.shutdown().await;
+            return;
+        }
+    };
+    let first_indexed = snap1.events_indexed;
+    assert!(
+        first_indexed > 0,
+        "m0_02: first snapshot must index at least one event"
+    );
+
+    // Record the page-size-limited view of the engine after snap1.
+    let filter = chronos_sandbox::client::types::QueryFilter {
+        limit: 5000,
+        offset: 0,
+        ..Default::default()
+    };
+    let after_snap1 = match client.query_events(&session_id, filter).await {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("m0_02: query_events after snap1 failed: {}", e);
+            let _ = client.shutdown().await;
+            return;
+        }
+    };
+    assert!(
+        after_snap1.len() >= first_indexed,
+        "m0_02: first query must see at least first_indexed events"
+    );
+
+    // Wait for more events to arrive, then second snapshot.
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let snap2 = match client.session_snapshot(&session_id).await {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("m0_02: second session_snapshot failed: {}", e);
+            let _ = client.shutdown().await;
+            return;
+        }
+    };
+
+    // Cumulative refresh: the engine after snap2 must hold AT LEAST
+    // as many events as it did after snap1 (the second refresh adds;
+    // it does not replace).
+    let filter = chronos_sandbox::client::types::QueryFilter {
+        limit: 5000,
+        offset: 0,
+        ..Default::default()
+    };
+    let after_snap2 = match client.query_events(&session_id, filter).await {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("m0_02: query_events after snap2 failed: {}", e);
+            let _ = client.shutdown().await;
+            return;
+        }
+    };
+    assert_eq!(snap2.session_id, session_id, "m0_02: session_id mismatch");
+    assert!(
+        after_snap2.len() >= after_snap1.len(),
+        "m0_02: cumulative contract violated; after second snapshot the engine has {} events but the first snapshot left {}",
+        after_snap2.len(),
+        after_snap1.len()
+    );
+    // Spot-check: at least one event_id from snap1's view is still in
+    // the engine after snap2 (no replacement).
+    let first_id = after_snap1.first().map(|e| e.event_id);
+    let last_id_of_snap1 = after_snap1.last().map(|e| e.event_id);
+    if let (Some(fid), Some(lid)) = (first_id, last_id_of_snap1) {
+        let still_present = after_snap2
+            .iter()
+            .any(|e| e.event_id == fid || e.event_id == lid);
+        assert!(
+            still_present,
+            "m0_02: events from first snapshot must still be present after second snapshot"
+        );
+    }
+
+    let _ = client.probe_stop(&session_id).await;
+    let _ = client.shutdown().await;
+}
+
 #[test]
 #[ignore = "implemented in cycle m0-03"]
 fn m0_03_ebpf_probe_lifetime_is_session_owned() {

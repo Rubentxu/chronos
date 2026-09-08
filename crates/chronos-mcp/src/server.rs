@@ -783,25 +783,39 @@ impl ChronosServer {
             })
             .collect();
 
-        let mut builder = IndexBuilder::new();
-        builder.push_all(&events);
-        let indices = builder.finalize();
-
-        let engine = QueryEngine::with_indices(events, indices.shadow, indices.temporal)
-            .with_causality(indices.causality)
-            .with_performance(indices.performance);
-
-        // Store engine and language for later use
         let mut engines = self.engines.lock().await;
         let mut session_languages = self.session_languages.lock().await;
-        info!(
-            "Built query engine for session {} (language: {:?})",
-            session_id, language
-        );
-        engines.insert(session_id.to_string(), engine);
+
+        if let Some(existing) = engines.get_mut(session_id) {
+            // Cumulative refresh: merge new events into the existing engine
+            // and rebuild indices. m0-02-make-snapshots-cumulative (UAT-M0-02).
+            existing.merge(events);
+            info!(
+                "Refreshed query engine for session {} (cumulative, now {} events)",
+                session_id,
+                existing.event_count()
+            );
+        } else {
+            // First snapshot: build from scratch.
+            let mut builder = IndexBuilder::new();
+            builder.push_all(&events);
+            let indices = builder.finalize();
+
+            let engine = QueryEngine::with_indices(events, indices.shadow, indices.temporal)
+                .with_causality(indices.causality)
+                .with_performance(indices.performance);
+
+            info!(
+                "Built query engine for session {} (language: {:?})",
+                session_id, language
+            );
+            engines.insert(session_id.to_string(), engine);
+        }
         session_languages.insert(session_id.to_string(), language);
 
         // Set this session as the active session
+        drop(engines);
+        drop(session_languages);
         self.set_active_session(session_id).await;
     }
 
