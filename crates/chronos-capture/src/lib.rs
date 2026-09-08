@@ -5,6 +5,7 @@ pub mod config;
 pub mod factory;
 pub mod observation_log;
 pub mod pipeline;
+pub mod session_feed;
 pub mod state_recorder;
 
 pub use adapter::TraceAdapter;
@@ -16,4 +17,5 @@ pub use observation_log::{
     report_properties_on_session, ObservationLogWriter, PersistError, PropertyEvaluation,
 };
 pub use pipeline::CapturePipeline;
+pub use session_feed::{open_durable_feed, SegmentedLogBackend};
 pub use state_recorder::StateObservationRecorder;

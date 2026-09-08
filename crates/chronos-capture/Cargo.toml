@@ -8,3 +8,6 @@ chronos-domain = { workspace = true }
 chronos-log = { path = "../chronos-log" }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
