@@ -1348,7 +1348,7 @@ impl ChronosServer {
 
     #[tool(
         name = "debug_detect_races",
-        description = "Detect data races: find writes to the same memory address within the threshold_ns window on different threads. Default threshold is 100ns."
+        description = "Detect suspicious concurrent accesses (m0-09). Finds writes to the same memory address within the threshold_ns window on different threads. The tool name is kept for backward compatibility; internally the heuristic is named detect_concurrent_access because we do not perform happens-before analysis — results are a triage signal, not a verdict that the access is a true data race. Default threshold is 100ns."
     )]
     async fn debug_detect_races(
         &self,
@@ -1372,13 +1372,13 @@ impl ChronosServer {
             time_range: None,
             threshold_ns: params.threshold_ns,
         };
-        let result = engine.detect_races(&query);
+        let result = engine.detect_concurrent_access(&query);
 
         let output = serde_json::json!({
             "session_id": params.session_id,
             "threshold_ns": params.threshold_ns,
-            "race_count": result.races.len(),
-            "races": result.races.iter().map(|r| serde_json::json!({
+            "access_count": result.accesses.len(),
+            "accesses": result.accesses.iter().map(|r| serde_json::json!({
                 "address": format!("0x{:x}", r.address),
                 "delta_ns": r.delta_ns,
                 "write_a": {
@@ -3461,7 +3461,10 @@ mod tests {
 
         assert_ne!(result.is_error, Some(true));
         let text = format!("{:?}", result.content);
-        assert!(text.contains("race_count"));
+        assert!(
+            text.contains("access_count"),
+            "m0-09: tool output renamed race_count -> access_count"
+        );
     }
 
     #[tokio::test]
