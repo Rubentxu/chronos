@@ -179,6 +179,32 @@ impl McpSession {
         Ok(result)
     }
 
+    /// Probe drain with an optional cursor (m0-01-live-pagination).
+    pub async fn probe_drain_with_cursor(
+        &mut self,
+        session_id: &str,
+        cursor: Option<CursorDto>,
+    ) -> Result<ProbeDrainResponse, McpSandboxError> {
+        let mut params = serde_json::json!({
+            "session_id": session_id,
+            "limit": 1000,
+            "offset": 0
+        });
+        if let Some(c) = cursor {
+            params.as_object_mut().unwrap().insert(
+                "cursor".to_string(),
+                serde_json::to_value(c).map_err(|e| McpSandboxError::RpcError(e.to_string()))?,
+            );
+        }
+
+        let response = self.rpc_client.call_tool("probe_drain", params).await?;
+
+        let result: ProbeDrainResponse = serde_json::from_value(response)
+            .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
+
+        Ok(result)
+    }
+
     /// Probe inject — inject a uprobe into a running process.
     pub async fn probe_inject(
         &mut self,

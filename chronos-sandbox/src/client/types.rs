@@ -62,13 +62,25 @@ pub struct ProbeStopResponse {
 }
 
 /// Parameters for probe_drain.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProbeDrainParams {
     pub session_id: String,
     #[serde(default = "default_limit")]
     pub limit: usize,
     #[serde(default)]
     pub offset: usize,
+    /// Optional cursor returned by a previous `probe_drain` call.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<CursorDto>,
+}
+
+/// Wire-format cursor (matches the MCP `CursorDto` shape).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CursorDto {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_pushed: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot_len: Option<u64>,
 }
 
 fn default_limit() -> usize {
@@ -97,6 +109,12 @@ pub struct ProbeDrainResponse {
     pub limit: usize,
     pub events: Vec<SemanticEvent>,
     pub hint: Option<String>,
+    /// Optional non-destructive read cursor (m0-01-live-pagination).
+    #[serde(default)]
+    pub cursor: Option<CursorDto>,
+    /// True when the server rejected the supplied cursor as stale.
+    #[serde(default)]
+    pub cursor_stale: Option<bool>,
 }
 
 /// Parameters for probe_inject.
