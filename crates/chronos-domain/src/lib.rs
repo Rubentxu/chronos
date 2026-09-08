@@ -15,7 +15,7 @@ pub mod value;
 
 // Re-exports for convenience
 pub use adapter::ProbeBackend;
-pub use bus::{BusMetrics, EventBus, EventBusHandle};
+pub use bus::{BusMetrics, CursorStatus, EventBus, EventBusHandle, EventCursor, ReadResult};
 pub use error::TraceError;
 pub use index::{
     CausalityEntry, CausalityIndex, CompressedTrace, CompressionLevel, DetailData,

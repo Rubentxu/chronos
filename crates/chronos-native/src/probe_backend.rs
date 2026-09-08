@@ -576,6 +576,14 @@ impl ProbeBackend for NativeProbeBackend {
         Ok(self.event_bus.snapshot())
     }
 
+    /// Non-destructive read on the underlying EventBus (m0-01-live-pagination).
+    fn read_since(
+        &self,
+        cursor: Option<chronos_domain::EventCursor>,
+    ) -> chronos_domain::ReadResult {
+        self.event_bus.read_since(cursor)
+    }
+
     fn stop_probe(&self, session: &CaptureSession) -> Result<(), TraceError> {
         self.stop_probe(session)
     }

@@ -19,10 +19,13 @@ pub mod types;
 pub mod uprobe;
 
 use crate::ring_buffer::MockRingBuffer;
+use crate::types::EbpfEvent;
 use chronos_capture::TraceAdapter as CaptureTraceAdapter;
 use chronos_domain::semantic::{SemanticEvent, SemanticEventKind};
+#[allow(unused_imports)]
 use chronos_domain::{
-    CaptureConfig, CaptureSession, Language, ProbeBackend, TraceError, TraceEvent,
+    CaptureConfig, CaptureSession, CursorStatus, EventCursor, Language, ProbeBackend, ReadResult,
+    TraceError, TraceEvent,
 };
 #[cfg(feature = "ebpf")]
 use std::sync::Mutex;
@@ -235,6 +238,78 @@ impl ProbeBackend for EbpfAdapter {
         }
     }
 
+    fn read_since(&self, cursor: Option<EventCursor>) -> ReadResult {
+        // The real BPF ring buffer does not support non-destructive peek.
+        // We surface a `Stale` cursor whenever the caller provides one
+        // (signaling "re-anchor from scratch"). With cursor=None we
+        // fall back to the destructive drain — acceptable because the
+        // MCP layer only invokes read_since on live probe state and
+        // currently relies on drain semantics for the eBPF backend.
+        #[cfg(feature = "ebpf")]
+        {
+            use chronos_domain::{EventData, EventType};
+            if cursor.is_some() {
+                return Err(TraceError::CursorStale {
+                    expected: 0,
+                    current: 0,
+                });
+            }
+            let inner = self
+                .inner
+                .lock()
+                .map_err(|e| TraceError::CaptureFailed(e.to_string()))?;
+            let raw_events = inner.drain_events();
+            let total_pushed = raw_events.len() as u64;
+            let semantic: Vec<SemanticEvent> = raw_events
+                .into_iter()
+                .map(|e| {
+                    let fn_name = match &e.data {
+                        EventData::EbpfUprobeHit { symbol_name, .. } => symbol_name.clone(),
+                        _ => e.location.function.clone(),
+                    };
+                    let kind = match e.event_type {
+                        EventType::FunctionEntry => SemanticEventKind::FunctionCalled {
+                            function: fn_name.clone(),
+                            module: None,
+                            arguments: vec![],
+                        },
+                        EventType::FunctionExit => SemanticEventKind::FunctionReturned {
+                            function: fn_name.clone(),
+                            return_value: None,
+                        },
+                        _ => SemanticEventKind::Unresolved,
+                    };
+                    SemanticEvent {
+                        source_event_id: e.event_id,
+                        timestamp_ns: e.timestamp_ns,
+                        thread_id: e.thread_id,
+                        language: Language::Ebpf,
+                        kind,
+                        description: format!("{:?} @ {}", e.event_type, fn_name),
+                    }
+                })
+                .collect();
+            let status = if semantic.is_empty() {
+                CursorStatus::Empty
+            } else {
+                CursorStatus::Fresh
+            };
+            Ok((
+                semantic,
+                EventCursor {
+                    total_pushed,
+                    snapshot_len: 0,
+                },
+                status,
+            ))
+        }
+        #[cfg(not(feature = "ebpf"))]
+        {
+            let _ = cursor;
+            Err(TraceError::capture_failed("eBPF support not compiled in"))
+        }
+    }
+
     fn stop_probe(&self, _session: &CaptureSession) -> Result<(), TraceError> {
         #[cfg(feature = "ebpf")]
         {
@@ -441,6 +516,45 @@ impl ProbeBackend for MockEbpfAdapter {
             .collect())
     }
 
+    fn read_since(&self, cursor: Option<EventCursor>) -> ReadResult {
+        // Mock adapter backed by MockRingBuffer which supports non-destructive peek.
+        let (snap, total_pushed) = self.buffer.peek_all();
+        let snap_len = snap.len() as u64;
+
+        let semantic: Vec<SemanticEvent> = match cursor {
+            None => snap.into_iter().map(convert_ebpf_to_semantic).collect(),
+            Some(c) => {
+                if c.total_pushed != total_pushed {
+                    return Err(TraceError::CursorStale {
+                        expected: c.total_pushed,
+                        current: total_pushed,
+                    });
+                }
+                if c.snapshot_len > snap_len {
+                    return Err(TraceError::CursorStale {
+                        expected: c.snapshot_len,
+                        current: snap_len,
+                    });
+                }
+                snap.into_iter()
+                    .skip(c.snapshot_len as usize)
+                    .map(convert_ebpf_to_semantic)
+                    .collect()
+            }
+        };
+
+        let new_cursor = EventCursor {
+            total_pushed,
+            snapshot_len: snap_len,
+        };
+        let status = if semantic.is_empty() {
+            CursorStatus::Empty
+        } else {
+            CursorStatus::Fresh
+        };
+        Ok((semantic, new_cursor, status))
+    }
+
     fn stop_probe(&self, _session: &CaptureSession) -> Result<(), TraceError> {
         // Mock adapter: nothing to stop
         Ok(())
@@ -448,6 +562,31 @@ impl ProbeBackend for MockEbpfAdapter {
 
     fn drain_raw_events(&self) -> Vec<TraceEvent> {
         self.buffer.drain_all()
+    }
+}
+
+/// Convert an eBPF kernel event into a `SemanticEvent` for live LLM consumption.
+fn convert_ebpf_to_semantic(e: EbpfEvent) -> SemanticEvent {
+    let fn_name = e.get_function_name().to_string();
+    let kind = match e.kind {
+        crate::types::EbpfEventKind::FunctionEntry => SemanticEventKind::FunctionCalled {
+            function: fn_name.clone(),
+            module: None,
+            arguments: vec![],
+        },
+        crate::types::EbpfEventKind::FunctionExit => SemanticEventKind::FunctionReturned {
+            function: fn_name.clone(),
+            return_value: None,
+        },
+        _ => SemanticEventKind::Unresolved,
+    };
+    SemanticEvent {
+        source_event_id: 0, // assigned later by the ring buffer's monotonic id counter
+        timestamp_ns: e.timestamp_ns,
+        thread_id: e.thread_id,
+        language: Language::Ebpf,
+        kind,
+        description: format!("{:?} @ {}", e.kind, fn_name),
     }
 }
 
