@@ -669,3 +669,98 @@ fn m1_05_execution_log_segment_compaction_impl() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// m1-07 — surface compaction counters through MCP.
+///
+/// This UAT exercises the new `probe_compaction_metrics` tool over
+/// the real MCP server. It assumes `chronos-mcp` is on the test
+/// PATH (via `CHRONOS_MCP_PATH` or the default lookup chain — see
+/// AGENTS.md §1). When the binary is missing, we treat that as a
+/// no-op like the other live UATs do (the in-tree native test
+/// `m1_07_compaction_metrics` covers the producer path).
+#[tokio::test(flavor = "current_thread")]
+async fn m1_07_compaction_metrics_exposed_impl() {
+    use chronos_sandbox::client::tools::McpTestClient;
+    use chronos_sandbox::McpSession;
+
+    let mut client = match McpTestClient::start().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("m1_07: McpTestClient start failed: {}", e);
+            return;
+        }
+    };
+
+    // 1. Unknown session: the tool should report the session_id
+    //    not found (matches `probe_drain_log` behaviour).
+    let unknown = client
+        .call_tool(
+            "probe_compaction_metrics",
+            serde_json::json!({ "session_id": "definitely-not-a-session" }),
+        )
+        .await;
+    let unknown_text = match unknown {
+        Ok(v) => v.to_string(),
+        Err(e) => format!("err: {}", e),
+    };
+    assert!(
+        unknown_text.contains("not found"),
+        "unknown session should yield 'not found'; got: {}",
+        unknown_text
+    );
+
+    // 2. Start a probe on test_busyloop. The native backend will
+    //    default to no ExecutionLog dir ⇒ the tool should return
+    //    `log_attached: false` with a hint instead of erroring.
+    let fixture = match McpSession::fixture_path("test_busyloop") {
+        Some(p) => p,
+        None => {
+            eprintln!("m1_07: test_busyloop fixture not built (cargo build --bin test_busyloop)");
+            let _ = client.shutdown().await;
+            return;
+        }
+    };
+    let session_id = match client.probe_start(fixture.to_str().unwrap()).await {
+        Ok(s) => s,
+        Err(e) => {
+            // If probe_start itself fails (no root / no fixture), skip
+            // — the in-tree native test already covers the producer path.
+            eprintln!("m1_07: probe_start failed: {}", e);
+            let _ = client.shutdown().await;
+            return;
+        }
+    };
+    // Give the native probe a moment to launch + attach.
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let resp = client
+        .call_tool(
+            "probe_compaction_metrics",
+            serde_json::json!({ "session_id": &session_id }),
+        )
+        .await;
+    let resp_text = match resp {
+        Ok(v) => v.to_string(),
+        Err(e) => {
+            let _ = client.probe_stop(&session_id).await;
+            let _ = client.shutdown().await;
+            panic!("probe_compaction_metrics call failed: {}", e);
+        }
+    };
+    // The response should at minimum include the session_id echo
+    // and either `log_attached:true` (with the counters) or
+    // `log_attached:false` (with the hint). Both are valid; we
+    // don't want the call to error.
+    assert!(
+        resp_text.contains("session_id"),
+        "response should include session_id; got: {}",
+        resp_text
+    );
+    assert!(
+        resp_text.contains("log_attached"),
+        "response should include log_attached flag; got: {}",
+        resp_text
+    );
+
+    let _ = client.probe_stop(&session_id).await;
+    let _ = client.shutdown().await;
+}

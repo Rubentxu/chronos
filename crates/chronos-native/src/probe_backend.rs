@@ -124,6 +124,22 @@ impl NativeProbeBackend {
             .clone()
     }
 
+    /// Snapshot of the attached `ExecutionLog`'s compaction counters
+    /// (m1-07). Returns `Ok(None)` if no log is attached; `Ok(Some(zeros))`
+    /// if a log is attached but no compaction runs have happened yet.
+    pub fn compaction_metrics(&self) -> Result<Option<chronos_log::CompactionMetrics>, TraceError> {
+        let log = self
+            .execution_log
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        let log = match log {
+            Some(l) => l,
+            None => return Ok(None),
+        };
+        Ok(Some(log.compaction_metrics()))
+    }
+
     /// Test-only accessor that returns the underlying `Arc<Mutex<…>>`
     /// holding the optional `ExecutionLog`. Lets integration tests
     /// attach a pre-built log so they can exercise
