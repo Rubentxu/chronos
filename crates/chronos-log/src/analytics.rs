@@ -117,7 +117,10 @@ pub fn recursion_depth(log: &InMemoryExecutionLog, session: &SessionId) -> usize
 /// the number of distinct invocation_ids in the chain (including
 /// the start). Returns 0 if `start` isn't present in `records` at
 /// all (which means a v1 record's parent pointed at a v1 record).
-fn chain_depth(records: &[ExecutionRecord], start: chronos_domain::InvocationId) -> usize {
+pub(crate) fn chain_depth(
+    records: &[ExecutionRecord],
+    start: chronos_domain::InvocationId,
+) -> usize {
     // Build a local id → parent_invocation_id map for the records we
     // have in hand. O(N) once; reused by every chain walk.
     let mut parents: std::collections::HashMap<
