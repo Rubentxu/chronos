@@ -15,6 +15,7 @@
 //! See `docs/chronos-agentic-reconstruction/docs/specs/EXECUTION_LOG.md`
 //! for the canonical behavior contract.
 
+pub mod analytics;
 pub mod backend;
 pub mod cursor;
 pub mod error;
