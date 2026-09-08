@@ -451,3 +451,130 @@ fn m1_03_execution_log_migration_impl() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// m1-04 — Durable consumer cursors + decoder counters + live
+/// ptrace UAT acceptance.
+///
+/// Exercises three new surfaces end-to-end through the public API:
+///   1. `SegmentedExecutionLog::commit_cursor` + `last_cursor` +
+///      `cursors()` — the cursor survives a process restart via
+///      the on-disk `<session>.cursors.json` sidecar.
+///   2. `NativeProbeBackend::read_execution_log_records_with_stats` —
+///      the new 4-tuple return value surfaces decoder counters
+///      (unparseable_payload_count, total_records_seen) so callers
+///      can spot schema drift or alternate producers.
+///   3. A live ptrace run (`/bin/true`, `trace_syscalls: false`)
+///      pushes events through `trace_event_to_log_record_for_test`
+///      and the read path returns them with zero unparseable
+///      payloads.
+///
+/// The actual ptrace integration lives in
+/// `chronos-sandbox/tests/m1_04_live_probe_execution_log.rs` (run
+/// separately, see AGENTS.md §6.5 for the kernel-isolation flake
+/// that affects `trace_syscalls: true` only). This acceptance
+/// focuses on (1) and (2); (3) is a sibling integration test.
+#[test]
+fn m1_04_execution_log_durable_cursors_and_decoders_impl() {
+    use chronos_log::{EventSeq, LogConsumerId, SegmentedConfig, SegmentedExecutionLog};
+    use chronos_native::probe_backend::{trace_event_to_log_record_for_test, NativeProbeBackend};
+    use std::sync::Arc;
+
+    // -- 1. Durable consumer cursors ----------------------------
+    let dir = tempdir("m1-04-cursor");
+    let session = chronos_log::SessionId::new("m1-04-uat");
+    let log = Arc::new(
+        SegmentedExecutionLog::open(session.clone(), SegmentedConfig::with_dir(&dir))
+            .expect("open"),
+    );
+    for i in 0..5u64 {
+        log.append(chronos_log::NewExecutionRecord {
+            session_id: session.clone(),
+            monotonic_ns: i * 100,
+            payload: chronos_log::ExecutionPayload::new(
+                serde_json::json!({"i": i}).to_string().into_bytes(),
+                "step",
+            ),
+        })
+        .expect("append");
+    }
+    log.commit_cursor(&LogConsumerId::new("agent-a"), EventSeq::new(4))
+        .expect("commit");
+
+    // The cursor is reflected in-memory.
+    assert_eq!(
+        log.last_cursor(&LogConsumerId::new("agent-a")),
+        Some(EventSeq::new(4))
+    );
+
+    // The sidecar file exists on disk.
+    let sidecar_path = dir.join("m1-04-uat.cursors.json");
+    assert!(
+        sidecar_path.exists(),
+        "cursor sidecar written at {:?}",
+        sidecar_path
+    );
+
+    // Drop the log and reopen — the cursor survives.
+    drop(log);
+    let log2 = SegmentedExecutionLog::open(session.clone(), SegmentedConfig::with_dir(&dir))
+        .expect("reopen");
+    assert_eq!(
+        log2.last_cursor(&LogConsumerId::new("agent-a")),
+        Some(EventSeq::new(4)),
+        "cursor survives restart"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+
+    // -- 2. Decoder counters on the consumer path --------------
+    let dir2 = tempdir("m1-04-counters");
+    let bus = chronos_domain::bus::EventBus::new_shared(64);
+    let backend = NativeProbeBackend::new(bus).with_execution_log_dir(Some(dir2.clone()));
+    let log_dir = dir2.join("native-m1-04-uat-counters");
+    let log = Arc::new(
+        SegmentedExecutionLog::open(
+            chronos_log::SessionId::new("native-m1-04-uat-counters"),
+            SegmentedConfig::with_dir(&log_dir),
+        )
+        .expect("open"),
+    );
+    {
+        let mut slot = backend
+            .execution_log_slot_for_test()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        *slot = Some(log.clone());
+    }
+    // One valid TraceEvent + one unparseable payload.
+    let good = chronos_domain::TraceEvent {
+        event_id: 7,
+        timestamp_ns: 7000,
+        thread_id: 1,
+        event_type: chronos_domain::EventType::FunctionEntry,
+        location: chronos_domain::SourceLocation::default(),
+        data: chronos_domain::EventData::Empty,
+    };
+    log.append(trace_event_to_log_record_for_test(
+        "native-m1-04-uat-counters",
+        0,
+        &good,
+    ))
+    .expect("append good");
+    log.append(chronos_log::NewExecutionRecord {
+        session_id: chronos_log::SessionId::new("native-m1-04-uat-counters"),
+        monotonic_ns: 100,
+        payload: chronos_log::ExecutionPayload::new(b"\xff\xfe\xfd not-json".to_vec(), "noise"),
+    })
+    .expect("append noise");
+    log.flush().expect("flush");
+
+    let (events, tail, unparseable, total) = backend
+        .read_execution_log_records_with_stats(None, 100)
+        .expect("read_with_stats");
+    assert_eq!(total, 2, "two records total");
+    assert_eq!(unparseable, 1, "exactly one record fails to decode");
+    assert_eq!(events.len(), 1, "only the valid one comes back");
+    assert_eq!(events[0].event_id, 7);
+    assert_eq!(tail, Some(1), "tail_seq is the highest seq (the noise)");
+
+    let _ = std::fs::remove_dir_all(&dir2);
+}

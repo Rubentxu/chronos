@@ -146,12 +146,30 @@ impl NativeProbeBackend {
     /// and `tail_seq` is the seq counter of the latest record. The
     /// optional `since` arg filters to records with seq strictly
     /// greater than the given value (m1-03 incremental read
-    /// support).
+    /// support). Use `read_execution_log_records_with_stats` if you
+    /// also need the decoder counters surfaced in m1-04.
     pub fn read_execution_log_records(
         &self,
         since: Option<u64>,
         limit: usize,
     ) -> Result<(Vec<TraceEvent>, Option<u64>), TraceError> {
+        let (events, tail, _unparseable, _total_seen) =
+            self.read_execution_log_records_with_stats(since, limit)?;
+        Ok((events, tail))
+    }
+
+    /// Variant of `read_execution_log_records` that also returns
+    /// decoder counters: `(events, tail_seq, unparseable_payload_count,
+    /// total_records_seen)`. `unparseable_payload_count` is the
+    /// number of records in the log whose JSON payload did not
+    /// decode as a `TraceEvent`. These are still durable on disk;
+    /// the counter is the signal that "something else wrote to
+    /// this log" (schema drift, alternate producer, corruption).
+    pub fn read_execution_log_records_with_stats(
+        &self,
+        since: Option<u64>,
+        limit: usize,
+    ) -> Result<(Vec<TraceEvent>, Option<u64>, u64, u64), TraceError> {
         let log = self
             .execution_log
             .lock()
@@ -175,8 +193,11 @@ impl NativeProbeBackend {
             .map_err(|e| TraceError::CaptureFailed(format!("log read: {}", e)))?;
         let mut out = Vec::new();
         let mut max_seq: Option<u64> = None;
+        let mut unparseable = 0u64;
+        let mut total_seen = 0u64;
         if let chronos_log::ReadResult::Ok { records, .. } = read {
             for r in records {
+                total_seen += 1;
                 if let Some(since) = since {
                     if r.seq.0 <= since {
                         continue;
@@ -189,15 +210,22 @@ impl NativeProbeBackend {
                 } else {
                     max_seq = Some(r.seq.0);
                 }
-                if let Ok(ev) = serde_json::from_slice::<TraceEvent>(&r.payload.bytes) {
-                    out.push(ev);
+                match serde_json::from_slice::<TraceEvent>(&r.payload.bytes) {
+                    Ok(ev) => out.push(ev),
+                    Err(_) => {
+                        // m1-04: surface the count instead of
+                        // silently dropping. The record stays
+                        // durable on disk; we just don't try to
+                        // decode it.
+                        unparseable += 1;
+                    }
                 }
                 if out.len() >= limit {
                     break;
                 }
             }
         }
-        Ok((out, max_seq))
+        Ok((out, max_seq, unparseable, total_seen))
     }
 
     /// Push a `TraceEvent` to the legacy EventBus and, if an
