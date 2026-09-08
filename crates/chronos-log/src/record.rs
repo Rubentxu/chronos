@@ -1,10 +1,11 @@
 //! `ExecutionRecord`, `ExecutionKind`, `ExecutionPayload`, `SessionId`.
 //!
-//! The full `ExecutionRecord` shape from the spec is large; this
-//! module ships the subset needed for m1-01 (cases 1–4 from the
-//! spec). Fields like `invocation_id`, `links`, `provenance`, etc.
-//! are added in subsequent m1-NN cycles when the producer/query
-//! paths that need them are migrated.
+//! `ExecutionRecord` carries the producer-reported `invocation_id`,
+//! `parent_invocation_id`, and `symbol_id` identity fields (v2) plus the
+//! opaque payload. v1 records (m0/m1 producers without frame tracking)
+//! leave the identity fields `None`; readers tolerate both shapes via
+//! serde defaults. (m2-09 corrected the module docs to describe the
+//! shipped v2 shape rather than the original m1-01 subset.)
 
 use crate::seq::EventSeq;
 use serde::{Deserialize, Serialize};
