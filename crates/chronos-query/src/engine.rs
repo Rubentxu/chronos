@@ -384,12 +384,18 @@ impl QueryEngine {
     /// Compute a state diff between two timestamps.
     ///
     /// Compares register snapshots and variable values at two points in time.
+    /// The returned [`StateDiff`] always reports whether any register evidence
+    /// was found (`register_evidence`) and, when not, an `evidence_note` that
+    /// explains why the diff is empty. This lets callers distinguish "the
+    /// program did not change registers" from "no register snapshots were
+    /// captured for this session".
     pub fn state_diff(&self, timestamp_a: u64, timestamp_b: u64) -> StateDiff {
         let mut changes: Vec<StateChange> = Vec::new();
 
         // Find register snapshots at or before each timestamp
         let regs_a = self.find_registers_at(timestamp_a);
         let regs_b = self.find_registers_at(timestamp_b);
+        let register_evidence = regs_a.is_some() || regs_b.is_some();
 
         if let (Some(ra), Some(rb)) = (&regs_a, &regs_b) {
             // Compare each register
@@ -417,10 +423,27 @@ impl QueryEngine {
             }
         }
 
+        let evidence_note = if !register_evidence {
+            Some(format!(
+                "no register snapshots found in [{}, {}]. Register capture must be enabled when starting the probe.",
+                timestamp_a, timestamp_b
+            ))
+        } else if regs_a.is_none() || regs_b.is_none() {
+            Some(format!(
+                "register snapshots missing on one side: a={}, b={}. Cannot compute a complete diff.",
+                if regs_a.is_some() { "present" } else { "missing" },
+                if regs_b.is_some() { "present" } else { "missing" },
+            ))
+        } else {
+            None
+        };
+
         StateDiff {
             timestamp_a,
             timestamp_b,
             changes,
+            evidence_note,
+            register_evidence,
         }
     }
 
@@ -1130,6 +1153,52 @@ mod tests {
         let engine = QueryEngine::new(sample_events());
         let diff = engine.state_diff(100, 500);
         assert!(diff.changes.is_empty());
+        // m0-06: when no register snapshots are captured, the diff must
+        // explicitly report zero register evidence and a note that explains
+        // why, so callers can distinguish "no changes" from "no evidence".
+        assert!(!diff.register_evidence);
+        assert!(
+            diff.evidence_note.is_some(),
+            "m0-06: empty diff must carry an evidence_note"
+        );
+        let note = diff.evidence_note.as_deref().unwrap_or("");
+        assert!(
+            note.contains("register snapshots"),
+            "m0-06: evidence_note must mention register snapshots, got {:?}",
+            note
+        );
+    }
+
+    #[test]
+    fn test_state_diff_with_evidence_no_note() {
+        // When register snapshots exist for both anchors and there are no
+        // changes, the diff is a legitimate "no diff" result and should NOT
+        // carry an evidence_note (otherwise we'd be misleadingly explaining
+        // away a real empty diff).
+        use chronos_domain::{EventData, EventType, RegisterState, SourceLocation};
+        let mut events: Vec<TraceEvent> = Vec::new();
+        for ts in [100u64, 200u64] {
+            events.push(TraceEvent::new(
+                1,
+                ts,
+                1,
+                EventType::BreakpointHit,
+                SourceLocation::default(),
+                EventData::Registers(RegisterState {
+                    rax: 42,
+                    ..Default::default()
+                }),
+            ));
+        }
+        let engine = QueryEngine::new(events);
+        let diff = engine.state_diff(100, 200);
+        assert!(diff.register_evidence);
+        assert!(diff.changes.is_empty());
+        assert!(
+            diff.evidence_note.is_none(),
+            "m0-06: diff with evidence and no changes must NOT carry a note, got {:?}",
+            diff.evidence_note
+        );
     }
 
     #[test]
