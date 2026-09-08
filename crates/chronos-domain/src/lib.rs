@@ -7,6 +7,7 @@ pub mod adapter;
 pub mod bus;
 pub mod error;
 pub mod index;
+pub mod property;
 pub mod query;
 pub mod semantic;
 pub mod trace;
@@ -21,6 +22,9 @@ pub use index::{
     CausalityEntry, CausalityIndex, CompressedTrace, CompressionLevel, DetailData,
     ExecutiveSummary, FunctionDetail, FunctionPerf, HotspotData, HotspotEntry, MicroscopyData,
     PerfCounters, PerformanceIndex, RawEventEntry, ShadowIndex, TemporalIndex,
+};
+pub use property::{
+    ComparisonOp, InvariantCheck, Property, PropertyId, PropertyOutcome, PropertyValue,
 };
 pub use query::{
     EventFilter, PerfEntry, PerfQuery, PerfResult, PerfSortBy, QueryResult, TraceQuery,
