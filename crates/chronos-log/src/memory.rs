@@ -539,3 +539,312 @@ impl ExecutionLogBackend for InMemoryExecutionLog {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gap::GapReason;
+
+    #[test]
+    fn fresh_log_returns_empty_session() {
+        let log = InMemoryExecutionLog::new();
+        let result = log
+            .read_after(SessionId::new("s1"), LogConsumerId::new("agent-a"), None)
+            .unwrap();
+        match result {
+            ReadResult::Ok {
+                records,
+                gaps,
+                next_cursor,
+            } => {
+                assert!(records.is_empty());
+                assert!(gaps.is_empty());
+                assert_eq!(next_cursor.last_seq, EventSeq::ZERO);
+            }
+            other => panic!("expected Ok, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn append_assigns_consecutive_seqs() {
+        let log = InMemoryExecutionLog::new();
+        let s1 = SessionId::new("s1");
+        let s0 = log.append_raw(s1.clone(), 100, "raw").unwrap();
+        let s1_seq = log.append_raw(s1.clone(), 200, "raw").unwrap();
+        let s2_seq = log.append_raw(s1.clone(), 300, "raw").unwrap();
+        assert_eq!(s0, EventSeq::new(0));
+        assert_eq!(s1_seq, EventSeq::new(1));
+        assert_eq!(s2_seq, EventSeq::new(2));
+        assert_eq!(log.entry_count(&s1), 3);
+    }
+
+    #[test]
+    fn sessions_have_independent_seqs() {
+        let log = InMemoryExecutionLog::new();
+        let a = SessionId::new("a");
+        let b = SessionId::new("b");
+        assert_eq!(log.append_raw(a.clone(), 0, "x").unwrap(), EventSeq::new(0));
+        assert_eq!(log.append_raw(b.clone(), 0, "x").unwrap(), EventSeq::new(0));
+        assert_eq!(log.append_raw(a.clone(), 0, "x").unwrap(), EventSeq::new(1));
+        assert_eq!(log.append_raw(b.clone(), 0, "x").unwrap(), EventSeq::new(1));
+    }
+
+    #[test]
+    fn record_gap_bumps_seq_allocator() {
+        let log = InMemoryExecutionLog::new();
+        let s = SessionId::new("s");
+        // First a normal append.
+        log.append_raw(s.clone(), 0, "x").unwrap();
+        // Now record a gap spanning seqs 1..=5.
+        log.record_gap(
+            s.clone(),
+            Gap::new(
+                EventSeq::new(1),
+                EventSeq::new(5),
+                GapReason::KernelRingOverflow,
+                "test",
+            ),
+        )
+        .unwrap();
+        // Next append must be > gap.last_missing.
+        let next = log.append_raw(s.clone(), 0, "x").unwrap();
+        assert!(
+            next > EventSeq::new(5),
+            "expected seq > 5 after gap, got {}",
+            next
+        );
+    }
+
+    #[test]
+    fn invalid_gap_rejected() {
+        let log = InMemoryExecutionLog::new();
+        let err = log
+            .record_gap(
+                SessionId::new("s"),
+                Gap::new(
+                    EventSeq::new(5),
+                    EventSeq::new(1),
+                    GapReason::KernelRingOverflow,
+                    "test",
+                ),
+            )
+            .unwrap_err();
+        assert!(matches!(err, LogError::InvalidGap { .. }));
+    }
+
+    // ----------------------------------------------------------------
+    // Identity-index tests (m2-02)
+    // ----------------------------------------------------------------
+
+    fn make_record_with_ids(
+        session_id: SessionId,
+        seq: u64,
+        monotonic_ns: u64,
+        invocation: Option<chronos_domain::InvocationId>,
+        parent: Option<chronos_domain::InvocationId>,
+        symbol: Option<chronos_domain::SymbolId>,
+    ) -> ExecutionRecord {
+        ExecutionRecord {
+            session_id,
+            seq: EventSeq::new(seq),
+            monotonic_ns,
+            kind: ExecutionKind::Raw,
+            payload: ExecutionPayload::new(Vec::new(), "v2"),
+            invocation_id: invocation,
+            parent_invocation_id: parent,
+            symbol_id: symbol,
+        }
+    }
+
+    #[test]
+    fn identity_get_by_invocation_returns_only_matching_records() {
+        let log = InMemoryExecutionLog::new();
+        let s = SessionId::new("idem");
+        let inv = chronos_domain::InvocationId::now();
+        let other = chronos_domain::InvocationId::now();
+        let sym = chronos_domain::SymbolId::new("foo", None, chronos_domain::Language::Rust);
+
+        log.append(NewExecutionRecord {
+            session_id: s.clone(),
+            monotonic_ns: 10,
+            payload: ExecutionPayload::new(Vec::new(), "a"),
+            invocation_id: Some(inv),
+            parent_invocation_id: None,
+            symbol_id: Some(sym),
+        })
+        .unwrap();
+        log.append(NewExecutionRecord {
+            session_id: s.clone(),
+            monotonic_ns: 20,
+            payload: ExecutionPayload::new(Vec::new(), "b"),
+            invocation_id: Some(other),
+            parent_invocation_id: Some(inv),
+            symbol_id: Some(sym),
+        })
+        .unwrap();
+        // v1 record — must be invisible to the identity index.
+        log.append_raw(s.clone(), 30, "v1").unwrap();
+
+        let by_inv = log.get_by_invocation(&s, inv);
+        assert_eq!(by_inv.len(), 1);
+        assert_eq!(by_inv[0].monotonic_ns, 10);
+    }
+
+    #[test]
+    fn identity_get_by_invocation_unknown_returns_empty() {
+        let log = InMemoryExecutionLog::new();
+        let s = SessionId::new("idem-unknown");
+        // No appends. Lookup for any invocation returns empty.
+        assert!(log
+            .get_by_invocation(&s, chronos_domain::InvocationId::now())
+            .is_empty());
+    }
+
+    #[test]
+    fn identity_children_of_returns_descendants_only() {
+        let log = InMemoryExecutionLog::new();
+        let s = SessionId::new("tree");
+        let root = chronos_domain::InvocationId::now();
+        let child1 = chronos_domain::InvocationId::now();
+        let child2 = chronos_domain::InvocationId::now();
+        let unrelated = chronos_domain::InvocationId::now();
+        let sym = chronos_domain::SymbolId::new("f", None, chronos_domain::Language::Rust);
+
+        log.append(NewExecutionRecord {
+            session_id: s.clone(),
+            monotonic_ns: 1,
+            payload: ExecutionPayload::new(Vec::new(), "root"),
+            invocation_id: Some(root),
+            parent_invocation_id: None,
+            symbol_id: Some(sym),
+        })
+        .unwrap();
+        log.append(NewExecutionRecord {
+            session_id: s.clone(),
+            monotonic_ns: 2,
+            payload: ExecutionPayload::new(Vec::new(), "c1"),
+            invocation_id: Some(child1),
+            parent_invocation_id: Some(root),
+            symbol_id: Some(sym),
+        })
+        .unwrap();
+        log.append(NewExecutionRecord {
+            session_id: s.clone(),
+            monotonic_ns: 3,
+            payload: ExecutionPayload::new(Vec::new(), "c2"),
+            invocation_id: Some(child2),
+            parent_invocation_id: Some(root),
+            symbol_id: Some(sym),
+        })
+        .unwrap();
+        log.append(NewExecutionRecord {
+            session_id: s.clone(),
+            monotonic_ns: 4,
+            payload: ExecutionPayload::new(Vec::new(), "unrelated"),
+            invocation_id: Some(unrelated),
+            parent_invocation_id: None,
+            symbol_id: Some(sym),
+        })
+        .unwrap();
+
+        let children = log.children_of(&s, root);
+        assert_eq!(children.len(), 2);
+        // BTreeSet gives sorted seq order.
+        assert_eq!(children[0].monotonic_ns, 2);
+        assert_eq!(children[1].monotonic_ns, 3);
+        // No record with parent_invocation_id == None appears.
+        assert!(log.children_of(&s, unrelated).is_empty());
+    }
+
+    #[test]
+    fn identity_in_range_by_symbol_filters_by_time() {
+        let log = InMemoryExecutionLog::new();
+        let s = SessionId::new("sym-range");
+        let sym = chronos_domain::SymbolId::new("foo", None, chronos_domain::Language::Rust);
+        let other = chronos_domain::SymbolId::new("bar", None, chronos_domain::Language::Rust);
+        let inv = chronos_domain::InvocationId::now();
+        for ns in [10u64, 20, 30, 40, 50] {
+            log.append(NewExecutionRecord {
+                session_id: s.clone(),
+                monotonic_ns: ns,
+                payload: ExecutionPayload::new(Vec::new(), "f"),
+                invocation_id: Some(inv),
+                parent_invocation_id: None,
+                symbol_id: if ns == 30 { Some(other) } else { Some(sym) },
+            })
+            .unwrap();
+        }
+        // Range [20, 40) over symbol foo: 20 (seq=1) qualifies, 40 is
+        // excluded because the upper bound is half-open. seq 2 has
+        // symbol=bar so it isn't in this index at all.
+        let in_range = log.in_range_by_symbol(&s, sym, 20, 40);
+        let mut ns_values: Vec<u64> = in_range.iter().map(|r| r.monotonic_ns).collect();
+        ns_values.sort();
+        assert_eq!(ns_values, vec![20]);
+        // Empty range returns nothing.
+        assert!(log.in_range_by_symbol(&s, sym, 100, 200).is_empty());
+        // Unknown symbol returns nothing.
+        let unknown = chronos_domain::SymbolId::new("nope", None, chronos_domain::Language::Rust);
+        assert!(log.in_range_by_symbol(&s, unknown, 0, 1000).is_empty());
+    }
+
+    #[test]
+    fn identity_replay_rebuilds_indexes() {
+        // Build a record list, replay it into a fresh backend, and
+        // verify the identity reads return identical results.
+        let s = SessionId::new("replay");
+        let inv1 = chronos_domain::InvocationId::now();
+        let inv2 = chronos_domain::InvocationId::now();
+        let sym = chronos_domain::SymbolId::new("f", None, chronos_domain::Language::Rust);
+
+        let live_log = InMemoryExecutionLog::new();
+        let records: Vec<ExecutionRecord> = vec![
+            make_record_with_ids(s.clone(), 0, 1, Some(inv1), None, Some(sym)),
+            make_record_with_ids(s.clone(), 1, 2, Some(inv2), Some(inv1), Some(sym)),
+            make_record_with_ids(s.clone(), 2, 3, None, None, None),
+        ];
+        for r in &records {
+            live_log.replay_record(r).unwrap();
+        }
+
+        let by_inv1 = live_log.get_by_invocation(&s, inv1);
+        assert_eq!(by_inv1.len(), 1);
+        assert_eq!(by_inv1[0].seq, EventSeq::new(0));
+        let children = live_log.children_of(&s, inv1);
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].seq, EventSeq::new(1));
+        // v1 record (seq=2) carries None on every identity field, so
+        // a lookup for an unknown invocation returns empty even
+        // though the session has 3 records.
+        let unknown = chronos_domain::InvocationId::now();
+        assert!(live_log.get_by_invocation(&s, unknown).is_empty());
+    }
+
+    #[test]
+    fn identity_prune_drops_evicted_seqs() {
+        let log = InMemoryExecutionLog::new();
+        let s = SessionId::new("prune");
+        let inv = chronos_domain::InvocationId::now();
+        let sym = chronos_domain::SymbolId::new("f", None, chronos_domain::Language::Rust);
+        for ns in 0..5u64 {
+            log.append(NewExecutionRecord {
+                session_id: s.clone(),
+                monotonic_ns: ns,
+                payload: ExecutionPayload::new(Vec::new(), "x"),
+                invocation_id: Some(inv),
+                parent_invocation_id: None,
+                symbol_id: Some(sym),
+            })
+            .unwrap();
+        }
+        // Pre-prune: 5 records reachable.
+        assert_eq!(log.get_by_invocation(&s, inv).len(), 5);
+        // Prune everything ≤ seq=2 → 3 records (seqs 3,4) survive.
+        log.prune_secondary_indexes_up_to(EventSeq::new(2));
+        let after = log.get_by_invocation(&s, inv);
+        assert_eq!(after.len(), 2);
+        let mut seqs: Vec<u64> = after.iter().map(|r| r.seq.0).collect();
+        seqs.sort();
+        assert_eq!(seqs, vec![3, 4]);
+    }
+}
