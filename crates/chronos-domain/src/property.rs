@@ -410,6 +410,205 @@ impl Property {
             total_observations: observations.len(),
         })
     }
+
+    /// Render this property as a declarative DSL text block.
+    pub fn to_dsl(&self) -> String {
+        let mut s = format!(
+            "property {} {{\n  observe: {}\n  when: {}\n  id: {}\n  version: {}\n  invariant: {}\n}}",
+            self.name,
+            self.observe,
+            self.trigger,
+            self.id.0,
+            self.version,
+            invariant_text(&self.invariant)
+        );
+        s.shrink_to_fit();
+        s
+    }
+
+    /// Parse a `Property` from its declarative DSL text block.
+    pub fn from_dsl(text: &str) -> Result<Property, String> {
+        let mut name: Option<String> = None;
+        let mut observe: Option<String> = None;
+        let mut when: Option<String> = None;
+        let mut id: Option<u64> = None;
+        let mut version: Option<u32> = None;
+        let mut invariant: Option<InvariantCheck> = None;
+        let mut closed = false;
+
+        for raw in text.lines() {
+            let line = raw.trim();
+            if line.is_empty() {
+                continue;
+            }
+            if line == "}" {
+                closed = true;
+                continue;
+            }
+            if let Some(rest) = line.strip_prefix("property") {
+                let after = rest.trim();
+                let open = after.find('{').unwrap_or(after.len());
+                name = Some(after[..open].trim().to_string());
+                continue;
+            }
+            let Some(colon) = line.find(':') else {
+                return Err(format!("unrecognized DSL line: `{line}`"));
+            };
+            let key = line[..colon].trim();
+            let value = line[colon + 1..].trim();
+            match key {
+                "observe" => observe = Some(value.to_string()),
+                "when" => when = Some(value.to_string()),
+                "id" => {
+                    id = Some(
+                        value
+                            .parse::<u64>()
+                            .map_err(|_| format!("invalid id: `{value}`"))?,
+                    )
+                }
+                "version" => {
+                    version = Some(
+                        value
+                            .parse::<u32>()
+                            .map_err(|_| format!("invalid version: `{value}`"))?,
+                    )
+                }
+                "invariant" => {
+                    invariant = Some(
+                        parse_invariant(value)
+                            .map_err(|e| format!("invalid invariant `{value}`: {e}"))?,
+                    )
+                }
+                _ => return Err(format!("unrecognized DSL field: `{key}`")),
+            }
+        }
+
+        let name = name.ok_or_else(|| "missing `property <name> {{` header".to_string())?;
+        let observe = observe.ok_or_else(|| "missing `observe:`".to_string())?;
+        let when = when.ok_or_else(|| "missing `when:`".to_string())?;
+        let invariant = invariant.ok_or_else(|| "missing `invariant:`".to_string())?;
+        if !closed {
+            return Err("missing closing `}`".to_string());
+        }
+        Ok(Property {
+            id: PropertyId(id.unwrap_or(0)),
+            name,
+            version: version.unwrap_or(1),
+            observe,
+            trigger: when,
+            invariant,
+        })
+    }
+}
+
+fn invariant_text(check: &InvariantCheck) -> String {
+    match check {
+        InvariantCheck::Exists => "exists".to_string(),
+        InvariantCheck::Changed => "changed()".to_string(),
+        InvariantCheck::Unchanged => "unchanged()".to_string(),
+        InvariantCheck::Comparison { op, constant } => {
+            format!("{op} {}", value_text(constant))
+        }
+        InvariantCheck::Delta { op, threshold } => {
+            format!("delta({op} {threshold})")
+        }
+    }
+}
+
+fn parse_invariant(text: &str) -> Result<InvariantCheck, String> {
+    let t = text.trim();
+    match t {
+        "exists" => return Ok(InvariantCheck::Exists),
+        "changed()" => return Ok(InvariantCheck::Changed),
+        "unchanged()" => return Ok(InvariantCheck::Unchanged),
+        _ => {}
+    }
+    if let Some(inner) = t.strip_prefix("delta(").and_then(|s| s.strip_suffix(')')) {
+        let mut parts = inner.splitn(2, char::is_whitespace);
+        let op = parts
+            .next()
+            .ok_or_else(|| "delta missing operator".to_string())?;
+        let threshold = parts
+            .next()
+            .ok_or_else(|| "delta missing threshold".to_string())?;
+        return Ok(InvariantCheck::Delta {
+            op: parse_op(op)?,
+            threshold: threshold
+                .parse::<f64>()
+                .map_err(|_| format!("invalid threshold `{threshold}`"))?,
+        });
+    }
+    let mut parts = t.splitn(2, char::is_whitespace);
+    let op = parts
+        .next()
+        .ok_or_else(|| "comparison missing operator".to_string())?;
+    let constant = parts
+        .next()
+        .ok_or_else(|| "comparison missing constant".to_string())?;
+    Ok(InvariantCheck::Comparison {
+        op: parse_op(op)?,
+        constant: parse_value(constant)?,
+    })
+}
+
+fn parse_op(tok: &str) -> Result<ComparisonOp, String> {
+    match tok {
+        "<" => Ok(ComparisonOp::Lt),
+        "<=" => Ok(ComparisonOp::Le),
+        ">" => Ok(ComparisonOp::Gt),
+        ">=" => Ok(ComparisonOp::Ge),
+        "==" => Ok(ComparisonOp::Eq),
+        "!=" => Ok(ComparisonOp::Ne),
+        other => Err(format!("unknown operator `{other}`")),
+    }
+}
+
+fn value_text(v: &PropertyValue) -> String {
+    match v {
+        PropertyValue::Number(n) => n.to_string(),
+        PropertyValue::Bool(b) => b.to_string(),
+        PropertyValue::Text(s) => {
+            format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+        }
+    }
+}
+
+fn parse_value(t: &str) -> Result<PropertyValue, String> {
+    let t = t.trim();
+    if t.starts_with('"') && t.ends_with('"') && t.len() >= 2 {
+        let inner = &t[1..t.len() - 1];
+        return Ok(PropertyValue::Text(unescape(inner)));
+    }
+    match t {
+        "true" => return Ok(PropertyValue::Bool(true)),
+        "false" => return Ok(PropertyValue::Bool(false)),
+        _ => {}
+    }
+    match t.parse::<f64>() {
+        Ok(n) => Ok(PropertyValue::Number(n)),
+        Err(_) => Err(format!("unrecognized value `{t}`")),
+    }
+}
+
+fn unescape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            if let Some(next) = chars.next() {
+                out.push(match next {
+                    'n' => '\n',
+                    't' => '\t',
+                    '"' => '"',
+                    '\\' => '\\',
+                    other => other,
+                });
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 fn previous_at(observations: &[PropertyValue], i: usize) -> Option<PropertyValue> {
@@ -761,5 +960,73 @@ mod tests {
         let json = serde_json::to_string(&v).unwrap();
         let back: PropertyViolation = serde_json::from_str(&json).unwrap();
         assert_eq!(back, v);
+    }
+
+    #[test]
+    fn scalar_property_dsl_round_trips() {
+        let p = order_total_property();
+        let text = p.to_dsl();
+        let back = Property::from_dsl(&text).expect("parse failed");
+        assert_eq!(back, p);
+    }
+
+    #[test]
+    fn all_invariant_variants_dsl_round_trip() {
+        let props = vec![
+            order_total_property(),
+            Property {
+                invariant: InvariantCheck::Exists,
+                ..order_total_property()
+            },
+            Property {
+                invariant: InvariantCheck::Changed,
+                ..order_total_property()
+            },
+            Property {
+                invariant: InvariantCheck::Unchanged,
+                ..order_total_property()
+            },
+            Property {
+                invariant: InvariantCheck::Delta {
+                    op: ComparisonOp::Le,
+                    threshold: 10.0,
+                },
+                ..order_total_property()
+            },
+            Property {
+                invariant: InvariantCheck::Comparison {
+                    op: ComparisonOp::Eq,
+                    constant: PropertyValue::Text("ok".to_string()),
+                },
+                ..order_total_property()
+            },
+            Property {
+                invariant: InvariantCheck::Comparison {
+                    op: ComparisonOp::Ne,
+                    constant: PropertyValue::Bool(true),
+                },
+                ..order_total_property()
+            },
+        ];
+        for p in props {
+            let text = p.to_dsl();
+            let back = Property::from_dsl(&text).expect("parse failed");
+            assert_eq!(back, p, "round-trip failed for text:\n{text}");
+        }
+    }
+
+    #[test]
+    fn malformed_dsl_is_rejected() {
+        let p = order_total_property();
+        let text = p.to_dsl();
+        // missing observe
+        let no_observe = text.replace("observe: Order.total\n", "");
+        assert!(Property::from_dsl(&no_observe).is_err());
+        // unknown invariant value
+        let bad_inv = text.replace("invariant: >= 0", "invariant: weird()");
+        assert!(Property::from_dsl(&bad_inv).is_err());
+        // missing closing brace
+        let no_close = text.trim_end_matches('}');
+        assert!(Property::from_dsl(no_close).is_err());
     }
 }
