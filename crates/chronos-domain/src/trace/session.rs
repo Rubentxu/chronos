@@ -170,8 +170,16 @@ pub struct CaptureSession {
     pub pid: u32,
     /// Detected or configured language.
     pub language: Language,
-    /// When the session was created (not serialized — for runtime use only).
+    /// When the session was created (monotonic clock — for relative duration
+    /// measurement within the lifetime of the host process). NOT serialized.
     pub started_at: Instant,
+    /// Wall-clock instant when the session was created (`SystemTime`). Useful
+    /// for cross-host log correlation and for serialising the session
+    /// record. Captured at the same `Instant` as `started_at` so the two
+    /// fields describe the same logical moment under different clocks.
+    /// m0-08: kept separate from `started_at` so callers can pick the clock
+    /// that fits their use case without lossy conversions.
+    pub started_at_wallclock: std::time::SystemTime,
     /// Capture configuration.
     pub config: CaptureConfig,
     /// Current state of the session.
@@ -186,6 +194,7 @@ impl CaptureSession {
             pid,
             language,
             started_at: Instant::now(),
+            started_at_wallclock: std::time::SystemTime::now(),
             config,
             state: SessionState::Created,
         }
@@ -196,11 +205,14 @@ impl CaptureSession {
     /// This is useful for evaluation purposes where only the language is needed.
     /// Other fields are set to dummy values that are sufficient for routing.
     pub fn minimal(session_id: String, language: Language) -> Self {
+        let now = Instant::now();
+        let wall = std::time::SystemTime::now();
         Self {
             session_id,
             pid: 0,
             language,
-            started_at: Instant::now(),
+            started_at: now,
+            started_at_wallclock: wall,
             config: CaptureConfig::new(""),
             state: SessionState::Finalized,
         }
@@ -318,5 +330,32 @@ mod tests {
         assert!(uuid::Uuid::parse_str(&session.session_id).is_ok());
         assert_eq!(session.pid, 42);
         assert_eq!(session.language, Language::Rust);
+    }
+
+    #[test]
+    fn test_capture_session_exposes_both_clocks() {
+        // m0-08: a CaptureSession MUST expose both a monotonic `started_at`
+        // and a wall-clock `started_at_wallclock` so callers can pick the
+        // right clock for their use case without lossy conversions.
+        use std::time::SystemTime;
+        let config = CaptureConfig::new("test.rs");
+        let session = CaptureSession::new(7, Language::Rust, config);
+        // Sanity: the fields exist, are distinct types, and both were
+        // populated at creation time (we can only check the wall-clock
+        // side is in the past; the monotonic side is opaque).
+        let _: std::time::Instant = session.started_at;
+        let wall: SystemTime = session.started_at_wallclock;
+        let now = SystemTime::now();
+        assert!(
+            wall <= now,
+            "m0-08: started_at_wallclock must be <= now (got {:?}, now {:?})",
+            wall,
+            now
+        );
+        // minimal() must also populate both clocks (used for evaluation
+        // routing that builds CaptureSession on the fly).
+        let minimal = CaptureSession::minimal("eval-id".to_string(), Language::Rust);
+        let _: std::time::Instant = minimal.started_at;
+        let _: SystemTime = minimal.started_at_wallclock;
     }
 }
