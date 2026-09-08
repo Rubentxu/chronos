@@ -167,6 +167,17 @@ impl StateTransition {
     }
 }
 
+/// Persisted evidence bundle linking a property to the transition that first
+/// violated its invariant.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PropertyViolation {
+    pub property_id: PropertyId,
+    pub property_name: String,
+    pub version: u32,
+    pub transition: StateTransition,
+    pub total_observations: usize,
+}
+
 fn same_variant(a: &PropertyValue, b: &PropertyValue) -> bool {
     matches!(
         (a, b),
@@ -383,6 +394,21 @@ impl Property {
             PropertySequenceOutcome::Pass
             | PropertySequenceOutcome::UnsupportedByRecordedEvidence { .. } => None,
         }
+    }
+
+    /// Evaluate this property over a sequence and, on the first violation,
+    /// return a persisted `PropertyViolation` bundle. Returns `None` when the
+    /// sequence passes or evaluation is unsupported.
+    pub fn evaluate_violation(&self, observations: &[PropertyValue]) -> Option<PropertyViolation> {
+        let outcome = self.evaluate_sequence(observations);
+        let transition = self.violation_transition(&outcome)?;
+        Some(PropertyViolation {
+            property_id: self.id,
+            property_name: self.name.clone(),
+            version: self.version,
+            transition,
+            total_observations: observations.len(),
+        })
     }
 }
 
@@ -690,5 +716,50 @@ mod tests {
         assert!(p.violation_transition(&pass).is_none());
         let short = p.evaluate_sequence(&[PropertyValue::Number(59.0)]);
         assert!(p.violation_transition(&short).is_none());
+    }
+
+    #[test]
+    fn evaluate_violation_builds_bundle_on_violation() {
+        let p = order_total_property();
+        let v = p
+            .evaluate_violation(&[
+                PropertyValue::Number(59.0),
+                PropertyValue::Number(0.0),
+                PropertyValue::Number(-35.0),
+            ])
+            .expect("expected a violation bundle");
+        assert_eq!(v.property_id, PropertyId(1));
+        assert_eq!(v.property_name, "order_total_non_negative");
+        assert_eq!(v.version, 1);
+        assert_eq!(v.transition.before, Some(PropertyValue::Number(0.0)));
+        assert_eq!(v.transition.after, PropertyValue::Number(-35.0));
+        assert_eq!(v.transition.index, 2);
+        assert_eq!(v.total_observations, 3);
+    }
+
+    #[test]
+    fn evaluate_violation_passing_sequence_is_none() {
+        let p = order_total_property();
+        let v = p.evaluate_violation(&[
+            PropertyValue::Number(59.0),
+            PropertyValue::Number(10.0),
+            PropertyValue::Number(0.0),
+        ]);
+        assert_eq!(v, None);
+    }
+
+    #[test]
+    fn property_violation_serializes_round_trip() {
+        let p = order_total_property();
+        let v = p
+            .evaluate_violation(&[
+                PropertyValue::Number(59.0),
+                PropertyValue::Number(0.0),
+                PropertyValue::Number(-35.0),
+            ])
+            .unwrap();
+        let json = serde_json::to_string(&v).unwrap();
+        let back: PropertyViolation = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, v);
     }
 }
