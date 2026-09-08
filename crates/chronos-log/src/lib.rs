@@ -17,6 +17,7 @@
 
 pub mod analytics;
 pub mod backend;
+pub mod call_graph;
 pub mod cursor;
 pub mod error;
 pub mod gap;
