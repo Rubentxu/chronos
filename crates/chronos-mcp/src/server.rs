@@ -569,6 +569,13 @@ fn default_log_limit() -> usize {
     256
 }
 
+/// m1-07: parameters for `probe_compaction_metrics`. Just a
+/// session_id — the response is a snapshot of three counters.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ProbeCompactionMetricsParams {
+    pub session_id: String,
+}
+
 /// Wire format for [`chronos_domain::EventCursor`] in MCP JSON payloads.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct CursorDto {
@@ -2769,6 +2776,61 @@ impl ChronosServer {
                      disk; the counter is the signal that another producer (or schema \
                      drift) wrote to the same log. `total_records_seen` includes them.",
         });
+        Ok(CallToolResult::success(json_content(&output)))
+    }
+
+    /// m1-07: snapshot the compaction counters of the live probe
+    /// session's `ExecutionLog`. Returns `{segments_removed_total,
+    /// bytes_reclaimed_total, compaction_runs_total}` plus a
+    /// `log_attached: bool` flag (false when the probe was not
+    /// configured with an ExecutionLog directory).
+    #[tool(
+        name = "probe_compaction_metrics",
+        description = "m1-07 ExecutionLog compaction metrics. Returns a snapshot of the live probe's segmented ExecutionLog compaction counters (segments_removed_total, bytes_reclaimed_total, compaction_runs_total) plus a log_attached flag. Counter values are zero until at least one compaction run has occurred. Available only when the native backend was configured with with_execution_log_dir."
+    )]
+    async fn probe_compaction_metrics(
+        &self,
+        params: Parameters<ProbeCompactionMetricsParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let metrics_out = {
+            let probes = self.live_probes.lock().unwrap();
+            let live_probe = match probes.get(&params.session_id) {
+                Some(lp) => lp,
+                None => {
+                    return Ok(CallToolResult::error(text_content(format!(
+                        "Live probe session '{}' not found.",
+                        params.session_id
+                    ))))
+                }
+            };
+            match live_probe.backend.compaction_metrics() {
+                Ok(m) => m,
+                Err(e) => {
+                    return Ok(CallToolResult::error(text_content(format!(
+                        "Failed to read compaction metrics: {}",
+                        e
+                    ))))
+                }
+            }
+        };
+        let output = match metrics_out {
+            None => serde_json::json!({
+                "session_id": params.session_id,
+                "log_attached": false,
+                "hint": "Backend was not configured with with_execution_log_dir. \
+                         The probe is still functional; it just does not have an \
+                         on-disk log to surface counters for.",
+            }),
+            Some(m) => serde_json::json!({
+                "session_id": params.session_id,
+                "log_attached": true,
+                "source": "chronos-log::SegmentedExecutionLog",
+                "segments_removed_total": m.segments_removed_total,
+                "bytes_reclaimed_total": m.bytes_reclaimed_total,
+                "compaction_runs_total": m.compaction_runs_total,
+            }),
+        };
         Ok(CallToolResult::success(json_content(&output)))
     }
 
