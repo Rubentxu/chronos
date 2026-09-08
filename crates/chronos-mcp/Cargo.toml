@@ -11,6 +11,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 chronos-domain = { workspace = true }
 chronos-capture = { workspace = true }
 chronos-native = { workspace = true }
+chronos-log = { path = "../chronos-log" }
 chronos-index = { workspace = true }
 chronos-query = { workspace = true }
 chronos-python = { workspace = true }
