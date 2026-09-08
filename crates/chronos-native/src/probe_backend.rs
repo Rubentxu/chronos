@@ -31,6 +31,14 @@ use tracing::{debug, error, info, warn};
 /// Serialize a `TraceEvent` into a `NewExecutionRecord` suitable for
 /// `SegmentedExecutionLog::append`. The `tag` is set to
 /// `trace_event.category` so consumers can filter by trace type.
+///
+/// When the event carries function identity — its `data` is
+/// `EventData::Function` with `symbol_id` / `invocation_id` /
+/// `parent_invocation_id` populated (m2 frame tracking) — those fields are
+/// copied onto the record so the v2 segment persists them (m2-07,
+/// REQ-BridgeProjectsEventIdentity). Non-Function payloads (syscalls,
+/// signals, v1-style events) keep all three identity fields `None`, matching
+/// the pre-m2-07 behaviour.
 fn trace_event_to_log_record(
     session_id: &str,
     monotonic_ns: u64,
@@ -39,13 +47,22 @@ fn trace_event_to_log_record(
     // Use serde_json as the body format — TraceEvent already derives
     // Serialize via chronos-domain's schemars feature.
     let payload_bytes = serde_json::to_vec(event).unwrap_or_default();
+    let (invocation_id, parent_invocation_id, symbol_id) = match &event.data {
+        chronos_domain::EventData::Function {
+            symbol_id,
+            invocation_id,
+            parent_invocation_id,
+            ..
+        } => (*invocation_id, *parent_invocation_id, *symbol_id),
+        _ => (None, None, None),
+    };
     NewExecutionRecord {
         session_id: chronos_log::SessionId::new(session_id),
         monotonic_ns,
         payload: ExecutionPayload::new(payload_bytes, format!("{:?}", event.event_type)),
-        invocation_id: None,
-        parent_invocation_id: None,
-        symbol_id: None,
+        invocation_id,
+        parent_invocation_id,
+        symbol_id,
     }
 }
 
@@ -914,5 +931,43 @@ mod tests {
         let bus = chronos_domain::bus::EventBus::new_shared(100);
         let backend = NativeProbeBackend::new(bus).with_language(Language::Rust);
         assert!(backend.is_available());
+    }
+
+    #[test]
+    fn bridge_projects_function_identity_onto_record() {
+        // REQ-BridgeProjectsEventIdentity: an EventData::Function carrying
+        // symbol/invocation identity must flow onto the NewExecutionRecord.
+        let sym = chronos_domain::SymbolId::new("factorial", None, Language::C);
+        let inv = chronos_domain::InvocationId::now();
+        let parent = chronos_domain::InvocationId::now();
+        let event = TraceEvent {
+            event_id: 1,
+            timestamp_ns: 1000,
+            thread_id: 1,
+            event_type: chronos_domain::EventType::FunctionEntry,
+            location: Default::default(),
+            data: chronos_domain::EventData::Function {
+                name: "factorial".into(),
+                signature: None,
+                symbol_id: Some(sym),
+                invocation_id: Some(inv),
+                parent_invocation_id: Some(parent),
+            },
+        };
+        let rec = super::trace_event_to_log_record_for_test("s", 1000, &event);
+        assert_eq!(rec.symbol_id, Some(sym));
+        assert_eq!(rec.invocation_id, Some(inv));
+        assert_eq!(rec.parent_invocation_id, Some(parent));
+    }
+
+    #[test]
+    fn bridge_keeps_identity_empty_for_non_function_events() {
+        // REQ-BridgeProjectsEventIdentity: non-Function payloads (here a
+        // syscall) keep all three identity fields None.
+        let event = TraceEvent::syscall_enter(1, 1000, 1, "read", 0, vec![], 0x4000);
+        let rec = super::trace_event_to_log_record_for_test("s", 1000, &event);
+        assert_eq!(rec.symbol_id, None);
+        assert_eq!(rec.invocation_id, None);
+        assert_eq!(rec.parent_invocation_id, None);
     }
 }
