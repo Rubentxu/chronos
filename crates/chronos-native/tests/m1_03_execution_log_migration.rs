@@ -129,6 +129,7 @@ fn read_execution_log_records_returns_seq_bounded_slice() {
             flush_threshold: NonZeroUsize::new(2).unwrap(),
             replay_on_open: true,
             memory_budget_bytes: None,
+            auto_load_call_graph_checkpoint: false,
         },
     )
     .expect("open");

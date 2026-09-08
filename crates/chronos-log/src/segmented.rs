@@ -71,6 +71,13 @@ pub struct SegmentedConfig {
     /// a write exceed this value, the next `append` records an
     /// explicit gap and forces a flush.
     pub memory_budget_bytes: Option<u64>,
+    /// Opt-in (default `false`): when `true`, `open` looks for the
+    /// session's sibling call-graph checkpoint
+    /// (`checkpoint_path(segment_dir, session_id)`), loads and verifies
+    /// it, and (when `replay_on_open` also loads records) validates
+    /// replay-equivalence before exposing it via
+    /// `SegmentedExecutionLog::call_graph_projection`. See m2-06.
+    pub auto_load_call_graph_checkpoint: bool,
 }
 
 impl SegmentedConfig {
@@ -82,7 +89,14 @@ impl SegmentedConfig {
             flush_threshold: NonZeroUsize::new(64).expect("non-zero"),
             replay_on_open: true,
             memory_budget_bytes: None,
+            auto_load_call_graph_checkpoint: false,
         }
+    }
+
+    /// Builder-style setter for `auto_load_call_graph_checkpoint`.
+    pub fn auto_load_call_graph_checkpoint(mut self, enabled: bool) -> Self {
+        self.auto_load_call_graph_checkpoint = enabled;
+        self
     }
 }
 
@@ -103,6 +117,10 @@ struct Inner {
     /// Compaction metrics (m1-06). Atomic counters so callers can
     /// read them without holding the inner lock.
     metrics: CompactionMetricsInner,
+    /// Call-graph checkpoint auto-loaded by `open` (m2-06). `None`
+    /// when auto-load is off, the checkpoint file is absent, or no
+    /// projection was stored yet.
+    loaded_projection: Option<crate::checkpoint::CallGraphCheckpoint>,
 }
 
 /// Atomic counters for compaction metrics (m1-06). Exposed via
@@ -169,6 +187,7 @@ impl SegmentedExecutionLog {
             overflow_pending: false,
             cursors: std::collections::BTreeMap::new(),
             metrics: CompactionMetricsInner::default(),
+            loaded_projection: None,
         };
         let this = Self {
             inner: Arc::new(Mutex::new(inner)),
@@ -178,6 +197,9 @@ impl SegmentedExecutionLog {
         if this.config.replay_on_open {
             this.replay_into_inner()?;
             this.replay_cursors_into_inner()?;
+        }
+        if this.config.auto_load_call_graph_checkpoint {
+            this.auto_load_projection()?;
         }
         Ok(this)
     }
@@ -312,6 +334,47 @@ impl SegmentedExecutionLog {
     pub fn call_graph(&self) -> crate::call_graph::CallGraph {
         let inner = self.inner.lock().expect("poisoned");
         crate::call_graph::call_graph(&inner.backend, &self.session_id)
+    }
+
+    /// Return the call-graph checkpoint auto-loaded by `open`, if any.
+    ///
+    /// Returns `None` when `auto_load_call_graph_checkpoint` is off, the
+    /// sibling checkpoint file is absent, or nothing was loaded yet.
+    /// Returns a cloned value so callers can hold it without locking the
+    /// log. See REQ-CallGraphProjectionAccessor.
+    pub fn call_graph_projection(&self) -> Option<crate::checkpoint::CallGraphCheckpoint> {
+        let inner = self.inner.lock().expect("poisoned");
+        inner.loaded_projection.clone()
+    }
+
+    /// Load and verify the sibling call-graph checkpoint for this
+    /// session, validate replay-equivalence against replayed records,
+    /// and store the loaded projection. Called by `open` when
+    /// `auto_load_call_graph_checkpoint` is set. See REQ-AutoLoadCheckpoint
+    /// and REQ-OpenTimeReplayEquivalence.
+    fn auto_load_projection(&self) -> Result<(), LogError> {
+        let path = crate::checkpoint::checkpoint_path(&self.config.segment_dir, &self.session_id);
+        if !path.exists() {
+            // Absent checkpoint is not an error; nothing to load.
+            return Ok(());
+        }
+        let ckpt = crate::checkpoint::read_call_graph_checkpoint(&path)?;
+        let records_loaded = self.config.replay_on_open;
+        let mut inner = self.inner.lock().expect("poisoned");
+        if records_loaded {
+            let derived = crate::call_graph::call_graph(&inner.backend, &self.session_id);
+            if derived != ckpt.graph {
+                return Err(LogError::Backend(format!(
+                    "checkpoint replay-equivalence failed on reopen of {:?}: \
+                     stored call graph does not match the replayed records \
+                     (session '{}'); remove or rewrite the checkpoint if the \
+                     records are authoritative",
+                    path, self.session_id
+                )));
+            }
+        }
+        inner.loaded_projection = Some(ckpt);
+        Ok(())
     }
 
     /// Append a record. Returns the assigned seq. May transparently
@@ -899,7 +962,13 @@ impl From<&ExecutionRecord> for NewExecutionRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::checkpoint::{checkpoint_path, write_call_graph_checkpoint};
     use crate::record::ExecutionPayload;
+    use chronos_domain::{InvocationId, Language, SymbolId};
+
+    fn sid(name: &str) -> SymbolId {
+        SymbolId::new(name, None, Language::Rust)
+    }
 
     fn tempdir() -> PathBuf {
         let base = std::env::temp_dir();
@@ -924,6 +993,22 @@ mod tests {
             invocation_id: None,
             parent_invocation_id: None,
             symbol_id: None,
+        }
+    }
+
+    fn new_v2_record(
+        s: &SessionId,
+        invocation: InvocationId,
+        parent: Option<InvocationId>,
+        symbol: SymbolId,
+    ) -> NewExecutionRecord {
+        NewExecutionRecord {
+            session_id: s.clone(),
+            monotonic_ns: 0,
+            payload: ExecutionPayload::new(Vec::new(), "v2"),
+            invocation_id: Some(invocation),
+            parent_invocation_id: parent,
+            symbol_id: Some(symbol),
         }
     }
 
@@ -1078,5 +1163,102 @@ mod tests {
         assert_eq!(log1.tail_seq(), log2.tail_seq());
         std::fs::remove_dir_all(&dir1).ok();
         std::fs::remove_dir_all(&dir2).ok();
+    }
+
+    #[test]
+    fn auto_loads_sibling_checkpoint_on_reopen() {
+        let dir = tempdir();
+        let session = SessionId::new("al-load");
+        let cfg = SegmentedConfig::with_dir(&dir).auto_load_call_graph_checkpoint(false);
+        let log = SegmentedExecutionLog::open(session.clone(), cfg).unwrap();
+        let sa = sid("main");
+        let sb = sid("alpha");
+        let ra = InvocationId::now();
+        let rb = InvocationId::now();
+        log.append(new_v2_record(&session, ra, None, sa)).unwrap();
+        log.append(new_v2_record(&session, rb, Some(ra), sb))
+            .unwrap();
+        log.flush().unwrap();
+        let graph = log.call_graph();
+        assert_eq!(graph.edges().len(), 2);
+        write_call_graph_checkpoint(&dir, &session, &graph).unwrap();
+        drop(log);
+
+        // Reopen with auto-load: the sibling checkpoint is loaded,
+        // verified, and replay-equivalent.
+        let cfg2 = SegmentedConfig::with_dir(&dir).auto_load_call_graph_checkpoint(true);
+        let log2 = SegmentedExecutionLog::open(session.clone(), cfg2).unwrap();
+        let proj = log2.call_graph_projection().expect("loaded projection");
+        assert_eq!(proj.graph, graph);
+        assert_eq!(log2.call_graph(), graph);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn auto_load_absent_file_yields_none() {
+        let dir = tempdir();
+        let session = SessionId::new("al-none");
+        let cfg = SegmentedConfig::with_dir(&dir).auto_load_call_graph_checkpoint(true);
+        let log = SegmentedExecutionLog::open(session.clone(), cfg).unwrap();
+        assert_eq!(log.call_graph_projection(), None);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn auto_load_corrupt_checkpoint_errors_on_open() {
+        let dir = tempdir();
+        let session = SessionId::new("al-corrupt");
+        // Write a sibling checkpoint path with garbage bytes.
+        let path = checkpoint_path(&dir, &session);
+        std::fs::write(&path, b"not a checkpoint").unwrap();
+        let cfg = SegmentedConfig::with_dir(&dir).auto_load_call_graph_checkpoint(true);
+        let err = SegmentedExecutionLog::open(session.clone(), cfg)
+            .err()
+            .expect("open should fail");
+        assert!(
+            err.to_string().contains("parse") || err.to_string().contains("checkpoint"),
+            "unexpected error: {err}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn auto_load_diverged_records_error_on_open() {
+        let dir = tempdir();
+        let session = SessionId::new("al-div");
+        let cfg = SegmentedConfig::with_dir(&dir).auto_load_call_graph_checkpoint(false);
+        let log = SegmentedExecutionLog::open(session.clone(), cfg).unwrap();
+        let sa = sid("main");
+        let sb = sid("alpha");
+        let ra = InvocationId::now();
+        let rb = InvocationId::now();
+        log.append(new_v2_record(&session, ra, None, sa)).unwrap();
+        log.append(new_v2_record(&session, rb, Some(ra), sb))
+            .unwrap();
+        log.flush().unwrap();
+        let graph = log.call_graph();
+        write_call_graph_checkpoint(&dir, &session, &graph).unwrap();
+        drop(log);
+
+        // Grow the log so its replayed graph no longer matches the
+        // stored checkpoint.
+        let grow = SegmentedConfig::with_dir(&dir).auto_load_call_graph_checkpoint(false);
+        let g2 = SegmentedExecutionLog::open(session.clone(), grow).unwrap();
+        let sc = sid("gamma");
+        let rc = InvocationId::now();
+        g2.append(new_v2_record(&session, rc, Some(ra), sc))
+            .unwrap();
+        g2.flush().unwrap();
+        drop(g2);
+
+        let reopen = SegmentedConfig::with_dir(&dir).auto_load_call_graph_checkpoint(true);
+        let err = SegmentedExecutionLog::open(session.clone(), reopen)
+            .err()
+            .expect("open should fail");
+        assert!(
+            err.to_string().contains("replay-equivalence failed"),
+            "unexpected error: {err}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
