@@ -429,15 +429,20 @@ fn run_capture_loop(
         entry_tracker = FunctionEntryTracker::new(resolver);
     }
 
-    // Continue after initial SIGTRAP (launch() leaves the process stopped)
-    if ptrace_config.trace_syscalls {
-        tracer
-            .syscall_continue(pid)
-            .map_err(|e| format!("Initial syscall_continue failed: {}", e))?;
-    } else {
-        tracer
-            .continue_execution(pid)
-            .map_err(|e| format!("Initial continue failed: {}", e))?;
+    // Continue after initial SIGTRAP. Only Attach leaves the tracee stopped
+    // (`attach()` does not resume); Spawn's `launch()` already resumed the child
+    // before returning, so an extra resume here would be a double-resume that
+    // fails with `PTRACE_CONT: ESRCH`.
+    if matches!(mode, AttachMode::Attach(_)) {
+        if ptrace_config.trace_syscalls {
+            tracer
+                .syscall_continue(pid)
+                .map_err(|e| format!("Initial syscall_continue failed: {}", e))?;
+        } else {
+            tracer
+                .continue_execution(pid)
+                .map_err(|e| format!("Initial continue failed: {}", e))?;
+        }
     }
 
     let mut events: Vec<TraceEvent> = Vec::new();
@@ -841,5 +846,21 @@ mod tests {
             "Expected ESRCH or attach error, got: {}",
             err
         );
+    }
+
+    /// Regression: a spawn capture must not double-resume (launch() already
+    /// resumed the child). Before the fix this failed with
+    /// `Initial continue failed: PTRACE_CONT: ESRCH`.
+    #[test]
+    fn test_spawn_run_completion_no_double_resume() {
+        if std::path::Path::new("/bin/true").exists() {
+            let config = CaptureConfig::new("/bin/true");
+            let result = CaptureRunner::new(config).run_to_completion();
+            assert!(
+                result.is_ok(),
+                "spawn capture should not double-resume (ESRCH); got: {:?}",
+                result.err()
+            );
+        }
     }
 }
