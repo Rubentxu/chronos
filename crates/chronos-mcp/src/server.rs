@@ -34,6 +34,8 @@ use chronos_domain::{
 use chronos_index::builder::IndexBuilder;
 use chronos_native::probe_backend::NativeProbeBackend;
 use chronos_query::QueryEngine;
+use chronos_services::error::ServiceError;
+use chronos_services::query_service::QueryService;
 use chronos_store::{SessionMetadata, SessionStore, TraceDiff};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, Content};
@@ -1238,23 +1240,26 @@ impl ChronosServer {
         params: Parameters<ListThreadsParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let engines = self.engines.lock().await;
 
-        match engines.get(&params.session_id) {
-            Some(engine) => {
-                let threads = engine.thread_ids();
-                let output = serde_json::json!({
-                    "session_id": params.session_id,
-                    "thread_count": threads.len(),
-                    "thread_ids": threads,
-                });
-                Ok(CallToolResult::success(json_content(&output)))
+        let threads = match QueryService::list_threads(&params.session_id, &self.engines).await {
+            Ok(t) => t,
+            Err(ServiceError::SessionNotFound(_)) => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "Session '{}' not found",
+                    params.session_id
+                ))));
             }
-            None => Ok(CallToolResult::error(text_content(format!(
-                "Session '{}' not found",
-                params.session_id
-            )))),
-        }
+            Err(ServiceError::LockPoisoned) => {
+                return Ok(CallToolResult::error(text_content("lock poisoned")));
+            }
+        };
+
+        let output = serde_json::json!({
+            "session_id": params.session_id,
+            "thread_count": threads.len(),
+            "thread_ids": threads,
+        });
+        Ok(CallToolResult::success(json_content(&output)))
     }
 
     // ========================================================================

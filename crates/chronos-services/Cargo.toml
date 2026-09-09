@@ -1,0 +1,15 @@
+[package]
+name = "chronos-services"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }
+chronos-query = { workspace = true }
+chronos-domain = { workspace = true }
+
+[dev-dependencies]
