@@ -827,7 +827,10 @@ where
         for sym in resolver.symbols().values() {
             if sym.size > 0 && sym.address > 0 {
                 let sid = SymbolId::new(&sym.name, None, Language::Unknown);
-                symbol_map.insert(sym.address.wrapping_add(bias), (sid, sym.name.clone()));
+                symbol_map.insert(
+                    sym.address.wrapping_add(bias),
+                    (sid, sym.name.clone(), sym.size),
+                );
             }
         }
         info!(
@@ -899,19 +902,27 @@ where
                         continue;
                     }
 
-                    // Is this a breakpoint hit at an instrumented entry?
-                    let ip = match ptrace::getregs(pid_pid) {
-                        Ok(r) => r.rip,
+                    // Read registers: RIP tells us *which* breakpoint fired,
+                    // RSP tells us where the return address sits on the stack.
+                    let (ip, return_addr) = match ptrace::getregs(pid_pid) {
+                        Ok(r) => {
+                            let ra = ptrace::read(pid_pid, r.rsp as ptrace::AddressType)
+                                .map(|w| w as u64)
+                                .unwrap_or(0);
+                            (r.rip, Some(ra))
+                        }
                         Err(e) => {
                             debug!("Function-frame: getregs failed: {}", e);
-                            0
+                            (0, None)
                         }
                     };
                     let hit_address = injector.hit_at_rip(ip).map(|bp| bp.address);
                     if let Some(entry_addr) = hit_address {
                         let now = timestamp_ns_now();
-                        if let Some(entry) = tracker.on_sigtrap(*p as u64, entry_addr, now) {
-                            on_event(entry);
+                        // on_sigtrap returns Vec<TraceEvent>: pop-then-push pattern.
+                        // May emit 0 (unknown addr), 1 (exit only), 2 (exit + entry).
+                        for ev in tracker.on_sigtrap(*p as u64, entry_addr, return_addr, now) {
+                            on_event(ev);
                         }
                         // Remove the trap byte, run the real instruction once,
                         // then put the trap back so the next (recursive) call
@@ -971,6 +982,14 @@ where
             }
             PtraceEvent::Exited { pid: p, exit_code } => {
                 info!("Function-frame: PID {} exited with code {}", p, exit_code);
+                // Natural exit: emit FunctionExit for each still-active frame.
+                // The process called exit(2) — its stack unwound; pop_all_as_exit
+                // fires the paired exits so analytics can close open frames.
+                // Compare with flush_incomplete_on_exit which is reserved for
+                // SIGKILL / abnormal termination where frames may not have closed.
+                for ev in tracker.pop_all_as_exit() {
+                    on_event(ev);
+                }
                 end_reason = CaptureEndReason::Exited(*exit_code);
                 break;
             }
