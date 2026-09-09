@@ -64,4 +64,8 @@ pub enum ServiceError {
     /// The named tripwire does not exist (remove returned false).
     #[error("tripwire '{0}' not found")]
     TripwireNotFound(String),
+
+    /// A trace query could not be executed.
+    #[error("query execution error: {0}")]
+    QueryExecutionError(String),
 }

@@ -7,6 +7,24 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Result of a trace event query.
+///
+/// A thin wrapper around [`chronos_domain::query::QueryResult`] that carries pagination
+/// metadata (`total_matching`, `next_offset`) in addition to the event list.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryEventsResult {
+    /// The raw query result from the engine.
+    pub result: chronos_domain::query::QueryResult,
+}
+
+impl PartialEq for QueryEventsResult {
+    fn eq(&self, other: &Self) -> bool {
+        self.result.total_matching == other.result.total_matching
+            && self.result.events.len() == other.result.events.len()
+            && self.result.next_offset == other.result.next_offset
+    }
+}
+
 /// Result of evaluating an arithmetic expression.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -319,6 +337,7 @@ pub struct TripwireDeleteResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chronos_domain::{EventData, EventType, SourceLocation};
 
     #[test]
     fn eval_result_value_roundtrips() {
@@ -330,6 +349,32 @@ mod tests {
             "untagged Value should serialize to a number"
         );
         assert_eq!(json, serde_json::json!(PI));
+    }
+
+    #[test]
+    fn query_events_result_roundtrips() {
+        let events_result = QueryEventsResult {
+            result: chronos_domain::query::QueryResult {
+                total_matching: 42,
+                events: vec![chronos_domain::TraceEvent {
+                    event_id: 1,
+                    timestamp_ns: 1000,
+                    thread_id: 1,
+                    event_type: EventType::FunctionEntry,
+                    location: SourceLocation::default(),
+                    data: EventData::Empty,
+                }],
+                next_offset: Some(100),
+            },
+        };
+        let json = serde_json::to_value(&events_result).unwrap();
+        assert_eq!(json["result"]["total_matching"], 42);
+        assert_eq!(json["result"]["next_offset"], 100);
+        assert_eq!(json["result"]["events"].as_array().unwrap().len(), 1);
+        let round: QueryEventsResult = serde_json::from_value(json).unwrap();
+        assert_eq!(round.result.total_matching, 42);
+        assert_eq!(round.result.events.len(), 1);
+        assert_eq!(round.result.next_offset, Some(100));
     }
 
     #[test]

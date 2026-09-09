@@ -4,6 +4,7 @@
 //! (today's rmcp, tomorrow's REST, etc.).
 
 pub mod debug_read;
+pub mod debug_trace;
 pub mod error;
 pub mod output;
 pub mod query_service;
