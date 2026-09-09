@@ -182,7 +182,7 @@ impl EventBus {
         };
 
         let count = ring.len();
-        let result: Vec<SemanticEvent> = ring.drain(..).collect();
+        let result: Vec<SemanticEvent> = std::mem::take(&mut *ring).into_iter().collect();
 
         // Update metrics
         if count > 0 {
@@ -201,7 +201,7 @@ impl EventBus {
             Err(_) => return Vec::new(),
         };
 
-        ring.drain(..).collect()
+        std::mem::take(&mut *ring).into_iter().collect()
     }
 
     /// Drain up to `max` semantic events from the buffer.
