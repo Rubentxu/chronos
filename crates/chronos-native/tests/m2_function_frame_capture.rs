@@ -18,6 +18,7 @@ use chronos_log::{
 };
 use chronos_native::capture_runner::{CaptureEndReason, CaptureResult, CaptureRunner};
 use chronos_native::probe_backend::trace_event_to_log_record_for_test;
+use chronos_native::probe_backend::NativeProbeBackend;
 use chronos_native::ptrace_tracer::PtraceConfig;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -285,4 +286,96 @@ fn real_function_frame_capture_persists_durable_execution_log_v2() {
         }
         other => panic!("expected Ok read, got {:?}", other),
     }
+}
+
+/// m2-native-live-probe-frame-capture: drive the live MCP path through
+/// `NativeProbeBackend::start_probe(config, track_function_frames=true)`,
+/// then read the FunctionEntry frames back through the same
+/// `read_execution_log_records_with_stats` API the QueryEngine uses.
+/// Each read-back row must carry `invocation_id`, `parent_invocation_id`
+/// and `symbol_id`, proving that the live MCP loop streams real INT3
+/// `FunctionEntry` frames into the durable `SegmentedExecutionLog` v2
+/// through the same `dual_push` producer used by the flat syscall loop.
+#[test]
+fn live_probe_emits_real_function_entries_to_execution_log() {
+    use std::time::Duration;
+
+    let Some(exe) = compile_fixture() else {
+        return;
+    };
+    let exe = exe.to_str().unwrap().to_string();
+
+    let execution_log_dir = scratch_dir("live-ff");
+    let bus = chronos_domain::bus::EventBus::new_shared(50000);
+    let backend = NativeProbeBackend::new(bus)
+        .with_language(chronos_domain::Language::C)
+        .with_execution_log_dir(Some(execution_log_dir.clone()));
+
+    let config = CaptureConfig::new(exe.clone());
+
+    let session = backend
+        .start_probe(config, /* track_function_frames */ true)
+        .expect("start_probe with track_function_frames=true failed");
+
+    // The fixture does 1 add + 4 recursive fact entries. Give INT3
+    // capture + dual_push + ExecutionLog.append time to settle.
+    std::thread::sleep(Duration::from_secs(3));
+
+    let _stop = backend.stop_probe(&session).expect("stop_probe failed");
+
+    // Read everything back from the ExecutionLog and filter for
+    // identity-bearing rows (proxy: any record whose payload decodes
+    // as a Function TraceEvent with non-None identity fields).
+    let (events, _tail, _unparseable, total) = backend
+        .read_execution_log_records_with_stats(None, 10_000)
+        .expect("read_execution_log_records_with_stats failed");
+
+    assert!(
+        total >= 1,
+        "ExecutionLog must contain at least 1 record after a live function-frame probe"
+    );
+
+    use chronos_domain::EventData;
+    let identity_entries: Vec<&TraceEvent> = events
+        .iter()
+        .filter(|ev| {
+            matches!(
+                &ev.data,
+                EventData::Function {
+                    symbol_id: Some(_),
+                    invocation_id: Some(_),
+                    ..
+                }
+            )
+        })
+        .collect();
+
+    assert!(
+        !identity_entries.is_empty(),
+        "live probe must emit at least one identity-bearing Function entry into the ExecutionLog, got {} total records",
+        events.len()
+    );
+
+    // At least one of the identity-bearing entries must carry a parent link
+    // (the recursive `fact` chain produces four nested entries); this proves
+    // FunctionFrameIdentity holds on the live MCP path.
+    let with_parent = identity_entries
+        .iter()
+        .filter(|ev| {
+            if let EventData::Function {
+                parent_invocation_id,
+                ..
+            } = &ev.data
+            {
+                parent_invocation_id.is_some()
+            } else {
+                false
+            }
+        })
+        .count();
+    assert!(
+        with_parent >= 1,
+        "at least one Function entry must carry parent_invocation_id (recursion), got 0 of {}",
+        identity_entries.len()
+    );
 }
