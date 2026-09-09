@@ -367,7 +367,7 @@ impl ProbeBackend for BrowserAdapter {
 
     fn drain_events(&self) -> Result<Vec<SemanticEvent>, TraceError> {
         let mut s = self.state.lock().unwrap();
-        let raw_events: Vec<TraceEvent> = s.event_buffer.drain(..).collect();
+        let raw_events: Vec<TraceEvent> = std::mem::take(&mut s.event_buffer).into();
 
         // If events were dropped, emit a warning log
         if s.dropped_events > 0 {
@@ -441,7 +441,7 @@ impl ProbeBackend for BrowserAdapter {
 
     fn drain_raw_events(&self) -> Vec<TraceEvent> {
         let mut s = self.state.lock().unwrap();
-        s.event_buffer.drain(..).collect()
+        std::mem::take(&mut s.event_buffer).into()
     }
 
     fn stop_probe(&self, _session: &CaptureSession) -> Result<(), TraceError> {

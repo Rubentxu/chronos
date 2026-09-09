@@ -710,7 +710,8 @@ impl QueryEngine {
         // Resolve address from query
         let addr = if let Some(a) = query.address {
             a
-        } else if let Some(ref name) = query.variable_name {
+        } else {
+            let name = query.variable_name.as_ref()?;
             // Use trace_lineage to find any address associated with this name
             let lineage = causality.trace_lineage(name);
             if lineage.is_empty() {
@@ -721,8 +722,6 @@ impl QueryEngine {
                 });
             }
             lineage[0].event_id // use first entry's event_id as proxy; addr resolved below
-        } else {
-            return None;
         };
 
         if query.full_lineage {
