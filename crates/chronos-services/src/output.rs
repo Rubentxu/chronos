@@ -165,6 +165,80 @@ pub struct StateDiffSnapshot {
 }
 
 // ---------------------------------------------------------------------------
+// Session-lifecycle output types
+// ---------------------------------------------------------------------------
+
+/// Result of saving a session to persistent storage.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SaveResult {
+    /// Number of events saved.
+    pub event_count: usize,
+    /// Number of unique content hashes stored (dedup).
+    pub hash_count: usize,
+    /// Language/runtime of the target.
+    pub language: String,
+    /// Target program path or name.
+    pub target: String,
+    /// Total duration in milliseconds.
+    pub duration_ms: u64,
+}
+
+/// Result of loading a session from persistent storage.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LoadResult {
+    /// Language/runtime of the target.
+    pub language: String,
+    /// Target program path or name.
+    pub target: String,
+    /// Number of events loaded.
+    pub event_count: usize,
+    /// Total duration in milliseconds.
+    pub duration_ms: u64,
+    /// Unix timestamp ms when the session was created.
+    pub created_at: u64,
+}
+
+/// Summary metadata for one saved session.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SessionSummary {
+    /// Session identifier.
+    pub session_id: String,
+    /// Language/runtime of the target.
+    pub language: String,
+    /// Target program path or name.
+    pub target: String,
+    /// Number of events in the session.
+    pub event_count: usize,
+    /// Total duration in milliseconds.
+    pub duration_ms: u64,
+    /// Unix timestamp ms when the session was created.
+    pub created_at: u64,
+}
+
+/// Result of listing all saved sessions.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ListResult {
+    /// All saved sessions.
+    pub sessions: Vec<SessionSummary>,
+}
+
+/// Result of deleting a session from persistent storage.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DeleteResult {
+    /// Deleted session identifier.
+    pub session_id: String,
+}
+
+/// Result of dropping a session from in-memory state.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DropResult {
+    /// Dropped session identifier.
+    pub session_id: String,
+    /// Whether the session existed in memory before the drop.
+    pub existed: bool,
+}
+
+// ---------------------------------------------------------------------------
 // Serde round-trip tests
 // ---------------------------------------------------------------------------
 
@@ -271,5 +345,51 @@ mod tests {
         let json = serde_json::to_value(&sd).unwrap();
         assert_eq!(json["event_id_a"], 1u64);
         assert_eq!(json["timestamp_delta_ns"], 1000u64);
+    }
+
+    #[test]
+    fn save_result_roundtrips() {
+        let sr = SaveResult {
+            event_count: 42,
+            hash_count: 38,
+            language: "python".into(),
+            target: "/usr/bin/python3".into(),
+            duration_ms: 1234,
+        };
+        let json = serde_json::to_value(&sr).unwrap();
+        assert_eq!(json["event_count"], 42u64);
+        assert_eq!(json["hash_count"], 38u64);
+        assert_eq!(json["language"], "python");
+    }
+
+    #[test]
+    fn load_result_roundtrips() {
+        let lr = LoadResult {
+            language: "go".into(),
+            target: "./server".into(),
+            event_count: 100,
+            duration_ms: 5000,
+            created_at: 1_700_000_000_000,
+        };
+        let json = serde_json::to_value(&lr).unwrap();
+        assert_eq!(json["language"], "go");
+        assert_eq!(json["event_count"], 100u64);
+    }
+
+    #[test]
+    fn list_result_roundtrips() {
+        let lr = ListResult {
+            sessions: vec![SessionSummary {
+                session_id: "s1".into(),
+                language: "c".into(),
+                target: "main".into(),
+                event_count: 10,
+                duration_ms: 100,
+                created_at: 1_700_000_000_000,
+            }],
+        };
+        let json = serde_json::to_value(&lr).unwrap();
+        assert_eq!(json["sessions"].as_array().unwrap().len(), 1);
+        assert_eq!(json["sessions"][0]["session_id"], "s1");
     }
 }
