@@ -511,6 +511,16 @@ pub struct ProbeStartParams {
     /// EventBus ring buffer capacity (default: 50000).
     #[serde(default = "default_bus_capacity")]
     pub bus_capacity: usize,
+    /// Whether to capture real function frames (default: false).
+    ///
+    /// When `true`, `NativeProbeBackend` plants INT3 at the relocated
+    /// function-entry addresses of the spawned binary and emits
+    /// `FunctionEntry` events (with `invocation_id`,
+    /// `parent_invocation_id`, `symbol_id`) to both `EventBus` and
+    /// `SegmentedExecutionLog` v2 through the same producer seam as
+    /// syscall/registers events. Requires symbols in the binary.
+    #[serde(default)]
+    pub track_function_frames: Option<bool>,
 }
 
 fn default_bus_capacity() -> usize {
@@ -2581,7 +2591,8 @@ impl ChronosServer {
         let backend = NativeProbeBackend::new(bus).with_language(language);
 
         // Start the probe (non-blocking — spawns background thread)
-        let session = match backend.start_probe(config) {
+        let track_function_frames = params.track_function_frames.unwrap_or(false);
+        let session = match backend.start_probe(config, track_function_frames) {
             Ok(s) => s,
             Err(e) => {
                 return Ok(CallToolResult::error(text_content(format!(
