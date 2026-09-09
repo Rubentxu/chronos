@@ -766,11 +766,9 @@ fn run_capture_loop(
     })
 }
 
-/// Dedicated capture loop for real function-frame tracking.
+/// Live-probe function-frame capture via INT3 injection.
 ///
-/// Reached from [`run_capture_loop`] when a spawn capture runs with
-/// `track_function_frames=true`. `launch()` left the child stopped at exec,
-/// so this function:
+/// Performs a complete function-level capture:
 ///
 /// 1. Computes the ASLR load bias and plants INT3 at every relocated
 ///    function-entry address (see [`Int3Injector`]).
@@ -783,15 +781,36 @@ fn run_capture_loop(
 ///    the same function produce distinct invocations.
 /// 4. Ends on process exit. If the child is killed while frames are active,
 ///    remaining invocations flush as `InvocationIncomplete` (LIFO).
+///
+/// Unlike the collect-all wrapper [`run_function_frame_capture`], this variant
+/// streams each `TraceEvent` through `on_event` instead of accumulating a `Vec`.
+/// This allows the caller to push to an `EventBus`, an `ExecutionLog`, a channel,
+/// or any combination without materialising a full intermediate vector.
+///
+/// The callback is called once per captured function entry (including flushed
+/// incomplete invocations on exit). It is _not_ called for stray SIGTRAPs,
+/// `Syscall`, `Registers`, or `PtraceEvent` variants.
+///
+/// # Arguments
+/// * `tracer` — a `PtraceTracer` that has not yet called `launch()`; this
+///   function calls `launch()`, injects breakpoints, and manages the process.
+/// * `pid`, `program`, `resolver` — as for the standalone capture.
+/// * `stop_flag` — checked on each iteration; set `true` to interrupt.
+/// * `max_duration_ms` — optional wall-clock cap.
+/// * `on_event` — called with every captured `TraceEvent`.
 #[allow(clippy::too_many_arguments)]
-fn run_function_frame_capture(
+pub fn run_function_frame_capture_with_callback<F>(
     tracer: &mut PtraceTracer,
     pid: i32,
     program: &Path,
     resolver: &SymbolResolver,
     stop_flag: &AtomicBool,
     max_duration_ms: Option<u64>,
-) -> Result<CaptureResult, String> {
+    mut on_event: F,
+) -> Result<CaptureResult, String>
+where
+    F: FnMut(TraceEvent),
+{
     let pid_pid = Pid::from_raw(pid);
 
     // (1) Relocate entry addresses and plant INT3. The InvocationTracker is
@@ -830,7 +849,6 @@ fn run_function_frame_capture(
         .continue_execution(pid)
         .map_err(|e| format!("resume after injection failed: {}", e))?;
 
-    let mut events: Vec<TraceEvent> = Vec::new();
     let mut end_reason = CaptureEndReason::StoppedByUser;
     let start_time = std::time::Instant::now();
 
@@ -893,7 +911,7 @@ fn run_function_frame_capture(
                     if let Some(entry_addr) = hit_address {
                         let now = timestamp_ns_now();
                         if let Some(entry) = tracker.on_sigtrap(*p as u64, entry_addr, now) {
-                            events.push(entry);
+                            on_event(entry);
                         }
                         // Remove the trap byte, run the real instruction once,
                         // then put the trap back so the next (recursive) call
@@ -966,7 +984,7 @@ fn run_function_frame_capture(
                 // Frames still active when the process is killed surface as
                 // InvocationIncomplete (LIFO) per the m2 contract.
                 for ev in tracker.flush_incomplete_on_exit() {
-                    events.push(ev);
+                    on_event(ev);
                 }
                 end_reason = CaptureEndReason::Signaled {
                     signal: *signal,
@@ -987,11 +1005,43 @@ fn run_function_frame_capture(
         let _ = tracer.kill(pid);
     }
 
-    let total = events.len() as u64;
+    info!("Function-frame capture ended");
+    Ok(CaptureResult {
+        events: Vec::new(), // events were streamed; total computed below
+        end_reason,
+        total_events: 0, // caller counts if needed via on_event call count
+    })
+}
+
+/// Collect-all variant — a 10-line wrapper around the callback helper.
+/// Kept for backward compatibility with existing callers that materialise a `Vec`.
+#[allow(clippy::too_many_arguments)]
+fn run_function_frame_capture(
+    tracer: &mut PtraceTracer,
+    pid: i32,
+    program: &Path,
+    resolver: &SymbolResolver,
+    stop_flag: &AtomicBool,
+    max_duration_ms: Option<u64>,
+) -> Result<CaptureResult, String> {
+    let mut events: Vec<TraceEvent> = Vec::new();
+    let mut total: u64 = 0;
+    let result = run_function_frame_capture_with_callback(
+        tracer,
+        pid,
+        program,
+        resolver,
+        stop_flag,
+        max_duration_ms,
+        |ev| {
+            total += 1;
+            events.push(ev);
+        },
+    )?;
     info!("Function-frame capture ended: {} events", total);
     Ok(CaptureResult {
         events,
-        end_reason,
+        end_reason: result.end_reason,
         total_events: total,
     })
 }

@@ -22,7 +22,8 @@ pub mod perf;
 
 pub use address_normalizer::{AddressNormalizer, SymbolOffset, SymbolOffsetNormalizer};
 pub use capture_runner::{
-    AttachMode, CaptureEndReason, CaptureResult, CaptureRunner, CaptureState,
+    run_function_frame_capture_with_callback, AttachMode, CaptureEndReason, CaptureResult,
+    CaptureRunner, CaptureState,
 };
 pub use dwarf::{BasicLocationEvaluator, DwarfLocationEvaluator, DwarfReader};
 pub use int3_injector::{InstalledBreakpoint, Int3Injector, INT3};
