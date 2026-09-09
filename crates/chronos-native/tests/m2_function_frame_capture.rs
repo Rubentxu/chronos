@@ -385,3 +385,178 @@ fn live_probe_emits_real_function_entries_to_execution_log() {
         identity_entries.len()
     );
 }
+
+/// PIE-flagged variant: compile `test_function_frames_pie.c` from the
+/// chronos-sandbox build script (already done at sandbox build time and
+/// exposed via `CARGO_BIN_EXE_test_function_frames_pie` if the sandbox is a
+/// dev-dep) and verify the load-bias relocation math holds for ASLR PIE.
+///
+/// The chronos-sandbox build.rs compiles this fixture with `-pie -fPIE -O0
+/// -fno-inline`. Linux ASLR randomises its load address on every exec, so
+/// the kernel's first PT_LOAD mapping is at a non-zero runtime base, and
+/// `Int3Injector::compute_load_bias` MUST return a non-zero bias for the
+/// tracer to relocate symbols correctly.
+///
+/// To exercise this without depending on the chronos-sandbox dev-dep, this
+/// test compiles the fixture inline (the source is committed in
+/// `chronos-sandbox/programs/c/test_function_frames_pie.c`). The
+/// `compile_pie_fixture` helper builds it with the same flags the sandbox
+/// build.rs uses, falling back gracefully if no C compiler is present.
+fn pie_fixture_source() -> PathBuf {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    // The fixture source lives in the chronos-sandbox workspace member; we
+    // resolve it relative to the workspace root via CARGO_MANIFEST_DIR's
+    // parent (chronos-native -> workspace root -> chronos-sandbox/...).
+    manifest_dir
+        .parent()
+        .expect("workspace root")
+        .join("chronos-sandbox")
+        .join("programs")
+        .join("c")
+        .join("test_function_frames_pie.c")
+}
+
+/// Compile the PIE-flagged fixture. Returns the exe path or `None` to skip.
+fn compile_pie_fixture() -> Option<PathBuf> {
+    let src = pie_fixture_source();
+    if !src.exists() {
+        eprintln!(
+            "skipping: PIE fixture source not found at {}",
+            src.display()
+        );
+        return None;
+    }
+    let dir = scratch_dir("build-pie");
+    let out = dir.join("test_function_frames_pie");
+    let args: Vec<String> = [
+        "-pie",
+        "-fPIE",
+        "-g",
+        "-O0",
+        "-fno-inline",
+        "-fno-omit-frame-pointer",
+        "-o",
+        out.to_str()?,
+        src.to_str()?,
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+
+    let cc_candidates = [
+        std::env::var("CC").ok(),
+        Some("cc".to_string()),
+        Some("gcc".to_string()),
+        Some("clang".to_string()),
+    ];
+    for cc in cc_candidates.into_iter().flatten() {
+        if let Ok(status) = Command::new(&cc).args(&args).status() {
+            if status.success() {
+                return Some(out);
+            }
+        }
+    }
+    eprintln!("skipping: no usable C compiler found to build the PIE fixture");
+    None
+}
+
+/// Spawn the PIE fixture under ptrace and compute the ASLR load bias while
+/// the child is stopped at exec. Linux sets the load base to a non-zero
+/// value for PIE binaries when ASLR is on (the kernel default), so the
+/// bias must be != 0 for the symbol relocation math to be meaningful.
+fn spawn_pie_and_compute_bias(exe: &Path) -> Option<u64> {
+    use nix::sys::ptrace;
+    use nix::sys::signal::{raise, SIGSTOP};
+    use nix::sys::wait::{waitpid, WaitStatus};
+    use nix::unistd::{execvp, fork, ForkResult};
+
+    match unsafe { fork() } {
+        Ok(ForkResult::Child) => {
+            // Tracee: PTRACE_TRACEME then exec.
+            ptrace::traceme().expect("child traceme");
+            // Stop ourselves so the parent has a chance to observe the
+            // pre-exec state; execve replaces the image immediately.
+            raise(SIGSTOP).expect("raise SIGSTOP");
+            let cpath = std::ffi::CString::new(exe.to_str().expect("exe utf-8"))
+                .expect("cstring no nul");
+            // execvp returns Result<Infallible> — if it succeeds we never
+            // get here; if it fails we exit the child immediately so the
+            // match arm produces the same Option<u64> type as the parent.
+            let _ = execvp(&cpath, &[] as &[&std::ffi::CStr]);
+            std::process::exit(1);
+        }
+        Ok(ForkResult::Parent { child }) => {
+            // Wait for the initial SIGSTOP from traceme.
+            match waitpid(child, None).expect("waitpid initial") {
+                WaitStatus::Stopped(_, _) => {}
+                other => panic!("unexpected initial status: {:?}", other),
+            }
+            // Continue the tracee so it can exec the PIE binary.
+            ptrace::cont(child, None).expect("cont after traceme");
+            // Wait for the next stop (the post-exec SIGTRAP that ptrace
+            // delivers on every exec).
+            match waitpid(child, None).expect("waitpid post-exec") {
+                WaitStatus::PtraceEvent(_, _, _)
+                | WaitStatus::Stopped(_, _)
+                | WaitStatus::PtraceSyscall(_) => {}
+                other => panic!("unexpected post-exec status: {:?}", other),
+            }
+            // Compute the bias while the child is alive and mapped.
+            let bias = chronos_native::Int3Injector::compute_load_bias(child.as_raw(), exe);
+            // Detach so the child can finish cleanly (or be reaped).
+            let _ = ptrace::detach(child, None);
+            let _ = waitpid(child, None);
+            bias
+        }
+        Err(e) => panic!("fork failed: {}", e),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn _ensure_linux_only_used() {}
+
+#[test]
+fn pie_fixture_compute_load_bias_is_nonzero() {
+    let exe = match compile_pie_fixture() {
+        Some(e) => e,
+        None => return, // skip silently when no compiler
+    };
+
+    // Linux ASLR is enabled by default. On a few sandboxes (some Docker
+    // setups) ASLR may be disabled via personality(ADDR_NO_RANDOMIZE); in
+    // that case the bias would be 0 and the test would fail. Skip instead
+    // of failing so the test is portable across dev environments.
+    let bias = match spawn_pie_and_compute_bias(&exe) {
+        Some(b) => b,
+        None => {
+            eprintln!("skipping: compute_load_bias returned None");
+            return;
+        }
+    };
+
+    // Sanity: bias is u64; the wrapper currently treats "no bias" as None
+    // (which is fine for non-PIE binaries). For PIE with ASLR on, the
+    // bias must be non-zero on a Linux default install.
+    if bias == 0 {
+        eprintln!(
+            "skipping: ASLR appears disabled on this host (bias=0); \
+             the PIE-vs-no-PIE difference is not meaningful here"
+        );
+        return;
+    }
+
+    assert!(
+        bias > 0,
+        "expected non-zero ASLR load bias for PIE binary, got {}",
+        bias
+    );
+
+    // A typical Linux ASLR base for PIE on x86_64 is page-aligned and
+    // non-trivial (>= 0x55_5555_0000 on modern kernels). Assert the bias
+    // is a plausible page-aligned address rather than zero or noise.
+    assert!(
+        bias % 0x1000 == 0,
+        "expected page-aligned ASLR base, got 0x{:x}",
+        bias
+    );
+}

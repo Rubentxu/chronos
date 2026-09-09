@@ -16,6 +16,7 @@ fn main() {
         "test_abort",
         "test_infinite_loop",
         "test_function_frames",
+        "test_function_frames_pie",
     ];
 
     for prog in &programs {
@@ -26,8 +27,13 @@ fn main() {
         // SymbolResolver finds size-bearing text symbols whose entry
         // addresses the live-probe frame-capture pipeline can INT3-breakpoint
         // and single-step through.
+        // test_function_frames_pie needs the same flags except -pie -fPIE so
+        // the runtime addresses require ASLR load-bias relocation; this
+        // exercises the non-zero-bias branch of `Int3Injector::compute_load_bias`.
         let extra_flags: &[&str] = if *prog == "test_function_frames" {
             &["-no-pie", "-O0", "-fno-inline"]
+        } else if *prog == "test_function_frames_pie" {
+            &["-pie", "-fPIE", "-O0", "-fno-inline"]
         } else {
             &[]
         };
