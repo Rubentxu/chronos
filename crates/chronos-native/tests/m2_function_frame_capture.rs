@@ -273,9 +273,17 @@ fn real_function_frame_capture_persists_durable_execution_log_v2() {
                 appended,
                 "all persisted records must be readable back"
             );
+            // m2-function-exit-dwarf: now that FunctionExit events are also written
+            // to the ExecutionLog (both have symbol_id + invocation_id), filter by
+            // deserializing each record's payload to check EventType.
             let identity_frames = records
                 .iter()
-                .filter(|r| r.symbol_id.is_some() && r.invocation_id.is_some())
+                .filter(|r| {
+                    r.symbol_id.is_some()
+                        && r.invocation_id.is_some()
+                        && serde_json::from_slice::<TraceEvent>(&r.payload.bytes)
+                            .is_ok_and(|ev| ev.event_type == EventType::FunctionEntry)
+                })
                 .count();
             assert_eq!(
                 identity_frames,
@@ -338,17 +346,22 @@ fn live_probe_emits_real_function_entries_to_execution_log() {
     );
 
     use chronos_domain::EventData;
+    // m2-function-exit-dwarf: now that FunctionExit events are also written to
+    // the ExecutionLog (both have symbol_id + invocation_id), filter explicitly
+    // by EventType so we count only FunctionEntry records — FunctionExit events
+    // carry the exit event type and must not inflate the identity-bearing count.
     let identity_entries: Vec<&TraceEvent> = events
         .iter()
         .filter(|ev| {
-            matches!(
-                &ev.data,
-                EventData::Function {
-                    symbol_id: Some(_),
-                    invocation_id: Some(_),
-                    ..
-                }
-            )
+            ev.event_type == EventType::FunctionEntry
+                && matches!(
+                    &ev.data,
+                    EventData::Function {
+                        symbol_id: Some(_),
+                        invocation_id: Some(_),
+                        ..
+                    }
+                )
         })
         .collect();
 
@@ -477,8 +490,8 @@ fn spawn_pie_and_compute_bias(exe: &Path) -> Option<u64> {
             // Stop ourselves so the parent has a chance to observe the
             // pre-exec state; execve replaces the image immediately.
             raise(SIGSTOP).expect("raise SIGSTOP");
-            let cpath = std::ffi::CString::new(exe.to_str().expect("exe utf-8"))
-                .expect("cstring no nul");
+            let cpath =
+                std::ffi::CString::new(exe.to_str().expect("exe utf-8")).expect("cstring no nul");
             // execvp returns Result<Infallible> — if it succeeds we never
             // get here; if it fails we exit the child immediately so the
             // match arm produces the same Option<u64> type as the parent.
@@ -558,5 +571,183 @@ fn pie_fixture_compute_load_bias_is_nonzero() {
         bias % 0x1000 == 0,
         "expected page-aligned ASLR base, got 0x{:x}",
         bias
+    );
+}
+
+// ---------------------------------------------------------------------------
+// m2-function-exit-dwarf integration tests
+// ---------------------------------------------------------------------------
+
+/// REQ-1/2: function_exit_is_emitted_when_caller_returns.
+///
+/// The capture must emit `FunctionExit` events when frames close naturally
+/// (via `pop_all_as_exit` at process exit) or via range-aware pop during
+/// the probe loop. We assert at least 3 exits: fact (recursive, multiple
+/// invocations), add, and main.
+#[test]
+fn function_exit_is_emitted_when_caller_returns() {
+    let Some(exe) = compile_fixture() else {
+        return;
+    };
+
+    let result = capture_frames(&exe);
+    assert!(
+        matches!(result.end_reason, CaptureEndReason::Exited(0)),
+        "fixture should exit cleanly, got {:?}",
+        result.end_reason
+    );
+    assert!(!result.events.is_empty(), "capture produced no events");
+
+    // Collect FunctionExit events.
+    let exits: Vec<&TraceEvent> = result
+        .events
+        .iter()
+        .filter(|ev| ev.event_type == EventType::FunctionExit)
+        .collect();
+
+    assert!(
+        exits.len() >= 3,
+        "expected ≥3 FunctionExit events (fact × ≥1, add, main), got {}: {:?}",
+        exits.len(),
+        exits
+            .iter()
+            .map(|e| format!("{:?}", e.data))
+            .collect::<Vec<_>>()
+    );
+
+    // Count exits per function name (drop compiler internals).
+    let mut by_name: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for ev in &exits {
+        if let EventData::Function { name, .. } = &ev.data {
+            by_name
+                .entry(name.clone())
+                .and_modify(|c| *c += 1)
+                .or_insert(1);
+        }
+    }
+
+    // The fixture has fact (recursive, 4 entries → 4 exits with range matching
+    // collapsing), add (1 entry → 1 exit), main (1 entry → 1 exit).
+    // In practice: with range-aware matching, recursive fact entries pop the
+    // previous fact before pushing, so we get one exit per recursive level.
+    // The minimum we assert: at least one exit for fact, add, and main.
+    for expected in ["fact", "add", "main"] {
+        assert!(
+            by_name.contains_key(expected),
+            "expected a FunctionExit for '{}', exits by name: {:?}",
+            expected,
+            by_name
+        );
+    }
+
+    // Every exit must carry invocation_id and symbol_id.
+    for ev in &exits {
+        match &ev.data {
+            EventData::Function {
+                invocation_id: Some(_),
+                symbol_id: Some(_),
+                ..
+            } => {}
+            other => panic!(
+                "FunctionExit must carry invocation_id and symbol_id, got {:?}",
+                other
+            ),
+        }
+    }
+}
+
+/// REQ-6: entry_exit_pairs_share_invocation_id.
+///
+/// Every `FunctionExit` must carry the same `invocation_id` as its
+/// matching `FunctionEntry`. We verify this invariant across the whole
+/// captured event stream, and additionally assert that entries and their
+/// paired exits share the same `parent_invocation_id`.
+#[test]
+fn entry_exit_pairs_share_invocation_id() {
+    let Some(exe) = compile_fixture() else {
+        return;
+    };
+
+    let result = capture_frames(&exe);
+    assert!(
+        matches!(result.end_reason, CaptureEndReason::Exited(0)),
+        "fixture should exit cleanly, got {:?}",
+        result.end_reason
+    );
+
+    // Collect entries and exits separately.
+    let entries: Vec<&TraceEvent> = result
+        .events
+        .iter()
+        .filter(|ev| ev.event_type == EventType::FunctionEntry)
+        .collect();
+    let exits: Vec<&TraceEvent> = result
+        .events
+        .iter()
+        .filter(|ev| ev.event_type == EventType::FunctionExit)
+        .collect();
+
+    assert!(
+        !entries.is_empty(),
+        "capture produced no FunctionEntry events"
+    );
+    assert!(!exits.is_empty(), "capture produced no FunctionExit events");
+
+    // Build a map: invocation_id → (name, parent_invocation_id) from entries.
+    let entry_map: std::collections::HashMap<InvocationId, (String, Option<InvocationId>)> =
+        entries
+            .iter()
+            .filter_map(|ev| {
+                if let EventData::Function {
+                    name,
+                    invocation_id: Some(id),
+                    parent_invocation_id,
+                    ..
+                } = &ev.data
+                {
+                    Some((*id, (name.clone(), *parent_invocation_id)))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+    // Verify each exit pairs with its entry.
+    let mut paired_count = 0usize;
+    for ev in exits {
+        match &ev.data {
+            EventData::Function {
+                name,
+                invocation_id: Some(id),
+                parent_invocation_id,
+                ..
+            } => {
+                let Some((entry_name, entry_parent)) = entry_map.get(id) else {
+                    panic!(
+                        "FunctionExit for '{}' (id={:?}) has no matching FunctionEntry",
+                        name, id
+                    );
+                };
+                assert_eq!(
+                    entry_name, name,
+                    "FunctionExit name must match its FunctionEntry name"
+                );
+                assert_eq!(
+                    entry_parent, parent_invocation_id,
+                    "FunctionExit parent_invocation_id must match its FunctionEntry"
+                );
+                paired_count += 1;
+            }
+            other => panic!(
+                "FunctionExit must carry invocation_id and parent_invocation_id, got {:?}",
+                other
+            ),
+        }
+    }
+
+    assert!(
+        paired_count >= 3,
+        "expected at least 3 paired entry/exit pairs, got {}",
+        paired_count
     );
 }
