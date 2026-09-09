@@ -219,14 +219,24 @@ impl Drop for ChromeProcess {
 // Chrome binary discovery
 // ============================================================================
 
-/// Find the Chrome binary path
+/// Find the Chrome binary path.
+///
+/// `CHROME_PATH` is treated as a **strict override**: if it is set, we use it
+/// regardless of what `PATH` search would find. This matches the test contract
+/// (`test_chrome_not_found_error` sets it to a bogus path and expects
+/// `ChromeNotFound`; without strict mode the test falls through to candidate
+/// search and silently picks up `google-chrome` from the runner image).
 fn find_chrome_binary() -> Result<String, BrowserError> {
-    // Check environment variable first
+    // Strict CHROME_PATH override.
     if let Ok(path) = std::env::var(CHROME_PATH_ENV) {
         if std::path::Path::new(&path).exists() {
             debug!("Using Chrome from {} env variable", CHROME_PATH_ENV);
             return Ok(path);
         }
+        return Err(BrowserError::ChromeNotFound(format!(
+            "{} env var points to non-existent path: {}",
+            CHROME_PATH_ENV, path
+        )));
     }
 
     // Try common Chrome binary paths

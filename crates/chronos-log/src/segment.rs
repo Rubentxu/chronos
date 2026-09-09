@@ -89,9 +89,9 @@ pub fn segment_path(dir: &Path, session_id: &SessionId, start_seq: EventSeq) -> 
 /// Replace any path-unfriendly character in `SessionId` with `_` so
 /// the file path is safe. Sessions whose id contains only
 /// `[A-Za-z0-9._-]` are passed through unchanged.
-pub fn sanitize_session(session_id: &SessionId) -> String {
-    session_id
-        .0
+pub fn sanitize_session(session_id: impl Into<SessionId>) -> String {
+    let sid = session_id.into();
+    sid.0
         .chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' {
@@ -597,11 +597,11 @@ mod tests {
     #[test]
     fn sanitize_passes_through_safe_chars() {
         assert_eq!(
-            sanitize_session(&SessionId::new("session-123")),
+            sanitize_session(SessionId::new("session-123")),
             "session-123"
         );
-        assert_eq!(sanitize_session(&SessionId::new("a/b")), "a_b");
-        assert_eq!(sanitize_session(&SessionId::new("x y")), "x_y");
+        assert_eq!(sanitize_session(SessionId::new("a/b")), "a_b");
+        assert_eq!(sanitize_session(SessionId::new("x y")), "x_y");
     }
 
     #[test]

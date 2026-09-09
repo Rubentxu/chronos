@@ -180,7 +180,7 @@ pub struct SegmentedExecutionLog {
 impl SegmentedExecutionLog {
     pub fn open(session_id: SessionId, config: SegmentedConfig) -> Result<Self, LogError> {
         std::fs::create_dir_all(&config.segment_dir)
-            .map_err(|e| LogError::Backend(format!("mkdir {:?}: {}", &config.segment_dir, e)))?;
+            .map_err(|e| LogError::Backend(format!("mkdir {:?}: {}", config.segment_dir, e)))?;
         let inner = Inner {
             backend: InMemoryExecutionLog::new(),
             buffer: Vec::new(),
@@ -720,7 +720,7 @@ impl SegmentedExecutionLog {
         let mut out = Vec::new();
         let safe = sanitize_session(&self.session_id);
         let entries = std::fs::read_dir(&self.config.segment_dir).map_err(|e| {
-            LogError::Backend(format!("read_dir {:?}: {}", &self.config.segment_dir, e))
+            LogError::Backend(format!("read_dir {:?}: {}", self.config.segment_dir, e))
         })?;
         for entry in entries.flatten() {
             let name = entry.file_name();

@@ -135,11 +135,8 @@ impl BasicLocationEvaluator {
                 // DW_OP_reg0 - DW_OP_reg31: Direct register
                 0x50..=0x6f => {
                     let dwarf_reg = op - 0x50;
-                    if let Some(val) = self.eval_reg(dwarf_reg, regs) {
-                        return Some(val);
-                    } else {
-                        return None;
-                    }
+                    let val = self.eval_reg(dwarf_reg, regs)?;
+                    return Some(val);
                 }
 
                 // DW_OP_fbreg: Frame base register offset + signedLEB128
@@ -206,11 +203,8 @@ impl BasicLocationEvaluator {
 
                 // DW_OP_dup: Duplicate stack top (for completeness)
                 0x12 => {
-                    if let Some(top) = stack.last() {
-                        stack.push(*top);
-                    } else {
-                        return None;
-                    }
+                    let top = stack.last()?;
+                    stack.push(*top);
                 }
 
                 // DW_OP_drop: Remove stack top

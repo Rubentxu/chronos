@@ -567,13 +567,25 @@ fn m0_10_sandbox_m0_acceptance_suite_passes() {
     use std::process::Command;
 
     // Locate the test binary.
+    //
+    // Discovery order (CI-safe):
+    //   1. `CARGO_BIN_EXE_<name>` env var — set automatically by `cargo test`
+    //      when the test binary is built normally.
+    //   2. `std::env::current_exe()` — the path of the running test binary.
+    //      Robust against any `CARGO_TARGET_DIR` / `CARGO_MANIFEST_DIR` /
+    //      cargo-cache-eviction combinations that remove sibling artifacts.
+    //   3. Fallback scan of `CARGO_TARGET_DIR/debug/deps/m0_acceptance-<hex>`
+    //      — used only when 1 and 2 fail (e.g., the binary moved/renamed).
     let test_bin = std::env::var("CARGO_BIN_EXE_m0_acceptance")
         .map(PathBuf::from)
         .ok()
         .or_else(|| {
-            // Fallback: <CARGO_TARGET_DIR>/debug/deps/m0_acceptance-<hex>
-            // We pick the most recently modified executable to follow
-            // whatever cargo just built.
+            // current_exe() returns the running test binary path directly,
+            // which works regardless of CARGO_TARGET_DIR.
+            std::env::current_exe().ok()
+        })
+        .or_else(|| {
+            // Last-resort: scan the cargo deps directory.
             let target_dir = std::env::var("CARGO_TARGET_DIR")
                 .unwrap_or_else(|_| "target".to_string());
             let deps = PathBuf::from(&target_dir).join("debug").join("deps");
@@ -622,7 +634,7 @@ fn m0_10_sandbox_m0_acceptance_suite_passes() {
             newest_exec.or_else(|| candidates.pop())
         })
         .expect("m0-10: could not locate compiled m0_acceptance test binary \
-                 (tried CARGO_BIN_EXE_m0_acceptance, then CARGO_TARGET_DIR/debug/deps/m0_acceptance-*)");
+                 (tried CARGO_BIN_EXE_m0_acceptance, current_exe(), then CARGO_TARGET_DIR/debug/deps/m0_acceptance-*)");
 
     assert!(
         test_bin.exists(),
