@@ -11,6 +11,8 @@ serde = { workspace = true }
 tokio = { workspace = true }
 chronos-query = { workspace = true }
 chronos-domain = { workspace = true }
+chronos-store = { workspace = true }
+chronos-index = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

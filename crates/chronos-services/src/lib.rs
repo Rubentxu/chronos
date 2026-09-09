@@ -7,3 +7,4 @@ pub mod debug_read;
 pub mod error;
 pub mod output;
 pub mod query_service;
+pub mod sessions;

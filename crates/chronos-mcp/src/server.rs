@@ -39,6 +39,8 @@ use chronos_services::debug_read::DebugReadService;
 use chronos_services::error::ServiceError;
 use chronos_services::output::EvalResult;
 use chronos_services::query_service::QueryService;
+use chronos_services::sessions::{SessionsContext, SessionsService};
+#[allow(unused_imports)]
 use chronos_store::{SessionMetadata, SessionStore, TraceDiff};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, Content};
@@ -1315,6 +1317,38 @@ impl ChronosServer {
                     "internal error: unexpected eval error",
                 )));
             }
+            // New session-lifecycle error variants (cannot occur from list_threads
+            // but must be listed for exhaustiveness).
+            Err(ServiceError::SessionNotInMemory(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected session error",
+                )));
+            }
+            Err(ServiceError::EmptySession(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected empty session",
+                )));
+            }
+            Err(ServiceError::SaveFailed(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected save error",
+                )));
+            }
+            Err(ServiceError::LoadFailed(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected load error",
+                )));
+            }
+            Err(ServiceError::ListFailed(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected list error",
+                )));
+            }
+            Err(ServiceError::DeleteFailed(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected delete error",
+                )));
+            }
         };
 
         let output = serde_json::json!({
@@ -1837,66 +1871,52 @@ impl ChronosServer {
         params: Parameters<SaveSessionParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let engines = self.engines.lock().await;
+        let ctx = SessionsContext {
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            connected_sessions: &self.connected_sessions,
+            store: &self.store,
+        };
 
-        let engine = match engines.get(&params.session_id) {
-            Some(e) => e,
-            None => {
-                return Ok(CallToolResult::error(text_content(format!(
+        match SessionsService::save_session(
+            &params.session_id,
+            Language::from_string(&params.language),
+            params.target.clone(),
+            &ctx,
+        )
+        .await
+        {
+            Ok(result) => {
+                let output = serde_json::json!({
+                    "session_id": params.session_id,
+                    "status": "saved",
+                    "event_count": result.event_count,
+                    "hash_count": result.hash_count,
+                    "language": result.language,
+                    "target": result.target,
+                    "duration_ms": result.duration_ms,
+                    "hint": "Use load_session to reload this session, or list_sessions to see all saved sessions.",
+                });
+                Ok(CallToolResult::success(json_content(&output)))
+            }
+            Err(ServiceError::SessionNotInMemory(s)) => {
+                Ok(CallToolResult::error(text_content(format!(
                     "Session '{}' not found in memory. Run probe_start first.",
-                    params.session_id
+                    s
                 ))))
             }
-        };
-
-        let events = engine.get_all_events();
-        let event_count = events.len();
-
-        if event_count == 0 {
-            return Ok(CallToolResult::error(text_content(
+            Err(ServiceError::EmptySession(_)) => Ok(CallToolResult::error(text_content(
                 "Session has no events to save.".to_string(),
-            )));
+            ))),
+            Err(ServiceError::SaveFailed(e)) => Ok(CallToolResult::error(text_content(format!(
+                "Failed to save session: {}",
+                e
+            )))),
+            Err(ServiceError::LockPoisoned) => Ok(CallToolResult::error(text_content(
+                "lock poisoned".to_string(),
+            ))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
-
-        // Determine duration from first/last events
-        let (duration_ms, created_at) =
-            if let (Some(first), Some(last)) = (events.first(), events.last()) {
-                let dur_ns = last.timestamp_ns.saturating_sub(first.timestamp_ns);
-                (dur_ns / 1_000_000, last.timestamp_ns / 1_000_000)
-            } else {
-                (0, 0)
-            };
-
-        let metadata = SessionMetadata {
-            session_id: params.session_id.clone(),
-            created_at,
-            language: params.language.clone(),
-            target: params.target.clone(),
-            event_count,
-            duration_ms,
-        };
-
-        let hashes = match self.store.save_session(metadata.clone(), &events) {
-            Ok(h) => h,
-            Err(e) => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Failed to save session: {}",
-                    e
-                ))))
-            }
-        };
-
-        let output = serde_json::json!({
-            "session_id": params.session_id,
-            "status": "saved",
-            "event_count": event_count,
-            "hash_count": hashes.len(),
-            "language": params.language,
-            "target": params.target,
-            "duration_ms": duration_ms,
-            "hint": "Use load_session to reload this session, or list_sessions to see all saved sessions.",
-        });
-        Ok(CallToolResult::success(json_content(&output)))
     }
 
     #[tool(
@@ -1908,40 +1928,36 @@ impl ChronosServer {
         params: Parameters<LoadSessionParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-
-        let (metadata, events) = match self.store.load_session(&params.session_id) {
-            Ok((m, e)) => (m, e),
-            Err(e) => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Failed to load session '{}': {}",
-                    params.session_id, e
-                ))))
-            }
+        let ctx = SessionsContext {
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            connected_sessions: &self.connected_sessions,
+            store: &self.store,
         };
 
-        // Build engine from loaded events
-        let mut builder = IndexBuilder::new();
-        builder.push_all(&events);
-        let indices = builder.finalize();
-
-        let engine = QueryEngine::with_indices(events, indices.shadow, indices.temporal)
-            .with_causality(indices.causality)
-            .with_performance(indices.performance);
-
-        let mut engines = self.engines.lock().await;
-        engines.insert(params.session_id.clone(), engine);
-
-        let output = serde_json::json!({
-            "session_id": params.session_id,
-            "status": "loaded",
-            "language": metadata.language,
-            "target": metadata.target,
-            "event_count": metadata.event_count,
-            "duration_ms": metadata.duration_ms,
-            "created_at": metadata.created_at,
-            "hint": "Session is now queryable. Use query_events, get_execution_summary, etc.",
-        });
-        Ok(CallToolResult::success(json_content(&output)))
+        match SessionsService::load_session(&params.session_id, &ctx).await {
+            Ok(result) => {
+                let output = serde_json::json!({
+                    "session_id": params.session_id,
+                    "status": "loaded",
+                    "language": result.language,
+                    "target": result.target,
+                    "event_count": result.event_count,
+                    "duration_ms": result.duration_ms,
+                    "created_at": result.created_at,
+                    "hint": "Session is now queryable. Use query_events, get_execution_summary, etc.",
+                });
+                Ok(CallToolResult::success(json_content(&output)))
+            }
+            Err(ServiceError::LoadFailed(e)) => Ok(CallToolResult::error(text_content(format!(
+                "Failed to load session '{}': {}",
+                params.session_id, e
+            )))),
+            Err(ServiceError::LockPoisoned) => Ok(CallToolResult::error(text_content(
+                "lock poisoned".to_string(),
+            ))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
+        }
     }
 
     #[tool(
@@ -1952,28 +1968,37 @@ impl ChronosServer {
         &self,
         _params: Parameters<NoParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let sessions = match self.store.list_sessions() {
-            Ok(s) => s,
-            Err(e) => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Failed to list sessions: {}",
-                    e
-                ))))
-            }
+        let ctx = SessionsContext {
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            connected_sessions: &self.connected_sessions,
+            store: &self.store,
         };
 
-        let output = serde_json::json!({
-            "session_count": sessions.len(),
-            "sessions": sessions.iter().map(|s| serde_json::json!({
-                "session_id": s.session_id,
-                "language": s.language,
-                "target": s.target,
-                "event_count": s.event_count,
-                "duration_ms": s.duration_ms,
-                "created_at": s.created_at,
-            })).collect::<Vec<_>>(),
-        });
-        Ok(CallToolResult::success(json_content(&output)))
+        match SessionsService::list_sessions(&ctx).await {
+            Ok(result) => {
+                let output = serde_json::json!({
+                    "session_count": result.sessions.len(),
+                    "sessions": result.sessions.iter().map(|s| serde_json::json!({
+                        "session_id": s.session_id,
+                        "language": s.language,
+                        "target": s.target,
+                        "event_count": s.event_count,
+                        "duration_ms": s.duration_ms,
+                        "created_at": s.created_at,
+                    })).collect::<Vec<_>>(),
+                });
+                Ok(CallToolResult::success(json_content(&output)))
+            }
+            Err(ServiceError::ListFailed(e)) => Ok(CallToolResult::error(text_content(format!(
+                "Failed to list sessions: {}",
+                e
+            )))),
+            Err(ServiceError::LockPoisoned) => Ok(CallToolResult::error(text_content(
+                "lock poisoned".to_string(),
+            ))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
+        }
     }
 
     #[tool(
@@ -1985,9 +2010,15 @@ impl ChronosServer {
         params: Parameters<DeleteSessionParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
+        let ctx = SessionsContext {
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            connected_sessions: &self.connected_sessions,
+            store: &self.store,
+        };
 
-        match self.store.delete_session(&params.session_id) {
-            Ok(()) => {
+        match SessionsService::delete_session(&params.session_id, &ctx).await {
+            Ok(_result) => {
                 // Also purge all in-memory state for this session.
                 self.cleanup_session_memory(&params.session_id).await;
 
@@ -1998,10 +2029,14 @@ impl ChronosServer {
                 });
                 Ok(CallToolResult::success(json_content(&output)))
             }
-            Err(e) => Ok(CallToolResult::error(text_content(format!(
+            Err(ServiceError::DeleteFailed(e)) => Ok(CallToolResult::error(text_content(format!(
                 "Failed to delete session '{}': {}",
                 params.session_id, e
             )))),
+            Err(ServiceError::LockPoisoned) => Ok(CallToolResult::error(text_content(
+                "lock poisoned".to_string(),
+            ))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
     }
 
@@ -2014,28 +2049,38 @@ impl ChronosServer {
         params: Parameters<DropSessionParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
+        let ctx = SessionsContext {
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            connected_sessions: &self.connected_sessions,
+            store: &self.store,
+        };
 
-        // Check if session exists in memory
-        let session_existed = self.engines.lock().await.contains_key(&params.session_id);
+        match SessionsService::drop_session(&params.session_id, &ctx).await {
+            Ok(result) => {
+                // Clean up all in-memory state for this session.
+                self.cleanup_session_memory(&params.session_id).await;
 
-        // Clean up all in-memory state for this session
-        self.cleanup_session_memory(&params.session_id).await;
-
-        if session_existed {
-            let output = serde_json::json!({
-                "session_id": params.session_id,
-                "status": "dropped",
-                "message": "Session removed from memory. Persistent storage not affected.",
-            });
-            Ok(CallToolResult::success(json_content(&output)))
-        } else {
-            // Idempotent: return success even if not found
-            let output = serde_json::json!({
-                "session_id": params.session_id,
-                "status": "not_found",
-                "message": "Session not found in memory. No action taken.",
-            });
-            Ok(CallToolResult::success(json_content(&output)))
+                if result.existed {
+                    let output = serde_json::json!({
+                        "session_id": params.session_id,
+                        "status": "dropped",
+                        "message": "Session removed from memory. Persistent storage not affected.",
+                    });
+                    Ok(CallToolResult::success(json_content(&output)))
+                } else {
+                    let output = serde_json::json!({
+                        "session_id": params.session_id,
+                        "status": "not_found",
+                        "message": "Session not found in memory. No action taken.",
+                    });
+                    Ok(CallToolResult::success(json_content(&output)))
+                }
+            }
+            Err(ServiceError::LockPoisoned) => Ok(CallToolResult::error(text_content(
+                "lock poisoned".to_string(),
+            ))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
     }
 
@@ -2107,6 +2152,25 @@ impl ChronosServer {
                 }))
                 .unwrap_or_default(),
             )])),
+            // New session-lifecycle variants (cannot occur from evaluate_expression).
+            Err(ServiceError::SessionNotInMemory(_)) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected session error".to_string(),
+            ))),
+            Err(ServiceError::EmptySession(_)) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected empty session".to_string(),
+            ))),
+            Err(ServiceError::SaveFailed(_)) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected save error".to_string(),
+            ))),
+            Err(ServiceError::LoadFailed(_)) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected load error".to_string(),
+            ))),
+            Err(ServiceError::ListFailed(_)) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected list error".to_string(),
+            ))),
+            Err(ServiceError::DeleteFailed(_)) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected delete error".to_string(),
+            ))),
         }
     }
 

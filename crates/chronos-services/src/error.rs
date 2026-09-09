@@ -28,4 +28,28 @@ pub enum ServiceError {
     /// Arithmetic expression evaluation failed.
     #[error("evaluation error: {0}")]
     EvalError(String),
+
+    /// Session not found in memory (engines map).
+    #[error("session '{0}' not found in memory")]
+    SessionNotInMemory(String),
+
+    /// Session has no events to save.
+    #[error("session '{0}' has no events to save")]
+    EmptySession(String),
+
+    /// SessionStore::save_session failed.
+    #[error("save failed: {0}")]
+    SaveFailed(String),
+
+    /// SessionStore::load_session failed.
+    #[error("load failed: {0}")]
+    LoadFailed(String),
+
+    /// SessionStore::list_sessions failed.
+    #[error("list failed: {0}")]
+    ListFailed(String),
+
+    /// SessionStore::delete_session failed.
+    #[error("delete failed: {0}")]
+    DeleteFailed(String),
 }
