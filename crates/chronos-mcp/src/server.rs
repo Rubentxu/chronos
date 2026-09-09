@@ -35,7 +35,9 @@ use chronos_domain::{
 use chronos_index::builder::IndexBuilder;
 use chronos_native::probe_backend::NativeProbeBackend;
 use chronos_query::QueryEngine;
+use chronos_services::debug_read::DebugReadService;
 use chronos_services::error::ServiceError;
+use chronos_services::output::EvalResult;
 use chronos_services::query_service::QueryService;
 use chronos_store::{SessionMetadata, SessionStore, TraceDiff};
 use rmcp::handler::server::wrapper::Parameters;
@@ -820,6 +822,22 @@ impl ChronosServer {
         }
     }
 
+    /// Inject a `QueryEngine` into the server's engine map for testing.
+    ///
+    /// This is intentionally **not** public in the production API — it exists
+    /// only to support integration tests in `tests/debug_read_tools.rs`.
+    #[cfg(test)]
+    pub async fn inject_engine_for_testing(
+        &self,
+        session_id: &str,
+        engine: chronos_query::QueryEngine,
+    ) {
+        self.engines
+            .lock()
+            .await
+            .insert(session_id.to_string(), engine);
+    }
+
     fn parse_event_type(name: &str) -> Option<EventType> {
         match name {
             "syscall_enter" => Some(EventType::SyscallEnter),
@@ -1274,6 +1292,28 @@ impl ChronosServer {
             }
             Err(ServiceError::LockPoisoned) => {
                 return Ok(CallToolResult::error(text_content("lock poisoned")));
+            }
+            // The new ServiceError variants cannot occur from list_threads,
+            // but must be listed for exhaustiveness.
+            Err(ServiceError::MemoryNotFound { .. }) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected memory error",
+                )));
+            }
+            Err(ServiceError::EventNotFound { .. }) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected event error",
+                )));
+            }
+            Err(ServiceError::NoRegisterState { .. }) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected register error",
+                )));
+            }
+            Err(ServiceError::EvalError(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected eval error",
+                )));
             }
         };
 
@@ -2013,33 +2053,60 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        // Use QueryEngine to evaluate the arithmetic expression
-        let engines = self.engines.lock().await;
-        match engines.get(&params.session_id) {
-            Some(engine) => match engine.evaluate_expression(params.event_id, &params.expression) {
-                Ok(result) => {
-                    let output = serde_json::json!({
-                        "event_id": params.event_id,
-                        "expression": params.expression,
-                        "result": result,
-                    });
-                    Ok(CallToolResult::success(json_content(&output)))
-                }
-                Err(e) => {
-                    let output = serde_json::json!({
-                        "event_id": params.event_id,
-                        "expression": params.expression,
-                        "error": format!("{:?}", e),
-                    });
-                    Ok(CallToolResult::success(vec![Content::text(
-                        serde_json::to_string_pretty(&output).unwrap_or_default(),
-                    )]))
-                }
-            },
-            None => Ok(CallToolResult::error(text_content(format!(
-                "Session '{}' not found",
-                params.session_id
+        let result = DebugReadService::evaluate_expression(
+            &params.session_id,
+            params.event_id,
+            &params.expression,
+            &self.engines,
+        )
+        .await;
+
+        match result {
+            Ok(EvalResult::Value(value)) => {
+                let output = serde_json::json!({
+                    "event_id": params.event_id,
+                    "expression": params.expression,
+                    "result": value,
+                });
+                Ok(CallToolResult::success(json_content(&output)))
+            }
+            Ok(EvalResult::Error(msg)) => {
+                let output = serde_json::json!({
+                    "event_id": params.event_id,
+                    "expression": params.expression,
+                    "error": msg,
+                });
+                Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::to_string_pretty(&output).unwrap_or_default(),
+                )]))
+            }
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{}' not found", s),
+            ))),
+            Err(ServiceError::LockPoisoned) => Ok(CallToolResult::error(text_content(
+                "lock poisoned".to_string(),
+            ))),
+            Err(ServiceError::MemoryNotFound {
+                address,
+                timestamp_ns,
+            }) => Ok(CallToolResult::error(text_content(format!(
+                "no memory at address 0x{:x} before timestamp {}",
+                address, timestamp_ns
             )))),
+            Err(ServiceError::EventNotFound { event_id }) => Ok(CallToolResult::error(
+                text_content(format!("event {} not found", event_id)),
+            )),
+            Err(ServiceError::NoRegisterState { event_id }) => Ok(CallToolResult::error(
+                text_content(format!("no register state at event {}", event_id)),
+            )),
+            Err(ServiceError::EvalError(msg)) => Ok(CallToolResult::success(vec![Content::text(
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "event_id": params.event_id,
+                    "expression": params.expression,
+                    "error": msg,
+                }))
+                .unwrap_or_default(),
+            )])),
         }
     }
 
@@ -2052,21 +2119,26 @@ impl ChronosServer {
         params: Parameters<DebugGetVariablesParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let engines = self.engines.lock().await;
 
-        match engines.get(&params.session_id) {
-            Some(engine) => {
-                let vars = engine.get_variables_at_event(params.event_id);
+        let result =
+            DebugReadService::get_variables(&params.session_id, params.event_id, &self.engines)
+                .await;
+
+        match result {
+            Ok(vars) => {
                 let output = serde_json::json!({
                     "event_id": params.event_id,
                     "variables": vars,
                 });
                 Ok(CallToolResult::success(json_content(&output)))
             }
-            None => Ok(CallToolResult::error(text_content(format!(
-                "Session '{}' not found",
-                params.session_id
-            )))),
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{}' not found", s),
+            ))),
+            Err(ServiceError::LockPoisoned) => Ok(CallToolResult::error(text_content(
+                "lock poisoned".to_string(),
+            ))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
     }
 
@@ -2079,36 +2151,41 @@ impl ChronosServer {
         params: Parameters<DebugGetMemoryParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let engines = self.engines.lock().await;
 
-        match engines.get(&params.session_id) {
-            Some(engine) => match engine.get_memory_at(params.address, params.timestamp_ns) {
-                Some(mem) => {
-                    let hex = mem
-                        .data
-                        .iter()
-                        .map(|b| format!("{:02x}", b))
-                        .collect::<Vec<_>>()
-                        .join("");
-                    let output = serde_json::json!({
-                        "address": format!("0x{:x}", mem.address),
-                        "timestamp_ns": mem.timestamp_ns,
-                        "event_id": mem.event_id,
-                        "size": mem.size,
-                        "data": mem.data,
-                        "hex": hex,
-                    });
-                    Ok(CallToolResult::success(json_content(&output)))
-                }
-                None => Ok(CallToolResult::error(text_content(format!(
-                    "No memory event found at address 0x{:x} before timestamp {}",
-                    params.address, params.timestamp_ns
-                )))),
-            },
-            None => Ok(CallToolResult::error(text_content(format!(
-                "Session '{}' not found",
-                params.session_id
+        let result = DebugReadService::get_memory(
+            &params.session_id,
+            params.address,
+            params.timestamp_ns,
+            &self.engines,
+        )
+        .await;
+
+        match result {
+            Ok(mem) => {
+                let output = serde_json::json!({
+                    "address": format!("0x{:x}", mem.address),
+                    "timestamp_ns": mem.timestamp_ns,
+                    "event_id": mem.event_id,
+                    "size": mem.size,
+                    "data": mem.data,
+                    "hex": mem.hex,
+                });
+                Ok(CallToolResult::success(json_content(&output)))
+            }
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{}' not found", s),
+            ))),
+            Err(ServiceError::MemoryNotFound {
+                address,
+                timestamp_ns,
+            }) => Ok(CallToolResult::error(text_content(format!(
+                "No memory event found at address 0x{:x} before timestamp {}",
+                address, timestamp_ns
             )))),
+            Err(ServiceError::LockPoisoned) => Ok(CallToolResult::error(text_content(
+                "lock poisoned".to_string(),
+            ))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
     }
 
@@ -2125,58 +2202,52 @@ impl ChronosServer {
         params: Parameters<DebugGetRegistersParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let engines = self.engines.lock().await;
 
-        let engine = match engines.get(&params.session_id) {
-            Some(e) => e,
-            None => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Session '{}' not found",
-                    params.session_id
-                ))))
-            }
-        };
+        let result =
+            DebugReadService::get_registers(&params.session_id, params.event_id, &self.engines)
+                .await;
 
-        match engine.get_event_by_id(params.event_id) {
-            Some(_event) => {
-                // Find register state attached to this event or the nearest prior one
-                let regs = engine.find_registers_at_event(params.event_id);
-                match regs {
-                    Some(r) => {
-                        let output = serde_json::json!({
-                            "event_id": params.event_id,
-                            "registers": {
-                                "rax": format!("0x{:x}", r.rax),
-                                "rbx": format!("0x{:x}", r.rbx),
-                                "rcx": format!("0x{:x}", r.rcx),
-                                "rdx": format!("0x{:x}", r.rdx),
-                                "rsi": format!("0x{:x}", r.rsi),
-                                "rdi": format!("0x{:x}", r.rdi),
-                                "rbp": format!("0x{:x}", r.rbp),
-                                "rsp": format!("0x{:x}", r.rsp),
-                                "r8": format!("0x{:x}", r.r8),
-                                "r9": format!("0x{:x}", r.r9),
-                                "r10": format!("0x{:x}", r.r10),
-                                "r11": format!("0x{:x}", r.r11),
-                                "r12": format!("0x{:x}", r.r12),
-                                "r13": format!("0x{:x}", r.r13),
-                                "r14": format!("0x{:x}", r.r14),
-                                "r15": format!("0x{:x}", r.r15),
-                                "rip": format!("0x{:x}", r.rip),
-                                "rflags": format!("0x{:x}", r.rflags),
-                            },
-                        });
-                        Ok(CallToolResult::success(json_content(&output)))
-                    }
-                    None => Ok(CallToolResult::error(text_content(
-                        "no register state at this event".to_string(),
-                    ))),
-                }
+        match result {
+            Ok(rr) => {
+                let r = &rr.registers;
+                let output = serde_json::json!({
+                    "event_id": rr.event_id,
+                    "registers": {
+                        "rax": format!("0x{:x}", r.rax),
+                        "rbx": format!("0x{:x}", r.rbx),
+                        "rcx": format!("0x{:x}", r.rcx),
+                        "rdx": format!("0x{:x}", r.rdx),
+                        "rsi": format!("0x{:x}", r.rsi),
+                        "rdi": format!("0x{:x}", r.rdi),
+                        "rbp": format!("0x{:x}", r.rbp),
+                        "rsp": format!("0x{:x}", r.rsp),
+                        "r8": format!("0x{:x}", r.r8),
+                        "r9": format!("0x{:x}", r.r9),
+                        "r10": format!("0x{:x}", r.r10),
+                        "r11": format!("0x{:x}", r.r11),
+                        "r12": format!("0x{:x}", r.r12),
+                        "r13": format!("0x{:x}", r.r13),
+                        "r14": format!("0x{:x}", r.r14),
+                        "r15": format!("0x{:x}", r.r15),
+                        "rip": format!("0x{:x}", r.rip),
+                        "rflags": format!("0x{:x}", r.rflags),
+                    },
+                });
+                Ok(CallToolResult::success(json_content(&output)))
             }
-            None => Ok(CallToolResult::error(text_content(format!(
-                "Event {} not found",
-                params.event_id
-            )))),
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{}' not found", s),
+            ))),
+            Err(ServiceError::EventNotFound { event_id }) => Ok(CallToolResult::error(
+                text_content(format!("Event {} not found", event_id)),
+            )),
+            Err(ServiceError::NoRegisterState { event_id }) => Ok(CallToolResult::error(
+                text_content(format!("no register state at event {}", event_id)),
+            )),
+            Err(ServiceError::LockPoisoned) => Ok(CallToolResult::error(text_content(
+                "lock poisoned".to_string(),
+            ))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
     }
 
@@ -2189,105 +2260,54 @@ impl ChronosServer {
         params: Parameters<DebugDiffParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let engines = self.engines.lock().await;
 
-        let engine = match engines.get(&params.session_id) {
-            Some(e) => e,
-            None => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Session '{}' not found",
-                    params.session_id
-                ))))
-            }
-        };
+        let result = DebugReadService::diff(
+            &params.session_id,
+            params.event_id_a,
+            params.event_id_b,
+            &self.engines,
+        )
+        .await;
 
-        // Get variables at both events
-        let vars_a = engine.get_variables_at_event(params.event_id_a);
-        let vars_b = engine.get_variables_at_event(params.event_id_b);
-
-        let names_a: std::collections::HashSet<_> = vars_a.iter().map(|v| v.name.clone()).collect();
-        let names_b: std::collections::HashSet<_> = vars_b.iter().map(|v| v.name.clone()).collect();
-
-        let vars_added: Vec<_> = names_b.difference(&names_a).cloned().collect();
-        let vars_removed: Vec<_> = names_a.difference(&names_b).cloned().collect();
-
-        // Find changed variables
-        let mut vars_changed = Vec::new();
-        for name in names_a.intersection(&names_b) {
-            let val_a = vars_a
-                .iter()
-                .find(|v| &v.name == name)
-                .map(|v| v.value.clone());
-            let val_b = vars_b
-                .iter()
-                .find(|v| &v.name == name)
-                .map(|v| v.value.clone());
-            if val_a != val_b {
-                vars_changed.push(serde_json::json!({
-                    "name": name,
-                    "before": val_a,
-                    "after": val_b,
-                }));
-            }
-        }
-
-        // Get registers at both events
-        let regs_a = engine.find_registers_at_event(params.event_id_a);
-        let regs_b = engine.find_registers_at_event(params.event_id_b);
-
-        let mut registers_changed = serde_json::Map::new();
-        if let (Some(ra), Some(rb)) = (&regs_a, &regs_b) {
-            let reg_fields = [
-                ("rax", ra.rax, rb.rax),
-                ("rbx", ra.rbx, rb.rbx),
-                ("rcx", ra.rcx, rb.rcx),
-                ("rdx", ra.rdx, rb.rdx),
-                ("rsi", ra.rsi, rb.rsi),
-                ("rdi", ra.rdi, rb.rdi),
-                ("rbp", ra.rbp, rb.rbp),
-                ("rsp", ra.rsp, rb.rsp),
-                ("r8", ra.r8, rb.r8),
-                ("r9", ra.r9, rb.r9),
-                ("r10", ra.r10, rb.r10),
-                ("r11", ra.r11, rb.r11),
-                ("r12", ra.r12, rb.r12),
-                ("r13", ra.r13, rb.r13),
-                ("r14", ra.r14, rb.r14),
-                ("r15", ra.r15, rb.r15),
-                ("rip", ra.rip, rb.rip),
-                ("rflags", ra.rflags, rb.rflags),
-            ];
-            for (name, val_a, val_b) in reg_fields {
-                if val_a != val_b {
+        match result {
+            Ok(snap) => {
+                // Convert RegisterChange back to the existing JSON Map shape
+                let mut registers_changed = serde_json::Map::new();
+                for (name, change) in snap.registers_changed {
                     registers_changed.insert(
-                        name.to_string(),
+                        name,
                         serde_json::json!({
-                            "before": format!("0x{:x}", val_a),
-                            "after": format!("0x{:x}", val_b),
+                            "before": change.before,
+                            "after": change.after,
                         }),
                     );
                 }
+
+                let output = serde_json::json!({
+                    "event_id_a": snap.event_id_a,
+                    "event_id_b": snap.event_id_b,
+                    "variables_added": snap.variables_added,
+                    "variables_removed": snap.variables_removed,
+                    "variables_changed": snap.variables_changed.iter().map(|vc| {
+                        serde_json::json!({
+                            "name": vc.name,
+                            "before": vc.before,
+                            "after": vc.after,
+                        })
+                    }).collect::<Vec<_>>(),
+                    "registers_changed": registers_changed,
+                    "timestamp_delta_ns": snap.timestamp_delta_ns,
+                });
+                Ok(CallToolResult::success(json_content(&output)))
             }
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{}' not found", s),
+            ))),
+            Err(ServiceError::LockPoisoned) => Ok(CallToolResult::error(text_content(
+                "lock poisoned".to_string(),
+            ))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
-
-        // Get timestamps for delta
-        let event_a = engine.get_event_by_id(params.event_id_a);
-        let event_b = engine.get_event_by_id(params.event_id_b);
-        let timestamp_delta_ns = match (event_a, event_b) {
-            (Some(ea), Some(eb)) => eb.timestamp_ns.saturating_sub(ea.timestamp_ns),
-            _ => 0,
-        };
-
-        let output = serde_json::json!({
-            "event_id_a": params.event_id_a,
-            "event_id_b": params.event_id_b,
-            "variables_added": vars_added,
-            "variables_removed": vars_removed,
-            "variables_changed": vars_changed,
-            "registers_changed": registers_changed,
-            "timestamp_delta_ns": timestamp_delta_ns,
-        });
-        Ok(CallToolResult::success(json_content(&output)))
     }
 
     #[tool(
@@ -2299,68 +2319,45 @@ impl ChronosServer {
         params: Parameters<DebugAnalyzeMemoryParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let engines = self.engines.lock().await;
 
-        let engine = match engines.get(&params.session_id) {
-            Some(e) => e,
-            None => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Session '{}' not found",
-                    params.session_id
-                ))))
-            }
-        };
+        let result = DebugReadService::analyze_memory(
+            &params.session_id,
+            params.start_address,
+            params.end_address,
+            params.start_ts,
+            params.end_ts,
+            &self.engines,
+        )
+        .await;
 
-        // Get all events and filter for memory writes in the address/time range
-        let all_events = engine.get_all_events();
-        let mut accesses = Vec::new();
-        let mut total_writes = 0u64;
-
-        for event in all_events {
-            // Filter by time window
-            if event.timestamp_ns < params.start_ts || event.timestamp_ns > params.end_ts {
-                continue;
-            }
-
-            // Check for memory events
-            if let EventData::Memory {
-                address,
-                size,
-                data,
-            } = &event.data
-            {
-                // Filter by address range
-                if *address >= params.start_address && *address <= params.end_address {
-                    let hex = data
-                        .as_ref()
-                        .map(|d| {
-                            d.iter()
-                                .map(|b| format!("{:02x}", b))
-                                .collect::<Vec<_>>()
-                                .join("")
+        match result {
+            Ok(analysis) => {
+                let output = serde_json::json!({
+                    "start_address": analysis.start_address,
+                    "end_address": analysis.end_address,
+                    "start_ts": analysis.start_ts,
+                    "end_ts": analysis.end_ts,
+                    "total_writes": analysis.total_writes,
+                    "accesses": analysis.accesses.iter().map(|a| {
+                        serde_json::json!({
+                            "address": a.address,
+                            "timestamp_ns": a.timestamp_ns,
+                            "data_hex": a.data_hex,
+                            "event_id": a.event_id,
+                            "size": a.size,
                         })
-                        .unwrap_or_default();
-                    accesses.push(serde_json::json!({
-                        "address": format!("0x{:x}", address),
-                        "timestamp_ns": event.timestamp_ns,
-                        "data_hex": hex,
-                        "event_id": event.event_id,
-                        "size": size,
-                    }));
-                    total_writes += 1;
-                }
+                    }).collect::<Vec<_>>(),
+                });
+                Ok(CallToolResult::success(json_content(&output)))
             }
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{}' not found", s),
+            ))),
+            Err(ServiceError::LockPoisoned) => Ok(CallToolResult::error(text_content(
+                "lock poisoned".to_string(),
+            ))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
-
-        let output = serde_json::json!({
-            "start_address": format!("0x{:x}", params.start_address),
-            "end_address": format!("0x{:x}", params.end_address),
-            "start_ts": params.start_ts,
-            "end_ts": params.end_ts,
-            "total_writes": total_writes,
-            "accesses": accesses,
-        });
-        Ok(CallToolResult::success(json_content(&output)))
     }
 
     #[tool(
@@ -2372,60 +2369,46 @@ impl ChronosServer {
         params: Parameters<ForensicMemoryAuditParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let engines = self.engines.lock().await;
 
-        let engine = match engines.get(&params.session_id) {
-            Some(e) => e,
-            None => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Session '{}' not found",
-                    params.session_id
-                ))))
-            }
-        };
+        let result = DebugReadService::forensic_audit(
+            &params.session_id,
+            params.address,
+            params.limit,
+            &self.engines,
+        )
+        .await;
 
-        // Get all events and find memory writes to this address
-        let all_events = engine.get_all_events();
-        let mut writes = Vec::new();
-
-        for event in &all_events {
-            if let EventData::Memory { address, data, .. } = &event.data {
-                if *address == params.address {
-                    // Get call stack at this event
-                    let stack = engine.reconstruct_call_stack(event.event_id);
-                    let hex = data
-                        .as_ref()
-                        .map(|d| {
-                            d.iter()
-                                .map(|b| format!("{:02x}", b))
-                                .collect::<Vec<_>>()
-                                .join("")
+        match result {
+            Ok(audit) => {
+                let output = serde_json::json!({
+                    "address": audit.address,
+                    "write_count": audit.write_count,
+                    "writes": audit.writes.iter().map(|w| {
+                        serde_json::json!({
+                            "timestamp_ns": w.timestamp_ns,
+                            "event_id": w.event_id,
+                            "data_hex": w.data_hex,
+                            "call_stack": w.call_stack.iter().map(|f| {
+                                serde_json::json!({
+                                    "depth": f.depth,
+                                    "function": f.function,
+                                    "file": f.file,
+                                    "line": f.line,
+                                })
+                            }).collect::<Vec<_>>(),
                         })
-                        .unwrap_or_default();
-                    writes.push(serde_json::json!({
-                        "timestamp_ns": event.timestamp_ns,
-                        "event_id": event.event_id,
-                        "data_hex": hex,
-                        "call_stack": stack.iter().map(|f| serde_json::json!({
-                            "depth": f.depth,
-                            "function": f.function,
-                            "file": f.file,
-                            "line": f.line,
-                        })).collect::<Vec<_>>(),
-                    }));
-                }
+                    }).collect::<Vec<_>>(),
+                });
+                Ok(CallToolResult::success(json_content(&output)))
             }
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{}' not found", s),
+            ))),
+            Err(ServiceError::LockPoisoned) => Ok(CallToolResult::error(text_content(
+                "lock poisoned".to_string(),
+            ))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
-
-        writes.sort_by_key(|w| w["timestamp_ns"].as_u64().unwrap_or(0));
-        writes.truncate(params.limit);
-
-        let output = serde_json::json!({
-            "address": format!("0x{:x}", params.address),
-            "write_count": writes.len(),
-            "writes": writes,
-        });
-        Ok(CallToolResult::success(json_content(&output)))
     }
 
     // ========================================================================
