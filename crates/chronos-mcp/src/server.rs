@@ -1260,12 +1260,9 @@ impl ChronosServer {
             Err(ServiceError::LockPoisoned) => {
                 Ok(CallToolResult::error(text_content("lock poisoned")))
             }
-            Err(ServiceError::QueryExecutionError(s)) => {
-                Ok(CallToolResult::error(text_content(format!(
-                    "internal error: unexpected query error: {}",
-                    s
-                ))))
-            }
+            Err(ServiceError::QueryExecutionError(s)) => Ok(CallToolResult::error(text_content(
+                format!("internal error: unexpected query error: {}", s),
+            ))),
             Err(e) => Ok(CallToolResult::error(text_content(format!(
                 "internal error: unexpected error: {}",
                 e

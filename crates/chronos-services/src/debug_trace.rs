@@ -541,10 +541,7 @@ mod tests {
             c_node.callers.contains(&"b".to_string()),
             "c should see b as caller"
         );
-        assert_eq!(
-            c_node.call_count, 1,
-            "c was entered once"
-        );
+        assert_eq!(c_node.call_count, 1, "c was entered once");
 
         // Verify b has c as callee
         let b_node = cg
