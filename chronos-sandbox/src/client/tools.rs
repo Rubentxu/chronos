@@ -118,6 +118,26 @@ impl McpSession {
         Ok(result.session_id)
     }
 
+    /// Probe start with `track_function_frames=true` — exercises the live
+    /// MCP path that drives the INT3 frame-capture pipeline and streams
+    /// `FunctionEntry` events to both `EventBus` and the attached
+    /// `SegmentedExecutionLog` v2. MCP-side default is `false`; this
+    /// helper sets it explicitly so the UAT can assert the new behaviour.
+    pub async fn probe_start_with_track_function_frames(
+        &mut self,
+        program: &str,
+    ) -> Result<String, McpSandboxError> {
+        let params = serde_json::json!({
+            "program": program,
+            "track_function_frames": true,
+        });
+
+        let response = self.rpc_client.call_tool("probe_start", params).await?;
+        let result: ProbeStartResponse = serde_json::from_value(response)
+            .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
+        Ok(result.session_id)
+    }
+
     /// Probe start raw — returns the raw JSON response for edge case testing.
     ///
     /// Use this when you need to inspect the full response including error cases.

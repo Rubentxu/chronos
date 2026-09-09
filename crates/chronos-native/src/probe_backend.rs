@@ -13,6 +13,7 @@
 //! opted into the new persistence backend (m1-01 / m0-01 UATs
 //! continue to pass).
 
+use crate::capture_runner::run_function_frame_capture_with_callback;
 use crate::native_adapter::NativeAdapter;
 use crate::ptrace_tracer::{PtraceConfig, PtraceTracer};
 use crate::symbol_resolver::SymbolResolver;
@@ -345,8 +346,19 @@ impl NativeProbeBackend {
     /// thread that runs the ptrace event loop. Each ptrace event is converted to a
     /// `TraceEvent` and pushed to the `EventBus` in real-time.
     ///
+    /// When `track_function_frames=true` (and a [`SymbolResolver`] was loaded from
+    /// the spawned binary), the live thread drives the function-capture branch
+    /// (`run_function_frame_capture_with_callback`) so that real `FunctionEntry`
+    /// events reach both `EventBus` and the attached `SegmentedExecutionLog` v2
+    /// through the same `dual_push` seam as syscall/registers events. See
+    /// `m2-native-live-probe-frame-capture` design for the contract.
+    ///
     /// Returns a `CaptureSession` immediately (non-blocking).
-    pub fn start_probe(&self, config: CaptureConfig) -> Result<CaptureSession, TraceError> {
+    pub fn start_probe(
+        &self,
+        config: CaptureConfig,
+        track_function_frames: bool,
+    ) -> Result<CaptureSession, TraceError> {
         // HIGH-4: Guard against double-start
         if self.running.load(Ordering::SeqCst) {
             return Err(TraceError::CaptureFailed(
@@ -393,7 +405,7 @@ impl NativeProbeBackend {
             trace_syscalls: config.capture_syscalls,
             capture_registers: true,
             follow_children: true,
-            track_function_frames: false,
+            track_function_frames,
         };
 
         // Build the (placeholder) session up front so we have a
@@ -690,6 +702,74 @@ impl NativeProbeBackend {
                 let _ = tracer.kill(pid);
             }
             return;
+        }
+
+        // m2-native-live-probe-frame-capture: when the live probe was launched
+        // with track_function_frames=true AND we resolved symbols for the
+        // spawned binary, drive the function-capture branch in place. The
+        // helper streams each TraceEvent (FunctionEntry or InvocationIncomplete)
+        // through `on_event`, which we pipe through the same `dual_push` seam
+        // the flat loop uses so frames reach both EventBus and the attached
+        // SegmentedExecutionLog v2. On any helper error we kill the tracee,
+        // fall through to cleanup, and let the thread exit normally.
+        if ptrace_config.track_function_frames {
+            if let Some(resolver) = symbol_resolver {
+                let timestamp_ns = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos() as u64;
+                // The live backend exposes an `Arc<AtomicBool>` named `running`
+                // (true = continue, false = stop). The capture helper expects a
+                // `stop_flag` (true = stop). Bridge the two with a mirror
+                // thread that keeps the helper's flag inverse-synchronised
+                // with `running`; `stop_probe` (which sets `running=false`)
+                // is observed by the helper within at most ~20 ms.
+                let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(
+                    !running.load(Ordering::SeqCst),
+                ));
+                let stop_flag_for_helper = stop_flag.clone();
+                let running_for_refresh = running.clone();
+                let _stop_mirror = std::thread::spawn(move || {
+                    while running_for_refresh.load(Ordering::SeqCst) {
+                        stop_flag_for_helper.store(false, Ordering::SeqCst);
+                        std::thread::sleep(std::time::Duration::from_millis(20));
+                    }
+                    stop_flag_for_helper.store(true, Ordering::SeqCst);
+                });
+                let helper_result = run_function_frame_capture_with_callback(
+                    &mut tracer,
+                    pid,
+                    PathBuf::from(program_path).as_path(),
+                    resolver,
+                    &stop_flag,
+                    None,
+                    |trace_event: TraceEvent| {
+                        Self::dual_push(
+                            &event_bus,
+                            execution_log.as_deref(),
+                            &log_session_id,
+                            &trace_event,
+                            timestamp_ns,
+                        );
+                        let ctx = ResolveContext {
+                            pid: pid as u32,
+                            binary_path: Some(program_path.to_string()),
+                        };
+                        let semantic_event = resolver_pipeline.resolve(&trace_event, &ctx);
+                        event_bus.push(semantic_event);
+                        event_id += 1;
+                    },
+                );
+                if let Err(err) = helper_result {
+                    warn!(
+                        "Live function-frame capture exited with error for PID {}: {} — \
+                         killing tracee and returning",
+                        pid, err
+                    );
+                    let _ = tracer.kill(pid);
+                }
+                // fall through to cleanup
+            }
         }
 
         // Main event loop
