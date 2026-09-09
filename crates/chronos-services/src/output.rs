@@ -331,6 +331,159 @@ pub struct TripwireDeleteResult {
 }
 
 // ---------------------------------------------------------------------------
+// Debug-trace specialized output types
+// ---------------------------------------------------------------------------
+
+/// A single mutation / write event in a variable or address lineage.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LineageEntry {
+    pub event_id: u64,
+    pub timestamp_ns: u64,
+    pub thread_id: u64,
+    pub value_before: Option<String>,
+    pub value_after: String,
+    pub function: String,
+    pub file: Option<String>,
+    pub line: Option<u32>,
+}
+
+impl From<chronos_domain::query::MutationRecord> for LineageEntry {
+    fn from(m: chronos_domain::query::MutationRecord) -> Self {
+        LineageEntry {
+            event_id: m.event_id,
+            timestamp_ns: m.timestamp,
+            thread_id: m.thread_id,
+            value_before: m.value_before,
+            value_after: m.value_after,
+            function: m.function,
+            file: m.file,
+            line: m.line,
+        }
+    }
+}
+
+/// Result of the `debug_find_variable_origin` tool.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VariableOriginResult {
+    pub session_id: String,
+    pub variable_name: String,
+    pub mutation_count: usize,
+    pub mutations: Vec<LineageEntry>,
+    /// Set when the engine returned no causality result (no index or no writes).
+    pub note: Option<String>,
+}
+
+/// A reconstructed stack frame at a crash event.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CrashStackFrame {
+    pub depth: u32,
+    pub function: String,
+    pub address: u64,
+    pub file: Option<String>,
+    pub line: Option<u32>,
+}
+
+impl From<chronos_domain::query::StackFrame> for CrashStackFrame {
+    fn from(sf: chronos_domain::query::StackFrame) -> Self {
+        CrashStackFrame {
+            depth: sf.depth,
+            function: sf.function,
+            address: sf.address,
+            file: sf.file,
+            line: sf.line,
+        }
+    }
+}
+
+/// Result of the `debug_find_crash` tool.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CrashPoint {
+    pub session_id: String,
+    pub crash_found: bool,
+    pub signal: String,
+    pub event_id: u64,
+    pub timestamp_ns: u64,
+    pub thread_id: u64,
+    pub call_stack_depth: usize,
+    pub call_stack: Vec<CrashStackFrame>,
+    /// Present only when crash_found is false.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// Result of the `debug_detect_races` tool.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RaceReport {
+    pub session_id: String,
+    pub threshold_ns: u64,
+    /// Number of suspicious accesses found.
+    pub access_count: usize,
+    /// Raw accesses from the engine (contains write pairs with delta_ns).
+    pub accesses: Vec<chronos_domain::query::SuspiciousConcurrentAccess>,
+    /// Total addresses checked.
+    pub total_writes: usize,
+    /// Extracted (function_a, function_b) pairs for quick triage.
+    pub suspicious_pairs: Vec<(String, String)>,
+    /// Human-readable summary.
+    pub summary: String,
+}
+
+/// Result of the `inspect_causality` tool.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CausalityReport {
+    pub session_id: String,
+    pub address: u64,
+    pub mutation_count: usize,
+    pub mutations: Vec<LineageEntry>,
+    /// Set when the engine returned no causality result.
+    pub note: Option<String>,
+}
+
+/// A single hotspot function entry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HotspotEntry {
+    pub function: String,
+    pub call_count: u64,
+    pub total_cycles: Option<u64>,
+    pub avg_cycles_per_call: Option<f64>,
+}
+
+/// Result of the `debug_expand_hotspot` tool.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HotspotReport {
+    pub session_id: String,
+    pub compression_level: String,
+    pub top_n: usize,
+    pub total_calls_in_trace: u64,
+    pub hotspot_functions: Vec<HotspotEntry>,
+    pub hint: Option<String>,
+}
+
+/// A single function saliency score.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SaliencyScore {
+    pub function: String,
+    /// Score in [0.0, 1.0], four decimal places.
+    pub saliency_score: f64,
+    pub call_count: u64,
+    /// Total cycles (only present when perf counters were available).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_cycles: Option<u64>,
+    /// Cycles field emitted when perf counters were NOT available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cycles: Option<()>,
+}
+
+/// Result of the `debug_get_saliency_scores` tool.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SaliencyScoreResult {
+    pub session_id: String,
+    pub scored_functions: usize,
+    pub scores: Vec<SaliencyScore>,
+    pub hint: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
 // Serde round-trip tests
 // ---------------------------------------------------------------------------
 
