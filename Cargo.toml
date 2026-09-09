@@ -16,6 +16,7 @@ members = [
     "crates/chronos-js",
     "crates/chronos-browser",
     "crates/chronos-log",
+    "crates/chronos-services",
     "chronos-sandbox",
 ]
 
@@ -41,6 +42,8 @@ chronos-java = { path = "crates/chronos-java" }
 chronos-go = { path = "crates/chronos-go" }
 chronos-js = { path = "crates/chronos-js" }
 chronos-browser = { path = "crates/chronos-browser" }
+chronos-log = { path = "crates/chronos-log" }
+chronos-services = { path = "crates/chronos-services" }
 
 # External
 tokio = { version = "1", features = ["full"] }
