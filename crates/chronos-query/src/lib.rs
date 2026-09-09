@@ -5,5 +5,7 @@
 
 pub mod engine;
 pub mod expr_eval;
+pub mod projection;
 
 pub use engine::QueryEngine;
+pub use projection::{PropertyProjection, PropertyProjectionReport};
