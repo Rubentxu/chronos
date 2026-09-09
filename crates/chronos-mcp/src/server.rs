@@ -36,6 +36,7 @@ use chronos_index::builder::IndexBuilder;
 use chronos_native::probe_backend::NativeProbeBackend;
 use chronos_query::QueryEngine;
 use chronos_services::debug_read::DebugReadService;
+use chronos_services::debug_trace::DebugTraceService;
 use chronos_services::error::ServiceError;
 use chronos_services::output::EvalResult;
 use chronos_services::query_service::QueryService;
@@ -1086,25 +1087,14 @@ impl ChronosServer {
         params: Parameters<QueryEventsParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let engines = self.engines.lock().await;
 
-        let engine = match engines.get(&params.session_id) {
-            Some(e) => e,
-            None => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Session '{}' not found or not finalized",
-                    params.session_id
-                ))));
-            }
-        };
-
-        let mut query = TraceQuery::new(&params.session_id).pagination(params.limit, params.offset);
-
+        // Parse event_type strings
+        let mut event_types: Option<Vec<EventType>> = None;
         if let Some(ref types) = params.event_types {
-            let mut event_types: Vec<EventType> = Vec::with_capacity(types.len());
+            let mut parsed: Vec<EventType> = Vec::with_capacity(types.len());
             for t in types {
                 match Self::parse_event_type(t) {
-                    Some(et) => event_types.push(et),
+                    Some(et) => parsed.push(et),
                     None => {
                         return Ok(CallToolResult::error(text_content(format!(
                             "query_events: unknown event_type '{}'. Valid types: syscall_enter, syscall_exit, function_entry, function_exit, variable_write, memory_write, signal_delivered, breakpoint_hit, thread_create, thread_exit, exception_thrown.",
@@ -1113,30 +1103,111 @@ impl ChronosServer {
                     }
                 }
             }
-            if !event_types.is_empty() {
-                query = query.event_types(event_types);
+            if !parsed.is_empty() {
+                event_types = Some(parsed);
             }
         }
 
-        if let (Some(start), Some(end)) = (params.timestamp_start, params.timestamp_end) {
-            query = query.time_range(start, end);
-        }
+        let result = match DebugTraceService::query_events(
+            &params.session_id,
+            event_types,
+            params.thread_id,
+            params.timestamp_start,
+            params.timestamp_end,
+            params.function_pattern.as_deref(),
+            params.limit,
+            params.offset,
+            &self.engines,
+        )
+        .await
+        {
+            Ok(r) => r,
+            Err(ServiceError::SessionNotFound(s)) => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "Session '{}' not found or not finalized",
+                    s
+                ))));
+            }
+            Err(ServiceError::LockPoisoned) => {
+                return Ok(CallToolResult::error(text_content("lock poisoned")));
+            }
+            Err(ServiceError::QueryExecutionError(s)) => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "query execution error: {}",
+                    s
+                ))));
+            }
+            // Other error variants cannot occur from query_events but are listed
+            // for exhaustiveness.
+            Err(ServiceError::EventNotFound { event_id: _ }) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected event error",
+                )));
+            }
+            Err(ServiceError::MemoryNotFound { .. }) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected memory error",
+                )));
+            }
+            Err(ServiceError::NoRegisterState { event_id: _ }) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected register error",
+                )));
+            }
+            Err(ServiceError::EvalError(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected eval error",
+                )));
+            }
+            Err(ServiceError::SessionNotInMemory(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected session error",
+                )));
+            }
+            Err(ServiceError::EmptySession(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected empty session",
+                )));
+            }
+            Err(ServiceError::SaveFailed(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected save error",
+                )));
+            }
+            Err(ServiceError::LoadFailed(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected load error",
+                )));
+            }
+            Err(ServiceError::ListFailed(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected list error",
+                )));
+            }
+            Err(ServiceError::DeleteFailed(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected delete error",
+                )));
+            }
+            Err(ServiceError::InvalidCondition(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected condition error",
+                )));
+            }
+            Err(ServiceError::InvalidTripwireIdFormat(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected tripwire ID format error",
+                )));
+            }
+            Err(ServiceError::TripwireNotFound(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected tripwire not found",
+                )));
+            }
+        };
 
-        if let Some(ref pattern) = params.function_pattern {
-            query = query.function_pattern(pattern);
-        }
-
-        if let Some(tid) = params.thread_id {
-            query.thread_id = Some(tid);
-        }
-
-        let result = engine.execute(&query);
-
-        // m0-07: explicit query absence semantics. When the session is
-        // queryable but no events match the filter, surface a `not_found`
-        // flag and a `reason` so callers can distinguish "empty result"
-        // (legitimate) from "I asked for something that isn't there".
-        let not_found = result.events.is_empty();
+        // m0-07: explicit query absence semantics
+        let not_found = result.result.events.is_empty();
         let reason = if not_found {
             Some("no_matching_events".to_string())
         } else {
@@ -1147,10 +1218,10 @@ impl ChronosServer {
             "session_id": params.session_id,
             "not_found": not_found,
             "reason": reason,
-            "total_matching": result.total_matching,
-            "returned_count": result.events.len(),
-            "next_offset": result.next_offset,
-            "events": result.events.iter().map(|e| serde_json::json!({
+            "total_matching": result.result.total_matching,
+            "returned_count": result.result.events.len(),
+            "next_offset": result.result.next_offset,
+            "events": result.result.events.iter().map(|e| serde_json::json!({
                 "event_id": e.event_id,
                 "timestamp_ns": e.timestamp_ns,
                 "thread_id": e.thread_id,
@@ -1172,22 +1243,29 @@ impl ChronosServer {
         params: Parameters<GetEventParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let engines = self.engines.lock().await;
 
-        match engines.get(&params.session_id) {
-            Some(engine) => match engine.get_event_by_id(params.event_id) {
-                Some(event) => {
-                    let json = serde_json::to_string_pretty(&event).unwrap_or_default();
-                    Ok(CallToolResult::success(vec![Content::text(json)]))
-                }
-                None => Ok(CallToolResult::error(text_content(format!(
-                    "Event {} not found",
-                    params.event_id
-                )))),
-            },
-            None => Ok(CallToolResult::error(text_content(format!(
-                "Session '{}' not found",
-                params.session_id
+        match DebugTraceService::get_event(&params.session_id, params.event_id, &self.engines).await
+        {
+            Ok(Some(event)) => {
+                let json = serde_json::to_string_pretty(&event).unwrap_or_default();
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Ok(None) => Ok(CallToolResult::error(text_content(format!(
+                "Event {} not found",
+                params.event_id
+            )))),
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{}' not found", s),
+            ))),
+            Err(ServiceError::LockPoisoned) => {
+                Ok(CallToolResult::error(text_content("lock poisoned")))
+            }
+            Err(ServiceError::QueryExecutionError(s)) => Ok(CallToolResult::error(text_content(
+                format!("internal error: unexpected query error: {}", s),
+            ))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "internal error: unexpected error: {}",
+                e
             )))),
         }
     }
@@ -1201,30 +1279,51 @@ impl ChronosServer {
         params: Parameters<GetCallStackParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let engines = self.engines.lock().await;
 
-        match engines.get(&params.session_id) {
-            Some(engine) => {
-                let stack = engine.reconstruct_call_stack(params.event_id);
-                let output = serde_json::json!({
-                    "session_id": params.session_id,
-                    "at_event_id": params.event_id,
-                    "depth": stack.len(),
-                    "frames": stack.iter().map(|f| serde_json::json!({
-                        "depth": f.depth,
-                        "function": f.function,
-                        "file": f.file,
-                        "line": f.line,
-                        "address": format!("0x{:x}", f.address),
-                    })).collect::<Vec<_>>(),
-                });
-                Ok(CallToolResult::success(json_content(&output)))
+        let stack = match DebugTraceService::get_call_stack(
+            &params.session_id,
+            params.event_id,
+            &self.engines,
+        )
+        .await
+        {
+            Ok(s) => s,
+            Err(ServiceError::SessionNotFound(s)) => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "Session '{}' not found",
+                    s
+                ))));
             }
-            None => Ok(CallToolResult::error(text_content(format!(
-                "Session '{}' not found",
-                params.session_id
-            )))),
-        }
+            Err(ServiceError::LockPoisoned) => {
+                return Ok(CallToolResult::error(text_content("lock poisoned")));
+            }
+            Err(ServiceError::QueryExecutionError(s)) => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "internal error: unexpected query error: {}",
+                    s
+                ))));
+            }
+            Err(e) => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "internal error: unexpected error: {}",
+                    e
+                ))));
+            }
+        };
+
+        let output = serde_json::json!({
+            "session_id": params.session_id,
+            "at_event_id": params.event_id,
+            "depth": stack.len(),
+            "frames": stack.iter().map(|f| serde_json::json!({
+                "depth": f.depth,
+                "function": f.function,
+                "file": f.file,
+                "line": f.line,
+                "address": format!("0x{:x}", f.address),
+            })).collect::<Vec<_>>(),
+        });
+        Ok(CallToolResult::success(json_content(&output)))
     }
 
     #[tool(
@@ -1236,19 +1335,36 @@ impl ChronosServer {
         params: Parameters<GetExecutionSummaryParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let engines = self.engines.lock().await;
 
-        match engines.get(&params.session_id) {
-            Some(engine) => {
-                let summary = engine.execution_summary(&params.session_id);
-                let json = serde_json::to_string_pretty(&summary).unwrap_or_default();
-                Ok(CallToolResult::success(vec![Content::text(json)]))
-            }
-            None => Ok(CallToolResult::error(text_content(format!(
-                "Session '{}' not found",
-                params.session_id
-            )))),
-        }
+        let summary =
+            match DebugTraceService::get_execution_summary(&params.session_id, &self.engines).await
+            {
+                Ok(s) => s,
+                Err(ServiceError::SessionNotFound(s)) => {
+                    return Ok(CallToolResult::error(text_content(format!(
+                        "Session '{}' not found",
+                        s
+                    ))));
+                }
+                Err(ServiceError::LockPoisoned) => {
+                    return Ok(CallToolResult::error(text_content("lock poisoned")));
+                }
+                Err(ServiceError::QueryExecutionError(s)) => {
+                    return Ok(CallToolResult::error(text_content(format!(
+                        "internal error: unexpected query error: {}",
+                        s
+                    ))));
+                }
+                Err(e) => {
+                    return Ok(CallToolResult::error(text_content(format!(
+                        "internal error: unexpected error: {}",
+                        e
+                    ))));
+                }
+            };
+
+        let json = serde_json::to_string_pretty(&summary).unwrap_or_default();
+        Ok(CallToolResult::success(vec![Content::text(json)]))
     }
 
     #[tool(
@@ -1260,19 +1376,41 @@ impl ChronosServer {
         params: Parameters<StateDiffParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let engines = self.engines.lock().await;
 
-        match engines.get(&params.session_id) {
-            Some(engine) => {
-                let diff = engine.state_diff(params.timestamp_a, params.timestamp_b);
-                let json = serde_json::to_string_pretty(&diff).unwrap_or_default();
-                Ok(CallToolResult::success(vec![Content::text(json)]))
+        let diff = match DebugTraceService::state_diff(
+            &params.session_id,
+            params.timestamp_a,
+            params.timestamp_b,
+            &self.engines,
+        )
+        .await
+        {
+            Ok(d) => d,
+            Err(ServiceError::SessionNotFound(s)) => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "Session '{}' not found",
+                    s
+                ))));
             }
-            None => Ok(CallToolResult::error(text_content(format!(
-                "Session '{}' not found",
-                params.session_id
-            )))),
-        }
+            Err(ServiceError::LockPoisoned) => {
+                return Ok(CallToolResult::error(text_content("lock poisoned")));
+            }
+            Err(ServiceError::QueryExecutionError(s)) => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "internal error: unexpected query error: {}",
+                    s
+                ))));
+            }
+            Err(e) => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "internal error: unexpected error: {}",
+                    e
+                ))));
+            }
+        };
+
+        let json = serde_json::to_string_pretty(&diff).unwrap_or_default();
+        Ok(CallToolResult::success(vec![Content::text(json)]))
     }
 
     #[tool(
@@ -1316,6 +1454,11 @@ impl ChronosServer {
             Err(ServiceError::EvalError(_)) => {
                 return Ok(CallToolResult::error(text_content(
                     "internal error: unexpected eval error",
+                )));
+            }
+            Err(ServiceError::QueryExecutionError(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected query error",
                 )));
             }
             // New session-lifecycle error variants (cannot occur from list_threads
@@ -1389,81 +1532,48 @@ impl ChronosServer {
         params: Parameters<DebugCallGraphParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let engines = self.engines.lock().await;
 
-        let engine = match engines.get(&params.session_id) {
-            Some(e) => e,
-            None => {
+        let graph = match DebugTraceService::debug_call_graph(
+            &params.session_id,
+            params.max_depth,
+            &self.engines,
+        )
+        .await
+        {
+            Ok(g) => g,
+            Err(ServiceError::SessionNotFound(s)) => {
                 return Ok(CallToolResult::error(text_content(format!(
                     "Session '{}' not found",
-                    params.session_id
-                ))))
+                    s
+                ))));
+            }
+            Err(ServiceError::LockPoisoned) => {
+                return Ok(CallToolResult::error(text_content("lock poisoned")));
+            }
+            Err(ServiceError::QueryExecutionError(s)) => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "internal error: unexpected query error: {}",
+                    s
+                ))));
+            }
+            Err(e) => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "internal error: unexpected error: {}",
+                    e
+                ))));
             }
         };
 
-        // Build a call graph from FunctionEntry events
-        let mut callers: std::collections::HashMap<String, Vec<String>> =
-            std::collections::HashMap::new();
-        let mut callees: std::collections::HashMap<String, Vec<String>> =
-            std::collections::HashMap::new();
-        let mut call_counts: std::collections::HashMap<String, u64> =
-            std::collections::HashMap::new();
-
-        // Reconstruct call graph from the full event list via stack simulation per thread
-        let mut stacks: std::collections::HashMap<u64, Vec<String>> =
-            std::collections::HashMap::new();
-
-        let query = TraceQuery::new(&params.session_id).pagination(usize::MAX, 0);
-        let result = engine.execute(&query);
-
-        for event in &result.events {
-            let func = event.location.function.clone().unwrap_or_default();
-            if func.is_empty() {
-                continue;
-            }
-            match event.event_type {
-                EventType::FunctionEntry => {
-                    let stack = stacks.entry(event.thread_id).or_default();
-                    *call_counts.entry(func.clone()).or_insert(0) += 1;
-
-                    // depth gate
-                    if stack.len() < params.max_depth {
-                        if let Some(parent) = stack.last().cloned() {
-                            callees
-                                .entry(parent.clone())
-                                .or_default()
-                                .push(func.clone());
-                            callers.entry(func.clone()).or_default().push(parent);
-                        }
-                        stack.push(func);
-                    }
-                }
-                EventType::FunctionExit => {
-                    let stack = stacks.entry(event.thread_id).or_default();
-                    stack.pop();
-                }
-                _ => {}
-            }
-        }
-
-        // Deduplicate edges
-        for v in callers.values_mut() {
-            v.sort();
-            v.dedup();
-        }
-        for v in callees.values_mut() {
-            v.sort();
-            v.dedup();
-        }
-
-        let nodes: Vec<serde_json::Value> = call_counts
+        // Build nodes JSON from the CallGraph structure
+        let nodes: Vec<serde_json::Value> = graph
+            .nodes
             .iter()
-            .map(|(name, count)| {
+            .map(|n| {
                 serde_json::json!({
-                    "function": name,
-                    "call_count": count,
-                    "callers": callers.get(name).cloned().unwrap_or_default(),
-                    "callees": callees.get(name).cloned().unwrap_or_default(),
+                    "function": n.function,
+                    "call_count": n.call_count,
+                    "callers": n.callers,
+                    "callees": n.callees,
                 })
             })
             .collect();
@@ -1471,7 +1581,7 @@ impl ChronosServer {
         let output = serde_json::json!({
             "session_id": params.session_id,
             "max_depth": params.max_depth,
-            "unique_functions": nodes.len(),
+            "unique_functions": graph.stats.node_count,
             "nodes": nodes,
         });
         Ok(CallToolResult::success(json_content(&output)))
@@ -2169,6 +2279,9 @@ impl ChronosServer {
                 }))
                 .unwrap_or_default(),
             )])),
+            Err(ServiceError::QueryExecutionError(msg)) => Ok(CallToolResult::error(text_content(
+                format!("internal error: unexpected query error: {}", msg),
+            ))),
             // New session-lifecycle variants (cannot occur from evaluate_expression).
             Err(ServiceError::SessionNotInMemory(_)) => Ok(CallToolResult::error(text_content(
                 "internal error: unexpected session error".to_string(),
