@@ -318,10 +318,12 @@ fn live_probe_emits_real_function_entries_to_execution_log() {
         .expect("start_probe with track_function_frames=true failed");
 
     // The fixture does 1 add + 4 recursive fact entries. Give INT3
-    // capture + dual_push + ExecutionLog.append time to settle.
-    std::thread::sleep(Duration::from_secs(3));
+    // capture + dual_push + ExecutionLog.append time to settle. INT3
+    // capture single-steps every entry, so it is noticeably slower than
+    // the flat syscall loop; 5 s reliably covers 1 main + 5 nested entries.
+    std::thread::sleep(Duration::from_secs(5));
 
-    let _stop = backend.stop_probe(&session).expect("stop_probe failed");
+    backend.stop_probe(&session).expect("stop_probe failed");
 
     // Read everything back from the ExecutionLog and filter for
     // identity-bearing rows (proxy: any record whose payload decodes
@@ -352,8 +354,12 @@ fn live_probe_emits_real_function_entries_to_execution_log() {
 
     assert!(
         !identity_entries.is_empty(),
-        "live probe must emit at least one identity-bearing Function entry into the ExecutionLog, got {} total records",
-        events.len()
+        "live probe must emit at least one identity-bearing Function entry into the ExecutionLog, got {} total records (variants: {:?})",
+        events.len(),
+        events
+            .iter()
+            .map(|ev| format!("{:?}", ev.data))
+            .collect::<Vec<_>>()
     );
 
     // At least one of the identity-bearing entries must carry a parent link

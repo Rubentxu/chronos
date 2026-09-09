@@ -718,12 +718,30 @@ impl NativeProbeBackend {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_nanos() as u64;
+                // The live backend exposes an `Arc<AtomicBool>` named `running`
+                // (true = continue, false = stop). The capture helper expects a
+                // `stop_flag` (true = stop). Bridge the two with a mirror
+                // thread that keeps the helper's flag inverse-synchronised
+                // with `running`; `stop_probe` (which sets `running=false`)
+                // is observed by the helper within at most ~20 ms.
+                let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(
+                    !running.load(Ordering::SeqCst),
+                ));
+                let stop_flag_for_helper = stop_flag.clone();
+                let running_for_refresh = running.clone();
+                let _stop_mirror = std::thread::spawn(move || {
+                    while running_for_refresh.load(Ordering::SeqCst) {
+                        stop_flag_for_helper.store(false, Ordering::SeqCst);
+                        std::thread::sleep(std::time::Duration::from_millis(20));
+                    }
+                    stop_flag_for_helper.store(true, Ordering::SeqCst);
+                });
                 let helper_result = run_function_frame_capture_with_callback(
                     &mut tracer,
                     pid,
                     PathBuf::from(program_path).as_path(),
                     resolver,
-                    running,
+                    &stop_flag,
                     None,
                     |trace_event: TraceEvent| {
                         Self::dual_push(
