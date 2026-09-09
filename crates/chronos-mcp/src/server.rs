@@ -25,7 +25,7 @@
 //!   `engines` and removed from the map.
 
 use chronos_browser::BrowserAdapter;
-use chronos_domain::tripwire::{TripwireCondition, TripwireId, TripwireManager};
+use chronos_domain::tripwire::{TripwireCondition, TripwireManager};
 use chronos_domain::{
     causal_slice::{slice_from, CausalEdge, EvidenceNodeId},
     query::{CausalityQuery, PerfQuery, PerfSortBy, RaceDetectionQuery},
@@ -40,6 +40,7 @@ use chronos_services::error::ServiceError;
 use chronos_services::output::EvalResult;
 use chronos_services::query_service::QueryService;
 use chronos_services::sessions::{SessionsContext, SessionsService};
+use chronos_services::tripwires::TripwiresService;
 #[allow(unused_imports)]
 use chronos_store::{SessionMetadata, SessionStore, TraceDiff};
 use rmcp::handler::server::wrapper::Parameters;
@@ -1349,6 +1350,22 @@ impl ChronosServer {
                     "internal error: unexpected delete error",
                 )));
             }
+            // New tripwire error variants (cannot occur from list_threads).
+            Err(ServiceError::InvalidCondition(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected condition error",
+                )));
+            }
+            Err(ServiceError::InvalidTripwireIdFormat(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected tripwire ID format error",
+                )));
+            }
+            Err(ServiceError::TripwireNotFound(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected tripwire not found",
+                )));
+            }
         };
 
         let output = serde_json::json!({
@@ -2171,6 +2188,16 @@ impl ChronosServer {
             Err(ServiceError::DeleteFailed(_)) => Ok(CallToolResult::error(text_content(
                 "internal error: unexpected delete error".to_string(),
             ))),
+            // New tripwire error variants (cannot occur from evaluate_expression).
+            Err(ServiceError::InvalidCondition(_)) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected condition error".to_string(),
+            ))),
+            Err(ServiceError::InvalidTripwireIdFormat(_)) => Ok(CallToolResult::error(
+                text_content("internal error: unexpected tripwire ID format error".to_string()),
+            )),
+            Err(ServiceError::TripwireNotFound(_)) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected tripwire not found".to_string(),
+            ))),
         }
     }
 
@@ -2497,15 +2524,22 @@ impl ChronosServer {
                 ))));
             }
         };
-        let id = self.tripwire_manager.register(condition);
 
-        let output = serde_json::json!({
-            "tripwire_id": id.to_string(),
-            "status": "registered",
-            "active_count": self.tripwire_manager.active_count(),
-            "label": params.label,
-        });
-        Ok(CallToolResult::success(json_content(&output)))
+        match TripwiresService::create(condition, params.label, &self.tripwire_manager) {
+            Ok(result) => {
+                let output = serde_json::json!({
+                    "tripwire_id": result.tripwire_id,
+                    "status": "registered",
+                    "active_count": result.active_count,
+                    "label": result.label,
+                });
+                Ok(CallToolResult::success(json_content(&output)))
+            }
+            Err(ServiceError::LockPoisoned) => Ok(CallToolResult::error(text_content(
+                "lock poisoned".to_string(),
+            ))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
+        }
     }
 
     #[tool(
@@ -2516,26 +2550,27 @@ impl ChronosServer {
         &self,
         _params: Parameters<NoParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let tripwires = self.tripwire_manager.list();
-        let fired = self.tripwire_manager.drain_fired();
+        let result = TripwiresService::list(&self.tripwire_manager);
 
-        let tripwire_summaries: Vec<_> = tripwires
+        let tripwire_summaries: Vec<_> = result
+            .tripwires
             .iter()
             .map(|tw| {
                 serde_json::json!({
-                    "id": tw.id.to_string(),
+                    "id": tw.id,
                     "label": tw.label,
-                    "condition": format!("{:?}", tw.condition),
+                    "condition": tw.condition,
                     "fire_count": tw.fire_count,
                 })
             })
             .collect();
 
-        let fired_events: Vec<_> = fired
+        let fired_events: Vec<_> = result
+            .fired_events
             .iter()
             .map(|f| {
                 serde_json::json!({
-                    "tripwire_id": f.tripwire_id.to_string(),
+                    "tripwire_id": f.tripwire_id,
                     "condition_description": f.condition_description,
                     "event_id": f.event_id,
                     "timestamp_ns": f.timestamp_ns,
@@ -2547,8 +2582,8 @@ impl ChronosServer {
         let output = serde_json::json!({
             "active_tripwires": tripwire_summaries,
             "fired_events": fired_events,
-            "total_active": tripwires.len(),
-            "fired_count": fired.len(),
+            "total_active": result.total_active,
+            "fired_count": result.fired_count,
         });
         Ok(CallToolResult::success(json_content(&output)))
     }
@@ -2562,38 +2597,35 @@ impl ChronosServer {
         params: Parameters<TripwireDeleteParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
+        let tripwire_id = params.tripwire_id.trim();
 
-        // Parse the tripwire ID (format: "tripwire-N")
-        let id_str = params.tripwire_id.trim();
-        let id_num: u64 = if let Some(rest) = id_str.strip_prefix("tripwire-") {
-            rest.parse().map_err(|_| {
-                rmcp::ErrorData::invalid_params(
-                    format!("Invalid tripwire ID format: '{}'", params.tripwire_id),
-                    None,
-                )
-            })?
-        } else {
+        // Validate format before calling service
+        if tripwire_id.strip_prefix("tripwire-").is_none() {
             return Ok(CallToolResult::error(text_content(format!(
                 "Invalid tripwire ID format '{}'. Expected format: 'tripwire-<number>'",
-                params.tripwire_id
+                tripwire_id
             ))));
-        };
+        }
 
-        let id = TripwireId(id_num);
-        let removed = self.tripwire_manager.remove(id);
-
-        if removed {
-            let output = serde_json::json!({
-                "tripwire_id": params.tripwire_id,
-                "status": "deleted",
-                "remaining_active": self.tripwire_manager.active_count(),
-            });
-            Ok(CallToolResult::success(json_content(&output)))
-        } else {
-            Ok(CallToolResult::error(text_content(format!(
-                "Tripwire '{}' not found",
-                params.tripwire_id
-            ))))
+        match TripwiresService::delete(tripwire_id, &self.tripwire_manager) {
+            Ok(result) => {
+                let output = serde_json::json!({
+                    "tripwire_id": result.tripwire_id,
+                    "status": "deleted",
+                    "remaining_active": result.remaining_active,
+                });
+                Ok(CallToolResult::success(json_content(&output)))
+            }
+            Err(ServiceError::LockPoisoned) => Ok(CallToolResult::error(text_content(
+                "lock poisoned".to_string(),
+            ))),
+            Err(ServiceError::InvalidTripwireIdFormat(s)) => Ok(CallToolResult::error(
+                text_content(format!("Invalid tripwire ID format: '{}'", s)),
+            )),
+            Err(ServiceError::TripwireNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Tripwire '{}' not found", s),
+            ))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
     }
 
@@ -2605,15 +2637,16 @@ impl ChronosServer {
         &self,
         _params: Parameters<NoParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let tripwires = self.tripwire_manager.list();
+        let result = TripwiresService::query(&self.tripwire_manager);
 
-        let tripwire_summaries: Vec<_> = tripwires
+        let tripwire_summaries: Vec<_> = result
+            .tripwires
             .iter()
             .map(|tw| {
                 serde_json::json!({
-                    "id": tw.id.to_string(),
+                    "id": tw.id,
                     "label": tw.label,
-                    "condition": format!("{:?}", tw.condition),
+                    "condition": tw.condition,
                     "fire_count": tw.fire_count,
                 })
             })
@@ -2621,7 +2654,7 @@ impl ChronosServer {
 
         let output = serde_json::json!({
             "active_tripwires": tripwire_summaries,
-            "total_active": tripwires.len(),
+            "total_active": result.total_active,
         });
         Ok(CallToolResult::success(json_content(&output)))
     }
