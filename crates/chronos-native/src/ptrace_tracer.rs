@@ -981,7 +981,7 @@ mod tests {
                 Ok(Some(PtraceEvent::Registers { .. })) => {
                     tracer.syscall_continue(pid).expect("syscall should work");
                 }
-                Ok(Some(PtraceEvent::Stopped { signal: _, .. })) => {
+                Ok(Some(PtraceEvent::Stopped { .. })) => {
                     tracer.syscall_continue(pid).expect("syscall should work");
                 }
                 Ok(Some(_)) => {

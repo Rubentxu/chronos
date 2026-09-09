@@ -32,6 +32,12 @@ impl std::fmt::Display for SessionId {
     }
 }
 
+impl From<&SessionId> for SessionId {
+    fn from(s: &SessionId) -> Self {
+        SessionId(s.0.clone())
+    }
+}
+
 impl From<&str> for SessionId {
     fn from(s: &str) -> Self {
         SessionId(s.to_string())

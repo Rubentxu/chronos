@@ -51,7 +51,7 @@ fn commit_cursor_persists_and_last_cursor_reflects() {
     assert_eq!(log.last_cursor(&consumer), Some(EventSeq::new(42)));
 
     // The on-disk sidecar must exist next to the segments.
-    let sidecar = dir.join(format!("{}.cursors.json", sanitize_session(&session)));
+    let sidecar = dir.join(format!("{}.cursors.json", sanitize_session(session)));
     assert!(sidecar.exists(), "sidecar file written: {:?}", sidecar);
 
     let raw = std::fs::read_to_string(&sidecar).expect("read sidecar");
