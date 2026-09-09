@@ -27,6 +27,7 @@
 use chronos_browser::BrowserAdapter;
 use chronos_domain::tripwire::{TripwireCondition, TripwireId, TripwireManager};
 use chronos_domain::{
+    causal_slice::{slice_from, CausalEdge, EvidenceNodeId},
     query::{CausalityQuery, PerfQuery, PerfSortBy, RaceDetectionQuery},
     CaptureConfig, CaptureSession, EventData, EventType, Language, ProbeBackend, PropertyValue,
     StateTransition, TraceEvent, TraceQuery, VariableInfo,
@@ -253,8 +254,16 @@ pub struct MutationLensParams {
 }
 
 // ============================================================================
-// SF4 — New tool parameter types
+// M3 — Causal Slice Tools
 // ============================================================================
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CausalSliceParams {
+    /// Session ID.
+    pub session_id: String,
+    /// Sink event ID to compute the backward causal slice from.
+    pub sink_event_id: u64,
+}
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DebugCallGraphParams {
@@ -3679,6 +3688,74 @@ impl ChronosServer {
         });
         Ok(CallToolResult::success(json_content(&output)))
     }
+
+    #[tool(
+        name = "causal_slice",
+        description = "Compute the conservative backward causal slice from a sink event. Returns evidence nodes reachable backward (included) and any included nodes whose evidence is unobserved (missing, never silently dropped)."
+    )]
+    async fn causal_slice(
+        &self,
+        params: Parameters<CausalSliceParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let engines = self.engines.lock().await;
+
+        let engine = match engines.get(&params.session_id) {
+            Some(e) => e,
+            None => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "Session '{}' not found",
+                    params.session_id
+                ))))
+            }
+        };
+
+        // Sink event must exist.
+        let _sink_event = match engine.get_event_by_id(params.sink_event_id) {
+            Some(e) => e,
+            None => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "Sink event {} not found in session '{}'",
+                    params.sink_event_id, params.session_id
+                ))))
+            }
+        };
+
+        // Build edges: for consecutive events on the same thread.
+        let mut prev_per_thread: HashMap<u64, u64> = HashMap::new();
+        let mut edges: Vec<CausalEdge> = Vec::new();
+        for ev in engine.events() {
+            let curr_id = ev.event_id;
+            if let Some(&prev_id) = prev_per_thread.get(&ev.thread_id) {
+                edges.push(CausalEdge {
+                    from: EvidenceNodeId(prev_id),
+                    to: EvidenceNodeId(curr_id),
+                });
+            }
+            prev_per_thread.insert(ev.thread_id, curr_id);
+        }
+
+        // All events are observed.
+        let mut observed: HashMap<EvidenceNodeId, bool> = HashMap::new();
+        for ev in engine.events() {
+            observed.insert(EvidenceNodeId(ev.event_id), true);
+        }
+
+        // Compute the causal slice.
+        let slice = slice_from(&edges, &observed, EvidenceNodeId(params.sink_event_id));
+
+        let included: Vec<u64> = slice.included.iter().map(|id| id.0).collect();
+        let missing: Vec<u64> = slice.missing.iter().map(|id| id.0).collect();
+
+        let output = serde_json::json!({
+            "session_id": params.session_id,
+            "sink": params.sink_event_id,
+            "included": included,
+            "missing": missing,
+            "depth": included.len(),
+        });
+        Ok(CallToolResult::success(json_content(&output)))
+    }
 }
 
 // mod tests is NOT cfg-gated (intentional pre-existing structure). Helper
@@ -5511,6 +5588,73 @@ mod tests {
             !s.contains("target") || !s.contains("y"),
             "target filter should exclude y: {s}"
         );
+    }
+
+    // ========================================================================
+    // M3 — Causal Slice Tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_causal_slice_no_session_returns_error() {
+        let server = ChronosServer::new();
+        let result = server
+            .causal_slice(Parameters(CausalSliceParams {
+                session_id: "nonexistent".to_string(),
+                sink_event_id: 0,
+            }))
+            .await
+            .unwrap();
+        assert_eq!(result.is_error, Some(true));
+        let s = format!("{:?}", &result.content[0]);
+        assert!(s.contains("not found"), "expected 'not found' error: {s}");
+    }
+
+    #[tokio::test]
+    async fn test_causal_slice_sink_not_found_returns_error() {
+        let events = vec![
+            make_fn_entry(0, 100, 1, "main"),
+            make_fn_entry(1, 200, 1, "compute"),
+        ];
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server
+            .causal_slice(Parameters(CausalSliceParams {
+                session_id: sid,
+                sink_event_id: 999, // Does not exist
+            }))
+            .await
+            .unwrap();
+        assert_eq!(result.is_error, Some(true));
+        let s = format!("{:?}", &result.content[0]);
+        assert!(s.contains("not found"), "expected 'not found' error: {s}");
+    }
+
+    #[tokio::test]
+    async fn test_causal_slice_returns_included_path_for_sink() {
+        let events = vec![
+            make_fn_entry(0, 100, 1, "main"),
+            make_fn_entry(1, 200, 1, "compute"),
+            make_fn_exit(2, 300, 1, "compute"),
+            make_fn_exit(3, 400, 1, "main"),
+        ];
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server
+            .causal_slice(Parameters(CausalSliceParams {
+                session_id: sid,
+                sink_event_id: 3, // main exit
+            }))
+            .await
+            .unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+        let s = format!("{:?}", &result.content[0]);
+        assert!(
+            s.contains("included") && s.contains("missing") && s.contains("depth"),
+            "expected causal slice output with included/missing/depth: {s}"
+        );
+        // Sink event 3 should be in the included set.
+        assert!(s.contains("3"), "expected sink event 3 in output: {s}");
     }
 }
 
