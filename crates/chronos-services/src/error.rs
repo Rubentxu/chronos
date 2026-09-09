@@ -52,4 +52,16 @@ pub enum ServiceError {
     /// SessionStore::delete_session failed.
     #[error("delete failed: {0}")]
     DeleteFailed(String),
+
+    /// The event_type string could not be parsed into a known [`TripwireCondition`].
+    #[error("unknown event_type '{0}'")]
+    InvalidCondition(String),
+
+    /// The tripwire ID string did not match the expected "tripwire-<number>" format.
+    #[error("invalid tripwire ID format '{0}'")]
+    InvalidTripwireIdFormat(String),
+
+    /// The named tripwire does not exist (remove returned false).
+    #[error("tripwire '{0}' not found")]
+    TripwireNotFound(String),
 }

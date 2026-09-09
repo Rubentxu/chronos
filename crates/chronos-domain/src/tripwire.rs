@@ -24,6 +24,18 @@ fn next_tripwire_id() -> TripwireId {
     TripwireId(NEXT_TRIPWIRE_ID.fetch_add(1, Ordering::Relaxed))
 }
 
+/// Reset the global tripwire ID counter.
+///
+/// **Test-only API.** Call this at the start of each test that asserts on
+/// specific ID strings (e.g. `"tripwire-1"`). Without a reset, IDs accumulate
+/// across the workspace test suite and assertions on fixed strings fail.
+///
+/// Compiled unconditionally so downstream test binaries can reach it even when
+/// `chronos-domain` is compiled as a plain lib (not `--tests`).
+pub fn reset_tripwire_ids_for_testing() {
+    NEXT_TRIPWIRE_ID.store(1, Ordering::Relaxed);
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum TripwireCondition {
     EventType(Vec<EventType>),
@@ -281,7 +293,19 @@ impl TripwireManager {
     }
 
     pub fn register(&self, condition: TripwireCondition) -> TripwireId {
-        let tw = Tripwire::new(condition);
+        self.register_with_label(condition, None)
+    }
+
+    /// Register a tripwire with an optional label.
+    ///
+    /// The label is stored in the [`Tripwire`] so it appears in list/query results.
+    pub fn register_with_label(
+        &self,
+        condition: TripwireCondition,
+        label: Option<String>,
+    ) -> TripwireId {
+        let mut tw = Tripwire::new(condition);
+        tw.label = label;
         let id = tw.id;
         self.tripwires.write().unwrap().push(tw);
         id

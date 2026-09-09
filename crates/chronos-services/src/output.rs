@@ -239,6 +239,80 @@ pub struct DropResult {
 }
 
 // ---------------------------------------------------------------------------
+// Tripwire output types
+// ---------------------------------------------------------------------------
+
+/// Result of creating a new tripwire.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CreateResult {
+    /// The assigned tripwire ID string (e.g. "tripwire-1").
+    pub tripwire_id: String,
+    /// Total number of active tripwires after registration.
+    pub active_count: usize,
+    /// The label supplied at creation time, if any.
+    pub label: Option<String>,
+}
+
+/// Summary of one active tripwire, returned by list/query operations.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TripwireSummary {
+    /// Tripwire ID string (e.g. "tripwire-1").
+    pub id: String,
+    /// Human-readable label, if set.
+    pub label: Option<String>,
+    /// Human-readable condition description.
+    pub condition: String,
+    /// How many times this tripwire has fired.
+    pub fire_count: u64,
+}
+
+/// A single tripwire-fire notification.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TripwireFiredSummary {
+    /// ID of the tripwire that fired.
+    pub tripwire_id: String,
+    /// Human-readable condition description at time of firing.
+    pub condition_description: String,
+    /// Source trace-event ID.
+    pub event_id: u64,
+    /// Nanosecond timestamp of the event.
+    pub timestamp_ns: u64,
+    /// Thread ID of the event.
+    pub thread_id: u64,
+}
+
+/// Result of listing active tripwires and draining fired events.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TripwireListResult {
+    /// All currently registered tripwires.
+    pub tripwires: Vec<TripwireSummary>,
+    /// Fired notifications drained from the buffer.
+    pub fired_events: Vec<TripwireFiredSummary>,
+    /// Total number of active tripwires.
+    pub total_active: usize,
+    /// Number of fired events returned.
+    pub fired_count: usize,
+}
+
+/// Result of querying active tripwires without draining fired events.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct QueryResult {
+    /// All currently registered tripwires.
+    pub tripwires: Vec<TripwireSummary>,
+    /// Total number of active tripwires.
+    pub total_active: usize,
+}
+
+/// Result of deleting a tripwire.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TripwireDeleteResult {
+    /// ID of the deleted tripwire.
+    pub tripwire_id: String,
+    /// Number of active tripwires remaining after deletion.
+    pub remaining_active: usize,
+}
+
+// ---------------------------------------------------------------------------
 // Serde round-trip tests
 // ---------------------------------------------------------------------------
 
@@ -391,5 +465,130 @@ mod tests {
         let json = serde_json::to_value(&lr).unwrap();
         assert_eq!(json["sessions"].as_array().unwrap().len(), 1);
         assert_eq!(json["sessions"][0]["session_id"], "s1");
+    }
+
+    // ---- Tripwire output type round-trip tests ----
+
+    #[test]
+    fn tripwire_create_result_roundtrips() {
+        let cr = CreateResult {
+            tripwire_id: "tripwire-5".into(),
+            active_count: 3,
+            label: Some("my-watch".into()),
+        };
+        let json = serde_json::to_value(&cr).unwrap();
+        assert_eq!(json["tripwire_id"], "tripwire-5");
+        assert_eq!(json["active_count"], 3);
+        assert_eq!(json["label"], "my-watch");
+        let round = serde_json::from_value::<CreateResult>(json).unwrap();
+        assert_eq!(round.tripwire_id, "tripwire-5");
+        assert_eq!(round.active_count, 3);
+        assert_eq!(round.label.as_deref(), Some("my-watch"));
+    }
+
+    #[test]
+    fn tripwire_summary_roundtrips() {
+        let ts = TripwireSummary {
+            id: "tripwire-1".into(),
+            label: None,
+            condition: "EventType([FunctionEntry])".into(),
+            fire_count: 7,
+        };
+        let json = serde_json::to_value(&ts).unwrap();
+        assert_eq!(json["id"], "tripwire-1");
+        assert_eq!(json["fire_count"], 7u64);
+        assert!(json["label"].is_null());
+        let round = serde_json::from_value::<TripwireSummary>(json).unwrap();
+        assert_eq!(round.id, "tripwire-1");
+        assert_eq!(round.fire_count, 7);
+    }
+
+    #[test]
+    fn tripwire_fired_summary_roundtrips() {
+        let tf = TripwireFiredSummary {
+            tripwire_id: "tripwire-2".into(),
+            condition_description: "FunctionName { pattern: \"main\" }".into(),
+            event_id: 99,
+            timestamp_ns: 1_000_000_000,
+            thread_id: 42,
+        };
+        let json = serde_json::to_value(&tf).unwrap();
+        assert_eq!(json["tripwire_id"], "tripwire-2");
+        assert_eq!(json["event_id"], 99u64);
+        let round = serde_json::from_value::<TripwireFiredSummary>(json).unwrap();
+        assert_eq!(round.event_id, 99);
+        assert_eq!(round.thread_id, 42);
+    }
+
+    #[test]
+    fn tripwire_list_result_roundtrips() {
+        use super::{TripwireFiredSummary, TripwireListResult, TripwireSummary};
+        let lr = TripwireListResult {
+            tripwires: vec![TripwireSummary {
+                id: "tripwire-1".into(),
+                label: Some("main-watch".into()),
+                condition: "EventType([FunctionEntry])".into(),
+                fire_count: 3,
+            }],
+            fired_events: vec![TripwireFiredSummary {
+                tripwire_id: "tripwire-1".into(),
+                condition_description: "EventType([FunctionEntry])".into(),
+                event_id: 50,
+                timestamp_ns: 500_000_000,
+                thread_id: 1,
+            }],
+            total_active: 1,
+            fired_count: 1,
+        };
+        let json = serde_json::to_value(&lr).unwrap();
+        assert_eq!(json["total_active"], 1u64);
+        assert_eq!(json["fired_count"], 1u64);
+        assert_eq!(json["tripwires"][0]["id"], "tripwire-1");
+        assert_eq!(json["fired_events"][0]["event_id"], 50u64);
+        let round = serde_json::from_value::<TripwireListResult>(json).unwrap();
+        assert_eq!(round.total_active, 1);
+        assert_eq!(round.fired_count, 1);
+    }
+
+    #[test]
+    fn tripwire_query_result_roundtrips() {
+        use super::QueryResult as TwQueryResult;
+        let qr = TwQueryResult {
+            tripwires: vec![
+                super::TripwireSummary {
+                    id: "tripwire-1".into(),
+                    label: None,
+                    condition: "FunctionName { pattern: \"*\" }".into(),
+                    fire_count: 0,
+                },
+                super::TripwireSummary {
+                    id: "tripwire-2".into(),
+                    label: Some("sigsegv".into()),
+                    condition: "Signal { numbers: [11] }".into(),
+                    fire_count: 5,
+                },
+            ],
+            total_active: 2,
+        };
+        let json = serde_json::to_value(&qr).unwrap();
+        assert_eq!(json["total_active"], 2u64);
+        assert_eq!(json["tripwires"].as_array().unwrap().len(), 2);
+        let round = serde_json::from_value::<TwQueryResult>(json).unwrap();
+        assert_eq!(round.total_active, 2);
+        assert_eq!(round.tripwires[1].label.as_deref(), Some("sigsegv"));
+    }
+
+    #[test]
+    fn tripwire_delete_result_roundtrips() {
+        let dr = super::TripwireDeleteResult {
+            tripwire_id: "tripwire-3".into(),
+            remaining_active: 4,
+        };
+        let json = serde_json::to_value(&dr).unwrap();
+        assert_eq!(json["tripwire_id"], "tripwire-3");
+        assert_eq!(json["remaining_active"], 4u64);
+        let round = serde_json::from_value::<super::TripwireDeleteResult>(json).unwrap();
+        assert_eq!(round.tripwire_id, "tripwire-3");
+        assert_eq!(round.remaining_active, 4);
     }
 }
