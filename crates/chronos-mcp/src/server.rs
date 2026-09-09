@@ -28,8 +28,8 @@ use chronos_browser::BrowserAdapter;
 use chronos_domain::tripwire::{TripwireCondition, TripwireId, TripwireManager};
 use chronos_domain::{
     query::{CausalityQuery, PerfQuery, PerfSortBy, RaceDetectionQuery},
-    CaptureConfig, CaptureSession, EventData, EventType, Language, ProbeBackend, TraceEvent,
-    TraceQuery,
+    CaptureConfig, CaptureSession, EventData, EventType, Language, ProbeBackend, PropertyValue,
+    StateTransition, TraceEvent, TraceQuery, VariableInfo,
 };
 use chronos_index::builder::IndexBuilder;
 use chronos_native::probe_backend::NativeProbeBackend;
@@ -236,6 +236,20 @@ pub struct StateDiffParams {
 pub struct ListThreadsParams {
     /// Session ID.
     pub session_id: String,
+}
+
+// ============================================================================
+// M3 — Mutation Lens Tools
+// ============================================================================
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MutationLensParams {
+    /// Session ID.
+    pub session_id: String,
+    /// Optional target variable name filter (e.g. "Order.total"). None = all.
+    pub target: Option<String>,
+    /// Max transitions to return (default 100).
+    pub limit: Option<usize>,
 }
 
 // ============================================================================
@@ -3599,6 +3613,72 @@ impl ChronosServer {
         });
         Ok(CallToolResult::success(json_content(&output)))
     }
+
+    // ========================================================================
+    // M3 — Mutation Lens Tools
+    // ========================================================================
+
+    #[tool(
+        name = "mutation_lens",
+        description = "Mutation Lens: list StateTransition records derived from VariableWrite events in a session. If `target` is given, filter to that variable name; otherwise return all observed transitions."
+    )]
+    async fn mutation_lens(
+        &self,
+        params: Parameters<MutationLensParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let engines = self.engines.lock().await;
+
+        let engine = match engines.get(&params.session_id) {
+            Some(e) => e,
+            None => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "Session '{}' not found",
+                    params.session_id
+                ))))
+            }
+        };
+
+        let limit = params.limit.unwrap_or(100);
+
+        // Collect consecutive Variable writes for each target.
+        let events = engine.events();
+        let mut pending: HashMap<String, (VariableInfo, usize)> = HashMap::new();
+        let mut transitions: Vec<StateTransition> = Vec::new();
+
+        for (idx, event) in events.iter().enumerate() {
+            if let EventData::Variable(var) = &event.data {
+                let target_filter = params.target.as_ref();
+                let matches = target_filter.is_none_or(|t| &var.name == t);
+                if !matches {
+                    continue;
+                }
+
+                if let Some((prev, _)) = pending.remove(&var.name) {
+                    transitions.push(StateTransition {
+                        target: prev.name.clone(),
+                        before: Some(PropertyValue::Text(prev.value.clone())),
+                        after: PropertyValue::Text(var.value.clone()),
+                        index: idx,
+                        actor: None,
+                    });
+                }
+                pending.insert(var.name.clone(), (var.clone(), idx));
+            }
+        }
+
+        // Apply limit
+        if transitions.len() > limit {
+            transitions.truncate(limit);
+        }
+
+        let output = serde_json::json!({
+            "session_id": params.session_id,
+            "count": transitions.len(),
+            "transitions": transitions,
+        });
+        Ok(CallToolResult::success(json_content(&output)))
+    }
 }
 
 // mod tests is NOT cfg-gated (intentional pre-existing structure). Helper
@@ -5332,6 +5412,105 @@ mod tests {
         assert!(s.contains("main"), "function name missing: {s}");
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // ========================================================================
+    // M3 — Mutation Lens Tests
+    // ========================================================================
+
+    #[allow(dead_code)]
+    fn make_var_write(id: u64, ts: u64, tid: u64, name: &str, value: &str) -> TraceEvent {
+        use chronos_domain::{SourceLocation, VariableInfo, VariableScope};
+        let loc = SourceLocation::new("", 0, "", 0x1000 + id);
+        TraceEvent::new(
+            id,
+            ts,
+            tid,
+            EventType::VariableWrite,
+            loc,
+            EventData::Variable(VariableInfo::new(
+                name,
+                value,
+                "string",
+                0x7FFE0000 + id,
+                VariableScope::Local,
+            )),
+        )
+    }
+
+    #[tokio::test]
+    async fn test_mutation_lens_no_session_returns_error() {
+        let server = ChronosServer::new();
+        let result = server
+            .mutation_lens(Parameters(MutationLensParams {
+                session_id: "nonexistent".to_string(),
+                target: None,
+                limit: None,
+            }))
+            .await
+            .unwrap();
+        assert_eq!(result.is_error, Some(true));
+        let s = format!("{:?}", &result.content[0]);
+        assert!(s.contains("not found"), "expected 'not found' error: {s}");
+    }
+
+    #[tokio::test]
+    async fn test_mutation_lens_with_two_writes_returns_one_transition() {
+        let events = vec![
+            make_var_write(0, 100, 1, "x", "1"),
+            make_var_write(1, 200, 1, "x", "2"),
+        ];
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server
+            .mutation_lens(Parameters(MutationLensParams {
+                session_id: sid,
+                target: None,
+                limit: None,
+            }))
+            .await
+            .unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+        let s = format!("{:?}", &result.content[0]);
+        assert!(
+            s.contains("count") && s.contains("transitions"),
+            "expected valid output: {s}"
+        );
+        assert!(
+            s.contains("target") && s.contains("x"),
+            "expected target 'x' in output: {s}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_mutation_lens_filters_by_target() {
+        let events = vec![
+            make_var_write(0, 100, 1, "x", "1"),
+            make_var_write(1, 200, 1, "y", "10"),
+            make_var_write(2, 300, 1, "x", "2"),
+            make_var_write(3, 400, 1, "y", "20"),
+        ];
+        let (server, sid) = server_with_session(events).await;
+
+        let result = server
+            .mutation_lens(Parameters(MutationLensParams {
+                session_id: sid,
+                target: Some("x".to_string()),
+                limit: None,
+            }))
+            .await
+            .unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+        let s = format!("{:?}", &result.content[0]);
+        // Should get exactly 1 transition for x (two writes: 1->2)
+        assert!(s.contains("count"), "expected count field: {s}");
+        // Should NOT contain y transitions
+        assert!(
+            !s.contains("target") || !s.contains("y"),
+            "target filter should exclude y: {s}"
+        );
     }
 }
 
