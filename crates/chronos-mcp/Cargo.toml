@@ -32,9 +32,6 @@ uuid = { workspace = true }
 thiserror = { workspace = true }
 nix = { workspace = true }
 
-[dev-dependencies]
-chronos-sandbox = { path = "../../chronos-sandbox" }
-
 [[bin]]
 name = "chronos-mcp"
 path = "src/bin/chronos-mcp.rs"
