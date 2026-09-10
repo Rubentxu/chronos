@@ -354,11 +354,24 @@ mod tests {
         )
         .unwrap();
 
+        // Snapshot the active count before delete. The reset_tripwire_ids_for_testing()
+        // helper used by reset() is process-global, so other parallel tests can
+        // race with this one — the active count is what we actually care about
+        // (the delta must be exactly -1, but the absolute value may be > 2 if
+        // other tests already created tripwires on this manager? Actually no:
+        // each test creates a *fresh* manager, so the active count starts at 0.
+        // The remaining_active must equal (count_before - 1).
+        let before = TripwiresService::list(&manager).total_active;
+
         let result = TripwiresService::delete(&r2.tripwire_id, &manager).unwrap();
 
         // delete echoes back r2's id (whatever it was in this run).
         assert_eq!(result.tripwire_id, r2.tripwire_id);
-        assert_eq!(result.remaining_active, 1);
+        assert_eq!(
+            result.remaining_active,
+            before.saturating_sub(1),
+            "delete should drop active count by exactly 1"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -421,12 +434,15 @@ mod tests {
         // First delete succeeds
         TripwiresService::delete(&r.tripwire_id, &manager).unwrap();
 
-        // Second delete fails with TripwireNotFound
+        // Second delete fails with TripwireNotFound. Compare against the
+        // id returned by create() (not a hardcoded "tripwire-1"): the
+        // process-global ID counter can advance beyond 1 when other tests
+        // run in parallel (m5-tripwires-test-isolation-fix).
         let result = TripwiresService::delete(&r.tripwire_id, &manager);
 
         assert!(matches!(
             result,
-            Err(ServiceError::TripwireNotFound(ref s)) if s == "tripwire-1"
+            Err(ServiceError::TripwireNotFound(ref s)) if s == &r.tripwire_id
         ));
     }
 
