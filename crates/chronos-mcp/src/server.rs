@@ -3770,63 +3770,37 @@ impl ChronosServer {
         params: Parameters<CausalSliceParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let engines = self.engines.lock().await;
-
-        let engine = match engines.get(&params.session_id) {
-            Some(e) => e,
-            None => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Session '{}' not found",
-                    params.session_id
-                ))))
-            }
+        let ctx = chronos_services::analysis::AnalysisContext {
+            engines: &self.engines,
         };
 
-        // Sink event must exist.
-        let _sink_event = match engine.get_event_by_id(params.sink_event_id) {
-            Some(e) => e,
-            None => {
-                return Ok(CallToolResult::error(text_content(format!(
+        match chronos_services::analysis::ChronosAnalysisService::causal_slice(
+            &ctx,
+            chronos_services::analysis::CausalSliceInput {
+                session_id: params.session_id.clone(),
+                sink_event_id: params.sink_event_id,
+            },
+        )
+        .await
+        {
+            Ok(result) => Ok(CallToolResult::success(json_content(&serde_json::json!({
+                "session_id": result.session_id,
+                "sink": result.sink,
+                "included": result.included,
+                "missing": result.missing,
+                "depth": result.depth,
+            })))),
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{}' not found", s),
+            ))),
+            Err(ServiceError::EventNotFound { event_id }) => Ok(CallToolResult::error(
+                text_content(format!(
                     "Sink event {} not found in session '{}'",
-                    params.sink_event_id, params.session_id
-                ))))
-            }
-        };
-
-        // Build edges: for consecutive events on the same thread.
-        let mut prev_per_thread: HashMap<u64, u64> = HashMap::new();
-        let mut edges: Vec<CausalEdge> = Vec::new();
-        for ev in engine.events() {
-            let curr_id = ev.event_id;
-            if let Some(&prev_id) = prev_per_thread.get(&ev.thread_id) {
-                edges.push(CausalEdge {
-                    from: EvidenceNodeId(prev_id),
-                    to: EvidenceNodeId(curr_id),
-                });
-            }
-            prev_per_thread.insert(ev.thread_id, curr_id);
+                    event_id, params.session_id
+                )),
+            )),
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
-
-        // All events are observed.
-        let mut observed: HashMap<EvidenceNodeId, bool> = HashMap::new();
-        for ev in engine.events() {
-            observed.insert(EvidenceNodeId(ev.event_id), true);
-        }
-
-        // Compute the causal slice.
-        let slice = slice_from(&edges, &observed, EvidenceNodeId(params.sink_event_id));
-
-        let included: Vec<u64> = slice.included.iter().map(|id| id.0).collect();
-        let missing: Vec<u64> = slice.missing.iter().map(|id| id.0).collect();
-
-        let output = serde_json::json!({
-            "session_id": params.session_id,
-            "sink": params.sink_event_id,
-            "included": included,
-            "missing": missing,
-            "depth": included.len(),
-        });
-        Ok(CallToolResult::success(json_content(&output)))
     }
 }
 
