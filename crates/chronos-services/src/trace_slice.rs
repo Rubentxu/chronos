@@ -147,9 +147,7 @@ impl ChronosTraceSliceService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chronos_domain::{
-        trace::{EventData, EventType, SourceLocation, TraceEvent},
-    };
+    use chronos_domain::trace::{EventData, EventType, SourceLocation, TraceEvent};
     use std::collections::HashMap;
     use tokio::sync::Mutex;
 
