@@ -10,6 +10,7 @@ use std::collections::HashMap;
 
 use crate::debug_trace::CallGraph;
 use chronos_domain::query::{ExecutionSummary, StackFrame, StateDiff};
+use chronos_store::SessionMetadata;
 
 // Re-exports so MCP wrappers can refer to property types via
 // `chronos_services::output::ComparisonOp` / `::PropertyValue`
@@ -1124,6 +1125,120 @@ pub enum HypothesisOutput {
         reachable_path: Option<Vec<String>>,
         summary: String,
     },
+}
+
+// ============================================================================
+// M6 — Session Export outputs (m6-05)
+// ----------------------------------------------------------------------------
+// Net-new v2 tool: `session_export`. Materializes a full session bundle
+// (metadata + trace events + properties snapshot) to a portable file on
+// disk. See `docs/milestones/m6-05-session-export.md` for the full
+// intent + scope + test matrix.
+//
+// No v1 analogue exists; this is the second net-new dispatcher identified
+// in M5 close report §4.2. The DTOs are deliberately minimal: ExportFormat
+// is the typed enum used by the service layer, while MCP callers pass
+// strings and a small parser in the wrapper maps them in.
+// ============================================================================
+
+/// Output format for `session_export`.
+///
+/// - `Json` -- the canonical `ExportBundle` JSON (one document, pretty
+///   printed). Round-trippable through `serde_json::from_slice`.
+/// - `OtlpJson` -- the OpenTelemetry-compatible JSON wire format
+///   (`{"resourceSpans":[{...}]}`). Compatible with Jaeger, Tempo, and
+///   Honeycomb JSON receivers. Not full OTLP/gRPC proto.
+/// - `ZipJson` -- reserved for m7+; would require bundling the bundle
+///   plus a `manifest.json` into a single `.zip` archive. The variant is
+///   declared now so the JSON schema stays forward-compatible, but the
+///   service layer currently rejects it with `InvalidParameter`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum ExportFormat {
+    Json,
+    OtlpJson,
+    ZipJson,
+}
+
+/// One row of the properties snapshot embedded in an [`ExportBundle`].
+///
+/// A `Vec<ExportPropertiesEntry>` rather than a `HashMap<String, PropertyValue>`
+/// so that JSON output preserves declaration order; humans diffing two
+/// exports of the same session otherwise see shuffled rows.
+///
+/// `ExportPropertyValue` is a JSON-friendly mirror of
+/// `chronos_domain::property::PropertyValue` (same pattern as
+/// `HypothesisConstant` in m6-04). We can't re-export the domain enum
+/// directly because it does not derive `JsonSchema`; the dispatcher
+/// converts `ExportPropertyValue` -> `PropertyValue` before evaluating.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub struct ExportPropertiesEntry {
+    pub name: String,
+    pub value: ExportPropertyValue,
+}
+
+/// JSON-friendly mirror of `chronos_domain::property::PropertyValue` for
+/// `session_export`. Only the three scalar variants are exposed because
+/// the OTLP wire format and `ExportBundle` consumers only ever need to
+/// serialize scalar measurements. Composite values (lists, maps) flatten
+/// to their string repr.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ExportPropertyValue {
+    Number { value: f64 },
+    Text { value: String },
+    Bool { value: bool },
+}
+
+impl From<PropertyValue> for ExportPropertyValue {
+    fn from(v: PropertyValue) -> Self {
+        match v {
+            PropertyValue::Number(n) => ExportPropertyValue::Number { value: n },
+            PropertyValue::Text(t) => ExportPropertyValue::Text { value: t },
+            PropertyValue::Bool(b) => ExportPropertyValue::Bool { value: b },
+        }
+    }
+}
+
+impl From<ExportPropertyValue> for PropertyValue {
+    fn from(v: ExportPropertyValue) -> Self {
+        match v {
+            ExportPropertyValue::Number { value } => PropertyValue::Number(value),
+            ExportPropertyValue::Text { value } => PropertyValue::Text(value),
+            ExportPropertyValue::Bool { value } => PropertyValue::Bool(value),
+        }
+    }
+}
+
+/// The payload of an exported session.
+///
+/// `schema_version` is a literal string so consumers can detect future
+/// migrations. `metadata` reuses the persistent store's `SessionMetadata`
+/// directly so a `session_load` -> `session_export` round trip produces
+/// identical metadata. `events` is the full `Vec<TraceEvent>` as captured
+/// by the live engine. `properties_snapshot` is best-effort: if the
+/// engine has no `evaluate_all` view, it is empty.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ExportBundle {
+    pub schema_version: String,
+    pub metadata: SessionMetadata,
+    pub events: Vec<chronos_domain::TraceEvent>,
+    pub properties_snapshot: Vec<ExportPropertiesEntry>,
+}
+
+/// Result of a successful `session_export` call.
+///
+/// `path` is the final on-disk location (the tmp file is renamed onto it).
+/// `bytes_written` is what serde emitted before fsync + rename, so a
+/// consumer re-reading the file will see exactly this many bytes.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub struct ExportResult {
+    pub path: std::path::PathBuf,
+    pub bytes_written: u64,
+    pub format: ExportFormat,
 }
 
 #[cfg(test)]

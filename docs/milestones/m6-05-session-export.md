@@ -62,7 +62,7 @@ ExportBundle {
   schema_version: "v2-export.1",
   metadata: SessionMetadata,
   events: Vec<TraceEvent>,
-  properties_snapshot: Vec<ExportPropertiesEntry>,
+  properties_snapshot: Vec<ExportPropertiesEntry>,   // always [] in m6-05
 }
 ```
 
@@ -71,9 +71,14 @@ ExportBundle {
 - `metadata` reuses `SessionStore::SessionMetadata` directly (already
   `Serialize + Deserialize`).
 - `events` is `Vec<TraceEvent>` re-using the domain's trace event type.
-- `properties_snapshot` is the property table as of export time, taken
-  from the in-memory engine's `evaluate_all` view (same shape used by
-  `execution_query` and `analytics` dispatchers).
+- `properties_snapshot` is **always empty in m6-05**: the
+  `QueryEngine` API does not currently expose a property table view
+  (properties are evaluated on-demand by name). Adding `properties()`
+  to the engine is a separable concern (probably M7+). The DTO ships
+  with the field so consumers don't need to special-case absent-vs-empty
+  payloads in the future, and the JSON schema for `ExportPropertiesEntry`
+  is final. The receipt + the dispatcher doc-comment both call this out
+  as a known limitation of m6-05.
 
 ### `ExportPropertiesEntry`
 
@@ -159,20 +164,39 @@ tests** mirroring the coverage matrix used in m6-04 (`hypothesis_test`):
 2. happy path: OtlpJson format
 3. session not in memory
 4. empty session (0 events)
-5. properties snapshot populated (3 properties)
-6. properties snapshot empty on engine without `evaluate_all`
-7. atomic write fails when output_path parent does not exist
-8. atomic write succeeds (tmp file removed after rename)
-9. schema_version is "v2-export.1" in Json output
-10. schema_version is "v2-export.1" in OtlpJson output (also appears in
-    `resource.attributes["schema.version"]`)
-11. metadata round-trip (write → read → metadata fields equal)
-12. events round-trip (write → read → events count equal, first/last
+5. properties_snapshot is empty Vec in m6-05 (known limitation, see
+   spec §"Known limitation")
+6. atomic write fails when output_path parent does not exist
+7. atomic write succeeds (tmp file removed after rename)
+8. schema_version is "v2-export.1" in Json output
+9. schema_version is "v2-export.1" in OtlpJson output (also appears in
+   `resource.attributes["schema.version"]`)
+10. metadata round-trip (write → read → metadata fields equal)
+11. events round-trip (write → read → events count equal, first/last
     timestamps equal)
-13. bytes_written > 0 for non-empty session
+12. bytes_written > 0 for non-empty session
+13. ExportFormat::ZipJson is rejected with `InvalidParameter`
 
 Fixtures reuse `chronos_index::builder::IndexBuilder` (same pattern as
 `hypothesis_test`).
+
+### Known limitation: `properties_snapshot` is always `[]`
+
+The `QueryEngine` API exposes events and indices but does not currently
+return a property table view (properties are evaluated on-demand by
+`property.observe` name, see `chronos-query::PropertyProjection::run`).
+Adding a `QueryEngine::properties()` accessor would be a separable
+addition (probably M7+) — it would require either:
+- (a) capturing every `(name, value)` pair the engine ever evaluates
+  on the fly (small, ~µs per event), or
+- (b) introducing a `Vec<Property>` registry at session registration
+  time so the engine has a pre-declared list to iterate.
+
+Both touch architectural state outside M6's surface-reduction scope. For
+m6-05 we ship `ExportBundle.properties_snapshot = Vec::new()` so the
+JSON shape is correct, and document the limitation in the dispatcher
+doc-comment + the cycle receipt. This is honest disclosure per the
+project's SDDK preferences.
 
 ## Out of path / not affected
 
