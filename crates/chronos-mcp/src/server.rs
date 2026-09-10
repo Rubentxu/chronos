@@ -46,7 +46,11 @@ use chronos_services::debug_trace::DebugTraceService;
 #[allow(unused_imports)]
 use chronos_services::debug_trace_specialized::DebugTraceSpecializedService;
 use chronos_services::error::ServiceError;
+use chronos_services::execution_query::{
+    ChronosExecutionQueryService, ExecutionQueryContext, ExecutionQueryInput,
+};
 use chronos_services::output::EvalResult;
+use chronos_services::output::{ExecutionQueryKind, ExecutionQueryOutput};
 use chronos_services::output::{StateQueryKind, StateQueryOutput};
 use chronos_services::probe::LiveProbeSession;
 use chronos_services::query_service::QueryService;
@@ -187,6 +191,35 @@ pub struct GetCallStackParams {
 pub struct GetExecutionSummaryParams {
     /// Session ID.
     pub session_id: String,
+}
+
+/// v2 `execution_query` tool params.
+///
+/// Discriminated by `kind`. Each kind has its own optional target
+/// fields; the dispatcher validates required fields (only `event_id`
+/// for kind=call_stack is strictly required) and applies v1 default
+/// values for optional fields.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ExecutionQueryParams {
+    /// Session ID.
+    pub session_id: String,
+    /// Query kind discriminator.
+    pub kind: ExecutionQueryKind,
+    /// Event ID (CallStack; required).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_id: Option<u64>,
+    /// Max call-graph depth (CallGraph; default 10).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_depth: Option<usize>,
+    /// Race-detection threshold ns (RaceDetect; default 100).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub threshold_ns: Option<u64>,
+    /// Top-N for hotspot (Hotspot; default 10).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_n: Option<usize>,
+    /// Saliency limit (Saliency; default 20).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub saliency_limit: Option<usize>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1444,6 +1477,45 @@ impl ChronosServer {
 
         let json = serde_json::to_string_pretty(&summary).unwrap_or_default();
         Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    #[tool(
+        name = "execution_query",
+        description = "v2 dispatcher for execution/call/performance projection queries. Select the query kind via `kind` (call_stack | execution_summary | call_graph | race_detect | hotspot | saliency). Each kind has its own required/optional fields; see docs/chronos-agentic-reconstruction/docs/specs/AGENT_API_V2.md."
+    )]
+    async fn execution_query(
+        &self,
+        params: Parameters<ExecutionQueryParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+
+        let ctx = ExecutionQueryContext {
+            engines: &self.engines,
+        };
+        let input = ExecutionQueryInput {
+            session_id: params.session_id,
+            kind: params.kind,
+            event_id: params.event_id,
+            max_depth: params.max_depth,
+            threshold_ns: params.threshold_ns,
+            top_n: params.top_n,
+            saliency_limit: params.saliency_limit,
+        };
+
+        match ChronosExecutionQueryService::query(&ctx, input).await {
+            Ok(out) => {
+                let value = serde_json::to_value(&out).unwrap_or(serde_json::json!({}));
+                Ok(CallToolResult::success(json_content(&value)))
+            }
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(
+                text_content(format!("Session '{}' not found", s)),
+            )),
+            Err(ServiceError::InvalidInput(s)) => Ok(CallToolResult::error(text_content(s))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "internal error: unexpected error: {}",
+                e
+            )))),
+        }
     }
 
     #[tool(
