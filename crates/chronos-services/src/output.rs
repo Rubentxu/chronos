@@ -648,6 +648,57 @@ pub struct ProbeStatusOutput {
     pub state: String,
 }
 
+// ============================================================================
+// Browser probe outputs (m5-07)
+// ============================================================================
+
+/// Output of `browser_probe_start`. Mirrors the JSON shape produced by the
+/// legacy in-server implementation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BrowserProbeStartOutput {
+    pub session_id: String,
+    pub status: String,
+    pub url: String,
+    pub hint: String,
+}
+
+/// Output of `browser_probe_stop`. Mirrors the JSON shape produced by the
+/// legacy in-server implementation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BrowserProbeStopOutput {
+    pub session_id: String,
+    pub status: String,
+    pub url: String,
+    pub total_events: usize,
+    pub hint: String,
+}
+
+/// A single semantic event drained from a browser probe adapter. The shape
+/// matches the JSON object emitted by the legacy `browser_probe_drain`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DrainedBrowserEventDto {
+    pub event_id: u64,
+    pub timestamp_ns: u64,
+    pub thread_id: u64,
+    pub language: String,
+    pub kind: String,
+    pub description: String,
+}
+
+/// Output of `browser_probe_drain`. Mirrors the JSON shape produced by the
+/// legacy in-server implementation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BrowserProbeDrainOutput {
+    pub session_id: String,
+    pub status: String,
+    pub total_buffered: usize,
+    pub returned: usize,
+    pub offset: usize,
+    pub limit: usize,
+    pub events: Vec<DrainedBrowserEventDto>,
+    pub hint: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
