@@ -3735,57 +3735,30 @@ impl ChronosServer {
         params: Parameters<MutationLensParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let engines = self.engines.lock().await;
-
-        let engine = match engines.get(&params.session_id) {
-            Some(e) => e,
-            None => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Session '{}' not found",
-                    params.session_id
-                ))))
-            }
+        let ctx = chronos_services::analysis::AnalysisContext {
+            engines: &self.engines,
         };
 
-        let limit = params.limit.unwrap_or(100);
-
-        // Collect consecutive Variable writes for each target.
-        let events = engine.events();
-        let mut pending: HashMap<String, (VariableInfo, usize)> = HashMap::new();
-        let mut transitions: Vec<StateTransition> = Vec::new();
-
-        for (idx, event) in events.iter().enumerate() {
-            if let EventData::Variable(var) = &event.data {
-                let target_filter = params.target.as_ref();
-                let matches = target_filter.is_none_or(|t| &var.name == t);
-                if !matches {
-                    continue;
-                }
-
-                if let Some((prev, _)) = pending.remove(&var.name) {
-                    transitions.push(StateTransition {
-                        target: prev.name.clone(),
-                        before: Some(PropertyValue::Text(prev.value.clone())),
-                        after: PropertyValue::Text(var.value.clone()),
-                        index: idx,
-                        actor: None,
-                    });
-                }
-                pending.insert(var.name.clone(), (var.clone(), idx));
-            }
+        match chronos_services::analysis::ChronosAnalysisService::mutation_lens(
+            &ctx,
+            chronos_services::analysis::MutationLensInput {
+                session_id: params.session_id,
+                target: params.target,
+                limit: params.limit,
+            },
+        )
+        .await
+        {
+            Ok(result) => Ok(CallToolResult::success(json_content(&serde_json::json!({
+                "session_id": result.session_id,
+                "count": result.count,
+                "transitions": result.transitions,
+            })))),
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{}' not found", s),
+            ))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
-
-        // Apply limit
-        if transitions.len() > limit {
-            transitions.truncate(limit);
-        }
-
-        let output = serde_json::json!({
-            "session_id": params.session_id,
-            "count": transitions.len(),
-            "transitions": transitions,
-        });
-        Ok(CallToolResult::success(json_content(&output)))
     }
 
     #[tool(
