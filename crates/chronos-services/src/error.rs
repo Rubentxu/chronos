@@ -110,4 +110,21 @@ pub enum ServiceError {
     /// eBPF uprobe injection failed.
     #[error("injection failed: {0}")]
     InjectionFailed(String),
+
+    // --- Browser probe service variants (m5-07) --------------------------------
+    /// Chrome (or Chromium) is not installed / accessible on PATH.
+    #[error("Chrome is not available. Please ensure Chrome or Chromium is installed and accessible.")]
+    ChromeUnavailable,
+
+    /// The browser probe session id is not registered in the live-browser-probe map.
+    #[error("Browser probe session '{0}' not found")]
+    BrowserProbeNotFound(String),
+
+    /// `browser_probe_start` failed to attach the Chrome adapter.
+    #[error("Failed to start browser probe: {0}")]
+    BrowserProbeStartFailed(String),
+
+    /// `browser_probe_drain` failed to read semantic events from the adapter.
+    #[error("Failed to drain browser events: {0}")]
+    BrowserProbeDrainFailed(String),
 }
