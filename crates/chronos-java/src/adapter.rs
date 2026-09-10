@@ -101,8 +101,8 @@ impl JavaAdapter {
         state.event_buffer.extend(new_events);
 
         // Assign event IDs and return buffered events
-        // First, collect into a separate vec to avoid borrow issues
-        let events_to_process: Vec<_> = state.event_buffer.drain(..).collect();
+        // First, take the buffer to avoid borrow issues
+        let events_to_process: Vec<_> = std::mem::take(&mut state.event_buffer);
         let mut events = Vec::new();
         for mut event in events_to_process {
             event.event_id = state.next_event_id;

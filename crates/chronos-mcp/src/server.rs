@@ -5666,7 +5666,7 @@ mod tests {
             .await
             .unwrap();
         assert_ne!(result.is_error, Some(true));
-        let s = format!("{:?}", &result.content[0]);
+        let s = format!("{:?}", result.content[0]);
         // Flat projection preserved.
         assert!(s.contains("event_id"), "flat event_id missing: {s}");
         assert!(s.contains("FunctionEntry"), "kind missing: {s}");
@@ -5720,7 +5720,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result.is_error, Some(true));
-        let s = format!("{:?}", &result.content[0]);
+        let s = format!("{:?}", result.content[0]);
         assert!(s.contains("not found"), "expected 'not found' error: {s}");
     }
 
@@ -5742,7 +5742,7 @@ mod tests {
             .unwrap();
 
         assert_ne!(result.is_error, Some(true));
-        let s = format!("{:?}", &result.content[0]);
+        let s = format!("{:?}", result.content[0]);
         assert!(
             s.contains("count") && s.contains("transitions"),
             "expected valid output: {s}"
@@ -5773,7 +5773,7 @@ mod tests {
             .unwrap();
 
         assert_ne!(result.is_error, Some(true));
-        let s = format!("{:?}", &result.content[0]);
+        let s = format!("{:?}", result.content[0]);
         // Should get exactly 1 transition for x (two writes: 1->2)
         assert!(s.contains("count"), "expected count field: {s}");
         // Should NOT contain y transitions
@@ -5798,7 +5798,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result.is_error, Some(true));
-        let s = format!("{:?}", &result.content[0]);
+        let s = format!("{:?}", result.content[0]);
         assert!(s.contains("not found"), "expected 'not found' error: {s}");
     }
 
@@ -5818,7 +5818,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result.is_error, Some(true));
-        let s = format!("{:?}", &result.content[0]);
+        let s = format!("{:?}", result.content[0]);
         assert!(s.contains("not found"), "expected 'not found' error: {s}");
     }
 
@@ -5841,7 +5841,7 @@ mod tests {
             .unwrap();
 
         assert_ne!(result.is_error, Some(true));
-        let s = format!("{:?}", &result.content[0]);
+        let s = format!("{:?}", result.content[0]);
         assert!(
             s.contains("included") && s.contains("missing") && s.contains("depth"),
             "expected causal slice output with included/missing/depth: {s}"
