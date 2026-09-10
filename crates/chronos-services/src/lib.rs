@@ -3,9 +3,9 @@
 //! Services are plain Rust structs that can be called from any RPC layer
 //! (today's rmcp, tomorrow's REST, etc.).
 //!
-//! ## Module index (post-M5 close, 2026-09-10; updated m6-01, 2026-09-10; updated m6-02, 2026-09-10; updated m6-03, 2026-09-10; updated m6-04, 2026-09-10)
+//! ## Module index (post-M5 close, 2026-09-10; updated m6-01, 2026-09-10; updated m6-02, 2026-09-10; updated m6-03, 2026-09-10; updated m6-04, 2026-09-10; updated m6-05, 2026-09-10)
 //!
-//! 16 service modules, each owning the algorithm for one or more MCP
+//! 17 service modules, each owning the algorithm for one or more MCP
 //! tools. The MCP wrappers at `crates/chronos-mcp/src/server.rs` only
 //! parse params, build a `*Context<'_>`, dispatch to the service, and
 //! map `ServiceError` back to MCP error text.
@@ -22,13 +22,14 @@
 //! | [`hypothesis_test`] | ~1000 | **M6 dispatcher.** `hypothesis_test` v2 (kind: invariant / existence / call_path). Net-new (no v1 shim). |
 //! | [`probe`] | ~590 | `probe_start`, `probe_stop`, `probe_drain` |
 //! | [`query_service`] | ~120 | `query`, `list_threads` |
+//! | [`session_export`] | ~660 | **M6 dispatcher.** `session_export` v2 (format: json / otlp_json; zip_json reserved for m7+). Net-new (no v1 shim). Atomic tmp+rename write. `properties_snapshot` always empty in m6-05 (see `docs/milestones/m6-05-session-export.md`). |
 //! | [`sessions`] | ~670 | session CRUD: `save/load/list/delete/drop` |
 //! | [`state_query`] | ~330 | **M6 dispatcher.** `state_query` v2 (kind: register_diff / memory_read / register_snapshot / memory_analysis / expression_eval). |
 //! | [`trace_slice`] | ~400 | **M6 dispatcher.** `trace_slice` v2 (kind: variable_origin / crash / causality / memory_audit). |
 //! | [`tripwires`] | ~680 | `tripwire_*` |
 //!
 //! Supporting modules: [`error`] (the `ServiceError` enum), [`output`]
-//! (all DTOs), and the 16 algorithm modules above.
+//! (all DTOs), and the 17 algorithm modules above.
 //!
 //! M6 progress:
 //! - m6-01: added [`trace_slice`] dispatcher. v1 tools `debug_find_variable_origin`,
@@ -50,8 +51,19 @@
 //!   else Violation). All three return tri-state
 //!   [`HypothesisVerdict`](output::HypothesisVerdict): Pass / Violation /
 //!   Unsupported.
-//! - remaining: `session_export` (m6-05), `events_read` merge + full
-//!   deprecation sweep (m6-06). See `docs/milestones/m5-close-report.md`.
+//! - m6-05: added [`session_export`] dispatcher. **Net-new v2 tool**
+//!   (no v1 shim — per close-report §4.2). Exports a session bundle
+//!   (metadata + trace events + properties snapshot) to disk in
+//!   `json` or `otlp_json` format; `zip_json` is reserved for m7+ and is
+//!   rejected by the dispatcher. Atomic tmp+rename write guarantees no
+//!   partial files at the final path. **Known limitation:** the
+//!   `properties_snapshot` field is always empty in m6-05 because the
+//!   `QueryEngine` API does not currently expose a property-table view
+//!   (properties are evaluated on-demand by name). The DTO and JSON
+//!   schema are final so m7+ can fill the field without breaking
+//!   consumers. See `docs/milestones/m6-05-session-export.md`.
+//! - remaining: `events_read` merge + full deprecation sweep (m6-06).
+//!   See `docs/milestones/m5-close-report.md`.
 
 pub mod analysis;
 pub mod browser_probe;
