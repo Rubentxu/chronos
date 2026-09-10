@@ -47,9 +47,11 @@ use chronos_services::debug_trace::DebugTraceService;
 use chronos_services::debug_trace_specialized::DebugTraceSpecializedService;
 use chronos_services::error::ServiceError;
 use chronos_services::output::EvalResult;
+use chronos_services::output::StateQueryKind;
 use chronos_services::probe::LiveProbeSession;
 use chronos_services::query_service::QueryService;
 use chronos_services::sessions::{SessionsContext, SessionsService};
+use chronos_services::state_query::{ChronosStateQueryService, StateQueryContext, StateQueryInput};
 use chronos_services::trace_slice::{ChronosTraceSliceService, TraceSliceContext, TraceSliceInput};
 use chronos_services::tripwires::TripwiresService;
 #[allow(unused_imports)]
@@ -195,6 +197,49 @@ pub struct StateDiffParams {
     pub timestamp_a: u64,
     /// Second timestamp (nanoseconds).
     pub timestamp_b: u64,
+}
+
+/// v2 `state_query` tool params.
+///
+/// Discriminated by `kind`. Each kind requires specific fields; the
+/// dispatcher validates and returns `ServiceError::InvalidInput` for
+/// missing required fields.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct StateQueryParams {
+    /// Session ID.
+    pub session_id: String,
+    /// Query kind discriminator.
+    pub kind: StateQueryKind,
+    /// First timestamp (RegisterDiff).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timestamp_a: Option<u64>,
+    /// Second timestamp (RegisterDiff).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timestamp_b: Option<u64>,
+    /// Event ID (RegisterSnapshot, ExpressionEval).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_id: Option<u64>,
+    /// Memory address (MemoryRead).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub address: Option<u64>,
+    /// Timestamp in nanoseconds (MemoryRead).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timestamp_ns: Option<u64>,
+    /// Memory range start (MemoryAnalysis).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_address: Option<u64>,
+    /// Memory range end (MemoryAnalysis).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_address: Option<u64>,
+    /// Window start in nanoseconds (MemoryAnalysis).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_ts: Option<u64>,
+    /// Window end in nanoseconds (MemoryAnalysis).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_ts: Option<u64>,
+    /// Arithmetic expression (ExpressionEval).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expression: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1445,6 +1490,50 @@ impl ChronosServer {
 
         let json = serde_json::to_string_pretty(&diff).unwrap_or_default();
         Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    #[tool(
+        name = "state_query",
+        description = "v2 dispatcher for state transition/value evidence queries. Select the query kind via `kind` (register_diff | memory_read | register_snapshot | memory_analysis | expression_eval). Each kind has its own required fields; see `docs/chronos-agentic-reconstruction/docs/specs/AGENT_API_V2.md`."
+    )]
+    async fn state_query(
+        &self,
+        params: Parameters<StateQueryParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+
+        let ctx = StateQueryContext {
+            engines: &self.engines,
+        };
+        let input = StateQueryInput {
+            session_id: params.session_id,
+            kind: params.kind,
+            timestamp_a: params.timestamp_a,
+            timestamp_b: params.timestamp_b,
+            event_id: params.event_id,
+            address: params.address,
+            timestamp_ns: params.timestamp_ns,
+            start_address: params.start_address,
+            end_address: params.end_address,
+            start_ts: params.start_ts,
+            end_ts: params.end_ts,
+            expression: params.expression,
+        };
+
+        match ChronosStateQueryService::query(&ctx, input).await {
+            Ok(out) => {
+                let value = serde_json::to_value(&out).unwrap_or(serde_json::json!({}));
+                Ok(CallToolResult::success(json_content(&value)))
+            }
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(
+                text_content(format!("Session '{}' not found", s)),
+            )),
+            Err(ServiceError::InvalidInput(s)) => Ok(CallToolResult::error(text_content(s))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "internal error: unexpected error: {}",
+                e
+            )))),
+        }
     }
 
     #[tool(
