@@ -3,6 +3,7 @@
 //! Services are plain Rust structs that can be called from any RPC layer
 //! (today's rmcp, tomorrow's REST, etc.).
 
+pub mod analysis;
 pub mod browser_probe;
 pub mod debug_read;
 pub mod debug_trace;
