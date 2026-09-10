@@ -8,6 +8,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use chronos_domain::query::StateDiff;
+
 /// Result of a trace event query.
 ///
 /// A thin wrapper around [`chronos_domain::query::QueryResult`] that carries pagination
@@ -795,6 +797,66 @@ pub enum TraceSliceOutput {
         session_id: String,
         #[serde(flatten)]
         result: MemoryAudit,
+    },
+}
+
+// ============================================================================
+// M6 — State Query outputs (m6-02)
+// ============================================================================
+
+/// Discriminator for [`StateQueryOutput`]. Selects which v1 tool's payload
+/// is produced by the v2 `state_query` dispatcher.
+///
+/// The five variants correspond to the five v1 tools that this v2 tool
+/// supersedes (see `docs/milestones/m5-close-report.md` §4.1):
+/// - `RegisterDiff` — formerly `state_diff`.
+/// - `MemoryRead` — formerly `debug_get_memory`.
+/// - `RegisterSnapshot` — formerly `debug_get_registers`.
+/// - `MemoryAnalysis` — formerly `debug_analyze_memory`.
+/// - `ExpressionEval` — formerly `evaluate_expression`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum StateQueryKind {
+    RegisterDiff,
+    MemoryRead,
+    RegisterSnapshot,
+    MemoryAnalysis,
+    ExpressionEval,
+}
+
+/// Output envelope of the v2 `state_query` tool.
+///
+/// The `kind` tag tells the consumer which payload variant follows.
+/// Each variant's inner DTO is flattened into the envelope so that the
+/// resulting JSON preserves byte-for-byte the shape of the corresponding
+/// v1 tool's output, plus a top-level `kind` discriminator.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum StateQueryOutput {
+    #[serde(rename = "register_diff")]
+    RegisterDiff {
+        #[serde(flatten)]
+        result: StateDiff,
+    },
+    #[serde(rename = "memory_read")]
+    MemoryRead {
+        #[serde(flatten)]
+        result: MemoryRead,
+    },
+    #[serde(rename = "register_snapshot")]
+    RegisterSnapshot {
+        #[serde(flatten)]
+        result: RegisterRead,
+    },
+    #[serde(rename = "memory_analysis")]
+    MemoryAnalysis {
+        #[serde(flatten)]
+        result: MemoryAnalysis,
+    },
+    #[serde(rename = "expression_eval")]
+    ExpressionEval {
+        #[serde(flatten)]
+        result: EvalResult,
     },
 }
 
