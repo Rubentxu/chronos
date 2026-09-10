@@ -8,8 +8,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use chronos_domain::query::{ExecutionSummary, StackFrame, StateDiff};
 use crate::debug_trace::CallGraph;
+use chronos_domain::query::{ExecutionSummary, StackFrame, StateDiff};
 
 /// Result of a trace event query.
 ///
@@ -898,7 +898,7 @@ pub enum ExecutionQueryKind {
 pub enum ExecutionQueryOutput {
     #[serde(rename = "call_stack")]
     CallStack {
-        #[serde(flatten)]
+        /// Stack frames at the requested event_id.
         frames: Vec<StackFrame>,
     },
     #[serde(rename = "execution_summary")]

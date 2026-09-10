@@ -104,22 +104,16 @@ impl ChronosExecutionQueryService {
             }
             ExecutionQueryKind::RaceDetect => {
                 let t = input.threshold_ns.unwrap_or(100);
-                let r = DebugTraceSpecializedService::detect_races(
-                    &input.session_id,
-                    t,
-                    ctx.engines,
-                )
-                .await?;
+                let r =
+                    DebugTraceSpecializedService::detect_races(&input.session_id, t, ctx.engines)
+                        .await?;
                 Ok(ExecutionQueryOutput::RaceDetect { report: r })
             }
             ExecutionQueryKind::Hotspot => {
                 let n = input.top_n.unwrap_or(10);
-                let r = DebugTraceSpecializedService::expand_hotspot(
-                    &input.session_id,
-                    n,
-                    ctx.engines,
-                )
-                .await?;
+                let r =
+                    DebugTraceSpecializedService::expand_hotspot(&input.session_id, n, ctx.engines)
+                        .await?;
                 Ok(ExecutionQueryOutput::Hotspot { report: r })
             }
             ExecutionQueryKind::Saliency => {
