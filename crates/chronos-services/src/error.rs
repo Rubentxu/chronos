@@ -70,7 +70,6 @@ pub enum ServiceError {
     QueryExecutionError(String),
 
     // --- Probe service variants -----------------------------------------------
-
     /// Invalid program path supplied to a probe tool (empty, not a file, etc.).
     #[error("invalid program path: {0}")]
     InvalidProgramPath(String),

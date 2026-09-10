@@ -11,10 +11,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use chronos_domain::adapter::ProbeBackend;
 use chronos_domain::bus::EventBus;
 use chronos_domain::{CaptureConfig, CaptureSession, Language};
 use chronos_native::probe_backend::NativeProbeBackend;
-use chronos_domain::adapter::ProbeBackend;
 use tokio::sync::Mutex as TokioMutex;
 use tracing::info;
 
@@ -220,7 +220,8 @@ impl ProbeService {
             target: input.program,
             language: format!("{:?}", language),
             bus_capacity: input.bus_capacity,
-            hint: "Use probe_drain to read events in real-time, probe_stop to finalize.".to_string(),
+            hint: "Use probe_drain to read events in real-time, probe_stop to finalize."
+                .to_string(),
         })
     }
 
@@ -229,10 +230,7 @@ impl ProbeService {
     /// Returns the drained raw `TraceEvent`s and metadata so the server-side
     /// wrapper can call `build_and_store_engine` (which still lives on the
     /// server because it touches `engines` and `session_languages`).
-    pub fn stop(
-        ctx: &ProbeContext<'_>,
-        session_id: &str,
-    ) -> Result<ProbeStopResult, ServiceError> {
+    pub fn stop(ctx: &ProbeContext<'_>, session_id: &str) -> Result<ProbeStopResult, ServiceError> {
         // Remove the live probe session
         let live_probe = ctx
             .live_probes
@@ -240,7 +238,8 @@ impl ProbeService {
             .map_err(|_| ServiceError::LockPoisoned)?
             .remove(session_id);
 
-        let live_probe = live_probe.ok_or_else(|| ServiceError::ProbeNotFound(session_id.to_string()))?;
+        let live_probe =
+            live_probe.ok_or_else(|| ServiceError::ProbeNotFound(session_id.to_string()))?;
 
         // Drain final raw events from the bus (for QueryEngine).
         // drain_raw_events() returns TraceEvent directly, which is what

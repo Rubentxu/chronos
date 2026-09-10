@@ -2828,12 +2828,12 @@ impl ChronosServer {
                 });
                 Ok(CallToolResult::success(json_content(&output)))
             }
-            Err(ServiceError::InvalidProgramPath(msg)) => Ok(CallToolResult::error(
-                text_content(format!("Invalid program path: {}", msg)),
-            )),
-            Err(ServiceError::ProbeStartFailed(msg)) => Ok(CallToolResult::error(
-                text_content(format!("Failed to start probe: {}", msg)),
-            )),
+            Err(ServiceError::InvalidProgramPath(msg)) => Ok(CallToolResult::error(text_content(
+                format!("Invalid program path: {}", msg),
+            ))),
+            Err(ServiceError::ProbeStartFailed(msg)) => Ok(CallToolResult::error(text_content(
+                format!("Failed to start probe: {}", msg),
+            ))),
             Err(ServiceError::LockPoisoned) => {
                 Ok(CallToolResult::error(text_content("lock poisoned")))
             }
@@ -2866,12 +2866,8 @@ impl ChronosServer {
             Ok(result) => {
                 // Build and store the query engine with proper noise filtering.
                 // Still on the server side because it touches engines/session_languages.
-                self.build_and_store_engine(
-                    &params.session_id,
-                    result.events,
-                    result.language,
-                )
-                .await;
+                self.build_and_store_engine(&params.session_id, result.events, result.language)
+                    .await;
 
                 let output = serde_json::json!({
                     "session_id": params.session_id,
@@ -2884,12 +2880,12 @@ impl ChronosServer {
                 });
                 Ok(CallToolResult::success(json_content(&output)))
             }
-            Err(ServiceError::ProbeNotFound(s)) => Ok(CallToolResult::error(text_content(
-                format!(
+            Err(ServiceError::ProbeNotFound(s)) => {
+                Ok(CallToolResult::error(text_content(format!(
                     "Live probe session '{}' not found. It may have already been stopped.",
                     s
-                ),
-            ))),
+                ))))
+            }
             Err(ServiceError::LockPoisoned) => {
                 Ok(CallToolResult::error(text_content("lock poisoned")))
             }
@@ -2981,8 +2977,7 @@ impl ChronosServer {
                 format!("Live probe session '{}' not found.", s),
             ))),
             Err(ServiceError::CursorStale) => Ok(CallToolResult::error(text_content(
-                "Cursor is stale; re-anchor with a fresh probe_drain (no cursor)."
-                    .to_string(),
+                "Cursor is stale; re-anchor with a fresh probe_drain (no cursor).".to_string(),
             ))),
             Err(ServiceError::DrainFailed(msg)) => Ok(CallToolResult::error(text_content(
                 format!("Failed to drain events: {}", msg),
