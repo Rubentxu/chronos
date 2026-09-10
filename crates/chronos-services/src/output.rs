@@ -11,6 +11,11 @@ use std::collections::HashMap;
 use crate::debug_trace::CallGraph;
 use chronos_domain::query::{ExecutionSummary, StackFrame, StateDiff};
 
+// Re-exports so MCP wrappers can refer to property types via
+// `chronos_services::output::ComparisonOp` / `::PropertyValue`
+// without importing from `chronos_domain` directly.
+pub use chronos_domain::property::{ComparisonOp, PropertyValue};
+
 /// Result of a trace event query.
 ///
 /// A thin wrapper around [`chronos_domain::query::QueryResult`] that carries pagination
@@ -1042,6 +1047,33 @@ pub enum HypothesisScope {
     EventCount,
     LatencyMs,
     PropertyValue,
+}
+
+/// JSON-friendly wrapper around `chronos_domain::property::PropertyValue`
+/// for the `hypothesis_test` MCP params. We can't re-export the domain
+/// enum directly because it doesn't derive `JsonSchema`; the MCP wrapper
+/// converts `HypothesisConstant` -> `PropertyValue` before invoking the
+/// dispatcher. The schema covers only the three scalar variants.
+///
+/// Note: `Text` is preserved as-is so callers can constrain invariants
+/// over captured string values (e.g. `repr()` of a `VariableInfo`).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum HypothesisConstant {
+    Number { value: f64 },
+    Text { value: String },
+    Bool { value: bool },
+}
+
+impl From<HypothesisConstant> for PropertyValue {
+    fn from(constant: HypothesisConstant) -> Self {
+        match constant {
+            HypothesisConstant::Number { value } => PropertyValue::Number(value),
+            HypothesisConstant::Text { value } => PropertyValue::Text(value),
+            HypothesisConstant::Bool { value } => PropertyValue::Bool(value),
+        }
+    }
 }
 
 /// Predicate shape for the `Existence` hypothesis.

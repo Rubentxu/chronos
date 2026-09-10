@@ -169,6 +169,43 @@ fn default_limit() -> usize {
     100
 }
 
+/// Default BFS expansion depth for `hypothesis_test` kind=call_path.
+/// Matches the `debug_call_graph` v1 default (see `chronos_services::debug_trace`).
+fn default_max_depth() -> usize {
+    10
+}
+
+/// Parse the JSON-friendly `scope` string from `HypothesisTestParams`
+/// into the typed [`chronos_services::output::HypothesisScope`]. Returns
+/// `None` for unknown values — the dispatcher then uses its
+/// `EventCount` default; for `latency_ms` the dispatcher returns
+/// `Unsupported` with the documented reason.
+fn parse_hypothesis_scope(s: &str) -> Option<chronos_services::output::HypothesisScope> {
+    use chronos_services::output::HypothesisScope;
+    match s {
+        "event_count" => Some(HypothesisScope::EventCount),
+        "latency_ms" => Some(HypothesisScope::LatencyMs),
+        "property_value" => Some(HypothesisScope::PropertyValue),
+        _ => None,
+    }
+}
+
+/// Parse the JSON-friendly `comparison` string from `HypothesisTestParams`
+/// into the typed [`chronos_services::property::ComparisonOp`]. Returns
+/// `None` for unknown values.
+fn parse_comparison_op(s: &str) -> Option<chronos_services::output::ComparisonOp> {
+    use chronos_services::output::ComparisonOp;
+    match s {
+        "lt" => Some(ComparisonOp::Lt),
+        "le" => Some(ComparisonOp::Le),
+        "gt" => Some(ComparisonOp::Gt),
+        "ge" => Some(ComparisonOp::Ge),
+        "eq" => Some(ComparisonOp::Eq),
+        "ne" => Some(ComparisonOp::Ne),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetEventParams {
     /// Session ID.
@@ -357,6 +394,50 @@ pub struct InspectCausalityParams {
     /// Maximum number of entries to return.
     #[serde(default = "default_limit")]
     pub limit: usize,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct HypothesisTestParams {
+    /// Session ID.
+    pub session_id: String,
+    /// Discriminator selecting which typed hypothesis shape to evaluate.
+    /// - `invariant`: reuses the property comparator; requires
+    ///   `scope + comparison + constant`. When `scope=property_value`,
+    ///   also requires `property_target`.
+    /// - `existence`: requires `predicate` (event_type, thread, or
+    ///   property_key).
+    /// - `call_path`: requires `caller + callee`.
+    pub kind: chronos_services::output::HypothesisKind,
+    /// What scalar target the Invariant shape observes. JSON-friendly
+    /// string the wrapper parses (avoids JsonSchema derive on the domain
+    /// enum). Allowed values: `"event_count"`, `"latency_ms"`,
+    /// `"property_value"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+    /// Comparison operator for the Invariant shape. JSON-friendly string;
+    /// allowed values: `"lt"`, `"le"`, `"gt"`, `"ge"`, `"eq"`, `"ne"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comparison: Option<String>,
+    /// Constant value for the Invariant shape. Wraps the domain
+    /// `PropertyValue` so MCP clients can send it as JSON without
+    /// triggering a JsonSchema derive on the domain type.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub constant: Option<chronos_services::output::HypothesisConstant>,
+    /// Property target key (required when `scope=property_value`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub property_target: Option<String>,
+    /// Predicate for the Existence shape.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub predicate: Option<chronos_services::output::ExistencePredicate>,
+    /// Caller function for the CallPath shape.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caller: Option<String>,
+    /// Callee function for the CallPath shape.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub callee: Option<String>,
+    /// Maximum BFS expansion depth for CallPath (default 10).
+    #[serde(default = "default_max_depth")]
+    pub max_depth: usize,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -3832,6 +3913,57 @@ impl ChronosServer {
                     event_id, params.session_id
                 ))))
             }
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
+        }
+    }
+
+    #[tool(
+        name = "hypothesis_test",
+        description = "Evaluate a typed hypothesis against captured session evidence and return Pass / Violation / Unsupported. Three supported shapes: 'invariant' (reuses chronos_domain::property::Property::evaluate on EventCount or PropertyValue), 'existence' (predicate scan over captured events; Pass if >=1 match, else Violation), 'call_path' (BFS reachability in the call graph). Returns raw support_event_ids + counter_event_ids per the v2 spec ('without hiding raw support'). v2 net-new tool (no v1 shim)."
+    )]
+    async fn hypothesis_test(
+        &self,
+        params: Parameters<HypothesisTestParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+
+        // Parse the JSON-friendly strings into the typed enums the
+        // dispatcher expects. Invalid values become ServiceError::InvalidInput
+        // via the dispatcher's own error path; here we just convert.
+        let scope = params.scope.as_deref().and_then(parse_hypothesis_scope);
+        let comparison = params
+            .comparison
+            .as_deref()
+            .and_then(parse_comparison_op);
+        let constant = params.constant.map(chronos_services::output::PropertyValue::from);
+
+        let ctx = chronos_services::hypothesis_test::HypothesisTestContext {
+            engines: &self.engines,
+        };
+        let input = chronos_services::hypothesis_test::HypothesisInput {
+            session_id: params.session_id,
+            kind: params.kind,
+            scope,
+            comparison,
+            constant,
+            property_target: params.property_target,
+            predicate: params.predicate,
+            caller: params.caller,
+            callee: params.callee,
+            max_depth: Some(params.max_depth),
+        };
+
+        match chronos_services::hypothesis_test::ChronosHypothesisTestService::test(&ctx, input)
+            .await
+        {
+            Ok(out) => Ok(CallToolResult::success(json_content(
+                &serde_json::to_value(&out)
+                    .map_err(|e| rmcp::ErrorData::internal_error(e.to_string(), None))?,
+            ))),
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{s}' not found"),
+            ))),
+            Err(ServiceError::InvalidInput(s)) => Ok(CallToolResult::error(text_content(s))),
             Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
     }
