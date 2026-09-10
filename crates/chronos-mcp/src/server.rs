@@ -50,9 +50,7 @@ use chronos_services::output::EvalResult;
 use chronos_services::probe::LiveProbeSession;
 use chronos_services::query_service::QueryService;
 use chronos_services::sessions::{SessionsContext, SessionsService};
-use chronos_services::trace_slice::{
-    ChronosTraceSliceService, TraceSliceContext, TraceSliceInput,
-};
+use chronos_services::trace_slice::{ChronosTraceSliceService, TraceSliceContext, TraceSliceInput};
 use chronos_services::tripwires::TripwiresService;
 #[allow(unused_imports)]
 use chronos_store::{SessionMetadata, SessionStore};
@@ -1745,14 +1743,16 @@ impl ChronosServer {
                 });
                 Ok(CallToolResult::success(json_content(&output)))
             }
-            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(
-                text_content(format!("Session '{}' not found", s)),
-            )),
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{}' not found", s),
+            ))),
             Err(e) => Ok(CallToolResult::error(text_content(format!(
                 "internal error: unexpected error: {}",
                 e
             )))),
-            Ok(_) => unreachable!("slice_kind=variable_origin always yields VariableOrigin variant"),
+            Ok(_) => {
+                unreachable!("slice_kind=variable_origin always yields VariableOrigin variant")
+            }
         }
     }
 
@@ -1808,9 +1808,9 @@ impl ChronosServer {
                 };
                 Ok(CallToolResult::success(json_content(&output)))
             }
-            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(
-                text_content(format!("Session '{}' not found", s)),
-            )),
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{}' not found", s),
+            ))),
             Err(e) => Ok(CallToolResult::error(text_content(format!(
                 "internal error: unexpected error: {}",
                 e
@@ -1917,9 +1917,9 @@ impl ChronosServer {
                 });
                 Ok(CallToolResult::success(json_content(&output)))
             }
-            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(
-                text_content(format!("Session '{}' not found", s)),
-            )),
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{}' not found", s),
+            ))),
             Err(e) => Ok(CallToolResult::error(text_content(format!(
                 "internal error: unexpected error: {}",
                 e
@@ -3734,12 +3734,10 @@ impl ChronosServer {
                 &serde_json::to_value(&out)
                     .map_err(|e| rmcp::ErrorData::internal_error(e.to_string(), None))?,
             ))),
-            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(
-                text_content(format!("Session '{}' not found", s)),
-            )),
-            Err(ServiceError::InvalidInput(s)) => Ok(CallToolResult::error(
-                text_content(s),
-            )),
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{}' not found", s),
+            ))),
+            Err(ServiceError::InvalidInput(s)) => Ok(CallToolResult::error(text_content(s))),
             Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
     }

@@ -108,9 +108,7 @@ impl ChronosTraceSliceService {
             }
             TraceSliceKind::Causality => {
                 let addr = input.address.ok_or_else(|| {
-                    ServiceError::InvalidInput(
-                        "address required for slice_kind=causality".into(),
-                    )
+                    ServiceError::InvalidInput("address required for slice_kind=causality".into())
                 })?;
                 let r = DebugTraceSpecializedService::inspect_causality(
                     &input.session_id,
@@ -160,7 +158,10 @@ mod tests {
         QueryEngine::new(events)
     }
 
-    fn engines_map(session_id: &str, events: Vec<TraceEvent>) -> Mutex<HashMap<String, QueryEngine>> {
+    fn engines_map(
+        session_id: &str,
+        events: Vec<TraceEvent>,
+    ) -> Mutex<HashMap<String, QueryEngine>> {
         let mut map = HashMap::new();
         map.insert(session_id.to_string(), make_engine(events));
         Mutex::new(map)
@@ -206,9 +207,7 @@ mod tests {
                 var_event(2, 200, 1, "x", "2"),
             ],
         );
-        let ctx = TraceSliceContext {
-            engines: &engines,
-        };
+        let ctx = TraceSliceContext { engines: &engines };
         let r = ChronosTraceSliceService::slice(
             &ctx,
             TraceSliceInput {
@@ -233,9 +232,7 @@ mod tests {
     #[tokio::test]
     async fn slice_variable_origin_missing_name_returns_invalid_input() {
         let engines = engines_map("s1", vec![]);
-        let ctx = TraceSliceContext {
-            engines: &engines,
-        };
+        let ctx = TraceSliceContext { engines: &engines };
         let r = ChronosTraceSliceService::slice(
             &ctx,
             TraceSliceInput {
@@ -252,15 +249,8 @@ mod tests {
 
     #[tokio::test]
     async fn slice_crash_ok() {
-        let engines = engines_map(
-            "s1",
-            vec![
-                signal_event(1, 100, 1, 11, "SIGSEGV"),
-            ],
-        );
-        let ctx = TraceSliceContext {
-            engines: &engines,
-        };
+        let engines = engines_map("s1", vec![signal_event(1, 100, 1, 11, "SIGSEGV")]);
+        let ctx = TraceSliceContext { engines: &engines };
         let r = ChronosTraceSliceService::slice(
             &ctx,
             TraceSliceInput {
@@ -285,9 +275,7 @@ mod tests {
     #[tokio::test]
     async fn slice_causality_ok() {
         let engines = engines_map("s1", vec![]);
-        let ctx = TraceSliceContext {
-            engines: &engines,
-        };
+        let ctx = TraceSliceContext { engines: &engines };
         let r = ChronosTraceSliceService::slice(
             &ctx,
             TraceSliceInput {
@@ -311,9 +299,7 @@ mod tests {
     #[tokio::test]
     async fn slice_causality_missing_address_returns_invalid_input() {
         let engines = engines_map("s1", vec![]);
-        let ctx = TraceSliceContext {
-            engines: &engines,
-        };
+        let ctx = TraceSliceContext { engines: &engines };
         let r = ChronosTraceSliceService::slice(
             &ctx,
             TraceSliceInput {
@@ -331,9 +317,7 @@ mod tests {
     #[tokio::test]
     async fn slice_memory_audit_ok() {
         let engines = engines_map("s1", vec![]);
-        let ctx = TraceSliceContext {
-            engines: &engines,
-        };
+        let ctx = TraceSliceContext { engines: &engines };
         let r = ChronosTraceSliceService::slice(
             &ctx,
             TraceSliceInput {
@@ -357,9 +341,7 @@ mod tests {
     #[tokio::test]
     async fn slice_memory_audit_missing_address_returns_invalid_input() {
         let engines = engines_map("s1", vec![]);
-        let ctx = TraceSliceContext {
-            engines: &engines,
-        };
+        let ctx = TraceSliceContext { engines: &engines };
         let r = ChronosTraceSliceService::slice(
             &ctx,
             TraceSliceInput {
@@ -377,9 +359,7 @@ mod tests {
     #[tokio::test]
     async fn slice_session_not_found() {
         let engines = engines_map("s1", vec![]);
-        let ctx = TraceSliceContext {
-            engines: &engines,
-        };
+        let ctx = TraceSliceContext { engines: &engines };
         let r = ChronosTraceSliceService::slice(
             &ctx,
             TraceSliceInput {
