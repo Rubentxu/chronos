@@ -4,6 +4,7 @@
 //! All types derive `Debug`, `Clone`, `PartialEq`, `Serialize`, `Deserialize`
 //! so they can cross RPC boundaries cleanly.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -740,7 +741,8 @@ pub struct CausalSliceOutput {
 /// - `Crash` — formerly `debug_find_crash`.
 /// - `Causality` — formerly `inspect_causality`.
 /// - `MemoryAudit` — formerly `forensic_memory_audit`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, JsonSchema)]
+#[schemars(rename_all = "snake_case")]
 pub enum TraceSliceKind {
     VariableOrigin,
     Crash,

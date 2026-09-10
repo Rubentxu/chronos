@@ -43,11 +43,16 @@ use chronos_services::browser_probe::{
 };
 use chronos_services::debug_read::DebugReadService;
 use chronos_services::debug_trace::DebugTraceService;
+#[allow(unused_imports)]
+use chronos_services::debug_trace_specialized::DebugTraceSpecializedService;
 use chronos_services::error::ServiceError;
 use chronos_services::output::EvalResult;
 use chronos_services::probe::LiveProbeSession;
 use chronos_services::query_service::QueryService;
 use chronos_services::sessions::{SessionsContext, SessionsService};
+use chronos_services::trace_slice::{
+    ChronosTraceSliceService, TraceSliceContext, TraceSliceInput,
+};
 use chronos_services::tripwires::TripwiresService;
 #[allow(unused_imports)]
 use chronos_store::{SessionMetadata, SessionStore};
@@ -275,6 +280,27 @@ pub struct InspectCausalityParams {
     pub session_id: String,
     /// Memory address (decimal) to inspect causal history.
     pub address: u64,
+    /// Maximum number of entries to return.
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TraceSliceParams {
+    /// Session ID.
+    pub session_id: String,
+    /// Discriminator selecting which kind of slice to produce.
+    /// - `variable_origin`: causal evidence around a named variable.
+    /// - `crash`: call stack at the last fatal signal in the session.
+    /// - `causality`: full reads + writes at a memory address.
+    /// - `memory_audit`: writes at a memory address, with call stacks.
+    pub slice_kind: chronos_services::output::TraceSliceKind,
+    /// Variable name (required when slice_kind=variable_origin).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variable_name: Option<String>,
+    /// Memory address (required when slice_kind=causality or memory_audit).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub address: Option<u64>,
     /// Maximum number of entries to return.
     #[serde(default = "default_limit")]
     pub limit: usize,
@@ -1209,6 +1235,11 @@ impl ChronosServer {
                     "internal error: unexpected browser probe drain failure",
                 )));
             }
+            Err(ServiceError::InvalidInput(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected invalid input",
+                )));
+            }
         };
 
         // m0-07: explicit query absence semantics
@@ -1587,6 +1618,11 @@ impl ChronosServer {
             Err(ServiceError::BrowserProbeDrainFailed(_)) => {
                 return Ok(CallToolResult::error(text_content(
                     "internal error: unexpected browser probe drain failure",
+                )));
+            }
+            Err(ServiceError::InvalidInput(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected invalid input",
                 )));
             }
         };
@@ -2340,6 +2376,9 @@ impl ChronosServer {
             Err(ServiceError::BrowserProbeDrainFailed(_)) => Ok(CallToolResult::error(
                 text_content("internal error: unexpected browser probe drain failure".to_string()),
             )),
+            Err(ServiceError::InvalidInput(_)) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected invalid input".to_string(),
+            ))),
         }
     }
 
@@ -3630,6 +3669,42 @@ impl ChronosServer {
                     event_id, params.session_id
                 ))))
             }
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
+        }
+    }
+
+    #[tool(
+        name = "trace_slice",
+        description = "Causal evidence around a target. Discriminated by slice_kind: variable_origin (mutations to a named variable), crash (call stack at last fatal signal), causality (full reads + writes at an address), memory_audit (writes at an address with call stacks). Supersedes the v1 debug_find_variable_origin, debug_find_crash, inspect_causality, and forensic_memory_audit tools."
+    )]
+    async fn trace_slice(
+        &self,
+        params: Parameters<TraceSliceParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+
+        let ctx = TraceSliceContext {
+            engines: &self.engines,
+        };
+        let input = TraceSliceInput {
+            session_id: params.session_id,
+            slice_kind: params.slice_kind,
+            variable_name: params.variable_name,
+            address: params.address,
+            limit: params.limit,
+        };
+
+        match ChronosTraceSliceService::slice(&ctx, input).await {
+            Ok(out) => Ok(CallToolResult::success(json_content(
+                &serde_json::to_value(&out)
+                    .map_err(|e| rmcp::ErrorData::internal_error(e.to_string(), None))?,
+            ))),
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(
+                text_content(format!("Session '{}' not found", s)),
+            )),
+            Err(ServiceError::InvalidInput(s)) => Ok(CallToolResult::error(
+                text_content(s),
+            )),
             Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
     }
