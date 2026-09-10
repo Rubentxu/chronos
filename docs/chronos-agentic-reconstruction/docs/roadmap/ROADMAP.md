@@ -138,6 +138,12 @@ Make MCP composable and thin.
 
 Exit: no new application algorithm belongs directly in `chronos-mcp::server`.
 
+> **Closed 2026-09-10.** See `docs/milestones/m5-close-report.md` for the
+> verdict, achieved structural state (12 service modules / 6,241 LoC,
+> `server.rs` at 5,546 LoC / 44 tool wrappers), and M6 candidate list. The
+> extraction goal is satisfied; the v2-spec surface reduction (44 → 8–12
+> tools via merging + deprecation shims) is deferred to M6.
+
 # M6 — OpenTelemetry correlation and export
 
 ## Goal
