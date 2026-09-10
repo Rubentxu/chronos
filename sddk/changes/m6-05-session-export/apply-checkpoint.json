@@ -1,0 +1,91 @@
+{
+  "cycle_id": "m6-05-session-export",
+  "title": "M6-05 — session_export net-new v2 tool",
+  "status": "completed",
+  "branch": "feat/m6-05-session-export",
+  "head_sha": "694df4c",
+  "base_sha": "47fb991",
+  "ff_merged_sha": "694df4c",
+  "started_at": "2026-09-10T20:52:00Z",
+  "completed_at": "2026-09-10T22:55:00Z",
+  "commits": [
+    { "sha": "0baac60", "subject": "docs(milestones): add m6-05 session_export cycle spec (PROPOSED)" },
+    { "sha": "4694eec", "subject": "feat(services): add ExportFormat + ExportBundle + ExportResult DTOs (m6-05)" },
+    { "sha": "ba01869", "subject": "feat(services): add ChronosSessionExportService dispatcher + 13 tests (m6-05)" },
+    { "sha": "891ce2e", "subject": "feat(mcp): add session_export v2 tool + SessionExportParams wrapper (m6-05)" },
+    { "sha": "14dce8d", "subject": "style: cargo fmt --all (m6-05)" },
+    { "sha": "694df4c", "subject": "docs(services): update lib doc index with session_export module + M6 progress (m6-05)" }
+  ],
+  "gates": {
+    "T0_fmt_clippy": "pass",
+    "T1_services_lib": "pass (156/156, +13 dispatcher tests)",
+    "T2_mcp_lib": "pass (73/73, no new MCP tests)",
+    "T3_workspace_lib_stable_25": "pass (min=244, max=244, fails=0/25)",
+    "T4_smoke_e2e_connectivity": "pass (1/1, server starts, new tool registers without panic)",
+    "post_merge_sanity_5_runs": "planned for next session — see TODO"
+  },
+  "scope": {
+    "path": "A-lite",
+    "rationale": "net-new capability (close-report §4.2 item 5), no v1 shim, bounded to one dispatcher + one MCP tool. No architectural fork."
+  },
+  "delivered": {
+    "new_module": "crates/chronos-services/src/session_export.rs (~660 LoC, 13 tests)",
+    "new_dtos": [
+      "ExportFormat { Json, OtlpJson, ZipJson }",
+      "ExportPropertiesEntry { name, value }",
+      "ExportPropertyValue { Number, Text, Bool }",
+      "ExportBundle { schema_version, metadata, events, properties_snapshot }",
+      "ExportResult { path, bytes_written, format }"
+    ],
+    "new_mcp_tool": "session_export (SessionExportParams: session_id, language, target, format, output_path)",
+    "new_service_error_variants": ["ExportFailed(String)", "InvalidExportParameter(String)"],
+    "lib_module_index_updated": true,
+    "mcp_wrapper_registered": true,
+    "module_count_services": "16 -> 17"
+  },
+  "known_limitations": [
+    {
+      "field": "ExportBundle.properties_snapshot",
+      "always": "Vec::new() in m6-05",
+      "reason": "QueryEngine API does not expose a property-table accessor (properties are evaluated on-demand by name). Adding `properties()` is a separable M7+ concern.",
+      "documented_in": [
+        "docs/milestones/m6-05-session-export.md §Known limitation",
+        "crates/chronos-services/src/session_export.rs module doc",
+        "crates/chronos-services/src/lib.rs M6 progress notes",
+        "MCP tool description (description field)"
+      ],
+      "json_schema_status": "FINAL — m7+ can fill the field without breaking consumers"
+    },
+    {
+      "field": "ExportFormat::ZipJson",
+      "always": "rejected with InvalidExportParameter",
+      "reason": "Requires the `zip` crate dependency, plus manifest.json packaging. Reserved for m7+ if user demand emerges."
+    }
+  ],
+  "files_changed": [
+    "docs/milestones/m6-05-session-export.md (new, 213 lines)",
+    "crates/chronos-services/src/output.rs (+101 lines: ExportFormat, ExportPropertiesEntry, ExportPropertyValue, ExportBundle, ExportResult)",
+    "crates/chronos-services/src/error.rs (+10 lines: ExportFailed, InvalidExportParameter variants)",
+    "crates/chronos-services/src/session_export.rs (new, 660 lines)",
+    "crates/chronos-services/src/lib.rs (+17/-5 lines: register module, update module index, M6 progress)",
+    "crates/chronos-mcp/src/server.rs (+108 lines: parse_export_format helper, SessionExportParams, session_export tool, ServiceError arms in two exhaustive matches)"
+  ],
+  "test_counts": {
+    "services_lib": { "before": 143, "after": 156, "delta": "+13" },
+    "mcp_lib": { "before": 73, "after": 73, "delta": "0 (MCP wrapper is mostly glue; covered by sandbox smoke)" },
+    "workspace_lib_stable": { "stable_total": 244, "iterations": 25, "fails_total": 0 }
+  },
+  "smoke_subset_chosen": ["e2e_connectivity"],
+  "notes": [
+    "T0 clean on first try (no clippy drift introduced — helper uses standard .unwrap_err()/.matches! patterns).",
+    "T3 had to be re-written mid-cycle: initial parser used `^[0-9]+ passed` (anchored to line start) but cargo test emits `test result: ok. N passed`. Fixed to `[0-9]+ passed`.",
+    "T3 also required `--skip ptrace_tracer --skip capture_runner` per AGENTS.md §6.5 (known flake in chronos-native that hangs the workspace --lib run).",
+    "Two ServiceError exhaustive matches in chronos-mcp needed new arms (ExportFailed, InvalidExportParameter) — matches the 'add new variant arm to each call site' pattern from AGENTS.md.",
+    "The 25-run T3 took ~37 min (90s timeout per run * 25 + cargo compile/link time). Iter 1 took ~3 min; subsequent iters took ~60-90s each once incremental cache was warm."
+  ],
+  "todo_next_session": [
+    "POST-MERGE 5-run sanity gate for m6-05 (script /tmp/m6-05-pm.sh modeled on /tmp/m6-04-pm.sh): 5 runs of `timeout 90 cargo test --workspace --lib --tests --exclude chronos-sandbox --no-fail-fast -- --skip ptrace_tracer --skip capture_runner`, expect min=max=244, fails=0.",
+    "If post-merge clean: start m6-06 (events_read merge + full deprecation sweep per close-report §4.2 item 2).",
+    "M6 close report (m6-close-report.md) after m6-06 — should mark both net-new capabilities (m6-04, m6-05) shipped and remaining v1->v2 merges done."
+  ]
+}
