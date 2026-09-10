@@ -32,13 +32,12 @@ use chronos_domain::{
     StateTransition, TraceEvent, VariableInfo,
 };
 use chronos_index::builder::IndexBuilder;
-use chronos_native::probe_backend::NativeProbeBackend;
 use chronos_query::QueryEngine;
 use chronos_services::debug_read::DebugReadService;
 use chronos_services::debug_trace::DebugTraceService;
 use chronos_services::error::ServiceError;
 use chronos_services::output::EvalResult;
-use chronos_services::probe::{EbpfAttachmentInfo, LiveProbeSession};
+use chronos_services::probe::LiveProbeSession;
 use chronos_services::query_service::QueryService;
 use chronos_services::sessions::{SessionsContext, SessionsService};
 use chronos_services::tripwires::TripwiresService;
