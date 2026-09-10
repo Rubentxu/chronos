@@ -3791,12 +3791,12 @@ impl ChronosServer {
             Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
                 format!("Session '{}' not found", s),
             ))),
-            Err(ServiceError::EventNotFound { event_id }) => Ok(CallToolResult::error(
-                text_content(format!(
+            Err(ServiceError::EventNotFound { event_id }) => {
+                Ok(CallToolResult::error(text_content(format!(
                     "Sink event {} not found in session '{}'",
                     event_id, params.session_id
-                )),
-            )),
+                ))))
+            }
             Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
     }

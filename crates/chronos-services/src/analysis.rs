@@ -244,10 +244,16 @@ mod tests {
         // x: (1->2), (2->3); y: (none -> 9, no transition)
         assert_eq!(result.count, 2);
         assert_eq!(result.transitions[0].target, "x");
-        assert_eq!(result.transitions[0].before, Some(PropertyValue::Text("1".into())));
+        assert_eq!(
+            result.transitions[0].before,
+            Some(PropertyValue::Text("1".into()))
+        );
         assert_eq!(result.transitions[0].after, PropertyValue::Text("2".into()));
         assert_eq!(result.transitions[1].target, "x");
-        assert_eq!(result.transitions[1].before, Some(PropertyValue::Text("2".into())));
+        assert_eq!(
+            result.transitions[1].before,
+            Some(PropertyValue::Text("2".into()))
+        );
         assert_eq!(result.transitions[1].after, PropertyValue::Text("3".into()));
     }
 
