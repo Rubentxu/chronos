@@ -321,18 +321,27 @@ impl Default for TripwireManager {
 
 impl TripwireManager {
     pub fn new() -> Self {
-        // Seed the per-instance counter from the global atomic so IDs remain
-        // globally unique across managers. We advance the global by a large
-        // stride (1024) to leave room for the per-instance sequence without
-        // colliding with other freshly-created managers in the same process.
-        let seed = NEXT_TRIPWIRE_ID.fetch_add(1024, Ordering::Relaxed);
+        // Reserve the next id from the global counter as the *base* for this
+        // manager's per-instance sequence. The per-instance counter then
+        // increments monotonically, so consecutive `register` calls in this
+        // manager are guaranteed to be unique within it — even when other
+        // tests concurrently call `reset_tripwire_ids_for_testing()`.
+        //
+        // Cross-manager collisions (different managers observing the same
+        // `TripwireId`) are harmless: each manager's `remove` is bounded to
+        // its own `tripwires` Vec, so an id reused by another manager does
+        // not affect a sibling manager's bookkeeping. The only invariant we
+        // need is *intra-manager* uniqueness, which the per-instance counter
+        // guarantees unconditionally.
+        let base = NEXT_TRIPWIRE_ID.fetch_add(1, Ordering::Relaxed);
         Self {
             tripwires: std::sync::RwLock::new(Vec::new()),
             fired_buffer: std::sync::RwLock::new(Vec::new()),
-            // Start allocating from `seed + 1` so id `seed` itself is never
-            // issued (the global counter may already have allocated ids in
-            // [seed, seed+1024) for legacy callers of `Tripwire::new`).
-            next_id: std::sync::atomic::AtomicU64::new(seed + 1),
+            // First issued id is `base` (the id we just consumed). After
+            // `reset_tripwire_ids_for_testing()`, `base` will be 1 — matching
+            // the convention used by legacy tests that assert on
+            // `"tripwire-1"`.
+            next_id: std::sync::atomic::AtomicU64::new(base),
         }
     }
 
