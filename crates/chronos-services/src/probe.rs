@@ -307,6 +307,29 @@ impl ProbeService {
             tripwires_fired,
         })
     }
+
+    /// Read records from a live probe session's durable `ExecutionLog`.
+    ///
+    /// Returns raw `TraceEvent`s plus decoder counters so the server wrapper
+    /// can serialize them into the existing JSON shape.
+    pub fn drain_log(
+        ctx: &ProbeContext<'_>,
+        session_id: &str,
+        since: Option<u64>,
+        limit: usize,
+    ) -> Result<(Vec<TraceEvent>, Option<u64>, u64, u64), ServiceError> {
+        let probes = ctx
+            .live_probes
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?;
+        let live_probe = probes
+            .get(session_id)
+            .ok_or_else(|| ServiceError::ProbeNotFound(session_id.to_string()))?;
+        live_probe
+            .backend
+            .read_execution_log_records_with_stats(since, limit)
+            .map_err(|e| ServiceError::DrainFailed(e.to_string()))
+    }
 }
 
 /// Language inferred from a file path. Mirrors `Language::from_path` but lives

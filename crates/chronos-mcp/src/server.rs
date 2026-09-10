@@ -3015,68 +3015,70 @@ impl ChronosServer {
         params: Parameters<ProbeDrainLogParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let (records, tail_seq, unparseable_payload_count, total_records_seen) = {
-            let probes = self.live_probes.lock().unwrap();
-            let live_probe = match probes.get(&params.session_id) {
-                Some(lp) => lp,
-                None => {
-                    return Ok(CallToolResult::error(text_content(format!(
-                        "Live probe session '{}' not found.",
-                        params.session_id
-                    ))))
-                }
-            };
-            match live_probe
-                .backend
-                .read_execution_log_records_with_stats(params.since, params.limit)
-            {
-                Ok(out) => out,
-                Err(e) => {
-                    return Ok(CallToolResult::error(text_content(format!(
-                        "Failed to read ExecutionLog: {}",
-                        e
-                    ))))
-                }
-            }
+
+        let ctx = chronos_services::probe::ProbeContext {
+            live_probes: &self.live_probes,
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            tripwire_manager: &self.tripwire_manager,
+            active_session: &self.active_session,
         };
-        let events: Vec<serde_json::Value> = records
-            .iter()
-            .map(|r| {
-                serde_json::json!({
-                    "event_id": r.event_id,
-                    "timestamp_ns": r.timestamp_ns,
-                    "thread_id": r.thread_id,
-                    "kind": format!("{:?}", r.event_type),
-                    "location": {
-                        "file": r.location.file,
-                        "line": r.location.line,
-                        "function": r.location.function,
-                    },
-                    // m2-08: surface the event payload so consumers can see
-                    // the identity fields (EventData::Function carries
-                    // symbol_id / invocation_id / parent_invocation_id) that
-                    // the m2 projection layer consumes. Flat fields above
-                    // remain for backward compatibility.
-                    "data": serde_json::to_value(&r.data).unwrap_or(serde_json::Value::Null),
-                })
-            })
-            .collect();
-        let output = serde_json::json!({
-            "session_id": params.session_id,
-            "source": "chronos-log::SegmentedExecutionLog",
-            "returned": events.len(),
-            "since": params.since,
-            "tail_seq": tail_seq,
-            "total_records_seen": total_records_seen,
-            "unparseable_payload_count": unparseable_payload_count,
-            "events": events,
-            "hint": "m1-04: ExecutionLog query path with decoder counters. \
-                     `unparseable_payload_count` is the number of records whose JSON \
-                     payload did not decode as a TraceEvent — these are still durable on \
-                     disk; the counter is the signal that another producer (or schema \
-                     drift) wrote to the same log. `total_records_seen` includes them.",
-        });
-        Ok(CallToolResult::success(json_content(&output)))
+
+        match chronos_services::probe::ProbeService::drain_log(
+            &ctx,
+            &params.session_id,
+            params.since,
+            params.limit,
+        ) {
+            Ok((records, tail_seq, unparseable_payload_count, total_records_seen)) => {
+                let events: Vec<serde_json::Value> = records
+                    .iter()
+                    .map(|r| {
+                        serde_json::json!({
+                            "event_id": r.event_id,
+                            "timestamp_ns": r.timestamp_ns,
+                            "thread_id": r.thread_id,
+                            "kind": format!("{:?}", r.event_type),
+                            "location": {
+                                "file": r.location.file,
+                                "line": r.location.line,
+                                "function": r.location.function,
+                            },
+                            "data": serde_json::to_value(&r.data).unwrap_or(serde_json::Value::Null),
+                        })
+                    })
+                    .collect();
+                let output = serde_json::json!({
+                    "session_id": params.session_id,
+                    "source": "chronos-log::SegmentedExecutionLog",
+                    "returned": events.len(),
+                    "since": params.since,
+                    "tail_seq": tail_seq,
+                    "total_records_seen": total_records_seen,
+                    "unparseable_payload_count": unparseable_payload_count,
+                    "events": events,
+                    "hint": "m1-04: ExecutionLog query path with decoder counters. \
+                             `unparseable_payload_count` is the number of records whose JSON \
+                             payload did not decode as a TraceEvent — these are still durable on \
+                             disk; the counter is the signal that another producer (or schema \
+                             drift) wrote to the same log. `total_records_seen` includes them.",
+                });
+                Ok(CallToolResult::success(json_content(&output)))
+            }
+            Err(ServiceError::ProbeNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Live probe session '{}' not found.", s),
+            ))),
+            Err(ServiceError::DrainFailed(msg)) => Ok(CallToolResult::error(text_content(
+                format!("Failed to read ExecutionLog: {}", msg),
+            ))),
+            Err(ServiceError::LockPoisoned) => {
+                Ok(CallToolResult::error(text_content("lock poisoned")))
+            }
+            Err(other) => Ok(CallToolResult::error(text_content(format!(
+                "internal error: unexpected drain_log error: {}",
+                other
+            )))),
+        }
     }
 
     /// m1-07: snapshot the compaction counters of the live probe
