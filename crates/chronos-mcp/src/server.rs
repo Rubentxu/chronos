@@ -28,9 +28,8 @@ use chronos_browser::BrowserAdapter;
 use chronos_domain::tripwire::{TripwireCondition, TripwireManager};
 use chronos_domain::{
     causal_slice::{slice_from, CausalEdge, EvidenceNodeId},
-    query::{CausalityQuery, PerfQuery, PerfSortBy, RaceDetectionQuery},
     CaptureConfig, CaptureSession, EventData, EventType, Language, ProbeBackend, PropertyValue,
-    StateTransition, TraceEvent, TraceQuery, VariableInfo,
+    StateTransition, TraceEvent, VariableInfo,
 };
 use chronos_index::builder::IndexBuilder;
 use chronos_native::probe_backend::NativeProbeBackend;
@@ -1596,52 +1595,40 @@ impl ChronosServer {
         params: Parameters<DebugFindVariableOriginParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let engines = self.engines.lock().await;
+        use chronos_services::debug_trace_specialized::DebugTraceSpecializedService;
 
-        let engine = match engines.get(&params.session_id) {
-            Some(e) => e,
-            None => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Session '{}' not found",
-                    params.session_id
-                ))))
-            }
-        };
-
-        let query = CausalityQuery {
-            session_id: params.session_id.clone(),
-            address: None,
-            variable_name: Some(params.variable_name.clone()),
-            before_timestamp: None,
-            full_lineage: true,
-        };
-
-        match engine.query_causality(&query) {
-            Some(result) => {
-                let mut mutations = result.mutations;
-                mutations.truncate(params.limit);
+        match DebugTraceSpecializedService::find_variable_origin(
+            &params.session_id,
+            &params.variable_name,
+            params.limit,
+            &self.engines,
+        )
+        .await
+        {
+            Ok(result) => {
                 let output = serde_json::json!({
-                    "session_id": params.session_id,
-                    "variable_name": params.variable_name,
-                    "mutation_count": mutations.len(),
-                    "mutations": mutations.iter().map(|m| serde_json::json!({
+                    "session_id": result.session_id,
+                    "variable_name": result.variable_name,
+                    "mutation_count": result.mutation_count,
+                    "mutations": result.mutations.iter().map(|m| serde_json::json!({
                         "event_id": m.event_id,
-                        "timestamp_ns": m.timestamp,
+                        "timestamp_ns": m.timestamp_ns,
                         "thread_id": m.thread_id,
                         "value_before": m.value_before,
                         "value_after": m.value_after,
                         "function": m.function,
                     })).collect::<Vec<_>>(),
+                    "note": result.note,
                 });
                 Ok(CallToolResult::success(json_content(&output)))
             }
-            None => Ok(CallToolResult::success(json_content(&serde_json::json!({
-                "session_id": params.session_id,
-                "variable_name": params.variable_name,
-                "mutation_count": 0,
-                "mutations": [],
-                "note": "No causality index or no writes to this variable found",
-            })))),
+            Err(chronos_services::error::ServiceError::SessionNotFound(s)) => Ok(
+                CallToolResult::error(text_content(format!("Session '{}' not found", s))),
+            ),
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "internal error: unexpected error: {}",
+                e
+            )))),
         }
     }
 
@@ -1654,69 +1641,43 @@ impl ChronosServer {
         params: Parameters<DebugFindCrashParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let engines = self.engines.lock().await;
+        use chronos_services::debug_trace_specialized::DebugTraceSpecializedService;
 
-        let engine = match engines.get(&params.session_id) {
-            Some(e) => e,
-            None => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Session '{}' not found",
-                    params.session_id
-                ))))
-            }
-        };
-
-        // Find fatal signals in the trace
-        let fatal_signals = [
-            "SIGSEGV", "SIGABRT", "SIGBUS", "SIGILL", "SIGFPE", "SIGKILL",
-        ];
-
-        let query = TraceQuery::new(&params.session_id)
-            .event_types(vec![EventType::SignalDelivered])
-            .pagination(usize::MAX, 0);
-        let result = engine.execute(&query);
-
-        let crash_event = result.events.iter().find(|e| {
-            if let EventData::Signal { signal_name, .. } = &e.data {
-                fatal_signals.contains(&signal_name.as_str())
-            } else {
-                // Fallback: check function field for signal name hint
-                false
-            }
-        });
-
-        match crash_event {
-            Some(ev) => {
-                let stack = engine.reconstruct_call_stack(ev.event_id);
-                let signal_name = if let EventData::Signal { signal_name, .. } = &ev.data {
-                    signal_name.clone()
+        match DebugTraceSpecializedService::find_crash(&params.session_id, &self.engines).await {
+            Ok(result) => {
+                let output = if result.crash_found {
+                    serde_json::json!({
+                        "session_id": result.session_id,
+                        "crash_found": result.crash_found,
+                        "signal": result.signal,
+                        "event_id": result.event_id,
+                        "timestamp_ns": result.timestamp_ns,
+                        "thread_id": result.thread_id,
+                        "call_stack_depth": result.call_stack_depth,
+                        "call_stack": result.call_stack.iter().map(|f| serde_json::json!({
+                            "depth": f.depth,
+                            "function": f.function,
+                            "address": format!("0x{:x}", f.address),
+                            "file": f.file,
+                            "line": f.line,
+                        })).collect::<Vec<_>>(),
+                    })
                 } else {
-                    "unknown".to_string()
+                    serde_json::json!({
+                        "session_id": result.session_id,
+                        "crash_found": result.crash_found,
+                        "note": result.note,
+                    })
                 };
-
-                let output = serde_json::json!({
-                    "session_id": params.session_id,
-                    "crash_found": true,
-                    "signal": signal_name,
-                    "event_id": ev.event_id,
-                    "timestamp_ns": ev.timestamp_ns,
-                    "thread_id": ev.thread_id,
-                    "call_stack_depth": stack.len(),
-                    "call_stack": stack.iter().map(|f| serde_json::json!({
-                        "depth": f.depth,
-                        "function": f.function,
-                        "address": format!("0x{:x}", f.address),
-                        "file": f.file,
-                        "line": f.line,
-                    })).collect::<Vec<_>>(),
-                });
                 Ok(CallToolResult::success(json_content(&output)))
             }
-            None => Ok(CallToolResult::success(json_content(&serde_json::json!({
-                "session_id": params.session_id,
-                "crash_found": false,
-                "note": "No fatal signal found in the trace",
-            })))),
+            Err(chronos_services::error::ServiceError::SessionNotFound(s)) => Ok(
+                CallToolResult::error(text_content(format!("Session '{}' not found", s))),
+            ),
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "internal error: unexpected error: {}",
+                e
+            )))),
         }
     }
 
@@ -1729,51 +1690,51 @@ impl ChronosServer {
         params: Parameters<DebugDetectRacesParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let engines = self.engines.lock().await;
+        use chronos_services::debug_trace_specialized::DebugTraceSpecializedService;
 
-        let engine = match engines.get(&params.session_id) {
-            Some(e) => e,
-            None => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Session '{}' not found",
-                    params.session_id
-                ))))
+        match DebugTraceSpecializedService::detect_races(
+            &params.session_id,
+            params.threshold_ns,
+            &self.engines,
+        )
+        .await
+        {
+            Ok(report) => {
+                let output = serde_json::json!({
+                    "session_id": report.session_id,
+                    "threshold_ns": report.threshold_ns,
+                    "access_count": report.access_count,
+                    "accesses": report.accesses.iter().map(|r| serde_json::json!({
+                        "address": format!("0x{:x}", r.address),
+                        "delta_ns": r.delta_ns,
+                        "write_a": {
+                            "event_id": r.write_a.event_id,
+                            "timestamp_ns": r.write_a.timestamp,
+                            "thread_id": r.write_a.thread_id,
+                            "value_before": r.write_a.value_before,
+                            "value_after": r.write_a.value_after,
+                            "function": r.write_a.function,
+                        },
+                        "write_b": {
+                            "event_id": r.write_b.event_id,
+                            "timestamp_ns": r.write_b.timestamp,
+                            "thread_id": r.write_b.thread_id,
+                            "value_before": r.write_b.value_before,
+                            "value_after": r.write_b.value_after,
+                            "function": r.write_b.function,
+                        },
+                    })).collect::<Vec<_>>(),
+                });
+                Ok(CallToolResult::success(json_content(&output)))
             }
-        };
-
-        let query = RaceDetectionQuery {
-            session_id: params.session_id.clone(),
-            time_range: None,
-            threshold_ns: params.threshold_ns,
-        };
-        let result = engine.detect_concurrent_access(&query);
-
-        let output = serde_json::json!({
-            "session_id": params.session_id,
-            "threshold_ns": params.threshold_ns,
-            "access_count": result.accesses.len(),
-            "accesses": result.accesses.iter().map(|r| serde_json::json!({
-                "address": format!("0x{:x}", r.address),
-                "delta_ns": r.delta_ns,
-                "write_a": {
-                    "event_id": r.write_a.event_id,
-                    "timestamp_ns": r.write_a.timestamp,
-                    "thread_id": r.write_a.thread_id,
-                    "value_before": r.write_a.value_before,
-                    "value_after": r.write_a.value_after,
-                    "function": r.write_a.function,
-                },
-                "write_b": {
-                    "event_id": r.write_b.event_id,
-                    "timestamp_ns": r.write_b.timestamp,
-                    "thread_id": r.write_b.thread_id,
-                    "value_before": r.write_b.value_before,
-                    "value_after": r.write_b.value_after,
-                    "function": r.write_b.function,
-                },
-            })).collect::<Vec<_>>(),
-        });
-        Ok(CallToolResult::success(json_content(&output)))
+            Err(chronos_services::error::ServiceError::SessionNotFound(s)) => Ok(
+                CallToolResult::error(text_content(format!("Session '{}' not found", s))),
+            ),
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "internal error: unexpected error: {}",
+                e
+            )))),
+        }
     }
 
     #[tool(
@@ -1785,52 +1746,40 @@ impl ChronosServer {
         params: Parameters<InspectCausalityParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let engines = self.engines.lock().await;
+        use chronos_services::debug_trace_specialized::DebugTraceSpecializedService;
 
-        let engine = match engines.get(&params.session_id) {
-            Some(e) => e,
-            None => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Session '{}' not found",
-                    params.session_id
-                ))))
-            }
-        };
-
-        let query = CausalityQuery {
-            session_id: params.session_id.clone(),
-            address: Some(params.address),
-            variable_name: None,
-            before_timestamp: None,
-            full_lineage: true,
-        };
-
-        match engine.query_causality(&query) {
-            Some(result) => {
-                let mut mutations = result.mutations;
-                mutations.truncate(params.limit);
+        match DebugTraceSpecializedService::inspect_causality(
+            &params.session_id,
+            params.address,
+            params.limit,
+            &self.engines,
+        )
+        .await
+        {
+            Ok(result) => {
                 let output = serde_json::json!({
-                    "session_id": params.session_id,
-                    "address": format!("0x{:x}", params.address),
-                    "mutation_count": mutations.len(),
-                    "mutations": mutations.iter().map(|m| serde_json::json!({
+                    "session_id": result.session_id,
+                    "address": format!("0x{:x}", result.address),
+                    "mutation_count": result.mutation_count,
+                    "mutations": result.mutations.iter().map(|m| serde_json::json!({
                         "event_id": m.event_id,
-                        "timestamp_ns": m.timestamp,
+                        "timestamp_ns": m.timestamp_ns,
                         "thread_id": m.thread_id,
                         "value_before": m.value_before,
                         "value_after": m.value_after,
                         "function": m.function,
                     })).collect::<Vec<_>>(),
+                    "note": result.note,
                 });
                 Ok(CallToolResult::success(json_content(&output)))
             }
-            None => Ok(CallToolResult::success(json_content(&serde_json::json!({
-                "session_id": params.session_id,
-                "address": format!("0x{:x}", params.address),
-                "mutation_count": 0,
-                "mutations": [],
-                "note": "No causality index or no writes to this address found",
-            })))),
+            Err(chronos_services::error::ServiceError::SessionNotFound(s)) => Ok(
+                CallToolResult::error(text_content(format!("Session '{}' not found", s))),
+            ),
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "internal error: unexpected error: {}",
+                e
+            )))),
         }
     }
 
@@ -1843,55 +1792,39 @@ impl ChronosServer {
         params: Parameters<DebugExpandHotspotParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let engines = self.engines.lock().await;
+        use chronos_services::debug_trace_specialized::DebugTraceSpecializedService;
 
-        let engine = match engines.get(&params.session_id) {
-            Some(e) => e,
-            None => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Session '{}' not found",
-                    params.session_id
-                ))))
+        match DebugTraceSpecializedService::expand_hotspot(
+            &params.session_id,
+            params.top_n,
+            &self.engines,
+        )
+        .await
+        {
+            Ok(result) => {
+                let output = serde_json::json!({
+                    "session_id": result.session_id,
+                    "compression_level": result.compression_level,
+                    "top_n": result.top_n,
+                    "total_calls_in_trace": result.total_calls_in_trace,
+                    "hotspot_functions": result.hotspot_functions.iter().map(|f| serde_json::json!({
+                        "function": f.function,
+                        "call_count": f.call_count,
+                        "total_cycles": f.total_cycles,
+                        "avg_cycles_per_call": f.avg_cycles_per_call,
+                    })).collect::<Vec<_>>(),
+                    "hint": result.hint,
+                });
+                Ok(CallToolResult::success(json_content(&output)))
             }
-        };
-
-        // Get top functions by calls from execution summary
-        let summary = engine.execution_summary(&params.session_id);
-        let top_by_calls: Vec<serde_json::Value> = summary
-            .top_functions
-            .iter()
-            .take(params.top_n)
-            .map(|f| {
-                // Try to get perf data for this function
-                let perf_entry = engine
-                    .query_perf(&PerfQuery {
-                        session_id: params.session_id.clone(),
-                        function_filter: Some(f.name.clone()),
-                        sort_by: PerfSortBy::Cycles,
-                        limit: 1,
-                    })
-                    .and_then(|r| r.functions.into_iter().next());
-
-                serde_json::json!({
-                    "function": f.name,
-                    "call_count": f.call_count,
-                    "total_cycles": perf_entry.as_ref().map(|p| p.total_cycles),
-                    "avg_cycles_per_call": perf_entry.as_ref().map(|p| p.avg_cycles),
-                })
-            })
-            .collect();
-
-        let total_calls: u64 = summary.top_functions.iter().map(|f| f.call_count).sum();
-
-        let output = serde_json::json!({
-            "session_id": params.session_id,
-            "compression_level": "hotspot",
-            "top_n": params.top_n,
-            "total_calls_in_trace": total_calls,
-            "hotspot_functions": top_by_calls,
-            "hint": "Use debug_call_graph for full call graph or query_events to drill into specific functions",
-        });
-        Ok(CallToolResult::success(json_content(&output)))
+            Err(chronos_services::error::ServiceError::SessionNotFound(s)) => Ok(
+                CallToolResult::error(text_content(format!("Session '{}' not found", s))),
+            ),
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "internal error: unexpected error: {}",
+                e
+            )))),
+        }
     }
 
     #[tool(
@@ -1903,86 +1836,55 @@ impl ChronosServer {
         params: Parameters<DebugGetSaliencyScoresParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let engines = self.engines.lock().await;
+        use chronos_services::debug_trace_specialized::DebugTraceSpecializedService;
 
-        let engine = match engines.get(&params.session_id) {
-            Some(e) => e,
-            None => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Session '{}' not found",
-                    params.session_id
-                ))))
-            }
-        };
-
-        let summary = engine.execution_summary(&params.session_id);
-
-        // Get perf data for all top functions
-        let perf_result = engine.query_perf(&PerfQuery {
-            session_id: params.session_id.clone(),
-            function_filter: None,
-            sort_by: PerfSortBy::Cycles,
-            limit: params.limit,
-        });
-
-        let scores: Vec<serde_json::Value> = if let Some(perf) = perf_result {
-            // Compute total cycles
-            let total_cycles: u64 = perf.functions.iter().map(|e| e.total_cycles).sum();
-
-            perf.functions
-                .iter()
-                .take(params.limit)
-                .map(|entry| {
-                    let score = if total_cycles > 0 {
-                        entry.total_cycles as f64 / total_cycles as f64
-                    } else {
-                        // Fallback: call count ratio
-                        let total_calls: u64 =
-                            summary.top_functions.iter().map(|f| f.call_count).sum();
-                        if total_calls > 0 {
-                            entry.call_count as f64 / total_calls as f64
+        match DebugTraceSpecializedService::get_saliency_scores(
+            &params.session_id,
+            params.limit,
+            &self.engines,
+        )
+        .await
+        {
+            Ok(result) => {
+                let scores: Vec<serde_json::Value> = result
+                    .scores
+                    .iter()
+                    .map(|s| {
+                        if s.cycles.is_some() {
+                            // No perf: cycles field is null, no total_cycles
+                            serde_json::json!({
+                                "function": s.function,
+                                "saliency_score": s.saliency_score,
+                                "call_count": s.call_count,
+                                "cycles": null,
+                            })
                         } else {
-                            0.0
+                            // Has perf: total_cycles present, no cycles field
+                            serde_json::json!({
+                                "function": s.function,
+                                "saliency_score": s.saliency_score,
+                                "call_count": s.call_count,
+                                "total_cycles": s.total_cycles,
+                            })
                         }
-                    };
-                    serde_json::json!({
-                        "function": entry.name.as_deref().unwrap_or("<unknown>"),
-                        "saliency_score": (score * 10000.0).round() / 10000.0,
-                        "call_count": entry.call_count,
-                        "total_cycles": entry.total_cycles,
                     })
-                })
-                .collect()
-        } else {
-            // No perf index: fall back to call-count based scoring
-            let total_calls: u64 = summary.top_functions.iter().map(|f| f.call_count).sum();
-            summary
-                .top_functions
-                .iter()
-                .take(params.limit)
-                .map(|f| {
-                    let score = if total_calls > 0 {
-                        f.call_count as f64 / total_calls as f64
-                    } else {
-                        0.0
-                    };
-                    serde_json::json!({
-                        "function": f.name,
-                        "saliency_score": (score * 10000.0).round() / 10000.0,
-                        "call_count": f.call_count,
-                        "cycles": null,
-                    })
-                })
-                .collect()
-        };
-
-        let output = serde_json::json!({
-            "session_id": params.session_id,
-            "scored_functions": scores.len(),
-            "scores": scores,
-            "hint": "saliency_score near 1.0 means this function dominated CPU time. Use debug_expand_hotspot to zoom in.",
-        });
-        Ok(CallToolResult::success(json_content(&output)))
+                    .collect();
+                let output = serde_json::json!({
+                    "session_id": result.session_id,
+                    "scored_functions": result.scored_functions,
+                    "scores": scores,
+                    "hint": result.hint,
+                });
+                Ok(CallToolResult::success(json_content(&output)))
+            }
+            Err(chronos_services::error::ServiceError::SessionNotFound(s)) => Ok(
+                CallToolResult::error(text_content(format!("Session '{}' not found", s))),
+            ),
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "internal error: unexpected error: {}",
+                e
+            )))),
+        }
     }
 
     // ========================================================================

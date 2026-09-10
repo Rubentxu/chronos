@@ -5,6 +5,7 @@
 
 pub mod debug_read;
 pub mod debug_trace;
+pub mod debug_trace_specialized;
 pub mod error;
 pub mod output;
 pub mod query_service;
