@@ -179,16 +179,14 @@ fn serialize_bundle_otlp_json(bundle: &ExportBundle) -> Result<Vec<u8>, ServiceE
         { "key": "session.duration_ms",  "value": { "intValue": bundle.metadata.duration_ms as i64 } },
     ]);
 
-    let scope_attrs = json!(
-        bundle
-            .properties_snapshot
-            .iter()
-            .map(|p| json!({
-                "key": p.name,
-                "value": { "stringValue": format!("{:?}", p.value) },
-            }))
-            .collect::<Vec<_>>()
-    );
+    let scope_attrs = json!(bundle
+        .properties_snapshot
+        .iter()
+        .map(|p| json!({
+            "key": p.name,
+            "value": { "stringValue": format!("{:?}", p.value) },
+        }))
+        .collect::<Vec<_>>());
 
     let spans: Vec<_> = bundle
         .events
@@ -328,7 +326,10 @@ mod tests {
         }
     }
 
-    fn make_engines_clean(session_id: &str, events: Vec<TraceEvent>) -> SessionExportContext<'static> {
+    fn make_engines_clean(
+        session_id: &str,
+        events: Vec<TraceEvent>,
+    ) -> SessionExportContext<'static> {
         let mut builder = IndexBuilder::new();
         builder.push_all(&events);
         let indices = builder.finalize();
@@ -404,10 +405,7 @@ mod tests {
 
         // schema.version appears in resource attributes.
         let attrs = rs0["resource"]["attributes"].as_array().unwrap();
-        let sv = attrs
-            .iter()
-            .find(|a| a["key"] == "schema.version")
-            .unwrap();
+        let sv = attrs.iter().find(|a| a["key"] == "schema.version").unwrap();
         assert_eq!(sv["value"]["stringValue"], "v2-export.1");
 
         let spans = rs0["scopeSpans"][0]["spans"].as_array().unwrap();
@@ -459,7 +457,11 @@ mod tests {
         let path = dir.join("session.json");
         let ctx = make_engines_clean(
             "s1",
-            vec![func_event(1, 1, "main"), func_event(2, 1, "worker"), func_event(3, 1, "cleanup")],
+            vec![
+                func_event(1, 1, "main"),
+                func_event(2, 1, "worker"),
+                func_event(3, 1, "cleanup"),
+            ],
         );
         let _ = ChronosSessionExportService::export(
             "s1",
@@ -516,11 +518,7 @@ mod tests {
         let leftovers: Vec<_> = std::fs::read_dir(&dir)
             .unwrap()
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.file_name()
-                    .to_string_lossy()
-                    .contains(".tmp.")
-            })
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp."))
             .collect();
         assert!(leftovers.is_empty(), "tmp file leaked: {:?}", leftovers);
     }
@@ -563,11 +561,10 @@ mod tests {
         let v: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         // Both at the top-level resource attribute AND in the scope version.
-        let attrs = v["resourceSpans"][0]["resource"]["attributes"].as_array().unwrap();
-        let sv = attrs
-            .iter()
-            .find(|a| a["key"] == "schema.version")
+        let attrs = v["resourceSpans"][0]["resource"]["attributes"]
+            .as_array()
             .unwrap();
+        let sv = attrs.iter().find(|a| a["key"] == "schema.version").unwrap();
         assert_eq!(sv["value"]["stringValue"], "v2-export.1");
     }
 

@@ -4082,15 +4082,15 @@ impl ChronosServer {
             Err(ServiceError::SessionNotInMemory(s)) => Ok(CallToolResult::error(text_content(
                 format!("Session '{s}' not found in memory. Run probe_start first."),
             ))),
-            Err(ServiceError::EmptySession(s)) => Ok(CallToolResult::error(text_content(
-                format!("Session '{s}' has no events to export."),
-            ))),
+            Err(ServiceError::EmptySession(s)) => Ok(CallToolResult::error(text_content(format!(
+                "Session '{s}' has no events to export."
+            )))),
             Err(ServiceError::InvalidExportParameter(s)) => {
                 Ok(CallToolResult::error(text_content(s)))
             }
-            Err(ServiceError::ExportFailed(s)) => {
-                Ok(CallToolResult::error(text_content(format!("export failed: {s}"))))
-            }
+            Err(ServiceError::ExportFailed(s)) => Ok(CallToolResult::error(text_content(format!(
+                "export failed: {s}"
+            )))),
             Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
     }
