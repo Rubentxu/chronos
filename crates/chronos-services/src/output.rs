@@ -723,6 +723,60 @@ pub struct CausalSliceOutput {
     pub depth: usize,
 }
 
+// ============================================================================
+// M5 — Diff & Compare outputs (m5-09)
+// ============================================================================
+
+/// One row of the performance regression audit: a function with its
+/// call counts in baseline and target and the percentage delta.
+///
+/// Positive `call_delta_pct` => more calls in target (potential regression).
+/// Negative `call_delta_pct` => fewer calls in target (potential improvement).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FunctionRegressionEntry {
+    pub function: String,
+    pub baseline_calls: u64,
+    pub target_calls: u64,
+    pub call_delta_pct: f64,
+}
+
+/// Output of `performance_regression_audit`.
+///
+/// `regressions` contains functions whose call count grew by more than 50%
+/// relative to baseline (sorted by `call_delta_pct` descending).
+/// `improvements` contains functions whose call count shrank by more than
+/// 50% (sorted by `call_delta_pct` ascending — most-improved first).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PerformanceRegressionAuditResult {
+    pub baseline_session_id: String,
+    pub target_session_id: String,
+    pub regressions: Vec<FunctionRegressionEntry>,
+    pub improvements: Vec<FunctionRegressionEntry>,
+    pub functions_analyzed: usize,
+    pub total_call_delta: i64,
+    pub summary: String,
+}
+
+/// Output of `compare_sessions` (set diff via `chronos_store::TraceDiff`).
+///
+/// `summary` is an LLM-readable string with three tiers:
+/// - `>= 90%` similarity => "Sessions are highly similar..."
+/// - `>= 50%` similarity => "Sessions differ in N events..."
+/// - `< 50%` similarity  => "Sessions are largely different..."
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CompareSessionsResult {
+    pub session_a_id: String,
+    pub session_b_id: String,
+    pub only_in_a_count: usize,
+    pub only_in_b_count: usize,
+    pub total_a: usize,
+    pub total_b: usize,
+    pub common_count: usize,
+    pub similarity_pct: f64,
+    pub timing_delta_ms: Option<i64>,
+    pub summary: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
