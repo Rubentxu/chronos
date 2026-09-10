@@ -6,6 +6,7 @@
 pub mod debug_read;
 pub mod debug_trace;
 pub mod debug_trace_specialized;
+pub mod browser_probe;
 pub mod error;
 pub mod output;
 pub mod probe;

@@ -19,6 +19,7 @@ chronos-index = { workspace = true }
 chronos-ebpf = { workspace = true }
 chronos-native = { workspace = true }
 chronos-log = { workspace = true }
+chronos-browser = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }
