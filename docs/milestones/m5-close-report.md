@@ -79,7 +79,7 @@ Test counts held flat through the close cycle (no code change, only docs):
 | `chronos-mcp` lib unit         | 73    | `cargo test -p chronos-mcp --lib`                                                       |
 | `chronos-services` lib unit    | 108   | 96 baseline + 7 (m5-08 analysis) + 5 (m5-09 diff)                                       |
 | `chronos-mcp` integration      | 122   | `cargo test -p chronos-mcp --tests`                                                     |
-| `cargo test --workspace --lib`  | 663   | 25-run stability: 25/25 PASS, `test result: ok` count consistent                        |
+| `cargo test --workspace --lib`  | 663 (baseline) / 773 (when chronos-native flaky tests pass) | 25-run stability: 25/25 PASS, `test result: ok` count consistent within ±10 across runs; the 6 pre-existing flaky tests in `chronos-native` (`ptrace_tracer::*` + `capture_runner::*`) are excluded from validation per AGENTS.md §6.5 |
 
 Sandbox subset last validated at m5-09 close: 7/7 PASS
 (`e2e_connectivity` 1, `diff_tools` 4, `probe_lifecycle` 2). T4-smoke is
