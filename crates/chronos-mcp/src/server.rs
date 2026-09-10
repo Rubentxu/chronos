@@ -1705,24 +1705,30 @@ impl ChronosServer {
 
     #[tool(
         name = "debug_find_variable_origin",
-        description = "Trace the origin of a variable: find all write mutations to it and reconstruct its lineage. Uses the CausalityIndex."
+        description = "Deprecated. Use `trace_slice` with `slice_kind=variable_origin` instead. Trace the origin of a variable: find all write mutations to it and reconstruct its lineage. Uses the CausalityIndex."
     )]
     async fn debug_find_variable_origin(
         &self,
         params: Parameters<DebugFindVariableOriginParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        use chronos_services::debug_trace_specialized::DebugTraceSpecializedService;
 
-        match DebugTraceSpecializedService::find_variable_origin(
-            &params.session_id,
-            &params.variable_name,
-            params.limit,
-            &self.engines,
-        )
-        .await
-        {
-            Ok(result) => {
+        let ctx = TraceSliceContext {
+            engines: &self.engines,
+        };
+        let input = TraceSliceInput {
+            session_id: params.session_id,
+            slice_kind: chronos_services::output::TraceSliceKind::VariableOrigin,
+            variable_name: Some(params.variable_name),
+            address: None,
+            limit: params.limit,
+        };
+
+        match ChronosTraceSliceService::slice(&ctx, input).await {
+            Ok(chronos_services::output::TraceSliceOutput::VariableOrigin {
+                session_id: _,
+                result,
+            }) => {
                 let output = serde_json::json!({
                     "session_id": result.session_id,
                     "variable_name": result.variable_name,
@@ -1739,29 +1745,43 @@ impl ChronosServer {
                 });
                 Ok(CallToolResult::success(json_content(&output)))
             }
-            Err(chronos_services::error::ServiceError::SessionNotFound(s)) => Ok(
-                CallToolResult::error(text_content(format!("Session '{}' not found", s))),
-            ),
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(
+                text_content(format!("Session '{}' not found", s)),
+            )),
             Err(e) => Ok(CallToolResult::error(text_content(format!(
                 "internal error: unexpected error: {}",
                 e
             )))),
+            Ok(_) => unreachable!("slice_kind=variable_origin always yields VariableOrigin variant"),
         }
     }
 
     #[tool(
         name = "debug_find_crash",
-        description = "Identify the crash point in a trace: find the last event before a fatal signal (SIGSEGV, SIGABRT, etc.) and return the call stack at that point."
+        description = "Deprecated. Use `trace_slice` with `slice_kind=crash` instead. Identify the crash point in a trace: find the last event before a fatal signal (SIGSEGV, SIGABRT, etc.) and return the call stack at that point."
     )]
     async fn debug_find_crash(
         &self,
         params: Parameters<DebugFindCrashParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        use chronos_services::debug_trace_specialized::DebugTraceSpecializedService;
 
-        match DebugTraceSpecializedService::find_crash(&params.session_id, &self.engines).await {
-            Ok(result) => {
+        let ctx = TraceSliceContext {
+            engines: &self.engines,
+        };
+        let input = TraceSliceInput {
+            session_id: params.session_id,
+            slice_kind: chronos_services::output::TraceSliceKind::Crash,
+            variable_name: None,
+            address: None,
+            limit: 0,
+        };
+
+        match ChronosTraceSliceService::slice(&ctx, input).await {
+            Ok(chronos_services::output::TraceSliceOutput::Crash {
+                session_id: _,
+                result,
+            }) => {
                 let output = if result.crash_found {
                     serde_json::json!({
                         "session_id": result.session_id,
@@ -1788,13 +1808,14 @@ impl ChronosServer {
                 };
                 Ok(CallToolResult::success(json_content(&output)))
             }
-            Err(chronos_services::error::ServiceError::SessionNotFound(s)) => Ok(
-                CallToolResult::error(text_content(format!("Session '{}' not found", s))),
-            ),
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(
+                text_content(format!("Session '{}' not found", s)),
+            )),
             Err(e) => Ok(CallToolResult::error(text_content(format!(
                 "internal error: unexpected error: {}",
                 e
             )))),
+            Ok(_) => unreachable!("slice_kind=crash always yields Crash variant"),
         }
     }
 
@@ -1856,24 +1877,30 @@ impl ChronosServer {
 
     #[tool(
         name = "inspect_causality",
-        description = "Inspect the full causal history of a memory address: all reads and writes, their timestamps, values, and originating functions."
+        description = "Deprecated. Use `trace_slice` with `slice_kind=causality` instead. Inspect the full causal history of a memory address: all reads and writes, their timestamps, values, and originating functions."
     )]
     async fn inspect_causality(
         &self,
         params: Parameters<InspectCausalityParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        use chronos_services::debug_trace_specialized::DebugTraceSpecializedService;
 
-        match DebugTraceSpecializedService::inspect_causality(
-            &params.session_id,
-            params.address,
-            params.limit,
-            &self.engines,
-        )
-        .await
-        {
-            Ok(result) => {
+        let ctx = TraceSliceContext {
+            engines: &self.engines,
+        };
+        let input = TraceSliceInput {
+            session_id: params.session_id,
+            slice_kind: chronos_services::output::TraceSliceKind::Causality,
+            variable_name: None,
+            address: Some(params.address),
+            limit: params.limit,
+        };
+
+        match ChronosTraceSliceService::slice(&ctx, input).await {
+            Ok(chronos_services::output::TraceSliceOutput::Causality {
+                session_id: _,
+                result,
+            }) => {
                 let output = serde_json::json!({
                     "session_id": result.session_id,
                     "address": format!("0x{:x}", result.address),
@@ -1890,13 +1917,14 @@ impl ChronosServer {
                 });
                 Ok(CallToolResult::success(json_content(&output)))
             }
-            Err(chronos_services::error::ServiceError::SessionNotFound(s)) => Ok(
-                CallToolResult::error(text_content(format!("Session '{}' not found", s))),
-            ),
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(
+                text_content(format!("Session '{}' not found", s)),
+            )),
             Err(e) => Ok(CallToolResult::error(text_content(format!(
                 "internal error: unexpected error: {}",
                 e
             )))),
+            Ok(_) => unreachable!("slice_kind=causality always yields Causality variant"),
         }
     }
 
@@ -2634,7 +2662,7 @@ impl ChronosServer {
 
     #[tool(
         name = "forensic_memory_audit",
-        description = "Full audit trail for a specific address — all writes with calling context."
+        description = "Deprecated. Use `trace_slice` with `slice_kind=memory_audit` instead. Full audit trail for a specific address — all writes with calling context."
     )]
     async fn forensic_memory_audit(
         &self,
@@ -2642,20 +2670,26 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        let result = DebugReadService::forensic_audit(
-            &params.session_id,
-            params.address,
-            params.limit,
-            &self.engines,
-        )
-        .await;
+        let ctx = TraceSliceContext {
+            engines: &self.engines,
+        };
+        let input = TraceSliceInput {
+            session_id: params.session_id,
+            slice_kind: chronos_services::output::TraceSliceKind::MemoryAudit,
+            variable_name: None,
+            address: Some(params.address),
+            limit: params.limit,
+        };
 
-        match result {
-            Ok(audit) => {
+        match ChronosTraceSliceService::slice(&ctx, input).await {
+            Ok(chronos_services::output::TraceSliceOutput::MemoryAudit {
+                session_id: _,
+                result,
+            }) => {
                 let output = serde_json::json!({
-                    "address": audit.address,
-                    "write_count": audit.write_count,
-                    "writes": audit.writes.iter().map(|w| {
+                    "address": result.address,
+                    "write_count": result.write_count,
+                    "writes": result.writes.iter().map(|w| {
                         serde_json::json!({
                             "timestamp_ns": w.timestamp_ns,
                             "event_id": w.event_id,
@@ -2680,6 +2714,7 @@ impl ChronosServer {
                 "lock poisoned".to_string(),
             ))),
             Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
+            Ok(_) => unreachable!("slice_kind=memory_audit always yields MemoryAudit variant"),
         }
     }
 
