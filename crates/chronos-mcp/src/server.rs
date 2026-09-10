@@ -3095,45 +3095,50 @@ impl ChronosServer {
         params: Parameters<ProbeCompactionMetricsParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let metrics_out = {
-            let probes = self.live_probes.lock().unwrap();
-            let live_probe = match probes.get(&params.session_id) {
-                Some(lp) => lp,
-                None => {
-                    return Ok(CallToolResult::error(text_content(format!(
-                        "Live probe session '{}' not found.",
-                        params.session_id
-                    ))))
-                }
-            };
-            match live_probe.backend.compaction_metrics() {
-                Ok(m) => m,
-                Err(e) => {
-                    return Ok(CallToolResult::error(text_content(format!(
-                        "Failed to read compaction metrics: {}",
-                        e
-                    ))))
-                }
+
+        let ctx = chronos_services::probe::ProbeContext {
+            live_probes: &self.live_probes,
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            tripwire_manager: &self.tripwire_manager,
+            active_session: &self.active_session,
+        };
+
+        match chronos_services::probe::ProbeService::compaction_metrics(&ctx, &params.session_id) {
+            Ok(metrics_out) => {
+                let output = match metrics_out {
+                    None => serde_json::json!({
+                        "session_id": params.session_id,
+                        "log_attached": false,
+                        "hint": "Backend was not configured with with_execution_log_dir. \
+                                 The probe is still functional; it just does not have an \
+                                 on-disk log to surface counters for.",
+                    }),
+                    Some(m) => serde_json::json!({
+                        "session_id": params.session_id,
+                        "log_attached": true,
+                        "source": "chronos-log::SegmentedExecutionLog",
+                        "segments_removed_total": m.segments_removed_total,
+                        "bytes_reclaimed_total": m.bytes_reclaimed_total,
+                        "compaction_runs_total": m.compaction_runs_total,
+                    }),
+                };
+                Ok(CallToolResult::success(json_content(&output)))
             }
-        };
-        let output = match metrics_out {
-            None => serde_json::json!({
-                "session_id": params.session_id,
-                "log_attached": false,
-                "hint": "Backend was not configured with with_execution_log_dir. \
-                         The probe is still functional; it just does not have an \
-                         on-disk log to surface counters for.",
-            }),
-            Some(m) => serde_json::json!({
-                "session_id": params.session_id,
-                "log_attached": true,
-                "source": "chronos-log::SegmentedExecutionLog",
-                "segments_removed_total": m.segments_removed_total,
-                "bytes_reclaimed_total": m.bytes_reclaimed_total,
-                "compaction_runs_total": m.compaction_runs_total,
-            }),
-        };
-        Ok(CallToolResult::success(json_content(&output)))
+            Err(ServiceError::ProbeNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Live probe session '{}' not found.", s),
+            ))),
+            Err(ServiceError::DrainFailed(msg)) => Ok(CallToolResult::error(text_content(
+                format!("Failed to read compaction metrics: {}", msg),
+            ))),
+            Err(ServiceError::LockPoisoned) => {
+                Ok(CallToolResult::error(text_content("lock poisoned")))
+            }
+            Err(other) => Ok(CallToolResult::error(text_content(format!(
+                "internal error: unexpected compaction metrics error: {}",
+                other
+            )))),
+        }
     }
 
     #[tool(

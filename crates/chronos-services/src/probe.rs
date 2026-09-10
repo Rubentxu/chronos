@@ -330,6 +330,27 @@ impl ProbeService {
             .read_execution_log_records_with_stats(since, limit)
             .map_err(|e| ServiceError::DrainFailed(e.to_string()))
     }
+
+    /// Snapshot the live probe session's `ExecutionLog` compaction counters.
+    ///
+    /// Returns `Ok(None)` when the probe was not configured with an
+    /// ExecutionLog directory (server wrapper surfaces this as `log_attached: false`).
+    pub fn compaction_metrics(
+        ctx: &ProbeContext<'_>,
+        session_id: &str,
+    ) -> Result<Option<chronos_log::CompactionMetrics>, ServiceError> {
+        let probes = ctx
+            .live_probes
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?;
+        let live_probe = probes
+            .get(session_id)
+            .ok_or_else(|| ServiceError::ProbeNotFound(session_id.to_string()))?;
+        live_probe
+            .backend
+            .compaction_metrics()
+            .map_err(|e| ServiceError::DrainFailed(e.to_string()))
+    }
 }
 
 /// Language inferred from a file path. Mirrors `Language::from_path` but lives
