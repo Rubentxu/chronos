@@ -542,6 +542,26 @@ pub struct ProbeStopOutput {
     pub hint: String,
 }
 
+/// Result of `ProbeService::stop` — the raw events + metadata needed by the
+/// server-side wrapper to call `build_and_store_engine`. The wrapper then
+/// turns this into the byte-identical MCP JSON shape.
+#[derive(Debug)]
+pub struct ProbeStopResult {
+    /// Final raw events drained from the live probe bus.
+    pub events: Vec<chronos_domain::TraceEvent>,
+    /// Language recorded when the probe was started.
+    pub language: chronos_domain::Language,
+    /// Original target binary path.
+    pub target: String,
+    /// Total number of events drained.
+    pub total_events: usize,
+    /// Wall-clock duration of the probe (ns difference between first and last
+    /// event, in milliseconds).
+    pub duration_ms: u64,
+    /// Whether the session had an eBPF attachment that was detached.
+    pub ebpf_detached: bool,
+}
+
 /// Output of `probe_drain`. JSON shape matches the existing literal in
 /// `chronos-mcp/src/server.rs::probe_drain`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

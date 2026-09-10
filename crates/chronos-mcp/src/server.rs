@@ -2854,72 +2854,50 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        // Remove the live probe session
-        let live_probe = {
-            let mut probes = self.live_probes.lock().unwrap();
-            probes.remove(&params.session_id)
+        let ctx = chronos_services::probe::ProbeContext {
+            live_probes: &self.live_probes,
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            tripwire_manager: &self.tripwire_manager,
+            active_session: &self.active_session,
         };
 
-        let live_probe = match live_probe {
-            Some(lp) => lp,
-            None => {
-                return Ok(CallToolResult::error(text_content(format!(
+        match chronos_services::probe::ProbeService::stop(&ctx, &params.session_id) {
+            Ok(result) => {
+                // Build and store the query engine with proper noise filtering.
+                // Still on the server side because it touches engines/session_languages.
+                self.build_and_store_engine(
+                    &params.session_id,
+                    result.events,
+                    result.language,
+                )
+                .await;
+
+                let output = serde_json::json!({
+                    "session_id": params.session_id,
+                    "status": "stopped",
+                    "target": result.target,
+                    "total_events": result.total_events,
+                    "duration_ms": result.duration_ms,
+                    "ebpf_detached": result.ebpf_detached,
+                    "hint": "Session is now queryable. Use query_events, get_call_stack, etc."
+                });
+                Ok(CallToolResult::success(json_content(&output)))
+            }
+            Err(ServiceError::ProbeNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!(
                     "Live probe session '{}' not found. It may have already been stopped.",
-                    params.session_id
-                ))))
+                    s
+                ),
+            ))),
+            Err(ServiceError::LockPoisoned) => {
+                Ok(CallToolResult::error(text_content("lock poisoned")))
             }
-        };
-
-        // Drain final raw events from the bus (for QueryEngine)
-        // Note: drain_events() returns SemanticEvent for LLM-facing tools,
-        // but QueryEngine needs TraceEvent, so we use drain_raw_events()
-        // Order matters: drain BEFORE stop_probe to avoid losing events if stop has side effects.
-        let events: Vec<TraceEvent> = live_probe.backend.drain_raw_events();
-
-        // Detach any eBPF uprobes this session owned before tearing down the
-        // ptrace thread. Best-effort; we still proceed to stop the backend.
-        if let Some(adapter) = &live_probe.ebpf_adapter {
-            if let Err(e) = adapter.detach_all() {
-                tracing::warn!("eBPF detach error for session {}: {}", params.session_id, e);
-            }
+            Err(other) => Ok(CallToolResult::error(text_content(format!(
+                "internal error: unexpected probe stop error: {}",
+                other
+            )))),
         }
-
-        // Stop the probe thread
-        if let Err(e) = live_probe.backend.stop_probe(&live_probe.session) {
-            tracing::warn!("Probe stop error for session {}: {}", params.session_id, e);
-        }
-
-        let total_events = events.len();
-        let language = live_probe.language;
-        let target = live_probe.target;
-        let ebpf_was_attached = live_probe.ebpf_attachment.is_some();
-
-        // Compute duration before moving events
-        let duration_ms = if let (Some(first), Some(last)) = (events.first(), events.last()) {
-            last.timestamp_ns.saturating_sub(first.timestamp_ns) / 1_000_000
-        } else {
-            0
-        };
-
-        info!(
-            "Live probe stopped for '{}' (session: {}, events: {})",
-            target, params.session_id, total_events
-        );
-
-        // Build and store the query engine with proper noise filtering
-        self.build_and_store_engine(&params.session_id, events, language)
-            .await;
-
-        let output = serde_json::json!({
-            "session_id": params.session_id,
-            "status": "stopped",
-            "target": target,
-            "total_events": total_events,
-            "duration_ms": duration_ms,
-            "ebpf_detached": ebpf_was_attached,
-            "hint": "Session is now queryable. Use query_events, get_call_stack, etc."
-        });
-        Ok(CallToolResult::success(json_content(&output)))
     }
 
     #[tool(

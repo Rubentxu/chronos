@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use chronos_domain::bus::EventBus;
 use chronos_domain::{CaptureConfig, CaptureSession, Language};
@@ -20,8 +20,9 @@ use tracing::info;
 use chronos_query::QueryEngine;
 
 use crate::error::ServiceError;
-use crate::output::ProbeStartOutput;
+use crate::output::{ProbeStartOutput, ProbeStopResult};
 use chronos_domain::tripwire::TripwireManager;
+use chronos_domain::TraceEvent;
 
 /// A live native probe session.
 ///
@@ -62,7 +63,7 @@ pub struct EbpfAttachmentInfo {
 /// the underlying maps and the `ProbeService` borrows them through this struct.
 pub struct ProbeContext<'a> {
     /// Live probe sessions: `session_id` → `LiveProbeSession`.
-    pub live_probes: &'a std::sync::Mutex<HashMap<String, LiveProbeSession>>,
+    pub live_probes: &'a Mutex<HashMap<String, LiveProbeSession>>,
     /// Finalized session engines: `session_id` → `QueryEngine`.
     /// Kept here so `probe_stop` can hand off the events to the indexer path
     /// (the actual `build_and_store_engine` call still happens in the server,
@@ -172,6 +173,69 @@ impl ProbeService {
             language: format!("{:?}", language),
             bus_capacity: input.bus_capacity,
             hint: "Use probe_drain to read events in real-time, probe_stop to finalize.".to_string(),
+        })
+    }
+
+    /// Stop a live native probe session.
+    ///
+    /// Returns the drained raw `TraceEvent`s and metadata so the server-side
+    /// wrapper can call `build_and_store_engine` (which still lives on the
+    /// server because it touches `engines` and `session_languages`).
+    pub fn stop(
+        ctx: &ProbeContext<'_>,
+        session_id: &str,
+    ) -> Result<ProbeStopResult, ServiceError> {
+        // Remove the live probe session
+        let live_probe = ctx
+            .live_probes
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?
+            .remove(session_id);
+
+        let live_probe = live_probe.ok_or_else(|| ServiceError::ProbeNotFound(session_id.to_string()))?;
+
+        // Drain final raw events from the bus (for QueryEngine).
+        // drain_raw_events() returns TraceEvent directly, which is what
+        // build_and_store_engine needs.
+        let events: Vec<TraceEvent> = live_probe.backend.drain_raw_events();
+
+        // Detach any eBPF uprobes this session owned before tearing down the
+        // ptrace thread. Best-effort; we still proceed to stop the backend.
+        if let Some(adapter) = &live_probe.ebpf_adapter {
+            if let Err(e) = adapter.detach_all() {
+                tracing::warn!("eBPF detach error for session {}: {}", session_id, e);
+            }
+        }
+
+        // Stop the probe thread
+        if let Err(e) = live_probe.backend.stop_probe(&live_probe.session) {
+            tracing::warn!("Probe stop error for session {}: {}", session_id, e);
+        }
+
+        let total_events = events.len();
+        let language = live_probe.language;
+        let target = live_probe.target;
+        let ebpf_was_attached = live_probe.ebpf_attachment.is_some();
+
+        // Compute duration before moving events
+        let duration_ms = if let (Some(first), Some(last)) = (events.first(), events.last()) {
+            last.timestamp_ns.saturating_sub(first.timestamp_ns) / 1_000_000
+        } else {
+            0
+        };
+
+        info!(
+            "Live probe stopped for '{}' (session: {}, events: {})",
+            target, session_id, total_events
+        );
+
+        Ok(ProbeStopResult {
+            events,
+            language,
+            target,
+            total_events,
+            duration_ms,
+            ebpf_detached: ebpf_was_attached,
         })
     }
 }
