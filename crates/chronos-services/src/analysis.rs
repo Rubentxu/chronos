@@ -80,7 +80,10 @@ impl ChronosAnalysisService {
         for (idx, event) in events.iter().enumerate() {
             if let EventData::Variable(var) = &event.data {
                 let target_filter = input.target.as_ref();
-                let matches = target_filter.is_none_or(|t| &var.name == t);
+                let matches = match target_filter {
+                    Some(t) => &var.name == t,
+                    None => true,
+                };
                 if !matches {
                     continue;
                 }
