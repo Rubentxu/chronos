@@ -45,6 +45,16 @@ pub enum ServiceError {
     #[error("load failed: {0}")]
     LoadFailed(String),
 
+    /// Session export (m6-05) failed — wrapping any io/serialization/rename
+    /// failure encountered while writing the export bundle to disk.
+    #[error("export failed: {0}")]
+    ExportFailed(String),
+
+    /// Session export (m6-05) called with an unrecognized format string
+    /// or a format that is reserved for a future cycle (e.g. ZipJson).
+    #[error("invalid export parameter: {0}")]
+    InvalidExportParameter(String),
+
     /// SessionStore::list_sessions failed.
     #[error("list failed: {0}")]
     ListFailed(String),
