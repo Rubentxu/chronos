@@ -439,7 +439,7 @@ mod tests {
         // evaluate_semantic must match against that fallback path so live
         // evidence flows into the tripwire subsystem.
         let mgr = TripwireManager::new();
-        mgr.register(TripwireCondition::FunctionName {
+        let registered_id = mgr.register(TripwireCondition::FunctionName {
             pattern: "SyscallEnter".to_string(),
         });
         let event = crate::SemanticEvent {
@@ -452,7 +452,14 @@ mod tests {
         };
         let fired = mgr.evaluate_semantic(&event);
         assert_eq!(fired.len(), 1, "SyscallEnter tripwire must fire");
-        assert_eq!(fired[0].tripwire_id.0, 1);
+        // Assert the registered tripwire fired, not that its id equals 1.
+        // NEXT_TRIPWIRE_ID is a process-global atomic (tripwire.rs:24), so
+        // id values depend on test scheduling — the only stable invariant is
+        // "the tripwire we registered is the one that fired".
+        assert_eq!(
+            fired[0].tripwire_id, registered_id,
+            "fired tripwire must be the one we just registered"
+        );
     }
 
     #[test]
