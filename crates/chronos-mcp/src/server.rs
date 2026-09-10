@@ -2923,88 +2923,78 @@ impl ChronosServer {
             },
         };
 
-        // Narrow lock scope: read events inside scoped block, then drop lock.
-        // Uses non-destructive read_since (m0-01-live-pagination).
-        let (events, new_cursor, cursor_stale) = {
-            let probes = self.live_probes.lock().unwrap();
-            let live_probe = match probes.get(&params.session_id) {
-                Some(lp) => lp,
-                None => {
-                    return Ok(CallToolResult::error(text_content(format!(
-                        "Live probe session '{}' not found.",
-                        params.session_id
-                    ))))
-                }
-            };
-            match live_probe.backend.read_since(cursor) {
-                Ok((events, new_cursor, status)) => {
-                    let stale = matches!(status, chronos_domain::CursorStatus::Stale);
-                    (events, new_cursor, stale)
-                }
-                Err(chronos_domain::TraceError::CursorStale { .. }) => {
-                    return Ok(CallToolResult::error(text_content(
-                        "Cursor is stale; re-anchor with a fresh probe_drain (no cursor)."
-                            .to_string(),
-                    )))
-                }
-                Err(e) => {
-                    return Ok(CallToolResult::error(text_content(format!(
-                        "Failed to drain events: {}",
-                        e
-                    ))))
-                }
-            }
-        }; // lock dropped here
+        let input = chronos_services::probe::ProbeDrainInput {
+            session_id: params.session_id.clone(),
+            cursor,
+            offset: params.offset,
+            limit: params.limit,
+        };
 
-        let total = events.len();
-        // Evaluate tripwires against every drained semantic event so live
-        // evidence reaches the tripwire subsystem without waiting for stop.
-        // UAT-M0-03 wire-tripwires-to-live-evidence.
-        let mut fired: Vec<chronos_domain::TripwireFired> = Vec::new();
-        if !events.is_empty() {
-            let mgr = Arc::clone(&self.tripwire_manager);
-            for ev in &events {
-                let local = mgr.evaluate_semantic(ev);
-                if !local.is_empty() {
-                    fired.extend(local);
-                }
+        let ctx = chronos_services::probe::ProbeContext {
+            live_probes: &self.live_probes,
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            tripwire_manager: &self.tripwire_manager,
+            active_session: &self.active_session,
+        };
+
+        match chronos_services::probe::ProbeService::drain(&ctx, input) {
+            Ok(result) => {
+                // Apply offset/limit (matches existing contract: slicing happens
+                // after the drain, with the wrapper doing the slicing).
+                let sliced: Vec<_> = result
+                    .events
+                    .into_iter()
+                    .skip(params.offset)
+                    .take(params.limit)
+                    .map(|e| {
+                        serde_json::json!({
+                            "event_id": e.source_event_id,
+                            "timestamp_ns": e.timestamp_ns,
+                            "thread_id": e.thread_id,
+                            "language": format!("{:?}", e.language),
+                            "kind": format!("{:?}", e.kind),
+                            "description": e.description,
+                        })
+                    })
+                    .collect();
+
+                let output = serde_json::json!({
+                    "session_id": params.session_id,
+                    "status": "running",
+                    "total_buffered": result.total_buffered,
+                    "returned": sliced.len(),
+                    "offset": params.offset,
+                    "limit": params.limit,
+                    "cursor": {
+                        "total_pushed": result.new_cursor.total_pushed,
+                        "snapshot_len": result.new_cursor.snapshot_len,
+                    },
+                    "cursor_stale": result.cursor_stale,
+                    "tripwires_fired": result.tripwires_fired,
+                    "events": sliced,
+                    "hint": "Probe is still running. Call probe_drain again for more events, or probe_stop to finalize."
+                });
+                Ok(CallToolResult::success(json_content(&output)))
             }
+            Err(ServiceError::ProbeNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Live probe session '{}' not found.", s),
+            ))),
+            Err(ServiceError::CursorStale) => Ok(CallToolResult::error(text_content(
+                "Cursor is stale; re-anchor with a fresh probe_drain (no cursor)."
+                    .to_string(),
+            ))),
+            Err(ServiceError::DrainFailed(msg)) => Ok(CallToolResult::error(text_content(
+                format!("Failed to drain events: {}", msg),
+            ))),
+            Err(ServiceError::LockPoisoned) => {
+                Ok(CallToolResult::error(text_content("lock poisoned")))
+            }
+            Err(other) => Ok(CallToolResult::error(text_content(format!(
+                "internal error: unexpected probe drain error: {}",
+                other
+            )))),
         }
-        let fired_count = fired.len();
-        // Apply offset/limit
-        let sliced: Vec<_> = events
-            .into_iter()
-            .skip(params.offset)
-            .take(params.limit)
-            .map(|e| {
-                serde_json::json!({
-                    "event_id": e.source_event_id,
-                    "timestamp_ns": e.timestamp_ns,
-                    "thread_id": e.thread_id,
-                    "language": format!("{:?}", e.language),
-                    "kind": format!("{:?}", e.kind),
-                    "description": e.description,
-                })
-            })
-            .collect();
-
-        let output = serde_json::json!({
-            "session_id": params.session_id,
-            "status": "running",
-            "total_buffered": total,
-            "returned": sliced.len(),
-            "offset": params.offset,
-            "limit": params.limit,
-            "cursor": {
-                "total_pushed": new_cursor.total_pushed,
-                "snapshot_len": new_cursor.snapshot_len,
-            },
-            "cursor_stale": cursor_stale,
-            "tripwires_fired": fired_count,
-            "events": sliced,
-            "hint": "Probe is still running. Call probe_drain again for more events, or probe_stop to finalize."
-        });
-        Ok(CallToolResult::success(json_content(&output)))
     }
 
     /// m1-03: MCP query path that reads `TraceEvent`s from the

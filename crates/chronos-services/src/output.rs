@@ -579,6 +579,22 @@ pub struct ProbeDrainOutput {
     pub hint: String,
 }
 
+/// Result of `ProbeService::drain` — semantic events + cursor metadata so the
+/// server wrapper can serialize them into the byte-identical JSON shape.
+#[derive(Debug)]
+pub struct ProbeDrainResult {
+    /// Semantic events returned by the backend's `read_since`.
+    pub events: Vec<chronos_domain::SemanticEvent>,
+    /// New cursor after this drain call.
+    pub new_cursor: chronos_domain::EventCursor,
+    /// Whether the cursor is stale (caller should re-anchor).
+    pub cursor_stale: bool,
+    /// Total events in the buffer (before offset/limit).
+    pub total_buffered: usize,
+    /// Number of tripwires fired during this drain.
+    pub tripwires_fired: usize,
+}
+
 /// Output of `probe_drain_log`. JSON shape matches the existing literal in
 /// `chronos-mcp/src/server.rs::probe_drain_log`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

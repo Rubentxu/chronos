@@ -14,13 +14,14 @@ use std::sync::{Arc, Mutex};
 use chronos_domain::bus::EventBus;
 use chronos_domain::{CaptureConfig, CaptureSession, Language};
 use chronos_native::probe_backend::NativeProbeBackend;
+use chronos_domain::adapter::ProbeBackend;
 use tokio::sync::Mutex as TokioMutex;
 use tracing::info;
 
 use chronos_query::QueryEngine;
 
 use crate::error::ServiceError;
-use crate::output::{ProbeStartOutput, ProbeStopResult};
+use crate::output::{ProbeDrainResult, ProbeStartOutput, ProbeStopResult};
 use chronos_domain::tripwire::TripwireManager;
 use chronos_domain::TraceEvent;
 
@@ -97,6 +98,16 @@ pub struct ProbeStartInput {
     pub cwd: Option<String>,
     pub bus_capacity: usize,
     pub track_function_frames: Option<bool>,
+}
+
+/// Input for `ProbeService::drain`.
+#[derive(Debug, Clone)]
+pub struct ProbeDrainInput {
+    pub session_id: String,
+    /// Pre-parsed cursor (already converted from `CursorDto`).
+    pub cursor: Option<chronos_domain::EventCursor>,
+    pub offset: usize,
+    pub limit: usize,
 }
 
 /// Native probe service — business logic for `probe_start`, `probe_stop`,
@@ -236,6 +247,64 @@ impl ProbeService {
             total_events,
             duration_ms,
             ebpf_detached: ebpf_was_attached,
+        })
+    }
+
+    /// Non-destructive drain from a live probe session.
+    ///
+    /// Returns the semantic events + cursor metadata. The server wrapper is
+    /// responsible for serializing the events into the existing JSON shape
+    /// (this lets the wrapper apply the `offset`/`limit` slicing after the
+    /// service hands off the full snapshot, matching the original contract).
+    pub fn drain(
+        ctx: &ProbeContext<'_>,
+        input: ProbeDrainInput,
+    ) -> Result<ProbeDrainResult, ServiceError> {
+        // Narrow lock scope: read events inside scoped block, then drop lock.
+        let (events, new_cursor, cursor_stale) = {
+            let probes = ctx
+                .live_probes
+                .lock()
+                .map_err(|_| ServiceError::LockPoisoned)?;
+            let live_probe = probes
+                .get(&input.session_id)
+                .ok_or_else(|| ServiceError::ProbeNotFound(input.session_id.clone()))?;
+            match live_probe.backend.read_since(input.cursor) {
+                Ok((events, new_cursor, status)) => {
+                    let stale = matches!(status, chronos_domain::CursorStatus::Stale);
+                    (events, new_cursor, stale)
+                }
+                Err(chronos_domain::TraceError::CursorStale { .. }) => {
+                    return Err(ServiceError::CursorStale);
+                }
+                Err(e) => {
+                    return Err(ServiceError::DrainFailed(e.to_string()));
+                }
+            }
+        }; // lock dropped here
+
+        let total_buffered = events.len();
+
+        // Evaluate tripwires against every drained semantic event so live
+        // evidence reaches the tripwire subsystem without waiting for stop.
+        let mut fired: Vec<chronos_domain::TripwireFired> = Vec::new();
+        if !events.is_empty() {
+            let mgr = Arc::clone(ctx.tripwire_manager);
+            for ev in &events {
+                let local = mgr.evaluate_semantic(ev);
+                if !local.is_empty() {
+                    fired.extend(local);
+                }
+            }
+        }
+        let tripwires_fired = fired.len();
+
+        Ok(ProbeDrainResult {
+            events,
+            new_cursor,
+            cursor_stale,
+            total_buffered,
+            tripwires_fired,
         })
     }
 }
