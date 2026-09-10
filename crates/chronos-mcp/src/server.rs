@@ -3931,11 +3931,10 @@ impl ChronosServer {
         // dispatcher expects. Invalid values become ServiceError::InvalidInput
         // via the dispatcher's own error path; here we just convert.
         let scope = params.scope.as_deref().and_then(parse_hypothesis_scope);
-        let comparison = params
-            .comparison
-            .as_deref()
-            .and_then(parse_comparison_op);
-        let constant = params.constant.map(chronos_services::output::PropertyValue::from);
+        let comparison = params.comparison.as_deref().and_then(parse_comparison_op);
+        let constant = params
+            .constant
+            .map(chronos_services::output::PropertyValue::from);
 
         let ctx = chronos_services::hypothesis_test::HypothesisTestContext {
             engines: &self.engines,

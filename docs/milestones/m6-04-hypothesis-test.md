@@ -46,13 +46,23 @@ established in m6-01..m6-03 (single dispatcher + a single MCP wrapper named
 ### Invariant
 
 Reuses the scalar property infrastructure from
-`chronos_domain::property::evaluate`. Takes a typed target
-(`PropertyScope::EventCount / LatencyMs / PropertyValue`), a `ComparisonOp`,
-and a value. Returns:
+`chronos_domain::property::evaluate`. Two typed targets:
+- `EventCount` — runs the invariant against the total event count in the
+  session (cheap, always has evidence).
+- `PropertyValue` — runs the invariant against a recorded property value.
+
+Returns:
 
 - `PASS` if every observed value satisfies the comparison
 - `VIOLATION` if any observed value violates it; lists all violation event IDs
 - `UNSUPPORTED` if the required observation wasn't captured
+
+Honest scope disclosure: a third `LatencyMs` scope was drafted in the DTO
+but **not implemented in m6-04** because `chronos_domain::trace::EventData`
+has no `latency_ms` field today (the metrics infra lives elsewhere; see
+`docs/milestones/m7-*` candidates). `LatencyMs` is reserved as a future
+expansion. The DTO variant ships so the tool's JSON schema is stable, but
+calling with `scope=latency_ms` returns `Unsupported` with a reason.
 
 ### Existence
 

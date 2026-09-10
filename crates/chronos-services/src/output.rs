@@ -1027,12 +1027,8 @@ pub enum HypothesisKind {
 #[serde(tag = "verdict", rename_all = "snake_case")]
 pub enum HypothesisVerdict {
     Pass,
-    Violation {
-        reason: String,
-    },
-    Unsupported {
-        reason: String,
-    },
+    Violation { reason: String },
+    Unsupported { reason: String },
 }
 
 /// What scalar target an `Invariant` shape observes.

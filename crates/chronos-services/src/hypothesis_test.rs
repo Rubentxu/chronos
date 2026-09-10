@@ -111,10 +111,7 @@ impl ChronosHypothesisTestService {
 fn eval_invariant(input: &HypothesisInput, events: &[TraceEvent]) -> HypothesisOutput {
     let scope = input.scope.unwrap_or(HypothesisScope::EventCount);
     let comparison = input.comparison.unwrap_or(ComparisonOp::Eq);
-    let constant = input
-        .constant
-        .clone()
-        .unwrap_or(PropertyValue::Number(0.0));
+    let constant = input.constant.clone().unwrap_or(PropertyValue::Number(0.0));
 
     let (verdict, support, counter, mut summary): (HypothesisVerdict, Vec<u64>, Vec<u64>, String) =
         match scope {
@@ -223,13 +220,17 @@ fn outcome_to_envelope(
             format!("invariant satisfied ({op} {constant})"),
         ),
         PropertyOutcome::Violation { message, .. } => (
-            HypothesisVerdict::Violation { reason: message.clone() },
+            HypothesisVerdict::Violation {
+                reason: message.clone(),
+            },
             support,
             counter,
             message,
         ),
         PropertyOutcome::UnsupportedByRecordedEvidence { reason } => (
-            HypothesisVerdict::Unsupported { reason: reason.clone() },
+            HypothesisVerdict::Unsupported {
+                reason: reason.clone(),
+            },
             support,
             counter,
             reason,
@@ -276,11 +277,13 @@ fn parse_property_value(s: &str) -> PropertyValue {
 // ---------------------------------------------------------------------------
 
 fn eval_existence(input: &HypothesisInput, events: &[TraceEvent]) -> HypothesisOutput {
-    let predicate = input.predicate.clone().unwrap_or_else(|| {
-        ExistencePredicate::EventTypeEquals {
-            event_type: "function_entry".into(),
-        }
-    });
+    let predicate =
+        input
+            .predicate
+            .clone()
+            .unwrap_or_else(|| ExistencePredicate::EventTypeEquals {
+                event_type: "function_entry".into(),
+            });
 
     if events.is_empty() {
         return HypothesisOutput::Existence {
@@ -692,7 +695,11 @@ mod tests {
         };
         let out = ChronosHypothesisTestService::test(&ctx, inp).await.unwrap();
         match out {
-            HypothesisOutput::Invariant { verdict, support_event_ids, .. } => {
+            HypothesisOutput::Invariant {
+                verdict,
+                support_event_ids,
+                ..
+            } => {
                 assert_eq!(verdict, HypothesisVerdict::Pass);
                 assert_eq!(support_event_ids, vec![1u64]);
             }
@@ -780,7 +787,11 @@ mod tests {
         };
         let out = ChronosHypothesisTestService::test(&ctx, inp).await.unwrap();
         match out {
-            HypothesisOutput::Existence { verdict, support_event_ids, .. } => {
+            HypothesisOutput::Existence {
+                verdict,
+                support_event_ids,
+                ..
+            } => {
                 assert_eq!(verdict, HypothesisVerdict::Pass);
                 assert_eq!(support_event_ids, vec![1u64]);
             }
@@ -810,7 +821,11 @@ mod tests {
         };
         let out = ChronosHypothesisTestService::test(&ctx, inp).await.unwrap();
         match out {
-            HypothesisOutput::Existence { verdict, support_event_ids, .. } => {
+            HypothesisOutput::Existence {
+                verdict,
+                support_event_ids,
+                ..
+            } => {
                 assert!(matches!(verdict, HypothesisVerdict::Violation { .. }));
                 assert!(support_event_ids.is_empty());
             }
@@ -875,10 +890,17 @@ mod tests {
         };
         let out = ChronosHypothesisTestService::test(&ctx, inp).await.unwrap();
         match out {
-            HypothesisOutput::CallPath { verdict, reachable_path, .. } => {
+            HypothesisOutput::CallPath {
+                verdict,
+                reachable_path,
+                ..
+            } => {
                 assert_eq!(verdict, HypothesisVerdict::Pass);
                 let path = reachable_path.expect("path on Pass");
-                assert_eq!(path, vec!["main".to_string(), "a".to_string(), "b".to_string()]);
+                assert_eq!(
+                    path,
+                    vec!["main".to_string(), "a".to_string(), "b".to_string()]
+                );
             }
             _ => panic!("wrong variant"),
         }
@@ -910,7 +932,11 @@ mod tests {
         };
         let out = ChronosHypothesisTestService::test(&ctx, inp).await.unwrap();
         match out {
-            HypothesisOutput::CallPath { verdict, reachable_path, .. } => {
+            HypothesisOutput::CallPath {
+                verdict,
+                reachable_path,
+                ..
+            } => {
                 assert!(matches!(verdict, HypothesisVerdict::Violation { .. }));
                 assert!(reachable_path.is_none());
             }
@@ -996,4 +1022,3 @@ mod tests {
         assert!(matches!(err, Err(ServiceError::SessionNotFound(_))));
     }
 }
-
