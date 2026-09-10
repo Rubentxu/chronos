@@ -491,12 +491,16 @@ pub struct SaliencyScoreResult {
 // Probe service output types
 // ---------------------------------------------------------------------------
 
-/// A cursor for non-destructive probe drainage.
+/// A cursor for non-destructive probe drainage (output side).
 ///
 /// Mirrors the JSON shape produced by `probe_drain`'s existing `serde_json::json!({...})`
 /// output (`cursor.total_pushed`, `cursor.snapshot_len`, `cursor.cursor_stale`).
+///
+/// Named `ProbeCursorDto` to avoid collision with the input-side `CursorDto` in
+/// `chronos-mcp::server` (which carries `Option<u64>` fields for parsing
+/// malformed payloads).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CursorDto {
+pub struct ProbeCursorDto {
     pub total_pushed: u64,
     pub snapshot_len: usize,
 }
@@ -548,7 +552,7 @@ pub struct ProbeDrainOutput {
     pub returned: usize,
     pub offset: usize,
     pub limit: usize,
-    pub cursor: CursorDto,
+    pub cursor: ProbeCursorDto,
     pub cursor_stale: bool,
     pub tripwires_fired: usize,
     pub events: Vec<DrainedEventDto>,
