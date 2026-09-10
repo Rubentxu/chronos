@@ -8,7 +8,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use chronos_domain::query::StateDiff;
+use chronos_domain::query::{ExecutionSummary, StackFrame, StateDiff};
+use crate::debug_trace::CallGraph;
 
 /// Result of a trace event query.
 ///
@@ -857,6 +858,73 @@ pub enum StateQueryOutput {
     ExpressionEval {
         #[serde(flatten)]
         result: EvalResult,
+    },
+}
+
+// ============================================================================
+// M6 — Execution Query outputs (m6-03)
+// ============================================================================
+
+/// Discriminator for [`ExecutionQueryOutput`]. Selects which v1 tool's
+/// payload is produced by the v2 `execution_query` dispatcher.
+///
+/// The six variants correspond to the six v1 tools that this v2 tool
+/// supersedes (see `docs/milestones/m5-close-report.md` §4.1):
+/// - `CallStack` — formerly `get_call_stack`.
+/// - `ExecutionSummary` — formerly `get_execution_summary`.
+/// - `CallGraph` — formerly `debug_call_graph`.
+/// - `RaceDetect` — formerly `debug_detect_races`.
+/// - `Hotspot` — formerly `debug_expand_hotspot`.
+/// - `Saliency` — formerly `debug_get_saliency_scores`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum ExecutionQueryKind {
+    CallStack,
+    ExecutionSummary,
+    CallGraph,
+    RaceDetect,
+    Hotspot,
+    Saliency,
+}
+
+/// Output envelope of the v2 `execution_query` tool.
+///
+/// The `kind` tag tells the consumer which payload variant follows.
+/// Each variant's inner DTO is flattened into the envelope so that the
+/// resulting JSON preserves byte-for-byte the shape of the corresponding
+/// v1 tool's output, plus a top-level `kind` discriminator.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ExecutionQueryOutput {
+    #[serde(rename = "call_stack")]
+    CallStack {
+        #[serde(flatten)]
+        frames: Vec<StackFrame>,
+    },
+    #[serde(rename = "execution_summary")]
+    ExecutionSummary {
+        #[serde(flatten)]
+        summary: ExecutionSummary,
+    },
+    #[serde(rename = "call_graph")]
+    CallGraph {
+        #[serde(flatten)]
+        graph: CallGraph,
+    },
+    #[serde(rename = "race_detect")]
+    RaceDetect {
+        #[serde(flatten)]
+        report: RaceReport,
+    },
+    #[serde(rename = "hotspot")]
+    Hotspot {
+        #[serde(flatten)]
+        report: HotspotReport,
+    },
+    #[serde(rename = "saliency")]
+    Saliency {
+        #[serde(flatten)]
+        result: SaliencyScoreResult,
     },
 }
 
