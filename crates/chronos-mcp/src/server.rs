@@ -1523,9 +1523,9 @@ impl ChronosServer {
                 let value = serde_json::to_value(&out).unwrap_or(serde_json::json!({}));
                 Ok(CallToolResult::success(json_content(&value)))
             }
-            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(
-                text_content(format!("Session '{}' not found", s)),
-            )),
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{}' not found", s),
+            ))),
             Err(ServiceError::InvalidInput(s)) => Ok(CallToolResult::error(text_content(s))),
             Err(e) => Ok(CallToolResult::error(text_content(format!(
                 "internal error: unexpected error: {}",

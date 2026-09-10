@@ -88,14 +88,10 @@ impl ChronosStateQueryService {
         match input.kind {
             StateQueryKind::RegisterDiff => {
                 let ta = input.timestamp_a.ok_or_else(|| {
-                    ServiceError::InvalidInput(
-                        "timestamp_a required for kind=register_diff".into(),
-                    )
+                    ServiceError::InvalidInput("timestamp_a required for kind=register_diff".into())
                 })?;
                 let tb = input.timestamp_b.ok_or_else(|| {
-                    ServiceError::InvalidInput(
-                        "timestamp_b required for kind=register_diff".into(),
-                    )
+                    ServiceError::InvalidInput("timestamp_b required for kind=register_diff".into())
                 })?;
                 let r =
                     DebugTraceService::state_diff(&input.session_id, ta, tb, ctx.engines).await?;
@@ -118,7 +114,8 @@ impl ChronosStateQueryService {
                         "event_id required for kind=register_snapshot".into(),
                     )
                 })?;
-                let r = DebugReadService::get_registers(&input.session_id, eid, ctx.engines).await?;
+                let r =
+                    DebugReadService::get_registers(&input.session_id, eid, ctx.engines).await?;
                 Ok(StateQueryOutput::RegisterSnapshot { result: r })
             }
             StateQueryKind::MemoryAnalysis => {
