@@ -206,6 +206,22 @@ fn parse_comparison_op(s: &str) -> Option<chronos_services::output::ComparisonOp
     }
 }
 
+/// Parse the JSON-friendly `format` string from `SessionExportParams`
+/// into the typed [`chronos_services::output::ExportFormat`]. Returns
+/// `None` for unknown values — the dispatcher then returns
+/// `ServiceError::InvalidExportParameter` with a clear reason. The
+/// `zip_json` variant is parsed but rejected by the dispatcher itself
+/// (m7+ scope).
+fn parse_export_format(s: &str) -> Option<chronos_services::output::ExportFormat> {
+    use chronos_services::output::ExportFormat;
+    match s {
+        "json" => Some(ExportFormat::Json),
+        "otlp_json" => Some(ExportFormat::OtlpJson),
+        "zip_json" => Some(ExportFormat::ZipJson),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetEventParams {
     /// Session ID.
@@ -499,6 +515,27 @@ pub struct SaveSessionParams {
     pub language: String,
     /// Target program path or name.
     pub target: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SessionExportParams {
+    /// Session ID (existing in-memory session). The exporter reads the
+    /// live engine for this session and serializes its bundle to disk.
+    pub session_id: String,
+    /// Language/runtime metadata tag. Same vocabulary as `save_session`.
+    pub language: String,
+    /// Target program path or name. Same vocabulary as `save_session`.
+    pub target: String,
+    /// Output format. JSON-friendly string the wrapper parses via
+    /// `parse_export_format`. Allowed values:
+    /// - `"json"` -- pretty-printed canonical `ExportBundle`.
+    /// - `"otlp_json"` -- OpenTelemetry-compatible JSON wire format.
+    /// - `"zip_json"` -- reserved for m7+; rejected by the dispatcher.
+    pub format: String,
+    /// Absolute or server-CWD-relative path where the bundle will be
+    /// written. The dispatcher uses an atomic tmp + rename write, so
+    /// intermediate state is never visible at this path.
+    pub output_path: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1395,6 +1432,19 @@ impl ChronosServer {
                     "internal error: unexpected invalid input",
                 )));
             }
+            // m6-05: session_export variants cannot be produced by this
+            // call site but are listed for exhaustiveness against the
+            // ServiceError enum.
+            Err(ServiceError::ExportFailed(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected export failure",
+                )));
+            }
+            Err(ServiceError::InvalidExportParameter(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected invalid export parameter",
+                )));
+            }
         };
 
         // m0-07: explicit query absence semantics
@@ -1851,6 +1901,19 @@ impl ChronosServer {
             Err(ServiceError::InvalidInput(_)) => {
                 return Ok(CallToolResult::error(text_content(
                     "internal error: unexpected invalid input",
+                )));
+            }
+            // m6-05: session_export variants cannot be produced by this
+            // call site but are listed for exhaustiveness against the
+            // ServiceError enum.
+            Err(ServiceError::ExportFailed(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected export failure",
+                )));
+            }
+            Err(ServiceError::InvalidExportParameter(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected invalid export parameter",
                 )));
             }
         };
@@ -3963,6 +4026,71 @@ impl ChronosServer {
                 format!("Session '{s}' not found"),
             ))),
             Err(ServiceError::InvalidInput(s)) => Ok(CallToolResult::error(text_content(s))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
+        }
+    }
+
+    #[tool(
+        name = "session_export",
+        description = "Export a session bundle (metadata + trace events + properties snapshot) to a portable file on disk. Two supported formats: 'json' (pretty-printed canonical ExportBundle) and 'otlp_json' (OpenTelemetry-compatible JSON wire format, ready for Jaeger/Tempo/Honeycomb). The 'zip_json' format is reserved for m7+ and is rejected by the dispatcher. v2 net-new tool (no v1 shim). NOTE: in m6-05 the `properties_snapshot` field is always empty -- the QueryEngine has no property-table accessor yet. The DTO and JSON schema are final so m7+ can fill the field without a breaking change."
+    )]
+    async fn session_export(
+        &self,
+        params: Parameters<SessionExportParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+
+        let format = match parse_export_format(&params.format) {
+            Some(f) => f,
+            None => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "unknown format '{}'; allowed values: 'json', 'otlp_json' (zip_json is reserved for a future cycle)",
+                    params.format
+                ))));
+            }
+        };
+
+        let output_path = std::path::PathBuf::from(&params.output_path);
+        let ctx = chronos_services::session_export::SessionExportContext {
+            engines: &self.engines,
+        };
+
+        match chronos_services::session_export::ChronosSessionExportService::export(
+            &params.session_id,
+            Language::from_string(&params.language),
+            params.target.clone(),
+            format,
+            &output_path,
+            &ctx,
+        )
+        .await
+        {
+            Ok(out) => {
+                let output = serde_json::json!({
+                    "session_id": params.session_id,
+                    "path": out.path.display().to_string(),
+                    "bytes_written": out.bytes_written,
+                    "format": match out.format {
+                        chronos_services::output::ExportFormat::Json => "json",
+                        chronos_services::output::ExportFormat::OtlpJson => "otlp_json",
+                        chronos_services::output::ExportFormat::ZipJson => "zip_json",
+                    },
+                    "hint": "The file at `path` contains the full session bundle. Round-trip via `serde_json::from_slice` for the `json` format, or feed the `otlp_json` format directly to an OpenTelemetry JSON receiver.",
+                });
+                Ok(CallToolResult::success(json_content(&output)))
+            }
+            Err(ServiceError::SessionNotInMemory(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{s}' not found in memory. Run probe_start first."),
+            ))),
+            Err(ServiceError::EmptySession(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{s}' has no events to export."),
+            ))),
+            Err(ServiceError::InvalidExportParameter(s)) => {
+                Ok(CallToolResult::error(text_content(s)))
+            }
+            Err(ServiceError::ExportFailed(s)) => {
+                Ok(CallToolResult::error(text_content(format!("export failed: {s}"))))
+            }
             Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
     }
