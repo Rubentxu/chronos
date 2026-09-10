@@ -47,6 +47,7 @@ pub mod debug_trace;
 pub mod debug_trace_specialized;
 pub mod diff;
 pub mod error;
+pub mod execution_query;
 pub mod output;
 pub mod probe;
 pub mod query_service;
