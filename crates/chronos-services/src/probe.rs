@@ -69,7 +69,7 @@ pub struct ProbeContext<'a> {
     /// but the service surfaces the events/language it needs).
     pub engines: &'a TokioMutex<HashMap<String, QueryEngine>>,
     /// Language recorded per finalized session.
-    pub session_languages: &'a std::sync::Mutex<HashMap<String, Language>>,
+    pub session_languages: &'a Arc<TokioMutex<HashMap<String, Language>>>,
     /// Tripwire manager — `probe_drain` evaluates tripwires against every
     /// drained event so live evidence reaches the tripwire subsystem.
     pub tripwire_manager: &'a Arc<TripwireManager>,

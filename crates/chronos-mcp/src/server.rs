@@ -2791,7 +2791,7 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        // Validate the program path
+        // Validate the program path (security gate, kept in the server).
         if let Err(e) = crate::security::validate_program_path(&params.program) {
             return Ok(CallToolResult::error(text_content(format!(
                 "Invalid program path: {}",
@@ -2799,71 +2799,49 @@ impl ChronosServer {
             ))));
         }
 
-        let session_id = uuid::Uuid::new_v4().to_string();
-        let language = Language::from_path(&params.program);
+        let input = chronos_services::probe::ProbeStartInput {
+            program: params.program,
+            args: params.args,
+            trace_syscalls: params.trace_syscalls,
+            cwd: params.cwd,
+            bus_capacity: params.bus_capacity,
+            track_function_frames: params.track_function_frames,
+        };
 
-        // Build capture config
-        let mut config = CaptureConfig::new(&params.program);
-        config.args = params.args;
-        config.capture_syscalls = params.trace_syscalls;
-        config.language = Some(language);
+        let ctx = chronos_services::probe::ProbeContext {
+            live_probes: &self.live_probes,
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            tripwire_manager: &self.tripwire_manager,
+            active_session: &self.active_session,
+        };
 
-        if let Some(ref cwd) = params.cwd {
-            config.cwd = Some(PathBuf::from(cwd));
-        }
-
-        // Create a fresh EventBus for this session
-        let bus = chronos_domain::bus::EventBus::new_shared(params.bus_capacity);
-        let backend = NativeProbeBackend::new(bus).with_language(language);
-
-        // Start the probe (non-blocking — spawns background thread)
-        let track_function_frames = params.track_function_frames.unwrap_or(false);
-        let session = match backend.start_probe(config, track_function_frames) {
-            Ok(s) => s,
-            Err(e) => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Failed to start probe: {}",
-                    e
-                ))))
+        match chronos_services::probe::ProbeService::start(&ctx, input).await {
+            Ok(out) => {
+                let output = serde_json::json!({
+                    "session_id": out.session_id,
+                    "status": out.status,
+                    "target": out.target,
+                    "language": out.language,
+                    "bus_capacity": out.bus_capacity,
+                    "hint": out.hint,
+                });
+                Ok(CallToolResult::success(json_content(&output)))
             }
-        };
-
-        info!(
-            "Live probe started for '{}' (session: {}, bus capacity: {})",
-            params.program, session_id, params.bus_capacity
-        );
-
-        // Store the live probe session
-        let live_probe = LiveProbeSession {
-            backend,
-            session,
-            language,
-            target: params.program.clone(),
-            ebpf_adapter: None,
-            ebpf_attachment: None,
-        };
-        // Insert first so the session is immediately queryable, then mark as active.
-        // Brief inconsistency window is benign in single-client MCP usage.
-        self.live_probes
-            .lock()
-            .unwrap()
-            .insert(session_id.clone(), live_probe);
-
-        // Set as active session
-        {
-            let mut active = self.active_session.lock().await;
-            *active = Some(session_id.clone());
+            Err(ServiceError::InvalidProgramPath(msg)) => Ok(CallToolResult::error(
+                text_content(format!("Invalid program path: {}", msg)),
+            )),
+            Err(ServiceError::ProbeStartFailed(msg)) => Ok(CallToolResult::error(
+                text_content(format!("Failed to start probe: {}", msg)),
+            )),
+            Err(ServiceError::LockPoisoned) => {
+                Ok(CallToolResult::error(text_content("lock poisoned")))
+            }
+            Err(other) => Ok(CallToolResult::error(text_content(format!(
+                "internal error: unexpected probe start error: {}",
+                other
+            )))),
         }
-
-        let output = serde_json::json!({
-            "session_id": session_id,
-            "status": "running",
-            "target": params.program,
-            "language": format!("{:?}", language),
-            "bus_capacity": params.bus_capacity,
-            "hint": "Use probe_drain to read events in real-time, probe_stop to finalize."
-        });
-        Ok(CallToolResult::success(json_content(&output)))
     }
 
     #[tool(
