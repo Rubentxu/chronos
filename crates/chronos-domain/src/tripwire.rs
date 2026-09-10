@@ -120,9 +120,24 @@ pub struct Tripwire {
 }
 
 impl Tripwire {
+    /// Construct a tripwire with the global-counter id. Prefer
+    /// [`Tripwire::with_id`](Self::with_id) when the caller already has an
+    /// id allocated by a [`TripwireManager`] — that path is collision-free
+    /// even when tests race the global counter.
     pub fn new(condition: TripwireCondition) -> Self {
         Self {
             id: next_tripwire_id(),
+            condition,
+            label: None,
+            fire_count: 0,
+        }
+    }
+
+    /// Construct a tripwire with a caller-provided id (typically allocated
+    /// by [`TripwireManager::next_id`](crate::tripwire::TripwireManager)).
+    pub fn with_id(id: TripwireId, condition: TripwireCondition) -> Self {
+        Self {
+            id,
             condition,
             label: None,
             fire_count: 0,
@@ -281,15 +296,48 @@ pub fn validate_callback_url(url_str: &str) -> Result<url::Url, TripwireError> {
     Ok(parsed)
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct TripwireManager {
     tripwires: std::sync::RwLock<Vec<Tripwire>>,
     fired_buffer: std::sync::RwLock<Vec<TripwireFired>>,
+    /// Per-instance monotonic counter for tripwire IDs. Using a per-instance
+    /// counter (rather than the process-global `NEXT_TRIPWIRE_ID`) avoids
+    /// collisions when multiple test cases call `reset_tripwire_ids_for_testing()`
+    /// concurrently and then call `register` — with a shared counter, two
+    /// parallel registers could observe the same id, and `remove(id)` would
+    /// then delete both tripwires, breaking `delete_one_of_two`-style tests.
+    ///
+    /// The first id allocated by any manager is `manager_id_seed + 1`, where
+    /// `manager_id_seed` is fetched from the global atomic on `new()`. This
+    /// keeps IDs globally unique while preventing within-manager collisions.
+    next_id: std::sync::atomic::AtomicU64,
+}
+
+impl Default for TripwireManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TripwireManager {
     pub fn new() -> Self {
-        Self::default()
+        // Seed the per-instance counter from the global atomic so IDs remain
+        // globally unique across managers. We advance the global by a large
+        // stride (1024) to leave room for the per-instance sequence without
+        // colliding with other freshly-created managers in the same process.
+        let seed = NEXT_TRIPWIRE_ID.fetch_add(1024, Ordering::Relaxed);
+        Self {
+            tripwires: std::sync::RwLock::new(Vec::new()),
+            fired_buffer: std::sync::RwLock::new(Vec::new()),
+            // Start allocating from `seed + 1` so id `seed` itself is never
+            // issued (the global counter may already have allocated ids in
+            // [seed, seed+1024) for legacy callers of `Tripwire::new`).
+            next_id: std::sync::atomic::AtomicU64::new(seed + 1),
+        }
+    }
+
+    fn next_id(&self) -> TripwireId {
+        TripwireId(self.next_id.fetch_add(1, Ordering::Relaxed))
     }
 
     pub fn register(&self, condition: TripwireCondition) -> TripwireId {
@@ -304,9 +352,9 @@ impl TripwireManager {
         condition: TripwireCondition,
         label: Option<String>,
     ) -> TripwireId {
-        let mut tw = Tripwire::new(condition);
+        let id = self.next_id();
+        let mut tw = Tripwire::with_id(id, condition);
         tw.label = label;
-        let id = tw.id;
         self.tripwires.write().unwrap().push(tw);
         id
     }
