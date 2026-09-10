@@ -24,11 +24,17 @@
 //!   (as empty placeholders) until completion, at which point they're added to
 //!   `engines` and removed from the map.
 
+// BrowserAdapter / CaptureConfig / CaptureSession are used by the in-file
+// `#[cfg(test)] mod tests` block; the lib code itself delegates everything
+// to BrowserProbeService. The clippy::unused_imports lint complains even
+// though the imports are real (just only used in tests). Allow explicitly.
+#[allow(unused_imports)]
 use chronos_browser::BrowserAdapter;
 use chronos_domain::tripwire::{TripwireCondition, TripwireManager};
+#[allow(unused_imports)]
 use chronos_domain::{
     causal_slice::{slice_from, CausalEdge, EvidenceNodeId},
-    CaptureConfig, CaptureSession, EventData, EventType, Language, ProbeBackend, PropertyValue,
+    CaptureConfig, CaptureSession, EventData, EventType, Language, PropertyValue,
     StateTransition, TraceEvent, VariableInfo,
 };
 use chronos_index::builder::IndexBuilder;
