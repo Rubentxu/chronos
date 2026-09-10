@@ -20,6 +20,10 @@ pub enum Language {
     CSharp,
     Ebpf,
     WebAssembly,
+    /// Compiled native binary with no source-level language metadata
+    /// (used by chronos-store, chronos-capture factory, and the default
+    /// language tag in chronos-mcp tools).
+    Native,
     Unknown,
 }
 
@@ -66,6 +70,7 @@ impl Language {
             "csharp" | "cs" | "c#" => Language::CSharp,
             "ebpf" | "bpf" => Language::Ebpf,
             "wasm" | "webassembly" | "wasm-bytecode" => Language::WebAssembly,
+            "native" => Language::Native,
             _ => Language::Unknown,
         }
     }
@@ -86,6 +91,7 @@ impl std::fmt::Display for Language {
             Language::CSharp => write!(f, "csharp"),
             Language::Ebpf => write!(f, "ebpf"),
             Language::WebAssembly => write!(f, "webassembly"),
+            Language::Native => write!(f, "native"),
             Language::Unknown => write!(f, "unknown"),
         }
     }
