@@ -129,4 +129,9 @@ pub enum ServiceError {
     /// `browser_probe_drain` failed to read semantic events from the adapter.
     #[error("Failed to drain browser events: {0}")]
     BrowserProbeDrainFailed(String),
+
+    // --- Trace slice service variants (m6-01) ----------------------------------
+    /// A required parameter was missing or invalid for the requested slice kind.
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
 }
