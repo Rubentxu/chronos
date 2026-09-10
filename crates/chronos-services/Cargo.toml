@@ -14,6 +14,8 @@ chronos-query = { workspace = true }
 chronos-domain = { workspace = true }
 chronos-store = { workspace = true }
 chronos-index = { workspace = true }
+chronos-ebpf = { workspace = true }
+chronos-native = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }

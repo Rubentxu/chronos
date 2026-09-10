@@ -38,6 +38,7 @@ use chronos_services::debug_read::DebugReadService;
 use chronos_services::debug_trace::DebugTraceService;
 use chronos_services::error::ServiceError;
 use chronos_services::output::EvalResult;
+use chronos_services::probe::{EbpfAttachmentInfo, LiveProbeSession};
 use chronos_services::query_service::QueryService;
 use chronos_services::sessions::{SessionsContext, SessionsService};
 use chronos_services::tripwires::TripwiresService;
@@ -80,39 +81,6 @@ impl Default for ResourceLimits {
 /// the session is moved to `engines` and becomes queryable. The placeholder is kept
 /// in this map to track which sessions are still pending completion.
 type BackgroundSessionEvents = Arc<std::sync::Mutex<Vec<TraceEvent>>>;
-
-/// A live probe session using `NativeProbeBackend`.
-///
-/// Unlike `debug_run` which blocks until the program exits, a live probe streams
-/// events to an `EventBus` ring buffer in real-time. Events can be drained at any
-/// time via `probe_drain`, and the probe is stopped via `probe_stop`.
-struct LiveProbeSession {
-    /// The native probe backend driving the ptrace loop.
-    backend: NativeProbeBackend,
-    /// The capture session returned by `start_probe`.
-    session: CaptureSession,
-    /// Language of the target program.
-    language: Language,
-    /// Path to the target binary.
-    target: String,
-    /// eBPF adapter owned by this session, if any uprobes have been injected.
-    /// Stored here so the lifecycle is observable: subsequent `probe_inject`
-    /// calls reuse the same adapter, and `probe_stop` detaches cleanly.
-    ebpf_adapter: Option<Arc<chronos_ebpf::EbpfAdapter>>,
-    /// Most recent eBPF attachment metadata (binary_path, symbol_name, pid).
-    ebpf_attachment: Option<EbpfAttachmentInfo>,
-}
-
-/// Metadata for the eBPF attachment of a live probe session.
-#[derive(Debug, Clone)]
-struct EbpfAttachmentInfo {
-    /// Library / binary path the uprobe was attached to.
-    binary_path: String,
-    /// Symbol the uprobe was attached to.
-    symbol_name: String,
-    /// Pid the uprobe was attached to.
-    pid: u32,
-}
 
 /// A live browser probe session using `BrowserAdapter`.
 ///
@@ -1203,6 +1171,58 @@ impl ChronosServer {
                     "internal error: unexpected tripwire not found",
                 )));
             }
+            // Probe service variants cannot be produced by query_events but are
+            // listed for exhaustiveness against the ServiceError enum.
+            Err(ServiceError::InvalidProgramPath(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected probe program path error",
+                )));
+            }
+            Err(ServiceError::ProbeNotFound(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected probe not found",
+                )));
+            }
+            Err(ServiceError::ProbeStartFailed(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected probe start failure",
+                )));
+            }
+            Err(ServiceError::ProbeStopError(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected probe stop error",
+                )));
+            }
+            Err(ServiceError::InvalidCursorPayload) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected invalid cursor",
+                )));
+            }
+            Err(ServiceError::CursorStale) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected cursor stale",
+                )));
+            }
+            Err(ServiceError::DrainFailed(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected drain failure",
+                )));
+            }
+            Err(ServiceError::ProbeStarting) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected probe starting",
+                )));
+            }
+            Err(ServiceError::EbpfUnsupported(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected eBPF unsupported",
+                )));
+            }
+            Err(ServiceError::InjectionFailed(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected injection failure",
+                )));
+            }
         };
 
         // m0-07: explicit query absence semantics
@@ -1506,6 +1526,58 @@ impl ChronosServer {
             Err(ServiceError::TripwireNotFound(_)) => {
                 return Ok(CallToolResult::error(text_content(
                     "internal error: unexpected tripwire not found",
+                )));
+            }
+            // Probe service variants cannot be produced by query_events but are
+            // listed for exhaustiveness against the ServiceError enum.
+            Err(ServiceError::InvalidProgramPath(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected probe program path error",
+                )));
+            }
+            Err(ServiceError::ProbeNotFound(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected probe not found",
+                )));
+            }
+            Err(ServiceError::ProbeStartFailed(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected probe start failure",
+                )));
+            }
+            Err(ServiceError::ProbeStopError(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected probe stop error",
+                )));
+            }
+            Err(ServiceError::InvalidCursorPayload) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected invalid cursor",
+                )));
+            }
+            Err(ServiceError::CursorStale) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected cursor stale",
+                )));
+            }
+            Err(ServiceError::DrainFailed(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected drain failure",
+                )));
+            }
+            Err(ServiceError::ProbeStarting) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected probe starting",
+                )));
+            }
+            Err(ServiceError::EbpfUnsupported(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected eBPF unsupported",
+                )));
+            }
+            Err(ServiceError::InjectionFailed(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected injection failure",
                 )));
             }
         };
@@ -2212,6 +2284,37 @@ impl ChronosServer {
             )),
             Err(ServiceError::TripwireNotFound(_)) => Ok(CallToolResult::error(text_content(
                 "internal error: unexpected tripwire not found".to_string(),
+            ))),
+            // New probe service variants (cannot occur from evaluate_expression).
+            Err(ServiceError::InvalidProgramPath(_)) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected probe program path error".to_string(),
+            ))),
+            Err(ServiceError::ProbeNotFound(_)) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected probe not found".to_string(),
+            ))),
+            Err(ServiceError::ProbeStartFailed(_)) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected probe start failure".to_string(),
+            ))),
+            Err(ServiceError::ProbeStopError(_)) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected probe stop error".to_string(),
+            ))),
+            Err(ServiceError::InvalidCursorPayload) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected invalid cursor".to_string(),
+            ))),
+            Err(ServiceError::CursorStale) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected cursor stale".to_string(),
+            ))),
+            Err(ServiceError::DrainFailed(_)) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected drain failure".to_string(),
+            ))),
+            Err(ServiceError::ProbeStarting) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected probe starting".to_string(),
+            ))),
+            Err(ServiceError::EbpfUnsupported(_)) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected eBPF unsupported".to_string(),
+            ))),
+            Err(ServiceError::InjectionFailed(_)) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected injection failure".to_string(),
             ))),
         }
     }
