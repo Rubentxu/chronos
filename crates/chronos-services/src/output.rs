@@ -978,6 +978,128 @@ pub struct CompareSessionsResult {
     pub summary: String,
 }
 
+// M6 — Hypothesis Test outputs (m6-04)
+// ============================================================================
+
+/// Discriminator for [`HypothesisOutput`]. Selects which typed hypothesis
+/// shape is being evaluated by the v2 `hypothesis_test` dispatcher.
+///
+/// The three variants are net-new (no v1 tool backs this; see
+/// `docs/milestones/m5-close-report.md` §4.2 and
+/// `docs/.../specs/AGENT_API_V2.md` line 18):
+/// - `Invariant` — reuses `chronos_domain::property::InvariantCheck` machinery:
+///   compare a captured scalar value against a typed comparison + constant.
+///   Defaults to "Pass" only when every observation satisfies the invariant;
+///   never returns `Pass` on insufficient evidence (returns `Unsupported`).
+/// - `Existence` — did any captured event satisfy the predicate?
+///   Returns `Pass` if at least one event matched; `Violation` otherwise.
+/// - `CallPath` — is `callee` reachable from `caller` in the call graph?
+///   Returns `Pass` if reachable (or self-loop); `Violation` if not; lists
+///   the longest un-reachable prefix path it did observe (raw support).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum HypothesisKind {
+    Invariant,
+    Existence,
+    CallPath,
+}
+
+/// Verdict of a hypothesis evaluation. Tri-state: never false-PASS.
+///
+/// - `Pass`            — every required evidence observation satisfied the
+///                        hypothesis. This is the only state where the LLM
+///                        / caller should treat the hypothesis as true.
+/// - `Violation`       — at least one observation broke the hypothesis, or
+///                        the absence requirement (Existence) was not met.
+///                        `support_event_ids` always contains the offending
+///                        raw support so the caller can verify.
+/// - `Unsupported`     — required evidence was not captured at all; we
+///                        cannot tell PASS from FAIL. The caller must NOT
+///                        collapse this into PASS (per
+///                        `docs/.../specs/RUNTIME_PROPERTIES_AND_SLICING.md`).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+#[serde(tag = "verdict", rename_all = "snake_case")]
+pub enum HypothesisVerdict {
+    Pass,
+    Violation {
+        reason: String,
+    },
+    Unsupported {
+        reason: String,
+    },
+}
+
+/// What scalar target an `Invariant` shape observes.
+///
+/// `EventCount` runs the invariant over the live event count (cheap fallback
+/// when no specific property key exists). `LatencyMs` looks up the
+/// `latency_us`/`latency_ms` value on each captured event's `EventData::Metric`.
+/// `PropertyValue` looks up a recorded property by target key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum HypothesisScope {
+    EventCount,
+    LatencyMs,
+    PropertyValue,
+}
+
+/// Predicate shape for the `Existence` hypothesis.
+///
+/// These are deliberately small; richer filtering should be done by the LLM
+/// composing `trace_slice` + `state_query` before calling `hypothesis_test`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ExistencePredicate {
+    /// Match `event_type == X` (e.g. `Syscall`, `FunctionCall`).
+    EventTypeEquals { event_type: String },
+    /// Match `thread_id == N`.
+    ThreadEquals { thread_id: u64 },
+    /// Match `property_target == X` (a recorded property key).
+    PropertyKeyEquals { target: String },
+}
+
+/// Output envelope of the v2 `hypothesis_test` tool.
+///
+/// Always carries:
+/// - `kind`: which hypothesis shape was evaluated.
+/// - `verdict`: tri-state (Pass / Violation / Unsupported).
+/// - `support_event_ids`: raw event IDs that DID satisfy (or for
+///   `Violation`, the IDs whose evidence was the closest match — the raw
+///   support the LLM/agent needs to verify).
+/// - `counter_event_ids`: raw event IDs that DID NOT satisfy (for
+///   Invariant violations, this is the offending observation list).
+/// - `summary`: human-readable one-liner always populated, even on Unsupported.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum HypothesisOutput {
+    Invariant {
+        verdict: HypothesisVerdict,
+        support_event_ids: Vec<u64>,
+        counter_event_ids: Vec<u64>,
+        scope: HypothesisScope,
+        summary: String,
+    },
+    Existence {
+        verdict: HypothesisVerdict,
+        support_event_ids: Vec<u64>,
+        counter_event_ids: Vec<u64>,
+        predicate: ExistencePredicate,
+        summary: String,
+    },
+    CallPath {
+        verdict: HypothesisVerdict,
+        support_event_ids: Vec<u64>,
+        counter_event_ids: Vec<u64>,
+        caller: String,
+        callee: String,
+        reachable_path: Option<Vec<String>>,
+        summary: String,
+    },
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
