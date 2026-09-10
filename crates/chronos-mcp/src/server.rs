@@ -43,8 +43,6 @@ use chronos_services::browser_probe::{
 };
 use chronos_services::debug_read::DebugReadService;
 use chronos_services::debug_trace::DebugTraceService;
-#[allow(unused_imports)]
-use chronos_services::debug_trace_specialized::DebugTraceSpecializedService;
 use chronos_services::error::ServiceError;
 use chronos_services::execution_query::{
     ChronosExecutionQueryService, ExecutionQueryContext, ExecutionQueryInput,
@@ -1384,7 +1382,7 @@ impl ChronosServer {
 
     #[tool(
         name = "get_call_stack",
-        description = "Reconstruct the call stack at a specific event."
+        description = "Deprecated. Use `execution_query` with `kind=call_stack` instead. Reconstruct the call stack at a specific event."
     )]
     async fn get_call_stack(
         &self,
@@ -1392,55 +1390,49 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        let stack = match DebugTraceService::get_call_stack(
-            &params.session_id,
-            params.event_id,
-            &self.engines,
-        )
-        .await
-        {
-            Ok(s) => s,
-            Err(ServiceError::SessionNotFound(s)) => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Session '{}' not found",
-                    s
-                ))));
-            }
-            Err(ServiceError::LockPoisoned) => {
-                return Ok(CallToolResult::error(text_content("lock poisoned")));
-            }
-            Err(ServiceError::QueryExecutionError(s)) => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "internal error: unexpected query error: {}",
-                    s
-                ))));
-            }
-            Err(e) => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "internal error: unexpected error: {}",
-                    e
-                ))));
-            }
+        let ctx = ExecutionQueryContext {
+            engines: &self.engines,
+        };
+        let input = ExecutionQueryInput {
+            session_id: params.session_id.clone(),
+            kind: ExecutionQueryKind::CallStack,
+            event_id: Some(params.event_id),
+            max_depth: None,
+            threshold_ns: None,
+            top_n: None,
+            saliency_limit: None,
         };
 
-        let output = serde_json::json!({
-            "session_id": params.session_id,
-            "at_event_id": params.event_id,
-            "depth": stack.len(),
-            "frames": stack.iter().map(|f| serde_json::json!({
-                "depth": f.depth,
-                "function": f.function,
-                "file": f.file,
-                "line": f.line,
-                "address": format!("0x{:x}", f.address),
-            })).collect::<Vec<_>>(),
-        });
-        Ok(CallToolResult::success(json_content(&output)))
+        match ChronosExecutionQueryService::query(&ctx, input).await {
+            Ok(ExecutionQueryOutput::CallStack { frames }) => {
+                let output = serde_json::json!({
+                    "session_id": params.session_id,
+                    "at_event_id": params.event_id,
+                    "depth": frames.len(),
+                    "frames": frames.iter().map(|f| serde_json::json!({
+                        "depth": f.depth,
+                        "function": f.function,
+                        "file": f.file,
+                        "line": f.line,
+                        "address": format!("0x{:x}", f.address),
+                    })).collect::<Vec<_>>(),
+                });
+                Ok(CallToolResult::success(json_content(&output)))
+            }
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{}' not found", s),
+            ))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "internal error: unexpected error: {}",
+                e
+            )))),
+            Ok(_) => unreachable!("kind=call_stack always yields CallStack variant"),
+        }
     }
 
     #[tool(
         name = "get_execution_summary",
-        description = "Get execution summary: event counts, top functions, issues."
+        description = "Deprecated. Use `execution_query` with `kind=execution_summary` instead. Get execution summary: event counts, top functions, issues."
     )]
     async fn get_execution_summary(
         &self,
@@ -1448,35 +1440,33 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        let summary =
-            match DebugTraceService::get_execution_summary(&params.session_id, &self.engines).await
-            {
-                Ok(s) => s,
-                Err(ServiceError::SessionNotFound(s)) => {
-                    return Ok(CallToolResult::error(text_content(format!(
-                        "Session '{}' not found",
-                        s
-                    ))));
-                }
-                Err(ServiceError::LockPoisoned) => {
-                    return Ok(CallToolResult::error(text_content("lock poisoned")));
-                }
-                Err(ServiceError::QueryExecutionError(s)) => {
-                    return Ok(CallToolResult::error(text_content(format!(
-                        "internal error: unexpected query error: {}",
-                        s
-                    ))));
-                }
-                Err(e) => {
-                    return Ok(CallToolResult::error(text_content(format!(
-                        "internal error: unexpected error: {}",
-                        e
-                    ))));
-                }
-            };
+        let ctx = ExecutionQueryContext {
+            engines: &self.engines,
+        };
+        let input = ExecutionQueryInput {
+            session_id: params.session_id,
+            kind: ExecutionQueryKind::ExecutionSummary,
+            event_id: None,
+            max_depth: None,
+            threshold_ns: None,
+            top_n: None,
+            saliency_limit: None,
+        };
 
-        let json = serde_json::to_string_pretty(&summary).unwrap_or_default();
-        Ok(CallToolResult::success(vec![Content::text(json)]))
+        match ChronosExecutionQueryService::query(&ctx, input).await {
+            Ok(ExecutionQueryOutput::ExecutionSummary { summary }) => {
+                let json = serde_json::to_string_pretty(&summary).unwrap_or_default();
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{}' not found", s),
+            ))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "internal error: unexpected error: {}",
+                e
+            )))),
+            Ok(_) => unreachable!("kind=execution_summary always yields ExecutionSummary variant"),
+        }
     }
 
     #[tool(
@@ -1798,7 +1788,7 @@ impl ChronosServer {
 
     #[tool(
         name = "debug_call_graph",
-        description = "Build the call graph for a session up to a given depth. Returns callers and callees for each function observed in the trace."
+        description = "Deprecated. Use `execution_query` with `kind=call_graph` instead. Build the call graph for a session up to a given depth. Returns callers and callees for each function observed in the trace."
     )]
     async fn debug_call_graph(
         &self,
@@ -1806,58 +1796,50 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        let graph = match DebugTraceService::debug_call_graph(
-            &params.session_id,
-            params.max_depth,
-            &self.engines,
-        )
-        .await
-        {
-            Ok(g) => g,
-            Err(ServiceError::SessionNotFound(s)) => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Session '{}' not found",
-                    s
-                ))));
-            }
-            Err(ServiceError::LockPoisoned) => {
-                return Ok(CallToolResult::error(text_content("lock poisoned")));
-            }
-            Err(ServiceError::QueryExecutionError(s)) => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "internal error: unexpected query error: {}",
-                    s
-                ))));
-            }
-            Err(e) => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "internal error: unexpected error: {}",
-                    e
-                ))));
-            }
+        let ctx = ExecutionQueryContext {
+            engines: &self.engines,
+        };
+        let input = ExecutionQueryInput {
+            session_id: params.session_id.clone(),
+            kind: ExecutionQueryKind::CallGraph,
+            event_id: None,
+            max_depth: Some(params.max_depth),
+            threshold_ns: None,
+            top_n: None,
+            saliency_limit: None,
         };
 
-        // Build nodes JSON from the CallGraph structure
-        let nodes: Vec<serde_json::Value> = graph
-            .nodes
-            .iter()
-            .map(|n| {
-                serde_json::json!({
-                    "function": n.function,
-                    "call_count": n.call_count,
-                    "callers": n.callers,
-                    "callees": n.callees,
-                })
-            })
-            .collect();
-
-        let output = serde_json::json!({
-            "session_id": params.session_id,
-            "max_depth": params.max_depth,
-            "unique_functions": graph.stats.node_count,
-            "nodes": nodes,
-        });
-        Ok(CallToolResult::success(json_content(&output)))
+        match ChronosExecutionQueryService::query(&ctx, input).await {
+            Ok(ExecutionQueryOutput::CallGraph { graph }) => {
+                let nodes: Vec<serde_json::Value> = graph
+                    .nodes
+                    .iter()
+                    .map(|n| {
+                        serde_json::json!({
+                            "function": n.function,
+                            "call_count": n.call_count,
+                            "callers": n.callers,
+                            "callees": n.callees,
+                        })
+                    })
+                    .collect();
+                let output = serde_json::json!({
+                    "session_id": params.session_id,
+                    "max_depth": params.max_depth,
+                    "unique_functions": graph.stats.node_count,
+                    "nodes": nodes,
+                });
+                Ok(CallToolResult::success(json_content(&output)))
+            }
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{}' not found", s),
+            ))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "internal error: unexpected error: {}",
+                e
+            )))),
+            Ok(_) => unreachable!("kind=call_graph always yields CallGraph variant"),
+        }
     }
 
     #[tool(
@@ -1980,23 +1962,29 @@ impl ChronosServer {
 
     #[tool(
         name = "debug_detect_races",
-        description = "Detect suspicious concurrent accesses (m0-09). Finds writes to the same memory address within the threshold_ns window on different threads. The tool name is kept for backward compatibility; internally the heuristic is named detect_concurrent_access because we do not perform happens-before analysis — results are a triage signal, not a verdict that the access is a true data race. Default threshold is 100ns."
+        description = "Deprecated. Use `execution_query` with `kind=race_detect` instead. Detect suspicious concurrent accesses (m0-09). Finds writes to the same memory address within the threshold_ns window on different threads. The tool name is kept for backward compatibility; internally the heuristic is named detect_concurrent_access because we do not perform happens-before analysis — results are a triage signal, not a verdict that the access is a true data race. Default threshold is 100ns."
     )]
     async fn debug_detect_races(
         &self,
         params: Parameters<DebugDetectRacesParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        use chronos_services::debug_trace_specialized::DebugTraceSpecializedService;
 
-        match DebugTraceSpecializedService::detect_races(
-            &params.session_id,
-            params.threshold_ns,
-            &self.engines,
-        )
-        .await
-        {
-            Ok(report) => {
+        let ctx = ExecutionQueryContext {
+            engines: &self.engines,
+        };
+        let input = ExecutionQueryInput {
+            session_id: params.session_id,
+            kind: ExecutionQueryKind::RaceDetect,
+            event_id: None,
+            max_depth: None,
+            threshold_ns: Some(params.threshold_ns),
+            top_n: None,
+            saliency_limit: None,
+        };
+
+        match ChronosExecutionQueryService::query(&ctx, input).await {
+            Ok(ExecutionQueryOutput::RaceDetect { report }) => {
                 let output = serde_json::json!({
                     "session_id": report.session_id,
                     "threshold_ns": report.threshold_ns,
@@ -2024,13 +2012,14 @@ impl ChronosServer {
                 });
                 Ok(CallToolResult::success(json_content(&output)))
             }
-            Err(chronos_services::error::ServiceError::SessionNotFound(s)) => Ok(
-                CallToolResult::error(text_content(format!("Session '{}' not found", s))),
-            ),
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{}' not found", s),
+            ))),
             Err(e) => Ok(CallToolResult::error(text_content(format!(
                 "internal error: unexpected error: {}",
                 e
             )))),
+            Ok(_) => unreachable!("kind=race_detect always yields RaceDetect variant"),
         }
     }
 
@@ -2089,73 +2078,85 @@ impl ChronosServer {
 
     #[tool(
         name = "debug_expand_hotspot",
-        description = "Semantic compression Level 1 — return the top-N hottest functions by call count and CPU cycles. Use debug_execution_summary first (Level 0) then call this to zoom in."
+        description = "Deprecated. Use `execution_query` with `kind=hotspot` instead. Semantic compression Level 1 — return the top-N hottest functions by call count and CPU cycles. Use debug_execution_summary first (Level 0) then call this to zoom in."
     )]
     async fn debug_expand_hotspot(
         &self,
         params: Parameters<DebugExpandHotspotParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        use chronos_services::debug_trace_specialized::DebugTraceSpecializedService;
 
-        match DebugTraceSpecializedService::expand_hotspot(
-            &params.session_id,
-            params.top_n,
-            &self.engines,
-        )
-        .await
-        {
-            Ok(result) => {
+        let ctx = ExecutionQueryContext {
+            engines: &self.engines,
+        };
+        let input = ExecutionQueryInput {
+            session_id: params.session_id,
+            kind: ExecutionQueryKind::Hotspot,
+            event_id: None,
+            max_depth: None,
+            threshold_ns: None,
+            top_n: Some(params.top_n),
+            saliency_limit: None,
+        };
+
+        match ChronosExecutionQueryService::query(&ctx, input).await {
+            Ok(ExecutionQueryOutput::Hotspot { report }) => {
                 let output = serde_json::json!({
-                    "session_id": result.session_id,
-                    "compression_level": result.compression_level,
-                    "top_n": result.top_n,
-                    "total_calls_in_trace": result.total_calls_in_trace,
-                    "hotspot_functions": result.hotspot_functions.iter().map(|f| serde_json::json!({
+                    "session_id": report.session_id,
+                    "compression_level": report.compression_level,
+                    "top_n": report.top_n,
+                    "total_calls_in_trace": report.total_calls_in_trace,
+                    "hotspot_functions": report.hotspot_functions.iter().map(|f| serde_json::json!({
                         "function": f.function,
                         "call_count": f.call_count,
                         "total_cycles": f.total_cycles,
                         "avg_cycles_per_call": f.avg_cycles_per_call,
                     })).collect::<Vec<_>>(),
-                    "hint": result.hint,
+                    "hint": report.hint,
                 });
                 Ok(CallToolResult::success(json_content(&output)))
             }
-            Err(chronos_services::error::ServiceError::SessionNotFound(s)) => Ok(
-                CallToolResult::error(text_content(format!("Session '{}' not found", s))),
-            ),
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{}' not found", s),
+            ))),
             Err(e) => Ok(CallToolResult::error(text_content(format!(
                 "internal error: unexpected error: {}",
                 e
             )))),
+            Ok(_) => unreachable!("kind=hotspot always yields Hotspot variant"),
         }
     }
 
     #[tool(
         name = "debug_get_saliency_scores",
-        description = "Compute saliency scores [0.0–1.0] for all functions: a high score means this function consumed a disproportionate share of CPU cycles relative to other functions. Use to prioritize where to look."
+        description = "Deprecated. Use `execution_query` with `kind=saliency` instead. Compute saliency scores [0.0–1.0] for all functions: a high score means this function consumed a disproportionate share of CPU cycles relative to other functions. Use to prioritize where to look."
     )]
     async fn debug_get_saliency_scores(
         &self,
         params: Parameters<DebugGetSaliencyScoresParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        use chronos_services::debug_trace_specialized::DebugTraceSpecializedService;
 
-        match DebugTraceSpecializedService::get_saliency_scores(
-            &params.session_id,
-            params.limit,
-            &self.engines,
-        )
-        .await
-        {
-            Ok(result) => {
+        let ctx = ExecutionQueryContext {
+            engines: &self.engines,
+        };
+        let input = ExecutionQueryInput {
+            session_id: params.session_id,
+            kind: ExecutionQueryKind::Saliency,
+            event_id: None,
+            max_depth: None,
+            threshold_ns: None,
+            top_n: None,
+            saliency_limit: Some(params.limit),
+        };
+
+        match ChronosExecutionQueryService::query(&ctx, input).await {
+            Ok(ExecutionQueryOutput::Saliency { result }) => {
                 let scores: Vec<serde_json::Value> = result
                     .scores
                     .iter()
                     .map(|s| {
                         if s.cycles.is_some() {
-                            // No perf: cycles field is null, no total_cycles
                             serde_json::json!({
                                 "function": s.function,
                                 "saliency_score": s.saliency_score,
@@ -2163,7 +2164,6 @@ impl ChronosServer {
                                 "cycles": null,
                             })
                         } else {
-                            // Has perf: total_cycles present, no cycles field
                             serde_json::json!({
                                 "function": s.function,
                                 "saliency_score": s.saliency_score,
@@ -2181,13 +2181,14 @@ impl ChronosServer {
                 });
                 Ok(CallToolResult::success(json_content(&output)))
             }
-            Err(chronos_services::error::ServiceError::SessionNotFound(s)) => Ok(
-                CallToolResult::error(text_content(format!("Session '{}' not found", s))),
-            ),
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{}' not found", s),
+            ))),
             Err(e) => Ok(CallToolResult::error(text_content(format!(
                 "internal error: unexpected error: {}",
                 e
             )))),
+            Ok(_) => unreachable!("kind=saliency always yields Saliency variant"),
         }
     }
 
