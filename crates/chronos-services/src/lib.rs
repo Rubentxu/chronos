@@ -45,5 +45,6 @@ pub mod output;
 pub mod probe;
 pub mod query_service;
 pub mod sessions;
+pub mod state_query;
 pub mod trace_slice;
 pub mod tripwires;
