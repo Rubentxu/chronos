@@ -4,7 +4,7 @@
 **Path**: B-direct (documentation cycle — no production code changes)
 **Author**: orchestrator
 **Date**: 2026-09-09T14:23Z
-**Status**: scoping proposal
+**Status**: scoping proposal — **CLOSED 2026-09-10**, see `m5-close-report.md` for actual execution outcome
 
 ---
 
@@ -138,7 +138,20 @@ explicit input/output types. The `chronos-mcp::server` becomes a
 **router**: it parses MCP requests, calls into the right service, and
 serializes the response. No business logic remains in `server.rs`.
 
-## Implementation strategy (downstream M5 cycles)
+## Implementation strategy (planned) vs. actual execution
+
+The "Implementation strategy" section below lists 10 planned A-min cycles
+for M5 (services skeleton + SessionService extract + m5-05 execution_query
+merge + m5-06 state_query merge + m5-07 trace_slice merge + m5-08
+hypothesis_test + m5-09 session_export + m5-10 deprecation shims). The
+**actual** M5 cycle sequence diverged from this plan: the cycles that
+actually shipped were all *extraction* cycles, not *merge* cycles. The
+*v2-spec surface reduction* (44 → 8–12 tools) is deferred to M6 — see
+`m5-close-report.md` §4 for the full M6 candidate list and sequencing
+recommendation.
+
+The plan below is preserved for historical reference and as a cross-check
+against what actually shipped.
 
 Because this is a large architectural refactor, **do not attempt it
 in a single cycle**. Recommended cycle sequence:
@@ -175,6 +188,39 @@ in a single cycle**. Recommended cycle sequence:
 
 **Total**: ~4,000 LoC across 10 A-min cycles, ~6-10 weeks calendar
 time assuming 1 cycle/day. Each cycle keeps T0+T2+T4-smoke green.
+
+### Actual M5 execution
+
+The 10-cycle plan above was not followed verbatim. The actual M5 cycle
+sequence was nine A-min extraction cycles plus one B-direct close cycle.
+All FF-merged to `main` with no PR per repo convention. Receipts and
+merge SHAs are listed in `m5-close-report.md` §5.
+
+| Planned cycle                  | What actually shipped                                                                                |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `m5-01-services-skeleton`      | Landed as PR #10 (`a6ca9fb`): `chronos-services` crate + `DebugReadService` (7 tools).               |
+| `m5-02-session-service-extract`| Subsumed into m5-02b cleanup (`528d6e2`) + m5-03 (`c42081e`, `SessionsService`, 5 tools).             |
+| `m5-03-query-service-extract`  | Subsumed into m5-05a (`0ae1a9b`, `DebugTraceService`, 6 tools).                                       |
+| `m5-04-probe-service-extract`  | Landed as m5-06 (`e71d264` head, `ProbeService`, 8 tools) + m5-07 (`f8c3311` head, `BrowserProbeService`, 3 tools). |
+| `m5-05-execution-query-merge`  | **Not done** — deferred to M6 (see `m5-close-report.md` §4.1).                                       |
+| `m5-06-state-query-merge`      | **Not done** — deferred to M6.                                                                       |
+| `m5-07-trace-slice-merge`      | **Not done** — deferred to M6.                                                                       |
+| `m5-08-hypothesis-test`        | **Not done** — the m5-08 cycle shipped something different: `ChronosAnalysisService::mutation_lens` + `causal_slice` (see cycle artifacts). |
+| `m5-09-session-export`         | **Not done** — deferred to M6.                                                                       |
+| `m5-10-deprecation-shims`      | **Not done** — this slot was used for the M5 close cycle itself (m5-10-close-M5).                    |
+
+**Why the divergence:** the M5 cycles that did ship were driven by the
+exit criterion ("no new application algorithm in `chronos-mcp::server`")
+plus opportunistic scope pivots (m5-08 pivoted from debug-state to
+mutation-lens-causal-slice per the "pivot cosmetic-only cycles" policy).
+The merge cycles were judged premature: the right merge design only
+becomes obvious after the extracted services stabilise, and empirical
+evidence from m5-05a through m5-09 confirmed that the extraction
+approach yields small, focused, independently testable services.
+
+The v2-spec surface reduction (44 → 8–12) is therefore **M6** work, not
+M5 work. The M5 structural goal (services layer as canonical home of
+application algorithm) is **closed**.
 
 ## Risks
 
