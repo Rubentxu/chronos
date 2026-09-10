@@ -110,6 +110,43 @@ pub struct ProbeDrainInput {
     pub limit: usize,
 }
 
+/// Input for `ProbeService::inject`.
+#[derive(Debug, Clone)]
+pub struct ProbeInjectInput {
+    pub session_id: String,
+    pub binary_path: String,
+    pub symbol_name: String,
+    /// Optional PID override; if `None`, the probe's own traced PID is used.
+    pub pid: Option<u32>,
+}
+
+/// Result of `ProbeService::inject` — wraps the three terminal cases the
+/// `probe_inject` wrapper turns into JSON. `EbpfUnavailable` and
+/// `AttachFailed` carry the error message that the wrapper surfaces as a
+/// tool error (CallToolResult::error), while `Attached` becomes a success.
+#[derive(Debug)]
+pub enum ProbeInjectResult {
+    /// Probe is registered but its PID is not yet known (start-up race).
+    ProbeStarting,
+    /// Adapter could not be constructed (kernel lacks eBPF feature).
+    EbpfUnavailable(String),
+    /// Adapter attached successfully to the process.
+    Attached {
+        session_id: String,
+        binary_path: String,
+        symbol_name: String,
+        pid: u32,
+    },
+    /// Adapter constructed but `attach_uprobe` returned an error.
+    AttachFailed {
+        session_id: String,
+        binary_path: String,
+        symbol_name: String,
+        pid: u32,
+        error: String,
+    },
+}
+
 /// Native probe service — business logic for `probe_start`, `probe_stop`,
 /// `probe_drain`, `probe_drain_log`, `probe_compaction_metrics`,
 /// `session_snapshot`, `probe_inject`, `probe_status`.
@@ -371,6 +408,124 @@ impl ProbeService {
         let events = live_probe.backend.drain_raw_events();
         let language = live_probe.language;
         Ok((events, language))
+    }
+
+    /// Attach an eBPF uprobe to a running probe process.
+    ///
+    /// Mutates the live probe session in-place to record the adapter + attachment
+    /// metadata. Returns the terminal outcome so the server wrapper can serialize
+    /// the existing JSON shape.
+    pub fn inject(
+        ctx: &ProbeContext<'_>,
+        input: ProbeInjectInput,
+    ) -> Result<ProbeInjectResult, ServiceError> {
+        // Look up the live probe session to get the target PID and own the adapter.
+        let target_pid = {
+            let probes = ctx
+                .live_probes
+                .lock()
+                .map_err(|_| ServiceError::LockPoisoned)?;
+            let live_probe = probes
+                .get(&input.session_id)
+                .ok_or_else(|| ServiceError::ProbeNotFound(input.session_id.clone()))?;
+            live_probe
+                .backend
+                .get_traced_pid()
+                .map(|p| p as u32)
+                .unwrap_or(live_probe.session.pid)
+        };
+
+        let pid = input.pid.unwrap_or(target_pid);
+        if pid == 0 {
+            return Ok(ProbeInjectResult::ProbeStarting);
+        }
+
+        // If the session already has an eBPF adapter, detach the previous
+        // attachment first so the new injection is the single source of truth.
+        {
+            let mut probes = ctx
+                .live_probes
+                .lock()
+                .map_err(|_| ServiceError::LockPoisoned)?;
+            if let Some(lp) = probes.get_mut(&input.session_id) {
+                if lp.ebpf_adapter.is_some() {
+                    lp.ebpf_attachment = None;
+                }
+            }
+        }
+
+        // Attempt eBPF uprobe injection. The adapter is owned by the session
+        // so the lifecycle is observable via probe_status and probe_stop can
+        // detach on shutdown.
+        match chronos_ebpf::EbpfAdapter::new() {
+            Ok(adapter) => {
+                let adapter = Arc::new(adapter);
+                match adapter.attach_uprobe(pid, &input.binary_path, &input.symbol_name) {
+                    Ok(()) => {
+                        {
+                            let mut probes = ctx
+                                .live_probes
+                                .lock()
+                                .map_err(|_| ServiceError::LockPoisoned)?;
+                            if let Some(lp) = probes.get_mut(&input.session_id) {
+                                lp.ebpf_adapter = Some(adapter.clone());
+                                lp.ebpf_attachment = Some(EbpfAttachmentInfo {
+                                    binary_path: input.binary_path.clone(),
+                                    symbol_name: input.symbol_name.clone(),
+                                    pid,
+                                });
+                            }
+                        }
+                        Ok(ProbeInjectResult::Attached {
+                            session_id: input.session_id,
+                            binary_path: input.binary_path,
+                            symbol_name: input.symbol_name,
+                            pid,
+                        })
+                    }
+                    Err(e) => {
+                        // Persist adapter even on attach failure so the session
+                        // has a stable record and probe_status reflects availability.
+                        let mut probes = ctx
+                            .live_probes
+                            .lock()
+                            .map_err(|_| ServiceError::LockPoisoned)?;
+                        if let Some(lp) = probes.get_mut(&input.session_id) {
+                            lp.ebpf_adapter = Some(adapter.clone());
+                            lp.ebpf_attachment = Some(EbpfAttachmentInfo {
+                                binary_path: input.binary_path.clone(),
+                                symbol_name: input.symbol_name.clone(),
+                                pid,
+                            });
+                        }
+                        Ok(ProbeInjectResult::AttachFailed {
+                            session_id: input.session_id,
+                            binary_path: input.binary_path,
+                            symbol_name: input.symbol_name,
+                            pid,
+                            error: e.to_string(),
+                        })
+                    }
+                }
+            }
+            Err(e) => {
+                // Record the attempted attachment even when the kernel feature
+                // is unavailable, so the session record reflects that the user
+                // requested a probe and we cannot honour it.
+                let mut probes = ctx
+                    .live_probes
+                    .lock()
+                    .map_err(|_| ServiceError::LockPoisoned)?;
+                if let Some(lp) = probes.get_mut(&input.session_id) {
+                    lp.ebpf_attachment = Some(EbpfAttachmentInfo {
+                        binary_path: input.binary_path.clone(),
+                        symbol_name: input.symbol_name.clone(),
+                        pid,
+                    });
+                }
+                Ok(ProbeInjectResult::EbpfUnavailable(e.to_string()))
+            }
+        }
     }
 }
 

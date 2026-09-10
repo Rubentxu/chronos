@@ -630,9 +630,8 @@ pub struct ProbeInjectOutput {
     pub binary_path: String,
     pub symbol_name: String,
     pub pid: u32,
-    pub attached: bool,
-    pub error: Option<String>,
-    pub hint: String,
+    pub probes_attached: u32,
+    pub message: String,
 }
 
 /// Output of `probe_status`. JSON shape matches the existing literal in

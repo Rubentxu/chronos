@@ -3204,118 +3204,75 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        // Look up the live probe session to get the target PID and own the adapter.
-        let target_pid = {
-            let probes = self.live_probes.lock().unwrap();
-            match probes.get(&params.session_id) {
-                Some(lp) => {
-                    // For spawned probes, lp.session.pid is 0. Use the actual traced PID.
-                    lp.backend
-                        .get_traced_pid()
-                        .map(|p| p as u32)
-                        .unwrap_or(lp.session.pid)
-                }
-                None => {
-                    return Ok(CallToolResult::error(text_content(format!(
-                        "Live probe session '{}' not found. Start a probe with probe_start first.",
-                        params.session_id
-                    ))))
-                }
-            }
+        let input = chronos_services::probe::ProbeInjectInput {
+            session_id: params.session_id.clone(),
+            binary_path: params.binary_path.clone(),
+            symbol_name: params.symbol_name.clone(),
+            pid: params.pid,
         };
 
-        let pid = params.pid.unwrap_or(target_pid);
+        let ctx = chronos_services::probe::ProbeContext {
+            live_probes: &self.live_probes,
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            tripwire_manager: &self.tripwire_manager,
+            active_session: &self.active_session,
+        };
 
-        if pid == 0 {
-            return Ok(CallToolResult::error(text_content(
-                "Cannot inject: probe is still starting up (PID not yet known). Retry in a moment.",
-            )));
-        }
-
-        // If the session already has an eBPF adapter, detach the previous
-        // attachment first so the new injection is the single source of truth.
-        {
-            let mut probes = self.live_probes.lock().unwrap();
-            if let Some(lp) = probes.get_mut(&params.session_id) {
-                if lp.ebpf_adapter.is_some() {
-                    // detach is best-effort; the new attach below will replace state.
-                    lp.ebpf_attachment = None;
-                }
+        match chronos_services::probe::ProbeService::inject(&ctx, input) {
+            Ok(chronos_services::probe::ProbeInjectResult::Attached {
+                session_id,
+                binary_path,
+                symbol_name,
+                pid,
+            }) => {
+                let output = serde_json::json!({
+                    "session_id": session_id,
+                    "binary_path": binary_path,
+                    "symbol_name": symbol_name,
+                    "pid": pid,
+                    "probes_attached": 1u32,
+                    "message": format!(
+                        "uprobe attached to '{}' in '{}' (pid {}); adapter stored on session",
+                        symbol_name, binary_path, pid
+                    ),
+                });
+                Ok(CallToolResult::success(json_content(&output)))
             }
-        }
-
-        // Attempt eBPF uprobe injection. The adapter is owned by the session
-        // so the lifecycle is observable via probe_status and probe_stop can
-        // detach on shutdown. Even when the kernel feature is unavailable,
-        // we still record the attempted attachment so the session report
-        // tells the caller *why* the lifecycle didn't progress.
-        match chronos_ebpf::EbpfAdapter::new() {
-            Ok(adapter) => {
-                let adapter = Arc::new(adapter);
-                match adapter.attach_uprobe(pid, &params.binary_path, &params.symbol_name) {
-                    Ok(()) => {
-                        // Persist adapter + metadata on the session.
-                        {
-                            let mut probes = self.live_probes.lock().unwrap();
-                            if let Some(lp) = probes.get_mut(&params.session_id) {
-                                lp.ebpf_adapter = Some(adapter.clone());
-                                lp.ebpf_attachment = Some(EbpfAttachmentInfo {
-                                    binary_path: params.binary_path.clone(),
-                                    symbol_name: params.symbol_name.clone(),
-                                    pid,
-                                });
-                            }
-                        }
-                        let output = serde_json::json!({
-                            "session_id": params.session_id,
-                            "binary_path": params.binary_path,
-                            "symbol_name": params.symbol_name,
-                            "pid": pid,
-                            "probes_attached": 1u32,
-                            "message": format!(
-                                "uprobe attached to '{}' in '{}' (pid {}); adapter stored on session",
-                                params.symbol_name, params.binary_path, pid
-                            ),
-                        });
-                        Ok(CallToolResult::success(json_content(&output)))
-                    }
-                    Err(e) => {
-                        // Persist adapter even on attach failure so the session
-                        // has a stable record and probe_status reflects availability.
-                        let mut probes = self.live_probes.lock().unwrap();
-                        if let Some(lp) = probes.get_mut(&params.session_id) {
-                            lp.ebpf_adapter = Some(adapter.clone());
-                            lp.ebpf_attachment = Some(EbpfAttachmentInfo {
-                                binary_path: params.binary_path.clone(),
-                                symbol_name: params.symbol_name.clone(),
-                                pid,
-                            });
-                        }
-                        Ok(CallToolResult::error(text_content(format!(
-                            "Failed to attach uprobe for '{}' in '{}': {}",
-                            params.symbol_name, params.binary_path, e
-                        ))))
-                    }
-                }
+            Ok(chronos_services::probe::ProbeInjectResult::ProbeStarting) => {
+                Ok(CallToolResult::error(text_content(
+                    "Cannot inject: probe is still starting up (PID not yet known). Retry in a moment.",
+                )))
             }
-            Err(e) => {
-                // Record the attempted attachment even when the kernel feature
-                // is unavailable, so the session record reflects that the user
-                // requested a probe and we cannot honour it.
-                let mut probes = self.live_probes.lock().unwrap();
-                if let Some(lp) = probes.get_mut(&params.session_id) {
-                    lp.ebpf_attachment = Some(EbpfAttachmentInfo {
-                        binary_path: params.binary_path.clone(),
-                        symbol_name: params.symbol_name.clone(),
-                        pid,
-                    });
-                }
-                drop(probes);
+            Ok(chronos_services::probe::ProbeInjectResult::EbpfUnavailable(msg)) => {
                 Ok(CallToolResult::error(text_content(format!(
                     "eBPF not available on this system: {}",
-                    e
+                    msg
                 ))))
             }
+            Ok(chronos_services::probe::ProbeInjectResult::AttachFailed {
+                session_id: _,
+                binary_path,
+                symbol_name,
+                pid: _,
+                error,
+            }) => Ok(CallToolResult::error(text_content(format!(
+                "Failed to attach uprobe for '{}' in '{}': {}",
+                symbol_name, binary_path, error
+            )))),
+            Err(ServiceError::ProbeNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!(
+                    "Live probe session '{}' not found. Start a probe with probe_start first.",
+                    s
+                ),
+            ))),
+            Err(ServiceError::LockPoisoned) => {
+                Ok(CallToolResult::error(text_content("lock poisoned")))
+            }
+            Err(other) => Ok(CallToolResult::error(text_content(format!(
+                "internal error: unexpected probe inject error: {}",
+                other
+            )))),
         }
     }
 
