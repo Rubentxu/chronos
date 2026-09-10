@@ -487,6 +487,129 @@ pub struct SaliencyScoreResult {
 // Serde round-trip tests
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Probe service output types
+// ---------------------------------------------------------------------------
+
+/// A cursor for non-destructive probe drainage.
+///
+/// Mirrors the JSON shape produced by `probe_drain`'s existing `serde_json::json!({...})`
+/// output (`cursor.total_pushed`, `cursor.snapshot_len`, `cursor.cursor_stale`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CursorDto {
+    pub total_pushed: u64,
+    pub snapshot_len: usize,
+}
+
+/// A single event as returned by `probe_drain` (the JSON-shape consumed by
+/// the LLM-facing probe tools).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DrainedEventDto {
+    pub event_id: u64,
+    pub timestamp_ns: u64,
+    pub thread_id: u64,
+    pub language: String,
+    pub kind: String,
+    pub description: String,
+}
+
+/// Output of `probe_start`. JSON shape matches the existing
+/// `serde_json::json!({...})` literal in `chronos-mcp/src/server.rs::probe_start`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProbeStartOutput {
+    pub session_id: String,
+    pub status: String,
+    pub target: String,
+    pub language: String,
+    pub bus_capacity: usize,
+    pub hint: String,
+}
+
+/// Output of `probe_stop`. JSON shape matches the existing literal in
+/// `chronos-mcp/src/server.rs::probe_stop`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProbeStopOutput {
+    pub session_id: String,
+    pub status: String,
+    pub target: String,
+    pub total_events: usize,
+    pub duration_ms: u64,
+    pub ebpf_detached: bool,
+    pub hint: String,
+}
+
+/// Output of `probe_drain`. JSON shape matches the existing literal in
+/// `chronos-mcp/src/server.rs::probe_drain`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProbeDrainOutput {
+    pub session_id: String,
+    pub status: String,
+    pub total_buffered: usize,
+    pub returned: usize,
+    pub offset: usize,
+    pub limit: usize,
+    pub cursor: CursorDto,
+    pub cursor_stale: bool,
+    pub tripwires_fired: usize,
+    pub events: Vec<DrainedEventDto>,
+    pub hint: String,
+}
+
+/// Output of `probe_drain_log`. JSON shape matches the existing literal in
+/// `chronos-mcp/src/server.rs::probe_drain_log`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProbeDrainLogOutput {
+    pub session_id: String,
+    pub returned: usize,
+    pub tail_seq: Option<u64>,
+    pub records: Vec<serde_json::Value>,
+}
+
+/// Output of `probe_compaction_metrics`. JSON shape matches the existing
+/// literal in `chronos-mcp/src/server.rs::probe_compaction_metrics`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CompactionMetricsOutput {
+    pub session_id: String,
+    pub metrics: serde_json::Value,
+}
+
+/// Output of `session_snapshot`. JSON shape matches the existing literal in
+/// `chronos-mcp/src/server.rs::session_snapshot`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SessionSnapshotOutput {
+    pub session_id: String,
+    pub total_events: usize,
+    pub hint: String,
+}
+
+/// Output of `probe_inject`. JSON shape matches the existing literal in
+/// `chronos-mcp/src/server.rs::probe_inject`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProbeInjectOutput {
+    pub session_id: String,
+    pub binary_path: String,
+    pub symbol_name: String,
+    pub pid: u32,
+    pub attached: bool,
+    pub error: Option<String>,
+    pub hint: String,
+}
+
+/// Output of `probe_status`. JSON shape matches the existing literal in
+/// `chronos-mcp/src/server.rs::probe_status`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProbeStatusOutput {
+    pub session_id: String,
+    pub target: String,
+    pub language: String,
+    pub status: String,
+    pub ebpf_attached: bool,
+    pub ebpf_binary: Option<String>,
+    pub ebpf_symbol: Option<String>,
+    pub ebpf_pid: Option<u32>,
+    pub hint: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
