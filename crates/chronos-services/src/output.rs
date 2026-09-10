@@ -727,6 +727,75 @@ pub struct CausalSliceOutput {
 // M5 — Diff & Compare outputs (m5-09)
 // ============================================================================
 
+// ============================================================================
+// M6 — Trace Slice outputs (m6-01)
+// ============================================================================
+
+/// Discriminator for [`TraceSliceOutput`]. Selects which v1 tool's payload
+/// is produced by the v2 `trace_slice` dispatcher.
+///
+/// The four variants correspond to the four v1 tools that this v2 tool
+/// supersedes (see `docs/milestones/m5-close-report.md` §4.1):
+/// - `VariableOrigin` — formerly `debug_find_variable_origin`.
+/// - `Crash` — formerly `debug_find_crash`.
+/// - `Causality` — formerly `inspect_causality`.
+/// - `MemoryAudit` — formerly `forensic_memory_audit`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TraceSliceKind {
+    VariableOrigin,
+    Crash,
+    Causality,
+    MemoryAudit,
+}
+
+impl TraceSliceKind {
+    /// Snake-case name used as the JSON discriminator tag.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TraceSliceKind::VariableOrigin => "variable_origin",
+            TraceSliceKind::Crash => "crash",
+            TraceSliceKind::Causality => "causality",
+            TraceSliceKind::MemoryAudit => "memory_audit",
+        }
+    }
+}
+
+/// Output envelope of the v2 `trace_slice` tool.
+///
+/// The `slice_kind` tag tells the consumer which payload variant follows.
+/// Each variant's inner DTO is flattened into the envelope so that the
+/// resulting JSON preserves byte-for-byte the shape of the corresponding
+/// v1 tool's output, plus a top-level `slice_kind` discriminator and an
+/// explicit `session_id` echo.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "slice_kind", rename_all = "snake_case")]
+pub enum TraceSliceOutput {
+    #[serde(rename = "variable_origin")]
+    VariableOrigin {
+        session_id: String,
+        #[serde(flatten)]
+        result: VariableOriginResult,
+    },
+    #[serde(rename = "crash")]
+    Crash {
+        session_id: String,
+        #[serde(flatten)]
+        result: CrashPoint,
+    },
+    #[serde(rename = "causality")]
+    Causality {
+        session_id: String,
+        #[serde(flatten)]
+        result: CausalityReport,
+    },
+    #[serde(rename = "memory_audit")]
+    MemoryAudit {
+        session_id: String,
+        #[serde(flatten)]
+        result: MemoryAudit,
+    },
+}
+
 /// One row of the performance regression audit: a function with its
 /// call counts in baseline and target and the percentage delta.
 ///
