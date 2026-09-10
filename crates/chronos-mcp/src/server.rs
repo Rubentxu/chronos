@@ -3517,132 +3517,27 @@ impl ChronosServer {
         params: Parameters<PerformanceRegressionAuditParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let top_n = params.top_n.unwrap_or(20);
+        let ctx = chronos_services::diff::DiffContext { store: &self.store };
 
-        // Helper: load a session into an engine (reuse existing if already loaded).
-        let load_engine = |session_id: &str| -> Result<QueryEngine, String> {
-            let (_, events) = self
-                .store
-                .load_session(session_id)
-                .map_err(|e| format!("session '{}' not found: {}", session_id, e))?;
-            Ok(QueryEngine::new(events))
-        };
-
-        let baseline_engine = match load_engine(&params.baseline_session_id) {
-            Ok(e) => e,
-            Err(msg) => return Ok(CallToolResult::error(text_content(msg))),
-        };
-        let target_engine = match load_engine(&params.target_session_id) {
-            Ok(e) => e,
-            Err(msg) => return Ok(CallToolResult::error(text_content(msg))),
-        };
-
-        // Build function-call-count maps from execution summaries.
-        let baseline_summary = baseline_engine.execution_summary(&params.baseline_session_id);
-        let target_summary = target_engine.execution_summary(&params.target_session_id);
-
-        let baseline_map: HashMap<&str, u64> = baseline_summary
-            .top_functions
-            .iter()
-            .take(top_n)
-            .map(|f| (f.name.as_str(), f.call_count))
-            .collect();
-        let target_map: HashMap<&str, u64> = target_summary
-            .top_functions
-            .iter()
-            .take(top_n)
-            .map(|f| (f.name.as_str(), f.call_count))
-            .collect();
-
-        // Union of all function names from both sessions.
-        let all_functions: HashSet<&str> = baseline_map
-            .keys()
-            .chain(target_map.keys())
-            .copied()
-            .collect();
-
-        let functions_analyzed = all_functions.len();
-        let mut regressions: Vec<FunctionRegressionEntry> = Vec::new();
-        let mut improvements: Vec<FunctionRegressionEntry> = Vec::new();
-        let mut total_baseline_calls: i64 = 0;
-        let mut total_target_calls: i64 = 0;
-
-        for func_name in &all_functions {
-            let baseline_calls = baseline_map.get(func_name).copied().unwrap_or(0);
-            let target_calls = target_map.get(func_name).copied().unwrap_or(0);
-
-            total_baseline_calls += baseline_calls as i64;
-            total_target_calls += target_calls as i64;
-
-            // Skip functions that appear in only one session.
-            if baseline_calls == 0 || target_calls == 0 {
-                continue;
-            }
-
-            let delta_pct =
-                ((target_calls as f64 - baseline_calls as f64) / baseline_calls as f64) * 100.0;
-
-            let entry = FunctionRegressionEntry {
-                function: func_name.to_string(),
-                baseline_calls,
-                target_calls,
-                call_delta_pct: (delta_pct * 100.0).round() / 100.0,
-            };
-
-            if delta_pct > 50.0 {
-                regressions.push(entry);
-            } else if delta_pct < -50.0 {
-                improvements.push(entry);
-            }
-        }
-
-        // Sort: regressions descending, improvements ascending (most-improved first).
-        regressions.sort_by(|a, b| {
-            b.call_delta_pct
-                .partial_cmp(&a.call_delta_pct)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        improvements.sort_by(|a, b| {
-            a.call_delta_pct
-                .partial_cmp(&b.call_delta_pct)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        let total_call_delta = total_target_calls - total_baseline_calls;
-
-        let summary = if regressions.is_empty() {
-            format!(
-                "No significant regressions found. Target had {} total calls vs {} in baseline.",
-                total_target_calls, total_baseline_calls
-            )
-        } else {
-            let top = &regressions[0];
-            format!(
-                "Found {} significant regression(s). Top: '{}' increased by {:.0}%. \
-                 Target: {} total calls vs baseline: {}.",
-                regressions.len(),
-                top.function,
-                top.call_delta_pct,
-                total_target_calls,
-                total_baseline_calls
-            )
-        };
-
-        let result = PerformanceRegressionAuditResult {
-            baseline_session_id: params.baseline_session_id,
-            target_session_id: params.target_session_id,
-            regressions,
-            improvements,
-            functions_analyzed,
-            total_call_delta,
-            summary,
-        };
-        match serde_json::to_value(result) {
-            Ok(v) => Ok(CallToolResult::success(json_content(&v))),
-            Err(e) => Ok(CallToolResult::error(text_content(format!(
-                "Serialization error: {}",
-                e
-            )))),
+        match chronos_services::diff::ChronosDiffService::performance_regression_audit(
+            &ctx,
+            chronos_services::diff::PerformanceRegressionAuditInput {
+                baseline_session_id: params.baseline_session_id,
+                target_session_id: params.target_session_id,
+                top_n: params.top_n,
+            },
+        ) {
+            Ok(result) => match serde_json::to_value(result) {
+                Ok(v) => Ok(CallToolResult::success(json_content(&v))),
+                Err(e) => Ok(CallToolResult::error(text_content(format!(
+                    "Serialization error: {}",
+                    e
+                )))),
+            },
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("session '{}' not found", s),
+            ))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
     }
 
