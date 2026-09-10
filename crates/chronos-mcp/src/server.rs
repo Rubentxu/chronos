@@ -47,7 +47,7 @@ use chronos_services::debug_trace::DebugTraceService;
 use chronos_services::debug_trace_specialized::DebugTraceSpecializedService;
 use chronos_services::error::ServiceError;
 use chronos_services::output::EvalResult;
-use chronos_services::output::StateQueryKind;
+use chronos_services::output::{StateQueryKind, StateQueryOutput};
 use chronos_services::probe::LiveProbeSession;
 use chronos_services::query_service::QueryService;
 use chronos_services::sessions::{SessionsContext, SessionsService};
@@ -1448,7 +1448,7 @@ impl ChronosServer {
 
     #[tool(
         name = "state_diff",
-        description = "Compare program state (registers) between two timestamps."
+        description = "Deprecated. Use `state_query` with `kind=register_diff` instead. Compare program state (registers) between two timestamps."
     )]
     async fn state_diff(
         &self,
@@ -1456,40 +1456,38 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        let diff = match DebugTraceService::state_diff(
-            &params.session_id,
-            params.timestamp_a,
-            params.timestamp_b,
-            &self.engines,
-        )
-        .await
-        {
-            Ok(d) => d,
-            Err(ServiceError::SessionNotFound(s)) => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Session '{}' not found",
-                    s
-                ))));
-            }
-            Err(ServiceError::LockPoisoned) => {
-                return Ok(CallToolResult::error(text_content("lock poisoned")));
-            }
-            Err(ServiceError::QueryExecutionError(s)) => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "internal error: unexpected query error: {}",
-                    s
-                ))));
-            }
-            Err(e) => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "internal error: unexpected error: {}",
-                    e
-                ))));
-            }
+        let ctx = StateQueryContext {
+            engines: &self.engines,
+        };
+        let input = StateQueryInput {
+            session_id: params.session_id,
+            kind: StateQueryKind::RegisterDiff,
+            timestamp_a: Some(params.timestamp_a),
+            timestamp_b: Some(params.timestamp_b),
+            event_id: None,
+            address: None,
+            timestamp_ns: None,
+            start_address: None,
+            end_address: None,
+            start_ts: None,
+            end_ts: None,
+            expression: None,
         };
 
-        let json = serde_json::to_string_pretty(&diff).unwrap_or_default();
-        Ok(CallToolResult::success(vec![Content::text(json)]))
+        match ChronosStateQueryService::query(&ctx, input).await {
+            Ok(StateQueryOutput::RegisterDiff { result }) => {
+                let json = serde_json::to_string_pretty(&result).unwrap_or_default();
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{}' not found", s),
+            ))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "internal error: unexpected error: {}",
+                e
+            )))),
+            Ok(_) => unreachable!("kind=register_diff always yields RegisterDiff variant"),
+        }
     }
 
     #[tool(
@@ -2353,7 +2351,7 @@ impl ChronosServer {
 
     #[tool(
         name = "evaluate_expression",
-        description = "Evaluate an arithmetic expression using local variables captured at a frame event. Supports +, -, *, /, parentheses, and variable names."
+        description = "Deprecated. Use `state_query` with `kind=expression_eval` instead. Evaluate an arithmetic expression using local variables captured at a frame event. Supports +, -, *, /, parentheses, and variable names."
     )]
     async fn evaluate_expression(
         &self,
@@ -2361,33 +2359,45 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        let result = DebugReadService::evaluate_expression(
-            &params.session_id,
-            params.event_id,
-            &params.expression,
-            &self.engines,
-        )
-        .await;
+        let ctx = StateQueryContext {
+            engines: &self.engines,
+        };
+        let input = StateQueryInput {
+            session_id: params.session_id,
+            kind: StateQueryKind::ExpressionEval,
+            timestamp_a: None,
+            timestamp_b: None,
+            event_id: Some(params.event_id),
+            address: None,
+            timestamp_ns: None,
+            start_address: None,
+            end_address: None,
+            start_ts: None,
+            end_ts: None,
+            expression: Some(params.expression.clone()),
+        };
 
-        match result {
-            Ok(EvalResult::Value(value)) => {
-                let output = serde_json::json!({
-                    "event_id": params.event_id,
-                    "expression": params.expression,
-                    "result": value,
-                });
-                Ok(CallToolResult::success(json_content(&output)))
-            }
-            Ok(EvalResult::Error(msg)) => {
-                let output = serde_json::json!({
-                    "event_id": params.event_id,
-                    "expression": params.expression,
-                    "error": msg,
-                });
-                Ok(CallToolResult::success(vec![Content::text(
-                    serde_json::to_string_pretty(&output).unwrap_or_default(),
-                )]))
-            }
+        match ChronosStateQueryService::query(&ctx, input).await {
+            Ok(StateQueryOutput::ExpressionEval { result }) => match result {
+                EvalResult::Value(value) => {
+                    let output = serde_json::json!({
+                        "event_id": params.event_id,
+                        "expression": params.expression,
+                        "result": value,
+                    });
+                    Ok(CallToolResult::success(json_content(&output)))
+                }
+                EvalResult::Error(msg) => {
+                    let output = serde_json::json!({
+                        "event_id": params.event_id,
+                        "expression": params.expression,
+                        "error": msg,
+                    });
+                    Ok(CallToolResult::success(vec![Content::text(
+                        serde_json::to_string_pretty(&output).unwrap_or_default(),
+                    )]))
+                }
+            },
             Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
                 format!("Session '{}' not found", s),
             ))),
@@ -2415,87 +2425,8 @@ impl ChronosServer {
                 }))
                 .unwrap_or_default(),
             )])),
-            Err(ServiceError::QueryExecutionError(msg)) => Ok(CallToolResult::error(text_content(
-                format!("internal error: unexpected query error: {}", msg),
-            ))),
-            // New session-lifecycle variants (cannot occur from evaluate_expression).
-            Err(ServiceError::SessionNotInMemory(_)) => Ok(CallToolResult::error(text_content(
-                "internal error: unexpected session error".to_string(),
-            ))),
-            Err(ServiceError::EmptySession(_)) => Ok(CallToolResult::error(text_content(
-                "internal error: unexpected empty session".to_string(),
-            ))),
-            Err(ServiceError::SaveFailed(_)) => Ok(CallToolResult::error(text_content(
-                "internal error: unexpected save error".to_string(),
-            ))),
-            Err(ServiceError::LoadFailed(_)) => Ok(CallToolResult::error(text_content(
-                "internal error: unexpected load error".to_string(),
-            ))),
-            Err(ServiceError::ListFailed(_)) => Ok(CallToolResult::error(text_content(
-                "internal error: unexpected list error".to_string(),
-            ))),
-            Err(ServiceError::DeleteFailed(_)) => Ok(CallToolResult::error(text_content(
-                "internal error: unexpected delete error".to_string(),
-            ))),
-            // New tripwire error variants (cannot occur from evaluate_expression).
-            Err(ServiceError::InvalidCondition(_)) => Ok(CallToolResult::error(text_content(
-                "internal error: unexpected condition error".to_string(),
-            ))),
-            Err(ServiceError::InvalidTripwireIdFormat(_)) => Ok(CallToolResult::error(
-                text_content("internal error: unexpected tripwire ID format error".to_string()),
-            )),
-            Err(ServiceError::TripwireNotFound(_)) => Ok(CallToolResult::error(text_content(
-                "internal error: unexpected tripwire not found".to_string(),
-            ))),
-            // New probe service variants (cannot occur from evaluate_expression).
-            Err(ServiceError::InvalidProgramPath(_)) => Ok(CallToolResult::error(text_content(
-                "internal error: unexpected probe program path error".to_string(),
-            ))),
-            Err(ServiceError::ProbeNotFound(_)) => Ok(CallToolResult::error(text_content(
-                "internal error: unexpected probe not found".to_string(),
-            ))),
-            Err(ServiceError::ProbeStartFailed(_)) => Ok(CallToolResult::error(text_content(
-                "internal error: unexpected probe start failure".to_string(),
-            ))),
-            Err(ServiceError::ProbeStopError(_)) => Ok(CallToolResult::error(text_content(
-                "internal error: unexpected probe stop error".to_string(),
-            ))),
-            Err(ServiceError::InvalidCursorPayload) => Ok(CallToolResult::error(text_content(
-                "internal error: unexpected invalid cursor".to_string(),
-            ))),
-            Err(ServiceError::CursorStale) => Ok(CallToolResult::error(text_content(
-                "internal error: unexpected cursor stale".to_string(),
-            ))),
-            Err(ServiceError::DrainFailed(_)) => Ok(CallToolResult::error(text_content(
-                "internal error: unexpected drain failure".to_string(),
-            ))),
-            Err(ServiceError::ProbeStarting) => Ok(CallToolResult::error(text_content(
-                "internal error: unexpected probe starting".to_string(),
-            ))),
-            Err(ServiceError::EbpfUnsupported(_)) => Ok(CallToolResult::error(text_content(
-                "internal error: unexpected eBPF unsupported".to_string(),
-            ))),
-            Err(ServiceError::InjectionFailed(_)) => Ok(CallToolResult::error(text_content(
-                "internal error: unexpected injection failure".to_string(),
-            ))),
-            // Browser probe service variants cannot be produced by
-            // this call site but are listed for exhaustiveness against
-            // the ServiceError enum.
-            Err(ServiceError::ChromeUnavailable) => Ok(CallToolResult::error(text_content(
-                "internal error: unexpected Chrome unavailable".to_string(),
-            ))),
-            Err(ServiceError::BrowserProbeNotFound(_)) => Ok(CallToolResult::error(text_content(
-                "internal error: unexpected browser probe not found".to_string(),
-            ))),
-            Err(ServiceError::BrowserProbeStartFailed(_)) => Ok(CallToolResult::error(
-                text_content("internal error: unexpected browser probe start failure".to_string()),
-            )),
-            Err(ServiceError::BrowserProbeDrainFailed(_)) => Ok(CallToolResult::error(
-                text_content("internal error: unexpected browser probe drain failure".to_string()),
-            )),
-            Err(ServiceError::InvalidInput(_)) => Ok(CallToolResult::error(text_content(
-                "internal error: unexpected invalid input".to_string(),
-            ))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
+            Ok(_) => unreachable!("kind=expression_eval always yields ExpressionEval variant"),
         }
     }
 
@@ -2533,7 +2464,7 @@ impl ChronosServer {
 
     #[tool(
         name = "debug_get_memory",
-        description = "Read raw memory at an address as of a specific timestamp (nanoseconds). Returns the most recent MemoryWrite event at or before the timestamp."
+        description = "Deprecated. Use `state_query` with `kind=memory_read` instead. Read raw memory at an address as of a specific timestamp (nanoseconds). Returns the most recent MemoryWrite event at or before the timestamp."
     )]
     async fn debug_get_memory(
         &self,
@@ -2541,23 +2472,33 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        let result = DebugReadService::get_memory(
-            &params.session_id,
-            params.address,
-            params.timestamp_ns,
-            &self.engines,
-        )
-        .await;
+        let ctx = StateQueryContext {
+            engines: &self.engines,
+        };
+        let input = StateQueryInput {
+            session_id: params.session_id,
+            kind: StateQueryKind::MemoryRead,
+            timestamp_a: None,
+            timestamp_b: None,
+            event_id: None,
+            address: Some(params.address),
+            timestamp_ns: Some(params.timestamp_ns),
+            start_address: None,
+            end_address: None,
+            start_ts: None,
+            end_ts: None,
+            expression: None,
+        };
 
-        match result {
-            Ok(mem) => {
+        match ChronosStateQueryService::query(&ctx, input).await {
+            Ok(StateQueryOutput::MemoryRead { result }) => {
                 let output = serde_json::json!({
-                    "address": format!("0x{:x}", mem.address),
-                    "timestamp_ns": mem.timestamp_ns,
-                    "event_id": mem.event_id,
-                    "size": mem.size,
-                    "data": mem.data,
-                    "hex": mem.hex,
+                    "address": format!("0x{:x}", result.address),
+                    "timestamp_ns": result.timestamp_ns,
+                    "event_id": result.event_id,
+                    "size": result.size,
+                    "data": result.data,
+                    "hex": result.hex,
                 });
                 Ok(CallToolResult::success(json_content(&output)))
             }
@@ -2575,6 +2516,7 @@ impl ChronosServer {
                 "lock poisoned".to_string(),
             ))),
             Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
+            Ok(_) => unreachable!("kind=memory_read always yields MemoryRead variant"),
         }
     }
 
@@ -2584,7 +2526,7 @@ impl ChronosServer {
 
     #[tool(
         name = "debug_get_registers",
-        description = "Get CPU register values at a specific event_id. Returns the register state snapshot if available."
+        description = "Deprecated. Use `state_query` with `kind=register_snapshot` instead. Get CPU register values at a specific event_id. Returns the register state snapshot if available."
     )]
     async fn debug_get_registers(
         &self,
@@ -2592,15 +2534,29 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        let result =
-            DebugReadService::get_registers(&params.session_id, params.event_id, &self.engines)
-                .await;
+        let ctx = StateQueryContext {
+            engines: &self.engines,
+        };
+        let input = StateQueryInput {
+            session_id: params.session_id,
+            kind: StateQueryKind::RegisterSnapshot,
+            timestamp_a: None,
+            timestamp_b: None,
+            event_id: Some(params.event_id),
+            address: None,
+            timestamp_ns: None,
+            start_address: None,
+            end_address: None,
+            start_ts: None,
+            end_ts: None,
+            expression: None,
+        };
 
-        match result {
-            Ok(rr) => {
-                let r = &rr.registers;
+        match ChronosStateQueryService::query(&ctx, input).await {
+            Ok(StateQueryOutput::RegisterSnapshot { result }) => {
+                let r = &result.registers;
                 let output = serde_json::json!({
-                    "event_id": rr.event_id,
+                    "event_id": result.event_id,
                     "registers": {
                         "rax": format!("0x{:x}", r.rax),
                         "rbx": format!("0x{:x}", r.rbx),
@@ -2637,6 +2593,7 @@ impl ChronosServer {
                 "lock poisoned".to_string(),
             ))),
             Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
+            Ok(_) => unreachable!("kind=register_snapshot always yields RegisterSnapshot variant"),
         }
     }
 
@@ -2701,7 +2658,7 @@ impl ChronosServer {
 
     #[tool(
         name = "debug_analyze_memory",
-        description = "Analyze all memory accesses to an address range within a time window."
+        description = "Deprecated. Use `state_query` with `kind=memory_analysis` instead. Analyze all memory accesses to an address range within a time window."
     )]
     async fn debug_analyze_memory(
         &self,
@@ -2709,25 +2666,33 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        let result = DebugReadService::analyze_memory(
-            &params.session_id,
-            params.start_address,
-            params.end_address,
-            params.start_ts,
-            params.end_ts,
-            &self.engines,
-        )
-        .await;
+        let ctx = StateQueryContext {
+            engines: &self.engines,
+        };
+        let input = StateQueryInput {
+            session_id: params.session_id,
+            kind: StateQueryKind::MemoryAnalysis,
+            timestamp_a: None,
+            timestamp_b: None,
+            event_id: None,
+            address: None,
+            timestamp_ns: None,
+            start_address: Some(params.start_address),
+            end_address: Some(params.end_address),
+            start_ts: Some(params.start_ts),
+            end_ts: Some(params.end_ts),
+            expression: None,
+        };
 
-        match result {
-            Ok(analysis) => {
+        match ChronosStateQueryService::query(&ctx, input).await {
+            Ok(StateQueryOutput::MemoryAnalysis { result }) => {
                 let output = serde_json::json!({
-                    "start_address": analysis.start_address,
-                    "end_address": analysis.end_address,
-                    "start_ts": analysis.start_ts,
-                    "end_ts": analysis.end_ts,
-                    "total_writes": analysis.total_writes,
-                    "accesses": analysis.accesses.iter().map(|a| {
+                    "start_address": result.start_address,
+                    "end_address": result.end_address,
+                    "start_ts": result.start_ts,
+                    "end_ts": result.end_ts,
+                    "total_writes": result.total_writes,
+                    "accesses": result.accesses.iter().map(|a| {
                         serde_json::json!({
                             "address": a.address,
                             "timestamp_ns": a.timestamp_ns,
@@ -2746,6 +2711,7 @@ impl ChronosServer {
                 "lock poisoned".to_string(),
             ))),
             Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
+            Ok(_) => unreachable!("kind=memory_analysis always yields MemoryAnalysis variant"),
         }
     }
 
