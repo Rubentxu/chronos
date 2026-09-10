@@ -3546,12 +3546,9 @@ impl ChronosServer {
                 "timing_delta_ms": result.timing_delta_ms,
                 "summary": result.summary,
             })))),
-            Err(ServiceError::SessionNotFound(s)) => {
-                Ok(CallToolResult::error(text_content(format!(
-                    "session '{}' not found",
-                    s
-                ))))
-            }
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("session '{}' not found", s),
+            ))),
             Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
     }

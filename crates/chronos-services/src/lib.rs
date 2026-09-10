@@ -6,9 +6,9 @@
 pub mod analysis;
 pub mod browser_probe;
 pub mod debug_read;
-pub mod diff;
 pub mod debug_trace;
 pub mod debug_trace_specialized;
+pub mod diff;
 pub mod error;
 pub mod output;
 pub mod probe;

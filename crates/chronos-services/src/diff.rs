@@ -18,7 +18,9 @@ use chronos_query::QueryEngine;
 use chronos_store::{SessionStore, StoreError, TraceDiff};
 
 use crate::error::ServiceError;
-use crate::output::{CompareSessionsResult, FunctionRegressionEntry, PerformanceRegressionAuditResult};
+use crate::output::{
+    CompareSessionsResult, FunctionRegressionEntry, PerformanceRegressionAuditResult,
+};
 
 /// Borrowed handle to the live `SessionStore`.
 ///
@@ -103,8 +105,7 @@ impl ChronosDiffService {
                 continue;
             }
 
-            let delta_pct =
-                ((cb as f64 - ca as f64) / ca as f64) * 100.0;
+            let delta_pct = ((cb as f64 - ca as f64) / ca as f64) * 100.0;
             let entry = FunctionRegressionEntry {
                 function: func.to_string(),
                 baseline_calls: ca,
@@ -262,11 +263,7 @@ mod tests {
         )
     }
 
-    fn save_session(
-        store: &SessionStore,
-        id: &str,
-        funcs: &[&str],
-    ) {
+    fn save_session(store: &SessionStore, id: &str, funcs: &[&str]) {
         let events: Vec<TraceEvent> = funcs
             .iter()
             .enumerate()
