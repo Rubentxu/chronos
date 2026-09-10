@@ -618,7 +618,7 @@ pub struct CompactionMetricsOutput {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionSnapshotOutput {
     pub session_id: String,
-    pub total_events: usize,
+    pub events_indexed: usize,
     pub hint: String,
 }
 

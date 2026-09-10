@@ -3151,45 +3151,47 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        // Scope the sync mutex lock — drain events, then drop before any async
-        let (events, language) = {
-            let probes = self.live_probes.lock().unwrap();
-            let live_probe = match probes.get(&params.session_id) {
-                Some(lp) => lp,
-                None => {
-                    return Ok(CallToolResult::error(text_content(format!(
-                        "Live probe session '{}' not found.",
-                        params.session_id
-                    ))))
+        let ctx = chronos_services::probe::ProbeContext {
+            live_probes: &self.live_probes,
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            tripwire_manager: &self.tripwire_manager,
+            active_session: &self.active_session,
+        };
+
+        match chronos_services::probe::ProbeService::session_snapshot(&ctx, &params.session_id) {
+            Ok((events, language)) => {
+                let total_events = events.len();
+
+                // Build and store the query engine with proper noise filtering.
+                self.build_and_store_engine(&params.session_id, events, language)
+                    .await;
+
+                // Set as active session
+                {
+                    let mut active = self.active_session.lock().await;
+                    *active = Some(params.session_id.clone());
                 }
-            };
 
-            // Use drain_raw_events() because QueryEngine needs TraceEvent,
-            // but drain_events() (ProbeBackend trait) returns SemanticEvent
-            let events: Vec<TraceEvent> = live_probe.backend.drain_raw_events();
-            let lang = live_probe.language;
-            (events, lang)
-        }; // probes lock dropped here
-
-        let total_events = events.len();
-
-        // Build and store the query engine with proper noise filtering
-        self.build_and_store_engine(&params.session_id, events, language)
-            .await;
-
-        // Set as active session
-        {
-            let mut active = self.active_session.lock().await;
-            *active = Some(params.session_id.clone());
+                let output = serde_json::json!({
+                    "session_id": params.session_id,
+                    "status": "running",
+                    "events_indexed": total_events,
+                    "hint": "Session is now queryable. Probe is still running. Call session_snapshot again to refresh indices with newer events."
+                });
+                Ok(CallToolResult::success(json_content(&output)))
+            }
+            Err(ServiceError::ProbeNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Live probe session '{}' not found.", s),
+            ))),
+            Err(ServiceError::LockPoisoned) => {
+                Ok(CallToolResult::error(text_content("lock poisoned")))
+            }
+            Err(other) => Ok(CallToolResult::error(text_content(format!(
+                "internal error: unexpected session snapshot error: {}",
+                other
+            )))),
         }
-
-        let output = serde_json::json!({
-            "session_id": params.session_id,
-            "status": "running",
-            "events_indexed": total_events,
-            "hint": "Session is now queryable. Probe is still running. Call session_snapshot again to refresh indices with newer events."
-        });
-        Ok(CallToolResult::success(json_content(&output)))
     }
 
     #[tool(

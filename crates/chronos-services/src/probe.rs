@@ -351,6 +351,27 @@ impl ProbeService {
             .compaction_metrics()
             .map_err(|e| ServiceError::DrainFailed(e.to_string()))
     }
+
+    /// Drain raw events from a live probe session and return them + the
+    /// session's language. The server-side wrapper then calls
+    /// `build_and_store_engine` and surfaces the `session_snapshot` JSON shape.
+    pub fn session_snapshot(
+        ctx: &ProbeContext<'_>,
+        session_id: &str,
+    ) -> Result<(Vec<TraceEvent>, chronos_domain::Language), ServiceError> {
+        let probes = ctx
+            .live_probes
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?;
+        let live_probe = probes
+            .get(session_id)
+            .ok_or_else(|| ServiceError::ProbeNotFound(session_id.to_string()))?;
+
+        // drain_raw_events() returns TraceEvent (QueryEngine's expected type).
+        let events = live_probe.backend.drain_raw_events();
+        let language = live_probe.language;
+        Ok((events, language))
+    }
 }
 
 /// Language inferred from a file path. Mirrors `Language::from_path` but lives
