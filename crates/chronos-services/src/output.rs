@@ -699,6 +699,30 @@ pub struct BrowserProbeDrainOutput {
     pub hint: String,
 }
 
+// ============================================================================
+// M3 — Mutation Lens & Causal Slice outputs (m5-08)
+// ============================================================================
+
+/// Output of `mutation_lens`. `transitions` carry the full
+/// [`StateTransition`](chronos_domain::property::StateTransition) records.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MutationLensOutput {
+    pub session_id: String,
+    pub count: usize,
+    pub transitions: Vec<chronos_domain::property::StateTransition>,
+}
+
+/// Output of `causal_slice`. `included` lists backward-reachable event ids;
+/// `missing` lists those whose evidence was unobserved (never silently dropped).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CausalSliceOutput {
+    pub session_id: String,
+    pub sink: u64,
+    pub included: Vec<u64>,
+    pub missing: Vec<u64>,
+    pub depth: usize,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
