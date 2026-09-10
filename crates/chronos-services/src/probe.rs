@@ -527,6 +527,44 @@ impl ProbeService {
             }
         }
     }
+
+    /// Snapshot a live probe session's status — target, language, traced PID,
+    /// eBPF attachment metadata, and session state.
+    pub fn status(
+        ctx: &ProbeContext<'_>,
+        session_id: &str,
+    ) -> Result<crate::output::ProbeStatusOutput, ServiceError> {
+        let probes = ctx
+            .live_probes
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?;
+        let live_probe = probes
+            .get(session_id)
+            .ok_or_else(|| ServiceError::ProbeNotFound(session_id.to_string()))?;
+
+        let ebpf = live_probe.ebpf_attachment.as_ref().map(|a| {
+            serde_json::json!({
+                "binary_path": a.binary_path,
+                "symbol_name": a.symbol_name,
+                "pid": a.pid,
+                "adapter_owned": live_probe.ebpf_adapter.is_some(),
+            })
+        });
+        let traced_pid = live_probe
+            .backend
+            .get_traced_pid()
+            .map(|p| p as u32)
+            .unwrap_or(live_probe.session.pid);
+
+        Ok(crate::output::ProbeStatusOutput {
+            session_id: session_id.to_string(),
+            language: live_probe.language,
+            target: live_probe.target.clone(),
+            traced_pid,
+            ebpf,
+            state: format!("{:?}", live_probe.session.state),
+        })
+    }
 }
 
 /// Language inferred from a file path. Mirrors `Language::from_path` but lives

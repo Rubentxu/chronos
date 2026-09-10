@@ -635,18 +635,17 @@ pub struct ProbeInjectOutput {
 }
 
 /// Output of `probe_status`. JSON shape matches the existing literal in
-/// `chronos-mcp/src/server.rs::probe_status`.
+/// `chronos-mcp/src/server.rs::probe_status`. The shape is a snapshot of the
+/// session — the wrapper turns the enum into the JSON.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProbeStatusOutput {
     pub session_id: String,
+    pub language: chronos_domain::Language,
     pub target: String,
-    pub language: String,
-    pub status: String,
-    pub ebpf_attached: bool,
-    pub ebpf_binary: Option<String>,
-    pub ebpf_symbol: Option<String>,
-    pub ebpf_pid: Option<u32>,
-    pub hint: String,
+    pub traced_pid: u32,
+    /// `Some(json)` when an eBPF attachment is recorded, `None` otherwise.
+    pub ebpf: Option<serde_json::Value>,
+    pub state: String,
 }
 
 #[cfg(test)]

@@ -3285,37 +3285,36 @@ impl ChronosServer {
         params: Parameters<ProbeStatusParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let session_id = params.0.session_id;
-        let snapshot = {
-            let probes = self.live_probes.lock().unwrap();
-            probes.get(&session_id).map(|lp| {
-                let ebpf = lp.ebpf_attachment.as_ref().map(|a| {
-                    serde_json::json!({
-                        "binary_path": a.binary_path,
-                        "symbol_name": a.symbol_name,
-                        "pid": a.pid,
-                        "adapter_owned": lp.ebpf_adapter.is_some(),
-                    })
-                });
-                let traced_pid = lp
-                    .backend
-                    .get_traced_pid()
-                    .map(|p| p as u32)
-                    .unwrap_or(lp.session.pid);
-                serde_json::json!({
-                    "session_id": session_id,
-                    "language": lp.language,
-                    "target": lp.target,
-                    "traced_pid": traced_pid,
-                    "ebpf": ebpf,
-                    "state": format!("{:?}", lp.session.state),
-                })
-            })
+
+        let ctx = chronos_services::probe::ProbeContext {
+            live_probes: &self.live_probes,
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            tripwire_manager: &self.tripwire_manager,
+            active_session: &self.active_session,
         };
-        match snapshot {
-            Some(s) => Ok(CallToolResult::success(json_content(&s))),
-            None => Ok(CallToolResult::error(text_content(format!(
-                "Live probe session '{}' not found.",
-                session_id
+
+        match chronos_services::probe::ProbeService::status(&ctx, &session_id) {
+            Ok(snapshot) => {
+                let output = serde_json::json!({
+                    "session_id": snapshot.session_id,
+                    "language": snapshot.language,
+                    "target": snapshot.target,
+                    "traced_pid": snapshot.traced_pid,
+                    "ebpf": snapshot.ebpf,
+                    "state": snapshot.state,
+                });
+                Ok(CallToolResult::success(json_content(&output)))
+            }
+            Err(ServiceError::ProbeNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Live probe session '{}' not found.", s),
+            ))),
+            Err(ServiceError::LockPoisoned) => {
+                Ok(CallToolResult::error(text_content("lock poisoned")))
+            }
+            Err(other) => Ok(CallToolResult::error(text_content(format!(
+                "internal error: unexpected probe status error: {}",
+                other
             )))),
         }
     }
