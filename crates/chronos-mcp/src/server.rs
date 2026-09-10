@@ -3457,60 +3457,51 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        // Look up the browser probe session
-        let adapter = {
-            let probes = self.live_browser_probes.lock().unwrap();
-            match probes.get(&params.session_id) {
-                Some(bp) => bp.adapter.clone(),
-                None => {
-                    return Ok(CallToolResult::error(text_content(format!(
-                        "Browser probe session '{}' not found.",
-                        params.session_id
-                    ))))
-                }
-            }
+        let ctx = BrowserProbeContext {
+            live_browser_probes: &self.live_browser_probes,
+            active_session: &self.active_session,
         };
 
-        // Drain semantic events from the adapter
-        let events = match adapter.drain_events() {
-            Ok(e) => e,
-            Err(e) => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Failed to drain browser events: {}",
-                    e
-                ))))
+        match BrowserProbeService::drain(
+            &ctx,
+            chronos_services::browser_probe::BrowserProbeDrainInput {
+                session_id: params.session_id,
+                offset: params.offset,
+                limit: params.limit,
+            },
+        )
+        .await
+        {
+            Ok(result) => {
+                let events_json: Vec<serde_json::Value> = result
+                    .events
+                    .into_iter()
+                    .map(|e| {
+                        serde_json::json!({
+                            "event_id": e.event_id,
+                            "timestamp_ns": e.timestamp_ns,
+                            "thread_id": e.thread_id,
+                            "language": e.language,
+                            "kind": e.kind,
+                            "description": e.description,
+                        })
+                    })
+                    .collect();
+
+                let output = serde_json::json!({
+                    "session_id": result.session_id,
+                    "status": "running",
+                    "total_buffered": result.total_buffered,
+                    "returned": result.returned,
+                    "offset": result.offset,
+                    "limit": result.limit,
+                    "events": events_json,
+                    "hint": "Browser probe is still running. Call browser_probe_drain again for more events, or browser_probe_stop to finalize."
+                });
+                Ok(CallToolResult::success(json_content(&output)))
             }
-        };
-
-        let total = events.len();
-        // Apply offset/limit
-        let sliced: Vec<_> = events
-            .into_iter()
-            .skip(params.offset)
-            .take(params.limit)
-            .map(|e| {
-                serde_json::json!({
-                    "event_id": e.source_event_id,
-                    "timestamp_ns": e.timestamp_ns,
-                    "thread_id": e.thread_id,
-                    "language": format!("{:?}", e.language),
-                    "kind": format!("{:?}", e.kind),
-                    "description": e.description,
-                })
-            })
-            .collect();
-
-        let output = serde_json::json!({
-            "session_id": params.session_id,
-            "status": "running",
-            "total_buffered": total,
-            "returned": sliced.len(),
-            "offset": params.offset,
-            "limit": params.limit,
-            "events": sliced,
-            "hint": "Browser probe is still running. Call browser_probe_drain again for more events, or browser_probe_stop to finalize."
-        });
-        Ok(CallToolResult::success(json_content(&output)))
+            Err(e) => Ok(CallToolResult::error(text_content(e.to_string()))),
+        }
     }
 
     #[tool(
