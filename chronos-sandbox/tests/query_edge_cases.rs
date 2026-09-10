@@ -341,7 +341,11 @@ async fn test_query_events_event_type_filter_no_match() {
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Query with an event type that doesn't exist
+    // Query with an event type that doesn't exist. The server validates
+    // event_types and rejects unknown ones with a descriptive error
+    // (see crates/chronos-mcp/src/server.rs query_events). This is the
+    // intentional contract: silent filtering of unknown types would
+    // hide typos and break debugging. The test asserts the error path.
     let filter = QueryFilter {
         limit: 10,
         offset: 0,
@@ -349,17 +353,23 @@ async fn test_query_events_event_type_filter_no_match() {
         ..Default::default()
     };
 
-    let events = client
-        .query_events(&session_id, filter)
-        .await
-        .expect("query_events should handle invalid event_type");
+    let result = client.query_events(&session_id, filter).await;
+    assert!(
+        result.is_err(),
+        "query_events should reject unknown event_type, but it returned Ok"
+    );
+    let err = result.err().unwrap();
+    let err_msg = err.to_string();
+    assert!(
+        err_msg.contains("nonexistent_event_type_xyz") || err_msg.contains("unknown event_type"),
+        "error should mention the invalid event_type or the rejection reason, got: {}",
+        err_msg
+    );
 
     println!(
-        "✓ query_events with event_types=['nonexistent'] returned {} events",
-        events.len()
+        "✓ query_events with event_types=['nonexistent'] correctly rejected: {}",
+        err_msg
     );
-    // Note: Server ignores unknown types, so this returns all events
-    // This behavior should be documented or changed to return 0 events for unknown types
 
     client.shutdown().await.ok();
 }
