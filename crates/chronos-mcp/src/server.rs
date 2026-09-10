@@ -33,6 +33,10 @@ use chronos_domain::{
 };
 use chronos_index::builder::IndexBuilder;
 use chronos_query::QueryEngine;
+use chronos_services::browser_probe::{
+    BrowserProbeContext, BrowserProbeService, BrowserProbeStartInput,
+};
+use chronos_services::browser_probe::BrowserProbeSession;
 use chronos_services::debug_read::DebugReadService;
 use chronos_services::debug_trace::DebugTraceService;
 use chronos_services::error::ServiceError;
@@ -81,26 +85,7 @@ impl Default for ResourceLimits {
 /// in this map to track which sessions are still pending completion.
 type BackgroundSessionEvents = Arc<std::sync::Mutex<Vec<TraceEvent>>>;
 
-/// A live browser probe session using `BrowserAdapter`.
-///
-/// Streams WASM debugging events from Chrome CDP in real-time.
-#[allow(dead_code)]
-struct BrowserProbeSession {
-    /// The browser adapter driving the CDP session.
-    adapter: Arc<BrowserAdapter>,
-    /// The capture session returned by start_capture.
-    session: CaptureSession,
-    /// Session ID for this browser probe.
-    session_id: String,
-    /// Target URL being debugged.
-    url: String,
-}
-
 /// Empty parameter type for tools that take no arguments.
-///
-/// This is needed because rmcp sends `{}` as default arguments when none are provided,
-/// but `()` (unit) cannot deserialize from `{}`. This empty struct can deserialize
-/// from an empty JSON object `{}`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NoParams {}
 
@@ -1222,6 +1207,29 @@ impl ChronosServer {
                     "internal error: unexpected injection failure",
                 )));
             }
+            // Browser probe service variants cannot be produced by
+            // this call site but are listed for exhaustiveness against
+            // the ServiceError enum.
+            Err(ServiceError::ChromeUnavailable) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected Chrome unavailable",
+                )));
+            }
+            Err(ServiceError::BrowserProbeNotFound(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected browser probe not found",
+                )));
+            }
+            Err(ServiceError::BrowserProbeStartFailed(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected browser probe start failure",
+                )));
+            }
+            Err(ServiceError::BrowserProbeDrainFailed(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected browser probe drain failure",
+                )));
+            }
         };
 
         // m0-07: explicit query absence semantics
@@ -1577,6 +1585,29 @@ impl ChronosServer {
             Err(ServiceError::InjectionFailed(_)) => {
                 return Ok(CallToolResult::error(text_content(
                     "internal error: unexpected injection failure",
+                )));
+            }
+            // Browser probe service variants cannot be produced by
+            // this call site but are listed for exhaustiveness against
+            // the ServiceError enum.
+            Err(ServiceError::ChromeUnavailable) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected Chrome unavailable",
+                )));
+            }
+            Err(ServiceError::BrowserProbeNotFound(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected browser probe not found",
+                )));
+            }
+            Err(ServiceError::BrowserProbeStartFailed(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected browser probe start failure",
+                )));
+            }
+            Err(ServiceError::BrowserProbeDrainFailed(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected browser probe drain failure",
                 )));
             }
         };
@@ -2314,6 +2345,21 @@ impl ChronosServer {
             ))),
             Err(ServiceError::InjectionFailed(_)) => Ok(CallToolResult::error(text_content(
                 "internal error: unexpected injection failure".to_string(),
+            ))),
+            // Browser probe service variants cannot be produced by
+            // this call site but are listed for exhaustiveness against
+            // the ServiceError enum.
+            Err(ServiceError::ChromeUnavailable) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected Chrome unavailable".to_string(),
+            ))),
+            Err(ServiceError::BrowserProbeNotFound(_)) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected browser probe not found".to_string(),
+            ))),
+            Err(ServiceError::BrowserProbeStartFailed(_)) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected browser probe start failure".to_string(),
+            ))),
+            Err(ServiceError::BrowserProbeDrainFailed(_)) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected browser probe drain failure".to_string(),
             ))),
         }
     }
@@ -3327,63 +3373,32 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        // Check if Chrome is available
-        if !BrowserAdapter::is_chrome_available() {
-            return Ok(CallToolResult::error(text_content(
-                "Chrome is not available. Please ensure Chrome or Chromium is installed and accessible.".to_string(),
-            )));
-        }
+        let ctx = BrowserProbeContext {
+            live_browser_probes: &self.live_browser_probes,
+            active_session: &self.active_session,
+        };
 
-        let session_id = uuid::Uuid::new_v4().to_string();
-
-        // Create browser adapter and start capture
-        let adapter = Arc::new(BrowserAdapter::new());
-
-        let config = CaptureConfig::new(&params.url);
-        // SIG 9: Pass params.headless and params.chrome_path to start_probe_async
-        let session = match adapter
-            .start_probe_async(config, params.headless, params.chrome_path.as_deref())
-            .await
+        match BrowserProbeService::start(
+            &ctx,
+            BrowserProbeStartInput {
+                url: params.url,
+                headless: params.headless,
+                chrome_path: params.chrome_path,
+            },
+        )
+        .await
         {
-            Ok(s) => s,
-            Err(e) => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Failed to start browser probe: {}",
-                    e
-                ))))
+            Ok(result) => {
+                let output = serde_json::json!({
+                    "session_id": result.session_id,
+                    "status": "running",
+                    "url": result.url,
+                    "hint": "Use browser_probe_drain to read WASM events, browser_probe_stop to finalize."
+                });
+                Ok(CallToolResult::success(json_content(&output)))
             }
-        };
-
-        info!(
-            "Browser probe started for '{}' (session: {})",
-            params.url, session_id
-        );
-
-        // Store the browser probe session
-        let browser_probe = BrowserProbeSession {
-            adapter: adapter.clone(),
-            session,
-            session_id: session_id.clone(),
-            url: params.url.clone(),
-        };
-        self.live_browser_probes
-            .lock()
-            .unwrap()
-            .insert(session_id.clone(), browser_probe);
-
-        // Set as active session
-        {
-            let mut active = self.active_session.lock().await;
-            *active = Some(session_id.clone());
+            Err(e) => Ok(CallToolResult::error(text_content(e.to_string()))),
         }
-
-        let output = serde_json::json!({
-            "session_id": session_id,
-            "status": "running",
-            "url": params.url,
-            "hint": "Use browser_probe_drain to read WASM events, browser_probe_stop to finalize."
-        });
-        Ok(CallToolResult::success(json_content(&output)))
     }
 
     #[tool(
