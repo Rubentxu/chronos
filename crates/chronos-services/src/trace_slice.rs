@@ -149,7 +149,6 @@ mod tests {
     use super::*;
     use chronos_domain::{
         trace::{EventData, EventType, SourceLocation, TraceEvent},
-        EventType as _,
     };
     use std::collections::HashMap;
     use tokio::sync::Mutex;
