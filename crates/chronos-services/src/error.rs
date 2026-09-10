@@ -68,4 +68,47 @@ pub enum ServiceError {
     /// A trace query could not be executed.
     #[error("query execution error: {0}")]
     QueryExecutionError(String),
+
+    // --- Probe service variants -----------------------------------------------
+
+    /// Invalid program path supplied to a probe tool (empty, not a file, etc.).
+    #[error("invalid program path: {0}")]
+    InvalidProgramPath(String),
+
+    /// The live probe session id is not registered in the live-probe map.
+    #[error("probe not found: {0}")]
+    ProbeNotFound(String),
+
+    /// A `probe_start` call failed to start the backend.
+    #[error("probe start failed: {0}")]
+    ProbeStartFailed(String),
+
+    /// A `probe_stop` call failed to drain / detach.
+    #[error("probe stop error: {0}")]
+    ProbeStopError(String),
+
+    /// A cursor payload could not be base64-decoded / parsed.
+    #[error("invalid cursor payload")]
+    InvalidCursorPayload,
+
+    /// The cursor was decoded but its total_pushed is older than the live bus.
+    #[error("cursor stale")]
+    CursorStale,
+
+    /// A non-destructive drain encountered a backend error.
+    #[error("drain failed: {0}")]
+    DrainFailed(String),
+
+    /// The probe is registered but the underlying backend has not yet emitted
+    /// any events (start-up race).
+    #[error("probe still starting up")]
+    ProbeStarting,
+
+    /// eBPF is not supported on this host (kernel / permissions / missing probes).
+    #[error("eBPF unsupported: {0}")]
+    EbpfUnsupported(String),
+
+    /// eBPF uprobe injection failed.
+    #[error("injection failed: {0}")]
+    InjectionFailed(String),
 }
