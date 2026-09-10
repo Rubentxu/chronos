@@ -33,10 +33,10 @@ use chronos_domain::{
 };
 use chronos_index::builder::IndexBuilder;
 use chronos_query::QueryEngine;
+use chronos_services::browser_probe::BrowserProbeSession;
 use chronos_services::browser_probe::{
     BrowserProbeContext, BrowserProbeService, BrowserProbeStartInput,
 };
-use chronos_services::browser_probe::BrowserProbeSession;
 use chronos_services::debug_read::DebugReadService;
 use chronos_services::debug_trace::DebugTraceService;
 use chronos_services::error::ServiceError;
@@ -2355,12 +2355,12 @@ impl ChronosServer {
             Err(ServiceError::BrowserProbeNotFound(_)) => Ok(CallToolResult::error(text_content(
                 "internal error: unexpected browser probe not found".to_string(),
             ))),
-            Err(ServiceError::BrowserProbeStartFailed(_)) => Ok(CallToolResult::error(text_content(
-                "internal error: unexpected browser probe start failure".to_string(),
-            ))),
-            Err(ServiceError::BrowserProbeDrainFailed(_)) => Ok(CallToolResult::error(text_content(
-                "internal error: unexpected browser probe drain failure".to_string(),
-            ))),
+            Err(ServiceError::BrowserProbeStartFailed(_)) => Ok(CallToolResult::error(
+                text_content("internal error: unexpected browser probe start failure".to_string()),
+            )),
+            Err(ServiceError::BrowserProbeDrainFailed(_)) => Ok(CallToolResult::error(
+                text_content("internal error: unexpected browser probe drain failure".to_string()),
+            )),
         }
     }
 

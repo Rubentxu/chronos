@@ -113,7 +113,9 @@ pub enum ServiceError {
 
     // --- Browser probe service variants (m5-07) --------------------------------
     /// Chrome (or Chromium) is not installed / accessible on PATH.
-    #[error("Chrome is not available. Please ensure Chrome or Chromium is installed and accessible.")]
+    #[error(
+        "Chrome is not available. Please ensure Chrome or Chromium is installed and accessible."
+    )]
     ChromeUnavailable,
 
     /// The browser probe session id is not registered in the live-browser-probe map.

@@ -51,8 +51,7 @@ impl std::fmt::Debug for BrowserProbeSession {
 /// browser probe service. Mirrors `ProbeContext` from the native probe service.
 pub struct BrowserProbeContext<'a> {
     /// session_id → [`BrowserProbeSession`].
-    pub live_browser_probes:
-        &'a Arc<Mutex<HashMap<String, BrowserProbeSession>>>,
+    pub live_browser_probes: &'a Arc<Mutex<HashMap<String, BrowserProbeSession>>>,
     /// session_id of the currently active probe; set on `start`.
     pub active_session: &'a TokioMutex<Option<String>>,
 }
@@ -239,11 +238,7 @@ impl BrowserProbeService {
             let probes = ctx.live_browser_probes.lock().unwrap();
             match probes.get(&input.session_id) {
                 Some(bp) => bp.adapter.clone(),
-                None => {
-                    return Err(ServiceError::BrowserProbeNotFound(
-                        input.session_id.clone(),
-                    ))
-                }
+                None => return Err(ServiceError::BrowserProbeNotFound(input.session_id.clone())),
             }
         };
 
