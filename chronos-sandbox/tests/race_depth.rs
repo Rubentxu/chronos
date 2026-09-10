@@ -48,11 +48,11 @@ async fn test_debug_detect_races_threshold_1ns() {
         Ok(json) => {
             println!("✓ debug_detect_races (threshold=1ns) returned valid response");
             // Parse to check structure
-            if let Some(race_count) = json.get("race_count") {
-                println!("  Race count: {}", race_count);
+            if let Some(access_count) = json.get("access_count") {
+                println!("  Access count: {}", access_count);
             }
-            if let Some(races) = json.get("races") {
-                println!("  Races array: {}", races);
+            if let Some(accesses) = json.get("accesses") {
+                println!("  Accesses array: {}", accesses);
             }
         }
         Err(e) => {
@@ -106,9 +106,12 @@ async fn test_debug_detect_races_threshold_1ms() {
     match result {
         Ok(json) => {
             println!("✓ debug_detect_races (threshold=1ms) returned valid response");
-            let race_count = json.get("race_count").and_then(|v| v.as_u64()).unwrap_or(0);
-            println!("  Race count: {}", race_count);
-            // race_count >= 0 is always true since it's u64
+            let access_count = json
+                .get("access_count")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            println!("  Access count: {}", access_count);
+            // access_count >= 0 is always true since it's u64
             println!("  Response has valid structure");
         }
         Err(e) => {

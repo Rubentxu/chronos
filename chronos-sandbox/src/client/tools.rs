@@ -577,7 +577,7 @@ impl McpSession {
         let result: DebugDetectRacesResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
 
-        Ok(result.races)
+        Ok(result.accesses)
     }
 
     /// Inspect causality — inspects the full causal history of a memory address.

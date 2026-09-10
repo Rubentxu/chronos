@@ -408,8 +408,8 @@ pub struct RaceReport {
 pub struct DebugDetectRacesResponse {
     pub session_id: String,
     pub threshold_ns: u64,
-    pub race_count: usize,
-    pub races: Vec<RaceReport>,
+    pub access_count: usize,
+    pub accesses: Vec<RaceReport>,
 }
 
 /// A mutation entry in a causality report.
