@@ -3550,69 +3550,35 @@ impl ChronosServer {
         params: Parameters<CompareSessionsParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
+        let ctx = chronos_services::diff::DiffContext { store: &self.store };
 
-        let (meta_a, events_a) = match self.store.load_session(&params.session_a) {
-            Ok(r) => r,
-            Err(e) => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "session A not found: {}",
-                    e
+        match chronos_services::diff::ChronosDiffService::compare_sessions(
+            &ctx,
+            chronos_services::diff::CompareSessionsInput {
+                session_a: params.session_a,
+                session_b: params.session_b,
+            },
+        ) {
+            Ok(result) => Ok(CallToolResult::success(json_content(&serde_json::json!({
+                "session_a_id": result.session_a_id,
+                "session_b_id": result.session_b_id,
+                "only_in_a_count": result.only_in_a_count,
+                "only_in_b_count": result.only_in_b_count,
+                "total_a": result.total_a,
+                "total_b": result.total_b,
+                "common_count": result.common_count,
+                "similarity_pct": result.similarity_pct,
+                "timing_delta_ms": result.timing_delta_ms,
+                "summary": result.summary,
+            })))),
+            Err(ServiceError::SessionNotFound(s)) => {
+                Ok(CallToolResult::error(text_content(format!(
+                    "session '{}' not found",
+                    s
                 ))))
             }
-        };
-        let (meta_b, events_b) = match self.store.load_session(&params.session_b) {
-            Ok(r) => r,
-            Err(e) => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "session B not found: {}",
-                    e
-                ))))
-            }
-        };
-
-        let report = TraceDiff::compare(
-            &params.session_a,
-            &params.session_b,
-            &events_a,
-            &events_b,
-            &meta_a,
-            &meta_b,
-        );
-
-        let summary = if report.similarity_pct >= 90.0 {
-            format!(
-                "Sessions are highly similar ({}%). Most events match.",
-                report.similarity_pct.round()
-            )
-        } else if report.similarity_pct >= 50.0 {
-            format!(
-                "Sessions differ in {} events (only_in_b) vs {} (only_in_a). {}% similar.",
-                report.only_in_b.len(),
-                report.only_in_a.len(),
-                report.similarity_pct.round()
-            )
-        } else {
-            format!(
-                "Sessions are largely different. {}% similar with {} events only in B and {} only in A.",
-                report.similarity_pct.round(),
-                report.only_in_b.len(),
-                report.only_in_a.len()
-            )
-        };
-
-        let output = serde_json::json!({
-            "session_a_id": params.session_a,
-            "session_b_id": params.session_b,
-            "only_in_a_count": report.only_in_a.len(),
-            "only_in_b_count": report.only_in_b.len(),
-            "total_a": events_a.len(),
-            "total_b": events_b.len(),
-            "common_count": report.common_count,
-            "similarity_pct": report.similarity_pct,
-            "timing_delta_ms": report.timing_delta.as_ref().map(|t| t.delta_ms),
-            "summary": summary,
-        });
-        Ok(CallToolResult::success(json_content(&output)))
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
+        }
     }
 
     // ========================================================================
