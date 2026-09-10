@@ -1011,17 +1011,15 @@ pub enum HypothesisKind {
 
 /// Verdict of a hypothesis evaluation. Tri-state: never false-PASS.
 ///
-/// - `Pass`            — every required evidence observation satisfied the
-///                        hypothesis. This is the only state where the LLM
-///                        / caller should treat the hypothesis as true.
-/// - `Violation`       — at least one observation broke the hypothesis, or
-///                        the absence requirement (Existence) was not met.
-///                        `support_event_ids` always contains the offending
-///                        raw support so the caller can verify.
-/// - `Unsupported`     — required evidence was not captured at all; we
-///                        cannot tell PASS from FAIL. The caller must NOT
-///                        collapse this into PASS (per
-///                        `docs/.../specs/RUNTIME_PROPERTIES_AND_SLICING.md`).
+/// - `Pass` -- every required evidence observation satisfied the
+///   hypothesis. This is the only state where the LLM / caller should
+///   treat the hypothesis as true.
+/// - `Violation` -- at least one observation broke the hypothesis, or
+///   the absence requirement (Existence) was not met. `support_event_ids`
+///   always contains the offending raw support so the caller can verify.
+/// - `Unsupported` -- required evidence was not captured at all; we
+///   cannot tell PASS from FAIL. The caller must NOT collapse this into
+///   PASS (per `docs/.../specs/RUNTIME_PROPERTIES_AND_SLICING.md`).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, JsonSchema)]
 #[schemars(rename_all = "snake_case")]
 #[serde(tag = "verdict", rename_all = "snake_case")]

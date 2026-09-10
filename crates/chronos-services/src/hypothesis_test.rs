@@ -77,12 +77,11 @@ impl ChronosHypothesisTestService {
     /// Evaluate a typed hypothesis against the captured session evidence.
     ///
     /// Required parameters per kind:
-    /// - `Invariant` → `scope + comparison + constant`, plus `property_target`
-    ///                 when `scope == PropertyValue`.
-    /// - `Existence` → `predicate`.
-    /// - `CallPath`  → `caller + callee`. `max_depth` defaults to 10
-    ///                 (cap for BFS expansion; same default as
-    ///                 `debug_call_graph`).
+    /// - `Invariant` -> `scope + comparison + constant`, plus `property_target`
+    ///   when `scope == PropertyValue`.
+    /// - `Existence` -> `predicate`.
+    /// - `CallPath` -> `caller + callee`. `max_depth` defaults to 10
+    ///   (cap for BFS expansion; same default as `debug_call_graph`).
     ///
     /// Returns [`ServiceError::InvalidInput`] when a required target field
     /// is missing or the input is otherwise malformed.
@@ -250,7 +249,7 @@ fn observe_property_target(
             // or by trailing path component. `target` is treated as a free
             // identifier since VariableInfo doesn't carry a target_path.
             let matches_name = v.name == target
-                || v.name.split('.').last() == Some(target)
+                || v.name.split('.').next_back() == Some(target)
                 || v.name.ends_with(&format!(".{target}"));
             if matches_name {
                 let pv = parse_property_value(&v.value);
@@ -344,7 +343,7 @@ fn scan_predicate(events: &[TraceEvent], predicate: &ExistencePredicate) -> Vec<
             ExistencePredicate::PropertyKeyEquals { target } => {
                 if let EventData::Variable(v) = &ev.data {
                     let matches_name = v.name == *target
-                        || v.name.split('.').last() == Some(target)
+                        || v.name.split('.').next_back() == Some(target)
                         || v.name.ends_with(&format!(".{target}"));
                     matches_name
                 } else {
@@ -430,7 +429,7 @@ fn eval_call_path(input: &HypothesisInput, events: &[TraceEvent]) -> HypothesisO
             caller,
             callee,
             reachable_path: Some(vec![p]),
-            summary: format!("caller == callee (still owned)"),
+            summary: "caller == callee".to_string(),
         };
     }
 
