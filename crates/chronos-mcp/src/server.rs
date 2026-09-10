@@ -33,9 +33,7 @@ use chronos_browser::BrowserAdapter;
 use chronos_domain::tripwire::{TripwireCondition, TripwireManager};
 #[allow(unused_imports)]
 use chronos_domain::{
-    causal_slice::{slice_from, CausalEdge, EvidenceNodeId},
-    CaptureConfig, CaptureSession, EventData, EventType, Language, PropertyValue,
-    StateTransition, TraceEvent, VariableInfo,
+    CaptureConfig, CaptureSession, EventData, EventType, Language, TraceEvent, VariableInfo,
 };
 use chronos_index::builder::IndexBuilder;
 use chronos_query::QueryEngine;
