@@ -215,7 +215,20 @@ mod tests {
 
         let result = TripwiresService::create(cond, Some("main-watch".into()), &manager).unwrap();
 
-        assert_eq!(result.tripwire_id, "tripwire-1");
+        // tripwire_id is process-global and depends on test scheduling
+        // (see m5-tripwires-test-isolation-fix); only the format is stable.
+        assert!(
+            result.tripwire_id.starts_with("tripwire-"),
+            "tripwire_id should have 'tripwire-' prefix, got: {}",
+            result.tripwire_id
+        );
+        let n: u64 = result
+            .tripwire_id
+            .strip_prefix("tripwire-")
+            .unwrap()
+            .parse()
+            .expect("tripwire_id numeric suffix must parse");
+        assert!(n > 0, "tripwire_id numeric suffix must be positive");
         assert_eq!(result.active_count, 1);
         assert_eq!(result.label.as_deref(), Some("main-watch"));
     }
@@ -230,7 +243,19 @@ mod tests {
 
         let result = TripwiresService::create(cond, None, &manager).unwrap();
 
-        assert_eq!(result.tripwire_id, "tripwire-1");
+        // Same isolation rationale as create_event_type_ok.
+        assert!(
+            result.tripwire_id.starts_with("tripwire-"),
+            "tripwire_id should have 'tripwire-' prefix, got: {}",
+            result.tripwire_id
+        );
+        let n: u64 = result
+            .tripwire_id
+            .strip_prefix("tripwire-")
+            .unwrap()
+            .parse()
+            .expect("tripwire_id numeric suffix must parse");
+        assert!(n > 0);
         assert_eq!(result.active_count, 1);
         assert!(result.label.is_none());
     }
@@ -269,7 +294,19 @@ mod tests {
         let result =
             TripwiresService::create(cond, Some("python-errors".into()), &manager).unwrap();
 
-        assert_eq!(result.tripwire_id, "tripwire-1");
+        // Same isolation rationale as create_event_type_ok.
+        assert!(
+            result.tripwire_id.starts_with("tripwire-"),
+            "tripwire_id should have 'tripwire-' prefix, got: {}",
+            result.tripwire_id
+        );
+        let n: u64 = result
+            .tripwire_id
+            .strip_prefix("tripwire-")
+            .unwrap()
+            .parse()
+            .expect("tripwire_id numeric suffix must parse");
+        assert!(n > 0);
         assert_eq!(result.label.as_deref(), Some("python-errors"));
     }
 
@@ -291,7 +328,8 @@ mod tests {
 
         let result = TripwiresService::delete(&r.tripwire_id, &manager).unwrap();
 
-        assert_eq!(result.tripwire_id, "tripwire-1");
+        // delete echoes back the deleted tripwire_id (whatever it was)
+        assert_eq!(result.tripwire_id, r.tripwire_id);
         assert_eq!(result.remaining_active, 0);
     }
 
@@ -300,7 +338,9 @@ mod tests {
         reset();
         let manager = Arc::new(TripwireManager::new());
 
-        TripwiresService::create(
+        // First create — discarded, only its ID is used to confirm
+        // it's NOT the one deleted.
+        let _r1 = TripwiresService::create(
             try_into_condition(vec!["function_entry".into()]).unwrap(),
             None,
             &manager,
@@ -316,7 +356,8 @@ mod tests {
 
         let result = TripwiresService::delete(&r2.tripwire_id, &manager).unwrap();
 
-        assert_eq!(result.tripwire_id, "tripwire-2");
+        // delete echoes back r2's id (whatever it was in this run).
+        assert_eq!(result.tripwire_id, r2.tripwire_id);
         assert_eq!(result.remaining_active, 1);
     }
 
@@ -430,14 +471,14 @@ mod tests {
         reset();
         let manager = Arc::new(TripwireManager::new());
 
-        TripwiresService::create(
+        let r1 = TripwiresService::create(
             try_into_condition(vec!["function_entry".into()]).unwrap(),
             Some("entry-watch".into()),
             &manager,
         )
         .unwrap();
 
-        TripwiresService::create(
+        let r2 = TripwiresService::create(
             TripwireCondition::FunctionName {
                 pattern: "main".into(),
             },
@@ -451,11 +492,18 @@ mod tests {
         assert_eq!(result.total_active, 2);
         assert_eq!(result.fired_count, 0);
 
+        // Verify both created tripwires are present, regardless of their
+        // global-counter-dependent IDs.
         let ids: Vec<_> = result.tripwires.iter().map(|tw| tw.id.clone()).collect();
-        assert!(ids.contains(&"tripwire-1".into()));
-        assert!(ids.contains(&"tripwire-2".into()));
+        assert!(ids.contains(&r1.tripwire_id), "list should contain r1");
+        assert!(ids.contains(&r2.tripwire_id), "list should contain r2");
 
-        let labeled = &result.tripwires[0];
+        // r1 was created with the "entry-watch" label; r2 with None.
+        let labeled = result
+            .tripwires
+            .iter()
+            .find(|tw| tw.id == r1.tripwire_id)
+            .expect("r1 must be in the list");
         assert_eq!(labeled.label.as_deref(), Some("entry-watch"));
     }
 
@@ -464,7 +512,7 @@ mod tests {
         reset();
         let manager = Arc::new(TripwireManager::new());
 
-        TripwiresService::create(
+        let r1 = TripwiresService::create(
             try_into_condition(vec!["function_entry".into()]).unwrap(),
             None,
             &manager,
@@ -472,8 +520,8 @@ mod tests {
         .unwrap();
 
         // First list drains the empty buffer
-        let r1 = TripwiresService::list(&manager);
-        assert_eq!(r1.fired_count, 0);
+        let r1_list = TripwiresService::list(&manager);
+        assert_eq!(r1_list.fired_count, 0);
 
         // Simulate a fire by manually calling evaluate
         use chronos_domain::{SourceLocation, TraceEvent};
@@ -496,7 +544,9 @@ mod tests {
         // Second list drains the fired event
         let r2 = TripwiresService::list(&manager);
         assert_eq!(r2.fired_count, 1);
-        assert_eq!(r2.fired_events[0].tripwire_id, "tripwire-1");
+        // Only the just-created tripwire should have fired, regardless
+        // of its global-counter-dependent ID.
+        assert_eq!(r2.fired_events[0].tripwire_id, r1.tripwire_id);
 
         // Third list shows empty buffer (drained)
         let r3 = TripwiresService::list(&manager);
@@ -523,7 +573,7 @@ mod tests {
         reset();
         let manager = Arc::new(TripwireManager::new());
 
-        TripwiresService::create(
+        let r = TripwiresService::create(
             TripwireCondition::Signal { numbers: vec![11] },
             Some("sigsegv".into()),
             &manager,
@@ -533,7 +583,9 @@ mod tests {
         let result = TripwiresService::query(&manager);
 
         assert_eq!(result.total_active, 1);
-        assert_eq!(result.tripwires[0].id, "tripwire-1");
+        // Only the just-created tripwire should be returned, regardless
+        // of its global-counter-dependent ID.
+        assert_eq!(result.tripwires[0].id, r.tripwire_id);
         assert_eq!(result.tripwires[0].label.as_deref(), Some("sigsegv"));
     }
 
@@ -579,7 +631,7 @@ mod tests {
         )
         .unwrap();
 
-        TripwiresService::create(
+        let r2 = TripwiresService::create(
             TripwireCondition::ExceptionType {
                 exc_type: "NullPointerException".into(),
             },
@@ -595,10 +647,12 @@ mod tests {
         // Delete first
         TripwiresService::delete(&r1.tripwire_id, &manager).unwrap();
 
-        // Query again — only one remains
+        // Query again — only the second tripwire remains.
         let query = TripwiresService::query(&manager);
         assert_eq!(query.total_active, 1);
-        assert_eq!(query.tripwires[0].id, "tripwire-2");
+        // The survivor is the second tripwire created (r2), regardless
+        // of its global-counter-dependent ID.
+        assert_eq!(query.tripwires[0].id, r2.tripwire_id);
 
         // List
         let list = TripwiresService::list(&manager);
