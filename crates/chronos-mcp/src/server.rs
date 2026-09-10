@@ -3411,56 +3411,40 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        // Remove the browser probe session
-        let browser_probe = {
-            let mut probes = self.live_browser_probes.lock().unwrap();
-            probes.remove(&params.session_id)
+        let ctx = BrowserProbeContext {
+            live_browser_probes: &self.live_browser_probes,
+            active_session: &self.active_session,
         };
 
-        let browser_probe = match browser_probe {
-            Some(bp) => bp,
-            None => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Browser probe session '{}' not found. It may have already been stopped.",
-                    params.session_id
-                ))))
+        match BrowserProbeService::stop(
+            &ctx,
+            chronos_services::browser_probe::BrowserProbeStopInput {
+                session_id: params.session_id,
+            },
+        )
+        .await
+        {
+            Ok(result) => {
+                if result.total_events > 0 {
+                    self.build_and_store_engine(
+                        &result.session_id,
+                        result.raw_events,
+                        result.language,
+                    )
+                    .await;
+                }
+
+                let output = serde_json::json!({
+                    "session_id": result.session_id,
+                    "status": "stopped",
+                    "url": result.url,
+                    "total_events": result.total_events,
+                    "hint": "Session is now queryable. Use query_events, get_call_stack, etc."
+                });
+                Ok(CallToolResult::success(json_content(&output)))
             }
-        };
-
-        // Drain raw events from the adapter
-        let events: Vec<TraceEvent> = browser_probe.adapter.drain_raw_events();
-        let total_events = events.len();
-        let language = Language::WebAssembly;
-        let url = browser_probe.url.clone();
-
-        // Stop the browser probe
-        if let Err(e) = browser_probe.adapter.stop_probe(&browser_probe.session) {
-            tracing::warn!(
-                "Browser probe stop error for session {}: {}",
-                params.session_id,
-                e
-            );
+            Err(e) => Ok(CallToolResult::error(text_content(e.to_string()))),
         }
-
-        info!(
-            "Browser probe stopped for '{}' (session: {}, events: {})",
-            url, params.session_id, total_events
-        );
-
-        // Build and store the query engine if we have events
-        if total_events > 0 {
-            self.build_and_store_engine(&params.session_id, events, language)
-                .await;
-        }
-
-        let output = serde_json::json!({
-            "session_id": params.session_id,
-            "status": "stopped",
-            "url": url,
-            "total_events": total_events,
-            "hint": "Session is now queryable. Use query_events, get_call_stack, etc."
-        });
-        Ok(CallToolResult::success(json_content(&output)))
     }
 
     #[tool(
