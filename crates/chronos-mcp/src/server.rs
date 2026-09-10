@@ -50,7 +50,7 @@ use chronos_services::query_service::QueryService;
 use chronos_services::sessions::{SessionsContext, SessionsService};
 use chronos_services::tripwires::TripwiresService;
 #[allow(unused_imports)]
-use chronos_store::{SessionMetadata, SessionStore, TraceDiff};
+use chronos_store::{SessionMetadata, SessionStore};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, Content};
 use rmcp::tool;
@@ -677,31 +677,6 @@ pub struct PerformanceRegressionAuditParams {
     pub target_session_id: String,
     /// Maximum number of top functions to compare (default: 20).
     pub top_n: Option<usize>,
-}
-
-#[derive(Debug, serde::Serialize)]
-pub struct FunctionRegressionEntry {
-    pub function: String,
-    pub baseline_calls: u64,
-    pub target_calls: u64,
-    /// Percentage change in call count (positive = more calls in target).
-    pub call_delta_pct: f64,
-}
-
-#[derive(Debug, serde::Serialize)]
-pub struct PerformanceRegressionAuditResult {
-    pub baseline_session_id: String,
-    pub target_session_id: String,
-    /// Functions where call count increased significantly (>50%).
-    pub regressions: Vec<FunctionRegressionEntry>,
-    /// Functions where call count decreased significantly (>50% reduction).
-    pub improvements: Vec<FunctionRegressionEntry>,
-    /// Total functions analyzed.
-    pub functions_analyzed: usize,
-    /// Overall call count delta (positive = more calls in target).
-    pub total_call_delta: i64,
-    /// LLM-readable summary.
-    pub summary: String,
 }
 
 // ============================================================================
