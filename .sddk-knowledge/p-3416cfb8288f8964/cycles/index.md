@@ -23,6 +23,7 @@ Chronological record of all SDDK cycles for this project.
 | m8-06 | m8-06-real-per-variant-proptest-shrinking | — | — | — | CLOSED |
 | m8-07 | m8-07-hypothesis-reconstruction-fidelity | A-min | — | — | CLOSED |
 | m9-01 | m9-01-schema-versioning | A-min | `v0.6.0` | `25948147869307343a28e3896e8289c715efbc81` | CLOSED |
+| m9-02 | m9-02-events-side-table | A-lite | `v0.7.0` | `1a8d104ba2da883b40bd424cdc079b344f7ed63c` | CLOSED |
 
 ## Metadata
 
@@ -30,5 +31,5 @@ Chronological record of all SDDK cycles for this project.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-11T17:44:00Z |
-| Total cycles | 17 |
+| Last updated | 2026-09-11T22:38:00Z |
+| Total cycles | 18 |
