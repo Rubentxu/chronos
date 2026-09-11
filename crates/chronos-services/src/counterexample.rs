@@ -486,6 +486,7 @@ impl ChronosCounterexampleService {
             created_at_ms,
             rounds_used,
             has_full_bundle: true, // m8-03 ships full bundle persistence.
+            schema_version: cs::CURRENT_BUNDLE_SCHEMA_VERSION,
         };
         let record = cs::CounterexampleBundleRecord {
             summary,
@@ -493,6 +494,7 @@ impl ChronosCounterexampleService {
             minimised: minimised_opt,
             event_cas_hashes: Vec::new(),
             target_hypothesis: Some(target_hypothesis_wire),
+            schema_version: cs::CURRENT_BUNDLE_SCHEMA_VERSION,
         };
         let returned_id = ctx
             .store
@@ -3331,5 +3333,71 @@ mod tests {
             let rt = hypothesis_input_from_wire(wire);
             assert_eq!(rt.predicate, Some(predicate));
         }
+    }
+
+    // ========================================================================
+    // m9-01 tests: schema_version on wire summary via save()
+    // ========================================================================
+
+    // m9-01 §5 (per-crate integration): call ChronosCounterexampleService::save
+    // end-to-end (with a real in-memory SessionStore), then load_counterexample_bundle,
+    // assert schema_version: 1 on both record and summary. Confirms the
+    // chronos-services save path passes the version into the wire summary it builds.
+    #[test]
+    fn m9_01_save_persists_schema_version_1() {
+        use crate::hypothesis_test::HypothesisTestContext;
+        use chronos_domain::property::PropertyValue;
+        use chronos_query::QueryEngine;
+        use chronos_store::SessionStore;
+        use std::collections::HashMap;
+        use tokio::sync::Mutex as TokioMutex;
+
+        let store = SessionStore::in_memory().expect("in_memory store");
+        let engines: HashMap<String, QueryEngine> = HashMap::new();
+        let engines = TokioMutex::new(engines);
+        let hyp_ctx = HypothesisTestContext { engines: &engines };
+        let ctx = CounterexampleContext {
+            store: &store,
+            hypothesis_ctx: &hyp_ctx,
+        };
+
+        // Save a bundle via ChronosCounterexampleService::save.
+        let saved = ChronosCounterexampleService::save(
+            &ctx,
+            "ws-integration-test",
+            HypothesisKind::Invariant,
+            (2, Some(PropertyValue::Number(1.0)), None, None),
+            &HypothesisInput {
+                session_id: "s".to_string(),
+                kind: HypothesisKind::Invariant,
+                scope: None,
+                comparison: None,
+                constant: Some(PropertyValue::Number(1.0)),
+                property_target: None,
+                predicate: None,
+                caller: None,
+                callee: None,
+                max_depth: None,
+            },
+            vec![],
+        )
+        .expect("save should succeed");
+        let saved_id = match saved {
+            CounterexampleOutput::Saved { summary, .. } => summary.bundle_id,
+            _ => panic!("expected Saved variant"),
+        };
+
+        // Load it back via SessionStore directly (bypasses services-layer
+        // conversion so we can inspect the wire-level schema_version).
+        let loaded = store
+            .load_counterexample_bundle(&saved_id)
+            .expect("load should succeed")
+            .expect("bundle should exist");
+
+        assert_eq!(loaded.schema_version, 1, "record.schema_version must be 1");
+        assert_eq!(
+            loaded.summary.schema_version, 1,
+            "summary.schema_version must be 1"
+        );
     }
 }

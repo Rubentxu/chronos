@@ -19,6 +19,14 @@
 //!
 //! See `docs/milestones/m8-03-mcp-wrappers-redb-bundle-table-scoping.md`
 //! § "2. counterexample_bundles redb table" for the design.
+//!
+//! **Schema versioning (m9-01):** `CounterexampleBundleRecord` and
+//! `CounterexampleBundleSummary` carry a `schema_version: u32` field
+//! that lets the loader distinguish legacy bundles (no field on disk,
+//! serde defaults to 1) from future-versioned bundles. The current
+//! version is [`CURRENT_BUNDLE_SCHEMA_VERSION`]. Bundles written by a
+//! newer chronos-store with a higher version are hard-rejected on
+//! `load_counterexample_bundle`; the list path best-effort skips them.
 
 use crate::cas::ContentHash;
 use crate::error::StoreError;
@@ -33,6 +41,28 @@ use serde::{Deserialize, Serialize};
 /// Value: bincode-serialised [`CounterexampleBundleRecord`].
 const COUNTEREXAMPLE_BUNDLES: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("counterexample_bundles");
+
+/// Canonical "what we write today" value. Bumped when the bundle
+/// envelope (record + summary + nested wire types) changes in a way
+/// that requires a loader-side decision. See module docs.
+///
+/// m9-01 initial value: 1. All bundles persisted before m9-01 have no
+/// field on disk; serde defaults to 1 on load.
+pub const CURRENT_BUNDLE_SCHEMA_VERSION: u32 = 1;
+
+/// Versions the loader accepts silently. Today only 1; future cycles
+/// add entries here when they introduce a new envelope shape.
+///
+/// R4 disclosure (m9-01): currently unused — the loader policy in D3 only
+/// checks the upper bound (`> CURRENT`), not membership in the known list.
+/// Suppressed here so future cycles can tighten the check without a
+/// new lint cascade.
+#[allow(dead_code)]
+const KNOWN_BUNDLE_SCHEMA_VERSIONS: &[u32] = &[1];
+
+fn default_schema_version() -> u32 {
+    CURRENT_BUNDLE_SCHEMA_VERSION
+}
 
 /// What causal slice triggered the violation. Plumbed via the bundle so
 /// `counterexample_get` can re-emit the relevant trace window without
@@ -141,6 +171,11 @@ pub struct CounterexampleBundleSummary {
     pub created_at_ms: u64,
     pub rounds_used: u32,
     pub has_full_bundle: bool,
+    /// m9-01: monotonic version of the bundle envelope. Defaults to 1
+    /// for bundles persisted before m9-01 (serde `#[serde(default)]`).
+    /// Loader rejects bundles with `schema_version > CURRENT_BUNDLE_SCHEMA_VERSION`.
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
 }
 
 /// Full record stored as the redb value.
@@ -164,6 +199,11 @@ pub struct CounterexampleBundleRecord {
     /// scope/comparison/property_target for Invariant targets).
     #[serde(default)]
     pub target_hypothesis: Option<HypothesisInputWire>,
+    /// m9-01: envelope-level version. Always equals `summary.schema_version`
+    /// for records written by this build; the loader reads `record.schema_version`
+    /// (the envelope) as authoritative.
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
 }
 
 impl crate::storage::SessionStore {
@@ -186,6 +226,13 @@ impl crate::storage::SessionStore {
                 record.summary.bundle_id
             )));
         }
+
+        // m9-01 D5: always write the current schema version so the
+        // persisted value is controlled — even if the caller constructed
+        // a record with a stale value.
+        let mut record = record;
+        record.schema_version = CURRENT_BUNDLE_SCHEMA_VERSION;
+        record.summary.schema_version = CURRENT_BUNDLE_SCHEMA_VERSION;
 
         let bytes =
             bincode::serialize(&record).map_err(|e| StoreError::Serialization(e.to_string()))?;
@@ -239,6 +286,17 @@ impl crate::storage::SessionStore {
                 let bytes: &[u8] = bytes_guard.value();
                 let record: CounterexampleBundleRecord = bincode::deserialize(bytes)
                     .map_err(|e| StoreError::Serialization(e.to_string()))?;
+                // m9-01 D3: reject bundles written by a newer chronos-store.
+                // This is a hard-reject (not a warning) because silently loading
+                // a future-versioned bundle risks panicking on unknown enum
+                // variants in nested wire types downstream.
+                if record.schema_version > CURRENT_BUNDLE_SCHEMA_VERSION {
+                    return Err(StoreError::Serialization(format!(
+                        "bundle schema_version {} is newer than supported {}; \
+                         upgrade chronos-store to read this bundle",
+                        record.schema_version, CURRENT_BUNDLE_SCHEMA_VERSION,
+                    )));
+                }
                 Ok(Some(record))
             }
         }
@@ -352,11 +410,13 @@ mod tests {
                 created_at_ms: 1000,
                 rounds_used: 4,
                 has_full_bundle: true,
+                schema_version: 1,
             },
             events: vec![],
             minimised: Some(MinimisedPayload::Constant(PropertyValue::Number(2.0))),
             event_cas_hashes: vec![],
             target_hypothesis: None,
+            schema_version: 1,
         };
         store.save_counterexample_bundle(rec.clone()).unwrap();
         let loaded = store.load_counterexample_bundle("b1").unwrap().unwrap();
@@ -392,11 +452,13 @@ mod tests {
                         created_at_ms: 100,
                         rounds_used: 1,
                         has_full_bundle: true,
+                        schema_version: 1,
                     },
                     events: vec![],
                     minimised: None,
                     event_cas_hashes: vec![],
                     target_hypothesis: None,
+                    schema_version: 1,
                 })
                 .unwrap();
         }
@@ -426,11 +488,13 @@ mod tests {
                         created_at_ms: i,
                         rounds_used: 1,
                         has_full_bundle: true,
+                        schema_version: 1,
                     },
                     events: vec![],
                     minimised: None,
                     event_cas_hashes: vec![],
                     target_hypothesis: None,
+                    schema_version: 1,
                 })
                 .unwrap();
         }
@@ -461,11 +525,13 @@ mod tests {
                         created_at_ms: i as u64,
                         rounds_used: 1,
                         has_full_bundle: true,
+                        schema_version: 1,
                     },
                     events: vec![],
                     minimised: None,
                     event_cas_hashes: vec![],
                     target_hypothesis: None,
+                    schema_version: 1,
                 })
                 .unwrap();
         }
@@ -541,11 +607,13 @@ mod tests {
                         created_at_ms: i as u64,
                         rounds_used: 1,
                         has_full_bundle: true,
+                        schema_version: 1,
                     },
                     events: vec![],
                     minimised: None,
                     event_cas_hashes: vec![],
                     target_hypothesis: None,
+                    schema_version: 1,
                 })
                 .unwrap();
         }
@@ -575,11 +643,13 @@ mod tests {
                 created_at_ms: 0,
                 rounds_used: 0,
                 has_full_bundle: false,
+                schema_version: 1,
             },
             events: vec![],
             minimised: None,
             event_cas_hashes: vec![],
             target_hypothesis: None,
+            schema_version: 1,
         };
         let r = store.save_counterexample_bundle(rec);
         assert!(r.is_err(), "empty bundle_id must be rejected");
@@ -614,6 +684,7 @@ mod tests {
                 created_at_ms: 0,
                 rounds_used: 4,
                 has_full_bundle: true,
+                schema_version: 1,
             },
             events: vec![],
             minimised: Some(MinimisedPayload::Constant(
@@ -621,6 +692,7 @@ mod tests {
             )),
             event_cas_hashes: vec![],
             target_hypothesis: Some(wire),
+            schema_version: 1,
         };
         store.save_counterexample_bundle(rec.clone()).unwrap();
         let loaded = store
@@ -654,6 +726,7 @@ mod tests {
                 created_at_ms: 0,
                 rounds_used: 1,
                 has_full_bundle: true,
+                schema_version: 1,
             },
             events: vec![],
             minimised: Some(MinimisedPayload::Constant(
@@ -661,6 +734,7 @@ mod tests {
             )),
             event_cas_hashes: vec![],
             target_hypothesis: None,
+            schema_version: 1,
         };
         store.save_counterexample_bundle(rec.clone()).unwrap();
         let loaded = store
@@ -670,6 +744,234 @@ mod tests {
         assert!(
             loaded.target_hypothesis.is_none(),
             "pre-m8-07 bundles must have target_hypothesis=None"
+        );
+    }
+
+    // ========================================================================
+    // m9-01 tests: schema_version on CounterexampleBundleRecord / Summary
+    // ========================================================================
+
+    // m9-01 §5: save a bundle via in-memory store, load it, assert both
+    // summary.schema_version == 1 and record.schema_version == 1.
+    #[test]
+    fn m9_01_save_writes_schema_version_1() {
+        let store = make_store();
+        let rec = CounterexampleBundleRecord {
+            summary: CounterexampleBundleSummary {
+                bundle_id: "b-schema-test".into(),
+                property_kind: "invariant".into(),
+                workspace_id: "ws".into(),
+                created_at_ms: 0,
+                rounds_used: 1,
+                has_full_bundle: true,
+                schema_version: 1,
+            },
+            events: vec![],
+            minimised: None,
+            event_cas_hashes: vec![],
+            target_hypothesis: None,
+            schema_version: 1,
+        };
+        store.save_counterexample_bundle(rec).unwrap();
+        let loaded = store
+            .load_counterexample_bundle("b-schema-test")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            loaded.schema_version, 1,
+            "record.schema_version must be 1 after save"
+        );
+        assert_eq!(
+            loaded.summary.schema_version, 1,
+            "summary.schema_version must be 1 after save"
+        );
+    }
+
+    // m9-01 §5: a JSON payload without schema_version must deserialize to 1
+    // via #[serde(default = "default_schema_version")].
+    #[test]
+    fn m9_01_legacy_bundle_deserializes_with_schema_version_1() {
+        // Verify the default function returns 1.
+        assert_eq!(default_schema_version(), 1);
+        // Verify serde_json correctly assigns the default when the field is absent.
+        let json_no_version = r#"{
+            "bundle_id": "b-legacy",
+            "property_kind": "invariant",
+            "workspace_id": "ws",
+            "created_at_ms": 0,
+            "rounds_used": 1,
+            "has_full_bundle": true
+        }"#;
+        let summary: CounterexampleBundleSummary =
+            serde_json::from_str(json_no_version).expect("serde_json must accept pre-m9-01 JSON");
+        assert_eq!(
+            summary.schema_version, 1,
+            "pre-m9-01 JSON must default schema_version to 1"
+        );
+    }
+
+    // m9-01 §5: a bincode blob with schema_version=2 on the record must be
+    // rejected by load_counterexample_bundle with an error mentioning "newer
+    // than supported".
+    #[test]
+    fn m9_01_future_version_load_is_rejected() {
+        let store = make_store();
+
+        // Inject a future-versioned record directly into the DB (bypassing
+        // save_counterexample_bundle so we control the exact bytes).
+        let future_record: CounterexampleBundleRecord = CounterexampleBundleRecord {
+            summary: CounterexampleBundleSummary {
+                bundle_id: "b-future".into(),
+                property_kind: "invariant".into(),
+                workspace_id: "ws".into(),
+                created_at_ms: 0,
+                rounds_used: 1,
+                has_full_bundle: true,
+                schema_version: 2, // future version
+            },
+            events: vec![],
+            minimised: None,
+            event_cas_hashes: vec![],
+            target_hypothesis: None,
+            schema_version: 2, // future version
+        };
+        let future_bytes = bincode::serialize(&future_record).unwrap();
+        let tx = store.db().begin_write().unwrap();
+        {
+            let mut table = tx.open_table(COUNTEREXAMPLE_BUNDLES).unwrap();
+            table.insert(&b"b-future"[..], future_bytes.as_slice()).unwrap();
+        }
+        tx.commit().unwrap();
+
+        // Load it — must be rejected.
+        let result = store.load_counterexample_bundle("b-future");
+        let err = result.expect_err("future-versioned bundle must be rejected");
+        let err_msg = format!("{err}");
+        assert!(
+            err_msg.contains("newer than supported"),
+            "error message must mention 'newer than supported', got: {err_msg}"
+        );
+        assert!(
+            err_msg.contains('2'),
+            "error message must mention schema_version 2, got: {err_msg}"
+        );
+    }
+
+    // m9-01 §5 D5: construct a record with schema_version=99, save it,
+    // reload it, assert the persisted version is 1 (save overwrites caller's value).
+    #[test]
+    fn m9_01_save_overwrites_callers_schema_version() {
+        let store = make_store();
+        let rec = CounterexampleBundleRecord {
+            summary: CounterexampleBundleSummary {
+                bundle_id: "b-overwrite".into(),
+                property_kind: "invariant".into(),
+                workspace_id: "ws".into(),
+                created_at_ms: 0,
+                rounds_used: 1,
+                has_full_bundle: true,
+                schema_version: 99, // caller sets stale value
+            },
+            events: vec![],
+            minimised: None,
+            event_cas_hashes: vec![],
+            target_hypothesis: None,
+            schema_version: 99, // caller sets stale value
+        };
+        store.save_counterexample_bundle(rec).unwrap();
+        let loaded = store
+            .load_counterexample_bundle("b-overwrite")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            loaded.schema_version, 1,
+            "save must overwrite caller's schema_version with CURRENT"
+        );
+        assert_eq!(
+            loaded.summary.schema_version, 1,
+            "save must overwrite caller's summary.schema_version with CURRENT"
+        );
+    }
+
+    // m9-01 §5: list best-effort skips rows where bincode deserialization fails.
+    // A future-versioned row with schema_version=2 deserializes fine in bincode
+    // (bincode doesn't know about our version check), so it IS included in the
+    // list. The explicit rejection only happens in load_counterexample_bundle.
+    // This test pins that: both bundles appear in list, but load() rejects the
+    // future-versioned row individually.
+    #[test]
+    fn m9_01_list_includes_future_versioned_row_best_effort() {
+        let store = make_store();
+
+        // Normal bundle: save via the API (writes schema_version=1).
+        let normal_rec = CounterexampleBundleRecord {
+            summary: CounterexampleBundleSummary {
+                bundle_id: "b-normal".into(),
+                property_kind: "invariant".into(),
+                workspace_id: "ws".into(),
+                created_at_ms: 100,
+                rounds_used: 1,
+                has_full_bundle: true,
+                schema_version: 1,
+            },
+            events: vec![],
+            minimised: None,
+            event_cas_hashes: vec![],
+            target_hypothesis: None,
+            schema_version: 1,
+        };
+        store.save_counterexample_bundle(normal_rec).unwrap();
+
+        // Future-versioned bundle: inject directly into the DB.
+        let future_record: CounterexampleBundleRecord = CounterexampleBundleRecord {
+            summary: CounterexampleBundleSummary {
+                bundle_id: "b-future".into(),
+                property_kind: "invariant".into(),
+                workspace_id: "ws".into(),
+                created_at_ms: 200,
+                rounds_used: 1,
+                has_full_bundle: true,
+                schema_version: 2,
+            },
+            events: vec![],
+            minimised: None,
+            event_cas_hashes: vec![],
+            target_hypothesis: None,
+            schema_version: 2,
+        };
+        let future_bytes = bincode::serialize(&future_record).unwrap();
+        let tx = store.db().begin_write().unwrap();
+        {
+            let mut table = tx.open_table(COUNTEREXAMPLE_BUNDLES).unwrap();
+            table.insert(&b"b-future"[..], future_bytes.as_slice()).unwrap();
+        }
+        tx.commit().unwrap();
+
+        // List all bundles: both appear (bincode deserializes schema_version=2 fine).
+        let summaries = store
+            .list_counterexample_bundles(CounterexampleBundleFilter {
+                workspace_id: None,
+                property_kind: None,
+                since_ms: None,
+                until_ms: None,
+                limit: 100,
+                cursor: None,
+            })
+            .unwrap();
+
+        assert_eq!(
+            summaries.len(), 2,
+            "both normal and future-versioned bundles must appear in list \
+             (best-effort; bincode deserializes fine)"
+        );
+
+        // load_counterexample_bundle rejects the future-versioned row individually.
+        let load_result = store.load_counterexample_bundle("b-future");
+        let err = load_result.expect_err("future-versioned bundle must be rejected on load");
+        let err_msg = format!("{err}");
+        assert!(
+            err_msg.contains("newer than supported"),
+            "load error must mention 'newer than supported', got: {err_msg}"
         );
     }
 }

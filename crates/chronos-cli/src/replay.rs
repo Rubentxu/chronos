@@ -278,6 +278,7 @@ mod tests {
                 created_at_ms: 0,
                 rounds_used: 1,
                 has_full_bundle: true,
+                schema_version: 1,
             },
             events: vec![],
             minimised: Some(minimised),
@@ -286,6 +287,7 @@ mod tests {
             // no persisted target_hypothesis; reconstruct_hypothesis
             // falls back to the m8-04 synthetic-default path.
             target_hypothesis: None,
+            schema_version: 1,
         }
     }
 
@@ -389,11 +391,13 @@ mod tests {
                         created_at_ms: 0,
                         rounds_used: 1,
                         has_full_bundle: true,
+                        schema_version: 1,
                     },
                     events: vec![],
                     minimised: Some(MinimisedPayload::Constant(PropertyValue::Number(0.0))),
                     event_cas_hashes: vec![],
                     target_hypothesis: None,
+                    schema_version: 1,
                 })
                 .unwrap();
         } // store dropped here — redb file lock released.
@@ -436,6 +440,7 @@ mod tests {
                 created_at_ms: 0,
                 rounds_used: 4,
                 has_full_bundle: true,
+                schema_version: 1,
             },
             events: vec![],
             minimised: Some(MinimisedPayload::Constant(PropertyValue::Number(0.0))),
@@ -454,6 +459,7 @@ mod tests {
                 callee: None,
                 max_depth: None,
             }),
+            schema_version: 1,
         };
         let input = reconstruct_hypothesis(&bundle, "synthetic-session").unwrap();
         // session_id is overridden to the synthetic replay session.
@@ -481,6 +487,7 @@ mod tests {
                 created_at_ms: 0,
                 rounds_used: 2,
                 has_full_bundle: true,
+                schema_version: 1,
             },
             events: vec![],
             minimised: Some(MinimisedPayload::Constant(PropertyValue::Number(0.0))),
@@ -499,6 +506,7 @@ mod tests {
                 callee: None,
                 max_depth: None,
             }),
+            schema_version: 1,
         };
         let input = reconstruct_hypothesis(&bundle, "synth").unwrap();
         assert_eq!(input.scope, Some(HypothesisScope::LatencyMs));
