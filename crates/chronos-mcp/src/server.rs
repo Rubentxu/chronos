@@ -42,14 +42,13 @@ use chronos_services::browser_probe::{
     BrowserProbeContext, BrowserProbeService, BrowserProbeStartInput,
 };
 use chronos_services::debug_read::DebugReadService;
-use chronos_services::debug_trace::DebugTraceService;
 use chronos_services::error::ServiceError;
 use chronos_services::events_read::{ChronosEventsReadService, EventsReadContext, EventsReadInput};
 use chronos_services::execution_query::{
     ChronosExecutionQueryService, ExecutionQueryContext, ExecutionQueryInput,
 };
 use chronos_services::output::EvalResult;
-use chronos_services::output::EventsReadKind;
+use chronos_services::output::{EventsReadKind, EventsReadOutput};
 use chronos_services::output::{ExecutionQueryKind, ExecutionQueryOutput};
 use chronos_services::output::{StateQueryKind, StateQueryOutput};
 use chronos_services::probe::LiveProbeSession;
@@ -1274,7 +1273,7 @@ fn text_content(text: impl Into<String>) -> Vec<Content> {
 impl ChronosServer {
     #[tool(
         name = "query_events",
-        description = "Query trace events with filters. Returns paginated results."
+        description = "Deprecated. Use `events_read` with `mode=query` instead. Query trace events with filters (event_types, thread_id, timestamp range, function_pattern, limit, offset). Returns paginated results. The shim preserves the v1 JSON shape (not_found, reason, total_matching, returned_count, next_offset) for backward compatibility."
     )]
     async fn query_events(
         &self,
@@ -1282,7 +1281,9 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        // Parse event_type strings
+        // Parse event_type strings (kept inline to minimise shim diff;
+        // the v2 events_read wrapper parses the same strings — a future
+        // cleanup cycle can unify the two parsers).
         let mut event_types: Option<Vec<EventType>> = None;
         if let Some(ref types) = params.event_types {
             let mut parsed: Vec<EventType> = Vec::with_capacity(types.len());
@@ -1302,228 +1303,78 @@ impl ChronosServer {
             }
         }
 
-        let result = match DebugTraceService::query_events(
-            &params.session_id,
-            event_types,
-            params.thread_id,
-            params.timestamp_start,
-            params.timestamp_end,
-            params.function_pattern.as_deref(),
-            params.limit,
-            params.offset,
-            &self.engines,
-        )
-        .await
-        {
-            Ok(r) => r,
-            Err(ServiceError::SessionNotFound(s)) => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "Session '{}' not found or not finalized",
-                    s
-                ))));
-            }
-            Err(ServiceError::LockPoisoned) => {
-                return Ok(CallToolResult::error(text_content("lock poisoned")));
-            }
-            Err(ServiceError::QueryExecutionError(s)) => {
-                return Ok(CallToolResult::error(text_content(format!(
-                    "query execution error: {}",
-                    s
-                ))));
-            }
-            // Other error variants cannot occur from query_events but are listed
-            // for exhaustiveness.
-            Err(ServiceError::EventNotFound { event_id: _ }) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected event error",
-                )));
-            }
-            Err(ServiceError::MemoryNotFound { .. }) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected memory error",
-                )));
-            }
-            Err(ServiceError::NoRegisterState { event_id: _ }) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected register error",
-                )));
-            }
-            Err(ServiceError::EvalError(_)) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected eval error",
-                )));
-            }
-            Err(ServiceError::SessionNotInMemory(_)) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected session error",
-                )));
-            }
-            Err(ServiceError::EmptySession(_)) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected empty session",
-                )));
-            }
-            Err(ServiceError::SaveFailed(_)) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected save error",
-                )));
-            }
-            Err(ServiceError::LoadFailed(_)) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected load error",
-                )));
-            }
-            Err(ServiceError::ListFailed(_)) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected list error",
-                )));
-            }
-            Err(ServiceError::DeleteFailed(_)) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected delete error",
-                )));
-            }
-            Err(ServiceError::InvalidCondition(_)) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected condition error",
-                )));
-            }
-            Err(ServiceError::InvalidTripwireIdFormat(_)) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected tripwire ID format error",
-                )));
-            }
-            Err(ServiceError::TripwireNotFound(_)) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected tripwire not found",
-                )));
-            }
-            // Probe service variants cannot be produced by query_events but are
-            // listed for exhaustiveness against the ServiceError enum.
-            Err(ServiceError::InvalidProgramPath(_)) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected probe program path error",
-                )));
-            }
-            Err(ServiceError::ProbeNotFound(_)) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected probe not found",
-                )));
-            }
-            Err(ServiceError::ProbeStartFailed(_)) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected probe start failure",
-                )));
-            }
-            Err(ServiceError::ProbeStopError(_)) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected probe stop error",
-                )));
-            }
-            Err(ServiceError::InvalidCursorPayload) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected invalid cursor",
-                )));
-            }
-            Err(ServiceError::CursorStale) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected cursor stale",
-                )));
-            }
-            Err(ServiceError::DrainFailed(_)) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected drain failure",
-                )));
-            }
-            Err(ServiceError::ProbeStarting) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected probe starting",
-                )));
-            }
-            Err(ServiceError::EbpfUnsupported(_)) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected eBPF unsupported",
-                )));
-            }
-            Err(ServiceError::InjectionFailed(_)) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected injection failure",
-                )));
-            }
-            // Browser probe service variants cannot be produced by
-            // this call site but are listed for exhaustiveness against
-            // the ServiceError enum.
-            Err(ServiceError::ChromeUnavailable) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected Chrome unavailable",
-                )));
-            }
-            Err(ServiceError::BrowserProbeNotFound(_)) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected browser probe not found",
-                )));
-            }
-            Err(ServiceError::BrowserProbeStartFailed(_)) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected browser probe start failure",
-                )));
-            }
-            Err(ServiceError::BrowserProbeDrainFailed(_)) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected browser probe drain failure",
-                )));
-            }
-            Err(ServiceError::InvalidInput(_)) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected invalid input",
-                )));
-            }
-            // m6-05: session_export variants cannot be produced by this
-            // call site but are listed for exhaustiveness against the
-            // ServiceError enum.
-            Err(ServiceError::ExportFailed(_)) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected export failure",
-                )));
-            }
-            Err(ServiceError::InvalidExportParameter(_)) => {
-                return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected invalid export parameter",
-                )));
-            }
-        };
-
-        // m0-07: explicit query absence semantics
-        let not_found = result.result.events.is_empty();
-        let reason = if not_found {
-            Some("no_matching_events".to_string())
-        } else {
+        // m7-01 shim: translate v1 offset/limit into a cursor at the
+        // dispatcher boundary. The v1 path is best-effort: completeness
+        // is "best_effort" because the offset/limit model is not the
+        // same as the cursor model. Future m7+ may tighten this.
+        let cursor = if params.offset == 0 {
             None
+        } else {
+            Some(chronos_services::output::CursorDto {
+                total_pushed: Some(params.offset as u64),
+                snapshot_len: Some(params.limit as u64),
+            })
         };
 
-        let output = serde_json::json!({
-            "session_id": params.session_id,
-            "not_found": not_found,
-            "reason": reason,
-            "total_matching": result.result.total_matching,
-            "returned_count": result.result.events.len(),
-            "next_offset": result.result.next_offset,
-            "events": result.result.events.iter().map(|e| serde_json::json!({
-                "event_id": e.event_id,
-                "timestamp_ns": e.timestamp_ns,
-                "thread_id": e.thread_id,
-                "type": e.event_type.to_string(),
-                "function": e.location.function,
-                "address": format!("0x{:x}", e.location.address),
-            })).collect::<Vec<_>>(),
-        });
+        let ctx = EventsReadContext {
+            engines: &self.engines,
+        };
+        let input = EventsReadInput {
+            session_id: params.session_id.clone(),
+            mode: EventsReadKind::Query,
+            event_types,
+            thread_id: params.thread_id,
+            timestamp_start: params.timestamp_start,
+            timestamp_end: params.timestamp_end,
+            function_pattern: params.function_pattern.clone(),
+            limit: params.limit,
+            cursor,
+            event_id: None,
+        };
 
-        Ok(CallToolResult::success(json_content(&output)))
+        match ChronosEventsReadService::read(&ctx, input).await {
+            Ok(EventsReadOutput::Query { result, .. }) => {
+                // m0-07: explicit query absence semantics
+                let not_found = result.result.events.is_empty();
+                let reason = if not_found {
+                    Some("no_matching_events".to_string())
+                } else {
+                    None
+                };
+
+                let output = serde_json::json!({
+                    "session_id": params.session_id,
+                    "not_found": not_found,
+                    "reason": reason,
+                    "total_matching": result.result.total_matching,
+                    "returned_count": result.result.events.len(),
+                    "next_offset": result.result.next_offset,
+                    "events": result.result.events.iter().map(|e| serde_json::json!({
+                        "event_id": e.event_id,
+                        "timestamp_ns": e.timestamp_ns,
+                        "thread_id": e.thread_id,
+                        "type": e.event_type.to_string(),
+                        "function": e.location.function,
+                        "address": format!("0x{:x}", e.location.address),
+                    })).collect::<Vec<_>>(),
+                });
+
+                Ok(CallToolResult::success(json_content(&output)))
+            }
+            Ok(_) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected non-query events_read variant",
+            ))),
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{}' not found or not finalized", s),
+            ))),
+            Err(ServiceError::InvalidInput(s)) => Ok(CallToolResult::error(text_content(s))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
+        }
     }
 
     #[tool(
         name = "get_event",
-        description = "Get detailed information about a specific trace event."
+        description = "Deprecated. Use `events_read` with `mode=by_id` instead. Get detailed information about a specific trace event by id. Returns the event JSON or an error if not found. The shim preserves the v1 JSON shape (pretty-printed event or `Event <id> not found` error) for backward compatibility."
     )]
     async fn get_event(
         &self,
@@ -1531,25 +1382,39 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        match DebugTraceService::get_event(&params.session_id, params.event_id, &self.engines).await
-        {
-            Ok(Some(event)) => {
+        let ctx = EventsReadContext {
+            engines: &self.engines,
+        };
+        let input = EventsReadInput {
+            session_id: params.session_id.clone(),
+            mode: EventsReadKind::ById,
+            event_types: None,
+            thread_id: None,
+            timestamp_start: None,
+            timestamp_end: None,
+            function_pattern: None,
+            limit: 0,
+            cursor: None,
+            event_id: Some(params.event_id),
+        };
+
+        match ChronosEventsReadService::read(&ctx, input).await {
+            Ok(EventsReadOutput::ById {
+                event: Some(event), ..
+            }) => {
                 let json = serde_json::to_string_pretty(&event).unwrap_or_default();
                 Ok(CallToolResult::success(vec![Content::text(json)]))
             }
-            Ok(None) => Ok(CallToolResult::error(text_content(format!(
-                "Event {} not found",
-                params.event_id
-            )))),
+            Ok(EventsReadOutput::ById { event: None, .. }) => Ok(CallToolResult::error(
+                text_content(format!("Event {} not found", params.event_id)),
+            )),
+            Ok(_) => Ok(CallToolResult::error(text_content(
+                "internal error: unexpected non-by_id events_read variant",
+            ))),
             Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
                 format!("Session '{}' not found", s),
             ))),
-            Err(ServiceError::LockPoisoned) => {
-                Ok(CallToolResult::error(text_content("lock poisoned")))
-            }
-            Err(ServiceError::QueryExecutionError(s)) => Ok(CallToolResult::error(text_content(
-                format!("internal error: unexpected query error: {}", s),
-            ))),
+            Err(ServiceError::InvalidInput(s)) => Ok(CallToolResult::error(text_content(s))),
             Err(e) => Ok(CallToolResult::error(text_content(format!(
                 "internal error: unexpected error: {}",
                 e

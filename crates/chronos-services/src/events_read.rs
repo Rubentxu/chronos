@@ -164,9 +164,9 @@ impl ChronosEventsReadService {
         ctx: &EventsReadContext<'_>,
         input: EventsReadInput,
     ) -> Result<EventsReadOutput, ServiceError> {
-        let event_id = input.event_id.ok_or_else(|| {
-            ServiceError::InvalidInput("event_id required for mode=by_id".into())
-        })?;
+        let event_id = input
+            .event_id
+            .ok_or_else(|| ServiceError::InvalidInput("event_id required for mode=by_id".into()))?;
 
         let session_id = input.session_id.clone();
         let event: Option<TraceEvent> =
@@ -187,7 +187,7 @@ impl ChronosEventsReadService {
 mod tests {
     use super::*;
     use crate::output::{EventsReadKind, QueryEventsResult};
-    use chronos_domain::{query::QueryResult, TraceEvent, EventType, EventData, SourceLocation};
+    use chronos_domain::{query::QueryResult, EventData, EventType, SourceLocation, TraceEvent};
     use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::Mutex;
@@ -207,7 +207,9 @@ mod tests {
 
     impl ContextHolder {
         fn ctx(&self) -> EventsReadContext<'_> {
-            EventsReadContext { engines: &self.engines }
+            EventsReadContext {
+                engines: &self.engines,
+            }
         }
     }
 
@@ -227,7 +229,9 @@ mod tests {
             cursor: None,
             event_id: None,
         };
-        let err = ChronosEventsReadService::read(&ctx, input).await.unwrap_err();
+        let err = ChronosEventsReadService::read(&ctx, input)
+            .await
+            .unwrap_err();
         match err {
             ServiceError::InvalidInput(s) => assert!(s.contains("event_id")),
             other => panic!("expected InvalidInput, got {:?}", other),
@@ -250,7 +254,9 @@ mod tests {
             cursor: None,
             event_id: Some(42),
         };
-        let err = ChronosEventsReadService::read(&ctx, input).await.unwrap_err();
+        let err = ChronosEventsReadService::read(&ctx, input)
+            .await
+            .unwrap_err();
         match err {
             ServiceError::SessionNotFound(s) => assert_eq!(s, "missing"),
             other => panic!("expected SessionNotFound, got {:?}", other),
@@ -273,7 +279,9 @@ mod tests {
             cursor: None,
             event_id: None,
         };
-        let err = ChronosEventsReadService::read(&ctx, input).await.unwrap_err();
+        let err = ChronosEventsReadService::read(&ctx, input)
+            .await
+            .unwrap_err();
         match err {
             ServiceError::SessionNotFound(s) => assert_eq!(s, "missing"),
             other => panic!("expected SessionNotFound, got {:?}", other),
@@ -283,7 +291,11 @@ mod tests {
     #[tokio::test]
     async fn query_empty_session_returns_complete_no_cursor() {
         let holder = fresh_context_with();
-        holder.engines.lock().await.insert("s1".into(), empty_engine());
+        holder
+            .engines
+            .lock()
+            .await
+            .insert("s1".into(), empty_engine());
         let ctx = holder.ctx();
 
         let input = EventsReadInput {
