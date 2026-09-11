@@ -1241,6 +1241,146 @@ pub struct ExportResult {
     pub format: ExportFormat,
 }
 
+// ============================================================================
+// M7 — Events Read outputs (m7-01)
+// ----------------------------------------------------------------------------
+// V2 dispatcher that supersedes the two v1 event-read tools:
+// - `query_events` → `EventsReadKind::Query`
+// - `get_event`    → `EventsReadKind::ById`
+//
+// See `docs/milestones/m7-01-events-read-merge.md` for the full intent
+// + scope + algorithm. The v2 surface adds three fields the v1 tools
+// lacked (per spec line 60: "completeness, gap summary, provenance")
+// plus a cursor-based pagination model that complements the existing
+// offset/limit pagination. The cursor encoding reuses the existing
+// `chronos_domain::EventCursor` shape (same as `probe_drain`) so the
+// dispatcher does not introduce a parallel cursor type.
+// ============================================================================
+
+/// Discriminator for [`EventsReadOutput`]. Selects which v1 tool's payload
+/// is produced by the v2 `events_read` dispatcher.
+///
+/// - `Query` — formerly `query_events`. Cursor-based, paginated read
+///   with filters (event types, thread, time range, function pattern).
+/// - `ById`  — formerly `get_event`. Single-event lookup by id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum EventsReadKind {
+    Query,
+    ById,
+}
+
+impl EventsReadKind {
+    /// Snake-case name used as the JSON discriminator tag.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            EventsReadKind::Query => "query",
+            EventsReadKind::ById => "by_id",
+        }
+    }
+}
+
+/// Provenance descriptor attached to every `events_read` response.
+///
+/// Carries the *minimum* information an agent needs to know where the
+/// evidence came from (spec line 66: "provenance, capability limitations
+/// and stable IDs for follow-up calls"). The shape is deliberately
+/// minimal in m7-01 — richer provenance (capture source, instrumentation
+/// version, etc.) is m7+ territory.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EventsReadProvenance {
+    /// Always `"query_engine"` in m7-01 — the v2 dispatcher only reads
+    /// from the finalised-session `QueryEngine`. The live ring buffer
+    /// (`probe_drain`) is a separate read path until m7-02 (`observe`
+    /// merge) unifies them.
+    pub source: String,
+    /// The session this read is bound to. Mirrors the top-level
+    /// `session_id` echo but is structurally nested for forward
+    /// compatibility with multi-session responses.
+    pub session_id: String,
+}
+
+/// Output envelope of the v2 `events_read` tool.
+///
+/// The `mode` tag tells the consumer which payload variant follows.
+/// Each variant's inner DTO is flattened into the envelope so the
+/// resulting JSON preserves the v1 tool's shape (with the addition of
+/// the v2-spec fields `next_cursor`, `completeness`, `gap_summary`,
+/// `provenance`).
+///
+/// Honest disclosure (m7-01): `gap_summary` is always `None` in m7-01
+/// because `chronos_query::QueryEngine` does not currently expose gap
+/// info. The field is final so m7+ can fill it without breaking
+/// consumers.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum EventsReadOutput {
+    #[serde(rename = "query")]
+    Query {
+        session_id: String,
+        #[serde(flatten)]
+        result: QueryEventsResult,
+        /// Opaque cursor for the next page. `None` when the result set
+        /// was fully returned by this call. The encoding matches the
+        /// existing `CursorDto` shape (`{total_pushed, snapshot_len}`).
+        /// A fresh cursor is issued when the caller did not provide
+        /// one (`cursor == None`); the dispatcher returns
+        /// `ServiceError::CursorStale` if the caller's cursor is older
+        /// than the session's current `total_pushed`.
+        next_cursor: Option<CursorDto>,
+        /// `"complete"` for the cursor path, `"best_effort"` for the
+        /// offset/limit compatibility shim path. Forward-compatible:
+        /// m7+ may add `"gap"` to signal a known gap window in the
+        /// captured trace.
+        completeness: String,
+        /// Always `None` in m7-01 (see honest disclosure above).
+        gap_summary: Option<Vec<serde_json::Value>>,
+        provenance: EventsReadProvenance,
+    },
+    #[serde(rename = "by_id")]
+    ById {
+        session_id: String,
+        /// `Some(event)` if found, `None` otherwise. Same semantics as
+        /// v1 `get_event`.
+        event: Option<chronos_domain::TraceEvent>,
+        provenance: EventsReadProvenance,
+    },
+}
+
+/// Wire format for [`chronos_domain::EventCursor`] in MCP JSON payloads.
+///
+/// Mirrors the existing `CursorDto` at the MCP boundary (see
+/// `crates/chronos-mcp/src/server.rs:795`). We declare it here too so
+/// the v2 DTO surface does not depend on the MCP boundary module's
+/// internal types — the dispatcher accepts this DTO and converts to
+/// `chronos_domain::EventCursor` internally.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CursorDto {
+    #[serde(default)]
+    pub total_pushed: Option<u64>,
+    #[serde(default)]
+    pub snapshot_len: Option<u64>,
+}
+
+impl CursorDto {
+    /// Convert to the domain cursor, returning `None` if the payload is
+    /// malformed (e.g., missing required values).
+    pub fn to_domain(&self) -> Option<chronos_domain::EventCursor> {
+        Some(chronos_domain::EventCursor {
+            total_pushed: self.total_pushed?,
+            snapshot_len: self.snapshot_len?,
+        })
+    }
+
+    /// Convert from a domain cursor.
+    pub fn from_domain(c: &chronos_domain::EventCursor) -> Self {
+        Self {
+            total_pushed: Some(c.total_pushed),
+            snapshot_len: Some(c.snapshot_len),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
