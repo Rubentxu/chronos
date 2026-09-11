@@ -5,41 +5,43 @@
 
 ## Active Milestones
 
-> Currently no milestone is `Status: in_progress`. The next milestone
-> (M6) is documented in
-> `docs/chronos-agentic-reconstruction/docs/roadmap/ROADMAP.md` (OpenTelemetry
-> correlation and export) and the v2-spec surface reduction candidates
-> listed below. Per the cycle serialization lock, the next milestone will
-> be promoted to `Status: in_progress` only after the previous one
-> releases and archives.
+> Currently no milestone is `Status: in_progress`. The next v2-spec sub-cycle
+> (M7) candidates are listed below. The reconstruction-roadmap M6
+> (OpenTelemetry correlation + export) is a separate, still-pending
+> milestone documented in
+> `docs/chronos-agentic-reconstruction/docs/roadmap/ROADMAP.md`. Per the
+> cycle serialization lock, the next milestone will be promoted to
+> `Status: in_progress` only after the previous one releases and archives.
 
-### M6 candidates (deferred from M5)
+### M7 candidates (v2-spec sub-cycle, deferred from M6)
 
-The following work was identified during M5 closure
-(`docs/milestones/m5-close-report.md` §4) and is sequenced for M6:
+The following work was identified during M6 closure
+(`docs/milestones/m6-close-report.md` §6) and is sequenced for M7:
 
-1. **`trace_slice` merge** — collapse `debug_trace::trace_slice` +
-   `debug_trace::slice_window` + `debug_trace::query_events` into a
-   single tool with a discriminator parameter.
-2. **`state_query` merge** — collapse `debug_read::get_state` +
-   `debug_read::list_properties` + `debug_read::inspect_value` into a
-   single tool with a verb selector.
-3. **`execution_query` merge** — collapse `debug_trace::replay` +
-   `debug_trace::aggregate` + `debug_trace::race_summary` +
-   `debug_trace_specialized::*` into a single tool with a verb selector.
-4. **`hypothesis_test` tool** — net-new capability: run an LLM-stated
-   hypothesis against captured trace events; return support /
-   counter-evidence.
-5. **`session_export` tool** — net-new capability: export a session
-   bundle (metadata + trace events + properties) to a portable format
-   (`.json` or `.zip`).
-6. **Deprecation shims** — once the merges and new tools ship, the v1
-   names must continue to work as aliases (with `deprecated` annotations)
-   for at least one M6 minor.
+1. **`events_read` merge** — collapse `query_events` + `get_event` + future
+   cursor-aware reads into a single tool with cursor semantics (spec line
+   15). Today the v1 tools are still active in `chronos-mcp::server`.
+2. **`observe` merge** — collapse the 4 `tripwire_*` tools + `probe_inject`
+   behind a typed subscription model (spec lines 28–42). Tripwire +
+   property + probe injection today is split across 5 v1 tools.
+3. **`session_compare` + `session_explain`** — split out from the
+   overloaded `compare_sessions` + `performance_regression_audit` tools
+   (currently both live in `chronos-services::diff`).
+4. **`session_start` + `session_stop` + `capabilities`** — session
+   lifecycle v2 surface (spec lines 11–13). Today the flow is split
+   across `probe_start` / `probe_stop` / `session_snapshot`.
+5. **Deprecation sunset sweep** — remove the 15 v1 shims added in
+   m6-01..m6-03 after the **2027-09-11** deadline (or extend the
+   deadline if downstream AI agents still call them).
 
-The exact M6 cycle split (e.g. one cycle per merge vs. one cycle per
-deliverable) will be set at M6 kickoff based on empirical evidence from
-the first three cycles.
+The exact M7 cycle split will be set at M7 kickoff based on empirical
+evidence from the first three cycles.
+
+> **Naming.** "M7" here refers to the v2-spec sub-cycle that follows the
+> M6 sub-cycle. It is **not** the same as the reconstruction-roadmap M7
+> (*Differential execution v2*) in
+> `docs/chronos-agentic-reconstruction/docs/roadmap/ROADMAP.md` line 163.
+> Each is a separate milestone with its own scope and cycle split.
 
 ### Closed milestones
 
@@ -57,7 +59,19 @@ the first three cycles.
     wrappers; 9 cycles shipped (m5-01..m5-09) plus this close cycle
     (m5-10).
   - v2-spec surface reduction (44 → 8–12 tools) deferred to M6 (see
-    candidates above).
+    closed entry below).
+- **m6-v2-spec-surface-reduction** — Status: closed 2026-09-11
+  - Close report: `docs/milestones/m6-close-report.md`
+  - Sub-cycle: v2-spec surface reduction (deferred from M5). Distinct
+    from the reconstruction-roadmap M6 (OpenTelemetry export, pending).
+  - Exit criterion (5 v2 dispatcher tools live, 15 v1 tools preserved as
+    deprecated shims) satisfied. 18 service modules in `chronos-services`
+    (9,503 LoC, +3,262 from M5 close); `server.rs` at 6,041 LoC / 49 tool
+    wrappers (+5 v2 dispatcher tools); 5 cycles shipped
+    (m6-01..m6-05) plus this close cycle (m6-06).
+  - Remaining 7 v2 spec tools (events_read, observe, session_compare,
+    session_explain, session_start, session_stop, capabilities) deferred
+    to M7 (see candidates above).
 
 ## M0 backlog (decomposed)
 
