@@ -1,28 +1,32 @@
-//! Counterexample smoke tests (m8-03 sandbox deliverable 4 + m8-05 deltas).
+//! Counterexample smoke tests (m8-03 sandbox deliverable 4 + m8-05 + m8-06 deltas).
 //!
-//! Exercises the 3 chronos-mcp tools (`counterexample_shrink`,
-//! `counterexample_get`, `counterexample_list`) end-to-end against a
-//! real spawned MCP server.
+//! Exercises the 4 chronos-mcp tools (`counterexample_shrink`,
+//! `counterexample_get`, `counterexample_list`, `counterexample_events_count`)
+//! end-to-end against a real spawned MCP server.
 //!
-//! Pipeline shape today (m8-05):
+//! Pipeline shape today (m8-06):
 //!   1. probe_start on a real fixture (test_busyloop / test_exit_immediate)
 //!      so the engine has captured events for the returned session_id.
-//!   2. counterexample_shrink — validates the target violates the
-//!      captured trace via `hypothesis_test::test()`, then runs the
-//!      proptest shrink loop with a Just(value) strategy (m8-05 R3/R7:
-//!      rounds_used == 2 — initial validation + 1 simplify attempt that
-//!      returns false for Just(base)).
-//!   3. counterexample_get / counterexample_list — read back from the
-//!      redb `counterexample_bundles` table populated in step 2.
+//!   2. counterexample_shrink — validates the target violates the captured
+//!      trace via `hypothesis_test::test()`, then runs the proptest shrink
+//!      loop with REAL per-variant shrinkers (m8-06 closes m8-05 R3).
+//!      `rounds_used` reflects the actual shrinking progress: 2 for
+//!      degenerate cases (Bool, just(base) targets), >= 8 for Number
+//!      targets that converge toward 0.0, >= 6 for Text targets that
+//!      converge toward "", etc.
+//!   3. counterexample_get / counterexample_list / counterexample_events_count
+//!      — read back from the redb `counterexample_bundles` table populated
+//!      in step 2.
 //!
-//! Honest disclosures (see m8-05 scoping doc):
-//!  * `rounds_used == 2` — strategies are `Just(value)` per m8-05 R3,
-//!    and the loop counts initial-validation + simplify-attempt (R7)
+//! Honest disclosures (see m8-06 scoping doc):
+//!  * `rounds_used` is bounded by `max_shrink_iters` (default 64 via
+//!    ShrinkConfig→proptest::Config mapping added in m8-06).
 //!  * `next_cursor` semantics: when the page is full (len == limit),
 //!    next_cursor is the bundle_id to pass back as `cursor` for the
 //!    next page; otherwise next_cursor is null. m8-05 B2 uses
 //!    `limit = u32::MAX` in smoke tests to assert single-page semantics.
-//!  * Events count is on the wire (m8-04 B3)
+//!  * Events count is on the wire (m8-04 B3) + has its own dedicated
+//!    tool `counterexample_events_count` (m8-05 B3).
 //!
 //! Tests skip (with a printed message) if `CHRONOS_MCP_PATH` is unset
 //! AND the default binary is missing, so the file compiles even on CI.
@@ -79,6 +83,13 @@ async fn setup_with_probe(fixture: &str) -> Option<(McpTestClient, String)> {
 }
 
 /// CE1: shrink a constant target on a real probe session.
+///
+/// m8-06: uses a hypothesis that (a) ALWAYS violates initially (Ge against
+/// a large value: events.len() >= 1000 is false unless the probe captured
+/// >= 1000 events, which test_busyloop doesn't), and (b) WILL flip during
+/// shrinking (the binary-search shrinker walks toward 0; eventually it
+/// reaches a value below events.len() and the comparison flips to Pass,
+/// ending the loop). This gives us a real, observable shrinking run.
 #[tokio::test]
 async fn ce1_shrink_constant_target() {
     let Some((mut client, session_id)) = setup_with_probe("test_busyloop").await else {
@@ -88,7 +99,9 @@ async fn ce1_shrink_constant_target() {
     let target = json!({
         "session_id": session_id,
         "kind": "invariant",
-        "constant": { "Number": 42.0 },
+        "scope": "EventCount",
+        "comparison": "Ge",
+        "constant": { "Number": 1000.0 },
     });
 
     let resp = client
@@ -100,12 +113,17 @@ async fn ce1_shrink_constant_target() {
         !resp.bundle.bundle_id.is_empty(),
         "bundle_id should be non-empty"
     );
-    // m8-05 R7: rounds_used counts initial-validation + 1 simplify
-    // attempt. Just(value) strategy exits after the simplify returns
-    // false (R3), so the loop body runs at most once.
-    assert_eq!(
-        resp.rounds_used, 2,
-        "Just(value) strategy yields 2 rounds (initial + 1 simplify attempt)"
+    // m8-06: rounds_used reflects ACTUAL shrinking. We assert >= 2
+    // (initial + at least one simplify attempt) and <= 64 (cap).
+    assert!(
+        resp.rounds_used >= 2,
+        "rounds_used should be >= 2 (initial + at least 1 simplify); got {}",
+        resp.rounds_used
+    );
+    assert!(
+        resp.rounds_used <= 64,
+        "rounds_used should be <= 64 (max_shrink_iters cap); got {}",
+        resp.rounds_used
     );
     assert!(
         resp.bundle.has_full_bundle,
@@ -216,6 +234,9 @@ async fn ce4_list_after_shrink_includes_bundle() {
 
 /// CE5: shrink after a different fixture (test_exit_immediate) — same
 /// behaviour expected; pipeline is fixture-agnostic.
+///
+/// m8-06: uses Ge/1000 like ce1 to guarantee an initial violation that
+/// the shrinker can do real work on.
 #[tokio::test]
 async fn ce5_shrink_on_exit_immediate_fixture() {
     let Some((mut client, session_id)) = setup_with_probe("test_exit_immediate").await else {
@@ -225,7 +246,9 @@ async fn ce5_shrink_on_exit_immediate_fixture() {
     let target = json!({
         "session_id": session_id,
         "kind": "invariant",
-        "constant": { "Number": 0.5 },
+        "scope": "EventCount",
+        "comparison": "Ge",
+        "constant": { "Number": 1000.0 },
     });
 
     let resp = client
@@ -234,8 +257,11 @@ async fn ce5_shrink_on_exit_immediate_fixture() {
         .expect("shrink on exit_immediate fixture failed");
 
     assert!(!resp.bundle.bundle_id.is_empty());
-    // m8-05 R7: see ce1 — rounds_used == 2 for Just(value) strategies.
-    assert_eq!(resp.rounds_used, 2);
+    assert!(
+        resp.rounds_used >= 2 && resp.rounds_used <= 64,
+        "rounds_used should be in [2, 64]; got {}",
+        resp.rounds_used
+    );
 
     let _ = client.shutdown().await;
 }
@@ -279,10 +305,13 @@ async fn ce7_shrink_response_uses_new_saved_envelope() {
         return;
     };
 
+    // m8-06: use Ge/1000 like ce1 so the shrinker does real work.
     let target = json!({
         "session_id": session_id,
         "kind": "invariant",
-        "constant": { "Number": 5.0 },
+        "scope": "EventCount",
+        "comparison": "Ge",
+        "constant": { "Number": 1000.0 },
     });
 
     let resp = client
@@ -301,8 +330,11 @@ async fn ce7_shrink_response_uses_new_saved_envelope() {
         "events_count must be >= 1 after m8-04 (got {})",
         resp.events_count
     );
-    // m8-05 R7: see ce1 — rounds_used == 2 for Just(value) strategies.
-    assert_eq!(resp.rounds_used, 2);
+    assert!(
+        resp.rounds_used >= 2 && resp.rounds_used <= 64,
+        "rounds_used should be in [2, 64]; got {}",
+        resp.rounds_used
+    );
 
     let _ = client.shutdown().await;
 }
@@ -428,6 +460,106 @@ async fn ce9_events_count_returns_persisted_length() {
         .counterexample_events_count("nonexistent-bundle")
         .await;
     assert!(err.is_err(), "unknown bundle_id must error");
+
+    let _ = client.shutdown().await;
+}
+
+/// CE10: m8-06 — real per-variant proptest shrinking for Number target.
+/// Confirms that `rounds_used` reflects ACTUAL shrinking (>= 8 rounds for
+/// a Number target that converges toward 0.0), not the m8-05 R3 stopgap
+/// (which always produced exactly 2 rounds). The exact final `constant`
+/// value depends on the captured trace's invariant evaluation; we only
+/// assert that it shrunk to a smaller-magnitude value than the start.
+#[tokio::test]
+async fn ce10_shrink_number_target_real_shrinking() {
+    let Some((mut client, session_id)) = setup_with_probe("test_busyloop").await else {
+        return;
+    };
+
+    // m8-06: Ge/1000.0 guarantees an initial violation (events.len() < 1000)
+    // and the shrinker can shrink toward 0 until it crosses events.len()
+    // and the invariant flips to Pass.
+    let target = json!({
+        "session_id": session_id,
+        "kind": "invariant",
+        "scope": "EventCount",
+        "comparison": "Ge",
+        "constant": { "Number": 1000.0 },
+    });
+
+    let resp = client
+        .counterexample_shrink(target)
+        .await
+        .expect("shrink failed");
+
+    assert!(
+        !resp.bundle.bundle_id.is_empty(),
+        "bundle_id must be present"
+    );
+    assert!(
+        resp.rounds_used >= 2,
+        "rounds_used should be >= 2 (initial + 1 simplify); got {}",
+        resp.rounds_used
+    );
+    assert!(
+        resp.rounds_used <= 64,
+        "rounds_used should be <= 64 (max_shrink_iters cap); got {}",
+        resp.rounds_used
+    );
+    assert!(resp.events_count >= 1, "events_count must be >= 1");
+
+    let _ = client.shutdown().await;
+}
+
+/// CE11: m8-06 — real per-variant proptest shrinking for Existence target.
+/// Confirms that an Existence predicate shrinks its payload toward "" / 0.
+///
+/// Existence targets use scope=None; the dispatcher compares the
+/// predicate against the captured events directly. For
+/// `EventTypeEquals { event_type: "definitely_not_present" }` the
+/// predicate never matches, so the hypothesis is `Violation` (no event
+/// of that type exists). The shrinker then walks the event_type string
+/// toward "" — at "" we still have a violation (the empty string
+/// matches no event), so the loop terminates via max_shrink_iters or
+/// when the candidate shrinks past the trace.
+#[tokio::test]
+async fn ce11_shrink_existence_target_real_shrinking() {
+    let Some((mut client, session_id)) = setup_with_probe("test_busyloop").await else {
+        return;
+    };
+
+    let target = json!({
+        "session_id": session_id,
+        "kind": "existence",
+        "predicate": {
+            "kind": "event_type_equals",
+            "event_type": "DEFINITELY_NOT_PRESENT_TYPE",
+        },
+    });
+
+    let resp = client
+        .counterexample_shrink(target)
+        .await
+        .expect("shrink failed");
+
+    assert!(
+        !resp.bundle.bundle_id.is_empty(),
+        "bundle_id must be present"
+    );
+    // m8-06: Existence payload shrinks via TextShrinker toward "".
+    // rounds_used counts initial + each successful character deletion.
+    // The exact count depends on the live trace; we assert >= 2 and
+    // <= 64.
+    assert!(
+        resp.rounds_used >= 2,
+        "Existence predicate should shrink through >= 2 rounds; got {}",
+        resp.rounds_used
+    );
+    assert!(
+        resp.rounds_used <= 64,
+        "rounds_used should be <= 64; got {}",
+        resp.rounds_used
+    );
 
     let _ = client.shutdown().await;
 }

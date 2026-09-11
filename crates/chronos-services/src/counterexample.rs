@@ -219,6 +219,12 @@ impl From<ShrinkConfig> for proptest::test_runner::Config {
         // clippy's field_reassign_with_default lint.
         proptest::test_runner::Config {
             cases: s.max_rounds.max(1),
+            // m8-06: also set max_shrink_iters so `drive_strategy`'s
+            // loop is bounded. proptest's default is u32::MAX which is
+            // unsafe for our shrink loop. We use the same `max_rounds`
+            // cap so a single ShrinkConfig controls both the test cases
+            // and the shrink iterations.
+            max_shrink_iters: s.max_rounds.max(1),
             rng_seed: s
                 .seed
                 .map(proptest::test_runner::RngSeed::Fixed)
@@ -813,57 +819,422 @@ fn build_strategy_for(
 /// Strategy for `PropertyValue`. The starting sample equals `base`; the
 /// strategy tree's `simplify()` walks toward the variant's "zero-ish" form.
 ///
-/// m8-05 R2 disclosure: `Bool` cannot shrink meaningfully (only two values).
-/// The `Just(b)` strategy is correct but never simplifies. `Text` is treated
-/// as opaque (the proptest regex-based string strategies do not converge
-/// toward `""` deterministically given an arbitrary starting string). For
-/// m8-05 we ship a strategy that always produces the base value; `Number`
-/// is the variant that actually shrinks toward 0.0. A future cycle can
-/// introduce a custom `Strategy<PropertyValue>` impl that does proper
-/// lexicographic shrinking for `Text`.
+/// m8-06 (closes m8-05 R3):
+/// - `Number(n)` shrinks via `NumberShrinker` toward 0.0 (binary search by
+///   halving the distance; converges within 64 rounds).
+/// - `Text(s)` shrinks via `TextShrinker` toward `""` (one character
+///   deletion per `simplify()` round; O(len) convergence).
+/// - `Bool(b)` stays as `Just(b)` — degenerate (only 2 values). The
+///   operator must issue two shrink calls to test both.
+///
+/// m8-06 R1 disclosure: `Number` converges to `0.0 ± f64::EPSILON`, not
+/// exact 0.0. Hypotheses whose violation depends on exact-zero will not
+/// find a smaller reproducer.
 fn constant_strategy(base: &PropertyValue) -> proptest::strategy::SBoxedStrategy<PropertyValue> {
-    use proptest::strategy::{Just, Strategy};
+    use proptest::strategy::Strategy;
     match base {
-        // m8-05 R3: for Number, we wrap proptest's f64 strategy to always
-        // produce `base` initially; proptest's internal shrink machinery
-        // walks toward 0.0 from there. (The bound-range version shrinks via
-        // binary search; the unbounded ANY version picks a random value
-        // from the half-line. We use `prop_map` to inject the base value
-        // because we want the FIRST sample to be `base`, not random.)
-        PropertyValue::Number(_) => Just(base.clone()).sboxed(),
-        PropertyValue::Text(_) => Just(base.clone()).sboxed(),
-        PropertyValue::Bool(_) => Just(base.clone()).sboxed(),
+        PropertyValue::Number(n) => NumberShrinking { start: *n }.sboxed(),
+        PropertyValue::Text(s) => TextShrinking { start: s.clone() }.sboxed(),
+        PropertyValue::Bool(_) => proptest::strategy::Just(base.clone()).sboxed(),
     }
 }
 
 /// Strategy for `ExistencePredicate`. Variant is FIXED; payload shrinks
 /// toward its zero-ish form (string → "", thread_id → 0).
+///
+/// m8-06 (closes m8-05 R3 for Existence): the variant is fixed (we don't
+/// switch from `EventTypeEquals` to `ThreadEquals`), only the payload
+/// shrinks. `EventTypeEquals::event_type` and `PropertyKeyEquals::target`
+/// shrink toward `""` via `TextShrinker`. `ThreadEquals::thread_id`
+/// shrinks toward 0 via `NumberShrinker`.
+///
+/// m8-06 R4 disclosure: variant enumeration requires multiple shrink calls
+/// (one per variant). This matches the m8-05 R3 variant-comparison
+/// discipline (operators who want to compare across variants should issue
+/// separate shrink calls).
 fn existence_predicate_strategy(
     base: &ExistencePredicate,
 ) -> proptest::strategy::SBoxedStrategy<ExistencePredicate> {
-    use proptest::strategy::{Just, Strategy};
-    // m8-05 R3 (carried): proptest's `String` / `u64` strategies do not
-    // guarantee deterministic shrink-toward-zero from an arbitrary starting
-    // value. For m8-05 we ship a `Just(base)` strategy that always produces
-    // the captured predicate; this preserves the m8-03 R1 contract (1 round,
-    // no shrinkage) while the surrounding plumbing (per-variant selection,
-    // wire envelope, events_count, etc.) is finalised. A future cycle can
-    // introduce a custom `Strategy<ExistencePredicate>` that does proper
-    // payload-level shrinking (lexicographic for strings, toward 0 for u64).
-    Just(base.clone()).sboxed()
+    use proptest::strategy::Strategy;
+    ExistencePredicateShrinking {
+        start: base.clone(),
+    }
+    .sboxed()
 }
 
 /// Strategy for `CallPath`: produces `(caller, callee, max_depth)` triples.
-/// m8-05 R3 (carried): just produces the captured `(caller, callee, max_depth)`
-/// for now. Future cycle can introduce a tuple strategy that shrinks each
-/// component independently toward its zero-ish form.
+///
+/// m8-06 (closes m8-05 R3 for CallPath): each field shrinks independently.
+/// `caller` and `callee` shrink toward `""` (one char per round, alternating
+/// which field gets the deletion). `max_depth` shrinks toward `None`
+/// (passes through `Some(1)`, then `None`).
+///
+/// m8-06 R5 disclosure: `max_depth = None` is the terminal state. The
+/// shrinker treats `None` as the destination and stops there.
 fn call_path_strategy(
     caller: &str,
     callee: &str,
     max_depth: Option<usize>,
 ) -> proptest::strategy::SBoxedStrategy<(String, String, Option<usize>)> {
-    use proptest::strategy::{Just, Strategy};
-    Just((caller.to_string(), callee.to_string(), max_depth)).sboxed()
+    use proptest::strategy::Strategy;
+    CallPathShrinking {
+        start_caller: caller.to_string(),
+        start_callee: callee.to_string(),
+        start_max_depth: max_depth,
+    }
+    .sboxed()
+}
+
+// ---------------------------------------------------------------------------
+// m8-06 — per-variant shrinkers (close m8-05 R3)
+// ---------------------------------------------------------------------------
+//
+// Each shrinker is a tiny `Strategy + ValueTree` pair. The strategy captures
+// the starting value (which becomes the first sample). The value tree's
+// `simplify()` walks one step toward the variant's "zero-ish" form per
+// invocation. The `drive_strategy` loop calls `simplify()` repeatedly until
+// it returns `false` (or until `max_shrink_iters` is reached).
+//
+// We hand-roll these instead of using `proptest::num::f64::BinarySearch`
+// etc. because proptest's stock strategies walk toward their bounds, not
+// toward 0.0. The M8 acceptance criterion ("shrinks while preserving the
+// violation") requires a known anchor; 0.0 is the obvious choice for
+// `Number`, `""` for `Text`, etc.
+
+/// `f64` shrinker that walks toward 0.0 by halving the distance each step.
+#[derive(Debug, Clone)]
+struct NumberShrinking {
+    start: f64,
+}
+
+impl proptest::strategy::Strategy for NumberShrinking {
+    type Tree = NumberValueTree;
+    type Value = PropertyValue;
+
+    fn new_tree(&self, _runner: &mut TestRunner) -> proptest::strategy::NewTree<Self> {
+        Ok(NumberValueTree {
+            current: self.start,
+            done: self.start == 0.0,
+        })
+    }
+}
+
+/// Value tree for `NumberShrinking`. Tracks the current f64; `simplify()`
+/// halves the distance to 0.0. Converges in O(log2(ULP_precision)) rounds.
+#[derive(Debug)]
+struct NumberValueTree {
+    current: f64,
+    /// `true` once `current` cannot shrink further (already 0.0).
+    done: bool,
+}
+
+impl proptest::strategy::ValueTree for NumberValueTree {
+    type Value = PropertyValue;
+
+    fn current(&self) -> Self::Value {
+        PropertyValue::Number(self.current)
+    }
+
+    fn simplify(&mut self) -> bool {
+        if self.done {
+            return false;
+        }
+        let next = self.current / 2.0;
+        if next == self.current {
+            // Reached subnormal or NaN territory; stop.
+            self.done = true;
+            return false;
+        }
+        self.current = next;
+        if self.current.abs() < f64::EPSILON {
+            self.done = true;
+        }
+        true
+    }
+
+    fn complicate(&mut self) -> bool {
+        // We never re-expand a shrunken value. This is acceptable because
+        // `drive_strategy` never calls `complicate()` — it only re-roots
+        // the strategy at the current best (which is monotonic).
+        false
+    }
+}
+
+/// `String` shrinker that deletes one character per `simplify()` round.
+/// Deletion is round-robin: start, then end, then middle, alternating.
+#[derive(Debug, Clone)]
+struct TextShrinking {
+    start: String,
+}
+
+impl proptest::strategy::Strategy for TextShrinking {
+    type Tree = TextValueTree;
+    type Value = PropertyValue;
+
+    fn new_tree(&self, _runner: &mut TestRunner) -> proptest::strategy::NewTree<Self> {
+        Ok(TextValueTree {
+            current: self.start.clone(),
+            round: 0,
+        })
+    }
+}
+
+/// Value tree for `TextShrinking`. Each `simplify()` deletes one character
+/// using a round-robin index (start, end, middle, second-to-start, ...).
+#[derive(Debug)]
+struct TextValueTree {
+    current: String,
+    /// Round counter for round-robin index selection.
+    round: usize,
+}
+
+impl proptest::strategy::ValueTree for TextValueTree {
+    type Value = PropertyValue;
+
+    fn current(&self) -> Self::Value {
+        PropertyValue::Text(self.current.clone())
+    }
+
+    fn simplify(&mut self) -> bool {
+        if self.current.is_empty() {
+            return false;
+        }
+        let len = self.current.len();
+        // Round-robin index: start, end, middle, then second-to-start,
+        // second-to-end, etc. With len=1, only index 0 is valid (round 0).
+        // With len=2, indices 0 then 1. With len=3, indices 0, 2, 1.
+        let idx = match self.round % (2 * len).max(1) {
+            0 => 0,
+            x if x == 2 * len - 1 => len - 1,
+            x if x < len => x,
+            x => 2 * len - 1 - x,
+        };
+        let idx = idx.min(len - 1);
+        // Find the char boundary at `idx` (multi-byte UTF-8 safe).
+        let mut char_indices = self.current.char_indices();
+        let byte_idx = char_indices
+            .nth(idx)
+            .map(|(b, _)| b)
+            .unwrap_or(self.current.len());
+        let mut next = String::with_capacity(len.saturating_sub(1));
+        next.push_str(&self.current[..byte_idx]);
+        next.push_str(
+            &self.current[byte_idx
+                + self.current[byte_idx..]
+                    .chars()
+                    .next()
+                    .map_or(1, |c| c.len_utf8())..],
+        );
+        self.current = next;
+        self.round = self.round.saturating_add(1);
+        true
+    }
+
+    fn complicate(&mut self) -> bool {
+        false
+    }
+}
+
+/// `ExistencePredicate` shrinker: variant is FIXED; payload shrinks.
+#[derive(Debug, Clone)]
+struct ExistencePredicateShrinking {
+    start: ExistencePredicate,
+}
+
+impl proptest::strategy::Strategy for ExistencePredicateShrinking {
+    type Tree = ExistencePredicateValueTree;
+    type Value = ExistencePredicate;
+
+    fn new_tree(&self, _runner: &mut TestRunner) -> proptest::strategy::NewTree<Self> {
+        // Build a sub-strategy for the payload and wrap its tree.
+        let sub_tree = match &self.start {
+            ExistencePredicate::EventTypeEquals { event_type } => SubTree::Text(TextValueTree {
+                current: event_type.clone(),
+                round: 0,
+            }),
+            ExistencePredicate::ThreadEquals { thread_id } => SubTree::Number(NumberValueTree {
+                current: *thread_id as f64,
+                done: *thread_id == 0,
+            }),
+            ExistencePredicate::PropertyKeyEquals { target } => SubTree::Text(TextValueTree {
+                current: target.clone(),
+                round: 0,
+            }),
+        };
+        Ok(ExistencePredicateValueTree {
+            current: self.start.clone(),
+            sub_tree,
+        })
+    }
+}
+
+/// Inner shrinker for `ExistencePredicate` payloads. Either a number
+/// shrinker (for `ThreadEquals`) or a text shrinker (for the string variants).
+#[derive(Debug)]
+enum SubTree {
+    Number(NumberValueTree),
+    Text(TextValueTree),
+}
+
+/// Value tree for `ExistencePredicateShrinking`. Delegates `simplify()` to
+/// the inner payload shrinker and reconstructs the variant with the new
+/// payload.
+#[derive(Debug)]
+struct ExistencePredicateValueTree {
+    current: ExistencePredicate,
+    sub_tree: SubTree,
+}
+
+impl proptest::strategy::ValueTree for ExistencePredicateValueTree {
+    type Value = ExistencePredicate;
+
+    fn current(&self) -> Self::Value {
+        self.current.clone()
+    }
+
+    fn simplify(&mut self) -> bool {
+        match (&mut self.sub_tree, &mut self.current) {
+            (SubTree::Number(t), ExistencePredicate::ThreadEquals { thread_id }) => {
+                if t.simplify() {
+                    *thread_id = t.current as u64;
+                    true
+                } else {
+                    false
+                }
+            }
+            (SubTree::Text(t), ExistencePredicate::EventTypeEquals { event_type }) => {
+                if t.simplify() {
+                    *event_type = t.current.clone();
+                    true
+                } else {
+                    false
+                }
+            }
+            (SubTree::Text(t), ExistencePredicate::PropertyKeyEquals { target }) => {
+                if t.simplify() {
+                    *target = t.current.clone();
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
+    }
+
+    fn complicate(&mut self) -> bool {
+        false
+    }
+}
+
+/// `CallPath` shrinker: each field shrinks independently, in lockstep.
+#[derive(Debug, Clone)]
+struct CallPathShrinking {
+    start_caller: String,
+    start_callee: String,
+    start_max_depth: Option<usize>,
+}
+
+impl proptest::strategy::Strategy for CallPathShrinking {
+    type Tree = CallPathValueTree;
+    type Value = (String, String, Option<usize>);
+
+    fn new_tree(&self, _runner: &mut TestRunner) -> proptest::strategy::NewTree<Self> {
+        Ok(CallPathValueTree {
+            caller: self.start_caller.clone(),
+            callee: self.start_callee.clone(),
+            max_depth: self.start_max_depth,
+            caller_tree: TextValueTree {
+                current: self.start_caller.clone(),
+                round: 0,
+            },
+            callee_tree: TextValueTree {
+                current: self.start_callee.clone(),
+                round: 0,
+            },
+            max_depth_done: self.start_max_depth.is_none(),
+            round: 0,
+        })
+    }
+}
+
+/// Value tree for `CallPathShrinking`. Each round deletes one character from
+/// either `caller` or `callee` (alternating) OR shrinks `max_depth` by one
+/// step (`Some(n) -> Some(n-1) -> None`).
+#[derive(Debug)]
+struct CallPathValueTree {
+    caller: String,
+    callee: String,
+    max_depth: Option<usize>,
+    caller_tree: TextValueTree,
+    callee_tree: TextValueTree,
+    max_depth_done: bool,
+    /// 0..2: caller / callee alternation. 3: max_depth. Wraps.
+    round: usize,
+}
+
+impl proptest::strategy::ValueTree for CallPathValueTree {
+    type Value = (String, String, Option<usize>);
+
+    fn current(&self) -> Self::Value {
+        (self.caller.clone(), self.callee.clone(), self.max_depth)
+    }
+
+    fn simplify(&mut self) -> bool {
+        // Round-robin: caller → callee → max_depth → caller → ...
+        // We avoid recursion to prevent stack overflow when all three
+        // components are at their minimum.
+        loop {
+            match self.round % 3 {
+                0 => {
+                    if self.caller_tree.simplify() {
+                        self.caller = self.caller_tree.current.clone();
+                        self.round = self.round.saturating_add(1);
+                        return true;
+                    }
+                    // Caller already at minimum; advance to callee.
+                    self.round = 1;
+                }
+                1 => {
+                    if self.callee_tree.simplify() {
+                        self.callee = self.callee_tree.current.clone();
+                        self.round = self.round.saturating_add(1);
+                        return true;
+                    }
+                    self.round = 2;
+                }
+                2 => {
+                    if self.max_depth_done {
+                        // Everything at minimum; can't shrink further.
+                        return false;
+                    }
+                    match self.max_depth {
+                        Some(n) if n > 1 => {
+                            self.max_depth = Some(n - 1);
+                            self.round = self.round.saturating_add(1);
+                            return true;
+                        }
+                        Some(_) => {
+                            // Some(1) -> None (terminal).
+                            self.max_depth = None;
+                            self.max_depth_done = true;
+                            self.round = self.round.saturating_add(1);
+                            return true;
+                        }
+                        None => {
+                            self.max_depth_done = true;
+                            self.round = 0;
+                        }
+                    }
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    fn complicate(&mut self) -> bool {
+        false
+    }
 }
 
 /// Drive the per-variant proptest shrinking loop.
@@ -874,12 +1245,15 @@ fn call_path_strategy(
 /// extract the current sample synchronously, **drop** the strategy +
 /// tree, run the async test on the sample, and (only if the candidate
 /// still violates) regenerate a fresh strategy + tree rooted at the
-/// updated best. This works correctly for the m8-05 R3 `Just(base)`
-/// strategies (each rebuild yields the same `base`), but it forfeits
-/// proptest's in-place `simplify()` state evolution. A future cycle that
-/// introduces real shrinkers must address this: either constrain
-/// `ValueTree: Send` (proptest 1.6+ feature flag) or move the loop into
-/// a `spawn_blocking` task that drives a sync property test directly.
+/// updated best. Each round asks the fresh tree to `simplify()` once
+/// and extracts the new `current()` value.
+///
+/// m8-06 (closes m8-05 R3 contract): with real shrinkers in place,
+/// `simplify()` returns `true` for many rounds until the value tree
+/// reaches its minimum (0.0 / `""` / `None`). The loop bounds itself
+/// by `runner.config().max_shrink_iters()` so it never infinite-loops
+/// even if a shrinker is buggy. For `Just(value)` strategies (the only
+/// non-shrinking case, used for `Bool`) the loop exits after one round.
 async fn drive_strategy<F, Fut>(
     runner: &mut TestRunner,
     target: &HypothesisInput,
@@ -889,6 +1263,8 @@ where
     F: Fn(HypothesisInput) -> Fut,
     Fut: std::future::Future<Output = Result<crate::output::HypothesisOutput, ServiceError>>,
 {
+    let max_shrink_iters = runner.config().max_shrink_iters();
+
     // Synchronously extract the initial sample, drop the strategy + tree.
     let initial = {
         let strategy = build_strategy_for(target);
@@ -900,40 +1276,51 @@ where
     let mut best = initial;
     let mut rounds: u32 = 0;
 
-    // Validate the initial sample is a violation (validated upstream in
-    // shrink(), but we re-check defensively in case a future strategy
-    // adapter returns a non-violating initial sample).
+    // Round 1: validate the initial sample is a violation (also validated
+    // upstream in shrink(), but we re-check defensively in case a future
+    // strategy adapter returns a non-violating initial sample).
     rounds = rounds.saturating_add(1);
-    if !is_violation(async_test(best.clone()).await?) {
+    let initial_out = async_test(best.clone()).await?;
+    if !is_violation(initial_out) {
         // Initial sample does NOT violate. Fall back to the original target.
         return Ok((rounds, target.clone()));
     }
 
-    // m8-05 R7 disclosure: proptest's `dyn ValueTree` is `!Send`, so we
-    // cannot hold the tree across an `.await` and call `simplify()` in a
-    // tight loop. We work around this by **rebuilding** the strategy +
-    // tree each iteration, rooted at the current best, and asking the
-    // fresh tree to `simplify()` once. For `Just(base)` strategies
-    // (m8-05 R3), `simplify()` returns `false` immediately, so the loop
-    // body runs at most once per call. A future cycle that introduces
-    // real shrinkers must address this (e.g. drive a sync property test
-    // inside `spawn_blocking` and pass the verdict back through a channel).
-    let _ = runner.config().max_shrink_iters();
-    rounds = rounds.saturating_add(1);
-    let candidate = {
-        let strategy = build_strategy_for(&best);
-        let mut tree = strategy
-            .new_tree(runner)
-            .map_err(|e| ServiceError::EvalError(format!("strategy.new_tree failed: {e}")))?;
-        if tree.simplify() {
-            Some(tree.current())
-        } else {
-            None
+    // Rounds 2..N: rebuild strategy + tree each iteration (m8-05 R7), ask
+    // the fresh tree to `simplify()` once, and try the resulting candidate.
+    // Bound by `max_shrink_iters` (default u32::MAX in proptest; we cap at
+    // DEFAULT_SHRINK_MAX_ROUNDS = 64 via the upstream ShrinkConfig→Config
+    // mapping in `shrink()`).
+    loop {
+        if rounds >= max_shrink_iters {
+            break;
         }
-    };
-    if let Some(c) = candidate {
-        if is_violation(async_test(c.clone()).await?) {
-            best = c;
+        let candidate = {
+            let strategy = build_strategy_for(&best);
+            let mut tree = strategy
+                .new_tree(runner)
+                .map_err(|e| ServiceError::EvalError(format!("strategy.new_tree failed: {e}")))?;
+            if tree.simplify() {
+                Some(tree.current())
+            } else {
+                None
+            }
+        };
+        rounds = rounds.saturating_add(1);
+        match candidate {
+            Some(c) if is_violation(async_test(c.clone()).await?) => {
+                best = c;
+            }
+            Some(_) => {
+                // Candidate doesn't violate; the current best is smaller.
+                // Stop — proptest convention is that a non-violating
+                // candidate signals we've shrunk as far as we can.
+                break;
+            }
+            None => {
+                // simplify() returned false — the tree reached its minimum.
+                break;
+            }
         }
     }
 
@@ -1147,6 +1534,8 @@ fn counterexample_summary_from_wire(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::strategy::{Strategy, ValueTree};
+    use proptest::test_runner::Config;
 
     #[allow(dead_code)]
     fn assert_send<T: Send>(_: T) {}
@@ -1853,12 +2242,16 @@ mod tests {
     // wiring without asserting actual shrinkage.)
     #[test]
     fn m8_05_drive_strategy_with_violating_async_test_returns_initial() {
+        // m8-06: use `Bool(true)` instead of `Number(7.0)` so the strategy
+        // is `Just(value)` (the only non-shrinking case per D3 in m8-06
+        // scoping). With Number, the m8-06 NumberShrinker would shrink the
+        // value toward 0.0 in this test.
         let target = HypothesisInput {
             session_id: "sess".into(),
             kind: HypothesisKind::Invariant,
             scope: None,
             comparison: None,
-            constant: Some(PropertyValue::Number(7.0)),
+            constant: Some(PropertyValue::Bool(true)),
             property_target: None,
             predicate: None,
             caller: None,
@@ -1866,7 +2259,7 @@ mod tests {
             max_depth: None,
         };
         let p_cfg: proptest::test_runner::Config = ShrinkConfig {
-            max_rounds: 1,
+            max_rounds: 4,
             seed: None,
         }
         .into();
@@ -1878,9 +2271,7 @@ mod tests {
         let result = rt.block_on(async {
             drive_strategy(&mut runner, &target, |sampled| async move {
                 use crate::output::{HypothesisOutput, HypothesisVerdict};
-                let v = PropertyValue::Number(7.0);
                 let _ = sampled;
-                let _ = v;
                 // Return an Invariant Violation regardless of the candidate.
                 Ok::<_, ServiceError>(HypothesisOutput::Invariant {
                     verdict: HypothesisVerdict::Violation {
@@ -1895,14 +2286,15 @@ mod tests {
             .await
         });
         let (rounds, best) = result.expect("drive_strategy should succeed");
-        // m8-05 R7: rounds counts BOTH the initial validation AND the
-        // (failed) simplify() attempt; for `Just(base)` the simplify()
-        // returns false, so the loop terminates without further work.
+        // m8-06: with `Just(Bool(true))` (the only non-shrinking case),
+        // rounds counts BOTH the initial validation AND the (failed)
+        // simplify() attempt; the Bool strategy's simplify() returns
+        // false, so the loop terminates after exactly 2 rounds.
         assert_eq!(
             rounds, 2,
-            "Just(base) yields 2 rounds (initial + 1 simplify attempt)"
+            "Just(Bool(true)) yields 2 rounds (initial + 1 simplify attempt)"
         );
-        assert_eq!(best.constant, Some(PropertyValue::Number(7.0)));
+        assert_eq!(best.constant, Some(PropertyValue::Bool(true)));
     }
 
     // m8-05 #5: drive_strategy with an async test that returns Pass should
@@ -2295,5 +2687,310 @@ mod tests {
             }
             other => panic!("expected LoadFailed, got {other:?}"),
         }
+    }
+
+    // ========================================================================
+    // m8-06 — real per-variant proptest shrinking (closes m8-05 R3)
+    // ========================================================================
+
+    /// `NumberShrinking` strategy: starting from `Number(100.0)`, after 8
+    /// rounds the value is less than 1.0. Binary search halving distance.
+    #[test]
+    fn m8_06_number_strategy_shrinks_toward_zero() {
+        let strategy = NumberShrinking { start: 100.0 };
+        let mut runner = TestRunner::new(Config::default());
+        let mut tree = strategy.new_tree(&mut runner).expect("new_tree");
+        assert_eq!(tree.current(), PropertyValue::Number(100.0));
+        // 8 rounds of halving: 100 -> 50 -> 25 -> 12.5 -> 6.25 -> 3.125 -> 1.5625 -> 0.78125 -> 0.390625.
+        for _ in 0..8 {
+            assert!(tree.simplify(), "expected simplify() to make progress");
+        }
+        let v = if let PropertyValue::Number(n) = tree.current() {
+            n
+        } else {
+            panic!("expected Number, got {:?}", tree.current())
+        };
+        assert!(
+            v < 1.0,
+            "after 8 rounds, Number(100.0) should be < 1.0, got {v}"
+        );
+    }
+
+    /// `NumberShrinking` strategy: converges to ~0.0 within 64 rounds.
+    #[test]
+    fn m8_06_number_strategy_converges_within_max_rounds() {
+        let strategy = NumberShrinking { start: 1_000_000.0 };
+        let mut runner = TestRunner::new(Config::default());
+        let mut tree = strategy.new_tree(&mut runner).expect("new_tree");
+        let mut rounds = 0;
+        while tree.simplify() {
+            rounds += 1;
+            if rounds > 100 {
+                panic!("not converging within 100 rounds");
+            }
+        }
+        let v = if let PropertyValue::Number(n) = tree.current() {
+            n
+        } else {
+            panic!("expected Number, got {:?}", tree.current())
+        };
+        assert!(v.abs() < f64::EPSILON, "should converge to ~0.0, got {v}");
+    }
+
+    /// `TextShrinking` strategy: deletes one character per simplify round.
+    #[test]
+    fn m8_06_text_strategy_shrinks_toward_empty() {
+        let strategy = TextShrinking {
+            start: "hello".to_string(),
+        };
+        let mut runner = TestRunner::new(Config::default());
+        let mut tree = strategy.new_tree(&mut runner).expect("new_tree");
+        assert_eq!(tree.current(), PropertyValue::Text("hello".to_string()));
+        assert!(tree.simplify());
+        let v = if let PropertyValue::Text(s) = tree.current() {
+            s
+        } else {
+            panic!("expected Text, got {:?}", tree.current())
+        };
+        assert_eq!(v.len(), 4, "after 1 round, one char should be deleted");
+    }
+
+    /// `TextShrinking` strategy: converges to empty string.
+    #[test]
+    fn m8_06_text_strategy_converges_to_empty() {
+        let strategy = TextShrinking {
+            start: "hi".to_string(),
+        };
+        let mut runner = TestRunner::new(Config::default());
+        let mut tree = strategy.new_tree(&mut runner).expect("new_tree");
+        let mut rounds = 0;
+        while tree.simplify() {
+            rounds += 1;
+            if rounds > 10 {
+                panic!("not converging within 10 rounds");
+            }
+        }
+        assert_eq!(
+            tree.current(),
+            PropertyValue::Text(String::new()),
+            "should converge to empty string"
+        );
+        assert_eq!(rounds, 2, "should converge in exactly 2 rounds for 'hi'");
+    }
+
+    /// `Bool` strategy stays as `Just(b)` (D3 disclosure): no shrinkage.
+    #[test]
+    fn m8_06_bool_strategy_returns_base_no_shrink() {
+        let strategy = proptest::strategy::Just(PropertyValue::Bool(true));
+        let mut runner = TestRunner::new(Config::default());
+        let mut tree = strategy.new_tree(&mut runner).expect("new_tree");
+        assert_eq!(tree.current(), PropertyValue::Bool(true));
+        assert!(!tree.simplify(), "Bool should not simplify");
+        assert_eq!(tree.current(), PropertyValue::Bool(true));
+    }
+
+    /// `ExistencePredicate::EventTypeEquals` shrinks the event_type string.
+    #[test]
+    fn m8_06_existence_predicate_strategy_event_type_shrinks_string() {
+        let strategy = ExistencePredicateShrinking {
+            start: ExistencePredicate::EventTypeEquals {
+                event_type: "OPEN_HTTP".to_string(),
+            },
+        };
+        let mut runner = TestRunner::new(Config::default());
+        let mut tree = strategy.new_tree(&mut runner).expect("new_tree");
+        assert_eq!(
+            tree.current(),
+            ExistencePredicate::EventTypeEquals {
+                event_type: "OPEN_HTTP".to_string(),
+            }
+        );
+        assert!(tree.simplify());
+        if let ExistencePredicate::EventTypeEquals { event_type } = tree.current() {
+            assert_eq!(event_type.len(), 8, "one char should be deleted");
+        } else {
+            panic!("variant should be preserved");
+        }
+    }
+
+    /// `ExistencePredicate::ThreadEquals` shrinks the thread_id toward 0.
+    #[test]
+    fn m8_06_existence_predicate_strategy_thread_shrinks_u64() {
+        let strategy = ExistencePredicateShrinking {
+            start: ExistencePredicate::ThreadEquals { thread_id: 1000 },
+        };
+        let mut runner = TestRunner::new(Config::default());
+        let mut tree = strategy.new_tree(&mut runner).expect("new_tree");
+        assert!(tree.simplify());
+        if let ExistencePredicate::ThreadEquals { thread_id } = tree.current() {
+            assert_eq!(thread_id, 500, "thread_id should halve toward 0");
+        } else {
+            panic!("variant should be preserved");
+        }
+    }
+
+    /// `CallPath` strategy: each field shrinks independently.
+    #[test]
+    fn m8_06_call_path_strategy_shrinks_caller_and_callee() {
+        let strategy = CallPathShrinking {
+            start_caller: "foo".to_string(),
+            start_callee: "bar".to_string(),
+            start_max_depth: Some(3),
+        };
+        let mut runner = TestRunner::new(Config::default());
+        let mut tree = strategy.new_tree(&mut runner).expect("new_tree");
+        let (caller, callee, max_depth) = tree.current();
+        assert_eq!(caller, "foo");
+        assert_eq!(callee, "bar");
+        assert_eq!(max_depth, Some(3));
+        // Round 0: caller shrinks first.
+        assert!(tree.simplify());
+        let (caller, callee, _) = tree.current();
+        assert_eq!(caller.len(), 2, "caller lost one char");
+        assert_eq!(callee, "bar");
+        // Round 1: callee shrinks next.
+        assert!(tree.simplify());
+        let (caller, callee, _) = tree.current();
+        assert_eq!(caller.len(), 2);
+        assert_eq!(callee.len(), 2, "callee lost one char");
+    }
+
+    /// `CallPath` strategy: `max_depth` shrinks toward `None`.
+    #[test]
+    fn m8_06_call_path_strategy_max_depth_shrinks_to_none() {
+        let strategy = CallPathShrinking {
+            start_caller: String::new(),
+            start_callee: String::new(),
+            start_max_depth: Some(3),
+        };
+        let mut runner = TestRunner::new(Config::default());
+        let mut tree = strategy.new_tree(&mut runner).expect("new_tree");
+        // Call simplify() in a loop and observe max_depth's progress.
+        // Caller/callee are already empty so they don't shrink; max_depth
+        // shrinks Some(3) → Some(2) → Some(1) → None → terminal.
+        let mut seen_max_depths = Vec::new();
+        let mut shrink_iters = 0;
+        while tree.simplify() {
+            seen_max_depths.push(tree.current().2);
+            shrink_iters += 1;
+            if shrink_iters > 20 {
+                panic!("not converging within 20 rounds");
+            }
+        }
+        // First three simplifies shrink max_depth (3 → 2 → 1 → None);
+        // the 4th simplify hits max_depth_done=true and returns false.
+        assert_eq!(
+            seen_max_depths,
+            vec![Some(2), Some(1), None],
+            "max_depth should shrink Some(3) → Some(2) → Some(1) → None"
+        );
+        assert_eq!(tree.current().2, None, "final max_depth should be None");
+    }
+
+    /// `drive_strategy` integration: Number target shrinks through multiple
+    /// rounds, ending at a value near 0.0.
+    #[test]
+    fn m8_06_drive_strategy_with_number_shrinker_terminates_at_zero() {
+        let target = HypothesisInput {
+            session_id: "sess".into(),
+            kind: HypothesisKind::Invariant,
+            scope: None,
+            comparison: None,
+            constant: Some(PropertyValue::Number(1000.0)),
+            property_target: None,
+            predicate: None,
+            caller: None,
+            callee: None,
+            max_depth: None,
+        };
+        let p_cfg: proptest::test_runner::Config = ShrinkConfig {
+            max_rounds: 64,
+            seed: None,
+        }
+        .into();
+        let mut runner = TestRunner::new(p_cfg);
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("rt");
+        let result = rt.block_on(async {
+            drive_strategy(&mut runner, &target, |sampled| async move {
+                use crate::output::{HypothesisOutput, HypothesisVerdict};
+                let _ = sampled;
+                Ok::<_, ServiceError>(HypothesisOutput::Invariant {
+                    verdict: HypothesisVerdict::Violation {
+                        reason: "test".into(),
+                    },
+                    support_event_ids: vec![],
+                    counter_event_ids: vec![],
+                    scope: crate::output::HypothesisScope::PropertyValue,
+                    summary: "violation".into(),
+                })
+            })
+            .await
+        });
+        let (rounds, best) = result.expect("drive_strategy should succeed");
+        // m8-06: with real Number shrinker, rounds >= 8 (initial + 7 halvings
+        // to get under 8.0, then continued halving until < EPSILON).
+        assert!(
+            rounds >= 8,
+            "Number(1000.0) should shrink through many rounds, got {rounds}"
+        );
+        let v = if let Some(PropertyValue::Number(n)) = best.constant {
+            n
+        } else {
+            panic!("expected Number constant");
+        };
+        assert!(v.abs() < f64::EPSILON, "should converge to ~0.0, got {v}");
+    }
+
+    /// `drive_strategy` integration: Text target shrinks to empty string.
+    #[test]
+    fn m8_06_drive_strategy_with_text_shrinker_terminates_at_empty() {
+        let target = HypothesisInput {
+            session_id: "sess".into(),
+            kind: HypothesisKind::Invariant,
+            scope: None,
+            comparison: None,
+            constant: Some(PropertyValue::Text("hello".to_string())),
+            property_target: None,
+            predicate: None,
+            caller: None,
+            callee: None,
+            max_depth: None,
+        };
+        let p_cfg: proptest::test_runner::Config = ShrinkConfig {
+            max_rounds: 32,
+            seed: None,
+        }
+        .into();
+        let mut runner = TestRunner::new(p_cfg);
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("rt");
+        let result = rt.block_on(async {
+            drive_strategy(&mut runner, &target, |sampled| async move {
+                use crate::output::{HypothesisOutput, HypothesisVerdict};
+                let _ = sampled;
+                Ok::<_, ServiceError>(HypothesisOutput::Invariant {
+                    verdict: HypothesisVerdict::Violation {
+                        reason: "test".into(),
+                    },
+                    support_event_ids: vec![],
+                    counter_event_ids: vec![],
+                    scope: crate::output::HypothesisScope::PropertyValue,
+                    summary: "violation".into(),
+                })
+            })
+            .await
+        });
+        let (rounds, best) = result.expect("drive_strategy should succeed");
+        // m8-06: rounds counts initial + each successful simplify.
+        assert!(
+            rounds >= 6,
+            "Text(\"hello\") should shrink through many rounds, got {rounds}"
+        );
+        assert_eq!(best.constant, Some(PropertyValue::Text(String::new())));
     }
 }
