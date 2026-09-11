@@ -229,9 +229,9 @@ integration targets; one cross-cutting suite (e.g.
   window. This deviates from the M6 standing policy ("preserve v1
   names as deprecated shims") but is justified because there is
   nothing to preserve.
-* **`SessionMetadata` schema bump.** Adding `tail_sealed` +
-  `sealed_at` is a one-way additive change; the schema is
-  `serde::Deserialize` so old metadata files load with
+* **`SessionMetadata` additive bump.** Adding `tail_sealed` +
+  `sealed_at` is a one-way additive change; both are decorated
+  `#[serde(default)]` so old metadata files load with
   `tail_sealed=false, sealed_at=None` (verified during T1 unit
   tests). The `SessionStore::save_session` path needs no change.
 * **Sandbox smoke coverage.** `chronos-sandbox/tests/probe_lifecycle.rs`,

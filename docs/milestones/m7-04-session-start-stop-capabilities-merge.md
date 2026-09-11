@@ -245,7 +245,7 @@ SessionLifecycleProvenance { engine_version, source }
 ## `SessionMetadata` extension
 
 ```text
-// chronos-store/src/session_metadata.rs (or equivalent)
+// crates/chronos-store/src/storage.rs (existing struct)
 pub struct SessionMetadata {
     pub session_id: String,
     pub created_at: u64,
@@ -253,7 +253,6 @@ pub struct SessionMetadata {
     pub target: String,
     pub event_count: usize,
     pub duration_ms: u64,
-    pub schema_version: u32,  // bumped from "v2" → "v3"
     // New in m7-04:
     #[serde(default)]
     pub tail_sealed: bool,
@@ -264,8 +263,11 @@ pub struct SessionMetadata {
 
 The `#[serde(default)]` decorators ensure backward compatibility:
 metadata files written before m7-04 deserialize with
-`tail_sealed=false, sealed_at=None` so the v3 reader is a
-superset of v2.
+`tail_sealed=false, sealed_at=None` so the new reader is a
+superset of the old schema. (Note: `SessionMetadata` does not
+currently carry a `schema_version` field — m7-04 does not add one
+either; the additive bump is implicit in the `#[serde(default)]`
+design and round-trip unit tests.)
 
 ## v1 shim JSON shape preservation
 
