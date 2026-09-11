@@ -71,6 +71,7 @@ pub mod observe;
 pub mod output;
 pub mod probe;
 pub mod query_service;
+pub mod session_compare;
 pub mod session_export;
 pub mod sessions;
 pub mod state_query;
