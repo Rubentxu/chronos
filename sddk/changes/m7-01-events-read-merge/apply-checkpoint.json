@@ -3,7 +3,7 @@
   "title": "M7-01 — events_read v2 dispatcher + v1 shims for query_events / get_event",
   "status": "completed",
   "branch": "feat/m7-01-events-read-merge",
-  "head_sha": "f88363f",
+  "head_sha": "a551855",
   "base_sha": "ece02f7",
   "ff_merged_sha": null,
   "started_at": "2026-09-11T06:18:00Z",
