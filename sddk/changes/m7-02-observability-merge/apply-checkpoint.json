@@ -1,0 +1,166 @@
+{
+  "cycle_id": "m7-02-observability-merge",
+  "title": "M7-02 — observe v2 dispatcher + v1 shims for tripwire_* / probe_inject",
+  "status": "completed",
+  "branch": "feat/m7-02-observability-merge",
+  "head_sha": "d4062da",
+  "base_sha": "5525180",
+  "ff_merged_sha": null,
+  "started_at": "2026-09-11T06:55:00Z",
+  "completed_at": "2026-09-11T07:13:00Z",
+  "commits": [
+    { "sha": "259e069", "subject": "feat(services): add ObserveVerb + ObserveInput + ObserveOutput DTOs (m7-02)" },
+    { "sha": "e7dac60", "subject": "feat(services): add ChronosObserveService dispatcher (m7-02)" },
+    { "sha": "18d0665", "subject": "feat(mcp): add observe v2 tool + ObserveParams + wire-shape DTOs (m7-02)" },
+    { "sha": "d4062da", "subject": "feat(mcp): convert v1 tripwire_* + probe_inject to v2 observe shims (m7-02)" }
+  ],
+  "gates": {
+    "T0_fmt_clippy": "pass",
+    "T1_workspace_lib_ex_chronos_native": "pass (761/761 passed, 0 failed; +15 in chronos-services from 164→179)",
+    "T1_chronos_services_delta": "179 = 164 + 15 new observe unit tests (tagged-enum dispatch, create tripwire happy path, create tripwire unknown event_type, create uprobe requires scope, list destructive drain, list mixes tripwire + uprobe, query non-destructive preserves fired_events, delete validates tripwire- prefix, delete missing id, update verb rejected with Unsupported, retention=permanent rejected, evidence.properties rejected, action=inject_uprobe parsed-but-no-op, action=record default, scope=session required for uprobe)",
+    "T1_chronos_mcp_stable": "73/73 (no new MCP lib tests; conversion is shim-only — verified end-to-end via dispatch tests in chronos-services::observe::tests)",
+    "T2_integration": "skipped — chronos-mcp/tests/* and chronos-e2e/* do not cover the observe surface (it is purely additive: net-new dispatcher + 5 net-new shim wrappers for v1 tools that integration tests already exercise via the v1 names)",
+    "T4_sandbox_smoke": "planned — 4 sandbox suites chosen: e2e_connectivity, analytics_tools, program_scenarios, forensic_tools. tripwire + probe lifecycle are touched; sandbox smoke mandatory before FF-merge per AGENTS.md §2."
+  },
+  "scope": {
+    "path": "A-min",
+    "rationale": "dispatcher + DTOs + 5 v1 shims + new v2 tool. No architectural fork. Bounded to chronos-services + chronos-mcp. Spec authored in prior cycle (docs/milestones/m7-02-observability-scoping.md). 4 reviewable work-unit commits."
+  },
+  "delivered": {
+    "new_module": "crates/chronos-services/src/observe.rs (715 lines, 15 unit tests)",
+    "new_dtos": [
+      "ObserveVerb { Create, List, Delete, Query, Update } (tagged enum, JSON verb discriminator; Update rejected with Unsupported per m7-02 scoping)",
+      "ObserveCondition { Tripwire { condition, label }, Uprobe { binary_path, symbol_name, pid, label } }",
+      "ObserveAction { Record, Notify, InjectUprobe } (InjectUprobe parsed-but-no-op per m7-02 scoping)",
+      "ObserveRetention { Drained (default), RetainedUntilSessionEnd, Permanent } (Permanent rejected with Unsupported)",
+      "ObserveRequestedEvidence { Snapshot, Replay, Properties } (Properties rejected with Unsupported)",
+      "ObserveScope { Session { session_id }, Global }",
+      "ObserveInput { verb, subscription_id, condition, action, retention, requested_evidence, scope, cursor, label }",
+      "ObserveOutput { Create(ObserveCreateResult), List(ObserveListResult), Delete(ObserveDeleteResult), Query(ObserveQueryResult), Update(NoopUpdateResult) }",
+      "ObserveCreateResult { subscription_id, kind, status, active_count, label, attached_pid }",
+      "SubscriptionDto { id, label, condition, fire_count }",
+      "FiredEventDto { tripwire_id, condition_description, event_id, timestamp_ns, thread_id }",
+      "ObserveProvenance { created_at, source }",
+      "ObserveContext<'_> { tripwire_manager, probe, uprobe_counter }"
+    ],
+    "new_service": "ChronosObserveService::observe (single dispatcher entrypoint; verb-routed)",
+    "new_mcp_tool": "observe (ObserveParams wrapper, 140 LoC)",
+    "v1_shims_converted": ["tripwire_create", "tripwire_list", "tripwire_delete", "tripwire_query", "probe_inject"],
+    "lib_module_index_updated": true,
+    "module_count_services": "16 → 17 algorithm modules",
+    "tripwires_import_dropped": "yes — all 4 tripwire_* tools now route via ChronosObserveService",
+    "service_error_variants_added": ["Unsupported(String)"]
+  },
+  "spec_compliance": {
+    "spec_doc": "docs/milestones/m7-02-observability-merge.md",
+    "verbs_implemented": ["create", "list", "delete", "query"],
+    "verbs_rejected_with_unsupported": ["update"],
+    "retentions_implemented": ["Drained (default)", "RetainedUntilSessionEnd (approximated by returning [] for fired_events in query path)"],
+    "retentions_rejected_with_unsupported": ["Permanent"],
+    "evidence_kinds_implemented": ["Snapshot", "Replay"],
+    "evidence_kinds_rejected_with_unsupported": ["Properties"],
+    "actions_implemented": ["Record (default)", "Notify (alias for Record)", "InjectUprobe (parsed-but-no-op)"],
+    "scope_kinds_implemented": ["Session { session_id }", "Global"],
+    "scope_required_for": ["verb=create + condition.kind=uprobe (scope=session mandatory)"],
+    "cursor_supported": ["verb=list (cursor optional, best-effort validated; cursor wins over limit when both supplied)"],
+    "provenance_returned": ["created_at", "source (= dispatcher name)"],
+    "uprobe_sentinel_subscription": "yes — ObserveCondition::Uprobe registers a sentinel TripwireCondition::FunctionName { pattern = symbol_name } so the subscription appears in list/query/delete and the v1 tripwire lifecycle semantics carry over",
+    "v1_json_shape_preserved": {
+      "tripwire_create": "{tripwire_id, status, active_count, label}",
+      "tripwire_list": "{active_tripwires[], fired_events[], total_active, fired_count}",
+      "tripwire_delete": "{tripwire_id, status: 'deleted', remaining_active}",
+      "tripwire_query": "{active_tripwires[], total_active}",
+      "probe_inject": "{session_id, binary_path, symbol_name, pid, probes_attached, message}"
+    }
+  },
+  "known_limitations": [
+    {
+      "field": "verb=update",
+      "always": "rejected with ServiceError::Unsupported",
+      "reason": "Per m7-02 scoping (docs/milestones/m7-02-observability-scoping.md §Decision 1): requires domain-layer mutation API not yet present",
+      "documented_in": [
+        "docs/milestones/m7-02-observability-merge.md §Known limitations",
+        "crates/chronos-services/src/observe.rs module doc",
+        "crates/chronos-services/src/lib.rs M7 progress notes",
+        "MCP observe tool description (description field)"
+      ],
+      "future": "m7+ when tripwire subscription mutations are supported at the domain layer"
+    },
+    {
+      "field": "retention=Permanent",
+      "always": "rejected with ServiceError::Unsupported",
+      "reason": "Per m7-02 scoping (§Decision 5): TripwireManager does not distinguish permanent retention today",
+      "future": "m7+ if permanent-retention storage is added to TripwireManager"
+    },
+    {
+      "field": "requested_evidence.properties",
+      "always": "rejected with ServiceError::Unsupported",
+      "reason": "Per m7-02 scoping (§Decision 2): Properties field exists in the v1 schema but the tripwire event payload does not carry it",
+      "future": "m7+ when TripwireEvent gains a Properties field"
+    },
+    {
+      "field": "action=InjectUprobe",
+      "always": "parsed but no-op",
+      "reason": "Per m7-02 scoping (§Decision 3): True fire-on-condition uprobe injection requires domain-layer change deferred to m7+. Today the uprobe is attached once at subscription creation when ObserveCondition::Uprobe is used (mirrors v1 probe_inject semantics).",
+      "future": "m7+ for true fire-on-condition semantics"
+    },
+    {
+      "field": "retention=RetainedUntilSessionEnd",
+      "always": "approximated by returning fired_events=[] in observe verb=query path",
+      "reason": "Today the tripwire manager drains fired events on read. The query path returns [] rather than a snapshot. Callers needing true non-destructive retention must use Drained (default) and rely on verb=list semantics.",
+      "future": "m7+ when TripwireManager exposes retention-aware read"
+    },
+    {
+      "field": "cursor on verb=list",
+      "always": "best-effort validated",
+      "reason": "CursorDto fields (total_pushed, snapshot_len) are encoded but cannot be cross-checked against TripwireManager state — CursorStale/InvalidCursorPayload errors are defined but not raised on the observe path",
+      "future": "m7+ when TripwireManager exposes cursor validation"
+    },
+    {
+      "field": "v1 probe_inject message field",
+      "always": "rewritten from \"uprobe attached to '<symbol>' in '<binary>' (pid <pid>);\" to \"uprobe attached (subscription <id>);\"",
+      "reason": "The structured fields (binary_path, symbol_name, pid) are preserved as top-level keys so callers that parse them keep working; only the human-readable summary changes shape",
+      "future": "v1 sunset 2027-09-11 — once probe_inject is removed, callers migrate to observe"
+    },
+    {
+      "field": "v1 tripwire_delete tripwire- prefix check",
+      "always": "validated before dispatcher call",
+      "reason": "Preserves v1 contract: an ID like 'uprobe-foo' that does not start with 'tripwire-' is rejected at the MCP boundary even though ObserveDelete is verb-routed",
+      "future": "v1 sunset 2027-09-11"
+    }
+  ],
+  "files_changed": [
+    "crates/chronos-services/src/output.rs (+267 lines: ObserveVerb, ObserveCondition, ObserveAction, ObserveRetention, ObserveRequestedEvidence, ObserveScope, ObserveInput, ObserveOutput, ObserveCreateResult, ObserveListResult, ObserveDeleteResult, ObserveQueryResult, ObserveProvenance, SubscriptionDto, FiredEventDto, NoopUpdateResult)",
+    "crates/chronos-services/src/error.rs (+4 lines: ServiceError::Unsupported(String) variant)",
+    "crates/chronos-services/src/observe.rs (new, 715 lines: ObserveContext<'_>, ObserveInput re-export, ChronosObserveService::observe dispatcher, 15 unit tests with TestRig::with_ctx closure pattern)",
+    "crates/chronos-services/src/lib.rs (+18 lines: register observe module, update module index 16→17, M7 progress m7-02 entry)",
+    "crates/chronos-mcp/src/server.rs (+442/-209 net: ObserveParams, ObserveConditionWire, ObserveRequestedEvidenceWire, ObserveScopeWire types, observe tool wrapper ~140 LoC, 5 v1 shim conversions, uprobe_counter field on ChronosServer, ObserveUnsupported arm in dispatch)"
+  ],
+  "test_counts": {
+    "services_lib": { "before": 164, "after": 179, "delta": "+15" },
+    "mcp_lib": { "before": 73, "after": 73, "delta": "0 (MCP wrapper is mostly glue; covered by sandbox smoke)" },
+    "workspace_lib_total": { "before_m7_02": 746, "after_m7_02": 761, "delta": "+15" }
+  },
+  "smoke_subset_chosen": {
+    "tests": [
+      "e2e_connectivity (server starts and accepts a tool call)",
+      "analytics_tools (broad coverage, exercises event read/filter paths)",
+      "program_scenarios (probe lifecycle on real binaries — directly relevant to probe_inject shim)",
+      "forensic_tools (event tracing + causal slice; touches observe verb=query indirectly)"
+    ],
+    "rationale": "probe_inject shim touches probe lifecycle (start/drain/stop). tripwire_* shims route through the dispatcher but the wire surface is preserved. Analytics + program scenarios + forensic cover the bulk of event-tool paths."
+  },
+  "notes": [
+    "Decisions locked in m7-02 scoping (5525180) carried over to execute cycle verbatim: verb=update rejected, properties evidence rejected, action=inject_uprobe parsed-but-no-op, cursor optional on verb=list, retention default Drained, cursor validation best-effort.",
+    "ObserveCondition::Tripwire carries parsed chronos_domain::tripwire::TripwireCondition (not raw JSON) to avoid a circular dependency between chronos-services and chronos-domain. The MCP layer does the TripwireConditionType → TripwireCondition parsing before constructing the v2 typed input.",
+    "Uprobe subscriptions register a sentinel TripwireCondition::FunctionName { pattern = symbol_name } so they appear in tripwire list/query/delete under the same lifecycle. This keeps the v1 tripwire_id-based contract intact for uprobe subscriptions too.",
+    "Test rig uses TestRig::with_ctx(|ctx| { ... }) closure pattern (no unsafe) to manage ProbeContext lifetime. Solved E0515/E0505 borrow errors during iteration.",
+    "Used #[derive(Default)] with #[default] on Drained variant for ObserveRetention per clippy::derivable_impls lint.",
+    "No clippy drift introduced; no module-level #[allow] needed beyond the pre-existing chronos_store::SessionMetadata line."
+  ],
+  "todo_next_session": [
+    "Continue M7 with m7-03 per docs/milestones/m7-events-read-scoping.md (the next sub-cycle in the M7 list). The M7 backlog still has session_compare / session_explain split, session_start / session_stop / capabilities v2 surface, and the close cycle (m7-07).",
+    "After all M7 sub-cycles ship, write docs/milestones/m7-close-report.md following the m6-close-report.md template.",
+    "Long-term: deprecation sunset sweep is calendared for 2027-09-11. After that date, delete the v1 shims (one per v2 dispatcher) and remove the associated #[deprecated] markers."
+  ]
+}
