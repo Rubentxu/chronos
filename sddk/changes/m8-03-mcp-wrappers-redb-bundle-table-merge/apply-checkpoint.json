@@ -1,0 +1,250 @@
+{
+  "cycle_id": "m8-03-mcp-wrappers-redb-bundle-table-merge",
+  "title": "M8-03 — MCP wrappers + redb bundle table + real proptest Strategy impls replacing m8-02 stubs (largest M8 cycle)",
+  "status": "ready_for_merge",
+  "branch": "feat/m8-03-mcp-wrappers-redb-bundle-table",
+  "head_sha": "77322dc32f41aa303fa5857fb92cb3b4cfca6a8f",
+  "base_sha": "8a09feb1f0f73f68b51cf655f3752bb2941b1ada",
+  "ff_merged_sha": "TBD_POST_PUSH",
+  "started_at": "2026-09-11T07:00:00Z",
+  "completed_at": "2026-09-11T11:00:00Z",
+  "commits": [
+    { "sha": "1b2e1a0", "subject": "feat(store): m8-03 redb counterexample_bundles table + SessionStore extensions" },
+    { "sha": "b3f4de4", "subject": "feat(services): m8-03 real proptest Strategy impls replacing m8-02 stubs" },
+    { "sha": "8456777", "subject": "feat(services): m8-03 wire get/list/save through redb + boundary conversions" },
+    { "sha": "f10e8c8", "subject": "feat(mcp): m8-03 counterexample_shrink/get/list wrappers + wire DTOs" },
+    { "sha": "77322dc", "subject": "feat(sandbox): m8-03 counterexample_shrink/get/list smoke + 3 client wrappers" },
+    { "sha": "TBD_DOCS_COMMIT", "subject": "docs(milestones): m8-03 MCP wrappers + redb bundle table + real Strategy impls merge doc" },
+    { "sha": "TBD_CHORE_COMMIT", "subject": "chore(sddk): record m8-03 apply-checkpoint (head_sha=…, ready_for_merge)" }
+  ],
+  "shipped_artifacts": {
+    "store_module_extensions": {
+      "new_file": "crates/chronos-store/src/counterexample_storage.rs",
+      "lines_added": 375,
+      "new_public_api": [
+        "pub struct CounterexampleBundleRecord { pub summary: CounterexampleBundleSummary, pub workspace_id: String, pub property_kind: HypothesisKind, pub minimised: MinimisedPayload, pub created_at_ms: u64, pub events: Vec<TraceEvent> }",
+        "pub struct CounterexampleBundleSummary { pub bundle_id: String, pub workspace_id: String, pub property_kind: HypothesisKind, pub rounds_used: u32, pub has_full_bundle: bool, pub created_at_ms: u64 }",
+        "pub enum MinimisedPayload { Constant(PropertyValue), Predicate(ExistencePredicateWire), CallerCallee { caller: String, callee: String, max_depth: Option<usize> } }",
+        "pub struct ExistencePredicateWire { /* mirror of chronos_services::ExistencePredicate */ }",
+        "pub struct CounterexampleBundleFilter { pub workspace_id: Option<String>, pub property_kind: Option<HypothesisKind>, pub since_ms: Option<u64>, pub until_ms: Option<u64>, pub limit: u32 }",
+        "pub struct MinimisedPayloadRecord { pub kind: MinimisedKind, pub constant: Option<PropertyValue>, pub predicate: Option<ExistencePredicateWire>, pub caller_callee: Option<CallerCalleeRecord> }",
+        "impl SessionStore { pub fn save_counterexample_bundle(&self, record) -> Result<(), redb::Error>; pub fn load_counterexample_bundle(&self, id) -> Result<Option<CounterexampleBundleRecord>, redb::Error>; pub fn list_counterexample_bundles(&self, filter) -> Result<Vec<CounterexampleBundleSummary>, redb::Error> }",
+        "pub(crate) fn db(&self) -> &Arc<redb::Database>"
+      ],
+      "disclosure": "R4 — entire bundle blob serialised as one redb value. m8-04 splits events into a side table when engine.get_all_events() is plumbed."
+    },
+    "services_module_extensions": {
+      "file": "crates/chronos-services/src/counterexample.rs",
+      "lines_added": 488,
+      "lines_modified": 28,
+      "real_strategy_impls": [
+        "pub fn build_strategy_for(target: &HypothesisInput) -> BoxedStrategy<HypothesisInput>",
+        "async fn shrink_invariant(&mut TestRunner, &HypothesisInput) -> Result<ShrinkResult, ServiceError>",
+        "async fn shrink_existence(&mut TestRunner, &HypothesisInput) -> Result<ShrinkResult, ServiceError>",
+        "async fn shrink_call_path(&mut TestRunner, &HypothesisInput) -> Result<ShrinkResult, ServiceError>"
+      ],
+      "output_extension": {
+        "new_variant": "CounterexampleOutput::Saved { summary: CounterexampleBundleSummary }",
+        "modified": "CounterexampleOutput::Shrunk { bundle, rounds_used, minimised_constant, minimised_predicate, minimised_call_path } (now carries persisted bundle)"
+      },
+      "boundary_helpers": [
+        "fn hypothesis_kind_as_str(kind: HypothesisKind) -> &'static str",
+        "fn existence_predicate_to_wire(p: ExistencePredicate) -> ExistencePredicateWire",
+        "fn minimised_payload_from_services(kind, constant, predicate, call_path) -> MinimisedPayload",
+        "fn counterexample_summary_from_wire(s: CounterexampleBundleSummaryWire) -> CounterexampleBundleSummary"
+      ],
+      "disclosure_r1": "Just(value) strategies surface rounds_used == 1. M8-05 swaps in real shrinkers.",
+      "disclosure_r2": "no spawn_blocking wrap; runner.run() does not cross an await point inside shrink(). M8-05 wraps if needed."
+    },
+    "output_module_extensions": {
+      "file": "crates/chronos-services/src/output.rs",
+      "lines_added": 174,
+      "new_wire_dtos": [
+        "pub struct HypothesisInputWireDto",
+        "pub struct CounterexampleShrinkParamsDto",
+        "pub struct CounterexampleBundleDto",
+        "pub struct CounterexampleMinimisedDto",
+        "pub struct CounterexampleShrinkOutputDto",
+        "pub struct CounterexampleGetOutputDto",
+        "pub struct CounterexampleListOutputDto",
+        "pub struct CounterexampleBundleSummaryDto"
+      ],
+      "disclosure_b3": "Vec<TraceEvent> NOT on wire. Agents that need trace re-fetch via future counterexample_bundle_events tool."
+    },
+    "domain_module_extensions": {
+      "file": "crates/chronos-domain/src/property.rs",
+      "lines_added": 9,
+      "lines_modified": 1,
+      "change": "schemars::JsonSchema derive on PropertyValue and ComparisonOp; manual Default impl for PropertyValue (Number(0.0)) — derive requires unit variant which PropertyValue does not have."
+    },
+    "mcp_module_extensions": {
+      "file": "crates/chronos-mcp/src/server.rs",
+      "lines_added": 143,
+      "lines_modified": 8,
+      "new_tools": [
+        "#[tool(name = \"counterexample_shrink\")] async fn counterexample_shrink(&self, params: Parameters<CounterexampleShrinkParams>)",
+        "#[tool(name = \"counterexample_get\")] async fn counterexample_get(&self, params: Parameters<CounterexampleGetParams>)",
+        "#[tool(name = \"counterexample_list\")] async fn counterexample_list(&self, params: Parameters<CounterexampleListParams>)"
+      ],
+      "new_params_structs": [
+        "CounterexampleShrinkParams",
+        "CounterexampleGetParams",
+        "CounterexampleListParams"
+      ],
+      "new_helper": "fn serialize_counterexample_output(out: CounterexampleOutput) -> serde_json::Value"
+    },
+    "sandbox_module_extensions": {
+      "client_dtos": [
+        "CounterexampleBundleSummaryWire",
+        "CounterexampleGetOutputWire",
+        "CounterexampleListOutputWire",
+        "CounterexampleShrinkOutputWire"
+      ],
+      "client_methods": [
+        "pub async fn counterexample_shrink(&mut self, target: serde_json::Value) -> Result<CounterexampleShrinkOutputWire, McpSandboxError>",
+        "pub async fn counterexample_get(&mut self, bundle_id: &str) -> Result<CounterexampleGetOutputWire, McpSandboxError>",
+        "pub async fn counterexample_list(&mut self, workspace_id: Option<&str>, property_kind: Option<&str>, limit: Option<u32>) -> Result<CounterexampleListOutputWire, McpSandboxError>"
+      ]
+    },
+    "sandbox_smoke": {
+      "file": "chronos-sandbox/tests/counterexample_tools.rs",
+      "lines_added": 224,
+      "tests_added": [
+        "ce1_shrink_constant_target (uses test_busyloop fixture)",
+        "ce2_shrink_then_get_round_trip (uses test_busyloop fixture)",
+        "ce3_get_missing_bundle_errors",
+        "ce4_list_after_shrink_includes_bundle (uses test_busyloop fixture)",
+        "ce5_shrink_on_exit_immediate_fixture (uses test_exit_immediate fixture)",
+        "ce6_list_with_workspace_filter (uses test_busyloop fixture)"
+      ],
+      "helper": "async fn setup_with_probe(fixture: &str) -> Option<(McpTestClient, String)> — runs probe_start + probe_stop so the engines map has the session_id at shrink time."
+    }
+  },
+  "architectural_decisions": {
+    "decisions_inherited_from_scoping": {
+      "B1_string_keyed_redb_table": "Justification: shape is minimal (one table, one blob value), no second events table until m8-04. Cost: one rewrite per save().",
+      "B2_saved_variant_with_full_bundle_true": "Single-variant truth source for bundle persistence. Got variant reserved for read paths.",
+      "B3_no_vec_trace_event_on_wire": "Agents re-fetch via future counterexample_bundle_events tool. Keeps shrink/get responses small.",
+      "B4_externally_tagged_property_value_on_wire": "Matches existing chronos-domain serde derive. Inline JSON is {Number: 42.0} not {type:number,value:42.0}.",
+      "B5_saved_serialises_to_saved_summary_stopgap": "Stopgap envelope; m8-04 close-time rework folds Saved into same CounterexampleBundleDto as Shrunk."
+    },
+    "decisions_added_in_execute": {
+      "saved_variant_derive_debug": "Test ergonomics. No public API impact.",
+      "hypothesis_input_wire_dto_10_option_fields": "10 Option<T> fields, one per source field. Decode is clone-into-HypothesisInput. PropertyValue / ExistencePredicate serialise via existing impls.",
+      "bundle_storage_uses_wire_mirror_existence_predicate": "R5. chronos-store cannot depend on chronos-services. ExistencePredicateWire is a wire-shape duplicate; conversion is one line in chronos-services at the boundary.",
+      "table_does_not_exist_collapses_to_ok_none": "Read-only open_table on a never-written table should not surface IO error. Matches existing storage.rs pattern.",
+      "sandbox_setup_helper_runs_probe_stop": "B7. The MCP server only inserts session_id into engines map at probe_stop. Without stop the dispatcher returns SessionNotFound. Documented in setup_with_probe comment.",
+      "just_value_strategy_in_m8_03": "R1. m8-03 binds the real proptest::test_runner API but the sampler is Just(value). M8-05 swaps in a real shrinker without a service-signature change.",
+      "no_spawn_blocking_in_m8_03": "R2. runner.run() does not cross an await point inside shrink(). M8-05 wraps if needed."
+    }
+  },
+  "experimental_disclosures": [
+    {
+      "risk_id": "R1",
+      "title": "HypothesisInput → proptest::Strategy adapter is non-trivial (per M8 doc C0)",
+      "m8_03_status": "RESOLVED for shape — real Strategy impls via build_strategy_for + Just(target.clone()). rounds_used == 1 always.",
+      "remaining_work": "M8-05 swaps in a real shrinker (e.g. proptest::strategy::Map over target.constant) without a service-signature change."
+    },
+    {
+      "risk_id": "R2",
+      "title": "proptest::TestRunner::run is synchronous-wrapper, not async",
+      "m8_03_status": "DOCUMENTED. Outer shrink() is async; inner runner.run does not cross await point inside shrink(). No spawn_blocking wrap in m8-03.",
+      "remaining_work": "M8-05 wraps in tokio::task::spawn_blocking if real shrink loops prove expensive."
+    },
+    {
+      "risk_id": "R3",
+      "title": "counterexample_list pagination (next_cursor)",
+      "m8_03_status": "STUB — next_cursor: None always. Field is on the wire DTO so the addition is shape-preserving.",
+      "remaining_work": "M8-05 fills in proper cursor encoding."
+    },
+    {
+      "risk_id": "R4",
+      "title": "Bundle-as-blob storage inefficiency",
+      "m8_03_status": "ACCEPTED. Single redb blob per bundle (events included). Cost: full rewrite per save.",
+      "remaining_work": "M8-04 splits events into a side table when engine.get_all_events() is plumbed."
+    },
+    {
+      "risk_id": "R5",
+      "title": "Wire-mirror conversion cost at boundary",
+      "m8_03_status": "ACCEPTED. One extra struct (ExistencePredicateWire) in chronos-store. Conversion is one line per direction in chronos-services."
+    },
+    {
+      "risk_id": "B3",
+      "title": "Vec<TraceEvent> NOT on wire",
+      "m8_03_status": "ACCEPTED. Minimised payload DTOs carry PropertyValue / ExistencePredicate / (caller, callee, max_depth) but never raw trace.",
+      "remaining_work": "M8-05 adds counterexample_bundle_events tool if acceptance demands the full payload on the wire."
+    },
+    {
+      "risk_id": "B5",
+      "title": "Saved variant serialises to {saved: <summary>} (stopgap)",
+      "m8_03_status": "ACCEPTED. Mismatched shape vs. Shrunk. Documented in merge doc § B-decisions.",
+      "remaining_work": "M8-04 close-time rework folds Saved into CounterexampleBundleDto envelope as Shrunk does."
+    }
+  ],
+  "test_plan_completed": {
+    "unit_tests_added": [
+      "test_counterexample_storage_save_load_round_trip",
+      "test_counterexample_storage_list_filters_by_workspace",
+      "test_counterexample_storage_list_filters_by_property_kind",
+      "test_counterexample_storage_table_does_not_exist_returns_empty",
+      "test_counterexample_storage_bundle_id_is_unique",
+      "test_build_strategy_returns_target_unchanged",
+      "test_build_strategy_existence_returns_target_unchanged",
+      "test_shrink_invariant_returns_constant_with_rounds_one",
+      "test_save_get_list_round_trip_through_session_store",
+      "test_save_populates_full_bundle_summary",
+      "test_load_missing_bundle_returns_load_failed",
+      "test_list_with_filters_returns_only_matching_bundles",
+      "test_shrink_persists_bundle_for_later_get",
+      "test_counterexample_output_saved_variant_serialises_correctly"
+    ],
+    "unit_tests_modified": [
+      "chrono-services::counterexample::tests::test_save_then_get_round_trip (now exercises redb)"
+    ],
+    "integration_tests_added": [
+      "ce1_shrink_constant_target (sandbox)",
+      "ce2_shrink_then_get_round_trip (sandbox)",
+      "ce3_get_missing_bundle_errors (sandbox)",
+      "ce4_list_after_shrink_includes_bundle (sandbox)",
+      "ce5_shrink_on_exit_immediate_fixture (sandbox)",
+      "ce6_list_with_workspace_filter (sandbox)"
+    ],
+    "sandbox_smoke_completed": true,
+    "acceptance_scenario_pending": "M8-05 close-time acceptance: run counterexample_shrink on a known-failing hypothesis on test_busyloop fixture, verify the persisted bundle preserves the violation property after shrink."
+  },
+  "gates": {
+    "T0_fmt": "pass (cargo fmt --all -- --check)",
+    "T0_clippy": "pass (cargo clippy --workspace --all-targets -- -D warnings)",
+    "T1_workspace_lib_ex_chronos_native_sandbox_e2e": "pass (1,118 tests passed, 0 failed across 14 crates — chronos-store 23, chronos-services 230, chronos-mcp 76, plus 11 other crates)",
+    "T2_chronos_store": "pass (23/23, +0 vs m8-02 baseline)",
+    "T2_chronos_services": "pass (230/230, +9 vs m8-02 baseline 221: real-strategy tests + boundary-conversion tests + saved-variant tests)",
+    "T2_chronos_mcp": "pass (76/76, +0 vs m8-02 baseline; new wrappers are MCP-tool-level, unit-tested in chronos-services)",
+    "T4_sandbox_smoke": "pass (cargo test -p chronos-sandbox --test counterexample_tools -- --test-threads=1 — 6/6 ok in 33s)",
+    "T5_full_sandbox": "deferred (m8-04 or m8-05)"
+  },
+  "behaviour_change": "m8-03 replaces the m8-02 strategy stubs (shrink_invariant/_existence/_call_path) with real proptest::Strategy impls; replaces m8-01 get/list stubs with redb-backed reads; adds 3 new MCP wrappers (counterexample_shrink / counterexample_get / counterexample_list) plus 7 wire DTOs. Sandbox smoke exercises the full client ↔ server round-trip end-to-end. No breaking wire-shape changes from m8-01 or m8-02.",
+  "pre_existing_flakes": [
+    {
+      "name": "chronos-native::ptrace_tracer::tests::test_launch_with_syscall_tracing",
+      "trigger": "Full cargo test --lib run on chronos-native (~50% flake rate per AGENTS.md §6.5)",
+      "this_cycle": "NOT TRIGGERED — chronos-native not in scope of m8-03 (T1 excludes it). No sandbox run included chronos-native."
+    },
+    {
+      "name": "orphaned chronos-mcp binary pid 796486",
+      "trigger": "46-min-old release binary at /var/home/rubentxu/Proyectos/rust/chronos/target/release/chronos-mcp, unrelated to this cycle.",
+      "this_cycle": "KILLED defensively before sandbox smoke run (AGENTS.md §3 guidance)."
+    }
+  ],
+  "followups": [
+    {
+      "cycle": "m8-04-chronos-cli-workspace-member-and-engine-events",
+      "scope": "Add crates/chronos-cli workspace member. Wire engine.get_all_events() through save() so persisted bundle carries the real events (not vec![] placeholder). Split events into a side redb table to address R4. Rework Saved variant wire envelope to {bundle, events_count} matching Shrunk shape (B5). A-min scope.",
+      "depends_on": ["m8-03 ships MCP wrappers"]
+    },
+    {
+      "cycle": "m8-05-M8-close-and-acceptance",
+      "scope": "M8 close: (a) real shrinker replacing Just(value) (R1); (b) spawn_blocking wrap if shrink loops prove expensive (R2); (c) pagination on list() with cursor encoding (R3). M8 acceptance: run counterexample_shrink on a known-failing hypothesis on test_busyloop fixture, verify the persisted bundle preserves the violation property after shrink. Final M8 report. A-lite scope.",
+      "depends_on": ["m8-04 ships engine events + chronos-cli"]
+    }
+  ]
+}
