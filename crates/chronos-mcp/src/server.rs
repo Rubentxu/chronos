@@ -1571,6 +1571,39 @@ fn text_content(text: impl Into<String>) -> Vec<Content> {
 }
 
 // ============================================================================
+// Counterexample tool params (m8-03 MCP wrappers)
+// ============================================================================
+
+/// Params for `counterexample_shrink` (m8-03). Mirrors
+/// `chronos_services::output::CounterexampleShrinkParamsDto` 1:1 but
+/// re-declared here so the rmcp `Parameters<T>` derive can drive the
+/// JSON-schema-driven argument generation without exposing the
+/// services-internal HypothesisInput type on the wire verbatim.
+#[derive(Debug, serde::Deserialize, JsonSchema)]
+pub struct CounterexampleShrinkParams {
+    pub property_kind: chronos_services::output::HypothesisKind,
+    pub target_hypothesis: chronos_services::output::HypothesisInputWireDto,
+    pub max_rounds: Option<u32>,
+    pub seed: Option<u64>,
+}
+
+/// Params for `counterexample_get` (m8-03).
+#[derive(Debug, serde::Deserialize, JsonSchema)]
+pub struct CounterexampleGetParams {
+    pub bundle_id: String,
+}
+
+/// Params for `counterexample_list` (m8-03).
+#[derive(Debug, serde::Deserialize, JsonSchema)]
+pub struct CounterexampleListParams {
+    pub workspace_id: Option<String>,
+    pub property_kind: Option<chronos_services::output::HypothesisKind>,
+    pub since_ms: Option<u64>,
+    pub until_ms: Option<u64>,
+    pub limit: Option<u32>,
+}
+
+// ============================================================================
 // Tool handlers using rmcp macros
 // ============================================================================
 
@@ -5071,6 +5104,276 @@ impl ChronosServer {
             ))),
             Err(ServiceError::InvalidInput(s)) => Ok(CallToolResult::error(text_content(s))),
             Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
+        }
+    }
+
+    // ========================================================================
+    // M8 — Counterexample MCP wrappers (m8-03)
+    // ========================================================================
+
+    /// `counterexample_shrink` — run proptest's shrink loop on a failing
+    /// hypothesis. Returns the freshly-persisted bundle summary and the
+    /// full-bundle DTO (events_count + minimised payload).
+    #[tool(
+        name = "counterexample_shrink",
+        description = "Minimize a failing hypothesis by running proptest's shrink loop on the captured trace events. Returns the bundle summary plus a CounterexampleBundleDto carrying events_count and the minimised payload shape. m8-03 ships with Just(value) strategies (no real shrinking yet); rounds_used reports the round count the runner actually used."
+    )]
+    async fn counterexample_shrink(
+        &self,
+        params: Parameters<CounterexampleShrinkParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let p = params.0;
+
+        // Build the wire -> HypothesisInput bridge.
+        let target = chronos_services::hypothesis_test::HypothesisInput {
+            session_id: p.target_hypothesis.session_id,
+            kind: p.target_hypothesis.kind,
+            scope: p.target_hypothesis.scope,
+            comparison: p.target_hypothesis.comparison,
+            constant: p.target_hypothesis.constant,
+            property_target: p.target_hypothesis.property_target,
+            predicate: p.target_hypothesis.predicate,
+            caller: p.target_hypothesis.caller,
+            callee: p.target_hypothesis.callee,
+            max_depth: p.target_hypothesis.max_depth.map(|d| d as usize),
+        };
+        let hyp_ctx = chronos_services::hypothesis_test::HypothesisTestContext {
+            engines: &self.engines,
+        };
+        let counterexample_ctx = chronos_services::counterexample::CounterexampleContext {
+            store: &self.store,
+            hypothesis_ctx: &hyp_ctx,
+        };
+        let input = chronos_services::counterexample::CounterexampleShrinkInput::Shrink {
+            property_kind: p.property_kind,
+            target_hypothesis: target,
+            max_rounds: p
+                .max_rounds
+                .unwrap_or(chronos_services::counterexample::DEFAULT_SHRINK_MAX_ROUNDS),
+            seed: p.seed,
+        };
+        match chronos_services::counterexample::ChronosCounterexampleService::shrink(
+            &counterexample_ctx,
+            input,
+        )
+        .await
+        {
+            Ok(out) => {
+                let v = serialize_counterexample_output(out);
+                Ok(CallToolResult::success(json_content(&v)))
+            }
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "counterexample_shrink failed: {e}"
+            )))),
+        }
+    }
+
+    /// `counterexample_get` — retrieve a previously persisted bundle by id.
+    #[tool(
+        name = "counterexample_get",
+        description = "Read a persisted counterexample bundle from the redb counterexample_bundles table by bundle_id. Returns CounterexampleGetOutputDto { bundle, has_full_bundle }. Returns Err(LoadFailed) when no such bundle exists."
+    )]
+    async fn counterexample_get(
+        &self,
+        params: Parameters<CounterexampleGetParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let p = params.0;
+        let hyp_ctx = chronos_services::hypothesis_test::HypothesisTestContext {
+            engines: &self.engines,
+        };
+        let counterexample_ctx = chronos_services::counterexample::CounterexampleContext {
+            store: &self.store,
+            hypothesis_ctx: &hyp_ctx,
+        };
+        match chronos_services::counterexample::ChronosCounterexampleService::get(
+            &counterexample_ctx,
+            &p.bundle_id,
+        ) {
+            Ok(out) => {
+                let v = serialize_counterexample_output(out);
+                Ok(CallToolResult::success(json_content(&v)))
+            }
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "counterexample_get failed: {e}"
+            )))),
+        }
+    }
+
+    /// `counterexample_list` — list bundle summaries matching optional filters.
+    #[tool(
+        name = "counterexample_list",
+        description = "List counterexample bundle summaries from redb, optionally filtered by workspace_id, property_kind, since_ms, until_ms, and limit. Returns CounterexampleListOutputDto { bundles, next_cursor }. next_cursor is always null (m8-03 ships single-page; pagination is m8-05 close-time work)."
+    )]
+    async fn counterexample_list(
+        &self,
+        params: Parameters<CounterexampleListParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let p = params.0;
+        let hyp_ctx = chronos_services::hypothesis_test::HypothesisTestContext {
+            engines: &self.engines,
+        };
+        let counterexample_ctx = chronos_services::counterexample::CounterexampleContext {
+            store: &self.store,
+            hypothesis_ctx: &hyp_ctx,
+        };
+        let filter = chronos_services::counterexample::CounterexampleListFilter {
+            workspace_id: p.workspace_id,
+            property_kind: p.property_kind,
+            since_ms: p.since_ms,
+            until_ms: p.until_ms,
+            limit: p.limit.unwrap_or(50),
+        };
+        match chronos_services::counterexample::ChronosCounterexampleService::list(
+            &counterexample_ctx,
+            filter,
+        ) {
+            Ok(out) => {
+                let v = serialize_counterexample_output(out);
+                Ok(CallToolResult::success(json_content(&v)))
+            }
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "counterexample_list failed: {e}"
+            )))),
+        }
+    }
+}
+
+/// Serialize a `CounterexampleOutput` into the m8-03 wire DTO envelope.
+///
+/// - `Got` → `CounterexampleGetOutputDto` (without `full`).
+/// - `Saved` → `{ saved: summary }` envelope (m8-04 close-time work will
+///   re-use this for the persist path).
+/// - `Listed` → `CounterexampleListOutputDto`.
+/// - `Shrunk` → `CounterexampleShrinkOutputDto` with the full-bundle
+///   payload populated (events_count=0 placeholder; minimised payload
+///   shape taken from `target_hypothesis.session_id`).
+fn serialize_counterexample_output(
+    out: chronos_services::counterexample::CounterexampleOutput,
+) -> serde_json::Value {
+    use chronos_services::counterexample::CounterexampleOutput as COut;
+    use chronos_services::output::{
+        CounterexampleBundleDto, CounterexampleBundleSummaryDto, CounterexampleGetOutputDto,
+        CounterexampleListOutputDto, CounterexampleMinimisedDto, CounterexampleShrinkOutputDto,
+    };
+
+    match out {
+        COut::Got { summary } => {
+            let has_full = summary.has_full_bundle;
+            let bundle = CounterexampleBundleSummaryDto {
+                bundle_id: summary.bundle_id,
+                property_kind: summary.property_kind,
+                workspace_id: summary.workspace_id,
+                created_at_ms: summary.created_at_ms,
+                rounds_used: summary.rounds_used,
+                has_full_bundle: summary.has_full_bundle,
+            };
+            serde_json::to_value(CounterexampleGetOutputDto {
+                bundle,
+                has_full_bundle: has_full,
+            })
+            .unwrap_or_else(|e| serde_json::json!({"error": e.to_string()}))
+        }
+        COut::Saved { summary } => {
+            let bundle = CounterexampleBundleSummaryDto {
+                bundle_id: summary.bundle_id,
+                property_kind: summary.property_kind,
+                workspace_id: summary.workspace_id,
+                created_at_ms: summary.created_at_ms,
+                rounds_used: summary.rounds_used,
+                has_full_bundle: summary.has_full_bundle,
+            };
+            serde_json::json!({ "saved": bundle })
+        }
+        COut::Listed {
+            summaries,
+            next_cursor,
+        } => {
+            let bundles = summaries
+                .into_iter()
+                .map(|s| CounterexampleBundleSummaryDto {
+                    bundle_id: s.bundle_id,
+                    property_kind: s.property_kind,
+                    workspace_id: s.workspace_id,
+                    created_at_ms: s.created_at_ms,
+                    rounds_used: s.rounds_used,
+                    has_full_bundle: s.has_full_bundle,
+                })
+                .collect::<Vec<_>>();
+            serde_json::to_value(CounterexampleListOutputDto {
+                bundles,
+                next_cursor,
+            })
+            .unwrap_or_else(|e| serde_json::json!({"error": e.to_string()}))
+        }
+        COut::Shrunk {
+            bundle,
+            rounds_used,
+            minimised_constant,
+            minimised_predicate,
+            minimised_call_path,
+        } => {
+            // Build the minimised payload discriminated union.
+            let (minimised, minimised_kind) = match bundle.property_kind {
+                chronos_services::output::HypothesisKind::Invariant => {
+                    let p = minimised_constant.clone().unwrap_or_default();
+                    let d = CounterexampleMinimisedDto {
+                        constant: Some(p),
+                        predicate: None,
+                        caller: None,
+                        callee: None,
+                        max_depth: None,
+                    };
+                    (Some(d), Some("constant".to_string()))
+                }
+                chronos_services::output::HypothesisKind::Existence => {
+                    let p = minimised_predicate.clone().unwrap_or_else(|| {
+                        chronos_services::output::ExistencePredicate::EventTypeEquals {
+                            event_type: String::new(),
+                        }
+                    });
+                    let d = CounterexampleMinimisedDto {
+                        constant: None,
+                        predicate: Some(p),
+                        caller: None,
+                        callee: None,
+                        max_depth: None,
+                    };
+                    (Some(d), Some("predicate".to_string()))
+                }
+                chronos_services::output::HypothesisKind::CallPath => {
+                    let (caller, callee, max_depth) = minimised_call_path
+                        .clone()
+                        .unwrap_or_else(|| (String::new(), String::new(), None));
+                    let d = CounterexampleMinimisedDto {
+                        constant: None,
+                        predicate: None,
+                        caller: Some(caller),
+                        callee: Some(callee),
+                        max_depth: max_depth.map(|d| d as u64),
+                    };
+                    (Some(d), Some("call_path".to_string()))
+                }
+            };
+            let summary = CounterexampleBundleSummaryDto {
+                bundle_id: bundle.bundle_id.clone(),
+                property_kind: bundle.property_kind,
+                workspace_id: bundle.workspace_id.clone(),
+                created_at_ms: bundle.created_at_ms,
+                rounds_used,
+                has_full_bundle: bundle.has_full_bundle,
+            };
+            let full = CounterexampleBundleDto {
+                summary: summary.clone(),
+                events_count: 0,
+                minimised,
+                minimised_kind,
+            };
+            serde_json::to_value(CounterexampleShrinkOutputDto {
+                bundle: summary,
+                full,
+                rounds_used,
+            })
+            .unwrap_or_else(|e| serde_json::json!({"error": e.to_string()}))
         }
     }
 }

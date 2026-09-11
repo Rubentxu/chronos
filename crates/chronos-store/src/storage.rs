@@ -54,6 +54,13 @@ pub struct SessionStore {
 }
 
 impl SessionStore {
+    /// Crate-internal accessor to the underlying redb database.
+    /// Needed by extension modules (e.g., `counterexample_storage` for the
+    /// `counterexample_bundles` table — m8-03). Not exposed externally.
+    pub(crate) fn db(&self) -> &Arc<redb::Database> {
+        &self.db
+    }
+
     /// Open a session store at the given path, creating it if necessary.
     #[allow(clippy::result_large_err)]
     pub fn open(path: &Path) -> Result<Self, StoreError> {

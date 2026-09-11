@@ -8,6 +8,7 @@
 //! - [`TraceDiff`]: Session comparison via hash-based set difference.
 
 pub mod cas;
+pub mod counterexample_storage;
 pub mod diff;
 pub mod error;
 pub mod storage;
