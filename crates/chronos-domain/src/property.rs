@@ -20,11 +20,21 @@ impl fmt::Display for PropertyId {
 }
 
 /// A scalar observed value used by scalar invariants.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub enum PropertyValue {
     Number(f64),
     Text(String),
     Bool(bool),
+}
+
+impl Default for PropertyValue {
+    fn default() -> Self {
+        // Pin the default to `Number(0.0)` rather than relying on the
+        // derive — the derive requires a unit variant, and PropertyValue
+        // has no unit variant by design. `Number(0.0)` is the documented
+        // m8-03 placeholder when a wire-shape doesn't carry a constant.
+        PropertyValue::Number(0.0)
+    }
 }
 
 impl fmt::Display for PropertyValue {
@@ -38,7 +48,9 @@ impl fmt::Display for PropertyValue {
 }
 
 /// Comparison operator over two same-typed scalar values.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
 pub enum ComparisonOp {
     Lt,
     Le,

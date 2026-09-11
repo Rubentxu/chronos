@@ -2521,6 +2521,93 @@ pub struct CounterexampleGetOutputDto {
     pub has_full_bundle: bool,
 }
 
+/// Wire-shape DTO for [`crate::hypothesis_test::HypothesisInput`].
+///
+/// Reaches the wire in m8-03 because the MCP wrapper for
+/// `counterexample_shrink` needs a serialisable target hypothesis.
+/// All `Option` fields match the source struct so the dispatcher can
+/// decode by simple clone-into-HypothesisInput. PropertyValue and
+/// ExistencePredicate both serialise via their existing serde impls.
+///
+/// `max_depth` is modelled as `Option<u64>` on the wire (u32 widening
+/// for portability) and narrowed back to `Option<usize>` inside
+/// `chronos_mcp`.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub struct HypothesisInputWireDto {
+    pub session_id: String,
+    pub kind: HypothesisKind,
+    pub scope: Option<crate::output::HypothesisScope>,
+    pub comparison: Option<ComparisonOp>,
+    pub constant: Option<chronos_domain::property::PropertyValue>,
+    pub property_target: Option<String>,
+    pub predicate: Option<ExistencePredicate>,
+    pub caller: Option<String>,
+    pub callee: Option<String>,
+    pub max_depth: Option<u64>,
+}
+
+/// Input parameters for `counterexample_shrink` (m8-03).
+///
+/// `target_hypothesis` carries the failing hypothesis the agent wants
+/// minimised. `max_rounds` is the shrink budget (capped at
+/// `DEFAULT_SHRINK_MAX_ROUNDS` from `counterexample`). `seed` is
+/// optional — a `None` value lets proptest use its deterministic RNG.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub struct CounterexampleShrinkParamsDto {
+    pub property_kind: HypothesisKind,
+    pub target_hypothesis: HypothesisInputWireDto,
+    pub max_rounds: Option<u32>,
+    pub seed: Option<u64>,
+}
+
+/// Full counterexample bundle wire DTO (m8-03).
+///
+/// Carries the events count + minimised payload in addition to the
+/// summary fields. The raw `Vec<TraceEvent>` is intentionally NOT on
+/// the wire because (a) bundling 1000+ trace events in a tool
+/// response bloats the JSON, and (b) per the m8-03 scoping doc B3,
+/// "bundles are returned by handle and re-fetched", so the events
+/// stay in redb until the client requests them. m8-05 close can lift
+/// the events to a separate `counterexample_bundle_events` tool if
+/// acceptance tests demand the full payload. `events_count` is the
+/// number of events in the underlying redb blob.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub struct CounterexampleBundleDto {
+    pub summary: CounterexampleBundleSummaryDto,
+    pub events_count: usize,
+    /// Optional minimised payload. The discriminant is exposed as a
+    /// separate `minimised_kind` field for ergonomic filtering on the
+    /// client side without round-tripping the JSON value.
+    pub minimised: Option<CounterexampleMinimisedDto>,
+    pub minimised_kind: Option<String>,
+}
+
+/// Discriminated wire form of `MinimisedPayload` for the m8-03 wire.
+///
+/// Exactly one of the optional fields is populated. Variant matches
+/// `property_kind` of the owning bundle.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub struct CounterexampleMinimisedDto {
+    pub constant: Option<chronos_domain::property::PropertyValue>,
+    pub predicate: Option<ExistencePredicate>,
+    pub caller: Option<String>,
+    pub callee: Option<String>,
+    pub max_depth: Option<u64>,
+}
+
+/// Output envelope for `counterexample_shrink` (m8-03).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub struct CounterexampleShrinkOutputDto {
+    pub bundle: CounterexampleBundleSummaryDto,
+    pub full: CounterexampleBundleDto,
+    pub rounds_used: u32,
+}
+
 // ============================================================================
 // M8 — Counterexample DTO unit tests (m8-01)
 // ----------------------------------------------------------------------------
