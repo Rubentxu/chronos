@@ -3,17 +3,18 @@
   "title": "M7-01 — events_read v2 dispatcher + v1 shims for query_events / get_event",
   "status": "completed",
   "branch": "feat/m7-01-events-read-merge",
-  "head_sha": "4c69544",
+  "head_sha": "f88363f",
   "base_sha": "ece02f7",
   "ff_merged_sha": null,
   "started_at": "2026-09-11T06:18:00Z",
-  "completed_at": "2026-09-11T06:36:00Z",
+  "completed_at": "2026-09-11T06:37:00Z",
   "commits": [
     { "sha": "28dcf4f", "subject": "feat(services): add EventsReadKind + EventsReadOutput DTOs (m7-01)" },
     { "sha": "90de722", "subject": "feat(services): add ChronosEventsReadService dispatcher (m7-01)" },
     { "sha": "aa649f8", "subject": "feat(mcp): add events_read v2 tool + EventsReadParams wrapper (m7-01)" },
     { "sha": "75acccd", "subject": "refactor(mcp): convert query_events + get_event to deprecated shims via events_read dispatcher (m7-01)" },
-    { "sha": "4c69544", "subject": "docs(services): refresh lib.rs module index for m7-01 events_read dispatcher" }
+    { "sha": "4c69544", "subject": "docs(services): refresh lib.rs module index for m7-01 events_read dispatcher" },
+    { "sha": "f88363f", "subject": "chore(sddk): register m7-01 apply-checkpoint + close receipts (m7-01)" }
   ],
   "gates": {
     "T0_fmt_clippy": "pass",
