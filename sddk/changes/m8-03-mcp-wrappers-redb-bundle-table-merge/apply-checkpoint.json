@@ -18,7 +18,7 @@
     { "sha": "77322dc", "subject": "feat(sandbox): m8-03 counterexample_shrink/get/list smoke + 3 client wrappers" },
     { "sha": "9046d14", "subject": "docs(sddk): m8-03 MCP wrappers + redb bundle table merge doc + apply-checkpoint" },
     { "sha": "8e1a30c", "subject": "Merge branch 'feat/m8-03-mcp-wrappers-redb-bundle-table'" },
-    { "sha": "MERGE_COMMIT_BELOW", "subject": "chore(sddk): record m8-03 apply-checkpoint (head_sha=8e1a30c, ready_for_merge)" }
+    { "sha": "4755dda", "subject": "chore(sddk): record m8-03 apply-checkpoint (head_sha=8e1a30c, ready_for_merge)" }
   ],
   "shipped_artifacts": {
     "store_module_extensions": {
