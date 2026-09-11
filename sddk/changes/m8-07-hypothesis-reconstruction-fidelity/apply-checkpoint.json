@@ -1,0 +1,102 @@
+{
+  "change_id": "m8-07-hypothesis-reconstruction-fidelity",
+  "branch": "feat/m8-07-hypothesis-reconstruction-fidelity",
+  "base_sha": "148f009",
+  "head_sha": "456824693e59a97e8167f39f770dee02ba7ed2a4",
+  "status": "implemented",
+  "merge_sha": null,
+  "merge_doc": "docs/milestones/m8-07-hypothesis-reconstruction-fidelity-merge.md",
+  "scoping_doc": "docs/milestones/m8-07-hypothesis-reconstruction-fidelity-scoping.md",
+  "commits_since_base": [
+    {
+      "sha": "1248994",
+      "subject": "feat(m8-07): HypothesisInputWire + target_hypothesis in CounterexampleBundleRecord"
+    },
+    {
+      "sha": "fff77da",
+      "subject": "feat(m8-07): hypothesis_input_to_wire/from_wire + save/shrink plumbing"
+    },
+    {
+      "sha": "2e346ce",
+      "subject": "feat(m8-07): reconstruct_hypothesis uses persisted target_hypothesis"
+    },
+    {
+      "sha": "4568246",
+      "subject": "feat(m8-07): sandbox infrastructure + ce12 replay test"
+    }
+  ],
+  "deliverables": {
+    "B1_target_hypothesis_persistence": {
+      "status": "complete",
+      "closes": "m8-04 R-hypothesis-reconstruction-fidelity",
+      "mechanism": [
+        "HypothesisInputWire (field-for-field mirror in chronos-store; stringified enums for kind/scope/comparison)",
+        "CounterexampleBundleRecord.target_hypothesis: Option<HypothesisInputWire> with #[serde(default)]",
+        "counterexample_shrink() passes target_hypothesis: &HypothesisInput through to save()",
+        "save() persists Some(hypothesis_input_to_wire(target_hypothesis))"
+      ],
+      "backward_compat": "pre-m8-07 bundles deserialize with target_hypothesis: None via serde(default); replay falls back to m8-04 synthetic reconstruction"
+    },
+    "B2_reconstruct_uses_persisted_hypothesis": {
+      "status": "complete",
+      "mechanism": "reconstruct_hypothesis reads bundle.target_hypothesis first; falls back to m8-04 synthetic reconstruction when None"
+    },
+    "B3_sandbox_replay_integration": {
+      "status": "complete",
+      "mechanism": [
+        "McpProcess::spawn_with_env for custom env vars (CHRONOS_DB_PATH)",
+        "McpTestClient::start_with_db_path(db_path) — starts MCP with CHRONOS_DB_PATH set",
+        "McpTestClient::replay_bundle(bundle_id, db_path) — spawns 'chronos test replay' subprocess",
+        "ce12: end-to-end test sets EventCount/Ge/1000.0, shrinks, replays, asserts verdict is valid"
+      ]
+    }
+  },
+  "test_pyramid": {
+    "T0_fmt_clippy": "green",
+    "T1_services_lib": "259/259 (5 new m8-07 tests)",
+    "T2_per_crate_integration": "chronos-services: all pass",
+    "T4_smoke_counterexample_tools": "12/12 passed (ce1-ce12, including ce12_replay_preserves_non_default_invariant_options)",
+    "T4_smoke_e2e_connectivity": "1/1 passed"
+  },
+  "notes": [
+    {
+      "id": "D1",
+      "title": "HypothesisInputWire stringified enums",
+      "description": "kind, scope, comparison are stored as strings (e.g. 'Invariant', 'EventCount', 'Ge') rather than enums in HypothesisInputWire. hypothesis_input_from_wire deserialises these strings back to the domain enums. This avoids deriving serde for domain types (which require Clone etc.) and matches the R5 pattern from m8-03.",
+      "state": "closed_in_cycle"
+    },
+    {
+      "id": "D2",
+      "title": "serde(default) on target_hypothesis for backward compat",
+      "description": "CounterexampleBundleRecord.target_hypothesis = Option<HypothesisInputWire> with #[serde(default)]. Pre-m8-07 bundles (without the field) deserialise as None. replay.rs then falls back to the m8-04 synthetic reconstruction (MinimisedPayload -> HypothesisInput).",
+      "state": "closed_in_cycle"
+    },
+    {
+      "id": "D3",
+      "title": "reconstruct_hypothesis priority: persisted first, fallback second",
+      "description": "reconstruct_hypothesis in replay.rs now checks bundle.target_hypothesis first (D3 contract). If Some, it calls hypothesis_input_from_wire to produce the HypothesisInput and overrides session_id to the synthetic replay session. If None (pre-m8-07), falls back to m8-04 MinimisedPayload reconstruction.",
+      "state": "closed_in_cycle"
+    },
+    {
+      "id": "D4",
+      "title": "ReplayerReport defined locally in tools.rs (not in chronos-cli)",
+      "description": "chronos-cli is a binary crate with no lib target, so we cannot use it as a dev-dependency from chronos-sandbox. ReplayReport struct is defined locally in tools.rs with only the fields needed for the test assertions.",
+      "state": "closed_in_cycle"
+    },
+    {
+      "id": "D5",
+      "title": "CHRONOS_DB_PATH env var for shared store between MCP and CLI",
+      "description": "The MCP server and the 'chronos test replay' subprocess need to read from the same SQLite store. CHRONOS_DB_PATH is set in the env when starting the MCP server (via start_with_db_path) and when spawning the replay subprocess (via replay_bundle).",
+      "state": "closed_in_cycle"
+    }
+  ],
+  "smoke_subset": [
+    "counterexample_tools (12 tests: ce1-ce12 — ce12 exercises the full persist -> reconstruct path with non-default invariant options)",
+    "e2e_connectivity (verifies MCP server starts and responds)"
+  ],
+  "followups": {
+    "m9_plus": [
+      "m8-04 R-hypothesis-reconstruction-fidelity: property_target lost in fallback (m8-04 still has the fallback path — non-issue post m8-07 but the synthetic defaults remain for pre-m8-07 bundles)"
+    ]
+  }
+}
