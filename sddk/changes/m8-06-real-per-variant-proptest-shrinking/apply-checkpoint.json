@@ -1,0 +1,110 @@
+{
+  "change_id": "m8-06-real-per-variant-proptest-shrinking",
+  "branch": "feat/m8-06-real-shrinkers",
+  "base_sha": "9b5eed0e16205c070f78dcb67cba5ab8a3fce44e",
+  "head_sha": "211bdcf01c8d924b7f0b9b61ea5fb48fd4694472",
+  "merge_sha": "48f1d6664dfea17b5a01ddfc951c729cb8b94ac6",
+  "tag": "m8-06-real-shrinkers.0",
+  "status": "merged",
+  "merged_at": "2026-09-11",
+  "merge_doc": "docs/milestones/m8-06-real-per-variant-proptest-shrinking-merge.md",
+  "scoping_doc": "docs/milestones/m8-06-real-per-variant-proptest-shrinking-scoping.md",
+  "commits_since_base": [
+    {
+      "sha": "211bdcf01c8d924b7f0b9b61ea5fb48fd4694472",
+      "subject": "feat(services+sandbox): real per-variant proptest shrinking (m8-06 execute)"
+    }
+  ],
+  "deliverables": {
+    "B1_real_per_variant_shrinking": {
+      "status": "complete",
+      "closes": "m8-05 R3 (per-variant strategy returns Just(base); real shrinking is m9+)",
+      "shrinkers": [
+        "NumberShrinker (binary search toward 0.0, EPSILON floor)",
+        "TextShrinker (UTF-8 char deletion toward \"\")",
+        "Bool stays Just(b) (degenerate; only 2 values)",
+        "ExistencePredicateShrinker (variant fixed, payload shrinks)",
+        "CallPathShrinker (round-robin caller/callee/max_depth, iterative loop)"
+      ],
+      "max_rounds_wiring": "ShrinkConfig.max_rounds -> proptest::Config.max_shrink_iters (m8-06 R9)"
+    }
+  },
+  "test_pyramid": {
+    "T0_fmt_clippy": "green",
+    "T1_services_lib": "254/254",
+    "T3_workspace_no_sandbox_no_e2e_no_native": "1036 passed, 0 failed, 12 ignored",
+    "T4_smoke_counterexample_tools": "11/11 (ce1, ce5, ce7, ce10, ce11 all observe real shrinking rounds)"
+  },
+  "notes": [
+    {
+      "id": "R1",
+      "title": "f64 -> 0.0 +/- EPSILON",
+      "description": "NumberShrinker walks the constant toward 0.0 via binary search, but f64 cannot reach exactly 0.0 from a non-zero starting value. Floor is 1e-9 (EPSILON). m9+ could swap in arbitrary-precision if exact zero matters.",
+      "state": "accepted"
+    },
+    {
+      "id": "R2",
+      "title": "TextShrinker is lexicographic, not byte-optimal",
+      "description": "TextShrinker deletes one UTF-8 char at a time. Per proptest convention this is the right shape; m9+ can adopt dictionary-based shrinking for known token sets if needed.",
+      "state": "accepted"
+    },
+    {
+      "id": "R3",
+      "title": "Bool shrinker is the identity",
+      "description": "Bool has only 2 values; Just(b) is the correct minimiser. rounds_used == 1 for Bool targets (initial validation only).",
+      "state": "accepted"
+    },
+    {
+      "id": "R4",
+      "title": "ExistencePredicate variant fixed (no cross-variant shrinking)",
+      "description": "ExistencePredicateShrinker holds the variant (EventTypeEquals / PredicateEquals / etc.) fixed and shrinks the payload string. Cross-variant shrinking would require generating arbitrary ExistencePredicate JSON; significant scope expansion.",
+      "state": "open",
+      "plan": "m9+"
+    },
+    {
+      "id": "R5",
+      "title": "max_depth = None is terminal",
+      "description": "CallPathShrinker walks max_depth toward 0 but cannot shrink past None (None is a terminal state, not a value).",
+      "state": "accepted"
+    },
+    {
+      "id": "R6",
+      "title": "dyn ValueTree: !Send (carried from m8-05 R7)",
+      "description": "proptest's ValueTree trait is not Send. drive_strategy rebuilds the strategy + tree each round; tree is never held across .await. Path of least resistance.",
+      "state": "open",
+      "plan": "m9+"
+    },
+    {
+      "id": "R7",
+      "title": "SBoxedStrategy requirement (carried from m8-05 R5)",
+      "description": "BoxedStrategy is !Send; the MCP #[tool] wrapper requires Send, so we use SBoxedStrategy. Constraint, not a bug.",
+      "state": "open",
+      "plan": "accepted"
+    },
+    {
+      "id": "R8",
+      "title": "HypothesisInput: Send + Sync + 'static (carried from m8-05 R4)",
+      "description": "Required by proptest::test_runner::Config + SBoxedStrategy. The path of least resistance.",
+      "state": "open",
+      "plan": "m9+"
+    },
+    {
+      "id": "R9",
+      "title": "max_rounds is now wired through as the only infinite-loop guard",
+      "description": "ShrinkConfig -> proptest::Config mapping added in m8-06 sets max_shrink_iters = s.max_rounds.max(1). Without this wire-up, the default u32::MAX in proptest would let any non-converging shrinker loop forever. DEFAULT_SHRINK_MAX_ROUNDS = 64.",
+      "state": "closed_in_cycle"
+    }
+  ],
+  "smoke_subset": [
+    "counterexample_tools (11 tests including ce1, ce5, ce7, ce10, ce11 — the always-violating rewires that exercise real shrinking)"
+  ],
+  "followups": {
+    "m9_plus": [
+      "m8-04 R-hypothesis-reconstruction-fidelity (target_hypothesis persistence for byte-faithful replay)",
+      "bundle-as-blob -> side table for bundle payload columns",
+      "m7-07 single-call session_stop (CLI)",
+      "R4: cross-variant existence predicate shrinking",
+      "R6 / R8: dyn ValueTree Send bound; HypothesisInput Send+Sync+'static"
+    ]
+  }
+}
