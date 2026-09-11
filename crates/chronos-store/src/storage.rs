@@ -31,6 +31,14 @@ pub struct SessionMetadata {
     pub event_count: usize,
     /// Total duration in milliseconds.
     pub duration_ms: u64,
+    /// True after a v2 `session_stop{seal_tail=true}` call (m7-04).
+    /// Default `false`; old metadata files load with `false`.
+    #[serde(default)]
+    pub tail_sealed: bool,
+    /// Wall-clock timestamp (ms) when the session was sealed.
+    /// Only set when `tail_sealed=true`. Default `None`.
+    #[serde(default)]
+    pub sealed_at: Option<u64>,
 }
 
 /// Session store — manages persistent session data.
@@ -359,6 +367,8 @@ mod tests {
             target: "/bin/test".to_string(),
             event_count: 2,
             duration_ms: 500,
+            tail_sealed: false,
+            sealed_at: None,
         }
     }
 

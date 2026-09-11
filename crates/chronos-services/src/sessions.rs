@@ -94,6 +94,8 @@ impl SessionsService {
             target: target.clone(),
             event_count,
             duration_ms,
+            tail_sealed: false,
+            sealed_at: None,
         };
 
         // SessionStore methods are sync — drop the lock first

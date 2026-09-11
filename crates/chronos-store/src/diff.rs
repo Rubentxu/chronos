@@ -407,6 +407,8 @@ mod tests {
             target: "/bin/test".to_string(),
             event_count: 0,
             duration_ms: dur_ms,
+            tail_sealed: false,
+            sealed_at: None,
         }
     }
 

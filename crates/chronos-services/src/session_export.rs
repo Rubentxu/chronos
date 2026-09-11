@@ -125,6 +125,8 @@ impl ChronosSessionExportService {
                 target: target.clone(),
                 event_count,
                 duration_ms,
+                tail_sealed: false,
+                sealed_at: None,
             };
             (metadata, events)
         };

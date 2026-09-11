@@ -4146,9 +4146,8 @@ impl ChronosServer {
         params: Parameters<SessionExplainParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let explain_ctx = chronos_services::session_explain::SessionExplainContext {
-            store: &self.store,
-        };
+        let explain_ctx =
+            chronos_services::session_explain::SessionExplainContext { store: &self.store };
         let kind = parse_session_explain_kind(&params.kind)?;
         let input = chronos_services::output::SessionExplainInput {
             kind,
@@ -4610,8 +4609,7 @@ impl ChronosServer {
             target_session_id: Some(params.session_b),
             top_n: params.top_n,
         };
-        match chronos_services::session_compare::ChronosSessionCompareService::compare(ctx, input)
-        {
+        match chronos_services::session_compare::ChronosSessionCompareService::compare(ctx, input) {
             Ok(out) => match serde_json::to_value(out) {
                 Ok(v) => Ok(CallToolResult::success(json_content(&v))),
                 Err(e) => Ok(CallToolResult::error(text_content(format!(
@@ -5821,6 +5819,8 @@ mod tests {
             target: "/bin/test".to_string(),
             event_count: events.len(),
             duration_ms: 100,
+            tail_sealed: false,
+            sealed_at: None,
         };
         let meta_b = SessionMetadata {
             session_id: sid_b.clone(),
@@ -5829,6 +5829,8 @@ mod tests {
             target: "/bin/test".to_string(),
             event_count: events.len(),
             duration_ms: 200,
+            tail_sealed: false,
+            sealed_at: None,
         };
         server.store.save_session(meta_a, &events).unwrap();
         server.store.save_session(meta_b, &events).unwrap();
@@ -5889,6 +5891,8 @@ mod tests {
             target: "/bin/test".to_string(),
             event_count: events.len(),
             duration_ms: 100,
+            tail_sealed: false,
+            sealed_at: None,
         };
         let meta_b = SessionMetadata {
             session_id: sid_b.clone(),

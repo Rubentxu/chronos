@@ -29,6 +29,8 @@ fn bench_session_store_save_single_event(c: &mut Criterion) {
         target: "/bin/bench".to_string(),
         event_count: 1,
         duration_ms: 100,
+        tail_sealed: false,
+        sealed_at: None,
     };
 
     c.bench_function("session_store_save_single_event", |b| {
@@ -101,6 +103,8 @@ fn bench_session_store_load(c: &mut Criterion) {
         target: "/bin/bench".to_string(),
         event_count: 1,
         duration_ms: 100,
+        tail_sealed: false,
+        sealed_at: None,
     };
 
     store.save_session(metadata.clone(), &[event]).unwrap();
@@ -124,6 +128,8 @@ fn bench_trace_diff(c: &mut Criterion) {
         target: "prog".into(),
         event_count: 1000,
         duration_ms: 1000,
+        tail_sealed: false,
+        sealed_at: None,
     };
     let meta_b = meta_a.clone();
     c.bench_function("trace_diff_1k_50pct_overlap", |b| {

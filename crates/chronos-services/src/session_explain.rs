@@ -375,6 +375,8 @@ mod tests {
             target: "/bin/test".to_string(),
             event_count: events.len(),
             duration_ms: 100,
+            tail_sealed: false,
+            sealed_at: None,
         };
         store.save_session(meta, &events).unwrap();
     }
@@ -410,6 +412,8 @@ mod tests {
             target: "/bin/test".to_string(),
             event_count: events.len(),
             duration_ms: 100,
+            tail_sealed: false,
+            sealed_at: None,
         };
         store.save_session(meta, &events).unwrap();
         let _ = issue_type;
@@ -542,6 +546,8 @@ mod tests {
             target: "/bin/test".to_string(),
             event_count: events.len(),
             duration_ms: 100,
+            tail_sealed: false,
+            sealed_at: None,
         };
         store.save_session(meta, &events).unwrap();
 
