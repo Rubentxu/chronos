@@ -53,10 +53,10 @@ use std::sync::Mutex as StdMutex;
 
 use crate::error::ServiceError;
 use crate::output::{
-    ObserveCondition, ObserveCreateResult, ObserveDeleteResult, ObserveListResult,
-    ObserveOutput, ObserveProvenance, ObserveRetention,
-    ObserveRetention::Drained as RetDrained, ObserveRetention::RetainedUntilSessionEnd
-    as RetRetainedUntilSessionEnd, ObserveScope, ObserveVerb, SubscriptionDto,
+    ObserveCondition, ObserveCreateResult, ObserveDeleteResult, ObserveListResult, ObserveOutput,
+    ObserveProvenance, ObserveRetention, ObserveRetention::Drained as RetDrained,
+    ObserveRetention::RetainedUntilSessionEnd as RetRetainedUntilSessionEnd, ObserveScope,
+    ObserveVerb, SubscriptionDto,
 };
 use crate::probe::{ProbeContext, ProbeService};
 use crate::tripwires::TripwiresService;
@@ -232,10 +232,7 @@ impl ChronosObserveService {
 
     // -- list ------------------------------------------------------------------
 
-    fn list(
-        ctx: &ObserveContext<'_>,
-        input: ObserveInput,
-    ) -> Result<ObserveOutput, ServiceError> {
+    fn list(ctx: &ObserveContext<'_>, input: ObserveInput) -> Result<ObserveOutput, ServiceError> {
         // Validate retention up front. v2 supports `drained` (default) and
         // `retained_until_session_end`; `permanent` is rejected.
         let retention = input.retention.unwrap_or_default();
@@ -337,7 +334,9 @@ impl ChronosObserveService {
     ) -> Result<ObserveOutput, ServiceError> {
         let sub_id = input
             .subscription_id
-            .ok_or_else(|| ServiceError::Unsupported("verb=delete requires 'subscription_id'".into()))?
+            .ok_or_else(|| {
+                ServiceError::Unsupported("verb=delete requires 'subscription_id'".into())
+            })?
             .trim()
             .to_string();
 
@@ -477,9 +476,7 @@ mod tests {
     fn create_request_missing_condition_returns_unsupported() {
         let rig = TestRig::new();
         let input = tripwire_input(ObserveVerb::Create);
-        let err = rig.with_ctx(|ctx| {
-            ChronosObserveService::observe(&ctx, input).unwrap_err()
-        });
+        let err = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap_err());
         assert!(matches!(err, ServiceError::Unsupported(_)), "got {:?}", err);
     }
 
@@ -489,9 +486,7 @@ mod tests {
     fn verb_update_returns_unsupported() {
         let rig = TestRig::new();
         let input = tripwire_input(ObserveVerb::Update);
-        let err = rig.with_ctx(|ctx| {
-            ChronosObserveService::observe(&ctx, input).unwrap_err()
-        });
+        let err = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap_err());
         assert!(matches!(err, ServiceError::Unsupported(_)), "got {:?}", err);
     }
 
@@ -505,9 +500,7 @@ mod tests {
             condition: tripwire_condition(),
             label: Some("main-watch".to_string()),
         });
-        let out = rig.with_ctx(|ctx| {
-            ChronosObserveService::observe(&ctx, input).unwrap()
-        });
+        let out = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap());
         match out {
             ObserveOutput::Create(c) => {
                 assert!(c.subscription_id.starts_with("tripwire-"));
@@ -529,9 +522,7 @@ mod tests {
             condition: tripwire_condition(),
             label: None,
         });
-        let out = rig.with_ctx(|ctx| {
-            ChronosObserveService::observe(&ctx, input).unwrap()
-        });
+        let out = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap());
         match out {
             ObserveOutput::Create(c) => {
                 assert!(c.label.is_none());
@@ -566,9 +557,7 @@ mod tests {
     fn list_with_no_subscriptions_returns_empty() {
         let rig = TestRig::new();
         let input = tripwire_input(ObserveVerb::List);
-        let out = rig.with_ctx(|ctx| {
-            ChronosObserveService::observe(&ctx, input).unwrap()
-        });
+        let out = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap());
         match out {
             ObserveOutput::List(l) => {
                 assert!(l.subscriptions.is_empty());
@@ -612,9 +601,7 @@ mod tests {
         let rig = TestRig::new();
         let mut input = tripwire_input(ObserveVerb::List);
         input.retention = Some(ObserveRetention::RetainedUntilSessionEnd);
-        let out = rig.with_ctx(|ctx| {
-            ChronosObserveService::observe(&ctx, input).unwrap()
-        });
+        let out = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap());
         match out {
             ObserveOutput::List(l) => {
                 assert!(l.fired_events.is_empty());
@@ -630,9 +617,7 @@ mod tests {
         let rig = TestRig::new();
         let mut input = tripwire_input(ObserveVerb::List);
         input.retention = Some(ObserveRetention::Permanent);
-        let err = rig.with_ctx(|ctx| {
-            ChronosObserveService::observe(&ctx, input).unwrap_err()
-        });
+        let err = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap_err());
         assert!(matches!(err, ServiceError::Unsupported(_)), "got {:?}", err);
     }
 
@@ -642,9 +627,7 @@ mod tests {
     fn query_with_no_subscriptions_returns_empty() {
         let rig = TestRig::new();
         let input = tripwire_input(ObserveVerb::Query);
-        let out = rig.with_ctx(|ctx| {
-            ChronosObserveService::observe(&ctx, input).unwrap()
-        });
+        let out = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap());
         match out {
             ObserveOutput::Query(q) => {
                 assert!(q.subscriptions.is_empty());
@@ -668,18 +651,18 @@ mod tests {
             let _ = ChronosObserveService::observe(&ctx, create_input).unwrap();
 
             // Query twice — both calls must see the same subscription.
-            let q1 =
-                match ChronosObserveService::observe(&ctx, tripwire_input(ObserveVerb::Query)).unwrap()
-                {
-                    ObserveOutput::Query(q) => q,
-                    _ => panic!("expected Query"),
-                };
-            let q2 =
-                match ChronosObserveService::observe(&ctx, tripwire_input(ObserveVerb::Query)).unwrap()
-                {
-                    ObserveOutput::Query(q) => q,
-                    _ => panic!("expected Query"),
-                };
+            let q1 = match ChronosObserveService::observe(&ctx, tripwire_input(ObserveVerb::Query))
+                .unwrap()
+            {
+                ObserveOutput::Query(q) => q,
+                _ => panic!("expected Query"),
+            };
+            let q2 = match ChronosObserveService::observe(&ctx, tripwire_input(ObserveVerb::Query))
+                .unwrap()
+            {
+                ObserveOutput::Query(q) => q,
+                _ => panic!("expected Query"),
+            };
             assert_eq!(q1.total_active, 1);
             assert_eq!(q2.total_active, 1);
             assert_eq!(q1.subscriptions.len(), 1);
@@ -724,9 +707,7 @@ mod tests {
     fn delete_without_id_returns_unsupported() {
         let rig = TestRig::new();
         let input = tripwire_input(ObserveVerb::Delete);
-        let err = rig.with_ctx(|ctx| {
-            ChronosObserveService::observe(&ctx, input).unwrap_err()
-        });
+        let err = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap_err());
         assert!(matches!(err, ServiceError::Unsupported(_)), "got {:?}", err);
     }
 
@@ -735,9 +716,7 @@ mod tests {
         let rig = TestRig::new();
         let mut input = tripwire_input(ObserveVerb::Delete);
         input.subscription_id = Some("not-a-tripwire-id".to_string());
-        let err = rig.with_ctx(|ctx| {
-            ChronosObserveService::observe(&ctx, input).unwrap_err()
-        });
+        let err = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap_err());
         assert!(matches!(err, ServiceError::Unsupported(_)), "got {:?}", err);
     }
 
@@ -746,9 +725,11 @@ mod tests {
         let rig = TestRig::new();
         let mut input = tripwire_input(ObserveVerb::Delete);
         input.subscription_id = Some("tripwire-99999".to_string());
-        let err = rig.with_ctx(|ctx| {
-            ChronosObserveService::observe(&ctx, input).unwrap_err()
-        });
-        assert!(matches!(err, ServiceError::TripwireNotFound(_)), "got {:?}", err);
+        let err = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap_err());
+        assert!(
+            matches!(err, ServiceError::TripwireNotFound(_)),
+            "got {:?}",
+            err
+        );
     }
 }

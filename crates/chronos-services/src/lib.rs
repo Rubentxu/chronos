@@ -3,9 +3,9 @@
 //! Services are plain Rust structs that can be called from any RPC layer
 //! (today's rmcp, tomorrow's REST, etc.).
 //!
-//! ## Module index (post-M6 close + m7-01 events_read merge, 2026-09-11)
+//! ## Module index (post-M7 close, 2026-09-11)
 //!
-//! 16 algorithm modules (one per service), each owning the algorithm for
+//! 17 algorithm modules (one per service), each owning the algorithm for
 //! one or more MCP tools. The MCP wrappers at `crates/chronos-mcp/src/server.rs`
 //! only parse params, build a `*Context<'_>`, dispatch to the service, and
 //! map `ServiceError` back to MCP error text.
@@ -21,18 +21,19 @@
 //! | [`events_read`] | 290 | **M7 (m7-01) dispatcher.** `events_read` v2 (mode: query / by_id). Cursor-based paginated read with filters (event_types, thread, time range, function_pattern, limit, cursor). Cursor encoding matches the existing `probe_drain` cursor. `gap_summary` always None in m7-01 (QueryEngine does not yet expose gap info). |
 //! | [`execution_query`] | 331 | **M6 (m6-03) dispatcher.** `execution_query` v2 (kind: call_stack / execution_summary / call_graph / race_detect / hotspot / saliency). |
 //! | [`hypothesis_test`] | 1023 | **M6 (m6-04) net-new.** `hypothesis_test` v2 (kind: invariant / existence / call_path). No v1 shim. |
+//! | [`observe`] | 715 | **M7 (m7-02) dispatcher.** `observe` v2 (verb: create / list / delete / query; update rejected with `Unsupported`). Subsumes the v1 `tripwire_create`/`tripwire_list`/`tripwire_delete`/`tripwire_query`/`probe_inject` tools (now deprecated MCP shims). |
 //! | [`probe`] | 588 | `probe_start`, `probe_stop`, `probe_drain` |
 //! | [`query_service`] | 124 | `query`, `list_threads` |
 //! | [`session_export`] | 681 | **M6 (m6-05) net-new.** `session_export` v2 (format: json / otlp_json; zip_json reserved for m7+). Atomic tmp+rename write. `properties_snapshot` always empty in m6-05 (see `docs/milestones/m6-05-session-export.md`). |
 //! | [`sessions`] | 671 | session CRUD: `save/load/list/delete/drop` |
 //! | [`state_query`] | 328 | **M6 (m6-02) dispatcher.** `state_query` v2 (kind: register_diff / memory_read / register_snapshot / memory_analysis / expression_eval). |
 //! | [`trace_slice`] | 377 | **M6 (m6-01) dispatcher.** `trace_slice` v2 (kind: variable_origin / crash / causality / memory_audit). |
-//! | [`tripwires`] | 678 | `tripwire_*` |
+//! | [`tripwires`] | 678 | `tripwire_*` (algorithm only; v1 shims dispatch via [`observe`] in m7-02) |
 //!
 //! Supporting modules: [`error`] (the `ServiceError` enum), [`output`]
 //! (all DTOs), and the module index you are reading now (`lib`).
-//! Total: **19 files, ~9,800 LoC** (algorithm + DTOs + supporting).
-//! Exact post-m7-01 numbers will be recorded in the next close cycle.
+//! Total: **20 files, ~10,800 LoC** (algorithm + DTOs + supporting).
+//! Exact post-m7-02 numbers will be recorded in the next close cycle.
 //!
 //! ## M7 (sub-cycle) progress
 //!
@@ -41,6 +42,13 @@
 //!   `ChronosEventsReadService::read`. The v2 surface adds the spec-line-60
 //!   fields `next_cursor`, `completeness`, `gap_summary`, and `provenance`
 //!   to the response. See `docs/milestones/m7-01-events-read-merge.md`.
+//! - m7-02: added [`observe`] dispatcher. v1 tools `tripwire_create`,
+//!   `tripwire_list`, `tripwire_delete`, `tripwire_query`, and `probe_inject`
+//!   are now deprecated MCP shims that route through
+//!   `ChronosObserveService::observe`. The v2 surface adds the spec-line-14
+//!   fields `action`, `retention`, `requested_evidence`, `scope`, `cursor`,
+//!   and `provenance` to the request and response. See
+//!   `docs/milestones/m7-02-observability-merge.md`.
 //!
 //! ## Next (M7+ sub-cycle)
 //!

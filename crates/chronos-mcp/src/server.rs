@@ -57,7 +57,6 @@ use chronos_services::query_service::QueryService;
 use chronos_services::sessions::{SessionsContext, SessionsService};
 use chronos_services::state_query::{ChronosStateQueryService, StateQueryContext, StateQueryInput};
 use chronos_services::trace_slice::{ChronosTraceSliceService, TraceSliceContext, TraceSliceInput};
-use chronos_services::tripwires::TripwiresService;
 #[allow(unused_imports)]
 use chronos_store::{SessionMetadata, SessionStore};
 use rmcp::handler::server::wrapper::Parameters;
@@ -3031,14 +3030,16 @@ impl ChronosServer {
 
     #[tool(
         name = "tripwire_create",
-        description = "Create a tripwire to monitor trace events matching a condition. When a matching event occurs, the tripwire fires and can be retrieved via tripwire_list. Use this for alerting on specific function calls, exceptions, syscalls, or signals."
+        description = "Deprecated. Use `observe` with `verb=create` and `condition.kind=tripwire` instead. Create a tripwire to monitor trace events matching a condition. When a matching event occurs, the tripwire fires and can be retrieved via tripwire_list (or observe with verb=list). This shim preserves the v1 JSON shape (tripwire_id, status, active_count, label)."
     )]
     async fn tripwire_create(
         &self,
         params: Parameters<TripwireCreateParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let condition = match params.condition.into_condition() {
+        // Parse the v1 condition type → domain. Surface failure as an MCP error
+        // before constructing the v2 typed input.
+        let parsed_condition = match params.condition.into_condition() {
             Ok(c) => c,
             Err(bad) => {
                 return Ok(CallToolResult::error(text_content(format!(
@@ -3047,73 +3048,148 @@ impl ChronosServer {
                 ))));
             }
         };
-
-        match TripwiresService::create(condition, params.label, &self.tripwire_manager) {
-            Ok(result) => {
+        let label_for_v2 = params.label.clone();
+        let probe_ctx = chronos_services::probe::ProbeContext {
+            live_probes: &self.live_probes,
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            tripwire_manager: &self.tripwire_manager,
+            active_session: &self.active_session,
+        };
+        let ctx = ObserveContext {
+            tripwire_manager: &self.tripwire_manager,
+            probe: &probe_ctx,
+            uprobe_counter: &self.uprobe_counter,
+        };
+        let input = ObserveInput {
+            verb: chronos_services::output::ObserveVerb::Create,
+            subscription_id: None,
+            condition: Some(chronos_services::output::ObserveCondition::Tripwire {
+                condition: parsed_condition,
+                label: label_for_v2.clone(),
+            }),
+            action: None,
+            retention: None,
+            requested_evidence: None,
+            scope: None,
+            cursor: None,
+            label: label_for_v2,
+        };
+        match ChronosObserveService::observe(&ctx, input) {
+            Ok(chronos_services::output::ObserveOutput::Create(c)) => {
                 let output = serde_json::json!({
-                    "tripwire_id": result.tripwire_id,
-                    "status": "registered",
-                    "active_count": result.active_count,
-                    "label": result.label,
+                    "tripwire_id": c.subscription_id,
+                    "status": c.status,
+                    "active_count": c.active_count,
+                    "label": c.label,
                 });
                 Ok(CallToolResult::success(json_content(&output)))
             }
+            Ok(other) => Ok(CallToolResult::error(text_content(format!(
+                "tripwire_create: internal error: unexpected non-Create events variant: {:?}",
+                other
+            )))),
             Err(ServiceError::LockPoisoned) => Ok(CallToolResult::error(text_content(
-                "lock poisoned".to_string(),
+                "tripwire_create: lock poisoned".to_string(),
             ))),
-            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
+            Err(ServiceError::Unsupported(s)) => Ok(CallToolResult::error(text_content(format!(
+                "tripwire_create: unsupported: {}",
+                s
+            )))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "tripwire_create: {}",
+                e
+            )))),
         }
     }
 
     #[tool(
         name = "tripwire_list",
-        description = "List all active tripwires and any that have fired since the last call. Returns tripwire definitions and a list of fired notifications with event context."
+        description = "Deprecated. Use `observe` with `verb=list` instead. List all active tripwires and any that have fired since the last call. Destructive read (drains fired events). This shim preserves the v1 JSON shape (active_tripwires, fired_events, total_active, fired_count)."
     )]
     async fn tripwire_list(
         &self,
         _params: Parameters<NoParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = TripwiresService::list(&self.tripwire_manager);
-
-        let tripwire_summaries: Vec<_> = result
-            .tripwires
-            .iter()
-            .map(|tw| {
-                serde_json::json!({
-                    "id": tw.id,
-                    "label": tw.label,
-                    "condition": tw.condition,
-                    "fire_count": tw.fire_count,
-                })
-            })
-            .collect();
-
-        let fired_events: Vec<_> = result
-            .fired_events
-            .iter()
-            .map(|f| {
-                serde_json::json!({
-                    "tripwire_id": f.tripwire_id,
-                    "condition_description": f.condition_description,
-                    "event_id": f.event_id,
-                    "timestamp_ns": f.timestamp_ns,
-                    "thread_id": f.thread_id,
-                })
-            })
-            .collect();
-
-        let output = serde_json::json!({
-            "active_tripwires": tripwire_summaries,
-            "fired_events": fired_events,
-            "total_active": result.total_active,
-            "fired_count": result.fired_count,
-        });
-        Ok(CallToolResult::success(json_content(&output)))
+        let probe_ctx = chronos_services::probe::ProbeContext {
+            live_probes: &self.live_probes,
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            tripwire_manager: &self.tripwire_manager,
+            active_session: &self.active_session,
+        };
+        let ctx = ObserveContext {
+            tripwire_manager: &self.tripwire_manager,
+            probe: &probe_ctx,
+            uprobe_counter: &self.uprobe_counter,
+        };
+        let input = ObserveInput {
+            verb: chronos_services::output::ObserveVerb::List,
+            subscription_id: None,
+            condition: None,
+            action: None,
+            retention: None,
+            requested_evidence: None,
+            scope: None,
+            cursor: None,
+            label: None,
+        };
+        match ChronosObserveService::observe(&ctx, input) {
+            Ok(chronos_services::output::ObserveOutput::List(l)) => {
+                let tripwire_summaries: Vec<_> = l
+                    .subscriptions
+                    .iter()
+                    .map(|s| {
+                        serde_json::json!({
+                            "id": s.id,
+                            "label": s.label,
+                            "condition": s.condition,
+                            "fire_count": s.fire_count,
+                        })
+                    })
+                    .collect();
+                let fired_events: Vec<_> = l
+                    .fired_events
+                    .iter()
+                    .map(|f| {
+                        serde_json::json!({
+                            "tripwire_id": f.tripwire_id,
+                            "condition_description": f.condition_description,
+                            "event_id": f.event_id,
+                            "timestamp_ns": f.timestamp_ns,
+                            "thread_id": f.thread_id,
+                        })
+                    })
+                    .collect();
+                let output = serde_json::json!({
+                    "active_tripwires": tripwire_summaries,
+                    "fired_events": fired_events,
+                    "total_active": l.total_active,
+                    "fired_count": l.fired_count,
+                });
+                Ok(CallToolResult::success(json_content(&output)))
+            }
+            Ok(other) => Ok(CallToolResult::error(text_content(format!(
+                "tripwire_list: internal error: unexpected non-List events variant: {:?}",
+                other
+            )))),
+            Err(ServiceError::LockPoisoned) => Ok(CallToolResult::error(text_content(
+                "tripwire_list: lock poisoned".to_string(),
+            ))),
+            Err(ServiceError::Unsupported(s)) => Ok(CallToolResult::error(text_content(format!(
+                "tripwire_list: unsupported: {}",
+                s
+            )))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "tripwire_list: {}",
+                e
+            )))),
+        }
     }
 
     #[tool(
         name = "tripwire_delete",
-        description = "Delete a tripwire by ID. The tripwire will no longer fire for new events."
+        description = "Deprecated. Use `observe` with `verb=delete` and `subscription_id` instead. Delete a tripwire by ID. This shim preserves the v1 JSON shape (tripwire_id, status, remaining_active)."
     )]
     async fn tripwire_delete(
         &self,
@@ -3121,65 +3197,135 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
         let tripwire_id = params.tripwire_id.trim();
-
-        // Validate format before calling service
         if tripwire_id.strip_prefix("tripwire-").is_none() {
             return Ok(CallToolResult::error(text_content(format!(
                 "Invalid tripwire ID format '{}'. Expected format: 'tripwire-<number>'",
                 tripwire_id
             ))));
         }
-
-        match TripwiresService::delete(tripwire_id, &self.tripwire_manager) {
-            Ok(result) => {
+        let probe_ctx = chronos_services::probe::ProbeContext {
+            live_probes: &self.live_probes,
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            tripwire_manager: &self.tripwire_manager,
+            active_session: &self.active_session,
+        };
+        let ctx = ObserveContext {
+            tripwire_manager: &self.tripwire_manager,
+            probe: &probe_ctx,
+            uprobe_counter: &self.uprobe_counter,
+        };
+        let input = ObserveInput {
+            verb: chronos_services::output::ObserveVerb::Delete,
+            subscription_id: Some(tripwire_id.to_string()),
+            condition: None,
+            action: None,
+            retention: None,
+            requested_evidence: None,
+            scope: None,
+            cursor: None,
+            label: None,
+        };
+        match ChronosObserveService::observe(&ctx, input) {
+            Ok(chronos_services::output::ObserveOutput::Delete(d)) => {
                 let output = serde_json::json!({
-                    "tripwire_id": result.tripwire_id,
+                    "tripwire_id": d.subscription_id,
                     "status": "deleted",
-                    "remaining_active": result.remaining_active,
+                    "remaining_active": d.remaining_active,
                 });
                 Ok(CallToolResult::success(json_content(&output)))
             }
+            Ok(other) => Ok(CallToolResult::error(text_content(format!(
+                "tripwire_delete: internal error: unexpected non-Delete events variant: {:?}",
+                other
+            )))),
             Err(ServiceError::LockPoisoned) => Ok(CallToolResult::error(text_content(
-                "lock poisoned".to_string(),
+                "tripwire_delete: lock poisoned".to_string(),
+            ))),
+            Err(ServiceError::TripwireNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Tripwire '{}' not found", s),
             ))),
             Err(ServiceError::InvalidTripwireIdFormat(s)) => Ok(CallToolResult::error(
                 text_content(format!("Invalid tripwire ID format: '{}'", s)),
             )),
-            Err(ServiceError::TripwireNotFound(s)) => Ok(CallToolResult::error(text_content(
-                format!("Tripwire '{}' not found", s),
-            ))),
-            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
+            Err(ServiceError::Unsupported(s)) => Ok(CallToolResult::error(text_content(format!(
+                "tripwire_delete: unsupported: {}",
+                s
+            )))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "tripwire_delete: {}",
+                e
+            )))),
         }
     }
 
     #[tool(
         name = "tripwire_query",
-        description = "Query tripwire state without draining fired events (non-destructive read). Useful for checking if any tripwires have fired without consuming the notifications."
+        description = "Deprecated. Use `observe` with `verb=query` instead. Query tripwire state without draining fired events (non-destructive read). This shim preserves the v1 JSON shape (active_tripwires, total_active)."
     )]
     async fn tripwire_query(
         &self,
         _params: Parameters<NoParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = TripwiresService::query(&self.tripwire_manager);
-
-        let tripwire_summaries: Vec<_> = result
-            .tripwires
-            .iter()
-            .map(|tw| {
-                serde_json::json!({
-                    "id": tw.id,
-                    "label": tw.label,
-                    "condition": tw.condition,
-                    "fire_count": tw.fire_count,
-                })
-            })
-            .collect();
-
-        let output = serde_json::json!({
-            "active_tripwires": tripwire_summaries,
-            "total_active": result.total_active,
-        });
-        Ok(CallToolResult::success(json_content(&output)))
+        let probe_ctx = chronos_services::probe::ProbeContext {
+            live_probes: &self.live_probes,
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            tripwire_manager: &self.tripwire_manager,
+            active_session: &self.active_session,
+        };
+        let ctx = ObserveContext {
+            tripwire_manager: &self.tripwire_manager,
+            probe: &probe_ctx,
+            uprobe_counter: &self.uprobe_counter,
+        };
+        let input = ObserveInput {
+            verb: chronos_services::output::ObserveVerb::Query,
+            subscription_id: None,
+            condition: None,
+            action: None,
+            retention: None,
+            requested_evidence: None,
+            scope: None,
+            cursor: None,
+            label: None,
+        };
+        match ChronosObserveService::observe(&ctx, input) {
+            Ok(chronos_services::output::ObserveOutput::Query(q)) => {
+                let tripwire_summaries: Vec<_> = q
+                    .subscriptions
+                    .iter()
+                    .map(|s| {
+                        serde_json::json!({
+                            "id": s.id,
+                            "label": s.label,
+                            "condition": s.condition,
+                            "fire_count": s.fire_count,
+                        })
+                    })
+                    .collect();
+                let output = serde_json::json!({
+                    "active_tripwires": tripwire_summaries,
+                    "total_active": q.total_active,
+                });
+                Ok(CallToolResult::success(json_content(&output)))
+            }
+            Ok(other) => Ok(CallToolResult::error(text_content(format!(
+                "tripwire_query: internal error: unexpected non-Query events variant: {:?}",
+                other
+            )))),
+            Err(ServiceError::LockPoisoned) => Ok(CallToolResult::error(text_content(
+                "tripwire_query: lock poisoned".to_string(),
+            ))),
+            Err(ServiceError::Unsupported(s)) => Ok(CallToolResult::error(text_content(format!(
+                "tripwire_query: unsupported: {}",
+                s
+            )))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "tripwire_query: {}",
+                e
+            )))),
+        }
     }
 
     // ========================================================================
@@ -3596,7 +3742,7 @@ impl ChronosServer {
 
     #[tool(
         name = "probe_inject",
-        description = "Inject a uprobe into a running process via eBPF (requires root/CAP_BPF)"
+        description = "Deprecated. Use `observe` with `verb=create`, `condition.kind=uprobe`, and `scope=session{session_id}` instead. Inject a uprobe into a running process via eBPF (requires root/CAP_BPF). This shim preserves the v1 JSON shape (session_id, binary_path, symbol_name, pid, probes_attached, message)."
     )]
     async fn probe_inject(
         &self,
@@ -3604,74 +3750,72 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        let input = chronos_services::probe::ProbeInjectInput {
-            session_id: params.session_id.clone(),
-            binary_path: params.binary_path.clone(),
-            symbol_name: params.symbol_name.clone(),
-            pid: params.pid,
-        };
-
-        let ctx = chronos_services::probe::ProbeContext {
+        let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
         };
-
-        match chronos_services::probe::ProbeService::inject(&ctx, input) {
-            Ok(chronos_services::probe::ProbeInjectResult::Attached {
-                session_id,
-                binary_path,
-                symbol_name,
-                pid,
-            }) => {
+        let ctx = ObserveContext {
+            tripwire_manager: &self.tripwire_manager,
+            probe: &probe_ctx,
+            uprobe_counter: &self.uprobe_counter,
+        };
+        let input = ObserveInput {
+            verb: chronos_services::output::ObserveVerb::Create,
+            subscription_id: None,
+            condition: Some(chronos_services::output::ObserveCondition::Uprobe {
+                binary_path: params.binary_path.clone(),
+                symbol_name: params.symbol_name.clone(),
+                pid: params.pid,
+                label: None,
+            }),
+            action: None,
+            retention: None,
+            requested_evidence: None,
+            scope: Some(chronos_services::output::ObserveScope::Session {
+                session_id: params.session_id.clone(),
+            }),
+            cursor: None,
+            label: None,
+        };
+        match ChronosObserveService::observe(&ctx, input) {
+            Ok(chronos_services::output::ObserveOutput::Create(c)) => {
+                // Mirror v1 shape: pull fields back from the v2 result.
                 let output = serde_json::json!({
-                    "session_id": session_id,
-                    "binary_path": binary_path,
-                    "symbol_name": symbol_name,
-                    "pid": pid,
+                    "session_id": params.session_id,
+                    "binary_path": params.binary_path,
+                    "symbol_name": params.symbol_name,
+                    "pid": c.attached_pid,
                     "probes_attached": 1u32,
                     "message": format!(
-                        "uprobe attached to '{}' in '{}' (pid {}); adapter stored on session",
-                        symbol_name, binary_path, pid
+                        "uprobe attached (subscription {}); adapter stored on session",
+                        c.subscription_id
                     ),
                 });
                 Ok(CallToolResult::success(json_content(&output)))
             }
-            Ok(chronos_services::probe::ProbeInjectResult::ProbeStarting) => {
-                Ok(CallToolResult::error(text_content(
-                    "Cannot inject: probe is still starting up (PID not yet known). Retry in a moment.",
-                )))
-            }
-            Ok(chronos_services::probe::ProbeInjectResult::EbpfUnavailable(msg)) => {
-                Ok(CallToolResult::error(text_content(format!(
-                    "eBPF not available on this system: {}",
-                    msg
-                ))))
-            }
-            Ok(chronos_services::probe::ProbeInjectResult::AttachFailed {
-                session_id: _,
-                binary_path,
-                symbol_name,
-                pid: _,
-                error,
-            }) => Ok(CallToolResult::error(text_content(format!(
-                "Failed to attach uprobe for '{}' in '{}': {}",
-                symbol_name, binary_path, error
+            Ok(other) => Ok(CallToolResult::error(text_content(format!(
+                "probe_inject: internal error: unexpected non-Create events variant: {:?}",
+                other
             )))),
-            Err(ServiceError::ProbeNotFound(s)) => Ok(CallToolResult::error(text_content(
-                format!(
+            Err(ServiceError::ProbeNotFound(s)) => {
+                Ok(CallToolResult::error(text_content(format!(
                     "Live probe session '{}' not found. Start a probe with probe_start first.",
                     s
-                ),
-            ))),
-            Err(ServiceError::LockPoisoned) => {
-                Ok(CallToolResult::error(text_content("lock poisoned")))
+                ))))
             }
-            Err(other) => Ok(CallToolResult::error(text_content(format!(
-                "internal error: unexpected probe inject error: {}",
-                other
+            Err(ServiceError::LockPoisoned) => Ok(CallToolResult::error(text_content(
+                "probe_inject: lock poisoned".to_string(),
+            ))),
+            Err(ServiceError::Unsupported(s)) => Ok(CallToolResult::error(text_content(format!(
+                "probe_inject: unsupported: {}",
+                s
+            )))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "probe_inject: internal error: unexpected probe inject error: {}",
+                e
             )))),
         }
     }
@@ -4244,8 +4388,7 @@ impl ChronosServer {
         // TripwireConditionType and then converted via .into_condition().
         let typed_condition = match params.condition {
             Some(ObserveConditionWire::Tripwire { condition, label }) => {
-                let parsed_type: TripwireConditionType = match serde_json::from_value(condition)
-                {
+                let parsed_type: TripwireConditionType = match serde_json::from_value(condition) {
                     Ok(t) => t,
                     Err(e) => {
                         return Ok(CallToolResult::error(text_content(format!(
@@ -4292,12 +4435,12 @@ impl ChronosServer {
 
         // Translate ObserveRequestedEvidenceWire → ObserveRequestedEvidence.
         let typed_evidence = match params.requested_evidence {
-            Some(ObserveRequestedEvidenceWire::EventTypes { event_types }) => Some(
-                chronos_services::output::ObserveRequestedEvidence::EventTypes { event_types },
-            ),
-            Some(ObserveRequestedEvidenceWire::Properties { names }) => Some(
-                chronos_services::output::ObserveRequestedEvidence::Properties { names },
-            ),
+            Some(ObserveRequestedEvidenceWire::EventTypes { event_types }) => {
+                Some(chronos_services::output::ObserveRequestedEvidence::EventTypes { event_types })
+            }
+            Some(ObserveRequestedEvidenceWire::Properties { names }) => {
+                Some(chronos_services::output::ObserveRequestedEvidence::Properties { names })
+            }
             None => None,
         };
 
@@ -4333,18 +4476,19 @@ impl ChronosServer {
                 &serde_json::to_value(&out)
                     .map_err(|e| rmcp::ErrorData::internal_error(e.to_string(), None))?,
             ))),
-            Err(ServiceError::Unsupported(s)) => Ok(CallToolResult::error(text_content(
-                format!("observe: unsupported: {}", s),
-            ))),
+            Err(ServiceError::Unsupported(s)) => Ok(CallToolResult::error(text_content(format!(
+                "observe: unsupported: {}",
+                s
+            )))),
             Err(ServiceError::TripwireNotFound(s)) => Ok(CallToolResult::error(text_content(
                 format!("observe: tripwire '{}' not found", s),
             ))),
             Err(ServiceError::InvalidTripwireIdFormat(s)) => Ok(CallToolResult::error(
                 text_content(format!("observe: invalid tripwire id format: '{}'", s)),
             )),
-            Err(ServiceError::LockPoisoned) => {
-                Ok(CallToolResult::error(text_content("observe: lock poisoned")))
-            }
+            Err(ServiceError::LockPoisoned) => Ok(CallToolResult::error(text_content(
+                "observe: lock poisoned",
+            ))),
             Err(e) => Ok(CallToolResult::error(text_content(format!("observe: {e}")))),
         }
     }
