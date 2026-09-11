@@ -1,0 +1,19 @@
+{
+  "schema": "sddk.verify-finding/v1",
+  "subject": {
+    "base": "6f375fd96dbc0c03fe36b473d306f1e54d078b08",
+    "head": "570d2150336fb4b159c9f9c8cc1165a7731a9e2e",
+    "diff_digest": "b8fc3eef960a396364935675806117e47109ca178355c469286d26d63b7a6432",
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
+    "clean": true,
+    "verified_at": "2026-09-11T23:08Z"
+  },
+  "findings": [],
+  "summary": {
+    "verdict": "PASS",
+    "path": "B-direct",
+    "blocking_findings": 0,
+    "warnings": 0,
+    "suggestions": 0
+  }
+}
