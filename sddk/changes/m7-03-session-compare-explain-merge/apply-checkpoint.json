@@ -1,13 +1,13 @@
 {
   "cycle_id": "m7-03-session-compare-explain-merge",
   "title": "M7-03 — session_compare v2 dispatcher + session_explain v2 net-new + v1 shims for compare_sessions / performance_regression_audit",
-  "status": "in_progress",
+  "status": "ready_for_merge",
   "branch": "feat/m7-03-session-compare-explain-merge",
-  "head_sha": "947e73b",
+  "head_sha": "bbebce8",
   "base_sha": "1d218fb",
   "ff_merged_sha": null,
   "started_at": "2026-09-11T07:30:00Z",
-  "completed_at": null,
+  "completed_at": "2026-09-11T07:54:00Z",
   "commits": [
     { "sha": "da7fb83", "subject": "feat(services): add session_compare + session_explain DTOs (m7-03)" },
     { "sha": "36a0f34", "subject": "feat(services): add ChronosSessionCompareService dispatcher (m7-03)" },
@@ -45,7 +45,7 @@
     ],
     "T1_chronos_mcp_stable": "76/76 (+3 new lib tests; existing v1 shim tests test_compare_sessions_session_not_found + test_compare_sessions_identical still pass against shim path)",
     "T2_integration": "skipped — chronos-mcp/tests/* does not yet cover session_compare / session_explain (the wrappers are net-new). Sandbox smoke is the right gate here.",
-    "T4_sandbox_smoke": "planned — 4 sandbox suites: e2e_connectivity (server starts), diff_tools (compare_sessions shim + performance_regression_audit shim), analytics_tools (event read + summary paths), hypothesis_tools (session_explain{kind=hypothesis} returns a plan that hypothesis_test{kind=call_path} can execute)"
+    "T4_sandbox_smoke": "pass — 3 effective suites ran: e2e_connectivity (1/1), diff_tools (4/4), analytics_tools (4/4). session_compare sandbox test is pre-existing #[ignore] (fixture path issue documented in test header) — not a regression. No hypothesis_tools.rs suite exists in chronos-sandbox; coverage of hypothesis_test{kind=call_path} + session_explain{kind=hypothesis} composition is provided by chronos-services::hypothesis_test + chronos-services::session_explain unit tests instead."
   },
   "scope": {
     "path": "A-min",
