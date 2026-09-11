@@ -1284,7 +1284,13 @@ impl McpSession {
         let params = serde_json::json!({
             "property_kind": "invariant",
             "target_hypothesis": target,
-            "max_rounds": 1,
+            // m8-06: max_rounds is now wired through to
+            // proptest::Config::max_shrink_iters. drive_strategy uses 1
+            // round for the initial sample and up to max_rounds rounds
+            // for simplify() iterations, so rounds_used = 1 + N where
+            // N <= max_rounds. Use 8 here so the binary-search shrinker
+            // has headroom to converge toward 0.0 before hitting the cap.
+            "max_rounds": 8,
             "seed": None::<u64>,
         });
         let response = self
