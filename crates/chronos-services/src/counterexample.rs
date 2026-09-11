@@ -534,7 +534,20 @@ impl ChronosCounterexampleService {
             .store
             .load_counterexample_bundle(&summary_back.bundle_id)
             .map_err(|e| ServiceError::LoadFailed(format!("counterexample reload: {e}")))?;
-        let events_count = loaded.map(|r| r.events.len()).unwrap_or(0);
+        // m9-02: after mem::take events into the side table, the persisted
+        // record has events=[] but record.summary.events_count = events.len().
+        // For pre-m9-02 blobs (where summary.events_count stays 0) we fall
+        // back to the blob-embedded event count.
+        let events_count = loaded
+            .as_ref()
+            .map(|r| {
+                if r.summary.events_count > 0 {
+                    r.summary.events_count as usize
+                } else {
+                    r.events.len()
+                }
+            })
+            .unwrap_or(0);
         Ok(CounterexampleOutput::Saved {
             summary: summary_back,
             events_count,

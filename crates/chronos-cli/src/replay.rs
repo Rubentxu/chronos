@@ -25,7 +25,7 @@ use chronos_query::engine::QueryEngine;
 use chronos_services::hypothesis_test::{ChronosHypothesisTestService, HypothesisInput};
 use chronos_services::output::{ExistencePredicate, HypothesisKind};
 use chronos_store::counterexample_storage::{
-    bundle_events_or_legacy, CounterexampleBundleRecord, CounterexampleBundleSummary,
+    bundle_events_or_legacy, CounterexampleBundleRecord,
     ExistencePredicateWire, MinimisedPayload,
 };
 use chronos_store::SessionStore;
@@ -534,7 +534,6 @@ mod tests {
     fn m9_02_bundle_events_or_legacy_chokepoint_for_side_table() {
         // Verify bundle_events_or_legacy is exported and callable from this module.
         // The actual side-table loading is tested in chronos-store.
-        use chronos_store::counterexample_storage::CounterexampleBundleRecord;
         use chronos_store::SessionStore;
 
         let store = SessionStore::in_memory().expect("in_memory store");

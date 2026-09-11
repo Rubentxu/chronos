@@ -317,6 +317,7 @@ impl crate::storage::SessionStore {
     ///
     /// Re-save deletes any pre-existing chunks for `record.summary.bundle_id`
     /// before writing new ones (R7).
+    #[allow(clippy::result_large_err)]
     fn save_bundle_record_and_events(
         &self,
         record: CounterexampleBundleRecord,
@@ -652,6 +653,7 @@ impl crate::storage::SessionStore {
 ///   side table and concatenates them in `chunk_index` order.
 ///
 /// Consumers should use this instead of accessing `bundle.events` directly.
+#[allow(clippy::result_large_err)]
 pub fn bundle_events_or_legacy(
     store: &crate::storage::SessionStore,
     bundle: &CounterexampleBundleRecord,
