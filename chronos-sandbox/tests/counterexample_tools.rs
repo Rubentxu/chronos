@@ -104,6 +104,15 @@ async fn ce1_shrink_constant_target() {
         "m8-03 bundles always carry full payload"
     );
     assert_eq!(resp.bundle.property_kind, "invariant");
+    // m8-04: the persisted bundle now carries real captured trace events
+    // (m8-03 shipped events_count=0 as a vec![] placeholder). On the
+    // test_busyloop probe the engine captures events before the engine
+    // map is queried by the dispatcher, so events_count must be > 0.
+    assert!(
+        resp.events_count >= 1,
+        "events_count must be > 0 after m8-04 (got {})",
+        resp.events_count
+    );
 
     let _ = client.shutdown().await;
 }
@@ -240,6 +249,43 @@ async fn ce6_list_with_workspace_filter() {
         .expect("list with workspace filter failed");
 
     assert!(list.next_cursor.is_none());
+
+    let _ = client.shutdown().await;
+}
+
+/// CE7: shrink response carries the new m8-04 `{bundle, events_count}`
+/// shape (was `{saved: <summary>}` in m8-03). Asserts via the typed
+/// wrapper fields — `events_count >= 1` confirms m8-04 closed the
+/// m8-03 vec![] placeholder.
+#[tokio::test]
+async fn ce7_shrink_response_uses_new_saved_envelope() {
+    let Some((mut client, session_id)) = setup_with_probe("test_busyloop").await else {
+        return;
+    };
+
+    let target = json!({
+        "session_id": session_id,
+        "kind": "invariant",
+        "constant": { "Number": 5.0 },
+    });
+
+    let resp = client
+        .counterexample_shrink(target)
+        .await
+        .expect("shrink failed");
+
+    // m8-04 B5 rework: the Saved variant now carries (bundle,
+    // events_count) — the typed wrapper exposes both directly.
+    assert!(
+        !resp.bundle.bundle_id.is_empty(),
+        "bundle_id must be present"
+    );
+    assert!(
+        resp.events_count >= 1,
+        "events_count must be >= 1 after m8-04 (got {})",
+        resp.events_count
+    );
+    assert_eq!(resp.rounds_used, 1);
 
     let _ = client.shutdown().await;
 }

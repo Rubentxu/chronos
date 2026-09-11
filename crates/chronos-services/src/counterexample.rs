@@ -117,8 +117,15 @@ pub enum CounterexampleOutput {
     /// `save` call. The summary carries `has_full_bundle=true` so the MCP
     /// wire can distinguish a freshly-persisted bundle from the
     /// summary-only shape `List` returns.
+    ///
+    /// m8-04: `events_count` is the length of the persisted events vector.
+    /// m8-03 shipped `{"saved": <summary>}` (stopgap envelope, B5); m8-04
+    /// brings this variant into the `{bundle, events_count}` family that
+    /// `Shrunk` and `Got` use. The wire DTO is `CounterexampleBundleDto`
+    /// (m8-03) — no new wire type needed.
     Saved {
         summary: CounterexampleBundleSummary,
+        events_count: usize,
     },
     Listed {
         summaries: Vec<CounterexampleBundleSummary>,
@@ -128,12 +135,20 @@ pub enum CounterexampleOutput {
     /// shrink run. Carries the minimised input fields by their typed shape, plus
     /// the rounds-consumed count. m8-03 promotes to a wire DTO with a flattened
     /// `minimised: serde_json::Value` field that captures the discriminant.
+    ///
+    /// m8-04: `events_count` mirrors the `Saved { events_count }` we just
+    /// persisted (it is the same redb blob's `events.len()`). The m8-03
+    /// wire serialiser hardcoded `events_count: 0` in the `full` DTO
+    /// because the dispatcher didn't have access to the engine map; now
+    /// that `shrink()` calls `pull_engine_events`, we carry the count
+    /// through both `Saved` and `Shrunk` paths.
     Shrunk {
         bundle: CounterexampleBundleSummary,
         rounds_used: u32,
         minimised_constant: Option<PropertyValue>,
         minimised_predicate: Option<ExistencePredicate>,
         minimised_call_path: Option<(String, String, Option<usize>)>,
+        events_count: usize,
     },
 }
 
@@ -408,8 +423,22 @@ impl ChronosCounterexampleService {
             rounds_used,
             has_full_bundle: true,
         };
+        // m8-04: plumb the events count through the Saved variant so the
+        // MCP wire (and `chronos-cli replay`) can report the bundle's
+        // payload size without re-reading redb. We re-read the record
+        // we just persisted to recover the canonical event count (this
+        // also lets the wire layer assert that save() round-tripped
+        // the events correctly — a future m9+ hardening step could
+        // shortcut this by inlining the count into save()'s return
+        // type).
+        let loaded = ctx
+            .store
+            .load_counterexample_bundle(&summary_back.bundle_id)
+            .map_err(|e| ServiceError::LoadFailed(format!("counterexample reload: {e}")))?;
+        let events_count = loaded.map(|r| r.events.len()).unwrap_or(0);
         Ok(CounterexampleOutput::Saved {
             summary: summary_back,
+            events_count,
         })
     }
 
@@ -538,22 +567,26 @@ impl ChronosCounterexampleService {
             ),
             events,
         )?;
-        let bundle = match persist_result {
-            CounterexampleOutput::Saved { summary } => summary,
-            _ => {
-                return Err(ServiceError::EvalError(
-                    "CounterexampleSavePersistence did not return Saved variant".to_string(),
-                ));
-            }
-        };
-
-        Ok(CounterexampleOutput::Shrunk {
-            bundle,
-            rounds_used,
-            minimised_constant,
-            minimised_predicate,
-            minimised_call_path,
-        })
+        // m8-04: propagate the Saved events_count up into the
+        // Shrunk return so the wire serialiser can populate
+        // `full.events_count` from real data instead of the
+        // m8-03 hardcoded 0.
+        match persist_result {
+            CounterexampleOutput::Saved {
+                summary,
+                events_count,
+            } => Ok(CounterexampleOutput::Shrunk {
+                bundle: summary,
+                rounds_used,
+                minimised_constant,
+                minimised_predicate,
+                minimised_call_path,
+                events_count,
+            }),
+            _ => Err(ServiceError::EvalError(
+                "CounterexampleSavePersistence did not return Saved variant".to_string(),
+            )),
+        }
     }
 }
 
@@ -1033,6 +1066,7 @@ mod tests {
             minimised_constant: Some(PropertyValue::Number(0.0)),
             minimised_predicate: None,
             minimised_call_path: None,
+            events_count: 0,
         };
         if let CounterexampleOutput::Shrunk {
             minimised_constant,
@@ -1064,6 +1098,7 @@ mod tests {
                 event_type: "x".into(),
             }),
             minimised_call_path: None,
+            events_count: 0,
         };
         if let CounterexampleOutput::Shrunk {
             minimised_constant,
@@ -1093,6 +1128,7 @@ mod tests {
             minimised_constant: None,
             minimised_predicate: None,
             minimised_call_path: Some(("main".into(), "helper".into(), Some(8))),
+            events_count: 0,
         };
         if let CounterexampleOutput::Shrunk {
             minimised_constant,
@@ -1325,11 +1361,18 @@ mod tests {
         )
         .expect("save should succeed");
         let saved_id = match saved {
-            CounterexampleOutput::Saved { summary } => {
+            CounterexampleOutput::Saved {
+                summary,
+                events_count,
+            } => {
                 assert_eq!(summary.property_kind, HypothesisKind::Invariant);
                 assert!(
                     summary.has_full_bundle,
                     "saved bundle must report has_full_bundle=true"
+                );
+                assert_eq!(
+                    events_count, 0,
+                    "save() with vec![] events must report events_count=0"
                 );
                 summary.bundle_id
             }
@@ -1411,9 +1454,10 @@ mod tests {
             hypothesis_ctx: &hyp_ctx,
         };
 
-        let pulled = ChronosCounterexampleService::pull_engine_events(&ctx, "sess-m8-04".to_string())
-            .await
-            .expect("pull_engine_events should succeed");
+        let pulled =
+            ChronosCounterexampleService::pull_engine_events(&ctx, "sess-m8-04".to_string())
+                .await
+                .expect("pull_engine_events should succeed");
         assert_eq!(pulled.len(), 3, "all 3 events should round-trip");
         assert_eq!(pulled[0].event_id, 0);
         assert_eq!(pulled[2].event_id, 2);
@@ -1437,7 +1481,8 @@ mod tests {
         };
 
         let result =
-            ChronosCounterexampleService::pull_engine_events(&ctx, "absent-session".to_string()).await;
+            ChronosCounterexampleService::pull_engine_events(&ctx, "absent-session".to_string())
+                .await;
         match result {
             Err(ServiceError::SessionNotFound(id)) => {
                 assert_eq!(id, "absent-session");
