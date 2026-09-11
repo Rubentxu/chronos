@@ -1638,6 +1638,297 @@ impl CursorDto {
     }
 }
 
+// ============================================================================
+// M7 — Session Compare + Session Explain outputs (m7-03)
+// ----------------------------------------------------------------------------
+// V2 dispatcher set that splits out the v1 diff surface into two
+// semantically distinct v2 endpoints:
+// - `session_compare` — two-session comparison (kind: divergence |
+//   regression). Folds the v1 `compare_sessions` and
+//   `performance_regression_audit` behind a single dispatcher with a
+//   `kind` discriminator. The v1 names are preserved as deprecated
+//   MCP shims (sunset 2027-09-11 per m6-close-report §4).
+// - `session_explain` — one-session structured bundle (kind: facts |
+//   derived | inferred | hypothesis). Net-new per spec line 21; no
+//   v1 analogue exists, so this tool has no shim.
+//
+// Both tools return a `*Provenance` block on every variant per the
+// v2 agent-ergonomics line. Both tools are bounded by either the
+// two-session set (`session_compare`) or the per-session bundle
+// (`session_explain`); no cursor pagination is needed in m7-03.
+// ============================================================================
+
+/// Kind discriminator for the unified v2 `session_compare` tool.
+///
+/// `Divergence` maps to v1 `compare_sessions` (BLAKE3 hash set-diff +
+/// similarity_pct). `Regression` maps to v1
+/// `performance_regression_audit` (per-function call-count regression
+/// detection with a +50% / -50% threshold).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionCompareKind {
+    /// Set-diff + similarity comparison (v1 `compare_sessions`).
+    Divergence,
+    /// Per-function call-count regression detection
+    /// (v1 `performance_regression_audit`).
+    Regression,
+}
+
+/// Input for the unified v2 `session_compare` tool.
+///
+/// Carries the kind discriminator plus the per-kind arguments. The
+/// dispatcher validates kind/argument consistency and rejects unknown
+/// or mismatched fields with `ServiceError::InvalidInput`. Both v1
+/// names map cleanly onto the kind variants; the dispatcher does
+/// not require a separate `unknown` branch.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SessionCompareInput {
+    /// Which comparison kind to run.
+    pub kind: SessionCompareKind,
+    /// Required for `kind=divergence` (v1 `compare_sessions` shape).
+    pub session_a: Option<String>,
+    /// Required for `kind=divergence` (v1 `compare_sessions` shape).
+    pub session_b: Option<String>,
+    /// Required for `kind=regression` (v1 `performance_regression_audit` shape).
+    pub baseline_session_id: Option<String>,
+    /// Required for `kind=regression` (v1 `performance_regression_audit` shape).
+    pub target_session_id: Option<String>,
+    /// Optional, only honoured by `kind=regression`.
+    pub top_n: Option<usize>,
+}
+
+/// Tagged output envelope returned by `session_compare`.
+///
+/// Each variant preserves the v1 result shape 1:1 plus a
+/// `provenance` field. MCP shims drop the `provenance` field so
+/// existing v1 callers see the same JSON they did before m7-03.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SessionCompareOutput {
+    /// Set-diff result for `kind=divergence`.
+    Divergence {
+        /// Set-diff result (same shape as v1 `compare_sessions`).
+        result: CompareSessionsResult,
+        /// Provenance metadata (engine version, source tag).
+        provenance: SessionCompareProvenance,
+    },
+    /// Per-function regression result for `kind=regression`.
+    Regression {
+        /// Regression-audit result (same shape as v1
+        /// `performance_regression_audit`).
+        result: PerformanceRegressionAuditResult,
+        /// Provenance metadata (engine version, source tag).
+        provenance: SessionCompareProvenance,
+    },
+}
+
+/// Provenance metadata for `session_compare` responses.
+///
+/// Carries the engine version (matching `chronos_query::QueryEngine::engine_version()`)
+/// and a short `source` tag identifying which dispatcher produced
+/// the response (`"session_compare:divergence"` or
+/// `"session_compare:regression"`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SessionCompareProvenance {
+    /// Engine version string (matches
+    /// `chronos_query::QueryEngine::engine_version()`).
+    pub engine_version: String,
+    /// Source tag (e.g., `"session_compare:divergence"`).
+    pub source: String,
+}
+
+/// Kind discriminator for the net-new v2 `session_explain` tool.
+///
+/// `Facts` returns direct observations from the session. `Derived`
+/// returns projections computed from facts. `Inferred` returns
+/// best-effort characterisations (with a typed `Unknown` fallback).
+/// `Hypothesis` returns a typed plan that the agent can execute via
+/// the m6-04 `hypothesis_test` tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionExplainKind {
+    /// Direct observations from the session.
+    Facts,
+    /// Projections computed from facts (hotspots, call graph summary).
+    Derived,
+    /// Best-effort characterisations (crash / I/O-heavy / CPU-bound /
+    /// single-threaded, with a typed `Unknown` fallback).
+    Inferred,
+    /// Typed `hypothesis_test` plan the agent can execute separately.
+    Hypothesis,
+}
+
+/// Hypothesis-test kind selector for `session_explain{kind=hypothesis}`.
+///
+/// Mirrors the m6-04 surface but exposes only the kinds the explain
+/// bundle can plan without additional agent input. `Existence` is
+/// not plannable from `session_explain` because the predicate
+/// requires an agent-supplied event-type filter at execution time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HypothesisTestKind {
+    /// Invariant: did a captured scalar violate the typed comparison?
+    /// Used by `session_explain` to plan a "this session crashed"
+    /// hypothesis by checking `exit_status` against `Equal(0)`.
+    CrashInvariant,
+    /// CallPath: is `callee` reachable from `caller`? Used by
+    /// `session_explain` to plan a "the dominant function was
+    /// called N times" hypothesis.
+    DominantFunctionCallPath,
+}
+
+/// Input for the net-new v2 `session_explain` tool.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SessionExplainInput {
+    /// Which bundle kind to produce.
+    pub kind: SessionExplainKind,
+    /// Target session id (required for every kind).
+    pub session_id: String,
+    /// Required only for `kind=hypothesis` — selects the
+    /// hypothesis-test variant the plan targets.
+    pub hypothesis_kind: Option<HypothesisTestKind>,
+}
+
+/// Tagged output envelope returned by `session_explain`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SessionExplainOutput {
+    Facts {
+        bundle: FactsBundle,
+        provenance: SessionExplainProvenance,
+    },
+    Derived {
+        bundle: DerivedBundle,
+        provenance: SessionExplainProvenance,
+    },
+    Inferred {
+        bundle: InferredBundle,
+        provenance: SessionExplainProvenance,
+    },
+    Hypothesis {
+        bundle: HypothesisBundle,
+        provenance: SessionExplainProvenance,
+    },
+}
+
+/// Direct observations from a single session (m7-03 starter set).
+///
+/// m7-03 ships 7 fields. The bundle is deliberately minimal; richer
+/// facts (`signal_received`, `exit_status`, `peak_thread_count`) are
+/// deferred to m7+ unless execute-cycle evidence shows they are
+/// load-bearing.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FactsBundle {
+    pub session_id: String,
+    pub total_events: usize,
+    pub distinct_event_types: Vec<String>,
+    pub distinct_functions: Vec<String>,
+    pub duration_ms: Option<u64>,
+    pub thread_count: usize,
+    pub crash_detected: bool,
+    pub signal_delivered: Option<String>,
+}
+
+/// Projections computed from facts (m7-03 starter set).
+///
+/// `regressions_vs_none` is a typed `None` in m7-03 because
+/// regression detection requires a baseline session; that flow lives
+/// in `session_compare{kind=regression}`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DerivedBundle {
+    pub session_id: String,
+    pub hotspots: Vec<FunctionHotspot>,
+    pub call_graph_summary: CallGraphSummary,
+    pub regressions_vs_none: Option<Vec<FunctionRegressionEntry>>,
+}
+
+/// Hotspot projection (one entry per dominant function).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FunctionHotspot {
+    pub function: String,
+    pub call_count: u64,
+    pub share_pct: f64,
+}
+
+/// Call-graph summary (counts only — full graph is `execution_query`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CallGraphSummary {
+    pub total_calls: u64,
+    pub distinct_callees: usize,
+    pub max_depth: u32,
+}
+
+/// Best-effort characterisation bundle.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct InferredBundle {
+    pub session_id: String,
+    pub inferences: Vec<InferredTag>,
+}
+
+/// Typed characterisation tag applied by the inferred bundle.
+///
+/// Multiple tags can co-exist on the same session (e.g., a session
+/// can be both `IoHeavy` and `SingleThreaded`). `Unknown` is the
+/// typed fallback when no characterisation applies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum InferredTag {
+    /// The session crashed (one or more crash-class events observed).
+    CrashDetected,
+    /// >50% of events are syscall_enter/exit for IO syscalls.
+    IoHeavy,
+    /// One function dominates >70% of total call counts.
+    CpuBound,
+    /// `facts.thread_count == 1`.
+    SingleThreaded,
+    /// No characterisation applied (typed fallback).
+    Unknown,
+}
+
+/// Typed hypothesis plan returned by `session_explain{kind=hypothesis}`.
+///
+/// The agent executes the plan by calling the v2 `hypothesis_test`
+/// tool (m6-04) with the plan's kind + session_id. `session_explain`
+/// does **not** execute the plan itself — execution lives in
+/// `hypothesis_test`. The plan + hint bundle keeps the
+/// responsibility split clean.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HypothesisBundle {
+    pub session_id: String,
+    pub plan: HypothesisTestPlan,
+    pub hint: String,
+}
+
+/// Typed hypothesis-test plan.
+///
+/// Mirrors the m6-04 surface but only carries the kinds `session_explain`
+/// can plan without additional agent input.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum HypothesisTestPlan {
+    /// Plan: did the session's exit_status violate `Equal(0)`?
+    CrashInvariant {
+        session_id: String,
+        comparison: crate::output::ComparisonOp,
+    },
+    /// Plan: was the dominant function called `at_least_n` times?
+    DominantFunctionCallPath {
+        session_id: String,
+        function: String,
+        at_least_n: u64,
+    },
+}
+
+/// Provenance metadata for `session_explain` responses.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SessionExplainProvenance {
+    /// Engine version string (matches
+    /// `chronos_query::QueryEngine::engine_version()`).
+    pub engine_version: String,
+    /// Source tag (e.g., `"session_explain:facts"`).
+    pub source: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
