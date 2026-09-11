@@ -30,10 +30,6 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 
 | ID | Cycle | Cluster | Severity | Priority | Título | Owner | Destino |
 |---|---|---|---|---|---|---|---|
-| FIND-M9-02-DV-API-01 | m9-02 | api | LOW | P3 | `save_counterexample_bundle_events` dead API: no caller uses it standalone | unassigned | m9+ backlog |
-| FIND-M9-02-DV-DOC-01 | m9-02 | doc | LOW | P3 | `events_count` doc drift: fallback branch not documented at call site | unassigned | m9+ backlog |
-| FIND-M9-02-DV-OE-01 | m9-02 | overeng | MEDIUM | P2 | Side-table chunk-iteration skeleton duplicated in 3 places | unassigned | m9+ backlog |
-| FIND-M9-02-DV-COUP-01 | m9-02 | coupling | MEDIUM | P2 | Fallback outside D5 chokepoint: wrong module boundary | unassigned | m9+ backlog |
 | FIND-M9-02-DV-PERF-01 | m9-02 | perf | MEDIUM | P2 | Side-table key layout forces full-scan for single-bundle reads | unassigned | m9+ backlog |
 
 ### Debt findings from m9-01
@@ -57,6 +53,10 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|---|---|
 | m8-04-R4 | m8-04 | bundle-as-blob → side table: events still ride inside bundle blob | m9-02-events-side-table (`v0.7.0`) |
 | m8-07-R2 | m8-07 | Unknown future wire fields are dropped | m9-01-schema-versioning (`v0.6.0`) |
+| FIND-M9-02-DV-API-01 | m9-02 | `save_counterexample_bundle_events` dead API: no caller uses it standalone | m9-03-side-table-debt-cleanup (`v0.7.1`) |
+| FIND-M9-02-DV-DOC-01 | m9-02 | `events_count` doc drift: fallback branch not documented at call site | m9-03-side-table-debt-cleanup (`v0.7.1`) |
+| FIND-M9-02-DV-OE-01 | m9-02 | Side-table chunk-iteration skeleton duplicated in 3 places | m9-03-side-table-debt-cleanup (`v0.7.1`) |
+| FIND-M9-02-DV-COUP-01 | m9-02 | Fallback outside D5 chokepoint: wrong module boundary | m9-03-side-table-debt-cleanup (`v0.7.1`) |
 
 ## Metadata
 
@@ -64,5 +64,5 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-11T22:38:00Z |
-| Last archive | m9-02-events-side-table |
+| Last updated | 2026-09-11T23:17:00Z |
+| Last archive | m9-03-side-table-debt-cleanup |
