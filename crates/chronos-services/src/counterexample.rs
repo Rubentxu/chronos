@@ -257,6 +257,28 @@ pub enum CounterexampleBundle {
 pub struct ChronosCounterexampleService;
 
 impl ChronosCounterexampleService {
+    /// Pull the captured trace events for a session from the live engines
+    /// map. m8-04 closes the m8-03 placeholder — `shrink()` step 4 now
+    /// calls this instead of passing `vec![]` to `save()`.
+    ///
+    /// Returns `Err(ServiceError::SessionNotFound(session_id))` when the
+    /// engines map has no entry for the given session. This mirrors
+    /// `chronos_hypothesis_test::test()` line 92-95 (same pattern).
+    ///
+    /// Note: the events are read under a brief `tokio::sync::Mutex` lock.
+    /// No await happens inside the critical section beyond the lock
+    /// acquisition itself (B3 in m8-04 scoping doc).
+    pub async fn pull_engine_events(
+        ctx: &CounterexampleContext<'_>,
+        session_id: String,
+    ) -> Result<Vec<chronos_domain::TraceEvent>, ServiceError> {
+        let guard = ctx.hypothesis_ctx.engines.lock().await;
+        match guard.get(&session_id) {
+            Some(engine) => Ok(engine.get_all_events()),
+            None => Err(ServiceError::SessionNotFound(session_id)),
+        }
+    }
+
     /// Retrieve a bundle by id.
     ///
     /// m8-03: reads from the redb `counterexample_bundles` table. Returns
@@ -492,16 +514,18 @@ impl ChronosCounterexampleService {
             HypothesisKind::CallPath => shrink_call_path(&mut runner, &target_hypothesis).await?,
         };
 
-        // Step 4: synthesise the bundle (m8-03 persists).
+        // Step 4: synthesise the bundle (m8-03 persists, m8-04 wires events).
         //
-        // m8-03 disclosure: the dispatcher doesn't currently see the
-        // captured trace events (they live inside the engine
-        // map). Saving an empty `events: Vec` is acceptable for m8-03
-        // because m8-04 will plumb the engine.get_all_events() through
-        // here (the `save` entry already accepts the Vec). Today the
-        // shape is correct (Summary carries has_full_bundle=true);
-        // the events payload will be filled on m8-04 wire integration.
+        // m8-03 shipped `vec![]` as a placeholder for the captured trace
+        // events (the engine map was unreachable from the dispatcher
+        // because `save()` is a pure-persistence entry). m8-04 closes
+        // that gap: pull_engine_events reads from the live engines map
+        // so the persisted bundle carries the same trace the original
+        // hypothesis was tested against. `chronos test replay` (CLI,
+        // m8-04 deliverable 3) needs this to rebuild a QueryEngine from
+        // the bundle and re-run hypothesis_test deterministically.
         let (rounds_used, minimised_constant, minimised_predicate, minimised_call_path) = minimised;
+        let events = Self::pull_engine_events(ctx, target_hypothesis.session_id.clone()).await?;
         let persist_result = ChronosCounterexampleService::save(
             ctx,
             "ws-default",
@@ -512,7 +536,7 @@ impl ChronosCounterexampleService {
                 minimised_predicate.clone(),
                 minimised_call_path.clone(),
             ),
-            Vec::new(), // placeholder events; m8-04 wires the engine.
+            events,
         )?;
         let bundle = match persist_result {
             CounterexampleOutput::Saved { summary } => summary,
@@ -1347,6 +1371,78 @@ mod tests {
                 assert!(msg.contains("no-such-bundle"));
             }
             other => panic!("expected LoadFailed, got {other:?}"),
+        }
+    }
+
+    // m8-04 tests for `pull_engine_events` (engine events wiring).
+
+    fn make_test_trace_event(id: u64, ts: u64, tid: u64) -> chronos_domain::TraceEvent {
+        use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
+        TraceEvent::new(
+            id,
+            ts,
+            tid,
+            EventType::FunctionEntry,
+            SourceLocation::new("test.rs", 10, "main", 0x1000),
+            EventData::Empty,
+        )
+    }
+
+    #[tokio::test]
+    async fn m8_04_pull_engine_events_returns_session_events() {
+        use crate::hypothesis_test::HypothesisTestContext;
+        use chronos_query::QueryEngine;
+        use chronos_store::SessionStore;
+        use std::collections::HashMap;
+        use tokio::sync::Mutex as TokioMutex;
+
+        let store = SessionStore::in_memory().expect("in_memory store");
+        let mut engines_map: HashMap<String, QueryEngine> = HashMap::new();
+        let events = vec![
+            make_test_trace_event(0, 100, 1),
+            make_test_trace_event(1, 200, 1),
+            make_test_trace_event(2, 300, 1),
+        ];
+        engines_map.insert("sess-m8-04".to_string(), QueryEngine::new(events.clone()));
+        let engines = TokioMutex::new(engines_map);
+        let hyp_ctx = HypothesisTestContext { engines: &engines };
+        let ctx = CounterexampleContext {
+            store: &store,
+            hypothesis_ctx: &hyp_ctx,
+        };
+
+        let pulled = ChronosCounterexampleService::pull_engine_events(&ctx, "sess-m8-04".to_string())
+            .await
+            .expect("pull_engine_events should succeed");
+        assert_eq!(pulled.len(), 3, "all 3 events should round-trip");
+        assert_eq!(pulled[0].event_id, 0);
+        assert_eq!(pulled[2].event_id, 2);
+    }
+
+    #[tokio::test]
+    async fn m8_04_pull_engine_events_missing_session_errors() {
+        use crate::hypothesis_test::HypothesisTestContext;
+        use chronos_query::QueryEngine;
+        use chronos_store::SessionStore;
+        use std::collections::HashMap;
+        use tokio::sync::Mutex as TokioMutex;
+
+        let store = SessionStore::in_memory().expect("in_memory store");
+        let engines_map: HashMap<String, QueryEngine> = HashMap::new();
+        let engines = TokioMutex::new(engines_map);
+        let hyp_ctx = HypothesisTestContext { engines: &engines };
+        let ctx = CounterexampleContext {
+            store: &store,
+            hypothesis_ctx: &hyp_ctx,
+        };
+
+        let result =
+            ChronosCounterexampleService::pull_engine_events(&ctx, "absent-session".to_string()).await;
+        match result {
+            Err(ServiceError::SessionNotFound(id)) => {
+                assert_eq!(id, "absent-session");
+            }
+            other => panic!("expected SessionNotFound, got {other:?}"),
         }
     }
 }
