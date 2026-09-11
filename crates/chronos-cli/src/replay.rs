@@ -397,6 +397,7 @@ mod tests {
                         rounds_used: 1,
                         has_full_bundle: true,
                         schema_version: 1,
+                        events_count: 0,
                     },
                     events: vec![],
                     minimised: Some(MinimisedPayload::Constant(PropertyValue::Number(0.0))),
@@ -446,6 +447,7 @@ mod tests {
                 rounds_used: 4,
                 has_full_bundle: true,
                 schema_version: 1,
+                events_count: 0,
             },
             events: vec![],
             minimised: Some(MinimisedPayload::Constant(PropertyValue::Number(0.0))),
@@ -493,6 +495,7 @@ mod tests {
                 rounds_used: 2,
                 has_full_bundle: true,
                 schema_version: 1,
+                events_count: 0,
             },
             events: vec![],
             minimised: Some(MinimisedPayload::Constant(PropertyValue::Number(0.0))),
@@ -522,5 +525,77 @@ mod tests {
         assert_eq!(input.property_target.as_deref(), Some("cpu_time_ms"));
         // The constant is NOT the minimised 0.0 — it's the original 50.0.
         assert_eq!(input.constant, Some(PropertyValue::Number(50.0)));
+    }
+
+    // m9-02: post-m9-02 bundle loads events from side table via chokepoint.
+    // This is tested at the store level in chronos-store; the CLI
+    // exercises the same path via run_replay's bundle_events_or_legacy call.
+    #[test]
+    fn m9_02_bundle_events_or_legacy_chokepoint_for_side_table() {
+        // Verify bundle_events_or_legacy is exported and callable from this module.
+        // The actual side-table loading is tested in chronos-store.
+        use chronos_store::counterexample_storage::CounterexampleBundleRecord;
+        use chronos_store::SessionStore;
+
+        let store = SessionStore::in_memory().expect("in_memory store");
+
+        // Save a post-m9-02 bundle (empty blob events, events in side table).
+        let summary = chronos_store::counterexample_storage::CounterexampleBundleSummary {
+            bundle_id: "b-cli-test".into(),
+            property_kind: "invariant".into(),
+            workspace_id: "ws".into(),
+            created_at_ms: 0,
+            rounds_used: 1,
+            has_full_bundle: true,
+            schema_version: 1,
+            events_count: 0,
+        };
+        let rec = chronos_store::counterexample_storage::CounterexampleBundleRecord {
+            summary,
+            events: vec![],
+            minimised: Some(
+                chronos_store::counterexample_storage::MinimisedPayload::Constant(
+                    chronos_domain::property::PropertyValue::Number(0.0),
+                ),
+            ),
+            event_cas_hashes: vec![],
+            target_hypothesis: None,
+            schema_version: 1,
+        };
+        store
+            .save_counterexample_bundle(rec)
+            .expect("save should succeed");
+
+        // Load and verify chokepoint returns empty (no events in side table).
+        let bundle = store
+            .load_counterexample_bundle("b-cli-test")
+            .expect("load should succeed")
+            .expect("bundle should exist");
+        let events = bundle_events_or_legacy(&store, &bundle).expect("chokepoint should succeed");
+        assert!(
+            events.is_empty(),
+            "post-m9-02 bundle with no side-table events should return empty vec"
+        );
+    }
+
+    // m9-02: synthetic_bundle fixture is updated to set events: vec![] and
+    // events_count: 0 in the summary. This test verifies the fixture
+    // is correct and the legacy path is accessible.
+    #[test]
+    fn m9_02_synthetic_bundle_fixture_has_empty_events_and_events_count_zero() {
+        let bundle = synthetic_bundle(
+            "invariant",
+            chronos_store::counterexample_storage::MinimisedPayload::Constant(
+                chronos_domain::property::PropertyValue::Number(0.0),
+            ),
+        );
+        assert!(
+            bundle.events.is_empty(),
+            "synthetic_bundle should set events: vec![]"
+        );
+        assert_eq!(
+            bundle.summary.events_count, 0,
+            "synthetic_bundle should set events_count: 0"
+        );
     }
 }

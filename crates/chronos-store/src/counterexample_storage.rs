@@ -55,7 +55,7 @@ const COUNTEREXAMPLE_BUNDLES: TableDefinition<&[u8], &[u8]> =
 ///   - First 4 bytes: length of bundle_id as big-endian u32
 ///   - Next N bytes: bundle_id UTF-8 bytes
 ///   - Final 4 bytes: chunk_index as big-endian u32
-/// Value: bincode-serialised `Vec<TraceEvent>` chunk.
+///   - Value: bincode-serialised `Vec<TraceEvent>` chunk.
 ///
 /// Chunk size is [`BUNDLE_EVENTS_CHUNK_SIZE`]. Each chunk contains up to
 /// that many events; the last chunk may be smaller.
@@ -114,6 +114,7 @@ pub const CURRENT_BUNDLE_SCHEMA_VERSION: u32 = 2;
 
 /// Versions the loader accepts silently. Future cycles add entries here
 /// when they introduce a new envelope shape.
+#[allow(dead_code)]
 const KNOWN_BUNDLE_SCHEMA_VERSIONS: &[u32] = &[1, 2];
 
 fn default_schema_version() -> u32 {
@@ -352,7 +353,10 @@ impl crate::storage::SessionStore {
             match read_tx.open_table(COUNTEREXAMPLE_BUNDLE_EVENTS) {
                 Ok(events_table) => {
                     let mut keys = Vec::new();
-                    for entry in events_table.iter().map_err(|e| StoreError::Database(e.into()))? {
+                    for entry in events_table
+                        .iter()
+                        .map_err(|e| StoreError::Database(e.into()))?
+                    {
                         let (k, _) = entry.map_err(|e| StoreError::Database(e.into()))?;
                         let key_bytes = k.value();
                         if let Some((ref id, _)) = decode_chunk_key(key_bytes) {
@@ -374,13 +378,15 @@ impl crate::storage::SessionStore {
                 .map_err(|e| StoreError::Database(e.into()))?;
             // Delete prior chunks.
             for key in &prior_keys {
-                events_table.remove(key.as_slice()).map_err(|e| StoreError::Database(e.into()))?;
+                events_table
+                    .remove(key.as_slice())
+                    .map_err(|e| StoreError::Database(e.into()))?;
             }
             // Write new chunks.
             for (chunk_idx, chunk) in events.chunks(BUNDLE_EVENTS_CHUNK_SIZE).enumerate() {
                 let key = encode_chunk_key(&bundle_id, chunk_idx as u32);
-                let value =
-                    bincode::serialize(chunk).map_err(|e| StoreError::Serialization(e.to_string()))?;
+                let value = bincode::serialize(chunk)
+                    .map_err(|e| StoreError::Serialization(e.to_string()))?;
                 events_table
                     .insert(key.as_slice(), value.as_slice())
                     .map_err(|e| StoreError::Database(e.into()))?;
@@ -414,8 +420,8 @@ impl crate::storage::SessionStore {
                 .map_err(|e| StoreError::Database(e.into()))?;
             for (chunk_idx, chunk) in events.chunks(BUNDLE_EVENTS_CHUNK_SIZE).enumerate() {
                 let key = encode_chunk_key(bundle_id, chunk_idx as u32);
-                let value =
-                    bincode::serialize(chunk).map_err(|e| StoreError::Serialization(e.to_string()))?;
+                let value = bincode::serialize(chunk)
+                    .map_err(|e| StoreError::Serialization(e.to_string()))?;
                 events_table
                     .insert(key.as_slice(), value.as_slice())
                     .map_err(|e| StoreError::Database(e.into()))?;
@@ -678,6 +684,7 @@ mod tests {
                 rounds_used: 4,
                 has_full_bundle: true,
                 schema_version: 1,
+                events_count: 0,
             },
             events: vec![],
             minimised: Some(MinimisedPayload::Constant(PropertyValue::Number(2.0))),
@@ -720,6 +727,7 @@ mod tests {
                         rounds_used: 1,
                         has_full_bundle: true,
                         schema_version: 1,
+                        events_count: 0,
                     },
                     events: vec![],
                     minimised: None,
@@ -756,6 +764,7 @@ mod tests {
                         rounds_used: 1,
                         has_full_bundle: true,
                         schema_version: 1,
+                        events_count: 0,
                     },
                     events: vec![],
                     minimised: None,
@@ -793,6 +802,7 @@ mod tests {
                         rounds_used: 1,
                         has_full_bundle: true,
                         schema_version: 1,
+                        events_count: 0,
                     },
                     events: vec![],
                     minimised: None,
@@ -875,6 +885,7 @@ mod tests {
                         rounds_used: 1,
                         has_full_bundle: true,
                         schema_version: 1,
+                        events_count: 0,
                     },
                     events: vec![],
                     minimised: None,
@@ -911,6 +922,7 @@ mod tests {
                 rounds_used: 0,
                 has_full_bundle: false,
                 schema_version: 1,
+                events_count: 0,
             },
             events: vec![],
             minimised: None,
@@ -952,6 +964,7 @@ mod tests {
                 rounds_used: 4,
                 has_full_bundle: true,
                 schema_version: 1,
+                events_count: 0,
             },
             events: vec![],
             minimised: Some(MinimisedPayload::Constant(
@@ -994,6 +1007,7 @@ mod tests {
                 rounds_used: 1,
                 has_full_bundle: true,
                 schema_version: 1,
+                events_count: 0,
             },
             events: vec![],
             minimised: Some(MinimisedPayload::Constant(
@@ -1018,10 +1032,10 @@ mod tests {
     // m9-01 tests: schema_version on CounterexampleBundleRecord / Summary
     // ========================================================================
 
-    // m9-01 §5: save a bundle via in-memory store, load it, assert both
-    // summary.schema_version == 1 and record.schema_version == 1.
+    // m9-02 §5: save a bundle via in-memory store, load it, assert both
+    // summary.schema_version == CURRENT and record.schema_version == CURRENT.
     #[test]
-    fn m9_01_save_writes_schema_version_1() {
+    fn m9_02_save_writes_current_schema_version() {
         let store = make_store();
         let rec = CounterexampleBundleRecord {
             summary: CounterexampleBundleSummary {
@@ -1032,6 +1046,7 @@ mod tests {
                 rounds_used: 1,
                 has_full_bundle: true,
                 schema_version: 1,
+                events_count: 0,
             },
             events: vec![],
             minimised: None,
@@ -1045,21 +1060,21 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(
-            loaded.schema_version, 1,
-            "record.schema_version must be 1 after save"
+            loaded.schema_version, CURRENT_BUNDLE_SCHEMA_VERSION,
+            "record.schema_version must equal CURRENT after save"
         );
         assert_eq!(
-            loaded.summary.schema_version, 1,
-            "summary.schema_version must be 1 after save"
+            loaded.summary.schema_version, CURRENT_BUNDLE_SCHEMA_VERSION,
+            "summary.schema_version must equal CURRENT after save"
         );
     }
 
-    // m9-01 §5: a JSON payload without schema_version must deserialize to 1
-    // via #[serde(default = "default_schema_version")].
+    // m9-02 §5: a JSON payload without schema_version must deserialize to
+    // CURRENT via #[serde(default = "default_schema_version")].
     #[test]
-    fn m9_01_legacy_bundle_deserializes_with_schema_version_1() {
-        // Verify the default function returns 1.
-        assert_eq!(default_schema_version(), 1);
+    fn m9_02_legacy_bundle_deserializes_with_default_schema_version() {
+        // Verify the default function returns CURRENT.
+        assert_eq!(default_schema_version(), CURRENT_BUNDLE_SCHEMA_VERSION);
         // Verify serde_json correctly assigns the default when the field is absent.
         let json_no_version = r#"{
             "bundle_id": "b-legacy",
@@ -1072,16 +1087,16 @@ mod tests {
         let summary: CounterexampleBundleSummary =
             serde_json::from_str(json_no_version).expect("serde_json must accept pre-m9-01 JSON");
         assert_eq!(
-            summary.schema_version, 1,
-            "pre-m9-01 JSON must default schema_version to 1"
+            summary.schema_version, CURRENT_BUNDLE_SCHEMA_VERSION,
+            "JSON without schema_version must default to CURRENT"
         );
     }
 
-    // m9-01 §5: a bincode blob with schema_version=2 on the record must be
+    // m9-02 §5: a bincode blob with schema_version=3 on the record must be
     // rejected by load_counterexample_bundle with an error mentioning "newer
     // than supported".
     #[test]
-    fn m9_01_future_version_load_is_rejected() {
+    fn m9_02_future_version_load_is_rejected() {
         let store = make_store();
 
         // Inject a future-versioned record directly into the DB (bypassing
@@ -1094,13 +1109,14 @@ mod tests {
                 created_at_ms: 0,
                 rounds_used: 1,
                 has_full_bundle: true,
-                schema_version: 2, // future version
+                schema_version: 3, // future version (CURRENT is 2)
+                events_count: 0,
             },
             events: vec![],
             minimised: None,
             event_cas_hashes: vec![],
             target_hypothesis: None,
-            schema_version: 2, // future version
+            schema_version: 3, // future version (CURRENT is 2)
         };
         let future_bytes = bincode::serialize(&future_record).unwrap();
         let tx = store.db().begin_write().unwrap();
@@ -1121,15 +1137,15 @@ mod tests {
             "error message must mention 'newer than supported', got: {err_msg}"
         );
         assert!(
-            err_msg.contains('2'),
-            "error message must mention schema_version 2, got: {err_msg}"
+            err_msg.contains('3'),
+            "error message must mention schema_version 3, got: {err_msg}"
         );
     }
 
-    // m9-01 §5 D5: construct a record with schema_version=99, save it,
-    // reload it, assert the persisted version is 1 (save overwrites caller's value).
+    // m9-02 §5 D5: construct a record with schema_version=99, save it,
+    // reload it, assert the persisted version is CURRENT (save overwrites caller's value).
     #[test]
-    fn m9_01_save_overwrites_callers_schema_version() {
+    fn m9_02_save_overwrites_callers_schema_version() {
         let store = make_store();
         let rec = CounterexampleBundleRecord {
             summary: CounterexampleBundleSummary {
@@ -1140,6 +1156,7 @@ mod tests {
                 rounds_used: 1,
                 has_full_bundle: true,
                 schema_version: 99, // caller sets stale value
+                events_count: 0,
             },
             events: vec![],
             minimised: None,
@@ -1153,26 +1170,26 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(
-            loaded.schema_version, 1,
+            loaded.schema_version, CURRENT_BUNDLE_SCHEMA_VERSION,
             "save must overwrite caller's schema_version with CURRENT"
         );
         assert_eq!(
-            loaded.summary.schema_version, 1,
+            loaded.summary.schema_version, CURRENT_BUNDLE_SCHEMA_VERSION,
             "save must overwrite caller's summary.schema_version with CURRENT"
         );
     }
 
-    // m9-01 §5: list best-effort skips rows where bincode deserialization fails.
-    // A future-versioned row with schema_version=2 deserializes fine in bincode
+    // m9-02 §5: list best-effort skips rows where bincode deserialization fails.
+    // A future-versioned row with schema_version=3 deserializes fine in bincode
     // (bincode doesn't know about our version check), so it IS included in the
     // list. The explicit rejection only happens in load_counterexample_bundle.
     // This test pins that: both bundles appear in list, but load() rejects the
     // future-versioned row individually.
     #[test]
-    fn m9_01_list_includes_future_versioned_row_best_effort() {
+    fn m9_02_list_includes_future_versioned_row_best_effort() {
         let store = make_store();
 
-        // Normal bundle: save via the API (writes schema_version=1).
+        // Normal bundle: save via the API (writes CURRENT schema version).
         let normal_rec = CounterexampleBundleRecord {
             summary: CounterexampleBundleSummary {
                 bundle_id: "b-normal".into(),
@@ -1182,6 +1199,7 @@ mod tests {
                 rounds_used: 1,
                 has_full_bundle: true,
                 schema_version: 1,
+                events_count: 0,
             },
             events: vec![],
             minimised: None,
@@ -1191,7 +1209,7 @@ mod tests {
         };
         store.save_counterexample_bundle(normal_rec).unwrap();
 
-        // Future-versioned bundle: inject directly into the DB.
+        // Future-versioned bundle: inject directly into the DB (schema_version=3).
         let future_record: CounterexampleBundleRecord = CounterexampleBundleRecord {
             summary: CounterexampleBundleSummary {
                 bundle_id: "b-future".into(),
@@ -1200,13 +1218,14 @@ mod tests {
                 created_at_ms: 200,
                 rounds_used: 1,
                 has_full_bundle: true,
-                schema_version: 2,
+                schema_version: 3,
+                events_count: 0,
             },
             events: vec![],
             minimised: None,
             event_cas_hashes: vec![],
             target_hypothesis: None,
-            schema_version: 2,
+            schema_version: 3,
         };
         let future_bytes = bincode::serialize(&future_record).unwrap();
         let tx = store.db().begin_write().unwrap();
@@ -1218,7 +1237,7 @@ mod tests {
         }
         tx.commit().unwrap();
 
-        // List all bundles: both appear (bincode deserializes schema_version=2 fine).
+        // List all bundles: both appear (bincode deserializes schema_version=3 fine).
         let summaries = store
             .list_counterexample_bundles(CounterexampleBundleFilter {
                 workspace_id: None,
@@ -1244,6 +1263,341 @@ mod tests {
         assert!(
             err_msg.contains("newer than supported"),
             "load error must mention 'newer than supported', got: {err_msg}"
+        );
+    }
+
+    // ========================================================================
+    // m9-02 tests: side table (counterexample_bundle_events)
+    // ========================================================================
+
+    /// Helper: make a simple TraceEvent for test fixtures.
+    fn make_event(id: u64, func: &str) -> chronos_domain::TraceEvent {
+        use chronos_domain::{EventData, EventType, SourceLocation};
+        chronos_domain::TraceEvent::new(
+            id,
+            id * 100,
+            1,
+            EventType::FunctionEntry,
+            SourceLocation::new("test.rs", 10, func, 0x1000 + id),
+            EventData::Function {
+                name: func.to_string(),
+                signature: None,
+                symbol_id: None,
+                invocation_id: None,
+                parent_invocation_id: None,
+            },
+        )
+    }
+
+    // 4.1: save writes events to side table, not blob.
+    #[test]
+    fn m9_02_save_writes_events_to_side_table_not_blob() {
+        let store = make_store();
+        let events: Vec<_> = (0..10).map(|i| make_event(i, "test")).collect();
+        let rec = CounterexampleBundleRecord {
+            summary: CounterexampleBundleSummary {
+                bundle_id: "b-side".into(),
+                property_kind: "invariant".into(),
+                workspace_id: "ws".into(),
+                created_at_ms: 0,
+                rounds_used: 1,
+                has_full_bundle: true,
+                schema_version: 1,
+                events_count: 0,
+            },
+            events: events.clone(),
+            minimised: None,
+            event_cas_hashes: vec![],
+            target_hypothesis: None,
+            schema_version: 1,
+        };
+        store.save_counterexample_bundle(rec).unwrap();
+
+        // Blob record has empty events.
+        let loaded = store.load_counterexample_bundle("b-side").unwrap().unwrap();
+        assert!(
+            loaded.events.is_empty(),
+            "blob record must have empty events after save"
+        );
+        assert_eq!(
+            loaded.summary.events_count, 10,
+            "summary.events_count must be 10"
+        );
+        assert_eq!(
+            loaded.summary.schema_version, CURRENT_BUNDLE_SCHEMA_VERSION,
+            "schema_version must be bumped to CURRENT"
+        );
+
+        // Side table has the events.
+        let side_events = store.load_counterexample_bundle_events("b-side").unwrap();
+        assert_eq!(side_events.len(), 10, "side table must have all 10 events");
+        assert_eq!(side_events[0].event_id, 0);
+        assert_eq!(side_events[9].event_id, 9);
+    }
+
+    // 4.1: load concatenates chunks in ascending chunk_index order.
+    #[test]
+    fn m9_02_load_events_concatenates_chunks_in_order() {
+        let store = make_store();
+
+        // Inject 3 chunks directly at indices 0, 2, 1 (out of order).
+        // Each chunk has exactly 1 event so we can distinguish them.
+        let inject = |chunk_idx: u32, id: u64, func: &str| {
+            let key = encode_chunk_key("b-unordered", chunk_idx);
+            let chunk = vec![make_event(id, func)];
+            let value = bincode::serialize(&chunk).unwrap();
+            let tx = store.db().begin_write().unwrap();
+            {
+                let mut table = tx.open_table(COUNTEREXAMPLE_BUNDLE_EVENTS).unwrap();
+                table.insert(key.as_slice(), value.as_slice()).unwrap();
+            }
+            tx.commit().unwrap();
+        };
+
+        inject(0, 100, "first");
+        inject(2, 300, "third");
+        inject(1, 200, "second");
+
+        // load_counterexample_bundle_events should return them in 0,1,2 order.
+        let events = store
+            .load_counterexample_bundle_events("b-unordered")
+            .unwrap();
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0].event_id, 100, "chunk 0 first");
+        assert_eq!(events[1].event_id, 200, "chunk 1 second");
+        assert_eq!(events[2].event_id, 300, "chunk 2 third");
+    }
+
+    // 4.1: re-save overwrites prior chunks.
+    #[test]
+    fn m9_02_save_events_idempotent_overwrites_prior_chunks() {
+        let store = make_store();
+        let rec = CounterexampleBundleRecord {
+            summary: CounterexampleBundleSummary {
+                bundle_id: "b-overwrite".into(),
+                property_kind: "invariant".into(),
+                workspace_id: "ws".into(),
+                created_at_ms: 0,
+                rounds_used: 1,
+                has_full_bundle: true,
+                schema_version: 1,
+                events_count: 0,
+            },
+            events: (0..100).map(|i| make_event(i, "original")).collect(),
+            minimised: None,
+            event_cas_hashes: vec![],
+            target_hypothesis: None,
+            schema_version: 1,
+        };
+        store.save_counterexample_bundle(rec).unwrap();
+        assert_eq!(
+            store
+                .load_counterexample_bundle_events("b-overwrite")
+                .unwrap()
+                .len(),
+            100,
+            "initial save must write 100 events"
+        );
+
+        // Re-save with fewer events.
+        let rec2 = CounterexampleBundleRecord {
+            summary: CounterexampleBundleSummary {
+                bundle_id: "b-overwrite".into(),
+                property_kind: "invariant".into(),
+                workspace_id: "ws".into(),
+                created_at_ms: 1,
+                rounds_used: 2,
+                has_full_bundle: true,
+                schema_version: 1,
+                events_count: 0,
+            },
+            events: (0..50).map(|i| make_event(i + 200, "replaced")).collect(),
+            minimised: None,
+            event_cas_hashes: vec![],
+            target_hypothesis: None,
+            schema_version: 1,
+        };
+        store.save_counterexample_bundle(rec2).unwrap();
+        let events = store
+            .load_counterexample_bundle_events("b-overwrite")
+            .unwrap();
+        assert_eq!(events.len(), 50, "re-save must overwrite with 50 events");
+        assert_eq!(
+            events[0].event_id, 200,
+            "events must be from the re-saved bundle"
+        );
+        assert_eq!(events[49].event_id, 249, "last event must be id 249");
+    }
+
+    // 4.1: partial last chunk count is correct.
+    #[test]
+    fn m9_02_count_events_handles_partial_last_chunk() {
+        let store = make_store();
+        // Write 2 full chunks (256 each) + 1 partial chunk (100).
+        let events: Vec<_> = (0..612u64).map(|i| make_event(i, "partial")).collect();
+        let rec = CounterexampleBundleRecord {
+            summary: CounterexampleBundleSummary {
+                bundle_id: "b-partial".into(),
+                property_kind: "invariant".into(),
+                workspace_id: "ws".into(),
+                created_at_ms: 0,
+                rounds_used: 1,
+                has_full_bundle: true,
+                schema_version: 1,
+                events_count: 0,
+            },
+            events,
+            minimised: None,
+            event_cas_hashes: vec![],
+            target_hypothesis: None,
+            schema_version: 1,
+        };
+        store.save_counterexample_bundle(rec).unwrap();
+
+        // Count via summary (O(1) path).
+        let loaded = store
+            .load_counterexample_bundle("b-partial")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            loaded.summary.events_count, 612,
+            "summary.events_count must be 612"
+        );
+
+        // Count via count_counterexample_bundle_events.
+        let count = store
+            .count_counterexample_bundle_events("b-partial")
+            .unwrap();
+        assert_eq!(count, 612, "count must return 612 from 3 chunks");
+
+        // Load and verify total.
+        let events = store
+            .load_counterexample_bundle_events("b-partial")
+            .unwrap();
+        assert_eq!(events.len(), 612);
+        assert_eq!(events[0].event_id, 0);
+        assert_eq!(events[611].event_id, 611);
+    }
+
+    // 4.2: legacy bundle with events in blob loads normally via chokepoint.
+    #[test]
+    fn m9_02_legacy_bundle_with_events_in_blob_loads_normally() {
+        let store = make_store();
+        // Build a "legacy" record: events in blob, schema_version=1.
+        let legacy_record = CounterexampleBundleRecord {
+            summary: CounterexampleBundleSummary {
+                bundle_id: "b-legacy".into(),
+                property_kind: "invariant".into(),
+                workspace_id: "ws".into(),
+                created_at_ms: 0,
+                rounds_used: 1,
+                has_full_bundle: true,
+                schema_version: 1,
+                events_count: 0, // serde default
+            },
+            events: vec![
+                make_event(1, "legacy-e1"),
+                make_event(2, "legacy-e2"),
+                make_event(3, "legacy-e3"),
+            ],
+            minimised: None,
+            event_cas_hashes: vec![],
+            target_hypothesis: None,
+            schema_version: 1,
+        };
+        // Inject directly (simulating pre-m9-02 on-disk format).
+        let bytes = bincode::serialize(&legacy_record).unwrap();
+        let tx = store.db().begin_write().unwrap();
+        {
+            let mut table = tx.open_table(COUNTEREXAMPLE_BUNDLES).unwrap();
+            table
+                .insert(b"b-legacy".as_slice(), bytes.as_slice())
+                .unwrap();
+        }
+        tx.commit().unwrap();
+
+        // Load via chokepoint — must return blob events.
+        let loaded = store
+            .load_counterexample_bundle("b-legacy")
+            .unwrap()
+            .unwrap();
+        let events = bundle_events_or_legacy(&store, &loaded).unwrap();
+        assert_eq!(
+            events.len(),
+            3,
+            "chokepoint must return 3 legacy blob events"
+        );
+        assert_eq!(events[0].event_id, 1);
+        assert_eq!(events[2].event_id, 3);
+    }
+
+    // 4.2: post-m9-02 bundle loads events from side table via chokepoint.
+    #[test]
+    fn m9_02_post_m9_02_bundle_loads_events_from_side_table() {
+        let store = make_store();
+        let events: Vec<_> = (0..5).map(|i| make_event(i, "post")).collect();
+        let rec = CounterexampleBundleRecord {
+            summary: CounterexampleBundleSummary {
+                bundle_id: "b-post".into(),
+                property_kind: "invariant".into(),
+                workspace_id: "ws".into(),
+                created_at_ms: 0,
+                rounds_used: 1,
+                has_full_bundle: true,
+                schema_version: 1,
+                events_count: 0,
+            },
+            events,
+            minimised: None,
+            event_cas_hashes: vec![],
+            target_hypothesis: None,
+            schema_version: 1,
+        };
+        store.save_counterexample_bundle(rec).unwrap();
+
+        let loaded = store.load_counterexample_bundle("b-post").unwrap().unwrap();
+        assert!(
+            loaded.events.is_empty(),
+            "blob events must be empty post-m9-02 save"
+        );
+        let events = bundle_events_or_legacy(&store, &loaded).unwrap();
+        assert_eq!(
+            events.len(),
+            5,
+            "chokepoint must return 5 side-table events"
+        );
+    }
+
+    // 4.2: summary.events_count defaults to 0 for legacy bundles.
+    #[test]
+    fn m9_02_summary_events_count_default_zero_for_legacy() {
+        // Verify serde default.
+        let json_legacy = r#"{
+            "bundle_id": "b-legacy-json",
+            "property_kind": "invariant",
+            "workspace_id": "ws",
+            "created_at_ms": 0,
+            "rounds_used": 1,
+            "has_full_bundle": true
+        }"#;
+        let summary: CounterexampleBundleSummary =
+            serde_json::from_str(json_legacy).expect("must deserialize");
+        assert_eq!(
+            summary.events_count, 0,
+            "events_count must default to 0 for pre-m9-02 JSON"
+        );
+    }
+
+    // 4.2: loading unknown bundle returns empty events vec.
+    #[test]
+    fn m9_02_load_unknown_bundle_returns_empty_events_vec() {
+        let store = make_store();
+        let events = store
+            .load_counterexample_bundle_events("nonexistent-bundle")
+            .unwrap();
+        assert!(
+            events.is_empty(),
+            "unknown bundle must return empty vec, not an error"
         );
     }
 }

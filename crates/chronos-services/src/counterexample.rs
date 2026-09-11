@@ -3407,10 +3407,125 @@ mod tests {
             .expect("load should succeed")
             .expect("bundle should exist");
 
-        assert_eq!(loaded.schema_version, 1, "record.schema_version must be 1");
         assert_eq!(
-            loaded.summary.schema_version, 1,
-            "summary.schema_version must be 1"
+            loaded.schema_version,
+            cs::CURRENT_BUNDLE_SCHEMA_VERSION,
+            "record.schema_version must equal CURRENT"
         );
+        assert_eq!(
+            loaded.summary.schema_version,
+            cs::CURRENT_BUNDLE_SCHEMA_VERSION,
+            "summary.schema_version must equal CURRENT"
+        );
+    }
+
+    // m9-02: save a bundle and verify events_count is persisted in the summary.
+    #[tokio::test]
+    async fn m9_02_save_persists_events_count_in_summary() {
+        use crate::hypothesis_test::HypothesisTestContext;
+        use chronos_domain::property::PropertyValue;
+        use chronos_query::QueryEngine;
+        use chronos_store::SessionStore;
+        use std::collections::HashMap;
+        use tokio::sync::Mutex as TokioMutex;
+
+        let store = SessionStore::in_memory().expect("in_memory store");
+        let engines: HashMap<String, QueryEngine> = HashMap::new();
+        let engines = TokioMutex::new(engines);
+        let hyp_ctx = HypothesisTestContext { engines: &engines };
+        let ctx = CounterexampleContext {
+            store: &store,
+            hypothesis_ctx: &hyp_ctx,
+        };
+
+        let saved = ChronosCounterexampleService::save(
+            &ctx,
+            "ws-events-count-test",
+            HypothesisKind::Invariant,
+            (2, Some(PropertyValue::Number(1.0)), None, None),
+            &HypothesisInput {
+                session_id: "s".to_string(),
+                kind: HypothesisKind::Invariant,
+                scope: None,
+                comparison: None,
+                constant: Some(PropertyValue::Number(1.0)),
+                property_target: None,
+                predicate: None,
+                caller: None,
+                callee: None,
+                max_depth: None,
+            },
+            vec![],
+        )
+        .expect("save should succeed");
+        let saved_id = match saved {
+            CounterexampleOutput::Saved { summary, .. } => summary.bundle_id,
+            _ => panic!("expected Saved variant"),
+        };
+
+        // Load it back and verify events_count was persisted.
+        let loaded = store
+            .load_counterexample_bundle(&saved_id)
+            .expect("load should succeed")
+            .expect("bundle should exist");
+        assert_eq!(
+            loaded.summary.events_count, 0,
+            "events_count must be 0 for bundle with no events"
+        );
+    }
+
+    // m9-02: events_count returns summary.events_count when populated.
+    #[tokio::test]
+    async fn m9_02_events_count_reads_from_summary() {
+        use crate::hypothesis_test::HypothesisTestContext;
+        use chronos_domain::property::PropertyValue;
+        use chronos_query::QueryEngine;
+        use chronos_store::SessionStore;
+        use std::collections::HashMap;
+        use tokio::sync::Mutex as TokioMutex;
+
+        let store = SessionStore::in_memory().expect("in_memory store");
+        let engines: HashMap<String, QueryEngine> = HashMap::new();
+        let engines = TokioMutex::new(engines);
+        let hyp_ctx = HypothesisTestContext { engines: &engines };
+        let ctx = CounterexampleContext {
+            store: &store,
+            hypothesis_ctx: &hyp_ctx,
+        };
+
+        let saved = ChronosCounterexampleService::save(
+            &ctx,
+            "ws-events-count-summary",
+            HypothesisKind::Invariant,
+            (2, Some(PropertyValue::Number(1.0)), None, None),
+            &HypothesisInput {
+                session_id: "s".to_string(),
+                kind: HypothesisKind::Invariant,
+                scope: None,
+                comparison: None,
+                constant: Some(PropertyValue::Number(1.0)),
+                property_target: None,
+                predicate: None,
+                caller: None,
+                callee: None,
+                max_depth: None,
+            },
+            vec![],
+        )
+        .expect("save should succeed");
+        let saved_id = match saved {
+            CounterexampleOutput::Saved { summary, .. } => summary.bundle_id,
+            _ => panic!("expected Saved variant"),
+        };
+
+        // events_count tool returns the summary value.
+        let result = ChronosCounterexampleService::events_count(&ctx, &saved_id)
+            .expect("events_count should succeed");
+        match result {
+            CounterexampleOutput::EventsCount { events_count, .. } => {
+                assert_eq!(events_count, 0, "events_count must be 0");
+            }
+            _ => panic!("expected EventsCount variant"),
+        }
     }
 }
