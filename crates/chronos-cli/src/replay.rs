@@ -92,20 +92,35 @@ pub async fn run_replay(db_path: &Path, bundle_id: &str) -> Result<ReplayReport>
     Ok(report)
 }
 
-/// Build a [`HypothesisInput`] from the bundle's `MinimisedPayload`.
+/// Build a [`HypothesisInput`] from the bundle.
 ///
-/// The bundle only stores the MINIMISED payload, not the original
-/// `target_hypothesis` the user passed to the MCP server. This is fine for
-/// replay: the minimised payload IS the hypothesis the shrinker converged on,
-/// and re-testing it against the same events confirms that the shrunk
-/// hypothesis still produces a violation — which is the M8 acceptance
-/// criterion. We synthesise defaults for fields the shrink didn't expose
-/// (e.g. `scope = PropertyValue`, `comparison = None`) since the Invariant
-/// kind only requires `constant` to be `Some`.
+/// m8-07: prefers the persisted `target_hypothesis` (the EXACT
+/// `HypothesisInput` the user passed to `counterexample_shrink`) when
+/// present. Falls back to the m8-04 synthetic-default reconstruction
+/// from the `minimised` payload when `target_hypothesis` is absent
+/// (pre-m8-07 bundles).
+///
+/// The synthetic-default path is fine for the M8 acceptance criterion
+/// (re-running the minimised hypothesis against the same events must
+/// still produce a violation) but loses `scope`, `comparison`, and
+/// `property_target` for non-default Invariant targets. The
+/// `target_hypothesis` path preserves them byte-for-byte.
 fn reconstruct_hypothesis(
     bundle: &CounterexampleBundleRecord,
     session_id: &str,
 ) -> Result<HypothesisInput> {
+    // m8-07: prefer the persisted target_hypothesis. This is the EXACT
+    // HypothesisInput the user passed to counterexample_shrink; using it
+    // verbatim closes the m8-04 R-hypothesis-reconstruction-fidelity gap.
+    if let Some(wire) = &bundle.target_hypothesis {
+        let mut input = chronos_services::counterexample::hypothesis_input_from_wire(wire.clone());
+        // The persisted session_id is the LIVE probe session; replay uses
+        // the synthetic REPLAY_SESSION_ID so the in-memory engine lookup
+        // finds the rebuilt engine. All OTHER fields are preserved verbatim.
+        input.session_id = session_id.to_string();
+        return Ok(input);
+    }
+
     let minimised = bundle.minimised.as_ref().ok_or_else(|| {
         anyhow!(
             "bundle {bundle_id} has no minimised payload",
@@ -267,6 +282,10 @@ mod tests {
             events: vec![],
             minimised: Some(minimised),
             event_cas_hashes: vec![],
+            // m8-07: pre-m8-07 bundles (and synthetic test fixtures) have
+            // no persisted target_hypothesis; reconstruct_hypothesis
+            // falls back to the m8-04 synthetic-default path.
+            target_hypothesis: None,
         }
     }
 
@@ -374,6 +393,7 @@ mod tests {
                     events: vec![],
                     minimised: Some(MinimisedPayload::Constant(PropertyValue::Number(0.0))),
                     event_cas_hashes: vec![],
+                    target_hypothesis: None,
                 })
                 .unwrap();
         } // store dropped here — redb file lock released.
@@ -399,5 +419,95 @@ mod tests {
 
         // Cleanup.
         let _ = std::fs::remove_file(&path);
+    }
+
+    // m8-07 §5: when bundle.target_hypothesis is Some, reconstruct_hypothesis
+    // uses it verbatim (overriding the session_id with the synthetic one).
+    // This pins the D3 contract: the persisted target_hypothesis is the EXACT
+    // HypothesisInput the user passed to counterexample_shrink.
+    #[test]
+    fn m8_07_reconstruct_uses_persisted_target_hypothesis() {
+        use chronos_services::output::HypothesisScope;
+        let bundle = CounterexampleBundleRecord {
+            summary: CounterexampleBundleSummary {
+                bundle_id: "b-m8-07".into(),
+                property_kind: "invariant".into(),
+                workspace_id: "ws".into(),
+                created_at_ms: 0,
+                rounds_used: 4,
+                has_full_bundle: true,
+            },
+            events: vec![],
+            minimised: Some(MinimisedPayload::Constant(PropertyValue::Number(0.0))),
+            event_cas_hashes: vec![],
+            // m8-07: the persisted target_hypothesis carries the original
+            // scope=EventCount, comparison=Ge, constant=Number(1000.0).
+            target_hypothesis: Some(chronos_store::counterexample_storage::HypothesisInputWire {
+                session_id: "live-probe-session".into(),
+                kind: "invariant".into(),
+                scope: Some("event_count".into()),
+                comparison: Some("Ge".into()),
+                constant: Some(PropertyValue::Number(1000.0)),
+                property_target: None,
+                predicate: None,
+                caller: None,
+                callee: None,
+                max_depth: None,
+            }),
+        };
+        let input = reconstruct_hypothesis(&bundle, "synthetic-session").unwrap();
+        // session_id is overridden to the synthetic replay session.
+        assert_eq!(input.session_id, "synthetic-session");
+        // All other fields are preserved verbatim from the persisted target_hypothesis.
+        assert_eq!(input.kind, HypothesisKind::Invariant);
+        assert_eq!(input.scope, Some(HypothesisScope::EventCount));
+        assert_eq!(
+            input.comparison,
+            Some(chronos_domain::property::ComparisonOp::Ge)
+        );
+        assert_eq!(input.constant, Some(PropertyValue::Number(1000.0)));
+    }
+
+    // m8-07 §5: when target_hypothesis is Some, the fallback minimised-payload
+    // reconstruction is NOT used (scope stays EventCount, not PropertyValue).
+    #[test]
+    fn m8_07_reconstruct_preserves_scope_and_comparison() {
+        use chronos_services::output::HypothesisScope;
+        let bundle = CounterexampleBundleRecord {
+            summary: CounterexampleBundleSummary {
+                bundle_id: "b-m8-07-scope".into(),
+                property_kind: "invariant".into(),
+                workspace_id: "ws".into(),
+                created_at_ms: 0,
+                rounds_used: 2,
+                has_full_bundle: true,
+            },
+            events: vec![],
+            minimised: Some(MinimisedPayload::Constant(PropertyValue::Number(0.0))),
+            event_cas_hashes: vec![],
+            // The pre-m8-07 fallback would reconstruct scope=PropertyValue here.
+            // With target_hypothesis present, the real scope=LatencyMs must survive.
+            target_hypothesis: Some(chronos_store::counterexample_storage::HypothesisInputWire {
+                session_id: "live".into(),
+                kind: "invariant".into(),
+                scope: Some("latency_ms".into()),
+                comparison: Some("Gt".into()),
+                constant: Some(PropertyValue::Number(50.0)),
+                property_target: Some("cpu_time_ms".into()),
+                predicate: None,
+                caller: None,
+                callee: None,
+                max_depth: None,
+            }),
+        };
+        let input = reconstruct_hypothesis(&bundle, "synth").unwrap();
+        assert_eq!(input.scope, Some(HypothesisScope::LatencyMs));
+        assert_eq!(
+            input.comparison,
+            Some(chronos_domain::property::ComparisonOp::Gt)
+        );
+        assert_eq!(input.property_target.as_deref(), Some("cpu_time_ms"));
+        // The constant is NOT the minimised 0.0 — it's the original 50.0.
+        assert_eq!(input.constant, Some(PropertyValue::Number(50.0)));
     }
 }
