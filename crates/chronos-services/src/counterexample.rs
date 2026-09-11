@@ -373,13 +373,7 @@ impl ChronosCounterexampleService {
         // m9-02 D2: prefer summary.events_count (O(1)) when it is populated.
         // Fall back to record.events.len() only when events_count == 0 AND
         // the blob has non-empty events (legacy pre-m9-02 bundle).
-        let count = if record.summary.events_count > 0 {
-            record.summary.events_count
-        } else if !record.events.is_empty() {
-            record.events.len() as u64
-        } else {
-            0
-        };
+        let count = cs::bundle_events_count_or_legacy(&record);
         Ok(CounterexampleOutput::EventsCount {
             bundle_id: bundle_id.to_string(),
             events_count: count as usize,
@@ -540,13 +534,7 @@ impl ChronosCounterexampleService {
         // back to the blob-embedded event count.
         let events_count = loaded
             .as_ref()
-            .map(|r| {
-                if r.summary.events_count > 0 {
-                    r.summary.events_count as usize
-                } else {
-                    r.events.len()
-                }
-            })
+            .map(|r| cs::bundle_events_count_or_legacy(r) as usize)
             .unwrap_or(0);
         Ok(CounterexampleOutput::Saved {
             summary: summary_back,
