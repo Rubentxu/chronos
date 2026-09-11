@@ -44,10 +44,12 @@ use chronos_services::browser_probe::{
 use chronos_services::debug_read::DebugReadService;
 use chronos_services::debug_trace::DebugTraceService;
 use chronos_services::error::ServiceError;
+use chronos_services::events_read::{ChronosEventsReadService, EventsReadContext, EventsReadInput};
 use chronos_services::execution_query::{
     ChronosExecutionQueryService, ExecutionQueryContext, ExecutionQueryInput,
 };
 use chronos_services::output::EvalResult;
+use chronos_services::output::EventsReadKind;
 use chronos_services::output::{ExecutionQueryKind, ExecutionQueryOutput};
 use chronos_services::output::{StateQueryKind, StateQueryOutput};
 use chronos_services::probe::LiveProbeSession;
@@ -167,6 +169,50 @@ pub struct QueryEventsParams {
 
 fn default_limit() -> usize {
     100
+}
+
+/// Parameters for the v2 `events_read` tool (m7-01).
+///
+/// `mode=query` is the paginated event-list read (supersedes v1
+/// `query_events`); `mode=by_id` is the single-event lookup (supersedes
+/// v1 `get_event`). The cursor field carries an opaque
+/// `{total_pushed, snapshot_len}` payload — same encoding as the
+/// `probe_drain` cursor at the MCP boundary.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct EventsReadParams {
+    /// Session ID to read.
+    pub session_id: String,
+    /// Discriminator: `"query"` for paginated event list, `"by_id"` for
+    /// single-event lookup.
+    #[schemars(rename = "mode")]
+    pub mode: EventsReadKind,
+    /// Event ID (required when mode=by_id).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event_id: Option<u64>,
+    /// Filter by event types (mode=query only; e.g. "function_entry").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event_types: Option<Vec<String>>,
+    /// Filter by thread ID (mode=query only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<u64>,
+    /// Start timestamp in nanoseconds (inclusive; mode=query only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timestamp_start: Option<u64>,
+    /// End timestamp in nanoseconds (exclusive; mode=query only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timestamp_end: Option<u64>,
+    /// Filter by function name pattern (glob; mode=query only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub function_pattern: Option<String>,
+    /// Maximum events to return (mode=query only).
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+    /// Opaque cursor for the next page. Wire shape:
+    /// `{ "total_pushed": u64, "snapshot_len": u64 }`. Same encoding
+    /// as the existing `probe_drain` cursor. Omitted for the first
+    /// page (the dispatcher issues a fresh cursor).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<chronos_services::output::CursorDto>,
 }
 
 /// Default BFS expansion depth for `hypothesis_test` kind=call_path.
@@ -4125,6 +4171,71 @@ impl ChronosServer {
                 format!("Session '{}' not found", s),
             ))),
             Err(ServiceError::InvalidInput(s)) => Ok(CallToolResult::error(text_content(s))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
+        }
+    }
+
+    #[tool(
+        name = "events_read",
+        description = "v2 dispatcher for event reads. Select the read mode via `mode` (query | by_id). `mode=query` is a cursor-based, non-destructive event-list read with filters (event_types, thread_id, timestamp range, function_pattern, limit, cursor); `mode=by_id` is a single-event lookup by event_id. Supersedes the v1 `query_events` and `get_event` tools. See docs/chronos-agentic-reconstruction/docs/specs/AGENT_API_V2.md (line 15)."
+    )]
+    async fn events_read(
+        &self,
+        params: Parameters<EventsReadParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+
+        // Parse event_type strings (mode=query only).
+        let mut event_types: Option<Vec<EventType>> = None;
+        if let Some(ref types) = params.event_types {
+            if !types.is_empty() {
+                let mut parsed: Vec<EventType> = Vec::with_capacity(types.len());
+                for t in types {
+                    match Self::parse_event_type(t) {
+                        Some(et) => parsed.push(et),
+                        None => {
+                            return Ok(CallToolResult::error(text_content(format!(
+                                "events_read: unknown event_type '{}'. Valid types: syscall_enter, syscall_exit, function_entry, function_exit, variable_write, memory_write, signal_delivered, breakpoint_hit, thread_create, thread_exit, exception_thrown.",
+                                t
+                            ))));
+                        }
+                    }
+                }
+                event_types = Some(parsed);
+            }
+        }
+
+        let ctx = EventsReadContext {
+            engines: &self.engines,
+        };
+        let input = EventsReadInput {
+            session_id: params.session_id,
+            mode: params.mode,
+            event_types,
+            thread_id: params.thread_id,
+            timestamp_start: params.timestamp_start,
+            timestamp_end: params.timestamp_end,
+            function_pattern: params.function_pattern,
+            limit: params.limit,
+            cursor: params.cursor,
+            event_id: params.event_id,
+        };
+
+        match ChronosEventsReadService::read(&ctx, input).await {
+            Ok(out) => Ok(CallToolResult::success(json_content(
+                &serde_json::to_value(&out)
+                    .map_err(|e| rmcp::ErrorData::internal_error(e.to_string(), None))?,
+            ))),
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("Session '{}' not found", s),
+            ))),
+            Err(ServiceError::InvalidInput(s)) => Ok(CallToolResult::error(text_content(s))),
+            Err(ServiceError::CursorStale) => Ok(CallToolResult::error(text_content(
+                "cursor is stale: the session has advanced past this cursor's total_pushed",
+            ))),
+            Err(ServiceError::InvalidCursorPayload) => Ok(CallToolResult::error(text_content(
+                "invalid cursor payload: expected {total_pushed, snapshot_len}",
+            ))),
             Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
     }
