@@ -1259,8 +1259,9 @@ pub struct CompareSessionsResult {
 /// - `CallPath` — is `callee` reachable from `caller` in the call graph?
 ///   Returns `Pass` if reachable (or self-loop); `Violation` if not; lists
 ///   the longest un-reachable prefix path it did observe (raw support).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, JsonSchema)]
 #[schemars(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum HypothesisKind {
     Invariant,
     Existence,
@@ -2469,5 +2470,116 @@ mod tests {
         let round = serde_json::from_value::<super::TripwireDeleteResult>(json).unwrap();
         assert_eq!(round.tripwire_id, "tripwire-3");
         assert_eq!(round.remaining_active, 4);
+    }
+}
+
+// ============================================================================
+// M8 — Counterexample shrinking DTOs (m8-01 foundation)
+// ----------------------------------------------------------------------------
+// Wire-shape DTOs for the v2 `counterexample_*` MCP tools (m8-03).
+// m8-01 ships the *summary-only* DTOs so MCP wrappers that m8-03 binds can
+// compile and round-trip without a follow-up cycle change. The
+// full-bundle wire DTO (`CounterexampleBundleDto`, carrying the events
+// vector) is intentionally NOT in m8-01 — bundles are returned by handle
+// and re-fetched in m8-03+, never streamed in tool responses.
+//
+// See `docs/milestones/m8-01-counterexample-foundation-scoping.md` § "DTOs
+// added to output.rs" for the rationale (B3: summary-only is the wire
+// invariant until redb roundtrip is verified).
+// ============================================================================
+
+/// JSON-friendly summary of a counterexample bundle.
+///
+/// `has_full_bundle == false` is the only legitimate m8-01 state — m8-03
+/// flips it to `true` on successful redb roundtrip. MCP callers MUST treat
+/// `false` as "summary metadata only" and decline to drill down with a
+/// subsequent tool call.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub struct CounterexampleBundleSummaryDto {
+    pub bundle_id: String,
+    pub property_kind: HypothesisKind,
+    pub workspace_id: String,
+    pub created_at_ms: u64,
+    pub rounds_used: u32,
+    pub has_full_bundle: bool,
+}
+
+/// Output envelope for `counterexample_list` (m8-03 wrapper).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub struct CounterexampleListOutputDto {
+    pub bundles: Vec<CounterexampleBundleSummaryDto>,
+    pub next_cursor: Option<String>,
+}
+
+/// Output envelope for `counterexample_get` (m8-03 wrapper).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub struct CounterexampleGetOutputDto {
+    pub bundle: CounterexampleBundleSummaryDto,
+    pub has_full_bundle: bool,
+}
+
+// ============================================================================
+// M8 — Counterexample DTO unit tests (m8-01)
+// ----------------------------------------------------------------------------
+// Wire-shape assertions only. No service-level exercise — m8-01 stubs
+// return LoadFailed / Unsupported, so the only signal we can verify here
+// is the schema signature.
+// ============================================================================
+
+#[cfg(test)]
+mod counterexample_dto_tests {
+    use super::*;
+
+    #[test]
+    fn counterexample_bundle_summary_dto_roundtrip_snake_case() {
+        let s = CounterexampleBundleSummaryDto {
+            bundle_id: "bundle-1".to_string(),
+            property_kind: HypothesisKind::Invariant,
+            workspace_id: "ws".to_string(),
+            created_at_ms: 1_700_000_000_000,
+            rounds_used: 12,
+            has_full_bundle: false,
+        };
+        let json = serde_json::to_value(&s).unwrap();
+        assert_eq!(json["bundle_id"], "bundle-1");
+        assert_eq!(json["property_kind"], "invariant");
+        assert_eq!(json["rounds_used"], 12u32);
+        assert_eq!(json["has_full_bundle"], false);
+        let back: CounterexampleBundleSummaryDto = serde_json::from_value(json).unwrap();
+        assert_eq!(back, s);
+    }
+
+    #[test]
+    fn counterexample_list_output_dto_snake_case_keys() {
+        let dto = CounterexampleListOutputDto {
+            bundles: vec![],
+            next_cursor: Some("opaque-cursor".to_string()),
+        };
+        let json = serde_json::to_value(&dto).unwrap();
+        assert!(json["bundles"].is_array());
+        assert_eq!(json["next_cursor"], "opaque-cursor");
+    }
+
+    #[test]
+    fn counterexample_get_output_dto_dedupes_has_full_bundle() {
+        let bundle = CounterexampleBundleSummaryDto {
+            bundle_id: "bundle-2".to_string(),
+            property_kind: HypothesisKind::Existence,
+            workspace_id: "ws".to_string(),
+            created_at_ms: 1_700_000_001_000,
+            rounds_used: 0,
+            has_full_bundle: false,
+        };
+        let dto = CounterexampleGetOutputDto {
+            has_full_bundle: bundle.has_full_bundle,
+            bundle,
+        };
+        assert!(
+            !dto.has_full_bundle,
+            "m8-01 must never report has_full_bundle=true"
+        );
     }
 }

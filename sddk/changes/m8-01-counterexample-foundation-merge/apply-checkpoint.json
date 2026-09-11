@@ -1,0 +1,100 @@
+{
+  "cycle_id": "m8-01-counterexample-foundation-merge",
+  "title": "M8-01 — chronos-services::counterexample foundation (signatures + stub errors + 5 service tests + 3 DTO tests)",
+  "status": "ready_for_merge",
+  "branch": "feat/m8-01-counterexample-foundation",
+  "head_sha": "TBD_COMMIT_HASH",
+  "base_sha": "af8dcd5",
+  "ff_merged_sha": "TBD_POST_PUSH",
+  "started_at": "2026-09-11T09:46:00Z",
+  "completed_at": "2026-09-11T09:53:00Z",
+  "commits": [
+    { "sha": "TBD_FEATURE_COMMIT", "subject": "feat(services): chronos-services::counterexample foundation + proptest dev-dep + 3 wire DTOs (m8-01)" },
+    { "sha": "TBD_CHORE_COMMIT", "subject": "chore(sddk): record m8-01 apply-checkpoint (head_sha=…, ready_for_merge)" }
+  ],
+  "shipped_artifacts": {
+    "service_module": {
+      "file": "crates/chronos-services/src/counterexample.rs",
+      "lines": 342,
+      "service": "ChronosCounterexampleService",
+      "entry_points": [
+        "pub fn get(&CounterexampleContext<'_>, &str) -> Result<CounterexampleOutput, ServiceError> (m8-01 stub: LoadFailed)",
+        "pub fn list(&CounterexampleContext<'_>, CounterexampleListFilter) -> Result<CounterexampleOutput, ServiceError> (m8-01 stub: Unsupported)",
+        "// no shrink() in m8-01 — deferred to m8-02 (HypothesisInput→proptest::Strategy adapter)"
+      ],
+      "context": "CounterexampleContext<'a> { store: &'a SessionStore, hypothesis_ctx: &'a HypothesisTestContext<'a> }",
+      "test_coverage": "5 unit tests in counterexample::tests"
+    },
+    "wire_dtos": {
+      "file": "crates/chronos-services/src/output.rs (append, +119 LoC)",
+      "types_added": [
+        "CounterexampleBundleSummaryDto",
+        "CounterexampleListOutputDto",
+        "CounterexampleGetOutputDto"
+      ],
+      "test_coverage": "3 unit tests in output::counterexample_dto_tests"
+    },
+    "lib_rs_module_index": "20 algorithm modules + counterexample (m8-01) = 21 total. Inserted between browser_probe and debug_read alphabetically.",
+    "workspace_dep_added": "proptest = \"1.5\" as a workspace dependency; wired into chronos-services [dev-dependencies] only.",
+    "additive_change_to_existing_type": {
+      "type": "crate::output::HypothesisKind",
+      "previous_derives": "Debug + Clone + Copy + PartialEq + Eq + serde::Deserialize + JsonSchema",
+      "added_derives": "serde::Serialize + #[serde(rename_all = \"snake_case\")]",
+      "disclosure": "Additive wire-shape change. The new Serialize impl produces \"invariant\"|\"existence\"|\"call_path\" strings — matches JsonSchema's snake_case wire shape exactly. No inbound JSON breakage. Roundtrip verified via counterexample_bundle_summary_dto_roundtrip_snake_case test."
+    }
+  },
+  "architectural_decisions": {
+    "stub_first_to_avoid_signature_churn": "Both `get` and `list` return machine-readable stub errors in m8-01 instead of returning Unimplemented. m8-03 can wire redb read logic without changing the public signature that the future MCP wrappers will bind to. This is the 'single-call dispatch, no follow-up cycle' pattern from m7-07's SessionStopPersistence.",
+    "context_borrows_hypothesis_ctx": "CounterexampleContext<'a> borrows HypothesisTestContext<'a> rather than holding &QueryEngine directly. Mirrors m7-05 SessionLifecycleContext borrowing ProbeContext — avoids dual ownership and inherits the engines map lifetime.",
+    "internal_enum_at_module_scope": "CounterexampleShrinkInput + CounterexampleOutput + CounterexampleBundle stay at module scope (counterexample.rs), NOT in output.rs. They carry proptest runtime config / Vec<TraceEvent> which we don't want on the wire yet. m8-03 promotes the wire-shape sub-types to output.rs as *Dto types.",
+    "wire_dtos_are_summary_only": "Wire DTOs omit events vector intentionally. Bundles are returned by handle (bundle_id) and re-fetched, never streamed in tool responses. Rationale (B3 in scoping doc): avoids forcing JsonSchema through Vec<TraceEvent>.",
+    "proptest_is_dev_dependency_only": "promote to runtime dep is m8-02's decision. Wires at workspace level so future cycles can move it without a Cargo.toml change.",
+    "no_chronos_cli_workspace_member_in_m8_01": "Adding a new crate to host nothing violates minimalism. m8-04 brings the CLI wrapper, when the dispatcher has at least 2 entry points that the CLI shell-glue can hit."
+  },
+  "test_plan_completed": {
+    "unit_tests_added": [
+      "counterexample_context_is_send_when_inner_refs_are_send",
+      "counterexample_get_signature_accepts_bundle_id_string",
+      "counterexample_list_filter_default_has_zero_limit",
+      "counterexample_input_default_max_rounds_is_64",
+      "counterexample_bundle_summary_has_full_bundle_false_is_m8_01_state",
+      "counterexample_bundle_summary_dto_roundtrip_snake_case (output::counterexample_dto_tests)",
+      "counterexample_list_output_dto_snake_case_keys",
+      "counterexample_get_output_dto_dedupes_has_full_bundle"
+    ],
+    "integration_tests_pending": "MCP wrappers (m8-03) and redb roundtrip (m8-03) — not in m8-01 scope.",
+    "sandbox_smoke_pending": "n/a for m8-01 (does not touch probes/sessions). m8-03 introduces the only session-touching wire; sandbox smoke there."
+  },
+  "gates": {
+    "T0_fmt_clippy": "pass (cargo fmt --all -- --check + cargo clippy --workspace --all-targets -- -D warnings)",
+    "T1_workspace_lib_ex_chronos_native": "pass (806 passed, 0 failed; up from m8-scoping baseline 798 — +8 net = 5 new module tests + 3 new DTO tests). 0 ignored.",
+    "T2_per_crate_integration_services_store_mcp": "pass (358 tests green; m8-01 didn't add integration tests so net unchanged from m7-06 baseline).",
+    "T4_smoke_sandbox": "n/a (m8-01 stub-only; m8-03 introduces the wire)."
+  },
+  "followups": [
+    {
+      "cycle": "m8-02-shrink-loop-wiring",
+      "scope": "Promote proptest to runtime [dependencies] in chronos-services. Implement `ChronosCounterexampleService::shrink`: convert HypothesisInput → proptest::Strategy (this is the experimental risk of M8), run proptest::TestRunner for up to `max_rounds` rounds (default 64), observe HypothesisVerdict via the existing hypothesis_test dispatcher, and emit CounterexampleBundle on first run that finds the violation + a minimised counterexample after the shrink passes. Add 4-6 unit tests using a known-failing hypothesis (e.g., invariant: event_count < 5 on a busyloop fixture). A-min scope.",
+      "depends_on": []
+    },
+    {
+      "cycle": "m8-03-mcp-wrappers-and-redb-bundle-table",
+      "scope": "Provision `counterexample_bundles` redb table (key: bundle_id, value: serialised Bundle envelope). Replace `get`/`list` stub bodies with redb-backed lookups. Add `CounterexampleBundleDto` (wire shape WITH Vec<TraceEvent>) gated behind an `include_events: bool` param to keep roundtrip small. Add 3 v2 MCP wrappers `counterexample_shrink` / `counterexample_get` / `counterexample_list` in chronos-mcp/src/server.rs. Sandbox smoke against test_exit_immediate + test_busyloop fixtures (no test_echo — doesn't exist). A-lite scope.",
+      "depends_on": ["m8-02 ships shrink"]
+    },
+    {
+      "cycle": "m8-04-chronos-cli-workspace-member",
+      "scope": "Add crates/chronos-cli workspace member. Thin driver: parses `chronos test <bundle_id>` and `chronos replay <bundle_id>` subcommands, calls `counterexample_get` / session_load via the same RPC surface the MCP server uses. No reimplementation of dispatcher algorithms. A-min scope.",
+      "depends_on": ["m8-03 ships MCP wrappers"]
+    },
+    {
+      "cycle": "m8-05-M8-close-and-acceptance",
+      "scope": "M8 close: run an acceptance scenario that picks a known failing hypothesis on a test_busyloop fixture, ships it through counterexample_shrink → counterexample_get, and verifies the persisted bundle preserves the violation property after shrink. Final M8 report. A-lite scope.",
+      "depends_on": ["m8-04 ships chronos-cli"]
+    }
+  ],
+  "naming_collision_disclosure": {
+    "trigger": "m7-06 close report §7 labelled a wishlist (live-probe perf, MCP hardening, distributed tracing) as 'M8'. The actual roadmap M8 (ROADMAP.md line 179) is counterexample shrinking + test intelligence.",
+    "resolution": "Adopted the roadmap M8 (this cycle). The wishlist items remain valid but are post-M8 backlog: m7-09 (attach), m9.5 (otel export), m10.5 (multi-process fanout), m11.5 (MCP observability). See `docs/milestones/m8-counterexample-shrinking-scoping.md` § \"Naming-collision honest disclosure\" for the full item-by-item mapping."
+  }
+}

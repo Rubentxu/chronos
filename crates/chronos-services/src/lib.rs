@@ -81,6 +81,7 @@
 
 pub mod analysis;
 pub mod browser_probe;
+pub mod counterexample;
 pub mod debug_read;
 pub mod debug_trace;
 pub mod debug_trace_specialized;
