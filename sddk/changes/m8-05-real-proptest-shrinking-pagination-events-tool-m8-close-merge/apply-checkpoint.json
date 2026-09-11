@@ -3,11 +3,11 @@
   "title": "M8-05 — Real proptest shrinking + list pagination + events_count tool + M8 close report",
   "status": "merged",
   "branch": "feat/m8-05-real-proptest-shrinking-execute",
-  "head_sha": "a417e53",
+  "head_sha": "65cbaed",
   "base_sha": "a87d6a4",
-  "merge_sha": "PENDING",
+  "merge_sha": "503565e",
   "tag": "m8-05-real-proptest-shrinking.0",
-  "ff_merged_sha": "PENDING",
+  "ff_merged_sha": "503565e",
   "started_at": "2026-09-11T12:30:00Z",
   "completed_at": "2026-09-11T13:10:00Z",
   "commits": [
@@ -17,9 +17,9 @@
     { "sha": "464e689", "subject": "feat(store+mcp+sandbox): counterexample list pagination cursor (m8-05 execute 2)" },
     { "sha": "27f95b5", "subject": "feat(services+mcp+sandbox): counterexample_events_count lightweight tool (m8-05 execute 3)" },
     { "sha": "41f6ad2", "subject": "docs(milestones): M8 close report" },
-    { "sha": "PENDING", "subject": "docs(sddk): m8-05 real proptest shrinking + pagination + events tool + M8 close merge doc + apply-checkpoint" },
-    { "sha": "PENDING", "subject": "Merge branch 'feat/m8-05-real-proptest-shrinking-execute'" },
-    { "sha": "PENDING", "subject": "chore(sddk): record m8-05 apply-checkpoint (head_sha=41f6ad2, merge_sha=PENDING, status=merged)" }
+    { "sha": "65cbaed", "subject": "docs(sddk): m8-05 real proptest shrinking + pagination + events tool + M8 close merge doc + apply-checkpoint" },
+    { "sha": "503565e", "subject": "Merge branch 'feat/m8-05-real-proptest-shrinking-execute'" },
+    { "sha": "PENDING", "subject": "chore(sddk): record m8-05 apply-checkpoint (head_sha=65cbaed, merge_sha=503565e, status=merged)" }
   ],
   "shipped_artifacts": {
     "scope_doc": {
