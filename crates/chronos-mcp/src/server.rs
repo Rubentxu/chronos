@@ -49,6 +49,7 @@ use chronos_services::execution_query::{
 };
 use chronos_services::observe::{ChronosObserveService, ObserveContext, ObserveInput};
 use chronos_services::output::EvalResult;
+use chronos_services::output::{CapabilitySnapshot, SessionLifecycleProvenance, SessionStopOutput};
 use chronos_services::output::{EventsReadKind, EventsReadOutput};
 use chronos_services::output::{ExecutionQueryKind, ExecutionQueryOutput};
 use chronos_services::output::{StateQueryKind, StateQueryOutput};
@@ -56,9 +57,6 @@ use chronos_services::probe::LiveProbeSession;
 use chronos_services::query_service::QueryService;
 use chronos_services::session_lifecycle::{
     ChronosSessionLifecycleService, SessionLifecycleContext, SessionStopPersistence,
-};
-use chronos_services::output::{
-    CapabilitySnapshot, SessionLifecycleProvenance, SessionStopOutput,
 };
 use chronos_services::sessions::{SessionsContext, SessionsService};
 use chronos_services::state_query::{ChronosStateQueryService, StateQueryContext, StateQueryInput};
@@ -3862,7 +3860,10 @@ impl ChronosServer {
                     sealed_at,
                     drained_subscriptions,
                     capability_snapshot: snapshot,
-                    provenance: SessionLifecycleProvenance { engine_version: "chronos-0.1.0".to_string(), source: "session_stop".to_string() },
+                    provenance: SessionLifecycleProvenance {
+                        engine_version: "chronos-0.1.0".to_string(),
+                        source: "session_stop".to_string(),
+                    },
                 };
                 let json = serde_json::to_value(&out).map_err(|e| {
                     rmcp::ErrorData::internal_error(format!("session_stop serialize: {}", e), None)
@@ -3901,7 +3902,10 @@ impl ChronosServer {
                     sealed_at: meta.sealed_at,
                     drained_subscriptions,
                     capability_snapshot: snapshot,
-                    provenance: SessionLifecycleProvenance { engine_version: "chronos-0.1.0".to_string(), source: "session_stop".to_string() },
+                    provenance: SessionLifecycleProvenance {
+                        engine_version: "chronos-0.1.0".to_string(),
+                        source: "session_stop".to_string(),
+                    },
                 };
                 let json = serde_json::to_value(&out).map_err(|e| {
                     rmcp::ErrorData::internal_error(format!("session_stop serialize: {}", e), None)

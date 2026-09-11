@@ -314,10 +314,7 @@ impl ChronosSessionLifecycleService {
             }
             SessionStopPersistence::AlreadyStopped { session_id } => {
                 let (meta, events) = ctx.store.load_session(&session_id).map_err(|e| {
-                    ServiceError::LoadFailed(format!(
-                        "load_session({}) failed: {}",
-                        session_id, e
-                    ))
+                    ServiceError::LoadFailed(format!("load_session({}) failed: {}", session_id, e))
                 })?;
                 let snapshot = CapabilitySnapshot {
                     probe_type: Some("ebpf_user".to_string()),
@@ -809,8 +806,7 @@ mod tests {
     #[test]
     fn mark_sealed_missing_session_returns_load_failed() {
         let store = empty_store();
-        let result =
-            ChronosSessionLifecycleService::mark_sealed(&store, "no-such-session", 9999);
+        let result = ChronosSessionLifecycleService::mark_sealed(&store, "no-such-session", 9999);
         assert!(
             matches!(result, Err(ServiceError::LoadFailed(_))),
             "expected mark_sealed to return LoadFailed when session is missing"
