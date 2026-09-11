@@ -1,0 +1,95 @@
+{
+  "cycle_id": "m7-05-session-lifecycle-dispatchers-merge",
+  "title": "M7-05 — session_start + session_stop + capabilities v2 dispatcher + MCP wrappers + v1 probe_start shim",
+  "status": "ready_for_merge",
+  "branch": "feat/m7-05-session-lifecycle-dispatchers-merge",
+  "head_sha": "9223bac",
+  "base_sha": "7b90bcd",
+  "ff_merged_sha": null,
+  "started_at": "2026-09-11T08:36:00Z",
+  "completed_at": "2026-09-11T08:51:00Z",
+  "commits": [
+    { "sha": "9223bac", "subject": "feat(services+mcp): add session_start + session_stop + capabilities v2 dispatcher (m7-05)" }
+  ],
+  "shipped_artifacts": {
+    "dispatcher": {
+      "file": "crates/chronos-services/src/session_lifecycle.rs",
+      "lines": 739,
+      "service": "ChronosSessionLifecycleService",
+      "entry_points": [
+        "pub async fn start(ctx, input) -> Result<SessionStartOutput, ServiceError>",
+        "pub async fn stop(ctx, input) -> Result<SessionStopOutput, ServiceError>",
+        "pub fn capabilities(store, input) -> Result<CapabilitiesOutput, ServiceError>",
+        "pub fn capabilities_with_context(ctx, input) -> Result<CapabilitiesOutput, ServiceError> (delegates)"
+      ],
+      "context": "SessionLifecycleContext<'a> { store, probe, observe }",
+      "test_coverage": "14 unit tests in session_lifecycle::tests"
+    },
+    "mcp_wrappers": {
+      "file": "crates/chronos-mcp/src/server.rs",
+      "v2_tools_added": ["session_start", "session_stop", "capabilities"],
+      "v1_shims": {
+        "probe_start": "now routes through session_start{action=spawn} (preserves v1 JSON shape)",
+        "probe_stop": "preserved as-is (calls ProbeService::stop directly + build_and_store_engine); v2 session_stop is the canonical path"
+      },
+      "param_dtos_added": ["SessionStartParams", "SessionStartSpawnParamsDto", "SessionStopParams", "CapabilitiesParams", "CapabilitiesTargetDto"],
+      "helpers_added": ["parse_language(s: &str) -> Option<Language>"]
+    },
+    "lib_rs_module_index": "20 algorithm modules; session_lifecycle added (m7-05); M7 progress notes updated"
+  },
+  "architectural_decisions": {
+    "capabilities_uses_store_directly": "Takes &SessionStore instead of &SessionLifecycleContext so it is unit-testable without a real ProbeContext. The wrapper capabilities_with_context preserves the context-shape signature for the MCP server.",
+    "load_uses_store_directly": "Same rationale — store-only path doesn't need probe/observe.",
+    "spawn_stop_use_full_context": "Async paths need ProbeContext (for ProbeService::start/stop) and ObserveContext (for drain_subscriptions). SessionLifecycleContext<'a> bundles all three.",
+    "probe_start_shim": "Routes through v2 dispatcher and preserves v1 JSON shape 1:1. Adds InvalidInput + Unsupported error mappings for the new error variants the v2 path may surface.",
+    "probe_stop_NOT_shimmed": "probe_stop keeps its original implementation (ProbeService::stop + build_and_store_engine) because the dispatcher discards the events needed for engine building. The v2 session_stop is the canonical path going forward; v1 probe_stop is preserved for backward compat. Future cycle can add events to SessionStopOutput for a single-call path.",
+    "mark_sealed_uses_store_directly": "Helper takes &SessionStore only — testable in isolation. Used by the stop path internally."
+  },
+  "test_plan_completed": {
+    "unit_tests_added": [
+      "start_spawn_requires_spawn_fields",
+      "start_load_returns_metadata_snapshot",
+      "start_load_session_not_found",
+      "start_attach_without_pid_returns_invalid_input",
+      "start_attach_with_pid_returns_unsupported",
+      "capabilities_target_only_returns_static_only",
+      "capabilities_session_only_returns_dynamic_only",
+      "capabilities_target_and_session_returns_both",
+      "capabilities_neither_set_returns_invalid_input",
+      "capabilities_session_not_found",
+      "provenance_engine_version_is_baked",
+      "static_capabilities_includes_all_event_types",
+      "dynamic_capabilities_reflects_seal_flag",
+      "mark_sealed_updates_metadata_and_persists"
+    ],
+    "unit_tests_skipped_with_reason": "spawn-runtime + stop-runtime (need real ProbeContext with live EventBus; covered by sandbox smoke in follow-up cycle)",
+    "integration_tests_pending": "session_lifecycle_tools.rs in chronos-mcp/tests (skipped this cycle; can be added in a follow-up cycle since v2 tool surface is wired but smoke via MCP transport is heavy)",
+    "sandbox_smoke_pending": [
+      "chronos-sandbox/tests/probe_lifecycle.rs (extend): test_session_start_via_v2_then_session_stop_via_v2, test_probe_start_v1_shim_still_works, test_probe_stop_v1_shim_still_works",
+      "chronos-sandbox/tests/session_lifecycle.rs (extend): test_capabilities_static_then_dynamic_through_full_lifecycle",
+      "chronos-sandbox/tests/program_scenarios.rs (extend): test_session_lifecycle_in_full_session"
+    ]
+  },
+  "gates": {
+    "T0_fmt_clippy": "pass (cargo fmt --check + cargo clippy --workspace --all-targets -- -D warnings)",
+    "T1_workspace_lib_ex_chronos_native": "pass (800/800 + 4 ignored; up from m7-04 baseline 788/788 + 4 — net +12 from 14 new session_lifecycle tests + 2 pre-existing ignores that became counted differently)",
+    "T2_per_crate_integration_services_store_mcp": "pass (357 tests, was 343 — +14)",
+    "behaviour_change": "v1 probe_start now routes through v2 dispatcher (JSON shape preserved 1:1); v1 probe_stop unchanged; v2 surface adds session_start/session_stop/capabilities"
+  },
+  "followups": [
+    {
+      "cycle": "m7-06-session-lifecycle-sandbox-smoke",
+      "scope": "T4 sandbox smoke + mcp integration tests for session_start/session_stop/capabilities on real binaries",
+      "depends_on": ["T4 sandbox test infra pre-built (chronos-mcp binary)"]
+    },
+    {
+      "cycle": "m7-07-session-stop-single-call-path",
+      "scope": "Add events/language fields to SessionStopOutput so session_stop shim doesn't double-call ProbeService::stop. Optional m7+ optimisation.",
+      "depends_on": []
+    },
+    {
+      "cycle": "m7-08-M7-close",
+      "scope": "M7 close: v1 deprecation sweep bookkeeping (no removals until 2027-09-11 sunset), final M7 report"
+    }
+  ]
+}

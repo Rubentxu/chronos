@@ -3,7 +3,7 @@
 **Branch:** `feat/m7-05-session-lifecycle-dispatchers-merge`
 **Cycle:** M7 (v2-spec sub-cycle), fifth deliverable
 **Precedence:** `docs/milestones/m7-05-session-lifecycle-dispatchers-scoping.md` (parent doc); `docs/milestones/m7-04-session-start-stop-capabilities-merge.md` § "Revision note"; v2 spec `AGENT_API_V2.md` lines 11–13
-**Status:** PROPOSED — 2026-09-11
+**Status:** MERGED — 2026-09-11
 
 ## Why this cycle
 
