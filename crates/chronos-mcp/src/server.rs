@@ -55,7 +55,10 @@ use chronos_services::output::{StateQueryKind, StateQueryOutput};
 use chronos_services::probe::LiveProbeSession;
 use chronos_services::query_service::QueryService;
 use chronos_services::session_lifecycle::{
-    ChronosSessionLifecycleService, SessionLifecycleContext,
+    ChronosSessionLifecycleService, SessionLifecycleContext, SessionStopPersistence,
+};
+use chronos_services::output::{
+    CapabilitySnapshot, SessionLifecycleProvenance, SessionStopOutput,
 };
 use chronos_services::sessions::{SessionsContext, SessionsService};
 use chronos_services::state_query::{ChronosStateQueryService, StateQueryContext, StateQueryInput};
@@ -3784,77 +3787,127 @@ impl ChronosServer {
             observe: &observe_ctx,
         };
 
-        // Architecture (m7-06 follow-up fix): we used to call
-        // the dispatcher's `stop`, which itself called
-        // `ProbeService::stop` and discarded events, then *re-call*
-        // `ProbeService::stop` here to recover them. The double-call
-        // meant the second invocation returned `ProbeNotFound`
-        // (probe already gone) and `build_and_store_engine` was
-        // silently skipped — leaving the session live-only in the
-        // store. Fix: stop the probe *once* here BEFORE the
-        // dispatcher runs, persist the events through
-        // `build_and_store_engine`, then call the dispatcher for the
-        // seal + drain-subscriptions metadata housekeeping. The
-        // dispatcher's `stop` will see the probe already gone (and
-        // gracefully no-op the ProbeService::stop step), so it just
-        // handles `drain_subscriptions` + `seal_tail`.
-        let pre_stop =
-            chronos_services::probe::ProbeService::stop(&probe_ctx, &v2_input.session_id);
-        if let Ok(ref result) = pre_stop {
-            // 1. Persist events + metadata to the redb store so the
-            //    session is queryable through `load_session` /
-            //    `session_start{action=load}` (the v2 dispatcher
-            //    reads the store, not the in-memory engine).
-            let events = result.events.clone();
-            let _ = self.store.save_session(
-                chronos_store::SessionMetadata {
-                    session_id: v2_input.session_id.clone(),
-                    created_at: 0,
-                    language: result.language.to_string(),
-                    target: result.target.clone(),
-                    event_count: events.len(),
-                    duration_ms: 0,
-                    tail_sealed: false,
-                    sealed_at: None,
-                },
-                &events,
-            );
-            // 2. Build the in-memory QueryEngine for query_* tools.
-            self.build_and_store_engine(&v2_input.session_id, events, result.language)
-                .await;
-        }
-
-        match ChronosSessionLifecycleService::stop(&lifecycle_ctx, v2_input).await {
-            Ok(mut out) => {
-                // The dispatcher's ProbeService::stop call always
-                // returns ProbeNotFound in this path (because we
-                // already stopped above). Patch the snapshot's
-                // total_events / duration_ms / ebpf_detached from
-                // the pre-stop result so the response carries the
-                // real (non-zero) numbers instead of the "0 /
-                // false / unknown" probe-already-gone defaults.
-                if let Ok(result) = pre_stop {
-                    out.total_events = result.events.len() as u64;
-                    out.ebpf_detached = true;
+        // Architecture (m7-07 single-call path): we used to do a 3-step
+        // dance (pre-stop probe → save_session → build_and_store_engine
+        // → call dispatcher.stop which double-called ProbeService::stop
+        // internally). The double-call forced a load_session fallback in
+        // the dispatcher which was structurally a workaround. m7-07
+        // replaces all of that with a single
+        // `stop_with_persistence` call that returns the events for us
+        // to persist + build_engine on exactly one probe-stop.
+        let (drained_subscriptions, persistence) =
+            match ChronosSessionLifecycleService::stop_with_persistence(&lifecycle_ctx, v2_input)
+                .await
+            {
+                Ok(parts) => parts,
+                Err(ServiceError::InvalidInput(msg)) => {
+                    return Ok(CallToolResult::error(text_content(format!(
+                        "Invalid session_stop input: {}",
+                        msg
+                    ))));
                 }
+                Err(other) => {
+                    return Ok(CallToolResult::error(text_content(format!(
+                        "internal error: unexpected session_stop error: {}",
+                        other
+                    ))));
+                }
+            };
+
+        match persistence {
+            SessionStopPersistence::Stopped {
+                session_id,
+                events,
+                language,
+                target,
+                total_events,
+                duration_ms,
+                ebpf_detached,
+                sealed_at,
+            } => {
+                // 1. Persist metadata + events to the redb store so
+                //    `session_start{action=load}` can find the session.
+                let meta = chronos_store::SessionMetadata {
+                    session_id: session_id.clone(),
+                    created_at: 0,
+                    language: language.to_string(),
+                    target: target.clone(),
+                    event_count: events.len(),
+                    duration_ms,
+                    tail_sealed: sealed_at.is_some(),
+                    sealed_at,
+                };
+                let _ = self.store.save_session(meta, &events);
+                // 2. Build the in-memory QueryEngine for query_* tools.
+                self.build_and_store_engine(&session_id, events, language)
+                    .await;
+
+                let snapshot = CapabilitySnapshot {
+                    probe_type: Some("ebpf_user".to_string()),
+                    language: Some(language.to_string()),
+                    bus_capacity: None,
+                    bus_fill: None,
+                    query_engine_ready: true,
+                    active_subscriptions: vec![],
+                    tail_sealed: sealed_at.is_some(),
+                    sealed_at,
+                };
+                let out = SessionStopOutput {
+                    session_id,
+                    status: "stopped".to_string(),
+                    target,
+                    total_events,
+                    duration_ms,
+                    ebpf_detached,
+                    sealed_at,
+                    drained_subscriptions,
+                    capability_snapshot: snapshot,
+                    provenance: SessionLifecycleProvenance { engine_version: "chronos-0.1.0".to_string(), source: "session_stop".to_string() },
+                };
                 let json = serde_json::to_value(&out).map_err(|e| {
                     rmcp::ErrorData::internal_error(format!("session_stop serialize: {}", e), None)
                 })?;
                 Ok(CallToolResult::success(json_content(&json)))
             }
-            Err(ServiceError::ProbeNotFound(s)) => {
-                Ok(CallToolResult::error(text_content(format!(
-                    "Live probe session '{}' not found. It may have already been stopped.",
-                    s
-                ))))
+            SessionStopPersistence::AlreadyStopped { session_id } => {
+                // Idempotent path: load_session and synthesise the
+                // output from the already-persisted metadata + events.
+                let (meta, events) = match self.store.load_session(&session_id) {
+                    Ok(pair) => pair,
+                    Err(e) => {
+                        return Ok(CallToolResult::error(text_content(format!(
+                            "Live probe session '{}' not found ({}). It may have been stopped and the metadata is missing.",
+                            session_id, e
+                        ))));
+                    }
+                };
+                let snapshot = CapabilitySnapshot {
+                    probe_type: Some("ebpf_user".to_string()),
+                    language: Some(meta.language.clone()),
+                    bus_capacity: None,
+                    bus_fill: None,
+                    query_engine_ready: true,
+                    active_subscriptions: vec![],
+                    tail_sealed: meta.tail_sealed,
+                    sealed_at: meta.sealed_at,
+                };
+                let out = SessionStopOutput {
+                    session_id: session_id.clone(),
+                    status: "already_stopped".to_string(),
+                    target: meta.target,
+                    total_events: events.len() as u64,
+                    duration_ms: meta.duration_ms,
+                    ebpf_detached: true,
+                    sealed_at: meta.sealed_at,
+                    drained_subscriptions,
+                    capability_snapshot: snapshot,
+                    provenance: SessionLifecycleProvenance { engine_version: "chronos-0.1.0".to_string(), source: "session_stop".to_string() },
+                };
+                let json = serde_json::to_value(&out).map_err(|e| {
+                    rmcp::ErrorData::internal_error(format!("session_stop serialize: {}", e), None)
+                })?;
+                Ok(CallToolResult::success(json_content(&json)))
             }
-            Err(ServiceError::InvalidInput(msg)) => Ok(CallToolResult::error(text_content(
-                format!("Invalid session_stop input: {}", msg),
-            ))),
-            Err(other) => Ok(CallToolResult::error(text_content(format!(
-                "internal error: unexpected session_stop error: {}",
-                other
-            )))),
         }
     }
 

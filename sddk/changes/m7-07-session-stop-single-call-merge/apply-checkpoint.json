@@ -1,0 +1,96 @@
+{
+  "cycle_id": "m7-07-session-stop-single-call-merge",
+  "title": "M7-07 — session_stop single-call path (one ProbeService::stop call per request)",
+  "status": "ready_for_merge",
+  "branch": "feat/m7-07-session-stop-single-call-merge",
+  "head_sha": "TBD",
+  "base_sha": "9fa4b49",
+  "ff_merged_sha": null,
+  "started_at": "2026-09-11T09:23:00Z",
+  "completed_at": "2026-09-11T09:34:00Z",
+  "commits": [
+    { "sha": "TBD", "subject": "feat(services+mcp): session_stop single-call path (m7-07)" }
+  ],
+  "shipped_artifacts": {
+    "internal_helper": {
+      "enum": "pub enum SessionStopPersistence (module-scope, NOT in output.rs)",
+      "variants": [
+        "Stopped { session_id, events: Vec<TraceEvent>, language, target, total_events, duration_ms, ebpf_detached, sealed_at }",
+        "AlreadyStopped { session_id }"
+      ],
+      "rationale": "Carries Vec<TraceEvent> back to the wrapper without bloating the JSON wire shape. AlreadyStopped replaces the m7-06 StopSnapshot ProbeNotFound fallback so the dispatcher can express 'idempotent path' as a normal outcome instead of an error workaround."
+    },
+    "dispatcher_refactor": {
+      "file": "crates/chronos-services/src/session_lifecycle.rs",
+      "new_entry_points": [
+        "pub async fn stop_with_persistence(&ctx, &input) -> Result<(bool, SessionStopPersistence), ServiceError>",
+        "pub async fn stop(&ctx, &input) -> Result<SessionStopOutput, ServiceError> (now a thin synthesiser that delegates to stop_with_persistence)"
+      ],
+      "removed": [
+        "internal struct StopSnapshot (workaround for ProbeNotFound)",
+        "stop body that double-called ProbeService::stop",
+        "mark_sealed live-only edge-case handling (reverted to Result<(), ServiceError> as in m7-05)"
+      ],
+      "kept": [
+        "pub(crate) fn mark_sealed (#[allow(dead_code)]; future-caller helper)"
+      ]
+    },
+    "mcp_wrapper_refactor": {
+      "file": "crates/chronos-mcp/src/server.rs",
+      "wrapper_now": "Calls stop_with_persistence directly (NOT self.stop). On Stopped: save_session(meta, &events) then build_and_store_engine(sid, events, language). On AlreadyStopped: load_session and synthesise output. No more pre_stop double-call."
+    }
+  },
+  "architectural_decisions": {
+    "single_probe_call_site": "ChronosSessionLifecycleService::stop_with_persistence is the ONLY place that calls ProbeService::stop. The MCP wrapper never calls it directly. Eliminates the m7-06 'probe-already-gone' soft-handling.",
+    "events_flow_through_internal_enum_not_dto": "SessionStopPersistence is at module scope in services/src/session_lifecycle.rs (not in output.rs). External clients see only SessionStopOutput JSON which drops the events vector (would otherwise be many MB on the wire).",
+    "already_stopped_is_a_normal_outcome": "Replaces the m7-06 'ProbeNotFound → load_session fallback' with a clean AlreadyStopped variant. The wrapper synthesises a SessionStopOutput with status='already_stopped' on idempotent calls.",
+    "tail_sealed_set_at_persist_time": "The wrapper sets meta.tail_sealed = sealed_at.is_some() directly before save_session. No separate mark_sealed call needed (m7-05 had a load+mutate+save round-trip which is no longer required).",
+    "mark_sealed_kept_for_future": "Helper preserved with #[allow(dead_code)] for any future caller that wants to seal a session without going through stop (e.g. a /seal REST endpoint or a manual post-stop seal).",
+    "status_field_gains_already_stopped_variant": "Additive wire change: SessionStopOutput.status may now be 'already_stopped' in addition to 'stopped'. Old clients that check for 'stopped' continue to work (first call still returns 'stopped')."
+  },
+  "test_plan_completed": {
+    "unit_tests_kept_unchanged": [
+      "start_spawn_requires_spawn_fields",
+      "start_load_returns_metadata_snapshot",
+      "start_load_session_not_found",
+      "start_attach_without_pid_returns_invalid_input",
+      "start_attach_with_pid_returns_unsupported",
+      "capabilities_target_only_returns_static_only",
+      "capabilities_session_only_returns_dynamic_only",
+      "capabilities_target_and_session_returns_both",
+      "capabilities_neither_set_returns_invalid_input",
+      "capabilities_session_not_found",
+      "provenance_engine_version_is_baked",
+      "static_capabilities_includes_all_event_types",
+      "dynamic_capabilities_reflects_seal_flag"
+    ],
+    "unit_tests_updated": [
+      "mark_sealed_updates_metadata_and_persists (signature revert: unwrap() no longer checks bool)",
+      "mark_sealed_returns_false_when_session_not_in_store → renamed to mark_sealed_missing_session_returns_load_failed (asserts Err(ServiceError::LoadFailed(_)))"
+    ],
+    "sandbox_smoke_passed": [
+      "probe_lifecycle (5 tests)",
+      "session_lifecycle (8 tests; test_capabilities_static_then_dynamic_through_full_lifecycle + test_session_start_load_returns_metadata both still pass after the architectural refactor)",
+      "program_scenarios (11 tests)"
+    ]
+  },
+  "gates": {
+    "T0_fmt_clippy": "pass (cargo fmt --check + cargo clippy --workspace --all-targets -- -D warnings)",
+    "T1_workspace_lib_ex_chronos_native": "pass (798/798 + 4 ignored; same as m7-06 — no regression)",
+    "T2_per_crate_integration_services_store_mcp": "pass (358/358; same as m7-06 — no regression)",
+    "T4_smoke_sandbox_probe_lifecycle_session_lifecycle_program_scenarios": "pass (5 + 11 + 8 = 24 tests, --test-threads=1, ~167s wall)",
+    "behaviour_change": "Internal: single ProbeService::stop call (was two on the wrapper pre-stop path). External: SessionStopOutput.status field gains additive 'already_stopped' variant. No new ServiceError variants. No new Unsupported stubs."
+  },
+  "followups": [
+    {
+      "cycle": "m7-09-attach-domain-api",
+      "scope": "Implement chronos_domain::attach API; unblocks session_start{action=attach} (currently Unsupported stub)",
+      "depends_on": []
+    },
+    {
+      "cycle": "m8-scoping",
+      "scope": "M8 milestone planning: live probe performance, MCP server hardening, distributed tracing",
+      "depends_on": ["M7 close approved"]
+    }
+  ]
+}

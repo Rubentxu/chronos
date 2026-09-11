@@ -52,6 +52,32 @@ pub struct SessionLifecycleContext<'a> {
     pub observe: &'a ObserveContext<'a>,
 }
 
+/// Outcome of `ChronosSessionLifecycleService::stop_with_persistence`.
+///
+/// `Stopped` — the live-stop path; events were drained from the
+/// bus, the probe was torn down. The wrapper should now call
+/// `save_session(meta, &events)` + `build_and_store_engine`.
+///
+/// `AlreadyStopped` — idempotent path; the probe is already gone
+/// (e.g., from a previous stop or a v1 `probe_stop`). The wrapper
+/// synthesises `SessionStopOutput` from the already-persisted
+/// metadata + events.
+pub enum SessionStopPersistence {
+    Stopped {
+        session_id: String,
+        events: Vec<chronos_domain::TraceEvent>,
+        language: chronos_domain::Language,
+        target: String,
+        total_events: u64,
+        duration_ms: u64,
+        ebpf_detached: bool,
+        sealed_at: Option<u64>,
+    },
+    AlreadyStopped {
+        session_id: String,
+    },
+}
+
 /// Stateless holder for the v2 lifecycle dispatcher.
 pub struct ChronosSessionLifecycleService;
 
@@ -162,29 +188,25 @@ impl ChronosSessionLifecycleService {
         ))
     }
 
-    /// v2 `session_stop` dispatcher entrypoint.
+    /// v2 `session_stop` dispatcher entrypoint (helper, single-call).
     ///
-    /// Algorithm:
+    /// Algorithm (single-call, m7-07):
     /// 1. If `drain_subscriptions`, run `ChronosObserveService::observe{verb=list}`
     ///    to destructively drain fired tripwire events.
-    /// 2. `ProbeService::stop` to finalise the producer + drain ring buffer.
-    /// 3. If `seal_tail`, load + mutate + save `SessionMetadata` with
-    ///    `tail_sealed=true, sealed_at=<now>`.
+    /// 2. `ProbeService::stop` (one call only — events returned to caller).
+    /// 3. Compute `sealed_at` if `seal_tail` (no write yet — caller
+    ///    decides whether to persist sealed metadata into the redb
+    ///    store via `save_session(meta, &events)`).
     ///
-    /// **Important architectural note (m7-05 / m7-06):** when the
-    /// session is *live* (ring buffer still active), `ProbeService::stop`
-    /// drains the events but discards them after the call (returning
-    /// the language). The MCP `session_stop` wrapper layer is then
-    /// responsible for *also* persisting events + metadata via
-    /// `build_and_store_engine`. Without that wrapper call, the
-    /// session will remain "live-only" (i.e., not present in the
-    /// `SessionStore`), which is the expected behaviour for
-    /// service-layer units but **must be paired with the MCP wrapper
-    /// for a full client-facing stop**. See `crates/chronos-mcp/src/server.rs::session_stop`.
-    pub async fn stop(
+    /// **Architecture (m7-07):** replaces the m7-05/m7-06
+    /// double-call workaround. The MCP `session_stop` wrapper
+    /// calls this helper directly (NOT `self.stop`), so the probe
+    /// is stopped exactly once and the events flow through to the
+    /// persistence side.
+    pub async fn stop_with_persistence(
         ctx: &SessionLifecycleContext<'_>,
         input: SessionStopInput,
-    ) -> Result<SessionStopOutput, ServiceError> {
+    ) -> Result<(bool, SessionStopPersistence), ServiceError> {
         let drained_subscriptions = if input.drain_subscriptions {
             // observe{verb=list} is destructive; we ignore its return
             // value here because the v2 contract only exposes a boolean
@@ -210,90 +232,117 @@ impl ChronosSessionLifecycleService {
             false
         };
 
-        // ProbeService::stop. If the session has already been
-        // stopped at the wrapper layer (e.g. the m7-06 wrapper
-        // pre-stops + build_and_store_engine, then calls us for
-        // metadata housekeeping), ProbeService::stop returns
-        // ProbeNotFound. We treat that as a soft no-op rather than
-        // an error: in that case we look up the already-persisted
-        // session and synthesise the snapshot fields from the
-        // stored metadata + events.
-        struct StopSnapshot {
-            language: String,
-            target: String,
-            total_events: u64,
-            duration_ms: u64,
-            ebpf_detached: bool,
-        }
-        let stop_snapshot = match ProbeService::stop(ctx.probe, &input.session_id) {
-            Ok(r) => StopSnapshot {
-                language: r.language.to_string(),
-                target: r.target,
-                total_events: r.events.len() as u64,
-                duration_ms: r.duration_ms,
-                ebpf_detached: r.ebpf_detached,
-            },
-            Err(ServiceError::ProbeNotFound(_)) => {
-                match ctx.store.load_session(&input.session_id) {
-                    Ok((meta, events)) => StopSnapshot {
-                        language: meta.language.to_string(),
-                        target: meta.target,
-                        total_events: events.len() as u64,
-                        duration_ms: 0,
-                        ebpf_detached: true,
-                    },
-                    Err(_) => return Err(ServiceError::ProbeNotFound(input.session_id)),
-                }
-            }
-            Err(e) => return Err(e),
-        };
-        let StopSnapshot {
-            language: language_str,
-            target,
-            total_events: total_events_u64,
-            duration_ms,
-            ebpf_detached,
-        } = stop_snapshot;
         let sealed_at = if input.seal_tail {
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0);
-            // mark_sealed returns Ok(false) when the session has not
-            // yet been persisted to the store (live-only). We still
-            // populate `sealed_at` in the response so the caller
-            // knows the seal was *attempted* — the server-side
-            // build_and_store_engine path will write the flag
-            // through on the next metadata refresh.
-            let _ = Self::mark_sealed(ctx.store, &input.session_id, now);
             Some(now)
         } else {
             None
         };
 
-        let snapshot = CapabilitySnapshot {
-            probe_type: Some("ebpf_user".to_string()),
-            language: Some(language_str.clone()),
-            bus_capacity: None,
-            bus_fill: None,
-            query_engine_ready: true,
-            active_subscriptions: vec![],
-            tail_sealed: sealed_at.is_some(),
-            sealed_at,
+        // Single ProbeService::stop call. ProbeNotFound → already-stopped
+        // idempotent path; caller synthesises output from persisted
+        // metadata.
+        let persistence = match ProbeService::stop(ctx.probe, &input.session_id) {
+            Ok(r) => SessionStopPersistence::Stopped {
+                session_id: input.session_id,
+                events: r.events,
+                language: r.language,
+                target: r.target,
+                total_events: r.total_events as u64,
+                duration_ms: r.duration_ms,
+                ebpf_detached: r.ebpf_detached,
+                sealed_at,
+            },
+            Err(ServiceError::ProbeNotFound(_)) => SessionStopPersistence::AlreadyStopped {
+                session_id: input.session_id,
+            },
+            Err(e) => return Err(e),
         };
 
-        Ok(SessionStopOutput {
-            session_id: input.session_id,
-            status: "stopped".to_string(),
-            target,
-            total_events: total_events_u64,
-            duration_ms,
-            ebpf_detached,
-            sealed_at,
-            drained_subscriptions,
-            capability_snapshot: snapshot,
-            provenance: lifecycle_provenance("session_stop"),
-        })
+        Ok((drained_subscriptions, persistence))
+    }
+
+    /// v2 `session_stop` dispatcher entrypoint (public, JSON-shape
+    /// output for tests + in-process callers).
+    ///
+    /// Delegates to `stop_with_persistence` and synthesises the
+    /// wire-format `SessionStopOutput` (drops the events vector).
+    /// Does NOT persist events to the redb store — that is the MCP
+    /// wrapper's responsibility.
+    pub async fn stop(
+        ctx: &SessionLifecycleContext<'_>,
+        input: SessionStopInput,
+    ) -> Result<SessionStopOutput, ServiceError> {
+        let (drained_subscriptions, persistence) = Self::stop_with_persistence(ctx, input).await?;
+
+        match persistence {
+            SessionStopPersistence::Stopped {
+                session_id,
+                language,
+                target,
+                total_events,
+                duration_ms,
+                ebpf_detached,
+                sealed_at,
+                ..
+            } => {
+                let snapshot = CapabilitySnapshot {
+                    probe_type: Some("ebpf_user".to_string()),
+                    language: Some(language.to_string()),
+                    bus_capacity: None,
+                    bus_fill: None,
+                    query_engine_ready: true,
+                    active_subscriptions: vec![],
+                    tail_sealed: sealed_at.is_some(),
+                    sealed_at,
+                };
+                Ok(SessionStopOutput {
+                    session_id,
+                    status: "stopped".to_string(),
+                    target,
+                    total_events,
+                    duration_ms,
+                    ebpf_detached,
+                    sealed_at,
+                    drained_subscriptions,
+                    capability_snapshot: snapshot,
+                    provenance: lifecycle_provenance("session_stop"),
+                })
+            }
+            SessionStopPersistence::AlreadyStopped { session_id } => {
+                let (meta, events) = ctx.store.load_session(&session_id).map_err(|e| {
+                    ServiceError::LoadFailed(format!(
+                        "load_session({}) failed: {}",
+                        session_id, e
+                    ))
+                })?;
+                let snapshot = CapabilitySnapshot {
+                    probe_type: Some("ebpf_user".to_string()),
+                    language: Some(meta.language.clone()),
+                    bus_capacity: None,
+                    bus_fill: None,
+                    query_engine_ready: true,
+                    active_subscriptions: vec![],
+                    tail_sealed: meta.tail_sealed,
+                    sealed_at: meta.sealed_at,
+                };
+                Ok(SessionStopOutput {
+                    session_id,
+                    status: "already_stopped".to_string(),
+                    target: meta.target,
+                    total_events: events.len() as u64,
+                    duration_ms: meta.duration_ms,
+                    ebpf_detached: true,
+                    sealed_at: meta.sealed_at,
+                    drained_subscriptions,
+                    capability_snapshot: snapshot,
+                    provenance: lifecycle_provenance("session_stop"),
+                })
+            }
+        }
     }
 
     /// v2 `capabilities` dispatcher entrypoint.
@@ -492,21 +541,21 @@ impl ChronosSessionLifecycleService {
     /// as a no-op or a warning; the m7-05 dispatcher treats it as a
     /// soft-skip so the seal flag is set once the server-side
     /// `build_and_store_engine` writes the metadata.
+    #[allow(dead_code)] // kept for future callers; not used by m7-07 dispatcher (see note above)
     pub(crate) fn mark_sealed(
         store: &chronos_store::SessionStore,
         session_id: &str,
         sealed_at: u64,
-    ) -> Result<bool, ServiceError> {
-        let (mut meta, events) = match store.load_session(session_id) {
-            Ok(pair) => pair,
-            Err(_) => return Ok(false),
-        };
+    ) -> Result<(), ServiceError> {
+        let (mut meta, events) = store.load_session(session_id).map_err(|e| {
+            ServiceError::LoadFailed(format!("load_session({}) failed: {}", session_id, e))
+        })?;
         meta.tail_sealed = true;
         meta.sealed_at = Some(sealed_at);
         store.save_session(meta, &events).map_err(|e| {
             ServiceError::SaveFailed(format!("save_session({}) failed: {}", session_id, e))
         })?;
-        Ok(true)
+        Ok(())
     }
 }
 
@@ -751,24 +800,20 @@ mod tests {
     fn mark_sealed_updates_metadata_and_persists() {
         let store = empty_store();
         save_meta(&store, "seal-1");
-        let updated = ChronosSessionLifecycleService::mark_sealed(&store, "seal-1", 9999).unwrap();
-        assert!(
-            updated,
-            "expected mark_sealed to return Ok(true) when session exists"
-        );
+        ChronosSessionLifecycleService::mark_sealed(&store, "seal-1", 9999).unwrap();
         let (meta, _events) = store.load_session("seal-1").unwrap();
         assert!(meta.tail_sealed);
         assert_eq!(meta.sealed_at, Some(9999));
     }
 
     #[test]
-    fn mark_sealed_returns_false_when_session_not_in_store() {
+    fn mark_sealed_missing_session_returns_load_failed() {
         let store = empty_store();
-        let updated =
-            ChronosSessionLifecycleService::mark_sealed(&store, "no-such-session", 9999).unwrap();
+        let result =
+            ChronosSessionLifecycleService::mark_sealed(&store, "no-such-session", 9999);
         assert!(
-            !updated,
-            "expected mark_sealed to return Ok(false) when session has no metadata yet"
+            matches!(result, Err(ServiceError::LoadFailed(_))),
+            "expected mark_sealed to return LoadFailed when session is missing"
         );
     }
 
