@@ -3,9 +3,11 @@
   "title": "M8-03 — MCP wrappers + redb bundle table + real proptest Strategy impls replacing m8-02 stubs (largest M8 cycle)",
   "status": "ready_for_merge",
   "branch": "feat/m8-03-mcp-wrappers-redb-bundle-table",
-  "head_sha": "77322dc32f41aa303fa5857fb92cb3b4cfca6a8f",
+  "head_sha": "9046d14ff7a7a9ffd1489284c6d2ee4b66f13693",
   "base_sha": "8a09feb1f0f73f68b51cf655f3752bb2941b1ada",
-  "ff_merged_sha": "TBD_POST_PUSH",
+  "merge_sha": "8e1a30c6d01a9a0210c2a52f863b38ccb4baee6b",
+  "tag": "m8-03-mcp-wrappers-redb-bundle-table.0",
+  "ff_merged_sha": "8e1a30c6d01a9a0210c2a52f863b38ccb4baee6b",
   "started_at": "2026-09-11T07:00:00Z",
   "completed_at": "2026-09-11T11:00:00Z",
   "commits": [
@@ -14,8 +16,9 @@
     { "sha": "8456777", "subject": "feat(services): m8-03 wire get/list/save through redb + boundary conversions" },
     { "sha": "f10e8c8", "subject": "feat(mcp): m8-03 counterexample_shrink/get/list wrappers + wire DTOs" },
     { "sha": "77322dc", "subject": "feat(sandbox): m8-03 counterexample_shrink/get/list smoke + 3 client wrappers" },
-    { "sha": "TBD_DOCS_COMMIT", "subject": "docs(milestones): m8-03 MCP wrappers + redb bundle table + real Strategy impls merge doc" },
-    { "sha": "TBD_CHORE_COMMIT", "subject": "chore(sddk): record m8-03 apply-checkpoint (head_sha=…, ready_for_merge)" }
+    { "sha": "9046d14", "subject": "docs(sddk): m8-03 MCP wrappers + redb bundle table merge doc + apply-checkpoint" },
+    { "sha": "8e1a30c", "subject": "Merge branch 'feat/m8-03-mcp-wrappers-redb-bundle-table'" },
+    { "sha": "MERGE_COMMIT_BELOW", "subject": "chore(sddk): record m8-03 apply-checkpoint (head_sha=8e1a30c, ready_for_merge)" }
   ],
   "shipped_artifacts": {
     "store_module_extensions": {
