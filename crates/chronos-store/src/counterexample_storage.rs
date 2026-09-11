@@ -839,7 +839,9 @@ mod tests {
         let tx = store.db().begin_write().unwrap();
         {
             let mut table = tx.open_table(COUNTEREXAMPLE_BUNDLES).unwrap();
-            table.insert(&b"b-future"[..], future_bytes.as_slice()).unwrap();
+            table
+                .insert(&b"b-future"[..], future_bytes.as_slice())
+                .unwrap();
         }
         tx.commit().unwrap();
 
@@ -943,7 +945,9 @@ mod tests {
         let tx = store.db().begin_write().unwrap();
         {
             let mut table = tx.open_table(COUNTEREXAMPLE_BUNDLES).unwrap();
-            table.insert(&b"b-future"[..], future_bytes.as_slice()).unwrap();
+            table
+                .insert(&b"b-future"[..], future_bytes.as_slice())
+                .unwrap();
         }
         tx.commit().unwrap();
 
@@ -960,7 +964,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            summaries.len(), 2,
+            summaries.len(),
+            2,
             "both normal and future-versioned bundles must appear in list \
              (best-effort; bincode deserializes fine)"
         );
