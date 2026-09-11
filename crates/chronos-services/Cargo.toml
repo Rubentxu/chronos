@@ -21,6 +21,7 @@ chronos-ebpf = { workspace = true }
 chronos-native = { workspace = true }
 chronos-log = { workspace = true }
 chronos-browser = { workspace = true }
+proptest = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }

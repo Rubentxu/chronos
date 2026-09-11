@@ -1,0 +1,112 @@
+{
+  "cycle_id": "m8-02-shrink-loop-wiring-merge",
+  "title": "M8-02 — shrink loop wiring: proptest runtime dep + shrink() entry + per-variant dispatch + 5 unit tests (strategy implementations themselves are stubs, deferred to m8-03)",
+  "status": "ready_for_merge",
+  "branch": "feat/m8-02-shrink-loop-wiring",
+  "head_sha": "TBD_COMMIT_HASH",
+  "base_sha": "282a572",
+  "ff_merged_sha": "TBD_POST_PUSH",
+  "started_at": "2026-09-11T09:56:00Z",
+  "completed_at": "2026-09-11T10:00:00Z",
+  "commits": [
+    { "sha": "TBD_FEATURE_COMMIT", "subject": "feat(services): m8-02 shrink loop wiring (proptest runtime dep + shrink() entry + per-variant dispatch)" },
+    { "sha": "TBD_CHORE_COMMIT", "subject": "chore(sddk): record m8-02 apply-checkpoint (head_sha=…, ready_for_merge)" }
+  ],
+  "shipped_artifacts": {
+    "service_module_extensions": {
+      "file": "crates/chronos-services/src/counterexample.rs",
+      "lines_added": 322,
+      "lines_modified": 5,
+      "new_public_api": [
+        "pub struct ShrinkConfig { pub max_rounds: u32, pub seed: Option<u64> }",
+        "impl Default for ShrinkConfig { fn default() -> Self { /* 64, None */ } }",
+        "impl From<ShrinkConfig> for proptest::test_runner::Config { fn from(s) -> Config { /* cases = max(s.max_rounds, 1); rng_seed = Fixed(s.seed) or Random; Default::default() for the rest */ } }",
+        "pub enum CounterexampleRunError { NoViolation { reason: String }, RoundsExhausted { best_so_far: Option<CounterexampleBundle> }, AdapterFailed(String) }",
+        "impl From<CounterexampleRunError> for ServiceError { /* NoViolation→Unsupported, RoundsExhausted→Unsupported, AdapterFailed→EvalError */ }",
+        "ChronosCounterexampleService::shrink (async) — pub async fn shrink(ctx, input) -> Result<CounterexampleOutput, ServiceError>"
+      ],
+      "internal_strategy_stubs": [
+        "async fn shrink_invariant(&TestRunner, &CounterexampleContext<'_>, &HypothesisInput) -> Result<ShrinkResult, ServiceError> — returns (1, Some(target.constant), None, None)",
+        "async fn shrink_existence(&TestRunner, &CounterexampleContext<'_>, &HypothesisInput) -> Result<ShrinkResult, ServiceError> — returns (1, None, Some(target.predicate), None)",
+        "async fn shrink_call_path(&TestRunner, &CounterexampleContext<'_>, &HypothesisInput) -> Result<ShrinkResult, ServiceError> — returns (1, None, None, Some((caller, callee, depth)))",
+        "type ShrinkResult = (u32, Option<PropertyValue>, Option<ExistencePredicate>, Option<(String, String, Option<usize>)>)"
+      ],
+      "output_extension": {
+        "file": "crates/chronos-services/src/counterexample.rs § '3. Output (service-internal)'",
+        "new_variant": "CounterexampleOutput::Shrunk { bundle, rounds_used, minimised_constant, minimised_predicate, minimised_call_path }"
+      },
+      "lifecycle_changes": [
+        "Lifted now_unix_ms() and fresh_bundle_id() out of #[cfg(test)] — production caller (shrink) needs them."
+      ]
+    },
+    "workspace_dep_promotion": {
+      "from": "crates/chronos-services/Cargo.toml [dev-dependencies]",
+      "to": "crates/chronos-services/Cargo.toml [dependencies] (kept [dev-dependencies] line too)",
+      "dep": "proptest = { workspace = true }",
+      "disclosure": "Compile-time cost: ~6-8s longer cargo check -p chronos-services per scope doc §7. Default features sufficient (no proptest-macro)."
+    }
+  },
+  "architectural_decisions": {
+    "promote_proptest_to_runtime_dep": "Justification: shrink() runs at session-tool invocation time, not at cargo test time. Dev-dep would force a feature flag. Runtime dep on chronos-services only (not workspace-wide) per A1 in M8 scoping.",
+    "shrunken_variant_per_field_some_none": "Each Shrunk variant carries exactly one Some payload (constant for Invariant, predicate for Existence, call_path tuple for CallPath). Dictated by bundle.property_kind. m8-03 flattens to wire DTO.",
+    "counter_example_run_error_no_new_service_error_variants": "Reuse Unsupported for both NoViolation + RoundsExhausted (semantically: 'no smaller counterexample found'); EvalError for AdapterFailed. No new variants added. Matches m8-01's reuse-Unsupported precedent.",
+    "pre_validate_target_hypothesis_violates": "shrink() first runs hypothesis_test::test on the original target_hypothesis. If Pass/Unsupported, returns Err(Unsupported) early — saves a useless shrink budget. Spec-grounded in the 'preserve the same property violation' constraint: we only shrink properties that ARE violated.",
+    "strategy_stubs_for_m8_02_signatures": "m8-02 ships the per-variant dispatcher pattern + return-shape contracts but the actual proptest::TestRunner::run(&strategy, closure) loop is m8-03 scope (needs live QueryEngine map + sandbox smoke for real shrink verification). Stub bodies are honest: 'rounds_used=1, return the original input unchanged' is documented in counterexample::shrink_invariant § 4b.",
+    "config_struct_init_via_struct_update_syntax": "From<ShrinkConfig> for Config uses Config { cases: ..., rng_seed: ..., ..Default::default() } (not field-by-field reassignment) to satisfy clippy field_reassign_with_default lint.",
+    "no_chronos_cli_workspace_member_in_m8_02": "Still m8-04. m8-02 only adds wiring; CLI shell-glue needs MCP wrappers first."
+  },
+  "experimental_disclosures": [
+    {
+      "risk_id": "R1",
+      "title": "HypothesisInput → proptest::Strategy adapter is non-trivial (per M8 doc C0)",
+      "m8_02_status": "STUB — three per-variant async fns are signatures + return shape only; the actual proptest Strategy impls (per-variant hand-rolled) are m8-03 scope.",
+      "m8_03_resolution": "Per-variant Strategy impls + proptest::TestRunner::run loop. Sandbox smoke against test_busyloop fixture verifies end-to-end shrink."
+    },
+    {
+      "risk_id": "R2",
+      "title": "proptest::TestRunner::run is synchronous-wrapper, not async",
+      "m8_02_status": "Outer shrink() is async (awaits hypothesis_test::test). Inner runner.run is not — the runner holds a single-thread TestRunner which we build via TestRunner::new(Config). Doc comment added."
+    },
+    {
+      "risk_id": "R3",
+      "title": "ExistencePredicate::EventTypeEquals shrink direction uses naive proptest string shrink",
+      "m8_02_status": "Stub does not run a real shrink — R3 is m8-03 scope. Will be addressed by per-variant Strategy impls there."
+    }
+  ],
+  "test_plan_completed": {
+    "unit_tests_added": [
+      "m8_02_shrink_config_default_matches_pinned_max_rounds",
+      "m8_02_shrink_config_to_proptest_enforces_case_ceiling",
+      "m8_02_run_error_maps_to_documented_service_error_variants",
+      "m8_02_shrunk_variant_carries_exactly_one_payload",
+      "m8_02_shrink_input_variant_carries_documented_four_fields"
+    ],
+    "unit_tests_skipped_with_reason": "Real shrink run against a known-failing hypothesis (e.g., invariant: event_count < 5 on busyloop trace) — requires live QueryEngine map; covered by m8-03 sandbox smoke.",
+    "integration_tests_pending": "MCP wrapper(s) for counterexample_shrink (m8-03).",
+    "sandbox_smoke_pending": "m8-03 introduces MCP wrappers + redb bundle table; sandbox smoke against test_busyloop fixture verifies end-to-end shrink. n/a for m8-02."
+  },
+  "gates": {
+    "T0_fmt_clippy": "pass (cargo fmt --all -- --check + cargo clippy --workspace --all-targets -- -D warnings)",
+    "T1_workspace_lib_ex_chronos_native": "pass (811 passed, 0 failed; up from m8-01 baseline 806 — +5 net = 5 new m8-02 tests)",
+    "T2_per_crate_integration_services_store_mcp": "pass (chronos-services: 226, was 221 in m8-01 = +5 net from new tests). No regressions.",
+    "T4_smoke_sandbox": "n/a (m8-02 doesn't touch probes/sessions/MCP wire)"
+  },
+  "behaviour_change": "m8-02 introduces the v2 counterexample_shrink dispatcher signature (returns CounterexampleOutput::Shrunk). Strategies are stubs returning input unchanged with rounds_used=1. No wire tools added (m8-03). No raw event exposure on wire.",
+  "followups": [
+    {
+      "cycle": "m8-03-mcp-wrappers-and-redb-bundle-table",
+      "scope": "Provision counterexample_bundles redb table. Replace get/list stub bodies with redb-backed reads. Add CounterexampleShrunkOutputDto (wire shape WITH Vec<TraceEvent> gated behind include_events) + CounterexampleBundleDto. Add 3 v2 MCP wrappers counterexample_shrink / counterexample_get / counterexample_list. REPLACE the m8-02 strategy stubs with real per-variant proptest Strategy impls and wire proptest::TestRunner::run loop against a live QueryEngine. Sandbox smoke against test_busyloop fixture. A-lite scope.",
+      "depends_on": ["m8-02 ships signatures + dispatch"]
+    },
+    {
+      "cycle": "m8-04-chronos-cli-workspace-member",
+      "scope": "Add crates/chronos-cli workspace member. Thin driver: parses chronos test <bundle_id> and chronos replay <bundle_id> subcommands; calls counterexample_get / session_load via the same RPC surface the MCP server uses. No reimplementation of dispatcher algorithms. A-min scope.",
+      "depends_on": ["m8-03 ships MCP wrappers"]
+    },
+    {
+      "cycle": "m8-05-M8-close-and-acceptance",
+      "scope": "M8 close: run an acceptance scenario that picks a known failing hypothesis on test_busyloop fixture, ships it through counterexample_shrink → counterexample_get, and verifies the persisted bundle preserves the violation property after shrink. Final M8 report. A-lite scope.",
+      "depends_on": ["m8-04 ships chronos-cli"]
+    }
+  ]
+}
