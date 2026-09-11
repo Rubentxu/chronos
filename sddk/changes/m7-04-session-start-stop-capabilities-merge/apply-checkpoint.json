@@ -57,7 +57,8 @@
   },
   "gates": {
     "T0_fmt_clippy": "pass (cargo fmt --check + cargo clippy --workspace --all-targets -- -D warnings)",
-    "T1_workspace_lib": "PENDING (background task 933872fvph; pre-cycle baseline: 788/788 + 4 ignored)",
+    "T1_workspace_lib_ex_chronos_native": "pass (788/788 passed + 4 ignored; matches m7-03 baseline — no regressions from SessionMetadata extension)",
+    "T2_per_crate_integration_services_store_mcp": "pass (343 integration tests across the 3 changed crates)",
     "behaviour_change": "NONE — only net-new types + additive SessionMetadata field; no existing tool affected"
   },
   "followups": [
