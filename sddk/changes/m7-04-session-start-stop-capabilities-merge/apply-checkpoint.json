@@ -1,0 +1,70 @@
+{
+  "cycle_id": "m7-04-session-start-stop-capabilities-merge",
+  "title": "M7-04 — session_start + session_stop + capabilities DTOs + SessionMetadata extension (foundation only)",
+  "status": "ready_for_merge",
+  "branch": "feat/m7-04-session-start-stop-capabilities-merge",
+  "head_sha": "679db2f",
+  "base_sha": "4cc2eec",
+  "ff_merged_sha": null,
+  "started_at": "2026-09-11T08:25:00Z",
+  "completed_at": "2026-09-11T08:25:00Z",
+  "scope_decision": "FOUNDATION_ONLY — dispatcher + wrappers + shims deferred to m7-05",
+  "commits": [
+    { "sha": "66f14f4", "subject": "feat(services): add session_start + session_stop + capabilities DTOs (m7-04)" },
+    { "sha": "1e98b76", "subject": "feat(store): add tail_sealed + sealed_at to SessionMetadata (m7-04)" },
+    { "sha": "679db2f", "subject": "docs(milestones): mark m7-04 as foundation-only cycle (m7-05 picks up dispatchers)" }
+  ],
+  "scope_split_rationale": [
+    "session_start{action=spawn} needs ProbeService::start (async) — first async dispatcher in chronos-services",
+    "session_stop{drain_subscriptions=true} chains to observe{verb=list} which requires ObserveContext (tripwire_manager + uprobe_counter) from MCP server",
+    "session_stop{seal_tail=true} needs SessionMetadata update; store API is save_session (overwrite) — load+mutate+save round-trip",
+    "ProbeContext testability — unit tests would need leaking statics or sandbox-only fixtures",
+    "Avoided shipping speculative dispatcher with invented APIs (ObserveContext::from_probe_only, ObserveInputResolve) and unsafe zeroing of TripwireManager"
+  ],
+  "shipped_artifacts": {
+    "dto_layer": {
+      "file": "crates/chronos-services/src/output.rs",
+      "lines_added": 239,
+      "new_types": [
+        "SessionStartAction { Spawn, Load, Attach }",
+        "SessionStartSpawnFields",
+        "SessionStartInput / SessionStartOutput",
+        "SessionStopInput / SessionStopOutput",
+        "TargetSpec",
+        "CapabilitiesInput / CapabilitiesOutput",
+        "StaticCapabilities",
+        "DynamicCapabilities",
+        "LanguageAdapterStatus",
+        "ProjectionKind",
+        "CapabilitySnapshot",
+        "SessionLifecycleProvenance"
+      ],
+      "engine_version_baked": "chronos-0.1.0 (m7-02/03 precedent; QueryEngine::engine_version() does not exist yet)"
+    },
+    "metadata_extension": {
+      "file": "crates/chronos-store/src/storage.rs",
+      "fields_added": ["tail_sealed: bool (default false)", "sealed_at: Option<u64> (default None)"],
+      "serde_compat": "#[serde(default)] ensures v2 metadata files load correctly into v3 reader",
+      "literal_sites_patched": 9
+    }
+  },
+  "deferred_to_m7_05": {
+    "dispatcher": "crates/chronos-services/src/session_lifecycle.rs (not in this cycle)",
+    "mcp_wrappers": ["session_start", "session_stop", "capabilities"],
+    "v1_shims": ["probe_start → session_start{action=spawn}", "probe_stop → session_stop"],
+    "lib_rs_module_index": "add module after dispatcher exists",
+    "t4_sandbox_smoke": ["probe_lifecycle.rs", "session_lifecycle.rs", "program_scenarios.rs"]
+  },
+  "gates": {
+    "T0_fmt_clippy": "pass (cargo fmt --check + cargo clippy --workspace --all-targets -- -D warnings)",
+    "T1_workspace_lib": "PENDING (background task 933872fvph; pre-cycle baseline: 788/788 + 4 ignored)",
+    "behaviour_change": "NONE — only net-new types + additive SessionMetadata field; no existing tool affected"
+  },
+  "followups": [
+    {
+      "cycle": "m7-05-session-lifecycle-dispatchers-merge",
+      "scope": "dispatcher + MCP wrappers + v1 shims + T4 smoke (probe_lifecycle + session_lifecycle + program_scenarios)",
+      "depends_on": ["ObserveContext API documented", "store:load_session + save_session round-trip is sufficient for seal"]
+    }
+  ]
+}
