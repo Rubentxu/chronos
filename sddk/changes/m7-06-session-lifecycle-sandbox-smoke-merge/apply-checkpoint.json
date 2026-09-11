@@ -1,0 +1,109 @@
+{
+  "cycle_id": "m7-06-session-lifecycle-sandbox-smoke-merge",
+  "title": "M7-06 — sandbox smoke for session_start/session_stop/capabilities v2 wrappers + M7 close",
+  "status": "ready_for_merge",
+  "branch": "feat/m7-06-session-lifecycle-sandbox-smoke-merge",
+  "head_sha": "TBD",
+  "base_sha": "c2c0d51",
+  "ff_merged_sha": null,
+  "started_at": "2026-09-11T09:00:00Z",
+  "completed_at": "2026-09-11T09:21:00Z",
+  "commits": [
+    { "sha": "TBD", "subject": "feat(sandbox+mcp+services): session_start/session_stop/capabilities v2 sandbox smoke (m7-06)" }
+  ],
+  "shipped_artifacts": {
+    "sandbox_client_surface": {
+      "file_types": "crates/../chronos-sandbox/src/client/types.rs (+130 LoC)",
+      "file_tools": "crates/../chronos-sandbox/src/client/tools.rs (+133 LoC)",
+      "types_added": [
+        "SessionStartAction",
+        "SessionStartResponse",
+        "SessionStopResponse",
+        "CapabilitiesResponse",
+        "SessionStartSpawnParams",
+        "SessionStartParams",
+        "SessionStopParams",
+        "CapabilitiesParams",
+        "CapabilitiesTargetParams"
+      ],
+      "client_methods_added": [
+        "session_start_spawn(target, args)",
+        "session_start_load(session_id)",
+        "session_start_attach()",
+        "session_stop(session_id, seal_tail, drain_subscriptions)",
+        "capabilities_target(target)",
+        "capabilities_session(session_id)"
+      ]
+    },
+    "sandbox_smoke_tests": {
+      "probe_lifecycle": "+3 tests (test_session_start_via_v2_then_session_stop_via_v2, test_session_stop_seal_tail_false_does_not_seal, test_probe_start_v1_shim_still_works)",
+      "session_lifecycle": "+3 tests (test_session_start_load_returns_metadata, test_session_start_attach_returns_unsupported, test_capabilities_static_then_dynamic_through_full_lifecycle)",
+      "program_scenarios": "+1 test (test_session_lifecycle_in_full_session)"
+    },
+    "close_report": "docs/milestones/m7-close-report.md (104 lines, 7 sections: executive summary, cycle log, v2 surface inventory, v1 deprecation bookkeeping, architectural decisions log, test pyramid state, m8+ handoff)"
+  },
+  "follow_up_in_cycle_fixes": {
+    "trigger": "Initial smoke revealed two architectural bugs in the m7-05 dispatcher+wrapper pair",
+    "bug_1_session_stop_double_call": {
+      "summary": "v2 session_stop wrapper used to call dispatcher's stop (which called ProbeService::stop and discarded events) then re-call ProbeService::stop to recover events for build_and_store_engine. The second call returned ProbeNotFound (probe already gone) so build_and_store_engine was silently skipped.",
+      "fix": "Pre-stop the probe ONCE in the wrapper, persist via save_session + build_and_store_engine, then call the dispatcher for the seal/drain housekeeping. Dispatcher's internal ProbeService::stop is now tolerant: if it returns ProbeNotFound, it falls back to load_session() and synthesises the snapshot from the persisted metadata + event count.",
+      "files_touched": ["crates/chronos-mcp/src/server.rs", "crates/chronos-services/src/session_lifecycle.rs"]
+    },
+    "bug_2_mark_sealed_required_session_in_store": {
+      "summary": "When seal_tail=true is requested for a session that has not yet been persisted to the store (live-only), mark_sealed.load_session returned SessionNotFound and the whole stop call errored out.",
+      "fix": "mark_sealed now returns Ok(bool) — Ok(true) when the session was persisted and updated, Ok(false) when it wasn't (live-only). The dispatcher ignores the bool and still populates sealed_at in the response.",
+      "files_touched": ["crates/chronos-services/src/session_lifecycle.rs"]
+    },
+    "bug_3_capabilities_session_for_live_sessions": {
+      "summary": "capabilities{session_id} read from the store but live sessions are only in live_probes. Test failure: `capabilities session failed: Session not found`.",
+      "fix": "capabilities_with_context now falls back to live_probes when load_session fails, synthesises a stub SessionMetadata from LiveProbeSession fields, and returns the dynamic capability snapshot.",
+      "files_touched": ["crates/chronos-services/src/session_lifecycle.rs", "crates/chronos-mcp/src/server.rs"]
+    }
+  },
+  "architectural_decisions": {
+    "pre_stop_then_dispatch_in_wrapper": "ProbeService::stop is called once in the wrapper (before the dispatcher) so build_and_store_engine has the events it needs. The dispatcher is then a metadata-layer pass that drains subscriptions, seals the tail, and returns the final capability snapshot.",
+    "wrapper_persists_to_both_stores": "After pre-stop, the wrapper calls save_session (redb store, for session_start{action=load}) AND build_and_store_engine (in-memory QueryEngine, for query_* tools). Same dual-write pattern that v1 probe_stop uses for the in-memory engine, plus a new redb write to make the session queryable via session_load.",
+    "save_session_metadata_is_minimal": "For the v2 wrapper-driven persist path we set created_at=0 and duration_ms=0 — these are filled in by the dispatcher's load_session round-trip on subsequent calls. m7-07 followup can refine to wall-clock timestamps.",
+    "live_probes_fallback_in_capabilities": "capabilities{session_id} resolves live-only sessions via live_probes lookup. Synthesised metadata has zero counts so the snapshot reflects 'session exists but no events yet'. m7-07 followup can extend SessionMetadata with a live_event_count field to avoid the 0 placeholder.",
+    "mark_sealed_tolerant_of_live_only": "mark_sealed returns Ok(false) instead of erroring. Caller treats both Ok(true) and Ok(false) as success."
+  },
+  "test_plan_completed": {
+    "sandbox_smoke_passed": [
+      "test_session_start_via_v2_then_session_stop_via_v2",
+      "test_session_stop_seal_tail_false_does_not_seal",
+      "test_probe_start_v1_shim_still_works",
+      "test_session_start_load_returns_metadata",
+      "test_session_start_attach_returns_unsupported",
+      "test_capabilities_static_then_dynamic_through_full_lifecycle",
+      "test_session_lifecycle_in_full_session"
+    ],
+    "unit_tests_added": [
+      "mark_sealed_returns_false_when_session_not_in_store (session_lifecycle::tests)"
+    ],
+    "test_helper_gotcha": "build.rs fixtures include test_exit_immediate and test_busyloop but NOT test_echo. Always use real fixture names from build.rs::build()."
+  },
+  "gates": {
+    "T0_fmt_clippy": "pass (cargo fmt --all -- --check + cargo clippy --workspace --all-targets -- -D warnings)",
+    "T1_workspace_lib_ex_chronos_native": "pass (798/798 + 4 ignored)",
+    "T2_per_crate_integration_services_store_mcp": "pass (358 tests, was 357 — +1 from new mark_sealed_returns_false_when_session_not_in_store)",
+    "T4_smoke_sandbox_probe_lifecycle_session_lifecycle_program_scenarios": "pass (5 + 8 + 11 = 24 smoke tests, --test-threads=1, ~167s wall; pre-built binary at /var/home/rubentxu/cargo-targets/debug/chronos-mcp; CHRONOS_MCP_PATH exported)",
+    "behaviour_change": "v2 session_stop now persists events to redb (required for session_start{action=load}); v2 capabilities{session_id} resolves live-only sessions via live_probes; v1 probe_stop semantics unchanged"
+  },
+  "followups": [
+    {
+      "cycle": "m7-07-session-stop-single-call-path",
+      "scope": "Add events + language fields to SessionStopOutput so session_stop wrapper doesn't need pre_stop (single-call path). Saves a redb write duplication.",
+      "depends_on": []
+    },
+    {
+      "cycle": "m7-08-M8-scoping",
+      "scope": "M8 planning: live probe performance improvements, MCP server hardening, distributed tracing",
+      "depends_on": ["M7 close approved"]
+    },
+    {
+      "cycle": "m7-09-attach-domain-api",
+      "scope": "Implement chronos_domain::attach API; unblocks session_start{action=attach} (currently returns Unsupported)",
+      "depends_on": []
+    }
+  ]
+}

@@ -171,6 +171,139 @@ impl McpSession {
         Ok(result)
     }
 
+    // ---- v2 session_start / session_stop / capabilities (m7-06) ----
+
+    /// v2 `session_start{action=spawn}` — wraps `ProbeService::start`.
+    pub async fn session_start_spawn(
+        &mut self,
+        program: &str,
+        args: Vec<String>,
+    ) -> Result<SessionStartResponse, McpSandboxError> {
+        let params = SessionStartParams {
+            action: SessionStartAction::Spawn,
+            spawn_fields: Some(SessionStartSpawnParams {
+                program: program.to_string(),
+                args,
+                trace_syscalls: true,
+                cwd: None,
+                bus_capacity: 50000,
+                track_function_frames: None,
+            }),
+            session_id: None,
+            pid: None,
+            path: None,
+        };
+        let response = self
+            .rpc_client
+            .call_tool("session_start", serde_json::to_value(params).unwrap())
+            .await?;
+        let result: SessionStartResponse = serde_json::from_value(response)
+            .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
+        Ok(result)
+    }
+
+    /// v2 `session_start{action=load}` — reads an existing session.
+    pub async fn session_start_load(
+        &mut self,
+        session_id: &str,
+    ) -> Result<SessionStartResponse, McpSandboxError> {
+        let params = SessionStartParams {
+            action: SessionStartAction::Load,
+            spawn_fields: None,
+            session_id: Some(session_id.to_string()),
+            pid: None,
+            path: None,
+        };
+        let response = self
+            .rpc_client
+            .call_tool("session_start", serde_json::to_value(params).unwrap())
+            .await?;
+        let result: SessionStartResponse = serde_json::from_value(response)
+            .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
+        Ok(result)
+    }
+
+    /// v2 `session_start{action=attach}` — stub (m7+); expects `Unsupported` error.
+    pub async fn session_start_attach(
+        &mut self,
+        pid: u32,
+    ) -> Result<serde_json::Value, McpSandboxError> {
+        let params = SessionStartParams {
+            action: SessionStartAction::Attach,
+            spawn_fields: None,
+            session_id: None,
+            pid: Some(pid),
+            path: None,
+        };
+        let response = self
+            .rpc_client
+            .call_tool("session_start", serde_json::to_value(params).unwrap())
+            .await?;
+        Ok(response)
+    }
+
+    /// v2 `session_stop` — defaults match v1 behavior
+    /// (`seal_tail=true, drain_subscriptions=true`).
+    pub async fn session_stop(
+        &mut self,
+        session_id: &str,
+        seal_tail: bool,
+        drain_subscriptions: bool,
+    ) -> Result<SessionStopResponse, McpSandboxError> {
+        let params = SessionStopParams {
+            session_id: session_id.to_string(),
+            seal_tail,
+            drain_subscriptions,
+        };
+        let response = self
+            .rpc_client
+            .call_tool("session_stop", serde_json::to_value(params).unwrap())
+            .await?;
+        let result: SessionStopResponse = serde_json::from_value(response)
+            .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
+        Ok(result)
+    }
+
+    /// v2 `capabilities{target}` — static capabilities.
+    pub async fn capabilities_target(
+        &mut self,
+        program: &str,
+    ) -> Result<CapabilitiesResponse, McpSandboxError> {
+        let params = CapabilitiesParams {
+            target: Some(CapabilitiesTargetParams {
+                program: program.to_string(),
+                args: vec![],
+                language: None,
+            }),
+            session_id: None,
+        };
+        let response = self
+            .rpc_client
+            .call_tool("capabilities", serde_json::to_value(params).unwrap())
+            .await?;
+        let result: CapabilitiesResponse = serde_json::from_value(response)
+            .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
+        Ok(result)
+    }
+
+    /// v2 `capabilities{session_id}` — dynamic capabilities.
+    pub async fn capabilities_session(
+        &mut self,
+        session_id: &str,
+    ) -> Result<CapabilitiesResponse, McpSandboxError> {
+        let params = CapabilitiesParams {
+            target: None,
+            session_id: Some(session_id.to_string()),
+        };
+        let response = self
+            .rpc_client
+            .call_tool("capabilities", serde_json::to_value(params).unwrap())
+            .await?;
+        let result: CapabilitiesResponse = serde_json::from_value(response)
+            .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
+        Ok(result)
+    }
+
     /// Probe drain — retrieves events collected since last drain.
     pub async fn probe_drain(
         &mut self,

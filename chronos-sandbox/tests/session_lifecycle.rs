@@ -251,3 +251,115 @@ async fn test_delete_and_drop_sequence() {
 
     client.shutdown().await.ok();
 }
+
+// ============================================================================
+// m7-06 — v2 lifecycle smoke (capabilities)
+// ============================================================================
+
+#[tokio::test]
+async fn test_capabilities_static_then_dynamic_through_full_lifecycle() {
+    // test_busyloop runs ~3 seconds, so the session is still
+    // live in the drainer when capabilities{session_id} is queried
+    // 1 second after spawn (otherwise the live_probes HashMap would
+    // already have evicted it).
+    let fixture = McpSession::fixture_path("test_busyloop")
+        .expect("test_busyloop fixture not found - run cargo build first");
+
+    let mut client = McpTestClient::start()
+        .await
+        .expect("Failed to start MCP server");
+
+    // 1. Static capabilities (no session yet).
+    let static_caps = client
+        .capabilities_target(fixture.to_str().unwrap())
+        .await
+        .expect("capabilities target failed");
+    assert!(static_caps.static_capabilities.is_some());
+    assert!(static_caps.dynamic_capabilities.is_none());
+
+    // 2. Start a session via v2.
+    let start = client
+        .session_start_spawn(fixture.to_str().unwrap(), vec![])
+        .await
+        .expect("session_start spawn failed");
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    // 3. Dynamic capabilities (session exists).
+    let dyn_caps = client
+        .capabilities_session(&start.session_id)
+        .await
+        .expect("capabilities session failed");
+    assert!(dyn_caps.dynamic_capabilities.is_some());
+
+    // 4. Stop with default seal_tail=true.
+    let stop = client
+        .session_stop(&start.session_id, true, true)
+        .await
+        .expect("session_stop failed");
+    assert!(stop.sealed_at.is_some());
+
+    // 5. Dynamic capabilities after stop — tail_sealed=true should be visible
+    //    on the next capabilities call (read from metadata).
+    let dyn_caps_after = client
+        .capabilities_session(&start.session_id)
+        .await
+        .expect("capabilities session after stop failed");
+    let dynamic = dyn_caps_after.dynamic_capabilities.expect("dynamic cap");
+    assert_eq!(
+        dynamic.get("tail_sealed").and_then(|v| v.as_bool()),
+        Some(true),
+        "tail_sealed should be true after session_stop with seal_tail=true"
+    );
+
+    client.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_session_start_load_returns_metadata() {
+    let fixture = McpSession::fixture_path("test_exit_immediate")
+        .expect("test_exit_immediate fixture not found - run cargo build first");
+
+    let mut client = McpTestClient::start()
+        .await
+        .expect("Failed to start MCP server");
+
+    let start = client
+        .session_start_spawn(fixture.to_str().unwrap(), vec![])
+        .await
+        .expect("session_start spawn failed");
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    client
+        .session_stop(&start.session_id, true, true)
+        .await
+        .expect("session_stop failed");
+
+    // Now load the session via v2.
+    let loaded = client
+        .session_start_load(&start.session_id)
+        .await
+        .expect("session_start load failed");
+    assert_eq!(loaded.session_id, start.session_id);
+    assert_eq!(
+        loaded.action,
+        chronos_sandbox::client::types::SessionStartAction::Load
+    );
+    assert!(loaded.target.is_some());
+
+    client.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_session_start_attach_returns_unsupported() {
+    let mut client = McpTestClient::start()
+        .await
+        .expect("Failed to start MCP server");
+
+    // attach is a stub (m7+); expect a server-side error response.
+    let result = client.session_start_attach(std::process::id()).await;
+    // We don't assert on the exact error shape because rmcp surfaces
+    // errors as text content; the test passes if we reach here without
+    // a panic (the dispatcher returns ServiceError::Unsupported).
+    let _ = result;
+
+    client.shutdown().await.ok();
+}

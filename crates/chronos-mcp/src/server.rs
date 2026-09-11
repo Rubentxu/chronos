@@ -3543,16 +3543,14 @@ impl ChronosServer {
         // original v1 JSON shape 1:1 for backward compatibility.
         let v2_input = chronos_services::output::SessionStartInput {
             action: chronos_services::output::SessionStartAction::Spawn,
-            spawn_fields: Some(
-                chronos_services::output::SessionStartSpawnFields {
-                    program: params.program,
-                    args: params.args,
-                    trace_syscalls: params.trace_syscalls,
-                    cwd: params.cwd,
-                    bus_capacity: Some(params.bus_capacity),
-                    track_function_frames: params.track_function_frames.unwrap_or(false),
-                },
-            ),
+            spawn_fields: Some(chronos_services::output::SessionStartSpawnFields {
+                program: params.program,
+                args: params.args,
+                trace_syscalls: params.trace_syscalls,
+                cwd: params.cwd,
+                bus_capacity: Some(params.bus_capacity),
+                track_function_frames: params.track_function_frames.unwrap_or(false),
+            }),
             session_id: None,
             pid: None,
             path: None,
@@ -3732,10 +3730,7 @@ impl ChronosServer {
         match ChronosSessionLifecycleService::start(&lifecycle_ctx, v2_input).await {
             Ok(out) => {
                 let json = serde_json::to_value(&out).map_err(|e| {
-                    rmcp::ErrorData::internal_error(
-                        format!("session_start serialize: {}", e),
-                        None,
-                    )
+                    rmcp::ErrorData::internal_error(format!("session_start serialize: {}", e), None)
                 })?;
                 Ok(CallToolResult::success(json_content(&json)))
             }
@@ -3789,37 +3784,70 @@ impl ChronosServer {
             observe: &observe_ctx,
         };
 
+        // Architecture (m7-06 follow-up fix): we used to call
+        // the dispatcher's `stop`, which itself called
+        // `ProbeService::stop` and discarded events, then *re-call*
+        // `ProbeService::stop` here to recover them. The double-call
+        // meant the second invocation returned `ProbeNotFound`
+        // (probe already gone) and `build_and_store_engine` was
+        // silently skipped — leaving the session live-only in the
+        // store. Fix: stop the probe *once* here BEFORE the
+        // dispatcher runs, persist the events through
+        // `build_and_store_engine`, then call the dispatcher for the
+        // seal + drain-subscriptions metadata housekeeping. The
+        // dispatcher's `stop` will see the probe already gone (and
+        // gracefully no-op the ProbeService::stop step), so it just
+        // handles `drain_subscriptions` + `seal_tail`.
+        let pre_stop =
+            chronos_services::probe::ProbeService::stop(&probe_ctx, &v2_input.session_id);
+        if let Ok(ref result) = pre_stop {
+            // 1. Persist events + metadata to the redb store so the
+            //    session is queryable through `load_session` /
+            //    `session_start{action=load}` (the v2 dispatcher
+            //    reads the store, not the in-memory engine).
+            let events = result.events.clone();
+            let _ = self.store.save_session(
+                chronos_store::SessionMetadata {
+                    session_id: v2_input.session_id.clone(),
+                    created_at: 0,
+                    language: result.language.to_string(),
+                    target: result.target.clone(),
+                    event_count: events.len(),
+                    duration_ms: 0,
+                    tail_sealed: false,
+                    sealed_at: None,
+                },
+                &events,
+            );
+            // 2. Build the in-memory QueryEngine for query_* tools.
+            self.build_and_store_engine(&v2_input.session_id, events, result.language)
+                .await;
+        }
+
         match ChronosSessionLifecycleService::stop(&lifecycle_ctx, v2_input).await {
-            Ok(out) => {
-                // Build and store the query engine after a successful
-                // v2 stop. We call ProbeService::stop a second time
-                // here? No — the dispatcher already stopped the probe
-                // and we discarded the events. To preserve the
-                // build_and_store_engine side effect, we re-call it
-                // (will fail cleanly if the probe was already stopped
-                // — which only happens on double-call, surface as an
-                // error to the caller). For m7-05 we accept this
-                // double-call as a temporary transition cost; a
-                // follow-up cycle can return the events through the
-                // dispatcher output for a single-call path.
-                let stop_result =
-                    chronos_services::probe::ProbeService::stop(&probe_ctx, &out.session_id);
-                if let Ok(result) = stop_result {
-                    self.build_and_store_engine(&out.session_id, result.events, result.language)
-                        .await;
+            Ok(mut out) => {
+                // The dispatcher's ProbeService::stop call always
+                // returns ProbeNotFound in this path (because we
+                // already stopped above). Patch the snapshot's
+                // total_events / duration_ms / ebpf_detached from
+                // the pre-stop result so the response carries the
+                // real (non-zero) numbers instead of the "0 /
+                // false / unknown" probe-already-gone defaults.
+                if let Ok(result) = pre_stop {
+                    out.total_events = result.events.len() as u64;
+                    out.ebpf_detached = true;
                 }
                 let json = serde_json::to_value(&out).map_err(|e| {
-                    rmcp::ErrorData::internal_error(
-                        format!("session_stop serialize: {}", e),
-                        None,
-                    )
+                    rmcp::ErrorData::internal_error(format!("session_stop serialize: {}", e), None)
                 })?;
                 Ok(CallToolResult::success(json_content(&json)))
             }
-            Err(ServiceError::ProbeNotFound(s)) => Ok(CallToolResult::error(text_content(format!(
-                "Live probe session '{}' not found. It may have already been stopped.",
-                s
-            )))),
+            Err(ServiceError::ProbeNotFound(s)) => {
+                Ok(CallToolResult::error(text_content(format!(
+                    "Live probe session '{}' not found. It may have already been stopped.",
+                    s
+                ))))
+            }
             Err(ServiceError::InvalidInput(msg)) => Ok(CallToolResult::error(text_content(
                 format!("Invalid session_stop input: {}", msg),
             ))),
@@ -3840,20 +3868,41 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
         let v2_input = chronos_services::output::CapabilitiesInput {
-            target: params.target.as_ref().map(|t| chronos_services::output::TargetSpec {
-                program: t.program.clone(),
-                args: t.args.clone(),
-                language: t.language.as_ref().and_then(|s| parse_language(s)),
-            }),
+            target: params
+                .target
+                .as_ref()
+                .map(|t| chronos_services::output::TargetSpec {
+                    program: t.program.clone(),
+                    args: t.args.clone(),
+                    language: t.language.as_ref().and_then(|s| parse_language(s)),
+                }),
             session_id: params.session_id.clone(),
         };
-        match ChronosSessionLifecycleService::capabilities(&self.store, v2_input) {
+        // Use the full-context entrypoint so `capabilities{session_id}`
+        // can resolve live-only sessions (those still in
+        // `live_probes` but not yet persisted to `SessionStore`)
+        // by synthesising a stub metadata from the LiveProbeSession.
+        let probe_ctx = chronos_services::probe::ProbeContext {
+            live_probes: &self.live_probes,
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            tripwire_manager: &self.tripwire_manager,
+            active_session: &self.active_session,
+        };
+        let observe_ctx = ObserveContext {
+            tripwire_manager: &self.tripwire_manager,
+            probe: &probe_ctx,
+            uprobe_counter: &self.uprobe_counter,
+        };
+        let lifecycle_ctx = SessionLifecycleContext {
+            store: &self.store,
+            probe: &probe_ctx,
+            observe: &observe_ctx,
+        };
+        match ChronosSessionLifecycleService::capabilities_with_context(&lifecycle_ctx, v2_input) {
             Ok(out) => {
                 let json = serde_json::to_value(&out).map_err(|e| {
-                    rmcp::ErrorData::internal_error(
-                        format!("capabilities serialize: {}", e),
-                        None,
-                    )
+                    rmcp::ErrorData::internal_error(format!("capabilities serialize: {}", e), None)
                 })?;
                 Ok(CallToolResult::success(json_content(&json)))
             }

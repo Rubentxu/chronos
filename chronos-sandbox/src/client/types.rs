@@ -63,6 +63,136 @@ pub struct ProbeStopResponse {
     pub hint: Option<String>,
 }
 
+// ============================================================================
+// SF9 v2 lifecycle surface (m7-06)
+// ============================================================================
+
+/// Action discriminator for `session_start`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionStartAction {
+    Spawn,
+    Load,
+    Attach,
+}
+
+/// Response from `session_start` v2.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionStartResponse {
+    pub session_id: String,
+    pub action: SessionStartAction,
+    #[serde(default)]
+    pub target: Option<String>,
+    #[serde(default)]
+    pub language: Option<String>,
+    #[serde(default)]
+    pub event_count: Option<usize>,
+    #[serde(default)]
+    pub duration_ms: Option<u64>,
+    #[serde(default)]
+    pub bus_capacity: Option<usize>,
+    /// Capability snapshot — see `CapabilitySnapshot` in
+    /// `chronos-services::output` for the full shape.
+    #[serde(default)]
+    pub capability_snapshot: serde_json::Value,
+    /// Provenance — see `SessionLifecycleProvenance`.
+    #[serde(default)]
+    pub provenance: serde_json::Value,
+}
+
+/// Response from `session_stop` v2.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionStopResponse {
+    pub session_id: String,
+    pub status: String,
+    #[serde(default)]
+    pub target: String,
+    #[serde(default)]
+    pub total_events: u64,
+    #[serde(default)]
+    pub duration_ms: u64,
+    #[serde(default)]
+    pub ebpf_detached: bool,
+    #[serde(default)]
+    pub sealed_at: Option<u64>,
+    #[serde(default)]
+    pub drained_subscriptions: bool,
+    #[serde(default)]
+    pub capability_snapshot: serde_json::Value,
+    #[serde(default)]
+    pub provenance: serde_json::Value,
+}
+
+/// Response from `capabilities` v2. Both fields optional — at least
+/// one is always present depending on the request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilitiesResponse {
+    #[serde(default)]
+    pub static_capabilities: Option<serde_json::Value>,
+    #[serde(default)]
+    pub dynamic_capabilities: Option<serde_json::Value>,
+    #[serde(default)]
+    pub provenance: serde_json::Value,
+}
+
+/// Parameters for `session_start{action=spawn}`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SessionStartSpawnParams {
+    pub program: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default = "default_true")]
+    pub trace_syscalls: bool,
+    #[serde(default)]
+    pub cwd: Option<String>,
+    #[serde(default = "default_bus_capacity")]
+    pub bus_capacity: usize,
+    #[serde(default)]
+    pub track_function_frames: Option<bool>,
+}
+
+/// Parameters for `session_start` v2.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionStartParams {
+    pub action: SessionStartAction,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spawn_fields: Option<SessionStartSpawnParams>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+/// Parameters for `session_stop` v2.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionStopParams {
+    pub session_id: String,
+    #[serde(default = "default_true")]
+    pub seal_tail: bool,
+    #[serde(default = "default_true")]
+    pub drain_subscriptions: bool,
+}
+
+/// Parameters for `capabilities` v2.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CapabilitiesParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<CapabilitiesTargetParams>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilitiesTargetParams {
+    pub program: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+}
+
 /// Parameters for probe_drain.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProbeDrainParams {

@@ -1,6 +1,7 @@
 //! Probe lifecycle tests — verify probe_start/probe_drain/probe_stop with real C fixtures.
 
-use chronos_sandbox::{client::tools::McpTestClient, McpSession};
+use chronos_sandbox::client::tools::McpTestClient;
+use chronos_sandbox::McpSession;
 use std::time::Duration;
 
 #[tokio::test]
@@ -155,6 +156,100 @@ async fn test_crash_detection() {
             println!("    {:?}", frame);
         }
     }
+
+    client.shutdown().await.ok();
+}
+
+// ============================================================================
+// m7-06 — v2 lifecycle smoke (session_start / session_stop / capabilities)
+// ============================================================================
+
+#[tokio::test]
+async fn test_session_start_via_v2_then_session_stop_via_v2() {
+    let fixture = McpSession::fixture_path("test_busyloop")
+        .expect("test_busyloop fixture not found - run cargo build first");
+
+    let mut client = McpTestClient::start()
+        .await
+        .expect("Failed to start MCP server");
+
+    // v2 session_start{action=spawn}
+    let start = client
+        .session_start_spawn(fixture.to_str().unwrap(), vec![])
+        .await
+        .expect("session_start spawn failed");
+    assert!(
+        !start.session_id.is_empty(),
+        "session_id should not be empty"
+    );
+    assert_eq!(
+        start.action,
+        chronos_sandbox::client::types::SessionStartAction::Spawn
+    );
+
+    // Let the program run.
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    // v2 session_stop with defaults (seal_tail=true, drain_subscriptions=true).
+    let stop = client
+        .session_stop(&start.session_id, true, true)
+        .await
+        .expect("session_stop failed");
+    assert_eq!(stop.session_id, start.session_id);
+    assert!(stop.drained_subscriptions);
+    assert!(
+        stop.sealed_at.is_some(),
+        "seal_tail=true should populate sealed_at"
+    );
+
+    client.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_session_stop_seal_tail_false_does_not_seal() {
+    let fixture = McpSession::fixture_path("test_exit_immediate")
+        .expect("test_exit_immediate fixture not found - run cargo build first");
+
+    let mut client = McpTestClient::start()
+        .await
+        .expect("Failed to start MCP server");
+
+    let start = client
+        .session_start_spawn(fixture.to_str().unwrap(), vec![])
+        .await
+        .expect("session_start spawn failed");
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let stop = client
+        .session_stop(&start.session_id, false, false)
+        .await
+        .expect("session_stop failed");
+    assert!(!stop.drained_subscriptions);
+    assert!(
+        stop.sealed_at.is_none(),
+        "seal_tail=false must not populate sealed_at"
+    );
+
+    client.shutdown().await.ok();
+}
+
+#[tokio::test]
+async fn test_probe_start_v1_shim_still_works() {
+    let fixture = McpSession::fixture_path("test_exit_immediate")
+        .expect("test_exit_immediate fixture not found - run cargo build first");
+
+    let mut client = McpTestClient::start()
+        .await
+        .expect("Failed to start MCP server");
+
+    // v1 probe_start — preserved for backward compat (m7-05 shim).
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
+        .expect("v1 probe_start shim failed");
+    assert!(!session_id.is_empty());
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let _ = client.probe_stop(&session_id).await;
 
     client.shutdown().await.ok();
 }

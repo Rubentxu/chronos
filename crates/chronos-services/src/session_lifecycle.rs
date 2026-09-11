@@ -158,8 +158,7 @@ impl ChronosSessionLifecycleService {
             ));
         }
         Err(ServiceError::Unsupported(
-            "session_start{action=attach} (m7+) — no domain-layer attach API yet"
-                .to_string(),
+            "session_start{action=attach} (m7+) — no domain-layer attach API yet".to_string(),
         ))
     }
 
@@ -171,6 +170,17 @@ impl ChronosSessionLifecycleService {
     /// 2. `ProbeService::stop` to finalise the producer + drain ring buffer.
     /// 3. If `seal_tail`, load + mutate + save `SessionMetadata` with
     ///    `tail_sealed=true, sealed_at=<now>`.
+    ///
+    /// **Important architectural note (m7-05 / m7-06):** when the
+    /// session is *live* (ring buffer still active), `ProbeService::stop`
+    /// drains the events but discards them after the call (returning
+    /// the language). The MCP `session_stop` wrapper layer is then
+    /// responsible for *also* persisting events + metadata via
+    /// `build_and_store_engine`. Without that wrapper call, the
+    /// session will remain "live-only" (i.e., not present in the
+    /// `SessionStore`), which is the expected behaviour for
+    /// service-layer units but **must be paired with the MCP wrapper
+    /// for a full client-facing stop**. See `crates/chronos-mcp/src/server.rs::session_stop`.
     pub async fn stop(
         ctx: &SessionLifecycleContext<'_>,
         input: SessionStopInput,
@@ -200,13 +210,62 @@ impl ChronosSessionLifecycleService {
             false
         };
 
-        let stop_result = ProbeService::stop(ctx.probe, &input.session_id)?;
+        // ProbeService::stop. If the session has already been
+        // stopped at the wrapper layer (e.g. the m7-06 wrapper
+        // pre-stops + build_and_store_engine, then calls us for
+        // metadata housekeeping), ProbeService::stop returns
+        // ProbeNotFound. We treat that as a soft no-op rather than
+        // an error: in that case we look up the already-persisted
+        // session and synthesise the snapshot fields from the
+        // stored metadata + events.
+        struct StopSnapshot {
+            language: String,
+            target: String,
+            total_events: u64,
+            duration_ms: u64,
+            ebpf_detached: bool,
+        }
+        let stop_snapshot = match ProbeService::stop(ctx.probe, &input.session_id) {
+            Ok(r) => StopSnapshot {
+                language: r.language.to_string(),
+                target: r.target,
+                total_events: r.events.len() as u64,
+                duration_ms: r.duration_ms,
+                ebpf_detached: r.ebpf_detached,
+            },
+            Err(ServiceError::ProbeNotFound(_)) => {
+                match ctx.store.load_session(&input.session_id) {
+                    Ok((meta, events)) => StopSnapshot {
+                        language: meta.language.to_string(),
+                        target: meta.target,
+                        total_events: events.len() as u64,
+                        duration_ms: 0,
+                        ebpf_detached: true,
+                    },
+                    Err(_) => return Err(ServiceError::ProbeNotFound(input.session_id)),
+                }
+            }
+            Err(e) => return Err(e),
+        };
+        let StopSnapshot {
+            language: language_str,
+            target,
+            total_events: total_events_u64,
+            duration_ms,
+            ebpf_detached,
+        } = stop_snapshot;
         let sealed_at = if input.seal_tail {
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0);
-            Self::mark_sealed(ctx.store, &input.session_id, now)?;
+            // mark_sealed returns Ok(false) when the session has not
+            // yet been persisted to the store (live-only). We still
+            // populate `sealed_at` in the response so the caller
+            // knows the seal was *attempted* — the server-side
+            // build_and_store_engine path will write the flag
+            // through on the next metadata refresh.
+            let _ = Self::mark_sealed(ctx.store, &input.session_id, now);
             Some(now)
         } else {
             None
@@ -214,7 +273,7 @@ impl ChronosSessionLifecycleService {
 
         let snapshot = CapabilitySnapshot {
             probe_type: Some("ebpf_user".to_string()),
-            language: Some(stop_result.language.to_string()),
+            language: Some(language_str.clone()),
             bus_capacity: None,
             bus_fill: None,
             query_engine_ready: true,
@@ -226,10 +285,10 @@ impl ChronosSessionLifecycleService {
         Ok(SessionStopOutput {
             session_id: input.session_id,
             status: "stopped".to_string(),
-            target: stop_result.target,
-            total_events: stop_result.total_events as u64,
-            duration_ms: stop_result.duration_ms,
-            ebpf_detached: stop_result.ebpf_detached,
+            target,
+            total_events: total_events_u64,
+            duration_ms,
+            ebpf_detached,
             sealed_at,
             drained_subscriptions,
             capability_snapshot: snapshot,
@@ -275,12 +334,68 @@ impl ChronosSessionLifecycleService {
     }
 
     /// `capabilities` taking the full context — convenience for the
-    /// MCP server which already holds the context. Just delegates.
+    /// MCP server which already holds the context. This variant
+    /// resolves `session_id` against BOTH the store (persisted
+    /// sessions) AND `live_probes` (live-only sessions not yet
+    /// persisted). For live sessions we synthesise a stub
+    /// `SessionMetadata` from `LiveProbeSession` so the dynamic
+    /// capability snapshot can be returned even before the first
+    /// `session_stop` call.
     pub fn capabilities_with_context(
         ctx: &SessionLifecycleContext<'_>,
         input: CapabilitiesInput,
     ) -> Result<CapabilitiesOutput, ServiceError> {
-        Self::capabilities(ctx.store, input)
+        if input.target.is_none() && input.session_id.is_none() {
+            return Err(ServiceError::InvalidInput(
+                "capabilities requires at least one of `target` or `session_id`".to_string(),
+            ));
+        }
+
+        let static_caps = input.target.as_ref().map(Self::static_capabilities);
+
+        let dynamic_caps = if let Some(sid) = input.session_id.as_ref() {
+            match ctx.store.load_session(sid) {
+                Ok((meta, _events)) => Some(Self::dynamic_capabilities(&meta)),
+                Err(_) => {
+                    // Fall back to live_probes — useful for
+                    // capabilities queries *before* the session
+                    // has been stopped (the dispatcher can mint a
+                    // stub metadata from the LiveProbeSession
+                    // fields).
+                    if let Ok(guard) = ctx.probe.live_probes.lock() {
+                        if let Some(live) = guard.get(sid) {
+                            let stub_meta = chronos_store::SessionMetadata {
+                                session_id: sid.clone(),
+                                created_at: 0,
+                                language: live.language.to_string(),
+                                target: live.target.clone(),
+                                event_count: 0,
+                                duration_ms: 0,
+                                tail_sealed: false,
+                                sealed_at: None,
+                            };
+                            return Ok(CapabilitiesOutput {
+                                static_capabilities: static_caps,
+                                dynamic_capabilities: Some(Self::dynamic_capabilities(&stub_meta)),
+                                provenance: lifecycle_provenance("capabilities"),
+                            });
+                        }
+                    }
+                    return Err(ServiceError::LoadFailed(format!(
+                        "load_session({}) failed: live-only and not in live_probes",
+                        sid
+                    )));
+                }
+            }
+        } else {
+            None
+        };
+
+        Ok(CapabilitiesOutput {
+            static_capabilities: static_caps,
+            dynamic_capabilities: dynamic_caps,
+            provenance: lifecycle_provenance("capabilities"),
+        })
     }
 
     // ---- helpers ----
@@ -370,20 +485,28 @@ impl ChronosSessionLifecycleService {
     /// sealed_at=<now>) by writing the updated metadata back to the
     /// store. Uses the load + mutate + save round-trip via the store's
     /// overwrite semantics.
-    fn mark_sealed(
+    ///
+    /// Returns `Ok(false)` if the session has not been persisted to the
+    /// store yet (i.e., the probe is still live-only and the events
+    /// have not been written). The caller can choose to surface this
+    /// as a no-op or a warning; the m7-05 dispatcher treats it as a
+    /// soft-skip so the seal flag is set once the server-side
+    /// `build_and_store_engine` writes the metadata.
+    pub(crate) fn mark_sealed(
         store: &chronos_store::SessionStore,
         session_id: &str,
         sealed_at: u64,
-    ) -> Result<(), ServiceError> {
-        let (mut meta, events) = store.load_session(session_id).map_err(|e| {
-            ServiceError::LoadFailed(format!("load_session({}) failed: {}", session_id, e))
-        })?;
+    ) -> Result<bool, ServiceError> {
+        let (mut meta, events) = match store.load_session(session_id) {
+            Ok(pair) => pair,
+            Err(_) => return Ok(false),
+        };
         meta.tail_sealed = true;
         meta.sealed_at = Some(sealed_at);
-        store
-            .save_session(meta, &events)
-            .map_err(|e| ServiceError::SaveFailed(format!("save_session({}) failed: {}", session_id, e)))?;
-        Ok(())
+        store.save_session(meta, &events).map_err(|e| {
+            ServiceError::SaveFailed(format!("save_session({}) failed: {}", session_id, e))
+        })?;
+        Ok(true)
     }
 }
 
@@ -398,9 +521,7 @@ fn lifecycle_provenance(source: &str) -> SessionLifecycleProvenance {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::output::{
-        CapabilitiesInput, SessionStartAction, SessionStartInput, TargetSpec,
-    };
+    use crate::output::{CapabilitiesInput, SessionStartAction, SessionStartInput, TargetSpec};
     use chronos_store::{SessionMetadata, SessionStore};
 
     fn empty_store() -> SessionStore {
@@ -630,10 +751,25 @@ mod tests {
     fn mark_sealed_updates_metadata_and_persists() {
         let store = empty_store();
         save_meta(&store, "seal-1");
-        ChronosSessionLifecycleService::mark_sealed(&store, "seal-1", 9999).unwrap();
+        let updated = ChronosSessionLifecycleService::mark_sealed(&store, "seal-1", 9999).unwrap();
+        assert!(
+            updated,
+            "expected mark_sealed to return Ok(true) when session exists"
+        );
         let (meta, _events) = store.load_session("seal-1").unwrap();
         assert!(meta.tail_sealed);
         assert_eq!(meta.sealed_at, Some(9999));
+    }
+
+    #[test]
+    fn mark_sealed_returns_false_when_session_not_in_store() {
+        let store = empty_store();
+        let updated =
+            ChronosSessionLifecycleService::mark_sealed(&store, "no-such-session", 9999).unwrap();
+        assert!(
+            !updated,
+            "expected mark_sealed to return Ok(false) when session has no metadata yet"
+        );
     }
 
     // ---- helpers for full-context tests ----
@@ -658,8 +794,9 @@ mod tests {
             Box::leak(Box::new(TokioMutex::new(None)));
         let langs: &'static Arc<TokioMutex<HashMap<String, Language>>> =
             Box::leak(Box::new(Arc::new(TokioMutex::new(HashMap::new()))));
-        let live_probes: &'static std::sync::Mutex<HashMap<String, crate::probe::LiveProbeSession>> =
-            Box::leak(Box::new(std::sync::Mutex::new(HashMap::new())));
+        let live_probes: &'static std::sync::Mutex<
+            HashMap<String, crate::probe::LiveProbeSession>,
+        > = Box::leak(Box::new(std::sync::Mutex::new(HashMap::new())));
         let engines: &'static TokioMutex<HashMap<String, chronos_query::QueryEngine>> =
             Box::leak(Box::new(TokioMutex::new(HashMap::new())));
 

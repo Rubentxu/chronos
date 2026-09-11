@@ -574,3 +574,38 @@ async fn test_track_function_frames_pie_fixture_yields_real_entries() {
 
     client.shutdown().await.ok();
 }
+
+// ============================================================================
+// m7-06 — v2 lifecycle smoke (full session via v2)
+// ============================================================================
+
+#[tokio::test]
+async fn test_session_lifecycle_in_full_session() {
+    let fixture = McpSession::fixture_path("test_busyloop")
+        .expect("test_busyloop fixture not found - run cargo build first");
+
+    let mut client = McpTestClient::start()
+        .await
+        .expect("Failed to start MCP server");
+
+    // Full v2 lifecycle on a real binary.
+    let start = client
+        .session_start_spawn(fixture.to_str().unwrap(), vec![])
+        .await
+        .expect("session_start spawn failed");
+    assert_eq!(
+        start.action,
+        chronos_sandbox::client::types::SessionStartAction::Spawn
+    );
+    assert!(start.capability_snapshot.get("probe_type").is_some());
+
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+    let stop = client
+        .session_stop(&start.session_id, true, true)
+        .await
+        .expect("session_stop failed");
+    assert!(stop.sealed_at.is_some());
+
+    client.shutdown().await.ok();
+}

@@ -42,3 +42,6 @@ perf.data.old
 # Python
 __pycache__/
 *.pyc
+
+# Jcode scratch (per-harness temp dir)
+$JCODE_SCRATCH_DIR/
