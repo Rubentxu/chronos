@@ -20,13 +20,18 @@
 //! See `docs/milestones/m8-03-mcp-wrappers-redb-bundle-table-scoping.md`
 //! § "2. counterexample_bundles redb table" for the design.
 //!
-//! **Schema versioning (m9-01):** `CounterexampleBundleRecord` and
+//! **Schema versioning (m9-01 / m9-02):** `CounterexampleBundleRecord` and
 //! `CounterexampleBundleSummary` carry a `schema_version: u32` field
 //! that lets the loader distinguish legacy bundles (no field on disk,
 //! serde defaults to 1) from future-versioned bundles. The current
 //! version is [`CURRENT_BUNDLE_SCHEMA_VERSION`]. Bundles written by a
 //! newer chronos-store with a higher version are hard-rejected on
 //! `load_counterexample_bundle`; the list path best-effort skips them.
+//!
+//! **m9-02:** Events are moved out of the blob into `counterexample_bundle_events`
+//! side table (chunked, 256 events per chunk). `summary.events_count` carries
+//! the O(1) count. Legacy bundles continue to load via `bundle_events_or_legacy`.
+//!
 
 use crate::cas::ContentHash;
 use crate::error::StoreError;
@@ -42,23 +47,30 @@ use serde::{Deserialize, Serialize};
 const COUNTEREXAMPLE_BUNDLES: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("counterexample_bundles");
 
+/// Chunk size for the `counterexample_bundle_events` side table.
+///
+/// Each chunk holds up to 256 `TraceEvent` items. 256 events at typical
+/// event size (~100–500 bytes) produces rows of ~25–125 KB, well within
+/// redb's default page size and giving 4 chunks for a typical 1000-event
+/// bundle.
+///
+/// This lives at module scope next to `CURRENT_BUNDLE_SCHEMA_VERSION`
+/// (m9-02 D7) so it is grep-able alongside the version constant.
+pub const BUNDLE_EVENTS_CHUNK_SIZE: usize = 256;
+
 /// Canonical "what we write today" value. Bumped when the bundle
 /// envelope (record + summary + nested wire types) changes in a way
 /// that requires a loader-side decision. See module docs.
 ///
 /// m9-01 initial value: 1. All bundles persisted before m9-01 have no
 /// field on disk; serde defaults to 1 on load.
-pub const CURRENT_BUNDLE_SCHEMA_VERSION: u32 = 1;
-
-/// Versions the loader accepts silently. Today only 1; future cycles
-/// add entries here when they introduce a new envelope shape.
 ///
-/// R4 disclosure (m9-01): currently unused — the loader policy in D3 only
-/// checks the upper bound (`> CURRENT`), not membership in the known list.
-/// Suppressed here so future cycles can tighten the check without a
-/// new lint cascade.
-#[allow(dead_code)]
-const KNOWN_BUNDLE_SCHEMA_VERSIONS: &[u32] = &[1];
+/// m9-02 bump to 2: events move to side table; `summary.events_count` added.
+pub const CURRENT_BUNDLE_SCHEMA_VERSION: u32 = 2;
+
+/// Versions the loader accepts silently. Future cycles add entries here
+/// when they introduce a new envelope shape.
+const KNOWN_BUNDLE_SCHEMA_VERSIONS: &[u32] = &[1, 2];
 
 fn default_schema_version() -> u32 {
     CURRENT_BUNDLE_SCHEMA_VERSION
@@ -176,6 +188,11 @@ pub struct CounterexampleBundleSummary {
     /// Loader rejects bundles with `schema_version > CURRENT_BUNDLE_SCHEMA_VERSION`.
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
+    /// m9-02: total event count at save time. Allows O(1) reads of the
+    /// bundle size without touching the side table. Defaults to 0 for
+    /// pre-m9-02 bundles (serde `#[serde(default)]`).
+    #[serde(default)]
+    pub events_count: u64,
 }
 
 /// Full record stored as the redb value.
