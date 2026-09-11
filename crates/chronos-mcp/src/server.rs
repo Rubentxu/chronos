@@ -1593,7 +1593,7 @@ pub struct CounterexampleGetParams {
     pub bundle_id: String,
 }
 
-/// Params for `counterexample_list` (m8-03).
+/// Params for `counterexample_list` (m8-03; m8-05 added cursor).
 #[derive(Debug, serde::Deserialize, JsonSchema)]
 pub struct CounterexampleListParams {
     pub workspace_id: Option<String>,
@@ -1601,6 +1601,16 @@ pub struct CounterexampleListParams {
     pub since_ms: Option<u64>,
     pub until_ms: Option<u64>,
     pub limit: Option<u32>,
+    /// m8-05 (B2): opaque pagination cursor. Pass the `next_cursor`
+    /// value returned by the previous page's response. `None` (or
+    /// omitted) means first page.
+    pub cursor: Option<String>,
+}
+
+/// Params for `counterexample_events_count` (m8-05 B3).
+#[derive(Debug, serde::Deserialize, JsonSchema)]
+pub struct CounterexampleEventsCountParams {
+    pub bundle_id: String,
 }
 
 // ============================================================================
@@ -5202,7 +5212,7 @@ impl ChronosServer {
     /// `counterexample_list` — list bundle summaries matching optional filters.
     #[tool(
         name = "counterexample_list",
-        description = "List counterexample bundle summaries from redb, optionally filtered by workspace_id, property_kind, since_ms, until_ms, and limit. Returns CounterexampleListOutputDto { bundles, next_cursor }. next_cursor is always null (m8-03 ships single-page; pagination is m8-05 close-time work)."
+        description = "List counterexample bundle summaries from redb, optionally filtered by workspace_id, property_kind, since_ms, until_ms, and limit. Returns CounterexampleListOutputDto { bundles, next_cursor }. m8-05 (B2): forward pagination — when the page is full (len == limit), next_cursor is the bundle_id to pass back as `cursor` for the next page; otherwise next_cursor is null."
     )]
     async fn counterexample_list(
         &self,
@@ -5222,6 +5232,7 @@ impl ChronosServer {
             since_ms: p.since_ms,
             until_ms: p.until_ms,
             limit: p.limit.unwrap_or(50),
+            cursor: p.cursor,
         };
         match chronos_services::counterexample::ChronosCounterexampleService::list(
             &counterexample_ctx,
@@ -5233,6 +5244,42 @@ impl ChronosServer {
             }
             Err(e) => Ok(CallToolResult::error(text_content(format!(
                 "counterexample_list failed: {e}"
+            )))),
+        }
+    }
+
+    /// m8-05 (B3): lightweight accessor — return the persisted
+    /// `events_count` of a bundle without re-emitting the summary.
+    /// Saves an LLM round-trip + a full-bundle-deserialize when all
+    /// it needs is the count. Returns
+    /// `CounterexampleEventsCountOutputDto { bundle_id, events_count }`.
+    /// Errors with `LoadFailed` when the bundle_id does not exist.
+    #[tool(
+        name = "counterexample_events_count",
+        description = "Return the events_count of a persisted counterexample bundle without re-emitting the full summary. m8-05 (B3) accessor; m8-05 R3: the count is the one persisted at save() time, not a live re-read of the engine. Input: bundle_id. Output: {bundle_id, events_count}."
+    )]
+    async fn counterexample_events_count(
+        &self,
+        params: Parameters<CounterexampleEventsCountParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let p = params.0;
+        let hyp_ctx = chronos_services::hypothesis_test::HypothesisTestContext {
+            engines: &self.engines,
+        };
+        let counterexample_ctx = chronos_services::counterexample::CounterexampleContext {
+            store: &self.store,
+            hypothesis_ctx: &hyp_ctx,
+        };
+        match chronos_services::counterexample::ChronosCounterexampleService::events_count(
+            &counterexample_ctx,
+            &p.bundle_id,
+        ) {
+            Ok(out) => {
+                let v = serialize_counterexample_output(out);
+                Ok(CallToolResult::success(json_content(&v)))
+            }
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "counterexample_events_count failed: {e}"
             )))),
         }
     }
@@ -5252,7 +5299,8 @@ fn serialize_counterexample_output(
 ) -> serde_json::Value {
     use chronos_services::counterexample::CounterexampleOutput as COut;
     use chronos_services::output::{
-        CounterexampleBundleDto, CounterexampleBundleSummaryDto, CounterexampleGetOutputDto,
+        CounterexampleBundleDto, CounterexampleBundleSummaryDto,
+        CounterexampleEventsCountOutputDto, CounterexampleGetOutputDto,
         CounterexampleListOutputDto, CounterexampleMinimisedDto, CounterexampleShrinkOutputDto,
     };
 
@@ -5386,6 +5434,20 @@ fn serialize_counterexample_output(
                 bundle: summary,
                 full,
                 rounds_used,
+            })
+            .unwrap_or_else(|e| serde_json::json!({"error": e.to_string()}))
+        }
+        COut::EventsCount {
+            bundle_id,
+            events_count,
+        } => {
+            // m8-05 (B3): just `{bundle_id, events_count}`. No summary,
+            // no events payload, no minimised. The lightweight accessor
+            // exists so an LLM agent that only wants the count doesn't
+            // have to deserialize the full bundle.
+            serde_json::to_value(CounterexampleEventsCountOutputDto {
+                bundle_id,
+                events_count,
             })
             .unwrap_or_else(|e| serde_json::json!({"error": e.to_string()}))
         }

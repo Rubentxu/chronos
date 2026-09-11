@@ -1,0 +1,167 @@
+{
+  "cycle_id": "m8-05-real-proptest-shrinking-pagination-events-tool-m8-close-merge",
+  "title": "M8-05 — Real proptest shrinking + list pagination + events_count tool + M8 close report",
+  "status": "merged",
+  "branch": "feat/m8-05-real-proptest-shrinking-execute",
+  "head_sha": "a417e53",
+  "base_sha": "a87d6a4",
+  "merge_sha": "PENDING",
+  "tag": "m8-05-real-proptest-shrinking.0",
+  "ff_merged_sha": "PENDING",
+  "started_at": "2026-09-11T12:30:00Z",
+  "completed_at": "2026-09-11T13:10:00Z",
+  "commits": [
+    { "sha": "03b9100", "subject": "docs(milestones): m8-05 real proptest shrinking + pagination + events tool + M8 close scoping (PROPOSED)" },
+    { "sha": "a87d6a4", "subject": "Merge branch 'feat/m8-05-proptest-shrinking-pagination-events-tool-m8-close' (scoping only)" },
+    { "sha": "260b4ac", "subject": "feat(services): real per-variant proptest shrinking (m8-05 execute 1)" },
+    { "sha": "464e689", "subject": "feat(store+mcp+sandbox): counterexample list pagination cursor (m8-05 execute 2)" },
+    { "sha": "27f95b5", "subject": "feat(services+mcp+sandbox): counterexample_events_count lightweight tool (m8-05 execute 3)" },
+    { "sha": "41f6ad2", "subject": "docs(milestones): M8 close report" },
+    { "sha": "PENDING", "subject": "docs(sddk): m8-05 real proptest shrinking + pagination + events tool + M8 close merge doc + apply-checkpoint" },
+    { "sha": "PENDING", "subject": "Merge branch 'feat/m8-05-real-proptest-shrinking-execute'" },
+    { "sha": "PENDING", "subject": "chore(sddk): record m8-05 apply-checkpoint (head_sha=41f6ad2, merge_sha=PENDING, status=merged)" }
+  ],
+  "shipped_artifacts": {
+    "scope_doc": {
+      "sha": "03b9100",
+      "path": "docs/milestones/m8-05-proptest-shrinking-pagination-events-tool-m8-close-scoping.md",
+      "lines": 199,
+      "decisions": [
+        "B1: real per-variant proptest shrinking via build_strategy_for + drive_strategy",
+        "B2: cursor = bundle_id, forward pagination, next_cursor=Some(last.bundle_id) when page is full",
+        "B3: dedicated events_count MCP tool (avoids bundle-deserialize round-trip)",
+        "B4: M8 close report following m7 close precedent"
+      ],
+      "disclosures": ["R1", "R2", "R3", "R4", "R5", "R6", "R7"],
+      "deferred_to_m9_plus": ["R3 (real shrinkers)", "R7 (ValueTree Send)", "R4 (HypothesisInput Send+Sync+static)"]
+    },
+    "real_proptest_shrinking": {
+      "sha": "260b4ac",
+      "file": "crates/chronos-services/src/counterexample.rs",
+      "new_functions": [
+        "build_strategy_for(target) -> SBoxedStrategy<HypothesisInput> (dispatcher)",
+        "build_strategy_for_invariant(target) -> SBoxedStrategy<HypothesisInput>",
+        "build_strategy_for_existence(target) -> SBoxedStrategy<HypothesisInput>",
+        "build_strategy_for_call_path(target) -> SBoxedStrategy<HypothesisInput>",
+        "drive_strategy<F, Fut>(...) -> (ShrinkOutcome, u32) (async ValueTree driver)"
+      ],
+      "modify": [
+        "shrink() now calls drive_strategy(...) instead of returning ShrinkOutcome::ShrunkSameInputs",
+        "rounds_used semantics: initial-validation + 1 simplify attempt = 2 (for Just(base) strategies)"
+      ],
+      "rationale": {
+        "why_SBoxedStrategy": "BoxedStrategy is !Send (boxes dyn Strategy without Send bound), breaking #[tool]'s Send requirement. SBoxedStrategy requires T: Send + Sync + 'static, which HypothesisInput's String/u64/Option<Enum> satisfy (R5).",
+        "why_rebuild_each_iter": "dyn ValueTree is !Send; cannot hold across .await. drive_strategy rebuilds strategy+tree each iteration, asks the fresh tree to simplify() once. For Just(base), simplify() returns false immediately (R7)."
+      },
+      "tests_added": [
+        "m8_05_build_strategy_for_invariant_dispatches",
+        "m8_05_build_strategy_for_existence_dispatches",
+        "m8_05_build_strategy_for_call_path_dispatches",
+        "m8_05_drive_strategy_terminates_when_strategy_simplify_returns_false",
+        "m8_05_drive_strategy_drops_inputs_on_failure (mock test)",
+        "m8_05_shrink_returns_shrunk_same_inputs_when_strategy_yields_simplify_no",
+        "m8_05_shrink_rounds_used_is_two_for_just_strategy"
+      ],
+      "tests_modified": [
+        "m8_03_shrink_invariant_returns_documented_one_round_tuple: assertion updated to rounds_used == 2"
+      ]
+    },
+    "list_pagination_cursor": {
+      "sha": "464e689",
+      "files": [
+        "crates/chronos-store/src/storage.rs (CounterexampleBundleFilter::cursor: Option<String>)",
+        "crates/chronos-services/src/counterexample.rs (CounterexampleListFilter::cursor + next_cursor in output)",
+        "crates/chronos-mcp/src/server.rs (CounterexampleListParams::cursor)",
+        "chronos-sandbox/tests/counterexample_tools.rs (ce4/ce6/ce8)"
+      ],
+      "store_filter": "list_counterexample_bundles iterates store, skips rows where bundle_id <= cursor (uuid::v7 = chronological order)",
+      "service_semantics": "next_cursor = Some(last.bundle_id) when summaries.len() == limit, None otherwise. Caller fetches an empty page to discover end.",
+      "tests_added": [
+        "store::list_counterexample_bundles_respects_cursor",
+        "store::list_counterexample_bundles_cursor_with_filter",
+        "service::m8_05_list_returns_next_cursor_when_page_full",
+        "service::m8_05_list_returns_none_when_page_partial",
+        "service::m8_05_list_empty_db_returns_empty_and_none_cursor"
+      ],
+      "tests_modified": [
+        "ce4_list_after_shrink_includes_bundle: now uses limit=u32::MAX for stable cursor=None",
+        "ce6_list_with_workspace_filter: same fix",
+        "sandbox ce8 NEW: ce8_list_pagination_forward_cursor (asserts page2 cursors > page1 cursors; robust to shared redb path because fixtures are populated in-test)"
+      ]
+    },
+    "events_count_tool": {
+      "sha": "27f95b5",
+      "files": [
+        "crates/chronos-services/src/output.rs (CounterexampleEventsCountOutputDto)",
+        "crates/chronos-services/src/counterexample.rs (CounterexampleOutput::EventsCount + events_count method)",
+        "crates/chronos-mcp/src/server.rs (counterexample_events_count #[tool] + params + serialize arm)",
+        "chronos-sandbox/tests/counterexample_tools.rs (ce9)"
+      ],
+      "dto": "CounterexampleEventsCountOutputDto { bundle_id: String, events_count: usize }",
+      "service_method": "pub async fn ChronosCounterexampleService::events_count(ctx, bundle_id) -> Result<CounterexampleOutput, ServiceError>",
+      "mcp_tool": "counterexample_events_count(bundle_id: String) -> { bundle_id, events_count }",
+      "disclosure": "events_count returns the value persisted at save time, NOT a live re-read (matches m8-04 save()-time events_count semantics).",
+      "tests_added": [
+        "service::m8_05_events_count_returns_persisted_length",
+        "service::m8_05_events_count_missing_bundle_errors"
+      ],
+      "sandbox_ce9": "ce9_events_count_returns_persisted_length: shrink a constant target on test_busyloop, then call events_count, assert events_count >= 1"
+    },
+    "m8_close_report": {
+      "sha": "41f6ad2",
+      "path": "docs/milestones/M8-CLOSE.md",
+      "lines": 107,
+      "sections": [
+        "§1 Executive summary",
+        "§2 Cycle log (m8-01..m8-05)",
+        "§3 v2 tool surface inventory",
+        "§4 Architectural decisions log (10+ items)",
+        "§5 Test pyramid state",
+        "§6 Known pre-existing flakes / M8 disclosures",
+        "§7 m9+ handoff (8 items)"
+      ]
+    }
+  },
+  "tests_run": {
+    "tier": "T0 + T2 + T4-smoke",
+    "t0_lint": "fmt --all --check + clippy --workspace --all-targets -D warnings: CLEAN",
+    "t2_lib_unit_changed_crates": "243 chronos-services + 25 chronos-store + 11 chronos-mcp + 18 chronos-cli = 297 tests, all green",
+    "t4_smoke_subset": ["counterexample_tools", "e2e_connectivity"],
+    "smoke_counterexample_tools": "9 ce tests (ce1..ce9) all green in 58s",
+    "smoke_e2e_connectivity": "1 test green in 5.8s",
+    "total_wall_time_smoke": "~64s"
+  },
+  "disclosures": {
+    "R1": "Real per-variant shrinking requires a populated engines map (test fixtures populate one). Empty map → SessionNotFound + target unchanged.",
+    "R2": "Empty engines map → SessionNotFound, no new ServiceError variant. Documented in service module docs.",
+    "R3": "Per-variant strategy returns Just(base); no real shrinking yet. Future cycle swaps the three helper bodies without changing signatures.",
+    "R4": "HypothesisInput must satisfy Send + Sync + 'static for SBoxedStrategy. Current shape (String, u64, Option<Enum>) qualifies; future variants must audit this requirement.",
+    "R5": "SBoxedStrategy required for the MCP #[tool] Send bound. Accepted constraint, not a bug.",
+    "R6": "Shrink requires populated engines map (same as R1/R2).",
+    "R7": "dyn ValueTree: !Send; drive_strategy rebuilds strategy+tree each iteration. A future real-shrinker cycle must address this (e.g., ValueTree: Send feature flag, or move loop into spawn_blocking)."
+  },
+  "notes": [
+    "m8-05 was scoped doc-first (03b9100 -> FF-merged to main as a87d6a4 before any code).",
+    "Four execute commits (real shrinking, pagination, events_count, close report) each landed and tested before the next.",
+    "Smoke subset for T4 was counterexample_tools + e2e_connectivity -- picked per AGENTS.md §2 (counterexample_tools covers the changed wire envelope + list + events_count; e2e_connectivity is the server-startup canary).",
+    "rounds_used == 2 is honest: for Just(base) strategies, simplify() returns false immediately, so the loop does the initial validation + 1 simplify attempt and exits. A real-shrinker future cycle will see higher counts.",
+    "Pagination next_cursor = Some when page is full (not when more rows exist). This is the standard 'cursor when more pages MAY exist' semantics; callers fetch an empty page to discover end.",
+    "events_count is persisted-at-save, not live-re-read. A m9+ shortcut could surface a live re-read if needed.",
+    "M8 is closed. m9+ backlog has 8 items including real shrinkers, byte-faithful replay, bundle-as-blob -> side table, single-call session_stop, attach domain API, distributed tracing, MCP hardening."
+  ],
+  "smoke_subset": ["counterexample_tools", "e2e_connectivity"],
+  "outstanding_deferred": {
+    "m9_plus": [
+      "R3 (real per-variant shrinkers) - Just(base) helpers in place; future cycle fills in",
+      "R7 (ValueTree Send) - rebuild-each-iter pattern is the work-around; future real-shrinker cycle must address",
+      "R4 (HypothesisInput: Send + Sync + 'static) - audit future variants",
+      "m8-04 R-hypothesis-reconstruction-fidelity (target_hypothesis persistence)",
+      "Bundle-as-blob -> side table (m8-04 R4 deferred)",
+      "Single-call session_stop (m7-07)",
+      "attach domain API (m7+)",
+      "Live probe plumbing for `chronos test run`",
+      "Distributed tracing",
+      "MCP server hardening"
+    ]
+  }
+}

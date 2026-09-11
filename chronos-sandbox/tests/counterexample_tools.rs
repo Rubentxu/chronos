@@ -1,23 +1,28 @@
-//! Counterexample smoke tests (m8-03 sandbox deliverable 4).
+//! Counterexample smoke tests (m8-03 sandbox deliverable 4 + m8-05 deltas).
 //!
-//! Exercises the 3 new chronos-mcp tools (`counterexample_shrink`,
+//! Exercises the 3 chronos-mcp tools (`counterexample_shrink`,
 //! `counterexample_get`, `counterexample_list`) end-to-end against a
 //! real spawned MCP server.
 //!
-//! Pipeline shape today (m8-03):
-//!   1. probe_start on a real fixture (test_busyloop) so the engine
-//!      has captured events for the returned session_id.
+//! Pipeline shape today (m8-05):
+//!   1. probe_start on a real fixture (test_busyloop / test_exit_immediate)
+//!      so the engine has captured events for the returned session_id.
 //!   2. counterexample_shrink — validates the target violates the
 //!      captured trace via `hypothesis_test::test()`, then runs the
-//!      proptest shrink loop with a Just(value) strategy (m8-02
-//!      disclosure: rounds_used == 1).
+//!      proptest shrink loop with a Just(value) strategy (m8-05 R3/R7:
+//!      rounds_used == 2 — initial validation + 1 simplify attempt that
+//!      returns false for Just(base)).
 //!   3. counterexample_get / counterexample_list — read back from the
 //!      redb `counterexample_bundles` table populated in step 2.
 //!
-//! Honest disclosures (see m8-03 scoping doc):
-//!  * `rounds_used == 1` — strategies are `Just(value)` per m8-02
-//!  * `next_cursor == None` — pagination is m8-05 close-time work (R3)
-//!  * Events count is 0 on the wire — events live in redb (B3, R4)
+//! Honest disclosures (see m8-05 scoping doc):
+//!  * `rounds_used == 2` — strategies are `Just(value)` per m8-05 R3,
+//!    and the loop counts initial-validation + simplify-attempt (R7)
+//!  * `next_cursor` semantics: when the page is full (len == limit),
+//!    next_cursor is the bundle_id to pass back as `cursor` for the
+//!    next page; otherwise next_cursor is null. m8-05 B2 uses
+//!    `limit = u32::MAX` in smoke tests to assert single-page semantics.
+//!  * Events count is on the wire (m8-04 B3)
 //!
 //! Tests skip (with a printed message) if `CHRONOS_MCP_PATH` is unset
 //! AND the default binary is missing, so the file compiles even on CI.
@@ -95,9 +100,12 @@ async fn ce1_shrink_constant_target() {
         !resp.bundle.bundle_id.is_empty(),
         "bundle_id should be non-empty"
     );
+    // m8-05 R7: rounds_used counts initial-validation + 1 simplify
+    // attempt. Just(value) strategy exits after the simplify returns
+    // false (R3), so the loop body runs at most once.
     assert_eq!(
-        resp.rounds_used, 1,
-        "Just(value) strategies always use 1 round"
+        resp.rounds_used, 2,
+        "Just(value) strategy yields 2 rounds (initial + 1 simplify attempt)"
     );
     assert!(
         resp.bundle.has_full_bundle,
@@ -185,7 +193,7 @@ async fn ce4_list_after_shrink_includes_bundle() {
     let bundle_id = shrink.bundle.bundle_id.clone();
 
     let list = client
-        .counterexample_list(None, Some("invariant"), Some(50))
+        .counterexample_list(None, Some("invariant"), Some(u32::MAX), None)
         .await
         .expect("counterexample_list failed");
 
@@ -193,9 +201,14 @@ async fn ce4_list_after_shrink_includes_bundle() {
         list.bundles.iter().any(|b| b.bundle_id == bundle_id),
         "newly-shrunk bundle should appear in list"
     );
+    // m8-05 B2: with `limit = u32::MAX` (effectively no limit), the
+    // returned page is always partial, so next_cursor is None. (The
+    // tests share a default redb path, so other ce* test bundles are
+    // also present — picking u32::MAX here keeps the assertion
+    // stable across runs.)
     assert!(
         list.next_cursor.is_none(),
-        "m8-03 next_cursor is always None (R3)"
+        "with limit=u32::MAX next_cursor must be None"
     );
 
     let _ = client.shutdown().await;
@@ -221,7 +234,8 @@ async fn ce5_shrink_on_exit_immediate_fixture() {
         .expect("shrink on exit_immediate fixture failed");
 
     assert!(!resp.bundle.bundle_id.is_empty());
-    assert_eq!(resp.rounds_used, 1);
+    // m8-05 R7: see ce1 — rounds_used == 2 for Just(value) strategies.
+    assert_eq!(resp.rounds_used, 2);
 
     let _ = client.shutdown().await;
 }
@@ -244,10 +258,12 @@ async fn ce6_list_with_workspace_filter() {
         .expect("shrink failed");
 
     let list = client
-        .counterexample_list(Some("ws-default"), None, Some(10))
+        .counterexample_list(Some("ws-default"), None, Some(u32::MAX), None)
         .await
         .expect("list with workspace filter failed");
 
+    // m8-05 B2: with `limit = u32::MAX` (effectively no limit), the
+    // returned page is always partial, so next_cursor is None.
     assert!(list.next_cursor.is_none());
 
     let _ = client.shutdown().await;
@@ -285,7 +301,133 @@ async fn ce7_shrink_response_uses_new_saved_envelope() {
         "events_count must be >= 1 after m8-04 (got {})",
         resp.events_count
     );
-    assert_eq!(resp.rounds_used, 1);
+    // m8-05 R7: see ce1 — rounds_used == 2 for Just(value) strategies.
+    assert_eq!(resp.rounds_used, 2);
+
+    let _ = client.shutdown().await;
+}
+
+/// CE8: m8-05 B2 forward pagination. Save 2 bundles in this test,
+/// then request page 1 with `limit=1`. The page must be full
+/// (`len == limit`) and `next_cursor` must be `Some(last.bundle_id)`.
+/// Page 2 with `cursor = page1.next_cursor` must return the second
+/// bundle and (since the page is no longer "full" with 1 result of
+/// limit 2) terminate pagination with `next_cursor = None` on the
+/// next iteration.
+#[tokio::test]
+async fn ce8_list_pagination_forward_cursor() {
+    let Some((mut client, session_id)) = setup_with_probe("test_busyloop").await else {
+        return;
+    };
+
+    // Save 2 distinct bundles in this test, each with a unique constant
+    // so the minimised payload differs. saved_ids[0] is the FIRST save
+    // (= older of the two bundle_ids we created); saved_ids[1] is the
+    // SECOND save (= newer of the two).
+    let mut saved_ids: Vec<String> = Vec::new();
+    for n in [11.0_f64, 22.0] {
+        let target = json!({
+            "session_id": session_id,
+            "kind": "invariant",
+            "constant": { "Number": n },
+        });
+        let resp = client
+            .counterexample_shrink(target)
+            .await
+            .expect("shrink failed");
+        saved_ids.push(resp.bundle.bundle_id.clone());
+    }
+    // saved_ids are uuid::v7; the second one is strictly larger.
+    assert!(
+        saved_ids[1] > saved_ids[0],
+        "second save must have larger uuid::v7 bundle_id"
+    );
+
+    // Page 1: limit=1, no cursor. Because the tests share a default
+    // redb path, the DB may contain bundles from prior test runs.
+    // We therefore cannot assert WHICH bundle page 1 returns; we
+    // only assert pagination semantics.
+    let page1 = client
+        .counterexample_list(None, Some("invariant"), Some(1), None)
+        .await
+        .expect("page1 list failed");
+    assert_eq!(page1.bundles.len(), 1, "page1 must have exactly 1 bundle");
+    let cursor = page1
+        .next_cursor
+        .clone()
+        .expect("page1 must have next_cursor when full");
+
+    // Page 2: cursor = page1.next_cursor, limit=1. Must return a
+    // single bundle strictly AFTER page1's bundle.
+    let page2 = client
+        .counterexample_list(None, Some("invariant"), Some(1), Some(&cursor))
+        .await
+        .expect("page2 list failed");
+    assert_eq!(page2.bundles.len(), 1, "page2 must have exactly 1 bundle");
+    assert!(
+        page2.bundles[0].bundle_id > page1.bundles[0].bundle_id,
+        "page2.bundle_id ({}) must be > page1.bundle_id ({})",
+        page2.bundles[0].bundle_id,
+        page1.bundles[0].bundle_id
+    );
+    // The shared redb path means OTHER ce* tests may have saved
+    // bundles. So we only assert that page2.next_cursor, if Some,
+    // must be > cursor (a forward-paging invariant). When the
+    // total page happens to be the last, next_cursor will be None.
+    if let Some(ref nc) = page2.next_cursor {
+        assert!(
+            nc.as_str() > cursor.as_str(),
+            "if next_cursor is Some on page2, it must be > cursor (forward paging)"
+        );
+    }
+
+    let _ = saved_ids; // silence unused-variable lint; the saves
+                       // themselves guarantee state population.
+
+    let _ = client.shutdown().await;
+}
+
+/// CE9: m8-05 (B3) `counterexample_events_count` tool. Save a bundle
+/// (which records the events count from the live engine), then call
+/// `counterexample_events_count(bundle_id)` and assert the typed
+/// wire envelope matches the count we know was persisted. Also call
+/// with an unknown id to confirm the error path returns LoadFailed.
+#[tokio::test]
+async fn ce9_events_count_returns_persisted_length() {
+    let Some((mut client, session_id)) = setup_with_probe("test_busyloop").await else {
+        return;
+    };
+
+    // Save a bundle (this records events_count from the live engine).
+    let target = json!({
+        "session_id": session_id,
+        "kind": "invariant",
+        "constant": { "Number": 13.0 },
+    });
+    let resp = client
+        .counterexample_shrink(target)
+        .await
+        .expect("shrink failed");
+    let bundle_id = resp.bundle.bundle_id.clone();
+    let expected_count = resp.events_count;
+    assert!(expected_count >= 1, "test_busyloop must produce >= 1 event");
+
+    // m8-05 B3: read just the events_count.
+    let count_resp = client
+        .counterexample_events_count(&bundle_id)
+        .await
+        .expect("events_count failed");
+    assert_eq!(count_resp.bundle_id, bundle_id);
+    assert_eq!(
+        count_resp.events_count, expected_count,
+        "events_count must match the Saved envelope"
+    );
+
+    // m8-05 B3: unknown bundle_id returns Err(LoadFailed).
+    let err = client
+        .counterexample_events_count("nonexistent-bundle")
+        .await;
+    assert!(err.is_err(), "unknown bundle_id must error");
 
     let _ = client.shutdown().await;
 }
