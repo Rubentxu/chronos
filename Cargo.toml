@@ -17,6 +17,7 @@ members = [
     "crates/chronos-browser",
     "crates/chronos-log",
     "crates/chronos-services",
+    "crates/chronos-cli",
     "chronos-sandbox",
 ]
 

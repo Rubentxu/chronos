@@ -5273,7 +5273,17 @@ fn serialize_counterexample_output(
             })
             .unwrap_or_else(|e| serde_json::json!({"error": e.to_string()}))
         }
-        COut::Saved { summary } => {
+        COut::Saved {
+            summary,
+            events_count,
+        } => {
+            // m8-04 (B5 rework): the `{"saved": <summary>}` stopgap is
+            // replaced with the `{bundle, events_count}` shape that
+            // `Shrunk` and `Got` already use. Reuses the existing
+            // `CounterexampleBundleSummaryDto` for the `bundle` field;
+            // `minimised`/`minimised_kind` are intentionally omitted
+            // from this variant (Saved has no minimised payload —
+            // that's a Shrunk-only field).
             let bundle = CounterexampleBundleSummaryDto {
                 bundle_id: summary.bundle_id,
                 property_kind: summary.property_kind,
@@ -5282,7 +5292,10 @@ fn serialize_counterexample_output(
                 rounds_used: summary.rounds_used,
                 has_full_bundle: summary.has_full_bundle,
             };
-            serde_json::json!({ "saved": bundle })
+            serde_json::json!({
+                "bundle": bundle,
+                "events_count": events_count,
+            })
         }
         COut::Listed {
             summaries,
@@ -5311,6 +5324,7 @@ fn serialize_counterexample_output(
             minimised_constant,
             minimised_predicate,
             minimised_call_path,
+            events_count,
         } => {
             // Build the minimised payload discriminated union.
             let (minimised, minimised_kind) = match bundle.property_kind {
@@ -5364,7 +5378,7 @@ fn serialize_counterexample_output(
             };
             let full = CounterexampleBundleDto {
                 summary: summary.clone(),
-                events_count: 0,
+                events_count, // m8-04: was hardcoded 0 in m8-03
                 minimised,
                 minimised_kind,
             };

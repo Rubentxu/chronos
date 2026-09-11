@@ -1410,14 +1410,67 @@ pub struct CounterexampleListOutputWire {
     pub next_cursor: Option<String>,
 }
 
-/// Shrink-response envelope (m8-03). The bundle entry carries the
-/// freshly-persisted summary; `rounds_used` is the documented value
+/// Shrink-response envelope (m8-03 + m8-04). The bundle entry carries
+/// the freshly-persisted summary; `rounds_used` is the documented value
 /// from the proptest runner (always 1 today per the m8-02 `Just(value)`
-/// disclosure).
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// disclosure). `events_count` is the number of captured trace events
+/// persisted in the bundle — m8-04 closes the m8-03 `vec![]`
+/// placeholder so the wire now reports the real count.
+///
+/// The m8-04 server serialises shrink as `{bundle, full: {...},
+/// rounds_used}` (the `full` sub-object carries `events_count`). This
+/// struct deserialises the top-level `events_count` field if present
+/// (future B5 unification of Shrunk+Saved envelopes) and falls back to
+/// `full.events_count` from the m8-03 wire shape so today's tests
+/// still see the right number.
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct CounterexampleShrinkOutputWire {
     pub bundle: CounterexampleBundleSummaryWire,
     pub rounds_used: u32,
+    #[serde(default)]
+    pub events_count: usize,
+    /// `full` sub-object (m8-03 wire shape). Optional because m8-05
+    /// may flatten the envelope — the custom deserialiser below pulls
+    /// `events_count` from here if it's not at the top level.
+    #[serde(default)]
+    pub full: Option<CounterexampleBundleFullWire>,
+}
+
+/// Mirrors the `full` sub-object of `CounterexampleShrinkOutputDto`.
+/// Only `events_count` is exposed today because that is the only field
+/// the sandbox tests assert on.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CounterexampleBundleFullWire {
+    #[serde(default)]
+    pub events_count: usize,
+}
+
+impl<'de> serde::de::Deserialize<'de> for CounterexampleShrinkOutputWire {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct Raw {
+            bundle: CounterexampleBundleSummaryWire,
+            rounds_used: u32,
+            #[serde(default)]
+            events_count: Option<usize>,
+            #[serde(default)]
+            full: Option<CounterexampleBundleFullWire>,
+        }
+        let raw = Raw::deserialize(deserializer)?;
+        let events_count = raw
+            .events_count
+            .or_else(|| raw.full.as_ref().map(|f| f.events_count))
+            .unwrap_or(0);
+        Ok(CounterexampleShrinkOutputWire {
+            bundle: raw.bundle,
+            rounds_used: raw.rounds_used,
+            events_count,
+            full: raw.full,
+        })
+    }
 }
 
 /// Regression report for performance comparison.
