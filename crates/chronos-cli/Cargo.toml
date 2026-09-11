@@ -25,3 +25,4 @@ thiserror = { workspace = true }
 # No third-party CLI framework per B-decision B1 (no clap). Manual arg parsing
 # keeps the binary small and dependency footprint light — the CLI only ships
 # two subcommands in m8-04.
+bincode = { workspace = true }

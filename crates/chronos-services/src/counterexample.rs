@@ -3529,4 +3529,98 @@ mod tests {
             _ => panic!("expected EventsCount variant"),
         }
     }
+
+    // m9-04 §5: spec §5 services + replay chokepoint — save via ChronosCounterexampleService,
+    // then load events via bundle_events_or_legacy (the m9-02 chokepoint). Verifies the
+    // v3 side-table layout end-to-end through the services wrapper.
+    #[tokio::test]
+    async fn m9_04_save_load_roundtrip_through_services() {
+        use crate::hypothesis_test::HypothesisTestContext;
+        use chronos_domain::property::PropertyValue;
+        use chronos_query::QueryEngine;
+        use chronos_store::counterexample_storage::bundle_events_or_legacy;
+        use chronos_store::SessionStore;
+        use std::collections::HashMap;
+        use tokio::sync::Mutex as TokioMutex;
+
+        let store = SessionStore::in_memory().expect("in_memory store");
+        let engines: HashMap<String, QueryEngine> = HashMap::new();
+        let engines = TokioMutex::new(engines);
+        let hyp_ctx = HypothesisTestContext { engines: &engines };
+        let ctx = CounterexampleContext {
+            store: &store,
+            hypothesis_ctx: &hyp_ctx,
+        };
+
+        // Build a bundle with 10 events.
+        let events: Vec<_> = (0u64..10)
+            .map(|id| {
+                chronos_domain::TraceEvent::new(
+                    id,
+                    id * 100,
+                    1,
+                    chronos_domain::EventType::FunctionEntry,
+                    chronos_domain::SourceLocation::new("test.rs", 10, "fn", 0x1000 + id),
+                    chronos_domain::EventData::Function {
+                        name: format!("fn_{id}"),
+                        signature: None,
+                        symbol_id: None,
+                        invocation_id: None,
+                        parent_invocation_id: None,
+                    },
+                )
+            })
+            .collect();
+
+        // Save via ChronosCounterexampleService::save — this writes v3 side-table chunks.
+        let saved = ChronosCounterexampleService::save(
+            &ctx,
+            "ws-m9-04-integration",
+            HypothesisKind::Invariant,
+            (2, Some(PropertyValue::Number(1.0)), None, None),
+            &HypothesisInput {
+                session_id: "s".to_string(),
+                kind: HypothesisKind::Invariant,
+                scope: None,
+                comparison: None,
+                constant: Some(PropertyValue::Number(1.0)),
+                property_target: None,
+                predicate: None,
+                caller: None,
+                callee: None,
+                max_depth: None,
+            },
+            events.clone(),
+        )
+        .expect("save should succeed");
+        let saved_id = match saved {
+            CounterexampleOutput::Saved { summary, .. } => summary.bundle_id,
+            _ => panic!("expected Saved variant"),
+        };
+
+        // Load the bundle record.
+        let bundle = store
+            .load_counterexample_bundle(&saved_id)
+            .expect("load should succeed")
+            .expect("bundle should exist");
+
+        // Verify bundle.summary.events_count was set correctly.
+        assert_eq!(
+            bundle.summary.events_count, 10,
+            "summary.events_count must match event count"
+        );
+
+        // Load events via bundle_events_or_legacy (the m9-02 chokepoint).
+        let loaded_events = bundle_events_or_legacy(&store, &bundle)
+            .expect("bundle_events_or_legacy should succeed");
+
+        assert_eq!(
+            loaded_events.len(),
+            10,
+            "bundle_events_or_legacy must return all 10 events"
+        );
+        for (i, evt) in loaded_events.iter().enumerate() {
+            assert_eq!(evt.event_id, i as u64, "event {i} must match original");
+        }
+    }
 }

@@ -240,7 +240,7 @@ fn project_report(
         workspace_id: bundle.summary.workspace_id.clone(),
         created_at_ms: bundle.summary.created_at_ms,
         rounds_used: bundle.summary.rounds_used,
-        events_in_bundle: bundle.events.len(),
+        events_in_bundle: bundle.summary.events_count as usize,
         replay_verdict: verdict_str.to_string(),
         replay_summary: summary,
         replay_support_event_ids: support,
