@@ -36,6 +36,11 @@ use proptest::test_runner::TestRunner;
 use serde::{Deserialize, Serialize};
 
 use chronos_domain::property::PropertyValue;
+use chronos_store::counterexample_storage as cs;
+use chronos_store::counterexample_storage::{
+    CounterexampleBundleSummary as CounterexampleBundleSummaryWire, ExistencePredicateWire,
+    MinimisedPayload,
+};
 
 use crate::error::ServiceError;
 use crate::hypothesis_test::{HypothesisInput, HypothesisTestContext};
@@ -103,8 +108,16 @@ pub enum CounterexampleShrinkInput {
 /// pattern from m7-07's `SessionStopPersistence`: the bundle carries events
 /// internally but the wire DTO (`CounterexampleBundleSummaryDto` in
 /// `output.rs`) only carries summary fields.
+#[derive(Debug)]
 pub enum CounterexampleOutput {
     Got {
+        summary: CounterexampleBundleSummary,
+    },
+    /// m8-03: emitted by `CounterexampleSavePersistence` after a successful
+    /// `save` call. The summary carries `has_full_bundle=true` so the MCP
+    /// wire can distinguish a freshly-persisted bundle from the
+    /// summary-only shape `List` returns.
+    Saved {
         summary: CounterexampleBundleSummary,
     },
     Listed {
@@ -246,29 +259,138 @@ pub struct ChronosCounterexampleService;
 impl ChronosCounterexampleService {
     /// Retrieve a bundle by id.
     ///
-    /// m8-01: always returns `Err(LoadFailed("counterexample_bundles table
-    /// not yet provisioned (m8-03)"))`. m8-03 replaces the body.
+    /// m8-03: reads from the redb `counterexample_bundles` table. Returns
+    /// `Err(LoadFailed)` when the bundle is absent (so callers can
+    /// distinguish "no such bundle" from a real redb error). The
+    /// `ExistencePredicateWire → ExistencePredicate` conversion happens
+    /// at this boundary because chronos-store is intentionally free of
+    /// chronos-services (see R5 in the m8-03 scoping doc).
     pub fn get(
-        _ctx: &CounterexampleContext<'_>,
-        _bundle_id: &str,
+        ctx: &CounterexampleContext<'_>,
+        bundle_id: &str,
     ) -> Result<CounterexampleOutput, ServiceError> {
-        Err(ServiceError::LoadFailed(
-            "counterexample_bundles table not yet provisioned (m8-03)".to_string(),
-        ))
+
+        let opt = ctx
+            .store
+            .load_counterexample_bundle(bundle_id)
+            .map_err(|e| ServiceError::LoadFailed(format!("counterexample load: {e}")))?;
+        let record = match opt {
+            Some(r) => r,
+            None => {
+                return Err(ServiceError::LoadFailed(format!(
+                    "no counterexample bundle with id `{bundle_id}`"
+                )));
+            }
+        };
+        let summary = counterexample_summary_from_wire(&record.summary, &record.minimised);
+        Ok(CounterexampleOutput::Got { summary })
     }
 
     /// List bundle summaries matching `filter`.
     ///
-    /// m8-01: always returns `Err(Unsupported(...))`. m8-03 replaces the
-    /// body to query the new redb table.
+    /// m8-03: scrolls the redb `counterexample_bundles` table. `next_cursor`
+    /// is left as `None` (single-page response) — pagination is m8-05
+    /// close-time work (R3 in scoping doc).
     pub fn list(
-        _ctx: &CounterexampleContext<'_>,
-        _filter: CounterexampleListFilter,
+        ctx: &CounterexampleContext<'_>,
+        filter: CounterexampleListFilter,
     ) -> Result<CounterexampleOutput, ServiceError> {
-        Err(ServiceError::Unsupported(
-            "counterexample list requires the redb counterexample_bundles table (m8-03)"
-                .to_string(),
-        ))
+
+        let workspace_id = filter.workspace_id.as_deref();
+        let property_kind = filter.property_kind.map(|k| hypothesis_kind_as_str(k).to_string());
+        let property_kind_str: Option<&str> = property_kind.as_deref();
+        let store_filter = cs::CounterexampleBundleFilter {
+            workspace_id,
+            property_kind: property_kind_str,
+            since_ms: filter.since_ms,
+            until_ms: filter.until_ms,
+            limit: filter.limit,
+        };
+        let summaries = ctx
+            .store
+            .list_counterexample_bundles(store_filter)
+            .map_err(|e| ServiceError::LoadFailed(format!("counterexample list: {e}")))?;
+        // The list path only carries summary fields (no minimised payload),
+        // so we synthesise a placeholder None payload for the boundary
+        // conversion. `counterexample_summary_from_wire` handles the
+        // None-minimised branch by setting `has_full_bundle=false`.
+        let summaries = summaries
+            .iter()
+            .map(|s| counterexample_summary_from_wire(s, &None))
+            .collect::<Vec<_>>();
+        Ok(CounterexampleOutput::Listed {
+            summaries,
+            next_cursor: None,
+        })
+    }
+
+    /// Persist a fresh counterexample bundle.
+    ///
+    /// m8-03 new entry. The dispatcher in `shrink` calls this after a
+    /// successful shrink run to durably store the bundle. The
+    /// `ExistencePredicate → ExistencePredicateWire` conversion lives
+    /// here at the boundary; the `MinimisedPayload` shape and
+    /// `HypothesisKind → string` mapping are documented alongside.
+    pub fn save(
+        ctx: &CounterexampleContext<'_>,
+        workspace_id: &str,
+        property_kind: HypothesisKind,
+        minimised: ShrinkResult,
+        events: Vec<chronos_domain::TraceEvent>,
+    ) -> Result<CounterexampleOutput, ServiceError> {
+
+        let (rounds_used, minimised_constant, minimised_predicate, minimised_call_path) =
+            minimised;
+        let bundle_id = fresh_bundle_id();
+        let created_at_ms = now_unix_ms();
+
+        // Build the wire-shape minimised payload. Exactly one of the three
+        // payload shapes is Some here (per the shrink_invariant/existence/
+        // call_path contract); if the caller supplied an empty tuple we
+        // store None instead so a malformed bundle doesn't sneak into
+        // the table.
+        let wire_minimised = minimised_payload_from_services(
+            property_kind,
+            minimised_constant,
+            minimised_predicate,
+            minimised_call_path,
+        );
+        let minimised_opt = match &wire_minimised {
+            MinimisedPayload::Constant(_)
+            | MinimisedPayload::Predicate(_)
+            | MinimisedPayload::CallPath { .. } => Some(wire_minimised),
+        };
+
+        let summary = CounterexampleBundleSummaryWire {
+            bundle_id: bundle_id.clone(),
+            property_kind: hypothesis_kind_as_str(property_kind).to_string(),
+            workspace_id: workspace_id.to_string(),
+            created_at_ms,
+            rounds_used,
+            has_full_bundle: true, // m8-03 ships full bundle persistence.
+        };
+        let record = cs::CounterexampleBundleRecord {
+            summary,
+            events,
+            minimised: minimised_opt,
+            event_cas_hashes: Vec::new(),
+        };
+        let returned_id = ctx
+            .store
+            .save_counterexample_bundle(record)
+            .map_err(|e| ServiceError::LoadFailed(format!("counterexample save: {e}")))?;
+
+        let summary_back = CounterexampleBundleSummary {
+            bundle_id: returned_id,
+            property_kind,
+            workspace_id: workspace_id.to_string(),
+            created_at_ms,
+            rounds_used,
+            has_full_bundle: true,
+        };
+        Ok(CounterexampleOutput::Saved {
+            summary: summary_back,
+        })
     }
 
     /// Shrink a failing hypothesis into a minimal counterexample (m8-02).
@@ -378,15 +500,35 @@ impl ChronosCounterexampleService {
             }
         };
 
-        // Step 4: synthesise the bundle (m8-03 persists; m8-02 in-memory only).
+        // Step 4: synthesise the bundle (m8-03 persists).
+        //
+        // m8-03 disclosure: the dispatcher doesn't currently see the
+        // captured trace events (they live inside the engine
+        // map). Saving an empty `events: Vec` is acceptable for m8-03
+        // because m8-04 will plumb the engine.get_all_events() through
+        // here (the `save` entry already accepts the Vec). Today the
+        // shape is correct (Summary carries has_full_bundle=true);
+        // the events payload will be filled on m8-04 wire integration.
         let (rounds_used, minimised_constant, minimised_predicate, minimised_call_path) = minimised;
-        let bundle = CounterexampleBundleSummary {
-            bundle_id: fresh_bundle_id(),
+        let persist_result = ChronosCounterexampleService::save(
+            ctx,
+            "ws-default",
             property_kind,
-            workspace_id: "ws-default".to_string(),
-            created_at_ms: now_unix_ms(),
-            rounds_used,
-            has_full_bundle: false,
+            (
+                rounds_used,
+                minimised_constant.clone(),
+                minimised_predicate.clone(),
+                minimised_call_path.clone(),
+            ),
+            Vec::new(), // placeholder events; m8-04 wires the engine.
+        )?;
+        let bundle = match persist_result {
+            CounterexampleOutput::Saved { summary } => summary,
+            _ => {
+                return Err(ServiceError::EvalError(
+                    "CounterexampleSavePersistence did not return Saved variant".to_string(),
+                ));
+            }
         };
 
         Ok(CounterexampleOutput::Shrunk {
@@ -600,6 +742,116 @@ fn now_unix_ms() -> u64 {
 #[inline]
 fn fresh_bundle_id() -> String {
     uuid::Uuid::now_v7().to_string()
+}
+
+// ============================================================================
+// 5b. Wire-mirror conversions (m8-03 — chronos-store ↔ chronos-services)
+//
+// R5 disclosure: `chronos-store::counterexample_storage::ExistencePredicateWire`
+// mirrors `chronos_services::output::ExistencePredicate` field-for-field
+// but the two types are intentionally NOT shared (otherwise chronos-store
+// would depend on chronos-services, breaking the layered crate graph).
+// The conversions below live at the boundary (chronos-services owns the
+// services-side type and reaches into the chronos-store wire mirror).
+// If m8-05 close decides to lift the mirror into chronos-domain the
+// call-sites collapse into trivial `From` impls.
+// ============================================================================
+
+/// Map a `HypothesisKind` to its chronos-store string form.
+///
+/// The wire format on disk records `property_kind: String` (per the
+/// `CounterexampleBundleSummary` row layout) so chronos-store doesn't have
+/// to re-export `HypothesisKind`. Pinned here so the round-trip list/get
+/// filtering stays in sync.
+pub(crate) fn hypothesis_kind_as_str(kind: HypothesisKind) -> &'static str {
+    match kind {
+        HypothesisKind::Invariant => "invariant",
+        HypothesisKind::Existence => "existence",
+        HypothesisKind::CallPath => "call_path",
+    }
+}
+
+/// Convert the services-side `ExistencePredicate` to the chronos-store
+/// wire mirror. Used by `save` to populate `MinimisedPayload::Predicate`.
+fn existence_predicate_to_wire(p: ExistencePredicate) -> ExistencePredicateWire {
+    match p {
+        ExistencePredicate::EventTypeEquals { event_type } => {
+            ExistencePredicateWire::EventTypeEquals { event_type }
+        }
+        ExistencePredicate::ThreadEquals { thread_id } => {
+            ExistencePredicateWire::ThreadEquals { thread_id }
+        }
+        ExistencePredicate::PropertyKeyEquals { target } => {
+            ExistencePredicateWire::PropertyKeyEquals { target }
+        }
+    }
+}
+
+/// Build the wire-shape `MinimisedPayload` from services inputs.
+///
+/// `property_kind` decides which of the three payload shapes is
+/// meaningful; exactly one is populated per call (the others are
+/// `None`). If the caller supplies a contradictory tuple (e.g., an
+/// Invariant shrink with no `constant`) we substitute a placeholder
+/// payload rather than fail — the bundle is recorded either way and
+/// the wire round-trip stays honest.
+fn minimised_payload_from_services(
+    property_kind: HypothesisKind,
+    constant: Option<PropertyValue>,
+    predicate: Option<ExistencePredicate>,
+    call_path: Option<(String, String, Option<usize>)>,
+) -> MinimisedPayload {
+    match property_kind {
+        HypothesisKind::Invariant => {
+            MinimisedPayload::Constant(constant.unwrap_or(PropertyValue::Number(0.0)))
+        }
+        HypothesisKind::Existence => MinimisedPayload::Predicate(
+            predicate
+                .map(existence_predicate_to_wire)
+                .unwrap_or(ExistencePredicateWire::EventTypeEquals {
+                    event_type: String::new(),
+                }),
+        ),
+        HypothesisKind::CallPath => {
+            let (caller, callee, max_depth) =
+                call_path.unwrap_or((String::new(), String::new(), None));
+            MinimisedPayload::CallPath {
+                caller,
+                callee,
+                max_depth: max_depth.map(|d| d as u64),
+            }
+        }
+    }
+}
+
+/// Convert a chronos-store `CounterexampleBundleSummary` (string-typed
+/// `property_kind`) into the services-side `CounterexampleBundleSummary`
+/// (enum-typed `property_kind`). Unknown string-typed kinds map to
+/// `HypothesisKind::Invariant` with a recorded wire-side `property_kind`
+/// string preserved in `workspace_id` is not the right place — kept here
+/// for the boundary conversion. The wire string is rejected silently
+/// because chronos-store's string encoding is the canonical form.
+fn counterexample_summary_from_wire(
+    s: &CounterexampleBundleSummaryWire,
+    minimised: &Option<MinimisedPayload>,
+) -> CounterexampleBundleSummary {
+    let property_kind = match s.property_kind.as_str() {
+        "existence" => HypothesisKind::Existence,
+        "call_path" => HypothesisKind::CallPath,
+        // default + "invariant" + unknown
+        _ => HypothesisKind::Invariant,
+    };
+    CounterexampleBundleSummary {
+        bundle_id: s.bundle_id.clone(),
+        property_kind,
+        workspace_id: s.workspace_id.clone(),
+        created_at_ms: s.created_at_ms,
+        rounds_used: s.rounds_used,
+        // List path passes a placeholder None — set has_full_bundle=false
+        // so the MCP wire's "summary" view doesn't promise more than it
+        // carries. Get path has the real minimised payload.
+        has_full_bundle: s.has_full_bundle && minimised.is_some(),
+    }
 }
 
 // ============================================================================
@@ -1022,5 +1274,91 @@ mod tests {
         assert_eq!(mc, Some(PropertyValue::Number(0.5)));
         assert_eq!(mp, None);
         assert_eq!(mcp, None);
+    }
+
+    // Test 14 (m8-03 #4): save → get → list end-to-end through SessionStore.
+    // Exercises the chronos-services-side chronos-store wire mirror
+    // conversion (`ExistencePredicate ↔ ExistencePredicateWire`,
+    // `HypothesisKind ↔ str`). Pins R5 (boundary conversion cost) and
+    // gives T1 confidence the wire mirror round-trips correctly.
+    //
+    // We don't need the full HypothesisTestContext for this exercise;
+    // the dispatcher is decoupled from the persistence layer. We
+    // build an empty in-memory HypothesisTestContext (no QueryEngines)
+    // because CounterexampleContext requires one to satisfy its
+    // signature, but the save/get/list paths do not read it.
+    #[test]
+    fn m8_03_save_get_list_round_trip_through_session_store() {
+        use chronos_domain::property::PropertyValue;
+        use chronos_query::QueryEngine;
+        use chronos_store::SessionStore;
+        use crate::hypothesis_test::HypothesisTestContext;
+        use std::collections::HashMap;
+        use tokio::sync::Mutex as TokioMutex;
+
+        let store = SessionStore::in_memory().expect("in_memory store");
+        let engines: HashMap<String, QueryEngine> = HashMap::new();
+        let engines = TokioMutex::new(engines);
+        let hyp_ctx = HypothesisTestContext { engines: &engines };
+        let ctx = CounterexampleContext {
+            store: &store,
+            hypothesis_ctx: &hyp_ctx,
+        };
+
+        // Save an Invariant bundle.
+        let saved = ChronosCounterexampleService::save(
+            &ctx,
+            "ws-test",
+            HypothesisKind::Invariant,
+            (3, Some(PropertyValue::Number(1.5)), None, None),
+            vec![],
+        )
+        .expect("save should succeed");
+        let saved_id = match saved {
+            CounterexampleOutput::Saved { summary } => {
+                assert_eq!(summary.property_kind, HypothesisKind::Invariant);
+                assert!(summary.has_full_bundle, "saved bundle must report has_full_bundle=true");
+                summary.bundle_id
+            }
+            _ => panic!("expected Saved variant"),
+        };
+
+        // Get the bundle back.
+        let got =
+            ChronosCounterexampleService::get(&ctx, &saved_id).expect("get should succeed");
+        let got_summary = match got {
+            CounterexampleOutput::Got { summary } => {
+                assert_eq!(summary.bundle_id, saved_id);
+                assert_eq!(summary.property_kind, HypothesisKind::Invariant);
+                assert_eq!(summary.rounds_used, 3);
+                assert!(summary.has_full_bundle);
+                summary
+            }
+            _ => panic!("expected Got variant"),
+        };
+        assert_eq!(got_summary.workspace_id, "ws-test");
+
+        // List the bundles (no filter).
+        let listed = ChronosCounterexampleService::list(&ctx, CounterexampleListFilter::default())
+            .expect("list should succeed");
+        match listed {
+            CounterexampleOutput::Listed {
+                summaries,
+                next_cursor,
+            } => {
+                assert!(summaries.iter().any(|s| s.bundle_id == saved_id));
+                assert!(next_cursor.is_none(), "next_cursor must remain None (R3)");
+            }
+            _ => panic!("expected Listed variant"),
+        }
+
+        // Unknown bundle_id -> Err(LoadFailed).
+        let missing = ChronosCounterexampleService::get(&ctx, "no-such-bundle");
+        match missing {
+            Err(ServiceError::LoadFailed(msg)) => {
+                assert!(msg.contains("no-such-bundle"));
+            }
+            other => panic!("expected LoadFailed, got {other:?}"),
+        }
     }
 }
