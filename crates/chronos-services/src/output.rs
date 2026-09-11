@@ -354,7 +354,7 @@ pub struct TripwireDeleteResult {
 /// `Update` is reserved (rejected with `ServiceError::Unsupported` in
 /// m7-02) because no v1 caller demands it today; deferring to m7+ keeps
 /// the v2 surface minimal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ObserveVerb {
     /// Register a new subscription (tripwire condition or uprobe-injecting tripwire).
@@ -411,7 +411,7 @@ pub enum ObserveCondition {
 /// placeholder for true fire-on-condition uprobe injection, deferred to
 /// a domain-layer change; m7-02 only honours it as a parsed-but-no-op
 /// branch).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ObserveAction {
     /// Capture the firing event into the tripwire buffer.
@@ -432,7 +432,7 @@ pub enum ObserveAction {
 /// the session terminates. `Permanent` is reserved (rejected with
 /// `Unsupported` in m7-02) — the tripwire manager does not currently
 /// distinguish permanent retention.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ObserveRetention {
     /// Drain fired events on the next `verb=list` (default, matches v1).

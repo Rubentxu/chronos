@@ -47,6 +47,7 @@ use chronos_services::events_read::{ChronosEventsReadService, EventsReadContext,
 use chronos_services::execution_query::{
     ChronosExecutionQueryService, ExecutionQueryContext, ExecutionQueryInput,
 };
+use chronos_services::observe::{ChronosObserveService, ObserveContext, ObserveInput};
 use chronos_services::output::EvalResult;
 use chronos_services::output::{EventsReadKind, EventsReadOutput};
 use chronos_services::output::{ExecutionQueryKind, ExecutionQueryOutput};
@@ -125,6 +126,10 @@ pub struct ChronosServer {
     active_session: Arc<Mutex<Option<String>>>,
     /// Tripwire manager for condition-based event notification.
     tripwire_manager: Arc<TripwireManager>,
+    /// Uprobe counter map (session_id → next uprobe subscription id
+    /// index). Guarded by a std Mutex; used by the observe dispatcher to
+    /// generate stable `uprobe-<session>-<n>` ids.
+    uprobe_counter: Arc<std::sync::Mutex<HashMap<String, usize>>>,
     /// Live probe sessions: session_id → LiveProbeSession.
     /// These are real-time probe sessions using `NativeProbeBackend` where events
     /// stream to an `EventBus` ring buffer. Use `probe_drain` to read current events
@@ -212,6 +217,119 @@ pub struct EventsReadParams {
     /// page (the dispatcher issues a fresh cursor).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cursor: Option<chronos_services::output::CursorDto>,
+}
+
+/// Parameters for the v2 `observe` tool (m7-02).
+///
+/// The unified v2 entry-point that supersedes 5 v1 tools:
+/// `tripwire_create`, `tripwire_list`, `tripwire_delete`, `tripwire_query`,
+/// and `probe_inject`. The `verb` discriminator selects the operation:
+///   - `create`  → register a subscription (tripwire or uprobe)
+///   - `list`    → enumerate subscriptions + drain fired events (destructive)
+///   - `query`   → non-destructive subscription snapshot
+///   - `delete`  → unregister a subscription
+///   - `update`  → rejected with `unsupported` in m7-02 (deferred to m7+)
+///
+/// See `docs/milestones/m7-02-observability-merge.md` for the full spec.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ObserveParams {
+    /// Discriminator: `"create" | "list" | "update" | "delete" | "query"`.
+    #[schemars(rename = "verb")]
+    pub verb: chronos_services::output::ObserveVerb,
+    /// Subscription ID (required for `verb=delete`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subscription_id: Option<String>,
+    /// Subscription body — discriminator + payload. Required for
+    /// `verb=create`. Shape:
+    /// `{kind: "tripwire", condition: {...}, label: "..."}` for tripwires,
+    /// `{kind: "uprobe", binary_path: "...", symbol_name: "...", pid: <u32>, label: "..."}`
+    /// for uprobe-injection conditions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub condition: Option<ObserveConditionWire>,
+    /// What to do when the subscription fires (`"record" | "notify" |
+    /// "inject_uprobe"`). Defaults to `"record"`. `inject_uprobe` is
+    /// parsed but is a no-op in m7-02.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<chronos_services::output::ObserveAction>,
+    /// Retention policy (`"drained" | "retained_until_session_end" |
+    /// "permanent"`). Defaults to `"drained"` (matches v1 `tripwire_list`).
+    /// `permanent` is rejected with `unsupported` in m7-02.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retention: Option<chronos_services::output::ObserveRetention>,
+    /// Requested evidence kind (`{kind: "event_types", event_types: [...]}`
+    /// or `{kind: "properties", ...}`). `properties` is rejected in m7-02.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_evidence: Option<ObserveRequestedEvidenceWire>,
+    /// Scope (`{scope: "session", session_id: "..."}` or `{scope: "global"}`).
+    /// Required for `verb=create` + `condition.kind=uprobe`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<ObserveScopeWire>,
+    /// Optional cursor for `verb=list` (matches m7-01 events_read cursor).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<chronos_services::output::CursorDto>,
+    /// Optional human-readable label (alternative to `condition.label`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+/// Wire-shape wrapper for the v2 `observe` `condition` body. The MCP
+/// layer parses this into the dispatcher's typed
+/// [`ObserveCondition`](chronos_services::output::ObserveCondition) (which
+/// carries a parsed `TripwireCondition`, not a raw JSON value).
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ObserveConditionWire {
+    /// Tripwire-style condition.
+    Tripwire {
+        /// The v1 JSON shape: `{"type": "event_type", "event_types": [...]}` etc.
+        /// Re-parsed via [`TripwireConditionType::into_condition`].
+        condition: serde_json::Value,
+        /// Optional human-readable label.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+    },
+    /// Uprobe-injection condition.
+    Uprobe {
+        /// Path to the binary or shared library.
+        binary_path: String,
+        /// Symbol name to attach the uprobe to.
+        symbol_name: String,
+        /// Optional PID override.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pid: Option<u32>,
+        /// Optional human-readable label.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+    },
+}
+
+/// Wire-shape wrapper for the v2 `observe` `requested_evidence` body.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ObserveRequestedEvidenceWire {
+    /// Capture events matching the given event-types filter.
+    EventTypes {
+        /// Event-type name list (e.g. `["function_entry", "exception"]`).
+        event_types: Vec<String>,
+    },
+    /// Reserved; rejected with `unsupported` in m7-02.
+    Properties {
+        /// Property names to project (deferred to m7+).
+        names: Vec<String>,
+    },
+}
+
+/// Wire-shape wrapper for the v2 `observe` `scope` body.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(tag = "scope", rename_all = "snake_case")]
+pub enum ObserveScopeWire {
+    /// Subscription attached to a specific session id.
+    Session {
+        /// Session id (required when `scope=session`).
+        session_id: String,
+    },
+    /// Subscription applies to every live session.
+    Global,
 }
 
 /// Default BFS expansion depth for `hypothesis_test` kind=call_path.
@@ -1014,6 +1132,7 @@ impl ChronosServer {
             connected_sessions: Arc::new(std::sync::Mutex::new(HashSet::new())),
             active_session: Arc::new(Mutex::new(None)),
             tripwire_manager: Arc::new(TripwireManager::new()),
+            uprobe_counter: Arc::new(std::sync::Mutex::new(HashMap::new())),
             live_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
             live_browser_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
@@ -4107,6 +4226,126 @@ impl ChronosServer {
                 "invalid cursor payload: expected {total_pushed, snapshot_len}",
             ))),
             Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
+        }
+    }
+
+    #[tool(
+        name = "observe",
+        description = "v2 dispatcher for observation/subscription/instrumentation. Select the operation via `verb` (create | list | update | delete | query). `verb=create` registers a tripwire or uprobe subscription; `verb=list` enumerates subscriptions and drains fired events (destructive); `verb=query` is a non-destructive snapshot; `verb=delete` unregisters a subscription by id; `verb=update` is reserved (rejected with `unsupported`). Supersedes the v1 `tripwire_create`, `tripwire_list`, `tripwire_delete`, `tripwire_query`, and `probe_inject` tools. See docs/chronos-agentic-reconstruction/docs/specs/AGENT_API_V2.md (line 14)."
+    )]
+    async fn observe(
+        &self,
+        params: Parameters<ObserveParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+
+        // Translate ObserveConditionWire → ObserveCondition. Tripwire
+        // variants carry a serde_json::Value that must be re-parsed into
+        // TripwireConditionType and then converted via .into_condition().
+        let typed_condition = match params.condition {
+            Some(ObserveConditionWire::Tripwire { condition, label }) => {
+                let parsed_type: TripwireConditionType = match serde_json::from_value(condition)
+                {
+                    Ok(t) => t,
+                    Err(e) => {
+                        return Ok(CallToolResult::error(text_content(format!(
+                            "observe: invalid tripwire condition JSON: {}",
+                            e
+                        ))));
+                    }
+                };
+                match parsed_type.into_condition() {
+                    Ok(c) => Some(chronos_services::output::ObserveCondition::Tripwire {
+                        condition: c,
+                        label,
+                    }),
+                    Err(bad) => {
+                        return Ok(CallToolResult::error(text_content(format!(
+                            "observe: unknown event_type '{}'. Valid types: syscall_enter, syscall_exit, function_entry, function_exit, variable_write, memory_write, signal_delivered, breakpoint_hit, thread_create, thread_exit, exception_thrown.",
+                            bad
+                        ))));
+                    }
+                }
+            }
+            Some(ObserveConditionWire::Uprobe {
+                binary_path,
+                symbol_name,
+                pid,
+                label,
+            }) => Some(chronos_services::output::ObserveCondition::Uprobe {
+                binary_path,
+                symbol_name,
+                pid,
+                label,
+            }),
+            None => None,
+        };
+
+        // Translate ObserveScopeWire → ObserveScope.
+        let typed_scope = match params.scope {
+            Some(ObserveScopeWire::Session { session_id }) => {
+                Some(chronos_services::output::ObserveScope::Session { session_id })
+            }
+            Some(ObserveScopeWire::Global) => Some(chronos_services::output::ObserveScope::Global),
+            None => None,
+        };
+
+        // Translate ObserveRequestedEvidenceWire → ObserveRequestedEvidence.
+        let typed_evidence = match params.requested_evidence {
+            Some(ObserveRequestedEvidenceWire::EventTypes { event_types }) => Some(
+                chronos_services::output::ObserveRequestedEvidence::EventTypes { event_types },
+            ),
+            Some(ObserveRequestedEvidenceWire::Properties { names }) => Some(
+                chronos_services::output::ObserveRequestedEvidence::Properties { names },
+            ),
+            None => None,
+        };
+
+        // Build the ProbeContext for the dispatcher.
+        let probe_ctx = chronos_services::probe::ProbeContext {
+            live_probes: &self.live_probes,
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            tripwire_manager: &self.tripwire_manager,
+            active_session: &self.active_session,
+        };
+
+        let ctx = ObserveContext {
+            tripwire_manager: &self.tripwire_manager,
+            probe: &probe_ctx,
+            uprobe_counter: &self.uprobe_counter,
+        };
+
+        let input = ObserveInput {
+            verb: params.verb,
+            subscription_id: params.subscription_id,
+            condition: typed_condition,
+            action: params.action,
+            retention: params.retention,
+            requested_evidence: typed_evidence,
+            scope: typed_scope,
+            cursor: params.cursor,
+            label: params.label,
+        };
+
+        match ChronosObserveService::observe(&ctx, input) {
+            Ok(out) => Ok(CallToolResult::success(json_content(
+                &serde_json::to_value(&out)
+                    .map_err(|e| rmcp::ErrorData::internal_error(e.to_string(), None))?,
+            ))),
+            Err(ServiceError::Unsupported(s)) => Ok(CallToolResult::error(text_content(
+                format!("observe: unsupported: {}", s),
+            ))),
+            Err(ServiceError::TripwireNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("observe: tripwire '{}' not found", s),
+            ))),
+            Err(ServiceError::InvalidTripwireIdFormat(s)) => Ok(CallToolResult::error(
+                text_content(format!("observe: invalid tripwire id format: '{}'", s)),
+            )),
+            Err(ServiceError::LockPoisoned) => {
+                Ok(CallToolResult::error(text_content("observe: lock poisoned")))
+            }
+            Err(e) => Ok(CallToolResult::error(text_content(format!("observe: {e}")))),
         }
     }
 }

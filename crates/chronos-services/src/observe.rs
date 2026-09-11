@@ -53,13 +53,19 @@ use std::sync::Mutex as StdMutex;
 
 use crate::error::ServiceError;
 use crate::output::{
-    ObserveCondition, ObserveCreateResult, ObserveDeleteResult, ObserveInput, ObserveListResult,
+    ObserveCondition, ObserveCreateResult, ObserveDeleteResult, ObserveListResult,
     ObserveOutput, ObserveProvenance, ObserveRetention,
     ObserveRetention::Drained as RetDrained, ObserveRetention::RetainedUntilSessionEnd
     as RetRetainedUntilSessionEnd, ObserveScope, ObserveVerb, SubscriptionDto,
 };
 use crate::probe::{ProbeContext, ProbeService};
 use crate::tripwires::TripwiresService;
+
+// Re-export `ObserveInput` so external crates can construct it without
+// reaching into `crate::output`. The other DTOs (output, provenance,
+// result, scope, verb, etc.) are intentionally NOT re-exported — those
+// are return-type payloads and stay opaque to callers.
+pub use crate::output::ObserveInput;
 
 /// Borrowed handle to the live state the dispatcher needs.
 ///
