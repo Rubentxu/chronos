@@ -3,13 +3,13 @@
   "title": "M7-06 — sandbox smoke for session_start/session_stop/capabilities v2 wrappers + M7 close",
   "status": "ready_for_merge",
   "branch": "feat/m7-06-session-lifecycle-sandbox-smoke-merge",
-  "head_sha": "TBD",
+  "head_sha": "1245bfd",
   "base_sha": "c2c0d51",
-  "ff_merged_sha": null,
+  "ff_merged_sha": "1245bfd",
   "started_at": "2026-09-11T09:00:00Z",
   "completed_at": "2026-09-11T09:21:00Z",
   "commits": [
-    { "sha": "TBD", "subject": "feat(sandbox+mcp+services): session_start/session_stop/capabilities v2 sandbox smoke (m7-06)" }
+    { "sha": "1245bfd", "subject": "feat(sandbox+mcp+services): session_start/session_stop/capabilities v2 sandbox smoke (m7-06)" }
   ],
   "shipped_artifacts": {
     "sandbox_client_surface": {
