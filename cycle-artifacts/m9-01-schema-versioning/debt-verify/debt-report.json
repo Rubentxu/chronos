@@ -1,0 +1,292 @@
+{
+  "contract_version": "debt-gate/v1",
+  "report_id": "chronos/m9-01-schema-versioning/debt-report",
+  "generated_at": "2026-09-11T17:35:30Z",
+  "cycle": {
+    "cycle_id": "m9-01-schema-versioning",
+    "change_name": "m9-01-schema-versioning",
+    "path": "A-min",
+    "remediation_round": 0
+  },
+  "subject": {
+    "branch": "feat/m9-01-schema-versioning",
+    "base_commit": "bceddc946b73209756d3360b0aec4dca592296c3",
+    "head_commit": "0aec8bac30f995e638e2a656b55935f48a60623d",
+    "diff_digest": "1d6e9cc1b652c1dd1c77c37c74f6f5556d76005d2802d1a7ac4a62fc5977141c",
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
+    "dirty": false
+  },
+  "verify_evidence": {
+    "path": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos/verify-report.md",
+    "sha256": "2a5eeee3a89690f967cec391708c0354a52cde83c3458b79d70949f1ea271d4f",
+    "subject_sha": "0aec8bac30f995e638e2a656b55935f48a60623d",
+    "verdict": "PASS_WITH_WARNINGS",
+    "findings_sha256": "14d5b301a31aa8899c0c4966e3ff38a86c21b758d4b42d4d85b81bf00d813565"
+  },
+  "coverage": {
+    "required_clusters": ["coupling", "overeng"],
+    "completed_clusters": ["coupling", "overeng"],
+    "failed_clusters": []
+  },
+  "cluster_runs": [
+    {
+      "cluster": "coupling-cluster",
+      "status": "completed",
+      "attempts": 1,
+      "analyzer": {
+        "name": "sddk-debt-verify coordinator (inline Rust-adapted detection catalog: grep + read; cluster spawn unavailable in light-swarm mode)",
+        "version": "debt-gate/v1 + MiniMax-M3"
+      },
+      "subject_sha": "0aec8bac30f995e638e2a656b55935f48a60623d",
+      "started_at": "2026-09-11T17:32:44Z",
+      "finished_at": "2026-09-11T17:33:11Z",
+      "findings": ["FIND-M9-01-DV-COUP-01", "FIND-M9-01-DV-COUP-02"],
+      "errors": [],
+      "details": {
+        "hidden_dependencies": 0,
+        "global_state_risks": 0,
+        "dependency_simplifications": 2
+      }
+    },
+    {
+      "cluster": "overeng-cluster",
+      "status": "completed",
+      "attempts": 1,
+      "analyzer": {
+        "name": "sddk-debt-verify coordinator (smoke depth: inline catalog + scoped debt-marker scan over changed paths)",
+        "version": "debt-gate/v1 + MiniMax-M3"
+      },
+      "subject_sha": "0aec8bac30f995e638e2a656b55935f48a60623d",
+      "started_at": "2026-09-11T17:33:15Z",
+      "finished_at": "2026-09-11T17:33:16Z",
+      "findings": ["FIND-M9-01-DV-OE-01"],
+      "errors": [],
+      "details": {
+        "total_ledger_items": 0,
+        "overdue_ledger_items": 0,
+        "total_loc_reducible": 3,
+        "bloat_trajectory": {
+          "trajectory": "STABLE",
+          "method": "git log --shortstat bceddc9..0aec8ba: 969 insertions, 0 deletions, of which 518 docs (scoping), 68 apply-checkpoint, 8+3-3 fmt, 375 production+tests (307 storage incl. ~237 tests, 68 services incl. ~66 tests, 8 cli test fixtures)",
+          "notes": "Single-concept cycle: 138 production LOC (constants + serde attrs + 5-line reject branch + 2 services field passes). Test LOC is 2.7x production, which is deliberate investment, not bloat. No abstractions added; one dead constant pre-disclosed as R4."
+        }
+      }
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "FIND-M9-01-DV-COUP-01",
+      "finding_id_alias_in_schema": "FIND-000001",
+      "fingerprint": "2c7d65e1d5c25ace0c1b21bc506868d3c30de0a7c8a73c09c10645d2b2a6c3af",
+      "rule_id": "coupling.duplicated-version-envelopes",
+      "cluster": "coupling",
+      "category": "coupling.module-boundary",
+      "severity": "MEDIUM",
+      "confidence": "HIGH",
+      "baseline_state": "new",
+      "attribution": "introduced",
+      "source_clusters": ["coupling"],
+      "locations": [
+        {
+          "path": "crates/chronos-store/src/counterexample_storage.rs",
+          "start_line": 195,
+          "end_line": 207,
+          "symbol": "CounterexampleBundleRecord.schema_version"
+        },
+        {
+          "path": "crates/chronos-store/src/counterexample_storage.rs",
+          "start_line": 171,
+          "end_line": 179,
+          "symbol": "CounterexampleBundleSummary.schema_version"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "source",
+          "observation": "schema_version now exists in two places of the same serialized envelope: on CounterexampleBundleRecord (envelope, line 206, declared authoritative by the field doc at lines 202-204) and on CounterexampleBundleSummary (nested, line 178). Nothing structurally enforces their equality: save() overwrites both unconditionally (lines 234-235), but any future writer path that deserializes a summary from elsewhere, or a new summary type embedded in another envelope, can carry a summary whose schema_version disagrees with the envelope. The loader rejects only on record.schema_version (line 293); a mismatched summary.schema_version would silently pass.",
+          "command": "sed -n '171,179p;195,207p;227,236p;286,299p' crates/chronos-store/src/counterexample_storage.rs",
+          "tool": "sed",
+          "tool_version": "system",
+          "exit_code": 0,
+          "output_digest": null
+        }
+      ],
+      "impact": "Redundant version fields create two sources of truth inside one serialized blob. Today save() canonicalizes both so drift cannot be persisted through the public API; the residual risk is a future code path constructing records by hand (e.g. a migration tool) that sets summary.schema_version independently, which the loader would not detect.",
+      "remediation": {
+        "target": "backlog",
+        "action": "Either (a) drop summary.schema_version when a wire-format break is acceptable, or (b) add a loader-side assertion that record.schema_version == summary.schema_version, returning StoreError::Serialization on mismatch. Option (b) is a 3-line change at the site of the existing >CURRENT check (line 293)."
+      },
+      "details": {
+        "type": "wrong-direction",
+        "sub_type": "redundant-state-across-envelope-boundary",
+        "modules": [
+          "crates/chronos-store/src/counterexample_storage.rs"
+        ],
+        "writers": 1,
+        "rationale": "Both fields are written by exactly one canonical writer today (D5 overwrite), so severity MEDIUM (latent drift risk, not active divergence) and remediation backlog (no failure path exists now)."
+      }
+    },
+    {
+      "finding_id": "FIND-M9-01-DV-COUP-02",
+      "finding_id_alias_in_schema": "FIND-000002",
+      "fingerprint": "3a8e76f2c9d04b15a6e8c9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c",
+      "rule_id": "coupling.list-load-policy-asymmetry",
+      "cluster": "coupling",
+      "category": "coupling.contract-consistency",
+      "severity": "LOW",
+      "confidence": "HIGH",
+      "baseline_state": "new",
+      "attribution": "introduced",
+      "source_clusters": ["coupling"],
+      "locations": [
+        {
+          "path": "crates/chronos-store/src/counterexample_storage.rs",
+          "start_line": 286,
+          "end_line": 299,
+          "symbol": "load_counterexample_bundle future-version reject"
+        },
+        {
+          "path": "crates/chronos-store/src/counterexample_storage.rs",
+          "start_line": 318,
+          "end_line": 340,
+          "symbol": "list_counterexample_bundles (summary projection, no version check)"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "source",
+          "observation": "The cycle deliberately ships an asymmetric contract: load_counterexample_bundle hard-rejects schema_version > CURRENT (line 293) while list_counterexample_bundles best-effort includes future-versioned rows (pinned by test m9_01_list_includes_future_versioned_row_best_effort, lines ~880-982 of the new tests; verify disclosure R2 confirms). Additionally, the reject is implemented as StoreError::Serialization with a human upgrade message, which is an error-kind overload: callers pattern-matching on Serialization to catch corrupt blobs will also catch the forward-compatibility rejection.",
+          "command": "sed -n '286,299p' crates/chronos-store/src/counterexample_storage.rs; grep -n 'list_includes_future_versioned' crates/chronos-store/src/counterexample_storage.rs",
+          "tool": "sed + grep",
+          "tool_version": "system",
+          "exit_code": 0,
+          "output_digest": null
+        }
+      ],
+      "impact": "Two distinct failure semantics (corrupt blob vs future writer) collapse into one error variant. This is disclosed and deliberate (R2 + module docs), and the asymmetry is arguably the right product call for a best-effort list path; the cost is that upstream consumers cannot distinguish 'data corrupt' from 'written by newer chronos' without string-matching the message. verify-report W1-independent: this does not affect current behaviour (only one schema version exists).",
+      "remediation": {
+        "target": "backlog",
+        "action": "When a second schema version actually ships (the first v2 bump), introduce a dedicated StoreError variant (e.g. SchemaTooNew { found, supported }) or a distinguished error code so callers can branch without message parsing."
+      },
+      "details": {
+        "type": "implicit-contract",
+        "sub_type": "error-kind-overload",
+        "rationale": "No behavioural failure today; the semantic compression becomes costly exactly when versioning starts to matter."
+      }
+    },
+    {
+      "finding_id": "FIND-M9-01-DV-OE-01",
+      "finding_id_alias_in_schema": "FIND-000003",
+      "fingerprint": "773001caa8436a9892c1981bc2f9991a5fa961479bbf5f5ddf5e839292014e47",
+      "rule_id": "overeng.dead-code-speculative-generality",
+      "cluster": "overeng",
+      "category": "over-engineering",
+      "severity": "LOW",
+      "confidence": "HIGH",
+      "baseline_state": "new",
+      "attribution": "introduced",
+      "source_clusters": ["overeng"],
+      "locations": [
+        {
+          "path": "crates/chronos-store/src/counterexample_storage.rs",
+          "start_line": 54,
+          "end_line": 61,
+          "symbol": "KNOWN_BUNDLE_SCHEMA_VERSIONS"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "command",
+          "observation": "KNOWN_BUNDLE_SCHEMA_VERSIONS (&[u32] = &[1]) is declared with #[allow(dead_code)] and referenced by nothing: grep across all crates returns exactly one hit (its own declaration). The loader policy (D3) checks only the upper bound record.schema_version > CURRENT (line 293). The constant exists to let future cycles 'tighten the check without a new lint cascade' (own doc comment), which is explicitly speculative. Verify disclosure R4 already records it honestly.",
+          "command": "grep -rn 'KNOWN_BUNDLE_SCHEMA_VERSIONS' crates/ --include='*.rs'; sed -n '54,61p' crates/chronos-store/src/counterexample_storage.rs",
+          "tool": "grep + sed",
+          "tool_version": "system",
+          "exit_code": 0,
+          "output_digest": null
+        }
+      ],
+      "impact": "3 LOC of speculative generality plus a suppression that will outlive its justification if the tightening never happens; every future reader pays a small comprehension tax to learn it is intentionally inert. No runtime cost (const slice, optimized out).",
+      "remediation": {
+        "target": "backlog",
+        "action": "Either delete the constant and re-add it at the v2 bump (a 1-line re-addition, the lint cascade argument is weak for a single item), or wire it into the loader when the first non-contiguous version set exists (e.g. accept 1 and 3 but not 2). Prefer deletion: YAGNI. loc_reducible: 3; change_risk: LOW."
+      },
+      "details": {
+        "type": "dead-code",
+        "sub_type": "speculative-generality",
+        "recommendation": "delete",
+        "loc_reducible": 3,
+        "change_risk": "LOW",
+        "disclosed_in_verify": "R4"
+      }
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "by_severity": { "critical": 0, "high": 0, "medium": 1, "low": 2 },
+    "by_confidence": { "high": 3, "medium": 0, "low": 0 },
+    "by_attribution": { "introduced": 3, "pre_existing": 0, "unknown": 0 },
+    "by_cluster": { "coupling": 2, "overeng": 1, "smells": 0, "duplication": 0, "architecture": 0 }
+  },
+  "decision": {
+    "verdict": "PASS_WITH_WARNINGS",
+    "re_iterate_from": "none",
+    "reasons": [
+      {
+        "rule": "no-critical-introduced",
+        "finding_fingerprints": [],
+        "explanation": "No unsuppressed introduced CRITICAL findings. No circular imports (chronos-store does not depend on chronos-services; direction services->store only), no unencapsulated shared mutable state, no contract-breaking LSP violation introduced by the change."
+      },
+      {
+        "rule": "no-high-introduced",
+        "finding_fingerprints": [],
+        "explanation": "No unsuppressed introduced HIGH findings. Hidden-dependency and global-state catalogs returned zero hits on changed production lines (no module-level mutable state, no env coupling, no time/randomness in business logic added by this cycle)."
+      },
+      {
+        "rule": "warning-band-below-thresholds",
+        "finding_fingerprints": [
+          "2c7d65e1d5c25ace0c1b21bc506868d3c30de0a7c8a73c09c10645d2b2a6c3af",
+          "3a8e76f2c9d04b15a6e8c9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c",
+          "773001caa8436a9892c1981bc2f9991a5fa961479bbf5f5ddf5e839292014e47"
+        ],
+        "explanation": "1 introduced MEDIUM (FIND-M9-01-DV-COUP-01 duplicated version envelopes) + 2 introduced LOW (COUP-02 list/load policy asymmetry as error-kind overload; OE-01 dead KNOWN_BUNDLE_SCHEMA_VERSIONS). One MEDIUM and two LOW are below both the 1-2-HIGH and 3-MEDIUM FAIL thresholds: PASS_WITH_WARNINGS with backlog attached."
+      },
+      {
+        "rule": "pre-existing-policy",
+        "finding_fingerprints": [],
+        "explanation": "No pre-existing findings were re-discovered inside the smoke scope; no follow-up INC files are required by cycle-7b (that rule triggers only when at least one finding has attribution pre_existing)."
+      }
+    ],
+    "fail_closed": true,
+    "waivers": []
+  },
+  "follow_up": [
+    {
+      "finding_fingerprint": "2c7d65e1d5c25ace0c1b21bc506868d3c30de0a7c8a73c09c10645d2b2a6c3af",
+      "action": "backlog: add loader assertion record.schema_version == summary.schema_version (or drop the nested field on the next wire-format break)",
+      "owner": "unassigned",
+      "priority": "P2"
+    },
+    {
+      "finding_fingerprint": "3a8e76f2c9d04b15a6e8c9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c",
+      "action": "backlog: at the first v2 bump, introduce a dedicated StoreError variant (SchemaTooNew) instead of overloading Serialization",
+      "owner": "unassigned",
+      "priority": "P3"
+    },
+    {
+      "finding_fingerprint": "773001caa8436a9892c1981bc2f9991a5fa961479bbf5f5ddf5e839292014e47",
+      "action": "backlog: delete KNOWN_BUNDLE_SCHEMA_VERSIONS until the first real version-set tightening; re-add when needed (YAGNI)",
+      "owner": "unassigned",
+      "priority": "P3"
+    }
+  ],
+  "artifact_paths": {
+    "json": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos/cycle-artifacts/m9-01-schema-versioning/debt-verify/debt-report.json",
+    "markdown": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos/cycle-artifacts/m9-01-schema-versioning/debt-verify/debt-report.md"
+  },
+  "runtime_handoff": {
+    "status": "specification_only",
+    "desired_artifact_kind": "debt-report",
+    "desired_gate": "debt-approved",
+    "note": "No debt-specific CLI transition is declared by this gate. This cycle is ad-hoc (sddk cycle status returns STORAGE_NOT_FOUND for m9-01-schema-versioning); release.complete gate evaluation via sddk cycle evaluate-gate could not run and is owned by the orchestrator."
+  }
+}

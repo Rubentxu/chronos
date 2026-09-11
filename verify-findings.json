@@ -1,0 +1,58 @@
+{
+  "schema": "verify-finding.schema.json",
+  "subject": {
+    "base": "bceddc946b73209756d3360b0aec4dca592296c3",
+    "head_initial": "cb4de8d4a9a72002deaf6e64ba4966fe817a54c4",
+    "head_final": "0aec8bac30f995e638e2a656b55935f48a60623d",
+    "diff_digest": "e60cd27a9aa285730968c0705b92069dbdde0eee2fc2c1b81afd1aa392027bd9",
+    "working_tree_clean": true,
+    "verified_at": "2026-09-11T17:30:00Z",
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos"
+  },
+  "findings": [
+    {
+      "finding_id": "sha256:warning-fmt-drift-applied-during-verify:m9-01",
+      "rule_id": "regression_and_build.fmt_drift",
+      "subject": {
+        "base": "bceddc946b73209756d3360b0aec4dca592296c3",
+        "head": "0aec8bac30f995e638e2a656b55935f48a60623d",
+        "diff_digest": "e60cd27a9aa285730968c0705b92069dbdde0eee2fc2c1b81afd1aa392027bd9"
+      },
+      "location": {
+        "path": "crates/chronos-store/src/counterexample_storage.rs",
+        "start_line": 837,
+        "end_line": 968,
+        "symbol": "tests::m9_01_future_version_load_is_rejected / tests::m9_01_list_includes_future_versioned_row_best_effort"
+      },
+      "classification": "warning",
+      "severity": "low",
+      "confidence": "high",
+      "production_reachable": "no",
+      "evidence": [
+        {
+          "kind": "command",
+          "observation": "cargo fmt --all -- --check exits 1 with diffs at counterexample_storage.rs:839, 945, 964 (test bodies, line-wrapping only)",
+          "command": "cargo fmt --all -- --check",
+          "exit_code": 1,
+          "output_digest": "pre-fix sha256 of fmt diff = cosmetic, no semantic change"
+        },
+        {
+          "kind": "command",
+          "observation": "After cargo fmt --all + commit (0aec8ba), T0 (fmt + clippy) passes with exit 0",
+          "command": "cargo fmt --all -- --check; cargo clippy --workspace --all-targets -- -D warnings",
+          "exit_code": 0,
+          "output_digest": null
+        }
+      ],
+      "exemption": null,
+      "owner_phase": "verify",
+      "notes": "Cosmetic-only drift introduced by apply phase (test bodies commit with rustfmt non-conformant line wrapping). Caught during verify re-run of T0 and fixed in a separate chore(fmt) commit (0aec8ba). Cycle was not blocked; discipline signal only. All semantic content unchanged: 8-line diff, no test logic touched."
+    }
+  ],
+  "issues_by_severity": {
+    "critical": 0,
+    "high": 0,
+    "warning": 1,
+    "suggestion": 0
+  }
+}

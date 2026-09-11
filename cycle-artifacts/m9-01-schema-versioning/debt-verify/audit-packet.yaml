@@ -1,0 +1,27 @@
+contract_version: debt-gate/v1
+cycle:
+  cycle_id: m9-01-schema-versioning
+  change_name: m9-01-schema-versioning
+  path: A-min
+  remediation_round: 0
+subject:
+  branch: feat/m9-01-schema-versioning
+  base_commit: bceddc946b73209756d3360b0aec4dca592296c3
+  head_commit: 0aec8bac30f995e638e2a656b55935f48a60623d
+  diff_digest: 1d6e9cc1b652c1dd1c77c37c74f6f5556d76005d2802d1a7ac4a62fc5977141c
+scope:
+  effective_depth: smoke
+  changed_paths:
+    - crates/chronos-store/src/counterexample_storage.rs
+    - crates/chronos-services/src/counterexample.rs
+    - crates/chronos-cli/src/replay.rs
+  one_hop_dependencies: []
+verify_evidence:
+  path: verify-report.md
+  sha256: 2a5eeee3a89690f967cec391708c0354a52cde83c3458b79d70949f1ea271d4f
+  subject_sha: 0aec8bac30f995e638e2a656b55935f48a60623d
+  verdict: PASS_WITH_WARNINGS
+router:
+  context_quality: C1
+  strict_tdd: false
+  engram_memory: false
