@@ -1,24 +1,24 @@
 {
   "cycle_id": "m8-04-chronos-cli-engine-events-saved-rework-merge",
   "title": "M8-04 — chronos-cli workspace member + engine events wiring + Saved-variant rework",
-  "status": "ready_for_merge",
+  "status": "merged",
   "branch": "feat/m8-04-chronos-cli-engine-events-saved-rework-execute",
-  "head_sha": "PENDING",
-  "base_sha": "84a8a19",
-  "merge_sha": "PENDING",
+  "head_sha": "e3c2e83",
+  "base_sha": "34d0b81",
+  "merge_sha": "fd62d9d",
   "tag": "m8-04-chronos-cli-engine-events-saved-rework.0",
-  "ff_merged_sha": "PENDING",
+  "ff_merged_sha": "fd62d9d",
   "started_at": "2026-09-11T07:00:00Z",
-  "completed_at": "PENDING",
+  "completed_at": "2026-09-11T11:36:00Z",
   "commits": [
     { "sha": "8589cce", "subject": "docs(milestones): m8-04 chronos-cli + engine events + Saved-variant rework scoping (PROPOSED)" },
     { "sha": "34d0b81", "subject": "Merge branch 'feat/m8-04-chronos-cli-engine-events-saved-rework' (scoping only)" },
     { "sha": "50a2188", "subject": "feat(services): m8-04 engine events wiring (pull_engine_events + shrink step 4)" },
     { "sha": "eef7de3", "subject": "feat(services+mcp+sandbox): m8-04 Saved-variant rework + events_count plumbing" },
     { "sha": "dfdf3d4", "subject": "feat(chronos-cli): workspace member + chronos test replay/run subcommands (m8-04 d3)" },
-    { "sha": "PENDING", "subject": "docs(sddk): m8-04 chronos-cli + engine events + Saved rework merge doc + apply-checkpoint" },
-    { "sha": "PENDING", "subject": "Merge branch 'feat/m8-04-chronos-cli-engine-events-saved-rework-execute'" },
-    { "sha": "PENDING", "subject": "chore(sddk): record m8-04 apply-checkpoint" }
+    { "sha": "e3c2e83", "subject": "docs(sddk): m8-04 chronos-cli + engine events + Saved rework merge doc + apply-checkpoint" },
+    { "sha": "fd62d9d", "subject": "Merge branch 'feat/m8-04-chronos-cli-engine-events-saved-rework-execute'" },
+    { "sha": "PENDING", "subject": "chore(sddk): record m8-04 apply-checkpoint (head_sha=e3c2e83, merge_sha=fd62d9d, status=merged)" }
   ],
   "shipped_artifacts": {
     "scope_doc": {
