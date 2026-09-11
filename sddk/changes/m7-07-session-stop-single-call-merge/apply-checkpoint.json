@@ -3,13 +3,13 @@
   "title": "M7-07 — session_stop single-call path (one ProbeService::stop call per request)",
   "status": "ready_for_merge",
   "branch": "feat/m7-07-session-stop-single-call-merge",
-  "head_sha": "TBD",
+  "head_sha": "31b2a59",
   "base_sha": "9fa4b49",
-  "ff_merged_sha": null,
+  "ff_merged_sha": "31b2a59",
   "started_at": "2026-09-11T09:23:00Z",
   "completed_at": "2026-09-11T09:34:00Z",
   "commits": [
-    { "sha": "TBD", "subject": "feat(services+mcp): session_stop single-call path (m7-07)" }
+    { "sha": "31b2a59", "subject": "feat(services+mcp): session_stop single-call path (m7-07)" }
   ],
   "shipped_artifacts": {
     "internal_helper": {
