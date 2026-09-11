@@ -33,6 +33,8 @@
 //! the O(1) count. Legacy bundles continue to load via `bundle_events_or_legacy`.
 //!
 
+use std::mem;
+
 use crate::cas::ContentHash;
 use crate::error::StoreError;
 use chronos_domain::property::PropertyValue;
@@ -46,6 +48,48 @@ use serde::{Deserialize, Serialize};
 /// Value: bincode-serialised [`CounterexampleBundleRecord`].
 const COUNTEREXAMPLE_BUNDLES: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("counterexample_bundles");
+
+/// Side table for counterexample bundle events (m9-02).
+///
+/// Key: binary-encoded `(bundle_id, chunk_index)` pair.
+///   - First 4 bytes: length of bundle_id as big-endian u32
+///   - Next N bytes: bundle_id UTF-8 bytes
+///   - Final 4 bytes: chunk_index as big-endian u32
+/// Value: bincode-serialised `Vec<TraceEvent>` chunk.
+///
+/// Chunk size is [`BUNDLE_EVENTS_CHUNK_SIZE`]. Each chunk contains up to
+/// that many events; the last chunk may be smaller.
+const COUNTEREXAMPLE_BUNDLE_EVENTS: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("counterexample_bundle_events");
+
+/// Encode `(bundle_id, chunk_index)` into a byte key for
+/// `COUNTEREXAMPLE_BUNDLE_EVENTS`.
+///
+/// Layout: [len(bundle_id) as u32 BE][bundle_id bytes][chunk_index as u32 BE]
+fn encode_chunk_key(bundle_id: &str, chunk_index: u32) -> Vec<u8> {
+    let id_bytes = bundle_id.as_bytes();
+    let mut key = Vec::with_capacity(4 + id_bytes.len() + 4);
+    key.extend_from_slice(&(id_bytes.len() as u32).to_be_bytes());
+    key.extend_from_slice(id_bytes);
+    key.extend_from_slice(&chunk_index.to_be_bytes());
+    key
+}
+
+/// Decode a byte key back to `(bundle_id, chunk_index)`.
+fn decode_chunk_key(key: &[u8]) -> Option<(String, u32)> {
+    if key.len() < 8 {
+        return None;
+    }
+    let id_len = u32::from_be_bytes(key[..4].try_into().ok()?) as usize;
+    if key.len() < 8 + id_len {
+        return None;
+    }
+    let id_bytes = &key[4..4 + id_len];
+    let chunk_bytes: [u8; 4] = key[4 + id_len..].try_into().ok()?;
+    let bundle_id = String::from_utf8(id_bytes.to_vec()).ok()?;
+    let chunk_index = u32::from_be_bytes(chunk_bytes);
+    Some((bundle_id, chunk_index))
+}
 
 /// Chunk size for the `counterexample_bundle_events` side table.
 ///
@@ -227,6 +271,12 @@ impl crate::storage::SessionStore {
     /// Save a counterexample bundle record. Returns the (already-existing)
     /// `bundle_id` for caller convenience (the bundle_id lives in the
     /// record itself).
+    ///
+    /// **m9-02:** This delegates to the private atomic
+    /// [`save_bundle_record_and_events`](Self::save_bundle_record_and_events)
+    /// which persists the record (with an empty `events` vec) and all events
+    /// as chunked rows in `counterexample_bundle_events` in one write
+    /// transaction.
     #[allow(clippy::result_large_err)]
     pub fn save_counterexample_bundle(
         &self,
@@ -244,12 +294,34 @@ impl crate::storage::SessionStore {
             )));
         }
 
-        // m9-01 D5: always write the current schema version so the
-        // persisted value is controlled — even if the caller constructed
-        // a record with a stale value.
+        // m9-01 D5: always write the current schema version.
         let mut record = record;
         record.schema_version = CURRENT_BUNDLE_SCHEMA_VERSION;
         record.summary.schema_version = CURRENT_BUNDLE_SCHEMA_VERSION;
+
+        // m9-02 D4: take events out of the record; the atomic wrapper
+        // will persist them to the side table.
+        let events = mem::take(&mut record.events);
+        record.summary.events_count = events.len() as u64;
+
+        self.save_bundle_record_and_events(record, events)
+    }
+
+    /// Persist a record and its events in one atomic write transaction (m9-02 D4).
+    ///
+    /// The `record.events` field is expected to be empty (populated by the
+    /// caller via `mem::take`). This function writes the record to
+    /// `counterexample_bundles` and all `events` as chunked rows in
+    /// `counterexample_bundle_events`.
+    ///
+    /// Re-save deletes any pre-existing chunks for `record.summary.bundle_id`
+    /// before writing new ones (R7).
+    fn save_bundle_record_and_events(
+        &self,
+        record: CounterexampleBundleRecord,
+        events: Vec<TraceEvent>,
+    ) -> Result<String, StoreError> {
+        let bundle_id = record.summary.bundle_id.clone();
 
         let bytes =
             bincode::serialize(&record).map_err(|e| StoreError::Serialization(e.to_string()))?;
@@ -258,16 +330,173 @@ impl crate::storage::SessionStore {
             .db()
             .begin_write()
             .map_err(|e| StoreError::Database(e.into()))?;
+
+        // Write the record (events field is empty at this point).
         {
             let mut table = tx
                 .open_table(COUNTEREXAMPLE_BUNDLES)
                 .map_err(|e| StoreError::Database(e.into()))?;
             table
-                .insert(record.summary.bundle_id.as_bytes(), bytes.as_slice())
+                .insert(bundle_id.as_bytes(), bytes.as_slice())
                 .map_err(|e| StoreError::Database(e.into()))?;
         }
+
+        // m9-02 R7: delete prior chunks for this bundle before writing new ones.
+        // We collect existing keys first (requires a read), then delete in the
+        // same write transaction.
+        let prior_keys: Vec<Vec<u8>> = {
+            let read_tx = self
+                .db()
+                .begin_read()
+                .map_err(|e| StoreError::Database(e.into()))?;
+            match read_tx.open_table(COUNTEREXAMPLE_BUNDLE_EVENTS) {
+                Ok(events_table) => {
+                    let mut keys = Vec::new();
+                    for entry in events_table.iter().map_err(|e| StoreError::Database(e.into()))? {
+                        let (k, _) = entry.map_err(|e| StoreError::Database(e.into()))?;
+                        let key_bytes = k.value();
+                        if let Some((ref id, _)) = decode_chunk_key(key_bytes) {
+                            if id == &bundle_id {
+                                keys.push(key_bytes.to_vec());
+                            }
+                        }
+                    }
+                    keys
+                }
+                Err(redb::TableError::TableDoesNotExist(_)) => Vec::new(),
+                Err(e) => return Err(StoreError::Database(e.into())),
+            }
+        };
+
+        {
+            let mut events_table = tx
+                .open_table(COUNTEREXAMPLE_BUNDLE_EVENTS)
+                .map_err(|e| StoreError::Database(e.into()))?;
+            // Delete prior chunks.
+            for key in &prior_keys {
+                events_table.remove(key.as_slice()).map_err(|e| StoreError::Database(e.into()))?;
+            }
+            // Write new chunks.
+            for (chunk_idx, chunk) in events.chunks(BUNDLE_EVENTS_CHUNK_SIZE).enumerate() {
+                let key = encode_chunk_key(&bundle_id, chunk_idx as u32);
+                let value =
+                    bincode::serialize(chunk).map_err(|e| StoreError::Serialization(e.to_string()))?;
+                events_table
+                    .insert(key.as_slice(), value.as_slice())
+                    .map_err(|e| StoreError::Database(e.into()))?;
+            }
+        }
+
         tx.commit().map_err(|e| StoreError::Database(e.into()))?;
-        Ok(record.summary.bundle_id)
+        Ok(bundle_id)
+    }
+
+    /// Save events for an existing bundle without writing the record atomically (m9-02 R3).
+    ///
+    /// This is a standalone write for callers who manage the record separately.
+    /// It does NOT write to `counterexample_bundles`; use
+    /// [`save_counterexample_bundle`](Self::save_counterexample_bundle) for
+    /// the atomic record + events save.
+    #[allow(clippy::result_large_err)]
+    pub fn save_counterexample_bundle_events(
+        &self,
+        bundle_id: &str,
+        events: Vec<TraceEvent>,
+    ) -> Result<(), StoreError> {
+        let tx = self
+            .db()
+            .begin_write()
+            .map_err(|e| StoreError::Database(e.into()))?;
+
+        {
+            let mut events_table = tx
+                .open_table(COUNTEREXAMPLE_BUNDLE_EVENTS)
+                .map_err(|e| StoreError::Database(e.into()))?;
+            for (chunk_idx, chunk) in events.chunks(BUNDLE_EVENTS_CHUNK_SIZE).enumerate() {
+                let key = encode_chunk_key(bundle_id, chunk_idx as u32);
+                let value =
+                    bincode::serialize(chunk).map_err(|e| StoreError::Serialization(e.to_string()))?;
+                events_table
+                    .insert(key.as_slice(), value.as_slice())
+                    .map_err(|e| StoreError::Database(e.into()))?;
+            }
+        }
+
+        tx.commit().map_err(|e| StoreError::Database(e.into()))?;
+        Ok(())
+    }
+
+    /// Load all events for a bundle from the side table, sorted by chunk index.
+    ///
+    /// Returns `Ok(vec![])` when no chunks exist (the table is absent or
+    /// the bundle has no side-table events).
+    #[allow(clippy::result_large_err)]
+    pub fn load_counterexample_bundle_events(
+        &self,
+        bundle_id: &str,
+    ) -> Result<Vec<TraceEvent>, StoreError> {
+        let tx = self
+            .db()
+            .begin_read()
+            .map_err(|e| StoreError::Database(e.into()))?;
+        let table = match tx.open_table(COUNTEREXAMPLE_BUNDLE_EVENTS) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
+            Err(e) => return Err(StoreError::Database(e.into())),
+        };
+
+        let mut chunks: Vec<(u32, Vec<TraceEvent>)> = Vec::new();
+        for entry in table.iter().map_err(|e| StoreError::Database(e.into()))? {
+            let (k, v) = entry.map_err(|e| StoreError::Database(e.into()))?;
+            let key_bytes = k.value();
+            if let Some((ref id, chunk_idx)) = decode_chunk_key(key_bytes) {
+                if id == bundle_id {
+                    let chunk: Vec<TraceEvent> = bincode::deserialize(v.value())
+                        .map_err(|e| StoreError::Serialization(e.to_string()))?;
+                    chunks.push((chunk_idx, chunk));
+                }
+            }
+        }
+
+        chunks.sort_by_key(|(idx, _)| *idx);
+        let mut result = Vec::new();
+        for (_, chunk) in chunks {
+            result.extend(chunk);
+        }
+        Ok(result)
+    }
+
+    /// Count total events across all chunks for a bundle.
+    ///
+    /// Used as a fallback in `bundle_events_or_legacy` when the bundle's
+    /// `events_count` is zero and the record has no events (shouldn't
+    /// happen in practice for post-m9-02 bundles, but included for
+    /// completeness).
+    #[allow(clippy::result_large_err)]
+    pub fn count_counterexample_bundle_events(&self, bundle_id: &str) -> Result<u64, StoreError> {
+        let tx = self
+            .db()
+            .begin_read()
+            .map_err(|e| StoreError::Database(e.into()))?;
+        let table = match tx.open_table(COUNTEREXAMPLE_BUNDLE_EVENTS) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(0),
+            Err(e) => return Err(StoreError::Database(e.into())),
+        };
+
+        let mut total: u64 = 0;
+        for entry in table.iter().map_err(|e| StoreError::Database(e.into()))? {
+            let (k, v) = entry.map_err(|e| StoreError::Database(e.into()))?;
+            let key_bytes = k.value();
+            if let Some((ref id, _)) = decode_chunk_key(key_bytes) {
+                if id == bundle_id {
+                    let chunk: Vec<TraceEvent> = bincode::deserialize(v.value())
+                        .map_err(|e| StoreError::Serialization(e.to_string()))?;
+                    total += chunk.len() as u64;
+                }
+            }
+        }
+        Ok(total)
     }
 
     /// Load a counterexample bundle by id.
@@ -406,6 +635,27 @@ impl crate::storage::SessionStore {
         out.sort_by(|a, b| a.bundle_id.cmp(&b.bundle_id));
         Ok(out)
     }
+}
+
+/// Load events for a bundle, handling both legacy (blob-embedded) and
+/// post-m9-02 (side-table) layouts.
+///
+/// This is the single chokepoint (m9-02 D5) that consumers call:
+/// - When `bundle.events` is non-empty (pre-m9-02 blob), returns a clone.
+/// - When `bundle.events` is empty (post-m9-02), loads chunks from the
+///   side table and concatenates them in `chunk_index` order.
+///
+/// Consumers should use this instead of accessing `bundle.events` directly.
+pub fn bundle_events_or_legacy(
+    store: &crate::storage::SessionStore,
+    bundle: &CounterexampleBundleRecord,
+) -> Result<Vec<TraceEvent>, StoreError> {
+    if !bundle.events.is_empty() {
+        // Legacy: events are embedded in the blob (pre-m9-02).
+        return Ok(bundle.events.clone());
+    }
+    // Post-m9-02: load from the side table.
+    store.load_counterexample_bundle_events(&bundle.summary.bundle_id)
 }
 
 #[cfg(test)]
