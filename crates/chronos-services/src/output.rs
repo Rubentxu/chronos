@@ -1929,6 +1929,245 @@ pub struct SessionExplainProvenance {
     pub source: String,
 }
 
+// ============================================================================
+// Session lifecycle (m7-04)
+//
+// Three net-new v2 tools: `session_start`, `session_stop`, `capabilities`.
+// The dispatcher `ChronosSessionLifecycleService` lives in
+// `crates/chronos-services/src/session_lifecycle.rs`.
+//
+// `session_start` unifies `probe_start` (action=spawn), `session_load`
+// (action=load), and a stubbed action=attach (m7+) behind a single
+// endpoint with a capability snapshot. `session_stop` wraps `probe_stop`
+// plus two new flags (seal_tail + drain_subscriptions). `capabilities`
+// is read-only introspection over target + session_id.
+// ============================================================================
+
+use chronos_domain::trace::{EventType, Language};
+
+/// Discriminator for the v2 `session_start` tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionStartAction {
+    /// Spawn a new process under a probe (mirrors v1 `probe_start`).
+    Spawn,
+    /// Load a previously persisted session from the store (mirrors
+    /// v1 `session_load`).
+    Load,
+    /// Attach to an already-running PID (m7+ stub; rejected with
+    /// `ServiceError::Unsupported` in m7-04 until the domain-layer
+    /// attach API lands).
+    Attach,
+}
+
+/// Input for the v2 `session_start` tool.
+///
+/// The per-action fields are gated: `spawn` requires `spawn_fields`,
+/// `load` requires `session_id`, `attach` requires `pid`. The
+/// dispatcher validates kind/argument consistency and rejects unknown
+/// or mismatched fields with `ServiceError::InvalidInput`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SessionStartInput {
+    pub action: SessionStartAction,
+    /// Required for `action=spawn` — mirrors v1 `ProbeStartInput`.
+    #[serde(default)]
+    pub spawn_fields: Option<SessionStartSpawnFields>,
+    /// Required for `action=load`.
+    #[serde(default)]
+    pub session_id: Option<String>,
+    /// Required for `action=attach` (m7+).
+    #[serde(default)]
+    pub pid: Option<u32>,
+    /// Optional override for `action=load` (deferred to m7+).
+    #[serde(default)]
+    pub path: Option<String>,
+}
+
+/// Per-action payload for `session_start{action=spawn}`.
+///
+/// Mirrors v1 `ProbeStartInput` 1:1. Field names + types are
+/// preserved so existing v1 callers can compose a v2 input by
+/// adding `action="spawn"` without renaming any other field.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SessionStartSpawnFields {
+    pub program: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub cwd: Option<String>,
+    #[serde(default)]
+    pub trace_syscalls: bool,
+    #[serde(default)]
+    pub bus_capacity: Option<usize>,
+    #[serde(default)]
+    pub track_function_frames: bool,
+}
+
+/// Output for the v2 `session_start` tool.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SessionStartOutput {
+    pub session_id: String,
+    pub action: SessionStartAction,
+    #[serde(default)]
+    pub target: Option<String>,
+    #[serde(default)]
+    pub language: Option<String>,
+    #[serde(default)]
+    pub event_count: Option<usize>,
+    #[serde(default)]
+    pub duration_ms: Option<u64>,
+    #[serde(default)]
+    pub bus_capacity: Option<usize>,
+    pub capability_snapshot: CapabilitySnapshot,
+    pub provenance: SessionLifecycleProvenance,
+}
+
+/// Input for the v2 `session_stop` tool.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SessionStopInput {
+    pub session_id: String,
+    /// Mark `SessionMetadata.tail_sealed=true` and record `sealed_at`.
+    /// Default `true` (m7-04 v2 semantic: "seal tail").
+    #[serde(default = "default_true")]
+    pub seal_tail: bool,
+    /// Drain `observe{verb=list}` before stop. Default `true`.
+    /// Destructive (matches m7-02 `retention=Drained` default).
+    #[serde(default = "default_true")]
+    pub drain_subscriptions: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// Output for the v2 `session_stop` tool.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SessionStopOutput {
+    pub session_id: String,
+    pub status: String,
+    pub target: String,
+    pub total_events: u64,
+    pub duration_ms: u64,
+    pub ebpf_detached: bool,
+    #[serde(default)]
+    pub sealed_at: Option<u64>,
+    pub drained_subscriptions: bool,
+    pub capability_snapshot: CapabilitySnapshot,
+    pub provenance: SessionLifecycleProvenance,
+}
+
+/// Input for the v2 `capabilities` tool.
+///
+/// At least one of `target` or `session_id` is required. Both are
+/// allowed for a combined static + dynamic view. The dispatcher
+/// rejects calls with neither set (ServiceError::InvalidInput).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CapabilitiesInput {
+    #[serde(default)]
+    pub target: Option<TargetSpec>,
+    #[serde(default)]
+    pub session_id: Option<String>,
+}
+
+/// Output for the v2 `capabilities` tool.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CapabilitiesOutput {
+    #[serde(default)]
+    pub static_capabilities: Option<StaticCapabilities>,
+    #[serde(default)]
+    pub dynamic_capabilities: Option<DynamicCapabilities>,
+    pub provenance: SessionLifecycleProvenance,
+}
+
+/// Static target description — what evidence mechanisms a target
+/// supports before any session is started.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TargetSpec {
+    pub program: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub language: Option<Language>,
+}
+
+/// Snapshot of what evidence mechanisms a session currently exposes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CapabilitySnapshot {
+    #[serde(default)]
+    pub probe_type: Option<String>,
+    #[serde(default)]
+    pub language: Option<String>,
+    #[serde(default)]
+    pub bus_capacity: Option<usize>,
+    #[serde(default)]
+    pub bus_fill: Option<usize>,
+    #[serde(default)]
+    pub query_engine_ready: bool,
+    #[serde(default)]
+    pub active_subscriptions: Vec<String>,
+    #[serde(default)]
+    pub tail_sealed: bool,
+    #[serde(default)]
+    pub sealed_at: Option<u64>,
+}
+
+/// Static capability surface (per-target, pre-session).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StaticCapabilities {
+    pub probe_type: String,
+    pub language: Language,
+    pub target_event_types: Vec<EventType>,
+    pub language_adapters: Vec<LanguageAdapterStatus>,
+    pub projections: Vec<ProjectionKind>,
+}
+
+/// Per-language adapter availability.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LanguageAdapterStatus {
+    pub language: Language,
+    pub available: bool,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+/// Projection kind that the v2 tool surface offers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectionKind {
+    EventsRead,
+    ExecutionQuery,
+    StateQuery,
+    TraceSlice,
+    SessionCompare,
+    SessionExplain,
+}
+
+/// Dynamic capability surface (per-session, live).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DynamicCapabilities {
+    pub bus_capacity: usize,
+    pub bus_fill: usize,
+    pub event_types_emitted: Vec<EventType>,
+    pub event_type_counts: HashMap<EventType, u64>,
+    pub query_engine_ready: bool,
+    pub active_subscriptions: Vec<String>,
+    pub tail_sealed: bool,
+    #[serde(default)]
+    pub sealed_at: Option<u64>,
+}
+
+/// Provenance metadata for `session_start` / `session_stop` /
+/// `capabilities` responses.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SessionLifecycleProvenance {
+    /// Engine version string. Hardcoded to `"chronos-0.1.0"` until
+    /// `chronos_query::QueryEngine::engine_version()` exists.
+    pub engine_version: String,
+    /// Source tag (e.g., `"session_start:spawn"`,
+    /// `"session_stop"`, `"capabilities:target"`).
+    pub source: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
