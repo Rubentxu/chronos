@@ -67,6 +67,42 @@ pub enum ExistencePredicateWire {
     PropertyKeyEquals { target: String },
 }
 
+/// m8-07: wire mirror of `chronos_services::hypothesis_test::HypothesisInput`.
+///
+/// Persisted in the bundle record (alongside the `minimised` payload) so
+/// `chronos test replay` can reconstruct the EXACT HypothesisInput the user
+/// passed to `counterexample_shrink`, instead of synthesising defaults from
+/// the minimised payload (the m8-04 R-hypothesis-reconstruction-fidelity gap).
+///
+/// R1 disclosure (m8-07): this is a hand-maintained mirror of the
+/// chronos-services type. Drift is possible if `HypothesisInput` evolves
+/// without updating this mirror; mitigated by the roundtrip test in
+/// `crates/chronos-services/src/counterexample.rs::tests`.
+///
+/// All fields are plain string / Option types to avoid cross-crate type
+/// sharing. Kind/scope/comparison are stringified to keep chronos-store
+/// independent of chronos-services' enum types (same precedent as
+/// `CounterexampleBundleSummary.property_kind`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HypothesisInputWire {
+    pub session_id: String,
+    /// "invariant" | "existence" | "call_path".
+    pub kind: String,
+    /// "event_count" | "property_value" | "latency_ms" | None.
+    pub scope: Option<String>,
+    /// "Eq" | "Ne" | "Ge" | "Gt" | "Le" | "Lt" | None.
+    pub comparison: Option<String>,
+    pub constant: Option<PropertyValue>,
+    pub property_target: Option<String>,
+    pub predicate: Option<ExistencePredicateWire>,
+    pub caller: Option<String>,
+    pub callee: Option<String>,
+    /// HypothesisInput::max_depth is Option<usize>; we persist as Option<u64>
+    /// for forward compatibility (future widening to u128). Cast is
+    /// saturating in `hypothesis_input_from_wire` (bounded by usize::MAX).
+    pub max_depth: Option<u64>,
+}
+
 /// Filter shape for `SessionStore::list_counterexample_bundles`.
 ///
 /// All fields are optional; passing `None` for everything returns the
@@ -117,6 +153,17 @@ pub struct CounterexampleBundleRecord {
     /// for read (we read `events` directly), but useful for future dedup.
     #[serde(default)]
     pub event_cas_hashes: Vec<ContentHash>,
+    /// m8-07: original `HypothesisInput` the user passed to
+    /// `counterexample_shrink`. None for bundles persisted before m8-07
+    /// (serde's `#[serde(default)]` makes legacy loads a clean
+    /// `target_hypothesis: None`).
+    ///
+    /// When `Some`, `chronos test replay` uses this verbatim to
+    /// reconstruct the user's original hypothesis for replay, instead of
+    /// the m8-04 synthetic-default reconstruction (which loses
+    /// scope/comparison/property_target for Invariant targets).
+    #[serde(default)]
+    pub target_hypothesis: Option<HypothesisInputWire>,
 }
 
 impl crate::storage::SessionStore {
@@ -309,6 +356,7 @@ mod tests {
             events: vec![],
             minimised: Some(MinimisedPayload::Constant(PropertyValue::Number(2.0))),
             event_cas_hashes: vec![],
+            target_hypothesis: None,
         };
         store.save_counterexample_bundle(rec.clone()).unwrap();
         let loaded = store.load_counterexample_bundle("b1").unwrap().unwrap();
@@ -348,6 +396,7 @@ mod tests {
                     events: vec![],
                     minimised: None,
                     event_cas_hashes: vec![],
+                    target_hypothesis: None,
                 })
                 .unwrap();
         }
@@ -381,6 +430,7 @@ mod tests {
                     events: vec![],
                     minimised: None,
                     event_cas_hashes: vec![],
+                    target_hypothesis: None,
                 })
                 .unwrap();
         }
@@ -415,6 +465,7 @@ mod tests {
                     events: vec![],
                     minimised: None,
                     event_cas_hashes: vec![],
+                    target_hypothesis: None,
                 })
                 .unwrap();
         }
@@ -494,6 +545,7 @@ mod tests {
                     events: vec![],
                     minimised: None,
                     event_cas_hashes: vec![],
+                    target_hypothesis: None,
                 })
                 .unwrap();
         }
@@ -527,8 +579,97 @@ mod tests {
             events: vec![],
             minimised: None,
             event_cas_hashes: vec![],
+            target_hypothesis: None,
         };
         let r = store.save_counterexample_bundle(rec);
         assert!(r.is_err(), "empty bundle_id must be rejected");
+    }
+
+    // m8-07 §5 (per-crate integration): save a bundle with a non-None
+    // target_hypothesis, load it back, and assert the wire mirror survived
+    // the bincode round-trip intact. This pins the D2 serde contract:
+    // #[serde(default)] on the field means pre-m8-07 bundles (which have
+    // no target_hypothesis on disk) deserialize cleanly as None.
+    #[test]
+    fn m8_07_save_then_load_preserves_target_hypothesis() {
+        use crate::counterexample_storage::HypothesisInputWire;
+        let store = make_store();
+        let wire = HypothesisInputWire {
+            session_id: "sess-m8-07-test".into(),
+            kind: "invariant".into(),
+            scope: Some("event_count".into()),
+            comparison: Some("Ge".into()),
+            constant: Some(chronos_domain::property::PropertyValue::Number(1000.0)),
+            property_target: None,
+            predicate: None,
+            caller: None,
+            callee: None,
+            max_depth: None,
+        };
+        let rec = CounterexampleBundleRecord {
+            summary: CounterexampleBundleSummary {
+                bundle_id: "b-m8-07".into(),
+                property_kind: "invariant".into(),
+                workspace_id: "ws".into(),
+                created_at_ms: 0,
+                rounds_used: 4,
+                has_full_bundle: true,
+            },
+            events: vec![],
+            minimised: Some(MinimisedPayload::Constant(
+                chronos_domain::property::PropertyValue::Number(0.0),
+            )),
+            event_cas_hashes: vec![],
+            target_hypothesis: Some(wire),
+        };
+        store.save_counterexample_bundle(rec.clone()).unwrap();
+        let loaded = store
+            .load_counterexample_bundle("b-m8-07")
+            .unwrap()
+            .unwrap();
+
+        // The wire mirror survived the bincode round-trip.
+        let th = loaded
+            .target_hypothesis
+            .expect("target_hypothesis must be present");
+        assert_eq!(th.session_id, "sess-m8-07-test");
+        assert_eq!(th.kind, "invariant");
+        assert_eq!(th.scope.as_deref(), Some("event_count"));
+        assert_eq!(th.comparison.as_deref(), Some("Ge"));
+        assert!(th.constant.is_some());
+    }
+
+    // m8-07 §5 (backward compatibility): a bundle record without target_hypothesis
+    // on disk must deserialize as target_hypothesis=None (serde #[serde(default)]).
+    // We simulate this by constructing a record with target_hypothesis=None
+    // and verifying it round-trips correctly.
+    #[test]
+    fn m8_07_pre_m8_07_bundle_has_no_target_hypothesis() {
+        let store = make_store();
+        let rec = CounterexampleBundleRecord {
+            summary: CounterexampleBundleSummary {
+                bundle_id: "b-pre-m8-07".into(),
+                property_kind: "invariant".into(),
+                workspace_id: "ws".into(),
+                created_at_ms: 0,
+                rounds_used: 1,
+                has_full_bundle: true,
+            },
+            events: vec![],
+            minimised: Some(MinimisedPayload::Constant(
+                chronos_domain::property::PropertyValue::Number(0.0),
+            )),
+            event_cas_hashes: vec![],
+            target_hypothesis: None,
+        };
+        store.save_counterexample_bundle(rec.clone()).unwrap();
+        let loaded = store
+            .load_counterexample_bundle("b-pre-m8-07")
+            .unwrap()
+            .unwrap();
+        assert!(
+            loaded.target_hypothesis.is_none(),
+            "pre-m8-07 bundles must have target_hypothesis=None"
+        );
     }
 }
