@@ -3,13 +3,13 @@
   "title": "M8-01 — chronos-services::counterexample foundation (signatures + stub errors + 5 service tests + 3 DTO tests)",
   "status": "ready_for_merge",
   "branch": "feat/m8-01-counterexample-foundation",
-  "head_sha": "TBD_COMMIT_HASH",
+  "head_sha": "9138721613dfe6e10625abd2f42e2c36768da998",
   "base_sha": "af8dcd5",
   "ff_merged_sha": "TBD_POST_PUSH",
   "started_at": "2026-09-11T09:46:00Z",
   "completed_at": "2026-09-11T09:53:00Z",
   "commits": [
-    { "sha": "TBD_FEATURE_COMMIT", "subject": "feat(services): chronos-services::counterexample foundation + proptest dev-dep + 3 wire DTOs (m8-01)" },
+    { "sha": "9138721613dfe6e10625abd2f42e2c36768da998", "subject": "feat(services): chronos-services::counterexample foundation + proptest dev-dep + 3 wire DTOs (m8-01)" },
     { "sha": "TBD_CHORE_COMMIT", "subject": "chore(sddk): record m8-01 apply-checkpoint (head_sha=…, ready_for_merge)" }
   ],
   "shipped_artifacts": {
