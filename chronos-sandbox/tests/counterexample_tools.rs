@@ -1,23 +1,25 @@
-//! Counterexample smoke tests (m8-03 sandbox deliverable 4).
+//! Counterexample smoke tests (m8-03 sandbox deliverable 4 + m8-05 deltas).
 //!
-//! Exercises the 3 new chronos-mcp tools (`counterexample_shrink`,
+//! Exercises the 3 chronos-mcp tools (`counterexample_shrink`,
 //! `counterexample_get`, `counterexample_list`) end-to-end against a
 //! real spawned MCP server.
 //!
-//! Pipeline shape today (m8-03):
-//!   1. probe_start on a real fixture (test_busyloop) so the engine
-//!      has captured events for the returned session_id.
+//! Pipeline shape today (m8-05):
+//!   1. probe_start on a real fixture (test_busyloop / test_exit_immediate)
+//!      so the engine has captured events for the returned session_id.
 //!   2. counterexample_shrink — validates the target violates the
 //!      captured trace via `hypothesis_test::test()`, then runs the
-//!      proptest shrink loop with a Just(value) strategy (m8-02
-//!      disclosure: rounds_used == 1).
+//!      proptest shrink loop with a Just(value) strategy (m8-05 R3/R7:
+//!      rounds_used == 2 — initial validation + 1 simplify attempt that
+//!      returns false for Just(base)).
 //!   3. counterexample_get / counterexample_list — read back from the
 //!      redb `counterexample_bundles` table populated in step 2.
 //!
-//! Honest disclosures (see m8-03 scoping doc):
-//!  * `rounds_used == 1` — strategies are `Just(value)` per m8-02
-//!  * `next_cursor == None` — pagination is m8-05 close-time work (R3)
-//!  * Events count is 0 on the wire — events live in redb (B3, R4)
+//! Honest disclosures (see m8-05 scoping doc):
+//!  * `rounds_used == 2` — strategies are `Just(value)` per m8-05 R3,
+//!    and the loop counts initial-validation + simplify-attempt (R7)
+//!  * `next_cursor == None` — pagination is m8-05 execute 2 work (B2)
+//!  * Events count is on the wire (m8-04 B3)
 //!
 //! Tests skip (with a printed message) if `CHRONOS_MCP_PATH` is unset
 //! AND the default binary is missing, so the file compiles even on CI.
@@ -95,9 +97,12 @@ async fn ce1_shrink_constant_target() {
         !resp.bundle.bundle_id.is_empty(),
         "bundle_id should be non-empty"
     );
+    // m8-05 R7: rounds_used counts initial-validation + 1 simplify
+    // attempt. Just(value) strategy exits after the simplify returns
+    // false (R3), so the loop body runs at most once.
     assert_eq!(
-        resp.rounds_used, 1,
-        "Just(value) strategies always use 1 round"
+        resp.rounds_used, 2,
+        "Just(value) strategy yields 2 rounds (initial + 1 simplify attempt)"
     );
     assert!(
         resp.bundle.has_full_bundle,
@@ -221,7 +226,8 @@ async fn ce5_shrink_on_exit_immediate_fixture() {
         .expect("shrink on exit_immediate fixture failed");
 
     assert!(!resp.bundle.bundle_id.is_empty());
-    assert_eq!(resp.rounds_used, 1);
+    // m8-05 R7: see ce1 — rounds_used == 2 for Just(value) strategies.
+    assert_eq!(resp.rounds_used, 2);
 
     let _ = client.shutdown().await;
 }
@@ -285,7 +291,8 @@ async fn ce7_shrink_response_uses_new_saved_envelope() {
         "events_count must be >= 1 after m8-04 (got {})",
         resp.events_count
     );
-    assert_eq!(resp.rounds_used, 1);
+    // m8-05 R7: see ce1 — rounds_used == 2 for Just(value) strategies.
+    assert_eq!(resp.rounds_used, 2);
 
     let _ = client.shutdown().await;
 }
