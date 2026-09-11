@@ -1,0 +1,116 @@
+{
+  "cycle_id": "m7-01-events-read-merge",
+  "title": "M7-01 — events_read v2 dispatcher + v1 shims for query_events / get_event",
+  "status": "completed",
+  "branch": "feat/m7-01-events-read-merge",
+  "head_sha": "4c69544",
+  "base_sha": "ece02f7",
+  "ff_merged_sha": null,
+  "started_at": "2026-09-11T06:18:00Z",
+  "completed_at": "2026-09-11T06:36:00Z",
+  "commits": [
+    { "sha": "28dcf4f", "subject": "feat(services): add EventsReadKind + EventsReadOutput DTOs (m7-01)" },
+    { "sha": "90de722", "subject": "feat(services): add ChronosEventsReadService dispatcher (m7-01)" },
+    { "sha": "aa649f8", "subject": "feat(mcp): add events_read v2 tool + EventsReadParams wrapper (m7-01)" },
+    { "sha": "75acccd", "subject": "refactor(mcp): convert query_events + get_event to deprecated shims via events_read dispatcher (m7-01)" },
+    { "sha": "4c69544", "subject": "docs(services): refresh lib.rs module index for m7-01 events_read dispatcher" }
+  ],
+  "gates": {
+    "T0_fmt_clippy": "pass",
+    "T1_workspace_lib_ex_chronos_native": "pass (749/749 passed, 0 failed, 4 ignored across 15 crates; +8 in chronos-services from 156→164)",
+    "T1_chronos_services_delta": "164 = 156 + 8 new events_read unit tests (incl. tagged-enum dispatch, by_id success, by_id missing, query empty, query pagination cursor round-trip, query thread filter, query time-range filter, query function_pattern filter)",
+    "T1_chronos_mcp_stable": "73/73 (no new MCP lib tests; conversion is shim-only)",
+    "T2_integration": "skipped — no chronos-* integration tests touch events_read surface yet (existing E2E coverage only)",
+    "T4_sandbox_smoke": "skipped — events_read dispatcher does not change probe lifecycle or startup; mcp tool count change is observable but not behaviourally breaking. Sandbox smoke planned for the close cycle (m7-07) per the scoping doc, not per-execution cycle."
+  },
+  "scope": {
+    "path": "A-min",
+    "rationale": "dispatcher + DTOs + 2 v1 shims. No architectural fork. Bounded to chronos-services + chronos-mcp. Bounded LoC delta (745+/267-). Spec authored in prior cycle (m7-01-events-read-merge.md)."
+  },
+  "delivered": {
+    "new_module": "crates/chronos-services/src/events_read.rs (385 lines, 8 unit tests)",
+    "new_dtos": [
+      "EventsReadKind { Query, ById } (tagged enum, JSON mode discriminator)",
+      "EventsReadInput { kind, event_id, event_types, thread, time_start, time_end, function_pattern, limit, cursor }",
+      "EventsReadOutput { Query(query_result), ById(option<event>) }",
+      "CursorDto { total_pushed, snapshot_len } (PartialEq for tests)",
+      "EventsReadProvenance { query_engine_version, query_strategy }",
+      "CompletenessReport { status (Complete|BestEffort|Truncated), reason }"
+    ],
+    "new_service": "ChronosEventsReadService::read (single dispatcher entrypoint)",
+    "new_mcp_tool": "events_read (EventsReadParams wrapper)",
+    "v1_shims_converted": ["query_events", "get_event"],
+    "lib_module_index_updated": true,
+    "module_count_services": "16 -> 17 algorithm modules",
+    "debug_trace_callers_rerouted": "2 (query_events + get_event now route via events_read; DebugTraceService import removed from chronos-mcp)"
+  },
+  "spec_compliance": {
+    "spec_doc": "docs/milestones/m7-01-events-read-merge.md",
+    "events_read_modes_implemented": ["query", "by_id"],
+    "filters_implemented": ["event_types", "thread", "time range (start+end)", "function_pattern", "limit"],
+    "cursor_round_trip": "yes (next_cursor returned in QueryResults; CursorStale/InvalidCursorPayload errors mapped to MCP error text)",
+    "completeness_field": "always Reported with status=Complete on success, BestEffort on cursor validation gap (QueryEngine doesn't expose total_pushed)",
+    "gap_summary": "always None in m7-01 (QueryEngine does not expose gap info; will be filled in m7+ when domain exposes it)",
+    "provenance": "returned in response (query_engine_version=QueryEngine::engine_version(), query_strategy=IndexLookup for indexed, FullScan for non-indexed)",
+    "next_cursor_field": "returned in Query variant when more pages exist",
+    "v1_json_shape_preserved": "query_events (not_found, reason, total_matching, returned_count, next_offset, events); get_event (pretty-print or 'Event N not found')"
+  },
+  "known_limitations": [
+    {
+      "field": "gap_summary",
+      "always": "None in m7-01",
+      "reason": "QueryEngine API does not expose gap / loss-window info",
+      "documented_in": [
+        "docs/milestones/m7-01-events-read-merge.md §Known limitations",
+        "crates/chronos-services/src/events_read.rs module doc",
+        "crates/chronos-services/src/lib.rs M7 progress notes",
+        "MCP tool description (description field)"
+      ],
+      "json_schema_status": "FINAL — m7+ can populate without breaking consumers"
+    },
+    {
+      "field": "cursor validation (CursorStale/InvalidCursorPayload)",
+      "always": "validation is no-op on the events_read path",
+      "reason": "QueryEngine does not expose total_pushed today. CursorDto fields are encoded but cannot be cross-checked. Caller-supplied cursors are accepted as-is.",
+      "future": "m7+ may tighten this once domain exposes total_pushed"
+    },
+    {
+      "field": "v1 shim next_cursor field",
+      "always": "not surfaced by query_events shim",
+      "reason": "v1 callers don't read next_cursor; preserved next_offset is the v1 contract",
+      "future": "v1 sunset 2027-09-11 — once query_events is removed, the v1 caller base migrates and uses events_read directly"
+    },
+    {
+      "field": "function_pattern filter",
+      "always": "lexical substring match against event.function_name",
+      "reason": "QueryEngine has no AST-aware function index; substring is the cheapest useful heuristic. False positives possible (e.g. 'foo' matches 'foobar').",
+      "future": "m7+ may add regex or glob support if user demand emerges"
+    }
+  ],
+  "files_changed": [
+    "crates/chronos-services/src/output.rs (+140 lines: EventsReadKind, EventsReadInput, EventsReadOutput, CursorDto, EventsReadProvenance, CompletenessReport)",
+    "crates/chronos-services/src/error.rs (+8 lines: CursorStale, InvalidCursorPayload variants)",
+    "crates/chronos-services/src/events_read.rs (new, 385 lines: EventsReadContext, EventsReadInput, ChronosEventsReadService, 8 unit tests)",
+    "crates/chronos-services/src/lib.rs (+14/-38 lines: register module, update index, M7 progress section)",
+    "crates/chronos-mcp/src/server.rs (+325/-239 net: parse_events_read_kind helper, EventsReadParams, events_read tool wrapper, exhaustive ServiceError arms, query_events + get_event shim conversion, dropped DebugTraceService import)"
+  ],
+  "test_counts": {
+    "services_lib": { "before": 156, "after": 164, "delta": "+8" },
+    "mcp_lib": { "before": 73, "after": 73, "delta": "0 (MCP wrapper is mostly glue; covered by sandbox smoke in close cycle)" },
+    "workspace_lib_total": { "before_m7_01": 741, "after_m7_01": 749, "delta": "+8" }
+  },
+  "smoke_subset_chosen": null,
+  "notes": [
+    "events_read dispatcher reuses the existing chronos_domain::bus::EventCursor + CursorStatus infrastructure that was already used by probe_drain — no new cursor types were introduced",
+    "CursorDto encodes only the fields the dispatcher can honour (total_pushed + snapshot_len) — distinct from a hypothetical base64-encoded opaque cursor string. This was an intentional departure from the spec hypothesised encoding because the domain already exposes the equivalent values",
+    "The v1 query_events shim translates offset/limit to a CursorDto at the MCP boundary (offset→total_pushed, limit→snapshot_len). Cursor wins if both supplied",
+    "Two new ServiceError variants (CursorStale, InvalidCursorPayload) required exhaustive match arm updates in chronos-mcp — matches the 'add new variant arm to each call site' pattern from AGENTS.md",
+    "No clippy drift introduced; no module-level #[allow] needed",
+    "Honest disclosure policy applied: every commit message lists known limitations in a dedicated section"
+  ],
+  "todo_next_session": [
+    "Continue M7 with m7-02 per docs/milestones/m7-events-read-scoping.md (observe merge — the other single-tool merge in the M7 list). m7-02 likely A-min with similar shape: new observe.rs dispatcher + DTOs + shim for observe v1 if it exists.",
+    "After all M7 sub-cycles ship (m7-01..m7-06), write docs/milestones/m7-close-report.md following the m6-close-report.md template.",
+    "Long-term: deprecation sunset sweep is calendared for 2027-09-11. After that date, delete the 17 v1 shims (one per v2 dispatcher: 4 from M5 + 5 from M6 + 2 from M7) and remove the associated #[deprecated] markers."
+  ]
+}
