@@ -1,68 +1,33 @@
 {
-  "cycle_id": "m9-01-schema-versioning",
-  "cycle_record": "p-3416cfb8288f8964/m9-01-schema-versioning",
-  "path": "A-min",
-  "status": "apply-complete",
-  "head_sha": "c346d8b3d1181aa7aa45c1033e64c140680a9554",
-  "base_sha": "bceddc9",
-  "scope_doc_sha": "0060a27",
-  "commits": [
-    "0060a27 docs(m9-01): scoping — schema_version on CounterexampleBundleRecord/Summary",
-    "c346d8b feat(chronos-store): schema_version on CounterexampleBundleRecord/Summary (m9-01)"
-  ],
-  "gates": {
-    "T0_fmt_clippy": {
-      "status": "pass",
-      "note": "clippy -D warnings pass; dead_code on KNOWN_BUNDLE_SCHEMA_VERSIONS suppressed per R4 disclosure"
+  "cycle_id": "m9-02-events-side-table",
+  "cycle_record": "p-3416cfb8288f8964/m9-02-events-side-table",
+  "path": "A-lite",
+  "status": "spec-complete",
+  "head_sha": "a765d56",
+  "base_sha": "48a9cff",
+  "scope_doc_sha": "a765d56",
+  "phases": {
+    "spec": {
+      "status": "complete",
+      "artifact_path": "/home/rubentxu/.local/share/sddk/projects/p-3416cfb8288f8964/cycle-artifacts/p-3416cfb8288f8964/m9-02-events-side-table/spec.md",
+      "summary": "8 ADDED requirements pinning the 14 scoping tests; no MODIFIED/REMOVED (m9-01 schema_version semantics still apply). Word count 645 (under 650 budget). Coverage: happy path, edge cases, legacy compat, error states.",
+      "requirements_count": 8,
+      "scenarios_count": 8,
+      "tests_pinned": 14
     },
-    "T1_chronos_store_lib": {
-      "status": "pass",
-      "tests_passed": 32,
-      "tests_failed": 0,
-      "note": "all lib unit tests including 5 new m9-01 tests"
-    },
-    "T2_chronos_services_lib": {
-      "status": "pass",
-      "tests_passed": 260,
-      "tests_failed": 0,
-      "note": "all lib unit tests including 1 new m9-01 integration test"
-    },
-    "T2_chronos_store_integration": {
-      "status": "pass",
-      "tests_passed": 32,
-      "tests_failed": 0
-    },
-    "T2_chronos_cli": {
-      "status": "pass",
-      "tests_passed": 20,
-      "tests_failed": 0,
-      "note": "chronos-cli tests updated with schema_version=1 in test fixtures"
+    "tasks": {
+      "status": "pending"
     }
   },
-  "smoke_subset": {
-    "description": "counterexample_tools (ce1..ce12) + e2e_connectivity",
-    "reason": "cycle touches bincode envelope of counterexample_bundles table; every save/load round-trips schema_version",
-    "pending": "T4-smoke not yet run"
-  },
-  "files_changed": [
-    "crates/chronos-store/src/counterexample_storage.rs",
-    "crates/chronos-services/src/counterexample.rs",
-    "crates/chronos-cli/src/replay.rs"
-  ],
+  "files_changed": [],
   "disclosures": {
-    "R1": "schema_version silently overwritten on save (D5 canonical writer)",
-    "R2": "future-versioned bundles appear in list (best-effort; bincode deserializes fine; load() rejects individually)",
-    "R3": "schema_version is internal-only (not on MCP wire or services-side summary)",
-    "R4": "KNOWN_BUNDLE_SCHEMA_VERSIONS currently unused (upper-bound check only); suppressed with #[allow(dead_code)]"
-  },
-  "notes": [
-    {
-      "ts": "2026-09-11T17:11:32Z",
-      "phase": "apply",
-      "action": "scope review + implementation",
-      "finding": "m9-01_list_skips_future_versioned_rows_best_effort test had wrong expectation: list path includes future-versioned rows (bincode deserializes schema_version=2 fine). Corrected to m9_01_list_includes_future_versioned_row_best_effort which pins D3 correctly."
-    }
-  ],
-  "t4_smoke_status": "pending",
-  "t4_smoke_note": "Requires pre-build of chronos-mcp and export CHRONOS_MCP_PATH before running sandbox tests"
+    "R1_m9_02_schema_version_bump": "CURRENT_BUNDLE_SCHEMA_VERSION moves 1 -> 2 in m9-02 (D3 R1 in scoping).",
+    "R2_m9_02_events_count_default": "Pre-m9-02 bundles deserialize with events_count: 0 via serde default; chronos-services falls back to events.len() only when events is non-empty.",
+    "R3_m9_02_public_save_events_not_atomic": "save_counterexample_bundle_events is a separate public method (for m9+ callers); the canonical save path uses internal atomic wrapper save_bundle_record_and_events.",
+    "R4_m9_02_no_new_mcp_tool": "counterexample_bundle_events tool stays m9+; m9-02 ships the storage primitive only.",
+    "R5_m9_02_no_chunk_compression": "TraceEvent variable-sized payloads; chunk compression deferred to m9+.",
+    "R6_m9_02_list_still_deserializes_blob": "redb lacks sub-value reads; events: vec![] in the post-m9-02 blob keeps list cheap.",
+    "R7_m9_02_resave_overwrites_chunks": "save drops all prior chunks for bundle_id; m9+ append-only would need separate method.",
+    "R8_m9_02_no_per_chunk_public_load": "load_counterexample_bundle_events_chunk is internal; future MCP tool uses concat-then-paginate."
+  }
 }
