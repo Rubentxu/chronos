@@ -4,310 +4,98 @@
   "path": "A-min",
   "subject": {
     "base_sha": "eb2cccd6fdfcd4b00bf980453bc40c606fa69885",
-    "head_sha": "7f86a1c565a2343748b45a3bc906729208590b38",
-    "diff_digest_sha256": "388fb903a615155c1a3aadba435ab234a3ad5d28237ba9e723c5c58ba85f8eb7",
+    "head_sha": "379759ed3d5dcc46e84c9b0bc153bab23e360b61",
+    "diff_digest_sha256": "de2fa4a767a4c14090409e68cc63f6ffdf7ddae4ca070c63c46e703366059e1a",
     "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
-    "verified_at": "2026-09-11T23:00:00+02:00",
+    "verified_at": "2026-09-12T01:21:00+02:00",
     "dirty": false
   },
-  "verdict": "FAIL",
+  "verdict": "PASS",
   "mandatory_gates": {
     "subject_identity": "PASS",
     "behavioral_compliance": "PASS",
     "real_implementation": "PASS",
     "documentation_discipline": "PASS",
-    "test_strength": "FAIL",
+    "test_strength": "PASS",
     "regression_and_build": "PASS",
     "production_readiness": "PASS",
     "design_and_solid": "PASS",
-    "task_completeness": "FAIL",
+    "task_completeness": "PASS",
     "pre_commit_discipline": "PASS",
     "apply_push_discipline": "PASS"
   },
-  "findings": [
-    {
-      "finding_id": "sha256:task-completeness-missing-integration-tests",
-      "rule_id": "task-completeness",
-      "subject": {
-        "base": "eb2cccd6fdfcd4b00bf980453bc40c606fa69885",
-        "head": "7f86a1c565a2343748b45a3bc906729208590b38",
-        "diff_digest": "388fb903a615155c1a3aadba435ab234a3ad5d28237ba9e723c5c58ba85f8eb7"
+  "findings": [],
+  "remediation_summary": {
+    "previous_round_verdict": "FAIL",
+    "previous_round_findings_count": 6,
+    "previous_round_critical": 1,
+    "previous_round_warnings": 3,
+    "previous_round_suggestions": 2,
+    "remediation_commit_sha": "379759ed3d5dcc46e84c9b0bc153bab23e360b61",
+    "previous_findings_resolution": [
+      {
+        "previous_finding_id": "sha256:task-completeness-missing-integration-tests",
+        "previous_severity": "critical",
+        "resolution": "RESOLVED",
+        "evidence": [
+          "crates/chronos-services/src/counterexample.rs:3537 m9_04_save_load_roundtrip_through_services (services wrapper round-trip)",
+          "crates/chronos-cli/tests/replay_integration.rs:25 m9_04_replay_uses_v3_layout (v3 chokepoint via run_replay)",
+          "crates/chronos-cli/tests/replay_integration.rs:126 m9_04_replay_v2_bundle_uses_legacy_path (v2 fallback via run_replay)"
+        ]
       },
-      "location": {
-        "path": "docs/milestones/m9-04-side-table-key-layout-spec.md",
-        "start_line": 80,
-        "end_line": 91,
-        "symbol": "Scenario: Services + replay chokepoint under v3 + v2"
+      {
+        "previous_finding_id": "sha256:test-quality-range-bound-tautology",
+        "previous_severity": "medium",
+        "resolution": "RESOLVED",
+        "evidence": [
+          "crates/chronos-store/src/counterexample_storage.rs:2068 m9_04_range_scan_covers_all_chunk_indices rewritten: inserts A=4 + B=10 chunks, asserts range(A) returns only A's 4 chunks, asserts range(B) returns only B's 10 chunks. T1 store 56/56 passed."
+        ]
       },
-      "classification": "blocking_defect",
-      "severity": "critical",
-      "confidence": "high",
-      "production_reachable": "no",
+      {
+        "previous_finding_id": "sha256:test-quality-collision-not-forced",
+        "previous_severity": "medium",
+        "resolution": "RESOLVED",
+        "evidence": [
+          "crates/chronos-store/src/counterexample_storage.rs:2354 __force_collision_prefix helper bypasses blake3 to write chosen 16-byte prefix",
+          "crates/chronos-store/src/counterexample_storage.rs:2365 m9_04_forced_prefix_collision_is_contained_by_identity_check: forces a real prefix collision between real_bundle and fake_bundle keys; verifies the per-chunk bundle_id identity filter drops the foreign chunk. T1 store 56/56 passed."
+        ]
+      },
+      {
+        "previous_finding_id": "sha256:spec-divergence-d7-events-count-guard",
+        "previous_severity": "low",
+        "resolution": "RESOLVED",
+        "evidence": [
+          "crates/chronos-store/src/counterexample_storage.rs:289 collect_bundle_chunks now takes events_count: Option<u64>; when Some(0) returns empty (skip v2 fallback); when None always tries v2 (direct-injection test path); when Some(n>0) tries v2 fallback when v3 is empty",
+          "crates/chronos-store/src/counterexample_storage.rs:624 SessionStore::get_bundle_events_count helper reads summary.events_count from bundle record",
+          "crates/chronos-store/src/counterexample_storage.rs:660 load_counterexample_bundle_events passes events_count through",
+          "crates/chronos-store/src/counterexample_storage.rs:696 count_counterexample_bundle_events passes events_count through",
+          "v2 fallback test (m9_04_v2_bundle_with_zero_events_count_loads_normally) now operates via direct-injection (no bundle record), exercises fallback path; new m9_04_replay_v2_bundle_uses_legacy_path pins the production chokepoint with events_count > 0"
+        ]
+      },
+      {
+        "previous_finding_id": "sha256:disclosure-r4-no-test-pinning",
+        "previous_severity": "low",
+        "resolution": "RESOLVED",
+        "evidence": [
+          "crates/chronos-store/src/counterexample_storage.rs: m9_04_r4_v2_bundle_never_resaved_uses_legacy_path: injects a v2 chunk + bundle record directly (events_count = 1), reads twice, asserts both reads return identical events via the fallback path. T1 store 56/56 passed."
+        ]
+      },
+      {
+        "previous_finding_id": "sha256:disclosure-r6-no-test-pinning",
+        "previous_severity": "low",
+        "resolution": "RESOLVED",
+        "evidence": [
+          "crates/chronos-store/src/counterexample_storage.rs: m9_04_known_bundle_schema_versions_pinned: asserts KNOWN_BUNDLE_SCHEMA_VERSIONS contains [1, 2, 3] with len == 3. T1 store 56/56 passed."
+        ]
+      }
+    ],
+    "incidental_bug_fix": {
+      "description": "project_report in crates/chronos-cli/src/replay.rs:243 read bundle.events.len() instead of bundle.summary.events_count. After m9-02, events live in the side table (bundle.events is empty for post-m9-02 bundles), so the events_in_bundle count in ReplayReport was always 0. Fixed to use bundle.summary.events_count as usize.",
+      "severity": "medium (incidental)",
       "evidence": [
-        {
-          "kind": "source",
-          "observation": "Spec §5 'Per-crate integration (chronos-services, chronos-cli)' lists three concrete tests: m9_04_save_load_roundtrip_through_services, m9_04_replay_uses_v3_layout, m9_04_replay_v2_bundle_uses_legacy_path. None of these three test names appear anywhere in the repo.",
-          "command": "grep -rln 'm9_04' --include='*.rs' | grep -v target",
-          "exit_code": 0,
-          "output_digest": null
-        },
-        {
-          "kind": "source",
-          "observation": "Only m9_04 references in the codebase live in crates/chronos-store/src/counterexample_storage.rs (lib unit tests). Services+cli+mcp crates have zero m9_04 references.",
-          "command": "grep -rln 'm9_04' crates/chronos-services crates/chronos-cli crates/chronos-mcp",
-          "exit_code": 1,
-          "output_digest": null
-        },
-        {
-          "kind": "source",
-          "observation": "chronos-cli has NO tests/ directory at all (no per-crate integration tests beyond lib unit tests in src/).",
-          "command": "ls crates/chronos-cli/tests/ 2>&1",
-          "exit_code": 2,
-          "output_digest": null
-        }
-      ],
-      "exemption": null,
-      "owner_phase": "apply",
-      "rationale": "Spec §5 is the authoritative artifact for A-min verification. The three integration tests pinning the services + cli chokepoint under v3 + v2 fallback were promised by scoping §7 T2 and design §Testing Strategy. None were delivered. The m9_02 chokepoint test (m9_02_bundle_events_or_legacy_chokepoint_for_side_table) is present in cli but covers the chokepoint shape with empty events, not the v3/v2 contract. Until at least the three spec-promised integration tests exist, the chokepoint is not pinned under the new layout."
-    },
-    {
-      "finding_id": "sha256:test-quality-range-bound-tautology",
-      "rule_id": "test-strength",
-      "subject": {
-        "base": "eb2cccd6fdfcd4b00bf980453bc40c606fa69885",
-        "head": "7f86a1c565a2343748b45a3bc906729208590b38",
-        "diff_digest": "388fb903a615155c1a3aadba435ab234a3ad5d28237ba9e723c5c58ba85f8eb7"
-      },
-      "location": {
-        "path": "crates/chronos-store/src/counterexample_storage.rs",
-        "start_line": 2023,
-        "end_line": 2038,
-        "symbol": "m9_04_range_scan_covers_all_chunk_indices"
-      },
-      "classification": "warning",
-      "severity": "medium",
-      "confidence": "high",
-      "production_reachable": "no",
-      "evidence": [
-        {
-          "kind": "source",
-          "observation": "Test only asserts start_key < end_key after building boundary keys. It does not open a redb table, insert chunks for two bundles, call collect_bundle_chunks_range, or count iteration. The promised scoping §5 test 'm9_04_range_scan_is_bounded_to_one_bundle' (insert A+B, assert range(A) returns only A's chunks, count = A's chunk count) was substituted by this weaker lex-order check.",
-          "command": "sed -n '2023,2038p' crates/chronos-store/src/counterexample_storage.rs",
-          "exit_code": 0,
-          "output_digest": null
-        }
-      ],
-      "exemption": null,
-      "owner_phase": "apply",
-      "rationale": "The implementation IS bounded (lines 209-247 build [prefix||0, prefix||0xFFFFFFFF) correctly), but the test does not pin that behavior. A buggy range implementation that calls table.iter() would pass this test. Per verify rules, tests must fail when the covered behavior is broken."
-    },
-    {
-      "finding_id": "sha256:test-quality-collision-not-forced",
-      "rule_id": "test-strength",
-      "subject": {
-        "base": "eb2cccd6fdfcd4b00bf980453bc40c606fa69885",
-        "head": "7f86a1c565a2343748b45a3bc906729208590b38",
-        "diff_digest": "388fb903a615155c1a3aadba435ab234a3ad5d28237ba9e723c5c58ba85f8eb7"
-      },
-      "location": {
-        "path": "crates/chronos-store/src/counterexample_storage.rs",
-        "start_line": 2042,
-        "end_line": 2098,
-        "symbol": "m9_04_collision_containment_via_bundle_id"
-      },
-      "classification": "warning",
-      "severity": "medium",
-      "confidence": "high",
-      "production_reachable": "no",
-      "evidence": [
-        {
-          "kind": "source",
-          "observation": "Test writes a v3 chunk with wrong bundle_id in the value (encode_chunk_value(fake, chunk) but key from encode_chunk_key(real, 0)). It does NOT force a true hash-prefix collision. The design D8 promised a test-only helper __force_collision_prefix that bypasses blake3::hash and writes chosen prefixes to force the key collision. The delivered test only exercises the value-identity check, not the prefix-collision containment path.",
-          "command": "sed -n '2042,2098p' crates/chronos-store/src/counterexample_storage.rs",
-          "exit_code": 0,
-          "output_digest": null
-        }
-      ],
-      "exemption": null,
-      "owner_phase": "apply",
-      "rationale": "The defense-in-depth is partially pinned (value-identity check works). The actual blake3-truncation collision scenario is not pinned by a test that proves prefix-only collision is contained. R2 disclosure claims collision risk is bounded; the test should force the collision to substantiate that claim."
-    },
-    {
-      "finding_id": "sha256:spec-divergence-d7-events-count-guard",
-      "rule_id": "design-coherence",
-      "subject": {
-        "base": "eb2cccd6fdfcd4b00bf980453bc40c606fa69885",
-        "head": "7f86a1c565a2343748b45a3bc906729208590b38",
-        "diff_digest": "388fb903a615155c1a3aadba435ab234a3ad5d28237ba9e723c5c58ba85f8eb7"
-      },
-      "location": {
-        "path": "crates/chronos-store/src/counterexample_storage.rs",
-        "start_line": 282,
-        "end_line": 292,
-        "symbol": "collect_bundle_chunks"
-      },
-      "classification": "warning",
-      "severity": "low",
-      "confidence": "high",
-      "production_reachable": "yes",
-      "evidence": [
-        {
-          "kind": "source",
-          "observation": "Scoping D7 step 3 says 'v2 fallback (only if v3 was empty AND summary.events_count > 0)'. Implementation (lines 282-292) does NOT guard on events_count; it always falls back to legacy scan when v3 returns empty. The design doc omits the guard. Harmless in practice because bundle_events_or_legacy short-circuits to bundle.events.clone() when bundle.events is non-empty (the only case where events_count can be 0 with chunks elsewhere is pre-m9-02 blob-embedded).",
-          "command": "sed -n '815,825p' crates/chronos-store/src/counterexample_storage.rs",
-          "exit_code": 0,
-          "output_digest": null
-        }
-      ],
-      "exemption": null,
-      "owner_phase": "verify",
-      "rationale": "Spec/impl divergence is harmless but contractually loose. Either tighten the scoping text to match the implementation (drop the events_count guard from the scoping pseudocode), or add the guard to align with the spec. Either way, resolve the wording mismatch."
-    },
-    {
-      "finding_id": "sha256:disclosure-r4-no-test-pinning",
-      "rule_id": "test-strength",
-      "subject": {
-        "base": "eb2cccd6fdfcd4b00bf980453bc40c606fa69885",
-        "head": "7f86a1c565a2343748b45a3bc906729208590b38",
-        "diff_digest": "388fb903a615155c1a3aadba435ab234a3ad5d28237ba9e723c5c58ba85f8eb7"
-      },
-      "location": {
-        "path": "docs/milestones/m9-04-side-table-key-layout-scoping.md",
-        "start_line": 837,
-        "end_line": 848,
-        "symbol": "R4 disclosure"
-      },
-      "classification": "suggestion",
-      "severity": "low",
-      "confidence": "medium",
-      "production_reachable": "no",
-      "evidence": [
-        {
-          "kind": "source",
-          "observation": "R4 claims v2 bundles never re-saved keep using the legacy path on read. No specific test pins this. m9_04_v2_bundle_loads_via_fallback covers the legacy load path, but does not verify the persistence invariant (v2 chunks still on disk after a fresh load of a never-resaved bundle)."
-        }
-      ],
-      "exemption": null,
-      "owner_phase": "apply",
-      "rationale": "Disclosure is documentation; future cycles may rely on it. A small 'load never-resaved v2 bundle twice — both reads return same events, both go through fallback' test would pin the disclosure."
-    },
-    {
-      "finding_id": "sha256:disclosure-r6-no-test-pinning",
-      "rule_id": "test-strength",
-      "subject": {
-        "base": "eb2cccd6fdfcd4b00bf980453bc40c606fa69885",
-        "head": "7f86a1c565a2343748b45a3bc906729208590b38",
-        "diff_digest": "388fb903a615155c1a3aadba435ab234a3ad5d28237ba9e723c5c58ba85f8eb7"
-      },
-      "location": {
-        "path": "crates/chronos-store/src/counterexample_storage.rs",
-        "start_line": 299,
-        "end_line": 299,
-        "symbol": "KNOWN_BUNDLE_SCHEMA_VERSIONS"
-      },
-      "classification": "suggestion",
-      "severity": "low",
-      "confidence": "high",
-      "production_reachable": "no",
-      "evidence": [
-        {
-          "kind": "source",
-          "observation": "KNOWN_BUNDLE_SCHEMA_VERSIONS = [1, 2, 3] declared with #[allow(dead_code)]. R6 claims the array grew correctly. No test verifies the array contents. A trivial assertion (KNOWN_BUNDLE_SCHEMA_VERSIONS.contains(&2) && KNOWN_BUNDLE_SCHEMA_VERSIONS.contains(&3)) would pin R6.",
-          "command": "sed -n '296,300p' crates/chronos-store/src/counterexample_storage.rs",
-          "exit_code": 0,
-          "output_digest": null
-        }
-      ],
-      "exemption": null,
-      "owner_phase": "apply",
-      "rationale": "Cosmetic, but future telemetry cycles will rely on this array."
+        "crates/chronos-cli/src/replay.rs:243 events_in_bundle: bundle.summary.events_count as usize",
+        "crates/chronos-cli/tests/replay_integration.rs:106-108 asserts report.events_in_bundle == 5 after save+replay round-trip"
+      ]
     }
-  ],
-  "lenses_used": ["spec-compliance", "test-quality"],
-  "commands_run": [
-    {
-      "command": "cargo fmt --all -- --check",
-      "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
-      "exit_code": 0,
-      "subject_sha": "7f86a1c565a2343748b45a3bc906729208590b38",
-      "log_path": "/tmp/clippy_out.log"
-    },
-    {
-      "command": "cargo clippy --workspace --all-targets -- -D warnings",
-      "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
-      "exit_code": 0,
-      "subject_sha": "7f86a1c565a2343748b45a3bc906729208590b38",
-      "log_path": "/tmp/clippy_out.log"
-    },
-    {
-      "command": "cargo test -p chronos-store --lib --no-fail-fast",
-      "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
-      "exit_code": 0,
-      "subject_sha": "7f86a1c565a2343748b45a3bc906729208590b38",
-      "log_path": "/tmp/t1_store_lib.log",
-      "result_summary": "53 passed; 0 failed; 0 ignored; 0 measured"
-    },
-    {
-      "command": "cargo test -p chronos-store --lib --no-fail-fast m9_04",
-      "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
-      "exit_code": 0,
-      "subject_sha": "7f86a1c565a2343748b45a3bc906729208590b38",
-      "result_summary": "13 passed; 0 failed; 0 ignored; 40 filtered out"
-    },
-    {
-      "command": "cargo test -p chronos-store --lib --no-fail-fast m9_02",
-      "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
-      "exit_code": 0,
-      "subject_sha": "7f86a1c565a2343748b45a3bc906729208590b38",
-      "result_summary": "13 passed; 0 failed; 0 ignored; 40 filtered out"
-    },
-    {
-      "command": "cargo test -p chronos-services --tests --no-fail-fast",
-      "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
-      "exit_code": 0,
-      "subject_sha": "7f86a1c565a2343748b45a3bc906729208590b38",
-      "log_path": "/tmp/t2_services.log",
-      "result_summary": "262 lib tests + 2 integration tests passed; 0 failed"
-    },
-    {
-      "command": "cargo test -p chronos-cli --tests --no-fail-fast",
-      "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
-      "exit_code": 0,
-      "subject_sha": "7f86a1c565a2343748b45a3bc906729208590b38",
-      "log_path": "/tmp/t2_cli.log",
-      "result_summary": "22 tests passed; 0 failed"
-    },
-    {
-      "command": "cargo build --bin chronos-mcp",
-      "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
-      "exit_code": 0,
-      "subject_sha": "7f86a1c565a2343748b45a3bc906729208590b38",
-      "binary_path": "/var/home/rubentxu/cargo-targets/debug/chronos-mcp"
-    },
-    {
-      "command": "CHRONOS_MCP_PATH=/var/home/rubentxu/cargo-targets/debug/chronos-mcp cargo test -p chronos-sandbox --test counterexample_tools --no-fail-fast",
-      "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
-      "exit_code": 0,
-      "subject_sha": "7f86a1c565a2343748b45a3bc906729208590b38",
-      "log_path": "/tmp/t4_cet.log",
-      "result_summary": "12 passed; 0 failed (ce1..ce12)"
-    },
-    {
-      "command": "CHRONOS_MCP_PATH=/var/home/rubentxu/cargo-targets/debug/chronos-mcp cargo test -p chronos-sandbox --test e2e_connectivity --no-fail-fast",
-      "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
-      "exit_code": 0,
-      "subject_sha": "7f86a1c565a2343748b45a3bc906729208590b38",
-      "log_path": "/tmp/t4_e2e.log",
-      "result_summary": "1 passed; 0 failed (test_mcp_server_starts_and_responds)"
-    }
-  ],
-  "subject_identity_pinned": true,
-  "clean_tree": true,
-  "issues_by_severity": {
-    "critical": 1,
-    "high": 0,
-    "medium": 2,
-    "low": 2
-  },
-  "next_recommended": "sddk-apply correction cycle to add the 3 spec-promised integration tests (services+cli) and strengthen the test-quality warnings; then re-run verify."
+  }
 }
