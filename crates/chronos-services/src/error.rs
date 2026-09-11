@@ -75,6 +75,12 @@ pub enum ServiceError {
     #[error("tripwire '{0}' not found")]
     TripwireNotFound(String),
 
+    /// A feature was requested that is not supported in the current cycle.
+    /// m7-02 uses this for `verb=update`, `retention=permanent`, and
+    /// `requested_evidence=properties` — all three are reserved for m7+.
+    #[error("unsupported: {0}")]
+    Unsupported(String),
+
     /// A trace query could not be executed.
     #[error("query execution error: {0}")]
     QueryExecutionError(String),

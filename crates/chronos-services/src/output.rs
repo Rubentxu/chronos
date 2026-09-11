@@ -341,6 +341,267 @@ pub struct TripwireDeleteResult {
 }
 
 // ---------------------------------------------------------------------------
+// Observe (m7-02) v2 dispatcher output types
+// ---------------------------------------------------------------------------
+
+/// Verb discriminator for the unified v2 `observe` tool.
+///
+/// Folds 5 v1 tools (`tripwire_create`, `tripwire_list`,
+/// `tripwire_delete`, `tripwire_query`, `probe_inject`) behind a single
+/// endpoint. See `docs/milestones/m7-02-observability-merge.md` for
+/// the full spec.
+///
+/// `Update` is reserved (rejected with `ServiceError::Unsupported` in
+/// m7-02) because no v1 caller demands it today; deferring to m7+ keeps
+/// the v2 surface minimal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ObserveVerb {
+    /// Register a new subscription (tripwire condition or uprobe-injecting tripwire).
+    Create,
+    /// Enumerate subscriptions + drain fired events (destructive).
+    List,
+    /// Reserved; rejected with `Unsupported` in m7-02.
+    Update,
+    /// Unregister a subscription.
+    Delete,
+    /// Non-destructive snapshot of subscription state.
+    Query,
+}
+
+/// Discriminator for the condition body of an `observe` request.
+///
+/// Tripwire conditions map to the v1 `TripwireConditionType` set;
+/// `Uprobe` carries `(binary_path, symbol_name, pid)` and routes through
+/// `ProbeService::inject` at subscription creation time (matching
+/// today's `probe_inject` semantics).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ObserveCondition {
+    /// Tripwire-style condition (event-type filter, function-name glob,
+    /// memory range, syscall numbers, variable name, signal).
+    Tripwire {
+        /// Same shape as the v1 `TripwireConditionType` JSON
+        /// (`{"type":"event_type","event_types":[...]}` etc.).
+        condition: serde_json::Value,
+        /// Optional human-readable label.
+        label: Option<String>,
+    },
+    /// Uprobe-injection condition (binary + symbol + pid).
+    Uprobe {
+        /// Path to the binary or shared library.
+        binary_path: String,
+        /// Symbol name to attach the uprobe to.
+        symbol_name: String,
+        /// Optional PID override (defaults to the probe session's traced PID).
+        pid: Option<u32>,
+        /// Optional human-readable label.
+        label: Option<String>,
+    },
+}
+
+/// What to do when a subscription fires.
+///
+/// `Record` captures the firing event in the tripwire manager's
+/// internal buffer (the v1 default). `Notify` is identical to `Record`
+/// today — the distinction exists so the v2 surface can grow streaming
+/// notifications without an API break in m7+. `InjectUprobe` is the
+/// only action that has *no* v1 equivalent semantics today (it is a
+/// placeholder for true fire-on-condition uprobe injection, deferred to
+/// a domain-layer change; m7-02 only honours it as a parsed-but-no-op
+/// branch).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ObserveAction {
+    /// Capture the firing event into the tripwire buffer.
+    Record,
+    /// Same as `Record` today; reserved for streaming notifications in m7+.
+    Notify,
+    /// Reserved for fire-on-condition uprobe injection (deferred to m7+).
+    /// Parsed but no-op in m7-02 — the uprobe is attached once at
+    /// subscription creation when the `ObserveCondition::Uprobe` variant
+    /// is used.
+    InjectUprobe,
+}
+
+/// Retention policy for fired events.
+///
+/// `Drained` matches v1 `tripwire_list` behaviour (destructive read).
+/// `RetainedUntilSessionEnd` keeps fired events in the buffer until
+/// the session terminates. `Permanent` is reserved (rejected with
+/// `Unsupported` in m7-02) — the tripwire manager does not currently
+/// distinguish permanent retention.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ObserveRetention {
+    /// Drain fired events on the next `verb=list` (default, matches v1).
+    Drained,
+    /// Keep fired events in the buffer until the session ends.
+    RetainedUntilSessionEnd,
+    /// Reserved; rejected with `Unsupported` in m7-02.
+    Permanent,
+}
+
+impl Default for ObserveRetention {
+    fn default() -> Self {
+        ObserveRetention::Drained
+    }
+}
+
+/// Requested evidence for a subscription.
+///
+/// m7-02 only honours `EventTypes`; `Properties` is rejected with
+/// `ServiceError::Unsupported` because the domain layer does not yet
+/// expose property snapshots (same gap as m7-01 `gap_summary=None`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ObserveRequestedEvidence {
+    /// Capture events matching the given `event_types` filter.
+    EventTypes {
+        /// Event-type name list (e.g. `["function_entry", "exception"]`).
+        event_types: Vec<String>,
+    },
+    /// Reserved; rejected with `Unsupported` in m7-02.
+    Properties {
+        /// Property names to project (deferred to m7+).
+        names: Vec<String>,
+    },
+}
+
+/// Scope discriminator — attaches a subscription to a session or
+/// makes it global (across all live sessions).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "scope", rename_all = "snake_case")]
+pub enum ObserveScope {
+    /// Subscription attached to a specific session id.
+    Session {
+        /// Session id (required when `scope=session`).
+        session_id: String,
+    },
+    /// Subscription applies to every live session.
+    Global,
+}
+
+/// Input for [`crate::observe::ChronosObserveService::observe`].
+///
+/// Carries the v2 `verb` discriminator plus the verb-specific fields.
+/// The dispatcher validates verb / field consistency (e.g. `update` is
+/// rejected outright; `delete` + `query` require a `subscription_id`;
+/// `create` requires a `condition`).
+#[derive(Debug, Clone)]
+pub struct ObserveInput {
+    /// Which verb to dispatch (create | list | update | delete | query).
+    pub verb: ObserveVerb,
+    /// Subscription id (required for `update`, `delete`, `query`).
+    pub subscription_id: Option<String>,
+    /// Subscription body (required for `create`).
+    pub condition: Option<ObserveCondition>,
+    /// What to do when a subscription fires (optional; defaults to `Record`).
+    pub action: Option<ObserveAction>,
+    /// Retention policy (optional; defaults to `Drained`).
+    pub retention: Option<ObserveRetention>,
+    /// Requested evidence filter (optional; defaults to `EventTypes` with `[]`).
+    pub requested_evidence: Option<ObserveRequestedEvidence>,
+    /// Scope (session id or global). Required for `create`.
+    pub scope: Option<ObserveScope>,
+    /// Optional cursor for `verb=list` (matches the m7-01 cursor pattern).
+    pub cursor: Option<crate::output::CursorDto>,
+    /// Optional human-readable label (alternative to `condition.label`).
+    pub label: Option<String>,
+}
+
+/// Payload returned by `verb=create`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ObserveCreateResult {
+    /// Assigned subscription id (`tripwire-<n>` for tripwire conditions,
+    /// `uprobe-<session>-<n>` for uprobe conditions).
+    pub subscription_id: String,
+    /// Subscription kind (`tripwire` or `uprobe`).
+    pub kind: String,
+    /// Status string (`"registered"` on success).
+    pub status: String,
+    /// Total number of active subscriptions of this kind after registration.
+    pub active_count: usize,
+    /// Optional human-readable label.
+    pub label: Option<String>,
+    /// For uprobe subscriptions: the PID the uprobe was attached to (if any).
+    /// `None` for tripwire-only subscriptions or when the probe is still starting.
+    pub attached_pid: Option<u32>,
+}
+
+/// Payload returned by `verb=list` (destructive) and `verb=query`
+/// (non-destructive). When `verb=list`, `fired_events` is drained.
+/// When `verb=query`, `fired_events` is `[]` (the buffer is intact).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ObserveListResult {
+    /// All currently registered subscriptions.
+    pub subscriptions: Vec<SubscriptionDto>,
+    /// Fired events (drained on `verb=list`, empty on `verb=query`).
+    pub fired_events: Vec<TripwireFiredSummary>,
+    /// Total number of active subscriptions.
+    pub total_active: usize,
+    /// Number of fired events returned.
+    pub fired_count: usize,
+    /// Next cursor (only set when more pages exist and `cursor` was supplied).
+    pub next_cursor: Option<crate::output::CursorDto>,
+    /// Provenance / source info (engine version + retention used).
+    pub provenance: ObserveProvenance,
+}
+
+/// Payload returned by `verb=delete`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ObserveDeleteResult {
+    /// ID of the deleted subscription.
+    pub subscription_id: String,
+    /// Number of active subscriptions remaining after deletion.
+    pub remaining_active: usize,
+}
+
+/// Provenance info attached to list/query responses. Matches the
+/// m7-01 `EventsReadProvenance` shape (engine_version + query_strategy).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ObserveProvenance {
+    /// Chronos engine version string (placeholder until the domain exposes one).
+    pub engine_version: String,
+    /// Strategy used for the read (`IndexLookup` for indexed, `FullScan` otherwise).
+    pub query_strategy: String,
+    /// Retention policy in effect (echo of the request default).
+    pub retention_in_effect: String,
+}
+
+/// One subscription in the list/query response envelope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SubscriptionDto {
+    /// Subscription id string.
+    pub id: String,
+    /// Kind string (`tripwire` or `uprobe`).
+    pub kind: String,
+    /// Optional label.
+    pub label: Option<String>,
+    /// Human-readable condition description.
+    pub condition: String,
+    /// How many times this subscription has fired.
+    pub fire_count: u64,
+}
+
+/// Tagged output envelope returned by [`crate::observe::ChronosObserveService::observe`].
+///
+/// Each verb maps to exactly one variant. The MCP wrapper destructures
+/// on `kind` to produce the JSON shape for each verb.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ObserveOutput {
+    /// `verb=create` response.
+    Create(ObserveCreateResult),
+    /// `verb=list` response (destructive).
+    List(ObserveListResult),
+    /// `verb=delete` response.
+    Delete(ObserveDeleteResult),
+    /// `verb=query` response (non-destructive; `fired_events` is `[]`).
+    Query(ObserveListResult),
+}
+
+// ---------------------------------------------------------------------------
 // Debug-trace specialized output types
 // ---------------------------------------------------------------------------
 
