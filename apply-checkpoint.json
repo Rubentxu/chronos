@@ -2,8 +2,8 @@
   "cycle_id": "m9-02-events-side-table",
   "cycle_record": "p-3416cfb8288f8964/m9-02-events-side-table",
   "path": "A-lite",
-  "status": "spec-complete",
-  "head_sha": "a765d56",
+  "status": "tasks-complete",
+  "head_sha": "b2a2455",
   "base_sha": "48a9cff",
   "scope_doc_sha": "a765d56",
   "phases": {
@@ -16,7 +16,22 @@
       "tests_pinned": 14
     },
     "tasks": {
-      "status": "pending"
+      "status": "complete",
+      "artifact_path": "/home/rubentxu/.local/share/sddk/projects/p-3416cfb8288f8964/cycle-artifacts/p-3416cfb8288f8964/m9-02-events-side-table/tasks.md",
+      "summary": "16 reviewable work units across 4 phases; dependency graph; commit plan; smoke + tiers; out-of-scope. Mandatory Review Workload Forecast lines present. Single branch off main, 4 atomic conventional commits, 350-500 LoC forecast (Medium 400-line budget risk).",
+      "total_tasks": 16,
+      "by_phase": {
+        "phase_1_foundation": 3,
+        "phase_2_core_storage": 7,
+        "phase_3_consumers": 3,
+        "phase_4_tests": 14
+      },
+      "forecast": {
+        "decision_needed_before_apply": "No",
+        "chained_prs_recommended": "No",
+        "chain_strategy": "stacked-to-main",
+        "budget_risk_400": "Medium"
+      }
     }
   },
   "files_changed": [],
