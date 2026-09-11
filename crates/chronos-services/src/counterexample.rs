@@ -370,9 +370,19 @@ impl ChronosCounterexampleService {
                 )));
             }
         };
+        // m9-02 D2: prefer summary.events_count (O(1)) when it is populated.
+        // Fall back to record.events.len() only when events_count == 0 AND
+        // the blob has non-empty events (legacy pre-m9-02 bundle).
+        let count = if record.summary.events_count > 0 {
+            record.summary.events_count
+        } else if !record.events.is_empty() {
+            record.events.len() as u64
+        } else {
+            0
+        };
         Ok(CounterexampleOutput::EventsCount {
             bundle_id: bundle_id.to_string(),
-            events_count: record.events.len(),
+            events_count: count as usize,
         })
     }
 
@@ -487,6 +497,9 @@ impl ChronosCounterexampleService {
             rounds_used,
             has_full_bundle: true, // m8-03 ships full bundle persistence.
             schema_version: cs::CURRENT_BUNDLE_SCHEMA_VERSION,
+            // events_count will be overwritten by save_counterexample_bundle
+            // which takes events from the record and sets the count there.
+            events_count: 0,
         };
         let record = cs::CounterexampleBundleRecord {
             summary,

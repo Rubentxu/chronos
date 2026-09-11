@@ -25,7 +25,8 @@ use chronos_query::engine::QueryEngine;
 use chronos_services::hypothesis_test::{ChronosHypothesisTestService, HypothesisInput};
 use chronos_services::output::{ExistencePredicate, HypothesisKind};
 use chronos_store::counterexample_storage::{
-    CounterexampleBundleRecord, ExistencePredicateWire, MinimisedPayload,
+    bundle_events_or_legacy, CounterexampleBundleRecord, CounterexampleBundleSummary,
+    ExistencePredicateWire, MinimisedPayload,
 };
 use chronos_store::SessionStore;
 use serde::Serialize;
@@ -73,7 +74,10 @@ pub async fn run_replay(db_path: &Path, bundle_id: &str) -> Result<ReplayReport>
     // 3. Rebuild the engine from the bundle's events. The synthetic engine
     //    has no live capture context — it only knows about events already
     //    persisted in the bundle.
-    let engine = QueryEngine::new(bundle.events.clone());
+    // m9-02 D5: always go through the chokepoint — it handles both
+    // legacy blob-embedded events (pre-m9-02) and side-table events (post-m9-02).
+    let events = bundle_events_or_legacy(&store, &bundle)?;
+    let engine = QueryEngine::new(events);
     let mut engines: HashMap<String, QueryEngine> = HashMap::new();
     engines.insert(REPLAY_SESSION_ID.to_string(), engine);
     let engines = TokioMutex::new(engines);
@@ -279,6 +283,7 @@ mod tests {
                 rounds_used: 1,
                 has_full_bundle: true,
                 schema_version: 1,
+                events_count: 0,
             },
             events: vec![],
             minimised: Some(minimised),
