@@ -102,7 +102,7 @@ These are NEW M8 disclosures (full list in apply-checkpoint):
 The m9 backlog (to be scoped in the next cycle):
 
 - **`attach` domain API** — implement `chronos_domain::attach` (m7+ scope per m7-04 decision). Unblocks `session_start{action=attach}`.
-- **Single-call `session_stop`** — add `events` + `language` to `SessionStopOutput` (m7-07). Removes the v1 shim's double-call.
+- **Single-call `session_stop`** — DONE in m7-07 (commit `31b2a59`). Adds `events` + `language` to `SessionStopOutput` via a new module-scope `SessionStopPersistence` enum and a `stop_with_persistence` dispatcher entry point. The m8-04 chronos-cli replay path is now able to call `session_stop` once and get the full payload back.
 - **Live probe performance** — currently single-process; m9 could explore multi-process fan-out.
 - **Cross-variant existence predicate shrinking** (m8-06 R4) — would require generating arbitrary ExistencePredicate JSON. Significant scope expansion.
 - **Bundle-as-blob → side table** (m8-04 R4) — events currently ride inside the bundle blob. Splitting into a separate `counterexample_bundle_events` table enables event-level queries without deserializing the whole blob.
