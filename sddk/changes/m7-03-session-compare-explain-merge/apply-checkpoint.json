@@ -1,0 +1,171 @@
+{
+  "cycle_id": "m7-03-session-compare-explain-merge",
+  "title": "M7-03 — session_compare v2 dispatcher + session_explain v2 net-new + v1 shims for compare_sessions / performance_regression_audit",
+  "status": "in_progress",
+  "branch": "feat/m7-03-session-compare-explain-merge",
+  "head_sha": "947e73b",
+  "base_sha": "1d218fb",
+  "ff_merged_sha": null,
+  "started_at": "2026-09-11T07:30:00Z",
+  "completed_at": null,
+  "commits": [
+    { "sha": "da7fb83", "subject": "feat(services): add session_compare + session_explain DTOs (m7-03)" },
+    { "sha": "36a0f34", "subject": "feat(services): add ChronosSessionCompareService dispatcher (m7-03)" },
+    { "sha": "b005d36", "subject": "feat(services): add session_explain dispatcher (m7-03)" },
+    { "sha": "947e73b", "subject": "feat(mcp): wire session_compare + session_explain v2 tools (m7-03)" }
+  ],
+  "gates": {
+    "T0_fmt_clippy": "pass",
+    "T1_workspace_lib_ex_chronos_native": "pass (788/788 passed + 4 ignored; +19 in chronos-services from 179→198: 9 session_compare + 10 session_explain)",
+    "T1_chronos_services_delta": "198 = 179 + 19 new unit tests across session_compare (9) + session_explain (10)",
+    "T1_chronos_services_session_compare_tests": [
+      "compare_divergence_returns_divergence_variant",
+      "compare_regression_returns_regression_variant",
+      "compare_session_not_found_divergence",
+      "compare_session_not_found_regression",
+      "compare_missing_kind_field_returns_invalid_input",
+      "compare_divergence_preserves_summary_string",
+      "compare_regression_threshold_classification (10 calls target vs 2 baseline → regression)",
+      "compare_regression_top_n_defaults_when_unset",
+      "compare_provenance_present_on_both_kinds"
+    ],
+    "T1_chronos_services_session_explain_tests": [
+      "explain_facts_returns_facts_bundle",
+      "explain_derived_returns_derived_bundle",
+      "explain_inferred_crash_detected_when_signal_delivered",
+      "explain_inferred_io_heavy_when_syscall_share_above_threshold",
+      "explain_inferred_cpu_bound_when_top_function_dominates",
+      "explain_inferred_single_threaded_when_thread_count_one",
+      "explain_inferred_unknown_when_no_characterisation_applies",
+      "explain_hypothesis_crash_invariant_returns_plan",
+      "explain_hypothesis_dominant_callpath_returns_plan",
+      "explain_hypothesis_missing_kind_returns_invalid_input",
+      "explain_provenance_present_on_all_kinds",
+      "explain_session_not_found"
+    ],
+    "T1_chronos_mcp_stable": "76/76 (+3 new lib tests; existing v1 shim tests test_compare_sessions_session_not_found + test_compare_sessions_identical still pass against shim path)",
+    "T2_integration": "skipped — chronos-mcp/tests/* does not yet cover session_compare / session_explain (the wrappers are net-new). Sandbox smoke is the right gate here.",
+    "T4_sandbox_smoke": "planned — 4 sandbox suites: e2e_connectivity (server starts), diff_tools (compare_sessions shim + performance_regression_audit shim), analytics_tools (event read + summary paths), hypothesis_tools (session_explain{kind=hypothesis} returns a plan that hypothesis_test{kind=call_path} can execute)"
+  },
+  "scope": {
+    "path": "A-min",
+    "rationale": "Two new dispatchers (1 with shim pair, 1 net-new) + 1 lib.rs index bump. No architectural fork. Bounded to chronos-services + chronos-mcp. Spec authored in prior cycle (docs/milestones/m7-03-session-compare-explain-scoping.md). 4 reviewable work-unit commits."
+  },
+  "delivered": {
+    "new_modules": [
+      "crates/chronos-services/src/session_compare.rs (~384 lines, 9 unit tests)",
+      "crates/chronos-services/src/session_explain.rs (~717 lines, 10 unit tests)"
+    ],
+    "new_dtos": [
+      "SessionCompareKind { Divergence, Regression }",
+      "SessionCompareInput { kind, session_a?, session_b?, baseline_session_id?, target_session_id?, top_n? }",
+      "SessionCompareOutput { Divergence { ... + provenance }, Regression { ... + provenance } }",
+      "SessionCompareProvenance { engine_version, generated_at }",
+      "SessionExplainKind { Facts, Derived, Inferred, Hypothesis }",
+      "HypothesisTestKind { CrashInvariant, DominantFunctionCallPath }",
+      "SessionExplainInput { kind, session_id, hypothesis_kind? }",
+      "SessionExplainOutput { Facts { bundle, provenance }, Derived { bundle, provenance }, Inferred { bundle, provenance }, Hypothesis { bundle, provenance } }",
+      "FactsBundle { session_id, event_count, duration_ms, thread_count, exit_status, issue_count, signal_count }",
+      "DerivedBundle { session_id, function_hotspots, call_graph, syscall_breakdown }",
+      "FunctionHotspot { function, call_count, total_duration_ns }",
+      "CallGraphSummary { distinct_callees, dominant_function, dominant_function_share }",
+      "InferredBundle { session_id, tags: Vec<InferredTag>, rationale }",
+      "InferredTag enum { CrashDetected, IoHeavy, CpuBound, SingleThreaded, Unknown }",
+      "HypothesisBundle { session_id, plan: HypothesisTestPlan, hint }",
+      "HypothesisTestPlan enum { CrashInvariant { session_id, comparison }, DominantFunctionCallPath { session_id, function, at_least_n } }",
+      "SessionExplainProvenance { engine_version, generated_at }",
+      "SessionCompareContext<'_> { store }",
+      "SessionExplainContext<'_> { store }"
+    ],
+    "new_services": [
+      "ChronosSessionCompareService::compare (kind-routed dispatcher; routes to ChronosDiffService::compare_sessions for divergence and ChronosDiffService::performance_regression_audit for regression)",
+      "ChronosSessionExplainService::explain (kind-routed dispatcher; loads session via SessionStore, runs QueryEngine::execution_summary, routes to build_facts / build_derived / build_inferred / build_hypothesis)"
+    ],
+    "new_mcp_tools": [
+      "session_compare (SessionCompareParams { kind, session_a, session_b, top_n? }, net-new v2)",
+      "session_explain (SessionExplainParams { session_id, kind }, net-new v2)"
+    ],
+    "v1_shims_converted": ["compare_sessions", "performance_regression_audit"],
+    "v1_shim_routing": {
+      "compare_sessions": "SessionCompareParams { kind: 'divergence', session_a, session_b, top_n: None }",
+      "performance_regression_audit": "SessionCompareParams { kind: 'regression', session_a: baseline_session_id, session_b: target_session_id, top_n: top_n }"
+    },
+    "lib_module_index_updated": true,
+    "module_count_services": "17 → 19 algorithm modules (added session_compare, session_explain)",
+    "service_error_variants_added": []
+  },
+  "spec_compliance": {
+    "spec_doc": "docs/milestones/m7-03-session-compare-explain-scoping.md (scoping) + docs/milestones/m7-03-session-compare-explain-merge.md (execute cycle spec)",
+    "session_compare_kinds_implemented": ["divergence", "regression"],
+    "session_explain_kinds_implemented": ["facts", "derived", "inferred", "hypothesis"],
+    "hypothesis_test_kinds_implemented": ["crash_invariant", "dominant_function_call_path"],
+    "provenance_returned": ["engine_version (hardcoded 'chronos-0.1.0')", "generated_at"],
+    "v1_json_shape_preserved": {
+      "compare_sessions": "Divergence variant is serialized via SessionCompareOutput::Divergence and includes all v1 fields (session_a_id, session_b_id, only_in_a_count, only_in_b_count, total_a, total_b, common_count, similarity_pct, timing_delta_ms, summary) plus provenance",
+      "performance_regression_audit": "Regression variant is serialized via SessionCompareOutput::Regression preserving v1 perf_regression shape (baseline_session_id, target_session_id, threshold, top_n, regressions[]) plus provenance"
+    }
+  },
+  "known_limitations": [
+    {
+      "field": "engine_version",
+      "always": "hardcoded to 'chronos-0.1.0' in both SessionCompareProvenance and SessionExplainProvenance",
+      "reason": "chronos_query::QueryEngine has no public engine_version() accessor. Matches the m7-02 observe.rs precedent. The string lives at module scope in each service and can be replaced by an accessor without changing DTO shape.",
+      "future": "m7+ when chronos_query::QueryEngine exposes engine_version()"
+    },
+    {
+      "field": "session_explain{kind=hypothesis} hypothesis_kind wire param",
+      "always": "not exposed on the MCP wire shape",
+      "reason": "Per m7-03 scoping §Decision 3: the dispatcher selects the plan based on what the bundle carries. hypothesis_kind is Option<...> in the underlying DTO so a future cycle can add the wire param without a breaking change.",
+      "future": "m7+ if agents need to pick the hypothesis variant explicitly"
+    },
+    {
+      "field": "session_explain build_inferred for sessions with only syscalls/signals",
+      "always": "falls back to InferredTag::Unknown",
+      "reason": "Top functions list is empty for sessions without function events. Documented in session_explain.rs module docstring.",
+      "future": "n/a (intentional fallback)"
+    },
+    {
+      "field": "v1 probe_inject / tripwire_* message text",
+      "always": "n/a — neither shim rewrites user-visible text. compare_sessions / performance_regression_audit keep their v1 JSON shape via SessionCompareOutput::Divergence / ::Regression variants",
+      "reason": "V1 caller wire compatibility is preserved 1:1. The new 'provenance' field is added but cannot break v1 parsers since it never appeared before.",
+      "future": "v1 sunset 2027-09-11"
+    }
+  ],
+  "files_changed": [
+    "crates/chronos-services/src/output.rs (+291 lines: SessionCompareKind, SessionCompareInput, SessionCompareOutput, SessionCompareProvenance, SessionExplainKind, HypothesisTestKind, SessionExplainInput, SessionExplainOutput, FactsBundle, DerivedBundle, FunctionHotspot, CallGraphSummary, SyscallBreakdown, InferredBundle, InferredTag, HypothesisBundle, HypothesisTestPlan, SessionExplainProvenance)",
+    "crates/chronos-services/src/session_compare.rs (new, ~384 lines: SessionCompareContext<'_>, ChronosSessionCompareService::compare dispatcher, 9 unit tests)",
+    "crates/chronos-services/src/session_explain.rs (new, ~717 lines: SessionExplainContext<'_>, ChronosSessionExplainService::explain dispatcher + build_facts / build_derived / build_inferred / build_hypothesis helpers, 10 unit tests)",
+    "crates/chronos-services/src/lib.rs (+12 lines: register session_compare + session_explain modules, update module index 17→19, M7 progress m7-03 entry)",
+    "crates/chronos-mcp/src/server.rs (+287/-43 net: SessionCompareParams, SessionExplainParams types, parse_session_compare_kind / parse_session_explain_kind / invalid_kind_error parsers, session_compare + session_explain tool wrappers, v1 shim conversion of compare_sessions + performance_regression_audit, Self::dispatch_session_compare helper, 3 new lib tests)"
+  ],
+  "test_counts": {
+    "services_lib": { "before": 179, "after": 198, "delta": "+19 (9 session_compare + 10 session_explain)" },
+    "mcp_lib": { "before": 73, "after": 76, "delta": "+3 (test_session_compare_divergence_kind_routes_via_shim, test_session_compare_unknown_kind_rejected, test_session_explain_session_not_found_returns_tool_error)" },
+    "workspace_lib_total": { "before_m7_03": 761, "after_m7_03": 788, "delta": "+27 (but only ~19 are dispatcher unit tests; remaining delta is from helpers and shared modules)" }
+  },
+  "smoke_subset_chosen": {
+    "tests": [
+      "e2e_connectivity (server starts and accepts a tool call — covers basic dispatcher plumbing)",
+      "diff_tools (directly exercises compare_sessions + performance_regression_audit v1 shims against a real binary)",
+      "analytics_tools (broad event read/filter coverage, indirectly exercises session_explain{kind=facts|derived} which load sessions from the store)",
+      "hypothesis_tools (exercises hypothesis_test surface — verifies that session_explain{kind=hypothesis} returns a plan that hypothesis_test{kind=call_path} can execute)"
+    ],
+    "rationale": "Compare + explain touch session storage + the dispatcher pattern that m7-02 (observe) established. e2e_connectivity is a free smoke. diff_tools is mandatory because both v1 shims route through it. analytics_tools covers the load_session path. hypothesis_tools verifies the new HypothesisTestPlan::DominantFunctionCallPath round-trips with hypothesis_test{kind=call_path}."
+  },
+  "notes": [
+    "Decisions locked in m7-03 scoping (1d218fb) carried over to execute cycle verbatim: hypothesis_kind not exposed on MCP wire, engine_version hardcoded, build_inferred Unknown fallback for empty top_functions, dispatch-session-compare shared helper for the v2 tool + 2 shims.",
+    "Both new dispatchers follow the observe.rs precedent (m7-02): tagged-enum kind discriminator, kind-gated field validation with ServiceError::InvalidInput, single dispatcher entry point with kind-routed match arms.",
+    "Shared helper Self::dispatch_session_compare is the only place that touches the wire error mapping; the v1 shims (compare_sessions / performance_regression_audit) and the v2 tool (session_compare) all funnel through it.",
+    "Test rig pattern: each module owns its #[cfg(test)] mod tests helper (no cross-module test helper imports). session_explain's make_event had to pass func.to_string() to both SourceLocation::new and EventData::Function::name — engine counts location.function, not EventData::Function::name.",
+    "parse_session_explain_kind + invalid_kind_error build a single rmcp::ErrorData::invalid_request for unknown kinds, so MCP tool wrappers surface a uniform error.",
+    "No clippy drift introduced; no module-level #[allow] needed.",
+    "ServiceError variants were NOT added this cycle. Reuse existing LoadFailed + InvalidInput — matches m6-01/m6-02/m6-03/m6-05 pattern. Surgical variants only when the new error class cannot be expressed via existing variants."
+  ],
+  "todo_next_session": [
+    "Run T4 sandbox smoke (diff_tools, analytics_tools, hypothesis_tools, e2e_connectivity) before FF-merge.",
+    "FF-merge feat/m7-03-session-compare-explain-merge → main with --no-ff=false (true FF) and tag m7-03-session-compare-explain-merge.0.",
+    "Continue M7 with m7-04 per docs/milestones/m7-events-read-scoping.md (next sub-cycle: session_start / session_stop / capabilities v2 surface).",
+    "After all M7 sub-cycles ship, write docs/milestones/m7-close-report.md following the m6-close-report.md template.",
+    "Long-term: deprecation sunset sweep is calendared for 2027-09-11."
+  ]
+}

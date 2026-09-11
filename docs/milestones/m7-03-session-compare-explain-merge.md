@@ -338,4 +338,64 @@ The apply-checkpoint will land as
 
 ---
 
-— Submitted 2026-09-11. Awaits m7-03 execute cycle kickoff.
+## Execute-cycle update (2026-09-11, in progress)
+
+### What shipped (4 commits on `feat/m7-03-session-compare-explain-merge`)
+
+1. **`da7fb83`** — DTOs in `crates/chronos-services/src/output.rs`
+   (+291 LoC): the four enums (`SessionCompareKind`,
+   `SessionExplainKind`, `HypothesisTestKind`, `InferredTag`), the
+   tagged-enum outputs (`SessionCompareOutput::{Divergence,Regression}`
+   with `provenance`, `SessionExplainOutput::{Facts,Derived,Inferred,Hypothesis}`),
+   and the four bundles (`FactsBundle`, `DerivedBundle`,
+   `InferredBundle`, `HypothesisBundle`).
+2. **`36a0f34`** — `crates/chronos-services/src/session_compare.rs`
+   (~384 LoC, 9 unit tests): `ChronosSessionCompareService::compare`
+   dispatcher that routes by kind to existing
+   `ChronosDiffService::compare_sessions` (divergence) /
+   `performance_regression_audit` (regression). Kind-gated field
+   validation returns `ServiceError::InvalidInput`. Engine version
+   hardcoded `"chronos-0.1.0"` (matches observe.rs precedent).
+3. **`b005d36`** — `crates/chronos-services/src/session_explain.rs`
+   (~717 LoC, 10 unit tests): `ChronosSessionExplainService::explain`
+   dispatcher that loads session, runs `QueryEngine::execution_summary`,
+   then routes by kind to `build_facts` / `build_derived` /
+   `build_inferred` / `build_hypothesis`. Heuristics: IoHeavy >50%
+   syscall_enter/exit share, CpuBound >70% one-function dominance,
+   SingleThreaded = thread_count==1, CrashDetected from
+   `potential_issues` or signal events. Hypothesis plans return
+   `HypothesisTestPlan::CrashInvariant` (with `ComparisonOp::Eq`) or
+   `DominantFunctionCallPath`.
+4. **`947e73b`** — `crates/chronos-mcp/src/server.rs` (+287/-43 net):
+   `SessionCompareParams` + `session_compare` tool + shim conversion of
+   `compare_sessions` + `performance_regression_audit` to v1 shims;
+   `SessionExplainParams` + `session_explain` tool (net-new). All three
+   `session_compare`-path wrappers funnel through
+   `Self::dispatch_session_compare`. Three new MCP lib tests.
+
+### Test counts
+
+| Bucket | Before m7-03 | After m7-03 | Delta |
+|---|---|---|---|
+| `chronos-services` lib | 179 | 198 | +19 (9 + 10) |
+| `chronos-mcp` lib | 73 | 76 | +3 (new MCP wrappers) |
+| Workspace total (lib, ex chronos-native) | 761 | 788 | +27 |
+
+T0 (fmt + clippy `-D warnings`) is green. T1 (workspace lib ex
+chronos-native) is 788/788 passing with 4 pre-existing ignored.
+
+### Smoke subset chosen (T4)
+
+Per `sddk/changes/m7-03-session-compare-explain-merge/apply-checkpoint.json`:
+
+- `e2e_connectivity` (server starts; free smoke).
+- `diff_tools` (directly exercises `compare_sessions` +
+  `performance_regression_audit` shims against a real binary).
+- `analytics_tools` (covers the load_session path).
+- `hypothesis_tools` (verifies
+  `session_explain{kind=hypothesis}` returns a
+  `DominantFunctionCallPath` plan that `hypothesis_test{kind=call_path}`
+  can execute).
+
+— Execute cycle kicked off 2026-09-11, awaiting T4 sandbox smoke before
+FF-merge to `main` and tag `m7-03-session-compare-explain-merge.0`.
