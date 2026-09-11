@@ -30,11 +30,25 @@ pub struct McpProcess {
 impl McpProcess {
     /// Spawn a new MCP server process from the given path.
     pub async fn spawn(mcp_path: &Path) -> Result<Self, McpSandboxError> {
+        Self::spawn_with_env(mcp_path, std::collections::HashMap::new()).await
+    }
+
+    /// Spawn a new MCP server process from the given path with extra environment variables.
+    ///
+    /// Used by sandbox tests that need to control the MCP server's DB path (e.g., ce12).
+    pub async fn spawn_with_env(
+        mcp_path: &Path,
+        extra_env: std::collections::HashMap<String, String>,
+    ) -> Result<Self, McpSandboxError> {
         let mut cmd = tokio::process::Command::new(mcp_path);
         cmd.env("RUST_LOG", "debug");
-        // Pass through CHRONOS_DB_PATH if set, so sessions can persist across server restarts
+        // Pass through CHRONOS_DB_PATH if set
         if let Ok(db_path) = std::env::var("CHRONOS_DB_PATH") {
             cmd.env("CHRONOS_DB_PATH", db_path);
+        }
+        // Apply extra environment variables (overriding any inherited ones)
+        for (k, v) in extra_env {
+            cmd.env(&k, &v);
         }
         let mut child = cmd
             .stdin(std::process::Stdio::piped())
@@ -190,7 +204,17 @@ pub mod factory {
     pub async fn start(
         mcp_path: &Path,
     ) -> Result<(McpProcess, McpWriter, McpReader), McpSandboxError> {
-        let mut process = McpProcess::spawn(mcp_path).await?;
+        start_with_env(mcp_path, std::collections::HashMap::new()).await
+    }
+
+    /// Spawn and return a new MCP process with custom environment variables,
+    /// along with its stdio handles. Used by sandbox tests that need to
+    /// control the MCP server's DB path (e.g., ce12).
+    pub async fn start_with_env(
+        mcp_path: &Path,
+        extra_env: std::collections::HashMap<String, String>,
+    ) -> Result<(McpProcess, McpWriter, McpReader), McpSandboxError> {
+        let mut process = McpProcess::spawn_with_env(mcp_path, extra_env).await?;
 
         // Take the handles from the process
         let stdin = process.stdin.take().unwrap();

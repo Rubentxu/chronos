@@ -1603,6 +1603,148 @@ impl McpTestClient {
         }
         Ok(())
     }
+
+    /// Default DB path used by the MCP server (`CHRONOS_DB_PATH` or
+    /// `$HOME/.local/share/chronos/sessions.redb`).
+    pub fn default_db_path() -> std::path::PathBuf {
+        std::env::var("CHRONOS_DB_PATH")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| {
+                let mut path = std::env::var("HOME")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|_| std::path::PathBuf::from("."));
+                path.push(".local");
+                path.push("share");
+                path.push("chronos");
+                path.push("sessions.redb");
+                path
+            })
+    }
+
+    /// Spawn the MCP server with an explicit DB path.
+    ///
+    /// Sets `CHRONOS_DB_PATH` in the server environment so the server opens
+    /// the same store that `run_replay` will read from. Used by ce12 to test
+    /// the end-to-end `counterexample_shrink` → `run_replay` round-trip.
+    pub async fn start_with_db_path(db_path: std::path::PathBuf) -> Result<Self, McpSandboxError> {
+        let mcp_path = std::env::var("CHRONOS_MCP_PATH")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| {
+                if let Ok(cargo_bin) = std::env::var("CARGO_BIN_EXE_chronos-mcp") {
+                    let path = std::path::PathBuf::from(cargo_bin);
+                    if path.exists() {
+                        return path;
+                    }
+                }
+                if let Ok(exe) = std::env::current_exe() {
+                    let relative = exe
+                        .parent()
+                        .and_then(|p| p.parent())
+                        .map(|p| p.join("chronos-mcp"));
+                    if let Some(ref path) = relative {
+                        if path.exists() {
+                            return path.clone();
+                        }
+                    }
+                }
+                std::path::PathBuf::from("chronos-mcp")
+            });
+        let mut env_vars: std::collections::HashMap<String, String> = std::env::vars().collect();
+        env_vars.insert(
+            "CHRONOS_DB_PATH".to_string(),
+            db_path.to_string_lossy().to_string(),
+        );
+        let (process, stdin, reader) =
+            crate::client::process::factory::start_with_env(&mcp_path, env_vars).await?;
+        let session = McpSession::new(stdin, reader).await?;
+        Ok(Self {
+            process: Some(process),
+            session: Some(session),
+        })
+    }
+
+    /// Replay a previously saved counterexample bundle and return the report.
+    ///
+    /// Spawns `chronos test replay <bundle_id>` as a subprocess against
+    /// `db_path`. Used by ce12 to verify that a bundle saved via
+    /// `counterexample_shrink` round-trips through the replay path correctly
+    /// (verifying `target_hypothesis` reconstruction).
+    pub async fn replay_bundle(
+        &self,
+        bundle_id: &str,
+        db_path: &std::path::Path,
+    ) -> Result<ReplayReport, McpSandboxError> {
+        // Find the chronos CLI binary. We look for the same patterns as
+        // `McpTestClient::start` (CARGO_BIN_EXE_chronos, relative, PATH).
+        let cli_path = std::env::var("CHRONOS_CLI_PATH")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| {
+                if let Ok(cargo_bin) = std::env::var("CARGO_BIN_EXE_chronos") {
+                    let path = std::path::PathBuf::from(cargo_bin);
+                    if path.exists() {
+                        return path;
+                    }
+                }
+                if let Ok(exe) = std::env::current_exe() {
+                    let relative = exe
+                        .parent()
+                        .and_then(|p| p.parent())
+                        .map(|p| p.join("chronos"));
+                    if let Some(ref path) = relative {
+                        if path.exists() {
+                            return path.clone();
+                        }
+                    }
+                }
+                std::path::PathBuf::from("chronos")
+            });
+
+        // Build the subprocess: `chronos test replay <bundle_id> --db <db_path>`
+        let output = tokio::process::Command::new(&cli_path)
+            .args(["test", "replay", bundle_id, "--db"])
+            .arg(db_path)
+            .env("RUST_LOG", "warn")
+            .output()
+            .await
+            .map_err(|e| {
+                McpSandboxError::RpcError(format!(
+                    "failed to spawn chronos CLI at {:?}: {e}",
+                    cli_path
+                ))
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(McpSandboxError::RpcError(format!(
+                "chronos test replay failed (exit {}): {}",
+                output.status, stderr
+            )));
+        }
+
+        // Parse stdout as JSON ReplayReport.
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        serde_json::from_str(stdout.trim())
+            .map_err(|e| McpSandboxError::RpcError(format!("failed to parse ReplayReport: {e}")))
+    }
+}
+
+/// Replay report returned by `chronos test replay`.
+///
+/// Matches `chronos_cli::replay::ReplayReport` field-for-field.
+/// Defined locally so `chronos-sandbox` does not need to depend on `chronos-cli`
+/// (which is a binary crate without a lib target).
+#[derive(Debug, serde::Deserialize)]
+pub struct ReplayReport {
+    pub bundle_id: String,
+    pub property_kind: String,
+    pub workspace_id: String,
+    pub created_at_ms: u64,
+    pub rounds_used: u32,
+    pub events_in_bundle: usize,
+    pub replay_verdict: String,
+    pub replay_summary: String,
+    pub replay_support_event_ids: Vec<u64>,
+    pub replay_counter_event_ids: Vec<u64>,
 }
 
 /// Deref implementation to allow `McpTestClient` to be used like `McpSession`.
