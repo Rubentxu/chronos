@@ -384,6 +384,50 @@ fn parse_export_format(s: &str) -> Option<chronos_services::output::ExportFormat
     }
 }
 
+/// Parse a `session_compare{kind=...}` discriminator string.
+/// Returns an error if the caller asked for anything other than the two
+/// documented kinds (divergence / regression).
+fn parse_session_compare_kind(
+    s: &str,
+) -> Result<chronos_services::output::SessionCompareKind, rmcp::ErrorData> {
+    use chronos_services::output::SessionCompareKind;
+    match s {
+        "divergence" => Ok(SessionCompareKind::Divergence),
+        "regression" => Ok(SessionCompareKind::Regression),
+        other => Err(invalid_kind_error(other, &["divergence", "regression"])),
+    }
+}
+
+/// Parse a `session_explain{kind=...}` discriminator string.
+/// Returns an error for anything outside the four documented kinds
+/// (facts / derived / inferred / hypothesis).
+fn parse_session_explain_kind(
+    s: &str,
+) -> Result<chronos_services::output::SessionExplainKind, rmcp::ErrorData> {
+    use chronos_services::output::SessionExplainKind;
+    match s {
+        "facts" => Ok(SessionExplainKind::Facts),
+        "derived" => Ok(SessionExplainKind::Derived),
+        "inferred" => Ok(SessionExplainKind::Inferred),
+        "hypothesis" => Ok(SessionExplainKind::Hypothesis),
+        other => Err(invalid_kind_error(
+            other,
+            &["facts", "derived", "inferred", "hypothesis"],
+        )),
+    }
+}
+
+/// Build a uniform "unknown discriminator" error so callers see the same
+/// shape from every parser. The MCP server maps `ErrorData` straight to a
+/// tool-error response; no further wrapping needed at the call site.
+fn invalid_kind_error(other: &str, allowed: &[&str]) -> rmcp::ErrorData {
+    use rmcp::model::ErrorData as McpError;
+    McpError::invalid_request(
+        format!("unknown kind '{}'; allowed: {}", other, allowed.join(", ")),
+        None,
+    )
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetEventParams {
     /// Session ID.
@@ -1057,6 +1101,40 @@ pub struct PerformanceRegressionAuditParams {
     pub target_session_id: String,
     /// Maximum number of top functions to compare (default: 20).
     pub top_n: Option<usize>,
+}
+
+// ============================================================================
+// Session Compare (v2, m7-03 dispatcher)
+// ============================================================================
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SessionCompareParams {
+    /// Session comparison kind.
+    /// - `divergence`: pairwise divergence of session_a vs session_b (functions only in A / only in B / common).
+    /// - `regression`: top-function performance regression audit (baseline vs target).
+    pub kind: String,
+    /// First session ID (divergence: session_a; regression: baseline_session_id).
+    pub session_a: String,
+    /// Second session ID (divergence: session_b; regression: target_session_id).
+    pub session_b: String,
+    /// Maximum number of top functions to compare (regression only, default: 20).
+    pub top_n: Option<usize>,
+}
+
+// ============================================================================
+// Session Explain (v2, m7-03 net-new)
+// ============================================================================
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SessionExplainParams {
+    /// Session ID to explain.
+    pub session_id: String,
+    /// Explanation kind:
+    /// - `facts`: raw counts and metadata (no analysis).
+    /// - `derived`: function hotspots, call-graph summary, syscall breakdown.
+    /// - `inferred`: heuristic characterisations (IoHeavy / CpuBound / SingleThreaded / CrashDetected / Unknown).
+    /// - `hypothesis`: typed hypothesis test plans (CrashInvariant / DominantFunctionCallPath).
+    pub kind: String,
 }
 
 // ============================================================================
@@ -4010,24 +4088,83 @@ impl ChronosServer {
 
     #[tool(
         name = "performance_regression_audit",
-        description = "Compare performance hotspots between two sessions to detect regressions"
+        description = "DEPRECATED v1 shim. Routes to session_compare{kind=regression} via ChronosSessionCompareService. The v1 parameter names baseline_session_id / target_session_id are preserved; top_n is forwarded unchanged. Prefer session_compare (v2)."
     )]
     async fn performance_regression_audit(
         &self,
         params: Parameters<PerformanceRegressionAuditParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let ctx = chronos_services::diff::DiffContext { store: &self.store };
+        let ctx = chronos_services::session_compare::SessionCompareContext { store: &self.store };
+        let v2_params = SessionCompareParams {
+            kind: "regression".to_string(),
+            session_a: params.baseline_session_id,
+            session_b: params.target_session_id,
+            top_n: params.top_n,
+        };
+        Self::dispatch_session_compare(&ctx, v2_params).await
+    }
 
-        match chronos_services::diff::ChronosDiffService::performance_regression_audit(
-            &ctx,
-            chronos_services::diff::PerformanceRegressionAuditInput {
-                baseline_session_id: params.baseline_session_id,
-                target_session_id: params.target_session_id,
-                top_n: params.top_n,
-            },
+    #[tool(
+        name = "compare_sessions",
+        description = "DEPRECATED v1 shim. Routes to session_compare{kind=divergence} via ChronosSessionCompareService. The v1 parameter names session_a / session_b are preserved. Prefer session_compare (v2)."
+    )]
+    async fn compare_sessions(
+        &self,
+        params: Parameters<CompareSessionsParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let ctx = chronos_services::session_compare::SessionCompareContext { store: &self.store };
+        let v2_params = SessionCompareParams {
+            kind: "divergence".to_string(),
+            session_a: params.session_a,
+            session_b: params.session_b,
+            top_n: None,
+        };
+        Self::dispatch_session_compare(&ctx, v2_params).await
+    }
+
+    #[tool(
+        name = "session_compare",
+        description = "v2 dispatcher for session-vs-session comparison. Discriminated by `kind`: `divergence` reports pairwise divergence (functions only in A / only in B / common + similarity%); `regression` audits top-function performance regression (baseline vs target). For divergence, `session_a` and `session_b` are the two sessions; for regression, `session_a` is the baseline and `session_b` is the target. Supersedes the v1 `compare_sessions` (kind=divergence) and `performance_regression_audit` (kind=regression) tools. See docs/chronos-agentic-reconstruction/docs/specs/AGENT_API_V2.md (line 14)."
+    )]
+    async fn session_compare(
+        &self,
+        params: Parameters<SessionCompareParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let ctx = chronos_services::session_compare::SessionCompareContext { store: &self.store };
+        Self::dispatch_session_compare(&ctx, params).await
+    }
+
+    #[tool(
+        name = "session_explain",
+        description = "v2 net-new dispatcher for session-level explanations (no v1 shim). Discriminated by `kind`: `facts` returns raw counts and metadata; `derived` returns function hotspots + call-graph summary + syscall breakdown; `inferred` returns heuristic characterisations (IoHeavy / CpuBound / SingleThreaded / CrashDetected / Unknown); `hypothesis` returns typed hypothesis test plans (CrashInvariant / DominantFunctionCallPath). See docs/chronos-agentic-reconstruction/docs/specs/AGENT_API_V2.md (line 14)."
+    )]
+    async fn session_explain(
+        &self,
+        params: Parameters<SessionExplainParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let explain_ctx = chronos_services::session_explain::SessionExplainContext {
+            store: &self.store,
+        };
+        let kind = parse_session_explain_kind(&params.kind)?;
+        let input = chronos_services::output::SessionExplainInput {
+            kind,
+            session_id: params.session_id,
+            // The MCP `session_explain` surface does not expose a
+            // per-hypothesis discriminator; the dispatcher picks the
+            // right plan based on what the bundle carries. The
+            // hypothesis-kind param can be added to the wire shape
+            // later without a breaking change (Option is forward-compat).
+            hypothesis_kind: None,
+        };
+        match chronos_services::session_explain::ChronosSessionExplainService::explain(
+            &explain_ctx,
+            input,
         ) {
-            Ok(result) => match serde_json::to_value(result) {
+            Ok(out) => match serde_json::to_value(out) {
                 Ok(v) => Ok(CallToolResult::success(json_content(&v))),
                 Err(e) => Ok(CallToolResult::error(text_content(format!(
                     "Serialization error: {}",
@@ -4037,43 +4174,7 @@ impl ChronosServer {
             Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
                 format!("session '{}' not found", s),
             ))),
-            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
-        }
-    }
-
-    #[tool(
-        name = "compare_sessions",
-        description = "Compare two saved sessions and report differences (Divergence Engine)"
-    )]
-    async fn compare_sessions(
-        &self,
-        params: Parameters<CompareSessionsParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let params = params.0;
-        let ctx = chronos_services::diff::DiffContext { store: &self.store };
-
-        match chronos_services::diff::ChronosDiffService::compare_sessions(
-            &ctx,
-            chronos_services::diff::CompareSessionsInput {
-                session_a: params.session_a,
-                session_b: params.session_b,
-            },
-        ) {
-            Ok(result) => Ok(CallToolResult::success(json_content(&serde_json::json!({
-                "session_a_id": result.session_a_id,
-                "session_b_id": result.session_b_id,
-                "only_in_a_count": result.only_in_a_count,
-                "only_in_b_count": result.only_in_b_count,
-                "total_a": result.total_a,
-                "total_b": result.total_b,
-                "common_count": result.common_count,
-                "similarity_pct": result.similarity_pct,
-                "timing_delta_ms": result.timing_delta_ms,
-                "summary": result.summary,
-            })))),
-            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
-                format!("session '{}' not found", s),
-            ))),
+            Err(ServiceError::InvalidInput(s)) => Ok(CallToolResult::error(text_content(s))),
             Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
     }
@@ -4490,6 +4591,39 @@ impl ChronosServer {
                 "observe: lock poisoned",
             ))),
             Err(e) => Ok(CallToolResult::error(text_content(format!("observe: {e}")))),
+        }
+    }
+
+    /// Shared dispatcher for `session_compare` v2 + the two v1 shims
+    /// (`compare_sessions` → kind=divergence, `performance_regression_audit`
+    /// → kind=regression). All three tool wrappers funnel through here so
+    /// the wire-shape and error mapping stay identical.
+    async fn dispatch_session_compare(
+        ctx: &chronos_services::session_compare::SessionCompareContext<'_>,
+        params: SessionCompareParams,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let input = chronos_services::output::SessionCompareInput {
+            kind: parse_session_compare_kind(&params.kind)?,
+            session_a: Some(params.session_a.clone()),
+            session_b: Some(params.session_b.clone()),
+            baseline_session_id: Some(params.session_a),
+            target_session_id: Some(params.session_b),
+            top_n: params.top_n,
+        };
+        match chronos_services::session_compare::ChronosSessionCompareService::compare(ctx, input)
+        {
+            Ok(out) => match serde_json::to_value(out) {
+                Ok(v) => Ok(CallToolResult::success(json_content(&v))),
+                Err(e) => Ok(CallToolResult::error(text_content(format!(
+                    "Serialization error: {}",
+                    e
+                )))),
+            },
+            Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
+                format!("session '{}' not found", s),
+            ))),
+            Err(ServiceError::InvalidInput(s)) => Ok(CallToolResult::error(text_content(s))),
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
     }
 }
@@ -5714,6 +5848,116 @@ mod tests {
         assert!(text.contains("summary"));
         // Identical events → high similarity
         assert!(text.contains("100") || text.contains("highly similar"));
+    }
+
+    // ========================================================================
+    // session_compare / session_explain tests (m7-03)
+    // ========================================================================
+
+    /// Re-uses the helpers from the v1 tests above; saves one session
+    /// so `session_compare{kind=divergence}` can be exercised end-to-end.
+    #[tokio::test]
+    async fn test_session_compare_divergence_kind_routes_via_shim() {
+        use chronos_domain::{EventData, SourceLocation};
+        let server = ChronosServer::new();
+
+        let make_event = |id: u64, func: &str| {
+            let loc = SourceLocation::new("test.rs", 1, func.to_string(), 0x1000 + id);
+            TraceEvent::new(
+                id,
+                id * 100,
+                1,
+                EventType::FunctionEntry,
+                loc,
+                EventData::Function {
+                    name: func.to_string(),
+                    signature: None,
+                    symbol_id: None,
+                    invocation_id: None,
+                    parent_invocation_id: None,
+                },
+            )
+        };
+
+        let events = vec![make_event(0, "main"), make_event(1, "helper")];
+        let sid_a = "sc-div-a".to_string();
+        let sid_b = "sc-div-b".to_string();
+        let meta = SessionMetadata {
+            session_id: sid_a.clone(),
+            created_at: 0,
+            language: "native".to_string(),
+            target: "/bin/test".to_string(),
+            event_count: events.len(),
+            duration_ms: 100,
+        };
+        let meta_b = SessionMetadata {
+            session_id: sid_b.clone(),
+            ..meta.clone()
+        };
+        server.store.save_session(meta, &events).unwrap();
+        server.store.save_session(meta_b, &events).unwrap();
+
+        let result = server
+            .session_compare(Parameters(SessionCompareParams {
+                kind: "divergence".to_string(),
+                session_a: sid_a.clone(),
+                session_b: sid_b.clone(),
+                top_n: None,
+            }))
+            .await
+            .unwrap();
+
+        assert_ne!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        // v2 divergence returns Divergence variant with provenance + similarity_pct
+        assert!(
+            text.contains("divergence") || text.contains("Divergence"),
+            "expected divergence variant in output: {text}"
+        );
+        assert!(text.contains("similarity_pct"));
+        assert!(text.contains("provenance"));
+    }
+
+    /// `session_compare` with an unknown kind returns the parser-level error.
+    #[tokio::test]
+    async fn test_session_compare_unknown_kind_rejected() {
+        let server = ChronosServer::new();
+        let result = server
+            .session_compare(Parameters(SessionCompareParams {
+                kind: "wat".to_string(),
+                session_a: "x".to_string(),
+                session_b: "y".to_string(),
+                top_n: None,
+            }))
+            .await;
+        // The parser returns `rmcp::ErrorData` (not `CallToolResult`), so the
+        // outer Result is Err; the wrapper short-circuits with `?`.
+        assert!(
+            result.is_err(),
+            "expected parser-level rejection, got {:?}",
+            result
+        );
+    }
+
+    /// `session_explain{kind=facts}` returns a FactsBundle variant.
+    /// Uses an empty-session store path: load_session returns SessionNotFound,
+    /// so the wrapper maps it to a tool error (not a parse error).
+    #[tokio::test]
+    async fn test_session_explain_session_not_found_returns_tool_error() {
+        let server = ChronosServer::new();
+        let result = server
+            .session_explain(Parameters(SessionExplainParams {
+                session_id: "no-such-session".to_string(),
+                kind: "facts".to_string(),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(result.is_error, Some(true));
+        let text = format!("{:?}", result.content);
+        assert!(
+            text.contains("not found"),
+            "expected 'not found' in error: {text}"
+        );
     }
 
     // ========================================================================
