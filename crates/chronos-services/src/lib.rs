@@ -3,9 +3,9 @@
 //! Services are plain Rust structs that can be called from any RPC layer
 //! (today's rmcp, tomorrow's REST, etc.).
 //!
-//! ## Module index (post-M7 close, 2026-09-11)
+//! ## Module index (post-M7-03 close, 2026-09-11)
 //!
-//! 17 algorithm modules (one per service), each owning the algorithm for
+//! 19 algorithm modules (one per service), each owning the algorithm for
 //! one or more MCP tools. The MCP wrappers at `crates/chronos-mcp/src/server.rs`
 //! only parse params, build a `*Context<'_>`, dispatch to the service, and
 //! map `ServiceError` back to MCP error text.
@@ -24,6 +24,8 @@
 //! | [`observe`] | 715 | **M7 (m7-02) dispatcher.** `observe` v2 (verb: create / list / delete / query; update rejected with `Unsupported`). Subsumes the v1 `tripwire_create`/`tripwire_list`/`tripwire_delete`/`tripwire_query`/`probe_inject` tools (now deprecated MCP shims). |
 //! | [`probe`] | 588 | `probe_start`, `probe_stop`, `probe_drain` |
 //! | [`query_service`] | 124 | `query`, `list_threads` |
+//! | [`session_compare`] | ~384 | **M7 (m7-03) dispatcher.** `session_compare` v2 (kind: divergence / regression). Subsumes the v1 `compare_sessions` (kind=divergence) and `performance_regression_audit` (kind=regression) tools (now deprecated MCP shims). |
+//! | [`session_explain`] | ~717 | **M7 (m7-03) net-new.** `session_explain` v2 (kind: facts / derived / inferred / hypothesis). No v1 shim. |
 //! | [`session_export`] | 681 | **M6 (m6-05) net-new.** `session_export` v2 (format: json / otlp_json; zip_json reserved for m7+). Atomic tmp+rename write. `properties_snapshot` always empty in m6-05 (see `docs/milestones/m6-05-session-export.md`). |
 //! | [`sessions`] | 671 | session CRUD: `save/load/list/delete/drop` |
 //! | [`state_query`] | 328 | **M6 (m6-02) dispatcher.** `state_query` v2 (kind: register_diff / memory_read / register_snapshot / memory_analysis / expression_eval). |
@@ -49,6 +51,13 @@
 //!   fields `action`, `retention`, `requested_evidence`, `scope`, `cursor`,
 //!   and `provenance` to the request and response. See
 //!   `docs/milestones/m7-02-observability-merge.md`.
+//! - m7-03: added [`session_compare`] dispatcher and [`session_explain`] net-new.
+//!   v1 tools `compare_sessions` and `performance_regression_audit` are now
+//!   deprecated MCP shims that route through `ChronosSessionCompareService::compare`
+//!   (with `kind=divergence` and `kind=regression` respectively). The `session_explain`
+//!   surface adds `kind: facts / derived / inferred / hypothesis` and returns the
+//!   m6-04-style `HypothesisTestPlan::CrashInvariant` and a new
+//!   `DominantFunctionCallPath` plan. See `docs/milestones/m7-03-session-compare-explain-merge.md`.
 //!
 //! ## Next (M7+ sub-cycle)
 //!
@@ -72,6 +81,7 @@ pub mod output;
 pub mod probe;
 pub mod query_service;
 pub mod session_compare;
+pub mod session_explain;
 pub mod session_export;
 pub mod sessions;
 pub mod state_query;
