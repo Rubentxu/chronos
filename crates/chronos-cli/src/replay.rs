@@ -25,8 +25,7 @@ use chronos_query::engine::QueryEngine;
 use chronos_services::hypothesis_test::{ChronosHypothesisTestService, HypothesisInput};
 use chronos_services::output::{ExistencePredicate, HypothesisKind};
 use chronos_store::counterexample_storage::{
-    bundle_events_or_legacy, CounterexampleBundleRecord,
-    ExistencePredicateWire, MinimisedPayload,
+    bundle_events_or_legacy, CounterexampleBundleRecord, ExistencePredicateWire, MinimisedPayload,
 };
 use chronos_store::SessionStore;
 use serde::Serialize;
