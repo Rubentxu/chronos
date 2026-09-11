@@ -5,7 +5,16 @@
 **Precedence:** `docs/milestones/m7-04-session-start-stop-capabilities-scoping.md`;
 `docs/milestones/m7-events-read-scoping.md`; v2 spec
 `AGENT_API_V2.md` lines 11–13
-**Status:** PROPOSED, 2026-09-11
+**Status:** PARTIAL SHIPMENT — foundation only, 2026-09-11
+
+> **Cycle scope revised during execute.** This cycle shipped the
+> foundation layer (DTOs + `SessionMetadata` extension) and recorded
+> the dispatcher + MCP wrapper plan. The full dispatcher +
+> wrappers + shims landed in the **next execute cycle**
+> (`m7-05-session-lifecycle-dispatchers-merge`), see "Revision
+> note" at the bottom of this file. The foundation ships cleanly
+> with no behaviour change to existing v1 tools — only new types +
+> an additive `SessionMetadata` field.
 
 ## Why this cycle
 
@@ -405,4 +414,55 @@ suites are not required for T4-smoke.
 
 ---
 
-— Submitted 2026-09-11. Awaits m7-04 execute cycle kickoff.
+## Revision note (2026-09-11, end of execute cycle)
+
+Cycle was scoped in the parent doc as a single execute cycle shipping
+DTOs + dispatcher + MCP wrappers + v1 shims + smoke. During execute,
+the dispatcher (`crates/chronos-services/src/session_lifecycle.rs`)
+proved significantly more complex than the m7-01..m7-03 dispatchers
+because:
+
+1. **Async path.** `session_start{action=spawn}` requires
+   `ProbeService::start` (async). m7-01..m7-03 dispatchers are all
+   sync; the new dispatcher is the first async dispatcher in
+   `chronos-services`.
+2. **Cross-service plumbing.** `session_stop{drain_subscriptions=true}`
+   chains to `observe{verb=list}`, which requires an `ObserveContext`
+   (tripwire manager + uprobe counter) that lives on the MCP server,
+   not on the session_lifecycle service. Passing the full context
+   through is straightforward but expands the surface area
+   meaningfully (versus m7-03 where `session_compare` / `session_explain`
+   are self-contained).
+3. **Store update path.** `session_stop{seal_tail=true}` updates
+   `SessionMetadata.tail_sealed=true, sealed_at=<now>`. The store
+   API exposes `save_session(meta, events)` (overwrite) and
+   `load_session(id) -> (meta, events)`. There is no
+   `update_session_metadata`, so sealing requires load + mutate +
+   save — adding a round-trip through CAS and doubling the I/O for
+   the common path.
+4. **ProbeContext testability.** The dispatcher's unit-test
+   scaffolding needs a real `ProbeContext` (TripwireManager +
+   Arc<TokioMutex<...>> + TokioMutex<...>). Constructing that in a
+   unit test requires leaking statics (`Box::leak`) or moving
+   fixtures to `chronos-sandbox`. Both are workable but the cycle
+   cost is non-trivial.
+
+Rather than ship a speculative dispatcher that referenced invented
+APIs (`ObserveContext::from_probe_only`, `ObserveInputResolve`, etc.)
+and unsafe zeroing of `TripwireManager`, the cycle was split:
+
+* **m7-04 (this cycle) — foundation only**: DTOs + `SessionMetadata`
+  extension + documentation. No behaviour change to existing tools.
+  Library + integration tests remain green. Smoke deferred until the
+  dispatcher exists.
+* **m7-05 (next cycle) — dispatcher + wrappers + shims + smoke**:
+  `ChronosSessionLifecycleService::start|stop|capabilities`, the
+  three MCP tool wrappers, v1 `probe_start`/`probe_stop` shim
+  conversion, and T4 sandbox smoke
+  (`probe_lifecycle` + `session_lifecycle` + `program_scenarios`).
+
+The foundation ships in FF-merge + tag
+`m7-04-session-start-stop-capabilities-foundation.0` so consumers can
+depend on the new types without waiting for the dispatcher.
+
+— Cycle closed 2026-09-11.
