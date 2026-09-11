@@ -1310,17 +1310,22 @@ impl McpSession {
     }
 
     /// Run `counterexample_list` with optional filters. Returns the list
-    /// response (single-page today; next_cursor is None per R3).
+    /// response.
+    ///
+    /// m8-05 (B2): `cursor` carries the `next_cursor` from a previous
+    /// page's response. `None` means first page.
     pub async fn counterexample_list(
         &mut self,
         workspace_id: Option<&str>,
         property_kind: Option<&str>,
         limit: Option<u32>,
+        cursor: Option<&str>,
     ) -> Result<CounterexampleListOutputWire, McpSandboxError> {
         let params = serde_json::json!({
             "workspace_id": workspace_id,
             "property_kind": property_kind,
             "limit": limit,
+            "cursor": cursor,
         });
         let response = self
             .rpc_client

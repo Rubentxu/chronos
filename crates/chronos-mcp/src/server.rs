@@ -1593,7 +1593,7 @@ pub struct CounterexampleGetParams {
     pub bundle_id: String,
 }
 
-/// Params for `counterexample_list` (m8-03).
+/// Params for `counterexample_list` (m8-03; m8-05 added cursor).
 #[derive(Debug, serde::Deserialize, JsonSchema)]
 pub struct CounterexampleListParams {
     pub workspace_id: Option<String>,
@@ -1601,6 +1601,10 @@ pub struct CounterexampleListParams {
     pub since_ms: Option<u64>,
     pub until_ms: Option<u64>,
     pub limit: Option<u32>,
+    /// m8-05 (B2): opaque pagination cursor. Pass the `next_cursor`
+    /// value returned by the previous page's response. `None` (or
+    /// omitted) means first page.
+    pub cursor: Option<String>,
 }
 
 // ============================================================================
@@ -5202,7 +5206,7 @@ impl ChronosServer {
     /// `counterexample_list` — list bundle summaries matching optional filters.
     #[tool(
         name = "counterexample_list",
-        description = "List counterexample bundle summaries from redb, optionally filtered by workspace_id, property_kind, since_ms, until_ms, and limit. Returns CounterexampleListOutputDto { bundles, next_cursor }. next_cursor is always null (m8-03 ships single-page; pagination is m8-05 close-time work)."
+        description = "List counterexample bundle summaries from redb, optionally filtered by workspace_id, property_kind, since_ms, until_ms, and limit. Returns CounterexampleListOutputDto { bundles, next_cursor }. m8-05 (B2): forward pagination — when the page is full (len == limit), next_cursor is the bundle_id to pass back as `cursor` for the next page; otherwise next_cursor is null."
     )]
     async fn counterexample_list(
         &self,
@@ -5222,6 +5226,7 @@ impl ChronosServer {
             since_ms: p.since_ms,
             until_ms: p.until_ms,
             limit: p.limit.unwrap_or(50),
+            cursor: p.cursor,
         };
         match chronos_services::counterexample::ChronosCounterexampleService::list(
             &counterexample_ctx,

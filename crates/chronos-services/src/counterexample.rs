@@ -325,9 +325,16 @@ impl ChronosCounterexampleService {
 
     /// List bundle summaries matching `filter`.
     ///
-    /// m8-03: scrolls the redb `counterexample_bundles` table. `next_cursor`
-    /// is left as `None` (single-page response) — pagination is m8-05
-    /// close-time work (R3 in scoping doc).
+    /// m8-05 (B2): forward pagination via `cursor`. If the page is
+    /// "full" (i.e. the returned `summaries.len() == filter.limit`),
+    /// `next_cursor` is set to the last returned `bundle_id`. The
+    /// caller passes that back as `filter.cursor` to fetch the
+    /// following page. `next_cursor` is `None` on the last (or empty)
+    /// page or when no `limit` was supplied (`limit == 0`).
+    ///
+    /// uuid::v7 makes lexicographic `>` match chronological order, so
+    /// the cursor is just the last `bundle_id` — no separate offset /
+    /// index bookkeeping is needed.
     pub fn list(
         ctx: &CounterexampleContext<'_>,
         filter: CounterexampleListFilter,
@@ -343,6 +350,7 @@ impl ChronosCounterexampleService {
             since_ms: filter.since_ms,
             until_ms: filter.until_ms,
             limit: filter.limit,
+            cursor: filter.cursor.clone(),
         };
         let summaries = ctx
             .store
@@ -356,9 +364,18 @@ impl ChronosCounterexampleService {
             .iter()
             .map(|s| counterexample_summary_from_wire(s, &None))
             .collect::<Vec<_>>();
+        // m8-05 B2: forward-pagination cursor. If the page is full,
+        // set `next_cursor` to the last returned bundle_id; otherwise
+        // (last page or no limit), no cursor.
+        let limit = filter.limit as usize;
+        let next_cursor = if limit > 0 && summaries.len() == limit {
+            summaries.last().map(|s| s.bundle_id.clone())
+        } else {
+            None
+        };
         Ok(CounterexampleOutput::Listed {
             summaries,
-            next_cursor: None,
+            next_cursor,
         })
     }
 
@@ -607,6 +624,9 @@ pub struct CounterexampleListFilter {
     pub since_ms: Option<u64>,
     pub until_ms: Option<u64>,
     pub limit: u32,
+    /// m8-05 (B2): opaque cursor returned by the previous page's
+    /// `next_cursor`. `None` means first page.
+    pub cursor: Option<String>,
 }
 
 // ============================================================================
@@ -1927,6 +1947,223 @@ mod tests {
             Err(ServiceError::SessionNotFound(id)) => assert_eq!(id, "absent"),
             Err(other) => panic!("expected SessionNotFound, got {other:?}"),
             Ok(_) => panic!("expected SessionNotFound, got Ok"),
+        }
+    }
+
+    // ========================================================================
+    // m8-05 (B2) tests: list pagination cursor
+    // ========================================================================
+
+    // m8-05 #7: list with `limit` smaller than the bundle count returns a
+    // non-None `next_cursor` so callers can fetch the following page.
+    #[test]
+    fn m8_05_list_full_page_sets_next_cursor() {
+        use crate::hypothesis_test::HypothesisTestContext;
+        use chronos_query::QueryEngine;
+        use chronos_store::SessionStore;
+        use std::collections::HashMap;
+        use tokio::sync::Mutex as TokioMutex;
+
+        let store = SessionStore::in_memory().expect("in_memory store");
+        let engines: HashMap<String, QueryEngine> = HashMap::new();
+        let engines = TokioMutex::new(engines);
+        let hyp_ctx = HypothesisTestContext { engines: &engines };
+        let ctx = CounterexampleContext {
+            store: &store,
+            hypothesis_ctx: &hyp_ctx,
+        };
+
+        // Save 3 bundles; the test only inspects the list API, not the
+        // events payload, so vec![] is fine.
+        for i in 0..3 {
+            let _ = ChronosCounterexampleService::save(
+                &ctx,
+                "ws",
+                HypothesisKind::Invariant,
+                (1, Some(PropertyValue::Number(i as f64)), None, None),
+                vec![],
+            )
+            .expect("save");
+        }
+
+        let filter = CounterexampleListFilter {
+            limit: 2,
+            ..Default::default()
+        };
+        let listed = ChronosCounterexampleService::list(&ctx, filter).expect("list should succeed");
+        match listed {
+            CounterexampleOutput::Listed {
+                summaries,
+                next_cursor,
+            } => {
+                assert_eq!(summaries.len(), 2);
+                assert!(
+                    next_cursor.is_some(),
+                    "next_cursor must be Some when page is full"
+                );
+                assert_eq!(
+                    next_cursor.as_deref(),
+                    Some(summaries.last().unwrap().bundle_id.as_str()),
+                    "next_cursor must equal the last returned bundle_id"
+                );
+            }
+            _ => panic!("expected Listed variant"),
+        }
+    }
+
+    // m8-05 #8: list with `cursor` skips rows whose bundle_id <= cursor
+    // and returns the next page. End-to-end through the service.
+    #[test]
+    fn m8_05_list_with_cursor_returns_next_page() {
+        use crate::hypothesis_test::HypothesisTestContext;
+        use chronos_query::QueryEngine;
+        use chronos_store::SessionStore;
+        use std::collections::HashMap;
+        use tokio::sync::Mutex as TokioMutex;
+
+        let store = SessionStore::in_memory().expect("in_memory store");
+        let engines: HashMap<String, QueryEngine> = HashMap::new();
+        let engines = TokioMutex::new(engines);
+        let hyp_ctx = HypothesisTestContext { engines: &engines };
+        let ctx = CounterexampleContext {
+            store: &store,
+            hypothesis_ctx: &hyp_ctx,
+        };
+
+        for i in 0..4 {
+            let _ = ChronosCounterexampleService::save(
+                &ctx,
+                "ws",
+                HypothesisKind::Invariant,
+                (1, Some(PropertyValue::Number(i as f64)), None, None),
+                vec![],
+            )
+            .expect("save");
+        }
+
+        // First page.
+        let page1 = ChronosCounterexampleService::list(
+            &ctx,
+            CounterexampleListFilter {
+                limit: 2,
+                ..Default::default()
+            },
+        )
+        .expect("page1");
+        let cursor = match page1 {
+            CounterexampleOutput::Listed {
+                summaries,
+                next_cursor,
+            } => {
+                assert_eq!(summaries.len(), 2);
+                next_cursor.expect("page1 must have next_cursor")
+            }
+            _ => panic!("expected Listed"),
+        };
+
+        // Second page: cursor = page1.next_cursor. With limit=2 and
+        // 4 total bundles, page2 is also full — by m8-05 B2 semantics
+        // ("cursor when page is full"), page2 ALSO returns a
+        // next_cursor. The caller fetches page3 to discover the actual
+        // end of the data (page3 returns 0 rows, no cursor).
+        let page2 = ChronosCounterexampleService::list(
+            &ctx,
+            CounterexampleListFilter {
+                limit: 2,
+                cursor: Some(cursor.clone()),
+                ..Default::default()
+            },
+        )
+        .expect("page2");
+        let cursor2 = match page2 {
+            CounterexampleOutput::Listed {
+                summaries,
+                next_cursor,
+            } => {
+                assert_eq!(summaries.len(), 2);
+                // page2's bundle_ids must all be > cursor.
+                for s in &summaries {
+                    assert!(
+                        s.bundle_id.as_str() > cursor.as_str(),
+                        "{} must be > cursor {}",
+                        s.bundle_id,
+                        cursor
+                    );
+                }
+                // page2 is also full -> next_cursor is Some.
+                next_cursor.expect("page2 must also have next_cursor (page full)")
+            }
+            _ => panic!("expected Listed"),
+        };
+
+        // Third page: cursor = page2.next_cursor. Now only 0 rows
+        // remain, so next_cursor is None.
+        let page3 = ChronosCounterexampleService::list(
+            &ctx,
+            CounterexampleListFilter {
+                limit: 2,
+                cursor: Some(cursor2),
+                ..Default::default()
+            },
+        )
+        .expect("page3");
+        match page3 {
+            CounterexampleOutput::Listed {
+                summaries,
+                next_cursor,
+            } => {
+                assert!(summaries.is_empty(), "no rows past the last cursor");
+                assert!(next_cursor.is_none());
+            }
+            _ => panic!("expected Listed"),
+        }
+    }
+
+    // m8-05 #9: list with limit > total rows returns no `next_cursor`.
+    #[test]
+    fn m8_05_list_last_page_has_no_cursor() {
+        use crate::hypothesis_test::HypothesisTestContext;
+        use chronos_query::QueryEngine;
+        use chronos_store::SessionStore;
+        use std::collections::HashMap;
+        use tokio::sync::Mutex as TokioMutex;
+
+        let store = SessionStore::in_memory().expect("in_memory store");
+        let engines: HashMap<String, QueryEngine> = HashMap::new();
+        let engines = TokioMutex::new(engines);
+        let hyp_ctx = HypothesisTestContext { engines: &engines };
+        let ctx = CounterexampleContext {
+            store: &store,
+            hypothesis_ctx: &hyp_ctx,
+        };
+
+        for i in 0..3 {
+            let _ = ChronosCounterexampleService::save(
+                &ctx,
+                "ws",
+                HypothesisKind::Invariant,
+                (1, Some(PropertyValue::Number(i as f64)), None, None),
+                vec![],
+            )
+            .expect("save");
+        }
+        let listed = ChronosCounterexampleService::list(
+            &ctx,
+            CounterexampleListFilter {
+                limit: 10,
+                ..Default::default()
+            },
+        )
+        .expect("list");
+        match listed {
+            CounterexampleOutput::Listed {
+                summaries,
+                next_cursor,
+            } => {
+                assert_eq!(summaries.len(), 3);
+                assert!(next_cursor.is_none(), "last page must not have next_cursor");
+            }
+            _ => panic!("expected Listed"),
         }
     }
 }

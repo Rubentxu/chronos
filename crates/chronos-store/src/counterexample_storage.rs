@@ -70,8 +70,14 @@ pub enum ExistencePredicateWire {
 /// Filter shape for `SessionStore::list_counterexample_bundles`.
 ///
 /// All fields are optional; passing `None` for everything returns the
-/// most recent bundles up to `limit`. m8-03 ships single-page only
-/// (`next_cursor` is m8-05 close-time work).
+/// most recent bundles up to `limit`.
+///
+/// m8-05 (B2): `cursor` carries the `bundle_id` returned by the
+/// previous page's `next_cursor`. When `Some`, the list skips rows
+/// whose `bundle_id <= cursor`, effectively returning the page that
+/// begins AFTER the cursor. The cursor is opaque to callers — we use
+/// the bundle_id directly (uuid::v7 is monotonically increasing, so
+/// lexicographic `>` gives chronological forward paging).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CounterexampleBundleFilter<'a> {
     pub workspace_id: Option<&'a str>,
@@ -79,6 +85,10 @@ pub struct CounterexampleBundleFilter<'a> {
     pub since_ms: Option<u64>,
     pub until_ms: Option<u64>,
     pub limit: u32,
+    /// m8-05: opaque pagination cursor (= last `bundle_id` from previous
+    /// page). When `Some(c)`, the list starts at the first row whose
+    /// `bundle_id > c`. `None` means first page.
+    pub cursor: Option<String>,
 }
 
 /// Summary shape used for list responses (no events).
@@ -190,6 +200,13 @@ impl crate::storage::SessionStore {
     /// List bundle summaries matching `filter`, oldest-first (uuid::v7
     /// lexicographic order matches chronological).
     ///
+    /// m8-05 (B2 note): when `filter.cursor` is `Some(c)`, the iteration
+    /// skips rows whose `bundle_id <= c` before applying other filters
+    /// and `limit`. This gives forward pagination: the first page returns
+    /// up to `limit` rows and sets `next_cursor = last.bundle_id`. The
+    /// next call passes that bundle_id as `cursor` to fetch the
+    /// following page.
+    ///
     /// Returns `Ok(vec![])` when the `counterexample_bundles` table has
     /// never been written (redb's read-only `open_table` errors
     /// `TableDoesNotExist` in that case; we collapse to empty per the
@@ -226,6 +243,14 @@ impl crate::storage::SessionStore {
                 Err(_) => continue,
             };
             let s = &record.summary;
+            // m8-05 B2: forward pagination. Skip rows at or before the
+            // cursor's bundle_id (uuid::v7 is monotonic, so the row key
+            // matches chronological order).
+            if let Some(c) = filter.cursor.as_deref() {
+                if s.bundle_id.as_str() <= c {
+                    continue;
+                }
+            }
             if let Some(w) = filter.workspace_id {
                 if s.workspace_id != w {
                     continue;
@@ -332,6 +357,7 @@ mod tests {
             since_ms: None,
             until_ms: None,
             limit: 100,
+            cursor: None,
         };
         let summaries = store.list_counterexample_bundles(filter).unwrap();
         assert_eq!(summaries.len(), 1);
@@ -364,8 +390,125 @@ mod tests {
             since_ms: None,
             until_ms: None,
             limit: 3,
+            cursor: None,
         };
         let summaries = store.list_counterexample_bundles(filter).unwrap();
+        assert_eq!(summaries.len(), 3);
+    }
+
+    // m8-05 (B2): cursor skips rows <= cursor's bundle_id, returning
+    // the page that begins AFTER the cursor.
+    #[test]
+    fn list_cursor_paginates_forward() {
+        let store = make_store();
+        for i in 0..6 {
+            store
+                .save_counterexample_bundle(CounterexampleBundleRecord {
+                    summary: CounterexampleBundleSummary {
+                        bundle_id: format!("b-{:02}", i),
+                        property_kind: "invariant".into(),
+                        workspace_id: "ws".into(),
+                        created_at_ms: i as u64,
+                        rounds_used: 1,
+                        has_full_bundle: true,
+                    },
+                    events: vec![],
+                    minimised: None,
+                    event_cas_hashes: vec![],
+                })
+                .unwrap();
+        }
+        // Page 1: limit=2, no cursor -> ["b-00", "b-01"].
+        let page1 = store
+            .list_counterexample_bundles(CounterexampleBundleFilter {
+                workspace_id: None,
+                property_kind: None,
+                since_ms: None,
+                until_ms: None,
+                limit: 2,
+                cursor: None,
+            })
+            .unwrap();
+        assert_eq!(page1.len(), 2);
+        assert_eq!(page1[0].bundle_id, "b-00");
+        assert_eq!(page1[1].bundle_id, "b-01");
+        // Page 2: cursor = "b-01" -> ["b-02", "b-03"].
+        let page2 = store
+            .list_counterexample_bundles(CounterexampleBundleFilter {
+                workspace_id: None,
+                property_kind: None,
+                since_ms: None,
+                until_ms: None,
+                limit: 2,
+                cursor: Some("b-01".into()),
+            })
+            .unwrap();
+        assert_eq!(page2.len(), 2);
+        assert_eq!(page2[0].bundle_id, "b-02");
+        assert_eq!(page2[1].bundle_id, "b-03");
+        // Page 3: cursor = "b-03" -> ["b-04", "b-05"].
+        let page3 = store
+            .list_counterexample_bundles(CounterexampleBundleFilter {
+                workspace_id: None,
+                property_kind: None,
+                since_ms: None,
+                until_ms: None,
+                limit: 2,
+                cursor: Some("b-03".into()),
+            })
+            .unwrap();
+        assert_eq!(page3.len(), 2);
+        assert_eq!(page3[0].bundle_id, "b-04");
+        assert_eq!(page3[1].bundle_id, "b-05");
+        // Page 4: cursor = "b-05" -> [].
+        let page4 = store
+            .list_counterexample_bundles(CounterexampleBundleFilter {
+                workspace_id: None,
+                property_kind: None,
+                since_ms: None,
+                until_ms: None,
+                limit: 2,
+                cursor: Some("b-05".into()),
+            })
+            .unwrap();
+        assert!(page4.is_empty(), "page past last bundle is empty");
+    }
+
+    // m8-05 (B2): cursor is opaque to callers; passing a non-existent
+    // bundle_id as cursor yields a deterministic forward page (all
+    // matching rows have id > cursor).
+    #[test]
+    fn list_cursor_unknown_id_returns_all() {
+        let store = make_store();
+        for i in 0..3 {
+            store
+                .save_counterexample_bundle(CounterexampleBundleRecord {
+                    summary: CounterexampleBundleSummary {
+                        bundle_id: format!("z-{:02}", i),
+                        property_kind: "invariant".into(),
+                        workspace_id: "ws".into(),
+                        created_at_ms: i as u64,
+                        rounds_used: 1,
+                        has_full_bundle: true,
+                    },
+                    events: vec![],
+                    minimised: None,
+                    event_cas_hashes: vec![],
+                })
+                .unwrap();
+        }
+        let summaries = store
+            .list_counterexample_bundles(CounterexampleBundleFilter {
+                workspace_id: None,
+                property_kind: None,
+                since_ms: None,
+                until_ms: None,
+                limit: 100,
+                // Lexicographically less than every "z-..." row, so
+                // all rows pass.
+                cursor: Some("a-00".into()),
+            })
+            .unwrap();
         assert_eq!(summaries.len(), 3);
     }
 
