@@ -269,7 +269,6 @@ impl ChronosCounterexampleService {
         ctx: &CounterexampleContext<'_>,
         bundle_id: &str,
     ) -> Result<CounterexampleOutput, ServiceError> {
-
         let opt = ctx
             .store
             .load_counterexample_bundle(bundle_id)
@@ -295,9 +294,10 @@ impl ChronosCounterexampleService {
         ctx: &CounterexampleContext<'_>,
         filter: CounterexampleListFilter,
     ) -> Result<CounterexampleOutput, ServiceError> {
-
         let workspace_id = filter.workspace_id.as_deref();
-        let property_kind = filter.property_kind.map(|k| hypothesis_kind_as_str(k).to_string());
+        let property_kind = filter
+            .property_kind
+            .map(|k| hypothesis_kind_as_str(k).to_string());
         let property_kind_str: Option<&str> = property_kind.as_deref();
         let store_filter = cs::CounterexampleBundleFilter {
             workspace_id,
@@ -338,9 +338,7 @@ impl ChronosCounterexampleService {
         minimised: ShrinkResult,
         events: Vec<chronos_domain::TraceEvent>,
     ) -> Result<CounterexampleOutput, ServiceError> {
-
-        let (rounds_used, minimised_constant, minimised_predicate, minimised_call_path) =
-            minimised;
+        let (rounds_used, minimised_constant, minimised_predicate, minimised_call_path) = minimised;
         let bundle_id = fresh_bundle_id();
         let created_at_ms = now_unix_ms();
 
@@ -489,15 +487,9 @@ impl ChronosCounterexampleService {
         // this `runner.run(...)` in `tokio::task::spawn_blocking`.
         let mut runner = proptest::test_runner::TestRunner::new(p_cfg);
         let minimised = match property_kind {
-            HypothesisKind::Invariant => {
-                shrink_invariant(&mut runner, &target_hypothesis).await?
-            }
-            HypothesisKind::Existence => {
-                shrink_existence(&mut runner, &target_hypothesis).await?
-            }
-            HypothesisKind::CallPath => {
-                shrink_call_path(&mut runner, &target_hypothesis).await?
-            }
+            HypothesisKind::Invariant => shrink_invariant(&mut runner, &target_hypothesis).await?,
+            HypothesisKind::Existence => shrink_existence(&mut runner, &target_hypothesis).await?,
+            HypothesisKind::CallPath => shrink_call_path(&mut runner, &target_hypothesis).await?,
         };
 
         // Step 4: synthesise the bundle (m8-03 persists).
@@ -641,9 +633,7 @@ async fn shrink_invariant(
             }
             Ok(())
         })
-        .map_err(|e| {
-            ServiceError::EvalError(format!("shrink_invariant runner failed: {e}"))
-        })?;
+        .map_err(|e| ServiceError::EvalError(format!("shrink_invariant runner failed: {e}")))?;
     let minimised = target
         .constant
         .clone()
@@ -674,9 +664,7 @@ async fn shrink_existence(
             }
             Ok(())
         })
-        .map_err(|e| {
-            ServiceError::EvalError(format!("shrink_existence runner failed: {e}"))
-        })?;
+        .map_err(|e| ServiceError::EvalError(format!("shrink_existence runner failed: {e}")))?;
     let minimised = target
         .predicate
         .clone()
@@ -709,9 +697,7 @@ async fn shrink_call_path(
             }
             Ok(())
         })
-        .map_err(|e| {
-            ServiceError::EvalError(format!("shrink_call_path runner failed: {e}"))
-        })?;
+        .map_err(|e| ServiceError::EvalError(format!("shrink_call_path runner failed: {e}")))?;
     let minimised = (
         target.caller.clone().unwrap_or_default(),
         target.callee.clone().unwrap_or_default(),
@@ -805,13 +791,13 @@ fn minimised_payload_from_services(
         HypothesisKind::Invariant => {
             MinimisedPayload::Constant(constant.unwrap_or(PropertyValue::Number(0.0)))
         }
-        HypothesisKind::Existence => MinimisedPayload::Predicate(
-            predicate
-                .map(existence_predicate_to_wire)
-                .unwrap_or(ExistencePredicateWire::EventTypeEquals {
+        HypothesisKind::Existence => {
+            MinimisedPayload::Predicate(predicate.map(existence_predicate_to_wire).unwrap_or(
+                ExistencePredicateWire::EventTypeEquals {
                     event_type: String::new(),
-                }),
-        ),
+                },
+            ))
+        }
         HypothesisKind::CallPath => {
             let (caller, callee, max_depth) =
                 call_path.unwrap_or((String::new(), String::new(), None));
@@ -1289,10 +1275,10 @@ mod tests {
     // signature, but the save/get/list paths do not read it.
     #[test]
     fn m8_03_save_get_list_round_trip_through_session_store() {
+        use crate::hypothesis_test::HypothesisTestContext;
         use chronos_domain::property::PropertyValue;
         use chronos_query::QueryEngine;
         use chronos_store::SessionStore;
-        use crate::hypothesis_test::HypothesisTestContext;
         use std::collections::HashMap;
         use tokio::sync::Mutex as TokioMutex;
 
@@ -1317,15 +1303,17 @@ mod tests {
         let saved_id = match saved {
             CounterexampleOutput::Saved { summary } => {
                 assert_eq!(summary.property_kind, HypothesisKind::Invariant);
-                assert!(summary.has_full_bundle, "saved bundle must report has_full_bundle=true");
+                assert!(
+                    summary.has_full_bundle,
+                    "saved bundle must report has_full_bundle=true"
+                );
                 summary.bundle_id
             }
             _ => panic!("expected Saved variant"),
         };
 
         // Get the bundle back.
-        let got =
-            ChronosCounterexampleService::get(&ctx, &saved_id).expect("get should succeed");
+        let got = ChronosCounterexampleService::get(&ctx, &saved_id).expect("get should succeed");
         let got_summary = match got {
             CounterexampleOutput::Got { summary } => {
                 assert_eq!(summary.bundle_id, saved_id);

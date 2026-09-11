@@ -5147,9 +5147,9 @@ impl ChronosServer {
         let input = chronos_services::counterexample::CounterexampleShrinkInput::Shrink {
             property_kind: p.property_kind,
             target_hypothesis: target,
-            max_rounds: p.max_rounds.unwrap_or(
-                chronos_services::counterexample::DEFAULT_SHRINK_MAX_ROUNDS,
-            ),
+            max_rounds: p
+                .max_rounds
+                .unwrap_or(chronos_services::counterexample::DEFAULT_SHRINK_MAX_ROUNDS),
             seed: p.seed,
         };
         match chronos_services::counterexample::ChronosCounterexampleService::shrink(
@@ -5250,11 +5250,11 @@ impl ChronosServer {
 fn serialize_counterexample_output(
     out: chronos_services::counterexample::CounterexampleOutput,
 ) -> serde_json::Value {
+    use chronos_services::counterexample::CounterexampleOutput as COut;
     use chronos_services::output::{
         CounterexampleBundleDto, CounterexampleBundleSummaryDto, CounterexampleGetOutputDto,
         CounterexampleListOutputDto, CounterexampleMinimisedDto, CounterexampleShrinkOutputDto,
     };
-    use chronos_services::counterexample::CounterexampleOutput as COut;
 
     match out {
         COut::Got { summary } => {
@@ -5267,8 +5267,11 @@ fn serialize_counterexample_output(
                 rounds_used: summary.rounds_used,
                 has_full_bundle: summary.has_full_bundle,
             };
-            serde_json::to_value(CounterexampleGetOutputDto { bundle, has_full_bundle: has_full })
-                .unwrap_or_else(|e| serde_json::json!({"error": e.to_string()}))
+            serde_json::to_value(CounterexampleGetOutputDto {
+                bundle,
+                has_full_bundle: has_full,
+            })
+            .unwrap_or_else(|e| serde_json::json!({"error": e.to_string()}))
         }
         COut::Saved { summary } => {
             let bundle = CounterexampleBundleSummaryDto {
@@ -5296,8 +5299,11 @@ fn serialize_counterexample_output(
                     has_full_bundle: s.has_full_bundle,
                 })
                 .collect::<Vec<_>>();
-            serde_json::to_value(CounterexampleListOutputDto { bundles, next_cursor })
-                .unwrap_or_else(|e| serde_json::json!({"error": e.to_string()}))
+            serde_json::to_value(CounterexampleListOutputDto {
+                bundles,
+                next_cursor,
+            })
+            .unwrap_or_else(|e| serde_json::json!({"error": e.to_string()}))
         }
         COut::Shrunk {
             bundle,
@@ -5335,9 +5341,9 @@ fn serialize_counterexample_output(
                     (Some(d), Some("predicate".to_string()))
                 }
                 chronos_services::output::HypothesisKind::CallPath => {
-                    let (caller, callee, max_depth) = minimised_call_path.clone().unwrap_or_else(
-                        || (String::new(), String::new(), None),
-                    );
+                    let (caller, callee, max_depth) = minimised_call_path
+                        .clone()
+                        .unwrap_or_else(|| (String::new(), String::new(), None));
                     let d = CounterexampleMinimisedDto {
                         constant: None,
                         predicate: None,

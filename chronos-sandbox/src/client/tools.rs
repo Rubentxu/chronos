@@ -1263,6 +1263,71 @@ impl McpSession {
 
         Ok(result)
     }
+
+    // ========================================================================
+    // Counterexample tool wrappers (m8-03 sandbox smoke)
+    //
+    // These are thin shims over `counterexample_shrink` / `counterexample_get`
+    // / `counterexample_list`. m8-03 ships Just(value) strategies; on the
+    // wire the shrink response carries rounds_used=1 (see m8-03 scoping
+    // doc R1). The get_response is a typed struct; on a real MCP server
+    // the response is JSON which serde flattens to the typed struct.
+    // ========================================================================
+
+    /// Run `counterexample_shrink` over the given target hypothesis.
+    /// Returns the freshly-persisted bundle summary (with bundle_id)
+    /// plus the rounds_used value the runner returned.
+    pub async fn counterexample_shrink(
+        &mut self,
+        target: serde_json::Value,
+    ) -> Result<CounterexampleShrinkOutputWire, McpSandboxError> {
+        let params = serde_json::json!({
+            "property_kind": "invariant",
+            "target_hypothesis": target,
+            "max_rounds": 1,
+            "seed": None::<u64>,
+        });
+        let response = self
+            .rpc_client
+            .call_tool("counterexample_shrink", params)
+            .await?;
+        serde_json::from_value(response).map_err(|e| McpSandboxError::RpcError(e.to_string()))
+    }
+
+    /// Run `counterexample_get` to retrieve a previously persisted bundle
+    /// by id. Returns Err(LoadFailed) at the wire layer when the
+    /// bundle is absent.
+    pub async fn counterexample_get(
+        &mut self,
+        bundle_id: &str,
+    ) -> Result<CounterexampleGetOutputWire, McpSandboxError> {
+        let params = serde_json::json!({ "bundle_id": bundle_id });
+        let response = self
+            .rpc_client
+            .call_tool("counterexample_get", params)
+            .await?;
+        serde_json::from_value(response).map_err(|e| McpSandboxError::RpcError(e.to_string()))
+    }
+
+    /// Run `counterexample_list` with optional filters. Returns the list
+    /// response (single-page today; next_cursor is None per R3).
+    pub async fn counterexample_list(
+        &mut self,
+        workspace_id: Option<&str>,
+        property_kind: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<CounterexampleListOutputWire, McpSandboxError> {
+        let params = serde_json::json!({
+            "workspace_id": workspace_id,
+            "property_kind": property_kind,
+            "limit": limit,
+        });
+        let response = self
+            .rpc_client
+            .call_tool("counterexample_list", params)
+            .await?;
+        serde_json::from_value(response).map_err(|e| McpSandboxError::RpcError(e.to_string()))
+    }
 }
 
 // ============================================================================
@@ -1310,6 +1375,49 @@ impl CompareReport {
         }
         false
     }
+}
+
+// ============================================================================
+// Counterexample client DTOs (m8-03 sandbox smoke)
+// ============================================================================
+
+/// Summary of a counterexample bundle returned by `counterexample_get` and
+/// `counterexample_list`. Mirrors `ChronosBundleSummaryDto` from the
+/// chronos-mcp wire. m8-03 ships summary fields only (no full events
+/// vector on the wire).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CounterexampleBundleSummaryWire {
+    pub bundle_id: String,
+    pub property_kind: String,
+    pub workspace_id: String,
+    pub created_at_ms: u64,
+    pub rounds_used: u32,
+    pub has_full_bundle: bool,
+}
+
+/// Get-response envelope (m8-03).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CounterexampleGetOutputWire {
+    pub bundle: CounterexampleBundleSummaryWire,
+    pub has_full_bundle: bool,
+}
+
+/// List-response envelope (m8-03). `next_cursor` is always None today
+/// (R3 disclosure); pagination is m8-05 close-time work.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CounterexampleListOutputWire {
+    pub bundles: Vec<CounterexampleBundleSummaryWire>,
+    pub next_cursor: Option<String>,
+}
+
+/// Shrink-response envelope (m8-03). The bundle entry carries the
+/// freshly-persisted summary; `rounds_used` is the documented value
+/// from the proptest runner (always 1 today per the m8-02 `Just(value)`
+/// disclosure).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CounterexampleShrinkOutputWire {
+    pub bundle: CounterexampleBundleSummaryWire,
+    pub rounds_used: u32,
 }
 
 /// Regression report for performance comparison.

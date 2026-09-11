@@ -49,7 +49,15 @@ impl fmt::Display for PropertyValue {
 
 /// Comparison operator over two same-typed scalar values.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    schemars::JsonSchema,
 )]
 pub enum ComparisonOp {
     Lt,
