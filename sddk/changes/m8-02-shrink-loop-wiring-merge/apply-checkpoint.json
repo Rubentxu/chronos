@@ -3,13 +3,13 @@
   "title": "M8-02 — shrink loop wiring: proptest runtime dep + shrink() entry + per-variant dispatch + 5 unit tests (strategy implementations themselves are stubs, deferred to m8-03)",
   "status": "ready_for_merge",
   "branch": "feat/m8-02-shrink-loop-wiring",
-  "head_sha": "TBD_COMMIT_HASH",
+  "head_sha": "94d2c51283209289d9f0208859f04ac9e1b48d2d",
   "base_sha": "282a572",
   "ff_merged_sha": "TBD_POST_PUSH",
   "started_at": "2026-09-11T09:56:00Z",
   "completed_at": "2026-09-11T10:00:00Z",
   "commits": [
-    { "sha": "TBD_FEATURE_COMMIT", "subject": "feat(services): m8-02 shrink loop wiring (proptest runtime dep + shrink() entry + per-variant dispatch)" },
+    { "sha": "94d2c51283209289d9f0208859f04ac9e1b48d2d", "subject": "feat(services): m8-02 shrink loop wiring (proptest runtime dep + shrink() entry + per-variant dispatch)" },
     { "sha": "TBD_CHORE_COMMIT", "subject": "chore(sddk): record m8-02 apply-checkpoint (head_sha=…, ready_for_merge)" }
   ],
   "shipped_artifacts": {
