@@ -40,7 +40,7 @@ use chronos_domain::property::PropertyValue;
 use chronos_store::counterexample_storage as cs;
 use chronos_store::counterexample_storage::{
     CounterexampleBundleSummary as CounterexampleBundleSummaryWire, ExistencePredicateWire,
-    MinimisedPayload,
+    HypothesisInputWire, MinimisedPayload,
 };
 
 use crate::error::ServiceError;
@@ -439,11 +439,19 @@ impl ChronosCounterexampleService {
     /// `ExistencePredicate → ExistencePredicateWire` conversion lives
     /// here at the boundary; the `MinimisedPayload` shape and
     /// `HypothesisKind → string` mapping are documented alongside.
+    ///
+    /// m8-07: `target_hypothesis` is the ORIGINAL `HypothesisInput` the
+    /// user passed to `counterexample_shrink`. It is persisted verbatim
+    /// so `chronos test replay` can reconstruct the exact hypothesis
+    /// for byte-faithful replay, instead of the m8-04 synthetic-default
+    /// reconstruction (which loses scope/comparison/property_target for
+    /// Invariant targets).
     pub fn save(
         ctx: &CounterexampleContext<'_>,
         workspace_id: &str,
         property_kind: HypothesisKind,
         minimised: ShrinkResult,
+        target_hypothesis: &HypothesisInput,
         events: Vec<chronos_domain::TraceEvent>,
     ) -> Result<CounterexampleOutput, ServiceError> {
         let (rounds_used, minimised_constant, minimised_predicate, minimised_call_path) = minimised;
@@ -467,6 +475,10 @@ impl ChronosCounterexampleService {
             | MinimisedPayload::CallPath { .. } => Some(wire_minimised),
         };
 
+        // m8-07: convert the original target_hypothesis to its wire
+        // mirror and persist alongside the minimised payload.
+        let target_hypothesis_wire = hypothesis_input_to_wire(target_hypothesis);
+
         let summary = CounterexampleBundleSummaryWire {
             bundle_id: bundle_id.clone(),
             property_kind: hypothesis_kind_as_str(property_kind).to_string(),
@@ -480,6 +492,7 @@ impl ChronosCounterexampleService {
             events,
             minimised: minimised_opt,
             event_cas_hashes: Vec::new(),
+            target_hypothesis: Some(target_hypothesis_wire),
         };
         let returned_id = ctx
             .store
@@ -641,6 +654,7 @@ impl ChronosCounterexampleService {
                 minimised_predicate.clone(),
                 minimised_call_path.clone(),
             ),
+            &target_hypothesis,
             events,
         )?;
         // m8-04: propagate the Saved events_count up into the
@@ -1528,6 +1542,153 @@ fn counterexample_summary_from_wire(
 }
 
 // ============================================================================
+// 5c. HypothesisInput wire mirror (m8-07)
+//
+// R1 disclosure (m8-07): `chronos_store::counterexample_storage::HypothesisInputWire`
+// mirrors `crate::hypothesis_test::HypothesisInput` field-for-field but
+// the two types are intentionally NOT shared (otherwise chronos-store
+// would depend on chronos-services, breaking the layered crate graph).
+// The conversions below live at the boundary (chronos-services owns the
+// services-side type and reaches into the chronos-store wire mirror).
+// ============================================================================
+
+/// Stringify a `HypothesisScope` for persistence. Returns `None` if the
+/// scope is `None`; otherwise the snake_case serde form. Mirrors the
+/// `#[serde(rename_all = "snake_case")]` on `HypothesisScope`.
+fn hypothesis_scope_to_wire(s: &crate::output::HypothesisScope) -> &'static str {
+    use crate::output::HypothesisScope;
+    match s {
+        HypothesisScope::EventCount => "event_count",
+        HypothesisScope::PropertyValue => "property_value",
+        HypothesisScope::LatencyMs => "latency_ms",
+    }
+}
+
+/// Inverse of `hypothesis_scope_to_wire`. Returns `None` for unknown
+/// strings (the wire mirror can carry arbitrary text if a future
+/// chronos-services version adds a new variant); the caller should fall
+/// back to the m8-04 synthetic-default reconstruction in that case.
+fn hypothesis_scope_from_wire(s: &str) -> Option<crate::output::HypothesisScope> {
+    use crate::output::HypothesisScope;
+    match s {
+        "event_count" => Some(HypothesisScope::EventCount),
+        "property_value" => Some(HypothesisScope::PropertyValue),
+        "latency_ms" => Some(HypothesisScope::LatencyMs),
+        _ => None,
+    }
+}
+
+/// Convert a services-side `HypothesisInput` into the chronos-store wire
+/// mirror `HypothesisInputWire`. Used by `save` (m8-07) to persist the
+/// ORIGINAL `target_hypothesis` the user passed to `counterexample_shrink`.
+pub(crate) fn hypothesis_input_to_wire(h: &HypothesisInput) -> HypothesisInputWire {
+    HypothesisInputWire {
+        session_id: h.session_id.clone(),
+        kind: hypothesis_kind_as_str(h.kind).to_string(),
+        scope: h
+            .scope
+            .as_ref()
+            .map(hypothesis_scope_to_wire)
+            .map(String::from),
+        // ComparisonOp uses default serde (PascalCase: "Ge", "Eq", ...).
+        // We stringify explicitly here so we don't depend on Debug or
+        // Display impls that may diverge from the wire format.
+        comparison: h.comparison.map(comparison_op_to_wire).map(String::from),
+        constant: h.constant.clone(),
+        property_target: h.property_target.clone(),
+        predicate: h
+            .predicate
+            .as_ref()
+            .cloned()
+            .map(existence_predicate_to_wire),
+        caller: h.caller.clone(),
+        callee: h.callee.clone(),
+        max_depth: h.max_depth.map(|d| d as u64),
+    }
+}
+
+/// Inverse of `hypothesis_input_to_wire`. Used by `chronos-cli::replay`
+/// (m8-07) to reconstruct the user's original `HypothesisInput` from a
+/// persisted bundle.
+///
+/// R1 disclosure (m8-07): `kind` is matched as a string; unknown values
+/// panic (bounded by the writer, which only emits known kinds).
+pub fn hypothesis_input_from_wire(w: HypothesisInputWire) -> HypothesisInput {
+    HypothesisInput {
+        session_id: w.session_id,
+        kind: match w.kind.as_str() {
+            "invariant" => HypothesisKind::Invariant,
+            "existence" => HypothesisKind::Existence,
+            "call_path" => HypothesisKind::CallPath,
+            other => panic!(
+                "hypothesis_input_from_wire: unknown kind {other:?} on disk \
+                 (bundle is corrupted or pre-m8-07 schema)"
+            ),
+        },
+        scope: w.scope.as_deref().and_then(hypothesis_scope_from_wire),
+        comparison: w.comparison.as_deref().and_then(comparison_op_from_wire),
+        constant: w.constant,
+        property_target: w.property_target,
+        predicate: w.predicate.map(existence_predicate_from_wire),
+        caller: w.caller,
+        callee: w.callee,
+        // Saturating cast: usize::MAX is the practical upper bound for any
+        // real probe; corrupt store data > usize::MAX collapses to MAX
+        // rather than panicking.
+        max_depth: w
+            .max_depth
+            .map(|d| usize::try_from(d).unwrap_or(usize::MAX)),
+    }
+}
+
+/// Map a `ComparisonOp` to its PascalCase wire form. Matches the default
+/// serde representation (no `rename_all` on the enum).
+fn comparison_op_to_wire(c: chronos_domain::property::ComparisonOp) -> &'static str {
+    use chronos_domain::property::ComparisonOp;
+    match c {
+        ComparisonOp::Eq => "Eq",
+        ComparisonOp::Ne => "Ne",
+        ComparisonOp::Ge => "Ge",
+        ComparisonOp::Gt => "Gt",
+        ComparisonOp::Le => "Le",
+        ComparisonOp::Lt => "Lt",
+    }
+}
+
+/// Inverse of `comparison_op_to_wire`. Returns `None` for unknown strings
+/// (defensive against future schema drift).
+fn comparison_op_from_wire(s: &str) -> Option<chronos_domain::property::ComparisonOp> {
+    use chronos_domain::property::ComparisonOp;
+    match s {
+        "Eq" => Some(ComparisonOp::Eq),
+        "Ne" => Some(ComparisonOp::Ne),
+        "Ge" => Some(ComparisonOp::Ge),
+        "Gt" => Some(ComparisonOp::Gt),
+        "Le" => Some(ComparisonOp::Le),
+        "Lt" => Some(ComparisonOp::Lt),
+        _ => None,
+    }
+}
+
+/// Inverse of `existence_predicate_to_wire` (m8-07 mirror helper; same
+/// shape as `chronos-cli::existence_predicate_from_wire` but in
+/// chronos-services so `hypothesis_input_from_wire` can call it without
+/// depending on chronos-cli).
+fn existence_predicate_from_wire(w: ExistencePredicateWire) -> ExistencePredicate {
+    match w {
+        ExistencePredicateWire::EventTypeEquals { event_type } => {
+            ExistencePredicate::EventTypeEquals { event_type }
+        }
+        ExistencePredicateWire::ThreadEquals { thread_id } => {
+            ExistencePredicate::ThreadEquals { thread_id }
+        }
+        ExistencePredicateWire::PropertyKeyEquals { target } => {
+            ExistencePredicate::PropertyKeyEquals { target }
+        }
+    }
+}
+
+// ============================================================================
 // 6. Tests (T1: lib unit)
 // ============================================================================
 
@@ -1539,6 +1700,29 @@ mod tests {
 
     #[allow(dead_code)]
     fn assert_send<T: Send>(_: T) {}
+
+    /// Build a minimal `HypothesisInput` for use in save() tests (m8-07).
+    ///
+    /// Most tests only care about the persist round-trip + the events
+    /// payload; the target_hypothesis argument to `save()` is required by
+    /// the signature but the tests don't inspect it. The default here is
+    /// an Invariant hypothesis with the same constant as the minimised
+    /// payload — this is what a real shrink run would produce for an
+    /// Invariant kind, so the wire mirror is well-formed.
+    fn dummy_target_invariant(c: PropertyValue) -> HypothesisInput {
+        HypothesisInput {
+            session_id: "s".to_string(),
+            kind: HypothesisKind::Invariant,
+            scope: None,
+            comparison: None,
+            constant: Some(c),
+            property_target: None,
+            predicate: None,
+            caller: None,
+            callee: None,
+            max_depth: None,
+        }
+    }
 
     // Test 1: CounterexampleContext<'a> is Send when the inner refs are Send.
     // Compile-time check — never actually runs the assertion function body.
@@ -2003,6 +2187,7 @@ mod tests {
             "ws-test",
             HypothesisKind::Invariant,
             (3, Some(PropertyValue::Number(1.5)), None, None),
+            &dummy_target_invariant(PropertyValue::Number(1.5)),
             vec![],
         )
         .expect("save should succeed");
@@ -2420,6 +2605,7 @@ mod tests {
                 "ws",
                 HypothesisKind::Invariant,
                 (1, Some(PropertyValue::Number(i as f64)), None, None),
+                &dummy_target_invariant(PropertyValue::Number(i as f64)),
                 vec![],
             )
             .expect("save");
@@ -2475,6 +2661,7 @@ mod tests {
                 "ws",
                 HypothesisKind::Invariant,
                 (1, Some(PropertyValue::Number(i as f64)), None, None),
+                &dummy_target_invariant(PropertyValue::Number(i as f64)),
                 vec![],
             )
             .expect("save");
@@ -2582,6 +2769,7 @@ mod tests {
                 "ws",
                 HypothesisKind::Invariant,
                 (1, Some(PropertyValue::Number(i as f64)), None, None),
+                &dummy_target_invariant(PropertyValue::Number(i as f64)),
                 vec![],
             )
             .expect("save");
@@ -2639,6 +2827,18 @@ mod tests {
             "ws",
             HypothesisKind::Invariant,
             (1, Some(PropertyValue::Number(3.0)), None, None),
+            &HypothesisInput {
+                session_id: "s".to_string(),
+                kind: HypothesisKind::Invariant,
+                scope: None,
+                comparison: None,
+                constant: Some(PropertyValue::Number(3.0)),
+                property_target: None,
+                predicate: None,
+                caller: None,
+                callee: None,
+                max_depth: None,
+            },
             events,
         )
         .expect("save");
@@ -2992,5 +3192,144 @@ mod tests {
             "Text(\"hello\") should shrink through many rounds, got {rounds}"
         );
         assert_eq!(best.constant, Some(PropertyValue::Text(String::new())));
+    }
+
+    // ========================================================================
+    // m8-07 tests: HypothesisInput wire mirror (hypothesis_input_to_wire /
+    // hypothesis_input_from_wire round-trip). R1 disclosure in §5 of the
+    // m8-07 scoping doc: drift is possible if HypothesisInput evolves
+    // without updating the mirror; these tests are the mitigation.
+    // ========================================================================
+
+    /// m8-07 §5: wire mirror roundtrip. hypothesis_input_to_wire + hypothesis_input_from_wire
+    /// should be a no-op for a fully-populated Invariant input (the m8-07 acceptance
+    /// scenario: scope=EventCount, comparison=Ge, constant=Number(1000.0) must survive
+    /// the persist → load round-trip intact).
+    #[test]
+    fn m8_07_hypothesis_input_roundtrip_invariant_preserves_non_defaults() {
+        let input = HypothesisInput {
+            session_id: "sess-ce12".into(),
+            kind: HypothesisKind::Invariant,
+            scope: Some(crate::output::HypothesisScope::EventCount),
+            comparison: Some(chronos_domain::property::ComparisonOp::Ge),
+            constant: Some(PropertyValue::Number(1000.0)),
+            property_target: None,
+            predicate: None,
+            caller: None,
+            callee: None,
+            max_depth: None,
+        };
+        let wire = hypothesis_input_to_wire(&input);
+        let roundtripped = hypothesis_input_from_wire(wire);
+        assert_eq!(roundtripped.kind, input.kind);
+        assert_eq!(roundtripped.scope, input.scope);
+        assert_eq!(roundtripped.comparison, input.comparison);
+        assert_eq!(roundtripped.constant, input.constant);
+        assert_eq!(roundtripped.property_target, input.property_target);
+    }
+
+    /// m8-07 §5: hypothesis_input_to_wire roundtrip for Existence kind.
+    #[test]
+    fn m8_07_hypothesis_input_roundtrip_existence() {
+        let input = HypothesisInput {
+            session_id: "sess-ext".into(),
+            kind: HypothesisKind::Existence,
+            scope: None,
+            comparison: None,
+            constant: None,
+            property_target: None,
+            predicate: Some(ExistencePredicate::EventTypeEquals {
+                event_type: "Syscall".into(),
+            }),
+            caller: None,
+            callee: None,
+            max_depth: None,
+        };
+        let wire = hypothesis_input_to_wire(&input);
+        let roundtripped = hypothesis_input_from_wire(wire);
+        assert_eq!(roundtripped.kind, HypothesisKind::Existence);
+        match roundtripped.predicate {
+            Some(ExistencePredicate::EventTypeEquals { event_type }) => {
+                assert_eq!(event_type, "Syscall");
+            }
+            _ => panic!("expected EventTypeEquals"),
+        }
+    }
+
+    /// m8-07 §5: hypothesis_input_to_wire roundtrip for CallPath kind.
+    #[test]
+    fn m8_07_hypothesis_input_roundtrip_call_path() {
+        let input = HypothesisInput {
+            session_id: "sess-cp".into(),
+            kind: HypothesisKind::CallPath,
+            scope: None,
+            comparison: None,
+            constant: None,
+            property_target: None,
+            predicate: None,
+            caller: Some("main".into()),
+            callee: Some("work".into()),
+            max_depth: Some(4),
+        };
+        let wire = hypothesis_input_to_wire(&input);
+        let roundtripped = hypothesis_input_from_wire(wire);
+        assert_eq!(roundtripped.kind, HypothesisKind::CallPath);
+        assert_eq!(roundtripped.caller.as_deref(), Some("main"));
+        assert_eq!(roundtripped.callee.as_deref(), Some("work"));
+        assert_eq!(roundtripped.max_depth, Some(4));
+    }
+
+    /// m8-07 §5: hypothesis_input_to_wire roundtrip for Invariant with
+    /// property_target set (the non-default case the m8-04 fallback loses).
+    #[test]
+    fn m8_07_hypothesis_input_roundtrip_invariant_with_property_target() {
+        let input = HypothesisInput {
+            session_id: "sess-pt".into(),
+            kind: HypothesisKind::Invariant,
+            scope: Some(crate::output::HypothesisScope::PropertyValue),
+            comparison: Some(chronos_domain::property::ComparisonOp::Gt),
+            constant: Some(PropertyValue::Number(0.0)),
+            property_target: Some("thread_count".into()),
+            predicate: None,
+            caller: None,
+            callee: None,
+            max_depth: None,
+        };
+        let wire = hypothesis_input_to_wire(&input);
+        let roundtripped = hypothesis_input_from_wire(wire);
+        assert_eq!(
+            roundtripped.property_target.as_deref(),
+            Some("thread_count")
+        );
+        assert_eq!(roundtripped.comparison, input.comparison);
+    }
+
+    /// m8-07 §5: roundtrip for Existence with ThreadEquals and PropertyKeyEquals
+    /// predicate variants.
+    #[test]
+    fn m8_07_hypothesis_input_roundtrip_existence_all_predicate_variants() {
+        use crate::output::HypothesisScope;
+        for predicate in [
+            ExistencePredicate::ThreadEquals { thread_id: 42 },
+            ExistencePredicate::PropertyKeyEquals {
+                target: "cpu_time_ms".into(),
+            },
+        ] {
+            let input = HypothesisInput {
+                session_id: "sess-pred".into(),
+                kind: HypothesisKind::Existence,
+                scope: Some(HypothesisScope::EventCount),
+                comparison: Some(chronos_domain::property::ComparisonOp::Eq),
+                constant: None,
+                property_target: Some("syscalls".into()),
+                predicate: Some(predicate.clone()),
+                caller: None,
+                callee: None,
+                max_depth: None,
+            };
+            let wire = hypothesis_input_to_wire(&input);
+            let rt = hypothesis_input_from_wire(wire);
+            assert_eq!(rt.predicate, Some(predicate));
+        }
     }
 }
