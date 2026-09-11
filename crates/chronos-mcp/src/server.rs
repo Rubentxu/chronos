@@ -1734,6 +1734,11 @@ impl ChronosServer {
                     "internal error: unexpected tripwire not found",
                 )));
             }
+            Err(ServiceError::Unsupported(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected unsupported error",
+                )));
+            }
             // Probe service variants cannot be produced by query_events but are
             // listed for exhaustiveness against the ServiceError enum.
             Err(ServiceError::InvalidProgramPath(_)) => {

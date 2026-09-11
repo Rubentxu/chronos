@@ -371,19 +371,20 @@ pub enum ObserveVerb {
 
 /// Discriminator for the condition body of an `observe` request.
 ///
-/// Tripwire conditions map to the v1 `TripwireConditionType` set;
+/// Tripwire conditions carry an already-parsed
+/// [`chronos_domain::tripwire::TripwireCondition`]. The MCP layer is
+/// responsible for parsing the v1-style JSON (`TripwireConditionType`)
+/// into the domain type before handing the request to the dispatcher.
 /// `Uprobe` carries `(binary_path, symbol_name, pid)` and routes through
 /// `ProbeService::inject` at subscription creation time (matching
 /// today's `probe_inject` semantics).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, Clone)]
 pub enum ObserveCondition {
     /// Tripwire-style condition (event-type filter, function-name glob,
     /// memory range, syscall numbers, variable name, signal).
     Tripwire {
-        /// Same shape as the v1 `TripwireConditionType` JSON
-        /// (`{"type":"event_type","event_types":[...]}` etc.).
-        condition: serde_json::Value,
+        /// Parsed domain condition.
+        condition: chronos_domain::tripwire::TripwireCondition,
         /// Optional human-readable label.
         label: Option<String>,
     },
@@ -431,21 +432,16 @@ pub enum ObserveAction {
 /// the session terminates. `Permanent` is reserved (rejected with
 /// `Unsupported` in m7-02) — the tripwire manager does not currently
 /// distinguish permanent retention.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ObserveRetention {
     /// Drain fired events on the next `verb=list` (default, matches v1).
+    #[default]
     Drained,
     /// Keep fired events in the buffer until the session ends.
     RetainedUntilSessionEnd,
     /// Reserved; rejected with `Unsupported` in m7-02.
     Permanent,
-}
-
-impl Default for ObserveRetention {
-    fn default() -> Self {
-        ObserveRetention::Drained
-    }
 }
 
 /// Requested evidence for a subscription.

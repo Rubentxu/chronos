@@ -59,6 +59,7 @@ pub mod error;
 pub mod events_read;
 pub mod execution_query;
 pub mod hypothesis_test;
+pub mod observe;
 pub mod output;
 pub mod probe;
 pub mod query_service;
