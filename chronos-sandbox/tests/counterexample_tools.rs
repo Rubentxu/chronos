@@ -386,3 +386,48 @@ async fn ce8_list_pagination_forward_cursor() {
 
     let _ = client.shutdown().await;
 }
+
+/// CE9: m8-05 (B3) `counterexample_events_count` tool. Save a bundle
+/// (which records the events count from the live engine), then call
+/// `counterexample_events_count(bundle_id)` and assert the typed
+/// wire envelope matches the count we know was persisted. Also call
+/// with an unknown id to confirm the error path returns LoadFailed.
+#[tokio::test]
+async fn ce9_events_count_returns_persisted_length() {
+    let Some((mut client, session_id)) = setup_with_probe("test_busyloop").await else {
+        return;
+    };
+
+    // Save a bundle (this records events_count from the live engine).
+    let target = json!({
+        "session_id": session_id,
+        "kind": "invariant",
+        "constant": { "Number": 13.0 },
+    });
+    let resp = client
+        .counterexample_shrink(target)
+        .await
+        .expect("shrink failed");
+    let bundle_id = resp.bundle.bundle_id.clone();
+    let expected_count = resp.events_count;
+    assert!(expected_count >= 1, "test_busyloop must produce >= 1 event");
+
+    // m8-05 B3: read just the events_count.
+    let count_resp = client
+        .counterexample_events_count(&bundle_id)
+        .await
+        .expect("events_count failed");
+    assert_eq!(count_resp.bundle_id, bundle_id);
+    assert_eq!(
+        count_resp.events_count, expected_count,
+        "events_count must match the Saved envelope"
+    );
+
+    // m8-05 B3: unknown bundle_id returns Err(LoadFailed).
+    let err = client
+        .counterexample_events_count("nonexistent-bundle")
+        .await;
+    assert!(err.is_err(), "unknown bundle_id must error");
+
+    let _ = client.shutdown().await;
+}

@@ -1333,6 +1333,21 @@ impl McpSession {
             .await?;
         serde_json::from_value(response).map_err(|e| McpSandboxError::RpcError(e.to_string()))
     }
+
+    /// m8-05 (B3): run `counterexample_events_count` to read just the
+    /// persisted events count of a bundle without re-emitting the
+    /// summary. Returns the typed wire envelope `{bundle_id, events_count}`.
+    pub async fn counterexample_events_count(
+        &mut self,
+        bundle_id: &str,
+    ) -> Result<CounterexampleEventsCountOutputWire, McpSandboxError> {
+        let params = serde_json::json!({ "bundle_id": bundle_id });
+        let response = self
+            .rpc_client
+            .call_tool("counterexample_events_count", params)
+            .await?;
+        serde_json::from_value(response).map_err(|e| McpSandboxError::RpcError(e.to_string()))
+    }
 }
 
 // ============================================================================
@@ -1407,12 +1422,24 @@ pub struct CounterexampleGetOutputWire {
     pub has_full_bundle: bool,
 }
 
-/// List-response envelope (m8-03). `next_cursor` is always None today
-/// (R3 disclosure); pagination is m8-05 close-time work.
+/// List-response envelope (m8-03; m8-05 added cursor).
+///
+/// `next_cursor` semantics (m8-05 B2): "Some when the page is full
+/// (len == limit); None when the page is partial or no limit was
+/// supplied". When a cursor is Some, the caller fetches the next page
+/// with `cursor = next_cursor`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CounterexampleListOutputWire {
     pub bundles: Vec<CounterexampleBundleSummaryWire>,
     pub next_cursor: Option<String>,
+}
+
+/// m8-05 (B3): events-count-response envelope. Just
+/// `{bundle_id, events_count}`, no summary, no events payload.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CounterexampleEventsCountOutputWire {
+    pub bundle_id: String,
+    pub events_count: usize,
 }
 
 /// Shrink-response envelope (m8-03 + m8-04). The bundle entry carries

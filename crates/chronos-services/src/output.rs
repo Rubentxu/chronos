@@ -2521,6 +2521,18 @@ pub struct CounterexampleGetOutputDto {
     pub has_full_bundle: bool,
 }
 
+/// m8-05 (B3): lightweight envelope for the
+/// `counterexample_events_count` tool. Just `{bundle_id, events_count}`,
+/// no summary, no events payload. Lets an LLM agent ask "how many
+/// events does this bundle carry?" without deserializing the full
+/// bundle summary.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub struct CounterexampleEventsCountOutputDto {
+    pub bundle_id: String,
+    pub events_count: usize,
+}
+
 /// Wire-shape DTO for [`crate::hypothesis_test::HypothesisInput`].
 ///
 /// Reaches the wire in m8-03 because the MCP wrapper for

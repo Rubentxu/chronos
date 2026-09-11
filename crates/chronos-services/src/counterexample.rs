@@ -151,6 +151,16 @@ pub enum CounterexampleOutput {
         minimised_call_path: Option<(String, String, Option<usize>)>,
         events_count: usize,
     },
+    /// m8-05 (B3): lightweight accessor — `events_count` of a persisted
+    /// bundle without re-emitting the summary. Saves the LLM one
+    /// round-trip + one bundle-deserialize when all it wants is the
+    /// count. Returned by `ChronosCounterexampleService::events_count`.
+    /// m8-05 R3: the count is the one persisted at `save()` time, NOT a
+    /// live re-read of the engine (which may have advanced).
+    EventsCount {
+        bundle_id: String,
+        events_count: usize,
+    },
 }
 
 /// Distinct failure modes for [`ChronosCounterexampleService::shrink`].
@@ -321,6 +331,43 @@ impl ChronosCounterexampleService {
         };
         let summary = counterexample_summary_from_wire(&record.summary, &record.minimised);
         Ok(CounterexampleOutput::Got { summary })
+    }
+
+    /// m8-05 (B3): lightweight accessor — return the persisted
+    /// `events_count` of a bundle without re-emitting the summary.
+    ///
+    /// This is a separate tool surface (`counterexample_events_count`)
+    /// so an LLM agent that only needs to know "how many events does
+    /// this bundle carry?" doesn't have to deserialize the full
+    /// `CounterexampleBundleSummary` DTO.
+    ///
+    /// m8-05 R3 disclosure: the count returned is the one persisted at
+    /// `save()` time, NOT a live re-read of the engine. The engine may
+    /// have advanced (more events captured since the bundle was
+    /// written), but the redb blob is the durable record.
+    ///
+    /// Returns `Err(LoadFailed)` when the bundle is absent (same
+    /// shape as `get`).
+    pub fn events_count(
+        ctx: &CounterexampleContext<'_>,
+        bundle_id: &str,
+    ) -> Result<CounterexampleOutput, ServiceError> {
+        let opt = ctx
+            .store
+            .load_counterexample_bundle(bundle_id)
+            .map_err(|e| ServiceError::LoadFailed(format!("counterexample load: {e}")))?;
+        let record = match opt {
+            Some(r) => r,
+            None => {
+                return Err(ServiceError::LoadFailed(format!(
+                    "no counterexample bundle with id `{bundle_id}`"
+                )));
+            }
+        };
+        Ok(CounterexampleOutput::EventsCount {
+            bundle_id: bundle_id.to_string(),
+            events_count: record.events.len(),
+        })
     }
 
     /// List bundle summaries matching `filter`.
@@ -2164,6 +2211,89 @@ mod tests {
                 assert!(next_cursor.is_none(), "last page must not have next_cursor");
             }
             _ => panic!("expected Listed"),
+        }
+    }
+
+    // ========================================================================
+    // m8-05 (B3) tests: events_count accessor
+    // ========================================================================
+
+    // m8-05 #10: events_count returns the persisted events vec length
+    // via the new variant.
+    #[test]
+    fn m8_05_events_count_returns_persisted_length() {
+        use crate::hypothesis_test::HypothesisTestContext;
+        use chronos_domain::TraceEvent;
+        use chronos_query::QueryEngine;
+        use chronos_store::SessionStore;
+        use std::collections::HashMap;
+        use tokio::sync::Mutex as TokioMutex;
+
+        let store = SessionStore::in_memory().expect("in_memory store");
+        let engines: HashMap<String, QueryEngine> = HashMap::new();
+        let engines = TokioMutex::new(engines);
+        let hyp_ctx = HypothesisTestContext { engines: &engines };
+        let ctx = CounterexampleContext {
+            store: &store,
+            hypothesis_ctx: &hyp_ctx,
+        };
+
+        // Save with 5 fake trace events.
+        let events: Vec<TraceEvent> = (0..5)
+            .map(|i| make_test_trace_event(i, 100 + i, 1))
+            .collect();
+        let saved = ChronosCounterexampleService::save(
+            &ctx,
+            "ws",
+            HypothesisKind::Invariant,
+            (1, Some(PropertyValue::Number(3.0)), None, None),
+            events,
+        )
+        .expect("save");
+        let bundle_id = match saved {
+            CounterexampleOutput::Saved { summary, .. } => summary.bundle_id,
+            _ => panic!("expected Saved variant"),
+        };
+
+        let count = ChronosCounterexampleService::events_count(&ctx, &bundle_id)
+            .expect("events_count should succeed");
+        match count {
+            CounterexampleOutput::EventsCount {
+                bundle_id: bid,
+                events_count,
+            } => {
+                assert_eq!(bid, bundle_id);
+                assert_eq!(events_count, 5, "persisted count must match input");
+            }
+            _ => panic!("expected EventsCount variant"),
+        }
+    }
+
+    // m8-05 #11: events_count for an unknown bundle_id returns
+    // LoadFailed (same shape as `get`).
+    #[test]
+    fn m8_05_events_count_unknown_bundle_errors() {
+        use crate::hypothesis_test::HypothesisTestContext;
+        use chronos_query::QueryEngine;
+        use chronos_store::SessionStore;
+        use std::collections::HashMap;
+        use tokio::sync::Mutex as TokioMutex;
+
+        let store = SessionStore::in_memory().expect("in_memory store");
+        let engines: HashMap<String, QueryEngine> = HashMap::new();
+        let engines = TokioMutex::new(engines);
+        let hyp_ctx = HypothesisTestContext { engines: &engines };
+        let ctx = CounterexampleContext {
+            store: &store,
+            hypothesis_ctx: &hyp_ctx,
+        };
+
+        let r = ChronosCounterexampleService::events_count(&ctx, "no-such-bundle");
+        match r {
+            Err(ServiceError::LoadFailed(msg)) => {
+                assert!(msg.contains("no-such-bundle"));
+            }
+            other => panic!("expected LoadFailed, got {other:?}"),
         }
     }
 }
