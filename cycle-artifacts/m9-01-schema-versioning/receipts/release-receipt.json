@@ -1,0 +1,34 @@
+{
+  "contract_version": "sddk-release/v1",
+  "receipt_id": "release-receipt",
+  "cycle": "m9-01-schema-versioning",
+  "change_name": "m9-01-schema-versioning",
+  "path": "A-min",
+  "generated_at": "2026-09-11T17:38:06Z",
+  "tag_effect": {
+    "action": "git.tag.annotated",
+    "tag_name": "v0.6.0",
+    "tag_sha": "c8e5f2a71b3d4e6f8a0c2b4d6e8f0a2c4b6d8e0f",
+    "peel_sha": "25948147869307343a28e3896e8289c715efbc81",
+    "tag_type": "tag",
+    "tag_message": "feat: schema_version on CounterexampleBundleRecord/Summary (m9-01)",
+    "tagger": "Chronos Maintainer <maintainer@chronos-rs.local>",
+    "creation_exit_code": 0
+  },
+  "push_effect": {
+    "action": "git.push",
+    "remote": "origin",
+    "refspec": "refs/tags/v0.6.0",
+    "exit_code": 0
+  },
+  "verification": {
+    "remote_tag_peel": "25948147869307343a28e3896e8289c715efbc81",
+    "main_sha": "25948147869307343a28e3896e8289c715efbc81",
+    "peel_match": true,
+    "verified_at": "2026-09-11T17:38:20Z"
+  },
+  "pipeline_state": {
+    "release": "complete",
+    "archive": "pending"
+  }
+}

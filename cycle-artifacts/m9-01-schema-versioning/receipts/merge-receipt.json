@@ -1,0 +1,35 @@
+{
+  "contract_version": "sddk-release/v1",
+  "receipt_id": "merge-receipt",
+  "cycle": "m9-01-schema-versioning",
+  "change_name": "m9-01-schema-versioning",
+  "path": "A-min",
+  "branch": "main",
+  "generated_at": "2026-09-11T17:38:03Z",
+  "git_effect": {
+    "action": "git.merge.ff-only",
+    "source_ref": "feat/m9-01-schema-versioning",
+    "target_ref": "main",
+    "base_sha": "bceddc946b73209756d3360b0aec4dca592296c3",
+    "head_sha": "25948147869307343a28e3896e8289c715efbc81",
+    "fast_forward": true
+  },
+  "push_effect": {
+    "action": "git.push",
+    "remote": "origin",
+    "refspec": "main",
+    "from_sha": "bceddc946b73209756d3360b0aec4dca592296c3",
+    "to_sha": "25948147869307343a28e3896e8289c715efbc81",
+    "exit_code": 0
+  },
+  "verification": {
+    "local_head_sha": "25948147869307343a28e3896e8289c715efbc81",
+    "origin_main_sha": "25948147869307343a28e3896e8289c715efbc81",
+    "sha_match": true,
+    "verified_at": "2026-09-11T17:37:53Z"
+  },
+  "pipeline_state": {
+    "release": "complete",
+    "archive": "pending"
+  }
+}
