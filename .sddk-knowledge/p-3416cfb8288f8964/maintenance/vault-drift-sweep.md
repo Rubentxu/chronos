@@ -133,20 +133,42 @@ manifests (m9-01, m9-02) which use the literal word "pending" as a
 placeholder before the SHA is captured; those are intentionally not in
 the Artifact-index format.
 
+### 5. cycles/index.md metadata consistency (closed by m9-11)
+
+```bash
+actual=$(awk -F'|' '/^\| (m6 |m[7-9])/{c++} END{print c+0}' .sddk-knowledge/p-3416cfb8288f8964/cycles/index.md)
+declared=$(awk -F'|' '/Total cycles/{gsub(/[ \t]+/, "", $3); print $3}' .sddk-knowledge/p-3416cfb8288f8964/cycles/index.md)
+[ "$actual" = "$declared" ] && echo "OK: $actual == $declared" || echo "DRIFT: actual=$actual declared=$declared"
+```
+
+**Expected output (clean):** `OK: <n> == <n>`.
+
+**If `DRIFT`:** the `Total cycles` metadata field in `cycles/index.md`
+diverges from the actual data-row count. Resolution: bump the field to
+the actual count, update `Last updated`. Resolution is mechanical
+(1-character edit). **History:** introduced when m9-07..m9-10 added
+rows without bumping the counter; first caught in the m9-11 cycle by
+this very procedure (drift of 4 cycles, 26 actual vs 22 declared).
+
 ## When to escalate
 
-If any of the four cross-checks finds drift that is **not** trivially
+If any of the cross-checks finds drift that is **not** trivially
 remediable (e.g. a cycle's entire artifact set is missing, or the source
 artifacts for a rebuild do not exist in the repo), document the gap in
 the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
+If **check 5** finds drift: the resolution is mechanical (1-character
+edit to the metadata field). Do this in the same cycle that catches
+it; do not defer.
+
 ## Reference
 
 Cycles that established this procedure:
-- **m9-09** (vault hygiene: m9-01-R4 active/terminated dedupe, v0.7.7)
-- **m9-10** (vault hygiene: m9-03 apply-checkpoint rebuild, v0.7.8)
+- **m9-09** (vault hygiene: m9-01-R4 active/terminated dedupe, v0.7.7) → cross-check #1
+- **m9-10** (vault hygiene: m9-03 apply-checkpoint rebuild, v0.7.8) → cross-check #2
+- **m9-11** (vault hygiene: cycles/index.md metadata drift fix, v0.7.9) → cross-check #5
 
-Each of those closed a one-line drift that the prior session's
-"exhausted" verdict missed. The lesson is that **vault drift is a
-first-class maintenance surface**, not a side effect of code work.
+Each closed a one-line drift that the prior session's "exhausted"
+verdict missed. The lesson is that **vault drift is a first-class
+maintenance surface**, not a side effect of code work.
