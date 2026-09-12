@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34**, or **check 35** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -1532,3 +1532,46 @@ schema). m9-42 adds it.
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class
 maintenance surface**, not a side effect of code work.
+
+### 35. verify-findings.json subject.head_sha must match apply-checkpoint.json head_sha (closed by m9-43)
+
+```python
+import json, glob, os
+
+errors = 0
+
+for f in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/verify-findings.json')):
+    folder = f.split('/')[-2]
+    ckpt_path = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/apply-checkpoint.json'
+    if not os.path.exists(ckpt_path): continue
+    d = json.load(open(f))
+    ckpt = json.load(open(ckpt_path))
+    sub = d.get('subject', {})
+    head = sub.get('head_sha') or sub.get('head')
+    if head and ckpt.get('head_sha') and head != ckpt['head_sha']:
+        # m9-03, m9-04 use legacy docs-peel convention with subject.head as fix commit
+        if folder in ['m9-03-side-table-debt-cleanup', 'm9-04-side-table-key-layout']:
+            continue
+        print(f"DRIFT: {folder}: verify-findings head={head[:8]} != ckpt={ckpt['head_sha'][:8]}")
+
+print(f'Total: {errors}')
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** A verify-findings.json `subject.head_sha` (or `subject.head`)
+doesn't match the corresponding apply-checkpoint.json `head_sha`.
+
+**Resolution:**
+
+1. Update verify-findings.json `subject.head_sha` to match
+   apply-checkpoint.json `head_sha`.
+2. m9-03, m9-04 are exempt — they use the legacy
+   `sddk.verify-finding/v1` schema with `subject.head` = fix commit
+   (docs-peel convention). Per C20, this is accepted-by-design for
+   pre-m9-11 cycles.
+
+**History:** m9-34, m9-35 verify-findings.json were written with the
+fix commit SHA (since the tag peels to fix) but apply-checkpoint.json
+uses the docs commit SHA (per fix-peel convention). m9-43 syncs
+verify-findings to match apply-checkpoint.

@@ -1,0 +1,12 @@
+{
+  "cycle_id": "m9-43",
+  "head_sha": "TBD",
+  "base_sha": "19074fc24e0f545ff2200dd8dfafe74863af79c0",
+  "created_at": "2026-09-12T13:45Z",
+  "route": "B-direct",
+  "summary": "Sync verify-findings.json subject.head_sha with apply-checkpoint.json head_sha for m9-34, m9-35 (both had fix-commit SHA but should have docs-commit SHA). Adds cross-check #35.",
+  "findings_closed": [],
+  "findings_introduced": {
+    "no_action": []
+  }
+}

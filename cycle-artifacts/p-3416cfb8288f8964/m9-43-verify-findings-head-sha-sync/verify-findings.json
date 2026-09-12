@@ -1,0 +1,12 @@
+{
+  "cycle_id": "m9-43",
+  "subject": {
+    "head_sha": "TBD",
+    "base_sha": "19074fc24e0f545ff2200dd8dfafe74863af79c0"
+  },
+  "verdict": "pass",
+  "findings": [],
+  "lens_summary": {
+    "drift": "m9-34, m9-35 verify-findings.json subject.head_sha had fix-commit SHAs (since tag peels to fix); should have docs-commit SHAs (per fix-peel convention). Synced."
+  }
+}
