@@ -35,7 +35,15 @@ blockers: []
 | Tag push | PASS — v0.7.7 -> origin |
 | Tag peel verification | PASS — remote tag peels to 07e731d |
 
-## Verification Summary
+
+## Cross-checks
+
+- C1: pass (pre-CC-cycle, no cross-checks applied)
+
+## Cross-checks
+
+- C1: pass (pre-CC-cycle, no cross-checks applied)
+ Summary
 
 Source: `cycle-artifacts/p-3416cfb8288f8964/m9-09-vault-hygiene-active-disclosure-dedupe/verify-report.md`
 

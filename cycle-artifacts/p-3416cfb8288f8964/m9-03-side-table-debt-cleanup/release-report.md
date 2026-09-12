@@ -33,7 +33,15 @@ blockers: []
 | Tag push | PASS — v0.7.1 -> origin |
 | Tag peel verification | PASS — remote tag peels to 2c98ce9 |
 
-## Verification Summary
+
+## Cross-checks
+
+- C1: pass (pre-CC-cycle, no cross-checks applied)
+
+## Cross-checks
+
+- C1: pass (pre-CC-cycle, no cross-checks applied)
+ Summary
 
 Source: `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/verify-report.md`
 

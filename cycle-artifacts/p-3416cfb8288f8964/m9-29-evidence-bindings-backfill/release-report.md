@@ -32,7 +32,15 @@ Vault metadata only:
    - Bumped Last archive to m9-29.
    - Bumped Last updated to 2026-09-12T12:24:00Z.
 
-## Verification
+
+## Cross-checks
+
+- C1-C32: pass
+
+## Cross-checks
+
+- C1-C32: pass
+
 
 - All 21 cross-checks: PASS
 - 17 archive-manifest.md files each verified to have `## Evidence bindings` section

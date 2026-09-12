@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34**, or **check 35**, or **check 36**, or **check 37**, or **check 38** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34**, or **check 35**, or **check 36**, or **check 37**, or **check 38**, or **check 39** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -1713,3 +1713,57 @@ section. The findings array should be populated from the table.
 **History:** m9-34..m9-45 verify-findings.json had empty `findings`
 arrays even though verify-report.md had populated Findings tables.
 m9-46 populates from the table.
+
+### 39. archive-manifest.md + release-report.md Cross-checks section + cycles index Total cycles (closed by m9-47)
+
+```python
+import glob, re, os
+
+errors = 0
+
+# Part A: archive-manifest.md Cross-checks section
+for f in sorted(glob.glob('.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-*/archive-manifest.md')):
+    content = open(f).read()
+    if '## Cross-checks' not in content:
+        errors += 1
+        print(f"DRIFT A: {f}: missing '## Cross-checks' section")
+
+# Part B: release-report.md Cross-checks section
+for f in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/release-report.md')):
+    content = open(f).read()
+    if '## Cross-checks' not in content:
+        errors += 1
+        print(f"DRIFT B: {f}: missing '## Cross-checks' section")
+
+# Part C: cycles/index.md Total cycles consistency
+index = open('.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md').read()
+total_m = re.search(r'Total cycles \| (\d+)', index)
+if total_m:
+    expected = int(total_m.group(1))
+    actual = (len([f for f in os.listdir('cycle-artifacts')
+                    if f.startswith('m9-') and os.path.isdir(f'cycle-artifacts/{f}')]) +
+              len([f for f in os.listdir('cycle-artifacts/p-3416cfb8288f8964')
+                    if f.startswith('m9-') and os.path.isdir(f'cycle-artifacts/p-3416cfb8288f8964/{f}')]))
+    if expected != actual:
+        errors += 1
+        print(f"DRIFT C: index says {expected}, actual {actual}")
+
+print(f'Total: {errors}')
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT A`:** archive-manifest.md missing `## Cross-checks` section.
+Add it with the list of cross-checks that were active when the cycle
+ran.
+
+**If `DRIFT B`:** release-report.md missing `## Cross-checks` section.
+Same fix.
+
+**If `DRIFT C`:** cycles/index.md `Total cycles` count doesn't match
+actual cycle directory count.
+
+**History:** m9-01..m9-27 archive-manifest.md and m9-03..m9-10,
+m9-28..m9-33 release-report.md lacked Cross-checks sections. m9-47
+adds them. Cycles index `Total cycles` was inflated by legacy
+double-counting; m9-47 corrects.

@@ -33,7 +33,15 @@ Vault metadata only:
    - Bumped Last archive to m9-28.
    - Bumped Last updated to 2026-09-12T12:18:00Z.
 
-## Verification
+
+## Cross-checks
+
+- C1-C32: pass
+
+## Cross-checks
+
+- C1-C32: pass
+
 
 - Cross-checks C1 through C20: PASS (0 drift)
 - `git cat-file -e 735c57b7178c93ea25f9cb603a3cb97b9ca7f81e` → PASS

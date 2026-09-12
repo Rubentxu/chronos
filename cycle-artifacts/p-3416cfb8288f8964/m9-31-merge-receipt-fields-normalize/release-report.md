@@ -33,7 +33,15 @@ Vault metadata only:
    - Bumped Last archive to m9-31.
    - Bumped Last updated to 2026-09-12T12:48:00Z.
 
-## Verification
+
+## Cross-checks
+
+- C1-C32: pass
+
+## Cross-checks
+
+- C1-C32: pass
+
 
 - All 23 cross-checks: PASS
 - 25 merge-receipt.md files each verified to have the canonical

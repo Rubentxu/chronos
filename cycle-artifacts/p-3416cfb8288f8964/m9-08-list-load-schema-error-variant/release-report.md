@@ -35,7 +35,15 @@ blockers: []
 | Tag push | PASS — v0.7.6 -> origin |
 | Tag peel verification | PASS — remote tag peels to d89862b |
 
-## Verification Summary
+
+## Cross-checks
+
+- C1: pass (pre-CC-cycle, no cross-checks applied)
+
+## Cross-checks
+
+- C1: pass (pre-CC-cycle, no cross-checks applied)
+ Summary
 
 Source: `cycle-artifacts/p-3416cfb8288f8964/m9-08-list-load-schema-error-variant/verify-report.md`
 

@@ -19,6 +19,10 @@
 Drift closure cycle. See release-receipt.md and change-entry.md for details.
 
 
+
+## Cross-checks
+
+- C1: pass (pre-CC-cycle, no cross-checks applied)
 ## Evidence bindings
 
 ### Release receipt

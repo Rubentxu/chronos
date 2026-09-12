@@ -36,7 +36,15 @@ blockers: []
 | Tag push | PASS — v0.7.2 -> origin |
 | Tag peel verification | PASS — remote tag peels to d6b3b8c |
 
-## Verification Summary
+
+## Cross-checks
+
+- C1: pass (pre-CC-cycle, no cross-checks applied)
+
+## Cross-checks
+
+- C1: pass (pre-CC-cycle, no cross-checks applied)
+ Summary
 
 Source: `cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/verify-report.md`
 

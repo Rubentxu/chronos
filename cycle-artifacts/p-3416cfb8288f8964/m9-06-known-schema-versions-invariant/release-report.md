@@ -35,7 +35,15 @@ blockers: []
 | Tag push | PASS — v0.7.4 -> origin |
 | Tag peel verification | PASS — remote tag peels to 3383905 |
 
-## Verification Summary
+
+## Cross-checks
+
+- C1: pass (pre-CC-cycle, no cross-checks applied)
+
+## Cross-checks
+
+- C1: pass (pre-CC-cycle, no cross-checks applied)
+ Summary
 
 Source: `cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/verify-report.md`
 

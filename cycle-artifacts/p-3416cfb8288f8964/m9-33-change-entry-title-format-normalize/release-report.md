@@ -28,7 +28,15 @@ Vault metadata only:
    - Bumped Last archive to m9-33.
    - Bumped Last updated to 2026-09-12T12:52:00Z.
 
-## Verification
+
+## Cross-checks
+
+- C1-C32: pass
+
+## Cross-checks
+
+- C1-C32: pass
+
 
 - All 25 cross-checks: PASS
 - 18 change-entry.md files each verified to have the canonical title format

@@ -1,0 +1,41 @@
+{
+  "cycle_id": "m9-47",
+  "subject": {
+    "head_sha": "TBD",
+    "base_sha": "f41d6c2ce5ce4a7c420b9b4cac0060e721528948"
+  },
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "low",
+      "category": "schema-drift",
+      "description": "27 archive-manifest.md files (m9-01..m9-27) were missing `## Cross-checks` section.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F2",
+      "severity": "low",
+      "category": "schema-drift",
+      "description": "13 release-report.md files (m9-03..m9-10, m9-28..m9-33) were missing `## Cross-checks` section.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F3",
+      "severity": "informational",
+      "category": "schema-drift",
+      "description": "cycles/index.md `Total cycles` count was 62 (inflated by legacy double-counting); corrected to 46.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F4",
+      "severity": "informational",
+      "category": "process",
+      "description": "Added cross-check #39 to vault-drift-sweep.md.",
+      "status": "RESOLVED"
+    }
+  ],
+  "lens_summary": {
+    "drift": "27 archive-manifest.md and 13 release-report.md files lacked Cross-checks sections. Cycles index Total was inflated (62). All fixed; cross-check #39 added."
+  }
+}

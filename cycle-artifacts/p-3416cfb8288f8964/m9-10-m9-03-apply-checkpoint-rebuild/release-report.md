@@ -35,7 +35,15 @@ blockers: []
 | Tag push | PASS — v0.7.8 -> origin |
 | Tag peel verification | PASS — remote tag peels to 69f200e |
 
-## Verification Summary
+
+## Cross-checks
+
+- C1: pass (pre-CC-cycle, no cross-checks applied)
+
+## Cross-checks
+
+- C1: pass (pre-CC-cycle, no cross-checks applied)
+ Summary
 
 Source: `cycle-artifacts/p-3416cfb8288f8964/m9-10-m9-03-apply-checkpoint-rebuild/verify-report.md`
 

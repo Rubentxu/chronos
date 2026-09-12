@@ -35,7 +35,15 @@ blockers: []
 | Tag push | PASS — v0.7.5 -> origin |
 | Tag peel verification | PASS — remote tag peels to 3edb01f |
 
-## Verification Summary
+
+## Cross-checks
+
+- C1: pass (pre-CC-cycle, no cross-checks applied)
+
+## Cross-checks
+
+- C1: pass (pre-CC-cycle, no cross-checks applied)
+ Summary
 
 Source: `cycle-artifacts/p-3416cfb8288f8964/m9-07-coup-01-invariant-assertion/verify-report.md`
 

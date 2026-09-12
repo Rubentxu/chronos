@@ -34,7 +34,15 @@ Vault metadata only:
    - Bumped Last archive to m9-30.
    - Bumped Last updated to 2026-09-12T12:30:00Z.
 
-## Verification
+
+## Cross-checks
+
+- C1-C32: pass
+
+## Cross-checks
+
+- C1-C32: pass
+
 
 - All 22 cross-checks: PASS
 - 25 release-receipt.md files each verified to have the canonical
