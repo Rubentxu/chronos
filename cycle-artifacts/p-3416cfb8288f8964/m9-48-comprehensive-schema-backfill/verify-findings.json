@@ -1,0 +1,41 @@
+{
+  "cycle_id": "m9-48",
+  "subject": {
+    "head_sha": "TBD",
+    "base_sha": "18a8273e499224736e8b25d8494ddfef709c1845"
+  },
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "low",
+      "category": "schema-drift",
+      "description": "15 apply-checkpoint.json files (m9-19..m9-33) were missing `findings_closed` array.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F2",
+      "severity": "low",
+      "category": "schema-drift",
+      "description": "27 archive-manifest.md files were missing `Date` field.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F3",
+      "severity": "low",
+      "category": "schema-drift",
+      "description": "5 archive-manifest.md files (m9-14..m9-18) were missing `Path` field.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F4",
+      "severity": "informational",
+      "category": "process",
+      "description": "Added cross-check #40 to vault-drift-sweep.md.",
+      "status": "RESOLVED"
+    }
+  ],
+  "lens_summary": {
+    "drift": "apply-checkpoint findings_closed (15 files) + archive-manifest Date (27) + archive-manifest Path (5) backfilled. Added cross-check #40."
+  }
+}

@@ -1,5 +1,7 @@
 # Archive Manifest — m9-02-events-side-table
 
+| Date | `2026-09-11` |
+
 ## Identidad del ciclo
 
 | Campo | Valor |

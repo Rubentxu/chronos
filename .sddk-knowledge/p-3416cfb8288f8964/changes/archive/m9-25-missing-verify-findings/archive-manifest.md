@@ -11,6 +11,7 @@
 | Archived at | 2026-09-12T11:27:00Z |
 | Path | B-direct |
 | Cross-check added | #18 |
+| Date | `2026-09-12` |
 
 ## Summary
 

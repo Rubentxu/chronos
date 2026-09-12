@@ -8,6 +8,8 @@
 | Head SHA | `38699061891b76f90ef316914d3ba15d6eb53f83` |
 | Base SHA | `c4f1237f878c900208e9506f8127b77d43a066af` |
 | Release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-14-m9-11-fabricated-sha/release-receipt.md` |
+| Path | `B-direct` |
+| Date | `2026-09-12` |
 
 ## Summary
 

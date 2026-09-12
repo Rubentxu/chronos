@@ -118,6 +118,7 @@ No new specs introduced. Bounded debt-cleanup:
 ## Artifact index
 
 | Kind | Path | SHA-256 |
+| Date | `2026-09-12` |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-03-side-table-debt-cleanup/archive-manifest.md` | pending (computed after write) |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-03-side-table-debt-cleanup/change-entry.md` | `99b97f7a731c323fd0997f23f6078efeb2b912bdcdd20417877d9169fafb8b87` |

@@ -152,6 +152,7 @@ No formal spec.md existed for this change; the scoping doc
 ## Artifact index
 
 | Kind | Path | SHA-256 |
+| Date | `2026-09-11` |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-01-schema-versioning/archive-manifest.md` | `a7eaf340b9a4b364547b8f6136bafec68102e5880eac580fc172b4be45f07476` |
 | archive-report | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-01-schema-versioning/archive-report.md` | `319d7ddf9d2cff6892d78fb68fa018905ede4a58aa422d02e5f927144b6878c0` |

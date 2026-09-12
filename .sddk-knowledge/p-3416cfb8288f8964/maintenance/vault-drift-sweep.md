@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34**, or **check 35**, or **check 36**, or **check 37**, or **check 38**, or **check 39** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34**, or **check 35**, or **check 36**, or **check 37**, or **check 38**, or **check 39**, or **check 40** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -1767,3 +1767,40 @@ actual cycle directory count.
 m9-28..m9-33 release-report.md lacked Cross-checks sections. m9-47
 adds them. Cycles index `Total cycles` was inflated by legacy
 double-counting; m9-47 corrects.
+
+### 40. comprehensive schema backfill (closed by m9-48)
+
+```python
+import json, glob, re, os
+
+errors = 0
+
+# Part A: apply-checkpoint.json must have findings_closed
+for f in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/apply-checkpoint.json')):
+    d = json.load(open(f))
+    if 'findings_closed' not in d:
+        errors += 1
+        print(f"DRIFT A: {f}: missing findings_closed")
+
+# Part B: archive-manifest.md must have Date and Path fields
+for f in sorted(glob.glob('.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-*/archive-manifest.md')):
+    content = open(f).read()
+    if '| Date |' not in content:
+        errors += 1
+        print(f"DRIFT B: {f}: missing Date field")
+    if '| Path |' not in content:
+        errors += 1
+        print(f"DRIFT B: {f}: missing Path field")
+
+print(f'Total: {errors}')
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT A`:** apply-checkpoint.json missing `findings_closed` array.
+
+**If `DRIFT B`:** archive-manifest.md missing `Date` or `Path` field.
+
+**History:** m9-19..m9-33 apply-checkpoint.json had no `findings_closed`
+array. m9-48 adds it. m9-01..m9-27 archive-manifest.md lacked `Date`
+and `Path` fields. m9-48 backfills.

@@ -125,6 +125,7 @@ note: CLI ledger not available (sddk not in PATH). Ad-hoc cycle, no CLI storage.
 ## Artifact index
 
 | Kind | Path | SHA-256 |
+| Date | `2026-09-12` |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-04-side-table-key-layout/archive-manifest.md` | `2d2d189142773d02a738f94106d1783c87dbfde6bf95f80892d75c59592a4d3d` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-04-side-table-key-layout/change-entry.md` | `a6e3ae78435674a2f1694e9d3ff6267d74d803badadde09adffc6f52d06e964d` |

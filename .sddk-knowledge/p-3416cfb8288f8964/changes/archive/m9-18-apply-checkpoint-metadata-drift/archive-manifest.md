@@ -8,6 +8,8 @@
 | Head SHA | `6dce3736df06d4fe09db861ad43a3667c0f0bc25` |
 | Base SHA | `cc995cdd2cf41bd0638a548fc3db169763bfc38d` |
 | Release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-18-apply-checkpoint-metadata-drift/release-receipt.md` |
+| Path | `B-direct` |
+| Date | `2026-09-12` |
 
 ## Summary
 

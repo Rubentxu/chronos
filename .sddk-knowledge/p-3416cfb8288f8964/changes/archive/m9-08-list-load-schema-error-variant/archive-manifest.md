@@ -116,6 +116,7 @@ No new specs introduced. Trivial B-direct cleanup:
 ## Artifact index
 
 | Kind | Path | SHA-256 |
+| Date | `2026-09-12` |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-08-list-load-schema-error-variant/archive-manifest.md` | `5821de4a7867f0a3503f9f857c47a53901b349c61a5e33d65e390d53c91d2b96` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-08-list-load-schema-error-variant/change-entry.md` | `fe60bbb9e279bc9fc7643fbbcd06c707f9fc7e4f403e9d3642ac74b7080fd122` |

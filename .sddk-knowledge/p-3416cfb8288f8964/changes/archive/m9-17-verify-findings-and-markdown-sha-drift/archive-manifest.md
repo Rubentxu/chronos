@@ -8,6 +8,8 @@
 | Head SHA | `134dc7525312275c447db8f5996740ff7c102a02` |
 | Base SHA | `0ed8f874f7b6f973505fc3997475fc398fcfa4cc` |
 | Release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-17-verify-findings-and-markdown-sha-drift/release-receipt.md` |
+| Path | `B-direct` |
+| Date | `2026-09-12` |
 
 ## Summary
 

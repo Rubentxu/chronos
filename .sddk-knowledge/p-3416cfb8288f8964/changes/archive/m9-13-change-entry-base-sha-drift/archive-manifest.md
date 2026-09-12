@@ -32,6 +32,7 @@ Vault metadata cycles only (or vault + minimal code). Each cycle artifact bound 
 ## Artifact index
 
 | Path | SHA-256 |
+| Date | `2026-09-12` |
 |---|---|
 | `cycle-artifacts/p-3416cfb8288f8964/m9-13-change-entry-base-sha-drift/merge-receipt.md` | `5e16b6edd7388eba3946c038ad3ad53e987020e3c040e45469c072e28de04c1c` |
 | `cycle-artifacts/p-3416cfb8288f8964/m9-13-change-entry-base-sha-drift/release-receipt.md` | `ab60e48b367116f1753aecb44a862b818755dfa7c4c9fa85b8845cb0880569b7` |

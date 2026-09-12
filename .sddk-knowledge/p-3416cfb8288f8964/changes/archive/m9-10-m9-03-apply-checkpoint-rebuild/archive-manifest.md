@@ -123,6 +123,7 @@ No new specs introduced. Vault-artifact rebuild only:
 ## Artifact index
 
 | Kind | Path | SHA-256 |
+| Date | `2026-09-12` |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-10-m9-03-apply-checkpoint-rebuild/archive-manifest.md` | `c706d7e3ae9157f5227ceb4869072cccbb667a6837cc1724cfbbb6368c9bf2e5` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-10-m9-03-apply-checkpoint-rebuild/change-entry.md` | `f93dcf7cd459f54ec07c6bae3502d5134ee76282f6f6d6a3f2227473b0c82df4` |

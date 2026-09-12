@@ -18,5 +18,6 @@
   "released_at": "2026-09-12T11:29:21Z",
   "archived_at": "2026-09-12T11:29:40Z",
   "created_at": "2026-09-12T11:28:00Z",
-  "summary": "Strip workspace prefix 'p-3416cfb8288f8964/' from cycle_id in m9-04 verify-findings.json. Extends cross-check #16 to cover verify-findings.json (was only checking apply-checkpoint.json)."
+  "summary": "Strip workspace prefix 'p-3416cfb8288f8964/' from cycle_id in m9-04 verify-findings.json. Extends cross-check #16 to cover verify-findings.json (was only checking apply-checkpoint.json).",
+  "findings_closed": []
 }

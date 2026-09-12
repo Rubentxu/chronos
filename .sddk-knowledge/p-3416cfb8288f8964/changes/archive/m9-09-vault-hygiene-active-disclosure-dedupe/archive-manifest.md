@@ -110,6 +110,7 @@ No new specs introduced. Vault-hygiene fix only:
 ## Artifact index
 
 | Kind | Path | SHA-256 |
+| Date | `2026-09-12` |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-09-vault-hygiene-active-disclosure-dedupe/archive-manifest.md` | `7f8434f21ccb11978800f045aa34bed4ae74eee0574c35008eff3ea78b630e1e` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-09-vault-hygiene-active-disclosure-dedupe/change-entry.md` | `d0f3693a8550167aee79f594c0adae53f5e9b4e25ef7c6c191b582282c26794c` |
