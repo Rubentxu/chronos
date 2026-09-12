@@ -74,5 +74,5 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T11:48:00Z |
-| Last archive | m9-27-vacuous-peel-note-move |
+| Last updated | 2026-09-12T12:18:00Z |
+| Last archive | m9-28-m9-19-fabricated-base-sha |

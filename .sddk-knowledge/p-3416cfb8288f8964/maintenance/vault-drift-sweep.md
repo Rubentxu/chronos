@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -533,6 +533,7 @@ Cycles that established this procedure:
 - **m9-25** (vault hygiene: synthesize missing verify-findings.json for m9-05..m9-10, v0.7.23) → cross-check #18
 - **m9-26** (vault hygiene: verify-findings.json cycle_id prefix strip, v0.7.24) → extended cross-check #16
 - **m9-27** (vault hygiene: findings_introduced.no_action free-text note → notes key, v0.7.25) → cross-check #19
+- **m9-28** (vault hygiene: m9-19 fabricated base_sha → real 735c57b, v0.7.26) → cross-check #20
 
 ### 13. apply-checkpoint.json `*_status` field backfill (closed by m9-20)
 
@@ -774,6 +775,87 @@ list. Real closures stay in `no_action` as bare term IDs.
 **History:** m9-14 stored a free-text note in `no_action` describing
 a deferred observation (vacuous peel_match on prior cycles). This
 tripped cross-check #2. m9-27 moves the note to a `notes` key.
+
+### 20. apply-checkpoint.json base_sha must equal head_sha^ for fix-peel cycles (closed by m9-28)
+
+```python
+import json, os, re, subprocess
+
+def tag_peel_era(tag):
+    """Return 'docs-peel' or 'fix-peel' based on the tag's peel commit
+    message. Fix-peel: tag peels to a 'fix(m9-XX): ...' commit.
+    Docs-peel: tag peels to a 'docs(m9-XX): ...' or 'verify(m9-XX): ...'
+    commit (the docs commit, with fix commit preceding)."""
+    peel = subprocess.check_output(
+        ['git', 'log', '--format=%s', '-n', '1', tag],
+        stderr=subprocess.DEVNULL,
+    ).decode().strip()
+    if peel.startswith('fix('):
+        return 'fix-peel'
+    return 'docs-peel'
+
+for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
+    m = re.match(r'm9-(\d+)', folder)
+    if not m: continue
+    ckpt = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/apply-checkpoint.json'
+    if not os.path.exists(ckpt): continue
+    d = json.load(open(ckpt))
+    head = d.get('head_sha', '')
+    base = d.get('base_sha', '')
+    if not head or not base or len(head) != 40 or len(base) != 40: continue
+    # Find the tag for this cycle (v0.7.<N+16> by convention)
+    tag = f'v0.7.{int(m.group(1)) + 16}'
+    try:
+        era = tag_peel_era(tag)
+    except subprocess.CalledProcessError:
+        continue
+    if era != 'fix-peel':
+        continue  # docs-peel cycles (m9-03..m9-06) intentionally have
+        # base_sha != head_sha^ (branched from a docs commit, not fix
+        # commit). This is accepted-by-design.
+    try:
+        parent = subprocess.check_output(
+            ['git', 'rev-parse', f'{head}^'],
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+    except subprocess.CalledProcessError:
+        continue
+    if parent != base:
+        print(f"DRIFT: {folder}: base_sha={base[:12]} != head^={parent[:12]} (expected parent of fix commit)")
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** For a fix-peel cycle (m9-07+), the stored `base_sha`
+does not match `head_sha^` (the parent of the fix commit). The
+correct `base_sha` is whatever was the tip of main when the cycle
+branch diverged — which, for fix-peel cycles, equals the parent of
+the fix commit.
+
+**Note on docs-peel cycles (m9-03..m9-06):** these are exempt because
+they branched off a docs commit (the m9-04 archive commit, etc.),
+not the fix commit. Their `base_sha` is the commit where their docs
+branch diverged from main, which is not necessarily `head_sha^`.
+
+**Resolution:**
+1. Compute the real `base_sha`: `git rev-parse <head_sha>^`
+2. Replace the fabricated value in `apply-checkpoint.json`
+3. The `change-entry.md` `Base SHA` field already uses the short
+   form (`6dce373`) which is a valid prefix of m9-18's fix commit
+   but NOT of m9-19's actual base. Update the change-entry to use
+   the correct short prefix too if the cycle's narrative depends
+   on it.
+
+**History:** m9-19 was authored with `base_sha = 6dce3739b7e2...`,
+which is a fabricated 40-char SHA guessed from the m9-18 tag short
+prefix `6dce373`. The real `head_sha^ = 735c57b7178c...` is "docs(m9-18):
+add release receipts + vault archive + backfill m9-18 published SHA" —
+the commit m9-19's branch actually diverged from. C8 (apply-checkpoint
+SHA fields exist in repo) catches fabrication but only when the
+fabricated SHA doesn't even exist; the m9-19 fabricated SHA was a
+near-miss (close to a real commit, easy to miss). m9-28 closes this
+drift and adds cross-check #20 with era-awareness to prevent
+recurrence without breaking docs-peel cycles.
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class
