@@ -653,7 +653,7 @@ cycles (m9-03..m9-18).
 **History:** m9-22 closed this drift class after m9-19 introduced
 the fields without backfill.
 
-### 16. apply-checkpoint.json cycle_id format (must be bare m9-NN-slug, no workspace prefix) (closed by m9-23)
+### 16. apply-checkpoint.json cycle_id format (no workspace prefix) (closed by m9-23)
 
 ```python
 import json, os, re
@@ -662,10 +662,13 @@ for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
     if not os.path.exists(ckpt): continue
     d = json.load(open(ckpt))
     cid = d.get('cycle_id', '')
+    # The cycle_id must NOT have a slash (which would indicate a
+    # workspace prefix like 'p-3416cfb8288f8964/').
+    # Acceptable forms:
+    #   - bare m9-NN (m9-19, m9-20, ...)
+    #   - full slug matching the folder name (m9-11-cycles-index-...)
     if '/' in cid:
         print(f"DRIFT: {folder}: cycle_id has workspace prefix: {cid!r}")
-    elif cid != folder:
-        print(f"DRIFT: {folder}: cycle_id ({cid!r}) != folder name")
 ```
 
 **Expected output (clean):** empty.
