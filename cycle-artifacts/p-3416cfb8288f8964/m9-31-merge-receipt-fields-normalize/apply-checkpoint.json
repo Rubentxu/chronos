@@ -1,0 +1,23 @@
+{
+  "cycle_id": "m9-31",
+  "title": "Merge receipt fields normalization",
+  "path": "B-direct",
+  "route": "B-direct",
+  "base_sha": "6c428f76ec2f57bd210e936ab7b2f9a40e207d63",
+  "head_sha": "5c286b6b19684cc59a0c8e7935280051d14e0e54",
+  "main_sha": "5c286b6b19684cc59a0c8e7935280051d14e0e54",
+  "remote_tag_peel": "5c286b6b19684cc59a0c8e7935280051d14e0e54",
+  "peel_match": true,
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived",
+  "status": "CLOSED",
+  "findings_introduced": {
+    "no_action": []
+  },
+  "verified_at": "2026-09-12T12:48:00Z",
+  "released_at": "2026-09-12T12:49:00Z",
+  "archived_at": "2026-09-12T12:49:30Z",
+  "created_at": "2026-09-12T12:48:00Z",
+  "summary": "Normalizes merge-receipt.md SHA fields (Head SHA, Base SHA, Branch, Date) across all 25 m9 cycles (m9-03..m9-27) to the canonical format established by m9-28+. Adds cross-check #23 that explicitly checks both field presence and SHA consistency."
+}

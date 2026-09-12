@@ -1,0 +1,29 @@
+# Verify Report — m9-31
+
+## Cross-checks
+
+- C1: PASS
+- C2: PASS
+- C3: PASS
+- C7: PASS
+- C8: PASS
+- C11: PASS
+- C14: PASS
+- C15: PASS
+- C16: PASS
+- C17: PASS
+- C19: PASS
+- C20: PASS
+- C22: PASS
+- C23: PASS (NEW — all 28 merge-receipt.md files have canonical SHA fields)
+
+## Findings
+
+None — clean state.
+
+## Notes
+
+25 merge-receipt.md files (m9-03..m9-27) were normalized to the canonical
+format established by m9-28+. C23 explicitly checks both field presence
+and SHA consistency for merge-receipt.md (parallel to C22 for
+release-receipt.md).
