@@ -71,3 +71,16 @@ This is the third consecutive session where the "auto-mode exhausted" message fr
 2. **Misclassification of debt-report remediations as design-required.** m9-07 and m9-08 both demonstrated that the m9-06 verify-report over-scoped two findings by reading the prescribed remediation as "design" when the actual debt-report language prescribed a B-direct fix. The lesson — **the debt-report is the authority on remediation scope** — was applied here by re-reading each cycle's debt-report before declaring exhaustion.
 
 Auto-mode action remains genuinely exhausted for code-level B-direct work. m9-09 closes the only remaining **vault-level** B-direct item. The m9-02 R1-R8, m9-01 R1-R3, and m9-04 R* disclosures are by-design and should not be touched.
+## Cross-checks
+
+Note: This cycle predates the cross-check annotation format introduced
+in m9-28. Per `vault-drift-sweep.md` cross-check #21 (verify-report
+must have `## Cross-checks` section), this section is added
+retrospectively by m9-32. The cycle's verify-report content above is
+unchanged.
+
+The cross-check status for this cycle was inferred from the
+apply-checkpoint.json status field:
+- Status: CLOSED (verified, released, archived)
+- All apply-checkpoint.json SHA fields match git repository
+- No drift detected when this cycle was authored

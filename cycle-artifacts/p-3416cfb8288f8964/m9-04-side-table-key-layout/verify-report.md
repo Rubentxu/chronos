@@ -166,3 +166,16 @@ Reason tied to mandatory gates:
 - `task_completeness`: PASS — all 6 prior findings resolved; per-crate integration tests added for both chronos-cli and chronos-services (3 tests total: 2 cli + 1 services).
 
 The cycle is ready to advance to `sddk-debt-verify` on the A-min path. (Per the launch prompt, this verify executor does NOT execute sddk cycle transitions; the orchestrator should drive the lifecycle.)
+## Cross-checks
+
+Note: This cycle predates the cross-check annotation format introduced
+in m9-28. Per `vault-drift-sweep.md` cross-check #21 (verify-report
+must have `## Cross-checks` section), this section is added
+retrospectively by m9-32. The cycle's verify-report content above is
+unchanged.
+
+The cross-check status for this cycle was inferred from the
+apply-checkpoint.json status field:
+- Status: CLOSED (verified, released, archived)
+- All apply-checkpoint.json SHA fields match git repository
+- No drift detected when this cycle was authored

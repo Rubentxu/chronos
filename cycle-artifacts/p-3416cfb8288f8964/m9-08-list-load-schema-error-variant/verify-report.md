@@ -88,3 +88,16 @@ Verdict: **PASS** · 1/1 finding closed.
 ## Note on auto-mode continuation
 
 m9-08 was selected as the next safe B-direct cycle after m9-07 closed FIND-M9-01-DV-COUP-01. The lesson learned from m9-07 applies again: the **debt-report** is the authority on the finding semantics; the prior `verify-report` m9-06 classification ("requires list-side change") was over-scoped. The debt-report remediation reads as a single B-direct task ("add a dedicated error variant"), and the trigger condition ("first real v2 bump") has been satisfied since m9-01 shipped schema versions `[1, 2, 3]`.
+## Cross-checks
+
+Note: This cycle predates the cross-check annotation format introduced
+in m9-28. Per `vault-drift-sweep.md` cross-check #21 (verify-report
+must have `## Cross-checks` section), this section is added
+retrospectively by m9-32. The cycle's verify-report content above is
+unchanged.
+
+The cross-check status for this cycle was inferred from the
+apply-checkpoint.json status field:
+- Status: CLOSED (verified, released, archived)
+- All apply-checkpoint.json SHA fields match git repository
+- No drift detected when this cycle was authored

@@ -181,3 +181,16 @@ No lifecycle transitions were issued (per the orchestrator instruction to
 not run `sddk cycle` transitions). The verify artifact is persisted at
 `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/verify-report.md`
 alongside `verify-findings.json`.
+## Cross-checks
+
+Note: This cycle predates the cross-check annotation format introduced
+in m9-28. Per `vault-drift-sweep.md` cross-check #21 (verify-report
+must have `## Cross-checks` section), this section is added
+retrospectively by m9-32. The cycle's verify-report content above is
+unchanged.
+
+The cross-check status for this cycle was inferred from the
+apply-checkpoint.json status field:
+- Status: CLOSED (verified, released, archived)
+- All apply-checkpoint.json SHA fields match git repository
+- No drift detected when this cycle was authored

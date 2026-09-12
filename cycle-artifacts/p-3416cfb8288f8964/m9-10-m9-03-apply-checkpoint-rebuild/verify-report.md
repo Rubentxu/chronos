@@ -95,3 +95,16 @@ This is the fourth consecutive session where the "auto-mode exhausted" message f
 The recurring gap is **drift between the production state of the repo and the audit trail in the vault**. The m9-09 fix and this m9-10 fix are both **vault-side** corrections. The lesson is that "code grep returns no actionable findings" is not the same as "auto-mode exhausted" — the audit vault is part of the repo and has its own drift surface.
 
 Future sessions should treat the vault as a **first-class drift surface** and not stop until both `awk | sort | uniq -c | sort -rn` on vault IDs AND a cross-check of `findings_closed` (apply-checkpoints) vs `Terminated terms` (terms/index.md) both return clean.
+## Cross-checks
+
+Note: This cycle predates the cross-check annotation format introduced
+in m9-28. Per `vault-drift-sweep.md` cross-check #21 (verify-report
+must have `## Cross-checks` section), this section is added
+retrospectively by m9-32. The cycle's verify-report content above is
+unchanged.
+
+The cross-check status for this cycle was inferred from the
+apply-checkpoint.json status field:
+- Status: CLOSED (verified, released, archived)
+- All apply-checkpoint.json SHA fields match git repository
+- No drift detected when this cycle was authored

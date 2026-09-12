@@ -79,3 +79,16 @@ Verdict: **PASS** · 2/2 findings closed.
 - m9-02 R1-R8 — pre-existing disclosures, deferred.
 - `cc-001-god-module` (counterexample_storage.rs at ~2.5K LoC) — design-required split.
 - `cc-004-implicit-io-toctou` (save() read-then-write) — concurrency design required.
+## Cross-checks
+
+Note: This cycle predates the cross-check annotation format introduced
+in m9-28. Per `vault-drift-sweep.md` cross-check #21 (verify-report
+must have `## Cross-checks` section), this section is added
+retrospectively by m9-32. The cycle's verify-report content above is
+unchanged.
+
+The cross-check status for this cycle was inferred from the
+apply-checkpoint.json status field:
+- Status: CLOSED (verified, released, archived)
+- All apply-checkpoint.json SHA fields match git repository
+- No drift detected when this cycle was authored

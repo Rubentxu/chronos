@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -537,6 +537,7 @@ Cycles that established this procedure:
 - **m9-29** (vault hygiene: backfill Evidence bindings section in m9-11..m9-27 archive-manifests, v0.7.27) → cross-check #21
 - **m9-30** (vault hygiene: normalize release-receipt.md SHA fields across all 25 m9 cycles, v0.7.28) → cross-check #22
 - **m9-31** (vault hygiene: normalize merge-receipt.md SHA fields across all 25 m9 cycles, v0.7.29) → cross-check #23
+- **m9-32** (vault hygiene: add `## Cross-checks` section to 25 verify-report.md files, v0.7.30) → cross-check #24
 
 ### 13. apply-checkpoint.json `*_status` field backfill (closed by m9-20)
 
@@ -1007,6 +1008,36 @@ of `Head SHA`. m9-11..m9-18 used Spanish `Campo` header. m9-19..m9-27
 used a minimal format with no Head SHA field at all. m9-28+ used the
 canonical format. m9-31 normalizes all 25 prior merge-receipts to the
 canonical format and adds C23 to enforce it.
+
+### 24. verify-report.md must have `## Cross-checks` section (closed by m9-32)
+
+```python
+import os, glob
+for vr in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/verify-report.md')):
+    content = open(vr).read()
+    if '## Cross-checks' not in content:
+        print(f"DRIFT: {vr}: missing '## Cross-checks' section")
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** A verify-report.md is missing the canonical
+`## Cross-checks` section. This section is the place where the
+cycle records its cross-check status (which vault-drift-sweep
+checks were run, what passed, what failed).
+
+**Resolution:**
+1. Add a `## Cross-checks` section at the end of the verify-report.md
+   with a brief note that the cycle predates the cross-check
+   annotation format introduced in m9-28.
+2. For cycles that did run cross-checks (m9-11+), transcribe the
+   cross-check status from the cycle's apply-checkpoint.json or
+   release-report.md into the section.
+
+**History:** All 25 verify-report.md files (m9-03..m9-27) were
+authored without the `## Cross-checks` section. The convention was
+introduced in m9-28+. m9-32 backfills the section for all 25 prior
+cycles.
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class
