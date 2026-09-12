@@ -1,0 +1,13 @@
+{
+  "cycle_id": "m9-29",
+  "subject": {
+    "head_sha": "8617ad0dde11f1a9e83a7f3c110dda3d691e374d",
+    "base_sha": "a65927d960d7a5b42cd425dc34befe3efe7c692f"
+  },
+  "verdict": "pass",
+  "findings": [],
+  "lens_summary": {
+    "drift": "17 archive-manifest.md files (m9-11..m9-27) were missing the canonical '## Evidence bindings' section. Added the section to each, listing all cycle artifacts with their SHA-256. Added cross-check #21.",
+    "lens_summary_note": "This was a structural drift, not a content drift — the '## Artifact index' section already listed the SHA-256s, but the Evidence bindings section was missing."
+  }
+}
