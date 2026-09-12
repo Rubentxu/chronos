@@ -4,6 +4,7 @@
 |---|---|
 | Cycle | m9-20-status-fields-backfill |
 | Head SHA | `07febc1bae0d236ad47eef3c5b3172c4824cde04` |
+| Base SHA | `d66569159fe3e47404aee3b4e13a3c5b883c7d69` |
 | Tag | `v0.7.18` |
 | Tag peel | `07febc1bae0d236ad47eef3c5b3172c4824cde04` |
 | Peel match | true |

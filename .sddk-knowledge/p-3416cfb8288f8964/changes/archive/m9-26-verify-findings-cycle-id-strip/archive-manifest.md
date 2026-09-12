@@ -4,6 +4,7 @@
 |---|---|
 | Cycle | m9-26-verify-findings-cycle-id-strip |
 | Head SHA | `a7d43e012be509fc44edae1ab2f05397e3452037` |
+| Base SHA | `38e0e3aaacc9471b1c2550e548f2c24ae3f71025` |
 | Tag | `v0.7.24` |
 | Tag peel | `a7d43e012be509fc44edae1ab2f05397e3452037` |
 | Peel match | true |

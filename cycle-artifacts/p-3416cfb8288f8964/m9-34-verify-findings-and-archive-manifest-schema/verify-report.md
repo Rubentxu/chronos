@@ -28,3 +28,8 @@ Cross-check #26 added to vault-drift-sweep.md.
 - head_sha: see release-receipt
 - cycle: m9-34
 - branch: `fix/m9-34-archive-manifest-header-normalize`
+
+## Cross-checks
+
+- C26: pass (after fixes applied)
+- C1-C25: pass

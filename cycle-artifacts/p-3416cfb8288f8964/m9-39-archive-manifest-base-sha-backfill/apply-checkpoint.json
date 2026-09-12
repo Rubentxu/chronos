@@ -1,0 +1,12 @@
+{
+  "cycle_id": "m9-39",
+  "head_sha": "TBD",
+  "base_sha": "32f62d2462182faa241799e305907e761f211f85",
+  "created_at": "2026-09-12T13:26Z",
+  "route": "B-direct",
+  "summary": "Add missing Base SHA field to 16 archive-manifest.md files (m9-11..m9-27) and add Cross-checks section to m9-34 verify-report.md. Adds cross-check #31.",
+  "findings_closed": [],
+  "findings_introduced": {
+    "no_action": []
+  }
+}

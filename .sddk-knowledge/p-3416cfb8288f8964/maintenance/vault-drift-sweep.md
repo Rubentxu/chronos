@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -1313,6 +1313,49 @@ m9-38 normalizes all to `Cycle`.
 m9-01..m9-18 change-entry.md used Spanish `## Ciclo`; m9-19+ uses `## Summary`.
 m9-38 normalizes all to `## Summary` (and inserts a placeholder summary
 text).
+
+### 31. archive-manifest.md Base SHA field + verify-report.md Cross-checks section (closed by m9-39)
+
+```python
+import glob, re
+
+errors = 0
+
+# Part A: archive-manifest.md has Base SHA field
+for f in sorted(glob.glob('.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-*/archive-manifest.md')):
+    content = open(f).read()
+    if 'Base SHA' not in content:
+        print(f"DRIFT: {f}: no Base SHA field")
+
+# Part B: verify-report.md has Cross-checks section (post-m9-32)
+for f in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/verify-report.md')):
+    m = re.search(r'm9-(\d+)', f)
+    if not m: continue
+    n = int(m.group(1))
+    if n < 32: continue
+    content = open(f).read()
+    if 'Cross-checks' not in content:
+        print(f"DRIFT: {f}: no Cross-checks section")
+
+print(f'Total: {errors}')
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:**
+- A: archive-manifest.md missing `Base SHA` field in header table.
+- B: verify-report.md missing `## Cross-checks` section.
+
+**Resolution:**
+- A: Add `| Base SHA | <sha> |` line right after the `| Head SHA |` line.
+  Source the SHA from apply-checkpoint.json `base_sha`.
+- B: Add `## Cross-checks` section listing the cross-checks that
+  passed/failed during this cycle's verification.
+
+**History:** m9-11..m9-27 archive-manifest.md used a table format
+without `Base SHA`. m9-39 backfills it. m9-34 verify-report.md
+was written before the Cross-checks section was standardized;
+m9-39 adds it.
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class

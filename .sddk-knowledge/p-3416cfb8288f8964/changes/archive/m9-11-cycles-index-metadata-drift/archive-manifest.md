@@ -7,6 +7,7 @@
 | Status | ARCHIVED |
 | Tag | `v0.7.9` |
 | Head SHA | `cd0115fd8f942058cde109c72a975cab7ea7473c` |
+| Base SHA | `6120e983e247d8d88fcd221f0e1063646f195cb7` |
 
 ## Evidence bindings
 

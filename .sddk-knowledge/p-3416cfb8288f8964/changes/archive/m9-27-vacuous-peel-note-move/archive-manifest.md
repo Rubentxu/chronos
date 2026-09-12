@@ -4,6 +4,7 @@
 |---|---|
 | Cycle | m9-27-vacuous-peel-note-move |
 | Head SHA | `91338e3b2fc58835662776507bde5308ec36568b` |
+| Base SHA | `cb7b05c8fe65b9de24ccd7f7f447374fcfd95f11` |
 | Tag | `v0.7.25` |
 | Tag peel | `91338e3b2fc58835662776507bde5308ec36568b` |
 | Peel match | true |

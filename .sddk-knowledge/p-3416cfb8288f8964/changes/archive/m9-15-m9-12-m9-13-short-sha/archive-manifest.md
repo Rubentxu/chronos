@@ -6,6 +6,7 @@
 | Archived at | 2026-09-12T10:11:30Z |
 | Tag | `v0.7.13` |
 | Head SHA | `2441f6f3c679555dc4106ea2e8a422ed407a26a0` |
+| Base SHA | `d55cdc874edd5863f5d8a65a42396b99d090b6dc` |
 | Release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-15-m9-12-m9-13-short-sha/release-receipt.md` |
 
 ## Evidence bindings
