@@ -13,7 +13,7 @@
   "route": "local",
   "verified_at": "2026-09-12T07:02:00Z",
   "released_at": "2026-09-12T07:03:02Z",
-  "archived_at": null,
+  "archived_at": "2026-09-12T07:05:00Z",
   "commits_since_base": [
     "d89862bfix(m9-08): dedicated StoreError::SchemaTooNew variant (closes FIND-M9-01-DV-COUP-02)",
     "cb47fe8docs(m9-08): light-verify evidence (R1 PASS, FIND-M9-01-DV-COUP-02 closed)"
@@ -61,8 +61,8 @@
     },
     {
       "gate": "archive",
-      "result": "pending",
-      "evidence": "apply-checkpoint + receipts written; change-entry + archive-manifest + terms + cycles-index updates pending in this session"
+      "result": "closed",
+      "evidence": "change-entry + archive-manifest + terms + cycles-index updated; FIND-M9-01-DV-COUP-02 moved from active to terminated"
     },
     {
       "gate": "scoping-decision",

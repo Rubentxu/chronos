@@ -29,6 +29,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-05 | m9-05-side-table-overeng-cleanup | B-direct | `v0.7.3` | `07d01d5869ff6e3ffed29315b761e6e476f3b70d` | CLOSED |
 | m9-06 | m9-06-known-schema-versions-invariant | B-direct | `v0.7.4` | `3383905d93ac66b6e90b6de8cea760c1ad4e2c99` | CLOSED |
 | m9-07 | m9-07-coup-01-invariant-assertion | B-direct | `v0.7.5` | `3edb01f0a17c3ac8877df1e7868d4e3cca374217` | CLOSED |
+| m9-08 | m9-08-list-load-schema-error-variant | B-direct | `v0.7.6` | `d89862bbe67256cf6274be1d71ee7f8857cb8808` | CLOSED |
 
 ## Metadata
 

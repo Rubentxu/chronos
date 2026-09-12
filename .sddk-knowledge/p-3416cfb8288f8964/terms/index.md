@@ -39,9 +39,7 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 
 ### Debt findings from m9-01
 
-| ID | Cycle | Cluster | Severity | Priority | Título | Owner | Destino |
-|---|---|---|---|---|---|---|---|
-| FIND-M9-01-DV-COUP-02 | m9-01 | coupling | LOW | P3 | List/load policy asymmetry: hard-reject on load vs best-effort include on list | unassigned | m9+ backlog |
+(empty — both FIND-M9-01-DV-COUP-01 and FIND-M9-01-DV-COUP-02 terminated by m9-07/m9-08; see Terminated terms below)
 
 ### Follow-ups inherited from prior cycles
 
@@ -69,6 +67,7 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 | m9-01-R4 | m9-01 | `KNOWN_BUNDLE_SCHEMA_VERSIONS` unused; `#[allow(dead_code)]` | m9-06-known-schema-versions-invariant (`v0.7.4`) |
 | FIND-M9-01-DV-OE-01 | m9-01 | `KNOWN_BUNDLE_SCHEMA_VERSIONS` dead speculative code | m9-06-known-schema-versions-invariant (`v0.7.4`) |
 | FIND-M9-01-DV-COUP-01 | m9-01 | Duplicated version envelopes: `schema_version` on record + summary, no loader equality check | m9-07-coup-01-invariant-assertion (`v0.7.5`) |
+| FIND-M9-01-DV-COUP-02 | m9-01 | List/load policy asymmetry: hard-reject on load vs best-effort include on list | m9-08-list-load-schema-error-variant (`v0.7.6`) |
 
 ## Metadata
 
@@ -76,5 +75,5 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T06:57:00Z |
-| Last archive | m9-07-coup-01-invariant-assertion |
+| Last updated | 2026-09-12T07:05:00Z |
+| Last archive | m9-08-list-load-schema-error-variant |
