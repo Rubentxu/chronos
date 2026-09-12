@@ -1,0 +1,23 @@
+{
+  "findings": [],
+  "lens_summary": {
+    "spec-compliance": 0,
+    "test-quality": 0,
+    "vault-hygiene": 0,
+    "documentation-discipline": 0
+  },
+  "verdict": "PASS",
+  "subject_sha": "0012f12",
+  "evidence": {
+    "vault_drift_sweep_checks": {
+      "check_1_id_uniqueness": "empty",
+      "check_2_findings_closed_vs_terminated": "0 drift (m8-04-R4 + m8-07-R2 expected pre-reorg)",
+      "check_3_apply_checkpoint_vs_tag_consistency": "9/9 m9 cycles head==peel, match=True",
+      "check_4_sha256_archive_manifest_artifact_index": "empty",
+      "check_5_cycles_index_metadata_consistency": "OK: 27 == 27",
+      "check_6_terms_index_last_archive_consistency": "OK: m9-11-cycles-index-metadata-drift == m9-11-cycles-index-metadata-drift"
+    },
+    "t0_lint": "0 warnings, 0 diffs (14 crates)",
+    "diff_size": "34 +, 5 - across 2 doc files"
+  }
+}

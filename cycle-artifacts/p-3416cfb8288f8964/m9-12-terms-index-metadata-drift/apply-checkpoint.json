@@ -1,0 +1,52 @@
+{
+  "cycle_id": "p-3416cfb8288f8964/m9-12-terms-index-metadata-drift",
+  "change": "fix terms/index.md Last archive metadata drift (m9-10 → m9-11) + add cross-check #6 to vault-drift-sweep",
+  "path": "B-direct",
+  "status": "CLOSED",
+  "head_sha": "0012f12",
+  "base_sha": "f4818d13928c091daeaadcb65dca38558c612e7c",
+  "tag": "v0.7.10",
+  "remote_tag_peel": "0012f12",
+  "main_sha": "f4818d13928c091daeaadcb65dca38558c612e7c",
+  "peel_match": true,
+  "runtime_status": "doc-only; no runtime impact",
+  "route": "B-direct (T0 + light-verify)",
+  "verified_at": "2026-09-12T08:54:00Z",
+  "released_at": "2026-09-12T08:54:00Z",
+  "archived_at": null,
+  "commits_since_base": [
+    "0012f12fix(m9-12): terms/index.md Last archive metadata drift (m9-10 → m9-11) + add cross-check #6 to vault-drift-sweep"
+  ],
+  "artifacts": {
+    "merge_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-12-terms-index-metadata-drift/merge-receipt.md",
+    "release_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-12-terms-index-metadata-drift/release-receipt.md",
+    "release_report": "cycle-artifacts/p-3416cfb8288f8964/m9-12-terms-index-metadata-drift/release-report.md",
+    "verify_report": "cycle-artifacts/p-3416cfb8288f8964/m9-12-terms-index-metadata-drift/verify-report.md",
+    "verify_findings": "cycle-artifacts/p-3416cfb8288f8964/m9-12-terms-index-metadata-drift/verify-findings.json",
+    "change_entry": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-12-terms-index-metadata-drift/change-entry.md",
+    "archive_manifest": ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-12-terms-index-metadata-drift/archive-manifest.md"
+  },
+  "findings_closed": [],
+  "findings_introduced": {
+    "no_action": []
+  },
+  "findings_remaining_m9_plus": [
+    "cc-001-god-module",
+    "cc-004-implicit-io-toctou",
+    "m9-02-R4 (feature: counterexample_bundle_events MCP tool)"
+  ],
+  "notes": [
+    "Drift introduced by m9-11: m9-11 added itself to cycles/index.md but did not bump terms/index.md's Last archive pointer.",
+    "Standing procedure had no cross-check for terms/index.md; m9-12 adds cross-check #6.",
+    "Self-referential catch: the new check returns OK on the post-fix state; would have returned DRIFT on the pre-fix state.",
+    "Doc-only change, no production code touched. T0 fmt+clippy clean.",
+    "Tag v0.7.10 peeled to fix commit 0012f12 per chronos convention."
+  ],
+  "next_cycle": null,
+  "next_cycle_path": null,
+  "next_cycle_target_findings": [],
+  "ledger_state": {
+    "available": false,
+    "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02..m9-11 pattern)"
+  }
+}
