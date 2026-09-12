@@ -76,6 +76,12 @@
       "gate": "smoke_subset",
       "result": "n/a",
       "evidence": "no MCP/probe plumbing touched; sandbox smoke not warranted"
+    },
+    {
+      "gate": "next-up-audit-2026-09-12",
+      "result": "exhausted",
+      "evidence": "After m9-06 closure, reviewed the m9+ backlog for auto-mode-safe B-direct work. Searched all 18 #[allow(dead_code)] / #[allow(unused_imports)] sites across the workspace; every candidate is either (a) a forward-facing reserved variant/marker (chronos-cli::ArgsError::UnknownSubcommand, chronos-services::mark_sealed), (b) a #[cfg]-conditional silence (chronos-ebpf::lib.rs non-ebpf build, chronos-services::probe::undead), or (c) a test-helper that Rust's dead-code lint treats as unused even when called from another #[test] (chronos-services::counterexample::assert_send, _execution_record_marker). Verified the counterexample::assert_send case by removing the attribute: clippy fires 'function is never used' even though assert_send is called inside a #[test] sibling. Reverted. All remaining m9+ findings (cc-001 god-module split, cc-004 save() concurrency, FIND-M9-01-DV-COUP-01/02 schema_version + list/load coupling, m9-02 R1-R8 disclosures) require architectural design and exceed B-direct scope. Auto-mode action genuinely exhausted for this session; awaiting user direction or new findings.",
+      "timestamp": "2026-09-12T06:48:00Z"
     }
   ],
   "next_cycle": null,
