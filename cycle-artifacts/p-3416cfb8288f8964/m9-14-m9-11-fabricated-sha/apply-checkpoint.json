@@ -26,7 +26,8 @@
   },
   "findings_closed": [],
   "findings_introduced": {
-    "no_action": [
+    "no_action": [],
+    "notes": [
       "vacuous-peel-match-prior-cycles (closed by C8 evidence: short-SHA cycles still ambiguous on cat-file -e; deferred \u2014 see notes)"
     ]
   },
