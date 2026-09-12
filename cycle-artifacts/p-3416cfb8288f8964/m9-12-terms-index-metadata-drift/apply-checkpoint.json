@@ -7,7 +7,7 @@
   "base_sha": "f4818d13928c091daeaadcb65dca38558c612e7c",
   "tag": "v0.7.10",
   "remote_tag_peel": "0012f1242cef949efc4cbd4c8d419a135ee3cf8a",
-  "main_sha": "f4818d13928c091daeaadcb65dca38558c612e7c",
+  "main_sha": "0012f1242cef949efc4cbd4c8d419a135ee3cf8a",
   "peel_match": true,
   "runtime_status": "doc-only; no runtime impact",
   "route": "B-direct (T0 + light-verify)",

@@ -441,6 +441,63 @@ it. The `status: "closed"` (lowercase) pattern was the pre-m9-11
 convention; m9-18 normalizes all 8 affected cycles to uppercase
 `CLOSED`. m9-18 adds cross-check #11 to prevent recurrence.
 
+### 12. apply-checkpoint.json route field + main_sha convention + cycle folder cleanup (closed by m9-19)
+
+```python
+import json, os, re
+
+for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
+    ckpt = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/apply-checkpoint.json'
+    if not os.path.exists(ckpt):
+        continue
+    d = json.load(open(ckpt))
+
+    # route must be a known B-direct / A-* path label, not the
+    # pre-m9-11 lowercase "local" placeholder
+    r = d.get('route')
+    if r in ('local', ''):
+        print(f"DRIFT: {folder}: route={r!r}, expected a path label like 'B-direct'")
+
+    # main_sha convention (m9-04+): post-cycle HEAD = head_sha
+    # (m9-11/12/13 wrongly set main_sha = pre-cycle HEAD = base_sha)
+    head = d.get('head_sha')
+    main = d.get('main_sha')
+    if head and main and head != main:
+        print(f"DRIFT: {folder}: main_sha ({main[:12]}) != head_sha ({head[:12]}) — expected post-cycle HEAD")
+
+# Cycle folder cleanup: no empty (untracked) cycle folders
+import glob
+for d in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*')):
+    if os.path.isdir(d) and not os.listdir(d):
+        folder = os.path.basename(d)
+        print(f"DRIFT: {folder}: empty cycle folder (no artifacts)")
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:**
+- `route` is the pre-m9-11 placeholder `"local"` instead of a real
+  path label like `"B-direct"` / `"A-min"` / `"A-lite"` / `"A-full"`
+  / `"B-rebuild"`. m9-11+ uses descriptive paths.
+- `main_sha` differs from `head_sha`. Per m9-04+ convention (and the
+  `path: B-direct` description), `main_sha` is "main HEAD after this
+  cycle merged", which equals `head_sha`. m9-11/12/13 wrongly set
+  `main_sha = base_sha` (pre-cycle HEAD). Fix: copy `head_sha` to
+  `main_sha`.
+- An empty cycle folder exists (no apply-checkpoint.json, no
+  artifacts). Likely an aborted investigation. Fix: remove the empty
+  folder.
+
+**History:** m9-19 discovered three classes of drift:
+- 8 cycles (m9-03..m9-10) had `route: "local"` from the pre-m9-11 era
+- 3 cycles (m9-11/12/13) had `main_sha` set to pre-cycle HEAD (an
+  inconsistency I introduced when authoring m9-11..m9-13 myself)
+- 1 empty folder (`m9-11-m9-04-findings-closed-drift-fix`) was a
+  leftover from an aborted false-positive investigation from prior
+  sessions
+
+m9-19 closes all three and adds cross-check #12 to prevent recurrence.
+
 ## When to escalate
 
 If any of the cross-checks finds drift that is **not** trivially
@@ -450,9 +507,9 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, or **check 11** finds drift: the resolution is
-mechanical (a small metadata edit). Do this in the same cycle that
-catches it; do not defer.
+**check 10**, **check 11**, or **check 12** finds drift: the
+resolution is mechanical (a small metadata edit). Do this in the
+same cycle that catches it; do not defer.
 
 ## Reference
 
@@ -467,6 +524,7 @@ Cycles that established this procedure:
 - **m9-16** (vault hygiene: archive-manifest short/fabricated-SHA fix, v0.7.14) → cross-check #9
 - **m9-17** (vault hygiene: cycle artifact SHA drift fix across verify-findings/markdown files, v0.7.15) → cross-check #10
 - **m9-18** (vault hygiene: apply-checkpoint metadata drift fix — archived_at, findings_introduced, status normalization, v0.7.16) → cross-check #11
+- **m9-19** (vault hygiene: route field normalization + main_sha convention + empty folder cleanup, v0.7.17) → cross-check #12
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class
