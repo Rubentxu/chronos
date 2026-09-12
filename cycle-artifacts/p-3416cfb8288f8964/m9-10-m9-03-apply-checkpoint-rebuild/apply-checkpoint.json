@@ -1,0 +1,112 @@
+{
+  "cycle_id": "p-3416cfb8288f8964/m9-10-m9-03-apply-checkpoint-rebuild",
+  "change": "m9-10-m9-03-apply-checkpoint-rebuild",
+  "path": "B-rebuild",
+  "status": "closed",
+  "head_sha": "69f200e2144bea2cd305c38903feb4814fb38806",
+  "base_sha": "0e1474a61cf5777a6d0e22358aded55be222c784",
+  "tag": "v0.7.8",
+  "remote_tag_peel": "69f200e2144bea2cd305c38903feb4814fb38806",
+  "main_sha": "69f200e2144bea2cd305c38903feb4814fb38806",
+  "peel_match": true,
+  "runtime_status": "RELEASED",
+  "route": "local",
+  "verified_at": "2026-09-12T07:21:00Z",
+  "released_at": "2026-09-12T07:22:36Z",
+  "archived_at": null,
+  "commits_since_base": [
+    "69f200efix(m9-10): rebuild missing apply-checkpoint.json for m9-03 (vault-reorg gap)",
+    "6dc4609docs(m9-10): light-verify evidence (R1 PASS, m9-03 apply-checkpoint rebuilt)"
+  ],
+  "artifacts": {
+    "rebuilt_artifact": "cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/apply-checkpoint.json",
+    "merge_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-10-m9-03-apply-checkpoint-rebuild/merge-receipt.md",
+    "release_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-10-m9-03-apply-checkpoint-rebuild/release-receipt.md",
+    "release_report": "cycle-artifacts/p-3416cfb8288f8964/m9-10-m9-03-apply-checkpoint-rebuild/release-report.md",
+    "verify_report": "cycle-artifacts/p-3416cfb8288f8964/m9-10-m9-03-apply-checkpoint-rebuild/verify-report.md",
+    "change_entry": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-10-m9-03-apply-checkpoint-rebuild/change-entry.md",
+    "archive_manifest": ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-10-m9-03-apply-checkpoint-rebuild/archive-manifest.md"
+  },
+  "findings_closed": [],
+  "findings_remaining_m9_plus": [
+    "m9-02-R1",
+    "m9-02-R2",
+    "m9-02-R3",
+    "m9-02-R4",
+    "m9-02-R5",
+    "m9-02-R6",
+    "m9-02-R7",
+    "m9-02-R8",
+    "m9-01-R1",
+    "m9-01-R2",
+    "m9-01-R3",
+    "cc-001-god-module",
+    "cc-004-implicit-io-toctou",
+    "m8-06-R4",
+    "m8-04-R-hypothesis-fallback"
+  ],
+  "notes": [
+    {
+      "gate": "T0-lint",
+      "result": "n/a",
+      "evidence": "no Rust source changed; T0 lint gate does not apply to a single JSON artifact rebuild"
+    },
+    {
+      "gate": "doc-verify",
+      "result": "pass",
+      "evidence": "python3 -c 'import json; ...' parses cleanly. findings_closed matches the 4 FIND-M9-02-DV-* that terms/index.md shows terminated by m9-03. tag (v0.7.8) is a new semver bump, peel_match: true."
+    },
+    {
+      "gate": "T1-lib-unit",
+      "result": "n/a",
+      "evidence": "no Rust source changed"
+    },
+    {
+      "gate": "T2-integration",
+      "result": "n/a",
+      "evidence": "no Rust source changed"
+    },
+    {
+      "gate": "verify",
+      "result": "PASS",
+      "verdict": "doc-verify inline; 1/1 spec scenario COMPLIANT (R1: m9-03 apply-checkpoint.json rebuilt with structural fidelity to m9-04..m9-09 schema)"
+    },
+    {
+      "gate": "release",
+      "result": "success",
+      "evidence": "v0.7.8 annotated tag at 69f200e2144bea2cd305c38903feb4814fb38806, peel_match: true, push to origin verified"
+    },
+    {
+      "gate": "archive",
+      "result": "pending",
+      "evidence": "apply-checkpoint + receipts written; change-entry + archive-manifest + cycles-index updates pending in this session"
+    },
+    {
+      "gate": "scoping-decision",
+      "result": "B-rebuild",
+      "evidence": "single JSON artifact rebuilt from unmodified pre-existing inputs (merge-receipt, release-receipt, release-report, verify-report, verify-findings.json of m9-03). 100-line file, no Rust code touched. Follows m9-09 pattern (vault hygiene). Note: distinct cycle because the rebuilt artifact belongs to m9-03 (cycle_id in the JSON) but the change is authored by m9-10 (this cycle's id)."
+    },
+    {
+      "gate": "smoke_subset",
+      "result": "n/a",
+      "evidence": "no Rust source touched"
+    },
+    {
+      "gate": "fidelity-check",
+      "result": "high",
+      "evidence": "all input artifacts (merge-receipt.md, release-receipt.md, release-report.md, verify-report.md, verify-findings.json of m9-03) were present in cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/ with unmodified SHA-256. No field in the rebuilt apply-checkpoint was invented — every value was lifted verbatim from one of the 5 input artifacts or from `git log 6f375fd..2c98ce9`."
+    },
+    {
+      "gate": "auto-mode-lesson-applied",
+      "result": "yes",
+      "evidence": "the search-more-drift sweep that selected this cycle was inspired by the three-session pattern of premature 'auto-mode exhausted' verdicts (sessions 1, 2, 3 → m9-07, m9-08, m9-09 found respectively). Extending the sweep from 'grep for FIND-M9-01-* in code' to 'cross-check findings_closed (apply-checkpoints) vs Terminated terms (terms/index.md)' surfaced the missing m9-03 apply-checkpoint. This is now the 4th consecutive session that found work the prior session claimed was exhausted."
+    }
+  ],
+  "next_cycle": null,
+  "next_cycle_path": null,
+  "next_cycle_target_findings": [],
+  "ledger_state": {
+    "available": false,
+    "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02..m9-09 pattern)"
+  }
+}
