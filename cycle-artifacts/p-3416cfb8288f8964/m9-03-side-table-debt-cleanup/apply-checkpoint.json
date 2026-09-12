@@ -2,7 +2,7 @@
   "cycle_id": "p-3416cfb8288f8964/m9-03-side-table-debt-cleanup",
   "change": "m9-03-side-table-debt-cleanup",
   "path": "B-direct",
-  "status": "closed",
+  "status": "CLOSED",
   "head_sha": "2c98ce9a1df65d44ae865376fee46eb0d95ac425",
   "base_sha": "6f375fd96dbc0c03fe36b473d306f1e54d078b08",
   "tag": "v0.7.1",
@@ -96,5 +96,8 @@
   "ledger_state": {
     "available": false,
     "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02..m9-09 pattern)"
+  },
+  "findings_introduced": {
+    "no_action": []
   }
 }

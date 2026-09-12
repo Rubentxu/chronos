@@ -2,7 +2,7 @@
   "cycle_id": "p-3416cfb8288f8964/m9-08-list-load-schema-error-variant",
   "change": "m9-08-list-load-schema-error-variant",
   "path": "B-direct",
-  "status": "closed",
+  "status": "CLOSED",
   "head_sha": "d89862bbe67256cf6274be1d71ee7f8857cb8808",
   "base_sha": "50553969309b945156c239fd5a5a7f794431df21",
   "tag": "v0.7.6",
@@ -86,5 +86,8 @@
   "ledger_state": {
     "available": false,
     "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02..m9-07 pattern)"
+  },
+  "findings_introduced": {
+    "no_action": []
   }
 }

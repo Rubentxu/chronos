@@ -74,5 +74,5 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T10:29:00Z |
-| Last archive | m9-17-verify-findings-and-markdown-sha-drift |
+| Last updated | 2026-09-12T10:43:00Z |
+| Last archive | m9-18-apply-checkpoint-metadata-drift |

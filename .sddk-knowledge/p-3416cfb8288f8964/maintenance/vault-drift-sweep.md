@@ -392,6 +392,55 @@ the remaining file types (verify-findings, release-receipt,
 merge-receipt, change-entry Head SHA) and adds cross-check #10 to
 prevent recurrence.
 
+### 11. apply-checkpoint.json required metadata fields (status, archived_at, findings_introduced) consistency (closed by m9-18)
+
+```python
+import json, os, re
+
+for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
+    ckpt = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/apply-checkpoint.json'
+    if not os.path.exists(ckpt):
+        continue
+    d = json.load(open(ckpt))
+
+    # Required fields per chronos convention (m9-11+)
+    if d.get('status') != 'CLOSED':
+        print(f"DRIFT: {folder}: status={d.get('status')!r}, expected 'CLOSED'")
+
+    # archived_at must be a timestamp string (not null) for cycles that have archive-manifest
+    am = f'.sddk-knowledge/p-3416cfb8288f8964/changes/archive/{folder}/archive-manifest.md'
+    archived_at = d.get('archived_at')
+    if os.path.exists(am) and archived_at is None:
+        print(f"DRIFT: {folder}: archived_at is None but archive-manifest exists")
+
+    # findings_introduced must be present (even if empty)
+    if 'findings_introduced' not in d:
+        print(f"DRIFT: {folder}: missing 'findings_introduced' field")
+    elif not isinstance(d.get('findings_introduced'), dict):
+        print(f"DRIFT: {folder}: findings_introduced is not a dict")
+    elif 'no_action' not in d.get('findings_introduced', {}):
+        print(f"DRIFT: {folder}: findings_introduced missing 'no_action' subfield")
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** apply-checkpoint.json is missing or has wrong values for
+required metadata fields that the m9-11+ convention established:
+- `status` must be uppercase `CLOSED` (not `closed`)
+- `archived_at` must be a timestamp string when archive-manifest.md
+  exists (not `null`)
+- `findings_introduced` must be present (even if empty `{}` with
+  empty `no_action: []`)
+
+**History:** m9-14 introduced the `archived_at` field but didn't
+backfill m9-11/12/13 apply-checkpoint.json (which had `archived_at:
+null` even though archive-manifest.md files existed for all three).
+m9-09 introduced the `findings_introduced` field but m9-03, m9-05,
+m9-06, m9-07, m9-08, m9-10 (7 cycles) were never updated to include
+it. The `status: "closed"` (lowercase) pattern was the pre-m9-11
+convention; m9-18 normalizes all 8 affected cycles to uppercase
+`CLOSED`. m9-18 adds cross-check #11 to prevent recurrence.
+
 ## When to escalate
 
 If any of the cross-checks finds drift that is **not** trivially
@@ -400,10 +449,10 @@ artifacts for a rebuild do not exist in the repo), document the gap in
 the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
-If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**, or
-**check 10** finds drift: the resolution is mechanical (a small
-metadata edit). Do this in the same cycle that catches it; do not
-defer.
+If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
+**check 10**, or **check 11** finds drift: the resolution is
+mechanical (a small metadata edit). Do this in the same cycle that
+catches it; do not defer.
 
 ## Reference
 
@@ -417,6 +466,7 @@ Cycles that established this procedure:
 - **m9-15** (vault hygiene: apply-checkpoint short-SHA expansion, v0.7.13) → tightened cross-check #3
 - **m9-16** (vault hygiene: archive-manifest short/fabricated-SHA fix, v0.7.14) → cross-check #9
 - **m9-17** (vault hygiene: cycle artifact SHA drift fix across verify-findings/markdown files, v0.7.15) → cross-check #10
+- **m9-18** (vault hygiene: apply-checkpoint metadata drift fix — archived_at, findings_introduced, status normalization, v0.7.16) → cross-check #11
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class

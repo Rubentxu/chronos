@@ -2,7 +2,7 @@
   "cycle_id": "p-3416cfb8288f8964/m9-07-coup-01-invariant-assertion",
   "change": "m9-07-coup-01-invariant-assertion",
   "path": "B-direct",
-  "status": "closed",
+  "status": "CLOSED",
   "head_sha": "3edb01f0a17c3ac8877df1e7868d4e3cca374217",
   "base_sha": "aa96e5a51b5424a844f1f153d7ce719a53017119",
   "tag": "v0.7.5",
@@ -87,5 +87,8 @@
   "ledger_state": {
     "available": false,
     "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02..m9-06 pattern)"
+  },
+  "findings_introduced": {
+    "no_action": []
   }
 }

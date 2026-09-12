@@ -2,7 +2,7 @@
   "cycle_id": "p-3416cfb8288f8964/m9-05-side-table-overeng-cleanup",
   "change": "m9-05-side-table-overeng-cleanup",
   "path": "B-direct",
-  "status": "closed",
+  "status": "CLOSED",
   "head_sha": "07d01d5869ff6e3ffed29315b761e6e476f3b70d",
   "base_sha": "c9e541750e39458b2b28c5d19ad0ca11d0e73d5b",
   "tag": "v0.7.3",
@@ -86,5 +86,8 @@
   "ledger_state": {
     "available": false,
     "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02/m9-03/m9-04 pattern)"
+  },
+  "findings_introduced": {
+    "no_action": []
   }
 }

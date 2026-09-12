@@ -39,6 +39,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-15 | m9-15-m9-12-m9-13-short-sha | B-direct | `v0.7.13` | `2441f6f3c679555dc4106ea2e8a422ed407a26a0` | CLOSED |
 | m9-16 | m9-16-archive-manifest-short-and-fabricated-sha | B-direct | `v0.7.14` | `eb5110d` | CLOSED |
 | m9-17 | m9-17-verify-findings-and-markdown-sha-drift | B-direct | `v0.7.15` | `134dc75` | CLOSED |
+| m9-18 | m9-18-apply-checkpoint-metadata-drift | B-direct | `v0.7.16` | TBD | CLOSED |
 
 ## Metadata
 
@@ -46,5 +47,5 @@ Chronological record of all SDDK cycles for this project.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T10:29:00Z |
-| Total cycles | 33 |
+| Last updated | 2026-09-12T10:43:00Z |
+| Total cycles | 34 |

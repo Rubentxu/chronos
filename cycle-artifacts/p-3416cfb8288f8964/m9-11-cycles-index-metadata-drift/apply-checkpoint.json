@@ -13,7 +13,7 @@
   "route": "B-direct (T0 + light-verify)",
   "verified_at": "2026-09-12T08:25:00Z",
   "released_at": "2026-09-12T08:25:00Z",
-  "archived_at": null,
+  "archived_at": "2026-09-12T08:26:41Z",
   "commits_since_base": [
     "cd0115fix(m9-11): cycles/index.md Total cycles metadata drift (22→26) + add cross-check #5 to vault-drift-sweep procedure"
   ],

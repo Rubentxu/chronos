@@ -13,7 +13,7 @@
   "route": "B-direct (T0 + light-verify)",
   "verified_at": "2026-09-12T09:57:00Z",
   "released_at": "2026-09-12T09:57:00Z",
-  "archived_at": null,
+  "archived_at": "2026-09-12T09:59:02Z",
   "commits_since_base": [
     "26848cffix(m9-13): m9-11 change-entry Base SHA drift (cd0115f → 6120e98) + add cross-check #7 to vault-drift-sweep"
   ],

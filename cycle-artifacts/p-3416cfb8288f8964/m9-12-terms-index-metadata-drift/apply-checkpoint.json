@@ -13,7 +13,7 @@
   "route": "B-direct (T0 + light-verify)",
   "verified_at": "2026-09-12T08:54:00Z",
   "released_at": "2026-09-12T08:54:00Z",
-  "archived_at": null,
+  "archived_at": "2026-09-12T08:55:40Z",
   "commits_since_base": [
     "0012f12fix(m9-12): terms/index.md Last archive metadata drift (m9-10 → m9-11) + add cross-check #6 to vault-drift-sweep"
   ],

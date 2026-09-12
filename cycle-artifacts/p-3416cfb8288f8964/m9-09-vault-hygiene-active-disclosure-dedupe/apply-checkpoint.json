@@ -2,7 +2,7 @@
   "cycle_id": "p-3416cfb8288f8964/m9-09-vault-hygiene-active-disclosure-dedupe",
   "change": "m9-09-vault-hygiene-active-disclosure-dedupe",
   "path": "B-direct",
-  "status": "closed",
+  "status": "CLOSED",
   "head_sha": "07e731d61424160c4f67d769db00a171837ba62c",
   "base_sha": "c183ad1822423419ffb7d5f92a8d5ac46423d653",
   "tag": "v0.7.7",
@@ -102,5 +102,8 @@
   "ledger_state": {
     "available": false,
     "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02..m9-08 pattern)"
+  },
+  "findings_introduced": {
+    "no_action": []
   }
 }
