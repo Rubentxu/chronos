@@ -1,0 +1,51 @@
+{
+  "cycle_id": "p-3416cfb8288f8964/m9-18-apply-checkpoint-metadata-drift",
+  "change": "backfill archived_at for m9-11/12/13 apply-checkpoint.json + add findings_introduced to 7 prior cycles + normalize status (closed → CLOSED) + add cross-check #11 to vault-drift-sweep",
+  "path": "B-direct",
+  "status": "CLOSED",
+  "head_sha": "6dce3736df06d4fe09db861ad43a3667c0f0bc25",
+  "base_sha": "cc995cdd2cf41bd0638a548fc3db169763bfc38d",
+  "tag": "v0.7.16",
+  "remote_tag_peel": "6dce3736df06d4fe09db861ad43a3667c0f0bc25",
+  "main_sha": "6dce3736df06d4fe09db861ad43a3667c0f0bc25",
+  "peel_match": true,
+  "runtime_status": "doc-only; no runtime impact",
+  "route": "B-direct (T0 + light-verify)",
+  "verified_at": "2026-09-12T10:44:10Z",
+  "released_at": "2026-09-12T10:44:30Z",
+  "archived_at": "2026-09-12T10:44:45Z",
+  "commits_since_base": [
+    "6dce373fix(m9-18): apply-checkpoint metadata drift — archived_at backfill + findings_introduced + status normalization + cross-check #11"
+  ],
+  "artifacts": {
+    "merge_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-18-apply-checkpoint-metadata-drift/merge-receipt.md",
+    "release_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-18-apply-checkpoint-metadata-drift/release-receipt.md",
+    "release_report": "cycle-artifacts/p-3416cfb8288f8964/m9-18-apply-checkpoint-metadata-drift/release-report.md",
+    "verify_report": "cycle-artifacts/p-3416cfb8288f8964/m9-18-apply-checkpoint-metadata-drift/verify-report.md",
+    "verify_findings": "cycle-artifacts/p-3416cfb8288f8964/m9-18-apply-checkpoint-metadata-drift/verify-findings.json"
+  },
+  "findings_closed": [],
+  "findings_introduced": {
+    "no_action": []
+  },
+  "findings_remaining_m9_plus": [
+    "cc-001-god-module",
+    "cc-004-implicit-io-toctou",
+    "m9-02-R4 (feature: counterexample_bundle_events MCP tool)",
+    "schema-v1-verify-findings (m9-03, m9-04 use sddk.verify-finding/v1 schema with nested subject.head; accepted by design — pre-m9-11 docs-peel convention)"
+  ],
+  "notes": [
+    "m9-14 introduced the archived_at field but didn't backfill m9-11/12/13 apply-checkpoint.json. Backfill from first-commit-time of each cycle's archive-manifest: m9-11=08:26:41Z, m9-12=08:55:40Z, m9-13=09:59:02Z (UTC).",
+    "m9-09 introduced findings_introduced but m9-03, m9-05..m9-10 (7 cycles) were never updated. Add empty {no_action: []} to all 7.",
+    "m9-11+ uses uppercase 'CLOSED' for status. 8 pre-m9-11 cycles used lowercase 'closed'. Normalize all 8 to uppercase 'CLOSED'.",
+    "Adds cross-check #11 to vault-drift-sweep.md enforcing: status='CLOSED', archived_at not null when archive-manifest.md exists, findings_introduced present with no_action subfield.",
+    "T0 fmt+clippy clean. All 11 cross-checks clean post-fix."
+  ],
+  "next_cycle": null,
+  "next_cycle_path": null,
+  "next_cycle_target_findings": [],
+  "ledger_state": {
+    "available": false,
+    "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02..m9-17 pattern)"
+  }
+}
