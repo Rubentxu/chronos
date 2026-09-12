@@ -1,0 +1,50 @@
+{
+  "cycle_id": "p-3416cfb8288f8964/m9-16-archive-manifest-short-and-fabricated-sha",
+  "change": "expand archive-manifest.md Head SHA + cross-references for m9-11, m9-12, m9-13 to full 40-char SHAs; expand cycles/index.md m9-14 + m9-15 Published SHA to full 40-char; add cross-check #9 to vault-drift-sweep",
+  "path": "B-direct",
+  "status": "CLOSED",
+  "head_sha": "eb5110dfe1f1d14eab85e6052f1f7cbb86e2f384",
+  "base_sha": "68c528ec34adc1ef5c0e049b9ab83207d710bcb6",
+  "tag": "v0.7.14",
+  "remote_tag_peel": "eb5110dfe1f1d14eab85e6052f1f7cbb86e2f384",
+  "main_sha": "eb5110dfe1f1d14eab85e6052f1f7cbb86e2f384",
+  "peel_match": true,
+  "runtime_status": "doc-only; no runtime impact",
+  "route": "B-direct (T0 + light-verify)",
+  "verified_at": "2026-09-12T10:16:00Z",
+  "released_at": "2026-09-12T10:16:30Z",
+  "archived_at": "2026-09-12T10:16:45Z",
+  "commits_since_base": [
+    "eb5110dfix(m9-16): archive-manifest short/fabricated SHAs + add cross-check #9 to vault-drift-sweep"
+  ],
+  "artifacts": {
+    "merge_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-16-archive-manifest-short-and-fabricated-sha/merge-receipt.md",
+    "release_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-16-archive-manifest-short-and-fabricated-sha/release-receipt.md",
+    "release_report": "cycle-artifacts/p-3416cfb8288f8964/m9-16-archive-manifest-short-and-fabricated-sha/release-report.md",
+    "verify_report": "cycle-artifacts/p-3416cfb8288f8964/m9-16-archive-manifest-short-and-fabricated-sha/verify-report.md",
+    "verify_findings": "cycle-artifacts/p-3416cfb8288f8964/m9-16-archive-manifest-short-and-fabricated-sha/verify-findings.json"
+  },
+  "findings_closed": [],
+  "findings_introduced": {
+    "no_action": []
+  },
+  "findings_remaining_m9_plus": [
+    "cc-001-god-module",
+    "cc-004-implicit-io-toctou",
+    "m9-02-R4 (feature: counterexample_bundle_events MCP tool)"
+  ],
+  "notes": [
+    "m9-14 (v0.7.12) fixed m9-11 apply-checkpoint.json fabricated SHA (cd0115f8c93bddcae06e5a57f4e7e91d3a4fbb33) but missed the corresponding archive-manifest.md which still had the same fabricated value.",
+    "m9-15 (v0.7.13) fixed m9-12 + m9-13 apply-checkpoint.json short SHAs but missed their archive-manifest.md files. Plus m9-12 archive-manifest cross-referenced m9-11's fabricated SHA in its Previous-cycles table.",
+    "m9-16 expands Head SHA in m9-11, m9-12, m9-13 archive-manifest.md to full 40-char SHAs, expands cross-references in m9-12 + m9-13 Previous-cycles tables, and expands cycles/index.md m9-14 + m9-15 Published SHA to full 40-char (they were authored short in this session for format consistency with prior cycles, but inconsistent with the now-tightened format).",
+    "Adds cross-check #9 to vault-drift-sweep.md: archive-manifest.md Head SHA + cross-references must be 40-char. C3 covers apply-checkpoint.json; C9 covers archive-manifest.md. Both are needed because they can drift independently.",
+    "T0 fmt+clippy clean (doc-only, no Rust touched). All 9 cross-checks clean post-fix."
+  ],
+  "next_cycle": null,
+  "next_cycle_path": null,
+  "next_cycle_target_findings": [],
+  "ledger_state": {
+    "available": false,
+    "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02..m9-15 pattern)"
+  }
+}

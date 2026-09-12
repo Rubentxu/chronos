@@ -214,10 +214,12 @@ the change-entry to match the apply-checkpoint.
 `base_sha = 6120e98` (the parent of the fix). m9-13 catches this
 drift and adds cross-check #7 to prevent recurrence.
 
-### 8. apply-checkpoint.json SHA fields exist in the repository (closed by m9-14)
+### 8. apply-checkpoint.json + archive-manifest.md SHA fields exist in the repository (closed by m9-14; extended m9-16)
 
 ```python
-import json, os, subprocess
+import json, os, re, subprocess, glob
+
+# Part A: apply-checkpoint.json SHA fields
 for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
     ckpt = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/apply-checkpoint.json'
     if not os.path.exists(ckpt):
@@ -233,7 +235,28 @@ for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
                 stderr=subprocess.DEVNULL,
             )
         except subprocess.CalledProcessError:
-            print(f"DRIFT: {folder}: {field}={v} does not exist in repository")
+            print(f"DRIFT: apply-checkpoint {folder}: {field}={v} does not exist in repository")
+
+# Part B: archive-manifest.md Head SHA fields (only enforced for m9-11+ where the convention was introduced)
+for manifest in sorted(glob.glob('.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-*/archive-manifest.md')):
+    # Only m9-11 and later use the | Head SHA | format; older cycles used | Published SHA |
+    folder = os.path.basename(os.path.dirname(manifest))
+    if folder < 'm9-11':
+        continue
+    with open(manifest) as f:
+        content = f.read()
+    m = re.search(r'\| Head SHA \| `([a-f0-9]+)` \|', content)
+    if not m:
+        print(f"DRIFT: {manifest}: no Head SHA field found")
+        continue
+    v = m.group(1)
+    try:
+        subprocess.check_output(
+            ['git', 'cat-file', '-e', v],
+            stderr=subprocess.DEVNULL,
+        )
+    except subprocess.CalledProcessError:
+        print(f"DRIFT: {manifest}: Head SHA {v} does not exist in repository")
 ```
 
 **Expected output (clean):** empty.

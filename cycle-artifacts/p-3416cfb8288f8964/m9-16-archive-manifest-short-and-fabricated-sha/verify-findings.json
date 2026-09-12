@@ -1,0 +1,26 @@
+{
+  "findings": [],
+  "lens_summary": {
+    "spec-compliance": 0,
+    "test-quality": 0,
+    "vault-hygiene": 0,
+    "documentation-discipline": 0
+  },
+  "verdict": "PASS",
+  "subject_sha": "eb5110dfe1f1d14eab85e6052f1f7cbb86e2f384",
+  "evidence": {
+    "vault_drift_sweep_checks": {
+      "check_1_id_uniqueness": "empty",
+      "check_2_findings_closed_vs_terminated": "clean (m8-04-R4 + m8-07-R2 are pre-reorg expected)",
+      "check_3_apply_checkpoint_vs_tag_consistency": "empty (TIGHTENED: requires head==peel, match=True, len(peel)==40)",
+      "check_4_sha256_archive_manifest_artifact_index": "empty",
+      "check_5_cycles_index_metadata_consistency": "OK: 32 == 32",
+      "check_6_terms_index_last_archive_consistency": "OK: m9-16 == m9-16",
+      "check_7_change_entry_sha_consistency": "empty (all change-entries consistent)",
+      "check_8_apply_checkpoint_sha_exists_in_repo": "empty (all SHAs valid in repo)",
+      "check_9_archive_manifest_sha_40char": "empty (NEW; all archive-manifests have 40-char Head SHA + cross-refs)"
+    },
+    "t0_lint": "0 warnings, 0 diffs (14 crates)",
+    "diff_size": "52 +, 17 - across 6 doc files"
+  }
+}

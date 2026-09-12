@@ -37,7 +37,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-13 | m9-13-change-entry-base-sha-drift | B-direct | `v0.7.11` | `26848cf8b26340d3fde99a3a7f398f2873943982` | CLOSED |
 | m9-14 | m9-14-m9-11-fabricated-sha | B-direct | `v0.7.12` | `38699061891b76f90ef316914d3ba15d6eb53f83` | CLOSED |
 | m9-15 | m9-15-m9-12-m9-13-short-sha | B-direct | `v0.7.13` | `2441f6f3c679555dc4106ea2e8a422ed407a26a0` | CLOSED |
-| m9-16 | m9-16-archive-manifest-short-and-fabricated-sha | B-direct | `v0.7.14` | TBD | CLOSED |
+| m9-16 | m9-16-archive-manifest-short-and-fabricated-sha | B-direct | `v0.7.14` | `eb5110d` | CLOSED |
 
 ## Metadata
 
