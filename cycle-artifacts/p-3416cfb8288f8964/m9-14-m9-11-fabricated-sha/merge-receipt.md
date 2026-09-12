@@ -6,7 +6,7 @@
 | Path | B-direct |
 | Branch | `fix/m9-14-m9-11-fabricated-sha` |
 | Base SHA | `c4f1237` (main @ start of cycle) |
-| Head SHA | `3869906` |
+| Head SHA | `38699061891b76f90ef316914d3ba15d6eb53f83` |
 | Tag | `v0.7.12` |
 | Status | MERGED |
 
@@ -14,7 +14,7 @@
 
 | SHA | Subject |
 |---|---|
-| `3869906` | fix(m9-14): m9-11 apply-checkpoint fabricated SHA + add cross-check #8 to vault-drift-sweep |
+| `38699061891b76f90ef316914d3ba15d6eb53f83` | fix(m9-14): m9-11 apply-checkpoint fabricated SHA + add cross-check #8 to vault-drift-sweep |
 
 ## What was fixed
 

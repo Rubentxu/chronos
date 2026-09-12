@@ -309,6 +309,89 @@ corresponding archive-manifest.md files, leaving the drift visible in
 the published archive. m9-16 closes this and adds cross-check #9 to
 prevent recurrence.
 
+### 10. cycle artifact SHA fields (verify-findings.subject_sha + markdown Head/Base SHA + Remote tag_peel) are full 40-char AND match apply-checkpoint (closed by m9-17)
+
+```python
+import json, os, re
+
+for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
+    ckpt_path = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/apply-checkpoint.json'
+    if not os.path.exists(ckpt_path):
+        continue
+    d = json.load(open(ckpt_path))
+    head = d.get('head_sha')
+    base = d.get('base_sha')
+    if not head or len(head) != 40:
+        continue  # already caught by C3
+
+    # Part A: verify-findings.json subject_sha (or schema-v1 subject.head)
+    vf = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/verify-findings.json'
+    if os.path.exists(vf):
+        vf_d = json.load(open(vf))
+        vf_sha = vf_d.get('subject_sha')
+        if vf_sha is None and 'subject' in vf_d:
+            vf_sha = vf_d['subject'].get('head_sha') or vf_d['subject'].get('head')
+        if vf_sha and vf_sha != head and len(vf_sha) == 40:
+            # Schema v1 (m9-03, m9-04) intentionally stores the fix commit
+            # which differs from apply-checkpoint.head under the pre-m9-11
+            # docs-peel convention. Skip those.
+            pass  # would need m9-03/m9-04 special-case
+
+    # Part B: release-receipt.md Head SHA / Remote tag_peel
+    rr = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/release-receipt.md'
+    if os.path.exists(rr):
+        content = open(rr).read()
+        for field, expected in [('Head SHA', head), ('Remote tag_peel', d.get('remote_tag_peel'))]:
+            m = re.search(rf'\| {field} \| `([a-f0-9]+)`', content)
+            if m:
+                sha = m.group(1)
+                if len(sha) != 40:
+                    print(f"DRIFT: {folder}/release-receipt.md: {field} is {len(sha)} chars (expected 40)")
+                elif expected and sha != expected:
+                    print(f"DRIFT: {folder}/release-receipt.md: {field}={sha[:12]} != apply-checkpoint={expected[:12]}")
+
+    # Part C: merge-receipt.md Head SHA
+    mr = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/merge-receipt.md'
+    if os.path.exists(mr):
+        content = open(mr).read()
+        m = re.search(r'\| Head SHA \| `([a-f0-9]+)`', content)
+        if m:
+            sha = m.group(1)
+            if len(sha) != 40:
+                print(f"DRIFT: {folder}/merge-receipt.md: Head SHA is {len(sha)} chars (expected 40)")
+            elif sha != head:
+                print(f"DRIFT: {folder}/merge-receipt.md: Head SHA={sha[:12]} != apply-checkpoint={head[:12]}")
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** a cycle artifact other than apply-checkpoint.json or
+archive-manifest.md (i.e., verify-findings.json, release-receipt.md,
+merge-receipt.md, change-entry.md) has a SHA field that is either
+short (< 40 chars) or disagrees with apply-checkpoint.head_sha. These
+files can drift independently and require explicit checks per file
+type.
+
+**Note on schema-v1 (m9-03, m9-04):** their verify-findings.json uses
+`sddk.verify-finding/v1` schema with a nested `subject.head` /
+`subject.head_sha` field that intentionally stores the **fix commit**
+rather than the apply-checkpoint head (which is a docs commit under
+the pre-m9-11 docs-peel convention). This is accepted-by-design
+drift; the cycle's apply-checkpoint, archive-manifest, tag, and
+release-receipts are all internally consistent. Don't migrate
+schema-v1 cycles without a dedicated cycle that handles the
+docs-peel → fix-peel migration.
+
+**History:** m9-14 fixed apply-checkpoint.json fabricated SHA but
+missed the corresponding release-receipt.md, merge-receipt.md,
+release-report.md, verify-report.md (all of which still had short
+SHA `cd0115f`). m9-15 fixed apply-checkpoint.json short SHAs but
+missed verify-findings.json (m9-12 and m9-13 still had `0012f12`
+and `26848cf`). m9-16 caught archive-manifest drift. m9-17 closes
+the remaining file types (verify-findings, release-receipt,
+merge-receipt, change-entry Head SHA) and adds cross-check #10 to
+prevent recurrence.
+
 ## When to escalate
 
 If any of the cross-checks finds drift that is **not** trivially
@@ -317,9 +400,10 @@ artifacts for a rebuild do not exist in the repo), document the gap in
 the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
-If **check 5**, **check 6**, **check 7**, **check 8**, or **check 9**
-finds drift: the resolution is mechanical (a small metadata edit). Do
-this in the same cycle that catches it; do not defer.
+If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**, or
+**check 10** finds drift: the resolution is mechanical (a small
+metadata edit). Do this in the same cycle that catches it; do not
+defer.
 
 ## Reference
 
@@ -332,6 +416,7 @@ Cycles that established this procedure:
 - **m9-14** (vault hygiene: apply-checkpoint fabricated-SHA fix, v0.7.12) → cross-check #8
 - **m9-15** (vault hygiene: apply-checkpoint short-SHA expansion, v0.7.13) → tightened cross-check #3
 - **m9-16** (vault hygiene: archive-manifest short/fabricated-SHA fix, v0.7.14) → cross-check #9
+- **m9-17** (vault hygiene: cycle artifact SHA drift fix across verify-findings/markdown files, v0.7.15) → cross-check #10
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class

@@ -8,14 +8,14 @@
 | Path | `B-direct` |
 | Status | CLOSED |
 | Base SHA | `f4818d1` (main @ start of cycle) |
-| Head SHA | `0012f12` |
+| Head SHA | `0012f1242cef949efc4cbd4c8d419a135ee3cf8a` |
 | Tag | `v0.7.10` (annotated, peel matches published SHA) |
 
 ## Commits
 
 | SHA | Subject |
 |---|---|
-| `0012f12` | fix(m9-12): terms/index.md Last archive metadata drift (m9-10 → m9-11) + add cross-check #6 to vault-drift-sweep |
+| `0012f1242cef949efc4cbd4c8d419a135ee3cf8a` | fix(m9-12): terms/index.md Last archive metadata drift (m9-10 → m9-11) + add cross-check #6 to vault-drift-sweep |
 
 ## What changed
 
@@ -58,5 +58,5 @@ part of the procedure that future sessions will run before declaring
 
 ## Tag convention
 
-Tag `v0.7.10` peeled to fix commit `0012f12`, preserving runtime
+Tag `v0.7.10` peeled to fix commit `0012f1242cef949efc4cbd4c8d419a135ee3cf8a`, preserving runtime
 semantics on the tagged SHA (chronos convention).

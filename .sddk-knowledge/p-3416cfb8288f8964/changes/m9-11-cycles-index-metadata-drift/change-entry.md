@@ -8,14 +8,14 @@
 | Path | `B-direct` |
 | Status | CLOSED |
 | Base SHA | `6120e98` (parent of fix commit, main HEAD before m9-11) |
-| Head SHA | `cd0115f` |
+| Head SHA | `cd0115fd8f942058cde109c72a975cab7ea7473c` |
 | Tag | `v0.7.9` (annotated, peel matches published SHA) |
 
 ## Commits
 
 | SHA | Subject |
 |---|---|
-| `cd0115f` | fix(m9-11): cycles/index.md Total cycles metadata drift (22→26) + add cross-check #5 to vault-drift-sweep procedure |
+| `cd0115fd8f942058cde109c72a975cab7ea7473c` | fix(m9-11): cycles/index.md Total cycles metadata drift (22→26) + add cross-check #5 to vault-drift-sweep procedure |
 
 ## What changed
 
@@ -55,5 +55,5 @@ of the procedure that future sessions will run before declaring
 
 ## Tag convention
 
-Tag `v0.7.9` peeled to fix commit `cd0115f`, preserving runtime semantics
+Tag `v0.7.9` peeled to fix commit `cd0115fd8f942058cde109c72a975cab7ea7473c`, preserving runtime semantics
 on the tagged SHA (chronos convention).

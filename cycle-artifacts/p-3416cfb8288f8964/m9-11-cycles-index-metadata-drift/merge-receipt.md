@@ -6,7 +6,7 @@
 | Path | B-direct |
 | Branch | `fix/m9-11-cycles-index-metadata-drift` |
 | Base SHA | `6120e98` (main @ start of cycle) |
-| Head SHA | `cd0115f` |
+| Head SHA | `cd0115fd8f942058cde109c72a975cab7ea7473c` |
 | Tag | `v0.7.9` |
 | Status | MERGED |
 
@@ -14,7 +14,7 @@
 
 | SHA | Subject |
 |---|---|
-| `cd0115f` | fix(m9-11): cycles/index.md Total cycles metadata drift (22→26) + add cross-check #5 to vault-drift-sweep procedure |
+| `cd0115fd8f942058cde109c72a975cab7ea7473c` | fix(m9-11): cycles/index.md Total cycles metadata drift (22→26) + add cross-check #5 to vault-drift-sweep procedure |
 
 ## What was fixed
 

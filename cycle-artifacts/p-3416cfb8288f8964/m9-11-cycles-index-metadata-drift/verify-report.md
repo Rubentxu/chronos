@@ -3,7 +3,7 @@
 ## Subject
 
 `v0.7.9` on `fix/m9-11-cycles-index-metadata-drift` (peel matches
-`cd0115f`).
+`cd0115fd8f942058cde109c72a975cab7ea7473c`).
 
 ## Verification gates
 
@@ -38,8 +38,8 @@ Output: `Finished 'dev' profile [unoptimized + debuginfo] target(s) in 2m 42s`
 ### R3 (PASS): Cycle structure
 
 - Branch: `fix/m9-11-cycles-index-metadata-drift` (off main @ `6120e98`)
-- Head: `cd0115f`
-- Tag: `v0.7.9` peeled to fix commit `cd0115f` (matches publish SHA)
+- Head: `cd0115fd8f942058cde109c72a975cab7ea7473c`
+- Tag: `v0.7.9` peeled to fix commit `cd0115fd8f942058cde109c72a975cab7ea7473c` (matches publish SHA)
 - Diff: 30 +/8 - across 2 doc files; no production code touched
 - Receipts present in `cycle-artifacts/p-3416cfb8288f8964/m9-11-cycles-index-metadata-drift/`
 
@@ -56,7 +56,7 @@ Output: `Finished 'dev' profile [unoptimized + debuginfo] target(s) in 2m 42s`
 **PASS**
 
 Reason tied to mandatory gates:
-- `subject_identity`: PASS — clean tree, HEAD pinned at `cd0115f`.
+- `subject_identity`: PASS — clean tree, HEAD pinned at `cd0115fd8f942058cde109c72a975cab7ea7473c`.
 - `behavioral_compliance`: PASS — the fix matches the documented
   remediation (bump metadata field, update procedure).
 - `real_implementation`: PASS — no stubs or mocks; both files

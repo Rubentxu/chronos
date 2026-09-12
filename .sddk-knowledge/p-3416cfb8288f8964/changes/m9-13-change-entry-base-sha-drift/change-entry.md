@@ -8,19 +8,19 @@
 | Path | `B-direct` |
 | Status | CLOSED |
 | Base SHA | `bfb9ede` (main @ start of cycle) |
-| Head SHA | `26848cf` |
+| Head SHA | `26848cf8b26340d3fde99a3a7f398f2873943982` |
 | Tag | `v0.7.11` (annotated, peel matches published SHA) |
 
 ## Commits
 
 | SHA | Subject |
 |---|---|
-| `26848cf` | fix(m9-13): m9-11 change-entry Base SHA drift (cd0115f → 6120e98) + add cross-check #7 to vault-drift-sweep |
+| `26848cf8b26340d3fde99a3a7f398f2873943982` | fix(m9-13): m9-11 change-entry Base SHA drift (cd0115f → 6120e98) + add cross-check #7 to vault-drift-sweep |
 
 ## What changed
 
 - `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-11-cycles-index-metadata-drift/change-entry.md`:
-  `Base SHA` field corrected from `cd0115f` (the fix commit, wrong)
+  `Base SHA` field corrected from `cd0115f` (the short-prefix that pointed at the fix commit, wrong)
   to `6120e98` (the parent of the fix, main HEAD before m9-11).
 - `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`:
   added **cross-check #7** (change-entry Head/Base SHA ↔ apply-checkpoint
@@ -51,5 +51,5 @@ of the corresponding apply-checkpoint SHA fields.
 
 ## Tag convention
 
-Tag `v0.7.11` peeled to fix commit `26848cf`, preserving runtime
+Tag `v0.7.11` peeled to fix commit `26848cf8b26340d3fde99a3a7f398f2873943982`, preserving runtime
 semantics on the tagged SHA (chronos convention).

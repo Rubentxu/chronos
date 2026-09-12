@@ -36,7 +36,7 @@ required.
 
 ## Tag convention
 
-Per chronos convention: tag peeled to the **fix commit** (`3869906`),
+Per chronos convention: tag peeled to the **fix commit** (`38699061891b76f90ef316914d3ba15d6eb53f83`),
 keeping runtime semantics on the tagged SHA.
 
 ## Findings

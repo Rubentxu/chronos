@@ -35,4 +35,4 @@ No findings introduced or closed. This is a hygiene cycle.
 
 ## Verdict
 
-**RELEASED** at tag `v0.7.9`, head SHA `cd0115f`.
+**RELEASED** at tag `v0.7.9`, head SHA `cd0115fd8f942058cde109c72a975cab7ea7473c`.

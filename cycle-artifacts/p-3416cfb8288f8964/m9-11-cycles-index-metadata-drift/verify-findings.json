@@ -7,7 +7,7 @@
     "documentation-discipline": 0
   },
   "verdict": "PASS",
-  "subject_sha": "cd0115f8c93bddcae06e5a57f4e7e91d3a4fbb33",
+  "subject_sha": "cd0115fd8f942058cde109c72a975cab7ea7473c",
   "evidence": {
     "vault_drift_sweep_checks": {
       "check_1_id_uniqueness": "empty",
