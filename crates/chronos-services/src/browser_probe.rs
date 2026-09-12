@@ -198,11 +198,9 @@ impl BrowserProbeService {
         let browser_probe = browser_probe
             .ok_or_else(|| ServiceError::BrowserProbeNotFound(input.session_id.clone()))?;
 
-        let events: Vec<TraceEvent> = browser_probe.adapter.drain_raw_events();
-        let total_events = events.len();
-        let language = Language::WebAssembly;
-        let url = browser_probe.url.clone();
-
+        // MS-RACE-FIX (ADR-0005): stop FIRST, then drain. BrowserAdapter::stop_probe
+        // blocks until the WASM task has finished, so draining afterwards observes
+        // every event (no concurrent producer).
         if let Err(e) = browser_probe.adapter.stop_probe(&browser_probe.session) {
             tracing::warn!(
                 "Browser probe stop error for session {}: {}",
@@ -210,6 +208,11 @@ impl BrowserProbeService {
                 e
             );
         }
+
+        let events: Vec<TraceEvent> = browser_probe.adapter.drain_raw_events();
+        let total_events = events.len();
+        let language = Language::WebAssembly;
+        let url = browser_probe.url.clone();
 
         info!(
             "Browser probe stopped for '{}' (session: {}, events: {})",
