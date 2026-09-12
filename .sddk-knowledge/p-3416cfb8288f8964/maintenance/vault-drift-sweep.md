@@ -208,6 +208,46 @@ the change-entry to match the apply-checkpoint.
 `base_sha = 6120e98` (the parent of the fix). m9-13 catches this
 drift and adds cross-check #7 to prevent recurrence.
 
+### 8. apply-checkpoint.json SHA fields exist in the repository (closed by m9-14)
+
+```python
+import json, os, subprocess
+for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
+    ckpt = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/apply-checkpoint.json'
+    if not os.path.exists(ckpt):
+        continue
+    d = json.load(open(ckpt))
+    for field in ['head_sha', 'base_sha', 'main_sha', 'remote_tag_peel']:
+        v = d.get(field)
+        if not v:
+            continue
+        try:
+            subprocess.check_output(
+                ['git', 'cat-file', '-e', v],
+                stderr=subprocess.DEVNULL,
+            )
+        except subprocess.CalledProcessError:
+            print(f"DRIFT: {folder}: {field}={v} does not exist in repository")
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** an SHA in the apply-checkpoint is not a real commit in
+the repository. This is a fabrication error: the agent writing the
+checkpoint guessed an SHA instead of looking it up via
+`git rev-list -n 1 <short-sha>` or `git rev-parse <ref>`. The fix is
+mechanical: replace the fabricated SHA with the real one, then verify
+`peel_match` is still correct by re-checking the tag.
+
+**History:** m9-11's `apply-checkpoint.json` was written with
+`head_sha = cd0115f8c93bddcae06e5a57f4e7e91d3a4fbb33` — a 40-character
+hex string that looks plausible but does not exist in the repository.
+The real m9-11 fix commit is `cd0115fd8f942058cde109c72a975cab7ea7473c`
+(verified via `git rev-list -n 1 cd0115f`). m9-14 catches this and adds
+cross-check #8 to prevent recurrence. Note that `peel_match: true` in
+m9-11 was also a lie: `remote_tag_peel` did not equal the actual tag
+peel; the corrected values match `git rev-list -n 1 v0.7.9`.
+
 ## When to escalate
 
 If any of the cross-checks finds drift that is **not** trivially
@@ -216,9 +256,9 @@ artifacts for a rebuild do not exist in the repo), document the gap in
 the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
-If **check 5**, **check 6**, or **check 7** finds drift: the resolution
-is mechanical (a small metadata edit). Do this in the same cycle that
-catches it; do not defer.
+If **check 5**, **check 6**, **check 7**, or **check 8** finds drift: the
+resolution is mechanical (a small metadata edit). Do this in the same
+cycle that catches it; do not defer.
 
 ## Reference
 
@@ -228,6 +268,7 @@ Cycles that established this procedure:
 - **m9-11** (vault hygiene: cycles/index.md metadata drift fix, v0.7.9) → cross-check #5
 - **m9-12** (vault hygiene: terms/index.md "Last archive" drift fix, v0.7.10) → cross-check #6
 - **m9-13** (vault hygiene: change-entry SHA drift fix, v0.7.11) → cross-check #7
+- **m9-14** (vault hygiene: apply-checkpoint fabricated-SHA fix, v0.7.12) → cross-check #8
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class
