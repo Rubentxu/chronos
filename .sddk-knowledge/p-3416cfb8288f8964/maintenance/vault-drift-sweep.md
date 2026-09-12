@@ -48,10 +48,17 @@ for folder in os.listdir('cycle-artifacts/p-3416cfb8288f8964/'):
         continue
     d = json.load(open(ckpt))
     for fid in d.get('findings_closed', []):
-        closed.add(fid)
+        # findings_closed entries can be strings or dicts
+        if isinstance(fid, str):
+            closed.add(fid)
+        elif isinstance(fid, dict):
+            closed.add(fid.get('finding_id', ''))
     # findings_introduced.no_action counts as closed by no-action
     for fid in d.get('findings_introduced', {}).get('no_action', []):
-        closed.add(fid)
+        if isinstance(fid, str):
+            closed.add(fid)
+        elif isinstance(fid, dict):
+            closed.add(fid.get('finding_id', ''))
 
 # Collect terminated IDs from terms/index.md
 terminated = set()
@@ -62,7 +69,8 @@ with open('.sddk-knowledge/p-3416cfb8288f8964/terms/index.md') as f:
         if line.startswith('## '): in_section = False; continue
         if in_section and line.startswith('|'):
             cols = [c.strip() for c in line.split('|')]
-            if len(cols) > 2 and cols[1] and cols[1] != 'ID':
+            # Skip separator rows and header
+            if len(cols) > 2 and cols[1] and cols[1] != 'ID' and not cols[1].startswith('---'):
                 terminated.add(cols[1])
 
 # Report
@@ -1762,10 +1770,20 @@ index = open('.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md').read()
 total_m = re.search(r'Total cycles \| (\d+)', index)
 if total_m:
     expected = int(total_m.group(1))
-    actual = (len([f for f in os.listdir('cycle-artifacts')
-                    if f.startswith('m9-') and os.path.isdir(f'cycle-artifacts/{f}')]) +
-              len([f for f in os.listdir('cycle-artifacts/p-3416cfb8288f8964')
-                    if f.startswith('m9-') and os.path.isdir(f'cycle-artifacts/p-3416cfb8288f8964/{f}')]))
+    # Cycles live in 3 places:
+    #  - cycle-artifacts/m9-NN-* legacy (m9-01, m9-02)
+    #  - cycle-artifacts/p-3416cfb8288f8964/m9-NN-*
+    #  - .sddk-knowledge/p-3416cfb8288f8964/changes/m9-NN-* (knowledge-only, e.g. m9-54)
+    actual = (
+        len([f for f in os.listdir('cycle-artifacts')
+             if f.startswith('m9-') and os.path.isdir(f'cycle-artifacts/{f}')]) +
+        len([f for f in os.listdir('cycle-artifacts/p-3416cfb8288f8964')
+             if f.startswith('m9-') and os.path.isdir(f'cycle-artifacts/p-3416cfb8288f8964/{f}')]) +
+        len([f for f in os.listdir('.sddk-knowledge/p-3416cfb8288f8964/changes')
+             if f.startswith('m9-') and os.path.isdir(f'.sddk-knowledge/p-3416cfb8288f8964/changes/{f}')
+             and not os.path.isdir(f'cycle-artifacts/{f}')
+             and not os.path.isdir(f'cycle-artifacts/p-3416cfb8288f8964/{f}')])
+    )
     if expected != actual:
         errors += 1
         print(f"DRIFT C: index says {expected}, actual {actual}")
@@ -1897,17 +1915,19 @@ for rr in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/release-rece
         errors += 1
         print(f"DRIFT A: {folder}: peel {stored_peel[:8]} != current {current_peel[:8]}")
 
-# Part B: cycles/index.md Last updated within last hour
-import time
+# Part B: cycles/index.md Last updated exists
 ci = open('.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md').read()
 m = re.search(r'Last updated \| (\S+)', ci)
-if m:
-    # Skip freshness check - just check it exists
+if not m:
+    errors += 1
+    print(f"DRIFT B: cycles/index.md missing 'Last updated' field")
 
-# Part C: terms/index.md Last updated within last hour
+# Part C: terms/index.md Last updated exists
 ti = open('.sddk-knowledge/p-3416cfb8288f8964/terms/index.md').read()
 m = re.search(r'Last updated \| (\S+)', ti)
-# Similarly skip freshness check
+if not m:
+    errors += 1
+    print(f"DRIFT C: terms/index.md missing 'Last updated' field")
 
 print(f'Total: {errors}')
 ```

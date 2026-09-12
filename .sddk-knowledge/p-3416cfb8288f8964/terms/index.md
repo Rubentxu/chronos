@@ -68,11 +68,12 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 | FIND-M9-01-DV-COUP-01 | m9-01 | Duplicated version envelopes: `schema_version` on record + summary, no loader equality check | m9-07-coup-01-invariant-assertion (`v0.7.5`) |
 | FIND-M9-01-DV-COUP-02 | m9-01 | List/load policy asymmetry: hard-reject on load vs best-effort include on list | m9-08-list-load-schema-error-variant (`v0.7.6`) |
 
+| FIND-M9-55-FABRICATED-BASE-SHA | m9-38 | apply-checkpoint.json base_sha referenced a non-existent commit (fabricated) | m9-55-apply-checkpoint-fabricated-sha (`v0.7.53`) |
 ## Metadata
 
 | Campo | Valor |
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T19:29:29Z |
+| Last updated | 2026-09-12T19:34:19Z |
 | Last archive | m9-33-change-entry-title-format-normalize |

@@ -29,7 +29,9 @@ Files changed (7 m9-38 artifacts):
 
 ## Findings
 
-- **FIND-M9-55-FABRICATED-BASE-SHA** (high): m9-38 base_sha was non-existent SHA. Pre-existing drift missed by 45 prior sweeps. Detection: `git cat-file -e <base_sha>` for every apply-checkpoint base_sha; m9-38 fail. m9-35, m9-36, m9-38, etc. previously added cross-checks for `format` and `consistency` but not `existence`. Cross-check #47 added by m9-55 covers existence.
+| ID | Severity | Category | Description | Status |
+|---|---|---|---|---|
+| F1 | high | vault_hygiene.sha_fabrication | m9-38 apply-checkpoint.json base_sha referenced a non-existent commit. Replaced with the real parent-of-head in the cycle branch. Cross-check #47 added by m9-55 to validate SHA reachability. | RESOLVED |
 
 ## Files Inventory
 

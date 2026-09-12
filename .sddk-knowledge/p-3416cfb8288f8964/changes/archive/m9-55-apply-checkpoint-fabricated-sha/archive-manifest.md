@@ -6,13 +6,13 @@
 |---|---|
 | Cycle | m9-55-apply-checkpoint-fabricated-sha |
 | Base SHA | `cbb93847228a9062de8e093dfe452c257233228c` |
-| Head SHA | `f6733fdfe38b3c405dc74c9e92450b2976957153` |
+| Head SHA | `6ca0afddccb018c0d66bfbb35fa44dbc58ec2db4` |
 | Path | B-direct |
 | Date | 2026-09-12T17:27Z |
 | Branch | `fix/m9-55-apply-checkpoint-fabricated-sha` |
 | Tag | `v0.7.53` |
-| Tag peel SHA | `f6733fdfe38b3c405dc74c9e92450b2976957153` |
-| Peel match | `f6733fdfe38b3c405dc74c9e92450b2976957153` |
+| Tag peel SHA | `6ca0afddccb018c0d66bfbb35fa44dbc58ec2db4` |
+| Peel match | `6ca0afddccb018c0d66bfbb35fa44dbc58ec2db4` |
 | Status | CLOSED |
 
 ## Evidence bindings
@@ -20,8 +20,8 @@
 - **`apply-checkpoint.json`**: `cycle-artifacts/p-3416cfb8288f8964/m9-55-*/apply-checkpoint.json` — `status: CLOSED`, `verify_status: passed`, `release_status: released`, `archive_status: archived`, `findings_closed: [FIND-M9-55-FABRICATED-BASE-SHA]`
 - **`verify-findings.json`**: 1 finding (FIND-M9-55-FABRICATED-BASE-SHA), verdict `passed`
 - **`verify-report.md`**: Subject table, Findings section, Files Inventory (15 lines), Cross-checks (#47), Verification (4 rows), History
-- **`merge-receipt.md`**: `Base SHA | cbb9384…`, `Head SHA | f6733fdfe38b3c405dc74c9e92450b2976957153`
-- **`release-receipt.md`**: `Remote tag | v0.7.53`, `Peel match | f6733fdfe38b3c405dc74c9e92450b2976957153`
+- **`merge-receipt.md`**: `Base SHA | cbb9384…`, `Head SHA | 6ca0afddccb018c0d66bfbb35fa44dbc58ec2db4`
+- **`release-receipt.md`**: `Remote tag | v0.7.53`, `Peel match | 6ca0afddccb018c0d66bfbb35fa44dbc58ec2db4`
 - **`release-report.md`**: `# m9-55: Apply-checkpoint base_sha fabrication fix`, Path B-direct, Subject, Files (13 changed), Cross-checks (#47)
 
 ## Tangential modifications
