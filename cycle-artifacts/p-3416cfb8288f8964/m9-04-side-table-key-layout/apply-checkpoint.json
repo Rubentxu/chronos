@@ -1,0 +1,109 @@
+{
+  "cycle_id": "p-3416cfb8288f8964/m9-04-side-table-key-layout",
+  "change": "m9-04-side-table-key-layout",
+  "path": "A-min",
+  "status": "closed",
+  "head_sha": "d6b3b8c51c50d2ce6d0fe4f8c804cf793137f0dc",
+  "base_sha": "eb2cccd6fdfcd4b00bf980453bc40c606fa69885",
+  "tag": "v0.7.2",
+  "remote_tag_peel": "d6b3b8c51c50d2ce6d0fe4f8c804cf793137f0dc",
+  "main_sha": "d6b3b8c51c50d2ce6d0fe4f8c804cf793137f0dc",
+  "peel_match": true,
+  "runtime_status": "RELEASED",
+  "route": "local",
+  "verified_at": "2026-09-12T01:21:00Z",
+  "released_at": "2026-09-12T08:21:00Z",
+  "archived_at": "2026-09-12T08:21:50Z",
+  "commits_since_base": [
+    "083f5badocs(m9-04): scoping — side-table key layout (range-scan friendly, v3 schema)",
+    "6ec8757docs(m9-04): spec — side-table key layout (range-scan friendly)",
+    "140d53adocs(m9-04): design — side-table v3 key layout (range-scan friendly)",
+    "7f86a1cfeat(m9-04): side-table key layout v3 (blake3 prefix, 20-byte fixed keys)",
+    "379759em9-04 side-table-key-layout: fix verify failures, add CLI replay integration tests",
+    "d6b3b8cverify(m9-04): PASS — remediation resolved all 6 prior findings"
+  ],
+  "artifacts": {
+    "scoping": "docs/milestones/m9-04-side-table-key-layout-scoping.md",
+    "spec": "docs/milestones/m9-04-side-table-key-layout-spec.md",
+    "design": "docs/milestones/m9-04-side-table-key-layout-design.md",
+    "merge_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/merge-receipt.md",
+    "release_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/release-receipt.md",
+    "release_report": "cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/release-report.md",
+    "verify_report": "cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/verify-report.md",
+    "verify_findings": "cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/verify-findings.json",
+    "change_entry": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-04-side-table-key-layout/change-entry.md",
+    "archive_manifest": ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-04-side-table-key-layout/archive-manifest.md"
+  },
+  "findings_closed": [
+    "FIND-M9-02-DV-PERF-01"
+  ],
+  "findings_introduced": {
+    "apply_target_m9_05": [
+      "overeng-001-v3-chunk-decode-dup",
+      "overeng-002-v3-range-scan-verify-dup",
+      "overeng-003-events-count-none-branch",
+      "cc-003-wrong-direction-visibility"
+    ],
+    "backlog": [
+      "cc-001-god-module",
+      "cc-004-implicit-io-toctou"
+    ],
+    "no_action": [
+      "cc-002-env-coupling-test"
+    ]
+  },
+  "notes": [
+    {
+      "gate": "T0-lint",
+      "result": "pass",
+      "evidence": "verify-report.md: PASS (T0/T1/T2/T4-smoke all green)"
+    },
+    {
+      "gate": "T1-lib-unit",
+      "result": "pass",
+      "evidence": "verify-report.md: T1 store 56/56"
+    },
+    {
+      "gate": "T2-integration",
+      "result": "pass",
+      "evidence": "verify-report.md: T2 cli 2/2, T2 services 1/1"
+    },
+    {
+      "gate": "verify",
+      "result": "PASS",
+      "verdict": "second-round (post-remediation); 9/9 spec scenarios pinned"
+    },
+    {
+      "gate": "release",
+      "result": "success",
+      "evidence": "v0.7.2 annotated tag at d6b3b8c, peel_match: true, push to origin verified"
+    },
+    {
+      "gate": "archive",
+      "result": "closed",
+      "evidence": "change-entry + archive-manifest + terms + cycles-index updated"
+    },
+    {
+      "gate": "scoping-decision",
+      "result": "scope-bound",
+      "evidence": "A-min; bounded schema migration with no architectural fork"
+    },
+    {
+      "gate": "smoke_subset",
+      "result": "n/a",
+      "evidence": "no MCP/probe plumbing touched; sandbox smoke not warranted"
+    }
+  ],
+  "next_cycle": "m9-05-side-table-overeng-cleanup",
+  "next_cycle_path": "B-direct",
+  "next_cycle_target_findings": [
+    "overeng-001-v3-chunk-decode-dup",
+    "overeng-002-v3-range-scan-verify-dup",
+    "overeng-003-events-count-none-branch",
+    "cc-003-wrong-direction-visibility"
+  ],
+  "ledger_state": {
+    "available": false,
+    "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02/m9-03 pattern)"
+  }
+}
