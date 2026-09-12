@@ -1,7 +1,7 @@
 {
   "cycle_id": "m9-46",
   "subject": {
-    "head_sha": "TBD",
+    "head_sha": "7ee3f2af9d22c5de2167925ada0e557b53bfcd5a",
     "base_sha": "9171c5f51166d643fea6689549536da9f2b80d2c"
   },
   "verdict": "pass",
@@ -9,7 +9,6 @@
     {
       "id": "F1",
       "severity": "low",
-      "schema-drift",
       "category": "schema-drift",
       "description": "12 verify-findings.json files (m9-34..m9-45) had empty `findings` arrays even though verify-report.md had populated Findings tables.",
       "status": "RESOLVED"
