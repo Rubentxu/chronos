@@ -14,8 +14,8 @@ post-merge:
 
 ```
 CHECK 1 (ID uniqueness): empty
-CHECK 2 (findings_closed ↔ Terminated): 14 drift (deferred to dedicated cycle)
-CHECK 3 (apply-checkpoint ↔ tag consistency): 2 drift (m9-12, m9-13 short SHAs — deferred)
+CHECK 2 (findings_closed ↔ Terminated): clean (header/separator rows excluded; m8-04-R4 + m8-07-R2 in Terminated are pre-reorg expected)
+CHECK 3 (apply-checkpoint ↔ tag consistency): 2 drift (m9-12, m9-13 short SHAs — see notes)
 CHECK 4 (SHA-256 archive-manifest Artifact index): empty
 CHECK 5 (cycles/index.md metadata consistency): OK: 30 == 30
 CHECK 6 (terms/index.md "Last archive" ↔ cycles/index.md most-recent): OK: m9-14 == m9-14
@@ -28,8 +28,12 @@ applied to the pre-fix state, it would have returned:
 `DRIFT: m9-11-cycles-index-metadata-drift: head_sha=cd0115f8c93bddcae06e5a57f4e7e91d3a4fbb33 does not exist in repository`
 
 Checks 2 and 3 were already drifting before m9-14 began (m9-12/m9-13
-era). They are documented as `findings_remaining_m9_plus` and deferred
-to dedicated cycles — they are not introduced by m9-14.
+era). C2 turned out to be a parser false alarm (C2's reference Python
+in vault-drift-sweep.md had a buggy `cells[0].startswith('m')` filter
+that missed IDs starting with `F`, `o`, `c`; all 14 IDs were actually
+in Terminated). C3 caught a real short-SHA drift which is fixed by
+m9-15 (next cycle) via tightening C3 itself. Both are documented in
+the m9-14/m9-15 cycle artifacts; neither is a regression.
 
 ### R2 (PASS): T0 lint clean
 

@@ -1,0 +1,52 @@
+{
+  "cycle_id": "p-3416cfb8288f8964/m9-15-m9-12-m9-13-short-sha",
+  "change": "expand m9-12 + m9-13 short SHAs (7-char) to full 40-char in apply-checkpoint.json + markdown + cycles/index.md; tighten C3 cross-check to require full-SHA",
+  "path": "B-direct",
+  "status": "CLOSED",
+  "head_sha": "2441f6f3c679555dc4106ea2e8a422ed407a26a0",
+  "base_sha": "d55cdc874edd5863f5d8a65a42396b99d090b6dc",
+  "tag": "v0.7.13",
+  "remote_tag_peel": "2441f6f3c679555dc4106ea2e8a422ed407a26a0",
+  "main_sha": "2441f6f3c679555dc4106ea2e8a422ed407a26a0",
+  "peel_match": true,
+  "runtime_status": "doc-only; no runtime impact",
+  "route": "B-direct (T0 + light-verify)",
+  "verified_at": "2026-09-12T10:09:50Z",
+  "released_at": "2026-09-12T10:11:00Z",
+  "archived_at": "2026-09-12T10:11:30Z",
+  "commits_since_base": [
+    "2441f6ffix(m9-15): expand m9-12 + m9-13 short SHAs to full 40-char + tighten C3"
+  ],
+  "artifacts": {
+    "merge_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-15-m9-12-m9-13-short-sha/merge-receipt.md",
+    "release_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-15-m9-12-m9-13-short-sha/release-receipt.md",
+    "release_report": "cycle-artifacts/p-3416cfb8288f8964/m9-15-m9-12-m9-13-short-sha/release-report.md",
+    "verify_report": "cycle-artifacts/p-3416cfb8288f8964/m9-15-m9-12-m9-13-short-sha/verify-report.md",
+    "verify_findings": "cycle-artifacts/p-3416cfb8288f8964/m9-15-m9-12-m9-13-short-sha/verify-findings.json"
+  },
+  "findings_closed": [],
+  "findings_introduced": {
+    "no_action": []
+  },
+  "findings_remaining_m9_plus": [
+    "cc-001-god-module",
+    "cc-004-implicit-io-toctou",
+    "m9-02-R4 (feature: counterexample_bundle_events MCP tool)",
+    "vacuous-peel-match-prior-cycles (placeholder from m9-14 — superseded by m9-15's tighter C3)"
+  ],
+  "notes": [
+    "m9-12 apply-checkpoint stored head_sha='0012f12' (7 chars). Real full SHA: 0012f1242cef949efc4cbd4c8d419a135ee3cf8a. main_sha and base_sha were already full — only head_sha/remote_tag_peel were short.",
+    "m9-13 apply-checkpoint stored head_sha='26848cf' (7 chars). Real full SHA: 26848cf8b26340d3fde99a3a7f398f2873943982. Same pattern.",
+    "Cross-check #8 (added by m9-14) did NOT catch this drift because git accepts short SHAs when unambiguous (cat-file -e 0012f12 returns success). The new tightened C3 explicitly requires len(remote_tag_peel) == 40, closing the gap.",
+    "All markdown references (merge-receipt, release-receipt, release-report, verify-report, cycles/index.md Published SHA columns) also corrected.",
+    "C3 in vault-drift-sweep.md tightened to: (1) require head_sha == remote_tag_peel, (2) require peel_match == True, (3) require len(remote_tag_peel) == 40. C8 (SHA existence) remains the second-line defense for fabrication.",
+    "T0 fmt+clippy clean (doc-only, no Rust touched). All 8 cross-checks clean post-fix including new C3 strict mode."
+  ],
+  "next_cycle": null,
+  "next_cycle_path": null,
+  "next_cycle_target_findings": [],
+  "ledger_state": {
+    "available": false,
+    "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02..m9-14 pattern)"
+  }
+}
