@@ -1,7 +1,6 @@
 {
   "cycle_id": "m9-17-verify-findings-and-markdown-sha-drift",
   "change": "fix verify-findings.json + cycle markdown SHA drift across 4 prior cycles (m9-11, m9-12, m9-13, m9-14) + add cross-check #10 to vault-drift-sweep",
-  "path": "B-direct",
   "status": "CLOSED",
   "head_sha": "134dc7525312275c447db8f5996740ff7c102a02",
   "base_sha": "0ed8f874f7b6f973505fc3997475fc398fcfa4cc",

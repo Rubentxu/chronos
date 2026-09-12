@@ -1,7 +1,6 @@
 {
   "cycle_id": "m9-07-coup-01-invariant-assertion",
   "change": "m9-07-coup-01-invariant-assertion",
-  "path": "B-direct",
   "status": "CLOSED",
   "head_sha": "3edb01f0a17c3ac8877df1e7868d4e3cca374217",
   "base_sha": "aa96e5a51b5424a844f1f153d7ce719a53017119",

@@ -1,7 +1,6 @@
 {
   "cycle_id": "m9-16-archive-manifest-short-and-fabricated-sha",
   "change": "expand archive-manifest.md Head SHA + cross-references for m9-11, m9-12, m9-13 to full 40-char SHAs; expand cycles/index.md m9-14 + m9-15 Published SHA to full 40-char; add cross-check #9 to vault-drift-sweep",
-  "path": "B-direct",
   "status": "CLOSED",
   "head_sha": "eb5110dfe1f1d14eab85e6052f1f7cbb86e2f384",
   "base_sha": "68c528ec34adc1ef5c0e049b9ab83207d710bcb6",

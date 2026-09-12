@@ -1,7 +1,6 @@
 {
   "cycle_id": "m9-21",
   "title": "Verbose route normalization + legacy field prohibition cross-check",
-  "path": "B-direct",
   "route": "B-direct",
   "base_sha": "efb9d93da368c4c6e1473c4668bbc945dff850c6",
   "head_sha": "14ecf16ded816896cb612721875e97380bcadbc3",

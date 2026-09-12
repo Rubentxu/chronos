@@ -21,7 +21,7 @@ cycles into alignment with the post-m9-28 convention.
 ## Subject
 
 - base_sha: `dbea58e61921eecb4b1b90f6f94dad21fea2e440`
-- head_sha: `a0b0d560365315b22012325e9d416f3ef1998faa`
+- head_sha: `d7fd733064999cf93eea429a78939a02a1d4d27c`
 - cycle: m9-35
 - branch: `fix/m9-35-release-report-title-format-normalize`
 - date: 2026-09-12

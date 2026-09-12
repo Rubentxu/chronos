@@ -1,7 +1,6 @@
 {
   "cycle_id": "m9-24",
   "title": "verify-findings.json schema normalization",
-  "path": "B-direct",
   "route": "B-direct",
   "base_sha": "dd389257d6fdf402a21845449e7d66727beafa6e",
   "head_sha": "8e0bfbf79d761452d7c186d855066b54a8176ace",

@@ -1,7 +1,6 @@
 {
   "cycle_id": "m9-20",
   "title": "Status fields backfill (verify_status, release_status, archive_status)",
-  "path": "B-direct",
   "route": "B-direct",
   "base_sha": "d66569159fe3e47404aee3b4e13a3c5b883c7d69",
   "head_sha": "07febc1bae0d236ad47eef3c5b3172c4824cde04",

@@ -1,7 +1,6 @@
 {
   "cycle_id": "m9-31",
   "title": "Merge receipt fields normalization",
-  "path": "B-direct",
   "route": "B-direct",
   "base_sha": "6c428f76ec2f57bd210e936ab7b2f9a40e207d63",
   "head_sha": "5c286b6b19684cc59a0c8e7935280051d14e0e54",

@@ -1,7 +1,6 @@
 {
   "cycle_id": "m9-03-side-table-debt-cleanup",
   "change": "m9-03-side-table-debt-cleanup",
-  "path": "B-direct",
   "status": "CLOSED",
   "head_sha": "2c98ce9a1df65d44ae865376fee46eb0d95ac425",
   "base_sha": "6f375fd96dbc0c03fe36b473d306f1e54d078b08",

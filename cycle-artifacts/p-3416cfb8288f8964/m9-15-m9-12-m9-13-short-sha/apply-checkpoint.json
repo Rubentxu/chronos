@@ -1,7 +1,6 @@
 {
   "cycle_id": "m9-15-m9-12-m9-13-short-sha",
   "change": "expand m9-12 + m9-13 short SHAs (7-char) to full 40-char in apply-checkpoint.json + markdown + cycles/index.md; tighten C3 cross-check to require full-SHA",
-  "path": "B-direct",
   "status": "CLOSED",
   "head_sha": "2441f6f3c679555dc4106ea2e8a422ed407a26a0",
   "base_sha": "d55cdc874edd5863f5d8a65a42396b99d090b6dc",

@@ -1,7 +1,6 @@
 {
   "cycle_id": "m9-29",
   "title": "Evidence bindings section backfill for m9-11..m9-27",
-  "path": "B-direct",
   "route": "B-direct",
   "base_sha": "a65927d960d7a5b42cd425dc34befe3efe7c692f",
   "head_sha": "8617ad0dde11f1a9e83a7f3c110dda3d691e374d",

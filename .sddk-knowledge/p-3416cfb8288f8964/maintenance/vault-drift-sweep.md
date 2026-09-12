@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -1187,6 +1187,61 @@ format that did not include the `Base SHA` field. m9-34, m9-35
 introduced the canonical pipe-separated format with all required fields.
 m9-36 normalizes m9-03..m9-33 to the canonical format and adds C28
 to enforce the presence of `Base SHA`.
+
+### 29. apply-checkpoint.json must use `route` (not `path`); change-entry.md Subject head_sha must match apply-checkpoint.json head_sha (closed by m9-37)
+
+```python
+import json, glob, re
+
+errors = 0
+
+# Part A: apply-checkpoint uses route, not path
+for f in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/apply-checkpoint.json')):
+    d = json.load(open(f))
+    if 'path' in d:
+        print(f"DRIFT: {f}: has 'path' field, should be 'route'")
+    if 'route' not in d:
+        print(f"DRIFT: {f}: missing 'route' field")
+
+# Part B: change-entry Subject head_sha matches apply-checkpoint head_sha
+for f in sorted(glob.glob('.sddk-knowledge/p-3416cfb8288f8964/changes/m9-*/change-entry.md')):
+    folder = '/'.join(f.split('/')[3:-1])
+    ckpt_path = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/apply-checkpoint.json'
+    if not __import__('os').path.exists(ckpt_path): continue
+    content = open(f).read()
+    m = re.search(r'- head_sha: `([a-f0-9]+)`', content)
+    if m:
+        head_sha = m.group(1)
+        ckpt = json.load(open(ckpt_path))
+        if ckpt.get('head_sha') and head_sha != ckpt['head_sha']:
+            print(f"DRIFT: {f}: head_sha={head_sha[:8]} != ckpt={ckpt['head_sha'][:8]}")
+
+print(f'Total: {errors}')
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:**
+- A: An apply-checkpoint.json uses the legacy `path` field instead of
+  the canonical `route` field.
+- B: A change-entry.md Subject section has a `head_sha` that doesn't
+  match the corresponding apply-checkpoint.json `head_sha`.
+
+**Resolution:**
+
+For Part A:
+1. Rename `path` → `route` in apply-checkpoint.json.
+
+For Part B:
+1. Update change-entry.md Subject `head_sha` to match apply-checkpoint.json.
+   The mismatch is usually caused by writing the change-entry before
+   the cycle's receipts/rebase was complete.
+
+**History:** m9-03..m9-33 apply-checkpoint used `path` field; m9-21+
+added `route` alongside `path`. m9-34 dropped `path` entirely. m9-37
+normalizes m9-03..m9-33 to `route`-only. m9-34, m9-35 change-entry
+`head_sha` field was written with intermediate SHA, not final HEAD;
+m9-37 fixes both.
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class

@@ -1,7 +1,6 @@
 {
   "cycle_id": "m9-23-cycle-id-strip-prefix",
   "title": "cycle_id workspace prefix strip",
-  "path": "B-direct",
   "route": "B-direct",
   "base_sha": "f5fbbd7584398d0fda1f090fe9295bcb9fdde045",
   "head_sha": "b549c7462932647b03cd9cd2f28da0fc03c9ed64",

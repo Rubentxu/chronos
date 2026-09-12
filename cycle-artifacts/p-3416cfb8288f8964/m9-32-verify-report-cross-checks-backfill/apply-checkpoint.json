@@ -1,7 +1,6 @@
 {
   "cycle_id": "m9-32",
   "title": "Verify report cross-checks section backfill",
-  "path": "B-direct",
   "route": "B-direct",
   "base_sha": "128a224dff9924e087647013df32edeb965efa75",
   "head_sha": "b3bfa59e85b1145c81ae84ce7cac6be6238b2a58",

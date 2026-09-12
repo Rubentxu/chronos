@@ -1,0 +1,12 @@
+{
+  "cycle_id": "m9-37",
+  "head_sha": "TBD",
+  "base_sha": "5225467421097d7b283a2b3e21d0ce38018c58bd",
+  "created_at": "2026-09-12T13:18Z",
+  "route": "B-direct",
+  "summary": "Normalize apply-checkpoint.json across 31 cycles (m9-03..m9-33): rename 'path' field to 'route'. Also fix m9-34, m9-35 change-entry.md Subject head_sha to match final HEAD. Adds cross-check #29.",
+  "findings_closed": [],
+  "findings_introduced": {
+    "no_action": []
+  }
+}

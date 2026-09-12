@@ -1,7 +1,6 @@
 {
   "cycle_id": "m9-11-cycles-index-metadata-drift",
   "change": "fix cycles/index.md Total cycles metadata drift (22\u219226) + add cross-check #5 to vault-drift-sweep procedure",
-  "path": "B-direct",
   "status": "CLOSED",
   "head_sha": "cd0115fd8f942058cde109c72a975cab7ea7473c",
   "base_sha": "6120e983e247d8d88fcd221f0e1063646f195cb7",

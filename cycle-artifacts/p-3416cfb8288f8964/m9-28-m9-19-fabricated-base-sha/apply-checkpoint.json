@@ -1,7 +1,6 @@
 {
   "cycle_id": "m9-28",
   "title": "m9-19 base_sha fabrication fix",
-  "path": "B-direct",
   "route": "B-direct",
   "base_sha": "8eb648779071f9a634e2439754034f1288929c62",
   "head_sha": "709e3c470d50064b9a2c819b5761a2972eadafcb",

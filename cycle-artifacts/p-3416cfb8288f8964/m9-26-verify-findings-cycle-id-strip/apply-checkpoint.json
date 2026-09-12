@@ -1,7 +1,6 @@
 {
   "cycle_id": "m9-26",
   "title": "verify-findings.json cycle_id workspace prefix strip",
-  "path": "B-direct",
   "route": "B-direct",
   "base_sha": "38e0e3aaacc9471b1c2550e548f2c24ae3f71025",
   "head_sha": "a7d43e012be509fc44edae1ab2f05397e3452037",

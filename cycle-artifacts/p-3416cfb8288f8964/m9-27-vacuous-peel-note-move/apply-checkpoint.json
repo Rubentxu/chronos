@@ -1,7 +1,6 @@
 {
   "cycle_id": "m9-27",
   "title": "findings_introduced.no_action free-text note move",
-  "path": "B-direct",
   "route": "B-direct",
   "base_sha": "cb7b05c8fe65b9de24ccd7f7f447374fcfd95f11",
   "head_sha": "91338e3b2fc58835662776507bde5308ec36568b",
