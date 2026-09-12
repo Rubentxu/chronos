@@ -8,6 +8,18 @@
 | Head SHA | `38699061891b76f90ef316914d3ba15d6eb53f83` |
 | Release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-14-m9-11-fabricated-sha/release-receipt.md` |
 
+## Evidence bindings
+
+Vault metadata cycles only (or vault + minimal code). Each cycle artifact bound to its SHA-256:
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-14-m9-11-fabricated-sha/apply-checkpoint.json` → `8f69f7bcdb33603740a587e9395f7420f3d6ec581d356bcd22457d26e913724f`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-14-m9-11-fabricated-sha/merge-receipt.md` → `dd4cd36ccedab5445b45c3a07f9caaf15947870e3842f215deaa7f87a6047f14`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-14-m9-11-fabricated-sha/release-receipt.md` → `44367b93a2b8afb6ba03e38a8749f7371d65f125261bd4540a1223747968f812`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-14-m9-11-fabricated-sha/release-report.md` → `bc31226fd76fc99d6ff3ea8dde66189d7bb12e3ad3bcdb02b9cee406ed7c9df7`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-14-m9-11-fabricated-sha/verify-findings.json` → `aeb3fd180538c589d7c63583ad33464dc3f0290680df3186545a9c6f4e271675`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-14-m9-11-fabricated-sha/verify-report.md` → `dea01b04c9b20eedf2392fcaf74ee7e6a7b3fe7ec286f5a5c2472f13c952f301`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-14-m9-11-fabricated-sha/change-entry.md` → `3921103baf032f9bfb8f6129fecd09660a3f038c69b9f5851d9e03799eca325d`
+
 ## Artifact index (SHA-256)
 
 | File | SHA-256 |

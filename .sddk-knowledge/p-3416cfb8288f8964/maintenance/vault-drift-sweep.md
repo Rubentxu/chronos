@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -534,6 +534,7 @@ Cycles that established this procedure:
 - **m9-26** (vault hygiene: verify-findings.json cycle_id prefix strip, v0.7.24) → extended cross-check #16
 - **m9-27** (vault hygiene: findings_introduced.no_action free-text note → notes key, v0.7.25) → cross-check #19
 - **m9-28** (vault hygiene: m9-19 fabricated base_sha → real 735c57b, v0.7.26) → cross-check #20
+- **m9-29** (vault hygiene: backfill Evidence bindings section in m9-11..m9-27 archive-manifests, v0.7.27) → cross-check #21
 
 ### 13. apply-checkpoint.json `*_status` field backfill (closed by m9-20)
 
@@ -856,6 +857,46 @@ fabricated SHA doesn't even exist; the m9-19 fabricated SHA was a
 near-miss (close to a real commit, easy to miss). m9-28 closes this
 drift and adds cross-check #20 with era-awareness to prevent
 recurrence without breaking docs-peel cycles.
+
+### 21. archive-manifest.md must have `## Evidence bindings` section (closed by m9-29)
+
+```python
+import os, glob
+for manifest in sorted(glob.glob('.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-*/archive-manifest.md')):
+    with open(manifest) as f:
+        content = f.read()
+    if '## Evidence bindings' not in content:
+        print(f"DRIFT: {manifest}: missing '## Evidence bindings' section")
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** An archive-manifest.md is missing the `## Evidence
+bindings` section. The section is the canonical binding between
+the cycle's released artifacts (in `cycle-artifacts/`) and their
+SHA-256 hashes. It is the primary evidence layer that lets readers
+verify the archive's claims against the actual files.
+
+**Resolution:**
+1. Compute SHA-256 of each cycle artifact:
+   - All files under `cycle-artifacts/p-3416cfb8288f8964/<folder>/`
+   - The `change-entry.md` under
+     `.sddk-knowledge/p-3416cfb8288f8964/changes/<folder>/`
+2. Insert `## Evidence bindings` section before the next `## ...`
+   heading, with one bullet per artifact in the form
+   `- <path> → <sha256>`.
+3. For m9-01 and m9-02 the format uses placeholder ("pending")
+   before the SHA is captured; those are exempt as pre-cycle-artifacts
+   era.
+
+**History:** m9-11..m9-27 archive-manifests were authored without the
+`## Evidence bindings` section (the agent in those cycles used a
+different layout with `## Archived artifacts` + `## SHA verification`).
+The `## Artifact index` / `## Artifact index (SHA-256)` section
+already lists SHA-256s of the artifacts, so the missing Evidence
+bindings section is a structural drift, not a content drift. m9-28
+restored the Evidence bindings section for m9-28 itself; m9-29
+backfills it for the 17 prior cycles (m9-11..m9-27).
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class

@@ -11,6 +11,18 @@
 | Path | B-direct |
 | Cross-check added | #13 |
 
+## Evidence bindings
+
+Vault metadata cycles only (or vault + minimal code). Each cycle artifact bound to its SHA-256:
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-20-status-fields-backfill/apply-checkpoint.json` → `1129d6775f18d4c866f6ff90a6a186569139ecb7be5f5561fd0d71494b0698dc`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-20-status-fields-backfill/merge-receipt.md` → `d3ac4ec275fc0aa1365871702715553c45b89995db90b9468145d87b958d51be`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-20-status-fields-backfill/release-receipt.md` → `16d761fa9221fd54f5a0e67caaec81bbe22b9f17523366bae373e1bec7e9ba63`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-20-status-fields-backfill/release-report.md` → `0fc324538c8b14dbb9a456fb9053b2518657b4e4c9475df32882435ef38ddc50`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-20-status-fields-backfill/verify-findings.json` → `0bae19db35f740b77697e21c17b2e0cf133445b48aabda3486fb93446c657e12`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-20-status-fields-backfill/verify-report.md` → `0d8b325d4cae36d161bee72cd46bf2addc52beb87c2afa594ad2c15bd5f3e17f`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-20-status-fields-backfill/change-entry.md` → `2bc2019e5f89353133d6c56dd2f73852630dcd26bc368759ad9789477367bb0a`
+
 ## Archived artifacts
 
 ### Cycle artifacts (`cycle-artifacts/p-3416cfb8288f8964/m9-20-status-fields-backfill/`)

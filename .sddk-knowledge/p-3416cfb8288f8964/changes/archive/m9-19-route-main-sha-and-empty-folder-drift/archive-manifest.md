@@ -11,6 +11,18 @@
 | Path | B-direct |
 | Cross-check added | #12 |
 
+## Evidence bindings
+
+Vault metadata cycles only (or vault + minimal code). Each cycle artifact bound to its SHA-256:
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-19-route-main-sha-and-empty-folder-drift/apply-checkpoint.json` → `b5443f1ac147fc4544b8d4d93f374d8206a7900817dc8a13d6fe64fdf78d3973`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-19-route-main-sha-and-empty-folder-drift/merge-receipt.md` → `e5002bdff47c2e5686ea1ebade64fe3f3063658bb6d03461a915c564b3143cb7`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-19-route-main-sha-and-empty-folder-drift/release-receipt.md` → `b890aac8a4068cacd026b1a309cfedd673d7784fd229355eb699e4a8c442b5ea`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-19-route-main-sha-and-empty-folder-drift/release-report.md` → `5f20f8e2c7fa77dd7158a90baa4c62a69d8f59cbd47f3340ef5dae927bee6c51`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-19-route-main-sha-and-empty-folder-drift/verify-findings.json` → `ac0d958f6bc5be4c709d6e9fb2668557b9e79577be37a8baca7ba4dcbfa9fdb6`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-19-route-main-sha-and-empty-folder-drift/verify-report.md` → `2509c6b864aa85e0f06c4fd96e933153b57f68ac49c42e67103c13659f9a3a66`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-19-route-main-sha-and-empty-folder-drift/change-entry.md` → `dd62da33c01c2ea21272b27a086f2c48f896c1a6dd716f359715e4435ed332bb`
+
 ## Archived artifacts
 
 ### Cycle artifacts (`cycle-artifacts/p-3416cfb8288f8964/m9-19-route-main-sha-and-empty-folder-drift/`)

@@ -8,6 +8,18 @@
 | Tag | `v0.7.11` |
 | Head SHA | `26848cf8b26340d3fde99a3a7f398f2873943982` |
 
+## Evidence bindings
+
+Vault metadata cycles only (or vault + minimal code). Each cycle artifact bound to its SHA-256:
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-13-change-entry-base-sha-drift/apply-checkpoint.json` → `0e5ded6f375aaee7e3dc72f5ce800bc7bfc19724b1e49c5225c4b323d827412e`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-13-change-entry-base-sha-drift/merge-receipt.md` → `8c65bbd761feaf85b89a300123a8cb8009922f3b5e1721dea07713f3ddd908b7`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-13-change-entry-base-sha-drift/release-receipt.md` → `46c94f8f372197fe6c32a09d092518255ed473b7729b2f9ac74420894d7575fe`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-13-change-entry-base-sha-drift/release-report.md` → `4b363866fed6f4a0c99b73756a422790ab5b16cb8fbcfb1be149ac3e1be3dca5`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-13-change-entry-base-sha-drift/verify-findings.json` → `ca1c03fef0a284e3a99fc509b4f57be3e9dcd5214428d5b839e1a1109fbd81b8`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-13-change-entry-base-sha-drift/verify-report.md` → `510a65ae68d3825075d1f11b77d91cec11e34cbd245c4e1575e4795ecf6d8c1b`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-13-change-entry-base-sha-drift/change-entry.md` → `5d17ab89ffd729aa99712fe6d9da6c61b4e97d4e40364a622ceee4f5795bc8af`
+
 ## Artifact index
 
 | Path | SHA-256 |

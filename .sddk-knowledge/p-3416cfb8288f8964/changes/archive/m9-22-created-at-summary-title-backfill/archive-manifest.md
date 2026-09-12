@@ -11,6 +11,18 @@
 | Path | B-direct |
 | Cross-check added | #15 |
 
+## Evidence bindings
+
+Vault metadata cycles only (or vault + minimal code). Each cycle artifact bound to its SHA-256:
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-22-created-at-summary-title-backfill/apply-checkpoint.json` → `54db313065c2910184c09051c1acd6ae15deef638cc2c3e09d77aa8bff306d83`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-22-created-at-summary-title-backfill/merge-receipt.md` → `3e391a0c592f995bec5b7e877b6cef791ebc8920ed53fcf8a5c2ec63d4be47ed`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-22-created-at-summary-title-backfill/release-receipt.md` → `d1ca5105c2ab086939a301251c9412d29b797e0ae857f4152c15bbc3a1ce5778`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-22-created-at-summary-title-backfill/release-report.md` → `c581be95d1018ccf64fefa31fdf8619e1deb2f8935f92fad795f80184d0fd928`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-22-created-at-summary-title-backfill/verify-findings.json` → `f7076ad7c74802a509cc7a190f701708f6d0d2e2dce83e05baa50984ebec75ea`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-22-created-at-summary-title-backfill/verify-report.md` → `6ef67660e69c5b67fbb6ddc693328b2f9b494cbdf761015bde29e8df5efc663e`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-22-created-at-summary-title-backfill/change-entry.md` → `0c96c95a83f36fe1edbc72d29d969dcdd55c4880206e077d2cd32ab6f177a39b`
+
 ## Archived artifacts
 
 ### Cycle artifacts

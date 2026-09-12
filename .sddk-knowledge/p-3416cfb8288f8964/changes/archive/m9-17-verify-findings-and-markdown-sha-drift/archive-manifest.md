@@ -8,6 +8,18 @@
 | Head SHA | `134dc7525312275c447db8f5996740ff7c102a02` |
 | Release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-17-verify-findings-and-markdown-sha-drift/release-receipt.md` |
 
+## Evidence bindings
+
+Vault metadata cycles only (or vault + minimal code). Each cycle artifact bound to its SHA-256:
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-17-verify-findings-and-markdown-sha-drift/apply-checkpoint.json` → `4a066388f5d218f135d1db0a7b7c903ba416879cdb820a105ba1bd4a296557fb`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-17-verify-findings-and-markdown-sha-drift/merge-receipt.md` → `18e120b52702c6b1936e4a1200696ac6e46c145ebb0d3355c64f64ddeb3a12dc`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-17-verify-findings-and-markdown-sha-drift/release-receipt.md` → `8e727977a6298df060e7f2ad4f047712e0f08d6930233276407547b4160d729f`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-17-verify-findings-and-markdown-sha-drift/release-report.md` → `1d345d12a817e7cb40a7e656375665fde688f16d90d3434980b203e533fcb441`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-17-verify-findings-and-markdown-sha-drift/verify-findings.json` → `e56991e8d55121c9c94c8b87b92ae9b05c263c5f7ca5e545e511d97d893e3d15`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-17-verify-findings-and-markdown-sha-drift/verify-report.md` → `4451c99de7cca438e65a343af461bb326d1da52eb2e550c2621bc0288747848d`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-17-verify-findings-and-markdown-sha-drift/change-entry.md` → `ee7321c5c87bab5069fa08260227a5398f5f01a607c4c95873efacd7f44e6424`
+
 ## Artifact index (SHA-256)
 
 | File | SHA-256 |

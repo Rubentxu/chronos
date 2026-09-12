@@ -11,6 +11,18 @@
 | Path | B-direct |
 | Cross-check added | #16 |
 
+## Evidence bindings
+
+Vault metadata cycles only (or vault + minimal code). Each cycle artifact bound to its SHA-256:
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-23-cycle-id-strip-prefix/apply-checkpoint.json` → `e25c2e7933e64f6351b05a93f5359b3dab6e18d81de187cc455f964fbfa53713`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-23-cycle-id-strip-prefix/merge-receipt.md` → `0e04b7d134c8c9db1bc272643f8aaf3b2f903bdfdb181866a349e12a8b64510e`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-23-cycle-id-strip-prefix/release-receipt.md` → `f6be8862e0a217c4be507238d73e0f0de340a5d50aa4e69bbecc998d970228af`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-23-cycle-id-strip-prefix/release-report.md` → `a8fbe3a4906cb8b97654c49b126b29abf491e9c53cb9ddd6e50316357ae7ee15`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-23-cycle-id-strip-prefix/verify-findings.json` → `bae71fa1298a3f5c556c1adc27455c0978766bff510d71b54956ad612d07fe63`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-23-cycle-id-strip-prefix/verify-report.md` → `26ede9a4ec01309cfece5309bcb5b45a10dad3d4fe6a8886dfb737c39f59a415`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-23-cycle-id-strip-prefix/change-entry.md` → `e72643d3bb82cce85a63940dfec29612a447c377e5b738d0b42fd398cecbe732`
+
 ## Archived artifacts
 
 ### Cycle artifacts

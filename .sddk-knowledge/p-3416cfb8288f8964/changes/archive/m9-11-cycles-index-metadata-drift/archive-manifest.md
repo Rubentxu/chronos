@@ -8,6 +8,18 @@
 | Tag | `v0.7.9` |
 | Head SHA | `cd0115fd8f942058cde109c72a975cab7ea7473c` |
 
+## Evidence bindings
+
+Vault metadata cycles only (or vault + minimal code). Each cycle artifact bound to its SHA-256:
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-11-cycles-index-metadata-drift/apply-checkpoint.json` → `71feffc581c2bfdd318ab6f8ef1f847f00d3b1fd1d1e43b6715045815e60ed87`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-11-cycles-index-metadata-drift/merge-receipt.md` → `e7eeb16d28166027aad14a6ed6a997c30c31639bef5022e6f24708b23dd09bdb`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-11-cycles-index-metadata-drift/release-receipt.md` → `d652dbc200c98ebecc0dee18b02a4ebf3dd8230999f24f0a703485023e659888`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-11-cycles-index-metadata-drift/release-report.md` → `b42b88e74a024501f99eda56426324fdf7b49d190ca5a7755a1298ab2a1254b9`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-11-cycles-index-metadata-drift/verify-findings.json` → `279826855bdda43e9b705731197196c3882509103a70ade4c28c1a0c960893db`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-11-cycles-index-metadata-drift/verify-report.md` → `2ec4b00f66095bf1651459a64042cce700c91e5ec84099a8eb5436e2f107c14b`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-11-cycles-index-metadata-drift/change-entry.md` → `848bf0b2033f9bbf03f4c95f250b2ff70853d431506e1e1d573ab3264949ba2d`
+
 ## Artifact index
 
 | Path | SHA-256 |

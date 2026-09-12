@@ -11,6 +11,18 @@
 | Path | B-direct |
 | Cross-check added | #14 |
 
+## Evidence bindings
+
+Vault metadata cycles only (or vault + minimal code). Each cycle artifact bound to its SHA-256:
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-21-route-and-schema-c14/apply-checkpoint.json` → `8cf3ad52b86e4682293faea75429cf77d839aa640064f0954073a85f6851db22`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-21-route-and-schema-c14/merge-receipt.md` → `62f7c41d2adc63fa38181f826c71437fb9a8dfdf13601c7e774bc48aa9cd1280`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-21-route-and-schema-c14/release-receipt.md` → `1c1cfc40faa68fa880bfa1bcb09f7e2a3dd77e4b35bbafba248385fcafab58cd`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-21-route-and-schema-c14/release-report.md` → `47ddbb6c7bd7ae8885bc2eb8b326f441be4722f117504f7296ad8148b7e43d58`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-21-route-and-schema-c14/verify-findings.json` → `4e1a71fe6b121a3834331e1e9b3dd23a0a29e77fc9675d03b6bd38a8828aac0a`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-21-route-and-schema-c14/verify-report.md` → `2b9c23e0224d07d71f2ee9e666b1f23a61aaae957e501784e80c784ce274ca7f`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-21-route-and-schema-c14/change-entry.md` → `b5bc5cc1216a39677b6cc0d0bb6c9091fbcb921aa4b93d88431c5e111432c2e3`
+
 ## Archived artifacts
 
 ### Cycle artifacts
