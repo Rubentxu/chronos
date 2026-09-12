@@ -13,7 +13,7 @@ This drift was missed by all prior sweeps (m9-09..m9-54). Standing cross-checks 
 
 | Base | Head (final) | Dirty diff digest | CWD | Verified at |
 |---|---|---|---|---|
-| `cbb9384` | `PENDING` | `PENDING` | `/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos` | 2026-09-12T17:27:00Z |
+| `cbb9384` | `f6733fdfe38b3c405dc74c9e92450b2976957153` | `sha256:e3b0c44...` | `/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos` | 2026-09-12T17:27:00Z |
 
 Files changed (7 m9-38 artifacts):
 
