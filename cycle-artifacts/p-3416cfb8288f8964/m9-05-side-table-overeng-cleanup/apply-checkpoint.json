@@ -1,0 +1,90 @@
+{
+  "cycle_id": "p-3416cfb8288f8964/m9-05-side-table-overeng-cleanup",
+  "change": "m9-05-side-table-overeng-cleanup",
+  "path": "B-direct",
+  "status": "closed",
+  "head_sha": "07d01d5869ff6e3ffed29315b761e6e476f3b70d",
+  "base_sha": "c9e541750e39458b2b28c5d19ad0ca11d0e73d5b",
+  "tag": "v0.7.3",
+  "remote_tag_peel": "07d01d5869ff6e3ffed29315b761e6e476f3b70d",
+  "main_sha": "07d01d5869ff6e3ffed29315b761e6e476f3b70d",
+  "peel_match": true,
+  "runtime_status": "RELEASED",
+  "route": "local",
+  "verified_at": "2026-09-12T08:39:00Z",
+  "released_at": "2026-09-12T08:40:00Z",
+  "archived_at": "2026-09-12T08:40:40Z",
+  "commits_since_base": [
+    "232e2d2docs(m9-05): scoping — side-table overeng cleanup (4 apply-target findings)",
+    "fa0ca90fix(m9-05): close 4 apply-target debt findings — extract decode_chunk_payload, collect_v3_keys_for_bundle; drop events_count Option wrapper; narrow pub visibility with chokepoints",
+    "07d01d5docs(m9-05): light-verify evidence (R1-R4 PASS, 4/4 findings closed)"
+  ],
+  "artifacts": {
+    "scoping": "docs/milestones/m9-05-side-table-overeng-cleanup-scoping.md",
+    "merge_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-05-side-table-overeng-cleanup/merge-receipt.md",
+    "release_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-05-side-table-overeng-cleanup/release-receipt.md",
+    "release_report": "cycle-artifacts/p-3416cfb8288f8964/m9-05-side-table-overeng-cleanup/release-report.md",
+    "verify_report": "cycle-artifacts/p-3416cfb8288f8964/m9-05-side-table-overeng-cleanup/verify-report.md",
+    "change_entry": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-05-side-table-overeng-cleanup/change-entry.md",
+    "archive_manifest": ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-05-side-table-overeng-cleanup/archive-manifest.md"
+  },
+  "findings_closed": [
+    "overeng-001-v3-chunk-decode-dup",
+    "overeng-002-v3-range-scan-verify-dup",
+    "overeng-003-events-count-none-branch",
+    "cc-003-wrong-direction-visibility"
+  ],
+  "findings_remaining_m9_plus": [
+    "cc-001-god-module",
+    "cc-004-implicit-io-toctou"
+  ],
+  "notes": [
+    {
+      "gate": "T0-lint",
+      "result": "pass",
+      "evidence": "cargo fmt --all -- --check (clean); cargo clippy --workspace --all-targets -- -D warnings (0 warnings)"
+    },
+    {
+      "gate": "T1-lib-unit",
+      "result": "pass",
+      "evidence": "cargo test -p chronos-store --lib: 56/56"
+    },
+    {
+      "gate": "T2-integration",
+      "result": "pass",
+      "evidence": "cargo test -p chronos-store --tests: 56/56; cargo test -p chronos-cli --tests: 2/2; cargo test -p chronos-services --lib: 263/263"
+    },
+    {
+      "gate": "verify",
+      "result": "PASS",
+      "verdict": "light-verify inline; 4/4 spec scenarios COMPLIANT (R1+R2+R3+R4)"
+    },
+    {
+      "gate": "release",
+      "result": "success",
+      "evidence": "v0.7.3 annotated tag at 07d01d5, peel_match: true, push to origin verified"
+    },
+    {
+      "gate": "archive",
+      "result": "closed",
+      "evidence": "change-entry + archive-manifest + terms + cycles-index updated; 4 findings moved from active to terminated"
+    },
+    {
+      "gate": "scoping-decision",
+      "result": "B-direct",
+      "evidence": "4 prescribed debt remediations from m9-04 envelopes; file-local refactor; no architectural fork"
+    },
+    {
+      "gate": "smoke_subset",
+      "result": "n/a",
+      "evidence": "no MCP/probe plumbing touched; sandbox smoke not warranted"
+    }
+  ],
+  "next_cycle": null,
+  "next_cycle_path": null,
+  "next_cycle_target_findings": [],
+  "ledger_state": {
+    "available": false,
+    "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02/m9-03/m9-04 pattern)"
+  }
+}
