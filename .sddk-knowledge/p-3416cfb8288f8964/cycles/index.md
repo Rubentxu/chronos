@@ -48,7 +48,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-24 | m9-24-verify-findings-schema-normalize | B-direct | `v0.7.22` | `8e0bfbf` | CLOSED |
 | m9-25 | m9-25-missing-verify-findings | B-direct | `v0.7.23` | `b4fccf4` | CLOSED |
 | m9-26 | m9-26-verify-findings-cycle-id-strip | B-direct | `v0.7.24` | `a7d43e0` | CLOSED |
-| m9-27 | m9-27-vacuous-peel-note-move | B-direct | `v0.7.25` | TBD | CLOSED |
+| m9-27 | m9-27-vacuous-peel-note-move | B-direct | `v0.7.25` | `91338e3` | CLOSED |
 
 ## Metadata
 

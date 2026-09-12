@@ -5,4 +5,4 @@
 | Cycle | m9-27-vacuous-peel-note-move |
 | Tag | `v0.7.25` |
 | Pee | fix commit (chronos convention) |
-| Released at | TBD |
+| Released at | 2026-09-12T11:48:44Z |
