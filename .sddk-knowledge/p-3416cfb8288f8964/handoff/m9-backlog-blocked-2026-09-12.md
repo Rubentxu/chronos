@@ -106,3 +106,45 @@ ran additional drift sweep across under-checked dimensions:
 
 After all fixes: CC#48 meta-check returns 0 DRIFT lines, confirming
 all 48 cross-checks are clean.
+
+
+## Session 2026-09-12T19:18Z: m9-58..m9-60 sweep
+
+After m9-59 tag v0.7.61, ran additional drift sweeps looking for
+dimensions not covered by existing 50 CCs.
+
+Closed:
+- m9-58 (v0.7.60): short SHAs in SHA-keyed metadata cells of change-entry
+  Ciclo tables (4 occurrences across m9-* history); CC#49 added.
+- m9-59 (v0.7.61): 31 apply-checkpoints missing canonical `remote_tag`
+  field (16 had legacy `tag`, 15 had neither); CC#50 added.
+- m9-60 (v0.7.62): 2 cycles (m9-56, m9-57) in cycles/index.md without
+  cycle-artifacts/ folder; synthesized 6 artifacts for each; CC#51 added.
+
+After all fixes: CC#48 meta-check returns 0 DRIFT lines, confirming
+all 51 cross-checks are clean.
+
+## Cross-checks summary (as of 2026-09-12T19:18Z)
+
+All 51 cross-checks pass. Breakdown:
+
+- C1-C10 (legacy schema normalization): PASS
+- C11-C20 (canonical schema enforcement): PASS
+- C21-C30 (release/merge receipt schema): PASS
+- C31-C40 (verify-report/verify-findings schema): PASS
+- C41-C47 (recent hardening): PASS
+- C48 (self-consistency meta-check, m9-57): PASS
+- C49 (short SHA detection, m9-58): PASS
+- C50 (canonical `remote_tag` detection, m9-59): PASS
+- C51 (cycle-artifacts existence, m9-60): PASS
+
+## Cosmetic drift remaining (not CC-enforced)
+
+These are by-design or low-impact:
+
+1. terms/index.md vs cycles/index.md Last updated timestamp format
+   inconsistency (`YYYY-MM-DDTHH:MMZ` vs `YYYY-MM-DDTHH:MM:SSZ`).
+2. 3 archive-manifests (m9-11, m9-12, m9-13) use Status=ARCHIVED while
+   cycles/index.md uses Status=CLOSED. Same meaning, different label.
+3. cycle_id short-form vs long-form is by-design per CC#16 (both
+   acceptable; m9-19+ uses short, m9-03..m9-18 uses long).
