@@ -80,6 +80,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-56 | m9-56-release-report-duplicate-cross-checks | B-direct | `v0.7.54` | `32d9a3c386de934bbbdf304b1cad367b629d9731` | CLOSED |
 | m9-57 | m9-57-apply-checkpoint-schema-backfill | B-direct | `v0.7.56` | `308215faf074dafb3054789db39c53af7fa2f1e6` | CLOSED |
 | m9-58 | m9-58-change-entry-ciclo-table-short-sha | B-direct | `v0.7.60` | `c6ce0e678d2872001ffca68abaffe00b72d8c516` | CLOSED |
+| m9-59 | m9-59-apply-checkpoint-remote-tag-canonical | B-direct | `v0.7.61` | `d54747a6eeaeb828fbba9c7f09a219656e96561d` | CLOSED |
 
 ## Metadata
 
@@ -87,5 +88,5 @@ Chronological record of all SDDK cycles for this project.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T18:42Z |
-| Total cycles | 58 |
+| Last updated | 2026-09-12T18:46Z |
+| Total cycles | 59 |

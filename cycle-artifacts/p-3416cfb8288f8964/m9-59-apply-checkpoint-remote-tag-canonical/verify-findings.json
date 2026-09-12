@@ -1,0 +1,29 @@
+{
+  "schema": "verify-finding.schema.json",
+  "subject": {
+    "head_sha": "d54747a6eeaeb828fbba9c7f09a219656e96561d",
+    "base_sha": "34341fa72f8ad003ce687493588e8b58b34d3dfb",
+    "diff_digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "working_tree_clean": true,
+    "verified_at": "2026-09-12T18:46:00Z",
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
+    "verdict": "passed"
+  },
+  "findings": [
+    {
+      "finding_id": "FIND-M9-59-APPLY-CHECKPOINT-MISSING-REMOTE-TAG",
+      "rule_id": "vault_hygiene.apply_checkpoint_schema_drift",
+      "severity": "medium",
+      "summary": "31 apply-checkpoint.json files missing canonical `remote_tag` field (16 had legacy `tag`, 15 had neither)",
+      "subject": {
+        "legacy_tag_count": 16,
+        "missing_both_count": 15,
+        "total": 31
+      },
+      "lens_summary": "Detection: schema sweep of apply-checkpoint.json for canonical `remote_tag` field. Cause: m9-57 backfill added 12 fields but missed `remote_tag`; 16 pre-m9-19 cycles had legacy `tag` field, 15 mid-era cycles (m9-19..m9-33) had neither. Fix: rename `tag` → `remote_tag` in 16 files, backfill `remote_tag` from cycles/index.md in 15 files; add CC#50."
+    }
+  ],
+  "lens_summary": "m9-59 closes the apply-checkpoint missing-`remote_tag` drift class. 31 cycles normalized. CC#50 added. CC#48 meta-check confirms all 50 CCs now report 0 DRIFT lines.",
+  "cycle_id": "m9-59-apply-checkpoint-remote-tag-canonical",
+  "verdict": "pass_with_findings"
+}

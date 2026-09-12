@@ -1,0 +1,37 @@
+{
+  "cycle_id": "m9-59-apply-checkpoint-remote-tag-canonical",
+  "head_sha": "d54747a6eeaeb828fbba9c7f09a219656e96561d",
+  "base_sha": "34341fa72f8ad003ce687493588e8b58b34d3dfb",
+  "created_at": "2026-09-12T18:46Z",
+  "route": "B-direct",
+  "summary": "Normalized 31 apply-checkpoint.json files to use the canonical  field. 16 cycles (m9-03..m9-18) had legacy  field (pre-m9-19 era); renamed. 15 cycles (m9-19..m9-33) had neither  nor  (mid-era when  was added but not backfilled); backfilled from cycles/index.md. Added cross-check #50 to detect this drift class.",
+  "findings_closed": [
+    {
+      "finding_id": "FIND-M9-59-APPLY-CHECKPOINT-MISSING-REMOTE-TAG",
+      "rule_id": "vault_hygiene.apply_checkpoint_schema_drift",
+      "subject": {
+        "cycle": "m9-59-apply-checkpoint-remote-tag-canonical",
+        "legacy_tag_count": 16,
+        "missing_both_count": 15,
+        "files": [
+          "31 apply-checkpoint.json files in cycle-artifacts/p-3416cfb8288f8964/m9-{03..33}*/apply-checkpoint.json"
+        ]
+      }
+    }
+  ],
+  "findings_introduced": {
+    "no_action": []
+  },
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived",
+  "title": "59 apply checkpoint remote tag canonical",
+  "status": "CLOSED",
+  "verified_at": "2026-09-12T18:46Z",
+  "released_at": "2026-09-12T18:46Z",
+  "archived_at": "2026-09-12T18:46Z",
+  "main_sha": "d54747a6eeaeb828fbba9c7f09a219656e96561d",
+  "remote_tag": "v0.7.61",
+  "remote_tag_peel": "d54747a6eeaeb828fbba9c7f09a219656e96561d",
+  "peel_match": true
+}
