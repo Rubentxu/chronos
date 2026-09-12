@@ -368,8 +368,31 @@ pub const CURRENT_BUNDLE_SCHEMA_VERSION: u32 = 3;
 
 /// Versions the loader accepts silently. Future cycles add entries here
 /// when they introduce a new envelope shape.
-#[allow(dead_code)]
+///
+/// m9-06: `#[allow(dead_code)]` removed — the constant is now exercised by
+/// `m9_04_known_bundle_schema_versions_pinned` (lib test), and the compile-time
+/// `KNOWN_SCHEMA_VERSIONS_INVARIANT` below references it from the production
+/// build so it is no longer dead. This closes both `m9-01-R4` (dead-code
+/// disclosure) and `FIND-M9-01-DV-OE-01` (speculative-code overeng).
 const KNOWN_BUNDLE_SCHEMA_VERSIONS: &[u32] = &[1, 2, 3];
+
+/// Compile-time invariant: `CURRENT_BUNDLE_SCHEMA_VERSION` must be in the
+/// known set. Touching `KNOWN_BUNDLE_SCHEMA_VERSIONS` is required to bump it.
+/// This block also forces the constant to be evaluated in the production build.
+const _: () = {
+    let cur = CURRENT_BUNDLE_SCHEMA_VERSION;
+    // Manual loop because `<[u32]>::contains` is not const-stable on stable.
+    let mut found = false;
+    let mut i = 0;
+    while i < KNOWN_BUNDLE_SCHEMA_VERSIONS.len() {
+        if KNOWN_BUNDLE_SCHEMA_VERSIONS[i] == cur {
+            found = true;
+            break;
+        }
+        i += 1;
+    }
+    assert!(found, "CURRENT_BUNDLE_SCHEMA_VERSION must be listed in KNOWN_BUNDLE_SCHEMA_VERSIONS");
+};
 
 fn default_schema_version() -> u32 {
     CURRENT_BUNDLE_SCHEMA_VERSION
@@ -2698,6 +2721,19 @@ mod tests {
             KNOWN_BUNDLE_SCHEMA_VERSIONS.len(),
             3,
             "KNOWN_BUNDLE_SCHEMA_VERSIONS must have exactly 3 entries"
+        );
+    }
+
+    // m9-06: pin the compile-time invariant that CURRENT_BUNDLE_SCHEMA_VERSION
+    // is included in KNOWN_BUNDLE_SCHEMA_VERSIONS. The const block at module
+    // scope already enforces this at compile time; this test exists so the
+    // invariant is greppable from a single test-run.
+    #[test]
+    fn m9_06_current_schema_version_is_listed_as_known() {
+        let cur = CURRENT_BUNDLE_SCHEMA_VERSION;
+        assert!(
+            KNOWN_BUNDLE_SCHEMA_VERSIONS.contains(&cur),
+            "CURRENT_BUNDLE_SCHEMA_VERSION ({cur}) must be listed in KNOWN_BUNDLE_SCHEMA_VERSIONS"
         );
     }
 }
