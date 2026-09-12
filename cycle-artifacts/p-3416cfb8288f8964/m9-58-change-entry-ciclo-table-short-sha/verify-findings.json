@@ -1,0 +1,38 @@
+{
+  "schema": "verify-finding.schema.json",
+  "subject": {
+    "head_sha": "c6ce0e678d2872001ffca68abaffe00b72d8c516",
+    "base_sha": "fc75ff3cbba48c6c4603d6b56b53664ad3849dbb",
+    "diff_digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "working_tree_clean": true,
+    "verified_at": "2026-09-12T18:38:00Z",
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
+    "verdict": "passed"
+  },
+  "findings": [
+    {
+      "finding_id": "FIND-M9-58-CHANGE-ENTRY-CICLO-TABLE-SHORT-SHA",
+      "rule_id": "vault_hygiene.short_sha_in_metadata",
+      "severity": "medium",
+      "summary": "4 change-entry.md `## Ciclo` table cells had short SHAs (1-39 chars) in `Base SHA` rows; CCs #22/#23 silently skipped them due to `len(head) != 40` precondition",
+      "subject": {
+        "files": [
+          ".sddk-knowledge/p-3416cfb8288f8964/changes/m8-07-hypothesis-reconstruction-fidelity/change-entry.md",
+          ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-54-stale-branch-cleanup/change-entry.md",
+          ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-55-apply-checkpoint-fabricated-sha/change-entry.md",
+          ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-56-release-report-duplicate-cross-checks/change-entry.md"
+        ],
+        "expansions": [
+          {"file": "m8-07/change-entry.md", "old": "148f009", "new": "148f009a4a957ae67ac62a28bcd04e49d44db5f2"},
+          {"file": "m9-54/change-entry.md", "old": "a24139e", "new": "a24139ec1410d6fff167c5b127c1d6fed019c192"},
+          {"file": "m9-55/change-entry.md", "old": "cbb9384", "new": "cbb93847228a9062de8e093dfe452c257233228c"},
+          {"file": "m9-56/change-entry.md", "old": "6bdf8ba", "new": "6bdf8ba506a61655edd82c997fca2137665ad8d6"}
+        ]
+      },
+      "lens_summary": "Detection: regex sweep of SHA-keyed table cells across all change-entry.md `## Ciclo` tables. Cause: CCs #22/#23 use `len(head) != 40` as precondition, skipping short SHAs. Fix: expand each short SHA to full 40-char via `git rev-parse`; add cross-check #49 that explicitly detects short SHAs in SHA-keyed metadata cells (independent of canonical-format precondition)."
+    }
+  ],
+  "lens_summary": "m9-58 closes the short-SHA-in-SHA-metadata drift class. 4 change-entry `## Ciclo` table cells had short Base SHA values missed by CCs #22/#23. CC#49 added to detect this drift class going forward. CC#48 meta-check confirms all 49 CCs now report 0 DRIFT lines.",
+  "cycle_id": "m9-58-change-entry-ciclo-table-short-sha",
+  "verdict": "pass_with_findings"
+}

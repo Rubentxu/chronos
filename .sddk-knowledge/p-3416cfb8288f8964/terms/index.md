@@ -75,5 +75,5 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T18:14:16Z
-| Last archive | m9-57-apply-checkpoint-schema-backfill |
+| Last updated | 2026-09-12T18:42:00Z
+| Last archive | m9-58-change-entry-ciclo-table-short-sha |
