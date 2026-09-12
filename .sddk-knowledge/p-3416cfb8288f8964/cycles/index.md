@@ -34,6 +34,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-10 | m9-10-m9-03-apply-checkpoint-rebuild | B-rebuild | `v0.7.8` | `69f200e2144bea2cd305c38903feb4814fb38806` | CLOSED |
 | m9-11 | m9-11-cycles-index-metadata-drift | B-direct | `v0.7.9` | `cd0115f8c93bddcae06e5a57f4e7e91d3a4fbb33` | CLOSED |
 | m9-12 | m9-12-terms-index-metadata-drift | B-direct | `v0.7.10` | `0012f12` | CLOSED |
+| m9-13 | m9-13-change-entry-base-sha-drift | B-direct | `v0.7.11` | `26848cf` | CLOSED |
 
 ## Metadata
 
@@ -41,5 +42,5 @@ Chronological record of all SDDK cycles for this project.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T08:54:00Z |
-| Total cycles | 28 |
+| Last updated | 2026-09-12T09:57:00Z |
+| Total cycles | 29 |

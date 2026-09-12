@@ -1,0 +1,52 @@
+{
+  "cycle_id": "p-3416cfb8288f8964/m9-13-change-entry-base-sha-drift",
+  "change": "fix m9-11 change-entry Base SHA drift (cd0115f → 6120e98) + add cross-check #7 to vault-drift-sweep",
+  "path": "B-direct",
+  "status": "CLOSED",
+  "head_sha": "26848cf",
+  "base_sha": "bfb9edeeea1a5dd88d8828addf38d0c755c7b5cf",
+  "tag": "v0.7.11",
+  "remote_tag_peel": "26848cf",
+  "main_sha": "bfb9edeeea1a5dd88d8828addf38d0c755c7b5cf",
+  "peel_match": true,
+  "runtime_status": "doc-only; no runtime impact",
+  "route": "B-direct (T0 + light-verify)",
+  "verified_at": "2026-09-12T09:57:00Z",
+  "released_at": "2026-09-12T09:57:00Z",
+  "archived_at": null,
+  "commits_since_base": [
+    "26848cffix(m9-13): m9-11 change-entry Base SHA drift (cd0115f → 6120e98) + add cross-check #7 to vault-drift-sweep"
+  ],
+  "artifacts": {
+    "merge_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-13-change-entry-base-sha-drift/merge-receipt.md",
+    "release_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-13-change-entry-base-sha-drift/release-receipt.md",
+    "release_report": "cycle-artifacts/p-3416cfb8288f8964/m9-13-change-entry-base-sha-drift/release-report.md",
+    "verify_report": "cycle-artifacts/p-3416cfb8288f8964/m9-13-change-entry-base-sha-drift/verify-report.md",
+    "verify_findings": "cycle-artifacts/p-3416cfb8288f8964/m9-13-change-entry-base-sha-drift/verify-findings.json",
+    "change_entry": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-13-change-entry-base-sha-drift/change-entry.md",
+    "archive_manifest": ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-13-change-entry-base-sha-drift/archive-manifest.md"
+  },
+  "findings_closed": [],
+  "findings_introduced": {
+    "no_action": []
+  },
+  "findings_remaining_m9_plus": [
+    "cc-001-god-module",
+    "cc-004-implicit-io-toctou",
+    "m9-02-R4 (feature: counterexample_bundle_events MCP tool)"
+  ],
+  "notes": [
+    "m9-11 author wrote Base SHA = cd0115f (the fix commit) but the correct Base SHA is 6120e98 (the parent of the fix, main HEAD before m9-11). This is a documentation drift.",
+    "Cross-check #7 (new in m9-13) parses change-entry SHA fields and verifies they are prefixes of apply-checkpoint SHA fields.",
+    "Self-referential catch: the new check returns empty on the post-fix state; would have returned DRIFT on the pre-fix state.",
+    "Doc-only change, no production code touched. T0 fmt+clippy clean.",
+    "Tag v0.7.11 peeled to fix commit 26848cf per chronos convention."
+  ],
+  "next_cycle": null,
+  "next_cycle_path": null,
+  "next_cycle_target_findings": [],
+  "ledger_state": {
+    "available": false,
+    "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02..m9-12 pattern)"
+  }
+}
