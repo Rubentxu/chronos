@@ -1,0 +1,13 @@
+{
+  "cycle_id": "m9-28",
+  "subject": {
+    "head_sha": "709e3c470d50064b9a2c819b5761a2972eadafcb",
+    "base_sha": "8eb648779071f9a634e2439754034f1288929c62"
+  },
+  "verdict": "pass",
+  "findings": [],
+  "lens_summary": {
+    "drift": "Replaced fabricated base_sha 6dce3739b7e2... in m9-19's apply-checkpoint.json with real 735c57b7178c... (parent of m9-19's fix commit). Added cross-check #20 with era-awareness (fix-peel vs docs-peel).",
+    "lens_summary_note": "C8 caught the fabricated SHA via 'git cat-file -e'. C20 prevents recurrence with stricter base_sha == head_sha^ rule for fix-peel cycles."
+  }
+}
