@@ -60,6 +60,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-36 | m9-36-release-receipt-base-sha-backfill | B-direct | `v0.7.34` | `ced90ec` | CLOSED |
 | m9-37 | m9-37-path-route-and-sha-normalize | B-direct | `v0.7.35` | `0d570b3` | CLOSED |
 | m9-38 | m9-38-verify-report-title-format-normalize | B-direct | `v0.7.36` | `e8f805f` | CLOSED |
+| m9-39 | m9-39-archive-manifest-base-sha-backfill | B-direct | `v0.7.37` | `75aec1a` | CLOSED |
 
 ## Metadata
 
@@ -67,5 +68,5 @@ Chronological record of all SDDK cycles for this project.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T13:23:00Z |
-| Total cycles | 54 |
+| Last updated | 2026-09-12T13:27:00Z |
+| Total cycles | 55 |
