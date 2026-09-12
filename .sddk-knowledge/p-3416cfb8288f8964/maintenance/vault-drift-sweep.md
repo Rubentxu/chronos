@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -1155,6 +1155,38 @@ print(f'Total: {errors}')
 **History:** m9-19..m9-27 used `# m9-NN: Release Report` format;
 m9-28+ uses `# Release Report — m9-NN`. m9-35 normalizes m9-19..m9-27
 and adds C27 to enforce the canonical format.
+
+### 28. release-receipt.md must have Base SHA field (closed by m9-36)
+
+```python
+import glob
+
+errors = 0
+for f in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/release-receipt.md')):
+    content = open(f).read()
+    # Both pipe-separated (`Base SHA |`) and table (`| Base SHA |`) formats allowed
+    if 'Base SHA' not in content:
+        print(f"DRIFT: {f}: no Base SHA field")
+
+print(f'Total: {errors}')
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** A release-receipt.md is missing the `Base SHA` field.
+
+**Resolution:**
+
+1. Add `Base SHA | <sha>` field to the release-receipt, sourced from
+   the corresponding apply-checkpoint.json `base_sha` field.
+2. While at it, normalize the file to the canonical pipe-separated
+   format (introduced in m9-34): one field per line, `Field | Value`.
+
+**History:** m9-03..m9-33 release-receipt.md used a markdown table
+format that did not include the `Base SHA` field. m9-34, m9-35
+introduced the canonical pipe-separated format with all required fields.
+m9-36 normalizes m9-03..m9-33 to the canonical format and adds C28
+to enforce the presence of `Base SHA`.
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class

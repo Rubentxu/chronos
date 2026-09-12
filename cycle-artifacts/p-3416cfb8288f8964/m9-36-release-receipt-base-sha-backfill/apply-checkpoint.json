@@ -1,0 +1,12 @@
+{
+  "cycle_id": "m9-36",
+  "head_sha": "TBD",
+  "base_sha": "d7fd733064999cf93eea429a78939a02a1d4d27c",
+  "created_at": "2026-09-12T13:15Z",
+  "route": "B-direct",
+  "summary": "Add missing Base SHA field to 31 release-receipt.md files (m9-03..m9-33) and normalize their format from markdown-table to canonical pipe-separated. Adds cross-check #28.",
+  "findings_closed": [],
+  "findings_introduced": {
+    "no_action": []
+  }
+}
