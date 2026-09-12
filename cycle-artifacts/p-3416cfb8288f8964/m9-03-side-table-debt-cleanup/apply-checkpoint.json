@@ -1,0 +1,100 @@
+{
+  "cycle_id": "p-3416cfb8288f8964/m9-03-side-table-debt-cleanup",
+  "change": "m9-03-side-table-debt-cleanup",
+  "path": "B-direct",
+  "status": "closed",
+  "head_sha": "2c98ce9a1df65d44ae865376fee46eb0d95ac425",
+  "base_sha": "6f375fd96dbc0c03fe36b473d306f1e54d078b08",
+  "tag": "v0.7.1",
+  "remote_tag_peel": "2c98ce9a1df65d44ae865376fee46eb0d95ac425",
+  "main_sha": "2c98ce9a1df65d44ae865376fee46eb0d95ac425",
+  "peel_match": true,
+  "runtime_status": "RELEASED",
+  "route": "local",
+  "verified_at": "2026-09-11T23:08:00Z",
+  "released_at": "2026-09-11T21:13:10Z",
+  "archived_at": "2026-09-11T21:13:30Z",
+  "commits_since_base": [
+    "3d72f69fix(m9-03): delete dead save_counterexample_bundle_events API + fix count doc drift + extract collect_bundle_chunks helper",
+    "570d215fix(m9-03): add bundle_events_count_or_legacy chokepoint, update services callers",
+    "2c98ce9docs(m9-03): light-verify evidence"
+  ],
+  "artifacts": {
+    "merge_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/merge-receipt.md",
+    "release_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/release-receipt.md",
+    "release_report": "cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/release-report.md",
+    "verify_report": "cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/verify-report.md",
+    "verify_findings": "cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/verify-findings.json",
+    "change_entry": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-03-side-table-debt-cleanup/change-entry.md",
+    "archive_manifest": ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-03-side-table-debt-cleanup/archive-manifest.md"
+  },
+  "findings_closed": [
+    "FIND-M9-02-DV-API-01",
+    "FIND-M9-02-DV-DOC-01",
+    "FIND-M9-02-DV-OE-01",
+    "FIND-M9-02-DV-COUP-01"
+  ],
+  "findings_remaining_m9_plus": [
+    "FIND-M9-02-DV-PERF-01",
+    "FIND-M9-01-DV-COUP-01",
+    "FIND-M9-01-DV-COUP-02",
+    "FIND-M9-01-DV-OE-01",
+    "m9-01-R4",
+    "cc-001-god-module",
+    "cc-004-implicit-io-toctou"
+  ],
+  "notes": [
+    {
+      "gate": "T0-lint",
+      "result": "n/a",
+      "evidence": "no Rust source changed; T0 lint gate does not apply to a JSON artifact rebuild"
+    },
+    {
+      "gate": "T1-lib-unit",
+      "result": "n/a",
+      "evidence": "no Rust source changed; T1 does not apply"
+    },
+    {
+      "gate": "T2-integration",
+      "result": "n/a",
+      "evidence": "no Rust source changed; T2 does not apply"
+    },
+    {
+      "gate": "verify",
+      "result": "PASS",
+      "verdict": "light-verify inline (historical); 4/4 spec scenarios COMPLIANT (F1: dead API eliminated; F2: doc drift fixed; F3: helper consolidates 3 duplicate loops; F4: chokepoint used by both services call sites). Source: pre-existing verify-report.md from m9-03 cycle."
+    },
+    {
+      "gate": "release",
+      "result": "success",
+      "evidence": "v0.7.1 annotated tag at 2c98ce9a1df65d44ae865376fee46eb0d95ac425, peel_match: true (per pre-existing release-receipt.md from m9-03 cycle)"
+    },
+    {
+      "gate": "archive",
+      "result": "rebuilt-2026-09-12",
+      "evidence": "change-entry.md and archive-manifest.md for m9-03 exist in `.sddk-knowledge/`. This apply-checkpoint.json was missing from `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/` (vault-reorg gap); it is rebuilt by m9-10 from the existing merge-receipt, release-receipt, release-report, and verify-report of m9-03. Archived at the original timestamp 2026-09-11T21:13:30Z (m9-03 close-of-cycle) — not the rebuild timestamp."
+    },
+    {
+      "gate": "scoping-decision",
+      "result": "B-rebuild",
+      "evidence": "single JSON artifact rebuilt from existing pre-reorg evidence. No Rust code touched. Follows m9-09 pattern (vault hygiene, no code touched)."
+    },
+    {
+      "gate": "smoke_subset",
+      "result": "n/a",
+      "evidence": "no Rust source touched; no MCP/probe plumbing touched."
+    },
+    {
+      "gate": "rebuild-source-fidelity",
+      "result": "high",
+      "evidence": "all five input artifacts (merge-receipt, release-receipt, release-report, verify-report, verify-findings.json) are present in cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/ with unmodified content (sha256 captured at rebuild time). The head_sha/base_sha/tag/verified_at values were lifted directly from those artifacts and from `git log 6f375fd..2c98ce9`. findings_closed inferred from verify-report.md table rows F1-F4 cross-referenced with the Terminated-terms table in terms/index.md. No values invented."
+    }
+  ],
+  "next_cycle": null,
+  "next_cycle_path": null,
+  "next_cycle_target_findings": [],
+  "ledger_state": {
+    "available": false,
+    "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02..m9-09 pattern)"
+  }
+}
