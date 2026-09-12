@@ -2,7 +2,8 @@
   "cycle_id": "m9-18-apply-checkpoint-metadata-drift",
   "subject": {
     "head": "6dce3736df06d4fe09db861ad43a3667c0f0bc25",
-    "head_sha": "6dce3736df06d4fe09db861ad43a3667c0f0bc25"
+    "head_sha": "6dce3736df06d4fe09db861ad43a3667c0f0bc25",
+    "base_sha": "cc995cdd2cf41bd0638a548fc3db169763bfc38d"
   },
   "findings": [],
   "_legacy": {

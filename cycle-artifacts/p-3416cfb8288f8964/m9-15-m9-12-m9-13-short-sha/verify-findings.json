@@ -2,7 +2,8 @@
   "cycle_id": "m9-15-m9-12-m9-13-short-sha",
   "subject": {
     "head": "2441f6f3c679555dc4106ea2e8a422ed407a26a0",
-    "head_sha": "2441f6f3c679555dc4106ea2e8a422ed407a26a0"
+    "head_sha": "2441f6f3c679555dc4106ea2e8a422ed407a26a0",
+    "base_sha": "d55cdc874edd5863f5d8a65a42396b99d090b6dc"
   },
   "findings": [],
   "_legacy": {

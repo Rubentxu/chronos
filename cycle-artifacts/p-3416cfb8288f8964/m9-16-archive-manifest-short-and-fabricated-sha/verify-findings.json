@@ -2,7 +2,8 @@
   "cycle_id": "m9-16-archive-manifest-short-and-fabricated-sha",
   "subject": {
     "head": "eb5110dfe1f1d14eab85e6052f1f7cbb86e2f384",
-    "head_sha": "eb5110dfe1f1d14eab85e6052f1f7cbb86e2f384"
+    "head_sha": "eb5110dfe1f1d14eab85e6052f1f7cbb86e2f384",
+    "base_sha": "68c528ec34adc1ef5c0e049b9ab83207d710bcb6"
   },
   "findings": [],
   "_legacy": {

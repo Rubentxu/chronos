@@ -2,7 +2,8 @@
   "cycle_id": "m9-11-cycles-index-metadata-drift",
   "subject": {
     "head": "cd0115fd8f942058cde109c72a975cab7ea7473c",
-    "head_sha": "cd0115fd8f942058cde109c72a975cab7ea7473c"
+    "head_sha": "cd0115fd8f942058cde109c72a975cab7ea7473c",
+    "base_sha": "6120e983e247d8d88fcd221f0e1063646f195cb7"
   },
   "findings": [],
   "_legacy": {

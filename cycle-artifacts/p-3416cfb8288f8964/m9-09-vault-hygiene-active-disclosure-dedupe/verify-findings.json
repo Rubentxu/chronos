@@ -2,7 +2,8 @@
   "cycle_id": "m9-09-vault-hygiene-active-disclosure-dedupe",
   "subject": {
     "head": "07e731d61424160c4f67d769db00a171837ba62c",
-    "head_sha": "07e731d61424160c4f67d769db00a171837ba62c"
+    "head_sha": "07e731d61424160c4f67d769db00a171837ba62c",
+    "base_sha": "c183ad1822423419ffb7d5f92a8d5ac46423d653"
   },
   "findings": [],
   "_note": "Synthetic verify-findings synthesized by m9-25. The original verify-findings.json for this cycle was lost during the vault reorg. Subject SHA taken from apply-checkpoint.json head_sha. No findings array entries.",

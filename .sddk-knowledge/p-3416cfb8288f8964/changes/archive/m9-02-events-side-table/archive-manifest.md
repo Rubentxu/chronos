@@ -9,6 +9,7 @@
 | Path | `A-lite` |
 | Status | **CLOSED** |
 | Published SHA | `1a8d104ba2da883b40bd424cdc079b344f7ed63c` |
+| Head SHA | `1a8d104ba2da883b40bd424cdc079b344f7ed63c` |
 | Tag | `v0.7.0` (annotated, peel matches HEAD) |
 | Base SHA | `48a9cff54ec165987063705d5d4d3af453fcb6b3` |
 | Delivery kind | ad-hoc (no CLI storage; orchestrator owns transition) |

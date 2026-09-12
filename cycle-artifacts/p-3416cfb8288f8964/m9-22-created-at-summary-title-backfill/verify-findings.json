@@ -2,7 +2,8 @@
   "cycle_id": "m9-22",
   "subject": {
     "head": "e87a25c29b4529b94e7823430e1cd1df3b5cbd0a",
-    "head_sha": "e87a25c29b4529b94e7823430e1cd1df3b5cbd0a"
+    "head_sha": "e87a25c29b4529b94e7823430e1cd1df3b5cbd0a",
+    "base_sha": "71e7d1171d40b6f137504db470c96e65a9be7f17"
   },
   "findings": [
     {

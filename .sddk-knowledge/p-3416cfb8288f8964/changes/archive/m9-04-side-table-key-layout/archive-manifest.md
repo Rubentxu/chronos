@@ -9,6 +9,7 @@
 | Path | `A-min` |
 | Status | **CLOSED** |
 | Published SHA | `d6b3b8c51c50d2ce6d0fe4f8c804cf793137f0dc` |
+| Head SHA | `d6b3b8c51c50d2ce6d0fe4f8c804cf793137f0dc` |
 | Tag | `v0.7.2` (annotated, peel matches HEAD) |
 | Base SHA | `eb2cccd6fdfcd4b00bf980453bc40c606fa69885` |
 | Delivery kind | local (no CLI storage; orchestrator owns transition) |

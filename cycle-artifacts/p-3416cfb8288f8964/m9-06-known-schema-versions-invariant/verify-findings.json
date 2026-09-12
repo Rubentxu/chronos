@@ -2,7 +2,8 @@
   "cycle_id": "m9-06-known-schema-versions-invariant",
   "subject": {
     "head": "3383905d93ac66b6e90b6de8cea760c1ad4e2c99",
-    "head_sha": "3383905d93ac66b6e90b6de8cea760c1ad4e2c99"
+    "head_sha": "3383905d93ac66b6e90b6de8cea760c1ad4e2c99",
+    "base_sha": "9d2c676bfc6331f730e7db9eac3ec9c057db1de4"
   },
   "findings": [],
   "_note": "Synthetic verify-findings synthesized by m9-25. The original verify-findings.json for this cycle was lost during the vault reorg. Subject SHA taken from apply-checkpoint.json head_sha. No findings array entries.",

@@ -2,7 +2,8 @@
   "cycle_id": "m9-21",
   "subject": {
     "head": "14ecf16ded816896cb612721875e97380bcadbc3",
-    "head_sha": "14ecf16ded816896cb612721875e97380bcadbc3"
+    "head_sha": "14ecf16ded816896cb612721875e97380bcadbc3",
+    "base_sha": "efb9d93da368c4c6e1473c4668bbc945dff850c6"
   },
   "findings": [
     {

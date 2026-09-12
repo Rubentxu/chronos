@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -1073,6 +1073,56 @@ than the canonical `# Change: m9-NN <human-readable>`.
 **History:** m9-01..m9-18 used `# Change Entry — <slug>` format. m9-19+
 used `# Change: m9-NN <title>` format. m9-33 normalizes all 32 cycles
 to the canonical format and adds C25 to enforce it.
+
+### 26. verify-findings.json subject must have head_sha AND base_sha; archive-manifest.md header must have Head SHA (closed by m9-34)
+
+```python
+import json, os, re, glob
+
+# Part A: verify-findings.json subject
+for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
+    vf = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/verify-findings.json'
+    if not os.path.exists(vf): continue
+    d = json.load(open(vf))
+    sub = d.get('subject', {})
+    if not isinstance(sub, dict): continue
+    # Either (head_sha + base_sha) OR (head + base) for legacy schema
+    has_head = sub.get('head_sha') or sub.get('head')
+    has_base = sub.get('base_sha') or sub.get('base')
+    if not has_head:
+        print(f"DRIFT: {folder}/verify-findings.json: subject missing head_sha/head")
+    if not has_base:
+        print(f"DRIFT: {folder}/verify-findings.json: subject missing base_sha/base")
+
+# Part B: archive-manifest.md header has Head SHA
+for manifest in sorted(glob.glob('.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-*/archive-manifest.md')):
+    content = open(manifest).read()
+    if '| Head SHA |' not in content:
+        print(f"DRIFT: {manifest}: no Head SHA field in header")
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** A verify-findings.json subject is missing the head
+SHA or base SHA, or an archive-manifest.md header is missing the
+Head SHA field.
+
+**Resolution:**
+
+For verify-findings.json:
+1. Add `subject.base_sha` from apply-checkpoint.json if missing.
+2. Legacy m9-03 schema uses `subject.base` / `subject.head` instead
+   of `subject.base_sha` / `subject.head_sha` — exempt as accepted-by-design.
+
+For archive-manifest.md:
+1. m9-01..m9-10 used `| Published SHA |` instead of `| Head SHA |`.
+   Add a `| Head SHA |` field as an alias for `| Published SHA |`
+   (same value) so cross-references match.
+
+**History:** m9-19..m9-27 verify-findings.json had `head_sha` but
+no `base_sha`. m9-01..m9-10 archive-manifest.md had `Published SHA`
+instead of `Head SHA`. m9-34 closes both drift classes and adds C26
+to enforce them.
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class

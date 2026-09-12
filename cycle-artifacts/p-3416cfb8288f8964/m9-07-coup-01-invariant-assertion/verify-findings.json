@@ -2,7 +2,8 @@
   "cycle_id": "m9-07-coup-01-invariant-assertion",
   "subject": {
     "head": "3edb01f0a17c3ac8877df1e7868d4e3cca374217",
-    "head_sha": "3edb01f0a17c3ac8877df1e7868d4e3cca374217"
+    "head_sha": "3edb01f0a17c3ac8877df1e7868d4e3cca374217",
+    "base_sha": "aa96e5a51b5424a844f1f153d7ce719a53017119"
   },
   "findings": [],
   "_note": "Synthetic verify-findings synthesized by m9-25. The original verify-findings.json for this cycle was lost during the vault reorg. Subject SHA taken from apply-checkpoint.json head_sha. No findings array entries.",

@@ -2,7 +2,8 @@
   "cycle_id": "m9-17-verify-findings-and-markdown-sha-drift",
   "subject": {
     "head": "134dc7525312275c447db8f5996740ff7c102a02",
-    "head_sha": "134dc7525312275c447db8f5996740ff7c102a02"
+    "head_sha": "134dc7525312275c447db8f5996740ff7c102a02",
+    "base_sha": "0ed8f874f7b6f973505fc3997475fc398fcfa4cc"
   },
   "findings": [],
   "_legacy": {

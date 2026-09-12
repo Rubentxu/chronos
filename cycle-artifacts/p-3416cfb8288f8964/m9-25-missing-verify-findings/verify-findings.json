@@ -2,7 +2,8 @@
   "cycle_id": "m9-25",
   "subject": {
     "head": "b4fccf44a6e5e117e2d7979c73909d962e42f6e1",
-    "head_sha": "b4fccf44a6e5e117e2d7979c73909d962e42f6e1"
+    "head_sha": "b4fccf44a6e5e117e2d7979c73909d962e42f6e1",
+    "base_sha": "429f01cf3ff8657044f2fc952e3c78bbe635c535"
   },
   "findings": [
     {

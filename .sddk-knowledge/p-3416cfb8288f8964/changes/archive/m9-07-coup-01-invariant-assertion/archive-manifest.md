@@ -9,6 +9,7 @@
 | Path | `B-direct` |
 | Status | **CLOSED** |
 | Published SHA | `3edb01f0a17c3ac8877df1e7868d4e3cca374217` |
+| Head SHA | `3edb01f0a17c3ac8877df1e7868d4e3cca374217` |
 | Tag | `v0.7.5` (annotated, peel matches HEAD) |
 | Base SHA | `aa96e5a51b5424a844f1f153d7ce719a53017119` |
 | Delivery kind | local (no CLI storage; orchestrator owns transition) |
