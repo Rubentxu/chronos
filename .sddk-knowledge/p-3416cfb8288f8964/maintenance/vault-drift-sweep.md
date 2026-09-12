@@ -254,6 +254,38 @@ cross-check #8 to prevent recurrence. Note that `peel_match: true` in
 m9-11 was also a lie: `remote_tag_peel` did not equal the actual tag
 peel; the corrected values match `git rev-list -n 1 v0.7.9`.
 
+### 9. archive-manifest.md Head SHA + cross-references are full 40-char (closed by m9-16)
+
+```python
+import re, glob
+for manifest in sorted(glob.glob('.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-*/archive-manifest.md')):
+    with open(manifest) as f:
+        content = f.read()
+    # Check Head SHA field
+    m = re.search(r'\| Head SHA \| `([a-f0-9]+)` \|', content)
+    if m and len(m.group(1)) != 40:
+        print(f"DRIFT: {manifest}: Head SHA is {len(m.group(1))} chars (expected 40)")
+    # Check all SHAs in m9-*-* row references within Previous cycles / Drift summary tables
+    for ref_m in re.finditer(r'\| (m9-\d+-[a-z0-9-]+) \| m9-\d+-[a-z0-9-]+ \| B-direct \| `v0\.\d+\.\d+` \| `([a-f0-9]+)` \|', content):
+        if len(ref_m.group(2)) != 40:
+            print(f"DRIFT: {manifest}: cross-ref to {ref_m.group(1)} has {len(ref_m.group(2))}-char SHA")
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** either (a) the archive-manifest's own `Head SHA`
+metadata field is short (e.g. `0012f12`), or (b) the archive-manifest
+references a prior cycle's row in a Previous-cycles table with a short
+SHA. C3 only checks `apply-checkpoint.json`; this check covers
+`archive-manifest.md` which can drift independently.
+
+**History:** m9-11, m9-12, and m9-13 archive-manifests all stored
+short or fabricated SHAs in their Head SHA fields. m9-14 and m9-15
+fixed the apply-checkpoint.json fields but did not touch the
+corresponding archive-manifest.md files, leaving the drift visible in
+the published archive. m9-16 closes this and adds cross-check #9 to
+prevent recurrence.
+
 ## When to escalate
 
 If any of the cross-checks finds drift that is **not** trivially
@@ -262,9 +294,9 @@ artifacts for a rebuild do not exist in the repo), document the gap in
 the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
-If **check 5**, **check 6**, **check 7**, or **check 8** finds drift: the
-resolution is mechanical (a small metadata edit). Do this in the same
-cycle that catches it; do not defer.
+If **check 5**, **check 6**, **check 7**, **check 8**, or **check 9**
+finds drift: the resolution is mechanical (a small metadata edit). Do
+this in the same cycle that catches it; do not defer.
 
 ## Reference
 
@@ -275,6 +307,8 @@ Cycles that established this procedure:
 - **m9-12** (vault hygiene: terms/index.md "Last archive" drift fix, v0.7.10) → cross-check #6
 - **m9-13** (vault hygiene: change-entry SHA drift fix, v0.7.11) → cross-check #7
 - **m9-14** (vault hygiene: apply-checkpoint fabricated-SHA fix, v0.7.12) → cross-check #8
+- **m9-15** (vault hygiene: apply-checkpoint short-SHA expansion, v0.7.13) → tightened cross-check #3
+- **m9-16** (vault hygiene: archive-manifest short/fabricated-SHA fix, v0.7.14) → cross-check #9
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class

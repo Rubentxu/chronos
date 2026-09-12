@@ -74,5 +74,5 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T10:09:00Z |
-| Last archive | m9-15-m9-12-m9-13-short-sha |
+| Last updated | 2026-09-12T10:15:00Z |
+| Last archive | m9-16-archive-manifest-short-and-fabricated-sha |

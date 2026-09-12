@@ -6,7 +6,7 @@
 | Path | B-direct |
 | Status | ARCHIVED |
 | Tag | `v0.7.9` |
-| Head SHA | `cd0115f8c93bddcae06e5a57f4e7e91d3a4fbb33` |
+| Head SHA | `cd0115fd8f942058cde109c72a975cab7ea7473c` |
 
 ## Artifact index
 
@@ -37,7 +37,7 @@ cross-check #5 to prevent recurrence.
 
 ```
 | m9-10 | m9-10-m9-03-apply-checkpoint-rebuild | B-rebuild | `v0.7.8` | `69f200e2144bea2cd305c38903feb4814fb38806` | CLOSED |
-| m9-11 | m9-11-cycles-index-metadata-drift | B-direct | `v0.7.9` | `cd0115f8c93bddcae06e5a57f4e7e91d3a4fbb33` | CLOSED |
+| m9-11 | m9-11-cycles-index-metadata-drift | B-direct | `v0.7.9` | `cd0115fd8f942058cde109c72a975cab7ea7473c` | CLOSED |
 ```
 
 `Total cycles` field updated: 22 → 26 → 27 (after adding m9-11 row).

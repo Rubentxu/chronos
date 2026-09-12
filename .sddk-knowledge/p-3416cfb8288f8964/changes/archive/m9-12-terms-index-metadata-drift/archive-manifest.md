@@ -6,7 +6,7 @@
 | Path | B-direct |
 | Status | ARCHIVED |
 | Tag | `v0.7.10` |
-| Head SHA | `0012f12` |
+| Head SHA | `0012f1242cef949efc4cbd4c8d419a135ee3cf8a` |
 
 ## Artifact index
 
@@ -37,8 +37,8 @@ cross-check #6 to prevent recurrence.
 `cycles/index.md` updated:
 
 ```
-| m9-11 | m9-11-cycles-index-metadata-drift | B-direct | `v0.7.9` | `cd0115f8c93bddcae06e5a57f4e7e91d3a4fbb33` | CLOSED |
-| m9-12 | m9-12-terms-index-metadata-drift | B-direct | `v0.7.10` | `0012f12` | CLOSED |
+| m9-11 | m9-11-cycles-index-metadata-drift | B-direct | `v0.7.9` | `cd0115fd8f942058cde109c72a975cab7ea7473c` | CLOSED |
+| m9-12 | m9-12-terms-index-metadata-drift | B-direct | `v0.7.10` | `0012f1242cef949efc4cbd4c8d419a135ee3cf8a` | CLOSED |
 ```
 
 `Total cycles` field updated: 27 → 28.

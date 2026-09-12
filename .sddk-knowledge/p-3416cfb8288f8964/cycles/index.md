@@ -35,8 +35,9 @@ Chronological record of all SDDK cycles for this project.
 | m9-11 | m9-11-cycles-index-metadata-drift | B-direct | `v0.7.9` | `cd0115fd8f942058cde109c72a975cab7ea7473c` | CLOSED |
 | m9-12 | m9-12-terms-index-metadata-drift | B-direct | `v0.7.10` | `0012f1242cef949efc4cbd4c8d419a135ee3cf8a` | CLOSED |
 | m9-13 | m9-13-change-entry-base-sha-drift | B-direct | `v0.7.11` | `26848cf8b26340d3fde99a3a7f398f2873943982` | CLOSED |
-| m9-14 | m9-14-m9-11-fabricated-sha | B-direct | `v0.7.12` | `3869906` | CLOSED |
-| m9-15 | m9-15-m9-12-m9-13-short-sha | B-direct | `v0.7.13` | TBD | CLOSED |
+| m9-14 | m9-14-m9-11-fabricated-sha | B-direct | `v0.7.12` | `38699061891b76f90ef316914d3ba15d6eb53f83` | CLOSED |
+| m9-15 | m9-15-m9-12-m9-13-short-sha | B-direct | `v0.7.13` | `2441f6f3c679555dc4106ea2e8a422ed407a26a0` | CLOSED |
+| m9-16 | m9-16-archive-manifest-short-and-fabricated-sha | B-direct | `v0.7.14` | TBD | CLOSED |
 
 ## Metadata
 
@@ -44,5 +45,5 @@ Chronological record of all SDDK cycles for this project.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T10:09:00Z |
-| Total cycles | 31 |
+| Last updated | 2026-09-12T10:15:00Z |
+| Total cycles | 32 |
