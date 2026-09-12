@@ -5,7 +5,29 @@
     "base_sha": "19074fc24e0f545ff2200dd8dfafe74863af79c0"
   },
   "verdict": "pass",
-  "findings": [],
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "low",
+      "category": "metadata-drift",
+      "description": "m9-34 verify-findings.json subject.head_sha was fix commit SHA; should be docs commit SHA.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F2",
+      "severity": "low",
+      "category": "metadata-drift",
+      "description": "m9-35 verify-findings.json subject.head_sha was fix commit SHA; should be docs commit SHA.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F3",
+      "severity": "informational",
+      "category": "process",
+      "description": "Added cross-check #35 to vault-drift-sweep.md.",
+      "status": "RESOLVED"
+    }
+  ],
   "lens_summary": {
     "drift": "m9-34, m9-35 verify-findings.json subject.head_sha had fix-commit SHAs (since tag peels to fix); should have docs-commit SHAs (per fix-peel convention). Synced."
   }

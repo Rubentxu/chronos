@@ -5,7 +5,29 @@
     "base_sha": "d7fd733064999cf93eea429a78939a02a1d4d27c"
   },
   "verdict": "pass",
-  "findings": [],
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "low",
+      "category": "schema-drift",
+      "description": "31 release-receipt.md files (m9-03..m9-33) were missing the `Base SHA` field.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F2",
+      "severity": "low",
+      "category": "schema-drift",
+      "description": "31 release-receipt.md files (m9-03..m9-33) used markdown table format instead of canonical pipe-separated format.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F3",
+      "severity": "informational",
+      "category": "process",
+      "description": "Added cross-check #28 to vault-drift-sweep.md enforcing `Base SHA` presence.",
+      "status": "RESOLVED"
+    }
+  ],
   "lens_summary": {
     "drift": "31 release-receipt.md files (m9-03..m9-33) used a markdown table format missing the Base SHA field. Normalized to canonical pipe-separated format with all fields. Added cross-check #28."
   }

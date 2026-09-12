@@ -5,7 +5,29 @@
     "base_sha": "5225467421097d7b283a2b3e21d0ce38018c58bd"
   },
   "verdict": "pass",
-  "findings": [],
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "low",
+      "category": "schema-drift",
+      "description": "31 apply-checkpoint.json files (m9-03..m9-33) had `path` field instead of canonical `route`.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F2",
+      "severity": "low",
+      "category": "metadata-drift",
+      "description": "2 change-entry.md files (m9-34, m9-35) had Subject `head_sha` pointing to intermediate commits instead of final HEAD.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F3",
+      "severity": "informational",
+      "category": "process",
+      "description": "Added cross-check #29 to vault-drift-sweep.md enforcing both schemas.",
+      "status": "RESOLVED"
+    }
+  ],
   "lens_summary": {
     "drift": "31 apply-checkpoint.json files (m9-03..m9-33) had 'path' field; canonical is 'route'. 2 change-entry.md files (m9-34, m9-35) had intermediate head_sha instead of final HEAD. Both classes normalized."
   }

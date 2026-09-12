@@ -5,7 +5,43 @@
     "base_sha": "6bc6781465f9dff5a59bd4d8e8a99930dba3e7e5"
   },
   "verdict": "pass",
-  "findings": [],
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "low",
+      "category": "schema-drift",
+      "description": "29 verify-report.md files used non-canonical title format.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F2",
+      "severity": "low",
+      "category": "schema-drift",
+      "description": "24 verify-findings.json files lacked top-level `verdict` field.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F3",
+      "severity": "low",
+      "category": "schema-drift",
+      "description": "18 archive-manifest.md files used `Cycle ID` instead of `Cycle`.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F4",
+      "severity": "low",
+      "category": "schema-drift",
+      "description": "18 change-entry.md files used `## Ciclo` instead of `## Summary`.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F5",
+      "severity": "informational",
+      "category": "process",
+      "description": "Added cross-check #30 to vault-drift-sweep.md enforcing all 4 schemas.",
+      "status": "RESOLVED"
+    }
+  ],
   "lens_summary": {
     "drift": "Four drift classes closed: verify-report.md title (29 files), verify-findings verdict (24 files), archive-manifest Cycle field (18 files), change-entry Summary section (18 files). Added cross-check #30."
   }

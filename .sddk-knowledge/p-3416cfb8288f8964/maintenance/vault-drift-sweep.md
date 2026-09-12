@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34**, or **check 35**, or **check 36**, or **check 37** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34**, or **check 35**, or **check 36**, or **check 37**, or **check 38** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -1672,3 +1672,44 @@ near the end of the file but Subject was inserted in the middle by
 m9-42's bullet conversion. m9-45 normalizes the order. m9-34..m9-44
 release-report.md had `**Cycle**: m9-NN name` (with space) instead of
 `**Cycle**: m9-NN-name` (folder slug); m9-45 fixes.
+
+### 38. verify-findings.json findings array populated from verify-report table (closed by m9-46)
+
+```python
+import json, glob, re, os
+
+errors = 0
+for vf in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/verify-findings.json')):
+    folder = vf.split('/')[-2]
+    vr_path = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/verify-report.md'
+    if not os.path.exists(vr_path):
+        continue
+    vr = open(vr_path).read()
+    findings_m = re.search(r'## Findings[^\n]*\n+(.*?)(?=\n## |\Z)', vr, re.DOTALL)
+    if not findings_m:
+        continue
+    body = findings_m.group(1)
+    if re.search(r'^None', body, re.MULTILINE):
+        table_rows = 0
+    else:
+        table_rows = len(re.findall(r'^\| F\d+', body, re.MULTILINE))
+    d = json.load(open(vf))
+    findings_count = len(d.get('findings', []))
+    if table_rows != findings_count:
+        if table_rows == 0 and findings_count == 0:
+            continue
+        errors += 1
+        print(f"DRIFT: {folder}: table_rows={table_rows} findings={findings_count}")
+
+print(f'Total: {errors}')
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** `verify-findings.json` `findings` array length doesn't
+match the number of table rows in `verify-report.md` `## Findings`
+section. The findings array should be populated from the table.
+
+**History:** m9-34..m9-45 verify-findings.json had empty `findings`
+arrays even though verify-report.md had populated Findings tables.
+m9-46 populates from the table.

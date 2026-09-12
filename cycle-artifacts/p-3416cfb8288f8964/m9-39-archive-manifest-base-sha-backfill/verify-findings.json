@@ -5,7 +5,29 @@
     "base_sha": "32f62d2462182faa241799e305907e761f211f85"
   },
   "verdict": "pass",
-  "findings": [],
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "low",
+      "category": "schema-drift",
+      "description": "16 archive-manifest.md files (m9-11..m9-27) were missing the `Base SHA` field in the header table.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F2",
+      "severity": "low",
+      "category": "schema-drift",
+      "description": "m9-34 verify-report.md was missing `## Cross-checks` section.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F3",
+      "severity": "informational",
+      "category": "process",
+      "description": "Added cross-check #31 to vault-drift-sweep.md enforcing both schemas.",
+      "status": "RESOLVED"
+    }
+  ],
   "lens_summary": {
     "drift": "16 archive-manifest.md files (m9-11..m9-27) missing Base SHA field; m9-34 verify-report.md missing Cross-checks section. Both classes normalized. Added cross-check #31."
   }

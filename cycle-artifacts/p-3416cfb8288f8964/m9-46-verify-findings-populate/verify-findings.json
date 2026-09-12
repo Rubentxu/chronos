@@ -1,0 +1,28 @@
+{
+  "cycle_id": "m9-46",
+  "subject": {
+    "head_sha": "TBD",
+    "base_sha": "9171c5f51166d643fea6689549536da9f2b80d2c"
+  },
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "low",
+      "schema-drift",
+      "category": "schema-drift",
+      "description": "12 verify-findings.json files (m9-34..m9-45) had empty `findings` arrays even though verify-report.md had populated Findings tables.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F2",
+      "severity": "informational",
+      "category": "process",
+      "description": "Added cross-check #38 to vault-drift-sweep.md.",
+      "status": "RESOLVED"
+    }
+  ],
+  "lens_summary": {
+    "drift": "12 verify-findings.json files (m9-34..m9-45) had empty findings arrays despite populated Findings tables. Populated from tables; cross-check #38 added."
+  }
+}

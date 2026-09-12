@@ -5,7 +5,29 @@
     "base_sha": "9170deacbe463c0e81886b9083ef5920006afc3a"
   },
   "verdict": "pass",
-  "findings": [],
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "low",
+      "category": "schema-drift",
+      "description": "22 release-report.md files (m9-03..m9-33) were missing `**Path**` field.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F2",
+      "severity": "low",
+      "category": "schema-drift",
+      "description": "17 release-report.md files (m9-11..m9-27) were missing `## Cross-checks` section.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F3",
+      "severity": "informational",
+      "category": "process",
+      "description": "Added cross-check #32 to vault-drift-sweep.md enforcing both schemas.",
+      "status": "RESOLVED"
+    }
+  ],
   "lens_summary": {
     "drift": "22 release-report.md files (m9-03..m9-33) missing Path field; 17 release-report.md files (m9-11..m9-27) missing Cross-checks section. Both classes normalized. Added cross-check #32."
   }

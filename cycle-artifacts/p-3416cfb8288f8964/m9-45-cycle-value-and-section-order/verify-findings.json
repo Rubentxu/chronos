@@ -5,7 +5,29 @@
     "base_sha": "89bd06beb701eb9eb236e4a28df9cd2db9943586"
   },
   "verdict": "pass",
-  "findings": [],
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "low",
+      "category": "schema-drift",
+      "description": "9 change-entry.md files had `## Cross-check` before `## Subject`.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F2",
+      "severity": "low",
+      "category": "schema-drift",
+      "description": "11 release-report.md files had `**Cycle**:` with spaces.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F3",
+      "severity": "informational",
+      "category": "process",
+      "description": "Added cross-check #37 to vault-drift-sweep.md.",
+      "status": "RESOLVED"
+    }
+  ],
   "lens_summary": {
     "drift": "Two drift classes closed: change-entry.md section order (9), release-report.md cycle value (11). Added cross-check #37."
   }
