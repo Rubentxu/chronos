@@ -50,7 +50,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-26 | m9-26-verify-findings-cycle-id-strip | B-direct | `v0.7.24` | `a7d43e0` | CLOSED |
 | m9-27 | m9-27-vacuous-peel-note-move | B-direct | `v0.7.25` | `91338e3` | CLOSED |
 | m9-28 | m9-28-m9-19-fabricated-base-sha | B-direct | `v0.7.26` | `709e3c4` | CLOSED |
-| m9-29 | m9-29-evidence-bindings-backfill | B-direct | `v0.7.27` | — | CLOSED |
+| m9-29 | m9-29-evidence-bindings-backfill | B-direct | `v0.7.27` | `24c144f` | CLOSED |
 
 ## Metadata
 
