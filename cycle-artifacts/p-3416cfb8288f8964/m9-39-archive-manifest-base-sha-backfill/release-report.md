@@ -1,6 +1,6 @@
 # Release Report — m9-39
 
-**Cycle**: m9-39 archive-manifest-base-sha-backfill
+**Cycle**: m9-39-archive-manifest-base-sha-backfill
 **Path**: B-direct
 **Tag**: v0.7.37
 

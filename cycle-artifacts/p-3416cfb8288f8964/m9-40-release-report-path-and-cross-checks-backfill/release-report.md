@@ -1,6 +1,6 @@
 # Release Report — m9-40
 
-**Cycle**: m9-40 release-report-path-and-cross-checks-backfill
+**Cycle**: m9-40-release-report-path-and-cross-checks-backfill
 **Path**: B-direct
 **Tag**: v0.7.38
 

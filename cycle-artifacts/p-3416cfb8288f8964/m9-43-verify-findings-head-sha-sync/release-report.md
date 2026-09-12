@@ -1,6 +1,6 @@
 # Release Report — m9-43
 
-**Cycle**: m9-43 verify-findings-head-sha-sync
+**Cycle**: m9-43-verify-findings-head-sha-sync
 **Path**: B-direct
 **Tag**: v0.7.41
 

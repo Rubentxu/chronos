@@ -8,9 +8,14 @@ Three drift classes closed:
 2. **change-entry.md Cross-check section** (18 files: m9-01..m9-18).
 3. **verify-findings.json cycle_id** (1 file: m9-03).
 
-## Cross-check added
+## Subject
 
-- **C34**: change-entry Subject bullets + Cross-check + verify-findings cycle_id.
+- base_sha: `60d2f78a66df75962a0f6a9bd0d0d06a9fee6092`
+- head_sha: `cf078cab0afde21ec7042ea5785ab1dffc7420aa`
+- cycle: m9-42
+- branch: `fix/m9-42-subject-bullets-and-cross-check-section`
+- date: 2026-09-12
+- tag: `v0.7.40`
 
 ## Files changed
 
@@ -20,11 +25,6 @@ Three drift classes closed:
 - 1 vault-drift-sweep.md: added cross-check #34
 - 6 new cycle artifacts for m9-42
 
-## Subject
+## Cross-check added
 
-- base_sha: `60d2f78a66df75962a0f6a9bd0d0d06a9fee6092`
-- head_sha: `cf078cab0afde21ec7042ea5785ab1dffc7420aa`
-- cycle: m9-42
-- branch: `fix/m9-42-subject-bullets-and-cross-check-section`
-- date: 2026-09-12
-- tag: `v0.7.40`
+- **C34**: change-entry Subject bullets + Cross-check + verify-findings cycle_id.

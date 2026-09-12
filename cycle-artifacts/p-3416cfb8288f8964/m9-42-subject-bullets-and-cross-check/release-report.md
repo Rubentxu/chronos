@@ -1,6 +1,6 @@
 # Release Report — m9-42
 
-**Cycle**: m9-42 subject-bullets-and-cross-check
+**Cycle**: m9-42-subject-bullets-and-cross-check
 **Path**: B-direct
 **Tag**: v0.7.40
 

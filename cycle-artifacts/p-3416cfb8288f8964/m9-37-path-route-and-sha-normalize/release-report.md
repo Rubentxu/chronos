@@ -1,6 +1,6 @@
 # Release Report — m9-37
 
-**Cycle**: m9-37 path-route-and-sha-normalize
+**Cycle**: m9-37-path-route-and-sha-normalize
 **Path**: B-direct
 **Tag**: v0.7.35
 

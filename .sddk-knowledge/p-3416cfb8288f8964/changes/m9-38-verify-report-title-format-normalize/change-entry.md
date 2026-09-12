@@ -15,10 +15,14 @@ Four drift classes closed:
 4. **change-entry.md Summary section** (18 files: m9-01..m9-18).
    Replaced Spanish `## Subject` with `## Summary`.
 
-## Cross-check added
+## Subject
 
-- **C30**: verify-report.md title, verify-findings verdict,
-  archive-manifest Cycle field, change-entry Summary section.
+- base_sha: `6bc6781465f9dff5a59bd4d8e8a99930dba3e7e5`
+- head_sha: `e8f805f350b47b7b1cad6c1ac507ae868b13c07e`
+- cycle: m9-38
+- branch: `fix/m9-38-verify-report-title-format-normalize`
+- date: 2026-09-12
+- tag: `v0.7.36`
 
 ## Files changed
 
@@ -29,11 +33,7 @@ Four drift classes closed:
 - 1 vault-drift-sweep.md: added cross-check #30
 - 6 new cycle artifacts for m9-38
 
-## Subject
+## Cross-check added
 
-- base_sha: `6bc6781465f9dff5a59bd4d8e8a99930dba3e7e5`
-- head_sha: `e8f805f350b47b7b1cad6c1ac507ae868b13c07e`
-- cycle: m9-38
-- branch: `fix/m9-38-verify-report-title-format-normalize`
-- date: 2026-09-12
-- tag: `v0.7.36`
+- **C30**: verify-report.md title, verify-findings verdict,
+  archive-manifest Cycle field, change-entry Summary section.

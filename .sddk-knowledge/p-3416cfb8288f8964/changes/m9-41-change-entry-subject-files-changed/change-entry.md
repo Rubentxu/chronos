@@ -11,10 +11,14 @@ Four drift classes closed:
 
 Short SHAs expanded to full 40-char SHAs in change-entry Subject sections.
 
-## Cross-check added
+## Subject
 
-- **C33**: change-entry Subject/Files + archive-manifest Summary +
-  verify-report Subject.
+- base_sha: `a055f9c565dc66155c5fc56f2211a11a87139935`
+- head_sha: `62f1121e0d10eb2be2bdb60d6a45c958aa56806e`
+- cycle: m9-41
+- branch: `fix/m9-41-change-entry-subject-section-normalize`
+- date: 2026-09-12
+- tag: `v0.7.39`
 
 ## Files changed
 
@@ -24,11 +28,7 @@ Short SHAs expanded to full 40-char SHAs in change-entry Subject sections.
 - 1 vault-drift-sweep.md: added cross-check #33
 - 6 new cycle artifacts for m9-41
 
-## Subject
+## Cross-check added
 
-- base_sha: `a055f9c565dc66155c5fc56f2211a11a87139935`
-- head_sha: `62f1121e0d10eb2be2bdb60d6a45c958aa56806e`
-- cycle: m9-41
-- branch: `fix/m9-41-change-entry-subject-section-normalize`
-- date: 2026-09-12
-- tag: `v0.7.39`
+- **C33**: change-entry Subject/Files + archive-manifest Summary +
+  verify-report Subject.

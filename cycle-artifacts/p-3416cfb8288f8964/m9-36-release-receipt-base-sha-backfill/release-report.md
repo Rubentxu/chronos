@@ -1,6 +1,6 @@
 # Release Report — m9-36
 
-**Cycle**: m9-36 release-receipt-base-sha-backfill
+**Cycle**: m9-36-release-receipt-base-sha-backfill
 **Path**: B-direct
 **Tag**: v0.7.34
 

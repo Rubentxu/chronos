@@ -13,16 +13,6 @@ Both classes fixed by normalizing m9-03..m9-33 to the canonical pipe-separated
 format with all fields: Cycle, Base SHA, Head SHA, Branch, Date, Remote tag,
 Remote tag_peel, Peel match.
 
-## Cross-check added
-
-- **C28**: release-receipt.md must have `Base SHA` field.
-
-## Files changed
-
-- 31 release-receipt.md files (m9-03..m9-33): format + Base SHA field
-- 1 vault-drift-sweep.md: added cross-check #28
-- 6 new cycle artifacts for m9-36
-
 ## Subject
 
 - base_sha: `d7fd733064999cf93eea429a78939a02a1d4d27c`
@@ -31,3 +21,13 @@ Remote tag_peel, Peel match.
 - branch: `fix/m9-36-release-receipt-base-sha-backfill`
 - date: 2026-09-12
 - tag: `v0.7.34`
+
+## Files changed
+
+- 31 release-receipt.md files (m9-03..m9-33): format + Base SHA field
+- 1 vault-drift-sweep.md: added cross-check #28
+- 6 new cycle artifacts for m9-36
+
+## Cross-check added
+
+- **C28**: release-receipt.md must have `Base SHA` field.

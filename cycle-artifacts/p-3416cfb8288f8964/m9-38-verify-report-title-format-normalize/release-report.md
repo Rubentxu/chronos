@@ -1,6 +1,6 @@
 # Release Report — m9-38
 
-**Cycle**: m9-38 verify-report-title-format-normalize
+**Cycle**: m9-38-verify-report-title-format-normalize
 **Path**: B-direct
 **Tag**: v0.7.36
 

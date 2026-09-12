@@ -1,6 +1,6 @@
 # Release Report — m9-35
 
-**Cycle**: m9-35 release-report-title-format-normalize
+**Cycle**: m9-35-release-report-title-format-normalize
 **Path**: B-direct
 **Tag**: v0.7.33
 

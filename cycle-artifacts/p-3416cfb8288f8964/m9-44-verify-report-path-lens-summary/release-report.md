@@ -1,6 +1,6 @@
 # Release Report — m9-44
 
-**Cycle**: m9-44 verify-report-path-lens-summary
+**Cycle**: m9-44-verify-report-path-lens-summary
 **Path**: B-direct
 **Tag**: v0.7.42
 

@@ -9,18 +9,6 @@ Two drift classes closed:
 2. **release-report.md Cross-checks section** (17 files: m9-11..m9-27).
    Added `## Cross-checks` section listing cross-checks that passed.
 
-## Cross-check added
-
-- **C32**: release-report.md must have `Path` field and
-  `## Cross-checks` / `## Verification` section.
-
-## Files changed
-
-- 22 release-report.md files (m9-03..m9-33): added Path
-- 17 release-report.md files (m9-11..m9-27): added Cross-checks
-- 1 vault-drift-sweep.md: added cross-check #32
-- 6 new cycle artifacts for m9-40
-
 ## Subject
 
 - base_sha: `9170deacbe463c0e81886b9083ef5920006afc3a`
@@ -29,3 +17,15 @@ Two drift classes closed:
 - branch: `fix/m9-40-release-report-path-and-cross-checks`
 - date: 2026-09-12
 - tag: `v0.7.38`
+
+## Files changed
+
+- 22 release-report.md files (m9-03..m9-33): added Path
+- 17 release-report.md files (m9-11..m9-27): added Cross-checks
+- 1 vault-drift-sweep.md: added cross-check #32
+- 6 new cycle artifacts for m9-40
+
+## Cross-check added
+
+- **C32**: release-report.md must have `Path` field and
+  `## Cross-checks` / `## Verification` section.

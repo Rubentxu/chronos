@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34**, or **check 35**, or **check 36** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34**, or **check 35**, or **check 36**, or **check 37** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -1627,3 +1627,48 @@ print(f'Total: {errors}')
 m9-44 backfills. m9-04..m9-27 verify-findings.json lacked
 `lens_summary`. m9-44 backfills. m9-09, m9-10 verify-report.md had
 non-canonical Findings prose; m9-44 normalizes to `None — clean state.`.
+
+### 37. change-entry.md section order + release-report.md cycle value (closed by m9-45)
+
+```python
+import glob, re, os
+
+errors = 0
+
+# Part A: change-entry.md: ## Subject heading must appear before ## Cross-check heading
+for f in sorted(glob.glob('.sddk-knowledge/p-3416cfb8288f8964/changes/m9-*/change-entry.md')):
+    content = open(f).read()
+    headings = re.findall(r'^## (.+)$', content, re.MULTILINE)
+    subject_pos = next((i for i, h in enumerate(headings) if h == 'Subject'), -1)
+    cc_pos = next((i for i, h in enumerate(headings)
+                   if h.startswith('Cross-check') or h.startswith('Verification')), -1)
+    if subject_pos != -1 and cc_pos != -1 and cc_pos < subject_pos:
+        errors += 1
+        print(f"DRIFT A: {f}: Cross-check idx={cc_pos} < Subject idx={subject_pos}")
+
+# Part B: release-report.md: **Cycle** value must equal folder slug
+for f in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/release-report.md')):
+    folder = f.split('/')[-2]
+    content = open(f).read()
+    cycle_m = re.search(r'\*\*Cycle\*\*:\s*([^\n]+)', content)
+    if cycle_m and cycle_m.group(1).strip() != folder:
+        errors += 1
+        print(f"DRIFT B: {f}: cycle={cycle_m.group(1).strip()!r} expected={folder!r}")
+
+print(f'Total: {errors}')
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT A`:** `## Cross-check` heading appears before `## Subject`
+heading in change-entry.md. Move Cross-check section to after Subject.
+
+**If `DRIFT B`:** `**Cycle**:` value contains spaces instead of being
+the canonical folder slug (e.g. `m9-34 name` instead of
+`m9-34-name`). Replace with folder name.
+
+**History:** m9-34..m9-44 change-entry.md wrote Cross-check sections
+near the end of the file but Subject was inserted in the middle by
+m9-42's bullet conversion. m9-45 normalizes the order. m9-34..m9-44
+release-report.md had `**Cycle**: m9-NN name` (with space) instead of
+`**Cycle**: m9-NN-name` (folder slug); m9-45 fixes.

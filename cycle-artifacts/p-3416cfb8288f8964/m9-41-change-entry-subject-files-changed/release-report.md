@@ -1,6 +1,6 @@
 # Release Report — m9-41
 
-**Cycle**: m9-41 change-entry-subject-files-changed
+**Cycle**: m9-41-change-entry-subject-files-changed
 **Path**: B-direct
 **Tag**: v0.7.39
 
