@@ -1,0 +1,13 @@
+{
+  "cycle_id": "m9-30",
+  "subject": {
+    "head_sha": "33acc58f9782c296f2f876cdfed280a024548188",
+    "base_sha": "f481a61169d3ec33a6ec0e236a938f231f303cf8"
+  },
+  "verdict": "pass",
+  "findings": [],
+  "lens_summary": {
+    "drift": "25 release-receipt.md files (m9-03..m9-27) had inconsistent field names and missing SHA fields. Normalized all to canonical format with Head SHA, Remote tag, Remote tag_peel, Peel match, Date. Added cross-check #22.",
+    "lens_summary_note": "C10 was checking SHA consistency but only when fields existed; it missed the case where the Head SHA field was entirely absent (m9-19..m9-27)."
+  }
+}

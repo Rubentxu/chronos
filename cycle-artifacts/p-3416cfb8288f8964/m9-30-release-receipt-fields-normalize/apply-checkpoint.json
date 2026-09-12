@@ -1,0 +1,23 @@
+{
+  "cycle_id": "m9-30",
+  "title": "Release receipt fields normalization",
+  "path": "B-direct",
+  "route": "B-direct",
+  "base_sha": "f481a61169d3ec33a6ec0e236a938f231f303cf8",
+  "head_sha": "33acc58f9782c296f2f876cdfed280a024548188",
+  "main_sha": "33acc58f9782c296f2f876cdfed280a024548188",
+  "remote_tag_peel": "33acc58f9782c296f2f876cdfed280a024548188",
+  "peel_match": true,
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived",
+  "status": "CLOSED",
+  "findings_introduced": {
+    "no_action": []
+  },
+  "verified_at": "2026-09-12T12:30:00Z",
+  "released_at": "2026-09-12T12:33:00Z",
+  "archived_at": "2026-09-12T12:33:30Z",
+  "created_at": "2026-09-12T12:30:00Z",
+  "summary": "Normalizes release-receipt.md SHA fields (Head SHA, Remote tag, Remote tag_peel, Peel match, Date) across all 25 m9 cycles (m9-03..m9-27) to the canonical format established by m9-28. Adds cross-check #22 that explicitly checks both field presence and SHA consistency."
+}
