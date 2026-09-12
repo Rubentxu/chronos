@@ -33,9 +33,10 @@ Chronological record of all SDDK cycles for this project.
 | m9-09 | m9-09-vault-hygiene-active-disclosure-dedupe | B-direct | `v0.7.7` | `07e731d61424160c4f67d769db00a171837ba62c` | CLOSED |
 | m9-10 | m9-10-m9-03-apply-checkpoint-rebuild | B-rebuild | `v0.7.8` | `69f200e2144bea2cd305c38903feb4814fb38806` | CLOSED |
 | m9-11 | m9-11-cycles-index-metadata-drift | B-direct | `v0.7.9` | `cd0115fd8f942058cde109c72a975cab7ea7473c` | CLOSED |
-| m9-12 | m9-12-terms-index-metadata-drift | B-direct | `v0.7.10` | `0012f12` | CLOSED |
-| m9-13 | m9-13-change-entry-base-sha-drift | B-direct | `v0.7.11` | `26848cf` | CLOSED |
+| m9-12 | m9-12-terms-index-metadata-drift | B-direct | `v0.7.10` | `0012f1242cef949efc4cbd4c8d419a135ee3cf8a` | CLOSED |
+| m9-13 | m9-13-change-entry-base-sha-drift | B-direct | `v0.7.11` | `26848cf8b26340d3fde99a3a7f398f2873943982` | CLOSED |
 | m9-14 | m9-14-m9-11-fabricated-sha | B-direct | `v0.7.12` | `3869906` | CLOSED |
+| m9-15 | m9-15-m9-12-m9-13-short-sha | B-direct | `v0.7.13` | TBD | CLOSED |
 
 ## Metadata
 
@@ -43,5 +44,5 @@ Chronological record of all SDDK cycles for this project.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T10:01:00Z |
-| Total cycles | 30 |
+| Last updated | 2026-09-12T10:09:00Z |
+| Total cycles | 31 |

@@ -4,9 +4,9 @@
 |---|---|
 | Cycle ID | `m9-12-terms-index-metadata-drift` |
 | Path | B-direct |
-| Head SHA | `0012f12` |
+| Head SHA | `0012f1242cef949efc4cbd4c8d419a135ee3cf8a` |
 | Tag | `v0.7.10` (annotated, peel matches published SHA) |
-| Remote tag_peel | `0012f12` |
+| Remote tag_peel | `0012f1242cef949efc4cbd4c8d419a135ee3cf8a` |
 | peel_match | true |
 | Status | RELEASED |
 
@@ -28,7 +28,7 @@ since the change is doc-only).
 
 ## Tag convention
 
-Per chronos convention: tag peeled to the **fix commit** (`0012f12`),
+Per chronos convention: tag peeled to the **fix commit** (`0012f1242cef949efc4cbd4c8d419a135ee3cf8a`),
 keeping runtime semantics on the tagged SHA. Docs commits (which would
 follow) would fast-forward the tag peel, but this cycle has only the
 fix commit — the docs (merge-receipt, release-receipt, archive-manifest,

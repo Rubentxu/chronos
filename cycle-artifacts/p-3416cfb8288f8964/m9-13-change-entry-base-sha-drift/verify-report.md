@@ -3,7 +3,7 @@
 ## Subject
 
 `v0.7.11` on `fix/m9-13-change-entry-base-sha-drift` (peel matches
-`26848cf`).
+`26848cf8b26340d3fde99a3a7f398f2873943982`).
 
 ## Verification gates
 
@@ -47,7 +47,7 @@ Output: 0 warnings across 14 crates.
 **PASS**
 
 Reason tied to mandatory gates:
-- `subject_identity`: PASS — clean tree, HEAD pinned at `26848cf`.
+- `subject_identity`: PASS — clean tree, HEAD pinned at `26848cf8b26340d3fde99a3a7f398f2873943982`.
 - `behavioral_compliance`: PASS — the fix matches the documented
   remediation (correct Base SHA, add check #7).
 - `real_implementation`: PASS — no stubs or mocks.

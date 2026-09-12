@@ -6,7 +6,7 @@
 | Path | B-direct |
 | Branch | `fix/m9-12-terms-index-metadata-drift` |
 | Base SHA | `f4818d1` (main @ start of cycle) |
-| Head SHA | `0012f12` |
+| Head SHA | `0012f1242cef949efc4cbd4c8d419a135ee3cf8a` |
 | Tag | `v0.7.10` |
 | Status | MERGED |
 
@@ -14,7 +14,7 @@
 
 | SHA | Subject |
 |---|---|
-| `0012f12` | fix(m9-12): terms/index.md Last archive metadata drift (m9-10 → m9-11) + add cross-check #6 to vault-drift-sweep |
+| `0012f1242cef949efc4cbd4c8d419a135ee3cf8a` | fix(m9-12): terms/index.md Last archive metadata drift (m9-10 → m9-11) + add cross-check #6 to vault-drift-sweep |
 
 ## What was fixed
 
@@ -25,7 +25,7 @@ cycle (`m9-11`) had been recorded in `cycles/index.md`.
 Drift history (from git log -p):
 - After `e50b27e` (m9-10 archive): terms Last archive = m9-10 ✓
 - After `cd0115f` (m9-11 archive): terms Last archive = m9-10 ✗ **drift introduced**
-- After `0012f12` (m9-12 fix): terms Last archive = m9-11 ✓
+- After `0012f1242cef949efc4cbd4c8d419a135ee3cf8a` (m9-12 fix): terms Last archive = m9-11 ✓
 
 m9-11 added itself to `cycles/index.md` but did not bump `terms/index.md`'s
 `Last archive` pointer. This is the same kind of metadata drift that

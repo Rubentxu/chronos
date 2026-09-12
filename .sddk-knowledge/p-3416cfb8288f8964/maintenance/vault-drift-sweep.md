@@ -89,7 +89,7 @@ source artifacts are not in this repo.
 
 ```python
 import json, os
-for folder in os.listdir('cycle-artifacts/p-3416cfb8288f8964/'):
+for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
     ckpt = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/apply-checkpoint.json'
     if not os.path.exists(ckpt):
         print(f"MISSING: {ckpt}")
@@ -98,17 +98,23 @@ for folder in os.listdir('cycle-artifacts/p-3416cfb8288f8964/'):
     head = d.get('head_sha')
     peel = d.get('remote_tag_peel')
     match = d.get('peel_match')
-    archive_manifest_sha = None  # would require parsing archive-manifest.md
-    print(f"{folder}: head={head[:8]} peel={peel[:8] if peel else None} match={match}")
+    if head and peel and head != peel:
+        print(f"DRIFT: {folder}: head_sha ({head[:12]}) != remote_tag_peel ({peel[:12]})")
+    if match is not True:
+        print(f"DRIFT: {folder}: peel_match is {match}, expected True")
+    if peel and len(peel) != 40:
+        print(f"DRIFT: {folder}: remote_tag_peel is {len(peel)} chars, expected 40 (full SHA)")
 ```
 
-**Expected output (clean):** all `peel_match=True`, all `head_sha` equals
-`remote_tag_peel`.
+**Expected output (clean):** empty (no DRIFT lines).
 
-**If non-empty:** the cycle was tagged but the local head diverged from
-the tag peel (most commonly because a subsequent cycle fast-forwarded past
-the tag peel — though chronos convention peels to the fix-commit which is
-typically a parent of the docs-commit, so this is usually fine).
+**If non-empty:** either (a) the cycle was tagged but the local head
+diverged from the tag peel (most commonly because a subsequent cycle
+fast-forwarded past the tag peel), or (b) the stored `peel_match` is
+not `True` (lying), or (c) the SHA is not 40 characters (short-SHA
+storage that git accepts but is ambiguous). Resolution: use full
+40-char SHAs in `head_sha` and `remote_tag_peel`, and verify
+`peel_match` against `git rev-list -n 1 <tag>`.
 
 ### 4. SHA-256 consistency in archive-manifest Artifact index
 

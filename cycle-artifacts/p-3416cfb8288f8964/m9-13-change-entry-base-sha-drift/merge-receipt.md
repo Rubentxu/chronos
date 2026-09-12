@@ -6,7 +6,7 @@
 | Path | B-direct |
 | Branch | `fix/m9-13-change-entry-base-sha-drift` |
 | Base SHA | `bfb9ede` (main @ start of cycle) |
-| Head SHA | `26848cf` |
+| Head SHA | `26848cf8b26340d3fde99a3a7f398f2873943982` |
 | Tag | `v0.7.11` |
 | Status | MERGED |
 
@@ -14,7 +14,7 @@
 
 | SHA | Subject |
 |---|---|
-| `26848cf` | fix(m9-13): m9-11 change-entry Base SHA drift (cd0115f → 6120e98) + add cross-check #7 to vault-drift-sweep |
+| `26848cf8b26340d3fde99a3a7f398f2873943982` | fix(m9-13): m9-11 change-entry Base SHA drift (cd0115f → 6120e98) + add cross-check #7 to vault-drift-sweep |
 
 ## What was fixed
 

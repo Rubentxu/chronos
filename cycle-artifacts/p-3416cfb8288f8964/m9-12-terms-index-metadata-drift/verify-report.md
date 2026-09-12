@@ -3,7 +3,7 @@
 ## Subject
 
 `v0.7.10` on `fix/m9-12-terms-index-metadata-drift` (peel matches
-`0012f12`).
+`0012f1242cef949efc4cbd4c8d419a135ee3cf8a`).
 
 ## Verification gates
 
@@ -47,7 +47,7 @@ Output: `Finished 'dev' profile [unoptimized + debuginfo] target(s) in 2m 42s`
 **PASS**
 
 Reason tied to mandatory gates:
-- `subject_identity`: PASS — clean tree, HEAD pinned at `0012f12`.
+- `subject_identity`: PASS — clean tree, HEAD pinned at `0012f1242cef949efc4cbd4c8d419a135ee3cf8a`.
 - `behavioral_compliance`: PASS — the fix matches the documented
   remediation (bump Last archive, update Last updated).
 - `real_implementation`: PASS — no stubs or mocks; both files

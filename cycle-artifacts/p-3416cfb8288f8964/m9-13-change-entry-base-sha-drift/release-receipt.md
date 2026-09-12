@@ -4,9 +4,9 @@
 |---|---|
 | Cycle ID | `m9-13-change-entry-base-sha-drift` |
 | Path | B-direct |
-| Head SHA | `26848cf` |
+| Head SHA | `26848cf8b26340d3fde99a3a7f398f2873943982` |
 | Tag | `v0.7.11` (annotated, peel matches published SHA) |
-| Remote tag_peel | `26848cf` |
+| Remote tag_peel | `26848cf8b26340d3fde99a3a7f398f2873943982` |
 | peel_match | true |
 | Status | RELEASED |
 
@@ -26,7 +26,7 @@ required.
 
 ## Tag convention
 
-Per chronos convention: tag peeled to the **fix commit** (`26848cf`),
+Per chronos convention: tag peeled to the **fix commit** (`26848cf8b26340d3fde99a3a7f398f2873943982`),
 keeping runtime semantics on the tagged SHA.
 
 ## Findings
