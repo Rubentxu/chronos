@@ -24,7 +24,6 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 | m9-01-R1 | m9-01 | `schema_version` silently overwritten on save (D5 canonical writer) | — | backlog | unassigned | m9+ |
 | m9-01-R2 | m9-01 | Future-versioned bundles appear in list (best-effort; load() rejects individually) | — | backlog | unassigned | m9+ |
 | m9-01-R3 | m9-01 | `schema_version` is internal-only (not on MCP wire or services-side summary) | — | backlog | unassigned | m9+ |
-| m9-01-R4 | m9-01 | `KNOWN_BUNDLE_SCHEMA_VERSIONS` unused; `#[allow(dead_code)]` | — | backlog | unassigned | m9+ |
 
 ### Debt findings from m9-02
 
