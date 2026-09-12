@@ -1,29 +1,23 @@
 {
-  "findings": [],
-  "lens_summary": {
-    "spec-compliance": 0,
-    "test-quality": 0,
-    "vault-hygiene": 0,
-    "documentation-discipline": 0
+  "cycle_id": "m9-18-apply-checkpoint-metadata-drift",
+  "subject": {
+    "head": "6dce3736df06d4fe09db861ad43a3667c0f0bc25",
+    "head_sha": "6dce3736df06d4fe09db861ad43a3667c0f0bc25"
   },
-  "verdict": "PASS",
-  "subject_sha": "6dce3736df06d4fe09db861ad43a3667c0f0bc25",
-  "evidence": {
-    "vault_drift_sweep_checks": {
-      "check_1_id_uniqueness": "empty",
-      "check_2_findings_closed_vs_terminated": "clean",
-      "check_3_apply_checkpoint_vs_tag_consistency": "empty",
-      "check_4_sha256_archive_manifest_artifact_index": "empty",
-      "check_5_cycles_index_metadata_consistency": "OK: 34 == 34",
-      "check_6_terms_index_last_archive_consistency": "OK: m9-18 == m9-18",
-      "check_7_change_entry_sha_consistency": "empty",
-      "check_8_apply_checkpoint_and_archive_manifest_sha_exists_in_repo": "empty",
-      "check_9_archive_manifest_sha_40char": "empty",
-      "check_10_cycle_artifact_sha_40char": "empty",
-      "check_11_apply_checkpoint_required_metadata": "empty (NEW; status=CLOSED, archived_at set, findings_introduced present)"
+  "findings": [],
+  "_legacy": {
+    "lens_summary": {
+      "spec-compliance": 0,
+      "test-quality": 0,
+      "vault-hygiene": 0,
+      "documentation-discipline": 0
     },
-    "t0_lint": "0 warnings, 0 diffs (14 crates)",
-    "diff_size": "94 +, 22 - across 14 files",
-    "drift_sites_fixed": "17 (3 archived_at, 6 findings_introduced, 8 status)"
+    "verdict": "PASS",
+    "evidence_keys": [
+      "vault_drift_sweep_checks",
+      "t0_lint",
+      "diff_size",
+      "drift_sites_fixed"
+    ]
   }
 }

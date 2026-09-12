@@ -1,25 +1,22 @@
 {
-  "findings": [],
-  "lens_summary": {
-    "spec-compliance": 0,
-    "test-quality": 0,
-    "vault-hygiene": 0,
-    "documentation-discipline": 0
+  "cycle_id": "m9-15-m9-12-m9-13-short-sha",
+  "subject": {
+    "head": "2441f6f3c679555dc4106ea2e8a422ed407a26a0",
+    "head_sha": "2441f6f3c679555dc4106ea2e8a422ed407a26a0"
   },
-  "verdict": "PASS",
-  "subject_sha": "2441f6f3c679555dc4106ea2e8a422ed407a26a0",
-  "evidence": {
-    "vault_drift_sweep_checks": {
-      "check_1_id_uniqueness": "empty",
-      "check_2_findings_closed_vs_terminated": "clean (header/separator excluded; m8-04-R4 + m8-07-R2 are pre-reorg expected)",
-      "check_3_apply_checkpoint_vs_tag_consistency": "empty (TIGHTENED: requires head==peel, match=True, len(peel)==40)",
-      "check_4_sha256_archive_manifest_artifact_index": "empty",
-      "check_5_cycles_index_metadata_consistency": "OK: 31 == 31",
-      "check_6_terms_index_last_archive_consistency": "OK: m9-15 == m9-15",
-      "check_7_change_entry_sha_consistency": "empty (all change-entries consistent)",
-      "check_8_apply_checkpoint_sha_exists_in_repo": "empty (all SHAs valid in repo)"
+  "findings": [],
+  "_legacy": {
+    "lens_summary": {
+      "spec-compliance": 0,
+      "test-quality": 0,
+      "vault-hygiene": 0,
+      "documentation-discipline": 0
     },
-    "t0_lint": "0 warnings, 0 diffs (14 crates)",
-    "diff_size": "43 +, 36 - across 13 doc files"
+    "verdict": "PASS",
+    "evidence_keys": [
+      "vault_drift_sweep_checks",
+      "t0_lint",
+      "diff_size"
+    ]
   }
 }

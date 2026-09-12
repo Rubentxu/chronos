@@ -45,6 +45,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-21 | m9-21-route-and-schema-c14 | B-direct | `v0.7.19` | `14ecf16` | CLOSED |
 | m9-22 | m9-22-created-at-summary-title-backfill | B-direct | `v0.7.20` | `e87a25c` | CLOSED |
 | m9-23 | m9-23-cycle-id-strip-prefix | B-direct | `v0.7.21` | `b549c74` | CLOSED |
+| m9-24 | m9-24-verify-findings-schema-normalize | B-direct | `v0.7.22` | `8e0bfbf` | CLOSED |
 
 ## Metadata
 
@@ -52,5 +53,5 @@ Chronological record of all SDDK cycles for this project.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T11:23:00Z |
-| Total cycles | 39 |
+| Last updated | 2026-09-12T11:25:00Z |
+| Total cycles | 40 |
