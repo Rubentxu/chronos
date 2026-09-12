@@ -1,12 +1,23 @@
-# Handoff: m9+ Backlog (Updated 2026-09-12T17:40Z)
+# Handoff: m9+ Backlog (Updated 2026-09-12T17:58Z)
 
 ## Status
 
-As of 2026-09-12T17:40Z, the m9 vault is canonical-schema-clean across all 56 cycles
-in CA p-3416cfb8288f8964 (plus 2 legacy). 42 active cross-checks all pass.
-m9-56 deduped duplicate `## Cross-checks` headings in 13 release-report.md
-files (m9-03..m9-10 + m9-28..m9-31) and re-added the section to m9-32
-(which was lost to a prior broken dedup script).
+As of 2026-09-12T17:58Z, the m9 vault is canonical-schema-clean across all 57 cycles
+in CA p-3416cfb8288f8964 (plus 2 legacy). 43 active cross-checks all pass.
+
+m9-57 was a major vault hygiene cycle. Discovery: prior CC runner filtered
+on the `Total: X` summary pattern and silently missed CCs that emit
+`DRIFT:` lines without a summary. Running all 43 CCs with broad pattern
+detection surfaced 452 drift lines (vs 0 previously reported).
+
+Closed:
+- 21 apply-checkpoints backfilled with 12 missing schema fields each
+- 4 overly-strict CC regexes hardened (CC#22, CC#23, CC#27, CC#30)
+- CC#3 made era-aware (fix-peel exemption)
+- CC#14: findings_closed removed from legacy set (semantic distinction)
+- m9-34/m9-35 SHAs reconciled to canonical (base_sha=head^, Head SHA match)
+- m9-54/m9-55/m9-56 change-entry + archive-manifest canonicalized
+- CC#48 added: meta-check that runs every CC and reports drift
 
 ## Bucket 1: By-design disclosures (unchanged)
 
@@ -52,17 +63,16 @@ snapshot only.
 
 **Action:** Treat as feature backlog.
 
-## Cross-checks summary (as of 2026-09-12T14:38Z)
+## Cross-checks summary (as of 2026-09-12T17:58Z)
 
-All 45 cross-checks pass. Breakdown:
+All 43 cross-checks pass. Breakdown:
 
-- **C1-C25 (legacy schema normalization)**: PASS
-- **C26-C35 (canonical schema enforcement)**: PASS
-- **C36-C41 (comprehensive metadata schema)**: PASS
-- **C42 (peel accuracy + tag existence)**: PASS
-- **C43 (head_sha consistency)**: PASS
-- **C44 (verify-report Summary)**: PASS
-- **C45 (cycles-index SHA 40-char + tag match)**: PASS
+- **C1-C10 (legacy schema normalization)**: PASS
+- **C11-C20 (canonical schema enforcement)**: PASS
+- **C21-C30 (release/merge receipt schema)**: PASS
+- **C31-C40 (verify-report/verify-findings schema)**: PASS
+- **C41-C47 (recent hardening)**: PASS
+- **C48 (self-consistency meta-check, m9-57)**: PASS
 
 ## Sessions
 
@@ -71,6 +81,8 @@ All 45 cross-checks pass. Breakdown:
 | m9-34..m9-43 | 10 | 10 |
 | m9-44..m9-49 | 6 | 6 |
 | m9-50..m9-53 | 4 | 4 |
+| m9-54..m9-56 | 3 | 3 (knowledge-only / dedup / branch cleanup) |
+| m9-57 | 1 | 7 (schema backfill + 4 CC hardening + CC#48 + era-awareness) |
 
 ## When to break the handoff
 
