@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -536,6 +536,7 @@ Cycles that established this procedure:
 - **m9-28** (vault hygiene: m9-19 fabricated base_sha → real 735c57b, v0.7.26) → cross-check #20
 - **m9-29** (vault hygiene: backfill Evidence bindings section in m9-11..m9-27 archive-manifests, v0.7.27) → cross-check #21
 - **m9-30** (vault hygiene: normalize release-receipt.md SHA fields across all 25 m9 cycles, v0.7.28) → cross-check #22
+- **m9-31** (vault hygiene: normalize merge-receipt.md SHA fields across all 25 m9 cycles, v0.7.29) → cross-check #23
 
 ### 13. apply-checkpoint.json `*_status` field backfill (closed by m9-20)
 
@@ -957,6 +958,55 @@ regressed to a minimal format with `Cycle`, `Tag`, `Pee` (typo),
 `Released at` — no Head SHA at all. m9-28 restored the canonical
 format. m9-30 normalizes all 25 prior cycles to the canonical format
 and adds C22 to enforce it.
+
+### 23. merge-receipt.md must have canonical SHA fields (closed by m9-31)
+
+```python
+import json, os, re
+
+for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
+    ckpt = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/apply-checkpoint.json'
+    mr = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/merge-receipt.md'
+    if not os.path.exists(ckpt) or not os.path.exists(mr):
+        continue
+    d = json.load(open(ckpt))
+    content = open(mr).read()
+    head = d.get('head_sha', '')
+    base = d.get('base_sha', '')
+    if not head or len(head) != 40:
+        continue
+    # Required fields present
+    for field in ['Head SHA', 'Base SHA', 'Branch', 'Date']:
+        if not re.search(rf'\| {field} \|', content):
+            print(f"DRIFT: {folder}/merge-receipt.md: missing '{field}' field")
+    # SHAs match apply-checkpoint
+    head_m = re.search(r'\| Head SHA \| `([a-f0-9]+)`', content)
+    base_m = re.search(r'\| Base SHA \| `([a-f0-9]+)`', content)
+    if head_m and head_m.group(1) != head:
+        print(f"DRIFT: {folder}/merge-receipt.md: Head SHA mismatch")
+    if base_m and base_m.group(1) != base:
+        print(f"DRIFT: {folder}/merge-receipt.md: Base SHA mismatch")
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** A merge-receipt.md is either missing the canonical
+fields (`Head SHA`, `Base SHA`, `Branch`, `Date`) or has SHA values
+that disagree with apply-checkpoint.json.
+
+**Resolution:**
+1. Normalize the merge-receipt to the canonical format (m9-28+ format):
+   - `| Cycle | <slug> |`
+   - `| Base SHA | \`<base>\` |`
+   - `| Head SHA | \`<head>\` |`
+   - `| Branch | \`<slug>\` |`
+   - `| Date | <archived_at> |`
+
+**History:** m9-03..m9-10 used `Main SHA` (different field name) instead
+of `Head SHA`. m9-11..m9-18 used Spanish `Campo` header. m9-19..m9-27
+used a minimal format with no Head SHA field at all. m9-28+ used the
+canonical format. m9-31 normalizes all 25 prior merge-receipts to the
+canonical format and adds C23 to enforce it.
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class

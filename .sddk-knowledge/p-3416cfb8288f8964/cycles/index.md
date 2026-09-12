@@ -52,6 +52,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-28 | m9-28-m9-19-fabricated-base-sha | B-direct | `v0.7.26` | `709e3c4` | CLOSED |
 | m9-29 | m9-29-evidence-bindings-backfill | B-direct | `v0.7.27` | `24c144f` | CLOSED |
 | m9-30 | m9-30-release-receipt-fields-normalize | B-direct | `v0.7.28` | `33acc58` | CLOSED |
+| m9-31 | m9-31-merge-receipt-fields-normalize | B-direct | `v0.7.29` | — | CLOSED |
 
 ## Metadata
 
@@ -59,5 +60,5 @@ Chronological record of all SDDK cycles for this project.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T12:30:00Z |
-| Total cycles | 46 |
+| Last updated | 2026-09-12T12:48:00Z |
+| Total cycles | 47 |

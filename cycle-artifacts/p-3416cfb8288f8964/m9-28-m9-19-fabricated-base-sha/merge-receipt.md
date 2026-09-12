@@ -1,16 +1,9 @@
-# Merge Receipt — m9-28
+# Merge Receipt — m9-28-m9-19-fabricated-base-sha
 
 | Field | Value |
 |---|---|
 | Cycle | m9-28-m9-19-fabricated-base-sha |
-| Base SHA | `8eb6487` |
-| Head SHA | `709e3c4` |
-| Branch | `fix/m9-28-m9-19-fabricated-base-sha` |
-| Date | 2026-09-12 |
-
-## Summary
-
-Merged m9-28 fix branch back into `main` as a fast-forward. No code
-changes; only vault metadata edits (apply-checkpoint.json SHA fix +
-cross-check #20 added to vault-drift-sweep.md + cycles/index.md +
-terms/index.md updated).
+| Base SHA | `8eb648779071f9a634e2439754034f1288929c62` |
+| Head SHA | `709e3c470d50064b9a2c819b5761a2972eadafcb` |
+| Branch | `m9-28-m9-19-fabricated-base-sha` |
+| Date | 2026-09-12T12:19:45Z |
