@@ -1,14 +1,15 @@
 # Change: m9-24 verify-findings schema normalization
 
-| Field | Value |
-|---|---|
-| Cycle | m9-24-verify-findings-schema-normalize |
-| Base SHA | `dd38925` |
-| Head SHA | `8e0bfbf` |
-| Tag | `v0.7.22` (peels to `8e0bfbf`) |
-| Path | B-direct |
-| Date | 2026-09-12 |
-| Author | jcode (auto-mode B-direct) |
+
+## Subject
+
+- base_sha: `dd389257d6fdf402a21845449e7d66727beafa6e`
+- head_sha: `8e0bfbf79d761452d7c186d855066b54a8176ace`
+- cycle: m9-24
+- tag: `v0.7.22`
+- route: B-direct
+- date: 2026-09-12
+
 
 ## Summary
 
@@ -22,6 +23,19 @@ under _legacy for traceability.
 ## Cross-check
 
 Cross-check #17 added to vault-drift-sweep.md.
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-24-verify-findings-schema-normalize/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-24-verify-findings-schema-normalize/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-24-verify-findings-schema-normalize/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-24-verify-findings-schema-normalize/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-24-verify-findings-schema-normalize/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-24-verify-findings-schema-normalize/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-24-verify-findings-schema-normalize/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-24-verify-findings-schema-normalize/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Verification
 

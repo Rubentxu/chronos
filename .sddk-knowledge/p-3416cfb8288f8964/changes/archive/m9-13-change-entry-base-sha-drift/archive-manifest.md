@@ -8,6 +8,11 @@
 | Tag | `v0.7.11` |
 | Head SHA | `26848cf8b26340d3fde99a3a7f398f2873943982` |
 
+## Summary
+
+Drift closure cycle. See release-receipt.md and change-entry.md for details.
+
+
 ## Evidence bindings
 
 Vault metadata cycles only (or vault + minimal code). Each cycle artifact bound to its SHA-256:

@@ -1,5 +1,11 @@
 # Change: m9-14 m9 11 fabricated sha
 
+## Subject
+
+- base_sha: `c4f1237f878c900208e9506f8127b77d43a066af`
+- head_sha: `38699061891b76f90ef316914d3ba15d6eb53f83`
+- cycle: m9-14
+
 ## Summary
 
 Drift closure cycle for this milestone.
@@ -40,6 +46,19 @@ comparison (`startswith`) and the fabricated SHA shared the same
 `git rev-list -n 1 v0.7.9`.
 
 C8 closes the gap by asking git itself whether the SHA is real.
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-14-m9-11-fabricated-sha/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-14-m9-11-fabricated-sha/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-14-m9-11-fabricated-sha/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-14-m9-11-fabricated-sha/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-14-m9-11-fabricated-sha/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-14-m9-11-fabricated-sha/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-14-m9-11-fabricated-sha/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-14-m9-11-fabricated-sha/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Files touched
 

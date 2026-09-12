@@ -1,14 +1,15 @@
 # Change: m9-30 Release receipt fields normalization
 
-| Field | Value |
-|---|---|
-| Cycle | m9-30-release-receipt-fields-normalize |
-| Base SHA | `f481a61` |
-| Head SHA | `33acc58` |
-| Tag | `v0.7.28` (peels to `33acc58`) |
-| Path | B-direct |
-| Date | 2026-09-12 |
-| Author | jcode (auto-mode B-direct) |
+
+## Subject
+
+- base_sha: `f481a61169d3ec33a6ec0e236a938f231f303cf8`
+- head_sha: `33acc58f9782c296f2f876cdfed280a024548188`
+- cycle: m9-30
+- tag: `v0.7.28`
+- route: B-direct
+- date: 2026-09-12
+
 
 ## Summary
 
@@ -72,6 +73,19 @@ the comparison — so the test reports PASS even when the field is
 absent. This is a subtle semantic difference: C10 means "no
 disagreement found", not "field is present and correct". C22 makes
 the presence check explicit.
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-30-release-receipt-fields-normalize/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-30-release-receipt-fields-normalize/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-30-release-receipt-fields-normalize/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-30-release-receipt-fields-normalize/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-30-release-receipt-fields-normalize/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-30-release-receipt-fields-normalize/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-30-release-receipt-fields-normalize/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-30-release-receipt-fields-normalize/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Risk
 

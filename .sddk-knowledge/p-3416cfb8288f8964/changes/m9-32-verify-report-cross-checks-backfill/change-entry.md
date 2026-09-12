@@ -1,14 +1,15 @@
 # Change: m9-32 Verify report Cross-checks section backfill
 
-| Field | Value |
-|---|---|
-| Cycle | m9-32-verify-report-cross-checks-backfill |
-| Base SHA | `128a224` |
-| Head SHA | `b3bfa59` |
-| Tag | `v0.7.30` (peels to `b3bfa59`) |
-| Path | B-direct |
-| Date | 2026-09-12 |
-| Author | jcode (auto-mode B-direct) |
+
+## Subject
+
+- base_sha: `128a224dff9924e087647013df32edeb965efa75`
+- head_sha: `b3bfa59e85b1145c81ae84ce7cac6be6238b2a58`
+- cycle: m9-32
+- tag: `v0.7.30`
+- route: B-direct
+- date: 2026-09-12
+
 
 ## Summary
 
@@ -51,6 +52,19 @@ The pattern: **structural drift compounds silently**. None of the
 prior cross-checks (C1-C23) detected the missing section because none
 of them checked for it. m9-32 adds C24 specifically to catch this
 class of drift in future cycles.
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-32-verify-report-cross-checks-backfill/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-32-verify-report-cross-checks-backfill/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-32-verify-report-cross-checks-backfill/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-32-verify-report-cross-checks-backfill/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-32-verify-report-cross-checks-backfill/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-32-verify-report-cross-checks-backfill/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-32-verify-report-cross-checks-backfill/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-32-verify-report-cross-checks-backfill/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Risk
 

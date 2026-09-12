@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -1397,6 +1397,76 @@ m9-34+ uses Path. m9-40 backfills Path for m9-04..m9-33.
 m9-11..m9-27 release-report.md didn't have Cross-checks section;
 m9-28+ uses `## Verification` or `## Cross-checks`. m9-40 backfills
 Cross-checks for m9-11..m9-27.
+
+### 33. change-entry.md Subject/Files changed sections + archive-manifest.md Summary + verify-report.md Subject (closed by m9-41)
+
+```python
+import glob, os, re
+
+errors = 0
+
+# Part A: change-entry.md has ## Subject section (m9-03..m9-37)
+for f in sorted(glob.glob('.sddk-knowledge/p-3416cfb8288f8964/changes/m9-*/change-entry.md')):
+    # m9-01 and m9-02 are pre-vault-reorg, accepted-by-design
+    if 'm9-01-schema-versioning' in f or 'm9-02-events-side-table' in f:
+        continue
+    content = open(f).read()
+    if '## Subject' not in content:
+        print(f"DRIFT: {f}: no ## Subject")
+
+# Part B: change-entry.md has ## Files changed section
+for f in sorted(glob.glob('.sddk-knowledge/p-3416cfb8288f8964/changes/m9-*/change-entry.md')):
+    if '## Files changed' not in open(f).read():
+        print(f"DRIFT: {f}: no ## Files changed")
+
+# Part C: archive-manifest.md has ## Summary section
+for f in sorted(glob.glob('.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-*/archive-manifest.md')):
+    if '## Summary' not in open(f).read():
+        print(f"DRIFT: {f}: no ## Summary")
+
+# Part D: verify-report.md has ## Subject section (post-m9-28)
+for f in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/verify-report.md')):
+    m = re.search(r'm9-(\d+)', f)
+    if not m: continue
+    n = int(m.group(1))
+    if n < 28: continue
+    content = open(f).read()
+    if '## Subject' not in content:
+        print(f"DRIFT: {f}: no ## Subject")
+
+print(f'Total: {errors}')
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:**
+- A: change-entry.md missing `## Subject` section (m9-03..m9-37).
+  m9-01, m9-02 are pre-vault-reorg; accepted-by-design.
+- B: change-entry.md missing `## Files changed` section.
+- C: archive-manifest.md missing `## Summary` section.
+- D: verify-report.md missing `## Subject` section (m9-28+).
+
+**Resolution:**
+
+- A: Convert existing metadata table (m9-19..m9-33) to `## Subject`
+  section. Convert `## Ciclo` (m9-01..m9-18) to `## Subject`.
+- B: Add `## Files changed` section listing the cycle artifacts and
+  knowledge artifacts touched by the cycle.
+- C: Add `## Summary` section with a brief one-sentence cycle description.
+- D: Add `## Subject` section listing base_sha, head_sha, cycle number.
+
+**History:** m9-01..m9-18 change-entry.md used `## Ciclo` (Spanish).
+m9-19..m9-33 used a metadata table at the top. m9-34+ uses `## Subject`.
+m9-41 normalizes all (except m9-01, m9-02) to `## Subject`.
+
+m9-01..m9-40 change-entry.md didn't have `## Files changed` section.
+m9-41 adds it to all.
+
+m9-01..m9-27 archive-manifest.md didn't have `## Summary` section.
+m9-41 adds a placeholder summary.
+
+m9-28..m9-33 verify-report.md didn't have `## Subject` section.
+m9-41 adds it.
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class

@@ -14,6 +14,11 @@
 | Base SHA | `c9e541750e39458b2b28c5d19ad0ca11d0e73d5b` |
 | Delivery kind | local (no CLI storage; orchestrator owns transition) |
 
+## Summary
+
+Drift closure cycle. See release-receipt.md and change-entry.md for details.
+
+
 ## Evidence bindings
 
 ### Release receipt

@@ -9,6 +9,11 @@
 | Head SHA | `0012f1242cef949efc4cbd4c8d419a135ee3cf8a` |
 | Base SHA | `f4818d13928c091daeaadcb65dca38558c612e7c` |
 
+## Summary
+
+Drift closure cycle. See release-receipt.md and change-entry.md for details.
+
+
 ## Evidence bindings
 
 Vault metadata cycles only (or vault + minimal code). Each cycle artifact bound to its SHA-256:

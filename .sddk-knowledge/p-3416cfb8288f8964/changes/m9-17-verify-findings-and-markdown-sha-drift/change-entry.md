@@ -1,5 +1,11 @@
 # Change: m9-17 verify findings and markdown sha drift
 
+## Subject
+
+- base_sha: `0ed8f874f7b6f973505fc3997475fc398fcfa4cc`
+- head_sha: `134dc7525312275c447db8f5996740ff7c102a02`
+- cycle: m9-17
+
 ## Summary
 
 Drift closure cycle for this milestone.
@@ -36,6 +42,19 @@ m9-17 closes the residual drift across 4 file types × 4 prior cycles:
 
 Adds cross-check #10 to vault-drift-sweep.md covering all four file
 types (verify-findings, release-receipt, merge-receipt, change-entry).
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-17-verify-findings-and-markdown-sha-drift/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-17-verify-findings-and-markdown-sha-drift/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-17-verify-findings-and-markdown-sha-drift/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-17-verify-findings-and-markdown-sha-drift/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-17-verify-findings-and-markdown-sha-drift/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-17-verify-findings-and-markdown-sha-drift/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-17-verify-findings-and-markdown-sha-drift/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-17-verify-findings-and-markdown-sha-drift/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Files touched
 

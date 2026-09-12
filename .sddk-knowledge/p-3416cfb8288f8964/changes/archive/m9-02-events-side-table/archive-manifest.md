@@ -14,6 +14,11 @@
 | Base SHA | `48a9cff54ec165987063705d5d4d3af453fcb6b3` |
 | Delivery kind | ad-hoc (no CLI storage; orchestrator owns transition) |
 
+## Summary
+
+Drift closure cycle. See release-receipt.md and change-entry.md for details.
+
+
 ## Evidence bindings
 
 ### Release receipt

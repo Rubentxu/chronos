@@ -5,7 +5,7 @@
 Drift closure cycle for this milestone.
 
 
-## Ciclo
+## Subject
 
 | Campo | Valor |
 |---|---|
@@ -53,6 +53,19 @@ of the corresponding apply-checkpoint SHA fields.
 - New change-entry: `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-13-change-entry-base-sha-drift/change-entry.md`
   (this file)
 - New archive-manifest: `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-13-change-entry-base-sha-drift/archive-manifest.md`
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-13-change-entry-base-sha-drift/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-13-change-entry-base-sha-drift/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-13-change-entry-base-sha-drift/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-13-change-entry-base-sha-drift/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-13-change-entry-base-sha-drift/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-13-change-entry-base-sha-drift/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-13-change-entry-base-sha-drift/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-13-change-entry-base-sha-drift/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Tag convention
 

@@ -1,14 +1,15 @@
 # Change: m9-19 Route + main_sha + empty folder drift fix
 
-| Field | Value |
-|---|---|
-| Cycle | m9-19-route-main-sha-and-empty-folder-drift |
-| Base SHA | `735c57b` |
-| Head SHA | `ec58934` |
-| Tag | `v0.7.17` (peels to `ec58934`) |
-| Path | B-direct |
-| Date | 2026-09-12 |
-| Author | jcode (auto-mode B-direct) |
+
+## Subject
+
+- base_sha: `735c57b7178c93ea25f9cb603a3cb97b9ca7f81e`
+- head_sha: `ec58934689b73a6a78cb65b8ece96c6cdda13b35`
+- cycle: m9-19
+- tag: `v0.7.17`
+- route: B-direct
+- date: 2026-09-12
+
 
 ## Summary
 
@@ -42,6 +43,19 @@ enforcing all three drift classes.
 - All 12 cross-checks → PASS (0 drift)
 - All cycle artifacts created under
   `cycle-artifacts/p-3416cfb8288f8964/m9-19-route-main-sha-and-empty-folder-drift/`
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-19-route-main-sha-and-empty-folder-drift/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-19-route-main-sha-and-empty-folder-drift/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-19-route-main-sha-and-empty-folder-drift/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-19-route-main-sha-and-empty-folder-drift/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-19-route-main-sha-and-empty-folder-drift/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-19-route-main-sha-and-empty-folder-drift/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-19-route-main-sha-and-empty-folder-drift/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-19-route-main-sha-and-empty-folder-drift/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Lessons
 

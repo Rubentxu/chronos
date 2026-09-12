@@ -5,7 +5,7 @@
 Drift closure cycle for this milestone.
 
 
-## Ciclo
+## Subject
 
 | Campo | Valor |
 |---|---|
@@ -74,6 +74,19 @@ product call and not the target of this finding.
 | FIND-M9-01-DV-COUP-02 | coupling | List/load policy asymmetry shipped as an error-kind overload (forward-compat reject should not be `Serialization`) | m9-08-list-load-schema-error-variant (`v0.7.6`) |
 
 Verdict: **PASS** (1/1 finding closed)
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-08-list-load-schema-error-variant/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-08-list-load-schema-error-variant/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-08-list-load-schema-error-variant/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-08-list-load-schema-error-variant/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-08-list-load-schema-error-variant/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-08-list-load-schema-error-variant/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-08-list-load-schema-error-variant/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-08-list-load-schema-error-variant/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Findings NOT resolved (m9+ backlog inherited)
 

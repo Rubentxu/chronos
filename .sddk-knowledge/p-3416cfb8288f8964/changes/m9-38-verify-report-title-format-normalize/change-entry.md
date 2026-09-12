@@ -13,7 +13,7 @@ Four drift classes closed:
 3. **archive-manifest.md Cycle field** (18 files: m9-01..m9-18).
    Renamed `Cycle ID` to `Cycle`.
 4. **change-entry.md Summary section** (18 files: m9-01..m9-18).
-   Replaced Spanish `## Ciclo` with `## Summary`.
+   Replaced Spanish `## Subject` with `## Summary`.
 
 ## Cross-check added
 

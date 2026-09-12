@@ -81,6 +81,14 @@ Verdict: PASS_WITH_WARNINGS · All findings → backlog · No INC files
 | Archive manifest | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-01-schema-versioning/archive-manifest.md` |
 | Archive report | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-01-schema-versioning/archive-report.md` |
 
+## Files changed
+
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-01-schema-versioning/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-01-schema-versioning/archive-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-01-schema-versioning/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
+
 ## Seguimiento m9+ pendiente
 
 - R1: evaluar si merece enforcement de igualdad record.summary en loader

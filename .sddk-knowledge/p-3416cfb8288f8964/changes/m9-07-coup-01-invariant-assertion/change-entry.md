@@ -5,7 +5,7 @@
 Drift closure cycle for this milestone.
 
 
-## Ciclo
+## Subject
 
 | Campo | Valor |
 |---|---|
@@ -69,6 +69,19 @@ remain green (T1: 58/58).
 | FIND-M9-01-DV-COUP-01 | coupling | Duplicated `schema_version` on record + summary with no equality enforcement at load time | m9-07-coup-01-invariant-assertion (`v0.7.5`) |
 
 Verdict: **PASS** (1/1 finding closed)
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-07-coup-01-invariant-assertion/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-07-coup-01-invariant-assertion/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-07-coup-01-invariant-assertion/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-07-coup-01-invariant-assertion/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-07-coup-01-invariant-assertion/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-07-coup-01-invariant-assertion/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-07-coup-01-invariant-assertion/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-07-coup-01-invariant-assertion/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Findings NOT resolved (m9+ backlog inherited)
 

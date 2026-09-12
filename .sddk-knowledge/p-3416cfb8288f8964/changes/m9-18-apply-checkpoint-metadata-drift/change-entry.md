@@ -1,5 +1,11 @@
 # Change: m9-18 apply checkpoint metadata drift
 
+## Subject
+
+- base_sha: `cc995cdd2cf41bd0638a548fc3db169763bfc38d`
+- head_sha: `6dce3736df06d4fe09db861ad43a3667c0f0bc25`
+- cycle: m9-18
+
 ## Summary
 
 Drift closure cycle for this milestone.
@@ -33,6 +39,19 @@ without retroactive application to prior cycles. m9-18 backfills
 
 Adds cross-check #11 to vault-drift-sweep.md enforcing all three
 classes going forward.
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-18-apply-checkpoint-metadata-drift/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-18-apply-checkpoint-metadata-drift/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-18-apply-checkpoint-metadata-drift/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-18-apply-checkpoint-metadata-drift/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-18-apply-checkpoint-metadata-drift/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-18-apply-checkpoint-metadata-drift/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-18-apply-checkpoint-metadata-drift/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-18-apply-checkpoint-metadata-drift/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Files touched
 

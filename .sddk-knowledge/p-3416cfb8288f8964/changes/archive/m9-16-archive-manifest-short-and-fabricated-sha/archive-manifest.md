@@ -9,6 +9,11 @@
 | Base SHA | `68c528ec34adc1ef5c0e049b9ab83207d710bcb6` |
 | Release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-16-archive-manifest-short-and-fabricated-sha/release-receipt.md` |
 
+## Summary
+
+Drift closure cycle. See release-receipt.md and change-entry.md for details.
+
+
 ## Evidence bindings
 
 Vault metadata cycles only (or vault + minimal code). Each cycle artifact bound to its SHA-256:

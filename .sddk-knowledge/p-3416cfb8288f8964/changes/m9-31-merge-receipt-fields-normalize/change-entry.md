@@ -1,14 +1,15 @@
 # Change: m9-31 Merge receipt fields normalization
 
-| Field | Value |
-|---|---|
-| Cycle | m9-31-merge-receipt-fields-normalize |
-| Base SHA | `6c428f7` |
-| Head SHA | `5c286b6` |
-| Tag | `v0.7.29` (peels to `5c286b6`) |
-| Path | B-direct |
-| Date | 2026-09-12 |
-| Author | jcode (auto-mode B-direct) |
+
+## Subject
+
+- base_sha: `6c428f76ec2f57bd210e936ab7b2f9a40e207d63`
+- head_sha: `5c286b6b19684cc59a0c8e7935280051d14e0e54`
+- cycle: m9-31
+- tag: `v0.7.29`
+- route: B-direct
+- date: 2026-09-12
+
 
 ## Summary
 
@@ -65,6 +66,19 @@ cross-check for merge-receipt.md SHA fields at all (C10 only checked
 release-receipt.md). The fact that C22 found drift in release-receipt
 made me realize that the same drift pattern would apply to
 merge-receipt. C23 closes this gap.
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-31-merge-receipt-fields-normalize/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-31-merge-receipt-fields-normalize/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-31-merge-receipt-fields-normalize/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-31-merge-receipt-fields-normalize/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-31-merge-receipt-fields-normalize/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-31-merge-receipt-fields-normalize/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-31-merge-receipt-fields-normalize/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-31-merge-receipt-fields-normalize/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Risk
 

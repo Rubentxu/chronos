@@ -5,7 +5,7 @@
 Drift closure cycle for this milestone.
 
 
-## Ciclo
+## Subject
 
 | Campo | Valor |
 |---|---|
@@ -57,6 +57,19 @@ of the procedure that future sessions will run before declaring
 - New change-entry: `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-11-cycles-index-metadata-drift/change-entry.md`
   (this file)
 - New archive-manifest: `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-11-cycles-index-metadata-drift/archive-manifest.md`
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-11-cycles-index-metadata-drift/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-11-cycles-index-metadata-drift/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-11-cycles-index-metadata-drift/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-11-cycles-index-metadata-drift/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-11-cycles-index-metadata-drift/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-11-cycles-index-metadata-drift/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-11-cycles-index-metadata-drift/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-11-cycles-index-metadata-drift/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Tag convention
 

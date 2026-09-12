@@ -9,6 +9,11 @@
 | Base SHA | `cc995cdd2cf41bd0638a548fc3db169763bfc38d` |
 | Release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-18-apply-checkpoint-metadata-drift/release-receipt.md` |
 
+## Summary
+
+Drift closure cycle. See release-receipt.md and change-entry.md for details.
+
+
 ## Evidence bindings
 
 Vault metadata cycles only (or vault + minimal code). Each cycle artifact bound to its SHA-256:

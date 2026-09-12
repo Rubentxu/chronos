@@ -1,14 +1,15 @@
 # Change: m9-33 change-entry title format normalization
 
-| Field | Value |
-|---|---|
-| Cycle | m9-33-change-entry-title-format-normalize |
-| Base SHA | `5bfcfed` |
-| Head SHA | `837bc5c` |
-| Tag | `v0.7.31` (peels to `837bc5c`) |
-| Path | B-direct |
-| Date | 2026-09-12 |
-| Author | jcode (auto-mode B-direct) |
+
+## Subject
+
+- base_sha: `5bfcfedaf9687050a8090a31f999738ff082a081`
+- head_sha: `837bc5c44a501e4c2253cc6fd257cc578bebf8e0`
+- cycle: m9-33
+- tag: `v0.7.31`
+- route: B-direct
+- date: 2026-09-12
+
 
 ## Summary
 
@@ -49,6 +50,19 @@ The deeper lesson: **convention evolution is a form of drift**. When
 the agent switched from slug-based to human-readable titles, it didn't
 backfill the prior cycles. C25 enforces that future cycles stay in
 the canonical format and that prior cycles can be migrated.
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-33-change-entry-title-format-normalize/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-33-change-entry-title-format-normalize/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-33-change-entry-title-format-normalize/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-33-change-entry-title-format-normalize/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-33-change-entry-title-format-normalize/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-33-change-entry-title-format-normalize/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-33-change-entry-title-format-normalize/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-33-change-entry-title-format-normalize/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Risk
 

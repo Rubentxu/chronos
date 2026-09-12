@@ -1,14 +1,15 @@
 # Change: m9-28 m9-19 base_sha fabrication fix
 
-| Field | Value |
-|---|---|
-| Cycle | m9-28-m9-19-fabricated-base-sha |
-| Base SHA | `8eb6487` |
-| Head SHA | `709e3c4` |
-| Tag | `v0.7.26` (peels to `709e3c4`) |
-| Path | B-direct |
-| Date | 2026-09-12 |
-| Author | jcode (auto-mode B-direct) |
+
+## Subject
+
+- base_sha: `8eb648779071f9a634e2439754034f1288929c62`
+- head_sha: `709e3c470d50064b9a2c819b5761a2972eadafcb`
+- cycle: m9-28
+- tag: `v0.7.26`
+- route: B-direct
+- date: 2026-09-12
+
 
 ## Summary
 
@@ -73,6 +74,19 @@ is the same class of error as m9-11's `cd0115f8c93b...` fabrication
 short SHA, write it down" without verifying the actual 40-char form.
 The fix is always: use `git rev-parse <short-sha>^` to get the real
 parent. C20 enforces this structurally for fix-peel cycles.
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-28-m9-19-fabricated-base-sha/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-28-m9-19-fabricated-base-sha/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-28-m9-19-fabricated-base-sha/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-28-m9-19-fabricated-base-sha/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-28-m9-19-fabricated-base-sha/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-28-m9-19-fabricated-base-sha/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-28-m9-19-fabricated-base-sha/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-28-m9-19-fabricated-base-sha/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Risk
 

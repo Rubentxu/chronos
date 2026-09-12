@@ -5,7 +5,7 @@
 Drift closure cycle for this milestone.
 
 
-## Ciclo
+## Subject
 
 | Campo | Valor |
 |---|---|
@@ -49,6 +49,19 @@ B-direct debt-cleanup closing the four `apply`-target findings introduced by `m9
 | cc-003-wrong-direction-visibility | coupling | `storage.rs::db()` widened `pub(crate)` → `pub`; `COUNTEREXAMPLE_BUNDLES` and `COUNTEREXAMPLE_BUNDLE_EVENTS` widened to `pub const` | m9-05-side-table-overeng-cleanup (`v0.7.3`) |
 
 Verdict: **PASS** (4/4 apply-target findings closed) · 2 m9-04 backlog findings (cc-001 god-module, cc-004 TOCTOU) remain in m9+ backlog.
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-05-side-table-overeng-cleanup/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-05-side-table-overeng-cleanup/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-05-side-table-overeng-cleanup/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-05-side-table-overeng-cleanup/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-05-side-table-overeng-cleanup/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-05-side-table-overeng-cleanup/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-05-side-table-overeng-cleanup/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-05-side-table-overeng-cleanup/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Artefactos
 

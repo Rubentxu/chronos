@@ -9,6 +9,11 @@
 | Base SHA | `0ed8f874f7b6f973505fc3997475fc398fcfa4cc` |
 | Release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-17-verify-findings-and-markdown-sha-drift/release-receipt.md` |
 
+## Summary
+
+Drift closure cycle. See release-receipt.md and change-entry.md for details.
+
+
 ## Evidence bindings
 
 Vault metadata cycles only (or vault + minimal code). Each cycle artifact bound to its SHA-256:

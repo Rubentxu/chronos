@@ -5,7 +5,7 @@
 Drift closure cycle for this milestone.
 
 
-## Ciclo
+## Subject
 
 | Campo | Valor |
 |---|---|
@@ -71,6 +71,19 @@ A-min schema-migration cycle targeting **FIND-M9-02-DV-PERF-01** (the last open 
 | cc-004-implicit-io-toctou | coupling | LOW | backlog | `save_bundle_record_and_events` opens read-then-write; pre-existing TOCTOU pattern |
 
 Verdict: **PASS** · 1/1 m9-02 finding closed; 4 m9-04 `apply`-target findings scheduled for `m9-05-side-table-overeng-cleanup`; 2 m9-04 backlog findings recorded.
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-04-side-table-key-layout/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-04-side-table-key-layout/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Artefactos
 

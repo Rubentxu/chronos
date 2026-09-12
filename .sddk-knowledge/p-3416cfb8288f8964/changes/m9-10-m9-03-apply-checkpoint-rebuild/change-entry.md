@@ -5,7 +5,7 @@
 Drift closure cycle for this milestone.
 
 
-## Ciclo
+## Subject
 
 | Campo | Valor |
 |---|---|
@@ -57,6 +57,19 @@ intentionally distinct.
 
 This cycle closes **no debt findings**. It rebuilds a single missing
 vault artifact that records the **already-closed** findings of m9-03.
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-10-m9-03-apply-checkpoint-rebuild/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-10-m9-03-apply-checkpoint-rebuild/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-10-m9-03-apply-checkpoint-rebuild/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-10-m9-03-apply-checkpoint-rebuild/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-10-m9-03-apply-checkpoint-rebuild/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-10-m9-03-apply-checkpoint-rebuild/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-10-m9-03-apply-checkpoint-rebuild/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-10-m9-03-apply-checkpoint-rebuild/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Findings NOT resolved (m9+ backlog unchanged)
 

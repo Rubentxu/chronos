@@ -5,7 +5,7 @@
 Drift closure cycle for this milestone.
 
 
-## Ciclo
+## Subject
 
 | Campo | Valor |
 |---|---|
@@ -43,6 +43,19 @@ Trivial B-direct cleanup targeting two stale findings from the m9-01 cycle:
 | FIND-M9-01-DV-OE-01 | overeng | `KNOWN_BUNDLE_SCHEMA_VERSIONS` dead speculative code | m9-06-known-schema-versions-invariant (`v0.7.4`) |
 
 Verdict: **PASS** (2/2 findings closed)
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-06-known-schema-versions-invariant/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-06-known-schema-versions-invariant/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Artefactos
 

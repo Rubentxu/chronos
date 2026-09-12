@@ -5,7 +5,7 @@
 Drift closure cycle for this milestone.
 
 
-## Ciclo
+## Subject
 
 | Campo | Valor |
 |---|---|
@@ -63,6 +63,19 @@ This cycle closes **no debt findings**. It is a documentation-drift
 hygiene fix only. The `m9-01-R4` disclosure was already terminated by
 m9-06; the change is to remove the duplicate that left the disclosure
 listed in both Active and Terminated sections.
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-09-vault-hygiene-active-disclosure-dedupe/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-09-vault-hygiene-active-disclosure-dedupe/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-09-vault-hygiene-active-disclosure-dedupe/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-09-vault-hygiene-active-disclosure-dedupe/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-09-vault-hygiene-active-disclosure-dedupe/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-09-vault-hygiene-active-disclosure-dedupe/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-09-vault-hygiene-active-disclosure-dedupe/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-09-vault-hygiene-active-disclosure-dedupe/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Findings NOT resolved (m9+ backlog unchanged)
 

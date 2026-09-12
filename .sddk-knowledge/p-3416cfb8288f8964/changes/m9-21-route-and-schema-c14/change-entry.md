@@ -1,14 +1,15 @@
 # Change: m9-21 Verbose route + cross-check #14
 
-| Field | Value |
-|---|---|
-| Cycle | m9-21-route-and-schema-c14 |
-| Base SHA | `efb9d93` |
-| Head SHA | `14ecf16` |
-| Tag | `v0.7.19` (peels to `14ecf16`) |
-| Path | B-direct |
-| Date | 2026-09-12 |
-| Author | jcode (auto-mode B-direct) |
+
+## Subject
+
+- base_sha: `efb9d93da368c4c6e1473c4668bbc945dff850c6`
+- head_sha: `14ecf16ded816896cb612721875e97380bcadbc3`
+- cycle: m9-21
+- tag: `v0.7.19`
+- route: B-direct
+- date: 2026-09-12
+
 
 ## Summary
 
@@ -29,6 +30,19 @@ Two drift classes closed in a single cycle:
 
 Cross-check #14 added to
 `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`.
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-21-route-and-schema-c14/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-21-route-and-schema-c14/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-21-route-and-schema-c14/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-21-route-and-schema-c14/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-21-route-and-schema-c14/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-21-route-and-schema-c14/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-21-route-and-schema-c14/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-21-route-and-schema-c14/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Verification
 

@@ -1,5 +1,11 @@
 # Change: m9-16 archive manifest short and fabricated sha
 
+## Subject
+
+- base_sha: `68c528ec34adc1ef5c0e049b9ab83207d710bcb6`
+- head_sha: `eb5110dfe1f1d14eab85e6052f1f7cbb86e2f384`
+- cycle: m9-16
+
 ## Summary
 
 Drift closure cycle for this milestone.
@@ -40,6 +46,19 @@ because they can drift independently.
 Also extends cross-check #8 to cover archive-manifest.md Head SHA
 fields via `git cat-file -e` (closes the gap that C9 does not catch
 40-char fabrications).
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-16-archive-manifest-short-and-fabricated-sha/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-16-archive-manifest-short-and-fabricated-sha/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-16-archive-manifest-short-and-fabricated-sha/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-16-archive-manifest-short-and-fabricated-sha/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-16-archive-manifest-short-and-fabricated-sha/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-16-archive-manifest-short-and-fabricated-sha/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-16-archive-manifest-short-and-fabricated-sha/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-16-archive-manifest-short-and-fabricated-sha/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Files touched
 

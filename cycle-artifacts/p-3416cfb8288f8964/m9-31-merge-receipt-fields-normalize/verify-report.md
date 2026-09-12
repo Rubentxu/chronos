@@ -1,5 +1,11 @@
 # Verify Report — m9-31
 
+## Subject
+
+- base_sha: `6c428f76ec2f57bd210e936ab7b2f9a40e207d63`
+- head_sha: `5c286b6b19684cc59a0c8e7935280051d14e0e54`
+- cycle: m9-31
+
 ## Cross-checks
 
 - C1: PASS

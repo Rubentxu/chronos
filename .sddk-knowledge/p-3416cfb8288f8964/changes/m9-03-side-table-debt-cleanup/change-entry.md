@@ -5,7 +5,7 @@
 Drift closure cycle for this milestone.
 
 
-## Ciclo
+## Subject
 
 | Campo | Valor |
 |---|---|
@@ -56,6 +56,19 @@ in the m9+ backlog.
 | FIND-M9-02-DV-COUP-01 | coupling | Fallback outside D5 chokepoint: wrong module boundary | m9-03-side-table-debt-cleanup (`v0.7.1`) |
 
 Verdict: `PASS` (4/4 findings resolved) · FIND-M9-02-DV-PERF-01 → m9+ backlog
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-03-side-table-debt-cleanup/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-03-side-table-debt-cleanup/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Artefactos
 

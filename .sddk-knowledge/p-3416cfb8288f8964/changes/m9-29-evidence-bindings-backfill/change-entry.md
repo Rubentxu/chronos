@@ -1,14 +1,15 @@
 # Change: m9-29 Evidence bindings section backfill
 
-| Field | Value |
-|---|---|
-| Cycle | m9-29-evidence-bindings-backfill |
-| Base SHA | `a65927d` |
-| Head SHA | `8617ad0` |
-| Tag | `v0.7.27` (peels to `8617ad0`) |
-| Path | B-direct |
-| Date | 2026-09-12 |
-| Author | jcode (auto-mode B-direct) |
+
+## Subject
+
+- base_sha: `a65927d960d7a5b42cd425dc34befe3efe7c692f`
+- head_sha: `8617ad0dde11f1a9e83a7f3c110dda3d691e374d`
+- cycle: m9-29
+- tag: `v0.7.27`
+- route: B-direct
+- date: 2026-09-12
+
 
 ## Summary
 
@@ -65,6 +66,19 @@ The pattern: **structural drift compounds silently**. None of the
 prior cross-checks (C1-C20) detected the missing section because none
 of them checked for it. m9-29 adds C21 specifically to catch this
 class of drift in future cycles.
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-29-evidence-bindings-backfill/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-29-evidence-bindings-backfill/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-29-evidence-bindings-backfill/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-29-evidence-bindings-backfill/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-29-evidence-bindings-backfill/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-29-evidence-bindings-backfill/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-29-evidence-bindings-backfill/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-29-evidence-bindings-backfill/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Risk
 

@@ -1,14 +1,15 @@
 # Change: m9-23 cycle_id workspace prefix strip
 
-| Field | Value |
-|---|---|
-| Cycle | m9-23-cycle-id-strip-prefix |
-| Base SHA | `f5fbbd7` |
-| Head SHA | `b549c74` |
-| Tag | `v0.7.21` (peels to `b549c74`) |
-| Path | B-direct |
-| Date | 2026-09-12 |
-| Author | jcode (auto-mode B-direct) |
+
+## Subject
+
+- base_sha: `f5fbbd7584398d0fda1f090fe9295bcb9fdde045`
+- head_sha: `b549c7462932647b03cd9cd2f28da0fc03c9ed64`
+- cycle: m9-23
+- tag: `v0.7.21`
+- route: B-direct
+- date: 2026-09-12
+
 
 ## Summary
 
@@ -20,6 +21,19 @@ prior cycles.
 ## Cross-check
 
 Cross-check #16 added to vault-drift-sweep.md.
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-23-cycle-id-strip-prefix/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-23-cycle-id-strip-prefix/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-23-cycle-id-strip-prefix/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-23-cycle-id-strip-prefix/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-23-cycle-id-strip-prefix/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-23-cycle-id-strip-prefix/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-23-cycle-id-strip-prefix/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-23-cycle-id-strip-prefix/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Verification
 

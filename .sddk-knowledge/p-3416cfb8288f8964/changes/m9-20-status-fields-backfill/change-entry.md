@@ -1,14 +1,15 @@
 # Change: m9-20 Status fields backfill
 
-| Field | Value |
-|---|---|
-| Cycle | m9-20-status-fields-backfill |
-| Base SHA | `d665691` |
-| Head SHA | `07febc1` |
-| Tag | `v0.7.18` (peels to `07febc1`) |
-| Path | B-direct |
-| Date | 2026-09-12 |
-| Author | jcode (auto-mode B-direct) |
+
+## Subject
+
+- base_sha: `d66569159fe3e47404aee3b4e13a3c5b883c7d69`
+- head_sha: `07febc1bae0d236ad47eef3c5b3172c4824cde04`
+- cycle: m9-20
+- tag: `v0.7.18`
+- route: B-direct
+- date: 2026-09-12
+
 
 ## Summary
 
@@ -37,6 +38,19 @@ enforcing these three fields on CLOSED cycles.
 
 - T0 gate: `cargo fmt --check` + `cargo clippy -- -D warnings` → PASS
 - All 13 cross-checks → PASS (0 drift)
+
+## Files changed
+
+- `cycle-artifacts/p-3416cfb8288f8964/m9-20-status-fields-backfill/apply-checkpoint.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-20-status-fields-backfill/merge-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-20-status-fields-backfill/release-receipt.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-20-status-fields-backfill/release-report.md`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-20-status-fields-backfill/verify-findings.json`
+- `cycle-artifacts/p-3416cfb8288f8964/m9-20-status-fields-backfill/verify-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-20-status-fields-backfill/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-20-status-fields-backfill/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
 
 ## Pattern
 

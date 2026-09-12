@@ -88,6 +88,14 @@ in `bundle_events_or_legacy` (D5). The m9-02 scoping doc §9 declares R4 closed.
 
 Verdict: `PASS_WITH_WARNINGS` (7 backlog findings) · All findings → m9+ backlog
 
+## Files changed
+
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-02-events-side-table/archive-manifest.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-02-events-side-table/archive-report.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-02-events-side-table/change-entry.md`
+- `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`
+
+
 ## Artefactos
 
 | Kind | Path |
