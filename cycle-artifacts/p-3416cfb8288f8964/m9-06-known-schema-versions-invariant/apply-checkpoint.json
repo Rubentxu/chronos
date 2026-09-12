@@ -1,0 +1,88 @@
+{
+  "cycle_id": "p-3416cfb8288f8964/m9-06-known-schema-versions-invariant",
+  "change": "m9-06-known-schema-versions-invariant",
+  "path": "B-direct",
+  "status": "closed",
+  "head_sha": "3383905d93ac66b6e90b6de8cea760c1ad4e2c99",
+  "base_sha": "9d2c676bfc6331f730e7db9eac3ec9c057db1de4",
+  "tag": "v0.7.4",
+  "remote_tag_peel": "3383905d93ac66b6e90b6de8cea760c1ad4e2c99",
+  "main_sha": "3383905d93ac66b6e90b6de8cea760c1ad4e2c99",
+  "peel_match": true,
+  "runtime_status": "RELEASED",
+  "route": "local",
+  "verified_at": "2026-09-12T08:43:00Z",
+  "released_at": "2026-09-12T08:43:51Z",
+  "archived_at": "2026-09-12T08:44:30Z",
+  "commits_since_base": [
+    "1feeab4fix(m9-06): remove stale #[allow(dead_code)] on KNOWN_BUNDLE_SCHEMA_VERSIONS; add compile-time invariant + test (closes m9-01-R4, FIND-M9-01-DV-OE-01)",
+    "3383905docs(m9-06): light-verify evidence (R1+R2 PASS, 2/2 findings closed)"
+  ],
+  "artifacts": {
+    "merge_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/merge-receipt.md",
+    "release_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/release-receipt.md",
+    "release_report": "cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/release-report.md",
+    "verify_report": "cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/verify-report.md",
+    "change_entry": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-06-known-schema-versions-invariant/change-entry.md",
+    "archive_manifest": ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-06-known-schema-versions-invariant/archive-manifest.md"
+  },
+  "findings_closed": [
+    "m9-01-R4",
+    "FIND-M9-01-DV-OE-01"
+  ],
+  "findings_remaining_m9_plus": [
+    "FIND-M9-01-DV-COUP-01",
+    "FIND-M9-01-DV-COUP-02",
+    "cc-001-god-module",
+    "cc-004-implicit-io-toctou"
+  ],
+  "notes": [
+    {
+      "gate": "T0-lint",
+      "result": "pass",
+      "evidence": "cargo fmt --all -- --check (clean); cargo clippy --workspace --all-targets -- -D warnings (0 warnings)"
+    },
+    {
+      "gate": "T1-lib-unit",
+      "result": "pass",
+      "evidence": "cargo test -p chronos-store --lib: 57/57 (+1 m9-06 test)"
+    },
+    {
+      "gate": "T2-integration",
+      "result": "pass",
+      "evidence": "cargo test -p chronos-services --lib: 263/263; cargo test -p chronos-cli --tests: 2/2"
+    },
+    {
+      "gate": "verify",
+      "result": "PASS",
+      "verdict": "light-verify inline; 2/2 spec scenarios COMPLIANT (R1+R2)"
+    },
+    {
+      "gate": "release",
+      "result": "success",
+      "evidence": "v0.7.4 annotated tag at 3383905, peel_match: true, push to origin verified"
+    },
+    {
+      "gate": "archive",
+      "result": "closed",
+      "evidence": "change-entry + archive-manifest + terms + cycles-index updated; 2 findings moved from active to terminated"
+    },
+    {
+      "gate": "scoping-decision",
+      "result": "B-direct",
+      "evidence": "single-file trivial change (+37 -1 lines); landed directly on main without separate branch"
+    },
+    {
+      "gate": "smoke_subset",
+      "result": "n/a",
+      "evidence": "no MCP/probe plumbing touched; sandbox smoke not warranted"
+    }
+  ],
+  "next_cycle": null,
+  "next_cycle_path": null,
+  "next_cycle_target_findings": [],
+  "ledger_state": {
+    "available": false,
+    "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02..m9-05 pattern)"
+  }
+}
