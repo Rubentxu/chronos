@@ -1,0 +1,106 @@
+{
+  "cycle_id": "p-3416cfb8288f8964/m9-09-vault-hygiene-active-disclosure-dedupe",
+  "change": "m9-09-vault-hygiene-active-disclosure-dedupe",
+  "path": "B-direct",
+  "status": "closed",
+  "head_sha": "07e731d61424160c4f67d769db00a171837ba62c",
+  "base_sha": "c183ad1822423419ffb7d5f92a8d5ac46423d653",
+  "tag": "v0.7.7",
+  "remote_tag_peel": "07e731d61424160c4f67d769db00a171837ba62c",
+  "main_sha": "07e731d61424160c4f67d769db00a171837ba62c",
+  "peel_match": true,
+  "runtime_status": "RELEASED",
+  "route": "local",
+  "verified_at": "2026-09-12T07:14:00Z",
+  "released_at": "2026-09-12T07:15:18Z",
+  "archived_at": null,
+  "commits_since_base": [
+    "07e731dfix(m9-09): remove duplicate m9-01-R4 from active disclosures (already terminated by m9-06)",
+    "bc94a33docs(m9-09): light-verify evidence (R1 PASS, vault drift closed)"
+  ],
+  "artifacts": {
+    "merge_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-09-vault-hygiene-active-disclosure-dedupe/merge-receipt.md",
+    "release_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-09-vault-hygiene-active-disclosure-dedupe/release-receipt.md",
+    "release_report": "cycle-artifacts/p-3416cfb8288f8964/m9-09-vault-hygiene-active-disclosure-dedupe/release-report.md",
+    "verify_report": "cycle-artifacts/p-3416cfb8288f8964/m9-09-vault-hygiene-active-disclosure-dedupe/verify-report.md",
+    "change_entry": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-09-vault-hygiene-active-disclosure-dedupe/change-entry.md",
+    "archive_manifest": ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-09-vault-hygiene-active-disclosure-dedupe/archive-manifest.md"
+  },
+  "findings_closed": [],
+  "findings_remaining_m9_plus": [
+    "m9-02-R1",
+    "m9-02-R2",
+    "m9-02-R3",
+    "m9-02-R4",
+    "m9-02-R5",
+    "m9-02-R6",
+    "m9-02-R7",
+    "m9-02-R8",
+    "m9-01-R1",
+    "m9-01-R2",
+    "m9-01-R3",
+    "cc-001-god-module",
+    "cc-004-implicit-io-toctou",
+    "m8-06-R4",
+    "m8-04-R-hypothesis-fallback"
+  ],
+  "notes": [
+    {
+      "gate": "T0-lint",
+      "result": "n/a",
+      "evidence": "no Rust source changed; T0 lint gate does not apply to a one-line Markdown edit"
+    },
+    {
+      "gate": "doc-verify",
+      "result": "pass",
+      "evidence": "awk sweep over terms/index.md: all m9-* IDs appear exactly once. Pre-fix: m9-01-R4 appeared 2 times. Post-fix: max count = 1."
+    },
+    {
+      "gate": "T1-lib-unit",
+      "result": "n/a",
+      "evidence": "no Rust source changed; T1 does not apply"
+    },
+    {
+      "gate": "T2-integration",
+      "result": "n/a",
+      "evidence": "no Rust source changed; T2 does not apply"
+    },
+    {
+      "gate": "verify",
+      "result": "PASS",
+      "verdict": "doc-verify inline; 1/1 spec scenario COMPLIANT (R1: m9-01-R4 removed from active section)"
+    },
+    {
+      "gate": "release",
+      "result": "success",
+      "evidence": "v0.7.7 annotated tag at 07e731d61424160c4f67d769db00a171837ba62c, peel_match: true, push to origin verified"
+    },
+    {
+      "gate": "archive",
+      "result": "pending",
+      "evidence": "apply-checkpoint + receipts written; change-entry + archive-manifest + cycles-index updates pending in this session"
+    },
+    {
+      "gate": "scoping-decision",
+      "result": "B-direct",
+      "evidence": "one-line vault hygiene fix (-1 line, single Markdown row); landed directly on main without separate branch. Follows m9-06/m9-07/m9-08 pattern."
+    },
+    {
+      "gate": "smoke_subset",
+      "result": "n/a",
+      "evidence": "no MCP/probe plumbing touched; no code touched at all. Sandbox smoke not warranted."
+    },
+    {
+      "gate": "drift-discovery-method",
+      "result": "successful",
+      "evidence": "awk-based id-uniqueness sweep over terms/index.md sections (one awk pipeline; ~6 ms). Pattern reusable for future vault-hygiene cycles if drift accumulates again. Recommend adding to AGENTS.md §4 as a standing maintenance command."
+    }
+  ],
+  "next_cycle": null,
+  "next_cycle_path": null,
+  "next_cycle_target_findings": [],
+  "ledger_state": {
+    "available": false,
+    "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02..m9-08 pattern)"
+  }
+}
