@@ -1,0 +1,11 @@
+{
+  "cycle_id": "m9-10-m9-03-apply-checkpoint-rebuild",
+  "subject": {
+    "head": "69f200e2144bea2cd305c38903feb4814fb38806",
+    "head_sha": "69f200e2144bea2cd305c38903feb4814fb38806"
+  },
+  "findings": [],
+  "_note": "Synthetic verify-findings synthesized by m9-25. The original verify-findings.json for this cycle was lost during the vault reorg. Subject SHA taken from apply-checkpoint.json head_sha. No findings array entries.",
+  "_legacy_schema": "sddk.verify-finding/v1 (original)",
+  "_restored_from": "apply-checkpoint.json head_sha"
+}

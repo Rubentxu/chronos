@@ -1,0 +1,11 @@
+{
+  "cycle_id": "m9-05-side-table-overeng-cleanup",
+  "subject": {
+    "head": "07d01d5869ff6e3ffed29315b761e6e476f3b70d",
+    "head_sha": "07d01d5869ff6e3ffed29315b761e6e476f3b70d"
+  },
+  "findings": [],
+  "_note": "Synthetic verify-findings synthesized by m9-25. The original verify-findings.json for this cycle was lost during the vault reorg. Subject SHA taken from apply-checkpoint.json head_sha. No findings array entries.",
+  "_legacy_schema": "sddk.verify-finding/v1 (original)",
+  "_restored_from": "apply-checkpoint.json head_sha"
+}

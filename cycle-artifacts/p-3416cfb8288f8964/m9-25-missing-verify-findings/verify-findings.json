@@ -1,0 +1,23 @@
+{
+  "cycle_id": "m9-25",
+  "subject": {
+    "head": "b4fccf44a6e5e117e2d7979c73909d962e42f6e1",
+    "head_sha": "b4fccf44a6e5e117e2d7979c73909d962e42f6e1"
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "low",
+      "category": "missing-artifact",
+      "summary": "6 prior CLOSED cycles (m9-05..m9-10) were missing verify-findings.json.",
+      "resolution": "Synthesize minimal verify-findings.json from apply-checkpoint.json head_sha. Document the synthesis."
+    },
+    {
+      "id": "F2",
+      "severity": "informational",
+      "category": "process",
+      "summary": "Added cross-check #18 to vault-drift-sweep.md.",
+      "resolution": "Cross-check #18 enforces verify-findings.json must exist for all CLOSED cycles."
+    }
+  ]
+}
