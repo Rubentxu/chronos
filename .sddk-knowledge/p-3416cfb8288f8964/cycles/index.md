@@ -50,7 +50,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-26 | m9-26-verify-findings-cycle-id-strip | B-direct | `v0.7.24` | `a7d43e012be509fc44edae1ab2f05397e3452037` | CLOSED |
 | m9-27 | m9-27-vacuous-peel-note-move | B-direct | `v0.7.25` | `91338e3b2fc58835662776507bde5308ec36568b` | CLOSED |
 | m9-28 | m9-28-m9-19-fabricated-base-sha | B-direct | `v0.7.26` | `709e3c470d50064b9a2c819b5761a2972eadafcb` | CLOSED |
-| m9-29 | m9-29-evidence-bindings-backfill | B-direct | `v0.7.27` | `24c144f` | CLOSED |
+| m9-29 | m9-29-evidence-bindings-backfill | B-direct | `v0.7.27` | `8617ad0dde11f1a9e83a7f3c110dda3d691e374d` | CLOSED |
 | m9-30 | m9-30-release-receipt-fields-normalize | B-direct | `v0.7.28` | `33acc58f9782c296f2f876cdfed280a024548188` | CLOSED |
 | m9-31 | m9-31-merge-receipt-fields-normalize | B-direct | `v0.7.29` | `5c286b6b19684cc59a0c8e7935280051d14e0e54` | CLOSED |
 | m9-32 | m9-32-verify-report-cross-checks-backfill | B-direct | `v0.7.30` | `b3bfa59e85b1145c81ae84ce7cac6be6238b2a58` | CLOSED |
@@ -71,10 +71,10 @@ Chronological record of all SDDK cycles for this project.
 | m9-47 | m9-47-cross-checks-and-index-count | B-direct | `v0.7.45` | `3ac364f0861d28b2893db6b8ac63fc22549a4b9c` | CLOSED |
 | m9-48 | m9-48-comprehensive-schema-backfill | B-direct | `v0.7.46` | `59322ef4da7ecfa4a1daf3a178cea2dad4ed3f1f` | CLOSED |
 | m9-49 | m9-49-release-report-backfill | B-direct | `v0.7.47` | `058399dca8bd333595abbd84f8620d93e5a8de1f` | CLOSED |
-| m9-50 | m9-50-tag-and-peel-reconcile | B-direct | `v0.7.48` | `18327df` | CLOSED |
+| m9-50 | m9-50-tag-and-peel-reconcile | B-direct | `v0.7.48` | `109e302286e6e53dfe51c8296dcfe59c16d77c3a` | CLOSED |
 | m9-51 | m9-51-head-sha-sync | B-direct | `v0.7.49` | `df071cce1a007b960f6bbf41d981c466efe45455` | CLOSED |
 | m9-52 | m9-52-verify-report-summary | B-direct | `v0.7.50` | `4fe8929b2c4db143a7227002747ff45c91e8803c` | CLOSED |
-| m9-53 | m9-53-cycles-index-sha-expand | B-direct | `v0.7.51` | `5781ce6` | CLOSED |
+| m9-53 | m9-53-cycles-index-sha-expand | B-direct | `v0.7.51` | `5781ce66da071a85bb71daa9263f5092b3e35b7e` | CLOSED |
 
 ## Metadata
 
