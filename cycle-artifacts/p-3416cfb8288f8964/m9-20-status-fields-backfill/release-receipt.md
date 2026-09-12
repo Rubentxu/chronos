@@ -5,7 +5,7 @@
 | Cycle | m9-20-status-fields-backfill |
 | Tag | `v0.7.18` |
 | Pee | fix commit (chronos convention) |
-| Released at | TBD |
+| Released at | 2026-09-12T11:13:21Z |
 
 ## Tag command
 

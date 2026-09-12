@@ -1,0 +1,59 @@
+# Archive Manifest: m9-20
+
+| Field | Value |
+|---|---|
+| Cycle | m9-20-status-fields-backfill |
+| Head SHA | `07febc1bae0d236ad47eef3c5b3172c4824cde04` |
+| Tag | `v0.7.18` |
+| Tag peel | `07febc1bae0d236ad47eef3c5b3172c4824cde04` |
+| Peel match | true |
+| Archived at | 2026-09-12T11:13:00Z |
+| Path | B-direct |
+| Cross-check added | #13 |
+
+## Archived artifacts
+
+### Cycle artifacts (`cycle-artifacts/p-3416cfb8288f8964/m9-20-status-fields-backfill/`)
+
+| File | SHA-256 |
+|---|---|
+| `apply-checkpoint.json` | `a8985dd10ec5ae9ceb6abad4064320d7e076359d9c73b6c2cbab0caaab6df7f8` |
+| `merge-receipt.md` | `d3ac4ec275fc0aa1365871702715553c45b89995db90b9468145d87b958d51be` |
+| `release-receipt.md` | `184927b93586ee6df7feaa4f7ef437c4e71e165a7460b88d693d14d8f5586aa1` |
+| `release-report.md` | `0fc324538c8b14dbb9a456fb9053b2518657b4e4c9475df32882435ef38ddc50` |
+| `verify-findings.json` | `02d4da4446b42cdfef02126d59b10018afdb686d5f7ec18b88c25b25b02af086` |
+| `verify-report.md` | `0d8b325d4cae36d161bee72cd46bf2addc52beb87c2afa594ad2c15bd5f3e17f` |
+
+### Knowledge artifacts
+
+| File | SHA-256 |
+|---|---|
+| `change-entry.md` | `2bc2019e5f89353133d6c56dd2f73852630dcd26bc368759ad9789477367bb0a` |
+
+### Modified cycle artifacts (17 prior cycles)
+
+The following prior-cycle apply-checkpoint.json files were modified
+to add `verify_status`, `release_status`, `archive_status`:
+
+- m9-03-side-table-debt-cleanup
+- m9-04-side-table-key-layout
+- m9-05-side-table-overeng-cleanup
+- m9-06-known-schema-versions-invariant
+- m9-07-coup-01-invariant-assertion
+- m9-08-list-load-schema-error-variant
+- m9-09-vault-hygiene-active-disclosure-dedupe
+- m9-10-m9-03-apply-checkpoint-rebuild
+- m9-11-cycles-index-metadata-drift
+- m9-12-terms-index-metadata-drift
+- m9-13-change-entry-base-sha-drift
+- m9-14-m9-11-fabricated-sha
+- m9-15-m9-12-m9-13-short-sha
+- m9-16-archive-manifest-short-and-fabricated-sha
+- m9-17-verify-findings-and-markdown-sha-drift
+- m9-18-apply-checkpoint-metadata-drift
+
+## SHA verification
+
+```bash
+git rev-parse v0.7.18^{}  # → 07febc1bae0d236ad47eef3c5b3172c4824cde04
+```
