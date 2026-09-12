@@ -25,6 +25,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-01 | m9-01-schema-versioning | A-min | `v0.6.0` | `25948147869307343a28e3896e8289c715efbc81` | CLOSED |
 | m9-02 | m9-02-events-side-table | A-lite | `v0.7.0` | `1a8d104ba2da883b40bd424cdc079b344f7ed63c` | CLOSED |
 | m9-03 | m9-03-side-table-debt-cleanup | B-direct | `v0.7.1` | `2c98ce9a1df65d44ae865376fee46eb0d95ac425` | CLOSED |
+| m9-04 | m9-04-side-table-key-layout | A-min | `v0.7.2` | `d6b3b8c51c50d2ce6d0fe4f8c804cf793137f0dc` | CLOSED |
 
 ## Metadata
 
@@ -32,5 +33,5 @@ Chronological record of all SDDK cycles for this project.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-11T23:17:00Z |
-| Total cycles | 19 |
+| Last updated | 2026-09-12T08:21:00Z |
+| Total cycles | 20 |
