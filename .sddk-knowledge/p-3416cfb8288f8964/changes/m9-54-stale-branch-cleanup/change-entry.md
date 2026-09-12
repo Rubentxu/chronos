@@ -11,7 +11,7 @@ Cleanup of stale `fix/m9-*` branches that accumulated across the 53 prior m9-* c
 | Cycle ID | `m9-54-stale-branch-cleanup` |
 | Path | B-direct |
 | Status | CLOSED |
-| Base SHA | `a24139e` |
+| Base SHA | `a24139ec1410d6fff167c5b127c1d6fed019c192` |
 | Head SHA | (no commit — branch-deletion-only housekeeping) |
 
 ## Subject

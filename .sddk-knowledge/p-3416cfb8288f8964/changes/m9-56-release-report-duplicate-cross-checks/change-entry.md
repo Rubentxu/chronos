@@ -11,7 +11,7 @@
 | Cycle ID | `m9-56-release-report-duplicate-cross-checks` |
 | Path | B-direct |
 | Status | CLOSED |
-| Base SHA | `6bdf8ba` |
+| Base SHA | `6bdf8ba506a61655edd82c997fca2137665ad8d6` |
 | Head SHA | (TBD after commit) |
 
 ## Subject

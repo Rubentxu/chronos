@@ -11,7 +11,7 @@ m9-38's `base_sha` field referenced a non-existent commit (`6bc6781465f9dff5a59b
 | Cycle ID | `m9-55-apply-checkpoint-fabricated-sha` |
 | Path | B-direct |
 | Status | CLOSED |
-| Base SHA | `cbb9384` |
+| Base SHA | `cbb93847228a9062de8e093dfe452c257233228c` |
 | Head SHA | (6ca0afddccb018c0d66bfbb35fa44dbc58ec2db4 — see release-report) |
 
 ## Subject

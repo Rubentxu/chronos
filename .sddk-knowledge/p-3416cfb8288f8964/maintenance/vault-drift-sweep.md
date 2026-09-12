@@ -2230,3 +2230,57 @@ were missing 11 fields each. m9-57 broadens the CC runner to detect
 any DRIFT line, then closes the underlying drift classes by:
 backfilling missing fields, hardening overly-strict regexes, and
 exempting fix-peel cycles from era-incompatible checks.
+
+### 49. SHA fields must use full 40-char SHAs (closed by m9-58)
+
+```python
+import os, re
+
+drifts = 0
+for root in ['.sddk-knowledge/p-3416cfb8288f8964', 'cycle-artifacts/p-3416cfb8288f8964']:
+    for d, _, files in os.walk(root):
+        for f in files:
+            if not f.endswith(('.md', '.json')):
+                continue
+            p = os.path.join(d, f)
+            try:
+                ci = open(p).read()
+            except:
+                continue
+            in_code = False
+            for line in ci.split('\n'):
+                if line.strip().startswith('\`\`\`'):
+                    in_code = not in_code
+                    continue
+                if in_code:
+                    continue
+                if not (line.lstrip().startswith('|') or re.match(r'^\s*"(?:head_sha|base_sha|remote_tag|remote_tag_peel|main_sha|merge_sha)"', line) or re.match(r'^\s*(?:head_sha|base_sha|remote_tag|remote_tag_peel|main_sha|merge_sha):', line)):
+                    continue
+                for m in re.finditer(r'(?:head_sha|base_sha|Head SHA|Base SHA|remote_tag|remote_tag_peel|main_sha|merge_sha)\s*[|:]\s*`([a-f0-9]{1,39})`', line):
+                    rel = p.replace(root + '/', '')
+                    print(f"DRIFT: {rel}: short SHA in '{m.group(0)[:40]}' ({m.group(1)})")
+                    drifts += 1
+print(f'Total: {drifts}')
+```
+
+**Expected output (clean):** `Total: 0`.
+
+**If `DRIFT`:** a SHA-field metadata cell references a hash that is
+shorter than 40 characters. Code-block narrative references (e.g.,
+diff-style `cd0115f` in the body of an archive-manifest summary)
+are skipped — the regex only inspects table rows (lines starting
+with `|`) and JSON property assignments.
+
+**Resolution:**
+- Expand the short SHA to its full 40-char form. The SHA is
+  reachable via `git rev-parse <short>`.
+- If the SHA is fabricated (does not exist in `git log`), see
+  CC#47 for the resolution pattern.
+
+**History:** m9-58 closed this drift class. Three cycles (m9-54,
+m9-55, m9-56) had `## Ciclo` table `Base SHA` cells with short
+SHAs (`a24139e`, `cbb9384`, `6bdf8ba`). The CCs that scan SHA
+fields (CC#22, CC#23) use `len(head) != 40` as a precondition,
+which silently skipped short-SHA rows. CC#49 explicitly scans
+for short SHAs in SHA-keyed fields, independent of the
+canonical-format precondition.
