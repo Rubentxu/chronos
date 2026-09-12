@@ -1,4 +1,4 @@
-# Change Entry — m9-12-terms-index-metadata-drift
+# Change: m9-12 terms index metadata drift
 
 ## Ciclo
 

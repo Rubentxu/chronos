@@ -1,4 +1,4 @@
-# Change Entry — m9-17-verify-findings-and-markdown-sha-drift
+# Change: m9-17 verify findings and markdown sha drift
 
 | Campo | Valor |
 |---|---|

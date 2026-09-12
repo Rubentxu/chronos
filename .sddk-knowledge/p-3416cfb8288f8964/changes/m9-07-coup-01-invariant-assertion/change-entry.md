@@ -1,4 +1,4 @@
-# Change Entry — m9-07-coup-01-invariant-assertion
+# Change: m9-07 coup 01 invariant assertion
 
 ## Ciclo
 

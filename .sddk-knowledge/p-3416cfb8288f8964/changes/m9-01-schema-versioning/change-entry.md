@@ -1,4 +1,4 @@
-# Change Entry — m9-01-schema-versioning
+# Change: m9-01 schema versioning
 
 ## Ciclo
 

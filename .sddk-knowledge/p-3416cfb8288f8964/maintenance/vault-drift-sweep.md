@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -538,6 +538,7 @@ Cycles that established this procedure:
 - **m9-30** (vault hygiene: normalize release-receipt.md SHA fields across all 25 m9 cycles, v0.7.28) → cross-check #22
 - **m9-31** (vault hygiene: normalize merge-receipt.md SHA fields across all 25 m9 cycles, v0.7.29) → cross-check #23
 - **m9-32** (vault hygiene: add `## Cross-checks` section to 25 verify-report.md files, v0.7.30) → cross-check #24
+- **m9-33** (vault hygiene: normalize change-entry.md title format to `# Change: m9-NN <title>` across 18 cycles, v0.7.31) → cross-check #25
 
 ### 13. apply-checkpoint.json `*_status` field backfill (closed by m9-20)
 
@@ -1038,6 +1039,40 @@ checks were run, what passed, what failed).
 authored without the `## Cross-checks` section. The convention was
 introduced in m9-28+. m9-32 backfills the section for all 25 prior
 cycles.
+
+### 25. change-entry.md title format must be `# Change: m9-NN <human-readable>` (closed by m9-33)
+
+```python
+import os, re
+for folder in sorted(os.listdir('.sddk-knowledge/p-3416cfb8288f8964/changes/')):
+    if folder == 'archive' or not os.path.isdir(f'.sddk-knowledge/p-3416cfb8288f8964/changes/{folder}'):
+        continue
+    ce = f'.sddk-knowledge/p-3416cfb8288f8964/changes/{folder}/change-entry.md'
+    if not os.path.exists(ce): continue
+    title = open(ce).readline().strip()
+    m = re.match(r'm9-(\d+)', folder)
+    if not m: continue
+    cycle_num = m.group(1)
+    expected_prefix = f"# Change: m9-{cycle_num} "
+    if not title.startswith(expected_prefix):
+        print(f"DRIFT: {ce}: title={title!r} (expected starts with {expected_prefix!r})")
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** A change-entry.md is using a different title format
+than the canonical `# Change: m9-NN <human-readable>`.
+
+**Resolution:**
+1. Convert `# Change Entry — <slug>` (pre-m9-19 format) to
+   `# Change: m9-NN <human-readable>` by replacing dashes with spaces
+   in the slug and stripping the `m9-NN-` prefix.
+2. Convert `# Change: <title without m9-NN prefix>` to
+   `# Change: m9-NN <title>`.
+
+**History:** m9-01..m9-18 used `# Change Entry — <slug>` format. m9-19+
+used `# Change: m9-NN <title>` format. m9-33 normalizes all 32 cycles
+to the canonical format and adds C25 to enforce it.
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class

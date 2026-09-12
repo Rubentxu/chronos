@@ -74,5 +74,5 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T12:50:00Z |
-| Last archive | m9-32-verify-report-cross-checks-backfill |
+| Last updated | 2026-09-12T12:52:00Z |
+| Last archive | m9-33-change-entry-title-format-normalize |

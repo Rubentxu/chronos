@@ -1,4 +1,4 @@
-# Change Entry — m9-16-archive-manifest-short-and-fabricated-sha
+# Change: m9-16 archive manifest short and fabricated sha
 
 | Campo | Valor |
 |---|---|

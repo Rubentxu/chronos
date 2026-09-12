@@ -1,4 +1,4 @@
-# Change Entry — m9-11-cycles-index-metadata-drift
+# Change: m9-11 cycles index metadata drift
 
 ## Ciclo
 

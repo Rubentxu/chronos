@@ -1,4 +1,4 @@
-# Change Entry — m9-18-apply-checkpoint-metadata-drift
+# Change: m9-18 apply checkpoint metadata drift
 
 | Campo | Valor |
 |---|---|

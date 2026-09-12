@@ -1,4 +1,4 @@
-# Change Entry — m9-10-m9-03-apply-checkpoint-rebuild
+# Change: m9-10 m9 03 apply checkpoint rebuild
 
 ## Ciclo
 

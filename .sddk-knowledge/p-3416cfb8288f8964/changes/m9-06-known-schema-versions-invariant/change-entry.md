@@ -1,4 +1,4 @@
-# Change Entry — m9-06-known-schema-versions-invariant
+# Change: m9-06 known schema versions invariant
 
 ## Ciclo
 

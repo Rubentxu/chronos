@@ -1,4 +1,4 @@
-# Change Entry — m9-03-side-table-debt-cleanup
+# Change: m9-03 side table debt cleanup
 
 ## Ciclo
 

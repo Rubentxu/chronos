@@ -1,4 +1,4 @@
-# Change Entry — m9-04-side-table-key-layout
+# Change: m9-04 side table key layout
 
 ## Ciclo
 

@@ -1,4 +1,4 @@
-# Change Entry — m9-02-events-side-table
+# Change: m9-02 events side table
 
 ## Ciclo
 
