@@ -4,7 +4,7 @@
 
 | Campo | Valor |
 |---|---|
-| Cycle ID | `m9-06-known-schema-versions-invariant` |
+| Cycle | `m9-06-known-schema-versions-invariant` |
 | Change name | `m9-06-known-schema-versions-invariant` |
 | Path | `B-direct` |
 | Status | **CLOSED** |

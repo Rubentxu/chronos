@@ -20,5 +20,6 @@
       "summary": "Added cross-check #15 to vault-drift-sweep.md.",
       "resolution": "Cross-check #15 prevents future 'new field added, no backfill' drift on these three fields."
     }
-  ]
+  ],
+  "verdict": "pass_with_findings"
 }

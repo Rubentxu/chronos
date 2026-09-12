@@ -1,5 +1,10 @@
 # Change: m9-16 archive manifest short and fabricated sha
 
+## Summary
+
+Drift closure cycle for this milestone.
+
+
 | Campo | Valor |
 |---|---|
 | Cycle ID | `m9-16-archive-manifest-short-and-fabricated-sha` |

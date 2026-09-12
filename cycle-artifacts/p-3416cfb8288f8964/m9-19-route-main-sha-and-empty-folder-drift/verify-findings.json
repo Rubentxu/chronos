@@ -34,5 +34,6 @@
       "summary": "Added cross-check #12 to vault-drift-sweep.md enforcing route field normalization, main_sha convention, and empty folder cleanup.",
       "resolution": "New cross-check #12 will catch any future recurrence of all 3 drift classes."
     }
-  ]
+  ],
+  "verdict": "pass_with_findings"
 }

@@ -1,5 +1,10 @@
 # Change: m9-01 schema versioning
 
+## Summary
+
+Drift closure cycle for this milestone.
+
+
 ## Ciclo
 
 | Campo | Valor |

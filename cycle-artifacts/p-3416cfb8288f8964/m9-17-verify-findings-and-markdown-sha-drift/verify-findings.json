@@ -20,5 +20,6 @@
       "diff_size",
       "schema_v1_accepted"
     ]
-  }
+  },
+  "verdict": "pass"
 }

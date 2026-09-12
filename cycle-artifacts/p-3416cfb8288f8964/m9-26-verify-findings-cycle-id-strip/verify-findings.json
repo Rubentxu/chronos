@@ -20,5 +20,6 @@
       "summary": "Extended cross-check #16 to cover verify-findings.json in addition to apply-checkpoint.json.",
       "resolution": "Cross-check #16 now catches both files."
     }
-  ]
+  ],
+  "verdict": "pass_with_findings"
 }

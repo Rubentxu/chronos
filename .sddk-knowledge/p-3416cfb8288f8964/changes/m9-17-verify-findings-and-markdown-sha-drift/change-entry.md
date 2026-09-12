@@ -1,5 +1,10 @@
 # Change: m9-17 verify findings and markdown sha drift
 
+## Summary
+
+Drift closure cycle for this milestone.
+
+
 | Campo | Valor |
 |---|---|
 | Cycle ID | `m9-17-verify-findings-and-markdown-sha-drift` |

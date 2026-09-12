@@ -20,5 +20,6 @@
       "summary": "Added cross-check #14 enforcing m9-19+ cycles do not introduce legacy schema-v1 fields and use bare route labels.",
       "resolution": "Cross-check #14 prevents future cycles from regressing to verbose route strings or reintroducing schema-v1 fields."
     }
-  ]
+  ],
+  "verdict": "pass_with_findings"
 }

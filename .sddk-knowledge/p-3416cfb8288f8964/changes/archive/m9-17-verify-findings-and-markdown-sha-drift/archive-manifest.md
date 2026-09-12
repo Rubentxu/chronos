@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| Cycle ID | `m9-17-verify-findings-and-markdown-sha-drift` |
+| Cycle | `m9-17-verify-findings-and-markdown-sha-drift` |
 | Archived at | 2026-09-12T10:33:15Z |
 | Tag | `v0.7.15` |
 | Head SHA | `134dc7525312275c447db8f5996740ff7c102a02` |

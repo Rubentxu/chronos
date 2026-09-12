@@ -4,7 +4,7 @@
 
 | Campo | Valor |
 |---|---|
-| Cycle ID | `m9-09-vault-hygiene-active-disclosure-dedupe` |
+| Cycle | `m9-09-vault-hygiene-active-disclosure-dedupe` |
 | Change name | `m9-09-vault-hygiene-active-disclosure-dedupe` |
 | Path | `B-direct` |
 | Status | **CLOSED** |

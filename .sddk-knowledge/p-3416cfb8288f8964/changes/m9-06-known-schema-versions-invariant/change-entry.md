@@ -1,5 +1,10 @@
 # Change: m9-06 known schema versions invariant
 
+## Summary
+
+Drift closure cycle for this milestone.
+
+
 ## Ciclo
 
 | Campo | Valor |

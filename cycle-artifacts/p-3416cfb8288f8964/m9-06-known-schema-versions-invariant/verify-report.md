@@ -1,4 +1,4 @@
-# Verification Report: m9-06-known-schema-versions-invariant
+# Verify Report — m9-06
 
 ## Subject
 

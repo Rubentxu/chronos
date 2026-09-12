@@ -1,5 +1,10 @@
 # Change: m9-13 change entry base sha drift
 
+## Summary
+
+Drift closure cycle for this milestone.
+
+
 ## Ciclo
 
 | Campo | Valor |

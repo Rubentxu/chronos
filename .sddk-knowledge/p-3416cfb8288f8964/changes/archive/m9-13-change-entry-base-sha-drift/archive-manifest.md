@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| Cycle ID | `m9-13-change-entry-base-sha-drift` |
+| Cycle | `m9-13-change-entry-base-sha-drift` |
 | Path | B-direct |
 | Status | ARCHIVED |
 | Tag | `v0.7.11` |

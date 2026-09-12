@@ -1,4 +1,4 @@
-# Verification Report: m9-07-coup-01-invariant-assertion
+# Verify Report — m9-07
 
 ## Subject
 

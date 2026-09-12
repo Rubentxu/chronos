@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| Cycle ID | `m9-12-terms-index-metadata-drift` |
+| Cycle | `m9-12-terms-index-metadata-drift` |
 | Path | B-direct |
 | Status | ARCHIVED |
 | Tag | `v0.7.10` |

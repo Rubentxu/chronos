@@ -4,7 +4,7 @@
 
 | Campo | Valor |
 |---|---|
-| Cycle ID | `m9-02-events-side-table` |
+| Cycle | `m9-02-events-side-table` |
 | Change name | `m9-02-events-side-table` |
 | Path | `A-lite` |
 | Status | **CLOSED** |

@@ -4,7 +4,7 @@
 
 | Campo | Valor |
 |---|---|
-| Cycle ID | `m9-04-side-table-key-layout` |
+| Cycle | `m9-04-side-table-key-layout` |
 | Change name | `m9-04-side-table-key-layout` |
 | Path | `A-min` |
 | Status | **CLOSED** |

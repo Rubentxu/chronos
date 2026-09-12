@@ -1,5 +1,10 @@
 # Change: m9-04 side table key layout
 
+## Summary
+
+Drift closure cycle for this milestone.
+
+
 ## Ciclo
 
 | Campo | Valor |

@@ -1,5 +1,10 @@
 # Change: m9-12 terms index metadata drift
 
+## Summary
+
+Drift closure cycle for this milestone.
+
+
 ## Ciclo
 
 | Campo | Valor |

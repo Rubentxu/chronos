@@ -4,7 +4,7 @@
 
 | Campo | Valor |
 |---|---|
-| Cycle ID | `m9-03-side-table-debt-cleanup` |
+| Cycle | `m9-03-side-table-debt-cleanup` |
 | Change name | `m9-03-side-table-debt-cleanup` |
 | Path | `B-direct` |
 | Status | **CLOSED** |

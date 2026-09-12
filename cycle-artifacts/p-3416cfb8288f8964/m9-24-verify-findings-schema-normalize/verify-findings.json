@@ -20,5 +20,6 @@
       "summary": "Added cross-check #17 to vault-drift-sweep.md.",
       "resolution": "Cross-check #17 enforces subject must be a dict."
     }
-  ]
+  ],
+  "verdict": "pass_with_findings"
 }

@@ -20,5 +20,6 @@
       "summary": "Added cross-check #13 to vault-drift-sweep.md enforcing these three fields on CLOSED cycles.",
       "resolution": "Cross-check #13 will catch any future 'new field added, no backfill' drift."
     }
-  ]
+  ],
+  "verdict": "pass_with_findings"
 }

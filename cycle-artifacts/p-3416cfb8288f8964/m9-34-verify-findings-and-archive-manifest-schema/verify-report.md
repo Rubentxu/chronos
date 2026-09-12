@@ -1,4 +1,4 @@
-# Verify Findings — m9-34 verify-findings-and-archive-manifest-schema
+# Verify Report — m9-34
 
 ## Summary
 

@@ -1,4 +1,4 @@
-# Verification Report: m9-04-side-table-key-layout
+# Verify Report — m9-04
 
 ## Subject
 | Base | Head | Dirty diff digest | CWD | Verified at |

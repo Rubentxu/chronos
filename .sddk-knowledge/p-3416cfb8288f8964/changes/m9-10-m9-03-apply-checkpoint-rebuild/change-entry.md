@@ -1,5 +1,10 @@
 # Change: m9-10 m9 03 apply checkpoint rebuild
 
+## Summary
+
+Drift closure cycle for this milestone.
+
+
 ## Ciclo
 
 | Campo | Valor |

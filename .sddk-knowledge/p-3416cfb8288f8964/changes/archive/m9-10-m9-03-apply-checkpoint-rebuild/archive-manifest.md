@@ -4,7 +4,7 @@
 
 | Campo | Valor |
 |---|---|
-| Cycle ID | `m9-10-m9-03-apply-checkpoint-rebuild` |
+| Cycle | `m9-10-m9-03-apply-checkpoint-rebuild` |
 | Change name | `m9-10-m9-03-apply-checkpoint-rebuild` |
 | Path | `B-rebuild` |
 | Status | **CLOSED** |

@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| Cycle ID | `m9-15-m9-12-m9-13-short-sha` |
+| Cycle | `m9-15-m9-12-m9-13-short-sha` |
 | Archived at | 2026-09-12T10:11:30Z |
 | Tag | `v0.7.13` |
 | Head SHA | `2441f6f3c679555dc4106ea2e8a422ed407a26a0` |

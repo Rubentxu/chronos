@@ -19,5 +19,6 @@
       "t0_lint",
       "diff_size"
     ]
-  }
+  },
+  "verdict": "pass"
 }

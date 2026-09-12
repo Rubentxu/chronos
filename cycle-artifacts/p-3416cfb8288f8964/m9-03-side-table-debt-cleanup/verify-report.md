@@ -1,4 +1,4 @@
-# Verification Report: m9-03-side-table-debt-cleanup
+# Verify Report — m9-03
 
 ## Subject
 

@@ -4,7 +4,7 @@
 
 | Campo | Valor |
 |---|---|
-| Cycle ID | `m9-08-list-load-schema-error-variant` |
+| Cycle | `m9-08-list-load-schema-error-variant` |
 | Change name | `m9-08-list-load-schema-error-variant` |
 | Path | `B-direct` |
 | Status | **CLOSED** |

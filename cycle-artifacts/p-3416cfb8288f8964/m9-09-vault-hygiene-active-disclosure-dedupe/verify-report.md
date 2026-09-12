@@ -1,4 +1,4 @@
-# Verification Report: m9-09-vault-hygiene-active-disclosure-dedupe
+# Verify Report — m9-09
 
 ## Subject
 

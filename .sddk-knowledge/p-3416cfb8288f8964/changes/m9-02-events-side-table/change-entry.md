@@ -1,5 +1,10 @@
 # Change: m9-02 events side table
 
+## Summary
+
+Drift closure cycle for this milestone.
+
+
 ## Ciclo
 
 | Campo | Valor |

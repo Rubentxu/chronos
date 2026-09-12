@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| Cycle ID | `m9-16-archive-manifest-short-and-fabricated-sha` |
+| Cycle | `m9-16-archive-manifest-short-and-fabricated-sha` |
 | Archived at | 2026-09-12T10:16:45Z |
 | Tag | `v0.7.14` |
 | Head SHA | `eb5110dfe1f1d14eab85e6052f1f7cbb86e2f384` |

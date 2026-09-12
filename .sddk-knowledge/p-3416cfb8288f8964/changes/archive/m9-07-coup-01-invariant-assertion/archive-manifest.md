@@ -4,7 +4,7 @@
 
 | Campo | Valor |
 |---|---|
-| Cycle ID | `m9-07-coup-01-invariant-assertion` |
+| Cycle | `m9-07-coup-01-invariant-assertion` |
 | Change name | `m9-07-coup-01-invariant-assertion` |
 | Path | `B-direct` |
 | Status | **CLOSED** |

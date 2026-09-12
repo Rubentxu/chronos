@@ -1,4 +1,4 @@
-# Verify Report — m9-12-terms-index-metadata-drift
+# Verify Report — m9-12
 
 ## Subject
 

@@ -20,5 +20,6 @@
       "summary": "Added cross-check #18 to vault-drift-sweep.md.",
       "resolution": "Cross-check #18 enforces verify-findings.json must exist for all CLOSED cycles."
     }
-  ]
+  ],
+  "verdict": "pass_with_findings"
 }

@@ -15,5 +15,6 @@
     "blocking_findings": 0,
     "warnings": 0,
     "suggestions": 0
-  }
+  },
+  "verdict": "pass"
 }

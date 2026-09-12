@@ -1,5 +1,10 @@
 # Change: m9-18 apply checkpoint metadata drift
 
+## Summary
+
+Drift closure cycle for this milestone.
+
+
 | Campo | Valor |
 |---|---|
 | Cycle ID | `m9-18-apply-checkpoint-metadata-drift` |

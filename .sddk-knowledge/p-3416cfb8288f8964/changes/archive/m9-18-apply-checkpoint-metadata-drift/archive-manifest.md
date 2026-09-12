@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| Cycle ID | `m9-18-apply-checkpoint-metadata-drift` |
+| Cycle | `m9-18-apply-checkpoint-metadata-drift` |
 | Archived at | 2026-09-12T10:44:45Z |
 | Tag | `v0.7.16` |
 | Head SHA | `6dce3736df06d4fe09db861ad43a3667c0f0bc25` |

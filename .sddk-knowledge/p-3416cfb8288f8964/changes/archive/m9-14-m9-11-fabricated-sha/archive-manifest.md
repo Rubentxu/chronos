@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| Cycle ID | `m9-14-m9-11-fabricated-sha` |
+| Cycle | `m9-14-m9-11-fabricated-sha` |
 | Archived at | 2026-09-12T10:06:30Z |
 | Tag | `v0.7.12` |
 | Head SHA | `38699061891b76f90ef316914d3ba15d6eb53f83` |

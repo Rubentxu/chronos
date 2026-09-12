@@ -1,5 +1,10 @@
 # Change: m9-08 list load schema error variant
 
+## Summary
+
+Drift closure cycle for this milestone.
+
+
 ## Ciclo
 
 | Campo | Valor |

@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -1242,6 +1242,77 @@ added `route` alongside `path`. m9-34 dropped `path` entirely. m9-37
 normalizes m9-03..m9-33 to `route`-only. m9-34, m9-35 change-entry
 `head_sha` field was written with intermediate SHA, not final HEAD;
 m9-37 fixes both.
+
+### 30. verify-report.md title + verify-findings verdict + archive-manifest Cycle field + change-entry Summary section (closed by m9-38)
+
+```python
+import json, glob, re
+
+errors = 0
+
+# Part A: verify-report.md title is `# Verify Report — m9-NN`
+for f in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/verify-report.md')):
+    m = re.search(r'm9-(\d+)', f)
+    if not m: continue
+    n = m.group(1)
+    expected = f"# Verify Report — m9-{n}"
+    actual = open(f).readline().strip()
+    if actual != expected:
+        print(f"DRIFT: {f}: actual={actual!r}")
+
+# Part B: verify-findings.json has verdict field
+for f in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/verify-findings.json')):
+    d = json.load(open(f))
+    if 'verdict' not in d:
+        print(f"DRIFT: {f}: no verdict field")
+
+# Part C: archive-manifest.md has Cycle field (not Cycle ID)
+for f in sorted(glob.glob('.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-*/archive-manifest.md')):
+    content = open(f).read()
+    if 'Cycle ID' in content:
+        print(f"DRIFT: {f}: has 'Cycle ID' field, should be 'Cycle'")
+    if '| Cycle |' not in content:
+        print(f"DRIFT: {f}: no 'Cycle' field")
+
+# Part D: change-entry.md has ## Summary section
+for f in sorted(glob.glob('.sddk-knowledge/p-3416cfb8288f8964/changes/m9-*/change-entry.md')):
+    if '## Summary' not in open(f).read():
+        print(f"DRIFT: {f}: no ## Summary section")
+
+print(f'Total: {errors}')
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:**
+
+- A: verify-report.md uses a non-canonical title format.
+- B: verify-findings.json missing `verdict` field.
+- C: archive-manifest.md uses `Cycle ID` instead of `Cycle` field.
+- D: change-entry.md missing `## Summary` section.
+
+**Resolution:**
+
+- A: Normalize to `# Verify Report — m9-NN` (canonical).
+- B: Add `verdict` field; use `pass` if no findings, else `pass_with_findings`.
+- C: Rename `Cycle ID` → `Cycle`.
+- D: Add `## Summary` section right after the H1 title.
+
+**History:** m9-03..m9-10 used `# Verification Report: m9-NN-slug`;
+m9-11..m9-18 used `# Verify Report — m9-NN-slug`; m9-19..m9-27 used
+`# m9-NN: Verify Report`; m9-28..m9-33 used canonical `# Verify Report — m9-NN`.
+m9-34..m9-37 used `# Verify Findings — ...`. m9-38 normalizes all to
+canonical `# Verify Report — m9-NN`.
+
+m9-03..m9-27 verify-findings.json lacked `verdict` (used `summary.verdict`).
+m9-38 adds the top-level `verdict` field.
+
+m9-01..m9-18 archive-manifest.md used `Cycle ID`; m9-19+ uses `Cycle`.
+m9-38 normalizes all to `Cycle`.
+
+m9-01..m9-18 change-entry.md used Spanish `## Ciclo`; m9-19+ uses `## Summary`.
+m9-38 normalizes all to `## Summary` (and inserts a placeholder summary
+text).
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class

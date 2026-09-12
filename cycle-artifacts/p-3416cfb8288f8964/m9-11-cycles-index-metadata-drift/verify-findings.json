@@ -20,5 +20,6 @@
       "t1_lib_tests",
       "diff_size"
     ]
-  }
+  },
+  "verdict": "pass"
 }

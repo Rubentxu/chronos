@@ -20,5 +20,6 @@
       "diff_size",
       "drift_sites_fixed"
     ]
-  }
+  },
+  "verdict": "pass"
 }

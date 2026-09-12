@@ -1,4 +1,4 @@
-# Verification Report: m9-10-m9-03-apply-checkpoint-rebuild
+# Verify Report — m9-10
 
 ## Subject
 

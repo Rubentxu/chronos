@@ -20,5 +20,6 @@
       "summary": "Added cross-check #16 to vault-drift-sweep.md.",
       "resolution": "Cross-check #16 prevents future cycle_id drift."
     }
-  ]
+  ],
+  "verdict": "pass_with_findings"
 }

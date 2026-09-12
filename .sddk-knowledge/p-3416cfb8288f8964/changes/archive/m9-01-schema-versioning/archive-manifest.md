@@ -4,7 +4,7 @@
 
 | Campo | Valor |
 |---|---|
-| Cycle ID | `m9-01-schema-versioning` |
+| Cycle | `m9-01-schema-versioning` |
 | Change name | `m9-01-schema-versioning` |
 | Path | `A-min` |
 | Status | **CLOSED** |

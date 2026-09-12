@@ -1,5 +1,10 @@
 # Change: m9-03 side table debt cleanup
 
+## Summary
+
+Drift closure cycle for this milestone.
+
+
 ## Ciclo
 
 | Campo | Valor |

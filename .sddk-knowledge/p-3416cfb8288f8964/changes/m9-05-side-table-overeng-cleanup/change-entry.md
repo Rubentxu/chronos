@@ -1,5 +1,10 @@
 # Change: m9-05 side table overeng cleanup
 
+## Summary
+
+Drift closure cycle for this milestone.
+
+
 ## Ciclo
 
 | Campo | Valor |
