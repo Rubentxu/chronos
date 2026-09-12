@@ -1,0 +1,23 @@
+{
+  "cycle_id": "m9-24",
+  "subject": {
+    "head": "TBD",
+    "head_sha": "TBD"
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "low",
+      "category": "schema-drift",
+      "summary": "8 prior cycles (m9-11..m9-18) had verify-findings.json with legacy schema (subject_sha at top level).",
+      "resolution": "Normalize to new schema with subject dict. Preserve legacy fields under _legacy."
+    },
+    {
+      "id": "F2",
+      "severity": "informational",
+      "category": "process",
+      "summary": "Added cross-check #17 to vault-drift-sweep.md.",
+      "resolution": "Cross-check #17 enforces subject must be a dict."
+    }
+  ]
+}

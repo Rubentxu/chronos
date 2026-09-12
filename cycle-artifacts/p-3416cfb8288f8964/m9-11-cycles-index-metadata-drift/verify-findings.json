@@ -1,23 +1,23 @@
 {
-  "findings": [],
-  "lens_summary": {
-    "spec-compliance": 0,
-    "test-quality": 0,
-    "vault-hygiene": 0,
-    "documentation-discipline": 0
+  "cycle_id": "m9-11-cycles-index-metadata-drift",
+  "subject": {
+    "head": "cd0115fd8f942058cde109c72a975cab7ea7473c",
+    "head_sha": "cd0115fd8f942058cde109c72a975cab7ea7473c"
   },
-  "verdict": "PASS",
-  "subject_sha": "cd0115fd8f942058cde109c72a975cab7ea7473c",
-  "evidence": {
-    "vault_drift_sweep_checks": {
-      "check_1_id_uniqueness": "empty",
-      "check_2_findings_closed_vs_terminated": "0 drift (m8-04-R4 + m8-07-R2 expected pre-reorg)",
-      "check_3_apply_checkpoint_vs_tag_consistency": "8/8 m9 cycles head==peel, match=True",
-      "check_4_sha256_archive_manifest_artifact_index": "empty",
-      "check_5_cycles_index_metadata_consistency": "OK: 26 == 26"
+  "findings": [],
+  "_legacy": {
+    "lens_summary": {
+      "spec-compliance": 0,
+      "test-quality": 0,
+      "vault-hygiene": 0,
+      "documentation-discipline": 0
     },
-    "t0_lint": "0 warnings, 0 diffs (14 crates)",
-    "t1_lib_tests": "900 tests across 15 crates, 0 failed (run in previous validation pass; m9-11 is doc-only)",
-    "diff_size": "30 +, 8 - across 2 doc files"
+    "verdict": "PASS",
+    "evidence_keys": [
+      "vault_drift_sweep_checks",
+      "t0_lint",
+      "t1_lib_tests",
+      "diff_size"
+    ]
   }
 }

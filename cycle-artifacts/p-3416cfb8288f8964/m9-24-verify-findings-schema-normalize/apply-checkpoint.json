@@ -1,0 +1,23 @@
+{
+  "cycle_id": "m9-24",
+  "title": "verify-findings.json schema normalization",
+  "path": "B-direct",
+  "route": "B-direct",
+  "base_sha": "dd389257d6fdf402a21845449e7d66727beafa6e",
+  "head_sha": "TBD",
+  "main_sha": "TBD",
+  "remote_tag_peel": "TBD",
+  "peel_match": true,
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived",
+  "status": "CLOSED",
+  "findings_introduced": {
+    "no_action": []
+  },
+  "verified_at": "2026-09-12T11:25:00Z",
+  "released_at": "TBD",
+  "archived_at": "TBD",
+  "created_at": "2026-09-12T11:25:00Z",
+  "summary": "Normalize verify-findings.json schema on 8 prior CLOSED cycles (m9-11..m9-18). Move subject_sha from top-level to subject.head_sha dict. Preserve lens_summary/verdict/evidence under _legacy. Adds cross-check #17."
+}

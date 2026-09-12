@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -529,6 +529,7 @@ Cycles that established this procedure:
 - **m9-21** (vault hygiene: verbose route normalization + legacy field prohibition for m9-19+ cycles, v0.7.19) → cross-check #14
 - **m9-22** (vault hygiene: created_at + title + summary backfill for 16 prior cycles, v0.7.20) → cross-check #15
 - **m9-23** (vault hygiene: cycle_id workspace prefix strip, v0.7.21) → cross-check #16
+- **m9-24** (vault hygiene: verify-findings.json schema normalization, v0.7.22) → cross-check #17
 
 ### 13. apply-checkpoint.json `*_status` field backfill (closed by m9-20)
 
@@ -684,6 +685,32 @@ matching the folder name.
 
 **History:** Pre-vault-reorg cycles included the workspace path in
 cycle_id. m9-19+ use bare slugs. m9-23 closes this drift.
+
+### 17. verify-findings.json schema must have `subject` dict (closed by m9-24)
+
+```python
+import json, os
+for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
+    vf = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/verify-findings.json'
+    if not os.path.exists(vf): continue
+    d = json.load(open(vf))
+    sub = d.get('subject')
+    if not isinstance(sub, dict):
+        print(f"DRIFT: {folder}: subject is not a dict (legacy schema)")
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** verify-findings.json uses the legacy schema where
+`subject_sha` is a top-level field. m9-19+ use the new schema with
+`subject: {head, head_sha}`.
+
+**Resolution:** Normalize to new schema. Preserve `lens_summary`,
+`verdict`, and `evidence` under a `_legacy` field for traceability.
+
+**History:** m9-11..m9-18 used the legacy lens-based schema. m9-19+
+use the simpler subject + findings schema. m9-24 normalizes the 8
+prior cycles.
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class

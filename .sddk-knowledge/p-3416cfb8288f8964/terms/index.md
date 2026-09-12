@@ -74,5 +74,5 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T11:23:00Z |
-| Last archive | m9-23-cycle-id-strip-prefix |
+| Last updated | 2026-09-12T11:25:00Z |
+| Last archive | m9-24-verify-findings-schema-normalize |
