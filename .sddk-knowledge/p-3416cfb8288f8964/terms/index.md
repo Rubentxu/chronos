@@ -43,7 +43,6 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|---|---|---|---|---|---|
 | FIND-M9-01-DV-COUP-01 | m9-01 | coupling | MEDIUM | P2 | Duplicated version envelopes: `schema_version` on record + summary, no loader equality check | unassigned | m9+ backlog |
 | FIND-M9-01-DV-COUP-02 | m9-01 | coupling | LOW | P3 | List/load policy asymmetry: hard-reject on load vs best-effort include on list | unassigned | m9+ backlog |
-| FIND-M9-01-DV-OE-01 | m9-01 | overeng | LOW | P3 | `KNOWN_BUNDLE_SCHEMA_VERSIONS` dead speculative code | unassigned | m9+ backlog |
 
 ### Follow-ups inherited from prior cycles
 
@@ -68,6 +67,8 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 | overeng-002-v3-range-scan-verify-dup | m9-04 | v3 range-scan + identity-verify ladder duplicated in `collect_bundle_chunks_range` and `save_bundle_record_and_events` | m9-05-side-table-overeng-cleanup (`v0.7.3`) |
 | overeng-003-events-count-none-branch | m9-04 | `collect_bundle_chunks(events_count: Option<u64>)` Option wrapper; no caller exercises None post-remediation | m9-05-side-table-overeng-cleanup (`v0.7.3`) |
 | cc-003-wrong-direction-visibility | m9-04 | `storage.rs::db()` widened `pub(crate)` → `pub`; table constants widened to `pub const` | m9-05-side-table-overeng-cleanup (`v0.7.3`) |
+| m9-01-R4 | m9-01 | `KNOWN_BUNDLE_SCHEMA_VERSIONS` unused; `#[allow(dead_code)]` | m9-06-known-schema-versions-invariant (`v0.7.4`) |
+| FIND-M9-01-DV-OE-01 | m9-01 | `KNOWN_BUNDLE_SCHEMA_VERSIONS` dead speculative code | m9-06-known-schema-versions-invariant (`v0.7.4`) |
 
 ## Metadata
 
@@ -75,5 +76,5 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T08:40:00Z |
-| Last archive | m9-05-side-table-overeng-cleanup |
+| Last updated | 2026-09-12T08:44:00Z |
+| Last archive | m9-06-known-schema-versions-invariant |
