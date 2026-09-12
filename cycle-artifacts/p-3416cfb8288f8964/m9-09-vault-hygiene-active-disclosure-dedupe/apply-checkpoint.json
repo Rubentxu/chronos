@@ -13,7 +13,7 @@
   "route": "local",
   "verified_at": "2026-09-12T07:14:00Z",
   "released_at": "2026-09-12T07:15:18Z",
-  "archived_at": null,
+  "archived_at": "2026-09-12T07:17:00Z",
   "commits_since_base": [
     "07e731dfix(m9-09): remove duplicate m9-01-R4 from active disclosures (already terminated by m9-06)",
     "bc94a33docs(m9-09): light-verify evidence (R1 PASS, vault drift closed)"
@@ -77,8 +77,8 @@
     },
     {
       "gate": "archive",
-      "result": "pending",
-      "evidence": "apply-checkpoint + receipts written; change-entry + archive-manifest + cycles-index updates pending in this session"
+      "result": "closed",
+      "evidence": "change-entry + archive-manifest + terms metadata + cycles-index updated; no findings moved (m9-09 is a vault-hygiene fix, not a finding closer)"
     },
     {
       "gate": "scoping-decision",

@@ -30,6 +30,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-06 | m9-06-known-schema-versions-invariant | B-direct | `v0.7.4` | `3383905d93ac66b6e90b6de8cea760c1ad4e2c99` | CLOSED |
 | m9-07 | m9-07-coup-01-invariant-assertion | B-direct | `v0.7.5` | `3edb01f0a17c3ac8877df1e7868d4e3cca374217` | CLOSED |
 | m9-08 | m9-08-list-load-schema-error-variant | B-direct | `v0.7.6` | `d89862bbe67256cf6274be1d71ee7f8857cb8808` | CLOSED |
+| m9-09 | m9-09-vault-hygiene-active-disclosure-dedupe | B-direct | `v0.7.7` | `07e731d61424160c4f67d769db00a171837ba62c` | CLOSED |
 
 ## Metadata
 
