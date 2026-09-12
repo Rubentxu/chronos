@@ -1,0 +1,13 @@
+{
+  "cycle_id": "m9-33",
+  "subject": {
+    "head_sha": "837bc5c44a501e4c2253cc6fd257cc578bebf8e0",
+    "base_sha": "5bfcfedaf9687050a8090a31f999738ff082a081"
+  },
+  "verdict": "pass",
+  "findings": [],
+  "lens_summary": {
+    "drift": "18 change-entry.md files (m9-01..m9-18) used '# Change Entry — <slug>' format. m9-19+ used '# Change: <human-readable>' format. m9-33 normalizes all to canonical '# Change: m9-NN <human-readable>'. Added cross-check #25.",
+    "lens_summary_note": "This is a structural convention drift that was hidden because no prior cross-check enforced the title format."
+  }
+}
