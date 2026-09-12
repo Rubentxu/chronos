@@ -1,4 +1,4 @@
-# Release Report — m9-12-terms-index-metadata-drift
+# Release Report — m9-12
 
 ## Summary
 

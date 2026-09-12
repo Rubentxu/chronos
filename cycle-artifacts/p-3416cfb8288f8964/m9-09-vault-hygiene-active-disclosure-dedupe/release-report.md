@@ -1,4 +1,4 @@
-# Release Report: m9-09-vault-hygiene-active-disclosure-dedupe
+# Release Report — m9-09
 
 ## Release Envelope
 

@@ -1,4 +1,4 @@
-# Release Report: m9-04-side-table-key-layout
+# Release Report — m9-04
 
 ## Release Envelope
 

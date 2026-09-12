@@ -1,4 +1,4 @@
-# Release Report: m9-06-known-schema-versions-invariant
+# Release Report — m9-06
 
 ## Release Envelope
 

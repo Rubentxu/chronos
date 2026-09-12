@@ -1,4 +1,4 @@
-# Release Report: m9-10-m9-03-apply-checkpoint-rebuild
+# Release Report — m9-10
 
 ## Release Envelope
 

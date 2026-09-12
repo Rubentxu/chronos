@@ -1,4 +1,4 @@
-# Release Report — m9-11-cycles-index-metadata-drift
+# Release Report — m9-11
 
 ## Summary
 

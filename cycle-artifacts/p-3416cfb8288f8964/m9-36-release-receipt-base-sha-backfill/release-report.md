@@ -27,3 +27,10 @@ Remote tag_peel, Peel match.
 - C1-C27: pass
 - T0 fmt+clippy: clean
 - T4 sandbox smoke: not run (metadata-only cycle)
+
+## Follow-up: title format normalize
+
+While verifying m9-36, cross-check #27 caught additional drift in
+release-report.md title format for m9-03..m9-18. Normalized all 16
+release-report titles to canonical `# Release Report — m9-NN` format
+in this same cycle.

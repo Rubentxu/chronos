@@ -1,4 +1,4 @@
-# Release Report: m9-07-coup-01-invariant-assertion
+# Release Report — m9-07
 
 ## Release Envelope
 
