@@ -34,10 +34,6 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 
 | ID | Cycle | Cluster | Severity | Priority | Título | Owner | Destino |
 |---|---|---|---|---|---|---|---|
-| overeng-001-v3-chunk-decode-dup | m9-04 | overeng | MEDIUM | P2 | v3 chunk decode ladder duplicated in `load_counterexample_bundle_events` and `count_counterexample_bundle_events` | unassigned | m9-05 |
-| overeng-002-v3-range-scan-verify-dup | m9-04 | overeng | LOW | P3 | v3 range-scan + identity-verify ladder duplicated in `collect_bundle_chunks_range` and `save_bundle_record_and_events` | unassigned | m9-05 |
-| overeng-003-events-count-none-branch | m9-04 | overeng | LOW | P3 | `collect_bundle_chunks(events_count: Option<u64>)` and `get_bundle_events_count` Option wrapper; no caller exercises None post-remediation | unassigned | m9-05 |
-| cc-003-wrong-direction-visibility | m9-04 | coupling | MEDIUM | P2 | `storage.rs::db()` widened `pub(crate)` → `pub`; `COUNTEREXAMPLE_BUNDLES` and `COUNTEREXAMPLE_BUNDLE_EVENTS` widened to `pub const` | unassigned | m9-05 |
 | cc-001-god-module | m9-04 | coupling | MEDIUM | P2 | `counterexample_storage.rs` at 2,556 lines; 5 distinct concerns | unassigned | m9+ backlog |
 | cc-004-implicit-io-toctou | m9-04 | coupling | LOW | P3 | `save_bundle_record_and_events` opens read-then-write; pre-existing TOCTOU pattern (m9-02 R7) | unassigned | m9+ backlog |
 
@@ -68,6 +64,10 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 | FIND-M9-02-DV-COUP-01 | m9-02 | Fallback outside D5 chokepoint: wrong module boundary | m9-03-side-table-debt-cleanup (`v0.7.1`) |
 | FIND-M9-02-DV-PERF-01 | m9-02 | Side-table key layout forces full-scan for single-bundle reads | m9-04-side-table-key-layout (`v0.7.2`) |
 | cc-002-env-coupling-test | m9-04 | `replay_integration::temp_db_path` reads `std::env::temp_dir()` (test-only) | m9-04-side-table-key-layout (no-action; test-scope coupling accepted) |
+| overeng-001-v3-chunk-decode-dup | m9-04 | v3 chunk decode ladder duplicated in `load_counterexample_bundle_events` and `count_counterexample_bundle_events` | m9-05-side-table-overeng-cleanup (`v0.7.3`) |
+| overeng-002-v3-range-scan-verify-dup | m9-04 | v3 range-scan + identity-verify ladder duplicated in `collect_bundle_chunks_range` and `save_bundle_record_and_events` | m9-05-side-table-overeng-cleanup (`v0.7.3`) |
+| overeng-003-events-count-none-branch | m9-04 | `collect_bundle_chunks(events_count: Option<u64>)` Option wrapper; no caller exercises None post-remediation | m9-05-side-table-overeng-cleanup (`v0.7.3`) |
+| cc-003-wrong-direction-visibility | m9-04 | `storage.rs::db()` widened `pub(crate)` → `pub`; table constants widened to `pub const` | m9-05-side-table-overeng-cleanup (`v0.7.3`) |
 
 ## Metadata
 
@@ -75,5 +75,5 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T08:21:00Z |
-| Last archive | m9-04-side-table-key-layout |
+| Last updated | 2026-09-12T08:40:00Z |
+| Last archive | m9-05-side-table-overeng-cleanup |
