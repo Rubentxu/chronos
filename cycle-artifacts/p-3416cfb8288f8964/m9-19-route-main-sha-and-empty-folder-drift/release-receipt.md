@@ -5,7 +5,7 @@
 | Cycle | m9-19-route-main-sha-and-empty-folder-drift |
 | Tag | `v0.7.17` |
 | Pee | fix commit (chronos convention) |
-| Released at | TBD |
+| Released at | 2026-09-12T11:11:38Z |
 
 ## Tag command
 

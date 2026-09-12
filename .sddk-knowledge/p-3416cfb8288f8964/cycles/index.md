@@ -40,7 +40,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-16 | m9-16-archive-manifest-short-and-fabricated-sha | B-direct | `v0.7.14` | `eb5110d` | CLOSED |
 | m9-17 | m9-17-verify-findings-and-markdown-sha-drift | B-direct | `v0.7.15` | `134dc75` | CLOSED |
 | m9-18 | m9-18-apply-checkpoint-metadata-drift | B-direct | `v0.7.16` | `6dce373` | CLOSED |
-| m9-19 | m9-19-route-main-sha-and-empty-folder-drift | B-direct | `v0.7.17` | TBD | CLOSED |
+| m9-19 | m9-19-route-main-sha-and-empty-folder-drift | B-direct | `v0.7.17` | `ec58934` | CLOSED |
 
 ## Metadata
 
