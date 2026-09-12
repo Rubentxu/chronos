@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34**, or **check 35**, or **check 36**, or **check 37**, or **check 38**, or **check 39**, or **check 40**, or **check 41**, or **check 42**, or **check 43**, or **check 44** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34**, or **check 35**, or **check 36**, or **check 37**, or **check 38**, or **check 39**, or **check 40**, or **check 41**, or **check 42**, or **check 43**, or **check 44**, or **check 45** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -1979,3 +1979,36 @@ print(f'Total: {errors}')
 
 **History:** m9-19, m9-28..m9-33 verify-report.md used table-based
 or finding-only format. m9-52 adds Summary section to 7 files.
+
+### 45. cycles/index.md Published SHA matches tag commit (closed by m9-53)
+
+```python
+import re, subprocess
+
+content = open('.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md').read()
+errors = 0
+for m in re.finditer(r'\| (m9-\d{2}-[a-z0-9-]+) \| (m9-\d{2}-[a-z0-9-]+) \| B-direct \| `(v0\.7\.\d+)` \| `([a-f0-9]+)` \| CLOSED \|', content):
+    idx_sha = m.group(4)
+    tag = m.group(3)
+    result = subprocess.run(['git', 'rev-parse', tag + '^{commit}'], capture_output=True, text=True)
+    if result.returncode != 0:
+        errors += 1
+        print(f"DRIFT: tag {tag} missing")
+        continue
+    tag_sha = result.stdout.strip()
+    if not tag_sha.startswith(idx_sha[:8]):
+        errors += 1
+        print(f"DRIFT: tag {tag}: idx={idx_sha[:8]} tag={tag_sha[:8]}")
+
+print(f'Total: {errors}')
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** cycles/index.md Published SHA prefix doesn't match
+the tag's commit. Either the index SHA is stale or the tag was
+re-pointed without updating the index.
+
+**History:** m9-19..m9-33 cycles/index.md had 7-char short SHAs that
+were equivalent to the tag commit prefix. m9-53 expanded to full
+40-char (35 rows).
