@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, or **check 13** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -525,6 +525,8 @@ Cycles that established this procedure:
 - **m9-17** (vault hygiene: cycle artifact SHA drift fix across verify-findings/markdown files, v0.7.15) → cross-check #10
 - **m9-18** (vault hygiene: apply-checkpoint metadata drift fix — archived_at, findings_introduced, status normalization, v0.7.16) → cross-check #11
 - **m9-19** (vault hygiene: route field normalization + main_sha convention + empty folder cleanup, v0.7.17) → cross-check #12
+- **m9-20** (vault hygiene: status fields backfill — verify_status + release_status + archive_status, v0.7.18) → cross-check #13
+- **m9-21** (vault hygiene: verbose route normalization + legacy field prohibition for m9-19+ cycles, v0.7.19) → cross-check #14
 
 ### 13. apply-checkpoint.json `*_status` field backfill (closed by m9-20)
 
@@ -559,6 +561,65 @@ three fields but didn't backfill the 17 prior CLOSED cycles.
 
 **History:** m9-20 closed this drift class after m9-19 introduced
 the fields without backfill.
+
+### 14. m9-19+ cycles must not introduce legacy schema-v1 fields (enforced by m9-21)
+
+```python
+import json, os, re
+legacy_fields = {'change', 'artifacts', 'commits_since_base', 'findings_closed',
+                 'findings_remaining_m9_plus', 'ledger_state', 'next_cycle',
+                 'next_cycle_path', 'next_cycle_target_findings', 'notes',
+                 'runtime_status', 'tag'}
+
+for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
+    m = re.match(r'm9-(\d+)', folder)
+    if not m: continue
+    n = int(m.group(1))
+    if n < 19: continue  # legacy cycles exempt
+    ckpt = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/apply-checkpoint.json'
+    if not os.path.exists(ckpt): continue
+    d = json.load(open(ckpt))
+    found = legacy_fields & set(d.keys())
+    if found:
+        print(f"DRIFT: {folder}: has legacy fields {sorted(found)}")
+
+# Also: route field must be a bare path label, not the verbose form
+for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
+    m = re.match(r'm9-(\d+)', folder)
+    if not m: continue
+    n = int(m.group(1))
+    if n < 19: continue
+    ckpt = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/apply-checkpoint.json'
+    if not os.path.exists(ckpt): continue
+    d = json.load(open(ckpt))
+    r = d.get('route', '')
+    if ' (' in r:
+        print(f"DRIFT: {folder}: route {r!r} is verbose, expected bare path label")
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** A cycle m9-19 or later has either:
+- One or more schema-v1 legacy fields (`change`, `artifacts`,
+  `commits_since_base`, `findings_closed`, etc.). These were used by
+  pre-m9-11 cycles but the new schema replaces them with the explicit
+  fields (`findings_introduced`, `verify_status`, etc.). New cycles
+  should follow the new schema.
+- A verbose `route` like `"B-direct (T0 + light-verify)"` instead of
+  the bare label `"B-direct"`.
+
+**Resolution:**
+- Remove the legacy fields (the data is preserved in the m9-18 and
+  earlier cycles that introduced them).
+- Set `route` to the bare path label.
+
+**History:** Pre-m9-11 cycles used a more verbose schema with fields
+like `change`, `artifacts`, `commits_since_base`, etc. m9-11+
+authored cycles kept these legacy fields for backward compat. m9-19
+authored a clean schema without them, and m9-20 followed suit. m9-21
+adds cross-check #14 to enforce that m9-19+ cycles stay clean and
+also normalizes the verbose `"B-direct (T0 + light-verify)"` route
+strings to bare `"B-direct"` for m9-11..m9-18.
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class
