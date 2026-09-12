@@ -8,5 +8,17 @@
   "findings_closed": [],
   "findings_introduced": {
     "no_action": []
-  }
+  },
+  "title": "53 cycles index sha expand",
+  "status": "CLOSED",
+  "verified_at": "2026-09-12T14:35Z",
+  "released_at": "2026-09-12T14:35Z",
+  "archived_at": "2026-09-12T14:35Z",
+  "main_sha": "5781ce66da071a85bb71daa9263f5092b3e35b7e",
+  "remote_tag": "v0.7.51",
+  "remote_tag_peel": "5781ce66da071a85bb71daa9263f5092b3e35b7e",
+  "peel_match": true,
+  "archive_status": "archived",
+  "verify_status": "passed",
+  "release_status": "released"
 }

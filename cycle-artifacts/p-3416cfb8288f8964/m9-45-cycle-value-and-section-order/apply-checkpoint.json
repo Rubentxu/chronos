@@ -8,5 +8,17 @@
   "findings_closed": [],
   "findings_introduced": {
     "no_action": []
-  }
+  },
+  "title": "45 cycle value and section order",
+  "status": "CLOSED",
+  "verified_at": "2026-09-12T14:16Z",
+  "released_at": "2026-09-12T14:16Z",
+  "archived_at": "2026-09-12T14:16Z",
+  "main_sha": "3e70b34628fcc2652cc6b8f5064975c8f7cc5926",
+  "remote_tag": "v0.7.43",
+  "remote_tag_peel": "3e70b34628fcc2652cc6b8f5064975c8f7cc5926",
+  "peel_match": true,
+  "archive_status": "archived",
+  "verify_status": "passed",
+  "release_status": "released"
 }

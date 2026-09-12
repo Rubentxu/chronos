@@ -1,4 +1,4 @@
-# Change Entry — m9-56-release-report-duplicate-cross-checks
+# Change: m9-56 release report duplicate cross checks
 
 ## Summary
 
@@ -25,8 +25,7 @@
 - findings_closed: 1 (DRIFT-M9-56-DUPLICATE-CROSS-CHECKS-HEADING)
 - findings_introduced.no_action: 0
 
-## Files
-
+## Files changed
 - (modified) 8 release-report.md files (m9-03..m9-10) dedup `## Cross-checks`
 - (modified) 4 release-report.md files (m9-28..m9-31) dedup `## Cross-checks`
 - (modified) 1 release-report.md file (m9-32) re-added `## Cross-checks` section

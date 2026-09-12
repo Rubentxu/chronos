@@ -1,12 +1,16 @@
 # Archive Manifest — m9-54-stale-branch-cleanup
 
+## Summary
+
+Stale local and remote `fix/m9-*` branch cleanup: 44 local + 28 remote branches deleted via `git branch -d` and `git push origin :fix/m9-*`.
+
 ## Cycle
 
 | Campo | Valor |
 |---|---|
 | Cycle | m9-54-stale-branch-cleanup |
 | Base SHA | `a24139e` |
-| Head SHA | (no commit — branch-deletion-only housekeeping) |
+| Head SHA | `df4efcfe55dc70c3991def5c917ebfe0a235359d` |
 | Path | B-direct |
 | Date | 2026-09-12T16:46Z |
 | Branch | (none — branch was deleted before m9-55's HEAD, never existed on remote main) |

@@ -8,5 +8,17 @@
   "findings_closed": [],
   "findings_introduced": {
     "no_action": []
-  }
+  },
+  "title": "38 verify report title format normalize",
+  "status": "CLOSED",
+  "verified_at": "2026-09-12T13:22Z",
+  "released_at": "2026-09-12T13:22Z",
+  "archived_at": "2026-09-12T13:22Z",
+  "main_sha": "e8f805f350b47b7b1cad6c1ac507ae868b13c07e",
+  "remote_tag": "v0.7.36",
+  "remote_tag_peel": "e8f805f350b47b7b1cad6c1ac507ae868b13c07e",
+  "peel_match": true,
+  "archive_status": "archived",
+  "verify_status": "passed",
+  "release_status": "released"
 }

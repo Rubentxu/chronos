@@ -8,5 +8,17 @@
   "findings_closed": [],
   "findings_introduced": {
     "no_action": []
-  }
+  },
+  "title": "41 change entry subject files changed",
+  "status": "CLOSED",
+  "verified_at": "2026-09-12T13:39Z",
+  "released_at": "2026-09-12T13:39Z",
+  "archived_at": "2026-09-12T13:39Z",
+  "main_sha": "62f1121e0d10eb2be2bdb60d6a45c958aa56806e",
+  "remote_tag": "v0.7.39",
+  "remote_tag_peel": "62f1121e0d10eb2be2bdb60d6a45c958aa56806e",
+  "peel_match": true,
+  "archive_status": "archived",
+  "verify_status": "passed",
+  "release_status": "released"
 }

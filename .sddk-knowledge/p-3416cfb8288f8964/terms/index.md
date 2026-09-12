@@ -75,5 +75,5 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T17:38:27Z
-| Last archive | m9-56-release-report-duplicate-cross-checks |
+| Last updated | 2026-09-12T17:57:07Z
+| Last archive | m9-57-apply-checkpoint-schema-backfill |

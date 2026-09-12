@@ -30,5 +30,14 @@
   },
   "verify_status": "passed",
   "release_status": "released",
-  "archive_status": "archived"
+  "archive_status": "archived",
+  "title": "55 apply checkpoint fabricated sha",
+  "status": "CLOSED",
+  "verified_at": "2026-09-12T17:27Z",
+  "released_at": "2026-09-12T17:27Z",
+  "archived_at": "2026-09-12T17:27Z",
+  "main_sha": "6ca0afddccb018c0d66bfbb35fa44dbc58ec2db4",
+  "remote_tag": "v0.7.53",
+  "remote_tag_peel": "6ca0afddccb018c0d66bfbb35fa44dbc58ec2db4",
+  "peel_match": true
 }

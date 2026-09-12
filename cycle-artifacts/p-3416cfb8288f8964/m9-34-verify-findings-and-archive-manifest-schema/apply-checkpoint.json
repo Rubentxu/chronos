@@ -1,12 +1,24 @@
 {
   "cycle_id": "m9-34",
   "head_sha": "27fc7149201d7657aa4c7acb15ee9d582e2f2664",
-  "base_sha": "7ffa57ab6bed79c9300b35d81a323e0f874746b2",
+  "base_sha": "5cfa91be296065ab4ca19c38bb0b06a859260627",
   "created_at": "2026-09-12T12:58Z",
   "route": "B-direct",
   "summary": "Add missing base_sha to 23 verify-findings.json files (m9-05..m9-27) and missing Head SHA field to 10 archive-manifest.md files (m9-01..m9-10). Both are zero-content drift closes; the SHAs are all already in apply-checkpoint.json. Adds cross-check #26.",
   "findings_closed": [],
   "findings_introduced": {
     "no_action": []
-  }
+  },
+  "title": "34 verify findings and archive manifest schema",
+  "status": "CLOSED",
+  "verified_at": "2026-09-12T12:58Z",
+  "released_at": "2026-09-12T12:58Z",
+  "archived_at": "2026-09-12T12:58Z",
+  "main_sha": "27fc7149201d7657aa4c7acb15ee9d582e2f2664",
+  "remote_tag": "v0.7.32",
+  "remote_tag_peel": "347b957ffa3525e7e5df68f12a6aaa9a8d19fbfe",
+  "peel_match": false,
+  "archive_status": "archived",
+  "verify_status": "passed",
+  "release_status": "released"
 }

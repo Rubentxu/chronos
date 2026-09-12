@@ -8,5 +8,17 @@
   "findings_closed": [],
   "findings_introduced": {
     "no_action": []
-  }
+  },
+  "title": "36 release receipt base sha backfill",
+  "status": "CLOSED",
+  "verified_at": "2026-09-12T13:15Z",
+  "released_at": "2026-09-12T13:15Z",
+  "archived_at": "2026-09-12T13:15Z",
+  "main_sha": "ced90eccf62f10e27ef0d76cab5b83bfc933172c",
+  "remote_tag": "v0.7.34",
+  "remote_tag_peel": "ced90eccf62f10e27ef0d76cab5b83bfc933172c",
+  "peel_match": true,
+  "archive_status": "archived",
+  "verify_status": "passed",
+  "release_status": "released"
 }

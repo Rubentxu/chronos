@@ -78,6 +78,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-54 | m9-54-stale-branch-cleanup | B-direct | `v0.7.52` | `df4efcfe55dc70c3991def5c917ebfe0a235359d` | CLOSED |
 | m9-55 | m9-55-apply-checkpoint-fabricated-sha | B-direct | `v0.7.53` | `6ca0afddccb018c0d66bfbb35fa44dbc58ec2db4` | CLOSED |
 | m9-56 | m9-56-release-report-duplicate-cross-checks | B-direct | `v0.7.54` | — | CLOSED |
+| m9-57 | m9-57-apply-checkpoint-schema-backfill | B-direct | `v0.7.56` | — | CLOSED |
 
 ## Metadata
 
@@ -86,4 +87,4 @@ Chronological record of all SDDK cycles for this project.
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
 | Last updated | 2026-09-12T19:29Z |
-| Total cycles | 56 |
+| Total cycles | 57 |

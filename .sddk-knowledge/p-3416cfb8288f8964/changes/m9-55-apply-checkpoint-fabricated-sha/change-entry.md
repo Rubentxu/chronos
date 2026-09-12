@@ -1,4 +1,4 @@
-# Change Entry — m9-55-apply-checkpoint-fabricated-sha
+# Change: m9-55 apply checkpoint fabricated sha
 
 ## Summary
 
@@ -25,8 +25,7 @@ m9-38's `base_sha` field referenced a non-existent commit (`6bc6781465f9dff5a59b
 - findings_closed: 1 (FIND-M9-55-FABRICATED-BASE-SHA)
 - findings_introduced.no_action: 0
 
-## Files
-
+## Files changed
 - `cycle-artifacts/p-3416cfb8288f8964/m9-38-verify-report-title-format-normalize/apply-checkpoint.json`
 - `cycle-artifacts/p-3416cfb8288f8964/m9-38-verify-report-title-format-normalize/merge-receipt.md`
 - `cycle-artifacts/p-3416cfb8288f8964/m9-38-verify-report-title-format-normalize/release-receipt.md`

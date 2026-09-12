@@ -8,5 +8,17 @@
   "findings_closed": [],
   "findings_introduced": {
     "no_action": []
-  }
+  },
+  "title": "37 path route and sha normalize",
+  "status": "CLOSED",
+  "verified_at": "2026-09-12T13:18Z",
+  "released_at": "2026-09-12T13:18Z",
+  "archived_at": "2026-09-12T13:18Z",
+  "main_sha": "0d570b3ff534fcecf490fbbda6384d5b30721384",
+  "remote_tag": "v0.7.35",
+  "remote_tag_peel": "0d570b3ff534fcecf490fbbda6384d5b30721384",
+  "peel_match": true,
+  "archive_status": "archived",
+  "verify_status": "passed",
+  "release_status": "released"
 }

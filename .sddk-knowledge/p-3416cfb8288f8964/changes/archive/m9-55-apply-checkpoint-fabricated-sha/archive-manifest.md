@@ -1,5 +1,9 @@
 # Archive Manifest — m9-55-apply-checkpoint-fabricated-sha
 
+## Summary
+
+m9-38 apply-checkpoint.json `base_sha` referenced a non-existent commit. Replaced fabricated SHA with the real parent-of-head across 7 artifact files.
+
 ## Cycle
 
 | Campo | Valor |

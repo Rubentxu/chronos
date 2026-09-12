@@ -8,5 +8,17 @@
   "findings_closed": [],
   "findings_introduced": {
     "no_action": []
-  }
+  },
+  "title": "52 verify report summary",
+  "status": "CLOSED",
+  "verified_at": "2026-09-12T14:33Z",
+  "released_at": "2026-09-12T14:33Z",
+  "archived_at": "2026-09-12T14:33Z",
+  "main_sha": "4fe8929b2c4db143a7227002747ff45c91e8803c",
+  "remote_tag": "v0.7.50",
+  "remote_tag_peel": "4fe8929b2c4db143a7227002747ff45c91e8803c",
+  "peel_match": true,
+  "archive_status": "archived",
+  "verify_status": "passed",
+  "release_status": "released"
 }

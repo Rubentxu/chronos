@@ -17,7 +17,7 @@ from apply-checkpoint.json.
 
 ## Subject
 
-- base_sha: `7ffa57ab6bed79c9300b35d81a323e0f874746b2`
+- base_sha: `5cfa91be296065ab4ca19c38bb0b06a859260627`
 - head_sha: `27fc7149201d7657aa4c7acb15ee9d582e2f2664`
 - cycle: m9-34
 - branch: `fix/m9-34-archive-manifest-header-normalize`

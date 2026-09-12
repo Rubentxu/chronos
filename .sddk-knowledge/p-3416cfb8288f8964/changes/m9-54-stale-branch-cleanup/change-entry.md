@@ -1,4 +1,4 @@
-# Change Entry — m9-54-stale-branch-cleanup
+# Change: m9-54 stale branch cleanup
 
 ## Summary
 
@@ -18,8 +18,7 @@ Cleanup of stale `fix/m9-*` branches that accumulated across the 53 prior m9-* c
 
 Repo hygiene: stale-branch cleanup
 
-## Files
-
+## Files changed
 - `git branch -d fix/m9-*` (44 local branches)
 - `git push origin :fix/m9-*` (28 remote branches)
 

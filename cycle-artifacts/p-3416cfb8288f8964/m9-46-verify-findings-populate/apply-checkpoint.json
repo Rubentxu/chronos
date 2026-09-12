@@ -8,5 +8,17 @@
   "findings_closed": [],
   "findings_introduced": {
     "no_action": []
-  }
+  },
+  "title": "46 verify findings populate",
+  "status": "CLOSED",
+  "verified_at": "2026-09-12T14:18Z",
+  "released_at": "2026-09-12T14:18Z",
+  "archived_at": "2026-09-12T14:18Z",
+  "main_sha": "7ee3f2af9d22c5de2167925ada0e557b53bfcd5a",
+  "remote_tag": "v0.7.44",
+  "remote_tag_peel": "7ee3f2af9d22c5de2167925ada0e557b53bfcd5a",
+  "peel_match": true,
+  "archive_status": "archived",
+  "verify_status": "passed",
+  "release_status": "released"
 }

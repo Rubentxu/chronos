@@ -8,5 +8,17 @@
   "findings_closed": [],
   "findings_introduced": {
     "no_action": []
-  }
+  },
+  "title": "42 subject bullets and cross check",
+  "status": "CLOSED",
+  "verified_at": "2026-09-12T13:43Z",
+  "released_at": "2026-09-12T13:43Z",
+  "archived_at": "2026-09-12T13:43Z",
+  "main_sha": "cf078cab0afde21ec7042ea5785ab1dffc7420aa",
+  "remote_tag": "v0.7.40",
+  "remote_tag_peel": "cf078cab0afde21ec7042ea5785ab1dffc7420aa",
+  "peel_match": true,
+  "archive_status": "archived",
+  "verify_status": "passed",
+  "release_status": "released"
 }

@@ -8,5 +8,17 @@
   "findings_closed": [],
   "findings_introduced": {
     "no_action": []
-  }
+  },
+  "title": "44 verify report path lens summary",
+  "status": "CLOSED",
+  "verified_at": "2026-09-12T14:14Z",
+  "released_at": "2026-09-12T14:14Z",
+  "archived_at": "2026-09-12T14:14Z",
+  "main_sha": "36d728a2036159fb485c8a6034a7b02b35fbdb57",
+  "remote_tag": "v0.7.42",
+  "remote_tag_peel": "36d728a2036159fb485c8a6034a7b02b35fbdb57",
+  "peel_match": true,
+  "archive_status": "archived",
+  "verify_status": "passed",
+  "release_status": "released"
 }

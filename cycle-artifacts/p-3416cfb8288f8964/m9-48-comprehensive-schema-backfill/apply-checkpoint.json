@@ -8,5 +8,17 @@
   "findings_closed": [],
   "findings_introduced": {
     "no_action": []
-  }
+  },
+  "title": "48 comprehensive schema backfill",
+  "status": "CLOSED",
+  "verified_at": "2026-09-12T14:22Z",
+  "released_at": "2026-09-12T14:22Z",
+  "archived_at": "2026-09-12T14:22Z",
+  "main_sha": "59322ef4da7ecfa4a1daf3a178cea2dad4ed3f1f",
+  "remote_tag": "v0.7.46",
+  "remote_tag_peel": "59322ef4da7ecfa4a1daf3a178cea2dad4ed3f1f",
+  "peel_match": true,
+  "archive_status": "archived",
+  "verify_status": "passed",
+  "release_status": "released"
 }

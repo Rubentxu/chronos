@@ -8,5 +8,17 @@
   "findings_closed": [],
   "findings_introduced": {
     "no_action": []
-  }
+  },
+  "title": "50 tag and peel reconcile",
+  "status": "CLOSED",
+  "verified_at": "2026-09-12T14:30Z",
+  "released_at": "2026-09-12T14:30Z",
+  "archived_at": "2026-09-12T14:30Z",
+  "main_sha": "18327df0f7d8da078d6abc812c614c54d970b7b8",
+  "remote_tag": "v0.7.48",
+  "remote_tag_peel": "109e302286e6e53dfe51c8296dcfe59c16d77c3a",
+  "peel_match": false,
+  "archive_status": "archived",
+  "verify_status": "passed",
+  "release_status": "released"
 }

@@ -8,5 +8,17 @@
   "findings_closed": [],
   "findings_introduced": {
     "no_action": []
-  }
+  },
+  "title": "43 verify findings head sha sync",
+  "status": "CLOSED",
+  "verified_at": "2026-09-12T13:45Z",
+  "released_at": "2026-09-12T13:45Z",
+  "archived_at": "2026-09-12T13:45Z",
+  "main_sha": "a2afb62bbf89838268eb1c798a14791446b0b19a",
+  "remote_tag": "v0.7.41",
+  "remote_tag_peel": "a2afb62bbf89838268eb1c798a14791446b0b19a",
+  "peel_match": true,
+  "archive_status": "archived",
+  "verify_status": "passed",
+  "release_status": "released"
 }

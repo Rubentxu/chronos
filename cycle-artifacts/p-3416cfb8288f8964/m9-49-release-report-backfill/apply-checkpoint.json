@@ -8,5 +8,17 @@
   "findings_closed": [],
   "findings_introduced": {
     "no_action": []
-  }
+  },
+  "title": "49 release report backfill",
+  "status": "CLOSED",
+  "verified_at": "2026-09-12T14:23Z",
+  "released_at": "2026-09-12T14:23Z",
+  "archived_at": "2026-09-12T14:23Z",
+  "main_sha": "058399dca8bd333595abbd84f8620d93e5a8de1f",
+  "remote_tag": "v0.7.47",
+  "remote_tag_peel": "058399dca8bd333595abbd84f8620d93e5a8de1f",
+  "peel_match": true,
+  "archive_status": "archived",
+  "verify_status": "passed",
+  "release_status": "released"
 }

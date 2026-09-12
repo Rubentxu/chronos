@@ -32,5 +32,7 @@
       "lens_summary": "Detection: ran `git cat-file -e $base_sha` for every apply-checkpoint's base_sha field; m9-38 returned non-zero. Cause: transcription error during m9-38 fix, the literal SHA had 6 different hex chars from the real commit `6bc67812d66548a3e0ee48f5323d45c4a1ed13d8` (parent of m9-38 head on the fix/m9-38-* branch). Fix: replace fabricated SHA with real SHA in all 7 files; verify with `git cat-file -t` returns 'commit'."
     }
   ],
-  "lens_summary": "Pre-existing vault hygiene check missed fabricated base_sha across m9-38 artifacts. Fix: replace 7 references to non-existent SHA with the real commit parent-of-head, add cross-check #47."
+  "lens_summary": "Pre-existing vault hygiene check missed fabricated base_sha across m9-38 artifacts. Fix: replace 7 references to non-existent SHA with the real commit parent-of-head, add cross-check #47.",
+  "cycle_id": "m9-55-apply-checkpoint-fabricated-sha",
+  "verdict": "pass_with_findings"
 }

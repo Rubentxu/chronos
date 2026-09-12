@@ -8,5 +8,17 @@
   "findings_closed": [],
   "findings_introduced": {
     "no_action": []
-  }
+  },
+  "title": "39 archive manifest base sha backfill",
+  "status": "CLOSED",
+  "verified_at": "2026-09-12T13:26Z",
+  "released_at": "2026-09-12T13:26Z",
+  "archived_at": "2026-09-12T13:26Z",
+  "main_sha": "75aec1a3ff6d06dffd8188c0efe5d59926809d2e",
+  "remote_tag": "v0.7.37",
+  "remote_tag_peel": "75aec1a3ff6d06dffd8188c0efe5d59926809d2e",
+  "peel_match": true,
+  "archive_status": "archived",
+  "verify_status": "passed",
+  "release_status": "released"
 }
