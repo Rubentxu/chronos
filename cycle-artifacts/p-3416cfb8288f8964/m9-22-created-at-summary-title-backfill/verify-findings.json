@@ -1,0 +1,23 @@
+{
+  "cycle_id": "m9-22",
+  "subject": {
+    "head": "TBD",
+    "head_sha": "TBD"
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "low",
+      "category": "schema-drift",
+      "summary": "16 prior cycles (m9-03..m9-18) missing created_at, title, summary fields. m9-19 introduced these without backfill.",
+      "resolution": "Backfill all three fields: created_at from git log (UTC normalized), title from folder slug, summary from merge-receipt.md."
+    },
+    {
+      "id": "F2",
+      "severity": "informational",
+      "category": "process",
+      "summary": "Added cross-check #15 to vault-drift-sweep.md.",
+      "resolution": "Cross-check #15 prevents future 'new field added, no backfill' drift on these three fields."
+    }
+  ]
+}
