@@ -19,5 +19,6 @@
   "archived_at": "2026-09-12T11:49:03Z",
   "created_at": "2026-09-12T11:48:00Z",
   "summary": "Move the 'vacuous-peel-match-prior-cycles' free-text note from findings_introduced.no_action to findings_introduced.notes in m9-14's apply-checkpoint.json. The note was tripping cross-check #2 because it contains spaces and parenthetical content, which are not valid term IDs. Adds cross-check #19.",
-  "findings_closed": []
+  "findings_closed": [],
+  "remote_tag": "v0.7.25"
 }

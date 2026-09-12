@@ -4,7 +4,6 @@
   "status": "CLOSED",
   "head_sha": "3383905d93ac66b6e90b6de8cea760c1ad4e2c99",
   "base_sha": "9d2c676bfc6331f730e7db9eac3ec9c057db1de4",
-  "tag": "v0.7.4",
   "remote_tag_peel": "3383905d93ac66b6e90b6de8cea760c1ad4e2c99",
   "main_sha": "3383905d93ac66b6e90b6de8cea760c1ad4e2c99",
   "peel_match": true,
@@ -98,5 +97,6 @@
   "archive_status": "archived",
   "created_at": "2026-09-12T06:44:34Z",
   "title": "known schema versions invariant",
-  "summary": "- `git.push` capability: direct push to `origin/main`"
+  "summary": "- `git.push` capability: direct push to `origin/main`",
+  "remote_tag": "v0.7.4"
 }

@@ -19,5 +19,6 @@
   "archived_at": "2026-09-12T12:51:30Z",
   "created_at": "2026-09-12T12:50:00Z",
   "summary": "Adds '## Cross-checks' section to 25 verify-report.md files (m9-03..m9-27) that were authored before the cross-check annotation format was introduced in m9-28. Adds cross-check #24 to vault-drift-sweep.md enforcing '## Cross-checks' section in all verify-report.md files.",
-  "findings_closed": []
+  "findings_closed": [],
+  "remote_tag": "v0.7.30"
 }

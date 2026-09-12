@@ -4,7 +4,6 @@
   "status": "CLOSED",
   "head_sha": "2c98ce9a1df65d44ae865376fee46eb0d95ac425",
   "base_sha": "6f375fd96dbc0c03fe36b473d306f1e54d078b08",
-  "tag": "v0.7.1",
   "remote_tag_peel": "2c98ce9a1df65d44ae865376fee46eb0d95ac425",
   "main_sha": "2c98ce9a1df65d44ae865376fee46eb0d95ac425",
   "peel_match": true,
@@ -104,5 +103,6 @@
   "archive_status": "archived",
   "created_at": "2026-09-12T07:22:16Z",
   "title": "side table debt cleanup",
-  "summary": "- `git.push` capability: direct push to `origin/main`"
+  "summary": "- `git.push` capability: direct push to `origin/main`",
+  "remote_tag": "v0.7.1"
 }

@@ -4,7 +4,6 @@
   "status": "CLOSED",
   "head_sha": "69f200e2144bea2cd305c38903feb4814fb38806",
   "base_sha": "0e1474a61cf5777a6d0e22358aded55be222c784",
-  "tag": "v0.7.8",
   "remote_tag_peel": "69f200e2144bea2cd305c38903feb4814fb38806",
   "main_sha": "69f200e2144bea2cd305c38903feb4814fb38806",
   "peel_match": true,
@@ -116,5 +115,6 @@
   "archive_status": "archived",
   "created_at": "2026-09-12T07:23:29Z",
   "title": "m9 03 apply checkpoint rebuild",
-  "summary": "The release tag `v0.7.8` is peeled to `69f200e2144bea2cd305c38903feb4814fb38806` (the fix SHA, pre-docs) so the tag points to the state that carries the rebuilt artifact, matching the m9-04..m9-09 convention."
+  "summary": "The release tag `v0.7.8` is peeled to `69f200e2144bea2cd305c38903feb4814fb38806` (the fix SHA, pre-docs) so the tag points to the state that carries the rebuilt artifact, matching the m9-04..m9-09 convention.",
+  "remote_tag": "v0.7.8"
 }

@@ -2284,3 +2284,50 @@ fields (CC#22, CC#23) use `len(head) != 40` as a precondition,
 which silently skipped short-SHA rows. CC#49 explicitly scans
 for short SHAs in SHA-keyed fields, independent of the
 canonical-format precondition.
+
+### 50. apply-checkpoint.json must use canonical `remote_tag` field (closed by m9-59)
+
+```python
+import json, os
+from pathlib import Path
+
+drifts = 0
+for d in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964')):
+    if not d.startswith('m9-'):
+        continue
+    p = Path(f'cycle-artifacts/p-3416cfb8288f8964/{d}/apply-checkpoint.json')
+    if not p.exists():
+        continue
+    j = json.load(open(p))
+    has_tag = 'tag' in j
+    has_remote = 'remote_tag' in j
+    if has_tag and not has_remote:
+        print(f"DRIFT: {d}: has legacy 'tag' field, missing canonical 'remote_tag'")
+        drifts += 1
+    elif not has_tag and not has_remote:
+        print(f"DRIFT: {d}: missing both 'tag' and 'remote_tag'")
+        drifts += 1
+print(f'Total: {drifts}')
+```
+
+**Expected output (clean):** `Total: 0`.
+
+**If `DRIFT`:** an apply-checkpoint.json uses the legacy `tag` field
+(pre-m9-19) or has neither `tag` nor `remote_tag` (m9-19..m9-33 era
+when `remote_tag` was added but not backfilled). The canonical field
+is `remote_tag` (introduced by m9-19 and codified by m9-22).
+
+**Resolution:**
+- If the file has `tag`: rename `tag` → `remote_tag`.
+- If the file has neither: look up the cycle's tag from
+  `cycles/index.md` (4th column) and add `remote_tag: <tag>`.
+- Verify the tag exists via `git rev-parse v0.7.X^{commit}`.
+
+**History:** m9-59 closed this drift class. 31 apply-checkpoints
+were missing `remote_tag`:
+- 16 had legacy `tag` field (m9-03..m9-18, pre-convention)
+- 15 had neither (m9-19..m9-33, mid-convention era when
+  `remote_tag` was added but not backfilled)
+m9-57 schema backfill added 12 fields to 21 apply-checkpoints
+but missed `remote_tag` for both legacy and mid-era cycles.
+CC#50 detects both sub-classes.

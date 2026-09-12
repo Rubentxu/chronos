@@ -19,5 +19,6 @@
   "archived_at": "2026-09-12T12:19:45Z",
   "created_at": "2026-09-12T12:19:00Z",
   "summary": "Replaces fabricated base_sha (6dce3739b7e2...) in m9-19's apply-checkpoint.json with the real value 735c57b7178c93ea25f9cb603a3cb97b9ca7f81e (parent of m9-19's fix commit). Adds cross-check #20 to vault-drift-sweep.md enforcing base_sha == head_sha^ for fix-peel cycles (m9-07+), exempting docs-peel cycles (m9-03..m9-06).",
-  "findings_closed": []
+  "findings_closed": [],
+  "remote_tag": "v0.7.26"
 }

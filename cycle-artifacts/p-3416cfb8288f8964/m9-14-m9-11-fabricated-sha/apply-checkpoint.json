@@ -4,7 +4,6 @@
   "status": "CLOSED",
   "head_sha": "38699061891b76f90ef316914d3ba15d6eb53f83",
   "base_sha": "c4f1237f878c900208e9506f8127b77d43a066af",
-  "tag": "v0.7.12",
   "remote_tag_peel": "38699061891b76f90ef316914d3ba15d6eb53f83",
   "main_sha": "38699061891b76f90ef316914d3ba15d6eb53f83",
   "peel_match": true,
@@ -57,5 +56,6 @@
   "archive_status": "archived",
   "created_at": "2026-09-12T10:07:18Z",
   "title": "m9 11 fabricated sha",
-  "summary": "The `head_sha` and `remote_tag_peel` fields in"
+  "summary": "The `head_sha` and `remote_tag_peel` fields in",
+  "remote_tag": "v0.7.12"
 }

@@ -19,5 +19,6 @@
   "archived_at": "2026-09-12T12:28:30Z",
   "created_at": "2026-09-12T12:24:00Z",
   "summary": "Backfills the canonical '## Evidence bindings' section in archive-manifest.md for m9-11..m9-27. Each section lists the cycle's released artifacts (cycle-artifacts/*.json + .md files) and the change-entry with their computed SHA-256. Adds cross-check #21 to vault-drift-sweep.md enforcing that all m9-* archive-manifests have a '## Evidence bindings' section.",
-  "findings_closed": []
+  "findings_closed": [],
+  "remote_tag": "v0.7.27"
 }

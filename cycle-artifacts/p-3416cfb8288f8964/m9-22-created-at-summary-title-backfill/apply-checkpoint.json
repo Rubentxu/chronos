@@ -19,5 +19,6 @@
   "archived_at": "2026-09-12T11:23:14Z",
   "created_at": "2026-09-12T11:22:00Z",
   "summary": "Backfill created_at, title, and summary on 16 prior CLOSED cycles (m9-03..m9-18). m9-19 introduced these fields without backfill. Adds cross-check #15.",
-  "findings_closed": []
+  "findings_closed": [],
+  "remote_tag": "v0.7.20"
 }

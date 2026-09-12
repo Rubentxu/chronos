@@ -4,7 +4,6 @@
   "status": "CLOSED",
   "head_sha": "cd0115fd8f942058cde109c72a975cab7ea7473c",
   "base_sha": "6120e983e247d8d88fcd221f0e1063646f195cb7",
-  "tag": "v0.7.9",
   "remote_tag_peel": "cd0115fd8f942058cde109c72a975cab7ea7473c",
   "main_sha": "cd0115fd8f942058cde109c72a975cab7ea7473c",
   "peel_match": true,
@@ -51,5 +50,6 @@
   "archive_status": "archived",
   "created_at": "2026-09-12T08:26:41Z",
   "title": "cycles index metadata drift",
-  "summary": "The `Total cycles` metadata field in `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md`"
+  "summary": "The `Total cycles` metadata field in `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md`",
+  "remote_tag": "v0.7.9"
 }

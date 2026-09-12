@@ -4,7 +4,6 @@
   "status": "CLOSED",
   "head_sha": "eb5110dfe1f1d14eab85e6052f1f7cbb86e2f384",
   "base_sha": "68c528ec34adc1ef5c0e049b9ab83207d710bcb6",
-  "tag": "v0.7.14",
   "remote_tag_peel": "eb5110dfe1f1d14eab85e6052f1f7cbb86e2f384",
   "main_sha": "eb5110dfe1f1d14eab85e6052f1f7cbb86e2f384",
   "peel_match": true,
@@ -51,5 +50,6 @@
   "archive_status": "archived",
   "created_at": "2026-09-12T10:19:18Z",
   "title": "archive manifest short and fabricated sha",
-  "summary": "Three archive-manifest.md files in"
+  "summary": "Three archive-manifest.md files in",
+  "remote_tag": "v0.7.14"
 }

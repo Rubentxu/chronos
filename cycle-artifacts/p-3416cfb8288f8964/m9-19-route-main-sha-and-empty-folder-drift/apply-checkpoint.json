@@ -19,5 +19,6 @@
   "archived_at": "2026-09-12T11:12:11Z",
   "created_at": "2026-09-12T11:09:00Z",
   "summary": "Three classes of pre-m9-11 / mid-m9-11 schema drift: (1) 8 pre-m9-11 cycles had route: 'local' placeholder instead of a real path label; (2) m9-11/12/13 had main_sha set to pre-cycle HEAD (base_sha) instead of post-cycle HEAD (head_sha); (3) one empty cycle folder from an aborted false-positive investigation. Adds cross-check #12.",
-  "findings_closed": []
+  "findings_closed": [],
+  "remote_tag": "v0.7.17"
 }

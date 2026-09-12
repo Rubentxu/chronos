@@ -4,7 +4,6 @@
   "status": "CLOSED",
   "head_sha": "07d01d5869ff6e3ffed29315b761e6e476f3b70d",
   "base_sha": "c9e541750e39458b2b28c5d19ad0ca11d0e73d5b",
-  "tag": "v0.7.3",
   "remote_tag_peel": "07d01d5869ff6e3ffed29315b761e6e476f3b70d",
   "main_sha": "07d01d5869ff6e3ffed29315b761e6e476f3b70d",
   "peel_match": true,
@@ -94,5 +93,6 @@
   "archive_status": "archived",
   "created_at": "2026-09-12T06:40:46Z",
   "title": "side table overeng cleanup",
-  "summary": "- `git.push` capability: direct push to `origin/main`"
+  "summary": "- `git.push` capability: direct push to `origin/main`",
+  "remote_tag": "v0.7.3"
 }

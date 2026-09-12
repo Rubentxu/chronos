@@ -4,7 +4,6 @@
   "status": "CLOSED",
   "head_sha": "d89862bbe67256cf6274be1d71ee7f8857cb8808",
   "base_sha": "50553969309b945156c239fd5a5a7f794431df21",
-  "tag": "v0.7.6",
   "remote_tag_peel": "d89862bbe67256cf6274be1d71ee7f8857cb8808",
   "main_sha": "d89862bbe67256cf6274be1d71ee7f8857cb8808",
   "peel_match": true,
@@ -94,5 +93,6 @@
   "archive_status": "archived",
   "created_at": "2026-09-12T07:04:05Z",
   "title": "list load schema error variant",
-  "summary": "The release tag `v0.7.6` is peeled to `d89862b` (the fix SHA, pre-docs) so the"
+  "summary": "The release tag `v0.7.6` is peeled to `d89862b` (the fix SHA, pre-docs) so the",
+  "remote_tag": "v0.7.6"
 }

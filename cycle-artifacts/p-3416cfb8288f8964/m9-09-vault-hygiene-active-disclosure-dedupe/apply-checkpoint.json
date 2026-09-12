@@ -4,7 +4,6 @@
   "status": "CLOSED",
   "head_sha": "07e731d61424160c4f67d769db00a171837ba62c",
   "base_sha": "c183ad1822423419ffb7d5f92a8d5ac46423d653",
-  "tag": "v0.7.7",
   "remote_tag_peel": "07e731d61424160c4f67d769db00a171837ba62c",
   "main_sha": "07e731d61424160c4f67d769db00a171837ba62c",
   "peel_match": true,
@@ -110,5 +109,6 @@
   "archive_status": "archived",
   "created_at": "2026-09-12T07:16:04Z",
   "title": "vault hygiene active disclosure dedupe",
-  "summary": "The release tag `v0.7.7` is peeled to `07e731d61424160c4f67d769db00a171837ba62c` (the fix SHA, pre-docs) so the tag points to the state that carries the corrected index, matching m9-04..m9-08 convention."
+  "summary": "The release tag `v0.7.7` is peeled to `07e731d61424160c4f67d769db00a171837ba62c` (the fix SHA, pre-docs) so the tag points to the state that carries the corrected index, matching m9-04..m9-08 convention.",
+  "remote_tag": "v0.7.7"
 }

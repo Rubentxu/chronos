@@ -19,5 +19,6 @@
   "archived_at": "2026-09-12T11:15:56Z",
   "created_at": "2026-09-12T11:14:00Z",
   "summary": "Normalize route field on m9-11..m9-18 from verbose 'B-direct (T0 + light-verify)' to bare 'B-direct'. Add cross-check #14 prohibiting legacy schema-v1 fields (change, artifacts, commits_since_base, findings_closed, etc.) on m9-19+ cycles. Pre-m9-11 cycles are exempt since their legacy data is preserved.",
-  "findings_closed": []
+  "findings_closed": [],
+  "remote_tag": "v0.7.19"
 }
