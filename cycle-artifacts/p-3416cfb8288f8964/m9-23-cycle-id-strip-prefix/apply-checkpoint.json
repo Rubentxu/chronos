@@ -1,0 +1,23 @@
+{
+  "cycle_id": "m9-23-cycle-id-strip-prefix",
+  "title": "cycle_id workspace prefix strip",
+  "path": "B-direct",
+  "route": "B-direct",
+  "base_sha": "f5fbbd7584398d0fda1f090fe9295bcb9fdde045",
+  "head_sha": "TBD",
+  "main_sha": "TBD",
+  "remote_tag_peel": "TBD",
+  "peel_match": true,
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived",
+  "status": "CLOSED",
+  "findings_introduced": {
+    "no_action": []
+  },
+  "verified_at": "2026-09-12T11:23:00Z",
+  "released_at": "TBD",
+  "archived_at": "TBD",
+  "created_at": "2026-09-12T11:23:00Z",
+  "summary": "Strip workspace prefix 'p-3416cfb8288f8964/' from cycle_id on 16 prior CLOSED cycles (m9-03..m9-18). m9-19+ use bare cycle slugs. Adds cross-check #16."
+}

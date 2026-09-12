@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -528,6 +528,7 @@ Cycles that established this procedure:
 - **m9-20** (vault hygiene: status fields backfill — verify_status + release_status + archive_status, v0.7.18) → cross-check #13
 - **m9-21** (vault hygiene: verbose route normalization + legacy field prohibition for m9-19+ cycles, v0.7.19) → cross-check #14
 - **m9-22** (vault hygiene: created_at + title + summary backfill for 16 prior cycles, v0.7.20) → cross-check #15
+- **m9-23** (vault hygiene: cycle_id workspace prefix strip, v0.7.21) → cross-check #16
 
 ### 13. apply-checkpoint.json `*_status` field backfill (closed by m9-20)
 
@@ -651,6 +652,35 @@ cycles (m9-03..m9-18).
 
 **History:** m9-22 closed this drift class after m9-19 introduced
 the fields without backfill.
+
+### 16. apply-checkpoint.json cycle_id format (must be bare m9-NN-slug, no workspace prefix) (closed by m9-23)
+
+```python
+import json, os, re
+for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
+    ckpt = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/apply-checkpoint.json'
+    if not os.path.exists(ckpt): continue
+    d = json.load(open(ckpt))
+    cid = d.get('cycle_id', '')
+    if '/' in cid:
+        print(f"DRIFT: {folder}: cycle_id has workspace prefix: {cid!r}")
+    elif cid != folder:
+        print(f"DRIFT: {folder}: cycle_id ({cid!r}) != folder name")
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** `cycle_id` either:
+- Has the workspace prefix `p-3416cfb8288f8964/` (16 cycles m9-03..m9-18
+  had this), or
+- Differs from the cycle folder name.
+
+**Resolution:** Strip the workspace prefix. The cycle_id should be
+the bare cycle slug (e.g. `m9-11-cycles-index-metadata-drift`),
+matching the folder name.
+
+**History:** Pre-vault-reorg cycles included the workspace path in
+cycle_id. m9-19+ use bare slugs. m9-23 closes this drift.
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class

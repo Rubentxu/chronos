@@ -1,5 +1,5 @@
 {
-  "cycle_id": "p-3416cfb8288f8964/m9-12-terms-index-metadata-drift",
+  "cycle_id": "m9-12-terms-index-metadata-drift",
   "change": "fix terms/index.md Last archive metadata drift (m9-10 \u2192 m9-11) + add cross-check #6 to vault-drift-sweep",
   "path": "B-direct",
   "status": "CLOSED",

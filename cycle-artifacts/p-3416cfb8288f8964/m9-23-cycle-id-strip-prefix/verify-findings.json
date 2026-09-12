@@ -1,0 +1,23 @@
+{
+  "cycle_id": "m9-23-cycle-id-strip-prefix",
+  "subject": {
+    "head": "TBD",
+    "head_sha": "TBD"
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "low",
+      "category": "schema-drift",
+      "summary": "16 prior cycles (m9-03..m9-18) had cycle_id with workspace prefix 'p-3416cfb8288f8964/'. m9-19+ use bare slugs.",
+      "resolution": "Strip workspace prefix from cycle_id on all 16 cycles."
+    },
+    {
+      "id": "F2",
+      "severity": "informational",
+      "category": "process",
+      "summary": "Added cross-check #16 to vault-drift-sweep.md.",
+      "resolution": "Cross-check #16 prevents future cycle_id drift."
+    }
+  ]
+}
