@@ -1,0 +1,46 @@
+{
+  "cycle_id": "m9-57-apply-checkpoint-schema-backfill",
+  "head_sha": "308215faf074dafb3054789db39c53af7fa2f1e6",
+  "base_sha": "af49e06fd5509b11805e0d63a330c540294274ea",
+  "created_at": "2026-09-12T17:45Z",
+  "route": "B-direct",
+  "summary": "Mass-backfill of 12 missing schema fields across 21 m9-34+..m9-55 apply-checkpoints. Hardened 4 overly-strict regexes (CC#22, CC#23, CC#27, CC#30) that produced false-positive drift. Made CC#3 era-aware for fix-peel cycles. Added CC#48 meta-check.",
+  "title": "57 apply checkpoint schema backfill",
+  "status": "CLOSED",
+  "archived_at": "2026-09-12T17:45Z",
+  "main_sha": "308215faf074dafb3054789db39c53af7fa2f1e6",
+  "peel_match": true,
+  "release_status": "released",
+  "released_at": "2026-09-12T17:45Z",
+  "remote_tag": "v0.7.56",
+  "remote_tag_peel": "308215faf074dafb3054789db39c53af7fa2f1e6",
+  "verify_status": "passed",
+  "verified_at": "2026-09-12T17:45Z",
+  "archive_status": "archived",
+  "findings_closed": [
+    {
+      "finding_id": "DRIFT-M9-57-APPLY-CHECKPOINT-MISSING-FIELDS",
+      "rule_id": "vault_hygiene.apply_checkpoint_schema_drift",
+      "subject": {
+        "cycle": "m9-57-apply-checkpoint-schema-backfill",
+        "files_modified": 21,
+        "fields_backfilled": 12
+      }
+    },
+    {
+      "finding_id": "DRIFT-M9-57-OVERLY-STRICT-CC-REGEX",
+      "rule_id": "vault_hygiene.cc_regex_drift",
+      "subject": {
+        "hardened": [
+          "CC#22",
+          "CC#23",
+          "CC#27",
+          "CC#30"
+        ]
+      }
+    }
+  ],
+  "findings_introduced": {
+    "no_action": []
+  }
+}

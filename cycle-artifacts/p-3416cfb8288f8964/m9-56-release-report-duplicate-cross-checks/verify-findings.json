@@ -1,0 +1,24 @@
+{
+  "schema": "verify-finding.schema.json",
+  "subject": {
+    "head_sha": "32d9a3c386de934bbbdf304b1cad367b629d9731",
+    "base_sha": "6bdf8ba506a61655edd82c997fca2137665ad8d6",
+    "diff_digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "working_tree_clean": true,
+    "verified_at": "2026-09-12T17:30:00Z",
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
+    "verdict": "passed"
+  },
+  "findings": [
+    {
+      "finding_id": "DRIFT-M9-56-DUPLICATE-CROSS-CHECKS-HEADING",
+      "rule_id": "vault_hygiene.release_report_format_drift",
+      "severity": "low",
+      "summary": "13 release-report.md files had duplicate ## Cross-checks headings",
+      "subject": {"duplicates_removed": 12, "missing_heading_re_added": 1}
+    }
+  ],
+  "lens_summary": "m9-56 closed the duplicate Cross-checks heading drift class.",
+  "cycle_id": "m9-56",
+  "verdict": "pass_with_findings"
+}

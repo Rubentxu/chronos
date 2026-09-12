@@ -2331,3 +2331,57 @@ were missing `remote_tag`:
 m9-57 schema backfill added 12 fields to 21 apply-checkpoints
 but missed `remote_tag` for both legacy and mid-era cycles.
 CC#50 detects both sub-classes.
+
+### 51. cycles/index.md cycle must have cycle-artifacts/ folder (closed by m9-60)
+
+```python
+import re, os
+
+# Allowed by-design exceptions (cycles without SHA-bearing cycle-artifacts)
+allowed_exceptions = {
+    'm9-01-schema-versioning',     # pre-vault-reorg, no artifacts captured at the time
+    'm9-02-events-side-table',      # pre-vault-reorg
+    'm9-54-stale-branch-cleanup',   # branch-deletion only, no SHA-bearing artifacts
+}
+
+ci = open('.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md').read()
+cycle_ids = []
+for line in ci.split('\n'):
+    m = re.match(r'^\|\s*(m9-\d+)\s*\|\s*(\S+?)\s*\|', line)
+    if m:
+        cycle_ids.append(m.group(2))
+
+missing = []
+for cid in cycle_ids:
+    if not os.path.isdir(f'cycle-artifacts/p-3416cfb8288f8964/{cid}'):
+        if cid not in allowed_exceptions:
+            missing.append(cid)
+
+for cid in missing:
+    print(f"DRIFT: {cid} listed in cycles/index.md but no cycle-artifacts/{cid}/ folder exists")
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** a cycle is listed in `cycles/index.md` with status
+CLOSED but has no corresponding folder under `cycle-artifacts/`. B-direct
+and higher-path cycles must produce SHA-bearing artifacts (apply-checkpoint,
+verify-findings, verify-report, merge-receipt, release-receipt,
+release-report).
+
+**Resolution:**
+1. For a missing B-direct/A-min cycle: synthesize the missing artifacts
+   from the cycle's commit (`git log -- <slug>`) and tag (if any).
+2. For a missing A-lite/A-full cycle: review whether the cycle was
+   properly closed (it should have artifacts).
+
+**History:** m9-60 closed this drift class. 2 cycles were missing
+cycle-artifacts:
+- m9-56 (B-direct, dedup-only) — had change-entry + archive-manifest
+  but no cycle-artifacts; created missing apply-checkpoint, etc.
+- m9-57 (B-direct, schema-backfill) — had knowledge artifacts but
+  no cycle-artifacts; created missing apply-checkpoint, etc.
+
+3 cycles are accepted-by-design (pre-vault-reorg or branch-only):
+- m9-01, m9-02 (pre-vault-reorg, artifacts captured under legacy schema)
+- m9-54 (branch-deletion only, no SHA-bearing artifacts)
