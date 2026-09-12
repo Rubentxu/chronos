@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34**, or **check 35**, or **check 36**, or **check 37**, or **check 38**, or **check 39**, or **check 40**, or **check 41**, or **check 42** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34**, or **check 35**, or **check 36**, or **check 37**, or **check 38**, or **check 39**, or **check 40**, or **check 41**, or **check 42**, or **check 43** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -1902,3 +1902,53 @@ peels without re-creation. 47 release-receipt.md files had stored
 peel using `git rev-parse vN` (which returns the tag-object SHA, not
 the commit). m9-50 recreates tags + fixes receipts to use
 `vN^{commit}`.
+
+### 43. release-receipt and verify-findings head_sha consistency with apply-checkpoint (closed by m9-51)
+
+```python
+import json, glob, re, os
+
+errors = 0
+
+# Part A: release-receipt Head SHA must match apply-checkpoint head_sha
+for f in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/release-receipt.md')):
+    folder = f.split('/')[-2]
+    content = open(f).read()
+    h_m = re.search(r'Head SHA \| ([a-f0-9]+)', content)
+    h_str = h_m.group(1) if h_m else ''
+    ckpt = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/apply-checkpoint.json'
+    if not os.path.exists(ckpt): continue
+    d = json.load(open(ckpt))
+    if h_str != d.get('head_sha', ''):
+        errors += 1
+        print(f"DRIFT A: {folder}: rr={h_str[:8]} ckpt={d['head_sha'][:8]}")
+
+# Part B: verify-findings subject.head_sha must match apply-checkpoint head_sha
+for vf in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/verify-findings.json')):
+    folder = vf.split('/')[-2]
+    d = json.load(open(vf))
+    vf_head = d.get('subject', {}).get('head_sha', '')
+    ckpt = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/apply-checkpoint.json'
+    if not os.path.exists(ckpt): continue
+    ck = json.load(open(ckpt))
+    if vf_head != ck.get('head_sha', ''):
+        errors += 1
+        print(f"DRIFT B: {folder}: vf={vf_head[:8]} ckpt={ck['head_sha'][:8]}")
+
+print(f'Total: {errors}')
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT A`:** `release-receipt.md` `Head SHA` doesn't match
+`apply-checkpoint.json` `head_sha`. The apply-checkpoint is
+authoritative.
+
+**If `DRIFT B`:** `verify-findings.json` `subject.head_sha` doesn't
+match `apply-checkpoint.json` `head_sha`.
+
+**History:** m9-03, m9-04 verify-findings had head_sha pointing at the
+original fix commit (570d215, 379759ed) rather than the cycle's
+published head (2c98ce9a, d6b3b8c5). m9-34, m9-35 release-receipts
+recorded the cycle's intermediate SHA rather than the final published
+SHA. m9-51 fixes these to align with apply-checkpoint.

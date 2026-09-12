@@ -1,0 +1,34 @@
+{
+  "cycle_id": "m9-51",
+  "subject": {
+    "head_sha": "TBD",
+    "base_sha": "bad8d0433dc5df3dbf75e255515ba1c05d0abe18"
+  },
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "low",
+      "category": "schema-drift",
+      "description": "2 release-receipt.md (m9-34, m9-35) had Head SHA that didn't match apply-checkpoint head_sha.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F2",
+      "severity": "low",
+      "category": "schema-drift",
+      "description": "2 verify-findings.json (m9-03, m9-04) had subject.head_sha that didn't match apply-checkpoint head_sha.",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F3",
+      "severity": "informational",
+      "category": "process",
+      "description": "Added cross-check #43 to vault-drift-sweep.md.",
+      "status": "RESOLVED"
+    }
+  ],
+  "lens_summary": {
+    "drift": "4 files had head_sha mismatch with apply-checkpoint (m9-34, m9-35 rr; m9-03, m9-04 vf). Aligned. Cross-check #43 added."
+  }
+}
