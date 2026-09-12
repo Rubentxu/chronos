@@ -4,9 +4,9 @@
   "path": "B-direct",
   "route": "B-direct",
   "base_sha": "f5fbbd7584398d0fda1f090fe9295bcb9fdde045",
-  "head_sha": "TBD",
-  "main_sha": "TBD",
-  "remote_tag_peel": "TBD",
+  "head_sha": "b549c7462932647b03cd9cd2f28da0fc03c9ed64",
+  "main_sha": "b549c7462932647b03cd9cd2f28da0fc03c9ed64",
+  "remote_tag_peel": "b549c7462932647b03cd9cd2f28da0fc03c9ed64",
   "peel_match": true,
   "verify_status": "passed",
   "release_status": "released",
@@ -16,8 +16,8 @@
     "no_action": []
   },
   "verified_at": "2026-09-12T11:23:00Z",
-  "released_at": "TBD",
-  "archived_at": "TBD",
+  "released_at": "2026-09-12T11:24:16Z",
+  "archived_at": "2026-09-12T11:24:35Z",
   "created_at": "2026-09-12T11:23:00Z",
   "summary": "Strip workspace prefix 'p-3416cfb8288f8964/' from cycle_id on 16 prior CLOSED cycles (m9-03..m9-18). m9-19+ use bare cycle slugs. Adds cross-check #16."
 }

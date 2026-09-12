@@ -1,8 +1,8 @@
 {
   "cycle_id": "m9-23-cycle-id-strip-prefix",
   "subject": {
-    "head": "TBD",
-    "head_sha": "TBD"
+    "head": "b549c7462932647b03cd9cd2f28da0fc03c9ed64",
+    "head_sha": "b549c7462932647b03cd9cd2f28da0fc03c9ed64"
   },
   "findings": [
     {
