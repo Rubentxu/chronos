@@ -5,7 +5,7 @@
 | Cycle | m9-22-created-at-summary-title-backfill |
 | Tag | `v0.7.20` |
 | Pee | fix commit (chronos convention) |
-| Released at | TBD |
+| Released at | 2026-09-12T11:22:54Z |
 
 ## Tag command
 
