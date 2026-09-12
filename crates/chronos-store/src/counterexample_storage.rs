@@ -391,7 +391,10 @@ const _: () = {
         }
         i += 1;
     }
-    assert!(found, "CURRENT_BUNDLE_SCHEMA_VERSION must be listed in KNOWN_BUNDLE_SCHEMA_VERSIONS");
+    assert!(
+        found,
+        "CURRENT_BUNDLE_SCHEMA_VERSION must be listed in KNOWN_BUNDLE_SCHEMA_VERSIONS"
+    );
 };
 
 fn default_schema_version() -> u32 {
@@ -891,6 +894,21 @@ impl crate::storage::SessionStore {
                         "bundle schema_version {} is newer than supported {}; \
                          upgrade chronos-store to read this bundle",
                         record.schema_version, CURRENT_BUNDLE_SCHEMA_VERSION,
+                    )));
+                }
+                // m9-07 (closes FIND-M9-01-DV-COUP-01): the record and its
+                // nested summary both carry a `schema_version`. `save()`
+                // canonicalizes both to `CURRENT_BUNDLE_SCHEMA_VERSION`, but a
+                // hand-constructed record (e.g. a future migration tool) could
+                // mismatch. The loader reads `record.schema_version` as the
+                // envelope-level authoritative version; assert the summary
+                // matches before returning. Mirrors the invariant asserted at
+                // save time without a second canonicalization site.
+                if record.schema_version != record.summary.schema_version {
+                    return Err(StoreError::Serialization(format!(
+                        "bundle envelope schema_version {} disagrees with summary \
+                         schema_version {}; rejecting as malformed",
+                        record.schema_version, record.summary.schema_version,
                     )));
                 }
                 Ok(Some(record))
@@ -1500,6 +1518,45 @@ mod tests {
         assert!(
             err_msg.contains('4'),
             "error message must mention schema_version 4, got: {err_msg}"
+        );
+    }
+
+    // m9-07 (closes FIND-M9-01-DV-COUP-01): the loader must reject records
+    // whose envelope `schema_version` does not match the nested summary
+    // `schema_version`. `save()` canonicalizes both, so legitimate writes
+    // always agree; this test exercises the gap for hand-constructed
+    // records (e.g. a future migration tool).
+    #[test]
+    fn m9_07_loader_rejects_envelope_summary_version_mismatch() {
+        let store = make_store();
+
+        // Envelope says 3 (CURRENT), summary says 1 — a drift the loader
+        // would have silently passed before m9-07.
+        let mismatched: CounterexampleBundleRecord = CounterexampleBundleRecord {
+            summary: CounterexampleBundleSummary {
+                bundle_id: "b-mismatched".into(),
+                property_kind: "invariant".into(),
+                workspace_id: "ws".into(),
+                created_at_ms: 0,
+                rounds_used: 1,
+                has_full_bundle: true,
+                schema_version: 1,
+                events_count: 0,
+            },
+            events: vec![],
+            minimised: None,
+            event_cas_hashes: vec![],
+            target_hypothesis: None,
+            schema_version: 3,
+        };
+        store.insert_bundle_record_for_test(&mismatched).unwrap();
+
+        let result = store.load_counterexample_bundle("b-mismatched");
+        let err = result.expect_err("envelope/summary schema_version mismatch must be rejected");
+        let err_msg = format!("{err}");
+        assert!(
+            err_msg.contains("disagrees with summary"),
+            "error message must mention 'disagrees with summary', got: {err_msg}"
         );
     }
 
