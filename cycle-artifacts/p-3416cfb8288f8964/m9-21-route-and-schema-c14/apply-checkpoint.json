@@ -4,9 +4,9 @@
   "path": "B-direct",
   "route": "B-direct",
   "base_sha": "efb9d93da368c4c6e1473c4668bbc945dff850c6",
-  "head_sha": "TBD",
-  "main_sha": "TBD",
-  "remote_tag_peel": "TBD",
+  "head_sha": "14ecf16ded816896cb612721875e97380bcadbc3",
+  "main_sha": "14ecf16ded816896cb612721875e97380bcadbc3",
+  "remote_tag_peel": "14ecf16ded816896cb612721875e97380bcadbc3",
   "peel_match": true,
   "verify_status": "passed",
   "release_status": "released",
@@ -16,8 +16,8 @@
     "no_action": []
   },
   "verified_at": "2026-09-12T11:14:00Z",
-  "released_at": "TBD",
-  "archived_at": "TBD",
+  "released_at": "2026-09-12T11:15:38Z",
+  "archived_at": "2026-09-12T11:15:56Z",
   "created_at": "2026-09-12T11:14:00Z",
   "summary": "Normalize route field on m9-11..m9-18 from verbose 'B-direct (T0 + light-verify)' to bare 'B-direct'. Add cross-check #14 prohibiting legacy schema-v1 fields (change, artifacts, commits_since_base, findings_closed, etc.) on m9-19+ cycles. Pre-m9-11 cycles are exempt since their legacy data is preserved."
 }
