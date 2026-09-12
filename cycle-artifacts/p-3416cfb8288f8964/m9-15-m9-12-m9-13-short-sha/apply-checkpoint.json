@@ -32,10 +32,10 @@
     "cc-001-god-module",
     "cc-004-implicit-io-toctou",
     "m9-02-R4 (feature: counterexample_bundle_events MCP tool)",
-    "vacuous-peel-match-prior-cycles (placeholder from m9-14 — superseded by m9-15's tighter C3)"
+    "vacuous-peel-match-prior-cycles (placeholder from m9-14 \u2014 superseded by m9-15's tighter C3)"
   ],
   "notes": [
-    "m9-12 apply-checkpoint stored head_sha='0012f12' (7 chars). Real full SHA: 0012f1242cef949efc4cbd4c8d419a135ee3cf8a. main_sha and base_sha were already full — only head_sha/remote_tag_peel were short.",
+    "m9-12 apply-checkpoint stored head_sha='0012f12' (7 chars). Real full SHA: 0012f1242cef949efc4cbd4c8d419a135ee3cf8a. main_sha and base_sha were already full \u2014 only head_sha/remote_tag_peel were short.",
     "m9-13 apply-checkpoint stored head_sha='26848cf' (7 chars). Real full SHA: 26848cf8b26340d3fde99a3a7f398f2873943982. Same pattern.",
     "Cross-check #8 (added by m9-14) did NOT catch this drift because git accepts short SHAs when unambiguous (cat-file -e 0012f12 returns success). The new tightened C3 explicitly requires len(remote_tag_peel) == 40, closing the gap.",
     "All markdown references (merge-receipt, release-receipt, release-report, verify-report, cycles/index.md Published SHA columns) also corrected.",
@@ -48,5 +48,8 @@
   "ledger_state": {
     "available": false,
     "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02..m9-14 pattern)"
-  }
+  },
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived"
 }

@@ -38,7 +38,7 @@
     {
       "gate": "T0-lint",
       "result": "pass",
-      "evidence": "cargo fmt --all -- --check (clean — includes a 2-line pre-existing m9-06 assert! reformat that fmt repaired); cargo clippy --workspace --all-targets -- -D warnings (0 warnings)"
+      "evidence": "cargo fmt --all -- --check (clean \u2014 includes a 2-line pre-existing m9-06 assert! reformat that fmt repaired); cargo clippy --workspace --all-targets -- -D warnings (0 warnings)"
     },
     {
       "gate": "T1-lib-unit",
@@ -90,5 +90,8 @@
   },
   "findings_introduced": {
     "no_action": []
-  }
+  },
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived"
 }

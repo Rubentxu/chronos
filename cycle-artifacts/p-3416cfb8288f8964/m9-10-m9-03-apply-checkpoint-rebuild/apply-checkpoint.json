@@ -94,12 +94,12 @@
     {
       "gate": "fidelity-check",
       "result": "high",
-      "evidence": "all input artifacts (merge-receipt.md, release-receipt.md, release-report.md, verify-report.md, verify-findings.json of m9-03) were present in cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/ with unmodified SHA-256. No field in the rebuilt apply-checkpoint was invented — every value was lifted verbatim from one of the 5 input artifacts or from `git log 6f375fd..2c98ce9`."
+      "evidence": "all input artifacts (merge-receipt.md, release-receipt.md, release-report.md, verify-report.md, verify-findings.json of m9-03) were present in cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/ with unmodified SHA-256. No field in the rebuilt apply-checkpoint was invented \u2014 every value was lifted verbatim from one of the 5 input artifacts or from `git log 6f375fd..2c98ce9`."
     },
     {
       "gate": "auto-mode-lesson-applied",
       "result": "yes",
-      "evidence": "the search-more-drift sweep that selected this cycle was inspired by the three-session pattern of premature 'auto-mode exhausted' verdicts (sessions 1, 2, 3 → m9-07, m9-08, m9-09 found respectively). Extending the sweep from 'grep for FIND-M9-01-* in code' to 'cross-check findings_closed (apply-checkpoints) vs Terminated terms (terms/index.md)' surfaced the missing m9-03 apply-checkpoint. This is now the 4th consecutive session that found work the prior session claimed was exhausted."
+      "evidence": "the search-more-drift sweep that selected this cycle was inspired by the three-session pattern of premature 'auto-mode exhausted' verdicts (sessions 1, 2, 3 \u2192 m9-07, m9-08, m9-09 found respectively). Extending the sweep from 'grep for FIND-M9-01-* in code' to 'cross-check findings_closed (apply-checkpoints) vs Terminated terms (terms/index.md)' surfaced the missing m9-03 apply-checkpoint. This is now the 4th consecutive session that found work the prior session claimed was exhausted."
     }
   ],
   "next_cycle": null,
@@ -111,5 +111,8 @@
   },
   "findings_introduced": {
     "no_action": []
-  }
+  },
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived"
 }

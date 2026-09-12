@@ -15,8 +15,8 @@
   "released_at": "2026-09-12T08:40:00Z",
   "archived_at": "2026-09-12T08:40:40Z",
   "commits_since_base": [
-    "232e2d2docs(m9-05): scoping — side-table overeng cleanup (4 apply-target findings)",
-    "fa0ca90fix(m9-05): close 4 apply-target debt findings — extract decode_chunk_payload, collect_v3_keys_for_bundle; drop events_count Option wrapper; narrow pub visibility with chokepoints",
+    "232e2d2docs(m9-05): scoping \u2014 side-table overeng cleanup (4 apply-target findings)",
+    "fa0ca90fix(m9-05): close 4 apply-target debt findings \u2014 extract decode_chunk_payload, collect_v3_keys_for_bundle; drop events_count Option wrapper; narrow pub visibility with chokepoints",
     "07d01d5docs(m9-05): light-verify evidence (R1-R4 PASS, 4/4 findings closed)"
   ],
   "artifacts": {
@@ -89,5 +89,8 @@
   },
   "findings_introduced": {
     "no_action": []
-  }
+  },
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived"
 }

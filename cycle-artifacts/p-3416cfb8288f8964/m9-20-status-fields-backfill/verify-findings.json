@@ -1,0 +1,23 @@
+{
+  "cycle_id": "m9-20",
+  "subject": {
+    "head": "07febc1bae0d236ad47eef3c5b3172c4824cde04",
+    "head_sha": "07febc1bae0d236ad47eef3c5b3172c4824cde04"
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "low",
+      "category": "schema-drift",
+      "summary": "17 prior CLOSED cycles (m9-03..m9-18) had verify_status / release_status / archive_status all set to null. m9-19 introduced these fields but didn't backfill.",
+      "resolution": "For each CLOSED cycle, set verify_status='passed', release_status='released', archive_status='archived'. Values derived from the status=CLOSED fact."
+    },
+    {
+      "id": "F2",
+      "severity": "informational",
+      "category": "process",
+      "summary": "Added cross-check #13 to vault-drift-sweep.md enforcing these three fields on CLOSED cycles.",
+      "resolution": "Cross-check #13 will catch any future 'new field added, no backfill' drift."
+    }
+  ]
+}
