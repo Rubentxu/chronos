@@ -93,7 +93,7 @@
     {
       "gate": "drift-discovery-method",
       "result": "successful",
-      "evidence": "awk-based id-uniqueness sweep over terms/index.md sections (one awk pipeline; ~6 ms). Pattern reusable for future vault-hygiene cycles if drift accumulates again. Recommend adding to AGENTS.md §4 as a standing maintenance command."
+      "evidence": "awk-based id-uniqueness sweep over terms/index.md sections (one awk pipeline; ~6 ms). Pattern reusable for future vault-hygiene cycles if drift accumulates again. Recommend adding to AGENTS.md \u00a74 as a standing maintenance command."
     }
   ],
   "next_cycle": null,
@@ -105,5 +105,8 @@
   },
   "findings_introduced": {
     "no_action": []
-  }
+  },
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived"
 }

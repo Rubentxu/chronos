@@ -72,7 +72,7 @@
     {
       "gate": "archive",
       "result": "rebuilt-2026-09-12",
-      "evidence": "change-entry.md and archive-manifest.md for m9-03 exist in `.sddk-knowledge/`. This apply-checkpoint.json was missing from `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/` (vault-reorg gap); it is rebuilt by m9-10 from the existing merge-receipt, release-receipt, release-report, and verify-report of m9-03. Archived at the original timestamp 2026-09-11T21:13:30Z (m9-03 close-of-cycle) — not the rebuild timestamp."
+      "evidence": "change-entry.md and archive-manifest.md for m9-03 exist in `.sddk-knowledge/`. This apply-checkpoint.json was missing from `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/` (vault-reorg gap); it is rebuilt by m9-10 from the existing merge-receipt, release-receipt, release-report, and verify-report of m9-03. Archived at the original timestamp 2026-09-11T21:13:30Z (m9-03 close-of-cycle) \u2014 not the rebuild timestamp."
     },
     {
       "gate": "scoping-decision",
@@ -99,5 +99,8 @@
   },
   "findings_introduced": {
     "no_action": []
-  }
+  },
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived"
 }

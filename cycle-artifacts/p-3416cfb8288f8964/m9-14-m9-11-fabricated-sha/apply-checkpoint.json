@@ -27,18 +27,18 @@
   "findings_closed": [],
   "findings_introduced": {
     "no_action": [
-      "vacuous-peel-match-prior-cycles (closed by C8 evidence: short-SHA cycles still ambiguous on cat-file -e; deferred — see notes)"
+      "vacuous-peel-match-prior-cycles (closed by C8 evidence: short-SHA cycles still ambiguous on cat-file -e; deferred \u2014 see notes)"
     ]
   },
   "findings_remaining_m9_plus": [
     "cc-001-god-module",
     "cc-004-implicit-io-toctou",
     "m9-02-R4 (feature: counterexample_bundle_events MCP tool)",
-    "findings_closed-no-terminated-entry (14 findings closed via cycles but never added to terms/index.md Terminated section — see C2 drift below)",
-    "short-SHA-remote-tag-peel (m9-12, m9-13 stored 7-char SHAs in remote_tag_peel field — C3 catches, see notes)"
+    "findings_closed-no-terminated-entry (14 findings closed via cycles but never added to terms/index.md Terminated section \u2014 see C2 drift below)",
+    "short-SHA-remote-tag-peel (m9-12, m9-13 stored 7-char SHAs in remote_tag_peel field \u2014 C3 catches, see notes)"
   ],
   "notes": [
-    "m9-11's apply-checkpoint.json had head_sha = cd0115f8c93bddcae06e5a57f4e7e91d3a4fbb33 — a fabricated 40-char SHA that does NOT exist in the repository (git cat-file -e reports 'bad object'). The real m9-11 fix commit is cd0115fd8f942058cde109c72a975cab7ea7473c. Same fabrication affected remote_tag_peel; peel_match: true was a lie.",
+    "m9-11's apply-checkpoint.json had head_sha = cd0115f8c93bddcae06e5a57f4e7e91d3a4fbb33 \u2014 a fabricated 40-char SHA that does NOT exist in the repository (git cat-file -e reports 'bad object'). The real m9-11 fix commit is cd0115fd8f942058cde109c72a975cab7ea7473c. Same fabrication affected remote_tag_peel; peel_match: true was a lie.",
     "Fix replaces both SHAs with the real one, plus corrects cycles/index.md m9-11 row (same fabricated SHA).",
     "Standing procedure (vault-drift-sweep.md) had no cross-check for SHA existence. Cross-check #8 added in this cycle (git cat-file -e per head_sha/base_sha/main_sha/remote_tag_peel).",
     "T0 fmt+clippy clean (doc-only, no Rust touched). All 7 prior cross-checks still clean after fix. C8 returns empty.",
@@ -51,5 +51,8 @@
   "ledger_state": {
     "available": false,
     "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02..m9-13 pattern)"
-  }
+  },
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived"
 }

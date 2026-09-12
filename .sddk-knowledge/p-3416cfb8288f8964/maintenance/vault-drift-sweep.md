@@ -507,9 +507,9 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, or **check 12** finds drift: the
-resolution is mechanical (a small metadata edit). Do this in the
-same cycle that catches it; do not defer.
+**check 10**, **check 11**, **check 12**, or **check 13** finds
+drift: the resolution is mechanical (a small metadata edit). Do this
+in the same cycle that catches it; do not defer.
 
 ## Reference
 
@@ -525,6 +525,40 @@ Cycles that established this procedure:
 - **m9-17** (vault hygiene: cycle artifact SHA drift fix across verify-findings/markdown files, v0.7.15) → cross-check #10
 - **m9-18** (vault hygiene: apply-checkpoint metadata drift fix — archived_at, findings_introduced, status normalization, v0.7.16) → cross-check #11
 - **m9-19** (vault hygiene: route field normalization + main_sha convention + empty folder cleanup, v0.7.17) → cross-check #12
+
+### 13. apply-checkpoint.json `*_status` field backfill (closed by m9-20)
+
+```python
+import json, os
+for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
+    ckpt = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/apply-checkpoint.json'
+    if not os.path.exists(ckpt):
+        continue
+    d = json.load(open(ckpt))
+    if d.get('status') != 'CLOSED':
+        continue
+    for f in ['verify_status', 'release_status', 'archive_status']:
+        if d.get(f) is None:
+            print(f"DRIFT: {folder}: {f} is None (expected 'passed'/'released'/'archived')")
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** A CLOSED cycle is missing the `verify_status`,
+`release_status`, or `archive_status` field. m9-19 introduced these
+three fields but didn't backfill the 17 prior CLOSED cycles.
+
+**Resolution:**
+- For a CLOSED cycle, set:
+  - `verify_status: "passed"`
+  - `release_status: "released"`
+  - `archive_status: "archived"`
+- This is mechanical and safe. The values are derived from the
+  `status: CLOSED` fact: if a cycle is CLOSED, it must have been
+  verified, released, and archived.
+
+**History:** m9-20 closed this drift class after m9-19 introduced
+the fields without backfill.
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class

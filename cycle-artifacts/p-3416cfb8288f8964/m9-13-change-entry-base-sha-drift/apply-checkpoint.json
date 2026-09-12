@@ -1,6 +1,6 @@
 {
   "cycle_id": "p-3416cfb8288f8964/m9-13-change-entry-base-sha-drift",
-  "change": "fix m9-11 change-entry Base SHA drift (cd0115f → 6120e98) + add cross-check #7 to vault-drift-sweep",
+  "change": "fix m9-11 change-entry Base SHA drift (cd0115f \u2192 6120e98) + add cross-check #7 to vault-drift-sweep",
   "path": "B-direct",
   "status": "CLOSED",
   "head_sha": "26848cf8b26340d3fde99a3a7f398f2873943982",
@@ -15,7 +15,7 @@
   "released_at": "2026-09-12T09:57:00Z",
   "archived_at": "2026-09-12T09:59:02Z",
   "commits_since_base": [
-    "26848cffix(m9-13): m9-11 change-entry Base SHA drift (cd0115f → 6120e98) + add cross-check #7 to vault-drift-sweep"
+    "26848cffix(m9-13): m9-11 change-entry Base SHA drift (cd0115f \u2192 6120e98) + add cross-check #7 to vault-drift-sweep"
   ],
   "artifacts": {
     "merge_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-13-change-entry-base-sha-drift/merge-receipt.md",
@@ -48,5 +48,8 @@
   "ledger_state": {
     "available": false,
     "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02..m9-12 pattern)"
-  }
+  },
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived"
 }

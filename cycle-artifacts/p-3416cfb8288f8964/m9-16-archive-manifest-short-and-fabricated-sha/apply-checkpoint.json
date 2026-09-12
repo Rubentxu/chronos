@@ -46,5 +46,8 @@
   "ledger_state": {
     "available": false,
     "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02..m9-15 pattern)"
-  }
+  },
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived"
 }

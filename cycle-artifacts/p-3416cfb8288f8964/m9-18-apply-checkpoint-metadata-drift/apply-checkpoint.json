@@ -1,6 +1,6 @@
 {
   "cycle_id": "p-3416cfb8288f8964/m9-18-apply-checkpoint-metadata-drift",
-  "change": "backfill archived_at for m9-11/12/13 apply-checkpoint.json + add findings_introduced to 7 prior cycles + normalize status (closed → CLOSED) + add cross-check #11 to vault-drift-sweep",
+  "change": "backfill archived_at for m9-11/12/13 apply-checkpoint.json + add findings_introduced to 7 prior cycles + normalize status (closed \u2192 CLOSED) + add cross-check #11 to vault-drift-sweep",
   "path": "B-direct",
   "status": "CLOSED",
   "head_sha": "6dce3736df06d4fe09db861ad43a3667c0f0bc25",
@@ -15,7 +15,7 @@
   "released_at": "2026-09-12T10:44:30Z",
   "archived_at": "2026-09-12T10:44:45Z",
   "commits_since_base": [
-    "6dce373fix(m9-18): apply-checkpoint metadata drift — archived_at backfill + findings_introduced + status normalization + cross-check #11"
+    "6dce373fix(m9-18): apply-checkpoint metadata drift \u2014 archived_at backfill + findings_introduced + status normalization + cross-check #11"
   ],
   "artifacts": {
     "merge_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-18-apply-checkpoint-metadata-drift/merge-receipt.md",
@@ -32,7 +32,7 @@
     "cc-001-god-module",
     "cc-004-implicit-io-toctou",
     "m9-02-R4 (feature: counterexample_bundle_events MCP tool)",
-    "schema-v1-verify-findings (m9-03, m9-04 use sddk.verify-finding/v1 schema with nested subject.head; accepted by design — pre-m9-11 docs-peel convention)"
+    "schema-v1-verify-findings (m9-03, m9-04 use sddk.verify-finding/v1 schema with nested subject.head; accepted by design \u2014 pre-m9-11 docs-peel convention)"
   ],
   "notes": [
     "m9-14 introduced the archived_at field but didn't backfill m9-11/12/13 apply-checkpoint.json. Backfill from first-commit-time of each cycle's archive-manifest: m9-11=08:26:41Z, m9-12=08:55:40Z, m9-13=09:59:02Z (UTC).",
@@ -47,5 +47,8 @@
   "ledger_state": {
     "available": false,
     "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02..m9-17 pattern)"
-  }
+  },
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived"
 }

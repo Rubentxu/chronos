@@ -89,5 +89,8 @@
   },
   "findings_introduced": {
     "no_action": []
-  }
+  },
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived"
 }

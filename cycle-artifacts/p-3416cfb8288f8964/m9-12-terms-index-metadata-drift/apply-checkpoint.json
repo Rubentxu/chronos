@@ -1,6 +1,6 @@
 {
   "cycle_id": "p-3416cfb8288f8964/m9-12-terms-index-metadata-drift",
-  "change": "fix terms/index.md Last archive metadata drift (m9-10 → m9-11) + add cross-check #6 to vault-drift-sweep",
+  "change": "fix terms/index.md Last archive metadata drift (m9-10 \u2192 m9-11) + add cross-check #6 to vault-drift-sweep",
   "path": "B-direct",
   "status": "CLOSED",
   "head_sha": "0012f1242cef949efc4cbd4c8d419a135ee3cf8a",
@@ -15,7 +15,7 @@
   "released_at": "2026-09-12T08:54:00Z",
   "archived_at": "2026-09-12T08:55:40Z",
   "commits_since_base": [
-    "0012f12fix(m9-12): terms/index.md Last archive metadata drift (m9-10 → m9-11) + add cross-check #6 to vault-drift-sweep"
+    "0012f12fix(m9-12): terms/index.md Last archive metadata drift (m9-10 \u2192 m9-11) + add cross-check #6 to vault-drift-sweep"
   ],
   "artifacts": {
     "merge_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-12-terms-index-metadata-drift/merge-receipt.md",
@@ -48,5 +48,8 @@
   "ledger_state": {
     "available": false,
     "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02..m9-11 pattern)"
-  }
+  },
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived"
 }

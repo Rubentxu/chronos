@@ -32,7 +32,7 @@
     "cc-001-god-module",
     "cc-004-implicit-io-toctou",
     "m9-02-R4 (feature: counterexample_bundle_events MCP tool)",
-    "schema-v1-verify-findings (m9-03, m9-04 use sddk.verify-finding/v1 schema with nested subject.head; accepted by design — pre-m9-11 docs-peel convention)"
+    "schema-v1-verify-findings (m9-03, m9-04 use sddk.verify-finding/v1 schema with nested subject.head; accepted by design \u2014 pre-m9-11 docs-peel convention)"
   ],
   "notes": [
     "m9-14 fixed m9-11 apply-checkpoint.json fabricated SHA but missed: m9-11 release-receipt.md, merge-receipt.md, release-report.md, verify-report.md (still short `cd0115f`); m9-11 verify-findings.json subject_sha (still fabricated); m9-14's own merge-receipt.md + release-receipt.md (still short `3869906`).",
@@ -48,5 +48,8 @@
   "ledger_state": {
     "available": false,
     "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02..m9-16 pattern)"
-  }
+  },
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived"
 }

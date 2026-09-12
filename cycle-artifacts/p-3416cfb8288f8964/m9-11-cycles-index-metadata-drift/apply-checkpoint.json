@@ -1,6 +1,6 @@
 {
   "cycle_id": "p-3416cfb8288f8964/m9-11-cycles-index-metadata-drift",
-  "change": "fix cycles/index.md Total cycles metadata drift (22→26) + add cross-check #5 to vault-drift-sweep procedure",
+  "change": "fix cycles/index.md Total cycles metadata drift (22\u219226) + add cross-check #5 to vault-drift-sweep procedure",
   "path": "B-direct",
   "status": "CLOSED",
   "head_sha": "cd0115fd8f942058cde109c72a975cab7ea7473c",
@@ -15,7 +15,7 @@
   "released_at": "2026-09-12T08:25:00Z",
   "archived_at": "2026-09-12T08:26:41Z",
   "commits_since_base": [
-    "cd0115fix(m9-11): cycles/index.md Total cycles metadata drift (22→26) + add cross-check #5 to vault-drift-sweep procedure"
+    "cd0115fix(m9-11): cycles/index.md Total cycles metadata drift (22\u219226) + add cross-check #5 to vault-drift-sweep procedure"
   ],
   "artifacts": {
     "merge_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-11-cycles-index-metadata-drift/merge-receipt.md",
@@ -46,5 +46,8 @@
   "ledger_state": {
     "available": false,
     "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02..m9-10 pattern)"
-  }
+  },
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived"
 }
