@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -527,6 +527,7 @@ Cycles that established this procedure:
 - **m9-19** (vault hygiene: route field normalization + main_sha convention + empty folder cleanup, v0.7.17) → cross-check #12
 - **m9-20** (vault hygiene: status fields backfill — verify_status + release_status + archive_status, v0.7.18) → cross-check #13
 - **m9-21** (vault hygiene: verbose route normalization + legacy field prohibition for m9-19+ cycles, v0.7.19) → cross-check #14
+- **m9-22** (vault hygiene: created_at + title + summary backfill for 16 prior cycles, v0.7.20) → cross-check #15
 
 ### 13. apply-checkpoint.json `*_status` field backfill (closed by m9-20)
 
@@ -620,6 +621,36 @@ authored a clean schema without them, and m9-20 followed suit. m9-21
 adds cross-check #14 to enforce that m9-19+ cycles stay clean and
 also normalizes the verbose `"B-direct (T0 + light-verify)"` route
 strings to bare `"B-direct"` for m9-11..m9-18.
+
+### 15. apply-checkpoint.json required fields (created_at, title, summary) backfill (closed by m9-22)
+
+```python
+import json, os
+required = ['created_at', 'title', 'summary']
+for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
+    ckpt = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/apply-checkpoint.json'
+    if not os.path.exists(ckpt): continue
+    d = json.load(open(ckpt))
+    missing = [f for f in required if f not in d or not d.get(f)]
+    if missing:
+        print(f"DRIFT: {folder}: missing {missing}")
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** A cycle is missing `created_at`, `title`, or
+`summary`. These were present in m9-19+ but missing on the 16 prior
+cycles (m9-03..m9-18).
+
+**Resolution:**
+- `created_at`: extract from git log (first commit touching the
+  apply-checkpoint.json), normalized to UTC.
+- `title`: derive from the cycle folder slug (kebab-case → spaces).
+- `summary`: extract first non-heading, non-table, non-code line from
+  the cycle's `merge-receipt.md`.
+
+**History:** m9-22 closed this drift class after m9-19 introduced
+the fields without backfill.
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class

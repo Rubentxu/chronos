@@ -51,5 +51,8 @@
   },
   "verify_status": "passed",
   "release_status": "released",
-  "archive_status": "archived"
+  "archive_status": "archived",
+  "created_at": "2026-09-12T09:59:02Z",
+  "title": "change entry base sha drift",
+  "summary": "The `Base SHA` field in"
 }

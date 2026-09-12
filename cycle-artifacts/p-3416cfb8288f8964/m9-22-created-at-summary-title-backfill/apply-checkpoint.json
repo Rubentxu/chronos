@@ -1,0 +1,23 @@
+{
+  "cycle_id": "m9-22",
+  "title": "created_at + title + summary backfill",
+  "path": "B-direct",
+  "route": "B-direct",
+  "base_sha": "71e7d1171d40b6f137504db470c96e65a9be7f17",
+  "head_sha": "e87a25c29b4529b94e7823430e1cd1df3b5cbd0a",
+  "main_sha": "e87a25c29b4529b94e7823430e1cd1df3b5cbd0a",
+  "remote_tag_peel": "e87a25c29b4529b94e7823430e1cd1df3b5cbd0a",
+  "peel_match": true,
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived",
+  "status": "CLOSED",
+  "findings_introduced": {
+    "no_action": []
+  },
+  "verified_at": "2026-09-12T11:22:00Z",
+  "released_at": "2026-09-12T11:22:54Z",
+  "archived_at": "2026-09-12T11:23:14Z",
+  "created_at": "2026-09-12T11:22:00Z",
+  "summary": "Backfill created_at, title, and summary on 16 prior CLOSED cycles (m9-03..m9-18). m9-19 introduced these fields without backfill. Adds cross-check #15."
+}
