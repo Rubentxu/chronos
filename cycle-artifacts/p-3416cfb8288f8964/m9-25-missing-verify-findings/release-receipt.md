@@ -5,4 +5,4 @@
 | Cycle | m9-25-missing-verify-findings |
 | Tag | `v0.7.23` |
 | Pee | fix commit (chronos convention) |
-| Released at | TBD |
+| Released at | 2026-09-12T11:27:41Z |
