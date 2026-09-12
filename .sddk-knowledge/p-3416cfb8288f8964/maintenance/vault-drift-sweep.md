@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -1123,6 +1123,38 @@ For archive-manifest.md:
 no `base_sha`. m9-01..m9-10 archive-manifest.md had `Published SHA`
 instead of `Head SHA`. m9-34 closes both drift classes and adds C26
 to enforce them.
+
+### 27. release-report.md title format `# Release Report — m9-NN` (closed by m9-35)
+
+```python
+import glob, re
+
+errors = 0
+for f in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/release-report.md')):
+    m = re.search(r'm9-(\d+)', f)
+    if not m: continue
+    n = m.group(1)
+    expected = f"# Release Report — m9-{n}"
+    actual = open(f).readline().strip()
+    if actual != expected:
+        print(f"DRIFT: {f}: actual={actual!r}")
+
+print(f'Total: {errors}')
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** A release-report.md uses an outdated title format
+(e.g. `# m9-NN: Release Report`).
+
+**Resolution:**
+
+1. Convert `# m9-NN: Release Report` to `# Release Report — m9-NN`
+   (canonical format introduced in m9-28).
+
+**History:** m9-19..m9-27 used `# m9-NN: Release Report` format;
+m9-28+ uses `# Release Report — m9-NN`. m9-35 normalizes m9-19..m9-27
+and adds C27 to enforce the canonical format.
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class

@@ -1,4 +1,4 @@
-# m9-24: Release Report
+# Release Report — m9-24
 
 | Field | Value |
 |---|---|

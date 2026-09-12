@@ -1,0 +1,12 @@
+{
+  "cycle_id": "m9-35",
+  "subject": {
+    "head_sha": "TBD",
+    "base_sha": "dbea58e61921eecb4b1b90f6f94dad21fea2e440"
+  },
+  "verdict": "pass",
+  "findings": [],
+  "lens_summary": {
+    "drift": "9 release-report.md files (m9-19..m9-27) used '# m9-NN: Release Report' format; m9-28+ uses '# Release Report — m9-NN'. Normalized m9-19..m9-27 to canonical format. Added cross-check #27."
+  }
+}

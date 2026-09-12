@@ -1,0 +1,12 @@
+{
+  "cycle_id": "m9-35",
+  "head_sha": "TBD",
+  "base_sha": "dbea58e61921eecb4b1b90f6f94dad21fea2e440",
+  "created_at": "2026-09-12T13:13Z",
+  "route": "B-direct",
+  "summary": "Normalize release-report.md title format across 9 cycles (m9-19..m9-27) from '# m9-NN: Release Report' to canonical '# Release Report — m9-NN' format. Adds cross-check #27.",
+  "findings_closed": [],
+  "findings_introduced": {
+    "no_action": []
+  }
+}
