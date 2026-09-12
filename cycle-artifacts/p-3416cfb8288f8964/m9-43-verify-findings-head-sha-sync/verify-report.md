@@ -1,5 +1,9 @@
 # Verify Report — m9-43
 
+**Cycle**: m9-43-verify-findings-head-sha-sync
+**Path**: B-direct
+
+
 ## Summary
 
 One drift class closed:

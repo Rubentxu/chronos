@@ -1,5 +1,9 @@
 # Verify Report — m9-31
 
+**Cycle**: m9-31-merge-receipt-fields-normalize
+**Path**: B-direct
+
+
 ## Subject
 
 - base_sha: `6c428f76ec2f57bd210e936ab7b2f9a40e207d63`

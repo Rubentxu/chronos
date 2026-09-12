@@ -1,5 +1,9 @@
 # Verify Report — m9-03
 
+**Cycle**: m9-03-side-table-debt-cleanup
+**Path**: B-direct
+
+
 ## Subject
 
 | Base | Head | Diff digest | CWD | Verified at |

@@ -1,5 +1,9 @@
 # Verify Report — m9-13
 
+**Cycle**: m9-13-change-entry-base-sha-drift
+**Path**: B-direct
+
+
 ## Subject
 
 `v0.7.11` on `fix/m9-13-change-entry-base-sha-drift` (peel matches

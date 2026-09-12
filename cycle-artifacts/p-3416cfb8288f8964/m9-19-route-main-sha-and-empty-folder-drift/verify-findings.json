@@ -35,5 +35,8 @@
       "resolution": "New cross-check #12 will catch any future recurrence of all 3 drift classes."
     }
   ],
-  "verdict": "pass_with_findings"
+  "verdict": "pass_with_findings",
+  "lens_summary": {
+    "drift": "Drift closure cycle. See verify-report.md and change-entry.md."
+  }
 }

@@ -1,5 +1,9 @@
 # Verify Report — m9-39
 
+**Cycle**: m9-39-archive-manifest-base-sha-backfill
+**Path**: B-direct
+
+
 ## Summary
 
 Two drift classes closed:

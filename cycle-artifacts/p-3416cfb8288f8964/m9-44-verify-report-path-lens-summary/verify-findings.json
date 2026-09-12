@@ -1,0 +1,12 @@
+{
+  "cycle_id": "m9-44",
+  "subject": {
+    "head_sha": "TBD",
+    "base_sha": "95b2dfb77f5032cb1af9a09c388e398fe063d5eb"
+  },
+  "verdict": "pass",
+  "findings": [],
+  "lens_summary": {
+    "drift": "Three drift classes closed: verify-report.md Path (37), verify-findings.json lens_summary (24), verify-report.md Findings prose (2). Added cross-check #36."
+  }
+}

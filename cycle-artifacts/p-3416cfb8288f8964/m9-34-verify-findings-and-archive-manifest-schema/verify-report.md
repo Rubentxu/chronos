@@ -1,5 +1,9 @@
 # Verify Report — m9-34
 
+**Cycle**: m9-34-verify-findings-and-archive-manifest-schema
+**Path**: B-direct
+
+
 ## Summary
 
 Two drift classes closed:

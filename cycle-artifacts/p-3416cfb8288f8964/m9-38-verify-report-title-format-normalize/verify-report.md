@@ -1,5 +1,9 @@
 # Verify Report — m9-38
 
+**Cycle**: m9-38-verify-report-title-format-normalize
+**Path**: B-direct
+
+
 ## Summary
 
 Four drift classes closed:

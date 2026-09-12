@@ -1,5 +1,9 @@
 # Verify Report — m9-15
 
+**Cycle**: m9-15-m9-12-m9-13-short-sha
+**Path**: B-direct
+
+
 ## Subject
 
 `v0.7.13` on `fix/m9-15-m9-12-m9-13-short-sha` (peel matches

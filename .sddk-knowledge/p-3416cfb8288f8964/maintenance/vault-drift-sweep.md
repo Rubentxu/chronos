@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34**, or **check 35** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34**, or **check 35**, or **check 36** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -1575,3 +1575,55 @@ doesn't match the corresponding apply-checkpoint.json `head_sha`.
 fix commit SHA (since the tag peels to fix) but apply-checkpoint.json
 uses the docs commit SHA (per fix-peel convention). m9-43 syncs
 verify-findings to match apply-checkpoint.
+
+### 36. verify-report.md Path field + verify-findings.json lens_summary + verify-report.md Findings format (closed by m9-44)
+
+```python
+import json, glob, re, os
+
+errors = 0
+
+# Part A: verify-report.md has Path field
+for f in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/verify-report.md')):
+    content = open(f).read()
+    if 'Path' not in content[:500] and 'route' not in content[:500]:
+        print(f"DRIFT: {f}: no Path field")
+
+# Part B: verify-findings.json has lens_summary (or legacy summary)
+for f in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/verify-findings.json')):
+    d = json.load(open(f))
+    if 'lens_summary' not in d and 'summary' not in d:
+        print(f"DRIFT: {f}: no lens_summary or summary")
+
+# Part C: verify-report.md has Findings section with table or "None" prose
+for f in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/verify-report.md')):
+    content = open(f).read()
+    # Accept either "## Findings" or "## Findings Closed"
+    m = re.search(r'## Findings[^\n]*\n+(.*?)(?=\n## |\Z)', content, re.DOTALL)
+    if m:
+        body = m.group(1).strip()
+        if body and not re.search(r'\|\s*ID\s*\|', body) and not re.search(r'^None', body, re.MULTILINE):
+            print(f"DRIFT: {f}: Findings body has no table or 'None' prose")
+
+print(f'Total: {errors}')
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:**
+- A: verify-report.md missing `**Path**` field.
+- B: verify-findings.json missing `lens_summary` field.
+- C: verify-report.md `## Findings` section has prose that isn't a table
+  or `None` marker.
+
+**Resolution:**
+
+- A: Add `**Path**: <route>` line, sourced from apply-checkpoint.json.
+- B: Add `lens_summary` field with `drift` key describing what was closed.
+- C: Either convert prose to a table, or replace with `None — clean state.`
+  prose marker.
+
+**History:** m9-03..m9-43 verify-report.md didn't have `Path` field.
+m9-44 backfills. m9-04..m9-27 verify-findings.json lacked
+`lens_summary`. m9-44 backfills. m9-09, m9-10 verify-report.md had
+non-canonical Findings prose; m9-44 normalizes to `None — clean state.`.

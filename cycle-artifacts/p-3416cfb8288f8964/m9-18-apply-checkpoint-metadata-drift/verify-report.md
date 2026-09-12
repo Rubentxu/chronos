@@ -1,5 +1,9 @@
 # Verify Report — m9-18
 
+**Cycle**: m9-18-apply-checkpoint-metadata-drift
+**Path**: B-direct
+
+
 ## Subject
 
 `v0.7.16` on `fix/m9-18-apply-checkpoint-metadata-drift` (peel matches `6dce3736df06d4fe09db861ad43a3667c0f0bc25`).

@@ -1,5 +1,9 @@
 # Verify Report — m9-16
 
+**Cycle**: m9-16-archive-manifest-short-and-fabricated-sha
+**Path**: B-direct
+
+
 ## Subject
 
 `v0.7.14` on `fix/m9-16-archive-manifest-short-and-fabricated-sha` (peel matches `eb5110dfe1f1d14eab85e6052f1f7cbb86e2f384`).

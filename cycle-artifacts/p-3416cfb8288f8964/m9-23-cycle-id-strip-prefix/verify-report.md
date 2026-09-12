@@ -1,5 +1,9 @@
 # Verify Report — m9-23
 
+**Cycle**: m9-23-cycle-id-strip-prefix
+**Path**: B-direct
+
+
 | Field | Value |
 |---|---|
 | Cycle | m9-23-cycle-id-strip-prefix |

@@ -21,5 +21,8 @@
       "resolution": "Cross-check #13 will catch any future 'new field added, no backfill' drift."
     }
   ],
-  "verdict": "pass_with_findings"
+  "verdict": "pass_with_findings",
+  "lens_summary": {
+    "drift": "Drift closure cycle. See verify-report.md and change-entry.md."
+  }
 }

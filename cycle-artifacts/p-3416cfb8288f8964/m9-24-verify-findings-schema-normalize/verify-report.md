@@ -1,5 +1,9 @@
 # Verify Report — m9-24
 
+**Cycle**: m9-24-verify-findings-schema-normalize
+**Path**: B-direct
+
+
 | Field | Value |
 |---|---|
 | Cycle | m9-24-verify-findings-schema-normalize |

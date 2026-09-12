@@ -1,5 +1,9 @@
 # Verify Report — m9-07
 
+**Cycle**: m9-07-coup-01-invariant-assertion
+**Path**: B-direct
+
+
 ## Subject
 
 | Base | Head | CWD | Verified at |

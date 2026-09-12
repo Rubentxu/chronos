@@ -1,5 +1,9 @@
 # Verify Report — m9-33
 
+**Cycle**: m9-33-change-entry-title-format-normalize
+**Path**: B-direct
+
+
 ## Subject
 
 - base_sha: `5bfcfedaf9687050a8090a31f999738ff082a081`

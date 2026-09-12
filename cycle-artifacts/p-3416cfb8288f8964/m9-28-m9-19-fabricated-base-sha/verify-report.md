@@ -1,5 +1,9 @@
 # Verify Report — m9-28
 
+**Cycle**: m9-28-m9-19-fabricated-base-sha
+**Path**: B-direct
+
+
 ## Subject
 
 - base_sha: `8eb648779071f9a634e2439754034f1288929c62`

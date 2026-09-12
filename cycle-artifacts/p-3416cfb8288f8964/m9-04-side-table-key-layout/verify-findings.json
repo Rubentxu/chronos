@@ -97,5 +97,8 @@
         "crates/chronos-cli/tests/replay_integration.rs:106-108 asserts report.events_in_bundle == 5 after save+replay round-trip"
       ]
     }
+  },
+  "lens_summary": {
+    "drift": "Drift closure cycle. See verify-report.md and change-entry.md."
   }
 }

@@ -14,5 +14,8 @@
       "resolution": "Move the free-text note from no_action to a new findings_introduced.notes key. Add cross-check #19."
     }
   ],
-  "verdict": "pass_with_findings"
+  "verdict": "pass_with_findings",
+  "lens_summary": {
+    "drift": "Drift closure cycle. See verify-report.md and change-entry.md."
+  }
 }

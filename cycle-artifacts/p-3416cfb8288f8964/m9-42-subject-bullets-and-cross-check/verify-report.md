@@ -1,5 +1,9 @@
 # Verify Report — m9-42
 
+**Cycle**: m9-42-subject-bullets-and-cross-check
+**Path**: B-direct
+
+
 ## Summary
 
 Three drift classes closed:

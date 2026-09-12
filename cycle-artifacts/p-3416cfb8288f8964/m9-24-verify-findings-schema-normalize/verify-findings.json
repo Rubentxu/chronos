@@ -21,5 +21,8 @@
       "resolution": "Cross-check #17 enforces subject must be a dict."
     }
   ],
-  "verdict": "pass_with_findings"
+  "verdict": "pass_with_findings",
+  "lens_summary": {
+    "drift": "Drift closure cycle. See verify-report.md and change-entry.md."
+  }
 }

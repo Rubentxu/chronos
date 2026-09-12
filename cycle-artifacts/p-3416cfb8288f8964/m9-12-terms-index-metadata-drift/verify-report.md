@@ -1,5 +1,9 @@
 # Verify Report — m9-12
 
+**Cycle**: m9-12-terms-index-metadata-drift
+**Path**: B-direct
+
+
 ## Subject
 
 `v0.7.10` on `fix/m9-12-terms-index-metadata-drift` (peel matches

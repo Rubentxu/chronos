@@ -1,5 +1,9 @@
 # Verify Report — m9-27
 
+**Cycle**: m9-27-vacuous-peel-note-move
+**Path**: B-direct
+
+
 | Field | Value |
 |---|---|
 | Cycle | m9-27-vacuous-peel-note-move |

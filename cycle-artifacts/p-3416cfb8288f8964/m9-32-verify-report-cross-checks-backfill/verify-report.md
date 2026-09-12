@@ -1,5 +1,9 @@
 # Verify Report — m9-32
 
+**Cycle**: m9-32-verify-report-cross-checks-backfill
+**Path**: B-direct
+
+
 ## Subject
 
 - base_sha: `128a224dff9924e087647013df32edeb965efa75`

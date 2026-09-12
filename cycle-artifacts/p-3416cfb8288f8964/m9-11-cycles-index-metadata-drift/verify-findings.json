@@ -21,5 +21,8 @@
       "diff_size"
     ]
   },
-  "verdict": "pass"
+  "verdict": "pass",
+  "lens_summary": {
+    "drift": "Drift closure cycle. See verify-report.md and change-entry.md."
+  }
 }

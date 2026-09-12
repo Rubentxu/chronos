@@ -21,5 +21,8 @@
       "resolution": "Cross-check #14 prevents future cycles from regressing to verbose route strings or reintroducing schema-v1 fields."
     }
   ],
-  "verdict": "pass_with_findings"
+  "verdict": "pass_with_findings",
+  "lens_summary": {
+    "drift": "Drift closure cycle. See verify-report.md and change-entry.md."
+  }
 }

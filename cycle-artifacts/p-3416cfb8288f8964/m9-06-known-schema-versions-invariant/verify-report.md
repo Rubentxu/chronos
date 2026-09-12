@@ -1,5 +1,9 @@
 # Verify Report — m9-06
 
+**Cycle**: m9-06-known-schema-versions-invariant
+**Path**: B-direct
+
+
 ## Subject
 
 | Base | Head | CWD | Verified at |

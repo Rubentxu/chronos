@@ -1,5 +1,9 @@
 # Verify Report — m9-17
 
+**Cycle**: m9-17-verify-findings-and-markdown-sha-drift
+**Path**: B-direct
+
+
 ## Subject
 
 `v0.7.15` on `fix/m9-17-verify-findings-and-markdown-sha-drift` (peel matches `134dc7525312275c447db8f5996740ff7c102a02`).

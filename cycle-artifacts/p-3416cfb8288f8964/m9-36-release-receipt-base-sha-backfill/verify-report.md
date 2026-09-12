@@ -1,5 +1,9 @@
 # Verify Report — m9-36
 
+**Cycle**: m9-36-release-receipt-base-sha-backfill
+**Path**: B-direct
+
+
 ## Summary
 
 Two related drift classes closed in m9-03..m9-33 release-receipt.md:

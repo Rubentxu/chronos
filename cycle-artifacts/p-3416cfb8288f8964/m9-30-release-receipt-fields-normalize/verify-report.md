@@ -1,5 +1,9 @@
 # Verify Report — m9-30
 
+**Cycle**: m9-30-release-receipt-fields-normalize
+**Path**: B-direct
+
+
 ## Subject
 
 - base_sha: `f481a61169d3ec33a6ec0e236a938f231f303cf8`
