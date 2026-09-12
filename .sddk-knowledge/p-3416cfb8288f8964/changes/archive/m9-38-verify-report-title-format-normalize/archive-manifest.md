@@ -4,7 +4,7 @@
 |---|---|
 | Cycle | m9-38-verify-report-title-format-normalize |
 | Head SHA | `e8f805f350b47b7b1cad6c1ac507ae868b13c07e` |
-| Base SHA | `6bc6781465f9dff5a59bd4d8e8a99930dba3e7e5` |
+| Base SHA | `6bc67812d66548a3e0ee48f5323d45c4a1ed13d8` |
 | Tag | `v0.7.36` |
 | Path | B-direct |
 | Date | 2026-09-12 |

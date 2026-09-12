@@ -1,0 +1,37 @@
+{
+  "schema": "verify-finding.schema.json",
+  "subject": {
+    "base": "cbb93847228a9062de8e093dfe452c257233228c",
+    "head_initial": "PENDING",
+    "head_final": "PENDING",
+    "diff_digest": "PENDING",
+    "working_tree_clean": true,
+    "verified_at": "2026-09-12T17:27:00Z",
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
+    "verdict": "passed"
+  },
+  "findings": [
+    {
+      "finding_id": "FIND-M9-55-FABRICATED-BASE-SHA",
+      "rule_id": "vault_hygiene.sha_fabrication",
+      "severity": "high",
+      "summary": "m9-38's base_sha (6bc6781465f9dff5a59bd4d8e8a99930dba3e7e5) does not exist in git, propagated to 7 artifact files",
+      "subject": {
+        "cycle": "m9-38-verify-report-title-format-normalize",
+        "files": [
+          "cycle-artifacts/p-3416cfb8288f8964/m9-38-verify-report-title-format-normalize/apply-checkpoint.json",
+          "cycle-artifacts/p-3416cfb8288f8964/m9-38-verify-report-title-format-normalize/merge-receipt.md",
+          "cycle-artifacts/p-3416cfb8288f8964/m9-38-verify-report-title-format-normalize/release-receipt.md",
+          "cycle-artifacts/p-3416cfb8288f8964/m9-38-verify-report-title-format-normalize/verify-findings.json",
+          "cycle-artifacts/p-3416cfb8288f8964/m9-38-verify-report-title-format-normalize/verify-report.md",
+          ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-38-verify-report-title-format-normalize/change-entry.md",
+          ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-38-verify-report-title-format-normalize/archive-manifest.md"
+        ],
+        "fabricated_sha": "6bc6781465f9dff5a59bd4d8e8a99930dba3e7e5",
+        "real_sha": "6bc67812d66548a3e0ee48f5323d45c4a1ed13d8"
+      },
+      "lens_summary": "Detection: ran `git cat-file -e $base_sha` for every apply-checkpoint's base_sha field; m9-38 returned non-zero. Cause: transcription error during m9-38 fix, the literal SHA had 6 different hex chars from the real commit `6bc67812d66548a3e0ee48f5323d45c4a1ed13d8` (parent of m9-38 head on the fix/m9-38-* branch). Fix: replace fabricated SHA with real SHA in all 7 files; verify with `git cat-file -t` returns 'commit'."
+    }
+  ],
+  "lens_summary": "Pre-existing vault hygiene check missed fabricated base_sha across m9-38 artifacts. Fix: replace 7 references to non-existent SHA with the real commit parent-of-head, add cross-check #47."
+}

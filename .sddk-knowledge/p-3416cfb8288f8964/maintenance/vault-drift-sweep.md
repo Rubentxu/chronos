@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34**, or **check 35**, or **check 36**, or **check 37**, or **check 38**, or **check 39**, or **check 40**, or **check 41**, or **check 42**, or **check 43**, or **check 44**, or **check 45**, or **check 46** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34**, or **check 35**, or **check 36**, or **check 37**, or **check 38**, or **check 39**, or **check 40**, or **check 41**, or **check 42**, or **check 43**, or **check 44**, or **check 45**, or **check 46**, or **check 47** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -560,6 +560,7 @@ Cycles that established this procedure:
 - **m9-52** (vault hygiene: verify-report `## Summary` section across 7 files, v0.7.50) → cross-check #44
 - **m9-53** (vault hygiene: cycles/index.md short-SHA expansion (35 rows), v0.7.51) → cross-check #45
 - **m9-54** (vault hygiene: stale-branch cleanup (44 local + 28 remote), v0.7.52) → cross-check #46
+- **m9-55** (vault hygiene: apply-checkpoint base_sha fabrication fix (m9-38 reachability), v0.7.53) → cross-check #47
 
 ### 13. apply-checkpoint.json `*_status` field backfill (closed by m9-20)
 
@@ -2056,3 +2057,53 @@ branches. Same applies to remote.
 
 **History:** m9-54 closed this drift class after 53 m9-cycles
 accumulated 44 local + 28 remote stale branches.
+
+### 47. apply-checkpoint.json `base_sha` must exist in git (closed by m9-55)
+
+```python
+import json, os, subprocess
+
+errors = 0
+for d in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
+    if not d.startswith('m9-'):
+        continue
+    p = f'cycle-artifacts/p-3416cfb8288f8964/{d}/apply-checkpoint.json'
+    if not os.path.exists(p):
+        continue
+    j = json.load(open(p))
+    for field in ('base_sha', 'head_sha'):
+        sha = j.get(field)
+        if not sha:
+            continue
+        res = subprocess.run(['git', 'cat-file', '-t', sha],
+                             capture_output=True)
+        if res.returncode != 0 or res.stdout.decode().strip() != 'commit':
+            errors += 1
+            print(f"DRIFT: {d}.{field} = {sha} (does not exist in git or is not a commit)")
+
+print(f'Total: {errors}')
+```
+
+**Expected output (clean):** `Total: 0`.
+
+**If `DRIFT`:** apply-checkpoint stores a `base_sha` or `head_sha`
+that is not a reachable git commit. This is a fabrication drift:
+the SHA passes format validation (40 hex chars) but fails
+reachability validation (`git cat-file -t` exit 128).
+
+**Resolution:**
+- For `base_sha`: the real base is the parent of the cycle's first
+  commit on the cycle branch. Run `git reflog --all | grep <cycle>`
+  to find when the `fix/<slug>` branch was created; the commit
+  preceding that is the cycle's base.
+- For `head_sha`: the cycle's actual fix commit. Reachable via
+  `git log --all --pretty=format:'%H %s' --grep=<cycle-marker>`.
+- Mechanical `sed` replacement to all 7 artifact files
+  (apply-checkpoint, merge-receipt, release-receipt, verify-findings,
+  verify-report, change-entry, archive-manifest).
+
+**History:** m9-55 closed this drift class. m9-38's `base_sha`
+(`6bc6781465f9dff5a59bd4d8e8a99930dba3e7e5`) was a transcription
+error of the real parent-of-head
+(`6bc67812d66548a3e0ee48f5323d45c4a1ed13d8`). Missed by 46 prior
+cross-checks that validated format only.

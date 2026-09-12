@@ -38,7 +38,7 @@ Cross-check #30 added to vault-drift-sweep.md.
 
 ## Subject
 
-- base_sha: `6bc6781465f9dff5a59bd4d8e8a99930dba3e7e5`
+- base_sha: `6bc67812d66548a3e0ee48f5323d45c4a1ed13d8`
 - head_sha: see release-receipt
 - cycle: m9-38
 - branch: `fix/m9-38-verify-report-title-format-normalize`
