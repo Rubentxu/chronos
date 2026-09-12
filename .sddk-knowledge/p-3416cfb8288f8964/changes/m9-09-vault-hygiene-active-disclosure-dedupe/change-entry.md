@@ -7,14 +7,10 @@ Drift closure cycle for this milestone.
 
 ## Subject
 
-| Campo | Valor |
-|---|---|
-| Cycle ID | `m9-09-vault-hygiene-active-disclosure-dedupe` |
-| Path | `B-direct` |
-| Status | CLOSED |
-| Base SHA | `c183ad1822423419ffb7d5f92a8d5ac46423d653` |
-| Head SHA | `07e731d61424160c4f67d769db00a171837ba62c` |
-| Tag | `v0.7.7` (annotated, peel matches published SHA) |
+- cycle: m9-09
+- route: B-direct
+- base_sha: `c183ad1822423419ffb7d5f92a8d5ac46423d653`
+- head_sha: `07e731d61424160c4f67d769db00a171837ba62c`
 
 ## Commits
 
@@ -63,6 +59,10 @@ This cycle closes **no debt findings**. It is a documentation-drift
 hygiene fix only. The `m9-01-R4` disclosure was already terminated by
 m9-06; the change is to remove the duplicate that left the disclosure
 listed in both Active and Terminated sections.
+
+## Cross-check
+
+Cross-check C1-C10 added to `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`.
 
 ## Files changed
 

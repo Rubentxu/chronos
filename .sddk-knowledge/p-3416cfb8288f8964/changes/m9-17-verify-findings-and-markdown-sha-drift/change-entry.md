@@ -43,6 +43,10 @@ m9-17 closes the residual drift across 4 file types × 4 prior cycles:
 Adds cross-check #10 to vault-drift-sweep.md covering all four file
 types (verify-findings, release-receipt, merge-receipt, change-entry).
 
+## Cross-check
+
+Cross-check C10 added to `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`.
+
 ## Files changed
 
 - `cycle-artifacts/p-3416cfb8288f8964/m9-17-verify-findings-and-markdown-sha-drift/apply-checkpoint.json`

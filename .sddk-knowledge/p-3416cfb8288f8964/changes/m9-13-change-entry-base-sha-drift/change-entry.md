@@ -7,14 +7,10 @@ Drift closure cycle for this milestone.
 
 ## Subject
 
-| Campo | Valor |
-|---|---|
-| Cycle ID | `m9-13-change-entry-base-sha-drift` |
-| Path | `B-direct` |
-| Status | CLOSED |
-| Base SHA | `bfb9ede` (main @ start of cycle) |
-| Head SHA | `26848cf8b26340d3fde99a3a7f398f2873943982` |
-| Tag | `v0.7.11` (annotated, peel matches published SHA) |
+- cycle: m9-13
+- route: B-direct
+- head_sha: `26848cf8b26340d3fde99a3a7f398f2873943982`
+- base_sha: `bfb9edeeea1a5dd88d8828addf38d0c755c7b5cf`
 
 ## Commits
 
@@ -53,6 +49,10 @@ of the corresponding apply-checkpoint SHA fields.
 - New change-entry: `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-13-change-entry-base-sha-drift/change-entry.md`
   (this file)
 - New archive-manifest: `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-13-change-entry-base-sha-drift/archive-manifest.md`
+
+## Cross-check
+
+Cross-check C1-C10 added to `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`.
 
 ## Files changed
 

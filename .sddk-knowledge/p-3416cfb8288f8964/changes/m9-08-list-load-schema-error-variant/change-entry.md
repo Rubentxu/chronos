@@ -7,14 +7,10 @@ Drift closure cycle for this milestone.
 
 ## Subject
 
-| Campo | Valor |
-|---|---|
-| Cycle ID | `m9-08-list-load-schema-error-variant` |
-| Path | `B-direct` |
-| Status | CLOSED |
-| Base SHA | `50553969309b945156c239fd5a5a7f794431df21` |
-| Head SHA | `d89862bbe67256cf6274be1d71ee7f8857cb8808` |
-| Tag | `v0.7.6` (annotated, peel matches published SHA) |
+- cycle: m9-08
+- route: B-direct
+- base_sha: `50553969309b945156c239fd5a5a7f794431df21`
+- head_sha: `d89862bbe67256cf6274be1d71ee7f8857cb8808`
 
 ## Commits
 
@@ -74,6 +70,10 @@ product call and not the target of this finding.
 | FIND-M9-01-DV-COUP-02 | coupling | List/load policy asymmetry shipped as an error-kind overload (forward-compat reject should not be `Serialization`) | m9-08-list-load-schema-error-variant (`v0.7.6`) |
 
 Verdict: **PASS** (1/1 finding closed)
+
+## Cross-check
+
+Cross-check C1-C10 added to `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`.
 
 ## Files changed
 

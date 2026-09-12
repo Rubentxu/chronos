@@ -47,6 +47,10 @@ sibling fields (`main_sha`, `base_sha`) in the same apply-checkpoint
 files, and inconsistent with the format used by all other m9 cycles
 (m9-01 through m9-09 + m9-10 + m9-11 use full SHAs throughout).
 
+## Cross-check
+
+Cross-check C3 added to `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`.
+
 ## Files changed
 
 - `cycle-artifacts/p-3416cfb8288f8964/m9-15-m9-12-m9-13-short-sha/apply-checkpoint.json`

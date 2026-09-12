@@ -16,5 +16,6 @@
     "warnings": 0,
     "suggestions": 0
   },
-  "verdict": "pass"
+  "verdict": "pass",
+  "cycle_id": "m9-03-side-table-debt-cleanup"
 }

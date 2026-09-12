@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -1467,6 +1467,67 @@ m9-41 adds a placeholder summary.
 
 m9-28..m9-33 verify-report.md didn't have `## Subject` section.
 m9-41 adds it.
+
+### 34. change-entry.md Subject must be bullet list + change-entry Cross-check section + verify-findings cycle_id (closed by m9-42)
+
+```python
+import json, glob, re
+
+errors = 0
+
+# Part A: change-entry.md Subject section uses bullet list format
+for f in sorted(glob.glob('.sddk-knowledge/p-3416cfb8288f8964/changes/m9-*/change-entry.md')):
+    if 'm9-01-schema-versioning' in f or 'm9-02-events-side-table' in f:
+        continue
+    content = open(f).read()
+    # Subject section should have bullet list `- field: value`, not a table
+    m = re.search(r'## Subject\n+(.*?)(?=\n## |\Z)', content, re.DOTALL)
+    if m:
+        subject_body = m.group(1)
+        # Check if it's a table (starts with | Campo | or | Field |)
+        if re.match(r'\s*\|', subject_body):
+            print(f"DRIFT: {f}: Subject is a table, should be bullet list")
+
+# Part B: change-entry.md has ## Cross-check or ## Verification section
+for f in sorted(glob.glob('.sddk-knowledge/p-3416cfb8288f8964/changes/m9-*/change-entry.md')):
+    content = open(f).read()
+    if '## Cross-check' not in content and '## Verification' not in content:
+        print(f"DRIFT: {f}: no ## Cross-check or ## Verification section")
+
+# Part C: verify-findings.json has cycle_id field
+for f in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/verify-findings.json')):
+    d = json.load(open(f))
+    if 'cycle_id' not in d:
+        print(f"DRIFT: {f}: no cycle_id field")
+
+print(f'Total: {errors}')
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:**
+- A: change-entry.md Subject section uses a markdown table
+  (`| Campo | Valor |` or `| Field | Value |`) instead of bullet list.
+- B: change-entry.md is missing `## Cross-check` or `## Verification` section.
+- C: verify-findings.json is missing `cycle_id` field.
+
+**Resolution:**
+
+- A: Convert table rows to bullet list format (`- field: value`).
+  Skip m9-01, m9-02 (pre-vault-reorg, accepted-by-design).
+- B: Add `## Cross-check` section listing cross-check IDs added.
+- C: Add `cycle_id` field to verify-findings.json, using the folder
+  slug as the value.
+
+**History:** m9-03..m9-18 change-entry.md Subject used a markdown
+table. m9-19..m9-33 used top metadata table. m9-34..m9-40 used
+bullet list. m9-42 normalizes m9-03..m9-18 to bullet list.
+
+m9-01..m9-18 change-entry.md didn't have `## Cross-check` section.
+m9-19+ uses `## Cross-check` or `## Verification`. m9-42 backfills.
+
+m9-03 verify-findings.json lacked `cycle_id` (legacy `sddk.verify-finding/v1`
+schema). m9-42 adds it.
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class

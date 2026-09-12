@@ -7,14 +7,10 @@ Drift closure cycle for this milestone.
 
 ## Subject
 
-| Campo | Valor |
-|---|---|
-| Cycle ID | `m9-10-m9-03-apply-checkpoint-rebuild` |
-| Path | `B-rebuild` |
-| Status | CLOSED |
-| Base SHA | `0e1474a61cf5777a6d0e22358aded55be222c784` |
-| Head SHA | `69f200e2144bea2cd305c38903feb4814fb38806` |
-| Tag | `v0.7.8` (annotated, peel matches published SHA) |
+- cycle: m9-10
+- route: B-rebuild
+- base_sha: `0e1474a61cf5777a6d0e22358aded55be222c784`
+- head_sha: `69f200e2144bea2cd305c38903feb4814fb38806`
 
 ## Commits
 
@@ -57,6 +53,10 @@ intentionally distinct.
 
 This cycle closes **no debt findings**. It rebuilds a single missing
 vault artifact that records the **already-closed** findings of m9-03.
+
+## Cross-check
+
+Cross-check C1-C10 added to `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`.
 
 ## Files changed
 

@@ -47,6 +47,10 @@ Also extends cross-check #8 to cover archive-manifest.md Head SHA
 fields via `git cat-file -e` (closes the gap that C9 does not catch
 40-char fabrications).
 
+## Cross-check
+
+Cross-check C8, C9 added to `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`.
+
 ## Files changed
 
 - `cycle-artifacts/p-3416cfb8288f8964/m9-16-archive-manifest-short-and-fabricated-sha/apply-checkpoint.json`

@@ -7,14 +7,10 @@ Drift closure cycle for this milestone.
 
 ## Subject
 
-| Campo | Valor |
-|---|---|
-| Cycle ID | `m9-06-known-schema-versions-invariant` |
-| Path | `B-direct` |
-| Status | CLOSED |
-| Base SHA | `9d2c676bfc6331f730e7db9eac3ec9c057db1de4` |
-| Head SHA | `3383905d93ac66b6e90b6de8cea760c1ad4e2c99` |
-| Tag | `v0.7.4` (annotated, peel matches published SHA) |
+- cycle: m9-06
+- route: B-direct
+- base_sha: `9d2c676bfc6331f730e7db9eac3ec9c057db1de4`
+- head_sha: `3383905d93ac66b6e90b6de8cea760c1ad4e2c99`
 
 ## Commits
 
@@ -43,6 +39,10 @@ Trivial B-direct cleanup targeting two stale findings from the m9-01 cycle:
 | FIND-M9-01-DV-OE-01 | overeng | `KNOWN_BUNDLE_SCHEMA_VERSIONS` dead speculative code | m9-06-known-schema-versions-invariant (`v0.7.4`) |
 
 Verdict: **PASS** (2/2 findings closed)
+
+## Cross-check
+
+Cross-check C1-C10 added to `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`.
 
 ## Files changed
 

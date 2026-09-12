@@ -7,14 +7,10 @@ Drift closure cycle for this milestone.
 
 ## Subject
 
-| Campo | Valor |
-|---|---|
-| Cycle ID | `m9-04-side-table-key-layout` |
-| Path | `A-min` |
-| Status | CLOSED |
-| Base SHA | `eb2cccd6fdfcd4b00bf980453bc40c606fa69885` |
-| Head SHA | `d6b3b8c51c50d2ce6d0fe4f8c804cf793137f0dc` |
-| Tag | `v0.7.2` (annotated, peel matches published SHA) |
+- cycle: m9-04
+- route: A-min
+- base_sha: `eb2cccd6fdfcd4b00bf980453bc40c606fa69885`
+- head_sha: `d6b3b8c51c50d2ce6d0fe4f8c804cf793137f0dc`
 
 ## Commits
 
@@ -71,6 +67,10 @@ A-min schema-migration cycle targeting **FIND-M9-02-DV-PERF-01** (the last open 
 | cc-004-implicit-io-toctou | coupling | LOW | backlog | `save_bundle_record_and_events` opens read-then-write; pre-existing TOCTOU pattern |
 
 Verdict: **PASS** · 1/1 m9-02 finding closed; 4 m9-04 `apply`-target findings scheduled for `m9-05-side-table-overeng-cleanup`; 2 m9-04 backlog findings recorded.
+
+## Cross-check
+
+Cross-check C1-C10 added to `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`.
 
 ## Files changed
 

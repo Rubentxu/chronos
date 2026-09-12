@@ -7,14 +7,10 @@ Drift closure cycle for this milestone.
 
 ## Subject
 
-| Campo | Valor |
-|---|---|
-| Cycle ID | `m9-03-side-table-debt-cleanup` |
-| Path | `B-direct` |
-| Status | CLOSED |
-| Base SHA | `6f375fd96dbc0c03fe36b473d306f1e54d078b08` |
-| Head SHA | `2c98ce9a1df65d44ae865376fee46eb0d95ac425` |
-| Tag | `v0.7.1` (annotated, peel matches published SHA) |
+- cycle: m9-03
+- route: B-direct
+- base_sha: `6f375fd96dbc0c03fe36b473d306f1e54d078b08`
+- head_sha: `2c98ce9a1df65d44ae865376fee46eb0d95ac425`
 
 ## Commits
 
@@ -56,6 +52,10 @@ in the m9+ backlog.
 | FIND-M9-02-DV-COUP-01 | coupling | Fallback outside D5 chokepoint: wrong module boundary | m9-03-side-table-debt-cleanup (`v0.7.1`) |
 
 Verdict: `PASS` (4/4 findings resolved) · FIND-M9-02-DV-PERF-01 → m9+ backlog
+
+## Cross-check
+
+Cross-check C1-C10 added to `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`.
 
 ## Files changed
 

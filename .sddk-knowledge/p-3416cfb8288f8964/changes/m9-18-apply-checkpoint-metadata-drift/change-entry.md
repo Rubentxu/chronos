@@ -40,6 +40,10 @@ without retroactive application to prior cycles. m9-18 backfills
 Adds cross-check #11 to vault-drift-sweep.md enforcing all three
 classes going forward.
 
+## Cross-check
+
+Cross-check C1-C10 added to `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`.
+
 ## Files changed
 
 - `cycle-artifacts/p-3416cfb8288f8964/m9-18-apply-checkpoint-metadata-drift/apply-checkpoint.json`

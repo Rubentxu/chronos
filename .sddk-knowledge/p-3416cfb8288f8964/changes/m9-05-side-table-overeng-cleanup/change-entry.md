@@ -7,14 +7,10 @@ Drift closure cycle for this milestone.
 
 ## Subject
 
-| Campo | Valor |
-|---|---|
-| Cycle ID | `m9-05-side-table-overeng-cleanup` |
-| Path | `B-direct` |
-| Status | CLOSED |
-| Base SHA | `c9e541750e39458b2b28c5d19ad0ca11d0e73d5b` |
-| Head SHA | `07d01d5869ff6e3ffed29315b761e6e476f3b70d` |
-| Tag | `v0.7.3` (annotated, peel matches published SHA) |
+- cycle: m9-05
+- route: B-direct
+- base_sha: `c9e541750e39458b2b28c5d19ad0ca11d0e73d5b`
+- head_sha: `07d01d5869ff6e3ffed29315b761e6e476f3b70d`
 
 ## Commits
 
@@ -49,6 +45,10 @@ B-direct debt-cleanup closing the four `apply`-target findings introduced by `m9
 | cc-003-wrong-direction-visibility | coupling | `storage.rs::db()` widened `pub(crate)` → `pub`; `COUNTEREXAMPLE_BUNDLES` and `COUNTEREXAMPLE_BUNDLE_EVENTS` widened to `pub const` | m9-05-side-table-overeng-cleanup (`v0.7.3`) |
 
 Verdict: **PASS** (4/4 apply-target findings closed) · 2 m9-04 backlog findings (cc-001 god-module, cc-004 TOCTOU) remain in m9+ backlog.
+
+## Cross-check
+
+Cross-check C1-C10 added to `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`.
 
 ## Files changed
 

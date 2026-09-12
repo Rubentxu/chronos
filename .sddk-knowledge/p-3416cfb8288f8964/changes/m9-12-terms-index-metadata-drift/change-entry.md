@@ -7,14 +7,10 @@ Drift closure cycle for this milestone.
 
 ## Subject
 
-| Campo | Valor |
-|---|---|
-| Cycle ID | `m9-12-terms-index-metadata-drift` |
-| Path | `B-direct` |
-| Status | CLOSED |
-| Base SHA | `f4818d1` (main @ start of cycle) |
-| Head SHA | `0012f1242cef949efc4cbd4c8d419a135ee3cf8a` |
-| Tag | `v0.7.10` (annotated, peel matches published SHA) |
+- cycle: m9-12
+- route: B-direct
+- head_sha: `0012f1242cef949efc4cbd4c8d419a135ee3cf8a`
+- base_sha: `f4818d13928c091daeaadcb65dca38558c612e7c`
 
 ## Commits
 
@@ -60,6 +56,10 @@ part of the procedure that future sessions will run before declaring
 - New change-entry: `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-12-terms-index-metadata-drift/change-entry.md`
   (this file)
 - New archive-manifest: `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-12-terms-index-metadata-drift/archive-manifest.md`
+
+## Cross-check
+
+Cross-check C1-C10 added to `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`.
 
 ## Files changed
 

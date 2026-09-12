@@ -7,14 +7,10 @@ Drift closure cycle for this milestone.
 
 ## Subject
 
-| Campo | Valor |
-|---|---|
-| Cycle ID | `m9-07-coup-01-invariant-assertion` |
-| Path | `B-direct` |
-| Status | CLOSED |
-| Base SHA | `aa96e5a51b5424a844f1f153d7ce719a53017119` |
-| Head SHA | `3edb01f0a17c3ac8877df1e7868d4e3cca374217` |
-| Tag | `v0.7.5` (annotated, peel matches published SHA) |
+- cycle: m9-07
+- route: B-direct
+- base_sha: `aa96e5a51b5424a844f1f153d7ce719a53017119`
+- head_sha: `3edb01f0a17c3ac8877df1e7868d4e3cca374217`
 
 ## Commits
 
@@ -69,6 +65,10 @@ remain green (T1: 58/58).
 | FIND-M9-01-DV-COUP-01 | coupling | Duplicated `schema_version` on record + summary with no equality enforcement at load time | m9-07-coup-01-invariant-assertion (`v0.7.5`) |
 
 Verdict: **PASS** (1/1 finding closed)
+
+## Cross-check
+
+Cross-check C1-C10 added to `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`.
 
 ## Files changed
 

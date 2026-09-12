@@ -47,6 +47,10 @@ comparison (`startswith`) and the fabricated SHA shared the same
 
 C8 closes the gap by asking git itself whether the SHA is real.
 
+## Cross-check
+
+Cross-check C2, C3 added to `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md`.
+
 ## Files changed
 
 - `cycle-artifacts/p-3416cfb8288f8964/m9-14-m9-11-fabricated-sha/apply-checkpoint.json`
