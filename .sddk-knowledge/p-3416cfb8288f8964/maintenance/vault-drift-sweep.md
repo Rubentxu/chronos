@@ -531,6 +531,7 @@ Cycles that established this procedure:
 - **m9-23** (vault hygiene: cycle_id workspace prefix strip, v0.7.21) → cross-check #16
 - **m9-24** (vault hygiene: verify-findings.json schema normalization, v0.7.22) → cross-check #17
 - **m9-25** (vault hygiene: synthesize missing verify-findings.json for m9-05..m9-10, v0.7.23) → cross-check #18
+- **m9-26** (vault hygiene: verify-findings.json cycle_id prefix strip, v0.7.24) → extended cross-check #16
 
 ### 13. apply-checkpoint.json `*_status` field backfill (closed by m9-20)
 
@@ -655,22 +656,23 @@ cycles (m9-03..m9-18).
 **History:** m9-22 closed this drift class after m9-19 introduced
 the fields without backfill.
 
-### 16. apply-checkpoint.json cycle_id format (no workspace prefix) (closed by m9-23)
+### 16. apply-checkpoint.json + verify-findings.json cycle_id format (no workspace prefix) (closed by m9-23; extended m9-26)
 
 ```python
-import json, os, re
+import json, os
 for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
-    ckpt = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/apply-checkpoint.json'
-    if not os.path.exists(ckpt): continue
-    d = json.load(open(ckpt))
-    cid = d.get('cycle_id', '')
-    # The cycle_id must NOT have a slash (which would indicate a
-    # workspace prefix like 'p-3416cfb8288f8964/').
-    # Acceptable forms:
-    #   - bare m9-NN (m9-19, m9-20, ...)
-    #   - full slug matching the folder name (m9-11-cycles-index-...)
-    if '/' in cid:
-        print(f"DRIFT: {folder}: cycle_id has workspace prefix: {cid!r}")
+    for fname in ['apply-checkpoint.json', 'verify-findings.json']:
+        p = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/{fname}'
+        if not os.path.exists(p): continue
+        d = json.load(open(p))
+        cid = d.get('cycle_id', '')
+        # The cycle_id must NOT have a slash (which would indicate a
+        # workspace prefix like 'p-3416cfb8288f8964/').
+        # Acceptable forms:
+        #   - bare m9-NN (m9-19, m9-20, ...)
+        #   - full slug matching the folder name (m9-11-cycles-index-...)
+        if '/' in cid:
+            print(f"DRIFT: {folder}/{fname}: cycle_id has workspace prefix: {cid!r}")
 ```
 
 **Expected output (clean):** empty.

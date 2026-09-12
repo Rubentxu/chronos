@@ -1,0 +1,23 @@
+{
+  "cycle_id": "m9-26",
+  "title": "verify-findings.json cycle_id workspace prefix strip",
+  "path": "B-direct",
+  "route": "B-direct",
+  "base_sha": "38e0e3aaacc9471b1c2550e548f2c24ae3f71025",
+  "head_sha": "a7d43e012be509fc44edae1ab2f05397e3452037",
+  "main_sha": "a7d43e012be509fc44edae1ab2f05397e3452037",
+  "remote_tag_peel": "a7d43e012be509fc44edae1ab2f05397e3452037",
+  "peel_match": true,
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived",
+  "status": "CLOSED",
+  "findings_introduced": {
+    "no_action": []
+  },
+  "verified_at": "2026-09-12T11:28:00Z",
+  "released_at": "2026-09-12T11:29:21Z",
+  "archived_at": "2026-09-12T11:29:40Z",
+  "created_at": "2026-09-12T11:28:00Z",
+  "summary": "Strip workspace prefix 'p-3416cfb8288f8964/' from cycle_id in m9-04 verify-findings.json. Extends cross-check #16 to cover verify-findings.json (was only checking apply-checkpoint.json)."
+}

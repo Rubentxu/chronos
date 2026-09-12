@@ -74,5 +74,5 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T11:27:00Z |
-| Last archive | m9-25-missing-verify-findings |
+| Last updated | 2026-09-12T11:28:00Z |
+| Last archive | m9-26-verify-findings-cycle-id-strip |
