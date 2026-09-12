@@ -74,5 +74,5 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T07:17:00Z |
-| Last archive | m9-09-vault-hygiene-active-disclosure-dedupe |
+| Last updated | 2026-09-12T07:24:00Z |
+| Last archive | m9-10-m9-03-apply-checkpoint-rebuild |

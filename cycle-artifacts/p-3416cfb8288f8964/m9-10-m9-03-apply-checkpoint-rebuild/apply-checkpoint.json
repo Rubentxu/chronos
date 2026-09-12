@@ -13,7 +13,7 @@
   "route": "local",
   "verified_at": "2026-09-12T07:21:00Z",
   "released_at": "2026-09-12T07:22:36Z",
-  "archived_at": null,
+  "archived_at": "2026-09-12T07:24:00Z",
   "commits_since_base": [
     "69f200efix(m9-10): rebuild missing apply-checkpoint.json for m9-03 (vault-reorg gap)",
     "6dc4609docs(m9-10): light-verify evidence (R1 PASS, m9-03 apply-checkpoint rebuilt)"
@@ -78,8 +78,8 @@
     },
     {
       "gate": "archive",
-      "result": "pending",
-      "evidence": "apply-checkpoint + receipts written; change-entry + archive-manifest + cycles-index updates pending in this session"
+      "result": "closed",
+      "evidence": "change-entry + archive-manifest + terms metadata + cycles-index updated; rebuilt apply-checkpoint.json for m9-03 is now queryable programmatically"
     },
     {
       "gate": "scoping-decision",
