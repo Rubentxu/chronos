@@ -1,0 +1,11 @@
+{
+  "cycle_id": "m9-08-list-load-schema-error-variant",
+  "subject": {
+    "head": "d89862bbe67256cf6274be1d71ee7f8857cb8808",
+    "head_sha": "d89862bbe67256cf6274be1d71ee7f8857cb8808"
+  },
+  "findings": [],
+  "_note": "Synthetic verify-findings synthesized by m9-25. The original verify-findings.json for this cycle was lost during the vault reorg. Subject SHA taken from apply-checkpoint.json head_sha. No findings array entries.",
+  "_legacy_schema": "sddk.verify-finding/v1 (original)",
+  "_restored_from": "apply-checkpoint.json head_sha"
+}

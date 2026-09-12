@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -530,6 +530,7 @@ Cycles that established this procedure:
 - **m9-22** (vault hygiene: created_at + title + summary backfill for 16 prior cycles, v0.7.20) → cross-check #15
 - **m9-23** (vault hygiene: cycle_id workspace prefix strip, v0.7.21) → cross-check #16
 - **m9-24** (vault hygiene: verify-findings.json schema normalization, v0.7.22) → cross-check #17
+- **m9-25** (vault hygiene: synthesize missing verify-findings.json for m9-05..m9-10, v0.7.23) → cross-check #18
 
 ### 13. apply-checkpoint.json `*_status` field backfill (closed by m9-20)
 
@@ -711,6 +712,33 @@ for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
 **History:** m9-11..m9-18 used the legacy lens-based schema. m9-19+
 use the simpler subject + findings schema. m9-24 normalizes the 8
 prior cycles.
+
+### 18. verify-findings.json must exist for all CLOSED cycles (closed by m9-25)
+
+```python
+import os
+for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
+    vf = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/verify-findings.json'
+    if not os.path.exists(vf):
+        print(f"DRIFT: {folder}: missing verify-findings.json")
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** A cycle folder is missing verify-findings.json.
+This can happen if the cycle was created before the standard
+6-artifact set was enforced, or if the file was lost during a
+vault reorg.
+
+**Resolution:** Synthesize a minimal verify-findings.json from
+the apply-checkpoint.json head_sha. Document the synthesis in
+the `_note` field so future readers know the file is a
+restoration, not an original.
+
+**History:** m9-05..m9-10 were missing verify-findings.json
+(synthesized by m9-25). m9-01 and m9-02 don't have cycle folders
+at all (pre-cycle-artifacts convention); they are out of scope
+for this check.
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class
