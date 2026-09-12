@@ -1,0 +1,28 @@
+{
+  "findings": [],
+  "lens_summary": {
+    "spec-compliance": 0,
+    "test-quality": 0,
+    "vault-hygiene": 0,
+    "documentation-discipline": 0
+  },
+  "verdict": "PASS",
+  "subject_sha": "134dc7525312275c447db8f5996740ff7c102a02",
+  "evidence": {
+    "vault_drift_sweep_checks": {
+      "check_1_id_uniqueness": "empty",
+      "check_2_findings_closed_vs_terminated": "clean (m8-04-R4 + m8-07-R2 are pre-reorg expected)",
+      "check_3_apply_checkpoint_vs_tag_consistency": "empty (TIGHTENED)",
+      "check_4_sha256_archive_manifest_artifact_index": "empty",
+      "check_5_cycles_index_metadata_consistency": "OK: 33 == 33",
+      "check_6_terms_index_last_archive_consistency": "OK: m9-17 == m9-17",
+      "check_7_change_entry_sha_consistency": "empty",
+      "check_8_apply_checkpoint_and_archive_manifest_sha_exists_in_repo": "empty",
+      "check_9_archive_manifest_sha_40char": "empty",
+      "check_10_cycle_artifact_sha_40char": "empty (NEW; verify-findings, release-receipt, merge-receipt, change-entry all 40-char and matching apply-checkpoint)"
+    },
+    "t0_lint": "0 warnings, 0 diffs (14 crates)",
+    "diff_size": "119 +, 33 - across 15 doc files",
+    "schema_v1_accepted": "m9-03, m9-04 verify-findings use sddk.verify-finding/v1 schema with nested subject.head; intentionally under pre-m9-11 docs-peel convention"
+  }
+}

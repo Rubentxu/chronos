@@ -1,0 +1,52 @@
+{
+  "cycle_id": "p-3416cfb8288f8964/m9-17-verify-findings-and-markdown-sha-drift",
+  "change": "fix verify-findings.json + cycle markdown SHA drift across 4 prior cycles (m9-11, m9-12, m9-13, m9-14) + add cross-check #10 to vault-drift-sweep",
+  "path": "B-direct",
+  "status": "CLOSED",
+  "head_sha": "134dc7525312275c447db8f5996740ff7c102a02",
+  "base_sha": "0ed8f874f7b6f973505fc3997475fc398fcfa4cc",
+  "tag": "v0.7.15",
+  "remote_tag_peel": "134dc7525312275c447db8f5996740ff7c102a02",
+  "main_sha": "134dc7525312275c447db8f5996740ff7c102a02",
+  "peel_match": true,
+  "runtime_status": "doc-only; no runtime impact",
+  "route": "B-direct (T0 + light-verify)",
+  "verified_at": "2026-09-12T10:32:30Z",
+  "released_at": "2026-09-12T10:33:00Z",
+  "archived_at": "2026-09-12T10:33:15Z",
+  "commits_since_base": [
+    "134dc75fix(m9-17): verify-findings + markdown SHA drift across 4 prior cycles + add cross-check #10"
+  ],
+  "artifacts": {
+    "merge_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-17-verify-findings-and-markdown-sha-drift/merge-receipt.md",
+    "release_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-17-verify-findings-and-markdown-sha-drift/release-receipt.md",
+    "release_report": "cycle-artifacts/p-3416cfb8288f8964/m9-17-verify-findings-and-markdown-sha-drift/release-report.md",
+    "verify_report": "cycle-artifacts/p-3416cfb8288f8964/m9-17-verify-findings-and-markdown-sha-drift/verify-report.md",
+    "verify_findings": "cycle-artifacts/p-3416cfb8288f8964/m9-17-verify-findings-and-markdown-sha-drift/verify-findings.json"
+  },
+  "findings_closed": [],
+  "findings_introduced": {
+    "no_action": []
+  },
+  "findings_remaining_m9_plus": [
+    "cc-001-god-module",
+    "cc-004-implicit-io-toctou",
+    "m9-02-R4 (feature: counterexample_bundle_events MCP tool)",
+    "schema-v1-verify-findings (m9-03, m9-04 use sddk.verify-finding/v1 schema with nested subject.head; accepted by design — pre-m9-11 docs-peel convention)"
+  ],
+  "notes": [
+    "m9-14 fixed m9-11 apply-checkpoint.json fabricated SHA but missed: m9-11 release-receipt.md, merge-receipt.md, release-report.md, verify-report.md (still short `cd0115f`); m9-11 verify-findings.json subject_sha (still fabricated); m9-14's own merge-receipt.md + release-receipt.md (still short `3869906`).",
+    "m9-15 fixed m9-12 + m9-13 apply-checkpoint.json short SHAs but missed: m9-12 + m9-13 verify-findings.json subject_sha (still short); m9-11/12/13 change-entry.md Head SHA fields + fix-commit table rows + 'Tag peeled' narrative.",
+    "m9-16 fixed archive-manifest.md but missed cycle markdown + JSON.",
+    "m9-17 closes the remaining file types (verify-findings.json + markdown) across 4 prior cycles. m9-03 + m9-04 schema-v1 verify-findings.json are accepted-by-design drift (pre-m9-11 docs-peel convention; their apply-checkpoint + archive-manifest + tag + release-receipt are internally consistent).",
+    "Adds cross-check #10 to vault-drift-sweep.md covering verify-findings.json subject_sha, release-receipt.md Head/Remote tag_peel, merge-receipt.md Head SHA, and change-entry.md Head SHA. These can drift independently of apply-checkpoint.json (which C3 covers) and archive-manifest.md (which C9 covers).",
+    "T0 fmt+clippy clean. All 10 cross-checks clean post-fix."
+  ],
+  "next_cycle": null,
+  "next_cycle_path": null,
+  "next_cycle_target_findings": [],
+  "ledger_state": {
+    "available": false,
+    "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02..m9-16 pattern)"
+  }
+}
