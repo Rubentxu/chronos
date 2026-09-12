@@ -1,0 +1,23 @@
+{
+  "cycle_id": "m9-26",
+  "subject": {
+    "head": "TBD",
+    "head_sha": "TBD"
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "low",
+      "category": "schema-drift",
+      "summary": "m9-04 verify-findings.json had cycle_id with workspace prefix 'p-3416cfb8288f8964/'. m9-23 stripped apply-checkpoint.json but missed verify-findings.json.",
+      "resolution": "Strip workspace prefix from cycle_id in m9-04 verify-findings.json."
+    },
+    {
+      "id": "F2",
+      "severity": "informational",
+      "category": "process",
+      "summary": "Extended cross-check #16 to cover verify-findings.json in addition to apply-checkpoint.json.",
+      "resolution": "Cross-check #16 now catches both files."
+    }
+  ]
+}

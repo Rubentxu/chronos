@@ -47,6 +47,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-23 | m9-23-cycle-id-strip-prefix | B-direct | `v0.7.21` | `b549c74` | CLOSED |
 | m9-24 | m9-24-verify-findings-schema-normalize | B-direct | `v0.7.22` | `8e0bfbf` | CLOSED |
 | m9-25 | m9-25-missing-verify-findings | B-direct | `v0.7.23` | `b4fccf4` | CLOSED |
+| m9-26 | m9-26-verify-findings-cycle-id-strip | B-direct | `v0.7.24` | TBD | CLOSED |
 
 ## Metadata
 
@@ -54,5 +55,5 @@ Chronological record of all SDDK cycles for this project.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T11:27:00Z |
-| Total cycles | 41 |
+| Last updated | 2026-09-12T11:28:00Z |
+| Total cycles | 42 |

@@ -1,6 +1,6 @@
 {
   "schema_version": "sddk.verify-finding/v1",
-  "cycle_id": "p-3416cfb8288f8964/m9-04-side-table-key-layout",
+  "cycle_id": "m9-04-side-table-key-layout",
   "path": "A-min",
   "subject": {
     "base_sha": "eb2cccd6fdfcd4b00bf980453bc40c606fa69885",
