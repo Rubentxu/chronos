@@ -74,5 +74,5 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T12:24:00Z |
-| Last archive | m9-29-evidence-bindings-backfill |
+| Last updated | 2026-09-12T12:30:00Z |
+| Last archive | m9-30-release-receipt-fields-normalize |

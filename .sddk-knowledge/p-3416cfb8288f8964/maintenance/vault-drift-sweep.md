@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -535,6 +535,7 @@ Cycles that established this procedure:
 - **m9-27** (vault hygiene: findings_introduced.no_action free-text note → notes key, v0.7.25) → cross-check #19
 - **m9-28** (vault hygiene: m9-19 fabricated base_sha → real 735c57b, v0.7.26) → cross-check #20
 - **m9-29** (vault hygiene: backfill Evidence bindings section in m9-11..m9-27 archive-manifests, v0.7.27) → cross-check #21
+- **m9-30** (vault hygiene: normalize release-receipt.md SHA fields across all 25 m9 cycles, v0.7.28) → cross-check #22
 
 ### 13. apply-checkpoint.json `*_status` field backfill (closed by m9-20)
 
@@ -897,6 +898,65 @@ already lists SHA-256s of the artifacts, so the missing Evidence
 bindings section is a structural drift, not a content drift. m9-28
 restored the Evidence bindings section for m9-28 itself; m9-29
 backfills it for the 17 prior cycles (m9-11..m9-27).
+
+### 22. release-receipt.md must have canonical SHA fields (closed by m9-30)
+
+```python
+import json, os, re
+
+for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
+    ckpt = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/apply-checkpoint.json'
+    rr = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/release-receipt.md'
+    if not os.path.exists(ckpt) or not os.path.exists(rr):
+        continue
+    d = json.load(open(ckpt))
+    content = open(rr).read()
+    head = d.get('head_sha', '')
+    peel = d.get('remote_tag_peel', '')
+    if not head or len(head) != 40:
+        continue
+    # C22 part A: required fields present
+    for field in ['Head SHA', 'Remote tag', 'Remote tag_peel', 'Peel match']:
+        if not re.search(rf'\| {field} \|', content):
+            print(f"DRIFT: {folder}/release-receipt.md: missing '{field}' field")
+    # C22 part B: SHAs match apply-checkpoint
+    head_m = re.search(r'\| Head SHA \| `([a-f0-9]+)`', content)
+    peel_m = re.search(r'\| Remote tag_peel \| `([a-f0-9]+)`', content)
+    if head_m and head_m.group(1) != head:
+        print(f"DRIFT: {folder}/release-receipt.md: Head SHA mismatch")
+    if peel_m and peel_m.group(1) != peel:
+        print(f"DRIFT: {folder}/release-receipt.md: Remote tag_peel mismatch")
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** A release-receipt.md is either missing the canonical
+fields (`Head SHA`, `Remote tag`, `Remote tag_peel`, `Peel match`)
+or has SHA values that disagree with apply-checkpoint.json.
+
+**Note:** The original cross-check #10 catches the case where the
+field exists but has wrong value. C22 additionally catches the case
+where the field is **missing entirely** (which m9-19..m9-27 had:
+their release-receipts only had `Cycle`, `Tag`, `Pee`, `Released at`
+and no Head SHA field at all).
+
+**Resolution:**
+1. Normalize the release-receipt to the canonical format (m9-28 format):
+   - `| Cycle | <slug> |`
+   - `| Head SHA | \`<sha>\` |`
+   - `| Remote tag | \`<tag>\` |`
+   - `| Remote tag_peel | \`<peel>\` |`
+   - `| Peel match | true |`
+   - `| Date | <released_at> |`
+2. The `Remote tag` follows the convention `v0.7.<N-2>` for `m9-NN`
+   (e.g. m9-19 → v0.7.17, m9-28 → v0.7.26).
+
+**History:** m9-03..m9-10 used a different format with `Peel SHA`
+field. m9-11..m9-18 used the Spanish `Campo` header. m9-19..m9-27
+regressed to a minimal format with `Cycle`, `Tag`, `Pee` (typo),
+`Released at` — no Head SHA at all. m9-28 restored the canonical
+format. m9-30 normalizes all 25 prior cycles to the canonical format
+and adds C22 to enforce it.
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class

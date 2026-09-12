@@ -51,6 +51,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-27 | m9-27-vacuous-peel-note-move | B-direct | `v0.7.25` | `91338e3` | CLOSED |
 | m9-28 | m9-28-m9-19-fabricated-base-sha | B-direct | `v0.7.26` | `709e3c4` | CLOSED |
 | m9-29 | m9-29-evidence-bindings-backfill | B-direct | `v0.7.27` | `24c144f` | CLOSED |
+| m9-30 | m9-30-release-receipt-fields-normalize | B-direct | `v0.7.28` | — | CLOSED |
 
 ## Metadata
 
@@ -58,5 +59,5 @@ Chronological record of all SDDK cycles for this project.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T12:24:00Z |
-| Total cycles | 45 |
+| Last updated | 2026-09-12T12:30:00Z |
+| Total cycles | 46 |
