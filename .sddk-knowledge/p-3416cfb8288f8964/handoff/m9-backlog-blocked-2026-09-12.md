@@ -1,10 +1,12 @@
-# Handoff: m9+ Backlog (Updated 2026-09-12T17:29Z)
+# Handoff: m9+ Backlog (Updated 2026-09-12T19:34Z)
 
 ## Status
 
-As of 2026-09-12T17:29:00Z, the m9 vault is canonical-schema-clean across
+As of 2026-09-12T19:34:00Z, the m9 vault is canonical-schema-clean across
 all 55 cycles in CA p-3416cfb8288f8964 (plus 2 legacy). 47 cross-checks
-all pass. m9-55 added SHA-reachability validation as cross-check #47.
+all pass. m9-55 added SHA-reachability validation (#47) plus post-cycle
+fixes to m9-55 head_sha sync (CC#43), release-report schema (CC#27),
+and 3 CC bug-fixes (#2, #39, #42).
 
 ## Bucket 1: By-design disclosures (unchanged)
 
