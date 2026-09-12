@@ -54,9 +54,12 @@ pub struct SessionStore {
 }
 
 impl SessionStore {
-    /// Accessor to the underlying redb database.
-    /// Kept at minimum visibility; most callers should use the typed table accessors.
-    pub fn db(&self) -> &Arc<redb::Database> {
+    /// Accessor to the underlying redb database (m9-05 R4: narrowed to `pub(crate)`).
+    ///
+    /// Cross-crate test access is provided through narrow typed chokepoints on
+    /// `SessionStore` itself (e.g., `insert_v2_chunk_for_test`, `count_v3_chunks_for_test`),
+    /// not through the raw database handle.
+    pub(crate) fn db(&self) -> &Arc<redb::Database> {
         &self.db
     }
 

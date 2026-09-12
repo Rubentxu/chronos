@@ -65,7 +65,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Key: `bundle_id: String` (as bytes).
 /// Value: bincode-serialised [`CounterexampleBundleRecord`].
-pub const COUNTEREXAMPLE_BUNDLES: TableDefinition<&[u8], &[u8]> =
+const COUNTEREXAMPLE_BUNDLES: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("counterexample_bundles");
 
 /// Side table for counterexample bundle events (m9-02, v3 layout).
@@ -93,7 +93,7 @@ pub const COUNTEREXAMPLE_BUNDLES: TableDefinition<&[u8], &[u8]> =
 ///
 /// m9-04: v3 chunks keyed by `blake3(bundle_id)[..16] || chunk_index`;
 /// v2 legacy chunks keyed by `len(bundle_id) || bundle_id || chunk_index`.
-pub const COUNTEREXAMPLE_BUNDLE_EVENTS: TableDefinition<&[u8], &[u8]> =
+const COUNTEREXAMPLE_BUNDLE_EVENTS: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("counterexample_bundle_events");
 
 // ========================================================================
@@ -156,6 +156,24 @@ fn encode_chunk_value(bundle_id: &str, chunk: &[chronos_domain::TraceEvent]) -> 
 /// Returns `None` if bincode deserialization fails.
 fn decode_chunk_value(b: &[u8]) -> Option<(String, Vec<chronos_domain::TraceEvent>)> {
     bincode::deserialize(b).ok()
+}
+
+/// Decode a chunk payload regardless of encoding (m9-05 R1).
+///
+/// Tries the v3 layout first (`decode_chunk_value` returns events directly),
+/// then falls back to the v2 legacy format (`bincode::serialize(&Vec<TraceEvent>)`).
+///
+/// Used by `load_counterexample_bundle_events` and `count_counterexample_bundle_events`
+/// to centralize the v3-first / v2-fallback decode ladder. Returns `None` if both
+/// layouts fail to deserialize.
+fn decode_chunk_payload(bytes: &[u8]) -> Option<Vec<TraceEvent>> {
+    if let Some((_, events)) = decode_chunk_value(bytes) {
+        return Some(events);
+    }
+    if let Ok(events) = bincode::deserialize::<Vec<TraceEvent>>(bytes) {
+        return Some(events);
+    }
+    None
 }
 
 // ========================================================================
@@ -250,6 +268,49 @@ pub fn collect_bundle_chunks_range(
     Ok(chunks)
 }
 
+/// Collect the raw v3 keys for a bundle using a bounded range scan (m9-05 R2).
+///
+/// Mirrors the range-scan + identity-verify ladder in `collect_bundle_chunks_range`,
+/// but returns the raw key bytes (not `(chunk_idx, value)` pairs). Used by
+/// `save_bundle_record_and_events` (D6 cleanup block) to know which keys to remove
+/// before writing new v3 chunks.
+///
+/// Returns `Ok(Vec::new())` when the events table does not exist.
+#[allow(clippy::result_large_err)]
+fn collect_v3_keys_for_bundle(
+    tx: &redb::ReadTransaction,
+    bundle_id: &str,
+) -> Result<Vec<Vec<u8>>, StoreError> {
+    let table = match tx.open_table(COUNTEREXAMPLE_BUNDLE_EVENTS) {
+        Ok(t) => t,
+        Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
+        Err(e) => return Err(StoreError::Database(e.into())),
+    };
+
+    let prefix = bundle_prefix(bundle_id);
+    let mut start_key = prefix.to_vec();
+    start_key.extend_from_slice(&0u32.to_be_bytes());
+    let mut end_key = prefix.to_vec();
+    end_key.extend_from_slice(&u32::MAX.to_be_bytes());
+
+    let range = match table.range(start_key.as_slice()..end_key.as_slice()) {
+        Ok(r) => r,
+        Err(e) => return Err(StoreError::Database(e.into())),
+    };
+
+    let mut keys = Vec::new();
+    for (k, v) in range.flatten() {
+        if decode_chunk_key(k.value()).is_some() {
+            if let Some((ref id, _)) = decode_chunk_value(v.value()) {
+                if id == bundle_id {
+                    keys.push(k.value().to_vec());
+                }
+            }
+        }
+    }
+    Ok(keys)
+}
+
 /// Collect v2 (legacy) chunks for a bundle using a full table scan.
 ///
 /// m9-04 D2: legacy reader for bundles persisted under m9-02/m9-03 layout.
@@ -281,27 +342,24 @@ fn collect_bundle_chunks_legacy(
 ///
 /// m9-04 D7: tries v3 range scan; if empty, falls back to v2 full scan.
 ///
-/// The `events_count` parameter controls the D7 guard:
-/// - `Some(n)`: we have a bundle record. If `n == 0`, skip v2 fallback —
-///   a post-m9-02 bundle with `events_count == 0` has no events anywhere.
-/// - `None`: no bundle record found (e.g., direct injection test). Always try
-///   v2 fallback to preserve existing test coverage.
+/// The `events_count` parameter controls the D7 guard (m9-05 R3):
+/// when `events_count == 0`, the v2 fallback is skipped — a post-m9-02 bundle
+/// with `events_count == 0` has no events anywhere. `events_count` is the
+/// value of `summary.events_count` from the bundle record, or `0` when no
+/// record exists for the queried bundle_id.
 #[allow(clippy::result_large_err)]
 fn collect_bundle_chunks(
     tx: &redb::ReadTransaction,
     bundle_id: &str,
-    events_count: Option<u64>,
+    events_count: u64,
 ) -> Result<Vec<(u32, Vec<u8>)>, StoreError> {
     let chunks = collect_bundle_chunks_range(tx, bundle_id)?;
     if !chunks.is_empty() {
         return Ok(chunks);
     }
-    // D7 guard: only apply events_count > 0 check when we have a bundle record.
-    // Direct-injection tests (no bundle record) should always try v2 fallback.
-    if let Some(count) = events_count {
-        if count == 0 {
-            return Ok(Vec::new());
-        }
+    // D7 guard: a bundle with events_count == 0 has no events anywhere.
+    if events_count == 0 {
+        return Ok(Vec::new());
     }
     collect_bundle_chunks_legacy(tx, bundle_id)
 }
@@ -541,36 +599,15 @@ impl crate::storage::SessionStore {
         }
 
         // m9-04 D6: delete prior chunks for this bundle (both v3 and v2) before
-        // writing new v3 chunks. Collect v3 keys via range scan, v2 keys via full scan.
+        // writing new v3 chunks. Collect v3 keys via `collect_v3_keys_for_bundle`
+        // (m9-05 R2), v2 keys via `collect_bundle_chunks_legacy`.
         let (prior_v3_keys, prior_v2_keys): (Vec<Vec<u8>>, Vec<Vec<u8>>) = {
             let read_tx = self
                 .db()
                 .begin_read()
                 .map_err(|e| StoreError::Database(e.into()))?;
 
-            // Collect v3 prior keys via range scan.
-            let prefix = bundle_prefix(&bundle_id);
-            let mut start_key = prefix.to_vec();
-            start_key.extend_from_slice(&0u32.to_be_bytes());
-            let mut end_key = prefix.to_vec();
-            end_key.extend_from_slice(&u32::MAX.to_be_bytes());
-
-            let mut v3_keys = Vec::new();
-            if let Ok(table) = read_tx.open_table(COUNTEREXAMPLE_BUNDLE_EVENTS) {
-                if let Ok(range) = table.range(start_key.as_slice()..end_key.as_slice()) {
-                    for (k, v) in range.flatten() {
-                        if let Some((_, _)) = decode_chunk_key(k.value()) {
-                            if let Some((ref id, _)) = decode_chunk_value(v.value()) {
-                                if id == &bundle_id {
-                                    v3_keys.push(k.value().to_vec());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Collect v2 prior keys via full scan.
+            let v3_keys = collect_v3_keys_for_bundle(&read_tx, &bundle_id)?;
             let v2_keys = collect_bundle_chunks_legacy(&read_tx, &bundle_id)?
                 .into_iter()
                 .map(|(idx, _)| encode_chunk_key_legacy(&bundle_id, idx))
@@ -619,19 +656,19 @@ impl crate::storage::SessionStore {
     /// Returns `Ok(vec![])` when no chunks exist (the table is absent or
     /// the bundle has no side-table events).
     ///
-    /// Internal helper: look up `summary.events_count` from the bundle record.
-    /// Returns `Some(n)` when the bundle record exists (n = events_count),
-    /// or `None` when the bundle record is absent (direct-injection test path).
-    /// Used by `load_counterexample_bundle_events` and `count_counterexample_bundle_events`
-    /// to pass the D7 `events_count > 0` guard into `collect_bundle_chunks`.
+    /// Internal helper: look up `summary.events_count` from the bundle record (m9-05 R3).
+    /// Returns `events_count` when the bundle record exists, or `0` when the table
+    /// is absent or no record exists for the queried `bundle_id`. Used by
+    /// `load_counterexample_bundle_events` and `count_counterexample_bundle_events`
+    /// to pass the D7 `events_count == 0` guard into `collect_bundle_chunks`.
     #[allow(clippy::result_large_err)]
     fn get_bundle_events_count(
         tx: &redb::ReadTransaction,
         bundle_id: &str,
-    ) -> Result<Option<u64>, StoreError> {
+    ) -> Result<u64, StoreError> {
         let table = match tx.open_table(COUNTEREXAMPLE_BUNDLES) {
             Ok(t) => t,
-            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(None),
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(0),
             Err(e) => return Err(StoreError::Database(e.into())),
         };
         let bytes_opt = match table.get(bundle_id.as_bytes()) {
@@ -639,11 +676,11 @@ impl crate::storage::SessionStore {
             Err(e) => return Err(StoreError::Database(e.into())),
         };
         match bytes_opt {
-            None => Ok(None),
+            None => Ok(0),
             Some(guard) => {
                 let record: CounterexampleBundleRecord = bincode::deserialize(guard.value())
                     .map_err(|e| StoreError::Serialization(e.to_string()))?;
-                Ok(Some(record.summary.events_count))
+                Ok(record.summary.events_count)
             }
         }
     }
@@ -662,13 +699,9 @@ impl crate::storage::SessionStore {
         let chunks_data = collect_bundle_chunks(&tx, bundle_id, events_count)?;
         let mut chunks: Vec<(u32, Vec<TraceEvent>)> = Vec::new();
         for (idx, bytes) in chunks_data {
-            // m9-04 D3: v3 value contains (bundle_id, Vec<TraceEvent>).
-            // v2 fallback value contains just Vec<TraceEvent>.
-            // Try v3 first, fall back to v2.
-            if let Some((_, events)) = decode_chunk_value(&bytes) {
-                chunks.push((idx, events));
-            } else if let Ok(events) = bincode::deserialize::<Vec<TraceEvent>>(&bytes) {
-                // v2 legacy format
+            // m9-05 R1: v3-first / v2-fallback decode ladder extracted into
+            // `decode_chunk_payload`. Drops entries neither layout can decode.
+            if let Some(events) = decode_chunk_payload(&bytes) {
                 chunks.push((idx, events));
             }
         }
@@ -698,17 +731,99 @@ impl crate::storage::SessionStore {
         let chunks_data = collect_bundle_chunks(&tx, bundle_id, events_count)?;
         let mut total: u64 = 0;
         for (_idx, bytes) in chunks_data {
-            // m9-04 D3: v3 value contains (bundle_id, Vec<TraceEvent>).
-            // v2 fallback value contains just Vec<TraceEvent>.
-            // Try v3 first, fall back to v2.
-            if let Some((_, events)) = decode_chunk_value(&bytes) {
-                total += events.len() as u64;
-            } else if let Ok(events) = bincode::deserialize::<Vec<TraceEvent>>(&bytes) {
-                // v2 legacy format
+            // m9-05 R1: shared with `load_counterexample_bundle_events`.
+            if let Some(events) = decode_chunk_payload(&bytes) {
                 total += events.len() as u64;
             }
         }
         Ok(total)
+    }
+
+    // ========================================================================
+    // m9-05 R4: test chokepoints — narrow `pub` surface for cross-crate tests.
+    //
+    // Pre-m9-05, the cli integration test (`crates/chronos-cli/tests/replay_integration.rs`)
+    // needed to inject v2 chunks and count v3 chunks, which forced a `pub` widening of
+    // `storage.rs::db()` and the two table constants. R4 reverses that widening and exposes
+    // only the two operations the cli test needs.
+    // ========================================================================
+
+    /// Insert a v2-format chunk directly into the side table (m9-05 R4 test chokepoint).
+    ///
+    /// Replaces the cli integration test's direct `db().begin_write()` +
+    /// `open_table(COUNTEREXAMPLE_BUNDLE_EVENTS)` + `insert` dance. Used by
+    /// `m9_04_replay_v2_bundle_uses_legacy_path` to simulate a pre-m9-04 bundle
+    /// that has not yet been re-saved.
+    #[doc(hidden)]
+    #[allow(clippy::result_large_err)]
+    pub fn insert_v2_chunk_for_test(
+        &self,
+        bundle_id: &str,
+        chunk_idx: u32,
+        events: &[TraceEvent],
+    ) -> Result<(), StoreError> {
+        let key = encode_chunk_key_legacy(bundle_id, chunk_idx);
+        let value =
+            bincode::serialize(events).map_err(|e| StoreError::Serialization(e.to_string()))?;
+        let tx = self
+            .db()
+            .begin_write()
+            .map_err(|e| StoreError::Database(e.into()))?;
+        {
+            let mut table = tx
+                .open_table(COUNTEREXAMPLE_BUNDLE_EVENTS)
+                .map_err(|e| StoreError::Database(e.into()))?;
+            table
+                .insert(key.as_slice(), value.as_slice())
+                .map_err(|e| StoreError::Database(e.into()))?;
+        }
+        tx.commit().map_err(|e| StoreError::Database(e.into()))?;
+        Ok(())
+    }
+
+    /// Count v3 chunks for a bundle (m9-05 R4 test chokepoint).
+    ///
+    /// Replaces the cli integration test's direct `db().begin_read()` +
+    /// `collect_bundle_chunks_range` call. Returns 0 when the bundle has no v3 chunks.
+    #[doc(hidden)]
+    #[allow(clippy::result_large_err)]
+    pub fn count_v3_chunks_for_test(&self, bundle_id: &str) -> Result<u64, StoreError> {
+        let tx = self
+            .db()
+            .begin_read()
+            .map_err(|e| StoreError::Database(e.into()))?;
+        let chunks = collect_bundle_chunks_range(&tx, bundle_id)?;
+        Ok(chunks.len() as u64)
+    }
+
+    /// Insert a bundle record directly into `counterexample_bundles` (m9-05 R4 test chokepoint).
+    ///
+    /// Used by `m9_04_replay_v2_bundle_uses_legacy_path` to inject a bundle record
+    /// with `events_count > 0` so the D7 guard lets the v2 fallback run, without
+    /// going through `save_counterexample_bundle` (which would overwrite `events_count`
+    /// based on `events.len()`).
+    #[doc(hidden)]
+    #[allow(clippy::result_large_err)]
+    pub fn insert_bundle_record_for_test(
+        &self,
+        record: &CounterexampleBundleRecord,
+    ) -> Result<(), StoreError> {
+        let bytes =
+            bincode::serialize(record).map_err(|e| StoreError::Serialization(e.to_string()))?;
+        let tx = self
+            .db()
+            .begin_write()
+            .map_err(|e| StoreError::Database(e.into()))?;
+        {
+            let mut table = tx
+                .open_table(COUNTEREXAMPLE_BUNDLES)
+                .map_err(|e| StoreError::Database(e.into()))?;
+            table
+                .insert(record.summary.bundle_id.as_bytes(), bytes.as_slice())
+                .map_err(|e| StoreError::Database(e.into()))?;
+        }
+        tx.commit().map_err(|e| StoreError::Database(e.into()))?;
+        Ok(())
     }
 
     /// Load a counterexample bundle by id.
@@ -1563,6 +1678,38 @@ mod tests {
     #[test]
     fn m9_02_load_events_concatenates_chunks_in_order() {
         let store = make_store();
+
+        // Inject a bundle record with events_count = 3 (one event per chunk)
+        // so the m9-05 R3 D7 guard lets v2 fallback run.
+        // (Prior to m9-05 R3, the guard was None / skip None — bundle records
+        // were not required for direct-injection tests. Post R3, a bundle
+        // record with events_count > 0 is required to exercise the v2 path.)
+        let rec = CounterexampleBundleRecord {
+            summary: CounterexampleBundleSummary {
+                bundle_id: "b-unordered".into(),
+                property_kind: "invariant".into(),
+                workspace_id: "ws".into(),
+                created_at_ms: 0,
+                rounds_used: 1,
+                has_full_bundle: true,
+                schema_version: CURRENT_BUNDLE_SCHEMA_VERSION,
+                events_count: 3,
+            },
+            events: vec![],
+            minimised: None,
+            event_cas_hashes: vec![],
+            target_hypothesis: None,
+            schema_version: CURRENT_BUNDLE_SCHEMA_VERSION,
+        };
+        let bytes = bincode::serialize(&rec).unwrap();
+        let tx = store.db().begin_write().unwrap();
+        {
+            let mut table = tx.open_table(COUNTEREXAMPLE_BUNDLES).unwrap();
+            table
+                .insert(b"b-unordered".as_slice(), bytes.as_slice())
+                .unwrap();
+        }
+        tx.commit().unwrap();
 
         // Inject 3 chunks directly at indices 0, 2, 1 (out of order).
         // Each chunk has exactly 1 event so we can distinguish them.

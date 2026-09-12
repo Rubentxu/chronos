@@ -125,7 +125,6 @@ async fn m9_04_replay_uses_v3_layout() {
 #[tokio::test]
 async fn m9_04_replay_v2_bundle_uses_legacy_path() {
     use chronos_cli::replay::run_replay;
-    use chronos_store::counterexample_storage::*;
     use chronos_store::SessionStore;
 
     let path = temp_db_path("v2-fallback-replay");
@@ -136,8 +135,8 @@ async fn m9_04_replay_v2_bundle_uses_legacy_path() {
     {
         let store = SessionStore::open(&path).expect("open store");
 
-        // Write a v2 chunk to the side table.
-        let v2_key = encode_chunk_key_legacy(bundle_id, 0);
+        // Write a v2 chunk to the side table via the m9-05 R4 test chokepoint
+        // (replaces the previous raw db().begin_write() + open_table(...).insert(...) path).
         let v2_events = vec![chronos_domain::TraceEvent::new(
             42,
             4200,
@@ -152,17 +151,9 @@ async fn m9_04_replay_v2_bundle_uses_legacy_path() {
                 parent_invocation_id: None,
             },
         )];
-        let v2_value = bincode::serialize(&v2_events).unwrap();
-        let tx = store.db().begin_write().expect("begin write");
-        {
-            let mut table = tx
-                .open_table(COUNTEREXAMPLE_BUNDLE_EVENTS)
-                .expect("open events table");
-            table
-                .insert(v2_key.as_slice(), v2_value.as_slice())
-                .expect("insert v2 chunk");
-        }
-        tx.commit().expect("commit v2 chunk");
+        store
+            .insert_v2_chunk_for_test(bundle_id, 0, &v2_events)
+            .expect("insert v2 chunk");
 
         // Write the bundle record with events_count > 0 (triggers v2 fallback).
         // Inject directly — save_counterexample_bundle overwrites events_count
@@ -188,17 +179,9 @@ async fn m9_04_replay_v2_bundle_uses_legacy_path() {
             target_hypothesis: None,
             schema_version: 1,
         };
-        let bytes = bincode::serialize(&rec).unwrap();
-        let tx = store.db().begin_write().expect("begin write");
-        {
-            let mut table = tx
-                .open_table(COUNTEREXAMPLE_BUNDLES)
-                .expect("open bundles table");
-            table
-                .insert(bundle_id.as_bytes(), bytes.as_slice())
-                .expect("insert bundle record");
-        }
-        tx.commit().expect("commit bundle record");
+        store
+            .insert_bundle_record_for_test(&rec)
+            .expect("insert bundle record");
     } // store dropped; redb lock released
 
     // Replay the v2 bundle — events must be loaded from v2 fallback path.
@@ -211,17 +194,14 @@ async fn m9_04_replay_v2_bundle_uses_legacy_path() {
         report.events_in_bundle, 1,
         "replay must load 1 event from v2 fallback"
     );
-    // Verify that the v3 side table has no v3 chunks for this bundle.
+    // Verify that the v3 side table has no v3 chunks for this bundle
+    // (via the m9-05 R4 test chokepoint).
     {
         let store = SessionStore::open(&path).expect("open store");
-        let tx = store.db().begin_read().expect("begin read");
-        let v3_chunks =
-            chronos_store::counterexample_storage::collect_bundle_chunks_range(&tx, bundle_id)
-                .expect("collect v3 chunks");
-        assert!(
-            v3_chunks.is_empty(),
-            "v2 fallback bundle must have no v3 chunks"
-        );
+        let v3_count = store
+            .count_v3_chunks_for_test(bundle_id)
+            .expect("count v3 chunks");
+        assert_eq!(v3_count, 0, "v2 fallback bundle must have no v3 chunks");
     }
 
     let _ = std::fs::remove_file(&path);
