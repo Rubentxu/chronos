@@ -1,5 +1,9 @@
 # Release Report — m9-22
 
+**Cycle**: m9-22-created-at-summary-title-backfill
+**Path**: B-direct
+**Tag**: v0.7.20
+
 | Field | Value |
 |---|---|
 | Cycle | m9-22-created-at-summary-title-backfill |
@@ -24,3 +28,11 @@ B-direct: T0 only (file-local mechanical backfill).
 
 - C1-C10: pass
 
+## What changed
+
+Drift closure cycle. See release-receipt.md and change-entry.md for details.
+
+## Verification
+
+- T0 fmt+clippy: clean
+- T4 sandbox smoke: not run (metadata-only cycle)

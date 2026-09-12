@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34**, or **check 35**, or **check 36**, or **check 37**, or **check 38**, or **check 39**, or **check 40** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34**, or **check 35**, or **check 36**, or **check 37**, or **check 38**, or **check 39**, or **check 40**, or **check 41** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -1804,3 +1804,44 @@ print(f'Total: {errors}')
 **History:** m9-19..m9-33 apply-checkpoint.json had no `findings_closed`
 array. m9-48 adds it. m9-01..m9-27 archive-manifest.md lacked `Date`
 and `Path` fields. m9-48 backfills.
+
+### 41. verify-findings.json lens_summary for m9-03 + release-report.md schema (closed by m9-49)
+
+```python
+import json, glob, re
+
+errors = 0
+
+# Part A: verify-findings.json must have lens_summary
+for f in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/verify-findings.json')):
+    d = json.load(open(f))
+    if 'lens_summary' not in d:
+        errors += 1
+        print(f"DRIFT A: {f}: missing lens_summary")
+
+# Part B: release-report.md must have **Cycle**, **Path**, **Tag** + ## sections (canonical era only)
+for f in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/release-report.md')):
+    folder = f.split('/')[-2]
+    m = re.match(r'm9-(\d+)', folder)
+    if not m: continue
+    num = int(m.group(1))
+    if num < 19 or num >= 34: continue
+    content = open(f).read()
+    for field in ['Cycle', 'Path', 'Tag']:
+        if f'**{field}**' not in content:
+            errors += 1
+            print(f"DRIFT B: {folder}: missing **{field}**")
+    for h in ['## What changed', '## Verification']:
+        if h not in content:
+            errors += 1
+            print(f"DRIFT B: {folder}: missing {h}")
+
+print(f'Total: {errors}')
+```
+
+**Expected output (clean):** empty.
+
+**History:** m9-03 verify-findings.json lacked lens_summary. m9-49 adds.
+m9-19..m9-33 release-report.md had legacy format without **Cycle**,
+**Path**, **Tag** fields or `## What changed`, `## Verification`
+sections. m9-49 backfills.

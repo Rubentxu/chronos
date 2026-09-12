@@ -1,12 +1,8 @@
 {
   "schema": "sddk.verify-finding/v1",
   "subject": {
-    "base": "6f375fd96dbc0c03fe36b473d306f1e54d078b08",
-    "head": "570d2150336fb4b159c9f9c8cc1165a7731a9e2e",
-    "diff_digest": "b8fc3eef960a396364935675806117e47109ca178355c469286d26d63b7a6432",
-    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
-    "clean": true,
-    "verified_at": "2026-09-11T23:08Z"
+    "head_sha": "570d2150336fb4b159c9f9c8cc1165a7731a9e2e",
+    "base_sha": "6f375fd96dbc0c03fe36b473d306f1e54d078b08"
   },
   "findings": [],
   "summary": {
@@ -17,5 +13,8 @@
     "suggestions": 0
   },
   "verdict": "pass",
-  "cycle_id": "m9-03-side-table-debt-cleanup"
+  "cycle_id": "m9-03-side-table-debt-cleanup",
+  "lens_summary": {
+    "drift": "Side-table debt cleanup. No specific drift closure - debt cleanup cycle."
+  }
 }

@@ -2,6 +2,7 @@
 
 **Cycle**: m9-30-release-receipt-fields-normalize
 **Path**: B-direct
+**Tag**: v0.7.28
 
 
 ## Cycle
@@ -51,3 +52,12 @@ Vault metadata only:
 ## Risk
 
 None. Vault metadata only; no code or runtime behavior affected.
+
+## What changed
+
+Drift closure cycle. See release-receipt.md and change-entry.md for details.
+
+## Verification
+
+- T0 fmt+clippy: clean
+- T4 sandbox smoke: not run (metadata-only cycle)

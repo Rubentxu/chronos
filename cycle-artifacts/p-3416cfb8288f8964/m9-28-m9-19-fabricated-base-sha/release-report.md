@@ -2,6 +2,7 @@
 
 **Cycle**: m9-28-m9-19-fabricated-base-sha
 **Path**: B-direct
+**Tag**: v0.7.26
 
 
 ## Cycle
@@ -50,3 +51,12 @@ Vault metadata only:
 ## Risk
 
 None. Vault metadata only; no code or runtime behavior affected.
+
+## What changed
+
+Drift closure cycle. See release-receipt.md and change-entry.md for details.
+
+## Verification
+
+- T0 fmt+clippy: clean
+- T4 sandbox smoke: not run (metadata-only cycle)

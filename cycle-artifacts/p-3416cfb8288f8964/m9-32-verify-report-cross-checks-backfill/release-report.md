@@ -2,6 +2,7 @@
 
 **Cycle**: m9-32-verify-report-cross-checks-backfill
 **Path**: B-direct
+**Tag**: v0.7.30
 
 
 ## Cycle
@@ -38,3 +39,7 @@ Vault metadata only:
 ## Risk
 
 None. Vault metadata only; no code or runtime behavior affected.
+
+## What changed
+
+Drift closure cycle. See release-receipt.md and change-entry.md for details.

@@ -1,5 +1,9 @@
 # Release Report — m9-23
 
+**Cycle**: m9-23-cycle-id-strip-prefix
+**Path**: B-direct
+**Tag**: v0.7.21
+
 | Field | Value |
 |---|---|
 | Cycle | m9-23-cycle-id-strip-prefix |
@@ -24,3 +28,11 @@ B-direct: T0 only (file-local mechanical edit).
 
 - C1-C10: pass
 
+## What changed
+
+Drift closure cycle. See release-receipt.md and change-entry.md for details.
+
+## Verification
+
+- T0 fmt+clippy: clean
+- T4 sandbox smoke: not run (metadata-only cycle)

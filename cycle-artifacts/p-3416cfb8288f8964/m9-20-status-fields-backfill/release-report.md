@@ -1,5 +1,9 @@
 # Release Report — m9-20
 
+**Cycle**: m9-20-status-fields-backfill
+**Path**: B-direct
+**Tag**: v0.7.18
+
 | Field | Value |
 |---|---|
 | Cycle | m9-20-status-fields-backfill |
@@ -24,3 +28,11 @@ B-direct: T0 only (file-local mechanical backfill).
 
 - C1-C10: pass
 
+## What changed
+
+Drift closure cycle. See release-receipt.md and change-entry.md for details.
+
+## Verification
+
+- T0 fmt+clippy: clean
+- T4 sandbox smoke: not run (metadata-only cycle)
