@@ -1,0 +1,23 @@
+{
+  "cycle_id": "m9-21",
+  "subject": {
+    "head": "TBD",
+    "head_sha": "TBD"
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "low",
+      "category": "schema-drift",
+      "summary": "8 cycles (m9-11..m9-18) had route set to verbose 'B-direct (T0 + light-verify)' instead of the bare path label 'B-direct'.",
+      "resolution": "Normalize route to bare 'B-direct'."
+    },
+    {
+      "id": "F2",
+      "severity": "informational",
+      "category": "process",
+      "summary": "Added cross-check #14 enforcing m9-19+ cycles do not introduce legacy schema-v1 fields and use bare route labels.",
+      "resolution": "Cross-check #14 prevents future cycles from regressing to verbose route strings or reintroducing schema-v1 fields."
+    }
+  ]
+}

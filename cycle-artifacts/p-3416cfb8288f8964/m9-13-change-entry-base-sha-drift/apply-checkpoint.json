@@ -10,7 +10,7 @@
   "main_sha": "26848cf8b26340d3fde99a3a7f398f2873943982",
   "peel_match": true,
   "runtime_status": "doc-only; no runtime impact",
-  "route": "B-direct (T0 + light-verify)",
+  "route": "B-direct",
   "verified_at": "2026-09-12T09:57:00Z",
   "released_at": "2026-09-12T09:57:00Z",
   "archived_at": "2026-09-12T09:59:02Z",
