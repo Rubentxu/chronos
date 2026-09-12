@@ -41,7 +41,6 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 
 | ID | Cycle | Cluster | Severity | Priority | Título | Owner | Destino |
 |---|---|---|---|---|---|---|---|
-| FIND-M9-01-DV-COUP-01 | m9-01 | coupling | MEDIUM | P2 | Duplicated version envelopes: `schema_version` on record + summary, no loader equality check | unassigned | m9+ backlog |
 | FIND-M9-01-DV-COUP-02 | m9-01 | coupling | LOW | P3 | List/load policy asymmetry: hard-reject on load vs best-effort include on list | unassigned | m9+ backlog |
 
 ### Follow-ups inherited from prior cycles
@@ -69,6 +68,7 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 | cc-003-wrong-direction-visibility | m9-04 | `storage.rs::db()` widened `pub(crate)` → `pub`; table constants widened to `pub const` | m9-05-side-table-overeng-cleanup (`v0.7.3`) |
 | m9-01-R4 | m9-01 | `KNOWN_BUNDLE_SCHEMA_VERSIONS` unused; `#[allow(dead_code)]` | m9-06-known-schema-versions-invariant (`v0.7.4`) |
 | FIND-M9-01-DV-OE-01 | m9-01 | `KNOWN_BUNDLE_SCHEMA_VERSIONS` dead speculative code | m9-06-known-schema-versions-invariant (`v0.7.4`) |
+| FIND-M9-01-DV-COUP-01 | m9-01 | Duplicated version envelopes: `schema_version` on record + summary, no loader equality check | m9-07-coup-01-invariant-assertion (`v0.7.5`) |
 
 ## Metadata
 
@@ -76,5 +76,5 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T08:44:00Z |
-| Last archive | m9-06-known-schema-versions-invariant |
+| Last updated | 2026-09-12T06:57:00Z |
+| Last archive | m9-07-coup-01-invariant-assertion |

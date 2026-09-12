@@ -13,7 +13,7 @@
   "route": "local",
   "verified_at": "2026-09-12T06:53:30Z",
   "released_at": "2026-09-12T06:54:48Z",
-  "archived_at": null,
+  "archived_at": "2026-09-12T06:57:00Z",
   "commits_since_base": [
     "3edb01ffix(m9-07): loader rejects envelope/summary schema_version mismatch (closes FIND-M9-01-DV-COUP-01)",
     "5c5b3ecdocs(m9-07): light-verify evidence (R1 PASS, FIND-M9-01-DV-COUP-01 closed)"
@@ -62,8 +62,8 @@
     },
     {
       "gate": "archive",
-      "result": "pending",
-      "evidence": "apply-checkpoint + receipts written; change-entry + archive-manifest + terms + cycles-index updates pending in this session"
+      "result": "closed",
+      "evidence": "change-entry + archive-manifest + terms + cycles-index updated; FIND-M9-01-DV-COUP-01 moved from active to terminated"
     },
     {
       "gate": "scoping-decision",

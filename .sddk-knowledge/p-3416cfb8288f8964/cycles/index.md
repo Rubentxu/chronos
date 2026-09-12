@@ -28,6 +28,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-04 | m9-04-side-table-key-layout | A-min | `v0.7.2` | `d6b3b8c51c50d2ce6d0fe4f8c804cf793137f0dc` | CLOSED |
 | m9-05 | m9-05-side-table-overeng-cleanup | B-direct | `v0.7.3` | `07d01d5869ff6e3ffed29315b761e6e476f3b70d` | CLOSED |
 | m9-06 | m9-06-known-schema-versions-invariant | B-direct | `v0.7.4` | `3383905d93ac66b6e90b6de8cea760c1ad4e2c99` | CLOSED |
+| m9-07 | m9-07-coup-01-invariant-assertion | B-direct | `v0.7.5` | `3edb01f0a17c3ac8877df1e7868d4e3cca374217` | CLOSED |
 
 ## Metadata
 
