@@ -1,0 +1,13 @@
+{
+  "cycle_id": "m9-32",
+  "subject": {
+    "head_sha": "b3bfa59e85b1145c81ae84ce7cac6be6238b2a58",
+    "base_sha": "128a224dff9924e087647013df32edeb965efa75"
+  },
+  "verdict": "pass",
+  "findings": [],
+  "lens_summary": {
+    "drift": "25 verify-report.md files (m9-03..m9-27) were missing the canonical '## Cross-checks' section. Added the section to each, with a note explaining that the cycle predates the cross-check annotation format. Added cross-check #24.",
+    "lens_summary_note": "No prior cross-check enforced the presence of '## Cross-checks' section in verify-report.md."
+  }
+}

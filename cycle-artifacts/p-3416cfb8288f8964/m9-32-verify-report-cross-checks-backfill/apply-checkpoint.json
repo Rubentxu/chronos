@@ -1,0 +1,23 @@
+{
+  "cycle_id": "m9-32",
+  "title": "Verify report cross-checks section backfill",
+  "path": "B-direct",
+  "route": "B-direct",
+  "base_sha": "128a224dff9924e087647013df32edeb965efa75",
+  "head_sha": "b3bfa59e85b1145c81ae84ce7cac6be6238b2a58",
+  "main_sha": "b3bfa59e85b1145c81ae84ce7cac6be6238b2a58",
+  "remote_tag_peel": "b3bfa59e85b1145c81ae84ce7cac6be6238b2a58",
+  "peel_match": true,
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived",
+  "status": "CLOSED",
+  "findings_introduced": {
+    "no_action": []
+  },
+  "verified_at": "2026-09-12T12:50:00Z",
+  "released_at": "2026-09-12T12:51:00Z",
+  "archived_at": "2026-09-12T12:51:30Z",
+  "created_at": "2026-09-12T12:50:00Z",
+  "summary": "Adds '## Cross-checks' section to 25 verify-report.md files (m9-03..m9-27) that were authored before the cross-check annotation format was introduced in m9-28. Adds cross-check #24 to vault-drift-sweep.md enforcing '## Cross-checks' section in all verify-report.md files."
+}
