@@ -890,11 +890,17 @@ impl crate::storage::SessionStore {
                 // a future-versioned bundle risks panicking on unknown enum
                 // variants in nested wire types downstream.
                 if record.schema_version > CURRENT_BUNDLE_SCHEMA_VERSION {
-                    return Err(StoreError::Serialization(format!(
-                        "bundle schema_version {} is newer than supported {}; \
-                         upgrade chronos-store to read this bundle",
-                        record.schema_version, CURRENT_BUNDLE_SCHEMA_VERSION,
-                    )));
+                    // m9-08 (closes FIND-M9-01-DV-COUP-02): previously this
+                    // overload-returned `StoreError::Serialization`, which
+                    // collapsed corrupt-blob failures and forward-compat
+                    // rejections into one variant callers could not
+                    // distinguish without message parsing. Dedicate the
+                    // `SchemaTooNew { found, supported }` variant so callers
+                    // can branch on the error kind itself.
+                    return Err(StoreError::SchemaTooNew {
+                        found: record.schema_version,
+                        supported: CURRENT_BUNDLE_SCHEMA_VERSION,
+                    });
                 }
                 // m9-07 (closes FIND-M9-01-DV-COUP-01): the record and its
                 // nested summary both carry a `schema_version`. `save()`
@@ -1510,6 +1516,20 @@ mod tests {
         // Load it — must be rejected.
         let result = store.load_counterexample_bundle("b-future");
         let err = result.expect_err("future-versioned bundle must be rejected");
+        // m9-08: the loader now returns the dedicated `SchemaTooNew`
+        // variant (closes FIND-M9-01-DV-COUP-02). Pattern-match on the
+        // variant so a future regression that re-overloads `Serialization`
+        // would be caught here, not at the message-string level.
+        match &err {
+            StoreError::SchemaTooNew { found, supported } => {
+                assert_eq!(*found, 4, "found should be 4");
+                assert_eq!(
+                    *supported, 3,
+                    "supported should be 3 (CURRENT_BUNDLE_SCHEMA_VERSION)"
+                );
+            }
+            other => panic!("expected StoreError::SchemaTooNew, got: {other:?}"),
+        }
         let err_msg = format!("{err}");
         assert!(
             err_msg.contains("newer than supported"),
@@ -2519,6 +2539,13 @@ mod tests {
         // Load it — must be rejected.
         let result = store.load_counterexample_bundle("b-future-v4");
         let err = result.expect_err("future-versioned bundle must be rejected");
+        // m9-08: must be the dedicated SchemaTooNew variant, not Serialization.
+        match &err {
+            StoreError::SchemaTooNew { found, .. } => {
+                assert_eq!(*found, 4, "found should be 4");
+            }
+            other => panic!("expected StoreError::SchemaTooNew, got: {other:?}"),
+        }
         let err_msg = format!("{err}");
         assert!(
             err_msg.contains("newer than supported"),
