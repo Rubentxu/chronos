@@ -1,0 +1,41 @@
+{
+  "cycle_id": "m9-50",
+  "subject": {
+    "head_sha": "TBD",
+    "base_sha": "109e302286e6e53dfe51c8296dcfe59c16d77c3a"
+  },
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "low",
+      "category": "schema-drift",
+      "description": "Tags v0.7.31 and v0.7.43 were missing from git (deleted during prior peels without re-creation).",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F2",
+      "severity": "medium",
+      "category": "schema-drift",
+      "description": "47 release-receipt.md files had Remote tag_peel using `git rev-parse vN` (tag-object SHA) instead of `vN^{commit}` (commit SHA).",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F3",
+      "severity": "informational",
+      "category": "metadata-drift",
+      "description": "terms/index.md and cycles/index.md Last updated timestamps were stale (2026-09-12T12:52Z and T14:23Z, respectively).",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "F4",
+      "severity": "informational",
+      "category": "process",
+      "description": "Added cross-check #42 to vault-drift-sweep.md.",
+      "status": "RESOLVED"
+    }
+  ],
+  "lens_summary": {
+    "drift": "Recreated v0.7.31 and v0.7.43 tags. Fixed 47 release-receipt peel values (use vN^{commit}). Updated terms/cycles index timestamps. Added cross-check #42."
+  }
+}

@@ -6,5 +6,5 @@ Head SHA | 839e9d3b06e3823bb0bbee99c3cbab3ed5a8d8f1
 Branch | fix/m9-40-release-report-path-and-cross-checks
 Date | 2026-09-12T13:30Z
 Remote tag | v0.7.38
-Remote tag_peel | 3d049772dd218fb92b9afe105768540c14c3332a
+Remote tag_peel | 839e9d3b06e3823bb0bbee99c3cbab3ed5a8d8f1
 Peel match | true

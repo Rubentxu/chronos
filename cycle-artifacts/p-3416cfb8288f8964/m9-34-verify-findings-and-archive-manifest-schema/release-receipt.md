@@ -6,5 +6,5 @@ Head SHA | 347b957ffa3525e7e5df68f12a6aaa9a8d19fbfe
 Branch | fix/m9-34-archive-manifest-header-normalize
 Date | 2026-09-12T13:00Z
 Remote tag | v0.7.32
-Remote tag_peel | 33b8e6e6f89dc9b59ddf2830b0eefdedeb09ad06
+Remote tag_peel | 347b957ffa3525e7e5df68f12a6aaa9a8d19fbfe
 Peel match | true
