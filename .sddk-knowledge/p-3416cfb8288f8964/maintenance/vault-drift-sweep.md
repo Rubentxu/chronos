@@ -150,6 +150,34 @@ the actual count, update `Last updated`. Resolution is mechanical
 rows without bumping the counter; first caught in the m9-11 cycle by
 this very procedure (drift of 4 cycles, 26 actual vs 22 declared).
 
+### 6. terms/index.md "Last archive" ↔ cycles/index.md most-recent-cycle consistency (closed by m9-12)
+
+```bash
+last_archive_in_terms=$(awk -F'|' '/Last archive/{gsub(/[ \t]+/, "", $3); print $3}' \
+  .sddk-knowledge/p-3416cfb8288f8964/terms/index.md)
+last_closed_cycle=$(awk -F'|' '/^\| m[0-9]+/{gsub(/[ \t]+/, "", $3); last=$3} END {print last}' \
+  .sddk-knowledge/p-3416cfb8288f8964/cycles/index.md)
+[ "$last_archive_in_terms" = "$last_closed_cycle" ] \
+  && echo "OK: $last_archive_in_terms == $last_closed_cycle" \
+  || echo "DRIFT: terms=$last_archive_in_terms cycles=$last_closed_cycle"
+```
+
+**Expected output (clean):** `OK: <cycle-id> == <cycle-id>`.
+
+**If `DRIFT`:** the `Last archive` field in `terms/index.md` is pointing
+at a previous cycle (or even further behind), but a more recent cycle
+has been recorded in `cycles/index.md`. This happens when an archive
+cycle adds itself to `cycles/index.md` but forgets to bump the
+`Last archive` pointer in `terms/index.md`.
+
+Resolution: bump `Last archive` to the most-recent closed cycle in
+`cycles/index.md`, and bump `Last updated` to the current cycle time.
+
+**History:** m9-11 added itself to `cycles/index.md` but did not bump
+`terms/index.md`'s `Last archive` (was pointing at m9-10, should have
+been m9-11). m9-12 closes this drift and adds cross-check #6 to prevent
+recurrence.
+
 ## When to escalate
 
 If any of the cross-checks finds drift that is **not** trivially
@@ -158,9 +186,9 @@ artifacts for a rebuild do not exist in the repo), document the gap in
 the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
-If **check 5** finds drift: the resolution is mechanical (1-character
-edit to the metadata field). Do this in the same cycle that catches
-it; do not defer.
+If **check 5** or **check 6** finds drift: the resolution is
+mechanical (a small metadata edit). Do this in the same cycle that
+catches it; do not defer.
 
 ## Reference
 
@@ -168,6 +196,7 @@ Cycles that established this procedure:
 - **m9-09** (vault hygiene: m9-01-R4 active/terminated dedupe, v0.7.7) → cross-check #1
 - **m9-10** (vault hygiene: m9-03 apply-checkpoint rebuild, v0.7.8) → cross-check #2
 - **m9-11** (vault hygiene: cycles/index.md metadata drift fix, v0.7.9) → cross-check #5
+- **m9-12** (vault hygiene: terms/index.md "Last archive" drift fix, v0.7.10) → cross-check #6
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class
