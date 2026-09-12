@@ -75,5 +75,5 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T18:46:00Z
-| Last archive | m9-59-apply-checkpoint-remote-tag-canonical |
+| Last updated | 2026-09-12T19:07:00Z
+| Last archive | m9-60-cycle-artifacts-existence |

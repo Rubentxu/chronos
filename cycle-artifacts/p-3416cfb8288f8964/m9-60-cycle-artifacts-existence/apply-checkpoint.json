@@ -1,0 +1,37 @@
+{
+  "cycle_id": "m9-60-cycle-artifacts-existence",
+  "head_sha": "c8772352e912cc769a3f2143ee1df18051e99d35",
+  "base_sha": "a0995886ab25dfc6b11396fd7b521c489c64344c",
+  "created_at": "2026-09-12T19:07Z",
+  "route": "B-direct",
+  "summary": "Post-m9-59 sweep found 2 B-direct cycles (m9-56, m9-57) in cycles/index.md missing cycle-artifacts/ folder. Both cycles had knowledge artifacts (change-entry, archive-manifest) but no SHA-bearing cycle artifacts. Created all 6 cycle artifacts for each, with peel_match verified against git rev-parse v0.7.54^{commit} and v0.7.56^{commit}. Added CC#51 to detect this drift class going forward.",
+  "title": "60 cycle artifacts existence",
+  "status": "CLOSED",
+  "archived_at": "2026-09-12T19:07Z",
+  "main_sha": "c8772352e912cc769a3f2143ee1df18051e99d35",
+  "peel_match": true,
+  "release_status": "released",
+  "released_at": "2026-09-12T19:07Z",
+  "remote_tag": "v0.7.62",
+  "remote_tag_peel": "c8772352e912cc769a3f2143ee1df18051e99d35",
+  "verify_status": "passed",
+  "verified_at": "2026-09-12T19:07Z",
+  "archive_status": "archived",
+  "findings_closed": [
+    {
+      "finding_id": "FIND-M9-60-MISSING-CYCLE-ARTIFACTS",
+      "rule_id": "vault_hygiene.cycle_artifacts_existence",
+      "subject": {
+        "cycle": "m9-60-cycle-artifacts-existence",
+        "missing_count": 2,
+        "files": [
+          "m9-56-release-report-duplicate-cross-checks",
+          "m9-57-apply-checkpoint-schema-backfill"
+        ]
+      }
+    }
+  ],
+  "findings_introduced": {
+    "no_action": []
+  }
+}
