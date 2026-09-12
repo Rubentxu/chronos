@@ -25,7 +25,7 @@ have head_sha != remote_tag_peel with peel_match=False.
 ## Subject
 
 - base_sha: `af49e06fd5509b11805e0d63a330c540294274ea`
-- head_sha: TBD (will be tag peel)
+- head_sha: `308215faf074dafb3054789db39c53af7fa2f1e6`
 - cycle: m9-57
 - branch: `fix/m9-57-apply-checkpoint-schema-backfill`
 - date: 2026-09-12

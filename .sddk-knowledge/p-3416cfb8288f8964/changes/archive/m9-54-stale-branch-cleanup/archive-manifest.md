@@ -9,7 +9,7 @@ Stale local and remote `fix/m9-*` branch cleanup: 44 local + 28 remote branches 
 | Campo | Valor |
 |---|---|
 | Cycle | m9-54-stale-branch-cleanup |
-| Base SHA | `a24139e` |
+| Base SHA | `a24139ec1410d6fff167c5b127c1d6fed019c192` |
 | Head SHA | `df4efcfe55dc70c3991def5c917ebfe0a235359d` |
 | Path | B-direct |
 | Date | 2026-09-12T16:46Z |

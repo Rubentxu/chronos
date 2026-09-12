@@ -16,8 +16,8 @@
 
 ## Subject
 
-- base_sha: `6bdf8ba...`
-- head_sha: TBD (see release-report)
+- base_sha: `6bdf8ba66bbf8da078d6abc812c614c54d970b7b8`
+- head_sha: `32d9a3c386de934bbbdf304b1cad367b629d9731`
 - cycle: m9-56
 - branch: `fix/m9-56-release-report-duplicate-cross-checks`
 - date: 2026-09-12

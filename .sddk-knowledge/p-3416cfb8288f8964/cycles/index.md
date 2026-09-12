@@ -77,8 +77,8 @@ Chronological record of all SDDK cycles for this project.
 | m9-53 | m9-53-cycles-index-sha-expand | B-direct | `v0.7.51` | `5781ce66da071a85bb71daa9263f5092b3e35b7e` | CLOSED |
 | m9-54 | m9-54-stale-branch-cleanup | B-direct | `v0.7.52` | `df4efcfe55dc70c3991def5c917ebfe0a235359d` | CLOSED |
 | m9-55 | m9-55-apply-checkpoint-fabricated-sha | B-direct | `v0.7.53` | `6ca0afddccb018c0d66bfbb35fa44dbc58ec2db4` | CLOSED |
-| m9-56 | m9-56-release-report-duplicate-cross-checks | B-direct | `v0.7.54` | — | CLOSED |
-| m9-57 | m9-57-apply-checkpoint-schema-backfill | B-direct | `v0.7.56` | — | CLOSED |
+| m9-56 | m9-56-release-report-duplicate-cross-checks | B-direct | `v0.7.54` | `32d9a3c386de934bbbdf304b1cad367b629d9731` | CLOSED |
+| m9-57 | m9-57-apply-checkpoint-schema-backfill | B-direct | `v0.7.56` | `308215faf074dafb3054789db39c53af7fa2f1e6` | CLOSED |
 
 ## Metadata
 

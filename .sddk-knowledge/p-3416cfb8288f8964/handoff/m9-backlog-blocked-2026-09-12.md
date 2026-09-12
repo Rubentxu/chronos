@@ -1,8 +1,8 @@
-# Handoff: m9+ Backlog (Updated 2026-09-12T17:58Z)
+# Handoff: m9+ Backlog (Updated 2026-09-12T18:18Z)
 
 ## Status
 
-As of 2026-09-12T17:58Z, the m9 vault is canonical-schema-clean across all 57 cycles
+As of 2026-09-12T18:18Z, the m9 vault is canonical-schema-clean across all 57 cycles
 in CA p-3416cfb8288f8964 (plus 2 legacy). 43 active cross-checks all pass.
 
 m9-57 was a major vault hygiene cycle. Discovery: prior CC runner filtered
@@ -63,7 +63,7 @@ snapshot only.
 
 **Action:** Treat as feature backlog.
 
-## Cross-checks summary (as of 2026-09-12T17:58Z)
+## Cross-checks summary (as of 2026-09-12T18:18Z)
 
 All 43 cross-checks pass. Breakdown:
 
@@ -88,3 +88,21 @@ All 43 cross-checks pass. Breakdown:
 
 Same as before. Bucket 1 unchanged, Bucket 3 requires source artifacts,
 Bucket 4 requires product scope.
+
+
+## Session 2026-09-12T18:18Z: post-m9-57 sweep
+
+After m9-57 tagged v0.7.56 (then v0.7.58 for archive-manifest self-fix),
+ran additional drift sweep across under-checked dimensions:
+
+- cycles/index.md `Published SHA` — found m9-56 and m9-57 had `—` placeholder
+  instead of real SHA; filled in (m9-56 → `32d9a3c...`, m9-57 → `308215f...`)
+- archive-manifest.md `Base SHA` column — found m9-13 was missing the row
+  entirely; added `bfb9edeeea1a5dd88d8828addf38d0c755c7b5cf` (verified reachable)
+- archive-manifest.md m9-54 had short Base SHA `a24139e`; expanded to full 40-char
+- change-entry.md `## Subject` m9-56 had `head_sha: TBD` and `base_sha: 6bdf8ba...`;
+  filled in (m9-56 → `32d9a3c...`/`6bdf8ba66...`)
+- change-entry.md `## Subject` m9-57 had `head_sha: TBD`; filled in (→ `308215f...`)
+
+After all fixes: CC#48 meta-check returns 0 DRIFT lines, confirming
+all 48 cross-checks are clean.
