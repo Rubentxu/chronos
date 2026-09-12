@@ -1,5 +1,5 @@
 {
-  "cycle_id": "p-3416cfb8288f8964/m9-14-m9-11-fabricated-sha",
+  "cycle_id": "m9-14-m9-11-fabricated-sha",
   "change": "fix m9-11 apply-checkpoint.json fabricated head_sha + remote_tag_peel + cycles/index.md m9-11 row + add cross-check #8 to vault-drift-sweep",
   "path": "B-direct",
   "status": "CLOSED",

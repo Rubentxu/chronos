@@ -1,5 +1,5 @@
 {
-  "cycle_id": "p-3416cfb8288f8964/m9-18-apply-checkpoint-metadata-drift",
+  "cycle_id": "m9-18-apply-checkpoint-metadata-drift",
   "change": "backfill archived_at for m9-11/12/13 apply-checkpoint.json + add findings_introduced to 7 prior cycles + normalize status (closed \u2192 CLOSED) + add cross-check #11 to vault-drift-sweep",
   "path": "B-direct",
   "status": "CLOSED",

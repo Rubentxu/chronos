@@ -1,5 +1,5 @@
 {
-  "cycle_id": "p-3416cfb8288f8964/m9-11-cycles-index-metadata-drift",
+  "cycle_id": "m9-11-cycles-index-metadata-drift",
   "change": "fix cycles/index.md Total cycles metadata drift (22\u219226) + add cross-check #5 to vault-drift-sweep procedure",
   "path": "B-direct",
   "status": "CLOSED",

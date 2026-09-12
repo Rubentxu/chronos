@@ -1,0 +1,22 @@
+# m9-23: Release Report
+
+| Field | Value |
+|---|---|
+| Cycle | m9-23-cycle-id-strip-prefix |
+| Path | B-direct (T0 + light-verify) |
+| Cycles closed | 39 → 40 |
+| Tags | v0.7.20 → v0.7.21 |
+
+## Drift class closed
+
+| Class | Cycles | Fix |
+|---|---|---|
+| `cycle_id` with workspace prefix | m9-03..m9-18 (16 cycles) | Strip prefix |
+
+## Cross-check
+
+Cross-check #16 added to `vault-drift-sweep.md`.
+
+## Tier
+
+B-direct: T0 only (file-local mechanical edit).
