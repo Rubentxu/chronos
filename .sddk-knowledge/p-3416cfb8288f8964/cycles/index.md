@@ -56,6 +56,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-32 | m9-32-verify-report-cross-checks-backfill | B-direct | `v0.7.30` | `b3bfa59` | CLOSED |
 | m9-33 | m9-33-change-entry-title-format-normalize | B-direct | `v0.7.31` | `837bc5c` | CLOSED |
 | m9-34 | m9-34-verify-findings-and-archive-manifest-schema | B-direct | `v0.7.32` | `347b957` | CLOSED |
+| m9-35 | m9-35-release-report-title-format-normalize | B-direct | `v0.7.33` | `0abc8f4` | CLOSED |
 
 ## Metadata
 
@@ -63,5 +64,5 @@ Chronological record of all SDDK cycles for this project.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T13:00:00Z |
-| Total cycles | 50 |
+| Last updated | 2026-09-12T13:14:00Z |
+| Total cycles | 51 |
