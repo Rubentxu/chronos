@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -532,6 +532,7 @@ Cycles that established this procedure:
 - **m9-24** (vault hygiene: verify-findings.json schema normalization, v0.7.22) → cross-check #17
 - **m9-25** (vault hygiene: synthesize missing verify-findings.json for m9-05..m9-10, v0.7.23) → cross-check #18
 - **m9-26** (vault hygiene: verify-findings.json cycle_id prefix strip, v0.7.24) → extended cross-check #16
+- **m9-27** (vault hygiene: findings_introduced.no_action free-text note → notes key, v0.7.25) → cross-check #19
 
 ### 13. apply-checkpoint.json `*_status` field backfill (closed by m9-20)
 
@@ -741,6 +742,38 @@ restoration, not an original.
 (synthesized by m9-25). m9-01 and m9-02 don't have cycle folders
 at all (pre-cycle-artifacts convention); they are out of scope
 for this check.
+
+### 19. findings_introduced.no_action must contain only term IDs (no free-text notes) (closed by m9-27)
+
+```python
+import json, os
+for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
+    ckpt = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/apply-checkpoint.json'
+    if not os.path.exists(ckpt): continue
+    d = json.load(open(ckpt))
+    fi = d.get('findings_introduced', {})
+    no_action = fi.get('no_action', [])
+    for entry in no_action:
+        # Real term IDs are short identifiers without spaces or parenthetical notes.
+        # If the entry contains spaces or parenthetical content, it's a free-text
+        # note that belongs under `notes` instead.
+        if ' ' in entry or '(' in entry:
+            print(f"DRIFT: {folder}: no_action has free-text note: {entry[:80]}")
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** A `findings_introduced.no_action` entry contains
+free-text content (spaces, parenthetical notes) instead of a bare
+term ID like `cc-002-env-coupling-test`. Cross-check #2 expects
+these to be valid term IDs.
+
+**Resolution:** Move free-text entries to a new `findings_introduced.notes`
+list. Real closures stay in `no_action` as bare term IDs.
+
+**History:** m9-14 stored a free-text note in `no_action` describing
+a deferred observation (vacuous peel_match on prior cycles). This
+tripped cross-check #2. m9-27 moves the note to a `notes` key.
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class

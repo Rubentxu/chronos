@@ -1,0 +1,16 @@
+{
+  "cycle_id": "m9-27",
+  "subject": {
+    "head": "91338e3b2fc58835662776507bde5308ec36568b",
+    "head_sha": "91338e3b2fc58835662776507bde5308ec36568b"
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "low",
+      "category": "schema-drift",
+      "summary": "m9-14 had a free-text note in findings_introduced.no_action (vacuous-peel-match-prior-cycles). Cross-check #2 expected no_action to contain only valid term IDs.",
+      "resolution": "Move the free-text note from no_action to a new findings_introduced.notes key. Add cross-check #19."
+    }
+  ]
+}
