@@ -40,23 +40,6 @@ blockers: []
 
 - C1: pass (pre-CC-cycle, no cross-checks applied)
 
-## Cross-checks
-
-- C1: pass (pre-CC-cycle, no cross-checks applied)
- Summary
-
-Source: `cycle-artifacts/p-3416cfb8288f8964/m9-10-m9-03-apply-checkpoint-rebuild/verify-report.md`
-
-| Verdict | Mode | Path | Commands passed | Critical | Warnings |
-|---|---|---|---|---|---|
-| PASS | doc-verify inline | B-rebuild | python3 json.load + cross-reference against terms/index.md | 0 | 0 |
-
-### Behavioral Compliance (1/1 spec scenario pinned)
-
-| Finding | Description | Status |
-|---|---|---|
-| R1 / vault-reorg-gap-m9-03 | `apply-checkpoint.json` for m9-03-side-table-debt-cleanup exists and is structurally consistent with the other m9-* apply-checkpoints | COMPLIANT |
-
 ## Files Inventory
 
 | Status | Bucket | Path |

@@ -31,6 +31,10 @@ Vault metadata only:
    - Bumped Last archive to m9-32.
    - Bumped Last updated to 2026-09-12T12:50:00Z.
 
+## Cross-checks
+
+- C1-C24: pass (see Verification section below)
+
 ## Verification
 
 - All 24 cross-checks: PASS

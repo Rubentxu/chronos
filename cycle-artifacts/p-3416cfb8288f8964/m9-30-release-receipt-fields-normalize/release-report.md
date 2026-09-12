@@ -40,15 +40,6 @@ Vault metadata only:
 
 - C1-C32: pass
 
-## Cross-checks
-
-- C1-C32: pass
-
-
-- All 22 cross-checks: PASS
-- 25 release-receipt.md files each verified to have the canonical
-  SHA fields, with SHAs matching apply-checkpoint.json
-
 ## Risk
 
 None. Vault metadata only; no code or runtime behavior affected.

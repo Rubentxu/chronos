@@ -40,24 +40,6 @@ blockers: []
 
 - C1: pass (pre-CC-cycle, no cross-checks applied)
 
-## Cross-checks
-
-- C1: pass (pre-CC-cycle, no cross-checks applied)
- Summary
-
-Source: `cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/verify-report.md`
-
-| Verdict | Mode | Path | Commands passed | Critical | Warnings |
-|---|---|---|---|---|---|
-| PASS | light-verify inline | B-direct | T0/T1/T2 all green (chronos-store 57/57, chronos-services 263/263, chronos-cli 2/2) | 0 | 0 |
-
-### Behavioral Compliance (2/2 spec scenarios pinned)
-
-| Finding | Description | Status |
-|---|---|---|
-| m9-01-R4 / R1 | `KNOWN_BUNDLE_SCHEMA_VERSIONS` no longer marked dead-code in production build | COMPLIANT |
-| FIND-M9-01-DV-OE-01 / R2 | `CURRENT_BUNDLE_SCHEMA_VERSION ∈ KNOWN_BUNDLE_SCHEMA_VERSIONS` enforced at compile time | COMPLIANT |
-
 ## Files Inventory
 
 | Status | Bucket | Path |

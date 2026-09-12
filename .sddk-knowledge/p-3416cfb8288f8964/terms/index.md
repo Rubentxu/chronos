@@ -75,5 +75,5 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T19:34:19Z |
-| Last archive | m9-33-change-entry-title-format-normalize |
+| Last updated | 2026-09-12T17:38:27Z
+| Last archive | m9-56-release-report-duplicate-cross-checks |

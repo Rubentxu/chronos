@@ -38,26 +38,6 @@ blockers: []
 
 - C1: pass (pre-CC-cycle, no cross-checks applied)
 
-## Cross-checks
-
-- C1: pass (pre-CC-cycle, no cross-checks applied)
- Summary
-
-Source: `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/verify-report.md`
-
-| Verdict | Mode | Path | Commands passed | Critical | Warnings |
-|---|---|---|---|---|---|
-| PASS | light-verify inline | B-direct | 4/4 | 0 | 0 |
-
-### Behavioral Compliance
-
-| Finding | Description | Status |
-|---|---|---|
-| F1 | `save_counterexample_bundle_events` API eliminated | COMPLIANT |
-| F2 | `count_counterexample_bundle_events` doc fixed | COMPLIANT |
-| F3 | `collect_bundle_chunks` helper consolidates 3 duplicate loops | COMPLIANT |
-| F4 | `bundle_events_count_or_legacy` chokepoint used by both services call sites | COMPLIANT |
-
 ## Files Inventory
 
 inventory-unavailable: invalid_rev — `inventory.json` was referenced in the verify report but was not persisted to the cycle artifacts directory. No inventory blocking per B-direct path rules.

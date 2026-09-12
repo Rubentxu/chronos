@@ -38,15 +38,6 @@ Vault metadata only:
 
 - C1-C32: pass
 
-## Cross-checks
-
-- C1-C32: pass
-
-
-- All 21 cross-checks: PASS
-- 17 archive-manifest.md files each verified to have `## Evidence bindings` section
-- Each artifact in those sections has its computed SHA-256 matching the actual file
-
 ## Risk
 
 None. Vault metadata only; no code or runtime behavior affected.

@@ -39,15 +39,6 @@ Vault metadata only:
 
 - C1-C32: pass
 
-## Cross-checks
-
-- C1-C32: pass
-
-
-- Cross-checks C1 through C20: PASS (0 drift)
-- `git cat-file -e 735c57b7178c93ea25f9cb603a3cb97b9ca7f81e` → PASS
-- `git rev-parse m9-19 fix commit ^ = 735c57b7178c93ea25f9cb603a3cb97b9ca7f81e` → PASS
-
 ## Risk
 
 None. Vault metadata only; no code or runtime behavior affected.

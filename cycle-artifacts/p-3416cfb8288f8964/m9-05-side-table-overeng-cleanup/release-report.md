@@ -40,26 +40,6 @@ blockers: []
 
 - C1: pass (pre-CC-cycle, no cross-checks applied)
 
-## Cross-checks
-
-- C1: pass (pre-CC-cycle, no cross-checks applied)
- Summary
-
-Source: `cycle-artifacts/p-3416cfb8288f8964/m9-05-side-table-overeng-cleanup/verify-report.md`
-
-| Verdict | Mode | Path | Commands passed | Critical | Warnings |
-|---|---|---|---|---|---|
-| PASS | light-verify inline | B-direct | T0/T1/T2 (store + cli + services) all green | 0 | 0 |
-
-### Behavioral Compliance (4/4 spec scenarios pinned)
-
-| Finding | Description | Status |
-|---|---|---|
-| R1 / overeng-001 | `decode_chunk_payload` extracted and used by both loaders | COMPLIANT |
-| R2 / overeng-002 | `collect_v3_keys_for_bundle` extracted; `save_bundle_record_and_events` reuses it | COMPLIANT |
-| R3 / overeng-003 | `collect_bundle_chunks(events_count: u64)` — `Option` wrapper dropped | COMPLIANT |
-| R4 / cc-003 | `db()` + table constants narrowed to module-private; cli test uses chokepoints | COMPLIANT |
-
 ## Files Inventory
 
 | Status | Bucket | Path |

@@ -40,23 +40,6 @@ blockers: []
 
 - C1: pass (pre-CC-cycle, no cross-checks applied)
 
-## Cross-checks
-
-- C1: pass (pre-CC-cycle, no cross-checks applied)
- Summary
-
-Source: `cycle-artifacts/p-3416cfb8288f8964/m9-08-list-load-schema-error-variant/verify-report.md`
-
-| Verdict | Mode | Path | Commands passed | Critical | Warnings |
-|---|---|---|---|---|---|
-| PASS | light-verify inline | B-direct | T0/T1/T2 (store + cli + services) all green | 0 | 0 |
-
-### Behavioral Compliance (1/1 spec scenario pinned)
-
-| Finding | Description | Status |
-|---|---|---|
-| R1 / FIND-M9-01-DV-COUP-02 | `StoreError::SchemaTooNew { found, supported }` exists as a dedicated variant; loader returns it instead of overloading `Serialization` | COMPLIANT |
-
 ## Files Inventory
 
 | Status | Bucket | Path |

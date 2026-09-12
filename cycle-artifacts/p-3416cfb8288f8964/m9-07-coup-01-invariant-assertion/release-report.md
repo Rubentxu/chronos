@@ -40,23 +40,6 @@ blockers: []
 
 - C1: pass (pre-CC-cycle, no cross-checks applied)
 
-## Cross-checks
-
-- C1: pass (pre-CC-cycle, no cross-checks applied)
- Summary
-
-Source: `cycle-artifacts/p-3416cfb8288f8964/m9-07-coup-01-invariant-assertion/verify-report.md`
-
-| Verdict | Mode | Path | Commands passed | Critical | Warnings |
-|---|---|---|---|---|---|
-| PASS | light-verify inline | B-direct | T0/T1/T2 (store + cli + services) all green | 0 | 0 |
-
-### Behavioral Compliance (1/1 spec scenario pinned)
-
-| Finding | Description | Status |
-|---|---|---|
-| R1 / FIND-M9-01-DV-COUP-01 | loader rejects records whose envelope `schema_version` disagrees with `summary.schema_version` | COMPLIANT |
-
 ## Files Inventory
 
 | Status | Bucket | Path |

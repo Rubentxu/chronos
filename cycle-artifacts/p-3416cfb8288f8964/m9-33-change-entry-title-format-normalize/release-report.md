@@ -34,14 +34,6 @@ Vault metadata only:
 
 - C1-C32: pass
 
-## Cross-checks
-
-- C1-C32: pass
-
-
-- All 25 cross-checks: PASS
-- 18 change-entry.md files each verified to have the canonical title format
-
 ## Risk
 
 None. Vault metadata only; no code or runtime behavior affected.

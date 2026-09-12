@@ -40,23 +40,6 @@ blockers: []
 
 - C1: pass (pre-CC-cycle, no cross-checks applied)
 
-## Cross-checks
-
-- C1: pass (pre-CC-cycle, no cross-checks applied)
- Summary
-
-Source: `cycle-artifacts/p-3416cfb8288f8964/m9-09-vault-hygiene-active-disclosure-dedupe/verify-report.md`
-
-| Verdict | Mode | Path | Commands passed | Critical | Warnings |
-|---|---|---|---|---|---|
-| PASS | doc-verify inline | B-direct | vault id-uniqueness sweep | 0 | 0 |
-
-### Behavioral Compliance (1/1 spec scenario pinned)
-
-| Finding | Description | Status |
-|---|---|---|
-| R1 / vault-drift-m9-01-R4 | `m9-01-R4` appears only in the Terminated section, not the Active section | COMPLIANT |
-
 ## Files Inventory
 
 | Status | Bucket | Path |

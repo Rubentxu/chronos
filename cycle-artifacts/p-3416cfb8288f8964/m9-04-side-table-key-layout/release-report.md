@@ -41,38 +41,6 @@ blockers: []
 
 - C1: pass (pre-CC-cycle, no cross-checks applied)
 
-## Cross-checks
-
-- C1: pass (pre-CC-cycle, no cross-checks applied)
- Summary
-
-Source: `cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/verify-report.md`
-
-| Verdict | Mode | Path | Commands passed | Critical | Warnings |
-|---|---|---|---|---|---|
-| PASS | coordinator | A-min | T0, T1, T2, T4-smoke (4/4 green) | 0 | 0 |
-
-### Behavioral Compliance (9/9 spec scenarios pinned)
-
-| Scenario | Production Path | Test | Status |
-|---|---|---|---|
-| Side-table keys use fixed-width blake3 prefix (v3) | `encode_chunk_key` + `bundle_prefix` | store + cli + services | COMPLIANT |
-| Side-table values carry `bundle_id` (identity defense) | `encode_chunk_value` / `decode_chunk_value` | store | COMPLIANT |
-| Read path: v3 range scan first, v2 fallback | `collect_bundle_chunks` (D7 guard) | store + cli | COMPLIANT |
-| Save writes v3 + removes both v3 and v2 prior chunks | `save_bundle_record_and_events` (dual cleanup) | store | COMPLIANT |
-| `CURRENT_BUNDLE_SCHEMA_VERSION == 3`; future-version rejected | store constant + future-version test | store | COMPLIANT |
-| Save → load round-trip under v3 layout | `save_counterexample_bundle` / `load_counterexample_bundle_events` | store + cli + services | COMPLIANT |
-| Services + replay chokepoint under v3 + v2 (services) | `ChronosCounterexampleService::save` → `bundle_events_or_legacy` | `m9_04_save_load_roundtrip_through_services` | COMPLIANT |
-| Replay uses v3 layout (cli) | `chronos_cli::replay::run_replay` | `m9_04_replay_uses_v3_layout` (+ project_report fix) | COMPLIANT |
-| Replay uses v2 fallback for legacy bundle (cli) | `run_replay` → `bundle_events_or_legacy` → v2 branch | `m9_04_replay_v2_bundle_uses_legacy_path` | COMPLIANT |
-
-### R4/R6 disclosure pins
-
-| Disclosure | Test | Status |
-|---|---|---|
-| R4 — never-resaved v2 bundle keeps using legacy path | `m9_04_r4_v2_bundle_never_resaved_uses_legacy_path` | COMPLIANT |
-| R6 — `KNOWN_BUNDLE_SCHEMA_VERSIONS == [1, 2, 3]` | `m9_04_known_bundle_schema_versions_pinned` | COMPLIANT |
-
 ## Files Inventory
 
 | Status | Bucket | Path |
