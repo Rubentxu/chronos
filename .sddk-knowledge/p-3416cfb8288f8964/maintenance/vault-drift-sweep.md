@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34**, or **check 35**, or **check 36**, or **check 37**, or **check 38**, or **check 39**, or **check 40**, or **check 41**, or **check 42**, or **check 43**, or **check 44**, or **check 45** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34**, or **check 35**, or **check 36**, or **check 37**, or **check 38**, or **check 39**, or **check 40**, or **check 41**, or **check 42**, or **check 43**, or **check 44**, or **check 45**, or **check 46** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -539,6 +539,27 @@ Cycles that established this procedure:
 - **m9-31** (vault hygiene: normalize merge-receipt.md SHA fields across all 25 m9 cycles, v0.7.29) → cross-check #23
 - **m9-32** (vault hygiene: add `## Cross-checks` section to 25 verify-report.md files, v0.7.30) → cross-check #24
 - **m9-33** (vault hygiene: normalize change-entry.md title format to `# Change: m9-NN <title>` across 18 cycles, v0.7.31) → cross-check #25
+- **m9-34** (vault hygiene: verify-findings subject.base_sha backfill for 23 affected cycles, v0.7.32) → cross-check #26
+- **m9-35** (vault hygiene: archive-manifest Published SHA→Head SHA rename across 10 files, v0.7.33) → cross-check #27
+- **m9-36** (vault hygiene: release-report.md `# m9-NN:` heading format across 9 files, v0.7.34) → cross-check #28
+- **m9-37** (vault hygiene: release-receipt Base SHA + markdown-table format, v0.7.35) → cross-check #29
+- **m9-38** (vault hygiene: apply-checkpoint path→route normalization, v0.7.36) → cross-check #30
+- **m9-39** (vault hygiene: verify-report title + verify-findings verdict + archive-manifest cycle, v0.7.37) → cross-check #31
+- **m9-40** (vault hygiene: archive-manifest Base SHA + m9-34 verify-report Cross-checks, v0.7.38) → cross-check #32
+- **m9-41** (vault hygiene: release-report Path + Cross-checks sections, v0.7.39) → cross-check #33
+- **m9-42** (vault hygiene: change-entry Subject/Files + verify-report Subject + short→full SHA across 16 files, v0.7.40) → cross-check #34
+- **m9-43** (vault hygiene: change-entry section order + cross-check section + m9-03 cycle_id, v0.7.41) → cross-check #35
+- **m9-44** (vault hygiene: verify-report Path + verify-findings lens_summary + Findings prose across 18 files, v0.7.42) → cross-check #36
+- **m9-45** (vault hygiene: change-entry section order + release-report cycle value, v0.7.43) → cross-check #37
+- **m9-46** (vault hygiene: verify-findings findings array population, v0.7.44) → cross-check #38
+- **m9-47** (vault hygiene: archive/release Cross-checks sections + cycles index count, v0.7.45) → cross-check #39
+- **m9-48** (vault hygiene: apply-checkpoint findings_closed + archive-manifest Date/Path backfill, v0.7.46) → cross-check #40
+- **m9-49** (vault hygiene: m9-03 lens_summary + m9-19..m9-33 release-report schema backfill, v0.7.47) → cross-check #41
+- **m9-50** (vault hygiene: tag recreation + peel reconciliation + index timestamps, v0.7.48) → cross-check #42
+- **m9-51** (vault hygiene: head_sha sync between apply-checkpoint + release-receipt + verify-findings, v0.7.49) → cross-check #43
+- **m9-52** (vault hygiene: verify-report `## Summary` section across 7 files, v0.7.50) → cross-check #44
+- **m9-53** (vault hygiene: cycles/index.md short-SHA expansion (35 rows), v0.7.51) → cross-check #45
+- **m9-54** (vault hygiene: stale-branch cleanup (44 local + 28 remote), v0.7.52) → cross-check #46
 
 ### 13. apply-checkpoint.json `*_status` field backfill (closed by m9-20)
 
@@ -2012,3 +2033,26 @@ re-pointed without updating the index.
 **History:** m9-19..m9-33 cycles/index.md had 7-char short SHAs that
 were equivalent to the tag commit prefix. m9-53 expanded to full
 40-char (35 rows).
+
+### 46. No stale local or remote feature/fix branches (closed by m9-54)
+
+```bash
+git branch --list 'fix/m9-*' | wc -l
+git branch -r --list 'origin/fix/m9-*' | wc -l
+```
+
+**Expected output (clean):** `0` and `0`.
+
+**If non-zero:** Stale branches accumulated across cycles. Each
+m9-cycle (m9-11+) creates a per-cycle branch, merges to main, but
+forgets to delete the branch. After N cycles this accumulates N
+branches. Same applies to remote.
+
+**Resolution:**
+- `git branch --list 'fix/m9-*' | xargs git branch -d` (safe delete,
+  only deletes merged branches; non-merged exits with warning)
+- `git push origin :fix/m9-<slug>` for each remote, or batch with
+  `git branch -r --list 'origin/fix/m9-*' | sed 's/origin\///' | xargs -I{} git push origin :{}`
+
+**History:** m9-54 closed this drift class after 53 m9-cycles
+accumulated 44 local + 28 remote stale branches.
