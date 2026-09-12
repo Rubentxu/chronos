@@ -7,7 +7,7 @@
 | Cycle ID | `m9-11-cycles-index-metadata-drift` |
 | Path | `B-direct` |
 | Status | CLOSED |
-| Base SHA | `cd0115f` (the m9-11 fix commit itself, since this is a single-commit cycle) |
+| Base SHA | `6120e98` (parent of fix commit, main HEAD before m9-11) |
 | Head SHA | `cd0115f` |
 | Tag | `v0.7.9` (annotated, peel matches published SHA) |
 

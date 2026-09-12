@@ -178,6 +178,36 @@ Resolution: bump `Last archive` to the most-recent closed cycle in
 been m9-11). m9-12 closes this drift and adds cross-check #6 to prevent
 recurrence.
 
+### 7. change-entry.md Head/Base SHA ↔ apply-checkpoint.json head_sha/base_sha consistency (closed by m9-13)
+
+```python
+import json, os, re
+for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
+    ckpt = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/apply-checkpoint.json'
+    ce = f'.sddk-knowledge/p-3416cfb8288f8964/changes/{folder}/change-entry.md'
+    if not os.path.exists(ckpt) or not os.path.exists(ce): continue
+    d = json.load(open(ckpt))
+    with open(ce) as f: content = f.read()
+    head_m = re.search(r'\| Head SHA \| `([a-f0-9]+)`', content)
+    base_m = re.search(r'\| Base SHA \| `([a-f0-9]+)', content)
+    if head_m and d.get('head_sha') and not d['head_sha'].startswith(head_m.group(1)):
+        print(f"DRIFT: {folder}: head SHA {head_m.group(1)} not a prefix of apply-checkpoint head_sha {d['head_sha'][:12]}")
+    if base_m and d.get('base_sha') and not d['base_sha'].startswith(base_m.group(1)):
+        print(f"DRIFT: {folder}: base SHA {base_m.group(1)} not a prefix of apply-checkpoint base_sha {d['base_sha'][:12]}")
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** the change-entry's `Base SHA` or `Head SHA` field
+disagrees with the corresponding field in `apply-checkpoint.json`. This
+is usually a copy-paste error in the change-entry. Resolution: update
+the change-entry to match the apply-checkpoint.
+
+**History:** m9-11's change-entry was authored with `Base SHA = cd0115f`
+(the fix commit), but the apply-checkpoint correctly had
+`base_sha = 6120e98` (the parent of the fix). m9-13 catches this
+drift and adds cross-check #7 to prevent recurrence.
+
 ## When to escalate
 
 If any of the cross-checks finds drift that is **not** trivially
@@ -186,8 +216,8 @@ artifacts for a rebuild do not exist in the repo), document the gap in
 the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
-If **check 5** or **check 6** finds drift: the resolution is
-mechanical (a small metadata edit). Do this in the same cycle that
+If **check 5**, **check 6**, or **check 7** finds drift: the resolution
+is mechanical (a small metadata edit). Do this in the same cycle that
 catches it; do not defer.
 
 ## Reference
@@ -197,6 +227,7 @@ Cycles that established this procedure:
 - **m9-10** (vault hygiene: m9-03 apply-checkpoint rebuild, v0.7.8) → cross-check #2
 - **m9-11** (vault hygiene: cycles/index.md metadata drift fix, v0.7.9) → cross-check #5
 - **m9-12** (vault hygiene: terms/index.md "Last archive" drift fix, v0.7.10) → cross-check #6
+- **m9-13** (vault hygiene: change-entry SHA drift fix, v0.7.11) → cross-check #7
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class
