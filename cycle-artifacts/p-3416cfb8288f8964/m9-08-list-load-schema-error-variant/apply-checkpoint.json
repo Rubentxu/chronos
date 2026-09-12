@@ -1,0 +1,90 @@
+{
+  "cycle_id": "p-3416cfb8288f8964/m9-08-list-load-schema-error-variant",
+  "change": "m9-08-list-load-schema-error-variant",
+  "path": "B-direct",
+  "status": "closed",
+  "head_sha": "d89862bbe67256cf6274be1d71ee7f8857cb8808",
+  "base_sha": "50553969309b945156c239fd5a5a7f794431df21",
+  "tag": "v0.7.6",
+  "remote_tag_peel": "d89862bbe67256cf6274be1d71ee7f8857cb8808",
+  "main_sha": "d89862bbe67256cf6274be1d71ee7f8857cb8808",
+  "peel_match": true,
+  "runtime_status": "RELEASED",
+  "route": "local",
+  "verified_at": "2026-09-12T07:02:00Z",
+  "released_at": "2026-09-12T07:03:02Z",
+  "archived_at": null,
+  "commits_since_base": [
+    "d89862bfix(m9-08): dedicated StoreError::SchemaTooNew variant (closes FIND-M9-01-DV-COUP-02)",
+    "cb47fe8docs(m9-08): light-verify evidence (R1 PASS, FIND-M9-01-DV-COUP-02 closed)"
+  ],
+  "artifacts": {
+    "merge_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-08-list-load-schema-error-variant/merge-receipt.md",
+    "release_receipt": "cycle-artifacts/p-3416cfb8288f8964/m9-08-list-load-schema-error-variant/release-receipt.md",
+    "release_report": "cycle-artifacts/p-3416cfb8288f8964/m9-08-list-load-schema-error-variant/release-report.md",
+    "verify_report": "cycle-artifacts/p-3416cfb8288f8964/m9-08-list-load-schema-error-variant/verify-report.md",
+    "change_entry": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-08-list-load-schema-error-variant/change-entry.md",
+    "archive_manifest": ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-08-list-load-schema-error-variant/archive-manifest.md"
+  },
+  "findings_closed": [
+    "FIND-M9-01-DV-COUP-02"
+  ],
+  "findings_remaining_m9_plus": [
+    "cc-001-god-module",
+    "cc-004-implicit-io-toctou"
+  ],
+  "notes": [
+    {
+      "gate": "T0-lint",
+      "result": "pass",
+      "evidence": "cargo fmt --all -- --check (clean); cargo clippy --workspace --all-targets -- -D warnings (0 warnings)"
+    },
+    {
+      "gate": "T1-lib-unit",
+      "result": "pass",
+      "evidence": "cargo test -p chronos-store --lib: 60/60 (+1 m9-08 test: error::tests::test_schema_too_new_variant_display_and_fields; pre-existing m9_02 and m9_04 future-version tests updated to pattern-match on the new variant)"
+    },
+    {
+      "gate": "T2-integration",
+      "result": "pass",
+      "evidence": "cargo test -p chronos-services --lib: 263/263; cargo test -p chronos-cli --tests: 2/2"
+    },
+    {
+      "gate": "verify",
+      "result": "PASS",
+      "verdict": "light-verify inline; 1/1 spec scenario COMPLIANT (R1: dedicated SchemaTooNew { found, supported } variant exposed via Display + pattern-match)"
+    },
+    {
+      "gate": "release",
+      "result": "success",
+      "evidence": "v0.7.6 annotated tag at d89862bbe67256cf6274be1d71ee7f8857cb8808, peel_match: true, push to origin verified"
+    },
+    {
+      "gate": "archive",
+      "result": "pending",
+      "evidence": "apply-checkpoint + receipts written; change-entry + archive-manifest + terms + cycles-index updates pending in this session"
+    },
+    {
+      "gate": "scoping-decision",
+      "result": "B-direct",
+      "evidence": "two-file trivial change (+67 -5 lines, 1 new error variant + 1 unit test + 2-line loader swap); landed directly on main without separate branch. Follows m9-07 pattern."
+    },
+    {
+      "gate": "smoke_subset",
+      "result": "n/a",
+      "evidence": "no MCP/probe plumbing touched; sandbox smoke not warranted. Change is a typed error variant construction in a pure storage method."
+    },
+    {
+      "gate": "trigger-condition-check",
+      "result": "satisfied",
+      "evidence": "FIND-M9-01-DV-COUP-02 remediation says 'at the first real v2 bump'; m9-01 already shipped 3 schema versions ([1, 2, 3], CURRENT=3), so the trigger has been met for two cycles. The prior m9-06 verify-report misclassified this finding as 'requires list-side change'; the debt-report itself prescribes only the variant addition, which is what m9-08 implements."
+    }
+  ],
+  "next_cycle": null,
+  "next_cycle_path": null,
+  "next_cycle_target_findings": [],
+  "ledger_state": {
+    "available": false,
+    "reason": "sddk not in PATH for CLI storage; orchestrator-owned transition (matches m9-02..m9-07 pattern)"
+  }
+}
