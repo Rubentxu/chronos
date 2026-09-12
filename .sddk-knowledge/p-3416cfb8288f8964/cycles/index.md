@@ -53,7 +53,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-29 | m9-29-evidence-bindings-backfill | B-direct | `v0.7.27` | `24c144f` | CLOSED |
 | m9-30 | m9-30-release-receipt-fields-normalize | B-direct | `v0.7.28` | `33acc58` | CLOSED |
 | m9-31 | m9-31-merge-receipt-fields-normalize | B-direct | `v0.7.29` | `5c286b6` | CLOSED |
-| m9-32 | m9-32-verify-report-cross-checks-backfill | B-direct | `v0.7.30` | — | CLOSED |
+| m9-32 | m9-32-verify-report-cross-checks-backfill | B-direct | `v0.7.30` | `b3bfa59` | CLOSED |
 
 ## Metadata
 
