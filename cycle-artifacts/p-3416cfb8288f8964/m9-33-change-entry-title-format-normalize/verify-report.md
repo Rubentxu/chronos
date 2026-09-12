@@ -29,6 +29,10 @@
 - C24: PASS
 - C25: PASS (NEW — all 32 change-entry.md files have canonical title format)
 
+## Summary
+
+Drift closure cycle.
+
 ## Findings
 
 None — clean state.

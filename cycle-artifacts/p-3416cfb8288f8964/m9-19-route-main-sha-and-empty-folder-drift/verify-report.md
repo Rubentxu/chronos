@@ -14,6 +14,10 @@
 | `cargo fmt --all -- --check` | PASS |
 | `cargo clippy --workspace --all-targets -- -D warnings` | PASS (0 warnings) |
 
+## Summary
+
+Drift closure cycle (route-main-sha-and-empty-folder-drift).
+
 ## Cross-check sweep (12 checks)
 
 All 12 cross-checks in `vault-drift-sweep.md` run via Python script.

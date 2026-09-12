@@ -27,6 +27,10 @@
 - C22: PASS
 - C23: PASS (NEW — all 28 merge-receipt.md files have canonical SHA fields)
 
+## Summary
+
+Drift closure cycle.
+
 ## Findings
 
 None — clean state.

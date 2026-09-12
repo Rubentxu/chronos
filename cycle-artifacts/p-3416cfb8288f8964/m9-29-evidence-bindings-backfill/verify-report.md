@@ -34,6 +34,10 @@
 - C20: PASS (base_sha == head_sha^ for all fix-peel cycles)
 - C21: PASS (NEW — all 26 m9-* archive-manifests have `## Evidence bindings` section)
 
+## Summary
+
+Drift closure cycle.
+
 ## Findings
 
 None — clean state.

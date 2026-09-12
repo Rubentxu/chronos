@@ -27,6 +27,10 @@
 - C20: PASS
 - C22: PASS (NEW — all 27 release-receipt.md files have canonical SHA fields)
 
+## Summary
+
+Drift closure cycle.
+
 ## Findings
 
 None — clean state.

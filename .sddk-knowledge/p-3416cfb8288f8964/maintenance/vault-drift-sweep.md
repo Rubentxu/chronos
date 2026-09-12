@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34**, or **check 35**, or **check 36**, or **check 37**, or **check 38**, or **check 39**, or **check 40**, or **check 41**, or **check 42**, or **check 43** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32**, or **check 33**, or **check 34**, or **check 35**, or **check 36**, or **check 37**, or **check 38**, or **check 39**, or **check 40**, or **check 41**, or **check 42**, or **check 43**, or **check 44** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -1952,3 +1952,30 @@ original fix commit (570d215, 379759ed) rather than the cycle's
 published head (2c98ce9a, d6b3b8c5). m9-34, m9-35 release-receipts
 recorded the cycle's intermediate SHA rather than the final published
 SHA. m9-51 fixes these to align with apply-checkpoint.
+
+### 44. verify-report.md ## Summary section (post-m9-19) (closed by m9-52)
+
+```python
+import glob, re
+
+errors = 0
+for f in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/verify-report.md')):
+    folder = f.split('/')[-2]
+    m = re.match(r'm9-(\d+)', folder)
+    if not m: continue
+    num = int(m.group(1))
+    if num < 19: continue
+    content = open(f).read()
+    if '## Summary' not in content:
+        errors += 1
+        print(f"DRIFT: {folder}: missing ## Summary")
+
+print(f'Total: {errors}')
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** verify-report.md (m9-19+) lacks `## Summary` heading.
+
+**History:** m9-19, m9-28..m9-33 verify-report.md used table-based
+or finding-only format. m9-52 adds Summary section to 7 files.

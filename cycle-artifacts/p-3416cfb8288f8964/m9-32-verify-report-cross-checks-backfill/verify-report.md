@@ -34,6 +34,10 @@
 
 ## Cross-checks` section)
 
+## Summary
+
+Drift closure cycle.
+
 ## Findings
 
 None — clean state.

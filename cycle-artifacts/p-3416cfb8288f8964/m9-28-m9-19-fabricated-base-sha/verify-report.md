@@ -33,6 +33,10 @@
 - C19: PASS
 - C20: PASS (NEW — base_sha == head_sha^ for all fix-peel cycles)
 
+## Summary
+
+Drift closure cycle.
+
 ## Findings
 
 None — clean state.
