@@ -1,0 +1,23 @@
+{
+  "cycle_id": "m9-19",
+  "title": "Route field normalization + main_sha convention + empty folder cleanup",
+  "path": "B-direct",
+  "route": "B-direct",
+  "base_sha": "6dce3739b7e2f0fcbdb2c10c0a35b27cfb2b8a37",
+  "head_sha": "ec58934689b73a6a78cb65b8ece96c6cdda13b35",
+  "main_sha": "ec58934689b73a6a78cb65b8ece96c6cdda13b35",
+  "remote_tag_peel": "ec58934689b73a6a78cb65b8ece96c6cdda13b35",
+  "peel_match": true,
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived",
+  "status": "CLOSED",
+  "findings_introduced": {
+    "no_action": []
+  },
+  "verified_at": "2026-09-12T11:11:00Z",
+  "released_at": "2026-09-12T11:11:38Z",
+  "archived_at": "2026-09-12T11:12:11Z",
+  "created_at": "2026-09-12T11:09:00Z",
+  "summary": "Three classes of pre-m9-11 / mid-m9-11 schema drift: (1) 8 pre-m9-11 cycles had route: 'local' placeholder instead of a real path label; (2) m9-11/12/13 had main_sha set to pre-cycle HEAD (base_sha) instead of post-cycle HEAD (head_sha); (3) one empty cycle folder from an aborted false-positive investigation. Adds cross-check #12."
+}

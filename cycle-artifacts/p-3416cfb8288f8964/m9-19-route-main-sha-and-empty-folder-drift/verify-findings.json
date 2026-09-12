@@ -1,0 +1,37 @@
+{
+  "cycle_id": "m9-19",
+  "subject": {
+    "head": "ec58934689b73a6a78cb65b8ece96c6cdda13b35",
+    "head_sha": "ec58934689b73a6a78cb65b8ece96c6cdda13b35"
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "low",
+      "category": "schema-drift",
+      "summary": "8 pre-m9-11 cycles (m9-03..m9-10) had apply-checkpoint.json route field set to lowercase 'local' placeholder instead of a real path label like 'B-direct' / 'A-min'.",
+      "resolution": "Normalize route to 'B-direct' for all 8 cycles. m9-11..m9-18 already use the descriptive convention."
+    },
+    {
+      "id": "F2",
+      "severity": "low",
+      "category": "schema-drift",
+      "summary": "3 cycles (m9-11, m9-12, m9-13) had main_sha set to base_sha (pre-cycle HEAD) instead of head_sha (post-cycle HEAD), violating the m9-04+ convention.",
+      "resolution": "Set main_sha = head_sha for m9-11/12/13. All other cycles already conform."
+    },
+    {
+      "id": "F3",
+      "severity": "low",
+      "category": "leftover-artifact",
+      "summary": "Empty untracked cycle folder 'm9-11-m9-04-findings-closed-drift-fix/' from an aborted false-positive investigation in a prior session.",
+      "resolution": "Remove the empty folder (rmdir). The investigation was a false positive (m9-03 verified_at > released_at reflects an actual historical narrative, not drift)."
+    },
+    {
+      "id": "F4",
+      "severity": "informational",
+      "category": "process",
+      "summary": "Added cross-check #12 to vault-drift-sweep.md enforcing route field normalization, main_sha convention, and empty folder cleanup.",
+      "resolution": "New cross-check #12 will catch any future recurrence of all 3 drift classes."
+    }
+  ]
+}
