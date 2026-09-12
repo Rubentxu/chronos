@@ -35,7 +35,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-11 | m9-11-cycles-index-metadata-drift | B-direct | `v0.7.9` | `cd0115fd8f942058cde109c72a975cab7ea7473c` | CLOSED |
 | m9-12 | m9-12-terms-index-metadata-drift | B-direct | `v0.7.10` | `0012f12` | CLOSED |
 | m9-13 | m9-13-change-entry-base-sha-drift | B-direct | `v0.7.11` | `26848cf` | CLOSED |
-| m9-14 | m9-14-m9-11-fabricated-sha | B-direct | `v0.7.12` | TBD | CLOSED |
+| m9-14 | m9-14-m9-11-fabricated-sha | B-direct | `v0.7.12` | `3869906` | CLOSED |
 
 ## Metadata
 
