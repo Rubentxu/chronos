@@ -32,7 +32,7 @@
   "verified_at": "2026-09-12T18:38Z",
   "released_at": "2026-09-12T18:38Z",
   "archived_at": "2026-09-12T18:38Z",
-  "main_sha": "fc75ff3cbba48c6c4603d6b56b53664ad3849dbb",
+  "main_sha": "c6ce0e678d2872001ffca68abaffe00b72d8c516",
   "remote_tag": "v0.7.60",
   "remote_tag_peel": "c6ce0e678d2872001ffca68abaffe00b72d8c516",
   "peel_match": true
