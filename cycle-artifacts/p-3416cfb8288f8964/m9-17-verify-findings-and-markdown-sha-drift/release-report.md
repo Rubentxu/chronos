@@ -1,5 +1,9 @@
 # Release Report — m9-17
 
+**Cycle**: m9-17-verify-findings-and-markdown-sha-drift
+**Path**: B-direct
+
+
 ## Summary
 
 Doc-only cycle that closes residual SHA drift across 4 file types
@@ -47,3 +51,7 @@ No findings introduced or closed.
 ## Verdict
 
 **RELEASED** at tag `v0.7.15`, head SHA `134dc7525312275c447db8f5996740ff7c102a02`.
+## Cross-checks
+
+- C10: pass
+

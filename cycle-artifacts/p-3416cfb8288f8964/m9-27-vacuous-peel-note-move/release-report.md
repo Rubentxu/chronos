@@ -16,3 +16,7 @@
 ## Tier
 
 B-direct: T0 only (file-local mechanical edit).
+## Cross-checks
+
+- C1-C10: pass
+

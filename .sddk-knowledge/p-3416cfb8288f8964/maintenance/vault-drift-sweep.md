@@ -507,7 +507,7 @@ the next cycle's apply-checkpoint and the `handoff-blocked` standing
 item — do not attempt a cross-cycle rebuild outside a dedicated cycle.
 
 If **check 5**, **check 6**, **check 7**, **check 8**, **check 9**,
-**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31** finds
+**check 10**, **check 11**, **check 12**, **check 13**, or **check 14**, or **check 15**, or **check 16**, or **check 17**, or **check 18**, or **check 19**, or **check 20**, or **check 21**, or **check 22**, or **check 23**, or **check 24**, or **check 25**, or **check 26**, or **check 27**, or **check 28**, or **check 29**, or **check 30**, or **check 31**, or **check 32** finds
 drift: the resolution is mechanical (a small metadata edit). Do this
 in the same cycle that catches it; do not defer.
 
@@ -1356,6 +1356,47 @@ print(f'Total: {errors}')
 without `Base SHA`. m9-39 backfills it. m9-34 verify-report.md
 was written before the Cross-checks section was standardized;
 m9-39 adds it.
+
+### 32. release-report.md must have Path field + Cross-checks/Verification section (closed by m9-40)
+
+```python
+import glob
+
+errors = 0
+
+for f in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/release-report.md')):
+    content = open(f).read()
+    # Path field somewhere in the file
+    if 'Path' not in content[:500]:
+        print(f"DRIFT: {f}: no Path field")
+    # Cross-checks or Verification section
+    if 'Cross-checks' not in content and '## Verification' not in content:
+        print(f"DRIFT: {f}: no Cross-checks / Verification section")
+
+print(f'Total: {errors}')
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:**
+- A: release-report.md is missing `Path` field (e.g. `**Path**: B-direct`)
+  in the header area.
+- B: release-report.md is missing a `## Cross-checks` or `## Verification`
+  section listing which cross-checks passed/failed.
+
+**Resolution:**
+- A: Add `**Path**: <route>` line right after `**Cycle**` line, sourced
+  from apply-checkpoint.json `route`.
+- B: Add `## Cross-checks` section listing the cross-checks that
+  passed during this cycle's verification. Source the cross-check IDs
+  from the cycle's verify-report.md (which should list them).
+
+**History:** m9-04..m9-33 release-report.md didn't have Path field;
+m9-34+ uses Path. m9-40 backfills Path for m9-04..m9-33.
+
+m9-11..m9-27 release-report.md didn't have Cross-checks section;
+m9-28+ uses `## Verification` or `## Cross-checks`. m9-40 backfills
+Cross-checks for m9-11..m9-27.
 
 Each closed a one-line drift that the prior session's "exhausted"
 verdict missed. The lesson is that **vault drift is a first-class

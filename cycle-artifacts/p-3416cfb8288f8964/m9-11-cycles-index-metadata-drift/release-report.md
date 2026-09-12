@@ -1,5 +1,9 @@
 # Release Report — m9-11
 
+**Cycle**: m9-11-cycles-index-metadata-drift
+**Path**: B-direct
+
+
 ## Summary
 
 Doc-only cycle that fixes a 4-cycle-old drift in the cycles index
@@ -36,3 +40,7 @@ No findings introduced or closed. This is a hygiene cycle.
 ## Verdict
 
 **RELEASED** at tag `v0.7.9`, head SHA `cd0115fd8f942058cde109c72a975cab7ea7473c`.
+## Cross-checks
+
+- C1-C10: pass
+

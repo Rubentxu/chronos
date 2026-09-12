@@ -1,5 +1,9 @@
 # Release Report — m9-04
 
+**Cycle**: m9-04-side-table-key-layout
+**Path**: B-direct
+
+
 ## Release Envelope
 
 ```yaml

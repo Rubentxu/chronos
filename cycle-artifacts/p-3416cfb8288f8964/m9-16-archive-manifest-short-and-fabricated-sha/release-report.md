@@ -1,5 +1,9 @@
 # Release Report — m9-16
 
+**Cycle**: m9-16-archive-manifest-short-and-fabricated-sha
+**Path**: B-direct
+
+
 ## Summary
 
 Doc-only cycle that closes a follow-up drift left over by m9-14 and
@@ -40,3 +44,7 @@ No findings introduced or closed.
 ## Verdict
 
 **RELEASED** at tag `v0.7.14`, head SHA `eb5110dfe1f1d14eab85e6052f1f7cbb86e2f384`.
+## Cross-checks
+
+- C9, C8: pass
+

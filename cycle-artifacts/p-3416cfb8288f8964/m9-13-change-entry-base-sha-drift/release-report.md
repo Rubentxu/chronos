@@ -1,5 +1,9 @@
 # Release Report — m9-13
 
+**Cycle**: m9-13-change-entry-base-sha-drift
+**Path**: B-direct
+
+
 ## Summary
 
 Doc-only cycle that fixes a documentation drift in m9-11's change-entry
@@ -32,3 +36,7 @@ No findings introduced or closed. This is a hygiene cycle.
 ## Verdict
 
 **RELEASED** at tag `v0.7.11`, head SHA `26848cf8b26340d3fde99a3a7f398f2873943982`.
+## Cross-checks
+
+- C1-C10: pass
+

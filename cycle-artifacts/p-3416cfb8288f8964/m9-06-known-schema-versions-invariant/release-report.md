@@ -1,5 +1,9 @@
 # Release Report — m9-06
 
+**Cycle**: m9-06-known-schema-versions-invariant
+**Path**: B-direct
+
+
 ## Release Envelope
 
 ```yaml

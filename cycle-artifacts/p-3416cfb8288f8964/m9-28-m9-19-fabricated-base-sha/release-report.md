@@ -1,5 +1,9 @@
 # Release Report — m9-28
 
+**Cycle**: m9-28-m9-19-fabricated-base-sha
+**Path**: B-direct
+
+
 ## Cycle
 
 m9-28-m9-19-fabricated-base-sha (v0.7.26)

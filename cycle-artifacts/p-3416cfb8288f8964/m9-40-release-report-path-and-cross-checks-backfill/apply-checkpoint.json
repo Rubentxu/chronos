@@ -1,0 +1,12 @@
+{
+  "cycle_id": "m9-40",
+  "head_sha": "TBD",
+  "base_sha": "9170deacbe463c0e81886b9083ef5920006afc3a",
+  "created_at": "2026-09-12T13:29Z",
+  "route": "B-direct",
+  "summary": "Add missing Path field to 22 release-report.md files (m9-03..m9-33) and add Cross-checks section to 17 release-report.md files (m9-11..m9-27). Adds cross-check #32.",
+  "findings_closed": [],
+  "findings_introduced": {
+    "no_action": []
+  }
+}

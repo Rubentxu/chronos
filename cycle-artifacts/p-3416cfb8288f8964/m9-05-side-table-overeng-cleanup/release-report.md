@@ -1,5 +1,9 @@
 # Release Report — m9-05
 
+**Cycle**: m9-05-side-table-overeng-cleanup
+**Path**: B-direct
+
+
 ## Release Envelope
 
 ```yaml

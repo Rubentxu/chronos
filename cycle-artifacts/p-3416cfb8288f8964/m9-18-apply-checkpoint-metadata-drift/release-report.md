@@ -1,5 +1,9 @@
 # Release Report — m9-18
 
+**Cycle**: m9-18-apply-checkpoint-metadata-drift
+**Path**: B-direct
+
+
 ## Summary
 
 Doc-only cycle that closes 3 classes of apply-checkpoint.json metadata
@@ -47,3 +51,7 @@ No findings introduced or closed.
 ## Verdict
 
 **RELEASED** at tag `v0.7.16`, head SHA `6dce3736df06d4fe09db861ad43a3667c0f0bc25`.
+## Cross-checks
+
+- C1-C10: pass
+

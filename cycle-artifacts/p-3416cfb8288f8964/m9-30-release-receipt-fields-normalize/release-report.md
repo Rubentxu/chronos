@@ -1,5 +1,9 @@
 # Release Report — m9-30
 
+**Cycle**: m9-30-release-receipt-fields-normalize
+**Path**: B-direct
+
+
 ## Cycle
 
 m9-30-release-receipt-fields-normalize (v0.7.28)

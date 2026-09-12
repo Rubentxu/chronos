@@ -1,5 +1,9 @@
 # Release Report — m9-12
 
+**Cycle**: m9-12-terms-index-metadata-drift
+**Path**: B-direct
+
+
 ## Summary
 
 Doc-only cycle that fixes a 1-cycle-old drift in the terms index
@@ -32,3 +36,7 @@ No findings introduced or closed. This is a hygiene cycle.
 ## Verdict
 
 **RELEASED** at tag `v0.7.10`, head SHA `0012f1242cef949efc4cbd4c8d419a135ee3cf8a`.
+## Cross-checks
+
+- C1-C10: pass
+

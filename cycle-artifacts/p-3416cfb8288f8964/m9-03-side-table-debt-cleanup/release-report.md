@@ -1,5 +1,9 @@
 # Release Report — m9-03
 
+**Cycle**: m9-03-side-table-debt-cleanup
+**Path**: B-direct
+
+
 ## Release Envelope
 
 ```yaml

@@ -1,5 +1,9 @@
 # Release Report — m9-31
 
+**Cycle**: m9-31-merge-receipt-fields-normalize
+**Path**: B-direct
+
+
 ## Cycle
 
 m9-31-merge-receipt-fields-normalize (v0.7.29)

@@ -1,5 +1,9 @@
 # Release Report — m9-10
 
+**Cycle**: m9-10-m9-03-apply-checkpoint-rebuild
+**Path**: B-direct
+
+
 ## Release Envelope
 
 ```yaml

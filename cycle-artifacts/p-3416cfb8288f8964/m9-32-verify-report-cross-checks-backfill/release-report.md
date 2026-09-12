@@ -1,5 +1,9 @@
 # Release Report — m9-32
 
+**Cycle**: m9-32-verify-report-cross-checks-backfill
+**Path**: B-direct
+
+
 ## Cycle
 
 m9-32-verify-report-cross-checks-backfill (v0.7.30)

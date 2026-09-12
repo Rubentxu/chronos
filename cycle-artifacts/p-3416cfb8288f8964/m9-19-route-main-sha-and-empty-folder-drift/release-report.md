@@ -22,3 +22,7 @@ Cross-check #12 added to `vault-drift-sweep.md` enforcing all 3 classes.
 ## Tier
 
 B-direct: T0 only (file-local mechanical remediations).
+## Cross-checks
+
+- C1-C10: pass
+

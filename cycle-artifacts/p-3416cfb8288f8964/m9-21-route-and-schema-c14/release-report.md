@@ -20,3 +20,7 @@ Cross-check #14 added to `vault-drift-sweep.md`.
 ## Tier
 
 B-direct: T0 only (file-local mechanical normalization).
+## Cross-checks
+
+- C1-C10: pass
+

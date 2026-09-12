@@ -1,5 +1,9 @@
 # Release Report — m9-15
 
+**Cycle**: m9-15-m9-12-m9-13-short-sha
+**Path**: B-direct
+
+
 ## Summary
 
 Doc-only cycle that expands short 7-character SHAs in m9-12 and m9-13
@@ -47,3 +51,7 @@ a documentation format inconsistency (short-SHA storage).
 ## Verdict
 
 **RELEASED** at tag `v0.7.13`, head SHA `2441f6f3c679555dc4106ea2e8a422ed407a26a0`.
+## Cross-checks
+
+- C3: pass
+

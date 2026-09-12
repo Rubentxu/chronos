@@ -1,5 +1,9 @@
 # Release Report — m9-14
 
+**Cycle**: m9-14-m9-11-fabricated-sha
+**Path**: B-direct
+
+
 ## Summary
 
 Doc-only cycle that fixes a fabrication error in m9-11's
@@ -37,3 +41,7 @@ Drift fixed is a documentation/audit vault error, not a code defect.
 ## Verdict
 
 **RELEASED** at tag `v0.7.12`, head SHA `38699061891b76f90ef316914d3ba15d6eb53f83`.
+## Cross-checks
+
+- C2, C3: pass
+

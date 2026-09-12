@@ -1,5 +1,9 @@
 # Release Report — m9-33
 
+**Cycle**: m9-33-change-entry-title-format-normalize
+**Path**: B-direct
+
+
 ## Cycle
 
 m9-33-change-entry-title-format-normalize (v0.7.31)
