@@ -54,7 +54,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-30 | m9-30-release-receipt-fields-normalize | B-direct | `v0.7.28` | `33acc58` | CLOSED |
 | m9-31 | m9-31-merge-receipt-fields-normalize | B-direct | `v0.7.29` | `5c286b6` | CLOSED |
 | m9-32 | m9-32-verify-report-cross-checks-backfill | B-direct | `v0.7.30` | `b3bfa59` | CLOSED |
-| m9-33 | m9-33-change-entry-title-format-normalize | B-direct | `v0.7.31` | — | CLOSED |
+| m9-33 | m9-33-change-entry-title-format-normalize | B-direct | `v0.7.31` | `837bc5c` | CLOSED |
 
 ## Metadata
 
