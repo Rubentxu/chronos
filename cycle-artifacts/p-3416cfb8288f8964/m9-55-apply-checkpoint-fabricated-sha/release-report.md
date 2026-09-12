@@ -1,4 +1,4 @@
-# m9-55: Apply-checkpoint base_sha fabrication fix
+# Release Report — m9-55-apply-checkpoint-fabricated-sha
 
 ## Path
 

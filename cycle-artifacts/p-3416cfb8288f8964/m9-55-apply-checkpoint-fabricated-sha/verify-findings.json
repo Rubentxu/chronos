@@ -1,9 +1,8 @@
 {
   "schema": "verify-finding.schema.json",
   "subject": {
-    "base": "cbb93847228a9062de8e093dfe452c257233228c",
-    "head_initial": "f6733fdfe38b3c405dc74c9e92450b2976957153",
-    "head_final": "f6733fdfe38b3c405dc74c9e92450b2976957153",
+    "head_sha": "f6733fdfe38b3c405dc74c9e92450b2976957153",
+    "base_sha": "cbb93847228a9062de8e093dfe452c257233228c",
     "diff_digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "working_tree_clean": true,
     "verified_at": "2026-09-12T17:27:00Z",
