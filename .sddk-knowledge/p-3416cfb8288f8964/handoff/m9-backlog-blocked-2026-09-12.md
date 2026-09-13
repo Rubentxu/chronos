@@ -542,3 +542,43 @@ Also: parallel `cargo test -p chronos-native --lib` hangs (AGENTS.md §6.5 `ptra
 Net cycle delta this session: 68 → 69.
 Net CC delta this session: unchanged at 55 (m9-69 adds no new CC; local refactor + test only).
 Vault state: canonical, 69 cycles indexed, 55 CCs documented, peel_match verified for m9-69 (`v0.7.71` → `57c4a10`).
+
+
+## Session 2026-09-13T12:30Z: m9-70 (mcp store isolation)
+
+Closed `FIND-M9-69-MCP-STORE-ISOLATION`, the deferral recorded by m9-69 one session earlier, and closed a second defect the new test uncovered.
+
+| Item | Status |
+|---|---|
+| `crates/chronos-store/src/storage.rs` | `list_sessions` skips undeserializable records (`tracing::warn!` with key) instead of failing the call; `list_sessions` + `session_exists` treat `redb::TableError::TableDoesNotExist` as the empty answer; +83/−10, 3 tests |
+| `crates/chronos-mcp/src/server.rs` | `new()` → `from_store(Self::open_default_store())`; `#[cfg(not(test))]` keeps the `$CHRONOS_DB_PATH`/`$HOME` logic byte-identical, `#[cfg(test)]` returns a fresh in-memory store; `PathBuf` import removed (unused in `lib test` builds); +100/−17, 1 test |
+
+Four new tests, each **falsified before its fix** (revert the guard → the test fails):
+
+- `test_session_store_list_sessions_skips_unreadable_record`
+- `test_list_sessions_on_virgin_store_is_empty`
+- `test_session_exists_on_virgin_store_is_false`
+- `test_default_test_server_does_not_read_the_developer_store` — pre-fix observed **21 sessions** from the developer's real `$HOME` store
+
+Note on method: the first draft of the hermeticity test passed *before* the fix for the wrong reason (comparing two servers is masked by redb's exclusive lock, which forces the second one to an in-memory fallback). It was rewritten to assert the observable bug. Falsification matters more than a green test.
+
+Second defect found and closed in-cycle: `FIND-M9-70-VIRGIN-STORE-READ-ERROR` — a `sessions.redb` that exists but has no tables yet (fresh install) made `session_list` return an error instead of `[]`.
+
+Gates:
+- T0: `cargo fmt --check` + `cargo clippy -p chronos-store -p chronos-mcp --all-targets -- -D warnings` PASS
+- T2: `cargo test -p chronos-store -p chronos-mcp --tests` → store 62, mcp lib 77, 49 across 6 integration binaries; `cargo test -p chronos-services --lib` → 263 passed
+- T4-smoke: `e2e_connectivity` 1 (5.55s) + `session_persistence` 8 (56.99s) + `session_lifecycle` 4 (54.90s) = 13 passed / 0 failed
+- CC#12: `main_sha == head_sha == remote_tag_peel == 54e859f` (peel verified on origin)
+- Vault drift: PASS (47 python + 7 bash CCs all clean); CC smoke 5/5 PASS
+
+### Open follow-ups
+
+- **FIND-M9-70-SERVICES-TABLE-STRING-MATCH** (new, low): `chronos-services::sessions::list_sessions` still tolerates a missing table by substring-matching the error text. Unreachable now that the store returns `Ok(vec![])`; decide delete vs typed match.
+- **5+19 not-merged branches triage** (preserved from m9-65): human review needed.
+- **Sandbox test warm-up ordering**: `test_session_start_via_v2_then_session_stop_via_v2` fails alone, passes with full file (likely MCP server binary warm-up).
+
+Note for the next cycle: the 21 sessions found in the developer's real store were readable-but-stale-schema records. With the store fix, `session_list` now lists those instead of erroring, so the developer's own `session_list` output changed from "error" to "21 sessions". That is the intended direction (best-effort listing), but it is the one user-visible behavior change in this cycle.
+
+Net cycle delta this session: 69 → 70.
+Net CC delta this session: unchanged at 55 (m9-70 adds no new CC; local robustness + test isolation only).
+Vault state: canonical, 70 cycles indexed, 55 CCs documented, peel_match verified for m9-70 (`v0.7.72` → `54e859f`).
