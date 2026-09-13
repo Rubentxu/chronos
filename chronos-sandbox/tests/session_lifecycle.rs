@@ -351,14 +351,19 @@ async fn test_session_start_load_returns_metadata() {
 
 #[tokio::test]
 async fn test_session_start_attach_to_running_self() {
+    let mut target = tokio::process::Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .expect("failed to spawn attach target");
+    let target_pid = target.id().expect("sleep target must have a pid");
     let mut client = McpTestClient::start()
         .await
         .expect("Failed to start MCP server");
 
-    // The server is a child of this test process, so Linux ptrace permits
-    // attaching to its direct parent under the usual Yama policy.
+    // The target is deliberately external to the MCP server. This proves that
+    // session_stop detaches an attached process instead of terminating it.
     let start = client
-        .session_start_attach(std::process::id())
+        .session_start_attach(target_pid)
         .await
         .expect("session_start attach to the running test process failed");
     assert_eq!(start.action, SessionStartAction::Attach);
@@ -371,15 +376,17 @@ async fn test_session_start_attach_to_running_self() {
         Some("ebpf_user")
     );
 
-    // A successful capabilities lookup proves attach registered the probe in
-    // live_probes, rather than merely returning an optimistic response. Do not
-    // call session_stop here: its legacy stop path terminates spawned targets,
-    // while an attached target is caller-owned. Server shutdown detaches it.
-    let capabilities = client
-        .capabilities_session(&start.session_id)
+    let stop = client
+        .session_stop(&start.session_id, true, true)
         .await
-        .expect("capabilities after attach failed");
-    assert!(capabilities.dynamic_capabilities.is_some());
+        .expect("session_stop after attach failed");
+    assert!(stop.sealed_at.is_some());
+    assert!(
+        target.try_wait().expect("inspect attach target").is_none(),
+        "session_stop must detach an attached target instead of terminating it"
+    );
 
     client.shutdown().await.ok();
+    target.kill().await.ok();
+    target.wait().await.ok();
 }

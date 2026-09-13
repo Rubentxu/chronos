@@ -240,8 +240,6 @@ El adjunto usa `ptrace` de Linux. Puede fallar si el PID ya no existe, no tienes
 permiso para rastrearlo o la política `ptrace_scope` del host es restrictiva.
 Chronos devuelve un error de adjunto y no crea una sesión parcial.
 
-> **Limitación actual del ciclo de vida:** `session_stop` se rechaza
-> deliberadamente para procesos adjuntos porque la ruta heredada de parada es
-> propietaria de los procesos iniciados por Chronos y los termina. Cierra el
-> servidor MCP para desadjuntar con seguridad. Una operación explícita de
-> desadjunto gradual queda para trabajo posterior.
+> `session_stop` desadjunta con seguridad un objetivo adjunto. Chronos despierta
+> el bucle ptrace, espera su salida y ejecuta `PTRACE_DETACH`; no termina el
+> proceso objetivo.
