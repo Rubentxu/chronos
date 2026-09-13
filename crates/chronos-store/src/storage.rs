@@ -154,6 +154,18 @@ impl SessionStore {
 
     /// Save all events for a session. Stores events in CAS and records metadata.
     /// Returns the list of content hashes.
+    ///
+    /// m9-74 (closes `FIND-M9-73-CAS-PUT-ONE-WRITE-TRANSACTION-PER-EVENT`): the
+    /// CAS side is written with `ContentStore::put_many`, so a session costs one
+    /// write transaction for its events plus one for its metadata, no matter how
+    /// many events it holds. The previous loop called `put` per event and paid a
+    /// durability barrier each time (redb's default immediate durability), which
+    /// put a 35k-event session at minutes.
+    ///
+    /// The two transactions are ordered CAS-then-metadata, and a failure between
+    /// them leaves CAS content that no session references. That is harmless:
+    /// CAS rows are content-addressed and deduplicated, so a later save of the
+    /// same events reuses them, and no session can observe half its events.
     #[allow(clippy::result_large_err)]
     pub fn save_session(
         &self,
@@ -165,13 +177,8 @@ impl SessionStore {
             return Err(StoreError::InvalidSessionId(metadata.session_id.clone()));
         }
 
-        let mut hashes = Vec::with_capacity(events.len());
-
-        // Store each event in CAS
-        for event in events {
-            let h = self.cas.put(event)?;
-            hashes.push(h);
-        }
+        // Store all events in one CAS write transaction.
+        let hashes = self.cas.put_many(events)?;
 
         // Serialize metadata
         let meta_bytes =
@@ -623,5 +630,56 @@ mod tests {
 
         let result = store.delete_session(uuid);
         assert!(result.is_ok());
+    }
+
+    /// m9-74 (closes FIND-M9-73-CAS-PUT-ONE-WRITE-TRANSACTION-PER-EVENT):
+    /// `save_session` must cost a constant number of durability barriers, not
+    /// one per event.
+    ///
+    /// Before this cycle the CAS side looped over `ContentStore::put`, and redb's
+    /// default immediate durability makes every `commit()` a `sync_data` barrier,
+    /// so this session took 1,000 barriers instead of two. The counting backend
+    /// is file-backed for exactly that reason: on an in-memory backend redb never
+    /// syncs and the assertion would pass for the wrong reason. The bound leaves
+    /// room for redb's own bookkeeping around the two transactions this method
+    /// performs (one CAS batch plus one for the metadata and hash list).
+    #[cfg(unix)]
+    #[test]
+    fn test_save_session_costs_a_constant_number_of_durability_barriers() {
+        use crate::test_support::counting_file_db;
+        use std::sync::atomic::Ordering;
+
+        let dir = tempfile::tempdir().unwrap();
+        let (db, syncs) = counting_file_db(dir.path(), "save-session-barriers.redb");
+        let store = SessionStore {
+            db: db.clone(),
+            cas: ContentStore::new(db.clone()),
+        };
+
+        let events: Vec<_> = (0..1_000).map(|i| make_event(i, "batch")).collect();
+        let before = syncs.load(Ordering::SeqCst);
+        let hashes = store.save_session(session_meta("s1"), &events).unwrap();
+        let barriers = syncs.load(Ordering::SeqCst) - before;
+
+        assert_eq!(hashes.len(), events.len());
+        assert!(
+            barriers <= 4,
+            "save_session of {} events issued {barriers} durability barriers; expected \
+             one transaction for the CAS batch plus one for the metadata — the \
+             per-event commit loop is back",
+            events.len()
+        );
+
+        // The session must still round-trip: the batching is not allowed to
+        // change what is stored, only how it is written.
+        let (meta, loaded) = store.load_session("s1").unwrap();
+        assert_eq!(meta.session_id, "s1");
+        assert_eq!(loaded.len(), events.len());
+        for (event, hash) in loaded.iter().zip(&hashes) {
+            assert_eq!(
+                store.cas.get(hash).unwrap().unwrap().event_id,
+                event.event_id
+            );
+        }
     }
 }
