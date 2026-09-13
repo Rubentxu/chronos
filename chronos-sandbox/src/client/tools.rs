@@ -1576,7 +1576,12 @@ impl McpTestClient {
     /// 2. `CARGO_BIN_EXE_chronos-mcp` (set by cargo test with a binary dev-dep)
     /// 3. `../../target/debug/chronos-mcp` relative to the test binary
     /// 4. `chronos-mcp` in `PATH`
-    fn resolve_mcp_path() -> PathBuf {
+    ///
+    /// Public since m9-75: the store-open policy is only observable through the
+    /// real binary's exit status and stderr, so tests that spawn it directly
+    /// (rather than through a client that needs a live server) must resolve the
+    /// same path.
+    pub fn resolve_mcp_path() -> PathBuf {
         std::env::var("CHRONOS_MCP_PATH")
             .map(PathBuf::from)
             .unwrap_or_else(|_| {

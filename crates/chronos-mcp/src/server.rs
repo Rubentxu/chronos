@@ -1312,9 +1312,134 @@ pub struct DebugGetMemoryParams {
     pub timestamp_ns: u64,
 }
 
+/// The session store this process was configured to open could not be opened.
+///
+/// m9-75 (closes `FIND-M9-73-SILENT-IN-MEMORY-FALLBACK-MASKS-STORE-OPEN-FAILURE`):
+/// a store that exists but cannot be opened (locked by another process, corrupt,
+/// permission denied) must not be silently replaced by an empty in-memory store.
+#[derive(Debug)]
+pub struct StoreOpenError {
+    path: std::path::PathBuf,
+    /// Boxed so the `Err` variant stays small (`clippy::result_large_err`).
+    cause: Box<chronos_store::StoreError>,
+}
+
+impl StoreOpenError {
+    /// The path that could not be opened.
+    pub fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+
+    /// The underlying store failure.
+    pub fn cause(&self) -> &chronos_store::StoreError {
+        &self.cause
+    }
+}
+
+impl std::fmt::Display for StoreOpenError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "cannot open the session store at {}: {}; refusing to start with an empty \
+             in-memory store (set CHRONOS_ALLOW_IN_MEMORY_FALLBACK=1 to opt in to that \
+             degraded mode explicitly)",
+            self.path.display(),
+            self.cause
+        )
+    }
+}
+
+impl std::error::Error for StoreOpenError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.cause.as_ref())
+    }
+}
+
+/// Resolve the session-store path from the two environment values that select it.
+///
+/// `$CHRONOS_DB_PATH` wins; otherwise `$HOME/.local/share/chronos/sessions.redb`.
+/// Split out from the environment reads so the resolution is testable without
+/// mutating the process environment.
+fn default_store_path(db_path: Option<&str>, home: Option<&str>) -> std::path::PathBuf {
+    if let Some(explicit) = db_path.filter(|p| !p.is_empty()) {
+        return std::path::PathBuf::from(explicit);
+    }
+    let mut path = std::path::PathBuf::from(home.filter(|h| !h.is_empty()).unwrap_or("."));
+    path.push(".local");
+    path.push("share");
+    path.push("chronos");
+    path.push("sessions.redb");
+    path
+}
+
+/// Whether the caller explicitly opted into the in-memory fallback.
+///
+/// Strict on purpose: only `1`, `true` or `yes` (case-insensitive, trimmed)
+/// enable it, because any looser rule reintroduces the silent degradation this
+/// policy exists to prevent.
+fn allow_in_memory_fallback(raw: Option<&str>) -> bool {
+    matches!(
+        raw.map(|v| v.trim().to_ascii_lowercase()).as_deref(),
+        Some("1") | Some("true") | Some("yes")
+    )
+}
+
+/// Open the store at `path`, or fail.
+///
+/// With `allow_in_memory_fallback` the pre-m9-75 behaviour is preserved, but
+/// explicitly and loudly: the failure is logged at error level and a throwaway
+/// in-memory store is used, so nothing is persisted.
+fn open_store_at(
+    path: &std::path::Path,
+    allow_in_memory_fallback: bool,
+) -> Result<SessionStore, StoreOpenError> {
+    match SessionStore::try_open(path) {
+        Ok(store) => {
+            tracing::info!("Opened session store at {}", path.display());
+            Ok(store)
+        }
+        Err(cause) if allow_in_memory_fallback => {
+            tracing::error!(
+                "Could not open session store at {}: {}. Starting with an in-memory store \
+                 (degraded: nothing will be persisted).",
+                path.display(),
+                cause
+            );
+            SessionStore::in_memory().map_err(|e| StoreOpenError {
+                path: path.to_path_buf(),
+                cause: Box::new(e),
+            })
+        }
+        Err(cause) => Err(StoreOpenError {
+            path: path.to_path_buf(),
+            cause: Box::new(cause),
+        }),
+    }
+}
+
 impl ChronosServer {
+    /// Build a server around the configured store, opening it first.
+    ///
+    /// This is the entrypoint every production caller should use: it reports a
+    /// store that cannot be opened instead of degrading. See
+    /// [`StoreOpenError`] for the policy and
+    /// `CHRONOS_ALLOW_IN_MEMORY_FALLBACK` for the explicit opt-in.
+    pub fn try_new() -> Result<Self, StoreOpenError> {
+        Ok(Self::from_store(Self::try_open_default_store()?))
+    }
+
+    /// Infallible convenience wrapper around [`ChronosServer::try_new`].
+    ///
+    /// # Panics
+    ///
+    /// Panics with the [`StoreOpenError`] message when the configured store
+    /// cannot be opened and the in-memory fallback is not enabled. Prefer
+    /// [`ChronosServer::try_new`].
     pub fn new() -> Self {
-        Self::from_store(Self::open_default_store())
+        match Self::try_new() {
+            Ok(server) => server,
+            Err(e) => panic!("{e}"),
+        }
     }
 
     /// Build a server around an explicitly provided store.
@@ -1333,42 +1458,23 @@ impl ChronosServer {
         }
     }
 
-    /// Open the default session store for production use.
+    /// Open the session store configured for this process.
     ///
     /// Path: `$CHRONOS_DB_PATH`, else `$HOME/.local/share/chronos/sessions.redb`.
-    /// If the file cannot be opened (locked, corrupt, missing parent), fall back
-    /// to an in-memory store so the server still starts.
+    /// A failure to open is reported instead of being turned into an empty
+    /// in-memory store; see [`StoreOpenError`].
     #[cfg(not(test))]
-    fn open_default_store() -> SessionStore {
-        let db_path = std::env::var("CHRONOS_DB_PATH")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|_| {
-                let mut path = std::env::var("HOME")
-                    .map(std::path::PathBuf::from)
-                    .unwrap_or_else(|_| std::path::PathBuf::from("."));
-                path.push(".local");
-                path.push("share");
-                path.push("chronos");
-                path.push("sessions.redb");
-                path
-            });
-
-        // Try to open existing database with graceful lock handling
-        match SessionStore::try_open(&db_path) {
-            Ok(s) => {
-                tracing::info!("Opened session store at {:?}", db_path);
-                s
-            }
-            Err(e) => {
-                tracing::warn!(
-                    "Could not open session store at {:?}: {}. Using in-memory store.",
-                    db_path,
-                    e
-                );
-                // Fall back to in-memory store if disk store fails
-                SessionStore::in_memory().expect("Failed to create in-memory session store")
-            }
-        }
+    fn try_open_default_store() -> Result<SessionStore, StoreOpenError> {
+        let path = default_store_path(
+            std::env::var("CHRONOS_DB_PATH").ok().as_deref(),
+            std::env::var("HOME").ok().as_deref(),
+        );
+        let allow_fallback = allow_in_memory_fallback(
+            std::env::var("CHRONOS_ALLOW_IN_MEMORY_FALLBACK")
+                .ok()
+                .as_deref(),
+        );
+        open_store_at(&path, allow_fallback)
     }
 
     /// Open the session store for unit tests.
@@ -1378,13 +1484,24 @@ impl ChronosServer {
     /// coupling previously made `test_list_sessions_after_save` depend on
     /// whatever happened to be in the local database — see
     /// FIND-M9-69-MCP-STORE-ISOLATION). A test that specifically needs a real
-    /// file can still opt in by setting `CHRONOS_DB_PATH`.
+    /// file can still opt in by setting `CHRONOS_DB_PATH`, and a test that cannot
+    /// open the store it asked for now fails instead of silently degrading
+    /// (m9-75), unless it opts in through `CHRONOS_ALLOW_IN_MEMORY_FALLBACK`.
     #[cfg(test)]
-    fn open_default_store() -> SessionStore {
+    fn try_open_default_store() -> Result<SessionStore, StoreOpenError> {
         match std::env::var("CHRONOS_DB_PATH") {
-            Ok(p) => SessionStore::try_open(std::path::Path::new(&p))
-                .unwrap_or_else(|_| SessionStore::in_memory().expect("in-memory session store")),
-            Err(_) => SessionStore::in_memory().expect("in-memory session store"),
+            Ok(p) => {
+                let allow_fallback = allow_in_memory_fallback(
+                    std::env::var("CHRONOS_ALLOW_IN_MEMORY_FALLBACK")
+                        .ok()
+                        .as_deref(),
+                );
+                open_store_at(std::path::Path::new(&p), allow_fallback)
+            }
+            Err(_) => SessionStore::in_memory().map_err(|e| StoreOpenError {
+                path: std::path::PathBuf::from(":memory:"),
+                cause: Box::new(e),
+            }),
         }
     }
 
@@ -5819,6 +5936,37 @@ mod tests {
         )
     }
 
+    /// A unique temporary directory, so parallel tests never share a store path.
+    #[allow(dead_code)]
+    fn unique_test_dir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "chronos-{}-{}-{}",
+            tag,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        dir
+    }
+
+    /// Minimal `SessionMetadata` for store-level assertions (m9-75).
+    #[allow(dead_code)]
+    fn test_session_metadata(session_id: &str) -> chronos_store::SessionMetadata {
+        chronos_store::SessionMetadata {
+            session_id: session_id.to_string(),
+            created_at: 0,
+            language: "native".to_string(),
+            target: "/bin/test".to_string(),
+            event_count: 1,
+            duration_ms: 0,
+            tail_sealed: false,
+            sealed_at: None,
+        }
+    }
+
     #[tokio::test]
     async fn test_save_and_load_session_roundtrip() {
         let server = ChronosServer::new();
@@ -6012,6 +6160,136 @@ mod tests {
             0,
             "server b must not see server a's session (stores must be isolated)"
         );
+    }
+
+    /// m9-75: the store path resolution is a pure function of the two
+    /// environment values, so the policy is testable without mutating the
+    /// process environment.
+    #[test]
+    fn test_default_store_path_prefers_db_path_and_falls_back_to_home() {
+        assert_eq!(
+            default_store_path(Some("/tmp/explicit.redb"), Some("/home/dev")),
+            std::path::PathBuf::from("/tmp/explicit.redb")
+        );
+        assert_eq!(
+            default_store_path(None, Some("/home/dev")),
+            std::path::PathBuf::from("/home/dev/.local/share/chronos/sessions.redb")
+        );
+        assert_eq!(
+            default_store_path(Some(""), Some("/home/dev")),
+            std::path::PathBuf::from("/home/dev/.local/share/chronos/sessions.redb"),
+            "an empty CHRONOS_DB_PATH must not become a relative store path"
+        );
+        assert_eq!(
+            default_store_path(None, None),
+            std::path::PathBuf::from("./.local/share/chronos/sessions.redb")
+        );
+    }
+
+    /// m9-75: only an explicit opt-in enables the in-memory fallback.
+    #[test]
+    fn test_allow_in_memory_fallback_is_strict() {
+        for yes in ["1", "true", "TRUE", " yes ", "Yes"] {
+            assert!(allow_in_memory_fallback(Some(yes)), "{yes:?} must opt in");
+        }
+        for no in ["", "0", "false", "no", "maybe", "2", "on"] {
+            assert!(
+                !allow_in_memory_fallback(Some(no)),
+                "{no:?} must not opt in"
+            );
+        }
+        assert!(!allow_in_memory_fallback(None));
+    }
+
+    /// m9-75: a path whose parent does not exist yet is created, not rejected.
+    #[test]
+    fn test_open_store_at_creates_missing_parent_directories() {
+        let dir = unique_test_dir("m9-75-missing-parent");
+        let path = dir.join("nested").join("deeper").join("sessions.redb");
+        let store = open_store_at(&path, false).expect("a fresh path must be created");
+        store
+            .save_session(
+                test_session_metadata("fresh"),
+                &[make_fn_event(0, 100, 1, "main")],
+            )
+            .expect("the freshly created store must accept a session");
+        assert!(path.exists(), "the store file must exist after opening it");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// m9-75 (closes `FIND-M9-73-SILENT-IN-MEMORY-FALLBACK-MASKS-STORE-OPEN-FAILURE`):
+    /// a store that exists but cannot be opened is an error, and the only way
+    /// past it is the explicit opt-in, which really does give an in-memory store.
+    ///
+    /// The "cannot be opened" fixture is a store already open in this process:
+    /// redb allows one `Database` per path per process, so the second open fails
+    /// deterministically. Before m9-75 the server turned that failure into a
+    /// silent in-memory store, i.e. `session_save` reported success while
+    /// `session_list` stayed empty.
+    #[test]
+    fn test_open_store_at_fails_closed_instead_of_degrading_silently() {
+        let dir = unique_test_dir("m9-75-fail-closed");
+        let path = dir.join("sessions.redb");
+
+        // Positive control: the file store works and persists.
+        let live = open_store_at(&path, false).expect("first open must succeed");
+        live.save_session(
+            test_session_metadata("persisted"),
+            &[make_fn_event(0, 100, 1, "main")],
+        )
+        .expect("file-backed save must succeed");
+
+        // (1) Fail closed: the locked store must be reported, not replaced.
+        let err = match open_store_at(&path, false) {
+            Ok(_) => panic!("a store that cannot be opened must not be silently replaced"),
+            Err(e) => e,
+        };
+        assert_eq!(err.path(), path.as_path());
+        assert!(
+            err.to_string().contains("CHRONOS_ALLOW_IN_MEMORY_FALLBACK"),
+            "the error must name the opt-in: {err}"
+        );
+        assert!(
+            std::error::Error::source(&err).is_some(),
+            "the underlying store error must be preserved"
+        );
+
+        // (2) The documented opt-in still degrades, loudly: the store is
+        // genuinely in-memory, so what it accepts is never persisted.
+        let degraded = open_store_at(&path, true).expect("the explicit opt-in must still start");
+        degraded
+            .save_session(
+                test_session_metadata("ephemeral"),
+                &[make_fn_event(0, 100, 1, "main")],
+            )
+            .expect("in-memory save must succeed");
+        assert_eq!(
+            degraded.list_sessions().expect("list_sessions").len(),
+            1,
+            "the degraded store sees its own session"
+        );
+
+        // (3) Differential: once the file store is free it holds exactly the
+        // session written to it and none of the degraded one's.
+        drop(degraded);
+        drop(live);
+        let reopened = open_store_at(&path, false).expect("the store must be openable again");
+        let sessions: Vec<String> = reopened
+            .list_sessions()
+            .expect("list_sessions")
+            .into_iter()
+            .map(|m| m.session_id)
+            .collect();
+        assert!(
+            sessions.contains(&"persisted".to_string()),
+            "the file store must keep its own session, found {sessions:?}"
+        );
+        assert!(
+            !sessions.contains(&"ephemeral".to_string()),
+            "the degraded store's session must not leak into the file store, found {sessions:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]

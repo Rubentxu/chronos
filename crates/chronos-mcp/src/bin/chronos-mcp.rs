@@ -23,7 +23,17 @@ async fn main() {
 
     tracing::info!("Starting Chronos MCP Server v{}", env!("CARGO_PKG_VERSION"));
 
-    let server = ChronosServer::new();
+    // m9-75: fail closed on a store that cannot be opened. Exiting before the
+    // transport starts is the only way a client can tell the difference between
+    // "your store is there" and "the server quietly started with an empty one".
+    let server = match ChronosServer::try_new() {
+        Ok(server) => server,
+        Err(e) => {
+            tracing::error!("Fatal: {}", e);
+            eprintln!("chronos-mcp: fatal: {}", e);
+            std::process::exit(2);
+        }
+    };
 
     if let Err(e) = server.run_stdio().await {
         tracing::error!("Server error: {}", e);
