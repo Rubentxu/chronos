@@ -1,13 +1,13 @@
 {
   "cycle_id": "m9-73-sandbox-client-store-isolation",
-  "head_sha": "d4919eec670e133f55758ba6a37301aee92f9570",
+  "head_sha": "456247521285fc4899ed134e370340e689ca38ca",
   "base_sha": "2df028874bb74a618e126828dd84923a67030a60",
   "created_at": "2026-09-13T16:45Z",
   "route": "B-direct",
   "summary": "Closes FIND-M9-72-SANDBOX-SHARED-STORE-SAVE-TIMEOUT, the deferral m9-72 recorded when it found its required T4-smoke subset flaky. The finding said the sandbox harness shares one store and proposed giving each client a unique CHRONOS_DB_PATH. Recon found three independent writers of that variable, not one: McpTestClient::start/start_path spawned the server with the caller's environment so every client resolved the developer's $HOME store, session_edge_cases' SE1 called std::env::set_var around two start() calls (mutating the environment of the whole test binary, so other tests on other threads inherited it), and ce12 called set_var 'so the CLI replay can find the same store' - untrue, because replay_bundle passes --db <path> explicitly. start_path now allocates a private store (PID + atomic counter + nanos) and passes CHRONOS_DB_PATH through start_with_env; the field is removed on Drop after the child is reaped; start_with_db_path stays as the explicit opt-in for sharing; the spawn helper no longer inherits an ambient CHRONOS_DB_PATH at all; both global-mutation sites are gone - which also let SE1 be un-ignored, since the interference its #[ignore] guarded against was exactly that mutation. A new CC#56 forbids std::env::set_var/remove_var anywhere in chronos-sandbox so the class cannot return, and a new suite asserts store isolation against what the server actually opened on disk rather than what the client recorded. Running the required subset also surfaced a pre-existing failure unrelated to the cycle: session_edge_cases has two tests whose session_save never completes in this environment, on main as well (measured by interleaved A/B, and it still fails with a 180 s timeout), now recorded in AGENTS.md 6.5.",
   "title": "73 sandbox client store isolation",
   "status": "CLOSED",
-  "main_sha": "d4919eec670e133f55758ba6a37301aee92f9570",
+  "main_sha": "456247521285fc4899ed134e370340e689ca38ca",
   "findings_closed": [
     {
       "finding_id": "FIND-M9-72-SANDBOX-SHARED-STORE-SAVE-TIMEOUT",
@@ -53,11 +53,11 @@
   },
   "peel_match": true,
   "remote_tag": "v0.7.75",
-  "remote_tag_peel": "TBD_AFTER_RELEASE",
+  "remote_tag_peel": "456247521285fc4899ed134e370340e689ca38ca",
   "release_status": "released",
   "verify_status": "passed",
   "archive_status": "archived",
-  "released_at": "2026-09-13T15:16Z",
+  "released_at": "2026-09-13T15:20Z",
   "verified_at": "2026-09-13T15:16Z",
-  "archived_at": "2026-09-13T15:16Z"
+  "archived_at": "2026-09-13T15:20Z"
 }

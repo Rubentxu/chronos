@@ -81,5 +81,5 @@ Two commits:
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-70-mcp-store-isolation/release-report.md` | `90ce13f216e0304ed976e58fa1b033bbc54822b0f47835bd7d1e0306fba5e79a` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-70-mcp-store-isolation/release-receipt.md` | `aad24fa2ab687befb3a2acb52018b395de6935b259f4bdb392c821089a2799a4` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-70-mcp-store-isolation/merge-receipt.md` | `03ad0584b8ce842bc2c77b2cf63484b6b1056921c8cb4530f88aa19efcfdc633` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `67b734084479825a986d0f6fb3860700a9f2cc02005333ea5e5cb780179286a1` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `28bb11437e66eaabc0f90db5e35de4f4279f4f5c46d9486421c2efe94df847b5` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `097f49af733ec347bf351eae183adba212dcb2c4a5473da90e0a15b170bab06e` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `570e41f51e72fb86e9bcf7b873846f91d3b95ce68ac878b3b9cdd0b0f6bc72c4` |
