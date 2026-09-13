@@ -582,3 +582,103 @@ Note for the next cycle: the 21 sessions found in the developer's real store wer
 Net cycle delta this session: 69 → 70.
 Net CC delta this session: unchanged at 55 (m9-70 adds no new CC; local robustness + test isolation only).
 Vault state: canonical, 70 cycles indexed, 55 CCs documented, peel_match verified for m9-70 (`v0.7.72` → `54e859f`).
+
+
+## Session 2026-09-13T12:45Z: m9-71 (services list store contract)
+
+Closed `FIND-M9-70-SERVICES-TABLE-STRING-MATCH`, the deferral recorded by m9-70
+one session earlier. One function, one file, no behavior change — the cycle's
+real product is that a vacuous test became a real guard.
+
+| Item | Status |
+|---|---|
+| `crates/chronos-services/src/sessions.rs` | `list_sessions` drops `err_str.contains("does not exist") \|\| contains("not exist")` and propagates the store error via `?`; the doc comment now states that "no sessions yet" is a **store** contract; `list_sessions_empty` documents why it is load-bearing; +22/−15, 0 new tests |
+
+Falsification ran in **both directions** before the patch was committed, which is
+the whole justification for a cycle with no new test:
+
+| Configuration | `list_sessions_empty` |
+|---|---|
+| workaround removed (m9-71) + m9-70 store fix reverted | **FAILED** — `ListFailed("Database error: Table 'sessions' does not exist")` at `sessions.rs:465` |
+| workaround present (pre-m9-71) + same revert | **PASSED** — 1 passed; 0 failed |
+
+Row 2 is the point: before this cycle the test passed whether or not the store
+honoured the contract it appeared to check, so it provided zero coverage.
+
+Gates:
+- T0: `cargo fmt --all -- --check` + `cargo clippy --workspace --all-targets -- -D warnings` PASS
+- T2: `cargo test -p chronos-services -p chronos-store --lib` → 263 + 62; `cargo test -p chronos-mcp --tests` → 77 lib + 49 integration
+- T4-smoke: `session_persistence` 4 (55.61s) + `e2e_connectivity` 1 (6.24s) = 5 passed / 0 failed
+- CC#12: `main_sha == head_sha == remote_tag_peel == f8abe7b` (peel verified on origin)
+- Vault drift: PASS (47 python + 7 bash CCs); CC smoke 5/5 PASS
+- Cycle branch deleted (local + remote) after merge
+
+### Unplanned work: CC#4 index-SHA chain
+
+The first post-release drift sweep FAILED CC#4, and the reason is a structural
+property of the vault worth remembering:
+
+```
+DRIFT: CC#4: .../m9-70-mcp-store-isolation/archive-manifest.md :: cycles/index.md
+DRIFT: CC#4: .../m9-70-mcp-store-isolation/archive-manifest.md :: terms/index.md
+```
+
+CC#4 validates every SHA in the Artifact index of **every** `m9-*/archive-manifest.md`
+against the live file. Since each new manifest lists the current `cycles/index.md`
+and `terms/index.md` SHAs, every cycle that edits those indexes must rewrite the
+index rows of *every prior manifest that lists them* — not just m9-02's. This
+cycle had to fix m9-70's manifest too. The set grows by one per cycle, so the
+ritual is O(n²). Recorded as `FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION`
+(deferred, low) with candidate fixes: keep mutable vault indexes out of artifact
+indexes, or exempt vault-index paths in CC#4.
+
+Practical rule for the next cycle: after editing `cycles/index.md` or
+`terms/index.md`, run the CC#4 loop to a fixpoint over all archive manifests
+(edit → recompute → re-audit; a single pass is not enough because each edit
+changes the SHA you just propagated).
+
+### m9-71 flake candidate: NOT reproducible
+
+The slot's original candidate was the sandbox warm-up-ordering flake
+`test_session_start_via_v2_then_session_stop_via_v2` (`chronos-sandbox/tests/probe_lifecycle.rs:168`,
+recorded as "fails alone, passes with the full file"). It did **not** reproduce:
+
+- 5/5 passes in isolation (~16-17s each).
+- Also passes with a deliberately unopenable `CHRONOS_DB_PATH` (a directory),
+  simulating the in-memory fallback (7.94s).
+
+No cycle spent on it. Either the m9-70 hermetic-store work removed the
+interaction, or the original observation was environment-specific. Recommendation:
+re-characterize only if it reappears with a reproducible failure.
+
+### Discrepancy noticed (not fixed)
+
+m9-70's archive-manifest reports T4-smoke `session_persistence` **8 passed**, but
+`chronos-sandbox/tests/session_persistence.rs` contains **4** tests
+(`test_save_and_load_session_roundtrip`, `test_save_session_multiple_times`,
+`test_list_sessions_after_save`, `test_load_nonexistent_session`). The m9-70
+figure looks double-counted. Left as-is (frozen archive); noted in m9-71's
+verify-report and release-report.
+
+### Open follow-ups
+
+- **FIND-M9-71-LOAD-SESSION-TABLE-ERROR-COLLAPSE** (new, low): `SessionStore::load_session`
+  uses `Err(_) => SessionNotFound` in both read paths while `list_sessions` and
+  `session_exists` in the same file match `redb::TableError::TableDoesNotExist`
+  explicitly. Harmless today, but three sibling read paths disagree about the
+  same concern.
+- **FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION** (new, low): the O(n²)
+  vault-index regeneration ritual described above.
+- **5+19 not-merged branches triage** (preserved from m9-65): human review needed.
+  Merged-but-undeleted local branches now include `feat/m9-67-cc-smoke-test`,
+  `feat/m9-68-verify-report-files-inventory-backfill`,
+  `feat/m9-69-bounded-join-unit-test`, `feat/m9-70-mcp-store-isolation`
+  (m9-71's own branch was deleted this cycle).
+- **Sandbox test warm-up ordering**: not reproducible; see above.
+
+Net cycle delta this session: 70 → 71.
+Net CC delta this session: unchanged at 55 (m9-71 adds no new CC; it deletes a
+workaround and adds no structural class, so `smoke_test_ccs.sh` expected counts
+need no update).
+Vault state: canonical, 71 cycles indexed, 55 CCs documented, peel_match verified
+for m9-71 (`v0.7.73` → `f8abe7b`), CC#4 clean across all archive manifests.
