@@ -47,6 +47,12 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 | m8-06-R4 | m8-06 | Cross-variant existence predicate shrinking: variant still fixed in ExistencePredicateShrinker | unassigned | m9+ |
 | m8-04-R-hypothesis-fallback | m8-04 | property_target lost in fallback reconstruction | unassigned | m9+ (non-issue post m8-07 but synthetic defaults remain for pre-m8-07 bundles) |
 
+### Findings deferred from m9-69
+
+| ID | Cycle | Título | Owner | Destino |
+|---|---|---|---|---|
+| FIND-M9-69-MCP-STORE-ISOLATION | m9-69 | `chronos-mcp` server tests use the real `$HOME` store; `SessionStore::list_sessions` hard-fails on stale-schema records | unassigned | m9+ |
+
 ## Terminated terms
 
 | ID | Cycle | Título | Closed by |
@@ -75,5 +81,5 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-13T11:13:00Z
-| Last archive | m9-68-verify-report-files-inventory-backfill |
+| Last updated | 2026-09-13T12:10:00Z
+| Last archive | m9-69-bounded-join-unit-test |
