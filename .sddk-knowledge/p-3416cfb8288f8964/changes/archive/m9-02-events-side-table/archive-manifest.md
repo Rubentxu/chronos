@@ -176,7 +176,7 @@ No formal spec.md existed for this change; the scoping doc
 
 | Kind | Path | SHA-256 |
 |---|---|---|
-| archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-02-events-side-table/archive-manifest.md` | `45e5a127c4fafda7459317fec6be698ce6b401251078f3cef1fce07c25a57766` |
+| archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-02-events-side-table/archive-manifest.md` | `77fcb3c1175969b908f8d021adf65f10d9ff0fec2f640021a4cb0fbe348b759c` |
 | archive-report | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-02-events-side-table/archive-report.md` | `e59337788241a4ea96cef37c58e81563535f61caf74c8437f3078bd34aca1f89` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-02-events-side-table/change-entry.md` | `fa2360b658f3bdac01b4343b314cf808458002f3a03682f1165f43657cdb87d0` |
 | merge-receipt | `cycle-artifacts/m9-02-events-side-table/receipts/merge-receipt.md` | `031f5d3a3960716ed2f2ed3fbcc2164121cf700c3df2fb3590215b9c2d06d6a6` |
@@ -185,8 +185,8 @@ No formal spec.md existed for this change; the scoping doc
 | scoping doc | `docs/milestones/m9-02-events-side-table-scoping.md` | `001c7969d3f416432268cab8a0880460f87b23f6ee20800d9dafb2321afd0653` |
 | design doc | `docs/milestones/m9-02-events-side-table-design.md` | `6c13ff80e0d130463df66071653ae0dfd7ab9d302a36b7a2d35394b52aeb57c9` |
 | apply-checkpoint | `apply-checkpoint.json` | `4a4b367de0ba46730549e60343ea6b629612eda11cf23cb5c5addaa7f1a67dd8` |
-| terms index | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `dc4a5f9e8e465d41ea516dd1e6153c361d4a77ecdb8b1d89a34fc84095170f2d` |
-| cycles index | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `e55f6d2bc45aa144ab4b8acf8f97501c88728e502e07b50e937de23a5714f93c` |
+| terms index | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `42bacead70bd45bc0d0774acf8426cce3c938c9cb718b0fbd67cefa5a58c24df` |
+| cycles index | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `a94b4c0f4a3a57135e72d4b034d837d6fdac01e8b07d9f643ec8f296666d0477` |
 
 ## Runtime status
 
