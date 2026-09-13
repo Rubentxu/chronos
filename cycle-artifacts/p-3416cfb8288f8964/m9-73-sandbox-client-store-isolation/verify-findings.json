@@ -1,0 +1,74 @@
+{
+  "schema": "verify-finding.schema.json",
+  "subject": {
+    "head_sha": "d4919eec670e133f55758ba6a37301aee92f9570",
+    "base_sha": "2df028874bb74a618e126828dd84923a67030a60",
+    "diff_digest": "sha256:2c6d51e79e7b5e347273284e85377ec6bec4f1ea7fe4c93f4c1baf911591db7a",
+    "working_tree_clean": true,
+    "verified_at": "2026-09-13T15:16Z",
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
+    "verdict": "passed"
+  },
+  "lens_summary": "m9-73 closes FIND-M9-72-SANDBOX-SHARED-STORE-SAVE-TIMEOUT. The deferral named one writer of CHRONOS_DB_PATH in the sandbox harness; recon found three, and the two extra ones hid behind the first: McpTestClient::start() spawned the server with the caller's environment, so every client in all 35 suites resolved the developer's $HOME store; session_edge_cases published a path through std::env::set_var, which mutates the whole test binary's environment and leaks across threads; ce12 did the same under a comment its own code contradicts (replay_bundle already passes --db). Every client now allocates a private store, start_with_db_path is the explicit opt-in for sharing, spawn_with_env removes any inherited path before applying extra_env, and CC#56 fails the drift sweep if process-global environment mutation returns under chronos-sandbox/. Falsification rejected the first version of the cycle's own suite, which asserted what the client recorded rather than what the server opened; open_default_store's silent in-memory fallback satisfied 'B cannot see A's session' for the wrong reason. The suite now requires the recorded store file to exist on disk and be non-empty. Characterising the two session_edge_cases failures that survive on main as well produced the real blocker: ContentStore::put commits one redb write transaction per event (immediate durability, no set_durability anywhere in chronos-store) and save_session loops over it, so a 35k-event session takes ~3 minutes. Deferred with a proposed put_many fix.",
+  "findings": [
+    {
+      "finding_id": "FIND-M9-72-SANDBOX-SHARED-STORE-SAVE-TIMEOUT",
+      "rule_id": "test.shared_database_state",
+      "severity": "medium",
+      "summary": "Closed, and larger than recorded: three independent writers of CHRONOS_DB_PATH, not one. Every sandbox client inherited the developer's 86 MB store; session_edge_cases mutated the variable process-globally; ce12 set it under a comment that its own code contradicts. Clients now allocate a private store, the shared store is an explicit opt-in, the spawn helper no longer inherits the ambient value, and CC#56 forbids process-global environment mutation under chronos-sandbox.",
+      "subject": {
+        "gap": "McpTestClient::start() -> start_path() -> factory::start() spawned the server with the caller's environment, so all 35 sandbox suites (and every test inside each suite) resolved default_db_path() = $HOME/.local/share/chronos/sessions.redb and serialized ~2500 compressed events per save into it behind a fixed 30 s client-side tools/call timeout. session_edge_cases::test_load_session_persists_across_client_instances called std::env::remove_var/set_var/set_var/remove_var around two start() calls, which mutates the environment of the whole test binary and leaks into tests on other threads. counterexample_tools::ce12 called set_var 'so the CLI replay can find the same store', but replay_bundle passes --db <path> explicitly and is started via start_with_db_path, so the mutation was false as documented and harmful in effect.",
+        "fix": "tools.rs: db_dir/db_path fields; start_path allocates a private store (allocate_store_dir: PID + AtomicU64 counter + nanos) and starts the server with db_env(); impl Drop takes the process handle first (child reaped) then removes the store directory; start() and start_with_db_path share resolve_mcp_path(); start_with_db_path keeps explicit sharing with db_dir: None (caller owns the path) and drops the std::env::vars() base. process.rs: spawn_with_env removes CHRONOS_DB_PATH from the inherited environment before applying extra_env. session_edge_cases SE1 uses start_with_db_path; ce12 drops set_var/remove_var. New tests/client_store_isolation.rs asserts isolation against the filesystem. New CC#56 detects std::env::(set_var|remove_var) under chronos-sandbox."
+      },
+      "evidence": {
+        "falsification": "Six observations, each revert applied, observed, restored (restored sources byte-compared with their pre-falsification copies; suite re-run green). (1) The FIRST version of the new suite passed 3/3 with the guard removed: it compared a.db_path() with b.db_path(), i.e. the allocator's bookkeeping rather than the server's behaviour, and 'B cannot see A's session' was satisfied by open_default_store's in-memory fallback. That vacuity is what forced the rewrite. (2) With on-disk assertions added, removing the start_path guard fails 2/3 with 'server A never opened the store the client recorded' and 'client A's server never opened ... so invisible-to-B proves nothing'; test 3 (explicit path) correctly still passes. (3) With CHRONOS_DB_PATH exported to a scratch decoy and the fix in place: 3/3 pass, decoy never created. (4) With both guards removed (start_path and env_remove) and the decoy exported: FAILED on the ambient check ('a sandbox client opened the ambient CHRONOS_DB_PATH ... instead of a private store') and decoy.redb existed on disk. (5) CC#56 run against the pre-fix tree (git show HEAD of both touched test files) prints exactly 6 hits, the removed writers (counterexample_tools.rs:599,688; session_edge_cases.rs:41,44,94,176); against the current tree it prints nothing. (6) Interleaved A/B against main with alternating builds, session_persistence alone, 3 rounds each: fix 50 s/50 s/53 s, 3/3 pass; main 56 s/53 s/60 s with the 60 s run FAILED at session_persistence.rs:128, TimeoutError(\"method=tools/call\", 30s) - the signature m9-72 recorded. The failure landed on the unmodified build in the same sequence and on its slowest run, so the claim is measured rather than argued.",
+        "post_fix": "cargo fmt --check pass; cargo clippy --workspace --all-targets -D warnings pass (0 warnings); cargo test -p chronos-sandbox --lib 3 passed; T4-smoke subset client_store_isolation 3/3, session_persistence, session_edge_cases, counterexample_tools, e2e_connectivity all pass with --test-threads=1; drift sweep PASS with 48 python + 7 bash CCs; CC smoke 5/5."
+      }
+    }
+  ],
+  "findings_introduced": {
+    "no_action": [],
+    "deferred": [
+      {
+        "finding_id": "FIND-M9-73-CAS-PUT-ONE-WRITE-TRANSACTION-PER-EVENT",
+        "rule_id": "perf.transaction_per_item",
+        "severity": "high",
+        "note": "ContentStore::put (crates/chronos-store/src/cas.rs:55) opens a redb write transaction per event, calls ensure_table on it, inserts one row, and commits; no set_durability call exists anywhere in the crate, so redb's default immediate durability makes each commit a durability barrier (fsync). SessionStore::save_session (storage.rs:158) calls cas.put in a loop over the session's events before opening its own metadata transaction, so saving one session costs one fsync per event. How it surfaced: session_edge_cases::test_compare_sessions_crash_vs_normal prints 'Crash session stopped: 34905 events' and then fails to save within the client's 30 s tools/call timeout; raising the timeout to 180 s still fails after 186 s. The numbers are consistent to within measurement error with a linear per-event cost of roughly 4.8 ms (34,905 events x 4.8 ms = 168 s, against >186 s observed), which is also the right order for a 2,500-event save taking a few seconds - the volume session_persistence uses, and why that suite sits just under a 30 s client timeout when nothing contends. Consequences: any session above roughly 6,000 events approaches the 30 s sandbox client timeout, and realistic sessions (a crash capture is 35k events here) take minutes. This is a product-facing cost, not just a test one: the MCP client timeout is what makes it a hard failure, but a three-minute session_save is a usability defect regardless. Proposed fix, not attempted in this cycle: add ContentStore::put_many(&[TraceEvent]) that opens one write transaction and inserts every event in it (the dedup check per event stays, the transaction moves out of the loop), and have save_session batch its events through it; keep put as the single-event convenience wrapper over put_many. Verify by saving a 35k-event session and asserting wall time.",
+        "severity_rationale": "Linear fsync-per-event write path: a single crash session (35k events) does not complete in three minutes, and the cost is on the save path of every session, not just tests."
+      },
+      {
+        "finding_id": "FIND-M9-73-SILENT-IN-MEMORY-FALLBACK-MASKS-STORE-OPEN-FAILURE",
+        "rule_id": "code.silent_degradation",
+        "severity": "medium",
+        "note": "crates/chronos-mcp/src/server.rs::open_default_store opens $CHRONOS_DB_PATH (else $HOME/.local/share/chronos/sessions.redb) and, when that fails (locked, corrupt, missing parent), falls back to SessionStore::in_memory() behind a tracing::warn. The server therefore starts successfully against a store it cannot use: session_save reports success and session_list returns an empty list, i.e. silent data loss with a green health check, rather than an error the caller can see. How it surfaced: the first version of this cycle's isolation suite passed with the guard removed, because client B fell back to in-memory and saw 0 sessions, which satisfied the assertion 'B must not see A's session' for the wrong reason. The same degradation is what the pre-m9-73 shared store did to every second sandbox client. Not fixed here: the fallback is a deliberate resilience choice (it keeps the server usable when the local store is locked, and SessionStore::in_memory has legitimate uses), the remedy is a policy decision in chronos-mcp rather than a harness fix, and the candidate policies have different blast radii (fail closed on a store that exists but cannot be opened; keep the fallback only for a missing parent directory; or surface degraded mode in a tool response / a dedicated field). Detection is now in place: the isolation suite fails if it ever runs against a fallback store again."
+      },
+      {
+        "finding_id": "FIND-M9-73-CC4-REGEN-RITUAL-NOT-IN-REPO",
+        "rule_id": "process.undocumented_tooling",
+        "severity": "low",
+        "note": "CC#4 requires that when a cycle edits cycles/index.md, terms/index.md or any file listed in an archive manifest's artifact index, the SHA rows of every prior manifest that lists them are regenerated, and the loop is run to a fixpoint. The regeneration is performed by a throwaway python script held in the agent's scratch directory rather than in the repository, so each cycle re-derives it (m9-72 did, this cycle did). Two footguns follow, both observed this cycle. First, a whole-tree run rewrites the self-referential 'archive-manifest (this file)' row of every manifest, including nine pre-m9-11 manifests (m9-01, m9-03..m9-10) that are never in the affected set: those rows are unmaintainable by construction (a file cannot contain its own hash) and CC#4 skips them by design, so the rewrite is unrelated churn that a reviewer has to recognise and drop - this cycle reverted it, and restored m9-67/m9-68's self rows to their committed values so only the two rows CC#4 actually requires remain. Second, the naive recompute-everything rule is what produced the m9-02 self-row defect that m9-72 had to zero out. Remedy: land scripts/regen_manifest_index_shas.py implementing the skip-self-row rule, and document it in maintenance/vault-drift-sweep.md beside CC#4. Not done in this cycle: the affected set grows by one manifest per cycle (FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION), so the script deserves a deliberate cycle rather than being grown in passing inside a test-harness change."
+      },
+      {
+        "finding_id": "FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION",
+        "rule_id": "code.duplicated_policy",
+        "severity": "low",
+        "note": "Unchanged from m9-72: counterexample_storage.rs keeps four hand-rolled copies of the read-path TableDoesNotExist / else-propagate policy that chronos-store::table_error now names."
+      },
+      {
+        "finding_id": "FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION",
+        "rule_id": "process.content_addressed_index",
+        "severity": "low",
+        "note": "Unchanged, and the affected set grew again: this cycle's edits to cycles/index.md, terms/index.md, scripts/smoke_test_ccs.sh and maintenance/vault-drift-sweep.md made rows stale in m9-67 and m9-68 as well. Regenerated to a fixpoint (second pass: 0 rows updated)."
+      }
+    ]
+  },
+  "cross_checks": {
+    "cc_range": "CC#1..CC#56",
+    "drift": "PASS: 48 python CCs all clean, 7 bash CCs all clean",
+    "smoke": "5 tests run / 0 failures",
+    "new_cc": "CC#56 (python) - no process-global environment mutation in chronos-sandbox",
+    "counts_updated": "scripts/smoke_test_ccs.sh 47 -> 48 python (CC#48/CC#54 assertion)",
+    "cc12": "main_sha == head_sha == remote_tag_peel (verified after release)",
+    "cc24_cc31": "verify-report carries ## Cross-checks; archive manifest carries Base SHA and Head SHA"
+  }
+}
