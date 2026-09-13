@@ -132,6 +132,9 @@ pub struct NativeProbeBackend {
     thread_handle: std::sync::Mutex<Option<thread::JoinHandle<()>>>,
     /// The PID of the currently traced process (for stop_probe to kill).
     traced_pid: std::sync::Arc<std::sync::Mutex<Option<i32>>>,
+    /// Whether the current tracee is caller-owned through `attach_probe`.
+    /// Such targets must be woken and detached, never terminated.
+    attached_target: Arc<AtomicBool>,
     /// Optional `ExecutionLog` for the running session. Populated by
     /// `start_probe` so the ptrace thread can record events to a
     /// durable, segmented log alongside the legacy EventBus.
@@ -152,6 +155,7 @@ impl NativeProbeBackend {
             running: Arc::new(AtomicBool::new(false)),
             thread_handle: std::sync::Mutex::new(None),
             traced_pid: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            attached_target: Arc::new(AtomicBool::new(false)),
             execution_log: std::sync::Arc::new(std::sync::Mutex::new(None)),
             execution_log_dir: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
@@ -365,6 +369,7 @@ impl NativeProbeBackend {
                 "A probe is already running on this backend. Call stop_probe first.".into(),
             ));
         }
+        self.attached_target.store(false, Ordering::SeqCst);
 
         let program_path = PathBuf::from(&config.target);
 
@@ -510,6 +515,7 @@ impl NativeProbeBackend {
                 "A probe is already running on this backend. Call stop_probe first.".into(),
             ));
         }
+        self.attached_target.store(true, Ordering::SeqCst);
 
         let language = config.language.unwrap_or(Language::C);
         let event_bus = self.event_bus.clone();
@@ -574,7 +580,9 @@ impl NativeProbeBackend {
         // naturally when it checks running=false after the next wait_event returns).
         self.running.store(false, Ordering::SeqCst);
 
-        // Best-effort: kill the traced process to unblock waitpid.
+        // Best-effort: interrupt waitpid. Spawned tracees are owned by Chronos
+        // and can be killed. For an attached target, SIGSTOP creates a ptrace
+        // stop event; the loop observes `running=false` and PTRACE_DETACHes it.
         // If the PID isn't published yet, the thread will exit when it checks
         // running=false after launch.
         let pid_to_kill = self
@@ -583,11 +591,14 @@ impl NativeProbeBackend {
             .unwrap_or_else(|e| e.into_inner())
             .take();
         if let Some(pid) = pid_to_kill {
-            info!("Killing traced process PID {} to stop probe", pid);
-            let _ = nix::sys::signal::kill(
-                nix::unistd::Pid::from_raw(pid),
-                nix::sys::signal::Signal::SIGKILL,
-            );
+            let signal = if self.attached_target.swap(false, Ordering::SeqCst) {
+                info!("Stopping attached PID {} for safe ptrace detach", pid);
+                nix::sys::signal::Signal::SIGSTOP
+            } else {
+                info!("Killing spawned process PID {} to stop probe", pid);
+                nix::sys::signal::Signal::SIGKILL
+            };
+            let _ = nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), signal);
         } else {
             debug!("stop_probe: traced_pid not yet set, relying on running=false to stop thread");
         }

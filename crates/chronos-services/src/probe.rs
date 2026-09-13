@@ -351,16 +351,9 @@ impl ProbeService {
             .live_probes
             .lock()
             .map_err(|_| ServiceError::LockPoisoned)?;
-        if live_probes
-            .get(session_id)
-            .is_some_and(|live_probe| live_probe.attached)
-        {
-            return Err(ServiceError::Unsupported(
-                "session_stop for an attached process is not available yet; closing the MCP server detaches it without terminating the target".to_string(),
-            ));
-        }
-
-        // Remove the live probe session only after the ownership safety check.
+        // Attached sessions are stopped by the backend with SIGSTOP followed by
+        // PTRACE_DETACH, while spawned sessions retain the historical SIGKILL
+        // behavior. Both can therefore use the same lifecycle entrypoint.
         let live_probe = live_probes.remove(session_id);
 
         let live_probe =

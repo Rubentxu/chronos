@@ -393,7 +393,6 @@ you do not have permission to trace it, or the host `ptrace_scope` policy is
 restrictive. Chronos reports those cases as an attach failure rather than
 starting a partial session.
 
-> **Current lifecycle constraint:** `session_stop` is intentionally rejected
-> for attached processes because the legacy stop path owns and terminates
-> spawned targets. Close the MCP server to detach safely. A graceful explicit
-> detach operation is deferred work.
+> `session_stop` safely detaches an attached target. Chronos wakes the ptrace
+> loop, waits for it to exit, and performs `PTRACE_DETACH`; it does not
+> terminate the target process.
