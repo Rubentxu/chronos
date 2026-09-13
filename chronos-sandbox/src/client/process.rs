@@ -36,16 +36,21 @@ impl McpProcess {
     /// Spawn a new MCP server process from the given path with extra environment variables.
     ///
     /// Used by sandbox tests that need to control the MCP server's DB path (e.g., ce12).
+    ///
+    /// The child's `CHRONOS_DB_PATH` is **only** what `extra_env` supplies: the
+    /// ambient value is removed first, so a developer who has the variable
+    /// exported cannot silently redirect a sandbox server at their real store
+    /// (`FIND-M9-72-SANDBOX-SHARED-STORE-SAVE-TIMEOUT`). `Command` inherits the
+    /// parent environment by default, so without the removal an empty
+    /// `extra_env` would inherit the ambient store.
     pub async fn spawn_with_env(
         mcp_path: &Path,
         extra_env: std::collections::HashMap<String, String>,
     ) -> Result<Self, McpSandboxError> {
         let mut cmd = tokio::process::Command::new(mcp_path);
         cmd.env("RUST_LOG", "debug");
-        // Pass through CHRONOS_DB_PATH if set
-        if let Ok(db_path) = std::env::var("CHRONOS_DB_PATH") {
-            cmd.env("CHRONOS_DB_PATH", db_path);
-        }
+        // Never inherit the ambient store path; callers opt in explicitly.
+        cmd.env_remove("CHRONOS_DB_PATH");
         // Apply extra environment variables (overriding any inherited ones)
         for (k, v) in extra_env {
             cmd.env(&k, &v);

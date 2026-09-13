@@ -595,9 +595,6 @@ async fn ce12_replay_preserves_non_default_invariant_options() {
         }
     };
 
-    // Set CHRONOS_DB_PATH so the CLI replay can find the same store.
-    std::env::set_var("CHRONOS_DB_PATH", &db_path);
-
     let path = match chronos_sandbox::McpSession::fixture_path("test_busyloop") {
         Some(p) => p,
         None => {
@@ -685,5 +682,4 @@ async fn ce12_replay_preserves_non_default_invariant_options() {
     // Cleanup.
     let _ = client.shutdown().await;
     let _ = std::fs::remove_file(&db_path);
-    std::env::remove_var("CHRONOS_DB_PATH");
 }

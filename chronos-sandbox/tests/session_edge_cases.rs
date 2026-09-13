@@ -16,14 +16,18 @@ use std::time::Duration;
 /// Note: Each McpTestClient::start() spawns a NEW server process.
 /// The sessions are persisted to disk via SessionStore, so a new server
 /// should be able to load them if the same disk storage is used.
-/// We use CHRONOS_DB_PATH env var to ensure both server instances use the same storage.
+/// Both instances are started with `start_with_db_path` so that they share one
+/// explicit store, rather than mutating the process-global `CHRONOS_DB_PATH`
+/// (which leaked into every other test running in this binary).
 ///
-/// NOTE: This test is marked #[ignore] because it has race conditions when running
-/// in parallel with other tests. The database path uses PID+timestamp for uniqueness,
-/// but parallel test processes may still interfere. Run with:
-/// `cargo test -p chronos-sandbox --test session_edge_cases -- --ignored`
+/// This used to be `#[ignore]`d because running it in parallel with the rest of
+/// the binary interfered: the test published its path through the process-global
+/// `CHRONOS_DB_PATH`, so two clients racing through that variable could open the
+/// wrong store. The path is now passed explicitly and no test in this crate
+/// mutates the environment (enforced by CC#56), so the interference cannot
+/// happen and the test runs by default. It still belongs to the serial runner
+/// (`--test-threads=1`), because two instances deliberately share one path.
 #[tokio::test]
-#[ignore]
 async fn test_load_session_persists_across_client_instances() {
     let fixture_add = McpSession::fixture_path("test_add").expect("test_add fixture not found");
 
@@ -37,18 +41,12 @@ async fn test_load_session_persists_across_client_instances() {
     let db_path = temp_dir.join(format!("chronos_test_sessions_{}_{}.redb", pid, ts));
     let lock_path = db_path.with_extension("redb.lock");
 
-    // Clean up any stale env var from previous crashed tests
-    std::env::remove_var("CHRONOS_DB_PATH");
-
-    // Set CHRONOS_DB_PATH for instance 1
-    std::env::set_var("CHRONOS_DB_PATH", &db_path);
-
     // Remove any existing test database and lock file to start fresh
     let _ = std::fs::remove_file(&db_path);
     let _ = std::fs::remove_file(&lock_path);
 
     // ============ Instance 1: Create and save session ============
-    let mut client1 = McpTestClient::start()
+    let mut client1 = McpTestClient::start_with_db_path(db_path.clone())
         .await
         .expect("Failed to start MCP server (instance 1)");
 
@@ -90,11 +88,8 @@ async fn test_load_session_persists_across_client_instances() {
     let _ = std::fs::remove_file(&lock_path);
     let _ = std::fs::remove_file(db_path.with_extension("lock"));
 
-    // Re-set the database path in case it was interfered with by other tests
-    std::env::set_var("CHRONOS_DB_PATH", &db_path);
-
     // ============ Instance 2: NEW server with SAME db path, load saved session ============
-    let mut client2 = McpTestClient::start()
+    let mut client2 = McpTestClient::start_with_db_path(db_path.clone())
         .await
         .expect("Failed to start MCP server (instance 2)");
 
@@ -173,7 +168,6 @@ async fn test_load_session_persists_across_client_instances() {
     // Cleanup temp database and lock file
     let _ = std::fs::remove_file(&db_path);
     let _ = std::fs::remove_file(&lock_path);
-    std::env::remove_var("CHRONOS_DB_PATH");
 }
 
 /// SE2: Compare sessions — crash vs normal.

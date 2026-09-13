@@ -248,7 +248,7 @@ else:
 # ==============================================================================
 # This test verifies that in the clean state (no drift injected),
 # check_vault_drift.sh exits 0 and the final PASS message reports the
-# expected CC counts (47 python + 7 bash). If a future change to the
+# expected CC counts (48 python + 7 bash). If a future change to the
 # meta-check extraction logic (CC#48's python block detection or CC#54's
 # bash block extraction) silently drops a CC, this assertion catches it.
 test_meta_checks() {
@@ -265,7 +265,7 @@ test_meta_checks() {
     cat "$WORK_DIR/meta.log"
     return
   fi
-  if ! grep -qE "47 python CCs all clean, 7 bash CCs all clean" "$WORK_DIR/meta.log"; then
+  if ! grep -qE "48 python CCs all clean, 7 bash CCs all clean" "$WORK_DIR/meta.log"; then
     failures+=("CC#48+CC#54: PASS message format unexpected")
     echo "  FAIL: PASS message does not match expected format"
     cat "$WORK_DIR/meta.log"
