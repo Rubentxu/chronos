@@ -58,8 +58,8 @@ m9-68 closes the drift class `verify-report-files-inventory-missing` by backfill
 | Kind | Path | SHA-256 |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-68-verify-report-files-inventory-backfill/archive-manifest.md` | `da7efa34c9aa50706d169424648f48b3dad3898aa2de5b88c2b6392f0bae34bd` |
-| smoke-test script | `scripts/smoke_test_ccs.sh` | `6a74dbf1308db46986560cccdcdbc0df08b85f946d55f29917464384265505df` |
-| vault drift sweep spec | `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md` | `85c39f408fc15c01979456f3d1e69d6b6e981c937bde3ad0f89f560b7740012f` |
+| smoke-test script | `scripts/smoke_test_ccs.sh` | `86def49d7e23b4e521687ddcb53a384aac18ec3f91f0e2845396f90d7ac3e7d3` |
+| vault drift sweep spec | `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md` | `7f977ba9c293ef9370af205e6b21c48c3bb615fbfc78aac2faf665e1517809c3` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-68-verify-report-files-inventory-backfill/apply-checkpoint.json` | `50b5cf24fccd3fe82cfa0f3a72799ed4ab17cf9b43594ad735fefc628756a15c` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-68-verify-report-files-inventory-backfill/verify-report.md` | `6fb1fe061bb7f4702f13e6660a164efa4a1b3861774024c5ffb12dc375d5e650` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-68-verify-report-files-inventory-backfill/verify-findings.json` | `95159a7c001612552eb2e03614e83dd6321d878dab2b88c4ba194376bb642e34` |

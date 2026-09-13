@@ -154,6 +154,12 @@ unclean tree:
 - **Commits are reviewable work units.** See `docs/manual-ai/01-core-pattern.md`
   for the convention. A clippy cascade across 13 crates deserves **one**
   `chore(clippy): …` commit, not 13.
+- **Archive-manifest SHA rows are generated, not hand-edited.** After the last
+  commit that touches a file listed in any `archive-manifest.md`, run
+  `python3 scripts/regen_manifest_index_shas.py` and confirm with
+  `python3 scripts/regen_manifest_index_shas.py --check` (it rewrites to a
+  fixpoint; the self-referential row is preserved by design). CC#4 in
+  `scripts/check_vault_drift.sh` is the gate; this tool is its repair half.
 - **Update `apply-checkpoint.json`** (in the SDDK vault) after every commit.
   Include:
   - Current `head_sha`
@@ -232,6 +238,12 @@ cargo test -p chronos-sandbox --test e2e_connectivity --test analytics_tools
 
 # Full sandbox (T5) — only on A-full or pre-archive:
 cargo test -p chronos-sandbox --no-fail-fast -- --test-threads=1
+
+# Vault gates (issue/vault cycles, no Rust):
+python3 scripts/tests/test_regen_manifest_index_shas.py   # unit tests, zero deps
+python3 scripts/regen_manifest_index_shas.py --check      # CC#4 repair-tool check
+bash scripts/check_vault_drift.sh                         # full CC sweep
+./scripts/smoke_test_ccs.sh                               # synthetic-drift smoke (6 checks)
 
 # Build-only check (compile but do not run; use when you suspect breakage):
 cargo test --workspace --lib --tests --no-run

@@ -151,6 +151,27 @@ storage that git accepts but is ambiguous). Resolution: use full
 
 ### 4. SHA-256 consistency in archive-manifest Artifact index
 
+**Repair tool (added by m9-76):** the fix for this CC used to be a
+throwaway script in `$TMPDIR` (`FIND-M9-73-CC4-REGEN-RITUAL-NOT-IN-REPO`:
+the ritual was not in the repo, so nothing exercised the gate's logic and
+the broken-awk bug of m9-66 survived many cycles). It now lives at
+`scripts/regen_manifest_index_shas.py`, with unit tests in
+`scripts/tests/test_regen_manifest_index_shas.py`:
+
+- `python3 scripts/regen_manifest_index_shas.py` rewrites every stale row
+  to a fixpoint (rewriting one manifest changes the hash another one lists).
+- `python3 scripts/regen_manifest_index_shas.py --check` writes nothing and
+  exits 1 naming each stale row; this is the machine check that the ritual
+  was performed. It agrees with CC#4 by construction: it skips the
+  self-referential row and leaves rows whose target file does not exist
+  untouched, exactly as the awk above does.
+- `python3 scripts/regen_manifest_index_shas.py --dry-run` reports without
+  writing and always exits 0.
+
+`scripts/smoke_test_ccs.sh` pins the two together: it injects the same
+stale SHA that `test_cc4` injects, asserts that both CC#4 and `--check`
+flag it, rewrites it with the tool, and asserts both go green again.
+
 **Fix-peel exemption history:** m9-34, m9-35, m9-50 are fix-peel
 cycles where the cycle branch included additional fix commits after
 the tag peel. CC#3 originally flagged `head_sha != remote_tag_peel`
@@ -2656,8 +2677,11 @@ branches (those are intentional and tracked separately).
 `terms/index.md`. Resolution: deduplicate.
 
 **If `DRIFT` from CC#4:** an archive-manifest's Artifact-index SHA-256
-does not match the current file content. Resolution: recompute and
-update.
+does not match the current file content. Resolution: run
+`python3 scripts/regen_manifest_index_shas.py` (it rewrites every stale row
+to a fixpoint and reports what it changed), then
+`python3 scripts/regen_manifest_index_shas.py --check` to confirm. Do not
+hand-edit the table.
 
 **If `DRIFT` from CC#5:** `Total cycles` in `cycles/index.md` does
 not match the actual `m9-*` row count. Resolution: bump the field.
