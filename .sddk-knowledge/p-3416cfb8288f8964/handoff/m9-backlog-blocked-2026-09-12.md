@@ -1071,3 +1071,101 @@ Net cycle delta this session: 73 → 74.
 Net CC delta this session: 0 (still 56; 48 python + 7 bash).
 Vault state: canonical, 74 cycles indexed, peel_match verified for m9-74
 (`v0.7.76` → `c2c0d37`), CC#4 clean across all archive manifests.
+
+## Session 2026-09-13T17:20Z — m9-75 fail-closed store open (B-direct)
+
+Released and archived: tag `v0.7.77` at the artifacts commit `ac33be5`, merge
+`1a1c377`, post-release `5e9c072`; `main == origin/main == 5e9c072`, working tree
+clean, vault drift PASS (48 python + 7 bash CCs), CC smoke 5/5, feature branch
+deleted.
+
+### What the cycle did
+
+Closed `FIND-M9-73-SILENT-IN-MEMORY-FALLBACK-MASKS-STORE-OPEN-FAILURE` (medium),
+open since m9-70 and deferred by m9-73 as a policy decision. The server opened the
+configured store and, on any failure, logged a warning and continued with an empty
+in-memory store: a locked/corrupt/unreadable store produced successful
+`session_save` calls, empty `session_list` results and a green health check.
+
+`StoreOpenError` (path + boxed cause, `Display` names the opt-in) plus three pure
+functions — `default_store_path(db_path, home)`, `allow_in_memory_fallback(raw)`
+(strict: `1`/`true`/`yes`), `open_store_at(path, allow)` — carry the policy.
+`ChronosServer::try_new()` returns `Result`, `new()` panics with the message, and
+the binary exits `2` with `chronos-mcp: fatal: …` on stderr before the transport
+starts. A path that does not exist yet is still created.
+
+### The verification problem, and why the test lives in the sandbox
+
+The policy is invisible through the MCP tool surface: a degraded server and a
+healthy one answer the same tools and differ only in the data, which is exactly why
+the finding survived two cycles. It is visible in the exit status, so
+`chronos-sandbox/tests/store_open_failure.rs` spawns the real binary with
+`CHRONOS_DB_PATH` pointed at a **directory** (exists, so the missing-parent
+allowance cannot excuse it; can never be a redb database) and asserts exit `2` plus
+a stderr line naming the path and the cause; a second test repeats with
+`CHRONOS_ALLOW_IN_MEMORY_FALLBACK=1` and asserts the server does serve, which shows
+the opt-in is the difference and the fixture is genuinely unopenable.
+
+### Falsification
+
+- Unit: `open_store_at`'s `Err` arm back to the unconditional in-memory fallback →
+  `test_open_store_at_fails_closed_instead_of_degrading_silently` FAILED at
+  `server.rs:6237`.
+- Binary: same revert + rebuild → `test_server_refuses_to_start_…` FAILED with
+  `ExitStatus(unix_wait_status(256))` (exit 1) instead of `Some(2)`, stderr showing
+  `Using in-memory store.` with the server serving until stdin closed.
+- Both restored byte-identically (`cmp` vs
+  `/home/rubentxu/.jcode/scratch/server.rs.m9-75-good`) and re-run green.
+- Accident worth remembering: the **first** acceptance run was green against a
+  stale `target/debug/chronos-mcp` built before this cycle, because
+  `resolve_mcp_path()` prefers the built binary over `CHRONOS_MCP_PATH` in the test
+  process. Only the assertion's stderr dump (pre-m9-75 wording) revealed it.
+  `AGENTS.md` §1 now records the hazard and the rebuild rule.
+
+### New deferred row
+
+`FIND-M9-75-MCP-TOOLS-DO-NOT-DISCLOSE-DEGRADED-STORE` (low): with the opt-in set,
+the degraded mode is logged but never surfaced in a tool response, so an opted-in
+client cannot tell from a payload that nothing is persisted. API-shape decision,
+deliberately out of this cycle.
+
+### CC#4
+
+Affected set: m9-02 (index rows), m9-70, m9-71, m9-72, m9-73, m9-74 (source/index
+rows), plus the new m9-75 manifest. Regenerated to a fixpoint; the whole-tree pass
+again rewrote the self-referential row of nine pre-m9-11 manifests and
+m9-67/m9-68, all reverted. One extra wrinkle this cycle: the smoke script clones
+HEAD, so the post-release commit had to land **before** `smoke_test_ccs.sh` could
+pass — the first run failed CC#33/CC#42 against the tag commit, which still had
+the placeholder report shape.
+
+### Gates
+
+- T0: fmt clean + clippy `-D warnings` clean (first pass: `clippy::result_large_err`
+  on a 192-byte `Err` variant; the cause is boxed)
+- T2: `-p chronos-mcp --lib` 82 passed (was 78); `-p chronos-store --lib` 74 passed
+- T3: workspace lib minus sandbox/native/e2e green; native serial 101 passed;
+  `-p chronos-mcp --tests` green
+- T4-smoke (`--test-threads=1`, `CHRONOS_MCP_PATH` set): `store_open_failure` 2/2,
+  `client_store_isolation` 3/3, `e2e_connectivity` 1/1, `session_persistence` 4/4
+- Vault drift PASS; CC smoke 5/5; CC#12 `main_sha == head_sha == remote_tag_peel == ac33be5`
+
+### Open follow-ups
+
+- **FIND-M9-75-MCP-TOOLS-DO-NOT-DISCLOSE-DEGRADED-STORE** (new, low).
+- **FIND-M9-74-NATIVE-PTRACE-TESTS-NEED-SERIAL** (low, unchanged).
+- **FIND-M9-73-CC4-REGEN-RITUAL-NOT-IN-REPO** (low, fourth confirmation): land
+  `scripts/regen_manifest_index_shas.py` with the skip-self-row rule.
+- **FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION** (low, unchanged).
+- **FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION** (low, unchanged).
+- **Sandbox warm-up ordering** (preserved) and **5+19 not-merged branches
+  triage** (preserved from m9-65): human review needed.
+- Next roadmap candidate: `session_start{action=attach}` is still a stub
+  (`ChronosSessionLifecycleService::start` → `ServiceError::Unsupported("attach
+  (m7+)")`, mapped at `crates/chronos-mcp/src/server.rs:3783`); wiring
+  `chronos_domain::attach` is the pending m9-76.
+
+Net cycle delta this session: 74 → 75.
+Net CC delta this session: 0 (still 48 python + 7 bash).
+Vault state: canonical, 75 cycles indexed, peel_match verified for m9-75
+(`v0.7.77` → `ac33be5`), CC#4 clean across all archive manifests.
