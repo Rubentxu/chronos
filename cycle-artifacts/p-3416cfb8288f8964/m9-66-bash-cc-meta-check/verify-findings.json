@@ -1,0 +1,47 @@
+{
+  "schema": "verify-finding.schema.json",
+  "subject": {
+    "head_sha": "963a143aacd5e005fb39593afea060106f172c00",
+    "base_sha": "c46851baf07c13d2e6d680e35b54c14bd7698b76",
+    "diff_digest": "sha256:64bed0ca468750c2dfa11ff3c21e84ce08739470633256c37f06d5c4459d1424",
+    "working_tree_clean": true,
+    "verified_at": "2026-09-13T12:18:00Z",
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
+    "verdict": "passed"
+  },
+  "findings": [
+    {
+      "finding_id": "FIND-M9-66-CC4-SILENT",
+      "rule_id": "vault.cc4_silent_drift",
+      "severity": "medium",
+      "summary": "CC#4 had a broken awk regex ($4 had backticks at match time) so it never fired. Discovered 54 stale SHAs in m9-01..m9-10 archive-manifests. Fixed awk + regenerated.",
+      "subject": {
+        "gap": "CC#4 awk pattern '$4 ~ /^[a-f0-9]{64}$/' failed because the field still had backticks at match time. The CC silently never fired.",
+        "fix": "Updated CC#4 to strip backticks from $3 (path) AND $4 (sha), trim whitespace, then match. Added exclusion for the self-reference row. Regenerated 54 stale SHAs across m9-01..m9-10 archive-manifests."
+      }
+    },
+    {
+      "finding_id": "FIND-M9-66-CC5-OFF-BY-16",
+      "rule_id": "vault.cc5_total_cycles_off",
+      "severity": "low",
+      "summary": "CC#5 regex matched all m6/m7/m8 milestone rows, silently off-by-16. Fixed to match only m9-* rows.",
+      "subject": {
+        "gap": "CC#5 awk regex was '^\| (m6 |m[7-9])' which matched all m6/m7/m8 milestone rows in cycles/index.md (16 extra rows).",
+        "fix": "Updated CC#5 to match only m9-* rows via '^\| m9-'. Now actual=65, declared=65 (was actual=81, declared=65)."
+      }
+    },
+    {
+      "finding_id": "FIND-M9-66-NO-BASH-META-CHECK",
+      "rule_id": "vault.no_meta_check_for_bash_ccs",
+      "severity": "medium",
+      "summary": "CC#48 meta-check only auto-executes python CCs. Added CC#54 (bash sibling meta-check) + refactored check_vault_drift.sh to invoke both.",
+      "subject": {
+        "gap": "The 7 bash CCs (CC#1, #4, #5, #6, #46, #53) had no auto-execution. They were validated manually only, leaving room for silent drift.",
+        "fix": "Added CC#54 as a sibling of CC#48. Both are invoked by check_vault_drift.sh. Refactored the script to capture bash_exit before || true (which masks non-zero exits under set -e), and use a tmpfile for the CC count handoff between python and bash phases."
+      }
+    }
+  ],
+  "lens_summary": "m9-66 closes 3 drift classes with one focused B-direct cycle. CC#4 silent failure (54 stale SHAs), CC#5 off-by-16, and the no-meta-check-for-bash-CCs gap. Two-commit structure: (1) fix CCs + add CC#54, (2) regenerate 54 stale SHAs. Self-tested: injected wrong Total cycles value (PASS → DRIFT), injected wrong SHA in m9-01 manifest (DRIFT detected by CC#4).",
+  "cycle_id": "m9-66",
+  "verdict": "pass_with_findings"
+}
