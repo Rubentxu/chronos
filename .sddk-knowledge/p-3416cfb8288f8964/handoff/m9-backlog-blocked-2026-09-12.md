@@ -844,3 +844,137 @@ existing policy and fixes a command, so `smoke_test_ccs.sh` expected counts need
 no update).
 Vault state: canonical, 72 cycles indexed, 55 CCs documented, peel_match verified
 for m9-72 (`v0.7.74` → `f3500a9`), CC#4 clean across all archive manifests.
+
+## Session 2026-09-13T15:20Z: m9-73 (sandbox client store isolation)
+
+Closed `FIND-M9-72-SANDBOX-SHARED-STORE-SAVE-TIMEOUT`, the deferral m9-72 wrote
+when its required T4-smoke subset turned out to be flaky. The deferral named one
+writer of `CHRONOS_DB_PATH`; recon found **three**, and the two extra ones were
+hiding behind the first.
+
+| # | Writer | Old behaviour | Why it is wrong |
+|---|---|---|---|
+| 1 | `McpTestClient::start()` → `start_path()` → `factory::start()` | child inherits the caller's environment | all 35 suites resolve `$HOME/.local/share/chronos/sessions.redb`, one 86 MB store |
+| 2 | `session_edge_cases` SE1 | `remove_var` / `set_var` / `set_var` / `remove_var` | mutates the environment of the **whole test binary**; leaks to tests on other threads |
+| 3 | `counterexample_tools` ce12 | `set_var` "so the CLI replay can find the same store" | false: `replay_bundle` passes `--db <path>` explicitly |
+
+Fix: `start_path` allocates a private store (`allocate_store_dir()`: PID +
+process-local `AtomicU64` + nanosecond timestamp), hands it to the child through
+`db_env()`, and removes the directory in `impl Drop` **after** taking the process
+handle so the child is reaped before its store disappears. `start_with_db_path`
+stays the explicit opt-in for sharing, records `db_dir: None` so a caller-owned
+path is never deleted, and drops its redundant `std::env::vars()` base.
+`start()` and `start_with_db_path` now share one binary ladder
+(`resolve_mcp_path()`). `spawn_with_env` removes the inherited `CHRONOS_DB_PATH`
+before applying `extra_env`, so the child's store is only ever what the caller
+supplied. New CC#56 (python) walks `chronos-sandbox/` for
+`std::env::(set_var|remove_var)`; CC count 47 → 48 python.
+
+Falsification, eight observations. Every revert was applied, observed, restored,
+and the restored `src/` files are byte-identical to their pre-falsification
+copies:
+
+| # | Configuration | Observation |
+|---|---|---|
+| 1 | first draft of the suite, `start_path` guard removed | 3/3 **passed** — vacuous |
+| 2 | rewritten suite, guard removed | **2/3 failed** ("server A never opened the store the client recorded") |
+| 3 | `CHRONOS_DB_PATH` exported to a scratch decoy, fix in place | 3/3 passed, decoy never created |
+| 4 | decoy + both guards removed | **failed** on the ambient check; `decoy.redb` appeared |
+| 5 | CC#56 against the pre-fix tree | 6 hits, exactly the removed writers; empty now |
+| 6 | interleaved A/B, `session_persistence`, 3 rounds | branch 50/50/53 s **3/3 pass** · `main` 56/53/**60 s FAILED** (`session_persistence.rs:128`) |
+| 7 | interleaved A/B, `session_edge_cases`, 3 rounds | branch 3/2/2 · `main` 2/2/2 — same two tests both sides |
+| 8 | SE1 with `--ignored --exact`, twice | pass both times (18.3 s) |
+
+### Unplanned work 1: falsification rejected the cycle's own test suite
+
+The first version of `client_store_isolation.rs` compared the paths the clients
+*recorded* — the allocator's own bookkeeping — so it passed with the guard
+removed. "B cannot see A's session" was satisfied for the wrong reason:
+`chronos-mcp::open_default_store` **silently falls back to an in-memory store**
+when the configured store cannot be opened, so a client that failed to open a
+real file still answered `session_list` with an empty list. The suite now
+requires the recorded store file to exist on disk and be non-empty, which is what
+proves the server opened it, and that rebuild is how observation 2 fails
+correctly. The fallback itself is deferred as
+`FIND-M9-73-SILENT-IN-MEMORY-FALLBACK-MASKS-STORE-OPEN-FAILURE` (medium): a
+server that cannot open its store reports success on `session_save` and returns
+0 sessions on `session_list` — silent data loss with a green health check. The
+remedy is a policy decision in `chronos-mcp`, not a harness change.
+
+### Unplanned work 2: the surviving `session_edge_cases` failure has a mechanism
+
+The required T4-smoke subset includes `session_edge_cases`, which is red in this
+environment. Attribution was measured, not assumed: interleaved A/B with
+alternating builds, three rounds each, 3/2/2 on the branch against 2/2/2 on
+`main`, **the same two tests every round**
+(`test_compare_sessions_crash_vs_normal`,
+`test_performance_regression_audit_different_workloads`), and raising the client
+RPC timeout to 180 s still fails after 186 s — so the save genuinely does not
+complete rather than being slow. Root cause found while characterising it:
+`ContentStore::put` (`cas.rs:55`) opens **one redb write transaction per event**
+and `set_durability` appears nowhere in `chronos-store`, so redb's default
+immediate durability makes each commit a durability barrier; `save_session` calls
+it in a loop. The test prints `Crash session stopped: 34905 events`, and 4.8 ms
+per event puts 35k events at ≈168 s. Recorded as
+`FIND-M9-73-CAS-PUT-ONE-WRITE-TRANSACTION-PER-EVENT` (**high**, product-facing:
+any session above ~6k events approaches the 30 s client timeout) with a proposed
+`put_many` batch, plus `FIND-M9-73-SESSION-EDGE-CASES-HEAVY-SAVE-NEVER-COMPLETES`
+(medium, the symptom). Both tests are pinned in `AGENTS.md` §6.5.
+
+The suite also had one test `#[ignore]`d for a reason this cycle removed: SE1 was
+skipped because parallel execution could interfere through the process-global
+`CHRONOS_DB_PATH`. With that mechanism gone and the test passing 2/2 when run, it
+now runs by default.
+
+### CC#4 chaintension: the set grew to six
+
+`cycles/index.md`, `terms/index.md`, `scripts/smoke_test_ccs.sh` and
+`maintenance/vault-drift-sweep.md` all changed, so the manifests listing them
+needed regeneration: m9-02, m9-67, m9-68, m9-70, m9-71, m9-72. The ritual is
+still a scratch script (`FIND-M9-73-CC4-REGEN-RITUAL-NOT-IN-REPO`, low) with two
+footguns confirmed again this cycle: a whole-tree pass rewrites the
+self-referential row of every manifest including nine pre-m9-11 files that are
+never in the affected set, and those rewrites never converge (pass 2 reported the
+same eleven manifests again). Reverted, restoring m9-67/m9-68 self-rows to their
+committed values and leaving only the rows CC#4 actually requires.
+
+### Gates
+
+- T0: `cargo fmt --all -- --check` + `cargo clippy --workspace --all-targets -- -D warnings` PASS
+- T2: `cargo test -p chronos-sandbox --lib` → 3 passed
+- T4-smoke (`--test-threads=1`): `client_store_isolation` 3/3, `session_persistence` 4/4, `counterexample_tools` 12/12, `e2e_connectivity` 1/1, `session_edge_cases` 4/2 (both failures pre-existing on `main`)
+- Vault drift PASS (48 python + 7 bash CCs); CC smoke 5/5 PASS
+- CC#12: `main_sha == head_sha == remote_tag_peel == 4562475` (peel verified on origin)
+- Cycle branch merged `--no-ff` to main as `60b9105`; tag `v0.7.75`
+
+### Open follow-ups
+
+- **FIND-M9-73-CAS-PUT-ONE-WRITE-TRANSACTION-PER-EVENT** (new, **high**):
+  `ContentStore::put` fsyncs per event and `save_session` loops; add
+  `put_many(&[TraceEvent])` in one transaction. This is the fix that makes large
+  sessions saveable and turns the two red `session_edge_cases` tests green.
+- **FIND-M9-73-SILENT-IN-MEMORY-FALLBACK-MASKS-STORE-OPEN-FAILURE** (new,
+  medium): `open_default_store` degrades to memory on a store it cannot open.
+  Decide fail-closed vs explicit degraded mode.
+- **FIND-M9-73-SESSION-EDGE-CASES-HEAVY-SAVE-NEVER-COMPLETES** (new, medium):
+  the observable symptom of the row above; pinned in `AGENTS.md` §6.5.
+- **FIND-M9-73-CC4-REGEN-RITUAL-NOT-IN-REPO** (new, low): land
+  `scripts/regen_manifest_index_shas.py` with the skip-self-row rule.
+- **FIND-M9-72-SANDBOX-SHARED-STORE-SAVE-TIMEOUT** (CLOSED this cycle).
+- **FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION** (preserved, low):
+  affected set now six manifests.
+- **FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION** (preserved, low).
+- **Sandbox warm-up ordering** (preserved): `test_session_start_via_v2_then_session_stop_via_v2`
+  still not reproducible.
+- **5+19 not-merged branches triage** (preserved from m9-65): human review needed.
+  Local branches merged-but-undeleted now include
+  `feat/m9-72-read-path-table-error-classification` and
+  `feat/m9-73-sandbox-client-store-isolation` (delete after this session).
+- **m9-70 archive manifest T4-smoke count** (preserved): left frozen.
+
+Net cycle delta this session: 72 → 73.
+Net CC delta this session: 55 → 56 (CC#56: no process-global environment
+mutation under `chronos-sandbox/`; expected python counts in
+`scripts/smoke_test_ccs.sh` updated 47 → 48).
+Vault state: canonical, 73 cycles indexed, 56 CCs documented, peel_match verified
+for m9-73 (`v0.7.75` → `4562475`), CC#4 clean across all archive manifests.
