@@ -96,9 +96,9 @@ Two commits:
 | test (store isolation) | `chronos-sandbox/tests/client_store_isolation.rs` | `a48c78a31a5a1517418e560a2982b2ec39ea435f78b627cda79d38133ce56495` |
 | test (session edge cases) | `chronos-sandbox/tests/session_edge_cases.rs` | `79d913f406259d2ffaa2c2537aab2a9c0c8a4e7c90628e7c737b0043e374bae0` |
 | test (counterexample tools) | `chronos-sandbox/tests/counterexample_tools.rs` | `debf760f268a40297bbb85923ad0ebb7d54d2342dbf1596395d37231a1f6a4b9` |
-| docs (agents manual) | `AGENTS.md` | `cf4263182fb3559abf63cbeca98307bb4513859952caa26cecef4f2e06bdd972` |
-| script (cc smoke test) | `scripts/smoke_test_ccs.sh` | `6a74dbf1308db46986560cccdcdbc0df08b85f946d55f29917464384265505df` |
-| vault maintenance (drift sweep) | `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md` | `85c39f408fc15c01979456f3d1e69d6b6e981c937bde3ad0f89f560b7740012f` |
+| docs (agents manual) | `AGENTS.md` | `83d09aa421c0c0c06a8dc28d4a5ba27dbb66772f7a1310103f3c133969fe8924` |
+| script (cc smoke test) | `scripts/smoke_test_ccs.sh` | `86def49d7e23b4e521687ddcb53a384aac18ec3f91f0e2845396f90d7ac3e7d3` |
+| vault maintenance (drift sweep) | `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md` | `7f977ba9c293ef9370af205e6b21c48c3bb615fbfc78aac2faf665e1517809c3` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/apply-checkpoint.json` | `35408c5d6ab2a0a9250228401b91f4f0b484cd7874ccb3f8b538bac2b5587931` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/verify-report.md` | `d12ad15ceb8c5673312b86206d0d5eb46a45a3b4d8d4348763bded29ae95e633` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/verify-findings.json` | `aed37a1c47262cd01bdaffa8ee667b499275e526b239bde62a07d2e88f0e96ad` |

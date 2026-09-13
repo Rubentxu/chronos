@@ -24,6 +24,9 @@
 # - CC#55: verify-report.md must have `## Files Inventory` section (added by m9-68)
 # - CC#48+CC#54: meta-checks (CC#48 was the only auto-executed check;
 #   CC#54 was added for bash CCs; both must run)
+# - regen_manifest_index_shas.py: the CC#4 repair tool must agree with CC#4
+#   (added by m9-76) — detects the same drift the gate detects, and its own
+#   rewrite makes the gate go green again.
 #
 # Cost: ~10s per CC × 5 CCs ≈ 50s. Run before merging any change that
 # touches vault-drift-sweep.md or check_vault_drift.sh.
@@ -50,10 +53,20 @@ setup_work_copy() {
   # .git, breaking them. The `--shared` flag avoids copying objects twice
   # (we only need the refs/logs/HEAD to answer `git log`).
   git clone --quiet --shared "$REPO_ROOT" "$dest"
-  # Copy the script too (it's not in the archive because it's uncommitted
-  # in some workflows; also future-proof for repo-local execution).
+  # Overlay the working-tree copies of the vault tooling. A clone only sees
+  # committed state, but the point of this script is to smoke-test the tree we
+  # are about to merge — including changes to these scripts themselves.
+  mkdir -p "$dest/scripts/tests"
   cp "$SCRIPT_DIR/check_vault_drift.sh" "$dest/scripts/check_vault_drift.sh"
   chmod +x "$dest/scripts/check_vault_drift.sh"
+  if [ -f "$SCRIPT_DIR/regen_manifest_index_shas.py" ]; then
+    cp "$SCRIPT_DIR/regen_manifest_index_shas.py" "$dest/scripts/regen_manifest_index_shas.py"
+    chmod +x "$dest/scripts/regen_manifest_index_shas.py"
+  fi
+  if [ -f "$SCRIPT_DIR/tests/test_regen_manifest_index_shas.py" ]; then
+    cp "$SCRIPT_DIR/tests/test_regen_manifest_index_shas.py" \
+       "$dest/scripts/tests/test_regen_manifest_index_shas.py"
+  fi
 }
 
 # Run check_vault_drift.sh in the work dir and capture output + exit code.
@@ -244,6 +257,130 @@ else:
 }
 
 # ==============================================================================
+# regen_manifest_index_shas.py: the CC#4 repair tool must agree with CC#4
+# ==============================================================================
+# CC#4 (broken awk, m9-66) had no in-repo repair tool: the ritual lived in a
+# throwaway $TMPDIR script, so nothing exercised the gate's own logic and the
+# bug survived many cycles. This test pins script and gate together:
+#   (a) the script's unit tests pass,
+#   (b) --check is clean on a clean tree (agreement in the green direction),
+#   (c) after injecting the same stale SHA that test_cc4 injects, BOTH the gate
+#       and --check fail and name the same offending row,
+#   (d) running the script rewrites the row, restores the true SHA, and makes
+#       both --check and the gate green again (agreement in the repair direction).
+test_regen_script() {
+  total=$((total+1))
+  echo "[regen] regen_manifest_index_shas.py ↔ CC#4..."
+  local dest="$WORK_DIR/regen"
+  setup_work_copy "$dest"
+
+  local manifest="$dest/.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-01-schema-versioning/archive-manifest.md"
+  local report=".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-01-schema-versioning/archive-report.md"
+
+  # (a) unit tests of the tool itself.
+  if ! ( cd "$dest" && python3 scripts/tests/test_regen_manifest_index_shas.py ) \
+      > "$WORK_DIR/regen-unit.log" 2>&1; then
+    failures+=("regen: unit tests failed")
+    echo "  FAIL: unit tests failed"
+    tail -20 "$WORK_DIR/regen-unit.log"
+    return
+  fi
+
+  # (b) clean tree: --check must agree with the gate (both green).
+  ( cd "$dest" && python3 scripts/regen_manifest_index_shas.py --check ) \
+      > "$WORK_DIR/regen-clean.log" 2>&1
+  local clean_rc=$?
+  if [ "$clean_rc" -ne 0 ]; then
+    failures+=("regen: --check exit=$clean_rc on clean tree (expected 0)")
+    echo "  FAIL: --check failed on a clean tree"
+    cat "$WORK_DIR/regen-clean.log"
+    return
+  fi
+
+  # (c) inject the same drift as test_cc4: a wrong archive-report SHA.
+  python3 -c "
+import re, sys
+path = '$manifest'
+content = open(path).read()
+bt = chr(96)
+pat = r'(\| archive-report \| ' + bt + re.escape('$report') + bt + r' \| ' + bt + r')([a-f0-9]{64})(' + bt + r' \|)'
+m = re.search(pat, content)
+if not m:
+    print('FAIL: could not find archive-report row to inject drift')
+    sys.exit(1)
+bad = 'deadbeef' * 8
+open(path, 'w').write(content[:m.start(2)] + bad + content[m.end(2):])
+print('Injected drift')
+" || {
+    failures+=("regen: drift injection failed")
+    echo "  FAIL: could not inject drift"
+    return
+  }
+
+  ( cd "$dest" && python3 scripts/regen_manifest_index_shas.py --check ) \
+      > "$WORK_DIR/regen-stale.log" 2>&1
+  local stale_rc=$?
+  if [ "$stale_rc" -ne 1 ]; then
+    failures+=("regen: --check exit=$stale_rc on drifted tree (expected 1)")
+    echo "  FAIL: --check did not detect the injected drift"
+    cat "$WORK_DIR/regen-stale.log"
+    return
+  fi
+  if ! grep -qF "$report" "$WORK_DIR/regen-stale.log"; then
+    failures+=("regen: --check did not name the drifted row")
+    echo "  FAIL: drifted row not named in --check output"
+    cat "$WORK_DIR/regen-stale.log"
+    return
+  fi
+  local gate_rc=$(run_check "$dest" "regen-drift")
+  if [ "$gate_rc" -ne 1 ] || ! grep -qE "DRIFT.*CC#4" "$WORK_DIR/regen-drift.log"; then
+    failures+=("regen: CC#4 gate and script disagree on injected drift (gate rc=$gate_rc)")
+    echo "  FAIL: the vault gate did not flag the same drift"
+    cat "$WORK_DIR/regen-drift.log"
+    return
+  fi
+
+  # (d) run the script: it must repair the row and both checks go green.
+  ( cd "$dest" && python3 scripts/regen_manifest_index_shas.py ) \
+      > "$WORK_DIR/regen-fix.log" 2>&1
+  local fix_rc=$?
+  if [ "$fix_rc" -ne 0 ]; then
+    failures+=("regen: rewrite exit=$fix_rc (expected 0)")
+    echo "  FAIL: rewrite failed"
+    cat "$WORK_DIR/regen-fix.log"
+    return
+  fi
+  if ! grep -qE "1 row\(s\) rewritten" "$WORK_DIR/regen-fix.log"; then
+    failures+=("regen: rewrite did not report exactly the injected row")
+    echo "  FAIL: rewrite summary unexpected"
+    cat "$WORK_DIR/regen-fix.log"
+    return
+  fi
+  local expected=$(sha256sum "$dest/$report" | cut -d' ' -f1)
+  if ! grep -qF "\`$expected\`" "$manifest"; then
+    failures+=("regen: rewritten row does not carry the true SHA-256")
+    echo "  FAIL: manifest does not carry the recomputed SHA"
+    return
+  fi
+  ( cd "$dest" && python3 scripts/regen_manifest_index_shas.py --check ) \
+      > "$WORK_DIR/regen-refixed.log" 2>&1
+  if [ $? -ne 0 ]; then
+    failures+=("regen: --check still failing after rewrite")
+    echo "  FAIL: --check not clean after rewrite"
+    cat "$WORK_DIR/regen-refixed.log"
+    return
+  fi
+  local gate_after=$(run_check "$dest" "regen-fixed")
+  if [ "$gate_after" -ne 0 ]; then
+    failures+=("regen: CC#4 gate still failing after rewrite (rc=$gate_after)")
+    echo "  FAIL: vault gate not green after rewrite"
+    cat "$WORK_DIR/regen-fixed.log"
+    return
+  fi
+  echo "  PASS"
+}
+
+# ==============================================================================
 # CC#48 + CC#54: meta-checks must run together AND report failure on drift
 # ==============================================================================
 # This test verifies that in the clean state (no drift injected),
@@ -285,6 +422,7 @@ test_cc4
 test_cc39
 test_cc46
 test_cc55
+test_regen_script
 test_meta_checks
 
 echo

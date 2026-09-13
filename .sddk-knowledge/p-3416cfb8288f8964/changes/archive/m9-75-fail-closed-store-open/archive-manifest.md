@@ -138,7 +138,7 @@ One commit:
 | source (mcp binary) | `crates/chronos-mcp/src/bin/chronos-mcp.rs` | `3797defa83c8218db6610047fece4b6ed67aa9b183e5c1f5193f2f10eeda1492` |
 | source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `0df7481d93f81135809e4d1e224a8b98f5f7d6d5fd21fd88c5afcdca3a78bd0c` |
 | test (store open failure) | `chronos-sandbox/tests/store_open_failure.rs` | `5f0461f8db78b9de6d27d9ba92c3c06e0ebbe3cf62eb990e69f7c9e1e4c7bec9` |
-| docs (agents manual) | `AGENTS.md` | `cf4263182fb3559abf63cbeca98307bb4513859952caa26cecef4f2e06bdd972` |
+| docs (agents manual) | `AGENTS.md` | `83d09aa421c0c0c06a8dc28d4a5ba27dbb66772f7a1310103f3c133969fe8924` |
 | docs (session management, en) | `docs/manual-ai/en/08-session-management.md` | `69487b75f364c1c37c8787cca94facb1841a1277e62a4dcc7e31f58736739eba` |
 | docs (session management, es) | `docs/manual-ai/es/08-gestion-sesiones.md` | `0fe1cdca3abbc19df32aa5093ac9cb5d727ed90b4480b1e90790951a6fe93303` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/apply-checkpoint.json` | `33adf19a9ac0df7a07db20f586a48ee4e280946c6aacb3785bf8b2bf98e52b5e` |
