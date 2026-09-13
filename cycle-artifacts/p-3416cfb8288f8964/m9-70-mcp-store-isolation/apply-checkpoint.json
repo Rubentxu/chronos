@@ -1,13 +1,13 @@
 {
   "cycle_id": "m9-70-mcp-store-isolation",
-  "head_sha": "071b820",
+  "head_sha": "54e859ffe43c09cc2217c8943233f27016bbe76b",
   "base_sha": "682817b520010dfa15512fb461a9eeb679009708",
   "created_at": "2026-09-13T12:10Z",
   "route": "B-direct",
   "summary": "Closes FIND-M9-69-MCP-STORE-ISOLATION with three independently falsified fixes. (1) chronos-store list_sessions is best-effort: a record that does not deserialize into SessionMetadata (bincode is not self-describing) is skipped with a warning instead of failing the whole listing. (2) Reading a database with no tables yet returns 'no sessions' instead of TableDoesNotExist, which was also a genuine fresh-install bug (session_list errored on a brand-new sessions.redb). (3) ChronosServer::new() is split into from_store() plus two open_default_store() impls: production keeps the $CHRONOS_DB_PATH/$HOME logic byte-identical, cfg(test) returns a fresh in-memory store, so all 36 unit-suite construction sites are hermetic. Each fix was reverted in turn to confirm its test fails; the hermeticity test observed 21 sessions from the developer's real store before the fix.",
   "title": "70 mcp store isolation",
-  "status": "OPEN",
-  "main_sha": "071b820",
+  "status": "CLOSED",
+  "main_sha": "54e859ffe43c09cc2217c8943233f27016bbe76b",
   "findings_closed": [
     {
       "finding_id": "FIND-M9-69-MCP-STORE-ISOLATION",
@@ -38,5 +38,14 @@
         "note": "chronos-services::sessions::list_sessions still tolerates a missing table by substring-matching the error text (contains(\"does not exist\")). After the chronos-store fix that branch is unreachable for the virgin-store case, making the workaround redundant defence-in-depth. Left in place deliberately (it still guards if the store layer regresses) and recorded so a future cycle can decide whether to delete it or replace it with a typed match. No behavior change either way."
       }
     ]
-  }
+  },
+  "peel_match": true,
+  "remote_tag": "v0.7.72",
+  "remote_tag_peel": "54e859ffe43c09cc2217c8943233f27016bbe76b",
+  "release_status": "released",
+  "verify_status": "passed",
+  "archive_status": "archived",
+  "released_at": "2026-09-13T12:30Z",
+  "verified_at": "2026-09-13T12:30Z",
+  "archived_at": "2026-09-13T12:30Z"
 }

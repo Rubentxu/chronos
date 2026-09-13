@@ -47,11 +47,11 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 | m8-06-R4 | m8-06 | Cross-variant existence predicate shrinking: variant still fixed in ExistencePredicateShrinker | unassigned | m9+ |
 | m8-04-R-hypothesis-fallback | m8-04 | property_target lost in fallback reconstruction | unassigned | m9+ (non-issue post m8-07 but synthetic defaults remain for pre-m8-07 bundles) |
 
-### Findings deferred from m9-69
+### Findings deferred from m9-70
 
 | ID | Cycle | Título | Owner | Destino |
 |---|---|---|---|---|
-| FIND-M9-69-MCP-STORE-ISOLATION | m9-69 | `chronos-mcp` server tests use the real `$HOME` store; `SessionStore::list_sessions` hard-fails on stale-schema records | unassigned | m9+ |
+| FIND-M9-70-SERVICES-TABLE-STRING-MATCH | m9-70 | `chronos-services::sessions::list_sessions` still substring-matches the error text for a missing table; unreachable after the chronos-store fix | unassigned | m9+ |
 
 ## Terminated terms
 
@@ -75,11 +75,12 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 | FIND-M9-01-DV-COUP-02 | m9-01 | List/load policy asymmetry: hard-reject on load vs best-effort include on list | m9-08-list-load-schema-error-variant (`v0.7.6`) |
 
 | FIND-M9-55-FABRICATED-BASE-SHA | m9-38 | apply-checkpoint.json base_sha referenced a non-existent commit (fabricated) | m9-55-apply-checkpoint-fabricated-sha (`v0.7.53`) |
+| FIND-M9-69-MCP-STORE-ISOLATION | m9-69 | `chronos-mcp` server tests use the real `$HOME` store; `SessionStore::list_sessions` hard-fails on stale-schema records | m9-70-mcp-store-isolation (`v0.7.72`) |
 ## Metadata
 
 | Campo | Valor |
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-13T12:10:00Z
-| Last archive | m9-69-bounded-join-unit-test |
+| Last updated | 2026-09-13T12:30:00Z
+| Last archive | m9-70-mcp-store-isolation |

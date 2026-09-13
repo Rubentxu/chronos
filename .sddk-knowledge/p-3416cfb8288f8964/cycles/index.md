@@ -91,6 +91,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-67 | m9-67-cc-smoke-test | B-direct | `v0.7.69` | `ef21e1fef358f63cc73e320688ec566c0806c378` | CLOSED |
 | m9-68 | m9-68-verify-report-files-inventory-backfill | B-direct | `v0.7.70` | `d4328cf19db8282100a97b13791f07f134ac0b76` | CLOSED |
 | m9-69 | m9-69-bounded-join-unit-test | B-direct | `v0.7.71` | `57c4a10f221bc47e67b81cc5f350739ac8fcfc31` | CLOSED |
+| m9-70 | m9-70-mcp-store-isolation | B-direct | `v0.7.72` | `54e859ffe43c09cc2217c8943233f27016bbe76b` | CLOSED |
 
 ## Metadata
 
@@ -98,5 +99,5 @@ Chronological record of all SDDK cycles for this project.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-13T12:10Z |
-| Total cycles | 69 |
+| Last updated | 2026-09-13T12:30Z |
+| Total cycles | 70 |
