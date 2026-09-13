@@ -75,5 +75,5 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T19:07:00Z
-| Last archive | m9-60-cycle-artifacts-existence |
+| Last updated | 2026-09-13T09:21:00Z
+| Last archive | m9-61-ms-race-fix |

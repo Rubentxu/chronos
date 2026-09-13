@@ -45,3 +45,9 @@ __pycache__/
 
 # Jcode scratch (per-harness temp dir)
 $JCODE_SCRATCH_DIR/
+
+# Jcode runtime state (per-machine scratch, never committed)
+.jcode/
+
+# Loose docs artifacts (working drafts; committed when promoted)
+docs/*.zip
