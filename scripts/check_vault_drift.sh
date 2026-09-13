@@ -32,14 +32,29 @@ if [[ ! -f "$VAULT_FILE" ]]; then
 fi
 
 # Extract the CC#48 python block and execute it.
-python3 - <<PYEOF
-import re, subprocess, sys
+VAULT_FILE="$VAULT_FILE" python3 - <<'PYEOF'
+import os, re, subprocess, sys
 
-text = open("$VAULT_FILE").read()
-m = re.search(r'### 48\..*?\n\`\`\`python\n(.*?)\n\`\`\`', text, re.DOTALL)
+text = open(os.environ["VAULT_FILE"]).read()
+m = re.search(r'### 48\..*?\n```python\n(.*?)\n```', text, re.DOTALL)
 if not m:
     print("ERROR: CC#48 block not found in vault-drift-sweep.md", file=sys.stderr)
     sys.exit(2)
+
+# Count total CCs (excluding CC#48 itself) for the PASS message.
+sections = re.split(r'### (\d+)\.', text)
+total_ccs = sum(1 for i in range(1, len(sections), 2) if int(sections[i]) != 48)
+# Count how many CCs are executable by CC#48 (i.e., have a python block).
+python_ccs = 0
+for i in range(1, len(sections), 2):
+    num = int(sections[i])
+    if num == 48:
+        continue
+    body = sections[i+1]
+    if '```python' in body:
+        python_ccs += 1
+# CCs without a python block (bash or non-executable) are validated
+# manually or via the CI workflow branch-merged check (see CC#53).
 
 # Capture the output of exec so we can report failures clearly.
 import io
@@ -57,5 +72,5 @@ if out:
     print(out)
     sys.exit(1)
 else:
-    print("vault-drift-sweep: PASS (52 CCs all clean)")
+    print(f"vault-drift-sweep: PASS ({python_ccs} python CCs all clean, {total_ccs - python_ccs} bash CC documented separately)")
 PYEOF

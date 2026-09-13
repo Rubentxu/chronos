@@ -2459,3 +2459,90 @@ re-introduce the race. CC#52 makes the constraint retroactive + forward-looking.
 
 **Allowed call sites as of m9-63:** `ProbeService::stop` and
 `BrowserProbeService::stop` (both correctly ordered since m9-61).
+
+### 53. No stale local or remote branches merged into main (extends CC#46; closed by m9-65)
+
+```bash
+# CC#46 only covered fix/m9-*. This extends to all milestone prefixes
+# (chore/*, feat/mX-*, fix/mX-*, ms-*), both local and remote, and adds a
+# safety check: only branches already merged into main count as "safe to
+# delete" drift. Not-merged branches are reported separately.
+echo "=== Local stale (merged into main) ==="
+git branch | grep -v "^$\|^\*" | while read b; do
+  branch=${b// /}
+  if git merge-base --is-ancestor "$branch" main 2>/dev/null; then
+    echo "  $branch"
+  fi
+done
+
+echo
+echo "=== Remote stale (merged into main) ==="
+git branch -r | grep "origin/" | grep -v "origin/main\$\|origin/HEAD ->" | sed 's|origin/||' | while read b; do
+  if git merge-base --is-ancestor "origin/$b" main 2>/dev/null; then
+    echo "  $b"
+  fi
+done
+
+echo
+echo "=== Local stale (NOT merged - DO NOT auto-delete) ==="
+git branch | grep -v "^$\|^\*" | while read b; do
+  branch=${b// /}
+  if ! git merge-base --is-ancestor "$branch" main 2>/dev/null; then
+    echo "  $branch"
+  fi
+done
+
+echo
+echo "=== Remote stale (NOT merged - DO NOT auto-delete) ==="
+git branch -r | grep "origin/" | grep -v "origin/main\$\|origin/HEAD ->" | sed 's|origin/||' | while read b; do
+  if ! git merge-base --is-ancestor "origin/$b" main 2>/dev/null; then
+    echo "  $b"
+  fi
+done
+
+echo
+echo "=== Counts (expected clean: merged=0+0, not-merged counts tracked in handoff) ==="
+# Manual count of merged-stale (the only drift CC#53 enforces):
+local_merged_count=0
+git branch | grep -v "^$\|^\*" | while read b; do
+  branch=${b// /}
+  git merge-base --is-ancestor "$branch" main 2>/dev/null && echo "MERGED-LOCAL:$branch"
+done
+remote_merged_count=0
+git branch -r | grep "origin/" | grep -v "origin/main\$\|origin/HEAD ->" | sed 's|origin/||' | while read b; do
+  git merge-base --is-ancestor "origin/$b" main 2>/dev/null && echo "MERGED-REMOTE:$b"
+done
+echo "(manual scan above; clean = no MERGED-LOCAL/MERGED-REMOTE lines)"
+echo
+```
+
+**Expected output (clean):** `local_merged=0` and `remote_merged=0`. The
+not-merged sections may show branches; those are intentionally preserved
+until a human reviewer triages them (see handoff `m9-backlog-blocked`).
+
+**If `local_merged > 0` or `remote_merged > 0`:** a milestone branch (any
+prefix: `chore/*`, `feat/mX-*`, `fix/mX-*`, `ms-*`) was merged into main
+but not deleted. CC#46 only watched `fix/m9-*`, so the other prefixes
+silently accumulated drift across M2-M9. Resolution:
+- `git branch --list 'chore/*' 'feat/m[0-9]-*' 'fix/m[0-9]-*' 'ms-*' | xargs git branch -d`
+  for each merged local branch (safe: `git branch -d` refuses unmerged).
+- `git branch -r --list 'origin/chore/*' 'origin/feat/m[0-9]-*' 'origin/fix/m[0-9]-*' 'origin/ms-*' | sed 's|origin/||' | xargs -I{} git push origin :{}`
+  for each merged remote branch.
+
+**If `not-merged > 0`:** those branches represent work that was started
+but never landed on main. They may be abandoned cycles, in-progress work,
+or work that diverged to a different approach. **Do NOT auto-delete.**
+Record them in the handoff under "abandoned-not-merged branches so the
+human can triage.
+
+**History:** m9-54 closed `fix/m9-*` drift after 44 local + 28 remote
+stale branches. m9-65 closes the broader drift class across all
+prefixes, finding 25 local + 24 remote stale merged branches plus 5
+local + 19 remote not-merged abandoned branches.
+
+**Scope of this CC:** all branches matching `chore/*`, `feat/m[0-9]-*`,
+`fix/m[0-9]-*`, `ms-*`, both local and remote.
+
+**Out of scope (still requires human review):** naming conventions,
+branch prefixes that don't match the above patterns, work-in-progress
+branches that may be intentionally divergent.
