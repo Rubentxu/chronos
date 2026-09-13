@@ -52,7 +52,6 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 | ID | Cycle | Título | Owner | Destino |
 |---|---|---|---|---|
 | FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION | m9-72 | `counterexample_storage.rs` keeps four hand-rolled copies of the read-path `TableDoesNotExist` / else-propagate policy that `chronos-store::table_error` now names | unassigned | m9+ |
-| FIND-M9-73-SILENT-IN-MEMORY-FALLBACK-MASKS-STORE-OPEN-FAILURE | m9-73 | `chronos-mcp::open_default_store` falls back to an in-memory store when the configured store cannot be opened, so a locked store yields successful saves and empty listings instead of an error (found by falsification of this cycle's own test) | unassigned | m9+ |
 | FIND-M9-73-CC4-REGEN-RITUAL-NOT-IN-REPO | m9-73 | The CC#4 archive-manifest SHA regeneration lives in agent scratch, not in `scripts/`; the naive whole-tree version churns the self-referential row of nine older manifests | unassigned | m9+ |
 
 ### Findings deferred from m9-74
@@ -60,6 +59,12 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 | ID | Cycle | Título | Owner | Destino |
 |---|---|---|---|---|
 | FIND-M9-74-NATIVE-PTRACE-TESTS-NEED-SERIAL | m9-74 | The `chronos-native` lib suite cannot run in parallel here: two ptrace tests fail and a third blocks in `waitpid` until the harness is killed (17 min, 0% CPU); serial it is 101 passed in 13 s | unassigned | m9+ |
+
+### Findings deferred from m9-75
+
+| ID | Cycle | Título | Owner | Destino |
+|---|---|---|---|---|
+| FIND-M9-75-MCP-TOOLS-DO-NOT-DISCLOSE-DEGRADED-STORE | m9-75 | With `CHRONOS_ALLOW_IN_MEMORY_FALLBACK=1` the degraded in-memory mode is logged but never surfaced in a tool response, so an opted-in client cannot tell from a `session_save` / `session_list` payload that nothing is persisted | unassigned | m9+ |
 
 ### Findings deferred from m9-71
 
@@ -96,11 +101,12 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 | FIND-M9-73-CAS-PUT-ONE-WRITE-TRANSACTION-PER-EVENT | m9-73 | `ContentStore::put` commits one redb write transaction (fsync, immediate durability) per event and `save_session` loops over it, so a 35k-event crash session takes ~3 minutes to save | m9-74-cas-put-many-batching (`v0.7.76`) |
 | FIND-M9-73-SESSION-EDGE-CASES-HEAVY-SAVE-NEVER-COMPLETES | m9-73 | `session_edge_cases` fails `test_compare_sessions_crash_vs_normal` and `test_performance_regression_audit_different_workloads` on every run in this environment, on `main` too; symptom of the row above | m9-74-cas-put-many-batching (`v0.7.76`) |
 | FIND-M9-74-V1-SHIMS-RETURN-V2-ENVELOPE | m9-74 | `compare_sessions` and `performance_regression_audit` stopped returning the flat v1 result in m7-03 (`947e73b`) and returned the tagged `session_compare` envelope instead, against their own descriptions and the output enum's doc; hidden behind the CAS timeout until m9-74 fixed it. Found and fixed in-cycle | m9-74-cas-put-many-batching (`v0.7.76`) |
+| FIND-M9-73-SILENT-IN-MEMORY-FALLBACK-MASKS-STORE-OPEN-FAILURE | m9-73 | `chronos-mcp::open_default_store` fell back to an in-memory store when the configured store could not be opened, so a locked store yielded successful saves and empty listings instead of an error (found by falsification of the cycle's own test) | m9-75-fail-closed-store-open (`v0.7.77`) |
 ## Metadata
 
 | Campo | Valor |
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-13T16:51Z |
-| Last archive | m9-74-cas-put-many-batching |
+| Last updated | 2026-09-13T17:20Z |
+| Last archive | m9-75-fail-closed-store-open |
