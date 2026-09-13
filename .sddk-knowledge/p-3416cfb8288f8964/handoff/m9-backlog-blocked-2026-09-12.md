@@ -208,3 +208,26 @@ Gates:
 Cross-checks: C1..C51 pass. No new CC added (bounded join enforced by construction).
 
 Vault: 62 cycles indexed, 51 cross-checks clean, peel_match verified.
+
+
+## Session 2026-09-13T09:54Z: m9-63 (stop-then-drain ordering cross-check)
+
+Closed the second m9-61 follow-up: added CC#52 (stop-then-drain
+ordering) to vault-drift-sweep.md. Single B-direct commit (8dc1063
+on feat/m9-63-stop-drain-cc). Tag v0.7.65.
+
+| Item | Status |
+|---|---|
+| CC#52 stop-then-drain ordering | CLOSED (m9-63-stop-drain-cc) |
+| Service-layer call sites monitored | probe.rs, browser_probe.rs |
+| Self-test (synthetic violation) | PASS (CC#52 catches it) |
+| Follow-up "stop-then-drain caller ordering CC" | CLOSED |
+
+Gates:
+- T0: fmt + clippy PASS
+- CC#52 on current code: 0 drift
+- CC#48 meta-check: PASS (52 CCs all clean)
+
+Both m9-61 follow-ups now closed (m9-62 bounded join, m9-63 CC).
+
+Vault: 63 cycles indexed, 52 cross-checks clean, peel_match verified.
