@@ -1,0 +1,89 @@
+{
+  "cycle_id": "m9-74-cas-put-many-batching",
+  "head_sha": "ac539db3014eeefcb165559d7629102c2205e605",
+  "base_sha": "6317af899440178d30dc1d45807aed1851d0bb83",
+  "created_at": "2026-09-13T16:51Z",
+  "route": "B-direct",
+  "summary": "Closes the high finding m9-73 deferred, the symptom row that came with it, and a medium finding that only surfaced once the first one was fixed. FIND-M9-73-CAS-PUT-ONE-WRITE-TRANSACTION-PER-EVENT: ContentStore::put opened a redb write transaction, inserted one row and committed, redb's default immediate durability made every commit a sync_data barrier, and SessionStore::save_session called put in a loop - one fsync per event, ~4.8 ms/event, so a 34,905-event crash session did not complete in 186 s against the sandbox client's 30 s tools/call timeout. The fix splits the pure encode step (bincode + LZ4 + BLAKE3) from the write so a batch is fully encoded before a transaction opens (an encoding failure stores nothing), inserts a batch in one write transaction with the per-event dedup check preserved (a write transaction reads its own inserts, so intra-batch duplicates collapse too), and exposes put_many for save_session; put is now encode + insert_batch and keeps its signature, semantics and hash. Evidence is a counted invariant rather than a timing: a new cfg(test) CountingBackend wraps redb's real FileBackend and counts sync_data calls (file-backed on purpose - an in-memory redb never syncs), a 500-event batch is asserted to stay under 4 barriers against a control loop of 50 puts that must issue at least 50, and save_session of 1,000 events is asserted to stay under 4 barriers and still round-trip. FIND-M9-73-SESSION-EDGE-CASES-HEAVY-SAVE-NEVER-COMPLETES was the symptom: with the batching in place and the client timeout untouched at 30 s, session_edge_cases goes from 4 passed / 2 failed (never completing) to 6 passed / 0 failed in 65 s, so both AGENTS.md 6.5 rows were removed rather than reworded, with a note recording where they went. FIND-M9-74-V1-SHIMS-RETURN-V2-ENVELOPE was found exactly there: with the save no longer timing out, both comparison tests failed with missing field 'session_a_id'. m7-03 (947e73b) rerouted the deprecated v1 tools through the session_compare dispatcher and silently changed their response shape from the flat v1 result (hand-built json! in the tool body before that commit) to the tagged SessionCompareOutput envelope, while keeping the v1 names, the v1 parameters and the 'DEPRECATED v1 shim ... v1 parameter names are preserved' descriptions; SessionCompareOutput's own doc comment declares the intent the code violated (shims drop provenance so v1 callers see the JSON they saw before m7-03). Nothing pinned it: the four chronos-mcp tests for those tools assert on Debug text that the nested shape also satisfies, and the sandbox client, the only caller that parses the payload as JSON, was blocked one step earlier. A new SessionCompareWire { V2Envelope, V1Flat } parameterises the dispatcher; session_compare keeps the envelope, both shims return the flat CompareSessionsResult / PerformanceRegressionAuditResult, and a new test pins the split in both directions by parsing the real tool payloads. Ordering is the lesson: finding 3 was reachable only after finding 1, since the suite had to save a 35k-event session before it could compare anything, and stopping at 'the timeout is fixed, the rest pre-exists' would have shipped a broken v1 API surface under a green suite.",
+  "title": "74 CAS put_many batching",
+  "status": "CLOSED",
+  "main_sha": "ac539db3014eeefcb165559d7629102c2205e605",
+  "findings_closed": [
+    {
+      "finding_id": "FIND-M9-73-CAS-PUT-ONE-WRITE-TRANSACTION-PER-EVENT",
+      "rule_id": "perf.transaction_per_item",
+      "subject": {
+        "cycle": "m9-73-sandbox-client-store-isolation",
+        "gap": "ContentStore::put (crates/chronos-store/src/cas.rs) opened a redb write transaction, ran ensure_table, checked the dedup row, inserted one row and committed. redb's default durability is immediate and set_durability appears nowhere in the crate, so every commit is a sync_data barrier; SessionStore::save_session (storage.rs) called that in a loop over the session's events, so saving one session cost one fsync per event. Measured cost: linear at about 4.8 ms per event, so the 34,905-event crash session in session_edge_cases took roughly 168 s and did not complete inside a 180 s client timeout (186 s observed), against the 30 s tools/call timeout the sandbox client uses. Any session above roughly 6,000 events approaches that timeout, and realistic captures take minutes, so this was a product-facing save-path defect and not only a test one.",
+        "fix": "cas.rs: fn encode(event) -> (ContentHash, Vec<u8>) holds the pure serialize + LZ4 + BLAKE3 step and touches no I/O, so a batch is fully encoded before any transaction opens and an encoding failure stores nothing; fn insert_batch(&[(ContentHash, Vec<u8>)]) opens one write transaction, keeps the per-event dedup check (a write transaction reads its own inserts, so duplicates inside a batch collapse as well) and commits once; pub fn put_many(&[TraceEvent]) -> Vec<ContentHash> encodes the whole slice, returns one hash per event in input order, and returns early for an empty batch without touching the database; put is now encode + insert_batch and keeps its signature, semantics and hash. storage.rs: save_session calls self.cas.put_many(events) instead of the put loop, documented as CAS-then-metadata ordering whose worst case is unreferenced but deduplicated, content-addressed CAS rows. Tests: crates/chronos-store/src/test_support.rs (new, registered as a cfg(test) module in lib.rs) provides CountingBackend, wrapping redb's real FileBackend to count sync_data calls, plus counting_file_db; file-backed on purpose because in-memory redb never syncs and the assertion would pass for the wrong reason. cas.rs gains four tests (order plus per-event hash equality against put, dedup within and across batches with a cas_row_count assertion, empty batch does not create the cas table, 500-event batch <= 3 barriers against a 50-put control loop that must report >= 50) and storage.rs gains one (1,000-event save_session <= 4 barriers plus a full round-trip)."
+      }
+    },
+    {
+      "finding_id": "FIND-M9-73-SESSION-EDGE-CASES-HEAVY-SAVE-NEVER-COMPLETES",
+      "rule_id": "test.environmental_failure",
+      "subject": {
+        "cycle": "m9-73-sandbox-client-store-isolation",
+        "gap": "chronos-sandbox/tests/session_edge_cases.rs::test_compare_sessions_crash_vs_normal and ::test_performance_regression_audit_different_workloads failed on every observed run in this environment, on main as well (m9-73 interleaved A/B), always at save_session with TimeoutError(\"method=tools/call\", 30s); raising the client timeout to 180 s still failed after 186 s, so the save genuinely did not complete. The suite therefore could not signal regressions in the comparison path at all, and both tests were pinned in AGENTS.md 6.5 as environmental.",
+        "fix": "No test change: the cause was the CAS finding above. With put_many in place and the client timeout untouched at 30 s both tests pass (6 passed / 0 failed in 65.1 s), and the two AGENTS.md 6.5 rows were removed with a note stating that ContentStore::put_many closed them, so a future reader does not re-add them as flakes."
+      }
+    },
+    {
+      "finding_id": "FIND-M9-74-V1-SHIMS-RETURN-V2-ENVELOPE",
+      "rule_id": "api.deprecated_shim_shape_drift",
+      "subject": {
+        "cycle": "m9-74-cas-put-many-batching",
+        "gap": "m7-03 (947e73b) rerouted compare_sessions and performance_regression_audit through dispatch_session_compare and changed what they return: before that commit the tool bodies built the flat v1 JSON by hand (session_a_id, session_b_id, only_in_a_count, ... and baseline_session_id, target_session_id, regressions, ...), afterwards they serialize the tagged SessionCompareOutput enum carrying provenance. The tool names, parameter names and descriptions stayed v1 ('DEPRECATED v1 shim ... the v1 parameter names are preserved'), and SessionCompareOutput's own doc comment states the behaviour the code violated: 'MCP shims drop the provenance field so existing v1 callers see the same JSON they did before m7-03'. A v1 client therefore receives {kind, result, provenance} where it expects the flat object and fails with missing field 'session_a_id'; observed in chronos-sandbox/tests/session_edge_cases.rs once the save timeout above was fixed. Detection was zero: the four chronos-mcp tests for these tools assert on the Debug text of the content block and look for keys (similarity_pct, common_count, summary) that also appear inside the envelope, and the sandbox client is the only caller that parses the payload as JSON.",
+        "fix": "crates/chronos-mcp/src/server.rs: new enum SessionCompareWire { V2Envelope, V1Flat } whose to_value(SessionCompareOutput) either serializes the tagged envelope or unwraps it to the flat CompareSessionsResult / PerformanceRegressionAuditResult that chronos-services::output kept for this purpose; dispatch_session_compare takes the wire shape as a parameter; session_compare passes V2Envelope and both shims pass V1Flat; both descriptions now state that the response shape is preserved too. New test test_v1_shims_return_flat_result_while_v2_returns_envelope parses the tool content blocks as JSON and asserts that both shims expose session_a_id / baseline_session_id at the top level and leak neither provenance nor result/kind, while session_compare carries kind, provenance and a nested result.session_a_id. Grep confirms these two are the only tools in chronos-mcp whose description contains 'DEPRECATED v1 shim', so the class is closed rather than sampled."
+      }
+    }
+  ],
+  "findings_introduced": {
+    "no_action": [],
+    "deferred": [
+      {
+        "finding_id": "FIND-M9-74-NATIVE-PTRACE-TESTS-NEED-SERIAL",
+        "rule_id": "test.environmental_failure",
+        "severity": "low",
+        "note": "The chronos-native lib suite cannot run in parallel in this environment. With the default test threads, ptrace_tracer::tests::test_launch_captures_events and ::test_launch_true_and_wait fail, and a third test blocks in waitpid until the harness is killed (observed 17 min at 0% CPU in a futex wait, still blocking after --skip test_launch_with_syscall_tracing). Serially the same suite is 101 passed in 13 s and the originally documented flaky test alone is 1 passed in 1.32 s, so the problem is concurrency between ptrace tests rather than a broken test. Not caused by this cycle - the diff touches chronos-store and chronos-mcp and these tests call PtraceTracer only. AGENTS.md 6.5 was rewritten to record the real shape (two failures plus a hang in parallel) and the T3 recipe that works here: the workspace command for everything except the ptrace crate, plus cargo test -p chronos-native --lib --test-threads=1. The structural remedy (a test-level lock, a separate test binary, or an explicit opt-in target) is deliberately left out of this cycle, which does not otherwise touch that crate.",
+        "severity_rationale": "No product impact; the cost is wasted agent/CI time on a silent 17-minute hang, and it is now documented where the next agent looks."
+      },
+      {
+        "finding_id": "FIND-M9-73-SILENT-IN-MEMORY-FALLBACK-MASKS-STORE-OPEN-FAILURE",
+        "rule_id": "code.silent_degradation",
+        "severity": "medium",
+        "note": "Unchanged from m9-73 and still open: crates/chronos-mcp/src/server.rs::open_default_store falls back to SessionStore::in_memory() when the configured store cannot be opened (locked, corrupt, missing parent), logging only a tracing::warn. A server asked to open a locked store therefore starts successfully with an empty store: session_save reports success and session_list returns 0 sessions, which is silent data loss with a green health check. It is a deliberate resilience choice, and the remedy is a policy decision belonging to chronos-mcp (fail closed on a store that exists but cannot be opened, keep the fallback only for a missing parent directory, or surface the degraded mode in a tool response). Detection exists in the sandbox harness (client_store_isolation fails if it ever runs against a fallback store), but nothing in production fails on the fallback itself.",
+        "severity_rationale": "Silent data loss, but it requires a store that exists and is locked or unreadable, which in practice means two processes against one configured path."
+      },
+      {
+        "finding_id": "FIND-M9-73-CC4-REGEN-RITUAL-NOT-IN-REPO",
+        "rule_id": "process.undocumented_tooling",
+        "severity": "low",
+        "note": "Unchanged and now confirmed a third time: the CC#4 archive-manifest SHA regeneration is a throwaway python script in the agent scratch directory, so every cycle re-derives it (m9-72, m9-73 and this cycle did). The naive whole-tree version churns the self-referential 'archive-manifest (this file)' row of nine pre-m9-11 manifests that can never be in the affected set, and those rows are reverted by hand each cycle. Remedy unchanged: land scripts/regen_manifest_index_shas.py with the skip-self-row rule and document it in maintenance/vault-drift-sweep.md next to CC#4. Deliberately not done in this product-fix cycle.",
+        "severity_rationale": "Process friction only; no correctness impact, since the drift gate catches a missed regeneration."
+      },
+      {
+        "finding_id": "FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION",
+        "rule_id": "code.duplicated_policy",
+        "severity": "low",
+        "note": "Unchanged from m9-72: counterexample_storage.rs keeps four hand-rolled copies of the read-path TableDoesNotExist / else-propagate policy that chronos-store::table_error now names. Out of scope for this cycle.",
+        "severity_rationale": "Latent divergence risk in error handling; no observed defect."
+      },
+      {
+        "finding_id": "FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION",
+        "rule_id": "process.growing_regeneration_set",
+        "severity": "low",
+        "note": "Unchanged from m9-71: every archive manifest that lists cycles/index.md or terms/index.md SHAs goes stale on the next cycle, so each cycle must rewrite prior manifests' artifact indexes (CC#4), and the set grows by one manifest per cycle. m9-74 regenerated the affected rows to a fixpoint again.",
+        "severity_rationale": "Process friction only; bounded by the fixpoint loop."
+      }
+    ]
+  },
+  "peel_match": true,
+  "remote_tag": "v0.7.76",
+  "remote_tag_peel": "TBD_AFTER_RELEASE",
+  "release_status": "released",
+  "verify_status": "passed",
+  "archive_status": "archived",
+  "released_at": "2026-09-13T16:51Z",
+  "verified_at": "2026-09-13T16:48Z",
+  "archived_at": "2026-09-13T16:51Z"
+}

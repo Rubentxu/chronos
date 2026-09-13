@@ -1229,6 +1229,41 @@ pub struct SessionCompareParams {
     pub top_n: Option<usize>,
 }
 
+/// Response wire shape for the session-comparison family.
+///
+/// m9-74 (`FIND-M9-74-V1-SHIMS-RETURN-V2-ENVELOPE`): m7-03 rerouted the two
+/// deprecated v1 tools through the v2 dispatcher and, with them, changed what
+/// they return — from the flat v1 result to the tagged `SessionCompareOutput`
+/// envelope. The tools kept their v1 names and their "v1 parameter names are
+/// preserved" descriptions, so a v1 client (the sandbox harness is one) started
+/// failing to parse a response that was still advertised as v1. `session_compare`
+/// gets the envelope; the shims get back the flat result the v1 DTOs
+/// (`CompareSessionsResult`, `PerformanceRegressionAuditResult`) were kept for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SessionCompareWire {
+    /// Tagged `SessionCompareOutput` envelope (`session_compare`, v2).
+    V2Envelope,
+    /// Flat v1 result (`compare_sessions`, `performance_regression_audit`).
+    V1Flat,
+}
+
+impl SessionCompareWire {
+    /// Serialize a dispatcher result in this wire shape.
+    fn to_value(
+        self,
+        out: chronos_services::output::SessionCompareOutput,
+    ) -> Result<serde_json::Value, serde_json::Error> {
+        use chronos_services::output::SessionCompareOutput;
+        match self {
+            SessionCompareWire::V2Envelope => serde_json::to_value(out),
+            SessionCompareWire::V1Flat => match out {
+                SessionCompareOutput::Divergence { result, .. } => serde_json::to_value(result),
+                SessionCompareOutput::Regression { result, .. } => serde_json::to_value(result),
+            },
+        }
+    }
+}
+
 // ============================================================================
 // Session Explain (v2, m7-03 net-new)
 // ============================================================================
@@ -4609,7 +4644,7 @@ impl ChronosServer {
 
     #[tool(
         name = "performance_regression_audit",
-        description = "DEPRECATED v1 shim. Routes to session_compare{kind=regression} via ChronosSessionCompareService. The v1 parameter names baseline_session_id / target_session_id are preserved; top_n is forwarded unchanged. Prefer session_compare (v2)."
+        description = "DEPRECATED v1 shim. Routes to session_compare{kind=regression} via ChronosSessionCompareService. The v1 parameter names baseline_session_id / target_session_id are preserved; top_n is forwarded unchanged. The v1 response shape is preserved too (flat PerformanceRegressionAuditResult — no session_compare envelope). Prefer session_compare (v2)."
     )]
     async fn performance_regression_audit(
         &self,
@@ -4623,12 +4658,12 @@ impl ChronosServer {
             session_b: params.target_session_id,
             top_n: params.top_n,
         };
-        Self::dispatch_session_compare(&ctx, v2_params).await
+        Self::dispatch_session_compare(&ctx, v2_params, SessionCompareWire::V1Flat).await
     }
 
     #[tool(
         name = "compare_sessions",
-        description = "DEPRECATED v1 shim. Routes to session_compare{kind=divergence} via ChronosSessionCompareService. The v1 parameter names session_a / session_b are preserved. Prefer session_compare (v2)."
+        description = "DEPRECATED v1 shim. Routes to session_compare{kind=divergence} via ChronosSessionCompareService. The v1 parameter names session_a / session_b are preserved. The v1 response shape is preserved too (flat CompareSessionsResult — no session_compare envelope). Prefer session_compare (v2)."
     )]
     async fn compare_sessions(
         &self,
@@ -4642,7 +4677,7 @@ impl ChronosServer {
             session_b: params.session_b,
             top_n: None,
         };
-        Self::dispatch_session_compare(&ctx, v2_params).await
+        Self::dispatch_session_compare(&ctx, v2_params, SessionCompareWire::V1Flat).await
     }
 
     #[tool(
@@ -4655,7 +4690,7 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
         let ctx = chronos_services::session_compare::SessionCompareContext { store: &self.store };
-        Self::dispatch_session_compare(&ctx, params).await
+        Self::dispatch_session_compare(&ctx, params, SessionCompareWire::V2Envelope).await
     }
 
     #[tool(
@@ -5116,11 +5151,13 @@ impl ChronosServer {
 
     /// Shared dispatcher for `session_compare` v2 + the two v1 shims
     /// (`compare_sessions` → kind=divergence, `performance_regression_audit`
-    /// → kind=regression). All three tool wrappers funnel through here so
-    /// the wire-shape and error mapping stay identical.
+    /// → kind=regression). All three tool wrappers funnel through here so the
+    /// validation and error mapping stay identical; only the response wire
+    /// shape differs, and `wire` selects it.
     async fn dispatch_session_compare(
         ctx: &chronos_services::session_compare::SessionCompareContext<'_>,
         params: SessionCompareParams,
+        wire: SessionCompareWire,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let input = chronos_services::output::SessionCompareInput {
             kind: parse_session_compare_kind(&params.kind)?,
@@ -5131,7 +5168,7 @@ impl ChronosServer {
             top_n: params.top_n,
         };
         match chronos_services::session_compare::ChronosSessionCompareService::compare(ctx, input) {
-            Ok(out) => match serde_json::to_value(out) {
+            Ok(out) => match wire.to_value(out) {
                 Ok(v) => Ok(CallToolResult::success(json_content(&v))),
                 Err(e) => Ok(CallToolResult::error(text_content(format!(
                     "Serialization error: {}",
@@ -6831,6 +6868,134 @@ mod tests {
         );
         assert!(text.contains("similarity_pct"));
         assert!(text.contains("provenance"));
+    }
+
+    /// m9-74 (`FIND-M9-74-V1-SHIMS-RETURN-V2-ENVELOPE`): m7-03 rerouted the two
+    /// deprecated v1 tools through the `session_compare` dispatcher, and with
+    /// them changed what they return — the tagged `SessionCompareOutput`
+    /// envelope instead of the flat v1 result their names, parameters and
+    /// descriptions still promise. `SessionCompareOutput`'s own doc comment
+    /// says "MCP shims drop the `provenance` field so existing v1 callers see
+    /// the same JSON they did before m7-03", so the flat shape is the declared
+    /// contract, not a preference. This pins the split: shims flat, v2 enveloped.
+    #[tokio::test]
+    async fn test_v1_shims_return_flat_result_while_v2_returns_envelope() {
+        use chronos_domain::{EventData, SourceLocation};
+
+        /// Pull the JSON payload out of a tool call's content block.
+        fn tool_json(result: &CallToolResult) -> serde_json::Value {
+            let content = serde_json::to_value(&result.content).expect("content serializes");
+            let text = content[0]["text"].as_str().expect("text content");
+            serde_json::from_str(text).expect("tool payload is JSON")
+        }
+
+        let server = ChronosServer::new();
+        let make_event = |id: u64, func: &str| {
+            let loc = SourceLocation::new("test.rs", 1, func.to_string(), 0x3000 + id);
+            TraceEvent::new(
+                id,
+                id * 100,
+                1,
+                EventType::FunctionEntry,
+                loc,
+                EventData::Function {
+                    name: func.to_string(),
+                    signature: None,
+                    symbol_id: None,
+                    invocation_id: None,
+                    parent_invocation_id: None,
+                },
+            )
+        };
+
+        // One shared event plus one event each: a genuine divergence.
+        let events_a = vec![make_event(0, "main"), make_event(1, "helper")];
+        let events_b = vec![make_event(0, "main"), make_event(1, "other")];
+        let sid_a = "wire-a".to_string();
+        let sid_b = "wire-b".to_string();
+        let meta = SessionMetadata {
+            session_id: sid_a.clone(),
+            created_at: 0,
+            language: "native".to_string(),
+            target: "/bin/test".to_string(),
+            event_count: events_a.len(),
+            duration_ms: 100,
+            tail_sealed: false,
+            sealed_at: None,
+        };
+        let meta_b = SessionMetadata {
+            session_id: sid_b.clone(),
+            event_count: events_b.len(),
+            ..meta.clone()
+        };
+        server.store.save_session(meta, &events_a).unwrap();
+        server.store.save_session(meta_b, &events_b).unwrap();
+
+        // v1 shim #1 — `compare_sessions` must be flat.
+        let shim = server
+            .compare_sessions(Parameters(CompareSessionsParams {
+                session_a: sid_a.clone(),
+                session_b: sid_b.clone(),
+            }))
+            .await
+            .unwrap();
+        assert_ne!(shim.is_error, Some(true));
+        let v = tool_json(&shim);
+        assert_eq!(v["session_a_id"], serde_json::json!(sid_a));
+        assert_eq!(v["session_b_id"], serde_json::json!(sid_b));
+        assert!(v["similarity_pct"].is_number(), "flat result fields: {v}");
+        assert!(
+            v.get("provenance").is_none(),
+            "v1 shim leaked the v2 envelope (provenance): {v}"
+        );
+        assert!(
+            v.get("result").is_none() && v.get("kind").is_none(),
+            "v1 shim leaked the v2 envelope (result/kind): {v}"
+        );
+
+        // v1 shim #2 — `performance_regression_audit` must be flat.
+        let shim = server
+            .performance_regression_audit(Parameters(PerformanceRegressionAuditParams {
+                baseline_session_id: sid_a.clone(),
+                target_session_id: sid_b.clone(),
+                top_n: Some(5),
+            }))
+            .await
+            .unwrap();
+        assert_ne!(shim.is_error, Some(true));
+        let v = tool_json(&shim);
+        assert_eq!(v["baseline_session_id"], serde_json::json!(sid_a));
+        assert_eq!(v["target_session_id"], serde_json::json!(sid_b));
+        assert!(
+            v["functions_analyzed"].is_number(),
+            "flat result fields: {v}"
+        );
+        assert!(
+            v.get("provenance").is_none(),
+            "v1 shim leaked the v2 envelope (provenance): {v}"
+        );
+
+        // v2 keeps the tagged envelope.
+        let v2 = server
+            .session_compare(Parameters(SessionCompareParams {
+                kind: "divergence".to_string(),
+                session_a: sid_a,
+                session_b: sid_b,
+                top_n: None,
+            }))
+            .await
+            .unwrap();
+        assert_ne!(v2.is_error, Some(true));
+        let v = tool_json(&v2);
+        assert_eq!(v["kind"], "divergence");
+        assert!(
+            v.get("provenance").is_some(),
+            "v2 must carry provenance: {v}"
+        );
+        assert!(
+            v["result"]["session_a_id"].is_string(),
+            "v2 result nests the flat shape: {v}"
+        );
     }
 
     /// `session_compare` with an unknown kind returns the parser-level error.

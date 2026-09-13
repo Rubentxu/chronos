@@ -178,10 +178,23 @@ tracked here so we do not chase them as regressions in every cycle:
 
 | Test | Crate | When it flakes | Reproduction |
 |---|---|---|---|
-| `ptrace_tracer::tests::test_launch_with_syscall_tracing` | `chronos-native` | ~50% when run with full `cargo test --lib`; passes 3/3 in isolation | Same on `main` (c76b1096) and on every `feat/*` cycle |
+| `ptrace_tracer::tests::*` (`test_launch_with_syscall_tracing`, `test_launch_captures_events`, `test_launch_true_and_wait`) | `chronos-native` | The crate's **lib suite must run with `--test-threads=1`**. In parallel the ptrace tests collide: two fail outright and another blocks in `waitpid` until the harness is killed (m9-74 measured it hanging 17 min at 0% CPU on a `futex` wait, still hung after `--skip test_launch_with_syscall_tracing`). Serial: 101 passed in 13 s | Same on `main` (c76b1096) and on every `feat/*` cycle |
 | `test_ptrace_capture` | `chronos-e2e` | Hangs indefinitely (no ptrace permission in this environment) whenever a `--tests` run pulls the crate in. This is why T3 excludes `chronos-e2e`; the crate stays bucket D, opt-in only | Same on `main`; observed 10+ min with no output on a cycle that used the old T3 command |
-| `session_edge_cases::test_compare_sessions_crash_vs_normal` | `chronos-sandbox` | Always fails in this environment: `save_session (crash) failed: TimeoutError("method=tools/call", 30s)`. Not a timeout-calibration problem — raising the client timeout to 180 s still fails (186 s), so the save genuinely does not complete | Same on `main`: interleaved A/B (alternating builds, 3 rounds) failed the same test on both builds |
-| `session_edge_cases::test_performance_regression_audit_different_workloads` | `chronos-sandbox` | Same class and same signature as the row above (also `save_session` on a heavy probe session) | Same on `main`, same interleaved A/B |
+
+T3 therefore runs in two halves here — the documented command for everything
+except the ptrace-heavy crate, plus a serial run of that crate:
+
+```bash
+cargo test --workspace --lib --tests --exclude chronos-sandbox --exclude chronos-e2e --no-fail-fast
+cargo test -p chronos-native --lib --test-threads=1
+```
+
+Row removed in m9-74: the two `session_edge_cases` `save_session` timeouts
+(`test_compare_sessions_crash_vs_normal`,
+`test_performance_regression_audit_different_workloads`) were the visible
+symptom of `FIND-M9-73-CAS-PUT-ONE-WRITE-TRANSACTION-PER-EVENT`, not an
+environmental flake. `ContentStore::put_many` now commits a session's events in
+one write transaction, and both tests pass (6/6 in that suite, 65 s).
 
 If a new "flake" appears, first verify it reproduces on `main`:
 

@@ -13,6 +13,8 @@ pub mod diff;
 pub mod error;
 pub mod storage;
 mod table_error;
+#[cfg(test)]
+mod test_support;
 
 pub use cas::{ContentHash, ContentStore};
 pub use diff::{DiffReport, TimingDelta, TraceDiff};
