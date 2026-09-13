@@ -4,7 +4,8 @@
 
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::time::sleep;
 
 use super::error::McpSandboxError;
@@ -1537,30 +1538,57 @@ pub struct McpTestClient {
     process: Option<McpProcess>,
     /// The MCP session for communicating with the server
     session: Option<McpSession>,
+    /// The private store directory this client allocated for its server, if any.
+    ///
+    /// `McpTestClient::start` (and `start_path`) give every client its own
+    /// store, so two clients never contend for the developer's
+    /// `$HOME/.local/share/chronos/sessions.redb`. The directory is removed
+    /// when the client is dropped. `None` when the caller supplied an explicit
+    /// path via `start_with_db_path`, because that path is the caller's to
+    /// manage.
+    db_dir: Option<PathBuf>,
+    /// The `CHRONOS_DB_PATH` the server was started with, when known.
+    db_path: Option<PathBuf>,
 }
 
 impl McpTestClient {
     /// Start a new MCP test session by spawning the server.
+    ///
+    /// The client gets a **private store**: the server is started with a unique
+    /// `CHRONOS_DB_PATH` under the system temp directory, so nothing this client
+    /// saves is visible to another client, and neither reads nor writes the
+    /// developer's real `$HOME/.local/share/chronos/sessions.redb`. Before this,
+    /// every client in every sandbox suite inherited the same store, which made
+    /// `save_session` contend for one multi-megabyte database shared by all of
+    /// them (see `FIND-M9-72-SANDBOX-SHARED-STORE-SAVE-TIMEOUT`).
     ///
     /// Uses CHRONOS_MCP_PATH env var if set, otherwise tries to find the binary:
     /// 1. CARGO_BIN_EXE_chronos-mcp env var (set by cargo test when using dev-dependency)
     /// 2. ../../target/debug/chronos-mcp relative to test binary (test binaries are in target/debug/deps/)
     /// 3. "chronos-mcp" in PATH
     pub async fn start() -> Result<Self, McpSandboxError> {
-        let mcp_path = std::env::var("CHRONOS_MCP_PATH")
+        Self::start_path(&Self::resolve_mcp_path()).await
+    }
+
+    /// Locate the `chronos-mcp` binary the same way for every client.
+    ///
+    /// 1. `CHRONOS_MCP_PATH`
+    /// 2. `CARGO_BIN_EXE_chronos-mcp` (set by cargo test with a binary dev-dep)
+    /// 3. `../../target/debug/chronos-mcp` relative to the test binary
+    /// 4. `chronos-mcp` in `PATH`
+    fn resolve_mcp_path() -> PathBuf {
+        std::env::var("CHRONOS_MCP_PATH")
             .map(PathBuf::from)
             .unwrap_or_else(|_| {
-                // Try CARGO_BIN_EXE_chronos-mcp first (set when using dev-dependency)
                 if let Ok(cargo_bin) = std::env::var("CARGO_BIN_EXE_chronos-mcp") {
                     let path = PathBuf::from(cargo_bin);
                     if path.exists() {
                         return path;
                     }
                 }
-                // Try relative path from test binary location
-                // Test binary is at target/debug/deps/<test> so we need to go up 2 levels
-                let exe_path = std::env::current_exe().ok();
-                let relative = exe_path
+                // Test binaries live in target/debug/deps/, so go up two levels.
+                let relative = std::env::current_exe()
+                    .ok()
                     .as_ref()
                     .and_then(|p| p.parent())
                     .and_then(|p| p.parent())
@@ -1571,18 +1599,64 @@ impl McpTestClient {
                     }
                 }
                 PathBuf::from("chronos-mcp")
-            });
-        Self::start_path(&mcp_path).await
+            })
     }
 
     /// Start a new MCP test session by spawning the server at the given path.
+    ///
+    /// The server is given a private store through `CHRONOS_DB_PATH`, so this
+    /// client never reads or writes another client's data (nor the developer's
+    /// real `$HOME/.local/share/chronos/sessions.redb`). Use
+    /// `start_with_db_path` when two clients must deliberately share one store.
     pub async fn start_path(mcp_path: &Path) -> Result<Self, McpSandboxError> {
-        let (process, stdin, reader) = crate::client::process::factory::start(mcp_path).await?;
+        let (db_dir, db_path) = Self::allocate_store_dir()?;
+        let (process, stdin, reader) =
+            crate::client::process::factory::start_with_env(mcp_path, Self::db_env(&db_path))
+                .await?;
         let session = McpSession::new(stdin, reader).await?;
         Ok(Self {
             process: Some(process),
             session: Some(session),
+            db_dir: Some(db_dir),
+            db_path: Some(db_path),
         })
+    }
+
+    /// Allocate a fresh private store directory for one client.
+    ///
+    /// Unique across threads of this process (atomic counter) and across test
+    /// binaries running concurrently (PID + nanosecond timestamp).
+    fn allocate_store_dir() -> Result<(PathBuf, PathBuf), McpSandboxError> {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!(
+            "chronos-sandbox-store-{}-{}-{}",
+            std::process::id(),
+            seq,
+            nanos
+        ));
+        std::fs::create_dir_all(&dir).map_err(|e| {
+            McpSandboxError::SpawnFailed(format!(
+                "failed to create private store dir {}: {e}",
+                dir.display()
+            ))
+        })?;
+        let db_path = dir.join("sessions.redb");
+        Ok((dir, db_path))
+    }
+
+    /// Environment for a server that must open `db_path`.
+    fn db_env(db_path: &Path) -> std::collections::HashMap<String, String> {
+        let mut env = std::collections::HashMap::new();
+        env.insert(
+            "CHRONOS_DB_PATH".to_string(),
+            db_path.to_string_lossy().to_string(),
+        );
+        env
     }
 
     /// Get a reference to the underlying session.
@@ -1621,45 +1695,35 @@ impl McpTestClient {
             })
     }
 
+    /// The store path this client's server was started with, when known.
+    ///
+    /// `Some` for clients started through `start`, `start_path` or
+    /// `start_with_db_path`; `None` only if the client was built directly.
+    /// Tests use it to assert that two clients do not share a store.
+    pub fn db_path(&self) -> Option<&Path> {
+        self.db_path.as_deref()
+    }
+
     /// Spawn the MCP server with an explicit DB path.
     ///
     /// Sets `CHRONOS_DB_PATH` in the server environment so the server opens
     /// the same store that `run_replay` will read from. Used by ce12 to test
-    /// the end-to-end `counterexample_shrink` → `run_replay` round-trip.
+    /// the end-to-end `counterexample_shrink` → `run_replay` round-trip, and by
+    /// `session_edge_cases` to make two clients share one store on purpose.
+    ///
+    /// Unlike `start`, the store is not private and is **not** cleaned up: the
+    /// caller owns `db_path`.
     pub async fn start_with_db_path(db_path: std::path::PathBuf) -> Result<Self, McpSandboxError> {
-        let mcp_path = std::env::var("CHRONOS_MCP_PATH")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|_| {
-                if let Ok(cargo_bin) = std::env::var("CARGO_BIN_EXE_chronos-mcp") {
-                    let path = std::path::PathBuf::from(cargo_bin);
-                    if path.exists() {
-                        return path;
-                    }
-                }
-                if let Ok(exe) = std::env::current_exe() {
-                    let relative = exe
-                        .parent()
-                        .and_then(|p| p.parent())
-                        .map(|p| p.join("chronos-mcp"));
-                    if let Some(ref path) = relative {
-                        if path.exists() {
-                            return path.clone();
-                        }
-                    }
-                }
-                std::path::PathBuf::from("chronos-mcp")
-            });
-        let mut env_vars: std::collections::HashMap<String, String> = std::env::vars().collect();
-        env_vars.insert(
-            "CHRONOS_DB_PATH".to_string(),
-            db_path.to_string_lossy().to_string(),
-        );
+        let mcp_path = Self::resolve_mcp_path();
         let (process, stdin, reader) =
-            crate::client::process::factory::start_with_env(&mcp_path, env_vars).await?;
+            crate::client::process::factory::start_with_env(&mcp_path, Self::db_env(&db_path))
+                .await?;
         let session = McpSession::new(stdin, reader).await?;
         Ok(Self {
             process: Some(process),
             session: Some(session),
+            db_dir: None,
+            db_path: Some(db_path),
         })
     }
 
@@ -1760,6 +1824,21 @@ impl Deref for McpTestClient {
 impl DerefMut for McpTestClient {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.session.as_mut().expect("session already dropped")
+    }
+}
+
+/// Kill the server (if still alive) and remove the private store directory.
+///
+/// The process is taken first so the child is reaped before its store
+/// directory disappears; `McpProcess`'s own `Drop` does the killing. Tests that
+/// return early or panic therefore leave neither a server nor a directory
+/// behind.
+impl Drop for McpTestClient {
+    fn drop(&mut self) {
+        let _ = self.process.take();
+        if let Some(dir) = self.db_dir.take() {
+            let _ = std::fs::remove_dir_all(&dir);
+        }
     }
 }
 

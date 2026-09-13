@@ -2745,3 +2745,54 @@ backfill is derived from `git diff --numstat base_sha..head_sha` so
 the data is reproducible from git history. The CC detects any future
 cycle that lands without the section, preventing recurrence of the
 same drift class.
+
+### 56. No process-global environment mutation in chronos-sandbox (closed by m9-73)
+
+```python
+import os, re
+
+hits = []
+for root, _dirs, files in os.walk('chronos-sandbox'):
+    for name in sorted(files):
+        if not name.endswith('.rs'):
+            continue
+        path = os.path.join(root, name)
+        with open(path, encoding='utf-8') as fh:
+            for lineno, line in enumerate(fh, 1):
+                if re.search(r'std::env::(set_var|remove_var)\s*\(', line):
+                    hits.append(f"{path}:{lineno}: {line.strip()}")
+
+for hit in hits:
+    print(f"DRIFT: chronos-sandbox must not mutate the process environment: {hit}")
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** a sandbox client or test is calling `std::env::set_var` /
+`remove_var`. That mutates the environment of the *whole test binary*, so
+tests running on other threads in the same process observe it, and any server
+the client spawns afterwards inherits it. This is how every sandbox suite
+ended up sharing one `$HOME/.local/share/chronos/sessions.redb`
+(`FIND-M9-72-SANDBOX-SHARED-STORE-SAVE-TIMEOUT`).
+
+**Resolution:** pass the variable to the child process instead of the parent.
+
+- To point a server at a specific store, use
+  `McpTestClient::start_with_db_path(path)`; `McpTestClient::start()` already
+  gives each client a private one.
+- For any other variable, use
+  `chronos_sandbox::client::process::factory::start_with_env(path, env)`.
+
+**Why this exists:** `CHRONOS_DB_PATH` had three independent writers in the
+sandbox before m9-73: the client inherited the ambient value, `ce12` set it
+globally "so the CLI replay can find the same store" (untrue — `replay_bundle`
+passes `--db <path>` explicitly), and the session edge-case suite set and
+cleared it around two `start()` calls. Removing the writers makes "a client's
+store is private unless it is passed one" a property a test can assert; this
+cross-check keeps the mechanism from coming back.
+
+**History:** m9-73 isolates the client store, removes all three writers, and
+adds this cross-check. The class was invisible for as long as it existed
+because a shared store usually *works*: it only fails when one process writes
+a large session while another holds the database, which is a timing accident,
+not an assertion.
