@@ -160,9 +160,25 @@ check. The `peel_match` boolean is still required to be `True`.
 
 
 ```bash
+# Note: archive-manifests use a 5-column table (| Kind | Path | SHA-256 |).
+# Field $4 = SHA-256 (with backticks + surrounding whitespace).
+# The original CC#4 used `$4 ~ /^[a-f0-9]{64}$/` but that failed because
+# the field still had backticks at match time. Fix: strip backticks AND
+# trim whitespace first, then match.
 for manifest in .sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-*/archive-manifest.md; do
   awk '/^## Artifact index/,0' "$manifest" \
-    | awk '/^\| / && $4 ~ /^[a-f0-9]{64}$/ {gsub(/`/, "", $2); gsub(/`/, "", $4); print $2 "|" $4}' \
+    | awk -F'|' '/^\| / {
+        gsub(/`/, "", $3); gsub(/^[ \t]+|[ \t]+$/, "", $3);
+        gsub(/`/, "", $4); gsub(/^[ \t]+|[ \t]+$/, "", $4);
+        if ($4 ~ /^[a-f0-9]{64}$/) {
+          # Skip self-reference: a manifest cannot list its own current
+          # SHA (writing the SHA would change the file). Either the row
+          # is missing entirely (acceptable) or the SHA is stale by
+          # design.
+          if ($3 == "'"$manifest"'") next;
+          print $3 "|" $4
+        }
+      }' \
     | while IFS='|' read path sha; do
         [ -f "$path" ] && [ "$(sha256sum "$path" | cut -d' ' -f1)" != "$sha" ] \
           && echo "DRIFT: $manifest :: $path"
@@ -183,7 +199,10 @@ the Artifact-index format.
 ### 5. cycles/index.md metadata consistency (closed by m9-11)
 
 ```bash
-actual=$(awk -F'|' '/^\| (m6 |m[7-9])/{c++} END{print c+0}' .sddk-knowledge/p-3416cfb8288f8964/cycles/index.md)
+# Total cycles counts only m9-* cycles (m9-11 convention; m6/m7/m8 milestones
+# are documented separately as historical cycles but not counted in the
+# Total cycles field). Match `| m9-XX |` rows specifically.
+actual=$(awk -F'|' '/^\| m9-/{c++} END{print c+0}' .sddk-knowledge/p-3416cfb8288f8964/cycles/index.md)
 declared=$(awk -F'|' '/Total cycles/{gsub(/[ \t]+/, "", $3); print $3}' .sddk-knowledge/p-3416cfb8288f8964/cycles/index.md)
 [ "$actual" = "$declared" ] && echo "OK: $actual == $declared" || echo "DRIFT: actual=$actual declared=$declared"
 ```
@@ -2546,3 +2565,131 @@ local + 19 remote not-merged abandoned branches.
 **Out of scope (still requires human review):** naming conventions,
 branch prefixes that don't match the above patterns, work-in-progress
 branches that may be intentionally divergent.
+
+### 54. All bash CCs (CC#1, #4, #5, #6, #46, #53) return empty output (closed by m9-66)
+
+```bash
+# CC#48 meta-check only auto-executes python CCs. The 6 bash CCs
+# (CC#1, #4, #5, #6, #46, #53) only run manually. CC#54 runs all of
+# them and reports drift.
+
+errors=0
+
+# CC#1: Vault ID uniqueness
+result1=$(awk -F'|' '/^### /{section=$0; next} /^\| m9/{gsub(/^[ \t]+/, "", $2); print $2}' \
+    .sddk-knowledge/p-3416cfb8288f8964/terms/index.md \
+    | sort | uniq -d)
+[ -n "$result1" ] && { echo "DRIFT: CC#1: $result1"; errors=$((errors+1)); }
+
+# CC#4: SHA-256 consistency in archive-manifest Artifact index
+cc4_drift=0
+drift_lines_cc4=()
+for manifest in .sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-*/archive-manifest.md; do
+  while IFS= read -r line; do
+    echo "$line"
+    drift_lines_cc4+=("$line")
+  done < <(awk '/^## Artifact index/,0' "$manifest" \
+    | awk -F'|' '/^\| / {
+        gsub(/`/, "", $3); gsub(/^[ \t]+|[ \t]+$/, "", $3);
+        gsub(/`/, "", $4); gsub(/^[ \t]+|[ \t]+$/, "", $4);
+        if ($4 ~ /^[a-f0-9]{64}$/) {
+          if ($3 == "'"$manifest"'") next;
+          print $3 "|" $4
+        }
+      }' \
+    | while IFS='|' read path sha; do
+        [ -f "$path" ] && [ "$(sha256sum "$path" | cut -d' ' -f1)" != "$sha" ] \
+          && echo "DRIFT: CC#4: $manifest :: $path"
+      done)
+done
+errors=$((errors + ${#drift_lines_cc4[@]}))
+
+# CC#5: cycles/index.md Total cycles consistency (m9-XX only)
+actual=$(awk -F'|' '/^\| m9-/{c++} END{print c+0}' .sddk-knowledge/p-3416cfb8288f8964/cycles/index.md)
+declared=$(awk -F'|' '/Total cycles/{gsub(/[ \t]+/, "", $3); print $3}' .sddk-knowledge/p-3416cfb8288f8964/cycles/index.md)
+[ "$actual" != "$declared" ] && { echo "DRIFT: CC#5: actual=$actual declared=$declared"; errors=$((errors+1)); }
+
+# CC#6: terms/index.md "Last archive" ↔ cycles/index.md most-recent-cycle
+last_archive=$(awk -F'|' '/Last archive/{gsub(/[ \t]+/, "", $3); print $3}' \
+  .sddk-knowledge/p-3416cfb8288f8964/terms/index.md)
+last_cycle=$(awk -F'|' '/^\| m[0-9]+/{gsub(/[ \t]+/, "", $3); last=$3} END {print last}' \
+  .sddk-knowledge/p-3416cfb8288f8964/cycles/index.md)
+[ "$last_archive" != "$last_cycle" ] && {
+  echo "DRIFT: CC#6: terms=$last_archive cycles=$last_cycle"
+  errors=$((errors+1))
+}
+
+# CC#46: No stale local or remote fix/m9-* branches
+local_count=$(git branch --list 'fix/m9-*' | wc -l)
+remote_count=$(git branch -r --list 'origin/fix/m9-*' | wc -l)
+[ "$local_count" != "0" ] || [ "$remote_count" != "0" ] && {
+  echo "DRIFT: CC#46: local=$local_count remote=$remote_count"
+  errors=$((errors+1))
+}
+
+# CC#53: No stale branches merged into main (all prefixes)
+local_merged=0
+git branch | grep -v "^$\|^\*" | while read b; do
+  branch=${b// /}
+  if [ "$branch" = "main" ]; then continue; fi
+  if git merge-base --is-ancestor "$branch" main 2>/dev/null; then
+    echo "MERGED-LOCAL: $branch"
+  fi
+done
+remote_merged=0
+git branch -r | grep "origin/" | grep -v "origin/main\$\|origin/HEAD ->" | sed 's|origin/||' | while read b; do
+  if git merge-base --is-ancestor "origin/$b" main 2>/dev/null; then
+    echo "MERGED-REMOTE: $b"
+  fi
+done
+
+echo "(CC#53: clean = no MERGED-LOCAL / MERGED-REMOTE lines above)"
+
+exit $errors
+```
+
+**Expected output (clean):** empty (no `DRIFT:` lines from CC#1, CC#4,
+CC#5, CC#6, CC#46). The CC#53 section may show the not-merged
+branches (those are intentional and tracked separately).
+
+**If `DRIFT` from CC#1:** a cycle ID appears in multiple rows of
+`terms/index.md`. Resolution: deduplicate.
+
+**If `DRIFT` from CC#4:** an archive-manifest's Artifact-index SHA-256
+does not match the current file content. Resolution: recompute and
+update.
+
+**If `DRIFT` from CC#5:** `Total cycles` in `cycles/index.md` does
+not match the actual `m9-*` row count. Resolution: bump the field.
+
+**If `DRIFT` from CC#6:** `Last archive` in `terms/index.md` does not
+match the most recent cycle in `cycles/index.md`. Resolution: align
+both fields.
+
+**If `DRIFT` from CC#46:** a `fix/m9-*` branch exists in local or
+remote. Resolution: `git branch -d` (local) or `git push origin
+--delete` (remote).
+
+**If MERGED-LOCAL/MERGED-REMOTE lines appear in CC#53 output:** a
+branch was merged into main but not deleted. Resolution: same as
+CC#46 but extended to all prefixes (see CC#53 history).
+
+**History:** m9-66 closes the auto-validation gap that CC#48 only
+covers python CCs. Bash CCs (CC#1, #4, #5, #6, #46, #53) were
+validated manually, leaving room for silent drift. m9-66 catches a
+real CC#5 drift that had been silently off-by-16 since the m6/m7/m8
+milestone rows were added to `cycles/index.md` (regex matched all
+`m[7-9]` rows instead of only `m9-` rows). After the fix, CC#5
+correctly reports `65 == 65`.
+
+**Why not fold into CC#48?** CC#48 is itself a python block executed
+by `scripts/check_vault_drift.sh`. Adding bash invocation to CC#48
+would create a chicken-and-egg situation: a meta-check invoking a
+sub-meta-check. CC#54 is a sibling meta-check, not a child. Both
+CC#48 and CC#54 are executed by `scripts/check_vault_drift.sh` (see
+m9-66 update to that script).
+
+**Implementation note:** the `exit $errors` pattern in this block
+allows `scripts/check_vault_drift.sh` to detect failure even when the
+output is split across multiple lines. If errors > 0, the script
+exits 1; if 0, exits 0.
