@@ -4,6 +4,7 @@
 //! to produce a content address. Identical events are automatically deduplicated.
 
 use crate::error::StoreError;
+use crate::table_error::classify_read_table_error;
 use blake3::hash;
 use chronos_domain::TraceEvent;
 use lz4_flex::compress_prepend_size;
@@ -102,7 +103,9 @@ impl ContentStore {
             .map_err(|e| StoreError::Database(e.into()))?;
         let table = match tx.open_table(CAS_TABLE) {
             Ok(t) => t,
-            Err(_) => return Ok(None), // Table doesn't exist
+            // m9-72: an absent table is a virgin database, not a fault. Any other
+            // table error must propagate — see `table_error`.
+            Err(e) => return classify_read_table_error(e).or_not_found(None),
         };
 
         let Some(stored) = table
@@ -131,7 +134,8 @@ impl ContentStore {
             .map_err(|e| StoreError::Database(e.into()))?;
         let table = match tx.open_table(CAS_TABLE) {
             Ok(t) => t,
-            Err(_) => return Ok(false), // Table doesn't exist
+            // m9-72: see `get` above.
+            Err(e) => return classify_read_table_error(e).or_not_found(false),
         };
         Ok(table
             .get(hash_hex.as_bytes())
@@ -168,6 +172,39 @@ mod tests {
                 parent_invocation_id: None,
             },
         )
+    }
+
+    /// m9-72 (closes FIND-M9-71-LOAD-SESSION-TABLE-ERROR-COLLAPSE): a real
+    /// storage fault must be reported, never answered as "content not found".
+    ///
+    /// The fault is genuine, not simulated: the `cas` table is created with an
+    /// incompatible key/value signature, which makes redb fail `open_table`
+    /// with `TableTypeMismatch` (a database written by a different binary would
+    /// look the same way). Before m9-72 this arm was `Err(_) => Ok(None)`, and
+    /// `SessionStore::load_session` consumes `get` in a loop
+    /// (`if let Some(evt) = self.cas.get(h)? { events.push(evt) }`), so the
+    /// fault silently *dropped events* from the loaded session.
+    #[test]
+    fn test_get_propagates_storage_fault_instead_of_reporting_missing_content() {
+        let db = in_memory_db();
+        let tx = db.begin_write().unwrap();
+        {
+            // Same table name, incompatible signature.
+            let _ = tx
+                .open_table(TableDefinition::<u64, u64>::new("cas"))
+                .expect("creating the cas table with a foreign signature must succeed");
+        }
+        tx.commit().unwrap();
+
+        let store = ContentStore::new(db);
+        match store.get("00") {
+            Err(StoreError::Database(_)) => {}
+            other => panic!("a storage fault must propagate from get, got {other:?}"),
+        }
+        match store.contains("00") {
+            Err(StoreError::Database(_)) => {}
+            other => panic!("a storage fault must propagate from contains, got {other:?}"),
+        }
     }
 
     #[test]

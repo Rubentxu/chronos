@@ -1,0 +1,48 @@
+{
+  "cycle_id": "m9-72-read-path-table-error-classification",
+  "head_sha": "f3500a9071d528fd6256c5f65ef00c0ca300b903",
+  "base_sha": "09e21107ca0707c0cd40d631eddcdb39cb3669ba",
+  "created_at": "2026-09-13T15:05Z",
+  "route": "B-direct",
+  "summary": "Closes FIND-M9-71-LOAD-SESSION-TABLE-ERROR-COLLAPSE, which m9-71 recorded as a two-site cosmetic inconsistency in chronos-store::storage::load_session. Recon found four sites, not two, and an observable consequence. cas::get and cas::contains answered every read-path open_table failure with Ok(None)/Ok(false), and both load_session reads answered every one with SessionNotFound. redb reports a database that exists but was never written as TableError::TableDoesNotExist, which is the only benign variant; every other variant (e.g. TableTypeMismatch on a store written by a different binary, or any variant redb adds later) is a storage fault. The consequence is that load_session consumes cas::get in a loop, so a fault was reported as Ok(None) and the event was silently dropped from the loaded session instead of failing the load. All four sites now share one classifier in a new table_error module; absent means 'nothing stored' and anything else propagates as StoreError::Database. Sibling module counterexample_storage.rs already matched TableDoesNotExist explicitly, so this unifies the crate on the policy three of its modules already followed.",
+  "title": "72 read path table error classification",
+  "status": "CLOSED",
+  "main_sha": "f3500a9071d528fd6256c5f65ef00c0ca300b903",
+  "findings_closed": [
+    {
+      "finding_id": "FIND-M9-71-LOAD-SESSION-TABLE-ERROR-COLLAPSE",
+      "rule_id": "code.error_classification_collapse",
+      "subject": {
+        "cycle": "m9-71-services-list-store-contract",
+        "gap": "Four chronos-store read paths turned *every* open_table failure on a read transaction into a benign answer, so a broken store was indistinguishable from an empty one. crates/chronos-store/src/cas.rs::get matched Err(_) => Ok(None) and ::contains matched Err(_) => Ok(false); crates/chronos-store/src/storage.rs::load_session matched Err(_) => StoreError::SessionNotFound in both the SESSION_META and SESSION_EVENTS reads. m9-71 recorded this as two sites and 'no behavior change today'. Two corrections found during recon: (a) the sites are four, and (b) the consequence is observable, because SessionStore::load_session consumes cas::get in a loop ('if let Some(evt) = self.cas.get(h)? { events.push(evt) }', storage.rs:260), so a storage fault answered with Ok(None) silently removes events from the loaded session and returns a plausible but truncated session. The crate already knew the right policy: counterexample_storage.rs matches redb::TableError::TableDoesNotExist explicitly and propagates every other variant, so the four sites were the crate disagreeing with itself.",
+        "fix": "New crates/chronos-store/src/table_error.rs holds classify_read_table_error(redb::TableError) -> TableOpenFailure::{Absent, Fault} plus the two answer shapes the callers need: or_not_found(T) for cas (absent -> Ok(None)/Ok(false), fault -> Err(StoreError::Database)) and session_not_found(&str) for load_session (absent -> SessionNotFound, fault -> Err(StoreError::Database)). All four sites now route through it and the module doc records why the collapse mattered. redb::TableError is #[non_exhaustive], so the wildcard arm is a real classification decision (anything not TableDoesNotExist is a fault), not defensive padding."
+      }
+    }
+  ],
+  "findings_introduced": {
+    "no_action": [],
+    "deferred": [
+      {
+        "finding_id": "FIND-M9-72-SANDBOX-SHARED-STORE-SAVE-TIMEOUT",
+        "rule_id": "test.shared_database_state",
+        "severity": "medium",
+        "note": "The sandbox T4-smoke subset is flaky in this environment, and the cycle characterised it before accepting a green run. Symptom: session_persistence::test_save_session_multiple_times fails with save_session failed: TimeoutError(\"method=tools/call\", 30s) at line 128 (first save) or line 133 (second save), in a subset of runs; sibling symptom, counterexample_tools::ce12 logs 'Database error: Database already open. Cannot acquire lock.' for its private scratch db. Mechanism after testing two hypotheses and dropping one: McpTestClient::start() inherits the caller's environment so every sandbox client resolves default_db_path() = $HOME/.local/share/chronos/sessions.redb, one 86 MB store shared by all 35 suites, and session_save serializes roughly 2500 compressed events into it behind a fixed 30 s client timeout. Failing runs are the slow ones (76-80 s of suite wall time vs 55-64 s) and the failing assertion moves between the first and second save, so the trigger is elapsed time, not data. The dropped hypothesis - a leaked chronos-mcp holding the redb lock - was an artifact of pgrep -fc matching the runner script's own command line; with a specific pattern the count is 0 before and after every run, so nothing leaks. Attribution is measured, not argued: the same failure reproduces on main (09e2110) with a build that excludes this cycle's code, and the same binary on the cycle branch produced both a pass and a failure across three back-to-back runs. The harness and the failing test are untouched by this cycle (git diff --name-only lists only crates/chronos-store) and the failing call is session_save, a write path, while the diff changes four read-path classifications. Candidate fixes: unique temporary CHRONOS_DB_PATH per sandbox client (start_with_db_path already does this and is used only by ce12), a wider tools/call timeout for save_session, or a smaller fixture event volume. Not attempted here: a 35-file harness change is out of scope for a store-policy cycle."
+      },
+      {
+        "finding_id": "FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION",
+        "rule_id": "code.duplicated_policy",
+        "severity": "low",
+        "note": "After m9-72 the crate has one named policy for read-path table-open failures (table_error) and still four hand-rolled copies of the same match in counterexample_storage.rs (collect_bundle_chunks_range, get_bundle_events_count, load_counterexample_bundle, and the list path): each matches redb::TableError::TableDoesNotExist explicitly and propagates the rest, which is correct but now duplicated. Behaviour is identical either way, so this is a pure consistency follow-up, worth doing only if counterexample_storage.rs is touched for another reason - it is a 2,500-line module and the cycle deliberately kept its diff to the four laggard sites."
+      }
+    ]
+  },
+  "peel_match": true,
+  "remote_tag": "v0.7.74",
+  "remote_tag_peel": "f3500a9071d528fd6256c5f65ef00c0ca300b903",
+  "release_status": "released",
+  "verify_status": "passed",
+  "archive_status": "archived",
+  "released_at": "2026-09-13T13:41Z",
+  "verified_at": "2026-09-13T15:05Z",
+  "archived_at": "2026-09-13T13:41Z"
+}

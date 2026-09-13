@@ -1,0 +1,48 @@
+{
+  "schema": "verify-finding.schema.json",
+  "subject": {
+    "head_sha": "845be8d",
+    "base_sha": "09e21107ca0707c0cd40d631eddcdb39cb3669ba",
+    "diff_digest": "sha256:9ae416b1e59e605a390a0a162f1b5a9173e611b790e203d63fb8e3aa6a111995",
+    "working_tree_clean": true,
+    "verified_at": "2026-09-13T15:05:00Z",
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
+    "verdict": "passed"
+  },
+  "findings": [
+    {
+      "finding_id": "FIND-M9-71-LOAD-SESSION-TABLE-ERROR-COLLAPSE",
+      "rule_id": "code.error_classification_collapse",
+      "severity": "low",
+      "summary": "Closed, and larger than recorded: four read paths collapsed every open_table failure into a benign answer, and load_session's loop over cas::get turned the collapse into silent event loss. A single classifier (table_error) now owns the distinction: TableDoesNotExist means 'nothing stored yet', every other variant propagates as StoreError::Database.",
+      "subject": {
+        "gap": "cas::get matched Err(_) => Ok(None), cas::contains matched Err(_) => Ok(false), and load_session's SESSION_META and SESSION_EVENTS reads each matched Err(_) => SessionNotFound. Only redb's TableDoesNotExist is benign; TableTypeMismatch (a store written by another binary) and any future variant are faults. Because load_session consumes cas::get in a loop, the Ok(None) arm silently dropped events from a loaded session, so a broken store produced a plausible truncated session instead of an error. m9-71 recorded two sites and 'no behavior change today'; both were wrong.",
+        "fix": "crates/chronos-store/src/table_error.rs: classify_read_table_error -> TableOpenFailure::{Absent, Fault}, with or_not_found(T) for cas and session_not_found(&str) for load_session. Four call sites routed through it. Module doc records the loop-over-get consequence so the next reader sees why the distinction is load-bearing."
+      },
+      "evidence": {
+        "falsification": "Genuine fault, not a mock: each table is created with an incompatible TableDefinition signature so redb itself returns TableTypeMismatch on the later read-path open_table (TableDoesNotExist cannot be produced for a table that was created, which is why the Err(_) arms were invisible to the suite). Each of the four sites was reverted individually and its test observed to fail, then restored - 4/4: cas::get revert -> test_get_propagates_storage_fault_instead_of_reporting_missing_content fails (Ok(None) for a fault); cas::contains revert -> same test fails on the contains assertion; SESSION_META revert -> test_load_session_propagates_storage_fault_instead_of_session_not_found fails; SESSION_EVENTS revert -> test_load_session_propagates_event_table_storage_fault fails. The EVENTS test writes the metadata row with the correct signature and injects only the event table, because the second open_table is otherwise unreachable.",
+        "post_fix": "cargo test -p chronos-store --lib => 69 passed (62 before: +4 classifier unit tests, +3 behavioural). cargo test -p chronos-services --lib => 263 passed. cargo test -p chronos-mcp --tests => 77 lib + 49 integration passed. T0 fmt + clippy --workspace --all-targets -D warnings clean. Drift sweep CC#1..CC#55 pass. CC smoke 5/5."
+      }
+    }
+  ],
+  "findings_introduced": {
+    "no_action": [],
+    "deferred": [
+      {
+        "finding_id": "FIND-M9-72-SANDBOX-SHARED-STORE-SAVE-TIMEOUT",
+        "rule_id": "test.shared_database_state",
+        "severity": "medium",
+        "note": "The sandbox T4-smoke subset is flaky, and this cycle had to characterise it before it could accept a green run. Symptom: session_persistence::test_save_session_multiple_times fails at session_persistence.rs:128 (first save) or session_persistence.rs:133 (second save) with TimeoutError(\"method=tools/call\", 30s) - a client-side RPC timeout, not a store error - in a subset of the runs of the three-binary command, and also in back-to-back runs of session_persistence alone; it never fails when the machine is idle, and it reproduces on main. Same runs, sibling symptom: counterexample_tools::ce12 logs 'opening session store at .../chronos-ce12-NNNNN.redb: Database error: Database already open. Cannot acquire lock.'. Mechanism, after two hypotheses were tested and one dropped: McpTestClient::start() -> start_path() -> factory::start() spawns the server with the caller's environment, so every sandbox client resolves default_db_path() = $HOME/.local/share/chronos/sessions.redb, a single 86 MB store shared by all 35 suites and by every test within a suite; session_save then serializes roughly 2500 compressed events into that store behind a fixed 30 s client-side timeout. The failing runs are consistently the slow ones (76-80 s of suite wall time against 55-64 s for the passes), and the failing assertion moves between line 128 (first save) and line 133 (second save), so the trigger is elapsed time rather than data or a specific request. The first hypothesis - a leaked chronos-mcp holding the redb write lock - was WRONG and is recorded here so it is not re-derived: pgrep -fc chronos-mcp appeared to show 1-2 survivors after each run, but that pattern matches the runner script's own command line; with a specific pattern (pgrep -fc 'cargo-targets/debug/chronos-mcp') the count is 0 before and after every run, so nothing leaks and no lock is held. ce12's 'Database already open. Cannot acquire lock.' belongs to that test's own race on its private scratch db and is a symptom of the same contention, not the cause of the timeout. Candidate fixes: give start()/start_path() a unique temporary CHRONOS_DB_PATH per client (start_with_db_path already does this and is used only by ce12), raise the 30 s tools/call timeout for save_session, or shrink the fixture's event volume. Not attempted here: a 35-file harness change is out of scope for a store-policy cycle. Blocks nothing, but it costs a green-run lottery on every future cycle that needs this subset."
+      },
+      {
+        "finding_id": "FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION",
+        "rule_id": "code.duplicated_policy",
+        "severity": "low",
+        "note": "counterexample_storage.rs keeps four hand-rolled copies of the policy that table_error now names (collect_bundle_chunks_range, get_bundle_events_count, load_counterexample_bundle, and the list path): each matches redb::TableError::TableDoesNotExist explicitly and propagates the rest. Correct, but duplicated. Behaviour is identical either way, so this is a consistency follow-up rather than a defect; worth folding in only if that 2,500-line module is edited for another reason. This cycle deliberately kept its diff to the four genuine laggards."
+      }
+    ]
+  },
+  "lens_summary": "m9-72 closes the deferral m9-71 recorded, after recon showed the deferral understated it twice over: four sites, not two, and an observable consequence rather than a cosmetic inconsistency. The consequence is the reason the cycle exists - load_session consumes cas::get in a loop, so 'a fault reads as absent' meant events vanished from a loaded session while the load still reported success. The fix is a named policy instead of four wildcard arms, which also puts storage.rs and cas.rs on the same rule that counterexample_storage.rs already followed. The tests attack the real thing: an incompatible table signature makes redb produce TableTypeMismatch, which no amount of mocking would prove, and all four sites were reverted one by one to watch each test fail (4/4). Two findings came out of the cycle and neither is a store defect: the sandbox harness shares one 86 MB session database across all suites with best-effort shutdown, which makes the required T4-smoke subset a coin flip (medium, characterised by an interleaved A/B against main rather than assumed away), and counterexample_storage.rs now carries four inline copies of a policy that has a name. No new vault CC: this replaces wildcard arms with one shared classifier and introduces no new structural class.",
+  "cycle_id": "m9-72",
+  "verdict": "passed"
+}

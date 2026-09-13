@@ -2,6 +2,7 @@
 
 use crate::cas::ContentStore;
 use crate::error::StoreError;
+use crate::table_error::classify_read_table_error;
 use chronos_domain::TraceEvent;
 use redb::{ReadableTable, TableDefinition};
 use std::path::Path;
@@ -225,7 +226,8 @@ impl SessionStore {
                 .map_err(|e| StoreError::Database(e.into()))?;
             let table = match tx.open_table(SESSION_META) {
                 Ok(t) => t,
-                Err(_) => return Err(StoreError::SessionNotFound(session_id.to_string())),
+                // m9-72: absent table -> SessionNotFound; anything else propagates.
+                Err(e) => return Err(classify_read_table_error(e).session_not_found(session_id)),
             };
             let entry = table
                 .get(session_id.as_bytes())
@@ -245,7 +247,8 @@ impl SessionStore {
                 .map_err(|e| StoreError::Database(e.into()))?;
             let table = match tx.open_table(SESSION_EVENTS) {
                 Ok(t) => t,
-                Err(_) => return Err(StoreError::SessionNotFound(session_id.to_string())),
+                // m9-72: see the SESSION_META read above.
+                Err(e) => return Err(classify_read_table_error(e).session_not_found(session_id)),
             };
             let entry = table
                 .get(session_id.as_bytes())
@@ -402,6 +405,64 @@ mod tests {
             tail_sealed: false,
             sealed_at: None,
         }
+    }
+
+    /// m9-72: `load_session` must report a storage fault instead of disguising
+    /// it as a missing session. The fault is genuine: the `sessions` table is
+    /// created with an incompatible signature, so redb fails `open_table` with
+    /// `TableTypeMismatch`. Before m9-72 the read paths matched `Err(_)` and
+    /// returned `SessionNotFound`, which reads as "you never saved that session"
+    /// and hides a broken database.
+    #[test]
+    fn test_load_session_propagates_storage_fault_instead_of_session_not_found() {
+        let store = SessionStore::in_memory().unwrap();
+        let tx = store.db().begin_write().unwrap();
+        {
+            let _ = tx
+                .open_table(redb::TableDefinition::<u64, u64>::new("sessions"))
+                .expect("creating the sessions table with a foreign signature must succeed");
+        }
+        tx.commit().unwrap();
+
+        let err = store
+            .load_session("s1")
+            .expect_err("a storage fault must not read as a missing session");
+        assert!(
+            matches!(err, StoreError::Database(_)),
+            "expected StoreError::Database, got {err:?}"
+        );
+    }
+
+    /// m9-72: the second `open_table` in `load_session` (the event-hash table)
+    /// gets the same treatment. Reaching it needs a database where `sessions`
+    /// opens and holds a record while `session_events` is broken, so the
+    /// metadata row is written directly with the correct signature and only the
+    /// event table is injected with a foreign one.
+    #[test]
+    fn test_load_session_propagates_event_table_storage_fault() {
+        let store = SessionStore::in_memory().unwrap();
+        let db = store.db().clone();
+        let meta = session_meta("s1");
+        let bytes = bincode::serialize(&meta).expect("metadata must serialize");
+
+        let tx = db.begin_write().unwrap();
+        {
+            let mut table = tx.open_table(SESSION_META).unwrap();
+            table.insert("s1".as_bytes(), bytes.as_slice()).unwrap();
+            drop(table);
+            let _ = tx
+                .open_table(redb::TableDefinition::<u64, u64>::new("session_events"))
+                .expect("creating session_events with a foreign signature must succeed");
+        }
+        tx.commit().unwrap();
+
+        let err = store
+            .load_session("s1")
+            .expect_err("a fault on the event table must not read as a missing session");
+        assert!(
+            matches!(err, StoreError::Database(_)),
+            "expected StoreError::Database, got {err:?}"
+        );
     }
 
     #[test]
