@@ -59,7 +59,7 @@ Run **only the buckets you need**. Match the tier to the SDDK path.
 | **T0 — lint gate** | `cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings` | ~30 s |
 | **T1 — lib unit only** | `cargo test --workspace --lib --no-fail-fast` | ~5-10 s |
 | **T2 — unit + per-crate integration of changed crates** | `cargo test -p <c1> -p <c2> … --tests --no-fail-fast` | ~10-30 s |
-| **T3 — full unit + per-crate integration (no sandbox)** | `cargo test --workspace --lib --tests --exclude chronos-sandbox --no-fail-fast` | ~30-60 s |
+| **T3 — full unit + per-crate integration (no sandbox)** | `cargo test --workspace --lib --tests --exclude chronos-sandbox --exclude chronos-e2e --no-fail-fast` | ~30-60 s |
 | **T4-smoke — sandbox subset** | `cargo test -p chronos-sandbox --test <one> --test <two>` (pick probes that touch changed code) | ~1-3 min |
 | **T5 — full sandbox** | `cargo test -p chronos-sandbox --no-fail-fast -- --test-threads=1` | ~10-30 min |
 
@@ -179,6 +179,7 @@ tracked here so we do not chase them as regressions in every cycle:
 | Test | Crate | When it flakes | Reproduction |
 |---|---|---|---|
 | `ptrace_tracer::tests::test_launch_with_syscall_tracing` | `chronos-native` | ~50% when run with full `cargo test --lib`; passes 3/3 in isolation | Same on `main` (c76b1096) and on every `feat/*` cycle |
+| `test_ptrace_capture` | `chronos-e2e` | Hangs indefinitely (no ptrace permission in this environment) whenever a `--tests` run pulls the crate in. This is why T3 excludes `chronos-e2e`; the crate stays bucket D, opt-in only | Same on `main`; observed 10+ min with no output on a cycle that used the old T3 command |
 
 If a new "flake" appears, first verify it reproduces on `main`:
 
@@ -200,7 +201,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test -p chronos-domain --lib
 
 # Unit tests for the workspace, no sandbox (T3):
-cargo test --workspace --lib --tests --exclude chronos-sandbox --no-fail-fast
+cargo test --workspace --lib --tests --exclude chronos-sandbox --exclude chronos-e2e --no-fail-fast
 
 # Sandbox smoke (T4) — set the binary path first:
 cargo build --bin chronos-mcp
