@@ -33,6 +33,22 @@ schema with `subject.head` = fix commit (docs-peel convention).
 - cycle: m9-43
 - branch: `fix/m9-43-verify-findings-head-sha-sync`
 
+## Files Inventory
+
+6 files changed across the 1 commit (105 insertions, 3 deletions):
+
+| File | Change |
+|---|---|
+| `.sddk-knowledge/.../vault-drift-sweep.md` | vault drift sweep spec (+44 -1) |
+| `cycle-artifacts/p-3416cfb8288f8964/m9-34-verify-findings-and-archive-manifest-schema/verify-findings.json` | cycle-artifact update (+1 -1) |
+| `cycle-artifacts/p-3416cfb8288f8964/m9-35-release-report-title-format-normalize/verify-findings.json` | cycle-artifact update (+1 -1) |
+| `cycle-artifacts/p-3416cfb8288f8964/m9-43-verify-findings-head-sha-sync/apply-checkpoint.json` | cycle-artifact update (+12 -0) |
+| `cycle-artifacts/p-3416cfb8288f8964/m9-43-verify-findings-head-sha-sync/verify-findings.json` | cycle-artifact update (+12 -0) |
+| `cycle-artifacts/p-3416cfb8288f8964/m9-43-verify-findings-head-sha-sync/verify-report.md` | cycle-artifact update (+35 -0) |
+
+Total: 6 files, +105 -3 across 1 commit.
+
+_(Files Inventory backfilled by m9-68 from `git diff --numstat base_sha..head_sha`.)_
 ## Cross-checks
 
 - C35: pass (after fixes applied)

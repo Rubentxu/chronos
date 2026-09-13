@@ -39,6 +39,22 @@ Cross-check #34 added to vault-drift-sweep.md.
 - cycle: m9-42
 - branch: `fix/m9-42-subject-bullets-and-cross-check-section`
 
+## Files Inventory
+
+23 files changed across the 1 commit (245 insertions, 90 deletions):
+
+| File | Change |
+|---|---|
+| `.sddk-knowledge/.../vault-drift-sweep.md` | vault drift sweep spec (+62 -1) |
+| `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/verify-findings.json` | cycle-artifact update (+2 -1) |
+| `cycle-artifacts/p-3416cfb8288f8964/m9-42-subject-bullets-and-cross-check/apply-checkpoint.json` | cycle-artifact update (+12 -0) |
+| `cycle-artifacts/p-3416cfb8288f8964/m9-42-subject-bullets-and-cross-check/verify-findings.json` | cycle-artifact update (+12 -0) |
+| `cycle-artifacts/p-3416cfb8288f8964/m9-42-subject-bullets-and-cross-check/verify-report.md` | cycle-artifact update (+41 -0) |
+| (18 prior change-entries) | change-entry update (+116 -88) |
+
+Total: 23 files, +245 -90 across 1 commit.
+
+_(Files Inventory backfilled by m9-68 from `git diff --numstat base_sha..head_sha`.)_
 ## Cross-checks
 
 - C34: pass (after fixes applied)

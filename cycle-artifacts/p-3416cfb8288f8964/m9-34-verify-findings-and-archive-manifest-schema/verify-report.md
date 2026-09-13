@@ -33,6 +33,19 @@ Cross-check #26 added to vault-drift-sweep.md.
 - cycle: m9-34
 - branch: `fix/m9-34-archive-manifest-header-normalize`
 
+## Files Inventory
+
+3 files changed across the 1 commit (83 insertions, 2 deletions):
+
+| File | Change |
+|---|---|
+| `.sddk-knowledge/.../cycles/index.md` | cycles registry (m9-NN row + Total cycles bump) (+3 -2) |
+| `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-34-verify-findings-and-archive-manifest-schema/archive-manifest.md` | archive-manifest update (+42 -0) |
+| `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-34-verify-findings-and-archive-manifest-schema/change-entry.md` | change-entry update (+38 -0) |
+
+Total: 3 files, +83 -2 across 1 commit.
+
+_(Files Inventory backfilled by m9-68 from `git diff --numstat base_sha..head_sha`.)_
 ## Cross-checks
 
 - C26: pass (after fixes applied)

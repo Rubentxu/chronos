@@ -41,3 +41,7 @@ None — clean state.
 format established by m9-28+. C23 explicitly checks both field presence
 and SHA consistency for merge-receipt.md (parallel to C22 for
 release-receipt.md).
+
+## Files Inventory
+
+Files Inventory not recorded for this cycle (predates the canonical format introduced in m9-32). See the cycle's `release-report.md` `## Files changed` section for the file list.

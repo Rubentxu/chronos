@@ -34,6 +34,18 @@ Cross-check #28 added to vault-drift-sweep.md.
 - cycle: m9-36
 - branch: `fix/m9-36-release-receipt-base-sha-backfill`
 
+## Files Inventory
+
+35 files changed across the 1 commit (345 insertions, 265 deletions):
+
+| File | Change |
+|---|---|
+| `.sddk-knowledge/.../vault-drift-sweep.md` | vault drift sweep spec (+33 -1) |
+| (34 prior cycle-artifact files) | cycle-artifact update (+312 -264) |
+
+Total: 35 files, +345 -265 across 1 commit.
+
+_(Files Inventory backfilled by m9-68 from `git diff --numstat base_sha..head_sha`.)_
 ## Cross-checks
 
 - C28: pass (after fixes applied)

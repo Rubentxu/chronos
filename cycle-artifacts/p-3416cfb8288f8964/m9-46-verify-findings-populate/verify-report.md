@@ -24,6 +24,18 @@ Cross-check #38 added to vault-drift-sweep.md.
 - cycle: m9-46
 - branch: `fix/m9-46-verify-findings-populate`
 
+## Files Inventory
+
+16 files changed across the 1 commit (430 insertions, 13 deletions):
+
+| File | Change |
+|---|---|
+| `.sddk-knowledge/.../vault-drift-sweep.md` | vault drift sweep spec (+42 -1) |
+| (15 prior cycle-artifact files) | cycle-artifact update (+388 -12) |
+
+Total: 16 files, +430 -13 across 1 commit.
+
+_(Files Inventory backfilled by m9-68 from `git diff --numstat base_sha..head_sha`.)_
 ## Cross-checks
 
 - C38: pass (after fixes applied)

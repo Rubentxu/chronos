@@ -43,6 +43,20 @@ Cross-check #30 added to vault-drift-sweep.md.
 - cycle: m9-38
 - branch: `fix/m9-38-verify-report-title-format-normalize`
 
+## Files Inventory
+
+93 files changed across the 1 commit (349 insertions, 95 deletions):
+
+| File | Change |
+|---|---|
+| `.sddk-knowledge/.../vault-drift-sweep.md` | vault drift sweep spec (+72 -1) |
+| (56 prior cycle-artifact files) | cycle-artifact update (+169 -76) |
+| (18 prior archive-manifests) | archive-manifest update (+18 -18) |
+| (18 prior change-entries) | change-entry update (+90 -0) |
+
+Total: 93 files, +349 -95 across 1 commit.
+
+_(Files Inventory backfilled by m9-68 from `git diff --numstat base_sha..head_sha`.)_
 ## Cross-checks
 
 - C30: pass (after fixes applied)

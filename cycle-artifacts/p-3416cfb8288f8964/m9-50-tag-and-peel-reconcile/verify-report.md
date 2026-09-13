@@ -28,6 +28,20 @@ Cross-check #42 added.
 - cycle: m9-50
 - branch: `fix/m9-50-tag-and-peel-reconcile`
 
+## Files Inventory
+
+53 files changed across the 1 commit (195 insertions, 51 deletions):
+
+| File | Change |
+|---|---|
+| `.sddk-knowledge/.../vault-drift-sweep.md` | vault drift sweep spec (+58 -1) |
+| `.sddk-knowledge/.../cycles/index.md` | cycles registry (m9-NN row + Total cycles bump) (+1 -1) |
+| `.sddk-knowledge/.../terms/index.md` | terms registry (Last archive bump) (+1 -1) |
+| (50 prior cycle-artifact files) | cycle-artifact update (+135 -48) |
+
+Total: 53 files, +195 -51 across 1 commit.
+
+_(Files Inventory backfilled by m9-68 from `git diff --numstat base_sha..head_sha`.)_
 ## Cross-checks
 
 - C42: pass (after fixes applied)

@@ -30,6 +30,20 @@ Cross-check #29 added to vault-drift-sweep.md.
 - cycle: m9-37
 - branch: `fix/m9-37-path-route-and-sha-normalize`
 
+## Files Inventory
+
+37 files changed across the 1 commit (143 insertions, 59 deletions):
+
+| File | Change |
+|---|---|
+| `.sddk-knowledge/.../vault-drift-sweep.md` | vault drift sweep spec (+56 -1) |
+| (34 prior cycle-artifact files) | cycle-artifact update (+85 -56) |
+| `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-34-verify-findings-and-archive-manifest-schema/change-entry.md` | change-entry update (+1 -1) |
+| `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-35-release-report-title-format-normalize/change-entry.md` | change-entry update (+1 -1) |
+
+Total: 37 files, +143 -59 across 1 commit.
+
+_(Files Inventory backfilled by m9-68 from `git diff --numstat base_sha..head_sha`.)_
 ## Cross-checks
 
 - C29: pass (after fixes applied)

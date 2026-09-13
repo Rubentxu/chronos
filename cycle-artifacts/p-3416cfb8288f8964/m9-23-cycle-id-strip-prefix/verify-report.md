@@ -57,3 +57,7 @@ apply-checkpoint.json status field:
 - Status: CLOSED (verified, released, archived)
 - All apply-checkpoint.json SHA fields match git repository
 - No drift detected when this cycle was authored
+
+## Files Inventory
+
+Files Inventory not recorded for this cycle (predates the canonical format introduced in m9-32). See the cycle's `release-report.md` `## Files changed` section for the file list.

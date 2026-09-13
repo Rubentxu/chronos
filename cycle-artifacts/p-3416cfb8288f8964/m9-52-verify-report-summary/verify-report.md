@@ -21,6 +21,18 @@ Drift class closed: 7 verify-report.md files (m9-19, m9-28..m9-33) lacked
 - cycle: m9-52
 - branch: `fix/m9-52-verify-report-summary`
 
+## Files Inventory
+
+11 files changed across the 1 commit (122 insertions, 1 deletions):
+
+| File | Change |
+|---|---|
+| `.sddk-knowledge/.../vault-drift-sweep.md` | vault drift sweep spec (+28 -1) |
+| (10 prior cycle-artifact files) | cycle-artifact update (+94 -0) |
+
+Total: 11 files, +122 -1 across 1 commit.
+
+_(Files Inventory backfilled by m9-68 from `git diff --numstat base_sha..head_sha`.)_
 ## Cross-checks
 
 - C44: pass

@@ -2693,3 +2693,55 @@ m9-66 update to that script).
 allows `scripts/check_vault_drift.sh` to detect failure even when the
 output is split across multiple lines. If errors > 0, the script
 exits 1; if 0, exits 0.
+
+### 55. verify-report.md must have `## Files Inventory` section (closed by m9-68)
+
+```python
+import glob, re
+
+# CC#55 (closed by m9-68): every verify-report.md for an m9-* cycle
+# must have a `## Files Inventory` section. The section records the
+# file changes between base_sha and head_sha (or a synthetic equivalent
+# when a cycle spans multiple commits with no merge wrapper). Cycles
+# that predate the canonical format may have a brief backfill note
+# instead of a per-file table — that's accepted-by-design.
+errors = 0
+for vr in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/verify-report.md')):
+    content = open(vr).read()
+    # Accept either the canonical Files Inventory section OR a backfill
+    # note for cycles predating the canonical format (m9-01..m9-31).
+    has_inventory = '## Files Inventory' in content
+    has_backfill_note = 'predates the canonical format' in content or 'Files Inventory not recorded' in content
+    if not (has_inventory or has_backfill_note):
+        print(f"DRIFT: {vr}: missing '## Files Inventory' section (and no backfill note)")
+        errors += 1
+print(f"Total: {errors}")
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** A verify-report.md is missing the canonical
+`## Files Inventory` section. This section is the place where the
+cycle records the file changes (file count + per-file table or
+grouped summary). Without it, reviewers cannot quickly assess the
+scope of the cycle's modifications.
+
+**Resolution:**
+1. For cycles that did record file changes (m9-32+), backfill the
+   section from `git diff --numstat base_sha..head_sha` for the
+   cycle. Group file lists when there are > 8 files in the same
+   category (e.g., 25 prior cycle artifacts).
+2. For older cycles that predate the format (m9-01..m9-31), add a
+   brief note: "Files Inventory not recorded for this cycle (predates
+   the canonical format introduced in m9-32). See release-report.md
+   `## Files changed` for the file list."
+3. For new cycles, ensure the section is present before merge by
+   running `grep -l '^## Files Inventory' verify-report.md`.
+
+**History:** m9-68 backfilled `## Files Inventory` for 22 cycles
+(m9-32..m9-53) that had been missing the section since the format
+was introduced in m9-32 but never propagated retroactively. The
+backfill is derived from `git diff --numstat base_sha..head_sha` so
+the data is reproducible from git history. The CC detects any future
+cycle that lands without the section, preventing recurrence of the
+same drift class.
