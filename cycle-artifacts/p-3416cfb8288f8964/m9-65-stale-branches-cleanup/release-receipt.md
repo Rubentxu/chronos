@@ -6,5 +6,5 @@ Head SHA | 97ff56e53c4e00768783f11d0df16878cf9c693e
 Branch | feat/m9-65-stale-branches-cleanup
 Date | 2026-09-13T11:42Z
 Remote tag | v0.7.67
-Remote tag_peel | (peeled after release)
-Peel match | (verified post-release)
+Remote tag_peel | 97ff56e53c4e00768783f11d0df16878cf9c693e
+Peel match | true

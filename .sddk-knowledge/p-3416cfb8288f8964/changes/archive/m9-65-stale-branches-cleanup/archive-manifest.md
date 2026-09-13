@@ -15,17 +15,17 @@ m9-65 closes the drift class `branch-stale-post-merge` across all milestone pref
 | Date | 2026-09-13T11:42Z |
 | Branch | `feat/m9-65-stale-branches-cleanup` |
 | Tag | `v0.7.67` |
-| Tag peel SHA | (peeled at release) |
-| Peel match | (verified at release) |
+| Tag peel SHA | `97ff56e53c4e00768783f11d0df16878cf9c693e` |
+| Peel match | `97ff56e53c4e00768783f11d0df16878cf9c693e` |
 | Status | CLOSED |
 
 ## Evidence bindings
 
-- **`apply-checkpoint.json`**: `status: CLOSED`, `verify_status: pending` (updated post-merge), `release_status: pending` (updated post-tag), `archive_status: pending` (updated post-archive), `findings_closed: [FIND-M9-65-BRANCH-DRIFT]`
+- **`apply-checkpoint.json`**: `status: CLOSED`, `verify_status: passed`, `release_status: released`, `archive_status: archived`, `findings_closed: [FIND-M9-65-BRANCH-DRIFT]`
 - **`verify-findings.json`**: 1 finding (FIND-M9-65-BRANCH-DRIFT, severity low), verdict `pass_with_findings`
 - **`verify-report.md`**: Subject, Files Inventory, Gates (T0 + T1 + T4-smoke + manual CC#53), Drift Evidence (pre/post-cycle), Safety Properties, Notes, History
 - **`merge-receipt.md`**: `Base SHA | 6e7e39e…`, `Head SHA | 97ff56e…`
-- **`release-receipt.md`**: `Remote tag | v0.7.67`, `Peel match | (verified)`
+- **`release-receipt.md`**: `Remote tag | v0.7.67`, `Peel match | 97ff56e…` (true)
 - **`branches-deleted.log`**: 49 deleted branch SHAs (recoverable via `git branch <name> <sha>`) + 24 preserved not-merged branches (with last-commit subject)
 
 ## Tangential modifications
