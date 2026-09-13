@@ -182,3 +182,29 @@ Follow-ups (deferred to m9+):
   the contract at the call sites.
 
 Vault: 61 cycles indexed, 51 cross-checks clean, peel_match verified.
+
+
+## Session 2026-09-13T09:44Z: m9-62 (bounded stop_probe HIGH-5 timeout)
+
+Closed the first m9-61 follow-up: bounded join restored in
+`NativeProbeBackend::stop_probe`. m9-61's inline `handle.join()` had
+lost the 10s upper bound. Pattern restored: spawn waiter + mpsc +
+recv_timeout(10s); abandon on timeout. Single B-direct commit
+(b98b2a4 on feat/m9-62-bounded-stop-probe). Tag v0.7.64.
+
+| Item | Status |
+|---|---|
+| Bounded join with 10s timeout | CLOSED (m9-62-bounded-stop-probe) |
+| NativeProbeBackend::stop_probe HIGH-5 pattern | restored |
+| Trait contract: blocking + bounded | enforced by construction |
+| Follow-up "stop-then-drain caller ordering CC" | deferred to m9-63+ |
+
+Gates:
+- T0: fmt + clippy PASS
+- T2: chronos-native single-thread 99/99
+- T4-smoke: program_scenarios 11/11 (incl. test_infinite_loop_stopped_by_probe_stop),
+  e2e_connectivity 1/1, analytics_tools 4/4, probe_lifecycle PASS
+
+Cross-checks: C1..C51 pass. No new CC added (bounded join enforced by construction).
+
+Vault: 62 cycles indexed, 51 cross-checks clean, peel_match verified.
