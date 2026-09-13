@@ -978,3 +978,96 @@ mutation under `chronos-sandbox/`; expected python counts in
 `scripts/smoke_test_ccs.sh` updated 47 → 48).
 Vault state: canonical, 73 cycles indexed, 56 CCs documented, peel_match verified
 for m9-73 (`v0.7.75` → `4562475`), CC#4 clean across all archive manifests.
+
+---
+
+## Session 2026-09-13T16:53Z — m9-74 CAS put_many batching (B-direct)
+
+Closed the m9-73 deferral that was the reason the previous session left two
+`session_edge_cases` tests pinned as environmental, plus the symptom row, plus one
+more medium finding the fix uncovered. Three findings in one cycle, because the
+first fix made the suite run far enough to expose the third.
+
+### What the cycle did
+
+- `FIND-M9-73-CAS-PUT-ONE-WRITE-TRANSACTION-PER-EVENT` (high, CLOSED).
+  `ContentStore::put` opened a redb write transaction per event and committed,
+  and redb's default immediate durability makes every commit a `sync_data`
+  barrier, while `save_session` looped over `put`: one fsync per event,
+  ~4.8 ms/event, ≈168 s for the 34,905-event crash capture against the sandbox
+  client's 30 s `tools/call` timeout. Fix: `encode` (pure bincode + LZ4 + BLAKE3,
+  no I/O) split from `insert_batch` (one write transaction, per-event dedup kept,
+  intra-batch duplicates collapse because a write transaction reads its own
+  inserts), `put_many(&[TraceEvent]) -> Vec<ContentHash>` for `save_session`;
+  `put` is now `encode` + `insert_batch` with its signature and hash unchanged.
+- `FIND-M9-73-SESSION-EDGE-CASES-HEAVY-SAVE-NEVER-COMPLETES` (medium, CLOSED).
+  Pure symptom: with `put_many` in place and the client timeout untouched,
+  `session_edge_cases` went 4/2 → 6/0 in 65.1 s, so both AGENTS.md §6.5 rows were
+  removed with a note recording where they went.
+- `FIND-M9-74-V1-SHIMS-RETURN-V2-ENVELOPE` (medium, found and fixed in-cycle).
+  `compare_sessions` and `performance_regression_audit` had returned the tagged
+  `SessionCompareOutput` envelope since m7-03 (`947e73b`) instead of the flat v1
+  result their names, parameters and descriptions promise, and
+  `SessionCompareOutput`'s own doc comment says the shims drop `provenance` so v1
+  callers see the pre-m7-03 JSON. Detection was zero: the four `chronos-mcp`
+  tests assert on `Debug` text the nested shape also satisfies, and the sandbox
+  client, the only JSON-parsing caller, was blocked one step earlier by the save
+  timeout. Fix: `SessionCompareWire { V2Envelope, V1Flat }` parameterises
+  `dispatch_session_compare`; v2 keeps the envelope, both shims return the flat
+  `CompareSessionsResult` / `PerformanceRegressionAuditResult`, both descriptions
+  state the response shape is preserved, and a new test parses the real tool
+  payloads in both directions.
+
+### Evidence approach worth reusing
+
+The CAS fix is proven with a counted invariant, not a timing: a `#[cfg(test)]`
+`CountingBackend` wraps redb's real `FileBackend` (file-backed on purpose, an
+in-memory redb never syncs) and counts `sync_data` calls. A 500-event batch must
+stay under 4 barriers against a 50-`put` control loop that must report ≥50; a
+1,000-event `save_session` must stay under 4 barriers and still round-trip.
+Both reverts were observed to fail and restored byte-identically.
+
+### T3 anomalies: measured, not argued
+
+- `chronos-e2e::test_ptrace_capture` never finishes (30 min, 0% CPU, futex). The
+  crate has zero references to `chronos_store`/`SessionStore`/`ContentStore`; it
+  is bucket D and already documented.
+- `chronos-native --lib` in parallel fails two ptrace tests and blocks a third in
+  `waitpid` for 17 min; serially it is 101 passed in 13 s. `AGENTS.md` §6.5 was
+  rewritten with the real shape and a T3 two-halves recipe. New deferred row
+  `FIND-M9-74-NATIVE-PTRACE-TESTS-NEED-SERIAL` (low).
+
+### CC#4
+
+Affected set this cycle: m9-02, m9-70, m9-71, m9-72, m9-73 (index rows plus the
+source rows of files m9-74 touched). Regenerated to a fixpoint (scoped pass 2: 0
+updates). The whole-tree pass again rewrote the self-referential row of nine
+pre-m9-11 manifests and m9-67/m9-68; all of those were reverted as before.
+
+### Gates
+
+- T0: fmt clean + clippy `-D warnings` clean
+- T2: `-p chronos-store --lib` 74 passed; `-p chronos-mcp --lib` 78 passed
+- T3: workspace minus sandbox minus e2e green (37 binaries); native serial 101 passed
+- T4-smoke (`--test-threads=1`): `session_edge_cases` 6/6, `session_persistence` 4/4, `multi_session` 6/6, `e2e_connectivity` 1/1
+- Vault drift PASS (48 python + 7 bash CCs); CC smoke 5/5 PASS
+- CC#12: `main_sha == head_sha == remote_tag_peel == c2c0d37` (peel verified on origin)
+- Merge `--no-ff` to main as `c080a5a`; post-release `cc6ca96` pushed; tag `v0.7.76`
+
+### Open follow-ups
+
+- **FIND-M9-74-NATIVE-PTRACE-TESTS-NEED-SERIAL** (new, low): ptrace tests need a
+  structural serial guarantee (lock, separate binary, or opt-in target).
+- **FIND-M9-73-SILENT-IN-MEMORY-FALLBACK-MASKS-STORE-OPEN-FAILURE** (medium,
+  unchanged): `open_default_store` degrades to memory on a store it cannot open.
+- **FIND-M9-73-CC4-REGEN-RITUAL-NOT-IN-REPO** (low, third confirmation): land
+  `scripts/regen_manifest_index_shas.py` with the skip-self-row rule.
+- **FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION** (low, unchanged).
+- **FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION** (low, unchanged).
+- **Sandbox warm-up ordering** (preserved) and **5+19 not-merged branches
+  triage** (preserved from m9-65): human review needed.
+
+Net cycle delta this session: 73 → 74.
+Net CC delta this session: 0 (still 56; 48 python + 7 bash).
+Vault state: canonical, 74 cycles indexed, peel_match verified for m9-74
+(`v0.7.76` → `c2c0d37`), CC#4 clean across all archive manifests.
