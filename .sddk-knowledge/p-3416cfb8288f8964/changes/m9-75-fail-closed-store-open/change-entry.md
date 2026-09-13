@@ -56,14 +56,14 @@ unopenable rather than merely disliked.
 | Path | B-direct |
 | Status | CLOSED |
 | Base SHA | `8e68fc8b9a56b30852ced43733dcbd07a89c3201` |
-| Head SHA | `TBD_HEAD_SHA` |
+| Head SHA | `ac33be59c8c177b7afef79d4440d8841dd7003d1` |
 | Tag | `v0.7.77` |
 
 ## Subject
 
 - base_sha: `8e68fc8b9a56b30852ced43733dcbd07a89c3201`
-- head_sha: `TBD_HEAD_SHA`
-- source commits: `4f7c781` (code + tests + docs), `TBD_ARTIFACTS_SHORT` (artifacts)
+- head_sha: `ac33be59c8c177b7afef79d4440d8841dd7003d1`
+- source commits: `4f7c781` (code + tests + docs), `ac33be5` (artifacts)
 - cycle: m9-75
 - branch: `feat/m9-75-fail-closed-store-open`
 - date: `2026-09-13T17:20Z`

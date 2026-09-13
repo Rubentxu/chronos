@@ -1,13 +1,13 @@
 {
   "cycle_id": "m9-75-fail-closed-store-open",
-  "head_sha": "TBD_HEAD_SHA",
+  "head_sha": "ac33be59c8c177b7afef79d4440d8841dd7003d1",
   "base_sha": "8e68fc8b9a56b30852ced43733dcbd07a89c3201",
   "created_at": "2026-09-13T17:20Z",
   "route": "B-direct",
   "summary": "Closes the medium finding m9-70 and m9-73 both left open. ChronosServer::open_default_store opened the configured session store and, on any failure, logged 'Could not open session store at {path}: {cause}. Using in-memory store.' at warn level and continued with an empty in-memory store. A server pointed at a store that exists but cannot be opened - locked by a second process against one CHRONOS_DB_PATH, corrupt, permission denied - therefore started successfully, answered session_save with success, answered session_list with an empty list, and reported healthy: silent data loss behind a green health check, indistinguishable from an empty store by any client. The fix makes store opening a decision the process cannot ignore. StoreOpenError { path, cause } names the path, the cause and the opt-in in Display, exposes path()/cause() and returns the store error from Error::source(); its cause is boxed because the first clippy pass rejected a 192-byte Err variant (clippy::result_large_err) and boxing makes it 32 bytes. Three pure functions carry the policy and are unit-testable without touching the process environment: default_store_path(db_path, home) prefers CHRONOS_DB_PATH and falls back to $HOME/.local/share/chronos/sessions.redb, with empty values falling through in both cases; allow_in_memory_fallback(raw) accepts only 1/true/yes after trim and lowercasing, so a typo cannot re-enable silent degradation; open_store_at(path, allow_in_memory_fallback) returns Result<SessionStore, StoreOpenError>, creates missing parent directories, and degrades only when the caller opted in. ChronosServer::try_new() is the new entrypoint, new() panics with the same message, and crates/chronos-mcp/src/bin/chronos-mcp.rs uses try_new() and exits 2 with 'chronos-mcp: fatal: <message>' on stderr before the transport starts. The verification problem was observability: a degraded server and a healthy server answer the same MCP tools and differ only in the data, so the policy can only be observed in the process exit status. chronos-sandbox/tests/store_open_failure.rs therefore spawns the real binary with CHRONOS_DB_PATH pointing at a directory - a path that exists, so the missing-parent allowance cannot excuse it, and that can never be a redb database - and asserts exit code 2, a stderr line naming the path and the cause, and no initialize response; a second test starts the same fixture with CHRONOS_ALLOW_IN_MEMORY_FALLBACK=1 and asserts the server does serve, which shows both that the opt-in is the difference and that the fixture is genuinely unopenable. Falsification: reverting open_store_at's Err branch to the unconditional in-memory fallback fails test_open_store_at_fails_closed_instead_of_degrading_silently at server.rs:6237, and rebuilding the binary with that revert fails test_server_refuses_to_start_when_the_configured_store_cannot_be_opened with ExitStatus(unix_wait_status(256)) instead of Some(2); both restored byte-identically (cmp against the scratch backup) before the green runs. A third observation kept the cycle honest: the first acceptance run passed against a stale target/debug/chronos-mcp built before this cycle, because the sandbox resolve_mcp_path() ladder prefers the built binary over CHRONOS_MCP_PATH in the test process, and the assertion's stderr dump showed the pre-m9-75 warning; the binary was rebuilt, the run repeated, and AGENTS.md now records the hazard. Docs gained a 'When the store cannot be opened' section in the English and Spanish session-management chapters, stating the fail-closed behaviour, the exit code and the opt-in.",
   "title": "75 fail-closed store open",
   "status": "CLOSED",
-  "main_sha": "TBD_HEAD_SHA",
+  "main_sha": "ac33be59c8c177b7afef79d4440d8841dd7003d1",
   "findings_closed": [
     {
       "finding_id": "FIND-M9-73-SILENT-IN-MEMORY-FALLBACK-MASKS-STORE-OPEN-FAILURE",
@@ -62,7 +62,7 @@
   },
   "peel_match": true,
   "remote_tag": "v0.7.77",
-  "remote_tag_peel": "TBD_HEAD_SHA",
+  "remote_tag_peel": "ac33be59c8c177b7afef79d4440d8841dd7003d1",
   "release_status": "released",
   "verify_status": "passed",
   "archive_status": "archived",

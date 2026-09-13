@@ -1,9 +1,9 @@
 {
   "schema": "verify-finding.schema.json",
   "subject": {
-    "head_sha": "TBD_HEAD_SHA",
+    "head_sha": "4f7c7817cdca87677e1fc958cbbcdfac8a264dc0",
     "base_sha": "8e68fc8b9a56b30852ced43733dcbd07a89c3201",
-    "diff_digest": "sha256:TBD_DIFF_DIGEST",
+    "diff_digest": "sha256:0b6ec6784781dacfcd62003d60e43cfbafb6804cadb33e8f85b7b00fdc0dab2d",
     "working_tree_clean": true,
     "verified_at": "2026-09-13T17:15Z",
     "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",

@@ -41,13 +41,13 @@ demonstrated rather than assumed. One commit on
 |---|---|
 | Cycle | m9-75-fail-closed-store-open |
 | Base SHA | `8e68fc8b9a56b30852ced43733dcbd07a89c3201` |
-| Head SHA | `TBD_HEAD_SHA` |
+| Head SHA | `ac33be59c8c177b7afef79d4440d8841dd7003d1` |
 | Path | B-direct |
 | Date | `2026-09-13T17:20Z` |
 | Branch | `feat/m9-75-fail-closed-store-open` |
 | Tag | `v0.7.77` |
-| Tag peel SHA | `TBD_HEAD_SHA` |
-| Peel match | `TBD_HEAD_SHA` |
+| Tag peel SHA | `ac33be59c8c177b7afef79d4440d8841dd7003d1` |
+| Peel match | `ac33be59c8c177b7afef79d4440d8841dd7003d1` |
 | Status | CLOSED |
 
 ## Evidence bindings
@@ -55,7 +55,7 @@ demonstrated rather than assumed. One commit on
 - **`apply-checkpoint.json`**: `status: CLOSED`, `verify_status: passed`, `release_status: released`, `archive_status: archived`, `findings_closed: [FIND-M9-73-SILENT-IN-MEMORY-FALLBACK-MASKS-STORE-OPEN-FAILURE]`
 - **`verify-findings.json`**: 1 finding closed (medium `code.silent_degradation`), 5 deferred (low `code.silent_degradation` new, low `test.environmental_failure`, low `process.undocumented_tooling`, low `code.duplicated_policy`, low `process.growing_regeneration_set`), verdict `passed`
 - **`verify-report.md`**: Path, Summary, Closed finding, Files Inventory, Falsification evidence, Gates, Residual risk, Cross-checks
-- **`merge-receipt.md`**: `Base SHA | 8e68fc8…`, `Head SHA | TBD_HEAD_SHA`
+- **`merge-receipt.md`**: `Base SHA | 8e68fc8…`, `Head SHA | ac33be59c8c177b7afef79d4440d8841dd7003d1`
 - **`release-receipt.md`**: `Remote tag | v0.7.77`, `Peel match | true`
 
 ## Falsification evidence
@@ -89,7 +89,7 @@ in row 2.
 
 One commit:
 - `4f7c7817cdca87677e1fc958cbbcdfac8a264dc0` — `fix(mcp): refuse to start when the configured session store cannot be opened (m9-75)`
-- `TBD_HEAD_SHA` — `feat(m9-75): cycle artifacts (apply-checkpoint, verify, release-report)` (tag `v0.7.77`)
+- `ac33be59c8c177b7afef79d4440d8841dd7003d1` — `feat(m9-75): cycle artifacts (apply-checkpoint, verify, release-report)` (tag `v0.7.77`)
 
 ## Cross-checks
 
@@ -134,19 +134,19 @@ One commit:
 | Kind | Path | SHA-256 |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-75-fail-closed-store-open/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
-| source (mcp server) | `crates/chronos-mcp/src/server.rs` | `TBD_SHA_SERVER_RS` |
-| source (mcp binary) | `crates/chronos-mcp/src/bin/chronos-mcp.rs` | `TBD_SHA_BIN` |
-| source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `TBD_SHA_TOOLS` |
-| test (store open failure) | `chronos-sandbox/tests/store_open_failure.rs` | `TBD_SHA_TEST` |
-| docs (agents manual) | `AGENTS.md` | `TBD_SHA_AGENTS` |
-| docs (session management, en) | `docs/manual-ai/en/08-session-management.md` | `TBD_SHA_DOC_EN` |
-| docs (session management, es) | `docs/manual-ai/es/08-gestion-sesiones.md` | `TBD_SHA_DOC_ES` |
-| apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/apply-checkpoint.json` | `TBD_SHA_CHECKPOINT` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/verify-report.md` | `TBD_SHA_VERIFY_REPORT` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/verify-findings.json` | `TBD_SHA_VERIFY_FINDINGS` |
-| release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/release-report.md` | `TBD_SHA_RELEASE_REPORT` |
-| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/release-receipt.md` | `TBD_SHA_RELEASE_RECEIPT` |
-| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/merge-receipt.md` | `TBD_SHA_MERGE_RECEIPT` |
-| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-75-fail-closed-store-open/change-entry.md` | `TBD_SHA_CHANGE_ENTRY` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `TBD_SHA_CYCLES_INDEX` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `TBD_SHA_TERMS_INDEX` |
+| source (mcp server) | `crates/chronos-mcp/src/server.rs` | `0f13819bc7cf19367b13aa247e630b64b942d64b6e61e2aa8ff9f09f62de1bd9` |
+| source (mcp binary) | `crates/chronos-mcp/src/bin/chronos-mcp.rs` | `3797defa83c8218db6610047fece4b6ed67aa9b183e5c1f5193f2f10eeda1492` |
+| source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `0df7481d93f81135809e4d1e224a8b98f5f7d6d5fd21fd88c5afcdca3a78bd0c` |
+| test (store open failure) | `chronos-sandbox/tests/store_open_failure.rs` | `5f0461f8db78b9de6d27d9ba92c3c06e0ebbe3cf62eb990e69f7c9e1e4c7bec9` |
+| docs (agents manual) | `AGENTS.md` | `cf4263182fb3559abf63cbeca98307bb4513859952caa26cecef4f2e06bdd972` |
+| docs (session management, en) | `docs/manual-ai/en/08-session-management.md` | `69487b75f364c1c37c8787cca94facb1841a1277e62a4dcc7e31f58736739eba` |
+| docs (session management, es) | `docs/manual-ai/es/08-gestion-sesiones.md` | `0fe1cdca3abbc19df32aa5093ac9cb5d727ed90b4480b1e90790951a6fe93303` |
+| apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/apply-checkpoint.json` | `33adf19a9ac0df7a07db20f586a48ee4e280946c6aacb3785bf8b2bf98e52b5e` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/verify-report.md` | `669dd622b5cf1dd3b9e39849e350ce0e31817ac9096971655608d58e68e04253` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/verify-findings.json` | `6de1e6f599ef5e71e300f78ebd243f607697e8e204f1b5ef6e2dcf4ba7c7b629` |
+| release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/release-report.md` | `0e1b6ff0d263e1fed2908a772cf2a215c8f266cd6ae9d1e11e487f8249406fff` |
+| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/release-receipt.md` | `21c61bc7dc435b9e6eb1af55955851f2964d82610e8d735baa5efc1dbb00d871` |
+| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/merge-receipt.md` | `2baf807473e5b377f77c14159cdc8e6c0d4ac91c0616706ab93b30f0938d013c` |
+| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-75-fail-closed-store-open/change-entry.md` | `a2816905b483ce610548937181eade69e6cfd72a49dd872c415fc1aa06012e76` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `304524de4840cd8ae867a2b063beef07ef23b50e5515770fb057b7f88e322d9a` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `4c40943140b5bad9c5426bcb2b08b38b9bb75a958e64d47d3b03e7d5cb0d518d` |

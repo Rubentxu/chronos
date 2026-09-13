@@ -36,7 +36,7 @@ bytes. That is the whole of the production diff apart from the binary and the
 | SHA | Subject |
 |---|---|
 | `4f7c7817cdca87677e1fc958cbbcdfac8a264dc0` | `fix(mcp): refuse to start when the configured session store cannot be opened (m9-75)` |
-| `TBD_ARTIFACTS_SHA` | `feat(m9-75): cycle artifacts (apply-checkpoint, verify, release-report)` (tag `v0.7.77`) |
+| `ac33be59c8c177b7afef79d4440d8841dd7003d1` | `feat(m9-75): cycle artifacts (apply-checkpoint, verify, release-report)` (tag `v0.7.77`) |
 
 ## Diff summary
 

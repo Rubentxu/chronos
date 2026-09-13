@@ -1,13 +1,16 @@
 # Verify Report — m9-75-fail-closed-store-open
 
-## Path
-
-- **Cycle**: `m9-75-fail-closed-store-open`
-- **Path**: B-direct
-- **Branch**: `feat/m9-75-fail-closed-store-open`
-- **Base SHA**: `8e68fc8b9a56b30852ced43733dcbd07a89c3201`
-- **Code SHA**: `4f7c7817cdca87677e1fc958cbbcdfac8a264dc0`
-- **Verdict**: passed
+| Campo | Valor |
+|---|---|
+| Cycle | `m9-75-fail-closed-store-open` |
+| Path | B-direct |
+| Base SHA | `8e68fc8b9a56b30852ced43733dcbd07a89c3201` |
+| Head SHA (pre-artifacts) | `4f7c7817cdca87677e1fc958cbbcdfac8a264dc0` |
+| Diff digest | `sha256:0b6ec6784781dacfcd62003d60e43cfbafb6804cadb33e8f85b7b00fdc0dab2d` |
+| Branch | `feat/m9-75-fail-closed-store-open` |
+| Verified at | `2026-09-13T17:15Z` |
+| Working tree | clean at verification time; artifact writes follow |
+| Verdict | **passed** |
 
 ## Summary
 
@@ -49,6 +52,19 @@ and no `initialize` response. The second test starts the same fixture with
 `CHRONOS_ALLOW_IN_MEMORY_FALLBACK=1` and asserts the server **does** serve, so the
 opt-in is shown to be the difference and the fixture is shown to be genuinely
 unopenable rather than merely disliked.
+
+## Subject
+
+- base_sha: `8e68fc8b9a56b30852ced43733dcbd07a89c3201` (`main` at cycle start)
+- head_sha: `4f7c7817cdca87677e1fc958cbbcdfac8a264dc0` (pre-artifacts source commit: code + tests + docs)
+- diff_digest: `sha256:0b6ec6784781dacfcd62003d60e43cfbafb6804cadb33e8f85b7b00fdc0dab2d`
+- working_tree_clean: true (at verification time)
+- verified_at: `2026-09-13T17:15Z`
+- cwd: `/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos`
+- branch: `feat/m9-75-fail-closed-store-open`
+- tag: `v0.7.77`
+- findings_closed: 1 (`FIND-M9-73-SILENT-IN-MEMORY-FALLBACK-MASKS-STORE-OPEN-FAILURE`, medium)
+- findings_introduced (deferred): 1 new low plus 4 inherited low rows
 
 ## Closed finding
 
