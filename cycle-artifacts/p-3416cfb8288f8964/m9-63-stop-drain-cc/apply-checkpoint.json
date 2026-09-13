@@ -1,0 +1,34 @@
+{
+  "cycle_id": "m9-63-stop-drain-cc",
+  "head_sha": "8dc1063d1a8f24bd2f59fac501b848003eec63d5",
+  "base_sha": "52ee9a2f2ba6233f03e46c7e5c139721779ba8d4",
+  "created_at": "2026-09-13T09:54Z",
+  "route": "B-direct",
+  "summary": "Closes the second m9-61 follow-up: add CC#52 (stop-then-drain ordering cross-check) to vault-drift-sweep.md. CC#52 scans the 2 known service-layer ProbeBackend consumers (probe.rs, browser_probe.rs) for fn ... stop bodies where drain_raw_events() appears before stop_probe(). Self-tested: reports 0 drift on current code (m9-61 ordering preserved) and catches a synthetic violation.",
+  "title": "63 stop-then-drain ordering cross-check",
+  "status": "CLOSED",
+  "archived_at": "2026-09-13T09:54Z",
+  "main_sha": "8dc1063d1a8f24bd2f59fac501b848003eec63d5",
+  "peel_match": true,
+  "release_status": "released",
+  "released_at": "2026-09-13T09:54Z",
+  "remote_tag": "v0.7.65",
+  "remote_tag_peel": "8dc1063d1a8f24bd2f59fac501b848003eec63d5",
+  "verify_status": "passed",
+  "verified_at": "2026-09-13T09:54Z",
+  "archive_status": "archived",
+  "findings_closed": [
+    {
+      "finding_id": "FIND-M9-63-MISSING-STOP-DRAIN-CC",
+      "rule_id": "chronos.lifecycle.stop_drain_ordering_static_check",
+      "subject": {
+        "cycle": "m9-63-stop-drain-cc",
+        "gap": "No static enforcement of the MS-RACE-FIX stop-then-drain contract at service-layer call sites",
+        "fix": "CC#52 added to vault-drift-sweep.md: scans probe.rs and browser_probe.rs for fn ... stop bodies where drain_raw_events() is invoked before stop_probe()"
+      }
+    }
+  ],
+  "findings_introduced": {
+    "no_action": []
+  }
+}

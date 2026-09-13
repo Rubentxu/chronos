@@ -75,5 +75,5 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-13T09:44:00Z
-| Last archive | m9-62-bounded-stop-probe |
+| Last updated | 2026-09-13T09:54:00Z
+| Last archive | m9-63-stop-drain-cc |
