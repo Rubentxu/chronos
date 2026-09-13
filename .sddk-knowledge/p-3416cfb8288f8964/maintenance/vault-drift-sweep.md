@@ -2385,3 +2385,77 @@ cycle-artifacts:
 3 cycles are accepted-by-design (pre-vault-reorg or branch-only):
 - m9-01, m9-02 (pre-vault-reorg, artifacts captured under legacy schema)
 - m9-54 (branch-deletion only, no SHA-bearing artifacts)
+
+### 52. ProbeBackend stop-then-drain ordering at service call sites (closed by m9-63)
+
+```python
+import re
+
+# Service files that wrap a ProbeBackend impl and call stop_probe + drain_raw_events.
+# Each call site must invoke stop_probe before drain_raw_events (MS-RACE-FIX, ADR-0005).
+call_sites = [
+    'crates/chronos-services/src/probe.rs',
+    'crates/chronos-services/src/browser_probe.rs',
+]
+
+# Patterns that mark a stop_probe invocation (matches both `backend.stop_probe(...)`
+# and `adapter.stop_probe(...)` call shapes seen in services).
+stop_probe_re = re.compile(r'\b\w+\.stop_probe\(')
+drain_re      = re.compile(r'\b\w+\.drain_raw_events\(')
+
+drift = []
+for path in call_sites:
+    src = open(path).read()
+    # Match top-level `fn ... { ... }` bodies whose name contains "stop".
+    for m in re.finditer(r'\bfn\s+(\w+)\s*\([^)]*\)\s*(?:->\s*[^{]*)?\{', src):
+        fn_name = m.group(1)
+        if 'stop' not in fn_name.lower():
+            continue
+        start = m.end()
+        # Walk braces to find the matching closing brace.
+        depth = 1
+        i = start
+        while i < len(src) and depth > 0:
+            if src[i] == '{':
+                depth += 1
+            elif src[i] == '}':
+                depth -= 1
+            i += 1
+        body = src[start:i]
+        sp = stop_probe_re.search(body)
+        dr = drain_re.search(body)
+        if dr is None or sp is None:
+            continue
+        if dr.start() < sp.start():
+            line_no = src[:start + dr.start()].count('\n') + 1
+            drift.append(
+                f"DRIFT: {path}:{line_no} (fn {fn_name}): "
+                f"drain_raw_events() invoked at offset {dr.start()} BEFORE "
+                f"stop_probe() at offset {sp.start()} (stop-then-drain contract violated)"
+            )
+
+for d in drift:
+    print(d)
+```
+
+**Expected output (clean):** empty.
+
+**If `DRIFT`:** a service-layer `fn ... stop(...)` invokes `drain_raw_events`
+on a `ProbeBackend` before calling `stop_probe`. This violates the stop-then-drain
+contract enforced by m9-61 and breaks the drain/stop race fix (ADR-0005):
+events emitted in the window between drain and probe-thread exit are lost.
+
+**Resolution:**
+1. Reorder the calls in the offending `fn` so `stop_probe(...)` is invoked
+   strictly before any `drain_raw_events(...)` on the same backend.
+2. If a new service file is added that wraps a `ProbeBackend`, extend the
+   `call_sites` list above.
+
+**History:** m9-63 closed this drift class. m9-61 closed the race by reordering
+the 2 known call sites (`ProbeService::stop`, `BrowserProbeService::stop`) and
+made `stop_probe` blocking, but had no enforcement mechanism. Adding a new
+`ProbeBackend` consumer (or refactoring an existing one) could silently
+re-introduce the race. CC#52 makes the constraint retroactive + forward-looking.
+
+**Allowed call sites as of m9-63:** `ProbeService::stop` and
+`BrowserProbeService::stop` (both correctly ordered since m9-61).
