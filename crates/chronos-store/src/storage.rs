@@ -267,22 +267,42 @@ impl SessionStore {
     }
 
     /// List all saved sessions (metadata only).
+    ///
+    /// Best-effort: a single record whose bytes cannot be deserialized into a
+    /// [`SessionMetadata`] (for example a record written by an older binary
+    /// whose `SessionMetadata` had a different field layout — `bincode` is not
+    /// self-describing) is **skipped** with a warning rather than failing the
+    /// entire call. One unreadable record must not brick session listing.
     #[allow(clippy::result_large_err)]
     pub fn list_sessions(&self) -> Result<Vec<SessionMetadata>, StoreError> {
         let tx = self
             .db
             .begin_read()
             .map_err(|e| StoreError::Database(e.into()))?;
-        let table = tx
-            .open_table(SESSION_META)
-            .map_err(|e| StoreError::Database(e.into()))?;
+        let table = match tx.open_table(SESSION_META) {
+            Ok(t) => t,
+            // A virgin database has no tables until something is written to it.
+            // `redb` reports that as `TableDoesNotExist`; for a read path it means
+            // "no sessions yet", not a failure. Without this, `session_list` on a
+            // freshly created store (new install, or the hermetic in-memory store
+            // used by `chronos-mcp` tests) returned an error instead of `[]`.
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
+            Err(e) => return Err(StoreError::Database(e.into())),
+        };
         let mut results = Vec::new();
 
         for entry in table.iter().map_err(|e| StoreError::Database(e.into()))? {
-            let (_, value) = entry.map_err(|e| StoreError::Database(e.into()))?;
-            let meta: SessionMetadata = bincode::deserialize(value.value())
-                .map_err(|e| StoreError::Serialization(e.to_string()))?;
-            results.push(meta);
+            let (key, value) = entry.map_err(|e| StoreError::Database(e.into()))?;
+            match bincode::deserialize::<SessionMetadata>(value.value()) {
+                Ok(meta) => results.push(meta),
+                Err(e) => {
+                    tracing::warn!(
+                        "list_sessions: skipping unreadable session metadata for key {:?}: {}",
+                        String::from_utf8_lossy(key.value()),
+                        e
+                    );
+                }
+            }
         }
 
         Ok(results)
@@ -336,9 +356,12 @@ impl SessionStore {
             .db
             .begin_read()
             .map_err(|e| StoreError::Database(e.into()))?;
-        let table = tx
-            .open_table(SESSION_META)
-            .map_err(|e| StoreError::Database(e.into()))?;
+        let table = match tx.open_table(SESSION_META) {
+            Ok(t) => t,
+            // See `list_sessions`: an absent table means "no sessions", not an error.
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(false),
+            Err(e) => return Err(StoreError::Database(e.into())),
+        };
         Ok(table
             .get(session_id.as_bytes())
             .map_err(|e| StoreError::Database(e.into()))?
@@ -405,6 +428,56 @@ mod tests {
 
         let sessions = store.list_sessions().unwrap();
         assert_eq!(sessions.len(), 2);
+    }
+
+    /// REQ-ListSkipsUnreadableRecord: one record whose value cannot be
+    /// deserialized into `SessionMetadata` (e.g. written by an older binary with
+    /// a different field layout — `bincode` is not self-describing) must not
+    /// brick the whole listing. The readable sessions are still returned.
+    #[test]
+    fn test_session_store_list_sessions_skips_unreadable_record() {
+        let store = SessionStore::in_memory().unwrap();
+        let events = vec![make_event(1, "main")];
+        store.save_session(session_meta("good"), &events).unwrap();
+
+        // Inject a record whose value is not valid bincode(SessionMetadata).
+        {
+            let tx = store.db().begin_write().unwrap();
+            let mut table = tx.open_table(SESSION_META).unwrap();
+            table
+                .insert(
+                    b"corrupt".as_slice(),
+                    b"\xff\xff\xff\xff\xff\xff".as_slice(),
+                )
+                .unwrap();
+            drop(table);
+            tx.commit().unwrap();
+        }
+
+        let sessions = store.list_sessions().unwrap();
+        assert_eq!(
+            sessions.len(),
+            1,
+            "unreadable record must be skipped, readable one kept"
+        );
+        assert_eq!(sessions[0].session_id, "good");
+    }
+
+    /// A database with no tables yet (fresh on-disk install, or a fresh in-memory
+    /// store) has no `sessions` table. Reading must report "no sessions", not
+    /// `TableDoesNotExist`. Before this, `session_list` errored on a brand-new
+    /// install, and the hermetic in-memory store used by `chronos-mcp` tests could
+    /// not be listed at all until a session was saved.
+    #[test]
+    fn test_list_sessions_on_virgin_store_is_empty() {
+        let store = SessionStore::in_memory().unwrap();
+        assert!(store.list_sessions().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_session_exists_on_virgin_store_is_false() {
+        let store = SessionStore::in_memory().unwrap();
+        assert!(!store.session_exists("anything").unwrap());
     }
 
     #[test]
