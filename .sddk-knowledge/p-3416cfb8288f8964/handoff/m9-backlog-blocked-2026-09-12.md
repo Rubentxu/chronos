@@ -148,3 +148,37 @@ These are by-design or low-impact:
    cycles/index.md uses Status=CLOSED. Same meaning, different label.
 3. cycle_id short-form vs long-form is by-design per CC#16 (both
    acceptable; m9-19+ uses short, m9-03..m9-18 uses long).
+
+
+## Session 2026-09-13T09:21Z: m9-61 (probe drain/stop race fix)
+
+Closed MS-RACE-FIX as a B-direct cycle. Single source commit (5d4c00d on
+feat/ms-race-fix) plus cycle-artifacts commit (21cb16d). Tag v0.7.63 on
+5d4c00d; merged into main as 35bccbc.
+
+| Item | Status |
+|---|---|
+| Drain/stop race in probe lifecycle | CLOSED (m9-61-ms-race-fix) |
+| NativeProbeBackend::stop_probe blocking semantics | applied |
+| ProbeService::stop + BrowserProbeService::stop reorder | applied |
+| ProbeBackend trait doc updated | applied (ADR-0005 cited) |
+
+Gates:
+- T0: fmt + clippy PASS
+- T2: chronos-domain (149), chronos-services (263), chronos-browser (42), chronos-native single-thread (99)
+- T4-smoke: 16/16 (4 analytics + 1 e2e + 11 program_scenarios)
+
+Pre-existing ptrace flake documented in AGENTS.md §6.5 — NOT a regression.
+Reproduces on main and feat/ms-race-fix alike.
+
+Cross-checks: C1..C51 pass. No new CC added (race closed by construction).
+
+Follow-ups (deferred to m9+):
+- **Bounded join with timeout** — current `handle.join()` is unbounded.
+  Previous HIGH-5 pattern (async spawn + recv_timeout(10s)) was bounded;
+  switching to inline join lost that bound. If a probe thread is wedged
+  in waitpid (parent ignores SIGKILL), MCP server blocks indefinitely.
+- **Static check for stop-then-drain caller order** — optional CC enforcing
+  the contract at the call sites.
+
+Vault: 61 cycles indexed, 51 cross-checks clean, peel_match verified.
