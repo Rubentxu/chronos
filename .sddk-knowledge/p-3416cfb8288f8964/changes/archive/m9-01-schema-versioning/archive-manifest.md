@@ -154,13 +154,13 @@ No formal spec.md existed for this change; the scoping doc
 | Kind | Path | SHA-256 |
 | Date | `2026-09-11` |
 |---|---|---|
-| archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-01-schema-versioning/archive-manifest.md` | `a7eaf340b9a4b364547b8f6136bafec68102e5880eac580fc172b4be45f07476` |
+| archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-01-schema-versioning/archive-manifest.md` | `527369fb145e2ac69ef51b21a526348beb8900489d826dacf2c9a0c1acc1a9ed` |
 | archive-report | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-01-schema-versioning/archive-report.md` | `319d7ddf9d2cff6892d78fb68fa018905ede4a58aa422d02e5f927144b6878c0` |
 | merge-receipt | `cycle-artifacts/m9-01-schema-versioning/receipts/merge-receipt.json` | `1215b9cea612f5dcb56b6690d0b7cfa0028906f8fa6481178cd41c88c4e5e9bf` |
 | release-receipt | `cycle-artifacts/m9-01-schema-versioning/receipts/release-receipt.json` | `6373a178670915fd49dd175692346fc470c75f33ca9c3c6c0f787f612aa05857` |
 | release-report | `cycle-artifacts/m9-01-schema-versioning/receipts/release-report.md` | `c62e63db1fd66cf01b0f613e22617a77ea2f2d6c8f2c5a15a87cda5e3998be3c` |
 | debt-report | `cycle-artifacts/m9-01-schema-versioning/debt-verify/debt-report.json` | `5351e72d4f7cd9a634348cc4b5e99518ab312826d0f220458728f71de54f599a` |
-| apply-checkpoint | `apply-checkpoint.json` | `fd77c4003bc82525866749687097d215b0223fc58c863c0a89e7728a282d65cb` |
+| apply-checkpoint | `apply-checkpoint.json` | `4a4b367de0ba46730549e60343ea6b629612eda11cf23cb5c5addaa7f1a67dd8` |
 | scoping doc | `docs/milestones/m9-01-schema-versioning-scoping.md` | `5da4416eb66b734d8e983a2b71377333fb4775fdb9509263d44f3af8de9edc9d` |
 
 ## Runtime status
