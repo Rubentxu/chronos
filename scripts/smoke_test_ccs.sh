@@ -21,10 +21,11 @@
 # - CC#4: SHA-256 consistency in archive-manifest Artifact index (broken awk bug)
 # - CC#39: Total cycles ↔ filesystem cycles (cross-cutting; superset of CC#5)
 # - CC#46: No stale fix/m9-* branches (missing other milestone prefixes)
+# - CC#55: verify-report.md must have `## Files Inventory` section (added by m9-68)
 # - CC#48+CC#54: meta-checks (CC#48 was the only auto-executed check;
 #   CC#54 was added for bash CCs; both must run)
 #
-# Cost: ~10s per CC × 4 CCs ≈ 40s. Run before merging any change that
+# Cost: ~10s per CC × 5 CCs ≈ 50s. Run before merging any change that
 # touches vault-drift-sweep.md or check_vault_drift.sh.
 
 set -uo pipefail
@@ -201,11 +202,53 @@ test_cc46() {
 }
 
 # ==============================================================================
+# CC#55: verify-report.md must have `## Files Inventory` section
+# ==============================================================================
+# Inject: remove the `## Files Inventory` section from a known-good
+# verify-report.md (m9-67, which is included in the clone since it's
+# part of the committed history). CC#55 should detect this.
+test_cc55() {
+  total=$((total+1))
+  echo "[CC#55] verify-report.md must have Files Inventory..."
+  local dest="$WORK_DIR/cc55"
+  setup_work_copy "$dest"
+
+  # Remove the Files Inventory section from m9-67's verify-report.
+  python3 -c "
+import re
+path = '$dest/cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/verify-report.md'
+content = open(path).read()
+m = re.search(r'^## Files Inventory.*?(?=^## |\Z)', content, re.MULTILINE | re.DOTALL)
+if m:
+    new = content[:m.start()] + content[m.end():]
+    open(path, 'w').write(new)
+    print('Removed Files Inventory section')
+else:
+    print('FAIL: could not find Files Inventory section to remove')
+    raise SystemExit(1)
+"
+
+  local exit_code=$(run_check "$dest" "cc55")
+  if [ "$exit_code" -ne 1 ]; then
+    failures+=("CC#55: exit=$exit_code (expected 1)")
+    echo "  FAIL: exit code $exit_code, expected 1"
+    return
+  fi
+  if ! grep -qE "DRIFT.*CC#55" "$WORK_DIR/cc55.log"; then
+    failures+=("CC#55: drift line missing in output")
+    echo "  FAIL: no drift line for CC#55"
+    cat "$WORK_DIR/cc55.log"
+    return
+  fi
+  echo "  PASS"
+}
+
+# ==============================================================================
 # CC#48 + CC#54: meta-checks must run together AND report failure on drift
 # ==============================================================================
 # This test verifies that in the clean state (no drift injected),
 # check_vault_drift.sh exits 0 and the final PASS message reports the
-# expected CC counts (46 python + 7 bash). If a future change to the
+# expected CC counts (47 python + 7 bash). If a future change to the
 # meta-check extraction logic (CC#48's python block detection or CC#54's
 # bash block extraction) silently drops a CC, this assertion catches it.
 test_meta_checks() {
@@ -222,7 +265,7 @@ test_meta_checks() {
     cat "$WORK_DIR/meta.log"
     return
   fi
-  if ! grep -qE "46 python CCs all clean, 7 bash CCs all clean" "$WORK_DIR/meta.log"; then
+  if ! grep -qE "47 python CCs all clean, 7 bash CCs all clean" "$WORK_DIR/meta.log"; then
     failures+=("CC#48+CC#54: PASS message format unexpected")
     echo "  FAIL: PASS message does not match expected format"
     cat "$WORK_DIR/meta.log"
@@ -241,6 +284,7 @@ echo
 test_cc4
 test_cc39
 test_cc46
+test_cc55
 test_meta_checks
 
 echo
