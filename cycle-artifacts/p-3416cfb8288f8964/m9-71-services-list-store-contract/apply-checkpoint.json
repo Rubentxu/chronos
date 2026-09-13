@@ -1,13 +1,13 @@
 {
   "cycle_id": "m9-71-services-list-store-contract",
-  "head_sha": "8bbd08c",
+  "head_sha": "f8abe7b91b70a7efb2633248d2e8aaea08b3c98a",
   "base_sha": "e9b6277170cb8059f5cd0340a3f66a5144558faf",
   "created_at": "2026-09-13T12:38Z",
   "route": "B-direct",
   "summary": "Closes FIND-M9-70-SERVICES-TABLE-STRING-MATCH. SessionsService::list_sessions tolerated a missing 'sessions' table by substring-matching the store error text (contains(\"does not exist\")); after m9-70 the store returns Ok(vec![]) for that case, so the branch was unreachable dead code that could also mask an unrelated store failure whose message happened to contain those words. The service now propagates the store error verbatim, and the 'no sessions yet' case is documented as a store contract at the call site. No observable behavior change post-m9-70: the existing list_sessions_empty test is promoted from vacuous to load-bearing, which is proved by reverting the store-side absent-table handling and watching it fail.",
   "title": "71 services list store contract",
-  "status": "OPEN",
-  "main_sha": "8bbd08c",
+  "status": "CLOSED",
+  "main_sha": "f8abe7b91b70a7efb2633248d2e8aaea08b3c98a",
   "findings_closed": [
     {
       "finding_id": "FIND-M9-70-SERVICES-TABLE-STRING-MATCH",
@@ -29,5 +29,14 @@
         "note": "crates/chronos-store/src/storage.rs::load_session handles the absent-table case with a wildcard, Err(_) => StoreError::SessionNotFound(...), in both read paths, while list_sessions and session_exists (same file, same concern, same commit in m9-70) match redb::TableError::TableDoesNotExist explicitly. The wildcard is harmless today (open_table on a read transaction realistically only fails with TableDoesNotExist), but it documents nothing and would misreport a future redb error variant as 'session not found'. Decide whether to make the three read paths agree on the explicit match. No behavior change today; no test can currently distinguish the two forms."
       }
     ]
-  }
+  },
+  "peel_match": true,
+  "remote_tag": "v0.7.73",
+  "remote_tag_peel": "f8abe7b91b70a7efb2633248d2e8aaea08b3c98a",
+  "release_status": "released",
+  "verify_status": "passed",
+  "archive_status": "archived",
+  "released_at": "2026-09-13T12:45Z",
+  "verified_at": "2026-09-13T12:38Z",
+  "archived_at": "2026-09-13T12:45Z"
 }
