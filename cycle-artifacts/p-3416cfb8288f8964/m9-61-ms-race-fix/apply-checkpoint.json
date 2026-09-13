@@ -1,0 +1,35 @@
+{
+  "cycle_id": "m9-61-ms-race-fix",
+  "head_sha": "5d4c00d36b14e56349b615e0a1d65186b273c510",
+  "base_sha": "97ce507d209eb1bb5d61a4d5b41c0f8bc068343a",
+  "created_at": "2026-09-13T09:21Z",
+  "route": "B-direct",
+  "summary": "Closed a drain/stop race in the probe lifecycle. Drain could be invoked while the probe thread was still emitting events, losing them. Fix: reorder stop-then-drain in ProbeService and BrowserProbeService, make NativeProbeBackend::stop_probe blocking (handle.join() inline instead of async spawn+channel), and update ProbeBackend trait doc to reflect blocking semantics. ADR-0005 (adaptive instrumentation).",
+  "title": "61 probe stop-then-drain race fix",
+  "status": "CLOSED",
+  "archived_at": "2026-09-13T09:21Z",
+  "main_sha": "5d4c00d36b14e56349b615e0a1d65186b273c510",
+  "peel_match": true,
+  "release_status": "released",
+  "released_at": "2026-09-13T09:21Z",
+  "remote_tag": "v0.7.63",
+  "remote_tag_peel": "5d4c00d36b14e56349b615e0a1d65186b273c510",
+  "verify_status": "passed",
+  "verified_at": "2026-09-13T09:21Z",
+  "archive_status": "archived",
+  "findings_closed": [
+    {
+      "finding_id": "FIND-MS-RACE-FIX-DRAIN-STOP",
+      "rule_id": "chronos.lifecycle.stop_drain_ordering",
+      "subject": {
+        "cycle": "m9-61-ms-race-fix",
+        "race_window": "drain_raw_events() vs probe thread emit",
+        "manifestation": "Events emitted in the window between drain_raw_events() return and probe thread exit were lost",
+        "fix": "stop_probe() now joins the probe thread inline (blocking, bounded by thread exit) before returning; ProbeService::stop / BrowserProbeService::stop reordered to stop-then-drain"
+      }
+    }
+  ],
+  "findings_introduced": {
+    "no_action": []
+  }
+}

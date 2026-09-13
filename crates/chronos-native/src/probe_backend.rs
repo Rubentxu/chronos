@@ -564,8 +564,10 @@ impl NativeProbeBackend {
     /// Stop an active probe session.
     ///
     /// Sets the running flag to false and kills the traced process to
-    /// interrupt any blocking waitpid. Returns immediately without waiting
-    /// for the probe thread to exit (non-blocking).
+    /// interrupt any blocking waitpid, then waits (bounded, 10 s timeout)
+    /// for the probe thread to exit before returning (blocking semantics,
+    /// MS-RACE-FIX / ADR-0005). This guarantees a subsequent
+    /// `drain_raw_events()` call observes every event the probe emitted.
     pub fn stop_probe(&self, session: &CaptureSession) -> Result<(), TraceError> {
         // CRIT-2: Signal the thread to stop (no spin-wait — the thread will exit
         // naturally when it checks running=false after the next wait_event returns).
@@ -589,39 +591,27 @@ impl NativeProbeBackend {
             debug!("stop_probe: traced_pid not yet set, relying on running=false to stop thread");
         }
 
-        // Detach the thread handle without joining — the probe thread will exit
-        // on its own once it sees running=false and/or the process is dead.
-        // We do NOT join here to avoid blocking the MCP server's response path.
+        // BLOCKING: join the probe thread inline before returning so that drain_raw_events
+        // called immediately after sees a fully-stopped producer. HIGH-5 timeout guards
+        // against a stuck thread so we never deadlock the caller.
+        let session_id = session.session_id.clone();
         if let Some(handle) = self
             .thread_handle
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .take()
         {
-            // HIGH-5: Use a channel to implement join-with-timeout so we don't
-            // leak if the probe thread is stuck in waitpid.
-            let session_id = session.session_id.clone();
-            std::thread::spawn(move || {
-                let (tx, rx) = std::sync::mpsc::channel::<()>();
-                std::thread::spawn(move || {
-                    let _ = handle.join();
-                    let _ = tx.send(());
-                });
-                match rx.recv_timeout(std::time::Duration::from_secs(10)) {
-                    Ok(()) => {
-                        info!("Probe thread exited cleanly for session {}", session_id)
-                    }
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                        warn!(
-                            "Probe thread did not exit within 10s for session {} — abandoning",
-                            session_id
-                        );
-                    }
-                    Err(_) => {
-                        warn!("Probe thread panicked during shutdown for {}", session_id)
-                    }
+            match handle.join() {
+                Ok(()) => {
+                    info!("Probe thread exited cleanly for session {}", session_id)
                 }
-            });
+                Err(_) => {
+                    warn!(
+                        "Probe thread panicked during shutdown for session {}",
+                        session_id
+                    );
+                }
+            }
         }
 
         Ok(())

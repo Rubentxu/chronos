@@ -51,7 +51,11 @@ pub trait ProbeBackend: Send {
 
     /// Stop the probe and release all resources.
     ///
-    /// This is non-blocking: it signals the probe thread to stop and returns immediately.
+    /// This is **blocking**: it signals the probe thread to stop and waits
+    /// (bounded by an implementation-defined timeout) for the capture thread
+    /// to exit before returning. This guarantees that a subsequent
+    /// [`ProbeBackend::drain_raw_events`] call observes every event the probe
+    /// emitted (no drain/stop race: MS-RACE-FIX, ADR-0005).
     fn stop_probe(&self, session: &CaptureSession) -> Result<(), TraceError>;
 
     /// Drain all raw trace events (for QueryEngine construction).

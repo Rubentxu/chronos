@@ -459,9 +459,8 @@ impl ProbeBackend for BrowserAdapter {
         }
         s.chrome = None;
 
-        // Clear event buffer
-        s.event_buffer.clear();
-
+        // NOTE: event_buffer is NOT cleared here — drain_raw_events() is called
+        // by the caller AFTER stop_probe returns (stop-then-drain contract, MS-RACE-FIX).
         Ok(())
     }
 }

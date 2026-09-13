@@ -241,23 +241,27 @@ impl ProbeService {
         let live_probe =
             live_probe.ok_or_else(|| ServiceError::ProbeNotFound(session_id.to_string()))?;
 
-        // Drain final raw events from the bus (for QueryEngine).
-        // drain_raw_events() returns TraceEvent directly, which is what
-        // build_and_store_engine needs.
-        let events: Vec<TraceEvent> = live_probe.backend.drain_raw_events();
+        // MS-RACE-FIX (ADR-0005): stop FIRST, then drain. `stop_probe` is
+        // blocking: it joins the capture thread (bounded) before returning,
+        // so draining afterwards observes every event the probe emitted.
+        // Draining before stopping loses events emitted in the race window.
+        if let Err(e) = live_probe.backend.stop_probe(&live_probe.session) {
+            tracing::warn!("Probe stop error for session {}: {}", session_id, e);
+        }
 
-        // Detach any eBPF uprobes this session owned before tearing down the
-        // ptrace thread. Best-effort; we still proceed to stop the backend.
+        // Detach any eBPF uprobes this session owned after the probe thread
+        // has exited. Best-effort.
         if let Some(adapter) = &live_probe.ebpf_adapter {
             if let Err(e) = adapter.detach_all() {
                 tracing::warn!("eBPF detach error for session {}: {}", session_id, e);
             }
         }
 
-        // Stop the probe thread
-        if let Err(e) = live_probe.backend.stop_probe(&live_probe.session) {
-            tracing::warn!("Probe stop error for session {}: {}", session_id, e);
-        }
+        // Drain final raw events from the bus (for QueryEngine). No concurrent
+        // producer remains at this point.
+        // drain_raw_events() returns TraceEvent directly, which is what
+        // build_and_store_engine needs.
+        let events: Vec<TraceEvent> = live_probe.backend.drain_raw_events();
 
         let total_events = events.len();
         let language = live_probe.language;

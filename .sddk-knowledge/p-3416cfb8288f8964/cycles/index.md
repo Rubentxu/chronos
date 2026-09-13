@@ -82,6 +82,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-58 | m9-58-change-entry-ciclo-table-short-sha | B-direct | `v0.7.60` | `c6ce0e678d2872001ffca68abaffe00b72d8c516` | CLOSED |
 | m9-59 | m9-59-apply-checkpoint-remote-tag-canonical | B-direct | `v0.7.61` | `d54747a6eeaeb828fbba9c7f09a219656e96561d` | CLOSED |
 | m9-60 | m9-60-cycle-artifacts-existence | B-direct | `v0.7.62` | `c8772352e912cc769a3f2143ee1df18051e99d35` | CLOSED |
+| m9-61 | m9-61-ms-race-fix | B-direct | `v0.7.63` | `5d4c00d36b14e56349b615e0a1d65186b273c510` | CLOSED |
 
 ## Metadata
 
@@ -89,5 +90,5 @@ Chronological record of all SDDK cycles for this project.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-12T19:07Z |
-| Total cycles | 60 |
+| Last updated | 2026-09-13T09:21Z |
+| Total cycles | 61 |
