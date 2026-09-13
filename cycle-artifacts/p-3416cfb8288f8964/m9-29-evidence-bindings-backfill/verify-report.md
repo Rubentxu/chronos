@@ -47,3 +47,7 @@ None — clean state.
 m9-11..m9-27 archive-manifests were missing the canonical `## Evidence bindings`
 section. m9-29 backfills it for all 17 cycles with one bullet per cycle artifact
 (path → SHA-256).
+
+## Files Inventory
+
+Files Inventory not recorded for this cycle (predates the canonical format introduced in m9-32). See the cycle's `release-report.md` `## Files changed` section for the file list.

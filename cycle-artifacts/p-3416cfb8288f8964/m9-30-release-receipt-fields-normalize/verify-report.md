@@ -40,3 +40,7 @@ None — clean state.
 m9-19..m9-27 release-receipts were authored with a minimal format (Cycle, Tag, Pee [typo], Released at) — no Head SHA field at all. m9-30 normalizes all 25 prior release-receipts (m9-03..m9-27) to the canonical format established by m9-28.
 
 C22 explicitly checks both field presence AND SHA consistency. C10 only checked SHA consistency when the field existed, missing the case where the field was absent.
+
+## Files Inventory
+
+Files Inventory not recorded for this cycle (predates the canonical format introduced in m9-32). See the cycle's `release-report.md` `## Files changed` section for the file list.

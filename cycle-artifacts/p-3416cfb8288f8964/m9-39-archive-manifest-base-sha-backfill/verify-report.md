@@ -34,6 +34,22 @@ Cross-check #31 added to vault-drift-sweep.md.
 - cycle: m9-39
 - branch: `fix/m9-39-archive-manifest-base-sha-and-verify-report-cross-checks`
 
+## Files Inventory
+
+21 files changed across the 1 commit (125 insertions, 1 deletions):
+
+| File | Change |
+|---|---|
+| `.sddk-knowledge/.../vault-drift-sweep.md` | vault drift sweep spec (+44 -1) |
+| `cycle-artifacts/p-3416cfb8288f8964/m9-34-verify-findings-and-archive-manifest-schema/verify-report.md` | cycle-artifact update (+5 -0) |
+| `cycle-artifacts/p-3416cfb8288f8964/m9-39-archive-manifest-base-sha-backfill/apply-checkpoint.json` | cycle-artifact update (+12 -0) |
+| `cycle-artifacts/p-3416cfb8288f8964/m9-39-archive-manifest-base-sha-backfill/verify-findings.json` | cycle-artifact update (+12 -0) |
+| `cycle-artifacts/p-3416cfb8288f8964/m9-39-archive-manifest-base-sha-backfill/verify-report.md` | cycle-artifact update (+36 -0) |
+| (16 prior archive-manifests) | archive-manifest update (+16 -0) |
+
+Total: 21 files, +125 -1 across 1 commit.
+
+_(Files Inventory backfilled by m9-68 from `git diff --numstat base_sha..head_sha`.)_
 ## Cross-checks
 
 - C31: pass (after fixes applied)

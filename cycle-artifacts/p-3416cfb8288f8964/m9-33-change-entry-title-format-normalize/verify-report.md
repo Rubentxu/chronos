@@ -10,6 +10,20 @@
 - head_sha: `837bc5c44a501e4c2253cc6fd257cc578bebf8e0`
 - cycle: m9-33
 
+## Files Inventory
+
+21 files changed across the 1 commit (59 insertions, 23 deletions):
+
+| File | Change |
+|---|---|
+| `.sddk-knowledge/.../vault-drift-sweep.md` | vault drift sweep spec (+36 -1) |
+| `.sddk-knowledge/.../cycles/index.md` | cycles registry (m9-NN row + Total cycles bump) (+3 -2) |
+| `.sddk-knowledge/.../terms/index.md` | terms registry (Last archive bump) (+2 -2) |
+| (18 prior change-entries) | change-entry update (+18 -18) |
+
+Total: 21 files, +59 -23 across 1 commit.
+
+_(Files Inventory backfilled by m9-68 from `git diff --numstat base_sha..head_sha`.)_
 ## Cross-checks
 
 - C1: PASS

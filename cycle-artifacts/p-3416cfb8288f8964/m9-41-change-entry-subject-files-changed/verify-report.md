@@ -46,6 +46,20 @@ change-entry.md Subject sections to satisfy C29-B.
 - cycle: m9-41
 - branch: `fix/m9-41-change-entry-subject-section-normalize`
 
+## Files Inventory
+
+71 files changed across the 1 commit (939 insertions, 150 deletions):
+
+| File | Change |
+|---|---|
+| `.sddk-knowledge/.../vault-drift-sweep.md` | vault drift sweep spec (+71 -1) |
+| (9 prior cycle-artifact files) | cycle-artifact update (+122 -2) |
+| (27 prior archive-manifests) | archive-manifest update (+135 -0) |
+| (34 prior change-entries) | change-entry update (+611 -147) |
+
+Total: 71 files, +939 -150 across 1 commit.
+
+_(Files Inventory backfilled by m9-68 from `git diff --numstat base_sha..head_sha`.)_
 ## Cross-checks
 
 - C33: pass (after fixes applied)

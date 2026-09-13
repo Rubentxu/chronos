@@ -53,3 +53,7 @@ C20 prevents recurrence: it enforces `base_sha == head_sha^` for fix-peel
 cycles (m9-07+ where tags peel to a `fix(m9-XX): ...` commit). Docs-peel
 cycles (m9-03..m9-06) are exempted because they branched off docs commits
 not fix commits.
+
+## Files Inventory
+
+Files Inventory not recorded for this cycle (predates the canonical format introduced in m9-32). See the cycle's `release-report.md` `## Files changed` section for the file list.

@@ -28,6 +28,18 @@ Cross-check #41 added.
 - cycle: m9-49
 - branch: `fix/m9-49-release-report-backfill`
 
+## Files Inventory
+
+20 files changed across the 1 commit (291 insertions, 8 deletions):
+
+| File | Change |
+|---|---|
+| `.sddk-knowledge/.../vault-drift-sweep.md` | vault drift sweep spec (+42 -1) |
+| (19 prior cycle-artifact files) | cycle-artifact update (+249 -7) |
+
+Total: 20 files, +291 -8 across 1 commit.
+
+_(Files Inventory backfilled by m9-68 from `git diff --numstat base_sha..head_sha`.)_
 ## Cross-checks
 
 - C41: pass (after fixes applied)
