@@ -56,10 +56,16 @@ setup_work_copy() {
 }
 
 # Run check_vault_drift.sh in the work dir and capture output + exit code.
+# Note: capture exit code BEFORE the redirect, because the redirect itself
+# would clobber $? from the script exit. The subshell parentheses ensure
+# the inner script's exit propagates cleanly. Each call writes to a
+# per-test log file so we can inspect failures after the fact.
 run_check() {
   local dest="$1"
-  ( cd "$dest" && ./scripts/check_vault_drift.sh ) > "$WORK_DIR/out.log" 2>&1
-  echo $?
+  local test_name="$2"
+  ( cd "$dest" && ./scripts/check_vault_drift.sh ) > "$WORK_DIR/${test_name}.log" 2>&1
+  local rc=$?
+  echo "$rc"
 }
 
 # Result tracking.
@@ -96,16 +102,16 @@ else:
     sys.exit(1)
 "
 
-  local exit_code=$(run_check "$dest")
+  local exit_code=$(run_check "$dest" "cc4")
   if [ "$exit_code" -ne 1 ]; then
     failures+=("CC#4: exit=$exit_code (expected 1)")
     echo "  FAIL: exit code $exit_code, expected 1"
     return
   fi
-  if ! grep -qE "DRIFT.*CC#4" "$WORK_DIR/out.log"; then
+  if ! grep -qE "DRIFT.*CC#4" "$WORK_DIR/cc4.log"; then
     failures+=("CC#4: drift line missing in output")
     echo "  FAIL: no drift line for CC#4"
-    cat "$WORK_DIR/out.log"
+    cat "$WORK_DIR/cc4.log"
     return
   fi
   echo "  PASS"
@@ -129,21 +135,30 @@ test_cc39() {
   python3 -c "
 path = '$dest/.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md'
 with open(path) as f: content = f.read()
-content = content.replace('| Total cycles | 66 |', '| Total cycles | 99 |')
+# Read current Total cycles value and bump it. The literal value changes
+# each cycle as new cycles are added, so we must read it dynamically.
+import re
+m = re.search(r'(\| Total cycles \| )(\d+)( \|)', content)
+if not m:
+    print('FAIL: could not find Total cycles row')
+    raise SystemExit(1)
+current = int(m.group(2))
+bad = current + 100  # any number that won't match filesystem
+content = content.replace(m.group(0), m.group(1) + str(bad) + m.group(3), 1)
 with open(path, 'w') as f: f.write(content)
-print('Injected drift')
+print('Injected drift (current=' + str(current) + ', bad=' + str(bad) + ')')
 "
 
-  local exit_code=$(run_check "$dest")
+  local exit_code=$(run_check "$dest" "cc39")
   if [ "$exit_code" -ne 1 ]; then
     failures+=("CC#39: exit=$exit_code (expected 1)")
     echo "  FAIL: exit code $exit_code, expected 1"
     return
   fi
-  if ! grep -qE "DRIFT.*CC#39" "$WORK_DIR/out.log"; then
+  if ! grep -qE "DRIFT.*CC#39" "$WORK_DIR/cc39.log"; then
     failures+=("CC#39: drift line missing in output")
     echo "  FAIL: no drift line for CC#39"
-    cat "$WORK_DIR/out.log"
+    cat "$WORK_DIR/cc39.log"
     return
   fi
   echo "  PASS"
@@ -170,16 +185,16 @@ test_cc46() {
     git checkout -q -b 'fix/m9-99-smoke-test' 2>/dev/null
   )
 
-  local exit_code=$(run_check "$dest")
+  local exit_code=$(run_check "$dest" "cc46")
   if [ "$exit_code" -ne 1 ]; then
     failures+=("CC#46: exit=$exit_code (expected 1)")
     echo "  FAIL: exit code $exit_code, expected 1"
     return
   fi
-  if ! grep -qE "DRIFT.*CC#46" "$WORK_DIR/out.log"; then
+  if ! grep -qE "DRIFT.*CC#46" "$WORK_DIR/cc46.log"; then
     failures+=("CC#46: drift line missing in output")
     echo "  FAIL: no drift line for CC#46"
-    cat "$WORK_DIR/out.log"
+    cat "$WORK_DIR/cc46.log"
     return
   fi
   echo "  PASS"
@@ -200,17 +215,17 @@ test_meta_checks() {
   setup_work_copy "$dest"
 
   # No drift injection; expect PASS, exit 0.
-  local exit_code=$(run_check "$dest")
+  local exit_code=$(run_check "$dest" "meta")
   if [ "$exit_code" -ne 0 ]; then
     failures+=("CC#48+CC#54: clean state exit=$exit_code (expected 0)")
     echo "  FAIL: clean state did not exit 0"
-    cat "$WORK_DIR/out.log"
+    cat "$WORK_DIR/meta.log"
     return
   fi
-  if ! grep -qE "46 python CCs all clean, 7 bash CCs all clean" "$WORK_DIR/out.log"; then
+  if ! grep -qE "46 python CCs all clean, 7 bash CCs all clean" "$WORK_DIR/meta.log"; then
     failures+=("CC#48+CC#54: PASS message format unexpected")
     echo "  FAIL: PASS message does not match expected format"
-    cat "$WORK_DIR/out.log"
+    cat "$WORK_DIR/meta.log"
     return
   fi
   echo "  PASS"
