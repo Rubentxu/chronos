@@ -375,3 +375,25 @@ CHRONOS_ALLOW_IN_MEMORY_FALLBACK=1 chronos-mcp
 | `delete_session` | Both | Deletes | No (error if missing) | Yes |
 | `drop_session` | Memory only | No | Yes | Yes |
 | `compare_sessions` | Both | No | Yes | Yes |
+
+## Attach a running process
+
+On Linux, `session_start` can attach Chronos to a running process you own:
+
+```json
+{"action":"attach","pid":12345}
+```
+
+The response contains a new `session_id` and a capability snapshot. Use
+`probe_drain` and `capabilities` with that session just as you would for a
+spawned probe.
+
+Attach uses Linux `ptrace`, so it can fail because the PID no longer exists,
+you do not have permission to trace it, or the host `ptrace_scope` policy is
+restrictive. Chronos reports those cases as an attach failure rather than
+starting a partial session.
+
+> **Current lifecycle constraint:** `session_stop` is intentionally rejected
+> for attached processes because the legacy stop path owns and terminates
+> spawned targets. Close the MCP server to detach safely. A graceful explicit
+> detach operation is deferred work.

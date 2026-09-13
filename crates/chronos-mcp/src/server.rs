@@ -2361,6 +2361,15 @@ impl ChronosServer {
                     "internal error: unexpected invalid export parameter",
                 )));
             }
+            // m9-77: AttachFailed cannot be produced by this call site
+            // (list_threads does not invoke the attach path) but is
+            // listed for exhaustiveness against the ServiceError enum.
+            Err(ServiceError::AttachFailed(msg)) => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "internal error: unexpected attach failure: {}",
+                    msg
+                ))));
+            }
         };
 
         let output = serde_json::json!({
@@ -3885,7 +3894,7 @@ impl ChronosServer {
 
     #[tool(
         name = "session_start",
-        description = "Start, load, or attach a session. action='spawn' starts a new probe (returns session_id + capability_snapshot); action='load' reads an existing session from the store; action='attach' is currently a stub (m7+)."
+        description = "Start, load, or attach a session. action='spawn' starts a new probe (returns session_id + capability_snapshot); action='load' reads an existing session from the store; action='attach' ptrace-attaches to a running process by pid and returns its capability_snapshot (Linux only; m9-77)."
     )]
     async fn session_start(
         &self,
@@ -3970,6 +3979,9 @@ impl ChronosServer {
                 format!("Session '{}' not found", s),
             ))),
             Err(ServiceError::LoadFailed(msg)) => Ok(CallToolResult::error(text_content(msg))),
+            Err(ServiceError::AttachFailed(msg)) => Ok(CallToolResult::error(text_content(
+                format!("session_start{{action=attach}} failed: {}", msg),
+            ))),
             Err(other) => Ok(CallToolResult::error(text_content(format!(
                 "internal error: unexpected session_start error: {}",
                 other
@@ -7690,6 +7702,7 @@ mod tests {
             session: dummy_session,
             language: Language::Rust,
             target: "noop".to_string(),
+            attached: false,
             ebpf_adapter: None,
             ebpf_attachment: None,
         };
@@ -7793,6 +7806,7 @@ mod tests {
             session: dummy_session,
             language: chronos_domain::Language::C,
             target: "noop".to_string(),
+            attached: false,
             ebpf_adapter: None,
             ebpf_attachment: None,
         };

@@ -39,6 +39,10 @@ pub struct LiveProbeSession {
     pub language: Language,
     /// Path to the target binary.
     pub target: String,
+    /// True when this session ptrace-attaches to a caller-owned process.
+    /// The legacy stop backend terminates its tracee, which is appropriate for
+    /// spawned probes but must not be applied to an attached process.
+    pub attached: bool,
     /// eBPF adapter owned by this session, if any uprobes have been injected.
     /// Stored here so the lifecycle is observable: subsequent `probe_inject`
     /// calls reuse the same adapter, and `probe_stop` detaches cleanly.
@@ -98,6 +102,32 @@ pub struct ProbeStartInput {
     pub cwd: Option<String>,
     pub bus_capacity: usize,
     pub track_function_frames: Option<bool>,
+}
+
+/// Input for `ProbeService::start_attach` (m9-77).
+///
+/// `pid` is the running process to attach to. The dispatcher resolves the
+/// binary path from `/proc/<pid>/exe`, so the caller does not supply a
+/// program name. `trace_syscalls` and `bus_capacity` mirror the spawn
+/// defaults.
+#[derive(Debug, Clone)]
+pub struct ProbeAttachInput {
+    pub pid: u32,
+    pub trace_syscalls: bool,
+    pub bus_capacity: usize,
+}
+
+/// Output for `ProbeService::start_attach` (m9-77).
+///
+/// `session_id` is the freshly minted id under which the live probe is
+/// registered in `ctx.live_probes` (same key shape as `ProbeStartOutput`).
+#[derive(Debug)]
+pub struct ProbeAttachOutput {
+    pub session_id: String,
+    pub pid: u32,
+    pub target: String,
+    pub language: String,
+    pub bus_capacity: usize,
 }
 
 /// Input for `ProbeService::drain`.
@@ -200,6 +230,7 @@ impl ProbeService {
             session,
             language,
             target: input.program.clone(),
+            attached: false,
             ebpf_adapter: None,
             ebpf_attachment: None,
         };
@@ -225,18 +256,112 @@ impl ProbeService {
         })
     }
 
+    /// Attach the live probe to an already-running process (m9-77).
+    ///
+    /// Resolves the running binary from `/proc/<pid>/exe`, builds a
+    /// `CaptureConfig`, calls `NativeProbeBackend::attach_probe`, registers
+    /// the returned `CaptureSession` under `ctx.live_probes`, and marks
+    /// `ctx.active_session` to the new id. The dispatcher surfaces the
+    /// returned `ProbeAttachOutput` as `SessionStartOutput { action: Attach }`.
+    ///
+    /// **Linux-only at the implementation level.** On non-Linux
+    /// `resolve_pid_target` returns `Err`, so the call fails closed before
+    /// any ptrace syscall. **Same-uid / same-pid only**: `PtraceTracer::attach`
+    /// returns `EPERM` for foreign-uids; the error is surfaced as
+    /// `ServiceError::AttachFailed` and the backend's `running` flag is
+    /// cleared by the spawned thread's failure path (HIGH-4 invariant).
+    pub fn start_attach(
+        ctx: &ProbeContext<'_>,
+        input: ProbeAttachInput,
+    ) -> Result<ProbeAttachOutput, ServiceError> {
+        let target = resolve_pid_target(input.pid).map_err(|e| {
+            ServiceError::AttachFailed(format!(
+                "could not resolve target for pid {}: {}",
+                input.pid, e
+            ))
+        })?;
+        let language = Language::from_path(&target);
+        // `Language::from_path` returns `Unknown` for binaries without a
+        // recognised extension (typical native executables). A binary that
+        // is already running is almost certainly a native ELF executable,
+        // so default to `Native` rather than `Unknown` — the language is
+        // surfaced in the capability snapshot and `Unknown` would be
+        // misleading.
+        let language = if language == Language::Unknown {
+            Language::Native
+        } else {
+            language
+        };
+        let config = CaptureConfig {
+            target: target.clone(),
+            args: Vec::new(),
+            env: None,
+            cwd: None,
+            language: Some(language),
+            capture_syscalls: input.trace_syscalls,
+            capture_variables: false,
+            capture_stack: true,
+            capture_memory: false,
+            capture_function_exit: false,
+            function_filter: None,
+            max_duration_ms: None,
+        };
+        let bus = EventBus::new_shared(input.bus_capacity);
+        let backend = NativeProbeBackend::new(bus).with_language(language);
+        let session = backend.attach_probe(input.pid, config).map_err(|e| {
+            ServiceError::AttachFailed(format!(
+                "NativeProbeBackend::attach_probe({}) failed: {}",
+                input.pid, e
+            ))
+        })?;
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let live = crate::probe::LiveProbeSession {
+            backend,
+            session,
+            language,
+            target: target.clone(),
+            attached: true,
+            ebpf_adapter: None,
+            ebpf_attachment: None,
+        };
+        ctx.live_probes
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?
+            .insert(session_id.clone(), live);
+        info!(
+            "Live probe attached to pid {} ('{}', session: {}, bus capacity: {})",
+            input.pid, target, session_id, input.bus_capacity
+        );
+        Ok(ProbeAttachOutput {
+            session_id,
+            pid: input.pid,
+            target,
+            language: format!("{:?}", language),
+            bus_capacity: input.bus_capacity,
+        })
+    }
+
     /// Stop a live native probe session.
     ///
     /// Returns the drained raw `TraceEvent`s and metadata so the server-side
     /// wrapper can call `build_and_store_engine` (which still lives on the
     /// server because it touches `engines` and `session_languages`).
     pub fn stop(ctx: &ProbeContext<'_>, session_id: &str) -> Result<ProbeStopResult, ServiceError> {
-        // Remove the live probe session
-        let live_probe = ctx
+        let mut live_probes = ctx
             .live_probes
             .lock()
-            .map_err(|_| ServiceError::LockPoisoned)?
-            .remove(session_id);
+            .map_err(|_| ServiceError::LockPoisoned)?;
+        if live_probes
+            .get(session_id)
+            .is_some_and(|live_probe| live_probe.attached)
+        {
+            return Err(ServiceError::Unsupported(
+                "session_stop for an attached process is not available yet; closing the MCP server detaches it without terminating the target".to_string(),
+            ));
+        }
+
+        // Remove the live probe session only after the ownership safety check.
+        let live_probe = live_probes.remove(session_id);
 
         let live_probe =
             live_probe.ok_or_else(|| ServiceError::ProbeNotFound(session_id.to_string()))?;
@@ -575,6 +700,33 @@ impl ProbeService {
 /// for this.
 fn ctx_infer_language(program: &str) -> Language {
     Language::from_path(program)
+}
+
+/// Resolve the binary path of a running pid (m9-77).
+///
+/// Linux: reads the symlink at `/proc/<pid>/exe`, which always exists for
+/// running processes and resolves through deleted-binary links. The result
+/// is the path the kernel reports as the currently-executing binary; if the
+/// binary has been deleted on disk, the path still resolves (with the
+/// ` (deleted)` suffix), and the downstream `attach_probe` call will fail
+/// at symbol-load time with `CaptureFailed`.
+///
+/// Non-Linux: returns `Err` so the caller fails closed. The dispatcher
+/// surfaces this as `ServiceError::AttachFailed("… requires Linux")`.
+fn resolve_pid_target(pid: u32) -> Result<String, String> {
+    #[cfg(target_os = "linux")]
+    {
+        let link = format!("/proc/{}/exe", pid);
+        match std::fs::read_link(&link) {
+            Ok(path) => Ok(path.to_string_lossy().into_owned()),
+            Err(e) => Err(format!("read_link({}): {}", link, e)),
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = pid;
+        Err("session_start{action=attach} requires Linux".to_string())
+    }
 }
 
 // The imports below are currently used by `ProbeService::start`. As follow-up

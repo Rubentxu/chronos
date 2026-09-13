@@ -87,7 +87,7 @@ impl ChronosSessionLifecycleService {
     /// Routes by `action`:
     /// - `Spawn`  → `ProbeService::start` (async)
     /// - `Load`   → `SessionStore::load_session` (synchronous read)
-    /// - `Attach` → `ServiceError::Unsupported("attach (m7+)")`
+    /// - `Attach` → `ProbeService::start_attach` (m9-77)
     pub async fn start(
         ctx: &SessionLifecycleContext<'_>,
         input: SessionStartInput,
@@ -95,7 +95,7 @@ impl ChronosSessionLifecycleService {
         match input.action {
             SessionStartAction::Spawn => Self::spawn(ctx, input).await,
             SessionStartAction::Load => Self::load(ctx.store, input),
-            SessionStartAction::Attach => Self::attach(input),
+            SessionStartAction::Attach => Self::attach(ctx, input),
         }
     }
 
@@ -177,15 +177,47 @@ impl ChronosSessionLifecycleService {
         })
     }
 
-    fn attach(input: SessionStartInput) -> Result<SessionStartOutput, ServiceError> {
-        if input.pid.is_none() {
+    fn attach(
+        ctx: &SessionLifecycleContext<'_>,
+        input: SessionStartInput,
+    ) -> Result<SessionStartOutput, ServiceError> {
+        let pid = input.pid.ok_or_else(|| {
+            ServiceError::InvalidInput("session_start{action=attach} requires `pid`".to_string())
+        })?;
+        if pid == 0 {
             return Err(ServiceError::InvalidInput(
-                "session_start{action=attach} requires `pid` (m7+)".to_string(),
+                "session_start{action=attach} requires a non-zero `pid`".to_string(),
             ));
         }
-        Err(ServiceError::Unsupported(
-            "session_start{action=attach} (m7+) — no domain-layer attach API yet".to_string(),
-        ))
+        let out = ProbeService::start_attach(
+            ctx.probe,
+            crate::probe::ProbeAttachInput {
+                pid,
+                trace_syscalls: false, // default; matches m7-04 spawn default
+                bus_capacity: 4096,
+            },
+        )?;
+        let snapshot = CapabilitySnapshot {
+            probe_type: Some("ebpf_user".to_string()),
+            language: Some(out.language.clone()),
+            bus_capacity: Some(out.bus_capacity),
+            bus_fill: Some(0),
+            query_engine_ready: false,
+            active_subscriptions: vec![],
+            tail_sealed: false,
+            sealed_at: None,
+        };
+        Ok(SessionStartOutput {
+            session_id: out.session_id,
+            action: SessionStartAction::Attach,
+            target: Some(out.target),
+            language: Some(out.language),
+            event_count: None,
+            duration_ms: None,
+            bus_capacity: Some(out.bus_capacity),
+            capability_snapshot: snapshot,
+            provenance: lifecycle_provenance("session_start:attach"),
+        })
     }
 
     /// v2 `session_stop` dispatcher entrypoint (helper, single-call).
@@ -644,6 +676,10 @@ mod tests {
 
     #[test]
     fn start_attach_without_pid_returns_invalid_input() {
+        // Guard fires before any probe call, so the minimal ctx (whose
+        // probe is never read) is sufficient.
+        let store = empty_store();
+        let ctx = build_minimal_ctx(&store);
         let input = SessionStartInput {
             action: SessionStartAction::Attach,
             spawn_fields: None,
@@ -651,21 +687,51 @@ mod tests {
             pid: None,
             path: None,
         };
-        let err = ChronosSessionLifecycleService::attach(input).unwrap_err();
+        let err = ChronosSessionLifecycleService::attach(&ctx, input).unwrap_err();
         assert!(matches!(err, ServiceError::InvalidInput(_)));
     }
 
     #[test]
-    fn start_attach_with_pid_returns_unsupported() {
+    fn start_attach_to_unknown_pid_returns_attach_failed() {
+        // 0xfffffffe is in the unmapped pid range; `read_link` on
+        // `/proc/<pid>/exe` returns ENOENT and the dispatcher surfaces
+        // it as `ServiceError::AttachFailed`. The minimal probe context
+        // is fine because the failure happens before any ptrace call.
+        let store = empty_store();
+        let ctx = build_minimal_ctx(&store);
         let input = SessionStartInput {
             action: SessionStartAction::Attach,
             spawn_fields: None,
             session_id: None,
-            pid: Some(4242),
+            pid: Some(0xfffffffe),
             path: None,
         };
-        let err = ChronosSessionLifecycleService::attach(input).unwrap_err();
-        assert!(matches!(err, ServiceError::Unsupported(_)));
+        let err = ChronosSessionLifecycleService::attach(&ctx, input).unwrap_err();
+        match err {
+            ServiceError::AttachFailed(msg) => {
+                assert!(
+                    msg.contains("0xfffffffe") || msg.contains("4294967294"),
+                    "AttachFailed message must name the pid, got: {}",
+                    msg
+                );
+            }
+            other => panic!("expected AttachFailed, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn start_attach_with_zero_pid_returns_invalid_input() {
+        let store = empty_store();
+        let ctx = build_minimal_ctx(&store);
+        let input = SessionStartInput {
+            action: SessionStartAction::Attach,
+            spawn_fields: None,
+            session_id: None,
+            pid: Some(0),
+            path: None,
+        };
+        let err = ChronosSessionLifecycleService::attach(&ctx, input).unwrap_err();
+        assert!(matches!(err, ServiceError::InvalidInput(_)));
     }
 
     // ---- capabilities ----

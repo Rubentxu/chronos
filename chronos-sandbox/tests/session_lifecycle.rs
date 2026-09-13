@@ -1,6 +1,7 @@
 //! Session lifecycle tests — verify delete_session and drop_session work correctly.
 
 use chronos_sandbox::client::tools::McpTestClient;
+use chronos_sandbox::client::types::SessionStartAction;
 use chronos_sandbox::McpSession;
 use std::time::Duration;
 
@@ -349,17 +350,36 @@ async fn test_session_start_load_returns_metadata() {
 }
 
 #[tokio::test]
-async fn test_session_start_attach_returns_unsupported() {
+async fn test_session_start_attach_to_running_self() {
     let mut client = McpTestClient::start()
         .await
         .expect("Failed to start MCP server");
 
-    // attach is a stub (m7+); expect a server-side error response.
-    let result = client.session_start_attach(std::process::id()).await;
-    // We don't assert on the exact error shape because rmcp surfaces
-    // errors as text content; the test passes if we reach here without
-    // a panic (the dispatcher returns ServiceError::Unsupported).
-    let _ = result;
+    // The server is a child of this test process, so Linux ptrace permits
+    // attaching to its direct parent under the usual Yama policy.
+    let start = client
+        .session_start_attach(std::process::id())
+        .await
+        .expect("session_start attach to the running test process failed");
+    assert_eq!(start.action, SessionStartAction::Attach);
+    assert!(!start.session_id.is_empty());
+    assert_eq!(
+        start
+            .capability_snapshot
+            .get("probe_type")
+            .and_then(serde_json::Value::as_str),
+        Some("ebpf_user")
+    );
+
+    // A successful capabilities lookup proves attach registered the probe in
+    // live_probes, rather than merely returning an optimistic response. Do not
+    // call session_stop here: its legacy stop path terminates spawned targets,
+    // while an attached target is caller-owned. Server shutdown detaches it.
+    let capabilities = client
+        .capabilities_session(&start.session_id)
+        .await
+        .expect("capabilities after attach failed");
+    assert!(capabilities.dynamic_capabilities.is_some());
 
     client.shutdown().await.ok();
 }

@@ -222,3 +222,26 @@ CHRONOS_ALLOW_IN_MEMORY_FALLBACK=1 chronos-mcp
 | `delete_session` | Ambos | Elimina | No (error si no existe) | Sí |
 | `drop_session` | Solo memória | No | Sí | Sí |
 | `compare_sessions` | Ambos | No | Sí | Sí |
+
+## Adjuntar un proceso en ejecución
+
+En Linux, `session_start` puede adjuntar Chronos a un proceso en ejecución que
+te pertenezca:
+
+```json
+{"action":"attach","pid":12345}
+```
+
+La respuesta incluye un nuevo `session_id` y una instantánea de capacidades.
+Usa `probe_drain` y `capabilities` con esa sesión como con una sonda iniciada
+mediante `spawn`.
+
+El adjunto usa `ptrace` de Linux. Puede fallar si el PID ya no existe, no tienes
+permiso para rastrearlo o la política `ptrace_scope` del host es restrictiva.
+Chronos devuelve un error de adjunto y no crea una sesión parcial.
+
+> **Limitación actual del ciclo de vida:** `session_stop` se rechaza
+> deliberadamente para procesos adjuntos porque la ruta heredada de parada es
+> propietaria de los procesos iniciados por Chronos y los termina. Cierra el
+> servidor MCP para desadjuntar con seguridad. Una operación explícita de
+> desadjunto gradual queda para trabajo posterior.
