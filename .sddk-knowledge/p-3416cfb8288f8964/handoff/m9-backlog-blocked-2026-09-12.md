@@ -471,3 +471,34 @@ The third instance is the most important: the smoke test is the first piece of c
 Net cycle delta this session: 64 → 67 (m9-65 + m9-66 + m9-67).
 Net CC delta this session: 52 → 54 (CC#53 + CC#54; m9-67 added no new CC).
 Vault state: canonical, 67 cycles indexed, 54 CCs documented, peel_match verified for m9-65/m9-66/m9-67.
+
+
+
+## Session 2026-09-13T11:13Z: m9-68 (verify-report Files Inventory backfill + CC#55)
+
+Closed the deferred follow-up tracked in m9-65/m9-66/m9-67 release-reports: "CC for `## Files Inventory` in verify-report" (cosmetic, 22 cycles m9-32..m9-53). Three things in one focused B-direct:
+
+| Item | Status |
+|---|---|
+| 22 verify-reports (m9-32..m9-53) | BACKFILLED with `## Files Inventory` (data from `git diff --numstat`) |
+| 21 verify-reports (m9-11..m9-31) | BACKFILL NOTES added (predates canonical format) |
+| CC#55 (python, auto-executed by CC#48) | ADDED — catches future regressions |
+| Smoke test extended with test_cc55 | 5/5 PASS in ~50s wall time |
+
+Gates:
+- T-self: 5 smoke tests PASS
+- CC#48 + CC#54: PASS (47 python + 7 bash CCs all clean)
+
+### CC#55 design pattern (mirrors CC#24)
+
+CC#24 (added in m9-32) watches for `## Cross-checks`. CC#55 (added in m9-68) watches for `## Files Inventory`. Both are python CCs auto-executed by CC#48. Both accept backfill notes for older cycles that predate the canonical format. The pattern of "introduce a section + add a CC that watches for it + accept-by-design for legacy" is now established and reproducible.
+
+### Open follow-ups
+
+- **Bounded join unit test** (deferred from m9-62): 10s runtime blocker.
+- **5+19 not-merged branches triage** (preserved from m9-65): human review needed.
+- **Sandbox test warm-up ordering**: `test_session_start_via_v2_then_session_stop_via_v2` fails alone, passes with full file (likely MCP server binary warm-up).
+
+Net cycle delta this session: 65 → 68 (m9-65 + m9-66 + m9-67 + m9-68).
+Net CC delta this session: 52 → 55 (CC#53, CC#54, CC#55).
+Vault state: canonical, 68 cycles indexed, 55 CCs documented, peel_match verified for m9-65/m9-66/m9-67/m9-68.
