@@ -282,3 +282,25 @@ Net CC delta: 51 → 52.
 Vault state: canonical, 52 CCs clean.
 
 All m9-61 follow-ups closed.
+
+
+## Session 2026-09-13T10:25Z: m9-64 (vault drift CI workflow)
+
+Closed a CI gap: the 52 vault CCs only ran manually during SDDK
+cycles. A regression in vault files would not be caught until the
+next session's drift sweep. Single B-direct commit (339f7b5 on
+feat/m9-64-vault-drift-ci). Tag v0.7.66.
+
+| Item | Status |
+|---|---|
+| Vault drift CI workflow | CLOSED (m9-64-vault-drift-ci) |
+| .github/workflows/vault-drift.yml | added |
+| scripts/check_vault_drift.sh | added |
+| Self-test (synthetic m9-99 drift) | PASS |
+
+Gates:
+- T0: fmt + clippy PASS
+- ./scripts/check_vault_drift.sh: PASS (52 CCs all clean)
+- Self-test: synthetic m9-99 row injected, script exits 1 + reports DRIFT
+
+Vault: 64 cycles indexed, 52 cross-checks clean, peel_match verified.
