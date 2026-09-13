@@ -371,3 +371,58 @@ Net cycle delta this session: 63 → 65.
 Net CC delta this session: 52 → 53.
 Vault state: canonical, 53 CCs documented, peel_match verified.
 
+
+
+## Session 2026-09-13T12:21Z: m9-66 (vault drift detection hardening)
+
+Closed 3 drift classes with one focused B-direct cycle. CC#4 had a
+silently-broken awk regex (backticks not stripped before match) that
+prevented it from ever firing — discovered 54 stale SHAs in m9-01..m9-10
+archive-manifests. CC#5 was off-by-16 since the m6/m7/m8 milestone rows
+were added. CC#54 added as a bash meta-check (sibling of CC#48) so the
+7 bash CCs are now auto-validated alongside the 46 python CCs.
+
+| Item | Status |
+|---|---|
+| CC#4 awk regex | FIXED (strip backticks + trim whitespace; exclude self-reference) |
+| CC#5 regex | FIXED (m9-* only) |
+| CC#54 (bash meta-check) | ADDED (sibling of CC#48) |
+| 54 stale SHAs in m9-01..m9-10 | REGENERATED |
+| check_vault_drift.sh | REFACTORED to invoke both CC#48 + CC#54 |
+
+Gates:
+- T0: fmt + clippy PASS
+- T1: chronos-domain/-services/-browser: 263 passed
+- T1: chronos-native: 99 passed
+- T4-smoke: e2e_connectivity + probe_lifecycle (full file): 6/6 passed
+- CC#48 + CC#54: PASS (46 python + 7 bash CCs all clean)
+
+Self-tests performed:
+- Inject wrong Total cycles (65→99): CC#5 catches → script exit 1
+- Inject wrong SHA in m9-01 manifest: CC#4 catches → script exit 1
+- Post-fix clean state: PASS
+
+Cross-check note (m9-62 follow-up partially addressed):
+- The "bounded join unit test" remains deferred (10s test runtime is the blocker)
+
+Vault: 66 cycles indexed, 54 cross-checks documented (46 python + 7 bash + 1 self = 54 total).
+
+### Pattern observed: "fix a broken CC, then fix what it would have caught"
+
+m9-65 surfaced 49 stale branches that CC#46 was missing.
+m9-66 surfaced 54 stale SHAs that CC#4 was silently failing to detect.
+Both times the fix was: improve the CC, then deal with the accumulated drift.
+A future "CC smoke test" cycle could periodically inject drift into each
+CC to confirm it's still firing — this is deferred.
+
+### Open follow-ups
+
+- **Bounded join unit test** (deferred from m9-62): 10s test runtime is the blocker.
+- **CC for `## Files Inventory` in verify-report** (deferred): 22 cycles m9-32..m9-53 lack the section.
+- **5+19 not-merged branches triage** (deferred from m9-65): human review recommended.
+- **CC smoke test cycle**: implement periodic drift injection to confirm every CC still fires.
+- **Sandbox test warm-up ordering**: `test_session_start_via_v2_then_session_stop_via_v2` fails when run alone, passes with full file (likely MCP server binary warm-up).
+
+Net cycle delta this session: 64 → 66 (m9-65 + m9-66).
+Net CC delta this session: 52 → 54 (CC#53 + CC#54).
+Vault state: canonical, 54 CCs documented, peel_match verified for both m9-65 and m9-66.
