@@ -56,8 +56,8 @@ Two commits:
 
 | Kind | Path | SHA-256 |
 |---|---|---|
-| archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-67-cc-smoke-test/archive-manifest.md` | `9dcc2d731ed0d3251cc8dd540027032354c555bb10d4c361c1bad197d3b04d1a` |
-| smoke-test script | `scripts/smoke_test_ccs.sh` | `bf48358eda758458ebcd6bf34c96d6695be5390bfcf1f490d7bff23f3d7e8dcd` |
+| archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-67-cc-smoke-test/archive-manifest.md` | `b9985057d0533b0f396302a34933fd7e35ce68bb317edfefc5aedaf849490944` |
+| smoke-test script | `scripts/smoke_test_ccs.sh` | `a5108fe42a51d33553a871c8ddc440bba00380903f40709be65849f665b76645` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/apply-checkpoint.json` | `4042c770f605fe7baf53a768be05b91f2ed604e5f684e7679663a76999f770b8` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/verify-report.md` | `9981b7eb1a0a4061941343762fc9222e004765090802fe9039a16b5f913e841e` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/verify-findings.json` | `1f78155b680ea4209b4280bc23428191a2429652d24769c94bf48382742feeab` |
