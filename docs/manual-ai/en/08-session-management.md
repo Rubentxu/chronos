@@ -384,8 +384,8 @@ On Linux, `session_start` can attach Chronos to a running process you own:
 {"action":"attach","pid":12345}
 ```
 
-The response contains a new `session_id` and a capability snapshot. Use
-`probe_drain` and `capabilities` with that session just as you would for a
+The response contains a new `session_id` and a capability snapshot with
+`probe_type: "ptrace_attach"`. Use `probe_drain` and `capabilities` with that session just as you would for a
 spawned probe.
 
 Attach uses Linux `ptrace`, so it can fail because the PID no longer exists,

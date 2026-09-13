@@ -373,7 +373,7 @@ async fn test_session_start_attach_to_running_self() {
             .capability_snapshot
             .get("probe_type")
             .and_then(serde_json::Value::as_str),
-        Some("ebpf_user")
+        Some("ptrace_attach")
     );
 
     let stop = client
