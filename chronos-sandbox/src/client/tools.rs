@@ -224,11 +224,11 @@ impl McpSession {
         Ok(result)
     }
 
-    /// v2 `session_start{action=attach}` — stub (m7+); expects `Unsupported` error.
+    /// v2 `session_start{action=attach}` — attach to a running Linux process.
     pub async fn session_start_attach(
         &mut self,
         pid: u32,
-    ) -> Result<serde_json::Value, McpSandboxError> {
+    ) -> Result<SessionStartResponse, McpSandboxError> {
         let params = SessionStartParams {
             action: SessionStartAction::Attach,
             spawn_fields: None,
@@ -240,7 +240,9 @@ impl McpSession {
             .rpc_client
             .call_tool("session_start", serde_json::to_value(params).unwrap())
             .await?;
-        Ok(response)
+        let result: SessionStartResponse = serde_json::from_value(response)
+            .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
+        Ok(result)
     }
 
     /// v2 `session_stop` — defaults match v1 behavior

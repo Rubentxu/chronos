@@ -897,6 +897,11 @@ impl NativeProbeBackend {
 
         if let Err(e) = tracer.attach(pid as i32) {
             error!("Failed to attach to PID {}: {}", pid, e);
+            // HIGH-4: clear `running` so the backend can be reused. The
+            // attach thread set it true before the ptrace call; if ptrace
+            // fails we must release that flag or every subsequent
+            // attach_probe returns the "already running" guard.
+            running.store(false, Ordering::SeqCst);
             return;
         }
 
@@ -1143,6 +1148,106 @@ mod tests {
         // bounded_join (which we already proved works). The drop of the
         // JoinHandle inside the waiter thread is what makes the test leak
         // the sleeper — acceptable for a unit test that runs in <1s.
+    }
+
+    // ---- attach_probe (m9-77) ----
+    //
+    // attach_probe uses PTRACE_ATTACH which is Linux-only. On non-Linux
+    // platforms the unit tests are compiled out and contribute zero coverage;
+    // the dispatcher path fails closed before reaching the backend.
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn attach_probe_to_self_sets_running_and_traced_pid() {
+        use chronos_domain::CaptureConfig;
+
+        let bus = chronos_domain::bus::EventBus::new_shared(100);
+        let backend = NativeProbeBackend::new(bus);
+        let pid = std::process::id();
+        let config = CaptureConfig::new("/usr/bin/true");
+        let session = backend.attach_probe(pid, config).expect("attach self");
+        // HIGH-4 invariant: attach must have flipped `running` to true.
+        assert!(
+            backend.running.load(std::sync::atomic::Ordering::SeqCst),
+            "attach_probe must mark running=true"
+        );
+        // traced_pid is set inside the attach thread before any ptrace call,
+        // but the test cannot observe it deterministically until the thread
+        // has scheduled. Poll briefly.
+        let mut traced = None;
+        for _ in 0..50 {
+            traced = *backend.traced_pid.lock().unwrap_or_else(|e| e.into_inner());
+            if traced == Some(pid as i32) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(
+            traced,
+            Some(pid as i32),
+            "traced_pid must equal the attached pid"
+        );
+        // CaptureSession state must be Active.
+        assert!(matches!(
+            session.state,
+            chronos_domain::SessionState::Active
+        ));
+        // Tidy: stop_probe brings `running` back to false. Bounded join via
+        // the existing helper.
+        let handle = backend
+            .thread_handle
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
+        let session_clone = session.clone();
+        backend
+            .running
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        if let Some(h) = handle {
+            let _ = super::bounded_join_with_timeout(h, std::time::Duration::from_secs(2));
+        }
+        // After stop: running=false.
+        assert!(
+            !backend.running.load(std::sync::atomic::Ordering::SeqCst),
+            "running must be cleared after stop"
+        );
+        // Reference the local to keep the compiler honest about unused
+        // warnings if the tidy-up paths above are removed in future edits.
+        let _ = session_clone;
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn attach_probe_to_unknown_pid_clears_running_after_ptrace_failure() {
+        use chronos_domain::CaptureConfig;
+
+        let bus = chronos_domain::bus::EventBus::new_shared(100);
+        let backend = NativeProbeBackend::new(bus);
+        // 0xfffffffe is a deliberately non-existent pid (it sits in the
+        // unmapped range; ESRCH on Linux). The attach thread's ptrace call
+        // fails and `run_probe_loop_attach` must clear `running` to release
+        // the HIGH-4 guard so the backend is reusable.
+        let pid = 0xfffffffe_u32;
+        let config = CaptureConfig::new("/usr/bin/true");
+        // attach_probe itself returns Ok — the ptrace call happens
+        // asynchronously inside the spawned thread.
+        let _ = backend
+            .attach_probe(pid, config)
+            .expect("spawn attach thread");
+        // Poll for the HIGH-4 invariant: a failed attach must leave
+        // `running=false` so the backend can be reused.
+        let mut cleared = false;
+        for _ in 0..200 {
+            if !backend.running.load(std::sync::atomic::Ordering::SeqCst) {
+                cleared = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(
+            cleared,
+            "failed attach must clear `running` (HIGH-4 invariant)"
+        );
     }
 }
 

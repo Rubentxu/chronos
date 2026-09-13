@@ -85,6 +85,13 @@ pub enum ServiceError {
     #[error("query execution error: {0}")]
     QueryExecutionError(String),
 
+    /// `session_start{action=attach}` could not attach the live probe to
+    /// the requested pid. The string carries the underlying cause
+    /// (e.g. `/proc/<pid>/exe: …` when the pid cannot be resolved, or
+    /// `PTRACE_ATTACH failed: …` when the kernel refuses).
+    #[error("attach failed: {0}")]
+    AttachFailed(String),
+
     // --- Probe service variants -----------------------------------------------
     /// Invalid program path supplied to a probe tool (empty, not a file, etc.).
     #[error("invalid program path: {0}")]
