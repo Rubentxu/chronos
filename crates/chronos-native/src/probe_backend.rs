@@ -566,8 +566,9 @@ impl NativeProbeBackend {
     /// Sets the running flag to false and kills the traced process to
     /// interrupt any blocking waitpid, then waits (bounded, 10 s timeout)
     /// for the probe thread to exit before returning (blocking semantics,
-    /// MS-RACE-FIX / ADR-0005). This guarantees a subsequent
-    /// `drain_raw_events()` call observes every event the probe emitted.
+    /// MS-RACE-FIX / ADR-0005, bounded by HIGH-5). This guarantees a
+    /// subsequent `drain_raw_events()` call observes every event the probe
+    /// emitted, while refusing to deadlock the caller if the thread is wedged.
     pub fn stop_probe(&self, session: &CaptureSession) -> Result<(), TraceError> {
         // CRIT-2: Signal the thread to stop (no spin-wait — the thread will exit
         // naturally when it checks running=false after the next wait_event returns).
@@ -593,7 +594,10 @@ impl NativeProbeBackend {
 
         // BLOCKING: join the probe thread inline before returning so that drain_raw_events
         // called immediately after sees a fully-stopped producer. HIGH-5 timeout guards
-        // against a stuck thread so we never deadlock the caller.
+        // against a stuck thread so we never deadlock the caller: spawn a waiter that
+        // joins the thread and signals via channel, then recv_timeout on the caller's
+        // stack. If the timeout elapses, we detach the waiter and warn (the MCP server
+        // response path must not block indefinitely).
         let session_id = session.session_id.clone();
         if let Some(handle) = self
             .thread_handle
@@ -601,15 +605,26 @@ impl NativeProbeBackend {
             .unwrap_or_else(|e| e.into_inner())
             .take()
         {
-            match handle.join() {
+            let (tx, rx) = std::sync::mpsc::channel::<()>();
+            std::thread::spawn(move || {
+                let _ = handle.join();
+                let _ = tx.send(());
+            });
+            match rx.recv_timeout(std::time::Duration::from_secs(10)) {
                 Ok(()) => {
                     info!("Probe thread exited cleanly for session {}", session_id)
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    warn!(
+                        "Probe thread did not exit within 10s for session {} — abandoning",
+                        session_id
+                    );
                 }
                 Err(_) => {
                     warn!(
                         "Probe thread panicked during shutdown for session {}",
                         session_id
-                    );
+                    )
                 }
             }
         }

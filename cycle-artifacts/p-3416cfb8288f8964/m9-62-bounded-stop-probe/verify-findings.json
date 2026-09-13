@@ -1,0 +1,27 @@
+{
+  "schema": "verify-finding.schema.json",
+  "subject": {
+    "head_sha": "b98b2a4f23cff82292aadc1e25c8d27b460b8cd5",
+    "base_sha": "bedfebd90e8092f8f0716742ff0bede5e4dc7b68",
+    "diff_digest": "sha256:7515bfbb8a78141b45610410c64602ab95f945b08a9ed879e2058b2745debb68",
+    "working_tree_clean": true,
+    "verified_at": "2026-09-13T09:44:00Z",
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
+    "verdict": "passed"
+  },
+  "findings": [
+    {
+      "finding_id": "FIND-M9-61-UNBOUNDED-JOIN",
+      "rule_id": "chronos.lifecycle.stop_probe_bounded_join",
+      "severity": "medium",
+      "summary": "NativeProbeBackend::stop_probe joined probe thread inline without timeout; if wedged, MCP server blocks indefinitely",
+      "subject": {
+        "issue": "Post-m9-61 inline handle.join() had no timeout bound. The previous HIGH-5 pattern (async spawn + recv_timeout(10s)) was lost when switching to inline join.",
+        "fix": "HIGH-5 pattern restored with stop-then-drain semantics: spawn waiter, mpsc::channel, recv_timeout(Duration::from_secs(10)), abandon on timeout with warn! log"
+      }
+    }
+  ],
+  "lens_summary": "m9-62 closes the m9-61 follow-up: bounded join restored in stop_probe. Single-commit B-direct; pure refactor; no API change; restores the contract that stop_probe is bounded.",
+  "cycle_id": "m9-62",
+  "verdict": "pass_with_findings"
+}
