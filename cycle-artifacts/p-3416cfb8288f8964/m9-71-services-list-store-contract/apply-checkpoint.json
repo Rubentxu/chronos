@@ -27,6 +27,12 @@
         "rule_id": "code.error_classification_collapse",
         "severity": "low",
         "note": "crates/chronos-store/src/storage.rs::load_session handles the absent-table case with a wildcard, Err(_) => StoreError::SessionNotFound(...), in both read paths, while list_sessions and session_exists (same file, same concern, same commit in m9-70) match redb::TableError::TableDoesNotExist explicitly. The wildcard is harmless today (open_table on a read transaction realistically only fails with TableDoesNotExist), but it documents nothing and would misreport a future redb error variant as 'session not found'. Decide whether to make the three read paths agree on the explicit match. No behavior change today; no test can currently distinguish the two forms."
+      },
+      {
+        "finding_id": "FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION",
+        "rule_id": "vault.archive_manifest_index_sha_chaintension",
+        "severity": "low",
+        "note": "CC#4 validates every SHA in every archive-manifest Artifact index against the live file. Because each new manifest lists the current cycles/index.md and terms/index.md SHAs, and CC#4 requires those to match, every cycle that edits a vault index must rewrite the index rows of every prior manifest that lists them (this cycle had to fix m9-70's, not just m9-02's). The set of affected manifests grows by one per cycle, so the ritual is O(n^2) in cycles. Options for a future cycle: drop mutable vault indexes from archive-manifest artifact indexes, or exempt them in CC#4. No behavior impact; pure vault-maintenance cost."
       }
     ]
   },

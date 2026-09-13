@@ -113,8 +113,12 @@ simplification with no behavioral delta.
 ## Cross-checks
 
 - CC#1..CC#55: pass, no drift. Vault files changed by this cycle are
-  `cycles/index.md` and `terms/index.md`; m9-02's archive-manifest artifact
-  index SHAs are regenerated accordingly.
+  `cycles/index.md` and `terms/index.md`, and CC#4 validates those SHAs in
+  **every** archive-manifest that lists them, so both m9-02's and m9-70's
+  artifact indexes were regenerated. The first post-release sweep failed CC#4
+  on m9-70's stale rows, which is how that requirement was discovered; the
+  resulting O(n^2) ritual is recorded as
+  `FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION`.
 - No new CC (47 python + 7 bash unchanged) — the smoke test's expected counts
   need no update.
 - CC#12: `main_sha == head_sha == remote_tag_peel` recorded in the

@@ -41,6 +41,7 @@ Closes `FIND-M9-70-SERVICES-TABLE-STRING-MATCH`, the deferral recorded by m9-70.
 - (modified) `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` (m9-71 row added, Total cycles 70→71)
 - (modified) `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` (FIND-M9-70-SERVICES-TABLE-STRING-MATCH terminated; FIND-M9-71-LOAD-SESSION-TABLE-ERROR-COLLAPSE deferred; Last archive bumped)
 - (modified) `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-02-events-side-table/archive-manifest.md` (cycles/index.md + terms/index.md SHAs regenerated)
+- (modified) `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-70-mcp-store-isolation/archive-manifest.md` (same regeneration; CC#4 validates **every** archive-manifest artifact index, not just m9-02's)
 
 ## Cross-checks
 
@@ -59,6 +60,7 @@ The second row is the point: before this cycle the test could not distinguish a 
 
 ## Follow-ups (deferred)
 
+- **FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION** (low): every archive-manifest listing the mutable vault-index SHAs goes stale the next cycle, so the regeneration ritual grows by one manifest per cycle. Found by this cycle's own drift gate (CC#4 flagged m9-70's stale index rows).
 - **FIND-M9-71-LOAD-SESSION-TABLE-ERROR-COLLAPSE** (low): `SessionStore::load_session` uses `Err(_) => SessionNotFound` in both read paths while its siblings match `redb::TableError::TableDoesNotExist` explicitly. Harmless today, but three read paths in one file disagree about the same concern.
 - **Sandbox warm-up ordering** (preserved): `test_session_start_via_v2_then_session_stop_via_v2` was reported to fail alone and pass with the full file. Not reproducible this cycle: 5/5 passes in isolation, plus a run with an unopenable `CHRONOS_DB_PATH` simulating the in-memory fallback. Re-characterize only if it reappears.
 - **5+19 not-merged branches triage** (preserved from m9-65): human review needed.

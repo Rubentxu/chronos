@@ -51,6 +51,7 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 
 | ID | Cycle | Título | Owner | Destino |
 |---|---|---|---|---|
+| FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION | m9-71 | Every archive-manifest that lists `cycles/index.md` / `terms/index.md` SHAs goes stale on the next cycle, so each cycle must rewrite prior manifests' artifact indexes (CC#4); the set grows by one per cycle | unassigned | m9+ |
 | FIND-M9-71-LOAD-SESSION-TABLE-ERROR-COLLAPSE | m9-71 | `SessionStore::load_session` classifies every `open_table` failure as `SessionNotFound` (`Err(_)`), disagreeing with `list_sessions`/`session_exists` which match `TableDoesNotExist` explicitly | unassigned | m9+ |
 
 ## Terminated terms

@@ -33,6 +33,12 @@
         "rule_id": "code.error_classification_collapse",
         "severity": "low",
         "note": "SessionStore::load_session handles the absent-table case with Err(_) => StoreError::SessionNotFound(...) in both read paths, while list_sessions and session_exists in the same file match redb::TableError::TableDoesNotExist explicitly. Harmless today (a read transaction's open_table realistically only fails with TableDoesNotExist) but it would misreport any future redb error variant as 'session not found', and it leaves three sibling read paths disagreeing about the same concern. Recorded so a future cycle can normalize the classification. No behavior change either way, and no test can currently distinguish the two forms."
+      },
+      {
+        "finding_id": "FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION",
+        "rule_id": "vault.archive_manifest_index_sha_chaintension",
+        "severity": "low",
+        "note": "Found by this cycle's own drift gate, not by inspection: the first post-release drift sweep failed CC#4 with 'DRIFT: m9-70-.../archive-manifest.md :: cycles/index.md' because m9-70's artifact index still listed the pre-m9-71 index SHAs. CC#4 checks every SHA in every archive-manifest artifact index against the live file, so each cycle that edits a vault index must rewrite the index rows of every prior manifest that lists them; the affected set grows by one per cycle (O(n^2) in cycles). Candidate fixes: keep mutable vault indexes out of artifact indexes, or exempt vault-index paths in CC#4. Pure maintenance cost, no behavior impact."
       }
     ]
   },

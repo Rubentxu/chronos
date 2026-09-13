@@ -53,7 +53,7 @@ Two commits:
 
 ## Cross-checks
 
-- CC#1..CC#55: pass (no drift). Only vault files changed by this cycle are `cycles/index.md` and `terms/index.md`; m9-02's archive-manifest artifact-index SHAs are regenerated.
+- CC#1..CC#55: pass (no drift). Only vault files changed by this cycle are `cycles/index.md` and `terms/index.md`; the artifact-index rows for those two paths are regenerated in **every** archive-manifest that lists them (m9-02's and m9-70's), which is what CC#4 checks. This O(n^2) ritual is recorded as `FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION`.
 - No new CC: 47 python + 7 bash CCs unchanged, so `scripts/smoke_test_ccs.sh` expected counts need no update (5 tests run / 0 failures).
 - T0: `cargo fmt --all -- --check` + `cargo clippy --workspace --all-targets -- -D warnings` pass (0 warnings)
 - T2: `cargo test -p chronos-services -p chronos-store --lib` → 263 + 62; `cargo test -p chronos-mcp --tests` → 77 lib + 49 integration
@@ -69,15 +69,16 @@ Two commits:
 
 ## Artifact index
 
+
 | Kind | Path | SHA-256 |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-71-services-list-store-contract/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
 | source (services sessions) | `crates/chronos-services/src/sessions.rs` | `3fa312d9b70dde97276debf0851561d07a675e3670c3e6ac1147df9ced5bf3cd` |
-| apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/apply-checkpoint.json` | `8989688bc5c20b8767f85bda0b9aa8ca2c7585b32c472ec0e1d73dade4fd454e` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/verify-report.md` | `ef738611f2e042cbe6522107dbfa2d8fac58df398a526ab6f862e59bcae1069a` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/verify-findings.json` | `b5daf98f3a6eff53b1242a93d4c1e5f68f5ae49f26d88d570595237de8433b8b` |
+| apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/apply-checkpoint.json` | `cc5bb8dddb0d4ab50013f024f2267816c5293e4c230cf1b804708077e46b838b` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/verify-report.md` | `f759d47ee47c580457865f4d2842e48dc1e71ec28fcf281e513d7dc292e4a52d` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/verify-findings.json` | `a31bdcb3dab9b20b4b2f433a1f5cf6de048d4a350cac7dff19e4ef194c10af89` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/release-report.md` | `b532010f348b5552b2b4d57f3104e152ecbd7158c5e88f76ff9bf4185add7fd6` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/release-receipt.md` | `5328e9ef4a76b1f48de59833052b2a65c9c6653c34aa1aa7f5188c85b7b97227` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/merge-receipt.md` | `eab6b058bea3ebbbf59a3fa5fd90110ba143d5c41fb3d0876923e828fe3ba984` |
 | vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `b8ecce839ad426bb04a6e15c83d4e0fe8122bf74833dbaa250b31c912fb8a214` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `fb904729ac575af0ba2968916ed4788764af5f129c358c2fea8a07f10c21df19` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `01c3f774aa170bd4d16e215b528e5527f037d1ca7c3b0e3e6ef92796ef5efebd` |
