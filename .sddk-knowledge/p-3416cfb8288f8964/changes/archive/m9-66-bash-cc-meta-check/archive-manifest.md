@@ -15,17 +15,17 @@ m9-66 hardens vault drift detection by fixing CC#4 (broken awk regex, silently n
 | Date | 2026-09-13T12:18Z |
 | Branch | `feat/m9-66-bash-cc-meta-check` |
 | Tag | `v0.7.68` |
-| Tag peel SHA | (peeled at release) |
-| Peel match | (verified at release) |
+| Tag peel SHA | `963a143aacd5e005fb39593afea060106f172c00` |
+| Peel match | `963a143aacd5e005fb39593afea060106f172c00` |
 | Status | CLOSED |
 
 ## Evidence bindings
 
-- **`apply-checkpoint.json`**: `status: CLOSED`, `findings_closed: [FIND-M9-66-CC4-SILENT, FIND-M9-66-CC5-OFF-BY-16, FIND-M9-66-NO-BASH-META-CHECK]`
+- **`apply-checkpoint.json`**: `status: CLOSED`, `verify_status: passed`, `release_status: released`, `archive_status: archived`, `findings_closed: [FIND-M9-66-CC4-SILENT, FIND-M9-66-CC5-OFF-BY-16, FIND-M9-66-NO-BASH-META-CHECK]`
 - **`verify-findings.json`**: 3 findings, verdict `pass_with_findings`
 - **`verify-report.md`**: Subject, Files Inventory, Drift Evidence (pre/post-cycle), Gates, Cross-checks, History
 - **`merge-receipt.md`**: `Base SHA | c46851b…`, `Head SHA | 963a143…`
-- **`release-receipt.md`**: `Remote tag | v0.7.68`
+- **`release-receipt.md`**: `Remote tag | v0.7.68`, `Peel match | 963a143…` (true)
 
 ## Tangential modifications
 
