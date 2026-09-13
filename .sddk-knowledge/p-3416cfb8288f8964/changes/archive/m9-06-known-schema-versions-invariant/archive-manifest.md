@@ -120,9 +120,9 @@ No new specs introduced. Trivial B-direct cleanup:
 | Kind | Path | SHA-256 |
 | Date | `2026-09-12` |
 |---|---|---|
-| archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-06-known-schema-versions-invariant/archive-manifest.md` | `a4cf2f5bde00b4492facdb1b37499e7239a8cea6c9b1b548e36b6b52af392708` |
-| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-06-known-schema-versions-invariant/change-entry.md` | `d6be53c35c24fbe1c86f957add8a5da5da0831a3709ae07934502452f4f37c51` |
-| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/merge-receipt.md` | `fcffbd44b1e163789c5781b80329f0b32554225d4991726fa62549e05138525b` |
-| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/release-receipt.md` | `6e625ca1ebdca4a237478e98cbb57f56382b0e867fb212a6fdddc1c1b0f6e229` |
-| release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/release-report.md` | `e1927c4ae60d0c3d23f4e1f89ca0fe1f3eaa75b4981b8c853295ec602b3134fb` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/verify-report.md` | `5bbc23c901ad1ea8a132f8a37176a19a55d3e696dbed07b088838c93f96bc0ee` |
+| archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-06-known-schema-versions-invariant/archive-manifest.md` | `803ae2402341bf965c30777b4202e1f5fe13dc17fac08d49c2e0afd53808b9cc` |
+| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-06-known-schema-versions-invariant/change-entry.md` | `aa3aac969ddcf534be64cbfa3a143073dbea48f93b4179568fe906bf9f915703` |
+| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/merge-receipt.md` | `48362aba98041117605c5cca978c749d688143e1616d335226a17912e5298f10` |
+| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/release-receipt.md` | `5cdd56dae6b4d23479446d3fd14e241e33d8c2f885c48a46803fc741bc819b99` |
+| release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/release-report.md` | `7c500ec81e34726d6ec3c880e015907b16b31461fbbeea5dbd10c836d754840f` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/verify-report.md` | `fd5c2c5ed60764ef29296a61815ce8db6bede76ab747bb2c56d0443a922aa5d8` |

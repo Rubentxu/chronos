@@ -118,9 +118,9 @@ No new specs introduced. Trivial B-direct cleanup:
 | Kind | Path | SHA-256 |
 | Date | `2026-09-12` |
 |---|---|---|
-| archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-08-list-load-schema-error-variant/archive-manifest.md` | `5821de4a7867f0a3503f9f857c47a53901b349c61a5e33d65e390d53c91d2b96` |
-| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-08-list-load-schema-error-variant/change-entry.md` | `fe60bbb9e279bc9fc7643fbbcd06c707f9fc7e4f403e9d3642ac74b7080fd122` |
-| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-08-list-load-schema-error-variant/merge-receipt.md` | `054bd94746a670d12b2ca61a4249eba901fe0a7821f01b6366e31e46d8031318` |
-| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-08-list-load-schema-error-variant/release-receipt.md` | `6526bd6370fa080f5330f982ac5a858dcdec09b46afdb668498a2d882a819154` |
-| release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-08-list-load-schema-error-variant/release-report.md` | `621fc4b9b2602f4ea4492ec384e8994b1d94005c05ff423511bd2f199ef86d85` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-08-list-load-schema-error-variant/verify-report.md` | `635efcc50a6a0fcfa1d35eb2066ad1b3befad48943693fc6cb389b351367b3a7` |
+| archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-08-list-load-schema-error-variant/archive-manifest.md` | `35f95c081d721bfbee8dcdfe5fc8805f6f50e3a52a8df962055473f9276055f1` |
+| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-08-list-load-schema-error-variant/change-entry.md` | `426c1686f750a0a719fe0f28f84833b3ce3c2b7324768d74c490417f0a80e4a5` |
+| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-08-list-load-schema-error-variant/merge-receipt.md` | `e506a3c909485fd3046080551c66b2566e9c34ed5aeaa9ae64aba8f8b6679e1f` |
+| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-08-list-load-schema-error-variant/release-receipt.md` | `c69a918fecddc5edcce4e623a7a2b4527ae793db751b5d08cc4756f34b49a47b` |
+| release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-08-list-load-schema-error-variant/release-report.md` | `547c45f8456b658998ed32bee8dfb58af212c7475d1a34351dbbaea27709d8a2` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-08-list-load-schema-error-variant/verify-report.md` | `629be50de008f6315ab3fa73a405088af72a246137581314dd80bc86da0dc0dd` |

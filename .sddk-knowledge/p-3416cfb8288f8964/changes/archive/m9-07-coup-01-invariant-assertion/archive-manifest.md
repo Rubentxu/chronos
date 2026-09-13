@@ -118,9 +118,9 @@ No new specs introduced. Trivial B-direct cleanup:
 | Kind | Path | SHA-256 |
 | Date | `2026-09-12` |
 |---|---|---|
-| archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-07-coup-01-invariant-assertion/archive-manifest.md` | `7794674eb58cd8b801f2e1670b37a8a1103ecf5ae262e338da845ba7a2da06fe` |
-| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-07-coup-01-invariant-assertion/change-entry.md` | `55722fa497b276cf22d06f70582082ac4fcc66135f4e76a2c83f1d306568e0f5` |
-| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-07-coup-01-invariant-assertion/merge-receipt.md` | `1afa15d6ed6c0af0a7611653289d647b4882f99e8e4d309d69c5d159e913a9c4` |
-| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-07-coup-01-invariant-assertion/release-receipt.md` | `ac5d1b925cfe1494ee0bb272e98d3f8d9ee0c49f47965c5e6347f7839562cf0d` |
-| release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-07-coup-01-invariant-assertion/release-report.md` | `0b2f7ae1db435b8f0d05231e812729766e6e0743c1cfd5b82bbec3421000d49c` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-07-coup-01-invariant-assertion/verify-report.md` | `30215cd1769cbe1f9e999b518379b0cec22ec439701377f2e7b28c3af840fc84` |
+| archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-07-coup-01-invariant-assertion/archive-manifest.md` | `0e8ae10d3f6df2f326e6a947f4b46534668e313b59d7963c5f85b4a4bd10b9a8` |
+| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-07-coup-01-invariant-assertion/change-entry.md` | `573a1e53244dccf5afa460246085c3e7fc9f4d8c15dfa27e280f86fa090e8116` |
+| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-07-coup-01-invariant-assertion/merge-receipt.md` | `904aebad6b5cd30559b563ac3b27e2f333e8f09116e04761d20d499ac7b796c2` |
+| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-07-coup-01-invariant-assertion/release-receipt.md` | `a86eb8af84795eb2d3e0b67d9bdef2e4b6590dd95aee92bcd5b7867902c68868` |
+| release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-07-coup-01-invariant-assertion/release-report.md` | `e8086f03294eda1ee01af0e997db5155da61668b0f6ee68fdba8773b1dd3af13` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-07-coup-01-invariant-assertion/verify-report.md` | `6298461d2b3a5335636f2405e383e5efac04b81b828c1343a5ee45e543fdb8ef` |

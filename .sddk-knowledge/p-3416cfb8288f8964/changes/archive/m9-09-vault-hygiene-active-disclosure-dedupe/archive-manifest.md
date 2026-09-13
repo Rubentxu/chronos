@@ -112,9 +112,9 @@ No new specs introduced. Vault-hygiene fix only:
 | Kind | Path | SHA-256 |
 | Date | `2026-09-12` |
 |---|---|---|
-| archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-09-vault-hygiene-active-disclosure-dedupe/archive-manifest.md` | `7f8434f21ccb11978800f045aa34bed4ae74eee0574c35008eff3ea78b630e1e` |
-| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-09-vault-hygiene-active-disclosure-dedupe/change-entry.md` | `d0f3693a8550167aee79f594c0adae53f5e9b4e25ef7c6c191b582282c26794c` |
-| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-09-vault-hygiene-active-disclosure-dedupe/merge-receipt.md` | `30548a00744b0aa46ea5fedcd32361b039bcb89f66312965daec9c401e5f184f` |
-| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-09-vault-hygiene-active-disclosure-dedupe/release-receipt.md` | `9d25b4b223788af592afd1f773f3456e8e425527e17157a74cfcac811f0ab829` |
-| release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-09-vault-hygiene-active-disclosure-dedupe/release-report.md` | `690fe470d857a832f326b4616e3ae8344486022453dbf1c5accefdc9150725d7` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-09-vault-hygiene-active-disclosure-dedupe/verify-report.md` | `52f2b3c1267d8497fdcbd24509fcb1ac40fdfbaca1abc2b54ca5922fd0259180` |
+| archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-09-vault-hygiene-active-disclosure-dedupe/archive-manifest.md` | `1b91d81951b500ca13fc855586d7288abaf8dc83511285aac41fb5f0d478ceb5` |
+| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-09-vault-hygiene-active-disclosure-dedupe/change-entry.md` | `270e2105da967fcb191ccff6f3680522cab8b10495c0a66e31a8e5866602422c` |
+| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-09-vault-hygiene-active-disclosure-dedupe/merge-receipt.md` | `05207b630b65b0e6d47ab6734074e55b9d9feebe0968b06f9affa5179b7b7b64` |
+| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-09-vault-hygiene-active-disclosure-dedupe/release-receipt.md` | `cba07a810406ccbf912ff9fcc5cecb10037ca1e303f2dbd02a60e485ee047630` |
+| release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-09-vault-hygiene-active-disclosure-dedupe/release-report.md` | `24e838eb973f1f19fe1d74642d157ecc13075209e6ec5017a64063fb930c5cde` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-09-vault-hygiene-active-disclosure-dedupe/verify-report.md` | `8f01e05b503fb24b443162173f98250c584f88e12b8b1807b9d74e7ffc04df6c` |

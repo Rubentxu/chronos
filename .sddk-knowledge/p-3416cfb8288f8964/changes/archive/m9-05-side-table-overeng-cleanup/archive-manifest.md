@@ -121,10 +121,10 @@ No new specs introduced. Bounded debt-cleanup:
 | Kind | Path | SHA-256 |
 | Date | `2026-09-12` |
 |---|---|---|
-| archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-05-side-table-overeng-cleanup/archive-manifest.md` | `47bbe915e680822169f8e7877029ec5373e3170a4768829414205a2df4c07940` |
-| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-05-side-table-overeng-cleanup/change-entry.md` | `7125b84c756ef88283bc673c7acff3ab19d24f729370be7c5a39420ed8144ee8` |
+| archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-05-side-table-overeng-cleanup/archive-manifest.md` | `db5052c20b951194e3cee992ac7fc8b0d268538a567cb20e2213d813cc7fc46a` |
+| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-05-side-table-overeng-cleanup/change-entry.md` | `12b674c6c4fe1a89fd4dd31740e5d4c406ebb30a9380fd6f72c998624d27f2a8` |
 | scoping | `docs/milestones/m9-05-side-table-overeng-cleanup-scoping.md` | `5760d827563e2d3ad8e7521285ec56fd17ea2adee367f30820aae0e01964b141` |
-| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-05-side-table-overeng-cleanup/merge-receipt.md` | `7307975defbf9613259563fb3766f15758336a324dea8cad742f57d68eee0db9` |
-| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-05-side-table-overeng-cleanup/release-receipt.md` | `d3bd177e6f3af104042e741a7e96451308ee22534a6014a926cb375f96f5c935` |
-| release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-05-side-table-overeng-cleanup/release-report.md` | `b656a98a7765157818b90c337b1f0713ad3d68adbffaafab790840d72aae0527` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-05-side-table-overeng-cleanup/verify-report.md` | `a5ce50aa2a4f84e0b2b47f9035525d5013bbeabb6f988a01341c6e08f0598103` |
+| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-05-side-table-overeng-cleanup/merge-receipt.md` | `8c38f082fe8ba33042df902aeb8d3d83265b4d1790abaef6418749fcfeebd284` |
+| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-05-side-table-overeng-cleanup/release-receipt.md` | `7c1995c6c53f43c9afa67b7b39aa4fc75d49d425ce9022e37943c4540fbb91ab` |
+| release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-05-side-table-overeng-cleanup/release-report.md` | `a63206e73f86fe425132ce550eea6909204f940ec221fda1abfdb493f2d78146` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-05-side-table-overeng-cleanup/verify-report.md` | `a6bc9b56c64f28028234610fe934c1ea7ea41de583b26c7beacde3cf7a3383b4` |

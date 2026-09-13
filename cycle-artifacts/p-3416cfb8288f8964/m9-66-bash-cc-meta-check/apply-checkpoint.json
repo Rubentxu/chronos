@@ -1,0 +1,52 @@
+{
+  "cycle_id": "m9-66-bash-cc-meta-check",
+  "head_sha": "963a143aacd5e005fb39593afea060106f172c00",
+  "base_sha": "c46851baf07c13d2e6d680e35b54c14bd7698b76",
+  "created_at": "2026-09-13T12:18Z",
+  "route": "B-direct",
+  "summary": "Hardened vault drift detection by fixing CC#4 (SHA-256 awk had a regex bug that prevented it from ever firing) and CC#5 (cycles/index.md Total cycles regex matched m6/m7/m8 milestone rows, inflating the count by 16). Added CC#54 (bash meta-check, sibling of CC#48) so the 7 bash CCs (CC#1, #4, #5, #6, #46, #53) are now auto-validated alongside the 46 python CCs. refactored check_vault_drift.sh to invoke both meta-checks. Side-effect: 54 stale SHAs in m9-01..m9-10 archive-manifests were detected by the now-functional CC#4 and regenerated.",
+  "title": "66 vault drift detection hardening",
+  "status": "CLOSED",
+  "archived_at": null,
+  "main_sha": null,
+  "peel_match": false,
+  "release_status": null,
+  "released_at": null,
+  "remote_tag": null,
+  "remote_tag_peel": null,
+  "verify_status": "pending",
+  "verified_at": null,
+  "archive_status": null,
+  "findings_closed": [
+    {
+      "finding_id": "FIND-M9-66-CC4-SILENT",
+      "rule_id": "vault.cc4_silent_drift",
+      "subject": {
+        "cycle": "m9-66-bash-cc-meta-check",
+        "gap": "CC#4 (SHA-256 consistency in archive-manifest Artifact index) had a broken awk regex ($4 still had backticks at match time). The CC silently never fired — no one noticed because archive-manifests for m9-01..m9-10 had stale SHAs but no one compared them.",
+        "fix": "Fixed CC#4 to strip backticks from BOTH $3 (path) and $4 (sha), trim whitespace, then match. Added exclusion for the self-reference row (a file cannot list its own current SHA because writing the SHA changes the file). Regenerated 54 stale SHAs."
+      }
+    },
+    {
+      "finding_id": "FIND-M9-66-CC5-OFF-BY-16",
+      "rule_id": "vault.cc5_total_cycles_off",
+      "subject": {
+        "cycle": "m9-66-bash-cc-meta-check",
+        "gap": "CC#5 (cycles/index.md Total cycles consistency) regex was '^\| (m6 |m[7-9])' which matched all m6/m7/m8 milestone rows (16 extra rows). The CC was silently off-by-16 since the m6/m7/m8 rows were added to cycles/index.md.",
+        "fix": "Fixed CC#5 to match only m9-* rows, which is what Total cycles represents. After fix: actual=65, declared=65 (was actual=81, declared=65)."
+      }
+    },
+    {
+      "finding_id": "FIND-M9-66-NO-BASH-META-CHECK",
+      "rule_id": "vault.no_meta_check_for_bash_ccs",
+      "subject": {
+        "cycle": "m9-66-bash-cc-meta-check",
+        "gap": "CC#48 meta-check only auto-executes python CCs. The 7 bash CCs (CC#1, #4, #5, #6, #46, #53) were validated manually only — silent drift could go unnoticed between sessions.",
+        "fix": "Added CC#54 (bash, sibling of CC#48) that aggregates drift across all 7 bash CCs. Refactored check_vault_drift.sh to invoke both meta-checks. Both are required for full coverage."
+      }
+    }
+  ],
+  "findings_introduced": {
+    "no_action": []
+  }
+}

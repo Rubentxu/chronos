@@ -127,10 +127,10 @@ note: CLI ledger not available (sddk not in PATH). Ad-hoc cycle, no CLI storage.
 | Kind | Path | SHA-256 |
 | Date | `2026-09-12` |
 |---|---|---|
-| archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-04-side-table-key-layout/archive-manifest.md` | `2d2d189142773d02a738f94106d1783c87dbfde6bf95f80892d75c59592a4d3d` |
-| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-04-side-table-key-layout/change-entry.md` | `a6e3ae78435674a2f1694e9d3ff6267d74d803badadde09adffc6f52d06e964d` |
-| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/merge-receipt.md` | `2a5652e6e1ad40d21dc49224ef3270369dac1604bdca41409595d68eb87f5b0a` |
-| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/release-receipt.md` | `b870428a2a990a1b80c921ebff38b70aff5e1e4a9339390849ba7d4694fa8d4a` |
-| release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/release-report.md` | `e4f13e25f6ddf93bc8a61473aebfde449b8578e5d652d0c35bc208aa72e8be61` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/verify-report.md` | `9786a2b530156f5bd9961318ed8e70c3e021aeab05150fd8f6f890259419151c` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/verify-findings.json` | `fd8de7a8416f184cab8389f6a36db2bca375d63b7cc8071177bc9fe2b7c87c23` |
+| archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-04-side-table-key-layout/archive-manifest.md` | `fe0cc0a8dd682ea698c078630d343bd791dcda421a3ea44bbcf3cb29c7304345` |
+| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-04-side-table-key-layout/change-entry.md` | `81f2d0aac4e79fad31c408e0e4d44e58ea1c9594bd0fb89353140c70e05a31a0` |
+| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/merge-receipt.md` | `996fb52bbe26d8b51524eee8e3d0963a8b415300f591c0414849d9e0cf6e8cb8` |
+| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/release-receipt.md` | `b2a5c69fd3d062f551dc3f1920791a60ae8ae65d4259a295e0ceb9355c886168` |
+| release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/release-report.md` | `0f1532a946c2ca617706ab58fadf86ac43319639b4848d78405599bf0a2039fc` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/verify-report.md` | `0698f9267c344518400c35eca4f5a40df4df70dba1e110e32b9b84474738c22a` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/verify-findings.json` | `a9d908698f07fdbed23552d98cabe6f4c42815819a323321846e21ca651cc3fd` |

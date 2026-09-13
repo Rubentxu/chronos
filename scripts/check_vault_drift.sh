@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
-# check_vault_drift.sh — execute the vault-drift-sweep CC#48 meta-check.
+# check_vault_drift.sh — execute the vault-drift-sweep meta-checks.
 #
-# Runs every CC in .sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md
-# (except CC#48 itself to avoid recursion) and exits 1 if any CC reports drift.
+# Runs CC#48 (python meta-check, executes every python CC) and
+# CC#54 (bash meta-check, executes every bash CC). Exits 1 if any
+# CC reports drift; 0 if all clean.
 #
 # Usage:
 #   ./scripts/check_vault_drift.sh
@@ -31,7 +32,9 @@ if [[ ! -f "$VAULT_FILE" ]]; then
     exit 2
 fi
 
-# Extract the CC#48 python block and execute it.
+# ==============================================================================
+# CC#48: python meta-check (executes every python CC)
+# ==============================================================================
 VAULT_FILE="$VAULT_FILE" python3 - <<'PYEOF'
 import os, re, subprocess, sys
 
@@ -41,20 +44,24 @@ if not m:
     print("ERROR: CC#48 block not found in vault-drift-sweep.md", file=sys.stderr)
     sys.exit(2)
 
-# Count total CCs (excluding CC#48 itself) for the PASS message.
+# Count total CCs and python-executable CCs for the PASS message.
 sections = re.split(r'### (\d+)\.', text)
 total_ccs = sum(1 for i in range(1, len(sections), 2) if int(sections[i]) != 48)
-# Count how many CCs are executable by CC#48 (i.e., have a python block).
 python_ccs = 0
+bash_ccs = 0
 for i in range(1, len(sections), 2):
     num = int(sections[i])
     if num == 48:
         continue
     body = sections[i+1]
+    # CCs that CC#48 actually executes (have a python block).
+    # Note: CC#54 itself has a bash block and is NOT executed by CC#48;
+    # CC#54 is executed by the bash part of this script (below).
     if '```python' in body:
         python_ccs += 1
-# CCs without a python block (bash or non-executable) are validated
-# manually or via the CI workflow branch-merged check (see CC#53).
+    # CC#54 is itself a bash CC (sibling meta-check, not executed by CC#48).
+    if num == 54 or ('```bash' in body and num != 48):
+        bash_ccs += 1
 
 # Capture the output of exec so we can report failures clearly.
 import io
@@ -68,9 +75,43 @@ finally:
 
 out = buf.getvalue().strip()
 if out:
-    print("DRIFT detected:")
+    print("DRIFT detected (CC#48):")
     print(out)
     sys.exit(1)
-else:
-    print(f"vault-drift-sweep: PASS ({python_ccs} python CCs all clean, {total_ccs - python_ccs} bash CC documented separately)")
+
+# Stash CC counts for the final message.
+import json
+with open('/tmp/check_vault_drift_counts.json', 'w') as f:
+    json.dump({'total_ccs': total_ccs, 'python_ccs': python_ccs, 'bash_ccs': bash_ccs}, f)
 PYEOF
+
+# ==============================================================================
+# CC#54: bash meta-check (executes every bash CC)
+# ==============================================================================
+bash_block=$(python3 - <<'PYEOF'
+import re, sys
+text = open(".sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md").read()
+m = re.search(r'### 54\..*?\n```bash\n(.*?)\n```', text, re.DOTALL)
+if not m:
+    print("ERROR: CC#54 block not found", file=sys.stderr)
+    sys.exit(1)
+print(m.group(1))
+PYEOF
+)
+
+set +e
+bash_out=$(bash -c "$bash_block" 2>&1)
+bash_exit=$?
+set -e
+if [ $bash_exit -ne 0 ]; then
+    echo "DRIFT detected (CC#54, exit $bash_exit):"
+    echo "$bash_out"
+    exit 1
+fi
+
+# All clean.
+counts=$(cat /tmp/check_vault_drift_counts.json 2>/dev/null || echo '{"python_ccs": 0, "bash_ccs": 0}')
+rm -f /tmp/check_vault_drift_counts.json
+python_ccs=$(echo "$counts" | python3 -c "import json,sys; print(json.load(sys.stdin)['python_ccs'])")
+bash_ccs=$(echo "$counts" | python3 -c "import json,sys; print(json.load(sys.stdin)['bash_ccs'])")
+echo "vault-drift-sweep: PASS ($python_ccs python CCs all clean, $bash_ccs bash CCs all clean)"

@@ -120,9 +120,9 @@ No new specs introduced. Bounded debt-cleanup:
 | Kind | Path | SHA-256 |
 | Date | `2026-09-12` |
 |---|---|---|
-| archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-03-side-table-debt-cleanup/archive-manifest.md` | pending (computed after write) |
-| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-03-side-table-debt-cleanup/change-entry.md` | `99b97f7a731c323fd0997f23f6078efeb2b912bdcdd20417877d9169fafb8b87` |
-| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/merge-receipt.md` | `6d2cc59dfc7dada71dbc9a77d449b3b564794fe743b5b7825cc626ffbc31109e` |
-| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/release-receipt.md` | `e5c3b40cc588cc639c325763fc88e01e4a398756324b1b8b58b7ce59e09a45ce` |
-| release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/release-report.md` | `0d2e6ef7b5ac310bd640f17f3e263426e019ed38351571fae4e61038bd06d2cb` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/verify-report.md` | `3405fa5f96e31b00e0ea7b23143667182625e88b1d7851bdbdee7404e8f82414` |
+| archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-03-side-table-debt-cleanup/archive-manifest.md` | `660b41989cf05d57628a8750cf056251eda2e18ef2f474e5053c637748397d27` |
+| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-03-side-table-debt-cleanup/change-entry.md` | `acc5508eb2a7b323fd788b0db78eb782b4befe68bcc70b4b56acb86c4daa17d5` |
+| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/merge-receipt.md` | `dadafeafae2b71315551cd09d7225b53fe57eaf83a2e7755fd4516afd6f38804` |
+| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/release-receipt.md` | `22e07c410cb3b1203eca682e5c4d1768f4b87b4c376bbd5aa3ddeb31be1d2a59` |
+| release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/release-report.md` | `ae7b2b1cbaba729f1138dc6a527af0f2822de538c9bf9bb7419d87aa3afd00a8` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/verify-report.md` | `ecbda18a1acf2fd0f7e145c6d361fa9c3e76e80a0e59a7282b7a6ff8fb126703` |

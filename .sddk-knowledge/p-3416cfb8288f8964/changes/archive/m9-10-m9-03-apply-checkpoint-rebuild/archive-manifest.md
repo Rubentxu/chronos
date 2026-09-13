@@ -125,10 +125,10 @@ No new specs introduced. Vault-artifact rebuild only:
 | Kind | Path | SHA-256 |
 | Date | `2026-09-12` |
 |---|---|---|
-| archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-10-m9-03-apply-checkpoint-rebuild/archive-manifest.md` | `c706d7e3ae9157f5227ceb4869072cccbb667a6837cc1724cfbbb6368c9bf2e5` |
-| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-10-m9-03-apply-checkpoint-rebuild/change-entry.md` | `f93dcf7cd459f54ec07c6bae3502d5134ee76282f6f6d6a3f2227473b0c82df4` |
-| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-10-m9-03-apply-checkpoint-rebuild/merge-receipt.md` | `624048400045e6b08a51ed57e5a470dbfdc3ae1f05cef032536401c206bc5ceb` |
-| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-10-m9-03-apply-checkpoint-rebuild/release-receipt.md` | `8f873901e49f0bad076ea162dab12e76b2f70c4173d1d2d2f890196e2f3357e1` |
-| release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-10-m9-03-apply-checkpoint-rebuild/release-report.md` | `ec98a9d4d82d0bbb904679a485e229448ed9c02494c925c4deeedcc9c438aaaf` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-10-m9-03-apply-checkpoint-rebuild/verify-report.md` | `8600ff5ee1b6ae8212664f0d9f52c9319179b74f3181c24f2e306c07b7014675` |
-| rebuilt (m9-03) apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/apply-checkpoint.json` | (recorded in the rebuilt file itself) |
+| archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-10-m9-03-apply-checkpoint-rebuild/archive-manifest.md` | `8640857d6edc748f41aab52f083a0fddb464358f6cabacaabbd8738d6db3e1da` |
+| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-10-m9-03-apply-checkpoint-rebuild/change-entry.md` | `50f929131710ddc94657626a34f865dabdc6b1a4d254abbc56b3da7cd271756f` |
+| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-10-m9-03-apply-checkpoint-rebuild/merge-receipt.md` | `5399e13a34e03e0aa81f5f1048e016a6546a4a2335c4ca18492d10d974e39439` |
+| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-10-m9-03-apply-checkpoint-rebuild/release-receipt.md` | `7e59b23e076da634c477d8558acff2a387f789bf49911940d908ddff3f733c89` |
+| release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-10-m9-03-apply-checkpoint-rebuild/release-report.md` | `ea50df07a81828435b47d4beaf817405b0cb4d53c8322f1691976102a90d7b8b` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-10-m9-03-apply-checkpoint-rebuild/verify-report.md` | `55ca517996f0267e73097c22e1f8fcf123bb1df212c2051b80a0cdad7042703e` |
+| rebuilt (m9-03) apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/apply-checkpoint.json` | `e3c8a608c38fbde1858e62d52aa2708614385149c52f42652db3114a94658983` |
