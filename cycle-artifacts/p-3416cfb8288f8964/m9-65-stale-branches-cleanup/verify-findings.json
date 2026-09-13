@@ -1,0 +1,27 @@
+{
+  "schema": "verify-finding.schema.json",
+  "subject": {
+    "head_sha": "97ff56e53c4e00768783f11d0df16878cf9c693e",
+    "base_sha": "6e7e39ec35f7bd6c882833206d72b2d46fab1199",
+    "diff_digest": "sha256:010eb126de03d016b3ca9293d47dceabbb93e71ca8720ed73ec6e039a45b2d97",
+    "working_tree_clean": true,
+    "verified_at": "2026-09-13T11:42:00Z",
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
+    "verdict": "passed"
+  },
+  "findings": [
+    {
+      "finding_id": "FIND-M9-65-BRANCH-DRIFT",
+      "rule_id": "repo.stale_branches_post_merge",
+      "severity": "low",
+      "summary": "49 stale branches (25 local + 24 remote) accumulated across M0-M9 because CC#46 only watched fix/m9-*. Cleanup executed; CC#53 added for future detection.",
+      "subject": {
+        "gap": "CC#46 only monitored fix/m9-* branches. Every milestone (M0, M1, M2, M3, M5, M6, M7, M8) merged cycles to main without deleting its per-cycle branch. Plus the m9-65 not-merged branches (chore/m-ci-flake-preflight etc.) accumulated as abandoned work from closed milestones.",
+        "fix": "CC#53 added to vault-drift-sweep.md extends CC#46 to all prefixes (chore/*, feat/mX-*, fix/mX-*, ms-*). 49 merged-stale branches deleted (git branch -d and git push origin --delete). 5+19 not-merged branches preserved and documented for human triage. check_vault_drift.sh updated to report dynamic CC counts (46 python + 6 bash + 1 self = 53 total)."
+      }
+    }
+  ],
+  "lens_summary": "m9-65 closes drift class branch-stale-post-merge across all prefixes. Two commits: (1) CC#53 added + script count dynamic, (2) branches-deleted.log created as recovery log. 49 git branch deletions executed safely (git branch -d refuses unmerged). Recovery: branches-deleted.log records tip SHA of each deleted branch. CC#53 is bash-only (CC#48 meta-check runs python only). Self-test: CC#48 still passes after CC#53 added; CC#46 still passes (now redundant since CC#53 is broader).",
+  "cycle_id": "m9-65",
+  "verdict": "pass_with_findings"
+}

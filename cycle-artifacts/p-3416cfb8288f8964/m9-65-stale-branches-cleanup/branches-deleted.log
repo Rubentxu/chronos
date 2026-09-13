@@ -1,0 +1,88 @@
+=== Branch deletion log (recovery via: git branch <name> <sha>) ===
+
+Generated: 2026-09-13T11:38:17+02:00
+Main HEAD: 5089e74d0d12157af492bf06e9c89efbf3ecfa34
+
+## Local branches deleted (merged into main, safe to delete)
+
+  feat/m5-06-probe-service-extract b98cc3a072e6850c8e247995ac8c3002ae860341
+  feat/m5-07-browser-probe-extract f8c331119770382b2c36443f2096530c6ecfbfb8
+  feat/m5-08-mutation-lens-causal-slice-extract 9d91482d01537ee10db0fac66889be49408a49e3
+  feat/m5-09-diff-compare-extract 2ff9e7c0b572a7edc50fb0dd5a6432a863271298
+  feat/m5-10-close-M5 61747012d8f6ed4d243193b98bfc76177d68ff61
+  feat/m6-01-trace-slice-merge c6aa009f4f9530ef0144a9eff9cf42b29d515352
+  feat/m6-02-state-query-merge 57e28e8bf7720fc9b6615258ad06ea98febd0476
+  feat/m6-03-execution-query-merge 045c5781e3b09d83a9b9596f35819eca688a4703
+  feat/m6-06-close-M6 c0ca69f83f5ad098b0c3ac3d33b7b8c3d7726949
+  feat/m7-03-session-compare-explain-merge eb466f76033ce11a605ac87967b71027def09195
+  feat/m7-04-session-start-stop-capabilities-scoping 10b51243319a563c7f4f72827192713db8be6fa3
+  feat/m8-05-real-proptest-shrinking-execute 65cbaed2e894d432b61236b00b5d6a4012a53931
+  feat/m8-06-real-shrinkers 211bdcf01c8d924b7f0b9b61ea5fb48fd4694472
+  feat/m8-07-hypothesis-reconstruction-fidelity bceddc946b73209756d3360b0aec4dca592296c3
+  feat/m9-01-schema-versioning 25948147869307343a28e3896e8289c715efbc81
+  feat/m9-02-events-side-table 1a8d104ba2da883b40bd424cdc079b344f7ed63c
+  feat/m9-03-side-table-debt-cleanup 2c98ce9a1df65d44ae865376fee46eb0d95ac425
+  feat/m9-04-side-table-key-layout d6b3b8c51c50d2ce6d0fe4f8c804cf793137f0dc
+  feat/m9-05-side-table-overeng-cleanup 07d01d5869ff6e3ffed29315b761e6e476f3b70d
+  feat/m9-62-bounded-stop-probe 0f878f0ac6a8f9cf61e28c08fe277ca0dd0d83b2
+  feat/m9-63-stop-drain-cc 2ca290d989ab858896d0be0e71b5c0f020a876d4
+  feat/m9-64-vault-drift-ci ec184b9fee3f7ce777687ea7f3b14e3db33623cb
+  feat/ms-race-fix 21cb16df527ac2c962477035fc938ca6c25f78fa
+  fix/m9-56-release-report-duplicate-cross-checks 32d9a3c386de934bbbdf304b1cad367b629d9731
+  fix/m9-57-apply-checkpoint-schema-backfill 308215faf074dafb3054789db39c53af7fa2f1e6
+
+## Remote branches deleted (merged into main, safe to delete)
+
+  feat/m0-truth-first-foundation dfae586a54b9b6c6e344599629046824198e5f9a
+  feat/m1-03-execution-log-migration f46d0809185de3bc5ef8bce9db8c7123f72d2a06
+  feat/m1-04-durable-consumer-cursors 01a5875eb8744301e6ff4a2b89fd607c613697f5
+  feat/m1-05-segment-compaction 086cbdd36a6d22c90551ff753890c5a5ba69f988
+  feat/m1-06-auto-compaction d627dbe5212a733177fffac60ce6490d5175783b
+  feat/m1-07-expose-compaction-metrics a4a9e6cac715f8f8f65ca9522581636510efc9f9
+  feat/m1-08-auto-compaction-daemon 2b4fc620df9b36c9bf592e719daf749098c530b7
+  feat/m2-01-function-frame-identity 84512d546c951e9fccf90537aad752b9dca6412a
+  feat/m2-02-frame-cursor 2a7c01ad3676e58a4dc9a5e70944ff5c71562473
+  feat/m2-03-frame-analytics 1ea0800af980cd39c65b6b0909b06e9e666624bf
+  feat/m2-04-call-graph 1a5c2d923ea827148329f13c515b05d352d80bf2
+  feat/m2-05-call-graph-checkpoint e554b854977ee75b997f3f94a49165e774cacdbc
+  feat/m2-native-frame-log-durable 844978d75df95f9983e82b5c5e45b7cf9a696459
+  feat/m2-native-int3-functionentry a13ebabecf125ce425d1fdc4880a891f23bbcd03
+  feat/m6-06-close-M6 c0ca69f83f5ad098b0c3ac3d33b7b8c3d7726949
+  feat/m7-01-events-read-scoping ece02f737e427f7168ca275ab0d72e3e6c614b80
+  feat/m8-05-real-proptest-shrinking-execute 65cbaed2e894d432b61236b00b5d6a4012a53931
+  feat/m8-06-real-shrinkers 211bdcf01c8d924b7f0b9b61ea5fb48fd4694472
+  feat/m9-62-bounded-stop-probe 0f878f0ac6a8f9cf61e28c08fe277ca0dd0d83b2
+  feat/m9-63-stop-drain-cc 2ca290d989ab858896d0be0e71b5c0f020a876d4
+  feat/m9-64-vault-drift-ci ec184b9fee3f7ce777687ea7f3b14e3db33623cb
+  feat/ms-race-fix 21cb16df527ac2c962477035fc938ca6c25f78fa
+  fix/m9-56-release-report-duplicate-cross-checks 32d9a3c386de934bbbdf304b1cad367b629d9731
+  fix/m9-57-apply-checkpoint-schema-backfill 308215faf074dafb3054789db39c53af7fa2f1e6
+=== Local not-merged (preserved) ===
+
+  chore/m-ci-flake-preflight 87a032bf27a988f63b6ee1e0f3a25908c98d4990 — ci: fix three pre-existing CI flakes
+  chore/m5-preflight-clippy-drift-cleanup 47922fef1af04a7e6bebcc2b5312fd2b093628b2 — chore(clippy): fix pre-existing rustc 1.98 clippy drift across 7 crates
+  chore/m5-preflight-sandbox-drift 69a510a119c79dc5ff109ca0515b808ce285948c — test(sandbox): fix pre-existing API drift in m2_acceptance
+  feat/m5-02b-debug-read-extract 13b18b41b5543b3bb39ab313ab0f350e99156cda — feat(services): extract 7 debug-read tools into DebugReadService
+  feat/m5-05b-debug-trace-specialized-extract a10212fddbdd3a9628882a8b7c0fd26f302ac111 — feat(services): extract 6 debug-trace specialized tools to DebugTraceSpecializedService (m5-05b)
+
+## Remote not-merged (preserved)
+
+  chore/m-ci-flake-preflight 87a032bf27a988f63b6ee1e0f3a25908c98d4990 — ci: fix three pre-existing CI flakes
+  chore/m5-02c-cleanup-inert-artifacts 0f4ad6fd235d20fd17ac3294ec7874879deb4cc3 — chore(mcp): remove inert m5-02b artifacts (build.rs, fixture symlink, dev-dep)
+  chore/m5-preflight-clippy-drift-cleanup 47922fef1af04a7e6bebcc2b5312fd2b093628b2 — chore(clippy): fix pre-existing rustc 1.98 clippy drift across 7 crates
+  chore/m5-preflight-sandbox-drift 69a510a119c79dc5ff109ca0515b808ce285948c — test(sandbox): fix pre-existing API drift in m2_acceptance
+  feat/m2-function-exit-dwarf 0aa6838114f6a613b97627f3a77d63ef02ac6a52 — feat(chronos-native): FunctionExit via return-address detection (m2-function-exit-dwarf)
+  feat/m2-native-live-probe-frame-capture 7cd67b7791faef11fc168d71a653f928ff4ad6b8 — fix(probe-backend): bridge running/stop_flag semantics + lint cleanup
+  feat/m2-pie-fixture-ci d197c83e2a94af619e2f6ba83b6cf53fb72bda6a — test(chronos-sandbox,native): add PIE-flagged function-frame fixture + ASLR load-bias assertion
+  feat/m3-08-property-projection ed5be7701d5f4159d25df41a0e608e2a81e204d1 — feat(query): add PropertyProjection for runtime property evaluation
+  feat/m3-09-mutation-lens-tools ad7299d907411e96becf006308aeb40d368771d0 — feat(mcp): add mutation_lens tool exposing StateTransition records
+  feat/m3-10-causal-slice-tool 7dae25c3dd99259b0941763e8b8eefbe518ac0f9 — feat(mcp): add causal_slice tool exposing chronos_domain::causal_slice
+  feat/m3-11-m3-uat-order-total afce265e2707f8ffe976b7fc6fb772dc57c0e6c9 — test(query): add m3-uat-order-total end-to-end property violation test
+  feat/m3-scoping 7bd5f77be540cb3f7c349fee5d2444a143c0735f — docs(milestones): add M3 runtime-properties scoping document
+  feat/m5-01-services-skeleton 40ca582b432454f66500f190fea755498947a585 — feat(services): add chronos-services crate with QueryService::list_threads POC
+  feat/m5-02b-debug-read-extract 13b18b41b5543b3bb39ab313ab0f350e99156cda — feat(services): extract 7 debug-read tools into DebugReadService
+  feat/m5-03-sessions-extract 060436b82dfeb21f3c54649eb07cb3082f430711 — feat(services): extract 5 session-lifecycle tools to SessionsService (m5-03)
+  feat/m5-04-tripwires-extract 437ccdac9d127238318b0caa051115b286eafcfb — feat(services): extract 4 tripwire tools to TripwiresService (m5-04)
+  feat/m5-05a-debug-trace-core-extract 6251e631e2844be38f8065e38ae21dc5258b5a74 — chore(fmt): apply cargo fmt to m5-05a changes
+  feat/m5-05b-debug-trace-specialized-extract a10212fddbdd3a9628882a8b7c0fd26f302ac111 — feat(services): extract 6 debug-trace specialized tools to DebugTraceSpecializedService (m5-05b)
+  feat/m5-agent-api-v2-scoping bae189641ae42b6508c9ce310d3d91cf3f05c1bf — docs(milestones): add M5 agent-api-v2 scoping document
