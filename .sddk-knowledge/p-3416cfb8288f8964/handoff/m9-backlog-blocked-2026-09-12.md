@@ -502,3 +502,43 @@ CC#24 (added in m9-32) watches for `## Cross-checks`. CC#55 (added in m9-68) wat
 Net cycle delta this session: 65 → 68 (m9-65 + m9-66 + m9-67 + m9-68).
 Net CC delta this session: 52 → 55 (CC#53, CC#54, CC#55).
 Vault state: canonical, 68 cycles indexed, 55 CCs documented, peel_match verified for m9-65/m9-66/m9-67/m9-68.
+
+
+## Session 2026-09-13T12:10Z: m9-69 (bounded join unit test)
+
+Closed the deferred follow-up tracked across m9-62/m9-67/m9-68: "Bounded join unit test".
+
+| Item | Status |
+|---|---|
+| `crates/chronos-native/src/probe_backend.rs` | `BoundedJoinResult` enum + `pub(crate) bounded_join_with_timeout(handle, timeout)` extracted; `stop_probe` calls it with `Duration::from_secs(10)` |
+| 2 new unit tests | `bounded_join_returns_joined_when_thread_exits_quickly`, `bounded_join_returns_timeout_when_thread_overruns` → 2 passed / 0 failed in **0.10s** |
+
+The 10s-hardcoded timeout was the entire reason m9-62's timeout branch was untestable. Parameterizing it turns a "10s runtime blocker" into a 0.10s test. Production behavior is unchanged: `stop_probe` still waits up to 10s and emits the same three log lines (`Joined` → info, `Timeout` → warn "abandoning", `Panicked` → warn). MS-RACE-FIX / HIGH-5 traceability preserved.
+
+Gates:
+- T0: `cargo fmt --check` + `cargo clippy -p chronos-native --lib -- -D warnings` PASS
+- T1: `cargo test -p chronos-native --lib` (serial) → 101 passed / 0 failed (13.19s)
+- T1: `cargo test --workspace --lib --no-fail-fast` (serial) → 1003 passed / 1 failed (see below)
+- CC#12: `main_sha == head_sha == remote_tag_peel == 57c4a10` (peel match verified on origin)
+- Vault drift: PASS (47 python + 7 bash CCs all clean)
+
+### Pre-existing failure discovered (deferred, not caused by m9-69)
+
+`chronos-mcp` `server::tests::test_list_sessions_after_save` fails deterministically:
+
+- Reproduces on `main` at `5b6c337` in isolation.
+- Cause: `ChronosServer::new()` opens the real `$HOME/.local/share/chronos/sessions.redb`; `list_sessions` bincode-deserializes every record and returns `StoreError::Serialization` on the first stale-schema record, propagated as `ListFailed` (only "does not exist" is tolerated).
+- Proof of env coupling: `CHRONOS_DB_PATH=/tmp/t.redb cargo test -p chronos-mcp --lib test_list_sessions_after_save` → 1 passed.
+- Tracked as `FIND-M9-69-MCP-STORE-ISOLATION` (terms/index.md, deferred → m9+). Recommended next cycle: isolate `chronos-mcp` server tests from the user store + make `list_sessions` resilient.
+
+Also: parallel `cargo test -p chronos-native --lib` hangs (AGENTS.md §6.5 `ptrace_tracer` flake); reproduces on `main`; serial passes 101/101 in 13s. Use `--test-threads=1` for this crate.
+
+### Open follow-ups
+
+- **FIND-M9-69-MCP-STORE-ISOLATION** (new): `chronos-mcp` test ↔ user-store coupling; `list_sessions` stale-record hard-fail. Recommended next cycle.
+- **5+19 not-merged branches triage** (preserved from m9-65): human review needed.
+- **Sandbox test warm-up ordering**: `test_session_start_via_v2_then_session_stop_via_v2` fails alone, passes with full file (likely MCP server binary warm-up).
+
+Net cycle delta this session: 68 → 69.
+Net CC delta this session: unchanged at 55 (m9-69 adds no new CC; local refactor + test only).
+Vault state: canonical, 69 cycles indexed, 55 CCs documented, peel_match verified for m9-69 (`v0.7.71` → `57c4a10`).
