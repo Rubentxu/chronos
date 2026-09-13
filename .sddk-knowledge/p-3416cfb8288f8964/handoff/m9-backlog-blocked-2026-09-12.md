@@ -426,3 +426,48 @@ CC to confirm it's still firing — this is deferred.
 Net cycle delta this session: 64 → 66 (m9-65 + m9-66).
 Net CC delta this session: 52 → 54 (CC#53 + CC#54).
 Vault state: canonical, 54 CCs documented, peel_match verified for both m9-65 and m9-66.
+
+
+
+## Session 2026-09-13T12:40Z: m9-67 (CC smoke test for drift detection)
+
+Closed the "fix a broken CC, then fix what it would have caught" pattern that recurred in m9-65 (49 stale branches) and m9-66 (54 stale SHAs). Added `scripts/smoke_test_ccs.sh` that periodically injects synthetic drift into CC#4 (wrong SHA in archive-manifest), CC#39 (wrong Total cycles in cycles/index.md; superset of CC#5), CC#46 (fake fix/m9-99-smoke-test branch), and verifies the CC#48+CC#54 meta-checks report PASS on clean state. Each test asserts exit code + DRIFT line in a per-test log file. ~35 seconds wall time.
+
+| Item | Status |
+|---|---|
+| `scripts/smoke_test_ccs.sh` | NEW (250 lines; per-test git clone; dynamic Total cycles read; per-test log files) |
+| CC#4 detection (synthetic SHA mismatch) | VERIFIED (smoke test catches injected drift) |
+| CC#39 detection (synthetic Total cycles mismatch) | VERIFIED (smoke test catches injected drift) |
+| CC#46 detection (synthetic stale branch) | VERIFIED (smoke test catches injected drift) |
+| CC#48 + CC#54 clean-state PASS | VERIFIED (exit 0; reports 46 python + 7 bash CCs all clean) |
+
+Gates:
+- T0: not applicable (no Rust changes)
+- T-self: 4 smoke tests PASS in ~35s wall time
+- CC#48 + CC#54: PASS on real tree after cycle
+
+Two bugs found in the smoke test script itself during post-merge verification (fixed in commit `dfddc99`):
+1. **Hardcoded `| Total cycles | 66 |`**: the CC#39 injection had the literal value hardcoded. When Total cycles became 67 (this cycle), the replace silently no-op'd and the test reported a false PASS. Fixed by reading the value dynamically and bumping by 100.
+2. **Shared `out.log`**: all four tests wrote to a single log, so a passing test could mask a previous failure. Each test now writes to its own log (`cc4.log`, `cc39.log`, `cc46.log`, `meta.log`).
+
+These are exactly the kind of "silent CC failure" the smoke test is designed to catch — they would have caused silent failures of the smoke test itself if not caught. m9-67 demonstrates the meta value of the smoke test: it caught bugs in its own implementation.
+
+### Pattern closed: "fix a broken CC, then fix what it would have caught"
+
+Three instances observed this session, all addressed:
+1. m9-65 → CC#46 missing milestone prefixes → 49 stale branches cleaned up
+2. m9-66 → CC#4 broken awk regex → 54 stale SHAs regenerated
+3. m9-67 → smoke test had its own latent bugs → caught by the smoke test running on a bumped Total cycles value
+
+The third instance is the most important: the smoke test is the first piece of cycle infrastructure that *tests itself* via the same mechanism it tests the rest of the system. Future cycles that touch `vault-drift-sweep.md` or `check_vault_drift.sh` should run `./scripts/smoke_test_ccs.sh` before merge.
+
+### Open follow-ups
+
+- **Bounded join unit test** (deferred from m9-62): 10s runtime blocker.
+- **CC for `## Files Inventory` in verify-report** (deferred): 22 cycles m9-32..m9-53.
+- **5+19 not-merged branches triage** (preserved from m9-65): human review recommended.
+- **Sandbox test warm-up ordering**: `test_session_start_via_v2_then_session_stop_via_v2` fails alone, passes with full file (likely MCP server binary warm-up).
+
+Net cycle delta this session: 64 → 67 (m9-65 + m9-66 + m9-67).
+Net CC delta this session: 52 → 54 (CC#53 + CC#54; m9-67 added no new CC).
+Vault state: canonical, 67 cycles indexed, 54 CCs documented, peel_match verified for m9-65/m9-66/m9-67.
