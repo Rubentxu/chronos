@@ -231,3 +231,54 @@ Gates:
 Both m9-61 follow-ups now closed (m9-62 bounded join, m9-63 CC).
 
 Vault: 63 cycles indexed, 52 cross-checks clean, peel_match verified.
+
+
+## Session 2026-09-13T10:17Z: final drift sweep
+
+End-of-session drift sweep across dimensions not covered by existing
+CCs (pattern from m9-58/59/60). All checks PASS.
+
+| Dimension | Check | Status |
+|---|---|---|
+| Cycles indexed | cycles/index.md has 63 rows | ✓ |
+| Cycle-artifacts ↔ cycles/index | 60 folders, 3 allowed exceptions (m9-01, m9-02, m9-54) | ✓ |
+| Inverse: folders without index row | 0 | ✓ |
+| Artifact count per cycle | 60/60 have exactly the 6 expected files | ✓ |
+| Knowledge pairs (change-entry ↔ archive-manifest) | 63/63 paired; pre-vault-reorg m8-* has only change-entry (by design) | ✓ |
+| terms/index.md Last archive ↔ cycles/index.md most-recent | Both = m9-63-stop-drain-cc | ✓ |
+| head_sha consistency (apply-checkpoint ↔ release-receipt ↔ cycles/index) | All 3 session cycles consistent | ✓ |
+| findings_closed IDs consistent (apply-checkpoint ↔ change-entry ↔ archive-manifest) | All 3 session cycles consistent | ✓ |
+| CC#48 meta-check (52 CCs all clean) | PASS (after m9-63 CC#52 added) | ✓ |
+
+No new drift dimensions discovered. CC#51 covers all known cases.
+
+### Known by-design exception (not CC-enforced)
+m8-07-hypothesis-reconstruction-fidelity has change-entry but no
+archive-manifest. Source artifacts not in checkout (vault reorg, see
+Bucket 3 of the original handoff). Documented in handoff bucket 3.
+Not a regression, no action required.
+
+### Cross-check coverage map (52 CCs)
+- C1-C10: legacy schema normalization (cycles/index, terms/index, change-entry structure)
+- C11-C20: canonical schema enforcement (apply-checkpoint required fields)
+- C21-C30: release/merge receipt canonical fields
+- C31-C40: verify-report/verify-findings schema
+- C41-C47: hardening (CC#42 era-aware peel, CC#44-#47 metadata)
+- C48: meta-check (every CC returns empty)
+- C49: SHA fields must be full 40-char (m9-58)
+- C50: canonical `remote_tag` field (m9-59)
+- C51: cycles/index.md cycle must have cycle-artifacts/ folder (m9-60)
+- C52: ProbeBackend stop-then-drain ordering at service call sites (m9-63)
+
+### Session close
+
+3 cycles closed in this session (2026-09-13T07:21Z → 10:17Z):
+- m9-61-ms-race-fix (v0.7.63): drain/stop race fix
+- m9-62-bounded-stop-probe (v0.7.64): HIGH-5 timeout restoration
+- m9-63-stop-drain-cc (v0.7.65): stop-then-drain ordering CC
+
+Net cycle delta: 60 → 63.
+Net CC delta: 51 → 52.
+Vault state: canonical, 52 CCs clean.
+
+All m9-61 follow-ups closed.
