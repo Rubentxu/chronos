@@ -1,0 +1,34 @@
+{
+  "cycle_id": "m9-65-stale-branches-cleanup",
+  "head_sha": "97ff56e53c4e00768783f11d0df16878cf9c693e",
+  "base_sha": "6e7e39ec35f7bd6c882833206d72b2d46fab1199",
+  "created_at": "2026-09-13T11:42Z",
+  "route": "B-direct",
+  "summary": "Cleanup of 49 stale branches (25 local + 24 remote) that were merged into main but never deleted. CC#53 (extends CC#46) added to vault-drift-sweep.md to detect future drift across all milestone prefixes (chore/*, feat/mX-*, fix/mX-*, ms-*). check_vault_drift.sh now reports a dynamic count of python-executable vs bash-documented CCs. CC#53 is bash-only (validated via CI branch-merged check, not CC#48 meta-check). 5 local + 19 remote not-merged branches preserved for human triage (documented in branches-deleted.log).",
+  "title": "65 stale branches cleanup",
+  "status": "CLOSED",
+  "archived_at": null,
+  "main_sha": null,
+  "peel_match": false,
+  "release_status": null,
+  "released_at": null,
+  "remote_tag": null,
+  "remote_tag_peel": null,
+  "verify_status": "pending",
+  "verified_at": null,
+  "archive_status": null,
+  "findings_closed": [
+    {
+      "finding_id": "FIND-M9-65-BRANCH-DRIFT",
+      "rule_id": "repo.stale_branches_post_merge",
+      "subject": {
+        "cycle": "m9-65-stale-branches-cleanup",
+        "gap": "CC#46 only watched fix/m9-*. Across M0-M8 milestones, every merge to main accumulated stale branches in chore/*, feat/mX-*, ms-* prefixes (25 local + 24 remote merged). Plus 5+19 not-merged branches represent abandoned work requiring human triage.",
+        "fix": "CC#53 added (bash) extends CC#46 to all milestone prefixes. 49 merged-stale branches deleted (safe: git branch -d refuses unmerged). Recovery: branches-deleted.log records the tip SHA of every deleted branch (git branch <name> <sha> recreates). Reflog is the backstop for 90 days. Not-merged branches preserved and documented."
+      }
+    }
+  ],
+  "findings_introduced": {
+    "no_action": []
+  }
+}
