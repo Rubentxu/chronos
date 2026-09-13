@@ -1169,3 +1169,133 @@ Net cycle delta this session: 74 → 75.
 Net CC delta this session: 0 (still 48 python + 7 bash).
 Vault state: canonical, 75 cycles indexed, peel_match verified for m9-75
 (`v0.7.77` → `ac33be5`), CC#4 clean across all archive manifests.
+
+## Session 2026-09-13T18:01Z — m9-76 CC#4 regeneration tool in repo (B-direct)
+
+Released and archived: tag `v0.7.78` at the artifacts commit `613b326`, code commit
+`fd2579f`, merge `8ad2fc7`, post-release `c53171a`; `main == origin/main == c53171a`,
+working tree clean, vault drift PASS (48 python + 7 bash CCs), CC smoke **6/6**,
+feature branch deleted.
+
+### What the cycle did
+
+Closed `FIND-M9-73-CC4-REGEN-RITUAL-NOT-IN-REPO` (low), open since m9-73. CC#4's
+gate (`scripts/check_vault_drift.sh`) requires every archive-manifest Artifact-index
+row to match the SHA-256 of the file it lists, but its *repair* half existed only as
+a throwaway python script re-derived in `~/.jcode/scratch/` on every cycle. Two
+consequences, both measured: nothing exercised the gate's own logic (m9-66's broken
+awk survived many cycles unnoticed), and the ritual left no reviewable trace.
+
+`scripts/regen_manifest_index_shas.py` (257 lines, stdlib only) now mirrors CC#4's
+two edge rules rather than re-deriving them:
+
+- **self-referential rows** are preserved by normalized-path equality
+  (`target_abs == manifest_abs`), so a manifest's row for itself is never rewritten;
+- **dangling rows** (listed file does not exist) are left byte-identical and reported
+  as `missing`, matching CC#4's `[ -f "$path" ]` guard.
+
+Modes: no flags rewrites to a bounded fixpoint (`MAX_PASSES = 5`, because rewriting
+one manifest changes bytes another manifest lists); `--check` writes nothing and
+exits 1 naming each stale row (this is the gate); `--dry-run` reports and exits 0;
+`--verbose` also lists clean manifests. `--check` with `--dry-run` exits 2, as does a
+missing manifest. Stale rows are **always** named, never quiet-gated — that
+distinction was found organically by the smoke check on its first run.
+
+`scripts/tests/test_regen_manifest_index_shas.py` (179 lines, 13 tests, plain
+`unittest`, no third-party dependency) drives a throwaway repo root under
+`tempfile.mkdtemp` so the tests never touch the real vault.
+
+### What the smoke check pins
+
+`scripts/smoke_test_ccs.sh` gained a sixth check, `test_regen_script()`, with four
+phases: unit tests pass; `--check` is clean on a clean clone; the same stale SHA that
+`test_cc4` injects is flagged by **both** CC#4 and `--check`, and `--check` names the
+row; then running the tool restores the true SHA and both are green again. It is
+registered between `test_cc55` and `test_meta_checks`, and `setup_work_copy()` now
+overlays working-tree copies of the tool, its tests and `check_vault_drift.sh` (the
+clone only sees committed state).
+
+### Falsification
+
+Six mutations, each reverted and `cmp`-verified byte-identical against
+`/home/rubentxu/.jcode/scratch/regen.m9-76-good.py` before the next, each observed to
+fail for the reason the guard exists:
+
+1. stale-row print quiet-gated again → the naming unit test FAILED; smoke FAILED with
+   `regen: --check did not name the drifted row` (this is the bug the suite caught).
+2. self-row comparison removed → two unit tests FAILED, and the real tree reported a
+   manifest's own path as stale.
+3. `--check` failure branch disabled → two unit tests FAILED; smoke FAILED.
+4. dangling-row guard removed → `FileNotFoundError`; 4b (row blanked and counted as
+   updated) → the preservation test FAILED with `1 != 0`.
+5. fixpoint loop reduced to one pass → the interlinked-manifest test FAILED.
+6. write path emits a wrong hash → smoke FAILED with
+   `regen: rewrite exit=2 (expected 0)`.
+
+Two limits are recorded rather than papered over: phase (d)'s true-SHA assertion was
+never the failing line in any mutation (the loop bound catches a persistently wrong
+repair first), and mutation 4c (blank the row without counting it) is a no-op because
+writes are gated on `updated`, so only 4b makes the dangling rule observable.
+
+### Identity accident (worth remembering)
+
+The repo's git config is `Chronos Maintainer <maintainer@chronos-rs.local>` while
+every historical commit is `rubentxu`. The first pair of commits was therefore
+authored under the wrong identity, and `git reset --soft` restaged the **final**
+working tree — which silently moved the CC#4 manifest-row updates that belong to the
+artifacts step into the code commit, changing the code-commit diff. Both commits were
+rebuilt with `git commit-tree` using the original commit's tree, the configured
+identity exported via `GIT_AUTHOR_*`/`GIT_COMMITTER_*`, which restored
+`diff_digest = sha256:bc726c11…` exactly. Use `git commit-tree` + explicit env when a
+cycle must preserve a verified diff, not `reset --soft`.
+
+### Gate notes
+
+- CC#21 (missing `## Evidence bindings`) was the one real red from the vault gate on
+  the new manifest; the section was written by hand and the gate went green.
+- CC#42 is red by construction between the artifacts commit and tag creation (the tag
+  does not exist yet); it cleared once `v0.7.78` was pushed and the peel recorded.
+- CC#4 affected set this cycle: m9-02, m9-67, m9-68, m9-70, m9-71, m9-72, m9-73, m9-74,
+  m9-75 (shared files: `smoke_test_ccs.sh`, `vault-drift-sweep.md`, `AGENTS.md`,
+  `cycles/index.md`, `terms/index.md`) plus the new m9-76 manifest; 28 rows across 76
+  manifests in the first pass, and one extra pass after each artifact edit.
+- `terms/index.md`: the finding row was moved out of the active deferred list (it had
+  been appended to the m9-72 section) into the resolved table.
+- `AGENTS.md` §5 gained the "archive-manifest SHA rows are generated, not hand-edited"
+  rule and §7 four vault commands; `maintenance/vault-drift-sweep.md` gained a
+  "Repair tool (added by m9-76)" paragraph under CC#4.
+
+### Gates
+
+- T0: `cargo fmt --all -- --check` clean; `cargo clippy --workspace --all-targets
+  -- -D warnings` clean
+- T1: 921 passed (workspace lib minus sandbox/native/e2e); `chronos-native --lib
+  --test-threads=1` 101 passed in 13.02 s
+- Unit: `scripts/tests/test_regen_manifest_index_shas.py` 13/13; `--check` clean over
+  76 manifests
+- T4-canary (`CHRONOS_MCP_PATH` set): `e2e_connectivity` 1/1, `store_open_failure` 2/2
+- Vault drift PASS; CC smoke 6/6; CC#12 `main_sha == head_sha == remote_tag_peel ==
+  613b326`
+
+### Open follow-ups
+
+- **FIND-M9-75-MCP-TOOLS-DO-NOT-DISCLOSE-DEGRADED-STORE** (low, unchanged).
+- **FIND-M9-74-NATIVE-PTRACE-TESTS-NEED-SERIAL** (low, unchanged).
+- **FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION** (low, unchanged).
+- **FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION** (low, now **partially
+  mitigated**): the regeneration is a single reviewed command, but the set still grows
+  by one manifest per cycle; the row stays open for the structural fix.
+- **Sandbox warm-up ordering** (preserved) and **not-merged branches triage**
+  (preserved from m9-65): human review needed.
+- Next roadmap candidate, still pending: `session_start{action=attach}` is a stub
+  (`ChronosSessionLifecycleService::start` →
+  `ServiceError::Unsupported("attach (m7+)")` at
+  `crates/chronos-services/src/session_lifecycle.rs:98`/`:180`, mapped at
+  `crates/chronos-mcp/src/server.rs:3783`); wiring `chronos_domain::attach` is the
+  roadmap m9-76 slot this cycle did not take, so it becomes m9-77.
+
+Net cycle delta this session: 75 → 76.
+Net CC delta this session: 0 (still 48 python + 7 bash; CC#4 already covered SHA
+consistency, so the smoke suite asserts the same counts while running 6 checks).
+Vault state: canonical, 76 cycles indexed, peel_match verified for m9-76 (`v0.7.78` →
+`613b326`), CC#4 clean across all archive manifests and now enforced by a tool.
