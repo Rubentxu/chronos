@@ -1,0 +1,37 @@
+name: Vault Drift Sweep
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md'
+      - '.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md'
+      - '.sddk-knowledge/p-3416cfb8288f8964/terms/index.md'
+      - '.sddk-knowledge/p-3416cfb8288f8964/changes/**'
+      - '.sddk-knowledge/p-3416cfb8288f8964/changes/archive/**'
+      - 'cycle-artifacts/**'
+      - 'scripts/check_vault_drift.sh'
+      - '.github/workflows/vault-drift.yml'
+  pull_request:
+    paths:
+      - '.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md'
+      - '.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md'
+      - '.sddk-knowledge/p-3416cfb8288f8964/terms/index.md'
+      - '.sddk-knowledge/p-3416cfb8288f8964/changes/**'
+      - '.sddk-knowledge/p-3416cfb8288f8964/changes/archive/**'
+      - 'cycle-artifacts/**'
+      - 'scripts/check_vault_drift.sh'
+      - '.github/workflows/vault-drift.yml'
+
+jobs:
+  vault-drift:
+    name: Vault drift sweep (CC#48 meta-check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check for drift
+        run: ./scripts/check_vault_drift.sh

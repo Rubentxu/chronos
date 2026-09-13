@@ -1,0 +1,27 @@
+{
+  "schema": "verify-finding.schema.json",
+  "subject": {
+    "head_sha": "339f7b5e806167550355413cf570507925b774cf",
+    "base_sha": "598c914b4427657c264949037787cbae191db533",
+    "diff_digest": "sha256:066ebe7ddcf52300449fa3f9c80bc5a5bf4bbf8751243a7a8a5b86b948da441a",
+    "working_tree_clean": true,
+    "verified_at": "2026-09-13T10:25:00Z",
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
+    "verdict": "passed"
+  },
+  "findings": [
+    {
+      "finding_id": "FIND-M9-64-NO-VAULT-CI",
+      "rule_id": "ci.vault_drift_sweep_automation",
+      "severity": "medium",
+      "summary": "The 52 vault CCs only ran manually during SDDK cycles; a regression in vault files would not be caught until the next drift sweep",
+      "subject": {
+        "gap": "Vault files (.sddk-knowledge/.../vault-drift-sweep.md, cycles/index.md, change-entry.md, archive-manifest.md, cycle-artifacts/*) had no CI automation. Drift was only detected when an SDDK cycle ran a manual sweep.",
+        "fix": "CI workflow .github/workflows/vault-drift.yml executes scripts/check_vault_drift.sh on every push to main and every PR that touches vault files. The script runs CC#48 meta-check (which executes every other CC) and exits 1 on drift."
+      }
+    }
+  ],
+  "lens_summary": "m9-64 closes the gap where vault CCs only ran manually. Single-commit B-direct: 1 workflow file + 1 shell script. No source code changes. Self-tested with synthetic m9-99 drift injection: script correctly returns exit 1 + DRIFT report.",
+  "cycle_id": "m9-64",
+  "verdict": "pass_with_findings"
+}
