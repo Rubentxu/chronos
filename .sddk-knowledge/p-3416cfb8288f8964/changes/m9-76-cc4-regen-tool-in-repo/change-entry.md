@@ -62,15 +62,15 @@ with a manual revert of self rows; here it was one command plus `--check`.
 | Path | B-direct |
 | Status | CLOSED |
 | Base SHA | `e59c44e64f40b475a3541c6de3e9176ebf5d0cdf` |
-| Head SHA | `TBD_HEAD_SHA` |
+| Head SHA | `613b326d24191fd0ceaba5a500ef5b59857bd68d` |
 | Tag | `v0.7.78` |
 
 ## Subject
 
 - base_sha: `e59c44e64f40b475a3541c6de3e9176ebf5d0cdf`
-- head_sha: `TBD_HEAD_SHA`
+- head_sha: `613b326d24191fd0ceaba5a500ef5b59857bd68d`
 - diff_digest: `sha256:bc726c11f39e072964a718c225b4b75f190841accda2cc6202394ca46581355a`
-- source commits: `fd2579f` (code + tests + docs), `TBD_ARTIFACTS_COMMIT` (artifacts)
+- source commits: `fd2579f` (code + tests + docs), `613b326` (artifacts)
 - cycle: m9-76
 - branch: `feat/m9-76-cc4-regen-tool-in-repo`
 - date: `2026-09-13T17:57Z`

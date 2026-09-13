@@ -46,7 +46,7 @@ manual revert of self rows. One commit on
 | Path | B-direct |
 | Status | CLOSED |
 | Base SHA | `e59c44e64f40b475a3541c6de3e9176ebf5d0cdf` |
-| Head SHA | `TBD_HEAD_SHA` |
+| Head SHA | `613b326d24191fd0ceaba5a500ef5b59857bd68d` |
 | Branch | `feat/m9-76-cc4-regen-tool-in-repo` |
 | Tag | `v0.7.78` |
 | Route | B-direct |
@@ -66,7 +66,7 @@ manual revert of self rows. One commit on
 - **`apply-checkpoint.json`**: `status: CLOSED`, `verify_status: passed`, `release_status: released`, `archive_status: archived`, `findings_closed: [FIND-M9-73-CC4-REGEN-RITUAL-NOT-IN-REPO]`
 - **`verify-findings.json`**: 1 finding closed (low `process.undocumented_tooling`), 4 deferred (low `code.silent_degradation`, low `test.environmental_failure`, low `code.duplicated_policy`, low `process.growing_regeneration_set`), verdict `passed`
 - **`verify-report.md`**: Path, Summary, Closed finding, Files Inventory, Falsification evidence, Gates, Residual risk, Cross-checks
-- **`merge-receipt.md`**: `Base SHA | e59c44e64f40b475a3541c6de3e9176ebf5d0cdf`, `Head SHA | TBD_HEAD_SHA`
+- **`merge-receipt.md`**: `Base SHA | e59c44e64f40b475a3541c6de3e9176ebf5d0cdf`, `Head SHA | 613b326d24191fd0ceaba5a500ef5b59857bd68d`
 - **`release-receipt.md`**: `Remote tag | v0.7.78`, `Peel match | true`
 - **`scripts/regen_manifest_index_shas.py`**: `--check` exit 0 over 76 manifests; `--dry-run` exit 0; `--check --dry-run` exit 2
 - **`scripts/tests/test_regen_manifest_index_shas.py`**: `Ran 13 tests … OK`
@@ -154,12 +154,12 @@ observed to fail for the reason the guard exists:
 | test (cc smoke suite) | `scripts/smoke_test_ccs.sh` | `86def49d7e23b4e521687ddcb53a384aac18ec3f91f0e2845396f90d7ac3e7d3` |
 | docs (agents manual) | `AGENTS.md` | `83d09aa421c0c0c06a8dc28d4a5ba27dbb66772f7a1310103f3c133969fe8924` |
 | docs (vault drift sweep) | `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md` | `7f977ba9c293ef9370af205e6b21c48c3bb615fbfc78aac2faf665e1517809c3` |
-| apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/apply-checkpoint.json` | `735a1db98fecc5aac2d22d58d0e5a24e5b547ada07063339891cebe1b262b704` |
+| apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/apply-checkpoint.json` | `232613564d78f9c0839f732c4b1647cf12f4582602c4073580cbf0cc6e20df0c` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/verify-report.md` | `c10f7d6c66d92dd01420a5dc64846ae717dd874c7e2334b138a9578d987adfcf` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/verify-findings.json` | `e3f3a9b1dd726d8794a6aa7eb11aa0bc91c86d06e1a0b623ef9ee6b72943b28a` |
-| release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/release-report.md` | `78aba373674307e971881bee5e8b416301c55639698df41ac43377145893e292` |
-| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/release-receipt.md` | `d2a2873720b143f5dbfb0e6106cca53421c23686fe3bb3bedaa65009f13a3888` |
-| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/merge-receipt.md` | `b233d355d4b38358e9881169914af2b3fea1b94ea1663db4bb1684ef5c12ac74` |
-| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-76-cc4-regen-tool-in-repo/change-entry.md` | `f6a509f0d32d26e6d8d71d5d0ec302c4beae8602c4f71c434ab053b10d519461` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `810411f322b7d52e9354c8bd16ff97f60ac9eb38c700e26738ca98d981154be5` |
+| release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/release-report.md` | `4d269ba1b0bff938b0ac7b11706a5d871b1ee553c60ac5747399eaa438f97c93` |
+| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/release-receipt.md` | `a0f2475bfc990115cbabf9109f26c06ffcd3b05ade3ef55ee9c53e9c24816182` |
+| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/merge-receipt.md` | `0ccc5642788a57be9e0457ca7dac763211872229f76f679311b9b483a7488051` |
+| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-76-cc4-regen-tool-in-repo/change-entry.md` | `c40623efda64da667293be5d19262f6d627d7c8a54e2e8b5d527bd82b2c778f1` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `2d2597158d64b360918cfa4133202ab44acbb0ca2f6fbcf3a164c55bfc2bcaf0` |
 | vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `67791a85c7cbcb975c6c951ffd0ac1649e0b8ea92c899fef9bdae5df5edca82b` |

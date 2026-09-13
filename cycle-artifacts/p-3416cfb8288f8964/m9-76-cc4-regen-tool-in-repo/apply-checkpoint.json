@@ -1,13 +1,13 @@
 {
   "cycle_id": "m9-76-cc4-regen-tool-in-repo",
-  "head_sha": "TBD_HEAD_SHA",
+  "head_sha": "613b326d24191fd0ceaba5a500ef5b59857bd68d",
   "base_sha": "e59c44e64f40b475a3541c6de3e9176ebf5d0cdf",
   "created_at": "2026-09-13T17:57Z",
   "route": "B-direct",
   "summary": "Closes FIND-M9-73-CC4-REGEN-RITUAL-NOT-IN-REPO, confirmed a fifth time in m9-75 and re-confirmed during this very cycle. CC#4 (archive-manifest Artifact index SHA-256 consistency) had a gate in scripts/check_vault_drift.sh but no repair tool in the repository: the repair was a throwaway python script re-derived in the agent scratch directory every cycle, so nothing exercised the gate's own logic and the broken-awk bug of m9-66 survived many cycles undetected. The cycle lands the repair half of the gate as scripts/regen_manifest_index_shas.py. It mirrors CC#4's semantics exactly, which is the reason it is trustworthy as a repair tool: the self-referential row is preserved (a file cannot contain its own hash, and CC#4 skips it with an explicit path comparison), and a row whose target file no longer exists is left byte-for-byte untouched (CC#4 guards every comparison with [ -f \"$path\" ], so a dangling row is invisible to the gate and the tool must not silently blank it). Modes: no flags rewrites every stale row to a fixpoint, because rewriting one manifest changes the hash of a manifest another one lists; --check writes nothing and exits 1 naming each stale row, which is the machine verification that the ritual was performed; --dry-run reports and always exits 0. scripts/tests/test_regen_manifest_index_shas.py adds 13 zero-dependency unittest cases covering row parsing, self-row preservation, dangling-row preservation, --check/--dry-run exit codes and exclusivity, the fixpoint across two manifests that list each other, manifest discovery, and the naming of stale rows. scripts/smoke_test_ccs.sh gains a sixth check that pins tool and gate together in four phases: the unit tests pass; --check is clean on a clean clone; after injecting the same stale SHA that test_cc4 injects, both --check and CC#4 flag it and --check names the row; after running the tool, the row carries the true SHA-256 and both --check and the gate go green. setup_work_copy now also overlays the working-tree copies of the vault tooling, so the suite tests the tree about to merge rather than HEAD alone (in m9-75 this cost a run: the suite clones HEAD, so a post-release commit had to land before the smoke could pass). The tool earned its keep inside its own cycle: editing scripts/smoke_test_ccs.sh, maintenance/vault-drift-sweep.md and AGENTS.md staled the rows of six historical manifests (m9-67, m9-68, m9-72, m9-73, m9-74, m9-75) plus two more after the vault doc edit, and the regeneration that used to be hand-managed was a single command with a --check confirmation. Falsification was done guard by guard, each reverted, the failure observed, the file restored byte-identically against /home/rubentxu/.jcode/scratch/regen.m9-76-good.py: quiet-gating the stale-row print fails the naming unit test and, in the smoke suite, phase (c) reported '--check did not name the drifted row' (this one was found organically, not constructed); removing the self-row comparison makes the tool try to write a manifest's own hash into itself and fails two tests; making --check swallow drift fails two unit tests and the smoke suite; removing the dangling-row guard crashes on a missing file, and a variant that blanks such rows and counts them as updated fails the preservation test; reducing the fixpoint loop to a single pass fails the interlinked-manifest test; writing a wrong hash fails the smoke suite with 'rewrite exit=2 (expected 0)' because the loop never converges, which is the reason the loop's own bound is worth having. Docs: maintenance/vault-drift-sweep.md documents the tool next to CC#4 (including that --check is the gate and --dry-run reports), its resolution paragraph now says to run the tool instead of hand-editing, and AGENTS.md section 5 makes archive-manifest SHA rows generated rather than hand-edited, with the two commands in the quick reference. The CC counts are unchanged (48 python + 7 bash): no new check was added to the drift sweep, because CC#4 already covers SHA consistency and a duplicate CC would add no signal.",
   "title": "76 cc4 regen tool in repo",
   "status": "CLOSED",
-  "main_sha": "TBD_HEAD_SHA",
+  "main_sha": "613b326d24191fd0ceaba5a500ef5b59857bd68d",
   "findings_closed": [
     {
       "finding_id": "FIND-M9-73-CC4-REGEN-RITUAL-NOT-IN-REPO",
@@ -55,7 +55,7 @@
   },
   "peel_match": true,
   "remote_tag": "v0.7.78",
-  "remote_tag_peel": "TBD_HEAD_SHA",
+  "remote_tag_peel": "613b326d24191fd0ceaba5a500ef5b59857bd68d",
   "release_status": "released",
   "verify_status": "passed",
   "archive_status": "archived",

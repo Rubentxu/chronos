@@ -45,7 +45,7 @@ with the commands in §7.
 | SHA | Subject |
 |---|---|
 | `fd2579f9b1ded8f71687f696d4b5b1f2234be892` | `chore(vault): land the CC#4 manifest-SHA regeneration as a repo script (m9-76)` |
-| `TBD_HEAD_SHA` | `feat(m9-76): cycle artifacts (apply-checkpoint, verify, release-report)` (tag `v0.7.78`) |
+| `613b326d24191fd0ceaba5a500ef5b59857bd68d` | `feat(m9-76): cycle artifacts (apply-checkpoint, verify, release-report)` (tag `v0.7.78`) |
 
 ## Diff summary
 
