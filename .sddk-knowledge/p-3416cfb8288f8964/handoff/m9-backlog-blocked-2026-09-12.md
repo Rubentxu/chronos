@@ -682,3 +682,165 @@ workaround and adds no structural class, so `smoke_test_ccs.sh` expected counts
 need no update).
 Vault state: canonical, 71 cycles indexed, 55 CCs documented, peel_match verified
 for m9-71 (`v0.7.73` → `f8abe7b`), CC#4 clean across all archive manifests.
+
+## Session 2026-09-13T13:45Z: m9-72 (read path table error classification)
+
+Closed `FIND-M9-71-LOAD-SESSION-TABLE-ERROR-COLLAPSE`, the deferral recorded by
+m9-71 one session earlier. The deferral was written as a two-site cosmetic
+inconsistency; recon found **four** sites and an observable consequence, so the
+cycle is considerably larger than its predecessor.
+
+| Site | Old behaviour | Why it is wrong |
+|---|---|---|
+| `ContentStore::get` (`cas.rs`) | `Err(_) => Ok(None)` | answers a storage fault with "content absent" |
+| `ContentStore::contains` (`cas.rs`) | `Err(_) => Ok(false)` | same, in the boolean query form |
+| `load_session` SESSION_META (`storage.rs`) | `Err(_) => SessionNotFound` | answers a storage fault with "no such session" |
+| `load_session` SESSION_EVENTS (`storage.rs`) | `Err(_) => SessionNotFound` | **drops events silently** |
+
+The fourth row is why this was a cycle and not a note. `load_session` consumes
+`cas::get` in a loop (`if let Some(evt) = self.cas.get(h)? { events.push(evt) }`),
+so a fault answered with `Ok(None)` silently removed events from the loaded
+session and still returned success. Only redb's
+`TableError::TableDoesNotExist` is benign — a database that exists but was never
+written — and every other variant, including `TableTypeMismatch` from a store
+written by a different binary, is a genuine fault.
+
+Fix: new `crates/chronos-store/src/table_error.rs` owns the distinction
+(`classify_read_table_error` → `TableOpenFailure::{Absent, Fault}`, plus
+`or_not_found<T>` and `session_not_found` helpers). All four sites route through
+it. `counterexample_storage.rs` already matched `TableDoesNotExist` explicitly,
+so the crate is now on the policy three of its four modules already followed.
+
+Falsification, one site at a time, 4/4:
+
+| Site reverted | Test that fails |
+|---|---|
+| `cas::get` | `test_get_propagates_storage_fault_instead_of_reporting_missing_content` |
+| `cas::contains` | same test, on the `contains` assertion |
+| `load_session` META | `test_load_session_propagates_storage_fault_instead_of_session_not_found` |
+| `load_session` EVENTS | `test_load_session_propagates_event_table_storage_fault` |
+
+The fault is genuine in every test, not mocked: the table is created with an
+incompatible `TableDefinition` signature so redb itself fails the later
+`open_table` with `TableTypeMismatch`. `TableDoesNotExist` cannot be manufactured
+for a table that was created, which is exactly why the old `Err(_)` arms were
+invisible to the suite.
+
+Gates:
+- T0: `cargo fmt --all -- --check` + `cargo clippy --workspace --all-targets -- -D warnings` PASS
+- T2: chronos-store **69** (62 → 69), chronos-services 263, chronos-mcp 77 lib + 49 integration
+- T3: workspace `--lib --tests` excluding `chronos-sandbox` and `chronos-e2e`, plus `chronos-native --lib -- --test-threads=1` → all pass
+- CC#12: `main_sha == head_sha == remote_tag_peel == f3500a9` (peel verified on origin)
+- Vault drift PASS (47 python + 7 bash CCs); CC smoke 5/5 PASS
+- Cycle branch merged `--no-ff` to main as `2c1f7da`; tag `v0.7.74`
+
+### Unplanned work 1: the documented T3 command hangs
+
+`AGENTS.md` §2 documented T3 as `cargo test --workspace --lib --tests --exclude
+chronos-sandbox --no-fail-fast`, which pulls in `chronos-e2e`; its
+`test_ptrace_capture` needs a ptrace permission this environment does not grant,
+so it runs for 10+ minutes with no output. §1 of the same file already classified
+`chronos-e2e` as bucket D, "explicit opt-in, needs root + ptrace", so the command
+contradicted the taxonomy two sections above it. Fixed in-cycle as its own
+`docs(agents):` commit rather than carried as a deferral: the next agent reads
+that file as authority. §6.5 now records the hang next to the documented
+`chronos-native` parallel flake.
+
+The corrected T3 is two commands; run `chronos-native` serially because of its
+own pre-existing parallel hang:
+```
+cargo test --workspace --lib --tests --exclude chronos-sandbox --exclude chronos-e2e --exclude chronos-native --no-fail-fast
+cargo test -p chronos-native --lib -- --test-threads=1
+```
+
+### Unplanned work 2: the T4-smoke flake is real and outside the diff
+
+`session_persistence` + `counterexample_tools` + `e2e_connectivity` with
+`--test-threads=1` failed intermittently (4+ times). Failure mode:
+`save_session failed: TimeoutError("method=tools/call", 30s)` — a **client-side
+RPC timeout**, not a store error — at line 128 (first save) or 133 (second save).
+Failing runs are the slow ones (76-80 s vs 55-64 s wall).
+
+Mechanism: `McpTestClient::start()` inherits the caller's environment, so every
+sandbox client resolves `default_db_path()` =
+`$HOME/.local/share/chronos/sessions.redb`, one 86 MB store shared by all 35
+suites; `session_save` serializes ~2500 compressed events into it behind a fixed
+30 s client timeout. The trigger is elapsed time, not data, which is why the
+failing assertion moves between the two saves.
+
+Attribution was measured, not argued. Builds were alternated so the shared store
+grows symmetrically:
+
+| Experiment | Observation |
+|---|---|
+| Three-binary command, alternating builds | cycle branch **101** · `main` 0 · cycle branch 0 · `main` 0 |
+| `session_persistence` alone, cycle-branch binary, 3 back-to-back | 0 (60 s) · **101** (76 s, line 133) · 0 (80 s) |
+| `session_persistence` alone, `main` binary, 3 back-to-back | 0 (59 s) · 0 (64 s) · **101** (80 s, line 133) |
+
+Row 3 is the exoneration: `main`'s build contains none of this cycle's code, and
+the cycle-branch binary produced both a pass and a failure, so the outcome does
+not track the build. Recorded as `FIND-M9-72-SANDBOX-SHARED-STORE-SAVE-TIMEOUT`
+(medium). Candidate fixes, in preference order: give each sandbox client a unique
+temporary `CHRONOS_DB_PATH` (`start_with_db_path` already exists and is used only
+by `ce12`), widen the 30 s client timeout, or shrink the fixture.
+
+One hypothesis was tested and **dropped** instead of being carried into the
+record: "a leaked `chronos-mcp` holds the redb lock". `pgrep -fc chronos-mcp`
+appeared to show survivors, but the pattern matched the wrapper script's own
+command line; with a specific pattern (`pgrep -fc
+'cargo-targets/debug/chronos-mcp'`) the count is 0 before and after every run.
+No process leaks. `ce12`'s `Database already open. Cannot acquire lock.` is its
+own test-level race on its private scratch db, not the cause.
+
+### Unplanned work 3: two defects in the archive itself, found by the sweep
+
+The post-release drift sweep caught two real defects that neither the cycle nor
+its predecessor had noticed. Both were fixed before the archive was closed.
+
+1. **CC#24 and CC#31 each reported one drift line**: this cycle's
+   `verify-report.md` was written without its `## Cross-checks` section. The
+   convention has existed since m9-28/m9-32 and every prior report carries it.
+   Added, and the section now records that it was missing and how it was found.
+2. **m9-02's artifact index carried a self-referential row with a real SHA** for
+   `archive-manifest (this file)`. A file cannot contain its own current hash, so
+   that row could never be correct; CC#4 skips self-referential rows *by design*,
+   so nothing validated it, and the regeneration helper rewrote it on every run —
+   churning a frozen archive by a diff each cycle. Zeroed to the convention m9-70
+   and m9-71 already use. This is a small instance of the same class as
+   `FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION`: a row that is
+   structurally unmaintainable and silently wrong.
+
+### CC#4 chaintension: the set grew to three
+
+`cycles/index.md` and `terms/index.md` changed this cycle, so **every**
+archive-manifest listing them needed its index rows regenerated: m9-02, m9-70,
+and m9-71. That is `FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION` doing
+exactly what it promised: the affected set grows by one per cycle. Practical
+rule for the next cycle is unchanged — after editing either index, run the CC#4
+loop to a fixpoint over all archive manifests (the m9-02 self-row above was
+discovered precisely because a single pass had not converged).
+
+### Open follow-ups
+
+- **FIND-M9-72-SANDBOX-SHARED-STORE-SAVE-TIMEOUT** (new, medium): all 35 sandbox
+  suites share `$HOME/.local/share/chronos/sessions.redb`; `session_save`
+  times out at 30 s on a slow run. Fix by unique per-client `CHRONOS_DB_PATH`.
+- **FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION** (new, low):
+  `counterexample_storage.rs` keeps four hand-rolled copies of the policy
+  `table_error` now names. Behaviour is identical; pure consistency.
+- **FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION** (preserved, low):
+  affected set now three manifests.
+- **Sandbox warm-up ordering** (preserved): `test_session_start_via_v2_then_session_stop_via_v2`
+  still not reproducible.
+- **5+19 not-merged branches triage** (preserved from m9-65): human review needed.
+  Local branches merged-but-undeleted now include
+  `feat/m9-72-read-path-table-error-classification` (delete after this session).
+- **m9-70 archive manifest T4-smoke count** (preserved): its `session_persistence`
+  figure (8) exceeds the file's 4 tests; left frozen, noted in m9-71 and m9-72.
+
+Net cycle delta this session: 71 → 72.
+Net CC delta this session: unchanged at 55 (m9-72 adds no new CC; it names an
+existing policy and fixes a command, so `smoke_test_ccs.sh` expected counts need
+no update).
+Vault state: canonical, 72 cycles indexed, 55 CCs documented, peel_match verified
+for m9-72 (`v0.7.74` → `f3500a9`), CC#4 clean across all archive manifests.
