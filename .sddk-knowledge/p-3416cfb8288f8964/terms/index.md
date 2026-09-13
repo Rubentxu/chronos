@@ -75,5 +75,5 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-13T12:18:00Z
-| Last archive | m9-66-bash-cc-meta-check |
+| Last updated | 2026-09-13T12:40:00Z
+| Last archive | m9-67-cc-smoke-test |
