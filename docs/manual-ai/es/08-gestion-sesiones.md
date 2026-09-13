@@ -192,6 +192,24 @@ CHRONOS_DB_PATH=/var/lib/chronos/sessions.redb chronos-mcp
 
 El store usa `redb`, una base de datos clave-valor embebida — no requiere servidor de base de datos externo.
 
+### Cuando el store no se puede abrir
+
+Si el store configurado existe pero no se puede abrir (bloqueado por otro
+proceso, corrupto, permiso denegado), el servidor **se niega a arrancar**:
+escribe la ruta y la causa en stderr y sale con estado `2`. No continúa en
+silencio con un store en memoria vacío, porque eso daría guardados exitosos y
+listados vacíos mientras se pierden los datos.
+
+La única excepción es una ruta que todavía no existe: se crean los directorios
+padre y se inicializa el store.
+
+Para aceptar explícitamente el comportamiento degradado anterior (solo útil en
+ejecuciones desechables):
+
+```bash
+CHRONOS_ALLOW_IN_MEMORY_FALLBACK=1 chronos-mcp
+```
+
 ---
 
 ## Tabla Resumen

@@ -40,6 +40,13 @@ cargo build --bin chronos-mcp
 export CHRONOS_MCP_PATH="$CARGO_TARGET_DIR/debug/chronos-mcp"
 ```
 
+The path (3) lookup uses the **last built** binary, so a stale
+`target/debug/chronos-mcp` silently tests the previous commit. After changing
+anything under `crates/chronos-mcp/src/`, rebuild the binary before running
+bucket C, otherwise a sandbox suite that spawns the server measures the old
+code. `chronos-sandbox/tests/store_open_failure.rs` is the suite that makes this
+visible: it asserts on the server's exit status, so a stale binary fails it.
+
 ---
 
 ## 2. Tiered test gates (the rule)

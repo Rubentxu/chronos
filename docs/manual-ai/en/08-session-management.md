@@ -345,6 +345,24 @@ CHRONOS_DB_PATH=/var/lib/chronos/sessions.redb chronos-mcp
 
 The store uses `redb`, an embedded key-value database — no external database server required.
 
+### When the store cannot be opened
+
+If the configured store exists but cannot be opened (locked by another process,
+corrupt, permission denied), the server **refuses to start**: it prints the path
+and the cause to stderr and exits with status `2`. It will not silently continue
+with an empty in-memory store, because that would report successful saves and
+empty listings while losing data.
+
+The one exception is a path that does not exist yet: the parent directories are
+created and the store is initialised.
+
+To accept the old degraded behaviour explicitly (useful only for throwaway
+runs), opt in with:
+
+```bash
+CHRONOS_ALLOW_IN_MEMORY_FALLBACK=1 chronos-mcp
+```
+
 ---
 
 ## Summary Table
