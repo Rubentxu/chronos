@@ -594,10 +594,11 @@ impl NativeProbeBackend {
 
         // BLOCKING: join the probe thread inline before returning so that drain_raw_events
         // called immediately after sees a fully-stopped producer. HIGH-5 timeout guards
-        // against a stuck thread so we never deadlock the caller: spawn a waiter that
-        // joins the thread and signals via channel, then recv_timeout on the caller's
-        // stack. If the timeout elapses, we detach the waiter and warn (the MCP server
-        // response path must not block indefinitely).
+        // against a stuck thread so we never deadlock the caller: see
+        // [`bounded_join_with_timeout`] for the pattern (spawn a waiter that joins
+        // the thread and signals via channel, then recv_timeout on the caller's
+        // stack). If the timeout elapses, we detach the waiter and warn (the MCP
+        // server response path must not block indefinitely).
         let session_id = session.session_id.clone();
         if let Some(handle) = self
             .thread_handle
@@ -605,22 +606,17 @@ impl NativeProbeBackend {
             .unwrap_or_else(|e| e.into_inner())
             .take()
         {
-            let (tx, rx) = std::sync::mpsc::channel::<()>();
-            std::thread::spawn(move || {
-                let _ = handle.join();
-                let _ = tx.send(());
-            });
-            match rx.recv_timeout(std::time::Duration::from_secs(10)) {
-                Ok(()) => {
+            match bounded_join_with_timeout(handle, std::time::Duration::from_secs(10)) {
+                BoundedJoinResult::Joined => {
                     info!("Probe thread exited cleanly for session {}", session_id)
                 }
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                BoundedJoinResult::Timeout => {
                     warn!(
                         "Probe thread did not exit within 10s for session {} — abandoning",
                         session_id
                     );
                 }
-                Err(_) => {
+                BoundedJoinResult::Panicked => {
                     warn!(
                         "Probe thread panicked during shutdown for session {}",
                         session_id
@@ -1092,5 +1088,101 @@ mod tests {
         assert_eq!(rec.symbol_id, None);
         assert_eq!(rec.invocation_id, None);
         assert_eq!(rec.parent_invocation_id, None);
+    }
+
+    // --- bounded_join_with_timeout tests (m9-69) ---
+    //
+    // The bounded-join pattern used by `stop_probe` is HARD to exercise in a
+    // unit test because the production timeout is 10 seconds. By extracting
+    // the pattern into `bounded_join_with_timeout`, we can test the timeout
+    // branch with a 100ms budget — proving boundedness without a 10s wait.
+
+    /// Happy path: a thread that exits quickly must produce `Joined` within
+    /// the timeout window.
+    #[test]
+    fn bounded_join_returns_joined_when_thread_exits_quickly() {
+        let handle = std::thread::spawn(|| {
+            // Trivial work; thread exits immediately.
+        });
+        let started = std::time::Instant::now();
+        let result = super::bounded_join_with_timeout(handle, std::time::Duration::from_secs(2));
+        let elapsed = started.elapsed();
+        assert_eq!(result, super::BoundedJoinResult::Joined);
+        assert!(
+            elapsed < std::time::Duration::from_millis(500),
+            "joined thread should return well under 2s, took {:?}",
+            elapsed
+        );
+    }
+
+    /// Timeout path: a thread that sleeps longer than the timeout must
+    /// produce `Timeout` within the timeout window — never block the caller.
+    /// This is the test that proves the boundedness of `stop_probe`.
+    #[test]
+    fn bounded_join_returns_timeout_when_thread_overruns() {
+        let handle = std::thread::spawn(|| {
+            // Sleep 10 seconds — much longer than the 100ms timeout.
+            // We expect the bounded_join to abandon us at ~100ms.
+            std::thread::sleep(std::time::Duration::from_secs(10));
+        });
+        let started = std::time::Instant::now();
+        let result =
+            super::bounded_join_with_timeout(handle, std::time::Duration::from_millis(100));
+        let elapsed = started.elapsed();
+        assert_eq!(result, super::BoundedJoinResult::Timeout);
+        // Must return within ~250ms (100ms timeout + slack for thread spawn +
+        // channel send overhead). The whole point of this assertion is to prove
+        // we don't wait 10 seconds here.
+        assert!(
+            elapsed < std::time::Duration::from_millis(250),
+            "bounded_join must return within ~timeout, took {:?}",
+            elapsed
+        );
+        // The waiter thread is now detached and will eventually finish the
+        // 10s sleep. No way to assert it from here without a second
+        // bounded_join (which we already proved works). The drop of the
+        // JoinHandle inside the waiter thread is what makes the test leak
+        // the sleeper — acceptable for a unit test that runs in <1s.
+    }
+}
+
+/// Result of [`bounded_join_with_timeout`].
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum BoundedJoinResult {
+    /// The thread completed within the timeout.
+    Joined,
+    /// The thread did not complete within the timeout; the waiter is detached.
+    Timeout,
+    /// The thread panicked during shutdown.
+    Panicked,
+}
+
+/// BLOCKING: wait for `handle` to complete, bounded by `timeout`.
+///
+/// Mirrors the HIGH-5 design pattern (spawn a waiter that joins the thread
+/// and signals via channel, then `recv_timeout` on the caller's stack).
+/// If the timeout elapses, the waiter thread is **abandoned** (not joined)
+/// because we cannot block the caller indefinitely. The waiter will eventually
+/// finish when the thread exits (clean exit or panic) and is detached via
+/// the standard `JoinHandle` drop semantics — no zombie risk.
+///
+/// Used by [`NativeProbeBackend::stop_probe`] with `Duration::from_secs(10)`
+/// to enforce the bounded join contract (MS-RACE-FIX / ADR-0005).
+///
+/// Exposed as `pub(crate)` for unit tests that need to exercise the timeout
+/// branch without waiting 10 seconds.
+pub(crate) fn bounded_join_with_timeout(
+    handle: std::thread::JoinHandle<()>,
+    timeout: std::time::Duration,
+) -> BoundedJoinResult {
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    std::thread::spawn(move || {
+        let _ = handle.join();
+        let _ = tx.send(());
+    });
+    match rx.recv_timeout(timeout) {
+        Ok(()) => BoundedJoinResult::Joined,
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => BoundedJoinResult::Timeout,
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => BoundedJoinResult::Panicked,
     }
 }
