@@ -69,7 +69,6 @@ use rmcp::tool;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
@@ -1280,12 +1279,38 @@ pub struct DebugGetMemoryParams {
 
 impl ChronosServer {
     pub fn new() -> Self {
+        Self::from_store(Self::open_default_store())
+    }
+
+    /// Build a server around an explicitly provided store.
+    fn from_store(store: SessionStore) -> Self {
+        Self {
+            engines: Arc::new(Mutex::new(HashMap::new())),
+            session_languages: Arc::new(Mutex::new(HashMap::new())),
+            store: Arc::new(store),
+            background_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            connected_sessions: Arc::new(std::sync::Mutex::new(HashSet::new())),
+            active_session: Arc::new(Mutex::new(None)),
+            tripwire_manager: Arc::new(TripwireManager::new()),
+            uprobe_counter: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            live_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            live_browser_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// Open the default session store for production use.
+    ///
+    /// Path: `$CHRONOS_DB_PATH`, else `$HOME/.local/share/chronos/sessions.redb`.
+    /// If the file cannot be opened (locked, corrupt, missing parent), fall back
+    /// to an in-memory store so the server still starts.
+    #[cfg(not(test))]
+    fn open_default_store() -> SessionStore {
         let db_path = std::env::var("CHRONOS_DB_PATH")
-            .map(PathBuf::from)
+            .map(std::path::PathBuf::from)
             .unwrap_or_else(|_| {
                 let mut path = std::env::var("HOME")
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|_| PathBuf::from("."));
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|_| std::path::PathBuf::from("."));
                 path.push(".local");
                 path.push("share");
                 path.push("chronos");
@@ -1294,7 +1319,7 @@ impl ChronosServer {
             });
 
         // Try to open existing database with graceful lock handling
-        let store = match SessionStore::try_open(&db_path) {
+        match SessionStore::try_open(&db_path) {
             Ok(s) => {
                 tracing::info!("Opened session store at {:?}", db_path);
                 s
@@ -1308,19 +1333,23 @@ impl ChronosServer {
                 // Fall back to in-memory store if disk store fails
                 SessionStore::in_memory().expect("Failed to create in-memory session store")
             }
-        };
+        }
+    }
 
-        Self {
-            engines: Arc::new(Mutex::new(HashMap::new())),
-            session_languages: Arc::new(Mutex::new(HashMap::new())),
-            store: Arc::new(store),
-            background_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
-            connected_sessions: Arc::new(std::sync::Mutex::new(HashSet::new())),
-            active_session: Arc::new(Mutex::new(None)),
-            tripwire_manager: Arc::new(TripwireManager::new()),
-            uprobe_counter: Arc::new(std::sync::Mutex::new(HashMap::new())),
-            live_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
-            live_browser_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
+    /// Open the session store for unit tests.
+    ///
+    /// Tests are **hermetic**: they get a fresh in-memory store so the suite
+    /// never reads from or writes to the developer's real `$HOME` store (that
+    /// coupling previously made `test_list_sessions_after_save` depend on
+    /// whatever happened to be in the local database — see
+    /// FIND-M9-69-MCP-STORE-ISOLATION). A test that specifically needs a real
+    /// file can still opt in by setting `CHRONOS_DB_PATH`.
+    #[cfg(test)]
+    fn open_default_store() -> SessionStore {
+        match std::env::var("CHRONOS_DB_PATH") {
+            Ok(p) => SessionStore::try_open(std::path::Path::new(&p))
+                .unwrap_or_else(|_| SessionStore::in_memory().expect("in-memory session store")),
+            Err(_) => SessionStore::in_memory().expect("in-memory session store"),
         }
     }
 
@@ -5892,6 +5921,60 @@ mod tests {
         assert_ne!(list_result.is_error, Some(true));
         let text = format!("{:?}", list_result.content);
         assert!(text.contains("session_count") || text.contains("sessions"));
+    }
+
+    /// FIND-M9-69-MCP-STORE-ISOLATION: under `cfg(test)`, `ChronosServer::new()`
+    /// must be hermetic — it must not read from or write to the developer's real
+    /// `$HOME/.local/share/chronos/sessions.redb`. Before the fix, `new()` opened
+    /// that database, so a fresh server started out listing whatever sessions the
+    /// developer happened to have, and `list_sessions` hard-failed on the first
+    /// stale-schema record. That coupling is exactly how
+    /// `test_list_sessions_after_save` failed deterministically on a populated
+    /// machine while passing on a clean one.
+    #[tokio::test]
+    async fn test_default_test_server_does_not_read_the_developer_store() {
+        // Escape hatch: a test that deliberately opts into a real file store is
+        // selected by CHRONOS_DB_PATH. Hermeticity is only asserted for the
+        // default configuration.
+        if std::env::var("CHRONOS_DB_PATH").is_ok() {
+            eprintln!("CHRONOS_DB_PATH set; skipping hermeticity assertion");
+            return;
+        }
+
+        let a = ChronosServer::new();
+        let b = ChronosServer::new();
+
+        // (1) A fresh test server starts empty, not with the developer's sessions.
+        let listed_before = a.store.list_sessions().expect("list_sessions must succeed");
+        assert!(
+            listed_before.is_empty(),
+            "fresh test server must start with an empty store, found {} session(s): \
+             the test store is reading the developer's $HOME database",
+            listed_before.len()
+        );
+
+        // (2) Two independently constructed servers must not share a store.
+        let sid = "isolation-test".to_string();
+        a.build_and_store_engine(&sid, vec![make_fn_event(0, 100, 1, "main")], Language::C)
+            .await;
+        a.save_session(Parameters(SaveSessionParams {
+            session_id: sid.clone(),
+            language: "native".to_string(),
+            target: "/bin/isolation".to_string(),
+        }))
+        .await
+        .unwrap();
+
+        assert_eq!(
+            a.store.list_sessions().expect("list_sessions").len(),
+            1,
+            "server a should see its own session"
+        );
+        assert_eq!(
+            b.store.list_sessions().expect("list_sessions").len(),
+            0,
+            "server b must not see server a's session (stores must be isolated)"
+        );
     }
 
     #[tokio::test]

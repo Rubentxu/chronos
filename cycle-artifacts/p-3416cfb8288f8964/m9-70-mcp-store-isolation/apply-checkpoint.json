@@ -1,0 +1,42 @@
+{
+  "cycle_id": "m9-70-mcp-store-isolation",
+  "head_sha": "071b820",
+  "base_sha": "682817b520010dfa15512fb461a9eeb679009708",
+  "created_at": "2026-09-13T12:10Z",
+  "route": "B-direct",
+  "summary": "Closes FIND-M9-69-MCP-STORE-ISOLATION with three independently falsified fixes. (1) chronos-store list_sessions is best-effort: a record that does not deserialize into SessionMetadata (bincode is not self-describing) is skipped with a warning instead of failing the whole listing. (2) Reading a database with no tables yet returns 'no sessions' instead of TableDoesNotExist, which was also a genuine fresh-install bug (session_list errored on a brand-new sessions.redb). (3) ChronosServer::new() is split into from_store() plus two open_default_store() impls: production keeps the $CHRONOS_DB_PATH/$HOME logic byte-identical, cfg(test) returns a fresh in-memory store, so all 36 unit-suite construction sites are hermetic. Each fix was reverted in turn to confirm its test fails; the hermeticity test observed 21 sessions from the developer's real store before the fix.",
+  "title": "70 mcp store isolation",
+  "status": "OPEN",
+  "main_sha": "071b820",
+  "findings_closed": [
+    {
+      "finding_id": "FIND-M9-69-MCP-STORE-ISOLATION",
+      "rule_id": "test.store_env_coupling",
+      "subject": {
+        "cycle": "m9-70-mcp-store-isolation",
+        "gap": "ChronosServer::new() opened $HOME/.local/share/chronos/sessions.redb even under cfg(test), so chronos-mcp's unit suite wrote to and depended on the developer's real database (which holds records from older binaries). SessionStore::list_sessions bincode-deserialized every record and returned StoreError::Serialization on the first stale layout, which chronos-services propagated as ListFailed because only 'does not exist' was tolerated. Result: server::tests::test_list_sessions_after_save failed deterministically on a populated machine and passed on a clean one; a fresh test server listed 21 foreign sessions.",
+        "fix": "list_sessions now skips undeserializable records with tracing::warn! (key included) instead of failing; list_sessions and session_exists now treat redb::TableError::TableDoesNotExist as the empty answer; ChronosServer::new() delegates to from_store(Self::open_default_store()) where cfg(not(test)) keeps the original $CHRONOS_DB_PATH/$HOME logic and cfg(test) returns a fresh in-memory store (CHRONOS_DB_PATH still opts into a real file). 4 new tests: test_session_store_list_sessions_skips_unreadable_record, test_list_sessions_on_virgin_store_is_empty, test_session_exists_on_virgin_store_is_false, test_default_test_server_does_not_read_the_developer_store."
+      }
+    },
+    {
+      "finding_id": "FIND-M9-70-VIRGIN-STORE-READ-ERROR",
+      "rule_id": "code.read_error_on_absent_table",
+      "subject": {
+        "cycle": "m9-70-mcp-store-isolation",
+        "gap": "Found by the new hermetic test: a sessions.redb that exists but has no tables yet (fresh install) made session_list return an error instead of an empty list, because SESSION_META was opened unconditionally in both read paths and the redb TableDoesNotExist error was wrapped as StoreError::Database.",
+        "fix": "list_sessions and session_exists match redb::TableError::TableDoesNotExist and return Ok(vec![]) / Ok(false); any other table error still propagates as StoreError::Database."
+      }
+    }
+  ],
+  "findings_introduced": {
+    "no_action": [],
+    "deferred": [
+      {
+        "finding_id": "FIND-M9-70-SERVICES-TABLE-STRING-MATCH",
+        "rule_id": "code.error_text_matching",
+        "severity": "low",
+        "note": "chronos-services::sessions::list_sessions still tolerates a missing table by substring-matching the error text (contains(\"does not exist\")). After the chronos-store fix that branch is unreachable for the virgin-store case, making the workaround redundant defence-in-depth. Left in place deliberately (it still guards if the store layer regresses) and recorded so a future cycle can decide whether to delete it or replace it with a typed match. No behavior change either way."
+      }
+    ]
+  }
+}
