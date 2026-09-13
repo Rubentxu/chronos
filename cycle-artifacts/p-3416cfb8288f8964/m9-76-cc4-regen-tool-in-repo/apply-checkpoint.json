@@ -1,0 +1,65 @@
+{
+  "cycle_id": "m9-76-cc4-regen-tool-in-repo",
+  "head_sha": "TBD_HEAD_SHA",
+  "base_sha": "e59c44e64f40b475a3541c6de3e9176ebf5d0cdf",
+  "created_at": "2026-09-13T17:57Z",
+  "route": "B-direct",
+  "summary": "Closes FIND-M9-73-CC4-REGEN-RITUAL-NOT-IN-REPO, confirmed a fifth time in m9-75 and re-confirmed during this very cycle. CC#4 (archive-manifest Artifact index SHA-256 consistency) had a gate in scripts/check_vault_drift.sh but no repair tool in the repository: the repair was a throwaway python script re-derived in the agent scratch directory every cycle, so nothing exercised the gate's own logic and the broken-awk bug of m9-66 survived many cycles undetected. The cycle lands the repair half of the gate as scripts/regen_manifest_index_shas.py. It mirrors CC#4's semantics exactly, which is the reason it is trustworthy as a repair tool: the self-referential row is preserved (a file cannot contain its own hash, and CC#4 skips it with an explicit path comparison), and a row whose target file no longer exists is left byte-for-byte untouched (CC#4 guards every comparison with [ -f \"$path\" ], so a dangling row is invisible to the gate and the tool must not silently blank it). Modes: no flags rewrites every stale row to a fixpoint, because rewriting one manifest changes the hash of a manifest another one lists; --check writes nothing and exits 1 naming each stale row, which is the machine verification that the ritual was performed; --dry-run reports and always exits 0. scripts/tests/test_regen_manifest_index_shas.py adds 13 zero-dependency unittest cases covering row parsing, self-row preservation, dangling-row preservation, --check/--dry-run exit codes and exclusivity, the fixpoint across two manifests that list each other, manifest discovery, and the naming of stale rows. scripts/smoke_test_ccs.sh gains a sixth check that pins tool and gate together in four phases: the unit tests pass; --check is clean on a clean clone; after injecting the same stale SHA that test_cc4 injects, both --check and CC#4 flag it and --check names the row; after running the tool, the row carries the true SHA-256 and both --check and the gate go green. setup_work_copy now also overlays the working-tree copies of the vault tooling, so the suite tests the tree about to merge rather than HEAD alone (in m9-75 this cost a run: the suite clones HEAD, so a post-release commit had to land before the smoke could pass). The tool earned its keep inside its own cycle: editing scripts/smoke_test_ccs.sh, maintenance/vault-drift-sweep.md and AGENTS.md staled the rows of six historical manifests (m9-67, m9-68, m9-72, m9-73, m9-74, m9-75) plus two more after the vault doc edit, and the regeneration that used to be hand-managed was a single command with a --check confirmation. Falsification was done guard by guard, each reverted, the failure observed, the file restored byte-identically against /home/rubentxu/.jcode/scratch/regen.m9-76-good.py: quiet-gating the stale-row print fails the naming unit test and, in the smoke suite, phase (c) reported '--check did not name the drifted row' (this one was found organically, not constructed); removing the self-row comparison makes the tool try to write a manifest's own hash into itself and fails two tests; making --check swallow drift fails two unit tests and the smoke suite; removing the dangling-row guard crashes on a missing file, and a variant that blanks such rows and counts them as updated fails the preservation test; reducing the fixpoint loop to a single pass fails the interlinked-manifest test; writing a wrong hash fails the smoke suite with 'rewrite exit=2 (expected 0)' because the loop never converges, which is the reason the loop's own bound is worth having. Docs: maintenance/vault-drift-sweep.md documents the tool next to CC#4 (including that --check is the gate and --dry-run reports), its resolution paragraph now says to run the tool instead of hand-editing, and AGENTS.md section 5 makes archive-manifest SHA rows generated rather than hand-edited, with the two commands in the quick reference. The CC counts are unchanged (48 python + 7 bash): no new check was added to the drift sweep, because CC#4 already covers SHA consistency and a duplicate CC would add no signal.",
+  "title": "76 cc4 regen tool in repo",
+  "status": "CLOSED",
+  "main_sha": "TBD_HEAD_SHA",
+  "findings_closed": [
+    {
+      "finding_id": "FIND-M9-73-CC4-REGEN-RITUAL-NOT-IN-REPO",
+      "rule_id": "process.undocumented_tooling",
+      "subject": {
+        "cycle": "m9-73-sandbox-client-store-isolation",
+        "gap": "scripts/check_vault_drift.sh implements CC#4, which compares every archive-manifest Artifact-index SHA-256 row against the current file content and skips the self-referential row. The repair side of that gate had no home in the repository: each cycle re-derived a throwaway python script in /home/rubentxu/.jcode/scratch/, and the naive whole-tree version churned the self-referential row of the manifests written before m9-11, so the pre-m9-11 rows had to be reverted by hand after every regeneration. Two consequences followed. First, the gate's logic was never exercised by the tool that was supposed to satisfy it, so when CC#4's awk was broken (m9-66) the drift it should have reported accumulated across many cycles with nothing to contradict it. Second, the ritual was invisible to the repository: a reviewer could not see what had been regenerated, could not re-run it, and could not tell a correctly regenerated table from a hand-edited one. The finding was deferred four times (m9-72, m9-73, m9-74, m9-75) as process friction behind product work.",
+        "fix": "scripts/regen_manifest_index_shas.py (257 lines): ROW regex matching the exact row shape CC#4 parses; sha256() streaming; default_manifests(root) discovering .sddk-knowledge/*/changes/archive/*/archive-manifest.md; rows_of() for reporting; rewrite(manifest, root, write) recomputing every row with the two CC#4-mirroring rules - a row whose normalized path equals the manifest is preserved as 'self', a row whose target does not exist is preserved and reported as 'missing'; main() with --check (write nothing, exit 1 naming stale rows), --dry-run (write nothing, exit 0) and --verbose (also print manifests that needed no change), iterating to a bounded fixpoint (MAX_PASSES = 5) because rewriting one manifest changes the bytes of any manifest another one lists. scripts/tests/test_regen_manifest_index_shas.py (179 lines, 13 tests, plain unittest, no third-party dependency): clean manifest exits 0; stale row reported with exit 1; stale row NAMED in --check output; --dry-run reports, exits 0 and writes nothing; --check and --dry-run are exclusive; a dangling row survives byte-identically and is invisible to --check, matching CC#4's [ -f ] guard; rewrite restores the true SHA and is then clean; the self row is preserved; the fixpoint converges across two interlinked manifests and A records B's post-rewrite bytes; a missing manifest argument and an empty manifest set both exit 2; an explicit manifest argument is honoured; default discovery finds both archives. scripts/smoke_test_ccs.sh: test_regen_script(), a sixth top-level check, with the four phases above, plus setup_work_copy() now overlying the working-tree regen script and its tests so the smoke suite tests the tree being merged. Documentation: maintenance/vault-drift-sweep.md gains a 'Repair tool (added by m9-76)' paragraph under CC#4 and its resolution line now reads run the tool, do not hand-edit; AGENTS.md section 5 gains an 'Archive-manifest SHA rows are generated, not hand-edited' bullet and section 7 lists the four vault commands.",
+        "evidence": "Falsification, one guard at a time, each mutation reverted and the file compared byte-identically (cmp) against /home/rubentxu/.jcode/scratch/regen.m9-76-good.py before the next: (1) stale-row print quiet-gated again -> test_stale_row_is_named_in_check_output FAILED with 'src.txt' not found in the summary-only output, and the smoke suite FAILED with 'regen: --check did not name the drifted row' - the same defect was hit organically on the first smoke run after the feature was written, which is what motivated the unit test; (2) self-row comparison replaced by 'if False' -> test_clean_manifest_exits_zero and test_self_row_is_preserved FAILED, and on the real tree --check reported a self row as stale, naming the manifest's own path with expected hash 903fe3b5... (the unfixable churn the finding describes); (3) --check's failure branch disabled -> test_stale_row_is_reported_and_exits_one and test_stale_row_is_named_in_check_output FAILED, and the smoke suite FAILED; (4) dangling-row guard removed -> FileNotFoundError on the missing target; variant that blanks the row and counts it as changed -> test_missing_target_is_preserved_and_invisible_to_check FAILED with '1 != 0'; (5) fixpoint loop replaced by a single pass -> test_fixpoint_across_interlinked_manifests FAILED; (6) write path made to emit a wrong hash -> the smoke suite FAILED with 'regen: rewrite exit=2 (expected 0)', because a wrong hash never converges and the bounded loop reports it rather than looping forever. Post-restore green: 13/13 unit tests OK, --check clean across 75 manifests, vault gate PASS (48 python + 7 bash), smoke suite 6/6."
+      }
+    }
+  ],
+  "findings_introduced": {
+    "no_action": [],
+    "deferred": [
+      {
+        "finding_id": "FIND-M9-75-MCP-TOOLS-DO-NOT-DISCLOSE-DEGRADED-STORE",
+        "rule_id": "code.silent_degradation",
+        "severity": "low",
+        "note": "Unchanged from m9-75. With CHRONOS_ALLOW_IN_MEMORY_FALLBACK=1 the server behaves as before except for an error-level log line: no MCP response mentions the degraded mode, so an opted-in client still cannot tell from a session_save or session_list payload that nothing is persisted. Surfacing it changes an API shape with callers to update, and the path requires an explicit opt-in. Not attempted in a vault-tooling cycle.",
+        "severity_rationale": "Reachable only through an explicit opt-in whose operator has already accepted that nothing is persisted."
+      },
+      {
+        "finding_id": "FIND-M9-74-NATIVE-PTRACE-TESTS-NEED-SERIAL",
+        "rule_id": "test.environmental_failure",
+        "severity": "low",
+        "note": "Unchanged from m9-74. The chronos-native lib suite cannot run in parallel in this environment: two ptrace tests fail and a third blocks in waitpid until killed (observed 17 min at 0% CPU), while serially the same suite is 101 passed in 13 s. This cycle followed the T3 two-halves recipe again and did not touch that crate; the structural remedy is still a test-level lock, a separate binary or an explicit opt-in target.",
+        "severity_rationale": "No product impact; the cost is a silent 17-minute hang for whoever runs the default command, already documented in AGENTS.md 6.5."
+      },
+      {
+        "finding_id": "FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION",
+        "rule_id": "code.duplicated_policy",
+        "severity": "low",
+        "note": "Unchanged from m9-72: counterexample_storage.rs keeps four hand-rolled copies of the read-path TableDoesNotExist / else-propagate policy that chronos-store::table_error now names. Out of scope for a vault-tooling cycle.",
+        "severity_rationale": "Latent divergence risk in error handling; no observed defect."
+      },
+      {
+        "finding_id": "FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION",
+        "rule_id": "process.growing_regeneration_set",
+        "severity": "low",
+        "note": "Now partially mitigated rather than merely unchanged. The operational half - each cycle must rewrite the rows of every prior manifest that lists cycles/index.md, terms/index.md or another shared file, and the set grows by one manifest per cycle - is what m9-76 automates: the fixpoint run rewrote 11 rows across six manifests this cycle with one command and a --check confirmation, where the previous cycles did it by hand. The design tension itself remains: a manifest that lists a shared mutable file creates O(n) churn per cycle, offset here by manifest paths on the 2027-09-11 deprecation horizon; keeping it open records that the automation does not change the underlying shape.",
+        "severity_rationale": "Process friction only, now mechanical instead of manual."
+      }
+    ]
+  },
+  "peel_match": true,
+  "remote_tag": "v0.7.78",
+  "remote_tag_peel": "TBD_HEAD_SHA",
+  "release_status": "released",
+  "verify_status": "passed",
+  "archive_status": "archived",
+  "released_at": "2026-09-13T17:57Z",
+  "verified_at": "2026-09-13T17:56Z",
+  "archived_at": "2026-09-13T17:57Z"
+}

@@ -97,6 +97,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-73 | m9-73-sandbox-client-store-isolation | B-direct | `v0.7.75` | `456247521285fc4899ed134e370340e689ca38ca` | CLOSED |
 | m9-74 | m9-74-cas-put-many-batching | B-direct | `v0.7.76` | `c2c0d3738d8295721eff30a12e7601af4010072f` | CLOSED |
 | m9-75 | m9-75-fail-closed-store-open | B-direct | `v0.7.77` | `ac33be59c8c177b7afef79d4440d8841dd7003d1` | CLOSED |
+| m9-76 | m9-76-cc4-regen-tool-in-repo | B-direct | `v0.7.78` | `TBD_HEAD_SHA` | CLOSED |
 
 ## Metadata
 
@@ -104,5 +105,5 @@ Chronological record of all SDDK cycles for this project.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-13T17:20Z |
-| Total cycles | 75 |
+| Last updated | 2026-09-13T17:57Z |
+| Total cycles | 76 |

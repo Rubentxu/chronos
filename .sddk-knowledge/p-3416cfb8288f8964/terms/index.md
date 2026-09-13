@@ -52,7 +52,6 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 | ID | Cycle | Título | Owner | Destino |
 |---|---|---|---|---|
 | FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION | m9-72 | `counterexample_storage.rs` keeps four hand-rolled copies of the read-path `TableDoesNotExist` / else-propagate policy that `chronos-store::table_error` now names | unassigned | m9+ |
-| FIND-M9-73-CC4-REGEN-RITUAL-NOT-IN-REPO | m9-73 | The CC#4 archive-manifest SHA regeneration lives in agent scratch, not in `scripts/`; the naive whole-tree version churns the self-referential row of nine older manifests | unassigned | m9+ |
 
 ### Findings deferred from m9-74
 
@@ -100,6 +99,7 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 | FIND-M9-72-SANDBOX-SHARED-STORE-SAVE-TIMEOUT | m9-72 | Every sandbox client shared one `$HOME/.local/share/chronos/sessions.redb`; intermittent 30 s `tools/call` timeout in `session_save` (`session_persistence.rs:128`/`:133`) | m9-73-sandbox-client-store-isolation (`v0.7.75`) |
 | FIND-M9-73-CAS-PUT-ONE-WRITE-TRANSACTION-PER-EVENT | m9-73 | `ContentStore::put` commits one redb write transaction (fsync, immediate durability) per event and `save_session` loops over it, so a 35k-event crash session takes ~3 minutes to save | m9-74-cas-put-many-batching (`v0.7.76`) |
 | FIND-M9-73-SESSION-EDGE-CASES-HEAVY-SAVE-NEVER-COMPLETES | m9-73 | `session_edge_cases` fails `test_compare_sessions_crash_vs_normal` and `test_performance_regression_audit_different_workloads` on every run in this environment, on `main` too; symptom of the row above | m9-74-cas-put-many-batching (`v0.7.76`) |
+| FIND-M9-73-CC4-REGEN-RITUAL-NOT-IN-REPO | m9-73 | The CC#4 archive-manifest SHA regeneration lived in agent scratch rather than in `scripts/`, so nothing exercised the gate's own logic (the broken awk of m9-66 went unnoticed) and the naive whole-tree version churned the self-referential row of the pre-m9-11 manifests | m9-76-cc4-regen-tool-in-repo (`v0.7.78`) |
 | FIND-M9-74-V1-SHIMS-RETURN-V2-ENVELOPE | m9-74 | `compare_sessions` and `performance_regression_audit` stopped returning the flat v1 result in m7-03 (`947e73b`) and returned the tagged `session_compare` envelope instead, against their own descriptions and the output enum's doc; hidden behind the CAS timeout until m9-74 fixed it. Found and fixed in-cycle | m9-74-cas-put-many-batching (`v0.7.76`) |
 | FIND-M9-73-SILENT-IN-MEMORY-FALLBACK-MASKS-STORE-OPEN-FAILURE | m9-73 | `chronos-mcp::open_default_store` fell back to an in-memory store when the configured store could not be opened, so a locked store yielded successful saves and empty listings instead of an error (found by falsification of the cycle's own test) | m9-75-fail-closed-store-open (`v0.7.77`) |
 ## Metadata
@@ -108,5 +108,5 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-13T17:20Z |
-| Last archive | m9-75-fail-closed-store-open |
+| Last updated | 2026-09-13T17:57Z |
+| Last archive | m9-76-cc4-regen-tool-in-repo |
