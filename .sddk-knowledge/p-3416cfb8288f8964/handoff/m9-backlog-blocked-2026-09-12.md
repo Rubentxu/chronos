@@ -304,3 +304,70 @@ Gates:
 - Self-test: synthetic m9-99 row injected, script exits 1 + reports DRIFT
 
 Vault: 64 cycles indexed, 52 cross-checks clean, peel_match verified.
+
+
+## Session 2026-09-13T11:46Z: m9-65 (stale branches cleanup)
+
+Closed drift class `branch-stale-post-merge` across all milestone prefixes.
+CC#46 only watched `fix/m9-*`, so 49 stale branches (25 local + 24 remote)
+across M0-M9 had accumulated since each cycle merged to main without
+deleting its per-cycle branch. Two B-direct commits landed as 97ff56e on
+feat/m9-65-stale-branches-cleanup. Tag v0.7.67.
+
+| Item | Status |
+|---|---|
+| CC#53 (extends CC#46 to all prefixes) | ADDED (bash, not auto-executed by CC#48) |
+| 49 stale merged branches deleted | DONE (25 local `git branch -d` + 24 remote `git push origin --delete`) |
+| Recovery log (branches-deleted.log) | CREATED (88 lines; tip SHA of every deleted branch + 24 preserved) |
+| 5 local + 19 remote not-merged branches | PRESERVED + DOCUMENTED for human triage |
+| Dynamic CC count in check_vault_drift.sh | DONE (46 python + 6 bash + 1 self = 53 total) |
+
+Gates:
+- T0: fmt + clippy PASS
+- T1: chronos-domain/-services/-browser unit tests: 263 passed
+- T1: chronos-native unit tests: 99 passed
+- T4-smoke: e2e_connectivity + probe_lifecycle: 6/6 passed
+- CC#48 meta-check: PASS (46 python + 6 bash documented)
+
+Cross-write convention check (CC#12): main_sha == head_sha (97ff56e53...).
+Initially set main_sha to merge commit c4b2740...; CC#12 caught the
+drift and corrected before final push. The standard convention is
+that main_sha points to the cycle head (the commit that landed the
+work) rather than the merge wrapper.
+
+Vault: 65 cycles indexed, 53 cross-checks documented, peel_match
+verified for m9-65.
+
+### Branches preserved (human triage recommended)
+
+These branches are NOT merged into main and represent either preflight
+cleanup attempts or scoping documents from closed milestones. Full list
+in cycle-artifacts/p-3416cfb8288f8964/m9-65-stale-branches-cleanup/branches-deleted.log.
+
+Local (5):
+- chore/m-ci-flake-preflight
+- chore/m5-preflight-clippy-drift-cleanup
+- chore/m5-preflight-sandbox-drift
+- feat/m5-02b-debug-read-extract
+- feat/m5-05b-debug-trace-specialized-extract
+
+Remote (19):
+- chore/m5-02c-cleanup-inert-artifacts
+- feat/m2-function-exit-dwarf, feat/m2-native-live-probe-frame-capture, feat/m2-pie-fixture-ci
+- feat/m3-08-property-projection, feat/m3-09-mutation-lens-tools, feat/m3-10-causal-slice-tool,
+  feat/m3-11-m3-uat-order-total, feat/m3-scoping
+- feat/m5-01-services-skeleton, feat/m5-03-sessions-extract, feat/m5-04-tripwires-extract,
+  feat/m5-05a-debug-trace-core-extract, feat/m5-05b-debug-trace-specialized-extract,
+  feat/m5-agent-api-v2-scoping
+- (plus 5 above that have remote counterparts)
+
+### Open follow-ups
+
+- **Bounded join unit test** (deferred from m9-62): 10s test runtime is the blocker.
+- **CC for `## Files Inventory` in verify-report** (deferred): 22 cycles m9-32..m9-53 lack the section.
+- **5+19 not-merged branches triage**: human review recommended (see above list).
+
+Net cycle delta this session: 63 → 65.
+Net CC delta this session: 52 → 53.
+Vault state: canonical, 53 CCs documented, peel_match verified.
+
