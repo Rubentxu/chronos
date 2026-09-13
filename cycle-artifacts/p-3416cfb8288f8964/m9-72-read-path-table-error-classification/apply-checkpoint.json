@@ -1,13 +1,13 @@
 {
   "cycle_id": "m9-72-read-path-table-error-classification",
-  "head_sha": "845be8d",
+  "head_sha": "f3500a9071d528fd6256c5f65ef00c0ca300b903",
   "base_sha": "09e21107ca0707c0cd40d631eddcdb39cb3669ba",
   "created_at": "2026-09-13T15:05Z",
   "route": "B-direct",
   "summary": "Closes FIND-M9-71-LOAD-SESSION-TABLE-ERROR-COLLAPSE, which m9-71 recorded as a two-site cosmetic inconsistency in chronos-store::storage::load_session. Recon found four sites, not two, and an observable consequence. cas::get and cas::contains answered every read-path open_table failure with Ok(None)/Ok(false), and both load_session reads answered every one with SessionNotFound. redb reports a database that exists but was never written as TableError::TableDoesNotExist, which is the only benign variant; every other variant (e.g. TableTypeMismatch on a store written by a different binary, or any variant redb adds later) is a storage fault. The consequence is that load_session consumes cas::get in a loop, so a fault was reported as Ok(None) and the event was silently dropped from the loaded session instead of failing the load. All four sites now share one classifier in a new table_error module; absent means 'nothing stored' and anything else propagates as StoreError::Database. Sibling module counterexample_storage.rs already matched TableDoesNotExist explicitly, so this unifies the crate on the policy three of its modules already followed.",
   "title": "72 read path table error classification",
   "status": "CLOSED",
-  "main_sha": "845be8d8cadaa0ee94c60117927a45f9293c719a",
+  "main_sha": "f3500a9071d528fd6256c5f65ef00c0ca300b903",
   "findings_closed": [
     {
       "finding_id": "FIND-M9-71-LOAD-SESSION-TABLE-ERROR-COLLAPSE",
@@ -38,11 +38,11 @@
   },
   "peel_match": true,
   "remote_tag": "v0.7.74",
-  "remote_tag_peel": "TBD_AFTER_RELEASE",
+  "remote_tag_peel": "f3500a9071d528fd6256c5f65ef00c0ca300b903",
   "release_status": "released",
   "verify_status": "passed",
   "archive_status": "archived",
-  "released_at": "TBD_AFTER_RELEASE",
+  "released_at": "2026-09-13T13:41Z",
   "verified_at": "2026-09-13T15:05Z",
-  "archived_at": "TBD_AFTER_RELEASE"
+  "archived_at": "2026-09-13T13:41Z"
 }

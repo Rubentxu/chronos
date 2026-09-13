@@ -73,7 +73,7 @@ Two commits:
 | Kind | Path | SHA-256 |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-70-mcp-store-isolation/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
-| source (session store) | `crates/chronos-store/src/storage.rs` | `940c3e2bd78d9f87a9583239e05077e19e1822fbe8d7b3b04ae14925dbc36de4` |
+| source (session store) | `crates/chronos-store/src/storage.rs` | `7e525d7405a6aa06a0d92c01d6816def86fb86decb6cae1384cd46561c657c27` |
 | source (mcp server) | `crates/chronos-mcp/src/server.rs` | `99207ec75f4802c98c9afaca7dc7745ce0edf74abe530885bfbc8eb44077f36d` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-70-mcp-store-isolation/apply-checkpoint.json` | `619c7367dc623d47ff703fade38c0d042e02b776c8fb0c46f378d4bf3226ab0d` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-70-mcp-store-isolation/verify-report.md` | `92fda69d11a85fdbf213f3086ba98e6ea6aebaebefdae87a55864c051cebb9d1` |
@@ -81,5 +81,5 @@ Two commits:
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-70-mcp-store-isolation/release-report.md` | `90ce13f216e0304ed976e58fa1b033bbc54822b0f47835bd7d1e0306fba5e79a` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-70-mcp-store-isolation/release-receipt.md` | `aad24fa2ab687befb3a2acb52018b395de6935b259f4bdb392c821089a2799a4` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-70-mcp-store-isolation/merge-receipt.md` | `03ad0584b8ce842bc2c77b2cf63484b6b1056921c8cb4530f88aa19efcfdc633` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `b8ecce839ad426bb04a6e15c83d4e0fe8122bf74833dbaa250b31c912fb8a214` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `01c3f774aa170bd4d16e215b528e5527f037d1ca7c3b0e3e6ef92796ef5efebd` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `67b734084479825a986d0f6fb3860700a9f2cc02005333ea5e5cb780179286a1` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `28bb11437e66eaabc0f90db5e35de4f4279f4f5c46d9486421c2efe94df847b5` |

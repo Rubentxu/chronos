@@ -208,3 +208,33 @@ by the retry itself.
   `bincode` decode failure, unchanged by this cycle: a corrupt metadata row is
   reported as a decode error, which is the pre-existing behaviour and out of
   scope here.
+
+## Cross-checks
+
+- CC#1..CC#55: pass, no drift. No new CC (47 python + 7 bash unchanged), so the
+  smoke test's expected counts need no update.
+- CC#4: the vault files changed by this cycle are `cycles/index.md` and
+  `terms/index.md`, and CC#4 validates their SHAs in **every** archive-manifest
+  that lists them. The affected set is now three manifests (m9-02, m9-70,
+  m9-71), one more than m9-71's two, which is
+  `FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION` growing as predicted.
+  Regenerated to a fixpoint and re-audited.
+- CC#24 and CC#31 caught a real omission in this report: the `## Cross-checks`
+  section you are reading was missing, and the post-release sweep flagged the
+  one drift line each. Fixed before the post-release commit rather than carried
+  into the archive.
+- CC#5: `Total cycles` bumped 71 → 72 with the m9-72 row.
+- CC#12: `main_sha == head_sha == remote_tag_peel` recorded in the
+  apply-checkpoint after release (`v0.7.74` peel verified on origin).
+- `FIND-M9-71-LOAD-SESSION-TABLE-ERROR-COLLAPSE` appears once in
+  `terms/index.md`, in the Terminated table; the two new deferrals appear once
+  each in the Deferred table.
+
+## Note on the T3 command fix
+
+`AGENTS.md` is a source file by the same standard as `crates/`: its documented
+T3 command pulled in bucket D (`chronos-e2e`), which hangs on ptrace. Since
+AGENTS.md is a file the next agent reads as authority, the contradiction between
+§1's taxonomy and §2's command was a live defect, so it is fixed in-cycle rather
+than deferred. It ships as its own commit because it is unrelated to the store
+change and would otherwise obscure the diff under review.

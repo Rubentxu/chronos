@@ -93,6 +93,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-69 | m9-69-bounded-join-unit-test | B-direct | `v0.7.71` | `57c4a10f221bc47e67b81cc5f350739ac8fcfc31` | CLOSED |
 | m9-70 | m9-70-mcp-store-isolation | B-direct | `v0.7.72` | `54e859ffe43c09cc2217c8943233f27016bbe76b` | CLOSED |
 | m9-71 | m9-71-services-list-store-contract | B-direct | `v0.7.73` | `f8abe7b91b70a7efb2633248d2e8aaea08b3c98a` | CLOSED |
+| m9-72 | m9-72-read-path-table-error-classification | B-direct | `v0.7.74` | `f3500a9071d528fd6256c5f65ef00c0ca300b903` | CLOSED |
 
 ## Metadata
 
@@ -100,5 +101,5 @@ Chronological record of all SDDK cycles for this project.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-13T12:45Z |
-| Total cycles | 71 |
+| Last updated | 2026-09-13T15:20Z |
+| Total cycles | 72 |

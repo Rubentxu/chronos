@@ -47,12 +47,18 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 | m8-06-R4 | m8-06 | Cross-variant existence predicate shrinking: variant still fixed in ExistencePredicateShrinker | unassigned | m9+ |
 | m8-04-R-hypothesis-fallback | m8-04 | property_target lost in fallback reconstruction | unassigned | m9+ (non-issue post m8-07 but synthetic defaults remain for pre-m8-07 bundles) |
 
+### Findings deferred from m9-72
+
+| ID | Cycle | Título | Owner | Destino |
+|---|---|---|---|---|
+| FIND-M9-72-SANDBOX-SHARED-STORE-SAVE-TIMEOUT | m9-72 | Every sandbox client shares one `$HOME/.local/share/chronos/sessions.redb` (86 MB); `session_save` of ~2500 events behind a fixed 30 s `tools/call` timeout fails intermittently (`session_persistence.rs:128`/`:133`), reproduces on `main` | unassigned | m9+ |
+| FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION | m9-72 | `counterexample_storage.rs` keeps four hand-rolled copies of the read-path `TableDoesNotExist` / else-propagate policy that `chronos-store::table_error` now names | unassigned | m9+ |
+
 ### Findings deferred from m9-71
 
 | ID | Cycle | Título | Owner | Destino |
 |---|---|---|---|---|
 | FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION | m9-71 | Every archive-manifest that lists `cycles/index.md` / `terms/index.md` SHAs goes stale on the next cycle, so each cycle must rewrite prior manifests' artifact indexes (CC#4); the set grows by one per cycle | unassigned | m9+ |
-| FIND-M9-71-LOAD-SESSION-TABLE-ERROR-COLLAPSE | m9-71 | `SessionStore::load_session` classifies every `open_table` failure as `SessionNotFound` (`Err(_)`), disagreeing with `list_sessions`/`session_exists` which match `TableDoesNotExist` explicitly | unassigned | m9+ |
 
 ## Terminated terms
 
@@ -78,11 +84,12 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 | FIND-M9-55-FABRICATED-BASE-SHA | m9-38 | apply-checkpoint.json base_sha referenced a non-existent commit (fabricated) | m9-55-apply-checkpoint-fabricated-sha (`v0.7.53`) |
 | FIND-M9-69-MCP-STORE-ISOLATION | m9-69 | `chronos-mcp` server tests use the real `$HOME` store; `SessionStore::list_sessions` hard-fails on stale-schema records | m9-70-mcp-store-isolation (`v0.7.72`) |
 | FIND-M9-70-SERVICES-TABLE-STRING-MATCH | m9-70 | `chronos-services::sessions::list_sessions` still substring-matches the error text for a missing table; unreachable after the chronos-store fix | m9-71-services-list-store-contract (`v0.7.73`) |
+| FIND-M9-71-LOAD-SESSION-TABLE-ERROR-COLLAPSE | m9-71 | Four `chronos-store` read paths turned every `open_table` failure into `Ok(None)`/`Ok(false)`/`SessionNotFound`; `load_session`'s loop over `cas::get` made it silent event loss | m9-72-read-path-table-error-classification (`v0.7.74`) |
 ## Metadata
 
 | Campo | Valor |
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-13T12:45:00Z
-| Last archive | m9-71-services-list-store-contract |
+| Last updated | 2026-09-13T15:20:00Z
+| Last archive | m9-72-read-path-table-error-classification |
