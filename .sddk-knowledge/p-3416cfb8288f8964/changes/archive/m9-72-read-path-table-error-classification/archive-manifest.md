@@ -96,10 +96,10 @@ Three commits:
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-72-read-path-table-error-classification/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
 | source (store table_error) | `crates/chronos-store/src/table_error.rs` | `e0ce9280d864cb660020d0fa5ad9ed7adb465ffefd50319965142076be5f1d0a` |
-| source (store lib) | `crates/chronos-store/src/lib.rs` | `5ba2ae327dabb54bfe885171ea04c78a83fe53468df9437d3f94d45466890208` |
-| source (store cas) | `crates/chronos-store/src/cas.rs` | `42d093c12b499b9d44845e81e27093f8a481eb1cd88776b233e8974a1785bd33` |
-| source (store storage) | `crates/chronos-store/src/storage.rs` | `7e525d7405a6aa06a0d92c01d6816def86fb86decb6cae1384cd46561c657c27` |
-| docs (agents manual) | `AGENTS.md` | `11d18220e0e8146287067547075f898c9efbf66d897e420236549ae7bcd2955a` |
+| source (store lib) | `crates/chronos-store/src/lib.rs` | `093934f02101a7f6404fcd3cebe7fce972861731a6657becaa8bba5eb6f687fa` |
+| source (store cas) | `crates/chronos-store/src/cas.rs` | `a0f32a00c732bde1cd2e2be7744cb25be1c2e583aaa987593e7c80b31510660a` |
+| source (store storage) | `crates/chronos-store/src/storage.rs` | `f973ef332f6302238b396d5fcb9f1aeedb0e315dc1a400aad5cd16674e0b9f52` |
+| docs (agents manual) | `AGENTS.md` | `1109797f04f5469b5ad1ac29d8869df66a33d37dd72432d74e4a0a0fa23109f9` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-72-read-path-table-error-classification/apply-checkpoint.json` | `0475383cd18fbccf83e647f29bf17ddfaeefab66300c489c96147a761f8daa28` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-72-read-path-table-error-classification/verify-report.md` | `1c12aabb3d5d693b2c9a4f075d836d518f80b05ee2a8eb499d623b3f9d262f53` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-72-read-path-table-error-classification/verify-findings.json` | `0bbf5881ab0d55137cdb540e9193a18f8ea30aa6e4592559c396231dae4a4a36` |
@@ -107,5 +107,5 @@ Three commits:
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-72-read-path-table-error-classification/release-receipt.md` | `f00addd97fb963a2df18e88ae20fc5dec28f12361daf4a5db7e72de961a87d36` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-72-read-path-table-error-classification/merge-receipt.md` | `f357b83a76a52ba3bb5bc77c5a0ea98381cc31dce464558853b35d54856f77a8` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-72-read-path-table-error-classification/change-entry.md` | `bd9b4be16a0db039dbfda4c28c0a6a434858c14512a93d94da6ade8c09301262` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `097f49af733ec347bf351eae183adba212dcb2c4a5473da90e0a15b170bab06e` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `570e41f51e72fb86e9bcf7b873846f91d3b95ce68ac878b3b9cdd0b0f6bc72c4` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `cd364d6e75d5682e52b4d5267792a7240451da1fee25f5d8fd4b75548a651afe` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `01eb598145fea7c75dc717d69fe909d553af25bd3db78d5b244b1eb47482d98e` |

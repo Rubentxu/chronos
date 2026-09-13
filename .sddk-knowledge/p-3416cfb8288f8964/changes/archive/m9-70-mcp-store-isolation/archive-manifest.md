@@ -73,13 +73,13 @@ Two commits:
 | Kind | Path | SHA-256 |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-70-mcp-store-isolation/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
-| source (session store) | `crates/chronos-store/src/storage.rs` | `7e525d7405a6aa06a0d92c01d6816def86fb86decb6cae1384cd46561c657c27` |
-| source (mcp server) | `crates/chronos-mcp/src/server.rs` | `99207ec75f4802c98c9afaca7dc7745ce0edf74abe530885bfbc8eb44077f36d` |
+| source (session store) | `crates/chronos-store/src/storage.rs` | `f973ef332f6302238b396d5fcb9f1aeedb0e315dc1a400aad5cd16674e0b9f52` |
+| source (mcp server) | `crates/chronos-mcp/src/server.rs` | `4bc96232b274ff150127017d8983bf9ef9d7e7ae65cb7c9460e1cf87a665dfd7` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-70-mcp-store-isolation/apply-checkpoint.json` | `619c7367dc623d47ff703fade38c0d042e02b776c8fb0c46f378d4bf3226ab0d` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-70-mcp-store-isolation/verify-report.md` | `92fda69d11a85fdbf213f3086ba98e6ea6aebaebefdae87a55864c051cebb9d1` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-70-mcp-store-isolation/verify-findings.json` | `3c22523b0bff619b9910da1d1d8e37ee03752a2bd6cc6b2d7c3dd5e0405fd667` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-70-mcp-store-isolation/release-report.md` | `90ce13f216e0304ed976e58fa1b033bbc54822b0f47835bd7d1e0306fba5e79a` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-70-mcp-store-isolation/release-receipt.md` | `aad24fa2ab687befb3a2acb52018b395de6935b259f4bdb392c821089a2799a4` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-70-mcp-store-isolation/merge-receipt.md` | `03ad0584b8ce842bc2c77b2cf63484b6b1056921c8cb4530f88aa19efcfdc633` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `097f49af733ec347bf351eae183adba212dcb2c4a5473da90e0a15b170bab06e` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `570e41f51e72fb86e9bcf7b873846f91d3b95ce68ac878b3b9cdd0b0f6bc72c4` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `cd364d6e75d5682e52b4d5267792a7240451da1fee25f5d8fd4b75548a651afe` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `01eb598145fea7c75dc717d69fe909d553af25bd3db78d5b244b1eb47482d98e` |

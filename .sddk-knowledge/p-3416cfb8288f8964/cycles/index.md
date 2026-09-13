@@ -95,6 +95,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-71 | m9-71-services-list-store-contract | B-direct | `v0.7.73` | `f8abe7b91b70a7efb2633248d2e8aaea08b3c98a` | CLOSED |
 | m9-72 | m9-72-read-path-table-error-classification | B-direct | `v0.7.74` | `f3500a9071d528fd6256c5f65ef00c0ca300b903` | CLOSED |
 | m9-73 | m9-73-sandbox-client-store-isolation | B-direct | `v0.7.75` | `456247521285fc4899ed134e370340e689ca38ca` | CLOSED |
+| m9-74 | m9-74-cas-put-many-batching | B-direct | `v0.7.76` | `c2c0d3738d8295721eff30a12e7601af4010072f` | CLOSED |
 
 ## Metadata
 
@@ -102,5 +103,5 @@ Chronological record of all SDDK cycles for this project.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-13T15:20Z |
-| Total cycles | 73 |
+| Last updated | 2026-09-13T16:51Z |
+| Total cycles | 74 |

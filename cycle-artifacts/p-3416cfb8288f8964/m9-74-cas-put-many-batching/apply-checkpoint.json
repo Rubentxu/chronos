@@ -1,13 +1,13 @@
 {
   "cycle_id": "m9-74-cas-put-many-batching",
-  "head_sha": "ac539db3014eeefcb165559d7629102c2205e605",
+  "head_sha": "c2c0d3738d8295721eff30a12e7601af4010072f",
   "base_sha": "6317af899440178d30dc1d45807aed1851d0bb83",
   "created_at": "2026-09-13T16:51Z",
   "route": "B-direct",
   "summary": "Closes the high finding m9-73 deferred, the symptom row that came with it, and a medium finding that only surfaced once the first one was fixed. FIND-M9-73-CAS-PUT-ONE-WRITE-TRANSACTION-PER-EVENT: ContentStore::put opened a redb write transaction, inserted one row and committed, redb's default immediate durability made every commit a sync_data barrier, and SessionStore::save_session called put in a loop - one fsync per event, ~4.8 ms/event, so a 34,905-event crash session did not complete in 186 s against the sandbox client's 30 s tools/call timeout. The fix splits the pure encode step (bincode + LZ4 + BLAKE3) from the write so a batch is fully encoded before a transaction opens (an encoding failure stores nothing), inserts a batch in one write transaction with the per-event dedup check preserved (a write transaction reads its own inserts, so intra-batch duplicates collapse too), and exposes put_many for save_session; put is now encode + insert_batch and keeps its signature, semantics and hash. Evidence is a counted invariant rather than a timing: a new cfg(test) CountingBackend wraps redb's real FileBackend and counts sync_data calls (file-backed on purpose - an in-memory redb never syncs), a 500-event batch is asserted to stay under 4 barriers against a control loop of 50 puts that must issue at least 50, and save_session of 1,000 events is asserted to stay under 4 barriers and still round-trip. FIND-M9-73-SESSION-EDGE-CASES-HEAVY-SAVE-NEVER-COMPLETES was the symptom: with the batching in place and the client timeout untouched at 30 s, session_edge_cases goes from 4 passed / 2 failed (never completing) to 6 passed / 0 failed in 65 s, so both AGENTS.md 6.5 rows were removed rather than reworded, with a note recording where they went. FIND-M9-74-V1-SHIMS-RETURN-V2-ENVELOPE was found exactly there: with the save no longer timing out, both comparison tests failed with missing field 'session_a_id'. m7-03 (947e73b) rerouted the deprecated v1 tools through the session_compare dispatcher and silently changed their response shape from the flat v1 result (hand-built json! in the tool body before that commit) to the tagged SessionCompareOutput envelope, while keeping the v1 names, the v1 parameters and the 'DEPRECATED v1 shim ... v1 parameter names are preserved' descriptions; SessionCompareOutput's own doc comment declares the intent the code violated (shims drop provenance so v1 callers see the JSON they saw before m7-03). Nothing pinned it: the four chronos-mcp tests for those tools assert on Debug text that the nested shape also satisfies, and the sandbox client, the only caller that parses the payload as JSON, was blocked one step earlier. A new SessionCompareWire { V2Envelope, V1Flat } parameterises the dispatcher; session_compare keeps the envelope, both shims return the flat CompareSessionsResult / PerformanceRegressionAuditResult, and a new test pins the split in both directions by parsing the real tool payloads. Ordering is the lesson: finding 3 was reachable only after finding 1, since the suite had to save a 35k-event session before it could compare anything, and stopping at 'the timeout is fixed, the rest pre-exists' would have shipped a broken v1 API surface under a green suite.",
   "title": "74 CAS put_many batching",
   "status": "CLOSED",
-  "main_sha": "ac539db3014eeefcb165559d7629102c2205e605",
+  "main_sha": "c2c0d3738d8295721eff30a12e7601af4010072f",
   "findings_closed": [
     {
       "finding_id": "FIND-M9-73-CAS-PUT-ONE-WRITE-TRANSACTION-PER-EVENT",
@@ -79,7 +79,7 @@
   },
   "peel_match": true,
   "remote_tag": "v0.7.76",
-  "remote_tag_peel": "TBD_AFTER_RELEASE",
+  "remote_tag_peel": "c2c0d3738d8295721eff30a12e7601af4010072f",
   "release_status": "released",
   "verify_status": "passed",
   "archive_status": "archived",
