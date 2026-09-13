@@ -56,10 +56,10 @@ Two commits:
 
 | Kind | Path | SHA-256 |
 |---|---|---|
-| archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-67-cc-smoke-test/archive-manifest.md` | `b9985057d0533b0f396302a34933fd7e35ce68bb317edfefc5aedaf849490944` |
+| archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-67-cc-smoke-test/archive-manifest.md` | `9444546f3f42e05507e259e1f9dee20c19357fa82a1426c3ef7cb1d510017351` |
 | smoke-test script | `scripts/smoke_test_ccs.sh` | `a5108fe42a51d33553a871c8ddc440bba00380903f40709be65849f665b76645` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/apply-checkpoint.json` | `4042c770f605fe7baf53a768be05b91f2ed604e5f684e7679663a76999f770b8` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/verify-report.md` | `9981b7eb1a0a4061941343762fc9222e004765090802fe9039a16b5f913e841e` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/verify-report.md` | `c62e063b9c721f70241e569e69776581bd4c9f1fde7b722e1abace53e0c01b4c` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/verify-findings.json` | `1f78155b680ea4209b4280bc23428191a2429652d24769c94bf48382742feeab` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/release-report.md` | `8203ae55fb7bc54fb62a1b9fdbd43c51fa380ef90fdbb5849ca1e2c6897161a6` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/release-receipt.md` | `b562c06d43de58ac66d1dfd058be7ab719df24c072b33e956a7df94e2367f23c` |

@@ -78,3 +78,13 @@ m9-67 closes the "fix a broken CC, then fix what it would have caught" pattern o
 2. m9-66 surfaced 54 stale SHAs because CC#4's awk regex was silently broken.
 
 Both drifts accumulated for many cycles before being noticed. m9-67 prevents recurrence by adding a 35-second smoke test that any future CC regression triggers immediately. The cycle was identified as the next action at the end of m9-66's release-report ("future 'CC smoke test' cycle that periodically injects drift into each CC to confirm it's still firing").
+
+## Post-cycle fix (commit `dfddc99`)
+
+Two bugs were discovered in the smoke test script itself during the post-merge re-verification required by adding m9-67 to `cycles/index.md` (which bumped Total cycles from 66 to 67):
+
+1. **Hardcoded Total cycles value**: the CC#39 injection hardcoded `| Total cycles | 66 |` as the source string. When the actual value became 67, the replace silently no-op'd and the test reported a false PASS (exit 0 + "ccs all clean"). Now reads the value dynamically and bumps it by 100 — a number that can never match the filesystem count by accident.
+
+2. **Shared output log**: all four tests wrote to a single `out.log`, so a passing test that ran after a failing test could mask the failure. Each test now writes to its own log (`cc4.log`, `cc39.log`, `cc46.log`, `meta.log`).
+
+These are exactly the kind of "silent CC failure" the smoke test is designed to catch — and they would have caused silent failures of the smoke test itself if not caught. The fix is the first cycle whose smoke test validated itself via dynamic reading (CC#39) and per-test logs (CC#48+CC#54).
