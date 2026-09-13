@@ -158,23 +158,22 @@ impl SessionsService {
     ///
     /// Returns metadata summaries for all sessions (no event data).
     ///
+    /// "No sessions yet" is a **store** contract, not a caller concern:
+    /// `SessionStore::list_sessions` returns an empty list for a database whose
+    /// `sessions` table does not exist yet (fresh install, or a fresh in-memory
+    /// store), so this method does not need to inspect or match on error text.
+    /// The former substring match (`err_str.contains("does not exist")`) was
+    /// removed in m9-71: it tolerated an error the store no longer produces, and
+    /// it would have masked a genuine store failure whose message happened to
+    /// contain those words.
+    ///
     /// # Errors
-    /// - `ListFailed` if the store read fails for a reason other than
-    ///   a missing table (which returns an empty list, suitable for empty stores).
+    /// - `ListFailed` if the store read fails.
     pub async fn list_sessions(ctx: &SessionsContext<'_>) -> Result<ListResult, ServiceError> {
-        let store_ref = ctx.store;
-        let sessions = match store_ref.list_sessions() {
-            Ok(s) => s,
-            Err(e) => {
-                // If the table doesn't exist yet (empty store), return empty list.
-                // Any other store error is propagated.
-                let err_str = e.to_string();
-                if err_str.contains("does not exist") || err_str.contains("not exist") {
-                    return Ok(ListResult { sessions: vec![] });
-                }
-                return Err(ServiceError::ListFailed(err_str));
-            }
-        };
+        let sessions = ctx
+            .store
+            .list_sessions()
+            .map_err(|e| ServiceError::ListFailed(e.to_string()))?;
 
         let summaries: Vec<SessionSummary> = sessions
             .into_iter()
@@ -447,6 +446,14 @@ mod tests {
     // list_sessions — happy path
     // -------------------------------------------------------------------------
 
+    /// m9-71 contract guard: a store with no `sessions` table yet (fresh
+    /// install, fresh in-memory store) must list as **empty**, not as an error.
+    ///
+    /// This test is only load-bearing because `list_sessions` above propagates
+    /// store errors instead of substring-matching them: with the old
+    /// `contains("does not exist")` workaround in place it would pass even if
+    /// the store returned `TableDoesNotExist` (verified by reverting the
+    /// store-side absent-table handling in m9-70 — this test then fails).
     #[tokio::test]
     async fn list_sessions_empty() {
         let store = make_store();
