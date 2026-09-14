@@ -23,10 +23,9 @@
 //! the raw `support_event_ids` (and `counter_event_ids` for violations)
 //! so the calling agent can verify the support itself.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::HashMap;
 
-use chronos_domain::property::{ComparisonOp, PropertyOutcome, PropertyValue};
-use chronos_domain::trace::{EventData, EventType, TraceEvent};
+use chronos_domain::property::{ComparisonOp, PropertyValue};
 use chronos_query::QueryEngine;
 use tokio::sync::Mutex as TokioMutex;
 
@@ -146,32 +145,38 @@ impl ChronosHypothesisTestService {
                 // PropertyKeyEquals; anything else falls back to
                 // EventTypeEquals function_entry (matches the original
                 // default predicate when input.predicate is None).
-                let domain_predicate =
-                    match input.predicate.clone().unwrap_or_else(|| {
-                        ExistencePredicate::EventTypeEquals {
-                            event_type: "function_entry".into(),
+                let domain_predicate = match input.predicate.clone().unwrap_or_else(|| {
+                    ExistencePredicate::EventTypeEquals {
+                        event_type: "function_entry".into(),
+                    }
+                }) {
+                    ExistencePredicate::EventTypeEquals { event_type } => {
+                        chronos_domain::property::PropertyExistencePredicate::EventTypeEquals {
+                            event_type,
                         }
-                    }) {
-                        ExistencePredicate::EventTypeEquals { event_type } => {
-                            chronos_domain::property::PropertyExistencePredicate::EventTypeEquals {
-                                event_type,
-                            }
+                    }
+                    ExistencePredicate::ThreadEquals { thread_id } => {
+                        chronos_domain::property::PropertyExistencePredicate::ThreadEquals {
+                            thread_id,
                         }
-                        ExistencePredicate::ThreadEquals { thread_id } => {
-                            chronos_domain::property::PropertyExistencePredicate::ThreadEquals {
-                                thread_id,
-                            }
+                    }
+                    ExistencePredicate::PropertyKeyEquals { target } => {
+                        chronos_domain::property::PropertyExistencePredicate::PropertyKeyEquals {
+                            target,
                         }
-                        ExistencePredicate::PropertyKeyEquals { target } => {
-                            chronos_domain::property::PropertyExistencePredicate::PropertyKeyEquals {
-                                target,
-                            }
-                        }
-                    };
+                    }
+                };
                 let outcome = chronos_domain::property::eval_existence(&events, domain_predicate);
                 Ok(HypothesisOutput::from(outcome))
             }
-            HypothesisKind::CallPath => Ok(eval_call_path(&input, &events)),
+            HypothesisKind::CallPath => {
+                let caller = input.caller.clone().unwrap_or_default();
+                let callee = input.callee.clone().unwrap_or_default();
+                let max_depth = input.max_depth.unwrap_or(10);
+                let outcome =
+                    chronos_domain::property::eval_call_path(&events, caller, callee, max_depth);
+                Ok(HypothesisOutput::from(outcome))
+            }
         }
     }
 }
@@ -180,42 +185,10 @@ impl ChronosHypothesisTestService {
 // Invariant
 // ---------------------------------------------------------------------------
 
-// Helpers below are kept because eval_existence (T2) and eval_call_path
-// (T3) still depend on them. They will be deleted in T2/T3 once those
-// functions are also moved to the domain.
-#[allow(dead_code)]
-fn outcome_to_envelope(
-    outcome: PropertyOutcome,
-    op: &ComparisonOp,
-    constant: &PropertyValue,
-    support: Vec<u64>,
-    counter: Vec<u64>,
-) -> (HypothesisVerdict, Vec<u64>, Vec<u64>, String) {
-    match outcome {
-        PropertyOutcome::Pass => (
-            HypothesisVerdict::Pass,
-            support,
-            counter,
-            format!("invariant satisfied ({op} {constant})"),
-        ),
-        PropertyOutcome::Violation { message, .. } => (
-            HypothesisVerdict::Violation {
-                reason: message.clone(),
-            },
-            support,
-            counter,
-            message,
-        ),
-        PropertyOutcome::UnsupportedByRecordedEvidence { reason } => (
-            HypothesisVerdict::Unsupported {
-                reason: reason.clone(),
-            },
-            support,
-            counter,
-            reason,
-        ),
-    }
-}
+// outcome_to_envelope removed: PropertyOutcome → HypothesisVerdict conversion
+// is no longer used (T1 moved Invariant + its helpers to domain, and T2/T3
+// similarly bypass this bridge by returning domain outcomes converted via
+// From impls in output.rs).
 
 // observe_property_target and parse_property_value moved to
 // chronos_domain::property::observe_property_target_domain (T1).
@@ -231,151 +204,7 @@ fn outcome_to_envelope(
 // CallPath
 // ---------------------------------------------------------------------------
 
-fn eval_call_path(input: &HypothesisInput, events: &[TraceEvent]) -> HypothesisOutput {
-    let caller = input.caller.clone().unwrap_or_default();
-    let callee = input.callee.clone().unwrap_or_default();
-    let max_depth = input.max_depth.unwrap_or(10);
-
-    if caller.is_empty() || callee.is_empty() {
-        return HypothesisOutput::CallPath {
-            verdict: HypothesisVerdict::Unsupported {
-                reason: "caller and callee are required for kind=call_path (must be non-empty)"
-                    .into(),
-            },
-            support_event_ids: Vec::new(),
-            counter_event_ids: Vec::new(),
-            caller,
-            callee,
-            reachable_path: None,
-            summary: "missing caller/callee".into(),
-        };
-    }
-
-    if caller == callee {
-        let p = caller.clone();
-        return HypothesisOutput::CallPath {
-            verdict: HypothesisVerdict::Pass,
-            support_event_ids: Vec::new(),
-            counter_event_ids: Vec::new(),
-            caller,
-            callee,
-            reachable_path: Some(vec![p]),
-            summary: "caller == callee".to_string(),
-        };
-    }
-
-    // Build adjacency from FunctionEntry/Exit events. VariableInfo's `value`
-    // field carries the function name.
-    let mut callees_by_caller: HashMap<String, Vec<String>> = HashMap::new();
-    let mut stacks: HashMap<u64, Vec<String>> = HashMap::new();
-    let mut function_node_present: HashSet<String> = HashSet::new();
-    for ev in events {
-        if let EventData::Function { name, .. } = &ev.data {
-            if name.is_empty() {
-                continue;
-            }
-            function_node_present.insert(name.clone());
-            match ev.event_type {
-                EventType::FunctionEntry => {
-                    let stack = stacks.entry(ev.thread_id).or_default();
-                    if stack.len() < max_depth {
-                        if let Some(parent) = stack.last().cloned() {
-                            callees_by_caller
-                                .entry(parent)
-                                .or_default()
-                                .push(name.clone());
-                        }
-                        stack.push(name.clone());
-                    }
-                }
-                EventType::FunctionExit => {
-                    if let Some(stack) = stacks.get_mut(&ev.thread_id) {
-                        stack.pop();
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    if !function_node_present.contains(&caller) {
-        let msg = format!("caller `{caller}` not present in call graph");
-        let summary = format!("caller `{caller}` absent");
-        return HypothesisOutput::CallPath {
-            verdict: HypothesisVerdict::Unsupported { reason: msg },
-            support_event_ids: Vec::new(),
-            counter_event_ids: Vec::new(),
-            caller,
-            callee,
-            reachable_path: None,
-            summary,
-        };
-    }
-
-    let (verdict, path, summary) = bfs_reach(&callees_by_caller, &caller, &callee);
-    HypothesisOutput::CallPath {
-        verdict,
-        support_event_ids: Vec::new(),
-        counter_event_ids: Vec::new(),
-        caller,
-        callee,
-        reachable_path: path,
-        summary,
-    }
-}
-
-fn bfs_reach(
-    adj: &HashMap<String, Vec<String>>,
-    caller: &str,
-    callee: &str,
-) -> (HypothesisVerdict, Option<Vec<String>>, String) {
-    let mut visited: HashSet<String> = HashSet::new();
-    let mut parents: HashMap<String, String> = HashMap::new();
-    let mut queue: VecDeque<String> = VecDeque::new();
-    visited.insert(caller.to_string());
-    queue.push_back(caller.to_string());
-
-    let mut found: Option<Vec<String>> = None;
-    while let Some(node) = queue.pop_front() {
-        if node == callee {
-            let mut path = Vec::new();
-            let mut cur = callee.to_string();
-            loop {
-                path.push(cur.clone());
-                match parents.get(&cur) {
-                    Some(p) => cur = p.clone(),
-                    None => break,
-                }
-            }
-            path.reverse();
-            found = Some(path);
-            break;
-        }
-        if let Some(nbrs) = adj.get(&node) {
-            for n in nbrs {
-                if visited.insert(n.clone()) {
-                    parents.insert(n.clone(), node.clone());
-                    queue.push_back(n.clone());
-                }
-            }
-        }
-    }
-
-    match found {
-        Some(p) => (
-            HypothesisVerdict::Pass,
-            Some(p.clone()),
-            format!("reachable in {} step(s)", p.len().saturating_sub(1)),
-        ),
-        None => (
-            HypothesisVerdict::Violation {
-                reason: format!("`{callee}` is not reachable from `{caller}`"),
-            },
-            None,
-            format!("no call path `{caller}` -> `{callee}`"),
-        ),
-    }
-}
+// fn eval_call_path and fn bfs_reach moved to chronos_domain::property in T3.
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -384,7 +213,7 @@ fn bfs_reach(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chronos_domain::trace::{EventData, EventType, SourceLocation};
+    use chronos_domain::trace::{EventData, EventType, SourceLocation, TraceEvent};
     use chronos_domain::value::{VariableInfo, VariableScope};
     use chronos_index::builder::IndexBuilder;
     use chronos_query::QueryEngine;

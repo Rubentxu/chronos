@@ -2743,9 +2743,9 @@ impl From<chronos_domain::property::PropertyExistencePredicate> for ExistencePre
             chronos_domain::property::PropertyExistencePredicate::ThreadEquals { thread_id } => {
                 ExistencePredicate::ThreadEquals { thread_id }
             }
-            chronos_domain::property::PropertyExistencePredicate::PropertyKeyEquals {
-                target,
-            } => ExistencePredicate::PropertyKeyEquals { target },
+            chronos_domain::property::PropertyExistencePredicate::PropertyKeyEquals { target } => {
+                ExistencePredicate::PropertyKeyEquals { target }
+            }
             chronos_domain::property::PropertyExistencePredicate::VariableRead { .. }
             | chronos_domain::property::PropertyExistencePredicate::EventTypeOnly => {
                 // Fallback: domain VariableRead / EventTypeOnly have no direct
@@ -2765,6 +2765,20 @@ impl From<chronos_domain::property::ExistenceOutcome> for HypothesisOutput {
             support_event_ids: outcome.support_event_ids,
             counter_event_ids: outcome.counter_event_ids,
             predicate: outcome.predicate.into(),
+            summary: outcome.summary,
+        }
+    }
+}
+
+impl From<chronos_domain::property::CallPathOutcome> for HypothesisOutput {
+    fn from(outcome: chronos_domain::property::CallPathOutcome) -> Self {
+        HypothesisOutput::CallPath {
+            verdict: outcome.verdict.into(),
+            support_event_ids: outcome.support_event_ids,
+            counter_event_ids: outcome.counter_event_ids,
+            caller: outcome.caller,
+            callee: outcome.callee,
+            reachable_path: outcome.reachable_path,
             summary: outcome.summary,
         }
     }

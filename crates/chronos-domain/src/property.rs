@@ -7,6 +7,7 @@
 //! `UnsupportedByRecordedEvidence` — never a false `Pass` when the recorded
 //! evidence lacks a required observation.
 
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 
 use crate::trace::{EventData, EventType, TraceEvent};
@@ -1470,8 +1471,7 @@ pub fn eval_invariant(
                     }
                     .evaluate(Some(&obs), None);
                     let mut counter_local: Vec<u64> = Vec::new();
-                    let (v, mut sm) =
-                        property_outcome_to_verdict(outcome, &comparison, &constant);
+                    let (v, mut sm) = property_outcome_to_verdict(outcome, &comparison, &constant);
                     if matches!(v, PropertyHypothesisVerdict::Violation { .. }) {
                         for id in &ids {
                             counter_local.push(*id);
@@ -1528,7 +1528,10 @@ fn event_type_label(t: EventType) -> &'static str {
 
 /// Scan events for those matching the given predicate. Returns the
 /// matching event IDs in order.
-fn scan_predicate_domain(events: &[TraceEvent], predicate: &PropertyExistencePredicate) -> Vec<u64> {
+fn scan_predicate_domain(
+    events: &[TraceEvent],
+    predicate: &PropertyExistencePredicate,
+) -> Vec<u64> {
     let mut support = Vec::new();
     for ev in events {
         let matches = match predicate {
@@ -1634,5 +1637,162 @@ pub fn eval_existence(
         counter_event_ids: Vec::new(),
         predicate,
         summary,
+    }
+}
+
+/// Evaluate a `CallPath`-shaped hypothesis against the captured events
+/// (BFS reachability in the captured call graph).
+///
+/// `caller` and `callee` are function names; `max_depth` caps the stack
+/// depth used when building the call graph from `FunctionEntry` /
+/// `FunctionExit` events (default 10, matching the services-layer
+/// `debug_call_graph` default).
+///
+/// Returns a [`CallPathOutcome`] with the verdict (Pass / Violation /
+/// Unsupported), the resolved path if reachable, and a summary.
+pub fn eval_call_path(
+    events: &[TraceEvent],
+    caller: String,
+    callee: String,
+    max_depth: usize,
+) -> CallPathOutcome {
+    if caller.is_empty() || callee.is_empty() {
+        return CallPathOutcome {
+            verdict: PropertyHypothesisVerdict::Unsupported {
+                reason: "caller and callee are required for kind=call_path (must be non-empty)"
+                    .into(),
+            },
+            support_event_ids: Vec::new(),
+            counter_event_ids: Vec::new(),
+            caller,
+            callee,
+            reachable_path: None,
+            summary: "missing caller/callee".into(),
+        };
+    }
+
+    if caller == callee {
+        let p = caller.clone();
+        return CallPathOutcome {
+            verdict: PropertyHypothesisVerdict::Pass,
+            support_event_ids: Vec::new(),
+            counter_event_ids: Vec::new(),
+            caller,
+            callee,
+            reachable_path: Some(vec![p]),
+            summary: "caller == callee".to_string(),
+        };
+    }
+
+    let mut callees_by_caller: HashMap<String, Vec<String>> = HashMap::new();
+    let mut stacks: HashMap<u64, Vec<String>> = HashMap::new();
+    let mut function_node_present: HashSet<String> = HashSet::new();
+    for ev in events {
+        if let EventData::Function { name, .. } = &ev.data {
+            if name.is_empty() {
+                continue;
+            }
+            function_node_present.insert(name.clone());
+            match ev.event_type {
+                EventType::FunctionEntry => {
+                    let stack = stacks.entry(ev.thread_id).or_default();
+                    if stack.len() < max_depth {
+                        if let Some(parent) = stack.last().cloned() {
+                            callees_by_caller
+                                .entry(parent)
+                                .or_default()
+                                .push(name.clone());
+                        }
+                        stack.push(name.clone());
+                    }
+                }
+                EventType::FunctionExit => {
+                    if let Some(stack) = stacks.get_mut(&ev.thread_id) {
+                        stack.pop();
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    if !function_node_present.contains(&caller) {
+        let reason = format!("caller `{caller}` not present in call graph");
+        let summary = format!("caller `{caller}` absent");
+        return CallPathOutcome {
+            verdict: PropertyHypothesisVerdict::Unsupported { reason },
+            support_event_ids: Vec::new(),
+            counter_event_ids: Vec::new(),
+            caller,
+            callee,
+            reachable_path: None,
+            summary,
+        };
+    }
+
+    let (verdict, path, summary) = bfs_reach_domain(&callees_by_caller, &caller, &callee);
+    CallPathOutcome {
+        verdict,
+        support_event_ids: Vec::new(),
+        counter_event_ids: Vec::new(),
+        caller,
+        callee,
+        reachable_path: path,
+        summary,
+    }
+}
+
+/// BFS reachability in the call graph. Returns (verdict, reachable_path,
+/// summary).
+fn bfs_reach_domain(
+    adj: &HashMap<String, Vec<String>>,
+    caller: &str,
+    callee: &str,
+) -> (PropertyHypothesisVerdict, Option<Vec<String>>, String) {
+    let mut visited: HashSet<String> = HashSet::new();
+    let mut parents: HashMap<String, String> = HashMap::new();
+    let mut queue: VecDeque<String> = VecDeque::new();
+    visited.insert(caller.to_string());
+    queue.push_back(caller.to_string());
+
+    let mut found: Option<Vec<String>> = None;
+    while let Some(node) = queue.pop_front() {
+        if node == callee {
+            let mut path = Vec::new();
+            let mut cur = callee.to_string();
+            loop {
+                path.push(cur.clone());
+                match parents.get(&cur) {
+                    Some(p) => cur = p.clone(),
+                    None => break,
+                }
+            }
+            path.reverse();
+            found = Some(path);
+            break;
+        }
+        if let Some(nbrs) = adj.get(&node) {
+            for n in nbrs {
+                if visited.insert(n.clone()) {
+                    parents.insert(n.clone(), node.clone());
+                    queue.push_back(n.clone());
+                }
+            }
+        }
+    }
+
+    match found {
+        Some(p) => (
+            PropertyHypothesisVerdict::Pass,
+            Some(p.clone()),
+            format!("reachable in {} step(s)", p.len().saturating_sub(1)),
+        ),
+        None => (
+            PropertyHypothesisVerdict::Violation {
+                reason: format!("`{callee}` is not reachable from `{caller}`"),
+            },
+            None,
+            format!("no call path `{caller}` -> `{callee}`"),
+        ),
     }
 }
