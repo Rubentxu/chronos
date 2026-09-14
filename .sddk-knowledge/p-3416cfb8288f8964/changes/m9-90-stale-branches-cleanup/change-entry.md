@@ -9,13 +9,13 @@
 | Path | B-direct (vault-only hardening) |
 | Status | CLOSED |
 | Base SHA | `20e2649822c0c24509ff6419a48fe3113591ecf0` |
-| Head SHA | PLACEHOLDER |
+| Head SHA | 42ee5df1d421b24f63424efc7204fba584080248 |
 | Tag | `v0.7.92` |
 
 ## Subject
 
 - base_sha: `20e2649822c0c24509ff6419a48fe3113591ecf0`
-- head_sha: PLACEHOLDER
+- head_sha: 42ee5df1d421b24f63424efc7204fba584080248
 - cycle: m9-90
 - branch: `chore/m9-90-stale-branches-cleanup`
 

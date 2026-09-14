@@ -10,14 +10,14 @@
 | Tier required | T0 |
 | Tier run | T0 (CC drift sweep) |
 | Base SHA | `20e2649822c0c24509ff6419a48fe3113591ecf0` (m9-89 post-push bookkeeping) |
-| Head SHA | `56f93d1d7e4fae5a245f00bf56b8f53c1d2056db` (m9-90 final artifact commit) |
-| Main SHA | `56f93d1d7e4fae5a245f00bf56b8f53c1d2056db` |
+| Head SHA | `42ee5df1d421b24f63424efc7204fba584080248` (m9-90 post-alignment HEAD) |
+| Main SHA | `42ee5df1d421b24f63424efc7204fba584080248` |
 
 ## Subject
 
 - cycle_id: m9-90-stale-branches-cleanup
 - base_sha: 20e2649822c0c24509ff6419a48fe3113591ecf0
-- head_sha: 56f93d1d7e4fae5a245f00bf56b8f53c1d2056db
+- head_sha: 42ee5df1d421b24f63424efc7204fba584080248
 - branch: chore/m9-90-stale-branches-cleanup
 - cycle: m9-90
 
@@ -64,7 +64,7 @@ A single B-direct commit landing `scripts/clean_m9_90_stale_branches.py`
 
 ## Cross-checks (CC#24 / CC#31 / CC#32 / CC#33)
 
-- `apply-checkpoint.head_sha` == `56f93d1d7e4fae5a245f00bf56b8f53c1d2056db`.
+- `apply-checkpoint.head_sha` == `42ee5df1d421b24f63424efc7204fba584080248`.
 - `apply-checkpoint.base_sha` == `20e2649822c0c24509ff6419a48fe3113591ecf0`.
 - `apply-checkpoint.peel_match` == `true`.
 - `apply-checkpoint.main_sha` == `apply-checkpoint.head_sha`.
@@ -127,5 +127,5 @@ stale-branch drift by deleting 9 feat/m9-* branches (6 local + 3
 remote) from m9-67..m9-78. Single new tool:
 `scripts/clean_m9_90_stale_branches.py` (220 lines, idempotent +
 dry-run + recovery log). Zero Rust source code touched. Released as
-`v0.7.92` at merge commit `56f93d1d7e4fae5a245f00bf56b8f53c1d2056db`.
+`v0.7.92` at post-alignment HEAD `42ee5df1d421b24f63424efc7204fba584080248`.
 
