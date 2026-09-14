@@ -1,7 +1,7 @@
 {
-  "head_sha": "TBD",
+  "head_sha": "600a020",
   "base_sha": "2c2a5cc8f8370eb64dca7fb4ddc47a6f3e8b15a7",
-  "main_sha": "TBD",
+  "main_sha": "600a020",
   "remote_tag": "v0.7.87",
   "remote_tag_peel": "a850346cc3f74e07fbc19f6a95b0ff5be1d2f99e",
   "tag_peel_sha": "a850346cc3f74e07fbc19f6a95b0ff5be1d2f99e",
