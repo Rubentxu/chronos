@@ -29,10 +29,11 @@ silent opt-in by a third party).
   add a `kind: StoreKind` field on `SessionStore` (Persistent | InMemory),
   set by both constructors, exposed through this accessor.
 - **`crates/chronos-mcp/src/server.rs`**: add `degraded: bool` field to
-  `ChronosServer` (line ~1446 `from_store`); set in `try_open_default_store`
-  based on the path actually taken by `open_store_at`. Add a
-  `degraded` field to the JSON envelope emitted by the tools that return
-  session-persistence results (`session_save`, `session_list`, `session_load`).
+  `ChronosServer` (line ~1446 `from_store`); set in `from_store` based
+  on the store kind. Add a `degraded` field to the JSON envelope
+  emitted by the tools that return session-persistence results
+  (`save_session`, `list_sessions`, `load_session`, `delete_session`,
+  `drop_session`).
 - **Tests**: 2 unit tests in `server.rs` and 1 in `storage.rs`. Pattern
   follows the existing `test_open_store_at_fails_closed_instead_of_degrading_silently`
   shape.
@@ -45,8 +46,13 @@ silent opt-in by a third party).
   `try_open(path)` store and `true` for one constructed from
   `in_memory()` (or after `try_open_default_store` falls back via the
   opt-in path).
-- `session_save` / `session_list` / `session_load` tool responses include
+- `save_session` / `list_sessions` / `load_session` tool responses include
   `degraded: <bool>` at the top level. Existing fields are unchanged.
+  (Spec correction m9-82 mid-impl: the proposal draft named the tools
+  `session_save`/`session_list`/`session_load`. The actual MCP tool
+  names registered in `server.rs` are `save_session`, `list_sessions`,
+  `load_session`, and the contract extends to `delete_session` and
+  `drop_session` for symmetry — all five talk to the persistent store.)
 - `cargo fmt --all -- --check` exits 0.
 - `cargo clippy --workspace --all-targets -- -D warnings` exits 0.
 - `cargo test -p chronos-store -p chronos-mcp --lib --no-fail-fast`

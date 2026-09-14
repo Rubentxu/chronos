@@ -57,16 +57,24 @@ immutable for the lifetime of the server.
 
 ## REQ-M9-82-03 — Tool responses include `degraded` at the top level
 
-`session_save`, `session_list`, and `session_load` tool responses SHALL
-include `degraded: <bool>` at the top level of the JSON envelope. The
-flag SHALL match `ChronosServer::is_degraded()`.
+`save_session`, `list_sessions`, `load_session`, `delete_session`, and
+`drop_session` tool responses SHALL include `degraded: <bool>` at the
+top level of the JSON envelope. The flag SHALL match
+`ChronosServer::is_degraded()`.
+
+> **Spec correction (m9-82 mid-implementation):** the proposal and
+> earlier spec draft named the tools with underscores-as-separators
+> (`session_save`, `session_list`, `session_load`). The actual tool
+> names registered in `server.rs` are `save_session`, `list_sessions`,
+> `load_session`, `delete_session`, and `drop_session`. The wire-shape
+> disclosure contract applies to all five.
 
 **Scenarios:**
-- `session_save_includes_degraded` — a unit test that calls
-  `session_save` on a server with an in-memory store and asserts the
+- `save_session_includes_degraded` — a unit test that calls
+  `save_session` on a server with an in-memory store and asserts the
   response contains `degraded: true`.
-- `session_list_includes_degraded` — same shape, on `session_list`.
-- `session_save_includes_degraded_false_for_persistent` — same shape,
+- `list_sessions_includes_degraded` — same shape, on `list_sessions`.
+- `save_session_includes_degraded_false_for_persistent` — same shape,
   on a server with a persistent store; asserts `degraded: false`.
 
 ## REQ-M9-82-04 — Wire-shape additivity
