@@ -56,9 +56,10 @@ use blake3::Hasher;
 
 use crate::cas::ContentHash;
 use crate::error::StoreError;
+use crate::table_error::classify_read_table_error;
 use chronos_domain::property::PropertyValue;
 use chronos_domain::TraceEvent;
-use redb::{ReadableTable, TableDefinition, TableError};
+use redb::{ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 
 /// Table for counterexample bundles.
@@ -234,8 +235,7 @@ pub fn collect_bundle_chunks_range(
 ) -> Result<Vec<(u32, Vec<u8>)>, StoreError> {
     let table = match tx.open_table(COUNTEREXAMPLE_BUNDLE_EVENTS) {
         Ok(t) => t,
-        Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
-        Err(e) => return Err(StoreError::Database(e.into())),
+        Err(e) => return classify_read_table_error(e).or_not_found(Vec::new()),
     };
 
     let prefix = bundle_prefix(bundle_id);
@@ -283,8 +283,7 @@ fn collect_v3_keys_for_bundle(
 ) -> Result<Vec<Vec<u8>>, StoreError> {
     let table = match tx.open_table(COUNTEREXAMPLE_BUNDLE_EVENTS) {
         Ok(t) => t,
-        Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
-        Err(e) => return Err(StoreError::Database(e.into())),
+        Err(e) => return classify_read_table_error(e).or_not_found(Vec::new()),
     };
 
     let prefix = bundle_prefix(bundle_id);
@@ -323,8 +322,7 @@ fn collect_bundle_chunks_legacy(
 ) -> Result<Vec<(u32, Vec<u8>)>, StoreError> {
     let table = match tx.open_table(COUNTEREXAMPLE_BUNDLE_EVENTS) {
         Ok(t) => t,
-        Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
-        Err(e) => return Err(StoreError::Database(e.into())),
+        Err(e) => return classify_read_table_error(e).or_not_found(Vec::new()),
     };
     let mut chunks = Vec::new();
     for entry in table.iter().map_err(|e| StoreError::Database(e.into()))? {
@@ -694,8 +692,7 @@ impl crate::storage::SessionStore {
     ) -> Result<u64, StoreError> {
         let table = match tx.open_table(COUNTEREXAMPLE_BUNDLES) {
             Ok(t) => t,
-            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(0),
-            Err(e) => return Err(StoreError::Database(e.into())),
+            Err(e) => return classify_read_table_error(e).or_not_found(0_u64),
         };
         let bytes_opt = match table.get(bundle_id.as_bytes()) {
             Ok(o) => o,
@@ -872,8 +869,10 @@ impl crate::storage::SessionStore {
         let table_result = tx.open_table(COUNTEREXAMPLE_BUNDLES);
         let table = match table_result {
             Ok(t) => t,
-            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(None),
-            Err(e) => return Err(StoreError::Database(e.into())),
+            Err(e) => {
+                return classify_read_table_error(e)
+                    .or_not_found(None::<CounterexampleBundleRecord>)
+            }
         };
         let bytes_opt = match table.get(bundle_id.as_bytes()) {
             Ok(o) => o,
@@ -947,8 +946,7 @@ impl crate::storage::SessionStore {
             .map_err(|e| StoreError::Database(e.into()))?;
         let table = match tx.open_table(COUNTEREXAMPLE_BUNDLES) {
             Ok(t) => t,
-            Err(TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
-            Err(e) => return Err(StoreError::Database(e.into())),
+            Err(e) => return classify_read_table_error(e).or_not_found(Vec::new()),
         };
 
         let mut out: Vec<CounterexampleBundleSummary> = Vec::new();
