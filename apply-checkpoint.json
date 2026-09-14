@@ -1,61 +1,59 @@
 {
-  "cycle_id": "m9-92-cc34-cc42-cleanup",
-  "cycle_record": "p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup",
-  "path": "B-direct",
+  "cycle_id": "m9-93-trace-event-json-schema",
+  "cycle_record": "p-3416cfb8288f8964/m9-93-trace-event-json-schema",
+  "path": "A-min",
   "status": "complete",
-  "head_sha": "6900395d088ff89e7ee67c3260a244b3d864e4e2",
-  "base_sha": "5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d",
-  "main_sha": "6900395d088ff89e7ee67c3260a244b3d864e4e2",
-  "remote_tag": "v0.7.94",
-  "remote_tag_peel": "6900395d088ff89e7ee67c3260a244b3d864e4e2",
+  "head_sha": "60db8b58bdcf9bb55549dad1e43c9d381b45939c",
+  "base_sha": "1b8164d209b521e341b6cbc433000d3a4f57aede",
+  "main_sha": "60db8b58bdcf9bb55549dad1e43c9d381b45939c",
+  "remote_tag": "v0.7.95",
+  "remote_tag_peel": "60db8b58bdcf9bb55549dad1e43c9d381b45939c",
   "peel_match": true,
-  "scope_doc_sha": "6900395",
+  "scope_doc_sha": "60db8b5",
   "phases": {
     "explore": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup/",
-      "summary": "Identified 3 pre-existing vault drift lines after m9-91 closure: CC#34 A1, CC#34 A2, CC#42 A. All documented in m9-91 handoff as pre-existing but unresolved."
+      "artifact_path": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-93-trace-event-json-schema/exploration-report.md",
+      "summary": "Identified 12 types in chronos-domain requiring JsonSchema derive + 1 cargo feature flag (schemars uuid1). No architectural changes."
     },
     "spec": {
       "status": "complete",
-      "artifact_path": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-92-cc34-cc42-cleanup/spec.md",
-      "summary": "5 REQs + 4 scenarios + acceptance criteria for CC#34 + CC#42 cleanup. Vault-only B-direct path; no Rust touched."
+      "artifact_path": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-93-trace-event-json-schema/spec.md",
+      "summary": "5 REQs + 4 scenarios + acceptance criteria. REQ-m9-93-1..4 cover the derives + workspace dep; REQ-m9-93-5 covers dropping the schemars(skip) on the DTO."
     },
     "tasks": {
       "status": "complete",
-      "artifact_path": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-92-cc34-cc42-cleanup/tasks.md",
-      "summary": "4 phases (vault edits, m9-90 re-anchor, cycles/terms index bump, cycle artifacts + archive)."
+      "artifact_path": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-93-trace-event-json-schema/tasks.md",
+      "summary": "5 phases: workspace dep, chronos-domain derives, chronos-services cleanup, verification, cycle artifacts + archive."
     },
     "apply": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup/implementation-receipt.md",
-      "summary": "Single vault-edit commit + cycle-artifacts commit + SHA-cascade fixpoint commit + merge. m9-90 SHAs re-anchored 2184975a → 5cdb4e1a across 5 vault artifacts."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-93-trace-event-json-schema/implementation-receipt.md",
+      "summary": "Single source commit: 6 files modified (Cargo.toml + 4 chronos-domain + 1 chronos-services). 12 JsonSchema derives added. 3 new unit tests."
     },
     "verify": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup/verify-report.md",
-      "summary": "bash scripts/check_vault_drift.sh: PASS. 0 drift lines (was 3). No new drift introduced."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-93-trace-event-json-schema/verify-report.md",
+      "summary": "T0+T1+T2+T4-smoke all green. 742 lib tests pass (was 739, +3 new). counterexample_tools 12/12. e2e_connectivity 1/1."
     },
     "release": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup/release-receipt.md",
-      "summary": "Tag v0.7.94 pre-created at cycle-artifacts commit 6900395d per CC#42 workaround. --no-ff merge into main. Cycle branch deleted per CC#53."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-93-trace-event-json-schema/release-receipt.md",
+      "summary": "Tag v0.7.95 pre-created at cycle-artifacts commit 60db8b58 per CC#42 workaround. --no-ff merge into main. Cycle branch deleted per CC#53."
     },
     "archive": {
       "status": "complete",
-      "artifact_path": ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-92-cc34-cc42-cleanup/archive-manifest.md",
+      "artifact_path": ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-93-trace-event-json-schema/archive-manifest.md",
       "summary": "Archive-manifest with SHA-256 evidence bindings for 12 released artifacts (7 cycle + 5 knowledge)."
     }
   },
   "vault_drift_baseline": {
-    "drift_lines_pre": 3,
+    "drift_lines_pre": 0,
     "drift_lines_post": 0,
-    "ccs_fixed": ["CC#34 A1", "CC#34 A2", "CC#42 A"],
-    "ccs_broken": []
+    "ccs_fixed": [],
+    "ccs_broken": [],
+    "note": "m9-93 is a Rust-only cycle; no vault drift introduced or closed."
   },
-  "carry_forward_findings": [
-    "FIND-M9-91-TRACE-EVENT-NO-JSON-SCHEMA",
-    "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK"
-  ],
-  "next_cycle_recommendation": "m9-93 = FIND-M9-91 follow-up (add JsonSchema derive to chronos_domain::TraceEvent; A-min Rust cycle). Closes m9-91's deferred finding before m10+ god-module work."
+  "carry_forward_findings": ["FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK"],
+  "next_cycle_recommendation": "m9-94 = cc-001 god-module follow-up (keys-split is smallest/lowest-risk). cc-004-implicit-io-toctou is too big for A-min and should be the first m10 cycle."
 }
