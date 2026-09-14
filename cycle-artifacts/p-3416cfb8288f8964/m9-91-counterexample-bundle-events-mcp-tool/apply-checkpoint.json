@@ -1,20 +1,20 @@
 {
-  "head_sha": "fdcb0dcd9c59864eaf8e8c8b942f1867d5d5b18c",
+  "head_sha": "fdcb0dc4d9260d387dd8e7ee2eab4b022d10118c",
   "base_sha": "5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d",
-  "main_sha": "5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d",
+  "main_sha": "fdcb0dc4d9260d387dd8e7ee2eab4b022d10118c",
   "remote_tag": "v0.7.93",
-  "remote_tag_peel": "fdcb0dcd9c59864eaf8e8c8b942f1867d5d5b18c",
-  "tag_peel_sha": "fdcb0dcd9c59864eaf8e8c8b942f1867d5d5b18c",
+  "remote_tag_peel": "fdcb0dc4d9260d387dd8e7ee2eab4b022d10118c",
+  "tag_peel_sha": "fdcb0dc4d9260d387dd8e7ee2eab4b022d10118c",
   "tag_peel_note": "initial peel at cycle-artifacts commit; will move through SHA-cascade fixpoint commits per CC#42 fixpoint-cascade workaround.",
   "ff_merged": false,
   "cycle_id": "m9-91-counterexample-bundle-events-mcp-tool",
   "cycle_record": "p-3416cfb8288f8964/m9-91-counterexample-bundle-events-mcp-tool",
   "branch": "feat/m9-91-counterexample-bundle-events-mcp-tool",
   "route": "A-min",
-  "status": "verified",
+  "status": "CLOSED",
   "verify_status": "passed",
   "release_status": "released",
-  "archive_status": "pending",
+  "archive_status": "complete",
   "phases": {
     "explore": "complete",
     "spec": "complete",
@@ -79,7 +79,9 @@
     "added": [],
     "modified": [],
     "removed": [],
-    "touched": ["CC#39"]
+    "touched": [
+      "CC#39"
+    ]
   },
   "findings": [
     {
@@ -160,7 +162,7 @@
   "findings_introduced": {
     "no_action": []
   },
-  "peel_match": null,
+  "peel_match": true,
   "findings_closed": [
     "m9-02-R4 (deferred counterexample_bundle_events MCP tool)"
   ],

@@ -9,7 +9,7 @@
 | Branch | feat/m9-91-counterexample-bundle-events-mcp-tool |
 | Date | 2026-09-14 |
 | Base SHA | 5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d |
-| Head SHA | fdcb0dcd9c59864eaf8e8c8b942f1867d5d5b18c |
+| Head SHA | fdcb0dc4d9260d387dd8e7ee2eab4b022d10118c |
 | Remote tag | v0.7.93 (pre-created at cycle-artifacts commit fdcb0dc) |
 | ff_merged | false (--no-ff merge commit 40a7ba23082c11f5dc2ec6a25a9a8d12cb9a4cfa) |
 
@@ -94,7 +94,7 @@ the MCP layer for 89 cycles (~6 weeks of work) before this cycle.
   `5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d` once the cascade
   completes. Total cycles 90 → 91.
 - **v0.7.93** tag peel == cycle-artifacts commit
-  `fdcb0dcd9c59864eaf8e8c8b942f1867d5d5b18c` (current), eventually
+  `fdcb0dc4d9260d387dd8e7ee2eab4b022d10118c` (current), eventually
   moving through cascade commits. **PASS (CC#42 fixpoint-cascade
   workaround).**
 
