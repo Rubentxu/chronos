@@ -155,3 +155,17 @@ m9-87 verify phase:
 
 All cross-checks match the baseline + delta recorded in
 `apply-checkpoint.json` and `release-report.md`.
+
+## Files Inventory
+
+| File | Status | Change |
+|---|---|---|
+| `crates/chronos-store/src/ce_schema.rs` | NEW | 240 lines (extracted from counterexample_storage.rs) |
+| `crates/chronos-store/src/counterexample_storage.rs` | modified | 2077 → 1954 lines (-123) |
+| `crates/chronos-store/src/ce_read.rs` | (m9-85, pre-existing) | sibling submodule |
+| `crates/chronos-store/src/ce_write.rs` | (m9-85, pre-existing) | sibling submodule |
+| `crates/chronos-store/src/ce_test_hooks.rs` | (m9-85, pre-existing) | sibling submodule |
+
+2 files directly affected by m9-87; sibling submodules from m9-85
+unchanged. No production code change outside `ce_schema.rs` (a NEW
+sibling submodule).

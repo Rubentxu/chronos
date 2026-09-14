@@ -108,3 +108,21 @@ modified.
 - Round-trip across all 16 production crates (not needed since no
   source code changed).
 - Sandbox tests (no chronos-mcp or chronos-sandbox touched).
+
+## Files Inventory
+
+| File | Status | Change |
+|---|---|---|
+| `cycle-artifacts/p-3416cfb8288f8964/m9-66-bash-cc-meta-check/apply-checkpoint.json` | fixed | line 35 invalid JSON escape → valid `\\|` |
+| `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/apply-checkpoint.json` | fixed | base_sha off-by-one corrected |
+| `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/merge-receipt.md` | cascade | Base SHA field updated |
+| `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/release-receipt.md` | cascade | Base SHA field updated |
+| `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/verify-findings.json` | cascade | base_sha updated to source head parent |
+| `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/verify-report.md` | cascade | Base column updated |
+| `cycle-artifacts/p-3416cfb8288f8964/m9-79-attach-capability-type/apply-checkpoint.json` | bonus | peel_match: None → true |
+| `cycle-artifacts/p-3416cfb8288f8964/m9-85-cc001-god-module-impl-split/apply-checkpoint.json` | fixed | base_sha: non-existent → real parent |
+| `cycle-artifacts/p-3416cfb8288f8964/m9-85-cc001-god-module-impl-split/merge-receipt.md` | cascade | Base SHA field updated |
+| `cycle-artifacts/p-3416cfb8288f8964/m9-85-cc001-god-module-impl-split/release-receipt.md` | cascade | Base SHA field updated |
+| `cycle-artifacts/p-3416cfb8288f8964/m9-85-cc001-god-module-impl-split/verify-report.md` | cascade | Base SHA + cross-check line updated |
+
+11 files modified (10 fix + 1 bonus). No chronos source code touched.
