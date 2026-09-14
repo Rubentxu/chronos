@@ -1402,3 +1402,117 @@ Do not switch away from `feat/m9-79-attach-capability-type` until preserving
 or formally triaging its local commit. The next session should begin with
 ` sddk version`, `sddk adopt status --root . --scope .`, `git fetch origin
 main`, and an explicit ledger reconciliation decision.
+
+
+## Session 2026-09-14T06:43Z — m9-79 release + SDDK ledger reconciliation
+
+Both tasks from the previous handoff were closed in this session.
+
+### Ledger reconciliation
+
+The stale `p-3416cfb8288f8964/m10-ms-race-fix` (status OPEN, phase verify)
+was closed as `external-obsolete` via `sddk cycle supersede`, citing the
+historical m9-61 closure (`v0.7.63`, merge `35bccbc`) and the handoff
+reference. The lease was reacquired for token 1, the supersede ran with
+that token, and the cycle is now `status=CLOSED, phase=verify` in the
+ledger (phase frozen at the point it was abandoned). Two `sddk-debt-verify`
+workers were not started in this session — the reconciliation happened
+directly through `cycle supersede` rather than a fan-out, since the
+ledger was the only artifact to fix.
+
+### m9-79 release
+
+| Item | Status |
+|---|---|
+| Code commit `917fcb0` (ebpf_user → ptrace_attach) | preserved |
+| Handoff commit `eba71a1` | preserved |
+| Merge to main `--no-ff` | `f41abd4` |
+| Tag | `v0.7.81` (annotated, tag SHA `c3c69f6…`, peel = `f41abd4`) |
+| HEAD == origin/main | `73907aa707ee5009a2fe42eeb19613a814200ebe` |
+| Cycle branch `feat/m9-79-attach-capability-type` | deleted (local + remote) |
+
+Gates (orchestrator-verified 2026-09-14T06:25Z):
+
+| Gate | Result |
+|---|---|
+| T0: `cargo fmt --all -- --check` | PASS |
+| T0: `cargo clippy --workspace --all-targets -- -D warnings` | PASS |
+| T2: `cargo test -p chronos-services --lib --no-fail-fast` | PASS (264/264) |
+| T4-smoke: `chronos-sandbox::e2e_connectivity` (`--test-threads=1`) | PASS (1/1, 5.65 s) |
+| T4-smoke: `chronos-sandbox::session_lifecycle::test_session_start_attach_to_running_self` (`--test-threads=1`) | PASS (1/1, 15.26 s) |
+| `scripts/check_vault_drift.sh` | PASS (48 python + 7 bash CCs all clean) |
+| `scripts/smoke_test_ccs.sh` | PASS (6/6) |
+| CC#4 (`regen_manifest_index_shas.py --check`) | PASS (77 manifests clean to fixpoint) |
+| CC#12 (peel match) | `main_sha == head_sha == remote_tag_peel == f41abd4` |
+
+### SDDK lifecycle for m9-79
+
+The cycle was driven end-to-end through the SDDK ledger for the first time
+in this repo (the previous m9-77/m9-78 cycles shipped before SDDK
+reconciliation):
+
+1. `sddk cycle start --name m9-79-attach-capability-type --path B-direct --branch feat/m9-79-attach-capability-type --base 009b750`
+2. `gate implementation-complete` (passed) → `phase.build.complete.b-direct`
+3. `gate tests-pass` + `gate policy-compliant` (both passed) → `phase.verify.complete.b-direct`
+4. `gate no-pending-effects` + `gate release-uat-approved` (both passed) → `release.complete`
+5. `gate ledger-valid` + `gate vault-index-current` (both passed) → `archive.complete`
+
+Total: 8 ledger events, status `CLOSED`, phase `archive`.
+
+### m9-77 and m9-78 backfill
+
+The two cycles before m9-79 had merged to main but lacked cycle-artifacts
+folders (CC#51 requires them for every cycles/index.md row). Synthesized
+6 files each (`apply-checkpoint.json`, `verify-report.md`, `verify-findings.json`,
+`release-report.md`, `release-receipt.md`, `merge-receipt.md`) with:
+
+- `# Verify Report — m9-NN` titles (CC#30A)
+- `subject.verdict: "passed"` and `lens_summary` in verify-findings.json (CC#30B, CC#36)
+- `| Cycle |` field in archive-manifest.md (CC#30C)
+- `## Summary` section in change-entry.md (CC#30D)
+- `**Path**:` header in release-report.md (CC#32)
+- `Remote tag | v…` / `Remote tag_peel | <sha>` flat format in release-receipt.md (CC#42)
+- `Base SHA | <sha>` field (CC#28)
+
+Both cycles' tags (`v0.7.79`, `v0.7.80`) point at the **code commit**, not
+the merge; this is preserved drift (the cycles shipped before SDDK
+reconciliation), and CC#12's `main_sha == head_sha == remote_tag_peel`
+check does not apply to them. The discrepancy is recorded explicitly in
+each `release-receipt.md`.
+
+### CC#4 cascade
+
+Editing `cycles/index.md` and `terms/index.md` for the new m9-77/78/79
+rows, plus the m9-77 cycle_id slug fix (`m9-77-session-attach-runtime` →
+`m9-77-attach-runtime` to match the dir), staled rows in 8 historical
+manifests. `scripts/regen_manifest_index_shas.py` rewrote 24 rows in one
+pass and reached fixpoint (`nothing to do (77 manifest(s) already correct)`).
+
+### Open follow-ups
+
+The low-severity follow-ups carried forward from m9-76 remain open and
+unchanged:
+
+- **FIND-M9-75-MCP-TOOLS-DO-NOT-DISCLOSE-DEGRADED-STORE** (low)
+- **FIND-M9-74-NATIVE-PTRACE-TESTS-NEED-SERIAL** (low)
+- **FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION** (low)
+- **FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION** (low, mitigated by
+  the regen tool added in m9-76)
+- **FIND-M9-66-bash-cc-meta-check**: a pre-existing JSON parse error in
+  `cycle-artifacts/p-3416cfb8288f8964/m9-66-bash-cc-meta-check/verify-findings.json`
+  (not caused by m9-79, documented for future triage)
+
+### Next roadmap
+
+The handoff's canonical next milestone is **MS-PROPERTY-POLICY** on a
+fresh branch `feat/ms-property-policy` from `origin/main`:
+
+- Path: A-min
+- Tier: T2
+- Entry: ownership of the four `observation_log` property-policy
+  functions in `chronos-domain`
+- Acceptance: one domain owner/re-export or replacement callsites plus a
+  shared chronos-domain fixture
+
+The branch should be created with the SDDK ledger (`sddk cycle start`)
+rather than ad hoc, so the cycle appears in the vault from phase 0.
