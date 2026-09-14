@@ -65,6 +65,27 @@ rewrite the SHA-256 rows in 86 archive-manifests (CC#4 cascade).
 Before: 197 drift lines across 12 CCs.
 After: 2 drift lines (CC#6 mid-cycle, CC#46/CC#53 deferred).
 
+## Cross-check
+
+- **CC#1..CC#8 vault invariants (post-cascade)**: pass.
+- **CC#46 (no stale local feat/m9-*/fix/m9-*/chore/m9-*)**: still
+  drifting post-m9-89 (9 stale feat/* branches from m9-67..m9-78);
+  carried to m9-90 cleanup cycle.
+- **CC#53 (no stale branches merged into main)**: also still drifting
+  post-m9-89; carried to m9-90.
+- **`bash scripts/check_vault_drift.sh` post-m9-89**: 197 → 2 drift
+  lines (CC#6 mid-cycle, CC#46/CC#53 deferred). 195 lines closed.
+- **`scripts/regen_manifest_index_shas.py --check` post-m9-89**: clean
+  (CC#4 fixpoint cascade applied; 86 archive-manifest SHA-256 rows
+  rewritten).
+- **`scripts/audit_m9_89_cascade.py` audit-only report**: 111 files
+  flagged for backfill (verified idempotent before apply).
+- **Apply-checkpoint head_sha = `47a10f8`**: re-anchored to that
+  peel via CC#42 fixpoint-cascade workaround after push.
+- **Tag `v0.7.91` immutable peel**: `47a10f8` (verified via
+  `git rev-parse v0.7.91^{commit}` at handoff time).
+- **Cycles index row**: m9-89 added post-merge; Total cycles 88 → 89.
+
 ## Out-of-scope
 
 - **CC#46/CC#53 stale branches** (m9-67..m9-78 feat/* branches merged

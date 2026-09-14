@@ -54,6 +54,32 @@ A single B-direct commit landing `scripts/clean_m9_90_stale_branches.py`
 Before: 9 stale feat/m9-* branches (6 local + 3 remote) merged into main.
 After: 0.
 
+## Cross-check
+
+- **CC#1..CC#8 vault invariants (post-m9-90)**: pass.
+- **CC#46 (no stale local feat/m9-*/fix/m9-*/chore/m9-*)**: clean
+  (was 6 stale local feat/m9-* branches pre-m9-90; m9-90 closed
+  them via `scripts/clean_m9_90_stale_branches.py`).
+- **CC#53 (no stale branches merged into main)**: clean (was 9
+  stale branches total pre-m9-90; 6 local + 3 remote deleted).
+- **`bash scripts/check_vault_drift.sh` post-m9-90**: 2 → 0 CC#46
+  + CC#53 drift lines (the 2 remaining drift lines are pre-existing
+  m9-89 change-entry + this change-entry CC#34 finding, which m9-92
+  closes; plus the m9-90 release-receipt CC#42 tag_peel drift, also
+  closed by m9-92).
+- **`python3 scripts/clean_m9_90_stale_branches.py --dry-run`**: 0
+  candidates (idempotency verified).
+- **`cargo fmt --all -- --check`**: clean (no Rust touched).
+- **`cargo clippy --workspace --all-targets -- -D warnings`**: clean.
+- **`python3 scripts/regen_manifest_index_shas.py --check`**:
+  clean (no Rust touched → no archive-manifest cascade needed).
+- **Cycles index row**: m9-90 added post-merge; Total cycles 89 → 90.
+- **Tag `v0.7.92` immutable peel**: stored as
+  `2184975a93b43ea1bbd2681dead79dfb4476fef7` in m9-90 release-receipt
+  at close time. **Note (closed by m9-92)**: the immutable tag was
+  later advanced to `5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d` after
+  the SHA-cascade final push. m9-92 re-aligns the receipt.
+
 ## Out-of-scope
 
 - **FIND-M9-81** (sddk CLI bug): external-deferred from m9-88;

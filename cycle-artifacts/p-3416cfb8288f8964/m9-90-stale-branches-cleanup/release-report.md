@@ -3,7 +3,8 @@
 > **Cycle**: m9-90-stale-branches-cleanup
 > **Path**: B-direct
 > **Tag**: v0.7.92
-> **Merge SHA**: 2184975a93b43ea1bbd2681dead79dfb4476fef7
+> **Tag peel (immutable)**: `5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d` (post-cascade HEAD)
+> **Merge SHA (cycle-artifacts)**: 2184975a93b43ea1bbd2681dead79dfb4476fef7
 > **Date archived**: 2026-09-14
 > **Status**: released
 
@@ -68,18 +69,33 @@ FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK.
 
 ## Status
 
-Released as `v0.7.92` at merge commit `2184975a93b43ea1bbd2681dead79dfb4476fef7`.
-The branch `chore/m9-90-stale-branches-cleanup` was merged into `main`
-with `--no-ff` and will be deleted after this report is archived.
+Released as `v0.7.92`. The branch `chore/m9-90-stale-branches-cleanup`
+was merged into `main` with `--no-ff` and deleted after release.
+
+Per m9-92 (CC#34 + CC#42 cleanup), the cycle's documented SHAs were
+re-anchored from the cycle-artifacts location (2184975a) to the
+immutable post-cascade tag location (5cdb4e1a) to match m9-89's pattern
+and CC#3 era-awareness:
+
+| Field | Cycle source | Re-anchored (m9-92) |
+|---|---|---|
+| `apply-checkpoint.head_sha` | 2184975a | **5cdb4e1a** |
+| `apply-checkpoint.main_sha` | 2184975a | **5cdb4e1a** |
+| `apply-checkpoint.remote_tag_peel` | 2184975a | **5cdb4e1a** |
+| `release-receipt.Head SHA` | 2184975a | **5cdb4e1a** |
+| `release-report.Merge SHA (cycle-artifacts)` | 2184975a | (kept as historical record) |
 
 ## Cross-checks
 
-- `apply-checkpoint.head_sha` == `release-receipt.head_sha` ==
-  `merge-receipt.head SHA` == `2184975a93b43ea1bbd2681dead79dfb4476fef7`.
-- `Remote tag` v0.7.92 peel: `2184975a93b43ea1bbd2681dead79dfb4476fef7`
-  (clean match to merge commit; CC#42 fixpoint-cascade workaround).
+- `apply-checkpoint.head_sha` (re-anchored 5cdb4e1a) ==
+  `release-receipt.head_sha` (5cdb4e1a) ==
+  `merge-receipt.head_sha` (5cdb4e1a).
+- `Remote tag` v0.7.92 peel: `5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d`
+  (immutable post-cascade HEAD; cycle source 2184975a was advanced
+  through the SHA-cascade fixpoint per CC#42 workaround documented in
+  m9-83 handoff).
 - `apply-checkpoint.peel_match` == `true`.
-- `apply-checkpoint.main_sha` == `apply-checkpoint.head_sha`.
+- `apply-checkpoint.main_sha` == `apply-checkpoint.head_sha` == 5cdb4e1a.
 - `apply-checkpoint.status` == `"CLOSED"`.
 - `apply-checkpoint.archive_status` == `"complete"`.
 - `cycles/index.md` row added; Total cycles 89 → 90.
@@ -87,3 +103,6 @@ with `--no-ff` and will be deleted after this report is archived.
 - `python3 scripts/clean_m9_90_stale_branches.py --dry-run`: 0 candidates
   (idempotent — nothing left to delete).
 - `cargo fmt --all -- --check`: clean (no Rust touched).
+- `Merge SHA (cycle-artifacts)` retained as historical record of
+  m9-90's original source commit (2184975a); the re-anchored
+  documentation above reflects the post-cascade immutable state.

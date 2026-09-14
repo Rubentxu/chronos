@@ -9,10 +9,19 @@
 | Branch | chore/m9-90-stale-branches-cleanup |
 | Date | 2026-09-14 |
 | Base SHA | 20e2649822c0c24509ff6419a48fe3113591ecf0 |
-| Head SHA | `2184975a93b43ea1bbd2681dead79dfb4476fef7` |
+| Head SHA | `5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d` |
 | Merge SHA | 56f93d1d7e4fae5a245f00bf56b8f53c1d2056db |
 | Remote tag | v0.7.92 |
-| Tag peel SHA | 2184975a93b43ea1bbd2681dead79dfb4476fef7 |
+| Tag peel SHA | 5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d (immutable; CC#42 fixpoint-cascade workaround applied by m9-92) |
+
+> Head SHA re-anchored by m9-92 (CC#34 + CC#42 cleanup): the cycle's
+> source commit was `2184975a93b43ea1bbd2681dead79dfb4476fef7` (final
+> post-alignment "m9-90: align artifacts to v0.7.92 HEAD 42ee5df"). The
+> immutable `v0.7.92` tag was advanced to `5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d`
+> through the SHA-cascade fixpoint (CC#42 workaround documented in
+> m9-83 handoff). Per m9-92, the documented Head SHA matches the
+> immutable post-cascade location to satisfy CC#3 era-awareness and
+> match m9-89's pattern.
 
 ## Summary
 
