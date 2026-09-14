@@ -75,3 +75,19 @@ No production behavior is at risk; rollback would be safe at any point.
 ## Sign-off
 
 Cycle complete. Ready for merge → archive → push.
+
+## Cross-checks
+
+- `bash scripts/check_vault_drift.sh`: PASS (CC#39 Part B satisfied; release-report.md has `## Cross-checks` section).
+- `python3 scripts/regen_manifest_index_shas.py --check`: clean.
+- `cargo fmt --all -- --check`: clean.
+- `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+- `cargo test -p chronos-store --lib --no-fail-fast`: 77 pass.
+- `cargo test --workspace --lib --no-fail-fast -- --test-threads=1`: 1042 pass (same as m9-93 baseline).
+- `apply-checkpoint.peel_match == true`.
+- `apply-checkpoint.head_sha == release-receipt.Head SHA == 9e15dd3`.
+- `Remote tag` v0.7.96 peel: `9e15dd3` (cycle-artifacts commit; tag pre-created at cycle-artifacts per CC#42 workaround).
+- `apply-checkpoint.status == "CLOSED"`.
+- `apply-checkpoint.archive_status == "complete"`.
+- `apply-checkpoint.findings_introduced.no_action == []` (cc#19-compliant).
+- `cycles/index.md` Total cycles = 94 (matches actual folder count).

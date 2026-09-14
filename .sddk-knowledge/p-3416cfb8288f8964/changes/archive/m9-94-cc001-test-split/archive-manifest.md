@@ -79,7 +79,7 @@ closed.
 | implementation-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-94-cc001-test-split/implementation-receipt.md` | `1c30c4d7b030b0ad095ca8fc0abb47c8d51489793b2779cf0da2e84e4fb2985c` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-94-cc001-test-split/merge-receipt.md` | `594ce7ac282da3c21646d586dee9920396b952c24737a91cbfe8cd78cd368acc` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-94-cc001-test-split/release-receipt.md` | `bfbe952937e015e91f6851f049da2d4972acf00e6e62a2aea2e77c8580785d36` |
-| release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-94-cc001-test-split/release-report.md` | `df6e795b949c4098a2bdf283188cf85eb174c21d0f3dafc5aa7ad59c72d59947` |
+| release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-94-cc001-test-split/release-report.md` | `8dbb748b69e62dc15663fd2f516f09638f7846687c27080e5efa2f19ffa364b4` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-94-cc001-test-split/verify-findings.json` | `6d0dadcb3b072ab59cc96ed03772c7fcffe393c21776cef9d180b32a06f83a19` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-94-cc001-test-split/verify-report.md` | `ae3832778ea1e5316785e9d4ba1648c8d0bbfe73332790d20daa8e2c8aab00ac` |
 | proposal | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-94-cc001-test-split/proposal.md` | `e467aa8c781ce6cb5c817662a987d9a90eca8ce70d2b9247066df162b5757592` |
