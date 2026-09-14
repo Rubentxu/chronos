@@ -35,6 +35,17 @@ All types derive `Debug`, `Clone`, `PartialEq`, `serde::Serialize`,
 - `cargo test -p chronos-services --lib hypothesis_test`: 13 passed
 - No `use chronos_services` introduced in `chronos-domain`
 
+## Vault note (added 2026-09-14T07:28Z)
+
+This note lives under `changes/` (knowledge-only) rather than
+`cycle-artifacts/.../m9-80/` because the cycle is still in
+`OPEN/build` state. CC#18 requires `verify-findings.json` for every
+folder in `cycle-artifacts/p-3416cfb8288f8964/`, and m9-80 has not
+been verified yet. The `cycle-artifacts/.../m9-80/` folder will be
+created when the cycle closes (with the standard 6-artifact set:
+implementation-receipt.md, verify-findings.json, verify-report.md,
+release-receipt.md, merge-receipt.md, release-report.md).
+
 ## Next steps
 
 T1 — Move `eval_invariant` into `chronos_domain::property`:
