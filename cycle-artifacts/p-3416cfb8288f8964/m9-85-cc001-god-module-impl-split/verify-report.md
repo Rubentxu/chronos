@@ -33,7 +33,7 @@ counterexample_storage.rs: 2720 → 2287 lines (-433 net).
 - **Cycle**: m9-85-cc001-god-module-impl-split
 - **Path**: A-min (cross-crate refactor with bounded scope)
 - **Branch**: feat/m9-85-cc001-god-module-impl-split
-- **Base SHA**: 2c2a5cc8f8370eb64dca7fb4ddc47a6f3e8b15a7
+- **Base SHA**: 72e120c2e2bb9774c459ef516dcf3e7b21ef90c3
 - **Head SHA**: a85034603031f2dd1dc340d78d84f71f140672e0
 - **Remote tag**: v0.7.87
 - **Date**: 2026-09-14
@@ -42,7 +42,7 @@ counterexample_storage.rs: 2720 → 2287 lines (-433 net).
 
 Executed in cycle branch `feat/m9-85-cc001-god-module-impl-split`
 at HEAD `a85034603031f2dd1dc340d78d84f71f140672e0` (base
-`2c2a5cc8f8370eb64dca7fb4ddc47a6f3e8b15a7`).
+`72e120c2e2bb9774c459ef516dcf3e7b21ef90c3`).
 
 ## Tier 0 — lint gate
 

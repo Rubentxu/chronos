@@ -30,7 +30,13 @@
       "verdict": "PASS",
       "critical_findings": 0,
       "warning_findings": 0,
-      "tiers_run": ["T0_fmt", "T0_clippy", "T2_services_lib", "T4_smoke_e2e_connectivity", "T4_smoke_session_lifecycle_attach"],
+      "tiers_run": [
+        "T0_fmt",
+        "T0_clippy",
+        "T2_services_lib",
+        "T4_smoke_e2e_connectivity",
+        "T4_smoke_session_lifecycle_attach"
+      ],
       "smoke_subset": [
         "e2e_connectivity::test_mcp_server_starts_and_responds",
         "session_lifecycle::test_session_start_attach_to_running_self"
@@ -75,11 +81,12 @@
   "notes": [
     "cycle_path: B-direct (single literal rename + matching test assertion + manual updates)",
     "scope_decision: ptrace_attach matches chronos-native/src/probe_backend.rs::attach_to_process (which calls PtraceTracer::attach via nix ptrace)",
-    "tier_plan: T0 fmt + clippy; T2 services lib; T4-smoke e2e_connectivity + session_lifecycle attach test (per AGENTS.md §2 B-direct table)",
+    "tier_plan: T0 fmt + clippy; T2 services lib; T4-smoke e2e_connectivity + session_lifecycle attach test (per AGENTS.md \u00a72 B-direct table)",
     "vault_indexes_updated: cycles/index.md (m9-77..m9-79 rows added; Total 76 -> 79); terms/index.md (Findings deferred from m9-77..m9-79 section + Last updated/archive metadata)",
     "archive_manifest_cc4_affected_set: m9-02 (index rows), m9-67, m9-68, m9-70, m9-71, m9-72, m9-73, m9-74, m9-75, m9-76 (source/index rows from cycles this batch shares files with), plus the new m9-79 manifest; regenerated to a fixpoint by scripts/regen_manifest_index_shas.py after the artifacts commit lands; the self-referential rows of pre-m9-11 manifests and m9-67/m9-68 are preserved by design",
     "sddk_reconciliation: m10-ms-race-fix stale ledger entry superseded as external-obsolete before this cycle started; the closure event was emitted with evidence pointing to m9-61-ms-race-fix:tag=v0.7.63:merge=35bccbc (no rebroadcast needed)",
     "out_of_scope_now: deferred low-severity findings preserved unchanged (FIND-M9-75-MCP-TOOLS-DO-NOT-DISCLOSE-DEGRADED-STORE, FIND-M9-74-NATIVE-PTRACE-TESTS-NEED-SERIAL, FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION, FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION)",
     "next_recommended: MS-PROPERTY-POLICY (A-min, T2) on a fresh branch from origin/main; ownership of the four observation_log property-policy functions in chronos-domain, one domain owner/re-export or replacement callsites plus a shared chronos-domain fixture"
-  ]
+  ],
+  "peel_match": true
 }

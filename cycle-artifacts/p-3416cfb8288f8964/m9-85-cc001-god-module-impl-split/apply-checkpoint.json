@@ -1,13 +1,13 @@
 {
+  "cycle_id": "m9-85-cc001-god-module-impl-split",
   "head_sha": "a85034603031f2dd1dc340d78d84f71f140672e0",
-  "base_sha": "2c2a5cc8f8370eb64dca7fb4ddc47a6f3e8b15a7",
+  "base_sha": "72e120c2e2bb9774c459ef516dcf3e7b21ef90c3",
   "main_sha": "a85034603031f2dd1dc340d78d84f71f140672e0",
   "remote_tag": "v0.7.87",
   "remote_tag_peel": "a85034603031f2dd1dc340d78d84f71f140672e0",
   "tag_peel_sha": "a85034603031f2dd1dc340d78d84f71f140672e0",
   "tag_peel_note": "non-standard: tag points at the cycle-artifacts commit (a850346), one commit before the SHA-cascade fixpoint. Pattern documented in m9-83 handoff (CC#42 fixpoint-cascade workaround).",
   "ff_merged": false,
-  "cycle_id": "m9-85-cc001-god-module-impl-split",
   "cycle_record": "p-3416cfb8288f8964/m9-85-cc001-god-module-impl-split",
   "branch": "feat/m9-85-cc001-god-module-impl-split",
   "path": "A-min",
@@ -26,7 +26,12 @@
     "archive": "pending"
   },
   "tier_required": "T2",
-  "tiers_run": ["T0", "T1", "T2", "T3"],
+  "tiers_run": [
+    "T0",
+    "T1",
+    "T2",
+    "T3"
+  ],
   "tier_results": {
     "T0": {
       "fmt_check": "passed",
@@ -38,7 +43,10 @@
       "passed": 77,
       "failed": 0,
       "ignored": 0,
-      "baseline_pre_refactor": {"passed": 77, "failed": 0},
+      "baseline_pre_refactor": {
+        "passed": 77,
+        "failed": 0
+      },
       "regression_check": "matched (77 / 77)"
     },
     "T2": {
@@ -63,7 +71,13 @@
     "added": [],
     "modified": [],
     "removed": [],
-    "touched": ["CC#4", "CC#28", "CC#33", "CC#34", "CC#39"]
+    "touched": [
+      "CC#4",
+      "CC#28",
+      "CC#33",
+      "CC#34",
+      "CC#39"
+    ]
   },
   "findings": [
     {
@@ -84,9 +98,9 @@
       "severity": "info",
       "status": "closed",
       "evidence": [
-        "Initial attempt used `pub use ce_write::{save_counterexample_bundle, ...}` in parent module — failed with E0432 \"no save_counterexample_bundle in counterexample_storage::ce_write\" because methods inside `impl SessionStore` blocks are not module-level items.",
+        "Initial attempt used `pub use ce_write::{save_counterexample_bundle, ...}` in parent module \u2014 failed with E0432 \"no save_counterexample_bundle in counterexample_storage::ce_write\" because methods inside `impl SessionStore` blocks are not module-level items.",
         "Fix: drop the `pub use` lines. Methods are still callable via `<SessionStore>::method_name` or `instance.method_name()` regardless of which file the impl block lives in.",
-        "Verified all real callers use `.method_name(...)` form via grep across crates/ — zero path-qualified `counterexample_storage::method_name(...)` call sites exist in the workspace."
+        "Verified all real callers use `.method_name(...)` form via grep across crates/ \u2014 zero path-qualified `counterexample_storage::method_name(...)` call sites exist in the workspace."
       ]
     }
   ],
@@ -113,7 +127,7 @@
     },
     {
       "phase": "T2",
-      "summary": "ce_write.rs (148 lines), ce_read.rs (276 lines), ce_test_hooks.rs (99 lines) created; counterexample_storage.rs trimmed from 2720 to 2287 (-433 lines); submodules declared via #[path] + pub mod (no pub use — inherent methods are type-level, not module-level)"
+      "summary": "ce_write.rs (148 lines), ce_read.rs (276 lines), ce_test_hooks.rs (99 lines) created; counterexample_storage.rs trimmed from 2720 to 2287 (-433 lines); submodules declared via #[path] + pub mod (no pub use \u2014 inherent methods are type-level, not module-level)"
     },
     {
       "phase": "T3",
@@ -121,7 +135,8 @@
     },
     {
       "phase": "smoke_subset",
-      "summary": "n/a: no probe/mcp touched; behaviour-preserving lexical refactor of inherent methods only; round-trip verified via replay_integration save→load and chronos-store lib tests"
+      "summary": "n/a: no probe/mcp touched; behaviour-preserving lexical refactor of inherent methods only; round-trip verified via replay_integration save\u2192load and chronos-store lib tests"
     }
-  ]
+  ],
+  "peel_match": true
 }
