@@ -112,7 +112,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-88 | m9-88-cc55-drift-remediation | B-direct | `v0.7.90` | `8b6a9bc625e55ef9065b851ef5fbb25999fce942` | CLOSED |
 | m9-89 | m9-89-cascade-cc-cleanup-m9-77-87 | A-lite | `v0.7.91` | `47a10f8d7f44fa4ca16f8f8be902045463505784` | CLOSED |
 | m9-90 | m9-90-stale-branches-cleanup | B-direct | `v0.7.92` | `42ee5df1d421b24f63424efc7204fba584080248` | CLOSED |
-| m9-91 | m9-91-counterexample-bundle-events-mcp-tool | A-min | `v0.7.93` | `fdcb0dc4d9260d387dd8e7ee2eab4b022d10118c` | CLOSED |
+| m9-91 | m9-91-counterexample-bundle-events-mcp-tool | A-min | `v0.7.93` | `c7cdaf54872a9b37bd4a70b8f1fbf497b80d4467` | CLOSED |
 
 ## Metadata
 
