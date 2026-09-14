@@ -75,6 +75,10 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 
 None — m9-77 wired `session_start{action=attach}`, m9-78 made `session_stop` safe to detach from a traced target, m9-79 distinguished the attach capability value (`probe_type: "ptrace_attach"`) from the misleading `ebpf_user` literal. All three closed in their respective cycles with no deferred findings.
 
+### Findings deferred from m9-80
+
+None — m9-80 closed the property-policy ownership refactor (layered split, spec rev 2): domain owns the four `eval_*` / `observe_property_target` primitives; services wraps via 6 new `From` impls. No wire/protocol change. 552 tests pass across all tiers. No new tests introduced.
+
 ## Terminated terms
 
 | ID | Cycle | Título | Closed by |
@@ -112,5 +116,5 @@ None — m9-77 wired `session_start{action=attach}`, m9-78 made `session_stop` s
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-14T06:28Z |
-| Last archive | m9-79-attach-capability-type |
+| Last updated | 2026-09-14T08:53Z |
+| Last archive | m9-80-property-policy-ownership |
