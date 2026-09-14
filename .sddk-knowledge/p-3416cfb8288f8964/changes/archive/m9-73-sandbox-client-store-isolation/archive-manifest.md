@@ -106,5 +106,5 @@ Two commits:
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/release-receipt.md` | `5872b2538d4b743dfa1c3b5c20894c340172d274b8a30fb657b463c5e311e3a1` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/merge-receipt.md` | `9c847b30ce3f734c0de4584bcade3a7c06f03d14225bd3ec02f6b9b4672e3294` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-73-sandbox-client-store-isolation/change-entry.md` | `0669b9d2740f447337a475e8cfd9c16bb041ad608ffc732c0e9a53e99fa2e31e` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `9efe74c29803ffdfbc694451eb840d0e99767ca22fc287a85aa22c32b5a747f8` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `b60e724fa6f76c521fc005053c241a2f22e69f0f5592ca4a24d8cce135c66b80` |
 | vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `2de1623f94ba85f648bae660840c3989c3ce812eb7f4e43800765715db25bac0` |
