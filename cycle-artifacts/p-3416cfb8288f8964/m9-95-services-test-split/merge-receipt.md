@@ -13,10 +13,10 @@
 | Field | Value |
 |---|---|
 | Merge type | --no-ff merge into main |
-| Merge commit | <merge-sha> (filled after merge) |
+| Merge commit | a33b84768026044b4500d677793b5654c410887b |
 | Base SHA | 72bff2808457a4ead6f4caec233dc404a20c35d8 |
 | Head SHA | 8ff34170fe98fd14cc1e10e30e95d842fe67f0f0 |
-| Main SHA post-merge | 8ff34170fe98fd14cc1e10e30e95d842fe67f0f0 |
+| Main SHA post-merge | a33b84768026044b4500d677793b5654c410887b |
 
 ## SHAs
 
