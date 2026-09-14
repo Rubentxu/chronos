@@ -1,0 +1,92 @@
+{
+  "subject": {
+    "head_sha": "e480508c372893ae3e4a9301e708b23c61a312ae",
+    "base_sha": "5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d",
+    "main_sha": "e480508c372893ae3e4a9301e708b23c61a312ae",
+    "remote_tag": "v0.7.94",
+    "remote_tag_peel": "e480508c372893ae3e4a9301e708b23c61a312ae",
+    "cycle_id": "m9-92-cc34-cc42-cleanup",
+    "cycle_record": "p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup",
+    "branch": "chore/m9-92-cc34-cc42-cleanup",
+    "route": "B-direct"
+  },
+  "tier": "T0",
+  "tiers_run": ["T0"],
+  "checks": {
+    "vault_drift_sweep": {
+      "status": "passed",
+      "command": "bash scripts/check_vault_drift.sh",
+      "drift_lines_pre": 3,
+      "drift_lines_post": 0,
+      "drift_lines_introduced": 0
+    },
+    "cc34_cross_check_sections": {
+      "status": "passed",
+      "drift_lines_closed": 2,
+      "files_added": [
+        ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-89-cascade-cc-cleanup-m9-77-87/change-entry.md (## Cross-check added)",
+        ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-90-stale-branches-cleanup/change-entry.md (## Cross-check added)"
+      ]
+    },
+    "cc42_remote_tag_peel": {
+      "status": "passed",
+      "drift_lines_closed": 1,
+      "files_updated": [
+        "cycle-artifacts/p-3416cfb8288f8964/m9-90-stale-branches-cleanup/release-receipt.md (Remote tag_peel: 2184975a -> 5cdb4e1a)",
+        "cycle-artifacts/p-3416cfb8288f8964/m9-90-stale-branches-cleanup/apply-checkpoint.json (head_sha/main_sha/remote_tag_peel re-anchored: 2184975a -> 5cdb4e1a)",
+        "cycle-artifacts/p-3416cfb8288f8964/m9-90-stale-branches-cleanup/release-report.md (Cross-checks updated)",
+        "cycle-artifacts/p-3416cfb8288f8964/m9-90-stale-branches-cleanup/merge-receipt.md (Head SHA + Main SHA re-anchored)",
+        ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-90-stale-branches-cleanup/archive-manifest.md (Head SHA single-line)"
+      ]
+    },
+    "cc3_era_awareness": {
+      "status": "passed",
+      "notes": "m9-90 head_sha re-anchored from cycle-artifacts (2184975a) to immutable post-cascade tag location (5cdb4e1a). era(peel)=docs-peel; head==peel; peel_match=true. Pattern matches m9-89."
+    },
+    "cc4_artifact_sha_consistency": {
+      "status": "passed",
+      "command": "python3 scripts/regen_manifest_index_shas.py --check",
+      "exit_code": 0
+    },
+    "cc5_total_cycles": {
+      "status": "passed",
+      "actual": 92,
+      "declared": 92
+    },
+    "cc6_last_archive": {
+      "status": "passed",
+      "terms_last_archive": "m9-92-cc34-cc42-cleanup",
+      "cycles_last_closed": "m9-92-cc34-cc42-cleanup"
+    }
+  },
+  "findings": [
+    {
+      "id": "FIND-M9-92-CC34-CC42-CLOSED",
+      "status": "closed",
+      "drift_lines_closed": 3,
+      "ccs_closed": ["CC#34 A1", "CC#34 A2", "CC#42 A"]
+    },
+    {
+      "id": "FIND-M9-92-M9-90-REANCHORED",
+      "status": "closed",
+      "summary": "m9-90 documented SHAs re-anchored from cycle-artifacts location (2184975a) to immutable post-cascade tag location (5cdb4e1a). 5 files updated."
+    },
+    {
+      "id": "FIND-M9-92-NO-RUST-CHANGES",
+      "status": "closed",
+      "summary": "vault-only B-direct cycle; no Rust source touched; T1-T4 not required."
+    }
+  ],
+  "carry_forward": [
+    "FIND-M9-91-TRACE-EVENT-NO-JSON-SCHEMA (separate Rust cycle)",
+    "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK (external-deferred, sddk CLI bug)"
+  ],
+  "out_of_scope": [
+    "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK",
+    "FIND-M9-91-TRACE-EVENT-NO-JSON-SCHEMA",
+    "cc-001-god-module-keys-split",
+    "cc-004-implicit-io-toctou"
+  ],
+  "summary": "passed",
+  "all_passed": true
+}

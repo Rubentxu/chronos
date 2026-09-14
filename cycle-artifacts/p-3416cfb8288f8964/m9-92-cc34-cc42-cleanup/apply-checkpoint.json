@@ -1,0 +1,83 @@
+{
+  "head_sha": "e480508c372893ae3e4a9301e708b23c61a312ae",
+  "base_sha": "5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d",
+  "main_sha": "e480508c372893ae3e4a9301e708b23c61a312ae",
+  "remote_tag": "v0.7.94",
+  "remote_tag_peel": "e480508c372893ae3e4a9301e708b23c61a312ae",
+  "tag_peel_sha": "e480508c372893ae3e4a9301e708b23c61a312ae",
+  "tag_peel_note": "non-standard: tag pre-created at cycle-artifacts commit SHA; will move through merge -> SHA-cascade fixpoint commits per CC#42 fixpoint-cascade workaround (m9-83 handoff). m9-92 is a vault-only B-direct cycle (no Rust source), so the cascade is purely SHA-bookkeeping.",
+  "ff_merged": false,
+  "cycle_id": "m9-92-cc34-cc42-cleanup",
+  "cycle_record": "p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup",
+  "branch": "chore/m9-92-cc34-cc42-cleanup",
+  "route": "B-direct",
+  "status": "CLOSED",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "complete",
+  "phases": {
+    "explore": "complete",
+    "spec": "complete",
+    "tasks": "complete",
+    "apply": "complete",
+    "verify": "complete",
+    "release": "complete",
+    "archive": "in-progress"
+  },
+  "tier_required": "T0",
+  "tiers_run": ["T0"],
+  "tier_results": {
+    "T0": {
+      "fmt_check": "not-required",
+      "clippy_check": "not-required",
+      "scope": "vault-only",
+      "notes": "No Rust source touched. Only vault edits (markdown, JSON). bash scripts/check_vault_drift.sh run as the vault-tier gate."
+    }
+  },
+  "created_at": "2026-09-14",
+  "title": "m9-92: CC#34 + CC#42 cleanup (3 pre-existing drift lines)",
+  "summary": "Vault-only B-direct hardening cycle. Closes 3 pre-existing drift lines that surfaced after m9-91 closure: CC#34 A1 + CC#34 A2 (missing Cross-check sections in m9-89 + m9-90 change-entries) and CC#42 A (m9-90 release-receipt Remote tag_peel out of sync with immutable v0.7.92 tag location 5cdb4e1a). Also re-anchors m9-90 documented SHAs from cycle-artifacts location (2184975a) to immutable post-cascade tag location (5cdb4e1a) to satisfy CC#3 era-awareness and match m9-89's pattern. No Rust source touched, no tests required (T0 only).",
+  "findings_closed": ["FIND-M9-92-CC34-CC42-CLOSED", "FIND-M9-92-M9-90-REANCHORED"],
+  "vault_drift_baseline": {
+    "drift_lines_pre": 3,
+    "drift_lines_post": 0,
+    "drift_lines_introduced": 0,
+    "ccs_fixed": ["CC#34 A1", "CC#34 A2", "CC#42 A"],
+    "ccs_broken": []
+  },
+  "findings_introduced": {
+    "no_action": [],
+    "followup": [],
+    "external_deferred": [
+      {
+        "id": "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK",
+        "reason": "external sddk CLI bug; not actionable in chronos scope (carried from m9-88)"
+      }
+    ]
+  },
+  "carry_forward_findings": [
+    "FIND-M9-91-TRACE-EVENT-NO-JSON-SCHEMA",
+    "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK"
+  ],
+  "out_of_scope": [
+    "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK",
+    "FIND-M9-91-TRACE-EVENT-NO-JSON-SCHEMA",
+    "cc-001-god-module-keys-split",
+    "cc-004-implicit-io-toctou"
+  ],
+  "files_changed": [
+    ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-89-cascade-cc-cleanup-m9-77-87/change-entry.md (added ## Cross-check section)",
+    ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-90-stale-branches-cleanup/change-entry.md (added ## Cross-check section)",
+    "cycle-artifacts/p-3416cfb8288f8964/m9-90-stale-branches-cleanup/apply-checkpoint.json (re-anchored head_sha, main_sha, remote_tag_peel from 2184975a to 5cdb4e1a)",
+    "cycle-artifacts/p-3416cfb8288f8964/m9-90-stale-branches-cleanup/release-receipt.md (Head SHA + Remote tag_peel updated to 5cdb4e1a)",
+    "cycle-artifacts/p-3416cfb8288f8964/m9-90-stale-branches-cleanup/release-report.md (Status + Cross-checks updated)",
+    "cycle-artifacts/p-3416cfb8288f8964/m9-90-stale-branches-cleanup/merge-receipt.md (Head SHA + Main SHA updated)",
+    ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-90-stale-branches-cleanup/archive-manifest.md (Head SHA re-anchored to 5cdb4e1a with single-line format)"
+  ],
+  "shas": {
+    "vault_edits_commit": "e480508c372893ae3e4a9301e708b23c61a312ae",
+    "cycle_artifacts_commit": "e480508c372893ae3e4a9301e708b23c61a312ae",
+    "merge_commit": "e480508c372893ae3e4a9301e708b23c61a312ae",
+    "cascade_commits": ["e480508c372893ae3e4a9301e708b23c61a312ae", "e480508c372893ae3e4a9301e708b23c61a312ae"]
+  }
+}
