@@ -1372,7 +1372,11 @@ fn property_outcome_to_verdict(
 
 /// Find the last `PropertyValue` recorded for `target` plus the event IDs
 /// of the matches. Returns `None` if no event matched.
-fn observe_property_target(
+///
+/// Public so external callers (e.g. an MCP `evaluate_property` tool,
+/// the spec scenarios for m9-80) can invoke it directly without going
+/// through the [`eval_invariant`] wrapper.
+pub fn observe_property_target(
     events: &[TraceEvent],
     target: &str,
 ) -> Option<(PropertyValue, Vec<u64>)> {
