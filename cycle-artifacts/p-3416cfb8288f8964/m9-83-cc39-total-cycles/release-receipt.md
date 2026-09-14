@@ -14,10 +14,10 @@
 | Field | Value |
 |---|---|
 | Base SHA | a0f72c2a7fe36eaeb9c772505dfe563f85f42773 |
-| Head SHA | a531c31afe4abfe58f020aaa2072a0a943e5e44f |
-| Main SHA | a531c31afe4abfe58f020aaa2072a0a943e5e44f |
+| Head SHA | 81cec6bbcf889b114ab3317575e2b87c78d18a82 |
+| Main SHA | 81cec6bbcf889b114ab3317575e2b87c78d18a82 |
 | Remote tag | v0.7.85 |
-| Remote tag_peel | a531c31afe4abfe58f020aaa2072a0a943e5e44f |
+| Remote tag_peel | 81cec6bbcf889b114ab3317575e2b87c78d18a82 |
 | Peel match | clean peel: v0.7.85 points at a531c31 (fixpoint HEAD) |
 
 ## Release notes
