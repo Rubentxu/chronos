@@ -1,0 +1,26 @@
+{
+  "subject": {
+    "head_sha": "5922928331a1bc01a794e641be1f3d4585ec7163",
+    "base_sha": "9239a87cbadc9571f17512415847b86b589292b9",
+    "cycle_id": "m9-98-m902r4-ledger-closure",
+    "branch": "chore/m9-98-m902r4-ledger-closure",
+    "route": "B-direct"
+  },
+  "tier": "vault-only",
+  "checks": {
+    "m9_02_r4_already_closed": {
+      "status": "passed",
+      "evidence": "m9-91 implementation, verify, release, and apply receipts all declare counterexample_bundle_events closes m9-02-R4"
+    },
+    "manifest_regen": {
+      "status": "passed",
+      "command": "python3 scripts/regen_manifest_index_shas.py --check"
+    },
+    "vault_drift": {
+      "status": "passed",
+      "command": "bash scripts/check_vault_drift.sh"
+    }
+  },
+  "verdict": "PASS",
+  "findings": []
+}

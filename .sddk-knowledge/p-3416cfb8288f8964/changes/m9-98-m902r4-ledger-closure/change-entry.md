@@ -16,3 +16,8 @@
 m9-91's implementation, verify, release, and apply receipts all state that
 `counterexample_bundle_events` closes m9-02-R4. This cycle corrects only the
 stale duplicate ledger state; no Rust behavior changes.
+
+## Cross-check
+
+- `python3 scripts/regen_manifest_index_shas.py --check`: passed.
+- `bash scripts/check_vault_drift.sh`: passed (post-fixpoint).

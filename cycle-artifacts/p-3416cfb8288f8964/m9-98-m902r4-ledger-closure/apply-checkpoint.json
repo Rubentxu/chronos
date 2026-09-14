@@ -15,12 +15,15 @@
     "followup": [],
     "external_deferred": []
   },
-  "main_sha": "1d3c126737df02104b03ead569413e7d80c84af6",
+  "main_sha": "5922928331a1bc01a794e641be1f3d4585ec7163",
   "remote_tag": "v0.7.100",
   "remote_tag_peel": "5922928331a1bc01a794e641be1f3d4585ec7163",
   "peel_match": true,
   "ff_merged": false,
   "release_status": "released",
   "archive_status": "complete",
-  "archived_at": "2026-09-14"
+  "archived_at": "2026-09-14",
+  "verify_status": "passed",
+  "title": "m9-02-R4 ledger closure",
+  "summary": "B-direct vault-only correction: removed stale active m9-02-R4 ledger row; m9-91 already delivered counterexample_bundle_events. No Rust changes."
 }
