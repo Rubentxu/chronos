@@ -1,1 +1,26 @@
-{"head_sha":"c8dbad4e6d8fb11db0d57867d2a85277aa4afb92","base_sha":"9239a87cbadc9571f17512415847b86b589292b9","cycle_id":"m9-98-m902r4-ledger-closure","cycle_record":"p-3416cfb8288f8964/m9-98-m902r4-ledger-closure","branch":"chore/m9-98-m902r4-ledger-closure","route":"B-direct","status":"VERIFYING","created_at":"2026-09-14","findings_closed":["m9-02-R4"],"findings_introduced":{"no_action":[],"followup":[],"external_deferred":[]}}
+{
+  "head_sha": "5922928331a1bc01a794e641be1f3d4585ec7163",
+  "base_sha": "9239a87cbadc9571f17512415847b86b589292b9",
+  "cycle_id": "m9-98-m902r4-ledger-closure",
+  "cycle_record": "p-3416cfb8288f8964/m9-98-m902r4-ledger-closure",
+  "branch": "chore/m9-98-m902r4-ledger-closure",
+  "route": "B-direct",
+  "status": "CLOSED",
+  "created_at": "2026-09-14",
+  "findings_closed": [
+    "m9-02-R4"
+  ],
+  "findings_introduced": {
+    "no_action": [],
+    "followup": [],
+    "external_deferred": []
+  },
+  "main_sha": "1d3c126737df02104b03ead569413e7d80c84af6",
+  "remote_tag": "v0.7.100",
+  "remote_tag_peel": "5922928331a1bc01a794e641be1f3d4585ec7163",
+  "peel_match": true,
+  "ff_merged": false,
+  "release_status": "released",
+  "archive_status": "complete",
+  "archived_at": "2026-09-14"
+}

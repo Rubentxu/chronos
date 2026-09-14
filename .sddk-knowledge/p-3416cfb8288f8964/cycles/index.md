@@ -119,6 +119,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-95 | m9-95-services-test-split | B-direct | `v0.7.97` | `8ff34170fe98fd14cc1e10e30e95d842fe67f0f0` | CLOSED |
 | m9-96 | m9-96-cc001-housekeeping | A-lite | `v0.7.98` | `2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a` | CLOSED |
 | m9-97 | m9-97-cc004-implicit-io-toctou | A-min | `v0.7.99` | `ddf059193287447dd866ea8818aafcceac660f70` | CLOSED |
+| m9-98 | m9-98-m902r4-ledger-closure | B-direct | `v0.7.100` | `5922928331a1bc01a794e641be1f3d4585ec7163` | CLOSED |
 
 ## Metadata
 
@@ -127,4 +128,4 @@ Chronological record of all SDDK cycles for this project.
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
 | Last updated | 2026-09-14T21:33Z |
-| Total cycles | 97 |
+| Total cycles | 98 |
