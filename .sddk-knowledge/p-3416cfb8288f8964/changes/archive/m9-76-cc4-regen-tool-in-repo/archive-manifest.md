@@ -161,5 +161,5 @@ observed to fail for the reason the guard exists:
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/release-receipt.md` | `a0f2475bfc990115cbabf9109f26c06ffcd3b05ade3ef55ee9c53e9c24816182` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/merge-receipt.md` | `0ccc5642788a57be9e0457ca7dac763211872229f76f679311b9b483a7488051` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-76-cc4-regen-tool-in-repo/change-entry.md` | `c40623efda64da667293be5d19262f6d627d7c8a54e2e8b5d527bd82b2c778f1` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `2d2597158d64b360918cfa4133202ab44acbb0ca2f6fbcf3a164c55bfc2bcaf0` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `67791a85c7cbcb975c6c951ffd0ac1649e0b8ea92c899fef9bdae5df5edca82b` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `a7ec282712b1222061836b6f0ff346d073e143a707db705583a4b2e5b10cf274` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `2de1623f94ba85f648bae660840c3989c3ce812eb7f4e43800765715db25bac0` |

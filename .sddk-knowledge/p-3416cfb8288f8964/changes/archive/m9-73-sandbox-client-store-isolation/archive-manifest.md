@@ -91,7 +91,7 @@ Two commits:
 | Kind | Path | SHA-256 |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-73-sandbox-client-store-isolation/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
-| source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `0df7481d93f81135809e4d1e224a8b98f5f7d6d5fd21fd88c5afcdca3a78bd0c` |
+| source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `054ad67e3b4fd871de0725b515b53a1d7f4ec06bc059eae1edbc7f222315fb97` |
 | source (sandbox process spawn) | `chronos-sandbox/src/client/process.rs` | `8306aa18d6b688e30c7531c3ee00365e936191a0e20df9ba2c0317b4975f236c` |
 | test (store isolation) | `chronos-sandbox/tests/client_store_isolation.rs` | `a48c78a31a5a1517418e560a2982b2ec39ea435f78b627cda79d38133ce56495` |
 | test (session edge cases) | `chronos-sandbox/tests/session_edge_cases.rs` | `79d913f406259d2ffaa2c2537aab2a9c0c8a4e7c90628e7c737b0043e374bae0` |
@@ -106,5 +106,5 @@ Two commits:
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/release-receipt.md` | `5872b2538d4b743dfa1c3b5c20894c340172d274b8a30fb657b463c5e311e3a1` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/merge-receipt.md` | `9c847b30ce3f734c0de4584bcade3a7c06f03d14225bd3ec02f6b9b4672e3294` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-73-sandbox-client-store-isolation/change-entry.md` | `0669b9d2740f447337a475e8cfd9c16bb041ad608ffc732c0e9a53e99fa2e31e` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `2d2597158d64b360918cfa4133202ab44acbb0ca2f6fbcf3a164c55bfc2bcaf0` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `67791a85c7cbcb975c6c951ffd0ac1649e0b8ea92c899fef9bdae5df5edca82b` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `a7ec282712b1222061836b6f0ff346d073e143a707db705583a4b2e5b10cf274` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `2de1623f94ba85f648bae660840c3989c3ce812eb7f4e43800765715db25bac0` |

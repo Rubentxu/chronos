@@ -134,13 +134,13 @@ One commit:
 | Kind | Path | SHA-256 |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-75-fail-closed-store-open/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
-| source (mcp server) | `crates/chronos-mcp/src/server.rs` | `0f13819bc7cf19367b13aa247e630b64b942d64b6e61e2aa8ff9f09f62de1bd9` |
+| source (mcp server) | `crates/chronos-mcp/src/server.rs` | `320253047f94ae4b9b9359790f08bfc669ad0835b47db3dfe12e87fd72e51e8a` |
 | source (mcp binary) | `crates/chronos-mcp/src/bin/chronos-mcp.rs` | `3797defa83c8218db6610047fece4b6ed67aa9b183e5c1f5193f2f10eeda1492` |
-| source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `0df7481d93f81135809e4d1e224a8b98f5f7d6d5fd21fd88c5afcdca3a78bd0c` |
+| source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `054ad67e3b4fd871de0725b515b53a1d7f4ec06bc059eae1edbc7f222315fb97` |
 | test (store open failure) | `chronos-sandbox/tests/store_open_failure.rs` | `5f0461f8db78b9de6d27d9ba92c3c06e0ebbe3cf62eb990e69f7c9e1e4c7bec9` |
 | docs (agents manual) | `AGENTS.md` | `83d09aa421c0c0c06a8dc28d4a5ba27dbb66772f7a1310103f3c133969fe8924` |
-| docs (session management, en) | `docs/manual-ai/en/08-session-management.md` | `69487b75f364c1c37c8787cca94facb1841a1277e62a4dcc7e31f58736739eba` |
-| docs (session management, es) | `docs/manual-ai/es/08-gestion-sesiones.md` | `0fe1cdca3abbc19df32aa5093ac9cb5d727ed90b4480b1e90790951a6fe93303` |
+| docs (session management, en) | `docs/manual-ai/en/08-session-management.md` | `c35df64b6b6d0b373c09a40d1e0364eb403fb25cd78644c0e4e35a1c289cbce2` |
+| docs (session management, es) | `docs/manual-ai/es/08-gestion-sesiones.md` | `1111d44fe62e66970f84211054fe491bac7aed4c288e49f68b7bc32c4b9d5092` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/apply-checkpoint.json` | `33adf19a9ac0df7a07db20f586a48ee4e280946c6aacb3785bf8b2bf98e52b5e` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/verify-report.md` | `669dd622b5cf1dd3b9e39849e350ce0e31817ac9096971655608d58e68e04253` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/verify-findings.json` | `6de1e6f599ef5e71e300f78ebd243f607697e8e204f1b5ef6e2dcf4ba7c7b629` |
@@ -148,5 +148,5 @@ One commit:
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/release-receipt.md` | `21c61bc7dc435b9e6eb1af55955851f2964d82610e8d735baa5efc1dbb00d871` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/merge-receipt.md` | `2baf807473e5b377f77c14159cdc8e6c0d4ac91c0616706ab93b30f0938d013c` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-75-fail-closed-store-open/change-entry.md` | `a2816905b483ce610548937181eade69e6cfd72a49dd872c415fc1aa06012e76` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `2d2597158d64b360918cfa4133202ab44acbb0ca2f6fbcf3a164c55bfc2bcaf0` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `67791a85c7cbcb975c6c951ffd0ac1649e0b8ea92c899fef9bdae5df5edca82b` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `a7ec282712b1222061836b6f0ff346d073e143a707db705583a4b2e5b10cf274` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `2de1623f94ba85f648bae660840c3989c3ce812eb7f4e43800765715db25bac0` |
