@@ -14,11 +14,11 @@
 | Field | Value |
 |---|---|
 | Base SHA | 20e2649822c0c24509ff6419a48fe3113591ecf0 |
-| Head SHA | 42ee5df1d421b24f63424efc7204fba584080248 |
-| Main SHA | 42ee5df1d421b24f63424efc7204fba584080248 |
+| Head SHA | 2184975a93b43ea1bbd2681dead79dfb4476fef7 |
+| Main SHA | 2184975a93b43ea1bbd2681dead79dfb4476fef7 |
 | Remote tag | v0.7.92 |
-| Remote tag_peel | 42ee5df1d421b24f63424efc7204fba584080248 |
-| Peel match | 42ee5df1d421b24f63424efc7204fba584080248 (will be True after tag move) |
+| Remote tag_peel | 2184975a93b43ea1bbd2681dead79dfb4476fef7 |
+| Peel match | 2184975a93b43ea1bbd2681dead79dfb4476fef7 (will be True after tag move) |
 
 ## SHAs (canonical table)
 
@@ -27,10 +27,10 @@
 | Branch | chore/m9-90-stale-branches-cleanup |
 | Date | 2026-09-14 |
 | Base SHA | 20e2649822c0c24509ff6419a48fe3113591ecf0 |
-| Head SHA | 42ee5df1d421b24f63424efc7204fba584080248 |
+| Head SHA | 2184975a93b43ea1bbd2681dead79dfb4476fef7 |
 | Remote tag | v0.7.92 |
-| Remote tag_peel | 42ee5df1d421b24f63424efc7204fba584080248 |
-| Peel match | 42ee5df1d421b24f63424efc7204fba584080248 (will be True after tag move) |
+| Remote tag_peel | 2184975a93b43ea1bbd2681dead79dfb4476fef7 |
+| Peel match | 2184975a93b43ea1bbd2681dead79dfb4476fef7 (will be True after tag move) |
 
 ## Release notes
 

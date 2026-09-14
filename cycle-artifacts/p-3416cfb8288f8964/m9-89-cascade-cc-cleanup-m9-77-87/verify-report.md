@@ -14,8 +14,8 @@ A-lite (vault-only hardening). No Rust source code changes.
 | Tier required | T0 + T2 |
 | Tier run | T0 + T1 (1036 tests passing) |
 | Base SHA | `a195367d64bd1caa56dedea82195259deb7b671b` (m9-88 vault commit) |
-| Head SHA | `23b175ee01a4fab69531a751d17dfa5cf1b044a1` (m9-89 SHA-256 regen commit) |
-| Main SHA | `23b175ee01a4fab69531a751d17dfa5cf1b044a1` |
+| Head SHA | `47a10f8d7f44fa4ca16f8f8be902045463505784` (m9-89 SHA-256 regen commit) |
+| Main SHA | `47a10f8d7f44fa4ca16f8f8be902045463505784` |
 
 ## Goal
 
@@ -115,9 +115,9 @@ See `verify-findings.json` for full structured findings:
 
 ## Cross-checks (CC#24 / CC#31 / CC#32 / CC#33)
 
-- `apply-checkpoint.head_sha` == `23b175ee01a4fab69531a751d17dfa5cf1b044a1` (SHA-256 regen commit).
+- `apply-checkpoint.head_sha` == `47a10f8d7f44fa4ca16f8f8be902045463505784` (SHA-256 regen commit).
 - `apply-checkpoint.base_sha` == `a195367d64bd1caa56dedea82195259deb7b671b` (m9-88 vault commit; verified via `git cat-file -e`).
-- `apply-checkpoint.remote_tag_peel` == `23b175ee01a4fab69531a751d17dfa5cf1b044a1` (tag v0.7.91 moved through merge → artifact fixups → SHA regen per CC#42 fixpoint-cascade workaround).
+- `apply-checkpoint.remote_tag_peel` == `47a10f8d7f44fa4ca16f8f8be902045463505784` (tag v0.7.91 moved through merge → artifact fixups → SHA regen per CC#42 fixpoint-cascade workaround).
 - `apply-checkpoint.peel_match` == `true` (tag_peel == HEAD).
 - `apply-checkpoint.main_sha` == `apply-checkpoint.head_sha` (both `23b175e...`).
 - `apply-checkpoint.status` == `"CLOSED"`.

@@ -3,7 +3,7 @@
 > **Cycle**: m9-90-stale-branches-cleanup
 > **Path**: B-direct
 > **Tag**: v0.7.92
-> **Merge SHA**: 42ee5df1d421b24f63424efc7204fba584080248
+> **Merge SHA**: 2184975a93b43ea1bbd2681dead79dfb4476fef7
 > **Date archived**: 2026-09-14
 > **Status**: released
 
@@ -68,15 +68,15 @@ FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK.
 
 ## Status
 
-Released as `v0.7.92` at merge commit `42ee5df1d421b24f63424efc7204fba584080248`.
+Released as `v0.7.92` at merge commit `2184975a93b43ea1bbd2681dead79dfb4476fef7`.
 The branch `chore/m9-90-stale-branches-cleanup` was merged into `main`
 with `--no-ff` and will be deleted after this report is archived.
 
 ## Cross-checks
 
 - `apply-checkpoint.head_sha` == `release-receipt.head_sha` ==
-  `merge-receipt.head SHA` == `42ee5df1d421b24f63424efc7204fba584080248`.
-- `Remote tag` v0.7.92 peel: `42ee5df1d421b24f63424efc7204fba584080248`
+  `merge-receipt.head SHA` == `2184975a93b43ea1bbd2681dead79dfb4476fef7`.
+- `Remote tag` v0.7.92 peel: `2184975a93b43ea1bbd2681dead79dfb4476fef7`
   (clean match to merge commit; CC#42 fixpoint-cascade workaround).
 - `apply-checkpoint.peel_match` == `true`.
 - `apply-checkpoint.main_sha` == `apply-checkpoint.head_sha`.
