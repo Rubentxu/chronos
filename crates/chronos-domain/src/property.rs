@@ -7,7 +7,10 @@
 //! `UnsupportedByRecordedEvidence` — never a false `Pass` when the recorded
 //! evidence lacks a required observation.
 
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
+
+use crate::trace::{EventData, EventType, TraceEvent};
 
 /// Stable identifier for a declared property.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -1216,5 +1219,584 @@ mod tests {
             let back = Property::from_dsl(&text).expect("parse failed");
             assert_eq!(back, p, "round-trip failed:\n{text}");
         }
+    }
+}
+
+// ============================================================================
+// m9-80: Property hypothesis policy outcomes (domain-owned)
+//
+// These types are the policy-side result of evaluating a hypothesis against
+// captured events. They live in `chronos_domain::property` (not services)
+// because the policy semantics are domain-owned; the wire-shape
+// `HypothesisOutput` lives in `chronos_services::output` and is constructed
+// from these via `From` impls (see `crates/chronos-services/src/output.rs`).
+//
+// The three variants mirror the three hypothesis kinds (Invariant,
+// Existence, CallPath) but use only domain types (no
+// `HypothesisScope` / `ExistencePredicate` / `HypothesisKind` enum), so the
+// domain crate has no reverse dependency on the services crate.
+// ============================================================================
+
+/// Verdict classification for a hypothesis evaluation.
+///
+/// Mirrors `chronos_services::output::HypothesisVerdict` but lives in the
+/// domain so that the policy primitives (eval_invariant / eval_existence /
+/// eval_call_path) can return it without depending on services types.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "verdict", rename_all = "snake_case")]
+pub enum PropertyHypothesisVerdict {
+    /// The hypothesis held against the recorded evidence.
+    Pass,
+    /// The hypothesis was falsified by the recorded evidence.
+    Violation { reason: String },
+    /// The policy cannot answer the hypothesis with the available evidence
+    /// (e.g. `property_target` not captured for the session).
+    Unsupported { reason: String },
+}
+
+/// What observation to feed into an invariant check.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PropertyObservationSource {
+    /// Use the live event count as the observed scalar.
+    EventCount,
+    /// Use the last recorded value for `target` as the observed scalar.
+    PropertyValue { target: String },
+    /// Reserved for a future milestone; chronos_domain::trace::EventData
+    /// has no latency_ms field today.
+    LatencyMs,
+}
+
+/// Result of evaluating an `Invariant`-shaped hypothesis against events.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct InvariantOutcome {
+    pub verdict: PropertyHypothesisVerdict,
+    pub support_event_ids: Vec<u64>,
+    pub counter_event_ids: Vec<u64>,
+    pub observation: PropertyObservationSource,
+    pub summary: String,
+}
+
+/// Predicate shape for `Existence`-kind hypotheses (mirrors the services
+/// wrapper but kept minimal — only the fields the domain function reads).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PropertyExistencePredicate {
+    /// Match `event_type == event_type` (e.g. `function_entry`).
+    EventTypeEquals { event_type: String },
+    /// Match `thread_id == thread_id`.
+    ThreadEquals { thread_id: u64 },
+    /// Match `property_target == target` (a recorded property key).
+    PropertyKeyEquals { target: String },
+    /// Reserved fallback for the original `VariableRead` shape from T0;
+    /// services-layer ExistencePredicate variants map to one of the above
+    /// or to this fallback when the input does not specify a target.
+    VariableRead { var_name: String },
+    /// Match every event with the given `EventType`.
+    EventTypeOnly,
+}
+
+/// Result of evaluating an `Existence`-shaped hypothesis.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ExistenceOutcome {
+    pub verdict: PropertyHypothesisVerdict,
+    pub support_event_ids: Vec<u64>,
+    pub counter_event_ids: Vec<u64>,
+    pub predicate: PropertyExistencePredicate,
+    pub summary: String,
+}
+
+/// Result of evaluating a `CallPath`-shaped hypothesis (BFS reachability
+/// in the captured call graph).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct CallPathOutcome {
+    pub verdict: PropertyHypothesisVerdict,
+    pub support_event_ids: Vec<u64>,
+    pub counter_event_ids: Vec<u64>,
+    pub caller: String,
+    pub callee: String,
+    /// If reachable, the resolved path of function names from caller to callee.
+    pub reachable_path: Option<Vec<String>>,
+    pub summary: String,
+}
+
+/// Discriminated union of all hypothesis outcomes. Mirrors
+/// `chronos_services::output::HypothesisOutput` but with domain types only.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PropertyHypothesisOutcome {
+    Invariant(InvariantOutcome),
+    Existence(ExistenceOutcome),
+    CallPath(CallPathOutcome),
+}
+
+// ============================================================================
+// m9-80: Property hypothesis evaluation primitives (domain-owned)
+//
+// The four functions below are the domain-owned implementations of the
+// services-layer hypothesis policy. They live in `chronos_domain::property`
+// because the policy semantics are domain-owned; the services layer wraps
+// them into the wire-shape `HypothesisOutput` via `From` impls (see
+// `crates/chronos-services/src/output.rs`).
+//
+// Each function takes the minimum necessary inputs (events slice +
+// policy-relevant scalars) and returns the domain outcome type.
+// ============================================================================
+
+/// Convert a `PropertyOutcome` (from `Property::evaluate`) into the
+/// domain-owned `PropertyHypothesisVerdict`.
+fn property_outcome_to_verdict(
+    outcome: PropertyOutcome,
+    comparison: &ComparisonOp,
+    constant: &PropertyValue,
+) -> (PropertyHypothesisVerdict, String) {
+    match outcome {
+        PropertyOutcome::Pass => (
+            PropertyHypothesisVerdict::Pass,
+            format!("invariant satisfied ({comparison} {constant})"),
+        ),
+        PropertyOutcome::Violation { message, .. } => (
+            PropertyHypothesisVerdict::Violation {
+                reason: message.clone(),
+            },
+            message,
+        ),
+        PropertyOutcome::UnsupportedByRecordedEvidence { reason } => (
+            PropertyHypothesisVerdict::Unsupported {
+                reason: reason.clone(),
+            },
+            reason,
+        ),
+    }
+}
+
+/// Find the last `PropertyValue` recorded for `target` plus the event IDs
+/// of the matches. Returns `None` if no event matched.
+///
+/// Public so external callers (e.g. an MCP `evaluate_property` tool,
+/// the spec scenarios for m9-80) can invoke it directly without going
+/// through the [`eval_invariant`] wrapper.
+pub fn observe_property_target(
+    events: &[TraceEvent],
+    target: &str,
+) -> Option<(PropertyValue, Vec<u64>)> {
+    let mut last: Option<PropertyValue> = None;
+    let mut ids: Vec<u64> = Vec::new();
+    for ev in events {
+        if let EventData::Variable(v) = &ev.data {
+            // Heuristic: match either by variable name (full path segments)
+            // or by trailing path component. `target` is treated as a free
+            // identifier since VariableInfo doesn't carry a target_path.
+            let matches_name = v.name == target
+                || v.name.split('.').next_back() == Some(target)
+                || v.name.ends_with(&format!(".{target}"));
+            if matches_name {
+                let pv = parse_property_value_string(&v.value);
+                last = Some(pv);
+                ids.push(ev.event_id);
+            }
+        }
+    }
+    last.map(|v| (v, ids))
+}
+
+/// Parse a textual variable value into a `PropertyValue` (Number > Bool > Text).
+fn parse_property_value_string(s: &str) -> PropertyValue {
+    if let Ok(n) = s.parse::<f64>() {
+        PropertyValue::Number(n)
+    } else if let Ok(b) = s.parse::<bool>() {
+        PropertyValue::Bool(b)
+    } else {
+        PropertyValue::Text(s.to_string())
+    }
+}
+
+/// Evaluate an `Invariant`-shaped hypothesis against the captured events.
+///
+/// The function takes the minimum inputs needed by the policy:
+/// `events` (the captured trace slice), `comparison` (the comparison
+/// operator, e.g. `Eq`/`Lt`/`Ge`), `constant` (the right-hand side of
+/// the comparison), and `observation` (what scalar to feed into the
+/// comparison: live event count, last recorded value for a target, or
+/// latency).
+///
+/// Returns an [`InvariantOutcome`] that the services layer wraps into
+/// the wire-shape `HypothesisOutput::Invariant` via `From`.
+pub fn eval_invariant(
+    events: &[TraceEvent],
+    comparison: ComparisonOp,
+    constant: PropertyValue,
+    observation: PropertyObservationSource,
+) -> InvariantOutcome {
+    let (verdict, support_event_ids, counter_event_ids, mut summary) = match observation.clone() {
+        PropertyObservationSource::EventCount => {
+            let count = events.len() as f64;
+            let observed = PropertyValue::Number(count);
+            let outcome = Property {
+                id: PropertyId(0),
+                name: "event_count".into(),
+                version: 1,
+                observe: "event_count".into(),
+                trigger: String::new(),
+                invariant: InvariantCheck::Comparison {
+                    op: comparison,
+                    constant: constant.clone(),
+                },
+            }
+            .evaluate(Some(&observed), None);
+            let (v, s) = property_outcome_to_verdict(outcome, &comparison, &constant);
+            (v, Vec::new(), Vec::new(), s)
+        }
+        PropertyObservationSource::PropertyValue { target } => {
+            match observe_property_target(events, &target) {
+                None => (
+                    PropertyHypothesisVerdict::Unsupported {
+                        reason: format!(
+                            "no recorded observation for property target `{target}` in session"
+                        ),
+                    },
+                    Vec::new(),
+                    Vec::new(),
+                    format!(
+                        "scope=property_value target={target}: required observation not captured"
+                    ),
+                ),
+                Some((obs, ids)) => {
+                    let outcome = Property {
+                        id: PropertyId(0),
+                        name: target.clone(),
+                        version: 1,
+                        observe: target.clone(),
+                        trigger: String::new(),
+                        invariant: InvariantCheck::Comparison {
+                            op: comparison,
+                            constant: constant.clone(),
+                        },
+                    }
+                    .evaluate(Some(&obs), None);
+                    let mut counter_local: Vec<u64> = Vec::new();
+                    let (v, mut sm) = property_outcome_to_verdict(outcome, &comparison, &constant);
+                    if matches!(v, PropertyHypothesisVerdict::Violation { .. }) {
+                        for id in &ids {
+                            counter_local.push(*id);
+                        }
+                        sm = format!("{sm}: observed {obs} at events {ids:?}");
+                    }
+                    (v, ids.clone(), counter_local, sm)
+                }
+            }
+        }
+        PropertyObservationSource::LatencyMs => (
+            PropertyHypothesisVerdict::Unsupported {
+                reason: "scope=latency_ms is reserved for a future milestone (m7+): \
+                         chronos_domain::trace::EventData has no latency_ms field today."
+                    .into(),
+            },
+            Vec::new(),
+            Vec::new(),
+            "scope=latency_ms not implemented in m6-04".into(),
+        ),
+    };
+
+    if summary.is_empty() {
+        summary = format!("invariant evaluated (observation={observation:?})");
+    }
+
+    InvariantOutcome {
+        verdict,
+        support_event_ids,
+        counter_event_ids,
+        observation,
+        summary,
+    }
+}
+
+/// String label for an `EventType` (matches the services-layer
+/// `event_type_label` so that hypothesis summaries are identical
+/// pre- and post-T2).
+fn event_type_label(t: EventType) -> &'static str {
+    match t {
+        EventType::SyscallEnter => "syscall_enter",
+        EventType::SyscallExit => "syscall_exit",
+        EventType::FunctionEntry => "function_entry",
+        EventType::FunctionExit => "function_exit",
+        EventType::VariableWrite => "variable_write",
+        EventType::MemoryWrite => "memory_write",
+        EventType::SignalDelivered => "signal_delivered",
+        EventType::BreakpointHit => "breakpoint_hit",
+        EventType::Custom => "custom",
+        EventType::Unknown => "unknown",
+        _ => "other",
+    }
+}
+
+/// Scan events for those matching the given predicate. Returns the
+/// matching event IDs in order.
+fn scan_predicate_domain(
+    events: &[TraceEvent],
+    predicate: &PropertyExistencePredicate,
+) -> Vec<u64> {
+    let mut support = Vec::new();
+    for ev in events {
+        let matches = match predicate {
+            PropertyExistencePredicate::EventTypeEquals { event_type } => {
+                event_type_label(ev.event_type) == *event_type
+            }
+            PropertyExistencePredicate::ThreadEquals { thread_id } => ev.thread_id == *thread_id,
+            PropertyExistencePredicate::PropertyKeyEquals { target } => {
+                if let EventData::Variable(v) = &ev.data {
+                    v.name == *target
+                        || v.name.split('.').next_back() == Some(target)
+                        || v.name.ends_with(&format!(".{target}"))
+                } else {
+                    false
+                }
+            }
+            PropertyExistencePredicate::VariableRead { var_name } => {
+                if let EventData::Variable(v) = &ev.data {
+                    v.name == *var_name
+                        || v.name.split('.').next_back() == Some(var_name)
+                        || v.name.ends_with(&format!(".{var_name}"))
+                } else {
+                    false
+                }
+            }
+            PropertyExistencePredicate::EventTypeOnly => true,
+        };
+        if matches {
+            support.push(ev.event_id);
+        }
+    }
+    support
+}
+
+/// Short label for a predicate (used in summaries).
+fn predicate_label_domain(p: &PropertyExistencePredicate) -> String {
+    match p {
+        PropertyExistencePredicate::EventTypeEquals { event_type } => {
+            format!("event_type={event_type}")
+        }
+        PropertyExistencePredicate::ThreadEquals { thread_id } => format!("thread_id={thread_id}"),
+        PropertyExistencePredicate::PropertyKeyEquals { target } => {
+            format!("property_key={target}")
+        }
+        PropertyExistencePredicate::VariableRead { var_name } => {
+            format!("var_name={var_name}")
+        }
+        PropertyExistencePredicate::EventTypeOnly => "event_type=any".into(),
+    }
+}
+
+/// Evaluate an `Existence`-shaped hypothesis against the captured events.
+///
+/// Returns an [`ExistenceOutcome`] with the verdict (Pass / Violation /
+/// Unsupported), the matching event IDs, the predicate that was evaluated,
+/// and a human-readable summary.
+pub fn eval_existence(
+    events: &[TraceEvent],
+    predicate: PropertyExistencePredicate,
+) -> ExistenceOutcome {
+    if events.is_empty() {
+        return ExistenceOutcome {
+            verdict: PropertyHypothesisVerdict::Unsupported {
+                reason: "session has no captured events; cannot evaluate existence".into(),
+            },
+            support_event_ids: Vec::new(),
+            counter_event_ids: Vec::new(),
+            predicate,
+            summary: "no captured events in session".into(),
+        };
+    }
+
+    let support = scan_predicate_domain(events, &predicate);
+
+    let (verdict, summary) = if !support.is_empty() {
+        (
+            PropertyHypothesisVerdict::Pass,
+            format!(
+                "found {} matching event(s) for {}",
+                support.len(),
+                predicate_label_domain(&predicate)
+            ),
+        )
+    } else {
+        (
+            PropertyHypothesisVerdict::Violation {
+                reason: format!(
+                    "no captured event satisfied {}",
+                    predicate_label_domain(&predicate)
+                ),
+            },
+            format!(
+                "0 matching events out of {} total for {}",
+                events.len(),
+                predicate_label_domain(&predicate)
+            ),
+        )
+    };
+
+    ExistenceOutcome {
+        verdict,
+        support_event_ids: support,
+        counter_event_ids: Vec::new(),
+        predicate,
+        summary,
+    }
+}
+
+/// Evaluate a `CallPath`-shaped hypothesis against the captured events
+/// (BFS reachability in the captured call graph).
+///
+/// `caller` and `callee` are function names; `max_depth` caps the stack
+/// depth used when building the call graph from `FunctionEntry` /
+/// `FunctionExit` events (default 10, matching the services-layer
+/// `debug_call_graph` default).
+///
+/// Returns a [`CallPathOutcome`] with the verdict (Pass / Violation /
+/// Unsupported), the resolved path if reachable, and a summary.
+pub fn eval_call_path(
+    events: &[TraceEvent],
+    caller: String,
+    callee: String,
+    max_depth: usize,
+) -> CallPathOutcome {
+    if caller.is_empty() || callee.is_empty() {
+        return CallPathOutcome {
+            verdict: PropertyHypothesisVerdict::Unsupported {
+                reason: "caller and callee are required for kind=call_path (must be non-empty)"
+                    .into(),
+            },
+            support_event_ids: Vec::new(),
+            counter_event_ids: Vec::new(),
+            caller,
+            callee,
+            reachable_path: None,
+            summary: "missing caller/callee".into(),
+        };
+    }
+
+    if caller == callee {
+        let p = caller.clone();
+        return CallPathOutcome {
+            verdict: PropertyHypothesisVerdict::Pass,
+            support_event_ids: Vec::new(),
+            counter_event_ids: Vec::new(),
+            caller,
+            callee,
+            reachable_path: Some(vec![p]),
+            summary: "caller == callee".to_string(),
+        };
+    }
+
+    let mut callees_by_caller: HashMap<String, Vec<String>> = HashMap::new();
+    let mut stacks: HashMap<u64, Vec<String>> = HashMap::new();
+    let mut function_node_present: HashSet<String> = HashSet::new();
+    for ev in events {
+        if let EventData::Function { name, .. } = &ev.data {
+            if name.is_empty() {
+                continue;
+            }
+            function_node_present.insert(name.clone());
+            match ev.event_type {
+                EventType::FunctionEntry => {
+                    let stack = stacks.entry(ev.thread_id).or_default();
+                    if stack.len() < max_depth {
+                        if let Some(parent) = stack.last().cloned() {
+                            callees_by_caller
+                                .entry(parent)
+                                .or_default()
+                                .push(name.clone());
+                        }
+                        stack.push(name.clone());
+                    }
+                }
+                EventType::FunctionExit => {
+                    if let Some(stack) = stacks.get_mut(&ev.thread_id) {
+                        stack.pop();
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    if !function_node_present.contains(&caller) {
+        let reason = format!("caller `{caller}` not present in call graph");
+        let summary = format!("caller `{caller}` absent");
+        return CallPathOutcome {
+            verdict: PropertyHypothesisVerdict::Unsupported { reason },
+            support_event_ids: Vec::new(),
+            counter_event_ids: Vec::new(),
+            caller,
+            callee,
+            reachable_path: None,
+            summary,
+        };
+    }
+
+    let (verdict, path, summary) = bfs_reach_domain(&callees_by_caller, &caller, &callee);
+    CallPathOutcome {
+        verdict,
+        support_event_ids: Vec::new(),
+        counter_event_ids: Vec::new(),
+        caller,
+        callee,
+        reachable_path: path,
+        summary,
+    }
+}
+
+/// BFS reachability in the call graph. Returns (verdict, reachable_path,
+/// summary).
+fn bfs_reach_domain(
+    adj: &HashMap<String, Vec<String>>,
+    caller: &str,
+    callee: &str,
+) -> (PropertyHypothesisVerdict, Option<Vec<String>>, String) {
+    let mut visited: HashSet<String> = HashSet::new();
+    let mut parents: HashMap<String, String> = HashMap::new();
+    let mut queue: VecDeque<String> = VecDeque::new();
+    visited.insert(caller.to_string());
+    queue.push_back(caller.to_string());
+
+    let mut found: Option<Vec<String>> = None;
+    while let Some(node) = queue.pop_front() {
+        if node == callee {
+            let mut path = Vec::new();
+            let mut cur = callee.to_string();
+            loop {
+                path.push(cur.clone());
+                match parents.get(&cur) {
+                    Some(p) => cur = p.clone(),
+                    None => break,
+                }
+            }
+            path.reverse();
+            found = Some(path);
+            break;
+        }
+        if let Some(nbrs) = adj.get(&node) {
+            for n in nbrs {
+                if visited.insert(n.clone()) {
+                    parents.insert(n.clone(), node.clone());
+                    queue.push_back(n.clone());
+                }
+            }
+        }
+    }
+
+    match found {
+        Some(p) => (
+            PropertyHypothesisVerdict::Pass,
+            Some(p.clone()),
+            format!("reachable in {} step(s)", p.len().saturating_sub(1)),
+        ),
+        None => (
+            PropertyHypothesisVerdict::Violation {
+                reason: format!("`{callee}` is not reachable from `{caller}`"),
+            },
+            None,
+            format!("no call path `{caller}` -> `{callee}`"),
+        ),
     }
 }

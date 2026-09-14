@@ -1,0 +1,14 @@
+{
+  "schema": "verify-finding.schema.json",
+  "subject": {
+    "base": "82e219f",
+    "head": "ccf8811",
+    "diff_digest": "24a1e00227dc74a577d254eb1ab5d2d8cb6f6cf6bb5c94ca89ccff180a8f27b6",
+    "working_tree_clean": true,
+    "verified_at": "2026-09-14T08:40:00+02:00",
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
+    "verdict": "passed"
+  },
+  "lens_summary": "m9-80 moves four property-policy primitives (eval_invariant, eval_existence, eval_call_path, observe_property_target) from chronos_services::hypothesis_test to chronos_domain::property via a layered split: domain returns domain-owned outcome types (PropertyHypothesisVerdict, PropertyObservationSource, InvariantOutcome, PropertyExistencePredicate, ExistenceOutcome, CallPathOutcome), services wraps them into HypothesisOutput via From impls. No public wire change. 4 files, +777/-435 across 10 commits since base. T0 fmt + workspace clippy clean; T1 chronos-services --lib hypothesis_test 13/13 passed; T2 services + domain libs 264 + 149; T3 chronos-native serial 103/103 (13s); T4-smoke chronos-sandbox session_lifecycle + analytics_tools + program_scenarios 4 + 11 + 8 passed (167s wall). All 6 mechanical spec scenarios verified (4/4 pub fns in domain; Property re-exported; no chronos_services dep from domain; 0 private eval fns in services; 0 signature changes; 3 From impls for the three outcome kinds). scripts/regen_manifest_index_shas.py no-op (77 correct); check_vault_drift.sh PASS (48 python + 7 bash CCs). No findings.",
+  "findings": []
+}

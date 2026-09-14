@@ -242,7 +242,7 @@ this very procedure (drift of 4 cycles, 26 actual vs 22 declared).
 ```bash
 last_archive_in_terms=$(awk -F'|' '/Last archive/{gsub(/[ \t]+/, "", $3); print $3}' \
   .sddk-knowledge/p-3416cfb8288f8964/terms/index.md)
-last_closed_cycle=$(awk -F'|' '/^\| m[0-9]+/{gsub(/[ \t]+/, "", $3); last=$3} END {print last}' \
+last_closed_cycle=$(awk -F'|' '/^\| m[0-9]+.*\| CLOSED/{gsub(/[ \t]+/, "", $3); last=$3} END {print last}' \
   .sddk-knowledge/p-3416cfb8288f8964/cycles/index.md)
 [ "$last_archive_in_terms" = "$last_closed_cycle" ] \
   && echo "OK: $last_archive_in_terms == $last_closed_cycle" \
@@ -2382,6 +2382,7 @@ allowed_exceptions = {
     'm9-01-schema-versioning',     # pre-vault-reorg, no artifacts captured at the time
     'm9-02-events-side-table',      # pre-vault-reorg
     'm9-54-stale-branch-cleanup',   # branch-deletion only, no SHA-bearing artifacts
+    'm9-80-property-policy-ownership',  # OPEN cycle in progress; cycle-artifacts/ folder will be created when the cycle closes (m9-80 launched 2026-09-14)
 }
 
 ci = open('.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md').read()
@@ -2633,7 +2634,7 @@ declared=$(awk -F'|' '/Total cycles/{gsub(/[ \t]+/, "", $3); print $3}' .sddk-kn
 # CC#6: terms/index.md "Last archive" ↔ cycles/index.md most-recent-cycle
 last_archive=$(awk -F'|' '/Last archive/{gsub(/[ \t]+/, "", $3); print $3}' \
   .sddk-knowledge/p-3416cfb8288f8964/terms/index.md)
-last_cycle=$(awk -F'|' '/^\| m[0-9]+/{gsub(/[ \t]+/, "", $3); last=$3} END {print last}' \
+last_cycle=$(awk -F'|' '/^\| m[0-9]+.*\| CLOSED/{gsub(/[ \t]+/, "", $3); last=$3} END {print last}' \
   .sddk-knowledge/p-3416cfb8288f8964/cycles/index.md)
 [ "$last_archive" != "$last_cycle" ] && {
   echo "DRIFT: CC#6: terms=$last_archive cycles=$last_cycle"

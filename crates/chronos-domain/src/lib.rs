@@ -26,7 +26,9 @@ pub use index::{
     PerfCounters, PerformanceIndex, RawEventEntry, ShadowIndex, TemporalIndex,
 };
 pub use property::{
-    ComparisonOp, InvariantCheck, MutationActor, Property, PropertyId, PropertyOutcome,
+    CallPathOutcome, ComparisonOp, ExistenceOutcome, InvariantCheck, InvariantOutcome,
+    MutationActor, Property, PropertyExistencePredicate, PropertyHypothesisOutcome,
+    PropertyHypothesisVerdict, PropertyId, PropertyObservationSource, PropertyOutcome,
     PropertySequenceOutcome, PropertyValue, PropertyViolation, StateTransition,
 };
 pub use query::{
