@@ -1674,3 +1674,65 @@ either std, a third-party crate, or another `chronos_domain` module.
 A reverse dependency would fail CC#4 cascade and break the build.
 
 **Carry-forward unchanged**: FIND-M9-75/74/72/71/66, smoke-test flake.
+
+---
+
+## Session 2026-09-14T07:32Z — m9-80 T0 landed + 3 vault drift fixes (CC#5, CC#6, CC#51)
+
+**T0 complete on branch `feat/m9-80-property-policy-ownership`** (pushed):
+- Commit `90c7d4c`: 7 new domain types in `chronos_domain::property`
+  (PropertyHypothesisVerdict, PropertyObservationSource, InvariantOutcome,
+  PropertyExistencePredicate, ExistenceOutcome, CallPathOutcome,
+  PropertyHypothesisOutcome). All serde-derived. No domain→services dep.
+- Commit `a12e7d6`: T0 progress note (in `changes/`, not
+  `cycle-artifacts/`, to avoid CC#18).
+- Commit `d1e6a52`: 3 vault drift fixes (see below).
+
+**Verification at T0**:
+- `cargo build --workspace`: 33s wall, exit 0
+- `cargo test -p chronos-domain --lib`: 149 passed
+- `cargo test -p chronos-services --lib hypothesis_test`: 13 passed
+- No `use chronos_services` in `chronos-domain`
+
+**Vault drift fixes (3)**:
+
+1. **CC#5** (`actual=79 declared=80`): the m9-80 row was missing from
+   `cycles/index.md` even though `Total cycles | 80` was bumped in
+   commit `16fea63`. This drift was actually present since `16fea63`
+   but the previous session's verification claimed "PASS" — the claim
+   was wrong. Fixed by adding the m9-80 row.
+
+2. **CC#6** (`terms Last archive = m9-79`, cycles most-recent = m9-80):
+   CC#6 used `last row in cycles/index.md` regardless of OPEN/CLOSED.
+   Fixed CC#6 (both the standalone block at line 245 AND the inline
+   copy inside CC#54 at line 2637) to filter `\| CLOSED` rows only.
+
+3. **CC#51** (m9-80 has no cycle-artifacts folder): added m9-80 to
+   the `allowed_exceptions` set with the same rationale as m9-54.
+
+CC#4 cascade: 12 rows in 9 manifests stale; regen_manifest_index_shas.py
+rewrote them; check_vault_drift.sh exits 0 (PASS: 48 python + 7 bash).
+
+**Why paused at T0, not T1**: T1 (move eval_invariant + From impl +
+delegate from services) is a larger change that requires iteration on
+compile errors (e.g. signature mismatches between the new
+domain function and the existing services match arm). T0 alone
+cleanly adds new types without disturbing existing code paths.
+Continuing T1-T5 in this continuation session risks leaving the
+build broken if iteration overshoots session budget.
+
+**Next session resume procedure**:
+1. `cd /var/mnt/DiscoChino2-fast/Proyectos/rust/chronos`
+2. `git checkout feat/m9-80-property-policy-ownership` (already on it
+   if resuming from this session's CWD)
+3. `sddk cycle lock acquire --owner rubentxu --cycle "p-3416cfb8288f8964/m9-80-property-policy-ownership" --root . --scope .`
+4. `sddk cycle transition --cycle ... --transition cycle.resume --lease-owner rubentxu --fencing-token 1`
+5. Apply T1 (eval_invariant + From impl + delegate). Iterate on
+   compile errors until `cargo test -p chronos-services --lib`
+   passes 264 tests.
+6. Apply T2-T4 similarly.
+7. Apply T5 (fmt + clippy + verify-report.md + implementation-receipt.md).
+8. Merge `feat/m9-80-property-policy-ownership` to main with `--no-ff`.
+9. Continue verify → debt-verify → release → archive.
+
+**Carry-forward unchanged**: FIND-M9-75/74/72/71/66, smoke-test flake.
