@@ -18,7 +18,7 @@ touched. CC#39 passes after the fix.
 - **Path**: B-direct (literal fix, scope = cycles/index.md single field)
 - **Branch**: fix/m9-83-cc39-total-cycles
 - **Base SHA**: a0f72c2a7fe36eaeb9c772505dfe563f85f42773
-- **Head SHA**: a21dcc253feb5c8d1af05143d0bc859b9a9dd132
+- **Head SHA**: a531c31afe4abfe58f020aaa2072a0a943e5e44f
 - **Remote tag**: v0.7.85
 - **Date**: 2026-09-14
 

@@ -9,7 +9,7 @@
 | Branch | fix/m9-83-cc39-total-cycles |
 | Date | 2026-09-14 |
 | Base SHA | a0f72c2a7fe36eaeb9c772505dfe563f85f42773 |
-| Head SHA | a21dcc253feb5c8d1af05143d0bc859b9a9dd132 |
+| Head SHA | a531c31afe4abfe58f020aaa2072a0a943e5e44f |
 | Remote tag | v0.7.85 |
 | Cycle | m9-83-cc39-total-cycles |
 
@@ -21,13 +21,13 @@ Single-line edit, no code, no schemas, no release artefact.
 
 ## Evidence bindings
 
-- `cycle-artifacts/p-3416cfb8288f8964/m9-83-cc39-total-cycles/apply-checkpoint.json` → 71f26e33c04ab59e2a27242f96ad9873ac906416789908bf66610c46adb77082
+- `cycle-artifacts/p-3416cfb8288f8964/m9-83-cc39-total-cycles/apply-checkpoint.json` → b92df84e4f74ab57f89a479a8ed1948f78eba1c31fef0eab3781dbdbaa607df7
 - `cycle-artifacts/p-3416cfb8288f8964/m9-83-cc39-total-cycles/implementation-receipt.md` → 1d2efb087fadb70681cb7dbf1e9e45d3903975be20804e254864c7206f59710c
-- `cycle-artifacts/p-3416cfb8288f8964/m9-83-cc39-total-cycles/merge-receipt.md` → 7ccc98a9ead1573dac6d156d4b002ceafe82ec7650962e855a4bfc2aef571d7a
-- `cycle-artifacts/p-3416cfb8288f8964/m9-83-cc39-total-cycles/release-receipt.md` → 68dc7f2201ef7d343c19bc94cccfd042b6bd21262fd0c90d693e01fba078bd63
-- `cycle-artifacts/p-3416cfb8288f8964/m9-83-cc39-total-cycles/release-report.md` → cf61015dbd0269857db01b0b0b26002f58a3bc664f633723ae4c69c0a2eb6cc311
-- `cycle-artifacts/p-3416cfb8288f8964/m9-83-cc39-total-cycles/verify-findings.json` → 1681e0b6875e6d700b2ced2bbb481e5cbbf10a8d7689d244b80d066812b97af4
-- `cycle-artifacts/p-3416cfb8288f8964/m9-83-cc39-total-cycles/verify-report.md` → a6291ce1d87afafeaaef1f53ea272896292286957fb2fd862423c10892cc84a1
+- `cycle-artifacts/p-3416cfb8288f8964/m9-83-cc39-total-cycles/merge-receipt.md` → 6364efcd1299ffd98b36034fa20103e1676df3e6dfedc91a2d0d225e8c8b3db5
+- `cycle-artifacts/p-3416cfb8288f8964/m9-83-cc39-total-cycles/release-receipt.md` → 38afdbc51e4152d51d003ca17cea8cec95fa33a91e029ee65b88bce68db63082
+- `cycle-artifacts/p-3416cfb8288f8964/m9-83-cc39-total-cycles/release-report.md` → 4b2d19341af863ea7d805906bf220a52921f3438cc96c229140c6b98f6d57d0d
+- `cycle-artifacts/p-3416cfb8288f8964/m9-83-cc39-total-cycles/verify-findings.json` → 7c83e66ec8d76c15dccd44a7906712afee0611784f3232fc45959fcfddf8f47c
+- `cycle-artifacts/p-3416cfb8288f8964/m9-83-cc39-total-cycles/verify-report.md` → 170847ac8df78e474f926315aecba697142a8131f630e41816637dc6686ddd2a
 - `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-83-cc39-total-cycles/change-entry.md` → 20b8ed3068d452549e237602eb761a349462949719132df6022ebd61a967fab2
 - `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-83-cc39-total-cycles/exploration-report.md` → 286909569a76aea907e0a0ed1a5f984c10b5e3509bb5b1402c75963fc7f697e5
 - `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-83-cc39-total-cycles/proposal.md` → 28cd3d1b677a1e316b44937152ff1c14808c0632777e0f17816e0d74cac7756e
@@ -38,6 +38,6 @@ Single-line edit, no code, no schemas, no release artefact.
 
 - `cycles/index.md` `Total cycles` field reads `83` and matches the row count.
 - `terms/index.md` Last archive = m9-83-cc39-total-cycles.
-- `apply-checkpoint.head_sha` == `release-receipt.head_sha` == `merge-receipt.head SHA` == `a21dcc253feb5c8d1af05143d0bc859b9a9dd132`.
-- `Remote tag` v0.7.85 peel: `a21dcc253feb5c8d1af05143d0bc859b9a9dd132` (clean match).
+- `apply-checkpoint.head_sha` == `release-receipt.head_sha` == `merge-receipt.head SHA` == `a531c31afe4abfe58f020aaa2072a0a943e5e44f`.
+- `Remote tag` v0.7.85 peel: `a531c31afe4abfe58f020aaa2072a0a943e5e44f` (clean match).
 - `bash scripts/check_vault_drift.sh`: CC#39 clean.
