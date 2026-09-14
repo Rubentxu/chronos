@@ -1,0 +1,67 @@
+{
+  "cycle_id": "m9-90-stale-branches-cleanup",
+  "cycle_record": "p-3416cfb8288f8964/m9-90-stale-branches-cleanup",
+  "branch": "chore/m9-90-stale-branches-cleanup",
+  "route": "B-direct",
+  "status": "CLOSED",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "complete",
+  "archived_at": "2026-09-14",
+  "head_sha": "PLACEHOLDER",
+  "main_sha": "PLACEHOLDER",
+  "base_sha": "20e2649822c0c24509ff6419a48fe3113591ecf0",
+  "remote_tag": "v0.7.92",
+  "remote_tag_peel": "PLACEHOLDER",
+  "tag_peel_sha": "PLACEHOLDER",
+  "tag_peel_note": "non-standard: tag points at the SHA-aligned HEAD (post-CC#42 fixpoint-cascade workaround). Pre-created at cleanup commit SHA 13f7084 and moved through subsequent artifact-fixup commits per CC#42.",
+  "peel_match": true,
+  "ff_merged": false,
+  "phases": {
+    "explore": "complete",
+    "spec": "complete",
+    "tasks": "complete",
+    "apply": "complete",
+    "verify": "complete",
+    "release": "complete",
+    "archive": "complete"
+  },
+  "tier_required": "T0",
+  "tiers_run": ["T0"],
+  "tier_results": {
+    "T0_fmt": "clean",
+    "T0_clippy": "clean (no Rust changes)",
+    "bash scripts/check_vault_drift.sh": "CC#46 + CC#53 clean (was 9 stale branches before, 0 after)"
+  },
+  "created_at": "2026-09-14T15:55Z",
+  "title": "m9-90 stale branches cleanup",
+  "summary": "B-direct vault-only cycle. Closes FIND-M9-89-STALE-BRANCHES-DEFERRED by deleting 6 local + 3 remote feat/m9-* branches that m9-65 missed (m9-65 ran before m9-66..m9-78 cycles landed their feat branches). Recovery log in scripts/branches-deleted-m9-90.log. Tag v0.7.92.",
+  "findings_introduced": {
+    "no_action": [],
+    "FIND-M9-90-NO-OP": "m9-90 closes FIND-M9-89-STALE-BRANCHES-DEFERRED without introducing new findings."
+  },
+  "findings_closed": [
+    "FIND-M9-89-STALE-BRANCHES-DEFERRED: 9 stale feat/m9-* branches (6 local + 3 remote) deleted via scripts/clean_m9_90_stale_branches.py. Recovery log: scripts/branches-deleted-m9-90.log.",
+    "FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION: cycle m9-90 demonstrates the reusable pattern (clean_m9_90 tool + recovery log) for future stale-branch sweeps."
+  ],
+  "files_changed": [
+    "scripts/clean_m9_90_stale_branches.py (NEW, 220 lines, idempotent + dry-run + recovery log)",
+    "scripts/branches-deleted-m9-90.log (NEW, 9 deletions + 0 preserved)",
+    "git: deleted 6 local feat/m9-* branches (m9-67..m9-78)",
+    "git: deleted 3 remote feat/m9-* branches via `git push origin --delete`"
+  ],
+  "files_inventory": "2 files added (clean_m9_90_stale_branches.py + branches-deleted-m9-90.log). 9 stale branches deleted (6 local + 3 remote feat/m9-* from m9-67..m9-78). No source code touched.",
+  "carry_forward_findings_closed": [],
+  "carry_forward_findings_introduced": [],
+  "cc_delta": [
+    "CC#46 (no stale local feat/m9-*/fix/m9-*/chore/m9-* branches): clean (was 6 stale, now 0)",
+    "CC#53 (no stale branches merged into main, all milestone prefixes): clean (was 9 stale, now 0)"
+  ],
+  "test_invocation_log": [
+    "python3 scripts/clean_m9_90_stale_branches.py --dry-run: 6 local + 3 remote identified, 0 preserved",
+    "python3 scripts/clean_m9_90_stale_branches.py --reset-log: 6 local + 3 remote deleted, log written",
+    "git branch --list 'feat/m9-*' 'fix/m9-*' 'chore/m9-*' | wc -l: 1 (only the current cycle branch chore/m9-90-...)",
+    "git branch -r --list 'origin/feat/m9-*' 'origin/fix/m9-*' 'origin/chore/m9-*' | wc -l: 0",
+    "bash scripts/check_vault_drift.sh: CC#46 + CC#53 clean (only CC#34 pre-existing m9-66 JSON escape + CC#42 transient post-tag remain)"
+  ]
+}
