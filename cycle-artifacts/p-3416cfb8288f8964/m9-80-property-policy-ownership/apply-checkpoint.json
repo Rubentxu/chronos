@@ -1,5 +1,5 @@
 {
-  "head_sha": "ccf8811",
+  "head_sha": "8012342",
   "base_sha": "82e219f",
   "cycle_id": "m9-80-property-policy-ownership",
   "cycle_record": "p-3416cfb8288f8964/m9-80-property-policy-ownership",
@@ -8,18 +8,18 @@
   "route": "A-min",
   "status": "open",
   "verify_status": "passed",
-  "release_status": "pending",
+  "release_status": "released",
   "archive_status": "pending",
   "remote_tag": "v0.7.82",
-  "tag_peel_sha": null,
-  "main_sha": null,
-  "tag_peel_note": null,
-  "ff_merged": null,
+  "tag_peel_sha": "7874e5c8e972172c024b07f60746f0e06df92f9d",
+  "main_sha": "7874e5c8e972172c024b07f60746f0e06df92f9d",
+  "tag_peel_note": "clean peel match: v0.7.82 tag points at merge commit 7874e5c (--no-ff merge of feat/m9-80-property-policy-ownership into main)",
+  "ff_merged": false,
   "phases": {
     "build": {
       "status": "complete",
-      "commit_sha": "ccf8811",
-      "commit_title": "m9-80: make observe_property_target public + final verification (T5)",
+      "commit_sha": "8012342",
+      "commit_title": "docs(handoff): append m9-80 T3+T4+T5+verify-artifacts landed; release phase pending",
       "summary": "All 5 implementation tasks (T0..T5) landed. T0 added 7 domain-owned types (PropertyHypothesisOutcome family). T1 moved eval_invariant. T2 moved eval_existence. T3 moved eval_call_path. T4 renamed observe_property_target_domain to observe_property_target. T5 promoted observe_property_target to pub and ran final verification. Services::hypothesis_test became a coordinator that delegates to chronos_domain::property::eval_* and wraps via From impls. 4 files, +777/-435.",
       "implementation_receipt": "/home/rubentxu/.local/share/sddk/projects/p-3416cfb8288f8964/cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/implementation-receipt.md",
       "files_modified": 4,
@@ -41,13 +41,16 @@
       "verify_findings": "/home/rubentxu/.local/share/sddk/projects/p-3416cfb8288f8964/cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/verify-findings.json"
     },
     "release": {
-      "status": "pending",
-      "tag": "v0.7.82 (predicted)",
-      "tag_sha": null,
-      "merge_commit_sha": null,
-      "release_receipt": null,
-      "merge_receipt": "/home/rubentxu/.local/share/sddk/projects/p-3416cfb8288f8964/cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/merge-receipt.md",
-      "note": "release-receipt.md is intentionally not present at verify phase; CC#42 iterates over cycle-artifacts/*/release-receipt.md and skips folders without one. release-receipt.md is created in the release phase once the tag is published (so the CC#42 peel check has a real git tag to verify)."
+      "status": "complete",
+      "tag": "v0.7.82",
+      "tag_sha": "c77333500da4ebb8f46e3b85cb0f9bfbf7bd4bd5",
+      "tag_peel_sha": "7874e5c8e972172c024b07f60746f0e06df92f9d",
+      "merge_commit_sha": "7874e5c8e972172c024b07f60746f0e06df92f9d",
+      "merge_type": "--no-ff",
+      "merge_author": "Chronos Maintainer <maintainer@chronos-rs.local>",
+      "pushed_at": "2026-09-14T08:49Z",
+      "release_receipt": "/home/rubentxu/.local/share/sddk/projects/p-3416cfb8288f8964/cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/release-receipt.md",
+      "merge_receipt": "/home/rubentxu/.local/share/sddk/projects/p-3416cfb8288f8964/cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/merge-receipt.md"
     },
     "archive": {
       "status": "pending",
@@ -64,7 +67,14 @@
     ".sddk-knowledge/p-3416cfb8288f8964/cycles/index.md (modified: adds m9-80 row at line 104; Total cycles 80 -> 81; CC#5 + CC#6 + CC#54 inline fixes)",
     ".sddk-knowledge/p-3416cfb8288f8964/handoff/m9-backlog-blocked-2026-09-12.md (modified: appends T0/T1/T2/T3/T4/T5 handoff sections)",
     ".sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md (modified: Last updated refresh)",
-    ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-{02,68,70,71,72,73,74,75,76,79}-*/archive-manifest.md (modified: CC#4 cascade — index SHA rows regenerated to fixpoint by scripts/regen_manifest_index_shas.py after m9-80 row landed in cycles/index.md)"
+    ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-{02,68,70,71,72,73,74,75,76,79}-*/archive-manifest.md (modified: CC#4 cascade — index SHA rows regenerated to fixpoint by scripts/regen_manifest_index_shas.py after m9-80 row landed in cycles/index.md)",
+    "cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/apply-checkpoint.json (added: this file)",
+    "cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/implementation-receipt.md (added)",
+    "cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/merge-receipt.md (added)",
+    "cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/release-receipt.md (added at release phase)",
+    "cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/release-report.md (added)",
+    "cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/verify-findings.json (added)",
+    "cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/verify-report.md (added)"
   ],
   "findings_closed": [],
   "findings_introduced": {
@@ -72,8 +82,9 @@
     "followup": []
   },
   "created_at": "2026-09-14T08:43:00Z",
+  "released_at": "2026-09-14T08:49Z",
   "title": "m9-80 property policy ownership",
-  "summary": "Move four property-policy primitives (eval_invariant, eval_existence, eval_call_path, observe_property_target) from chronos_services::hypothesis_test to chronos_domain::property via a layered split (spec rev 2). Domain returns PropertyHypothesisOutcome-family types; services wraps via From impls. No wire / protocol change. A-min, T0+T1+T2+T3+T4+T5, all 6 mechanical spec scenarios verified, 552 tests pass across all tiers, vault PASS.",
+  "summary": "Move four property-policy primitives (eval_invariant, eval_existence, eval_call_path, observe_property_target) from chronos_services::hypothesis_test to chronos_domain::property via a layered split (spec rev 2). Domain returns PropertyHypothesisOutcome-family types; services wraps via From impls. No wire / protocol change. A-min, T0+T1+T2+T3+T4+T5, all 6 mechanical spec scenarios verified, 552 tests pass across all tiers, vault PASS. Released as v0.7.82 (merge 7874e5c).",
   "commits_since_base": [
     "90c7d4c",
     "ae6a7df",
@@ -85,7 +96,9 @@
     "933670d",
     "26a5cf4",
     "3d93766",
-    "ccf8811"
+    "ccf8811",
+    "34b67b2",
+    "8012342"
   ],
   "notes": [
     "cycle_path: A-min (cross-crate ownership refactor; 1 apply phase each on domain + services)",
@@ -94,8 +107,8 @@
     "smoke_subset_rationale: 3 suites chosen because the cycle touches the HypothesisOutput::{Invariant, Existence, CallPath} wire shape. session_lifecycle exercises session_* actions that call HypothesisTest::test; analytics_tools covers broader analytics; program_scenarios covers probe lifecycle on real binaries (trace-shape regressions).",
     "vault_indexes_updated: cycles/index.md (m9-80 row added; Total 80 -> 81); 10 archive-manifest.md files in changes/archive/ regenerated to fixpoint via scripts/regen_manifest_index_shas.py (CC#4 cascade)",
     "archive_manifest_cc4_affected_set: m9-02 (index rows), m9-68, m9-70, m9-71, m9-72, m9-73, m9-74, m9-75, m9-76 (source/index rows from cycles this batch shares files with), plus m9-79 (recent attach-capability-type manifest); 10 archive-manifest.md files in the diff; regenerated to fixpoint after artifacts commit lands; the self-referential rows of pre-m9-11 manifests and m9-67/m9-68 are preserved by design",
-    "tag_convention: patch bump v0.7.81 -> v0.7.82 (no wire/protocol change)",
-    "branch_hygiene: --no-ff merge to preserve cycle topology; delete cycle branch after release",
+    "tag_convention: patch bump v0.7.81 -> v0.7.82 (no wire/protocol change); clean peel match (tag_peel == merge_commit_sha == HEAD == 7874e5c)",
+    "branch_hygiene: --no-ff merge to preserve cycle topology; delete cycle branch after archive phase",
     "carry_forward_findings_unchanged: FIND-M9-75, FIND-M9-74, FIND-M9-72, FIND-M9-71, FIND-M9-66 (broken JSON in m9-66 verify-findings.json), pre-existing smoke-test work-copy isolation flake"
   ]
 }

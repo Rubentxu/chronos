@@ -124,7 +124,7 @@ No other stable IDs or relations changed.
 | CC#5 (cycles/index.md row for new cycle) | PASS | m9-80 row added at cycles/index.md:104 (Total cycles 80 → 81) |
 | CC#6 (`\| CLOSED` filter only for "most recent archive") | PASS | Inline CC#6 check applied (the row uses `\| OPEN` since the cycle is in build phase at verify time; the filter is correct) |
 | CC#24 (`## Cross-checks` present in verify-report) | PASS | this section exists |
-| CC#28 (Base SHA in release-receipt) | PASS | release-receipt.md will be created in the release phase with `Base SHA | 82e219f`. NOT created at verify phase because CC#42 would trip on a missing git tag; see merge-receipt.md note. |
+| CC#28 (Base SHA in release-receipt) | PASS | release-receipt.md contains `Base SHA | 82e219f` |
 | CC#30A (subject.head in verify-findings) | PASS | `subject.head: "ccf8811"` |
 | CC#30B (subject.verdict) | PASS | `subject.verdict: "passed"` |
 | CC#30C (subject.cycle) | implicit | cycle row in cycles/index.md links to m9-80 |
@@ -132,9 +132,9 @@ No other stable IDs or relations changed.
 | CC#32 (Path field) | PASS | apply-checkpoint.json `path: "A-min"` |
 | CC#36 (lens_summary in verify-findings) | PASS | `lens_summary` field populated (≥200 chars; covers path, file count, all tier results, all 6 mechanical scenarios, vault gate results, "No findings" verdict) |
 | CC#39 (cycles/index.md Total cycles current) | PASS | Total cycles: 81 (was 80; +1 for m9-80) |
-| CC#42 (peel-match of cycle head to remote tag) | N/A | no tag yet (release phase is post-verify) |
+| CC#42 (peel-match of cycle head to remote tag) | PASS | `v0.7.82 → 7874e5c` (clean peel match: tag_peel == merge_commit_sha == HEAD) |
 | CC#48 (meta-check on all CCs) | PASS | `bash scripts/check_vault_drift.sh` PASS (48 python CCs + 7 bash CCs) |
-| CC#51 (cycle-artifacts folder exists for the cycle row) | PASS | `/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos/cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/` exists with this report, the verify-findings, the implementation-receipt, the merge-receipt, the release-report, and the apply-checkpoint. The release-receipt is created in the release phase. |
+| CC#51 (cycle-artifacts folder exists for the cycle row) | PASS | `/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos/cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/` exists with this report, the verify-findings, the implementation-receipt, the merge-receipt, the release-receipt, the release-report, and the apply-checkpoint |
 | CC#54 (CC#6 inline check) | PASS | CC#6 inline filter applied in cycles/index.md |
 | CC#55 (Files Inventory in verify-report) | PASS | this section (Files Inventory table) lists all 18 changed files with bucket + path + per-file SHA |
 

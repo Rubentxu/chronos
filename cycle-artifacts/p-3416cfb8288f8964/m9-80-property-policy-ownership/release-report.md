@@ -1,15 +1,15 @@
-# Release Report — m9-80-property-policy-ownership (pending release)
+# Release Report — m9-80-property-policy-ownership
 
 **Path**: A-min
 **Cycle**: m9-80-property-policy-ownership
-**Note**: Release-receipt synthesised 2026-09-14T08:43Z at the verify phase.
-Merge to `main` and tag publication pending release phase.
+**Tag**: v0.7.82
+**Merge commit**: 7874e5c8e972172c024b07f60746f0e06df92f9d
 
 ## Subject
 
-| Base | Head (verified) | Tag (predicted) | CWD | Verified at |
-|---|---|---|---|---|
-| `82e219f` | `ccf8811` | `v0.7.82` | `/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos` | 2026-09-14T08:40Z |
+| Base | Head (verified) | Tag | Tag SHA | Tag peel | CWD | Verified at |
+|---|---|---|---|---|---|---|
+| `82e219f` | `8012342` | `v0.7.82` | `c77333500da4ebb8f46e3b85cb0f9bfbf7bd4bd5` | `7874e5c8e972172c024b07f60746f0e06df92f9d` (merge commit) | `/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos` | 2026-09-14T08:40Z |
 
 ## Summary
 
@@ -22,18 +22,14 @@ Merge to `main` and tag publication pending release phase.
 - CC#4: `python3 scripts/regen_manifest_index_shas.py` reports "nothing to do
   (77 manifests already correct)"; 10 archive-manifest.md files in the cycle
   diff were regenerated to a fixpoint at the m9-80 row addition.
-- CC#28: Base SHA = `82e219f` will be in release-receipt (created at release time).
-- CC#42: peel-match will be populated when the tag is published. Expected:
-  `v0.7.82 → ccf8811` (clean peel match since this cycle has no merge drift
-  like the m9-78 backfill). release-receipt.md is intentionally NOT created
-  at verify phase (CC#42 would trip on a missing git tag); it is created
-  in the release phase once the tag is published.
+- CC#28: Base SHA = `82e219f` in release-receipt.md.
+- CC#42: `v0.7.82 → 7874e5c` (clean peel match: tag_peel == merge_commit_sha).
 - CC#48: `bash scripts/check_vault_drift.sh` PASS (48 python CCs + 7 bash CCs).
 - CC#51: cycle-artifacts folder exists at
   `/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos/cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/`
   with this report, the implementation-receipt, the merge-receipt, the
-  verify-findings, the verify-report, and the apply-checkpoint. The
-  release-receipt is created at release time.
+  release-receipt, the verify-findings, the verify-report, and the
+  apply-checkpoint.
 - CC#55: Files Inventory present in verify-report.md (18 files listed).
 
 ## Notes
@@ -48,7 +44,6 @@ Merge to `main` and tag publication pending release phase.
   convention.
 - 552 tests pass across all tiers (264 services + 149 domain + 103 native
   serial + 13 hypothesis_test + 23 sandbox smoke = 552).
-- All 6 mechanical spec scenarios verified (see verify-report.md for the
-  table).
-- Cycle branch `feat/m9-80-property-policy-ownership` will be deleted after
-  release, per local branch hygiene convention.
+- All 6 mechanical spec scenarios verified PASS (see verify-report.md).
+- Merged with `--no-ff` to preserve cycle branch topology; branch deletion
+  happens in the archive phase.
