@@ -102,6 +102,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-78 | m9-78-safe-attach-detach | B-direct | `v0.7.80` | `009b75037357d069775ad4d7a0661684e27fc9ca` | CLOSED |
 | m9-79 | m9-79-attach-capability-type | B-direct | `v0.7.81` | `f41abd4580d078a3f5f1255ffd543573a4fa702d` | CLOSED |
 | m9-80 | m9-80-property-policy-ownership | A-min | `v0.7.82` | `7874e5c8e972172c024b07f60746f0e06df92f9d` | CLOSED |
+| m9-81 | m9-81-counterexample-table-classifier | B-direct | — | — | OPEN (T0 done; T1-T7 pending) |
 
 ## Metadata
 
@@ -109,5 +110,5 @@ Chronological record of all SDDK cycles for this project.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-14T09:01Z |
-| Total cycles | 81 |
+| Last updated | 2026-09-14T09:19Z |
+| Total cycles | 82 |

@@ -1,0 +1,112 @@
+{
+  "head_sha": "a3f59ea0d1bd446cd20c12f3f62863d70deb0f3a",
+  "base_sha": "45b53df132186b09de75b543b87cf0bab23bd26e",
+  "cycle_id": "m9-81-counterexample-table-classifier",
+  "cycle_record": "p-3416cfb8288f8964/m9-81-counterexample-table-classifier",
+  "branch": "feat/m9-81-counterexample-table-classifier",
+  "path": "B-direct",
+  "route": "B-direct",
+  "status": "open",
+  "verify_status": "passed",
+  "release_status": "pending",
+  "archive_status": "pending",
+  "phases": {
+    "explore": "complete",
+    "spec": "complete",
+    "tasks": "complete",
+    "apply": "complete",
+    "verify": "complete",
+    "release": "pending",
+    "archive": "pending"
+  },
+  "tier_required": "T1",
+  "tiers_run": ["T0", "T1"],
+  "tier_results": {
+    "T0": {
+      "fmt_check": "passed",
+      "clippy_check": "passed",
+      "scope": "workspace"
+    },
+    "T1": {
+      "test_command": "cargo test -p chronos-store --lib --no-fail-fast",
+      "passed": 74,
+      "failed": 0,
+      "ignored": 0,
+      "baseline_pre_refactor": {"passed": 74, "failed": 0},
+      "regression_check": "matched (74 / 74)"
+    }
+  },
+  "carry_forward_findings_closed": ["FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION"],
+  "carry_forward_findings_introduced": [],
+  "cc_delta": {
+    "added": [],
+    "modified": [],
+    "removed": [],
+    "touched": ["CC#4", "CC#5", "CC#6", "CC#9", "CC#28", "CC#32", "CC#42", "CC#49", "CC#51", "CC#55"]
+  },
+  "files_inventory": {
+    "source": [
+      {
+        "path": "crates/chronos-store/src/counterexample_storage.rs",
+        "change": "modified",
+        "lines_added": 11,
+        "lines_removed": 13,
+        "net_delta": -2,
+        "description": "6 read-path sites now route through table_error::classify_read_table_error().or_not_found(EMPTY); TableError import dropped; classify_read_table_error import added"
+      }
+    ],
+    "tests": [],
+    "vault": [
+      {
+        "path": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-81-counterexample-table-classifier/exploration-report.md",
+        "kind": "exploration-report"
+      },
+      {
+        "path": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-81-counterexample-table-classifier/proposal.md",
+        "kind": "proposal"
+      },
+      {
+        "path": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-81-counterexample-table-classifier/spec.md",
+        "kind": "spec"
+      },
+      {
+        "path": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-81-counterexample-table-classifier/tasks.md",
+        "kind": "tasks"
+      },
+      {
+        "path": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-81-counterexample-table-classifier/change-entry.md",
+        "kind": "change-entry",
+        "status": "pending (archive phase)"
+      },
+      {
+        "path": ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-81-counterexample-table-classifier/archive-manifest.md",
+        "kind": "archive-manifest",
+        "status": "pending (archive phase)"
+      },
+      {
+        "path": ".sddk-knowledge/p-3416cfb8288f8964/cycles/index.md",
+        "kind": "cycles-index",
+        "change": "appended m9-81 OPEN row; Total cycles 81 -> 82"
+      },
+      {
+        "path": ".sddk-knowledge/p-3416cfb8288f8964/terms/index.md",
+        "kind": "terms-index",
+        "change": "Last updated 2026-09-14T08:53Z -> 2026-09-14T09:19Z"
+      }
+    ]
+  },
+  "test_invocation_log": [
+    {"command": "cargo fmt --all -- --check", "result": "passed", "ts": "2026-09-14T09:21:00Z"},
+    {"command": "cargo fmt --all", "result": "applied", "ts": "2026-09-14T09:21:04Z"},
+    {"command": "cargo clippy -p chronos-store --all-targets -- -D warnings", "result": "passed", "ts": "2026-09-14T09:21:20Z"},
+    {"command": "cargo clippy --workspace --all-targets -- -D warnings", "result": "passed", "ts": "2026-09-14T09:22:16Z"},
+    {"command": "cargo test -p chronos-store --lib --no-fail-fast", "result": "74 passed / 0 failed", "ts": "2026-09-14T09:21:35Z", "baseline_matched": true},
+    {"command": "cargo test -p chronos-services --lib --no-fail-fast", "result": "264 passed / 0 failed", "ts": "2026-09-14T09:23:07Z", "scope": "downstream smoke"}
+  ],
+  "notes": [
+    "Cycle uses B-direct path (single-crate mechanical refactor).",
+    "All 6 read-path sites refactored in a single commit because each site is a 4-line -> 2-line substitution; per-site commits would be churn.",
+    "FIND-M9-72 closure is the only carry-forward change.",
+    "sddk CLI cycle was opened for this run but its gate evaluation is blocked by a pre-existing FOREIGN KEY constraint bug in /var/home/rubentxu/.local/state/sddk/projects/p-3416cfb8288f8964/ledger.sqlite (duplicate event_id + FK violations). The cycle was abandoned and the manual vault-tracked workflow (the same pattern m9-80 used) is used instead. The CLI cycle is parked at OPEN: explore."
+  ]
+}
