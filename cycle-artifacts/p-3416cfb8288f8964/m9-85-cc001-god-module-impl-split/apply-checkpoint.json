@@ -1,0 +1,127 @@
+{
+  "head_sha": "158f5b1bdc4a8d33c2b34ef33b66ab8b3cf8a0bf",
+  "base_sha": "2c2a5cc8f8370eb64dca7fb4ddc47a6f3e8b15a7",
+  "main_sha": "2c2a5cc8f8370eb64dca7fb4ddc47a6f3e8b15a7",
+  "remote_tag": "v0.7.87",
+  "remote_tag_peel": "TBD",
+  "tag_peel_sha": "TBD",
+  "tag_peel_note": "tag not yet created — peel SHA assigned post-commit after main cascade fixpoint",
+  "ff_merged": false,
+  "cycle_id": "m9-85-cc001-god-module-impl-split",
+  "cycle_record": "p-3416cfb8288f8964/m9-85-cc001-god-module-impl-split",
+  "branch": "feat/m9-85-cc001-god-module-impl-split",
+  "path": "A-min",
+  "route": "A-min",
+  "status": "in_progress",
+  "verify_status": "passed",
+  "release_status": "pending",
+  "archive_status": "pending",
+  "phases": {
+    "explore": "complete",
+    "spec": "complete",
+    "tasks": "complete",
+    "apply": "complete",
+    "verify": "complete",
+    "release": "pending",
+    "archive": "pending"
+  },
+  "tier_required": "T2",
+  "tiers_run": ["T0", "T1", "T2", "T3"],
+  "tier_results": {
+    "T0": {
+      "fmt_check": "passed",
+      "clippy_check": "passed",
+      "scope": "workspace"
+    },
+    "T1": {
+      "test_command": "cargo test -p chronos-store --lib --no-fail-fast",
+      "passed": 77,
+      "failed": 0,
+      "ignored": 0,
+      "baseline_pre_refactor": {"passed": 77, "failed": 0},
+      "regression_check": "matched (77 / 77)"
+    },
+    "T2": {
+      "test_command": "cargo test -p chronos-services --lib --no-fail-fast",
+      "passed": 264,
+      "failed": 0,
+      "ignored": 0
+    },
+    "T3": {
+      "test_command": "cargo test -p chronos-cli --no-fail-fast",
+      "lib_passed": 11,
+      "integration_passed": 22,
+      "replay_integration_passed": 2,
+      "total_passed": 35,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  "carry_forward_findings_closed": [],
+  "carry_forward_findings_introduced": [],
+  "cc_delta": {
+    "added": [],
+    "modified": [],
+    "removed": [],
+    "touched": ["CC#4", "CC#28", "CC#33", "CC#34", "CC#39"]
+  },
+  "findings": [
+    {
+      "id": "FIND-M9-85-IMPL-SPLIT-3SUBMODULES",
+      "title": "impl SessionStore block split into 3 submodules (cc-001-god-module second slice)",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "crates/chronos-store/src/ce_write.rs (new, 148 lines): save_counterexample_bundle + save_bundle_record_and_events",
+        "crates/chronos-store/src/ce_read.rs (new, 276 lines): load/count/list methods",
+        "crates/chronos-store/src/ce_test_hooks.rs (new, 99 lines): insert_v2_chunk_for_test + count_v3_chunks_for_test + insert_bundle_record_for_test",
+        "crates/chronos-store/src/counterexample_storage.rs (2720 -> 2287 lines, -433)"
+      ]
+    },
+    {
+      "id": "FIND-M9-85-NO-PUB-USE-METHODS",
+      "title": "Rust method-vs-module-level: pub use re-export of inherent methods fails with E0432",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "Initial attempt used `pub use ce_write::{save_counterexample_bundle, ...}` in parent module — failed with E0432 \"no save_counterexample_bundle in counterexample_storage::ce_write\" because methods inside `impl SessionStore` blocks are not module-level items.",
+        "Fix: drop the `pub use` lines. Methods are still callable via `<SessionStore>::method_name` or `instance.method_name()` regardless of which file the impl block lives in.",
+        "Verified all real callers use `.method_name(...)` form via grep across crates/ — zero path-qualified `counterexample_storage::method_name(...)` call sites exist in the workspace."
+      ]
+    }
+  ],
+  "commits": [
+    {
+      "sha": "158f5b1",
+      "subject": "m9-85: extract ce_write/ce_read/ce_test_hooks impl SessionStore blocks from counterexample_storage.rs",
+      "files_changed": [
+        "crates/chronos-store/src/ce_write.rs",
+        "crates/chronos-store/src/ce_read.rs",
+        "crates/chronos-store/src/ce_test_hooks.rs",
+        "crates/chronos-store/src/counterexample_storage.rs"
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "phase": "T0",
+      "summary": "vault files prepared: exploration-report + proposal + spec + tasks added, cycles/index.md row to be added at release commit"
+    },
+    {
+      "phase": "T1",
+      "summary": "baseline 77/0 captured for chronos-store lib"
+    },
+    {
+      "phase": "T2",
+      "summary": "ce_write.rs (148 lines), ce_read.rs (276 lines), ce_test_hooks.rs (99 lines) created; counterexample_storage.rs trimmed from 2720 to 2287 (-433 lines); submodules declared via #[path] + pub mod (no pub use — inherent methods are type-level, not module-level)"
+    },
+    {
+      "phase": "T3",
+      "summary": "cargo test -p chronos-store: 77/77 (matched baseline); cargo test -p chronos-services: 264/264; cargo test -p chronos-cli: 35/35 (lib 11 + replay_integration 22 + other 2); cargo clippy --workspace: clean; cargo fmt: clean; cargo test -p chronos-native --lib --test-threads=1: 103/103"
+    },
+    {
+      "phase": "smoke_subset",
+      "summary": "n/a: no probe/mcp touched; behaviour-preserving lexical refactor of inherent methods only; round-trip verified via replay_integration save→load and chronos-store lib tests"
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+[
+  {
+    "id": "FIND-M9-85-IMPL-SPLIT-3SUBMODULES",
+    "title": "impl SessionStore block split into 3 submodules (cc-001-god-module second slice)",
+    "severity": "info",
+    "status": "closed",
+    "evidence": [
+      "crates/chronos-store/src/ce_write.rs (new, 148 lines): save_counterexample_bundle + save_bundle_record_and_events",
+      "crates/chronos-store/src/ce_read.rs (new, 276 lines): load/count/list methods",
+      "crates/chronos-store/src/ce_test_hooks.rs (new, 99 lines): insert_v2_chunk_for_test + count_v3_chunks_for_test + insert_bundle_record_for_test",
+      "crates/chronos-store/src/counterexample_storage.rs (2720 -> 2287 lines, -433 net)"
+    ],
+    "verification": {
+      "tier1": "77/77",
+      "tier2": "264/264",
+      "tier3": "35/35",
+      "tier4_chronos_native_serial": "103/103",
+      "clippy": "clean",
+      "fmt": "clean"
+    }
+  },
+  {
+    "id": "FIND-M9-85-NO-PUB-USE-METHODS",
+    "title": "Rust method-vs-module-level: pub use re-export of inherent methods fails with E0432",
+    "severity": "info",
+    "status": "closed",
+    "evidence": [
+      "Initial attempt used `pub use ce_write::{save_counterexample_bundle, ...}` in parent module — failed with E0432 \"no save_counterexample_bundle in counterexample_storage::ce_write\" because methods inside `impl SessionStore` blocks are not module-level items.",
+      "Fix: drop the `pub use` lines. Methods are still callable via `<SessionStore>::method_name` or `instance.method_name()` regardless of which file the impl block lives in.",
+      "Verified all real callers use `.method_name(...)` form via grep across crates/ — zero path-qualified `counterexample_storage::method_name(...)` call sites exist in the workspace."
+    ],
+    "verification": {
+      "build": "succeeds after dropping pub use lines",
+      "tests": "all 4 tiers pass",
+      "clippy": "clean"
+    }
+  }
+]
