@@ -4,10 +4,44 @@
 
 cycle-artifacts/p-3416cfb8288f8964/m9-85-cc001-god-module-impl-split/verify-report.md
 
+## Summary
+
+Path: A-min (cross-crate refactor with bounded scope, single-crate
+source change but with several downstream consumers).
+
+Extracted the 11-method `impl SessionStore { ... }` block from
+`crates/chronos-store/src/counterexample_storage.rs` (lines 448-909
+pre-refactor, ~462 lines) into 3 sibling submodules grouped by concern:
+
+- `ce_write.rs` — write-path methods.
+- `ce_read.rs` — read-path methods.
+- `ce_test_hooks.rs` — m9-05 R4 test chokepoints.
+
+This is the second slice of the multi-cycle `cc-001-god-module` debt
+finding (P2, MEDIUM, m9-04).
+
+Behaviour preservation verified: `cargo test -p chronos-store --lib`
+returned 77/77, `cargo test -p chronos-services --lib` returned 264/264,
+and `cargo test -p chronos-cli` returned 35/35 (including the
+replay_integration round-trip). Downstream crates compile and pass
+without source modification.
+
+counterexample_storage.rs: 2720 → 2287 lines (-433 net).
+
+## Subject
+
+- **Cycle**: m9-85-cc001-god-module-impl-split
+- **Path**: A-min (cross-crate refactor with bounded scope)
+- **Branch**: feat/m9-85-cc001-god-module-impl-split
+- **Base SHA**: 2c2a5cc8f8370eb64dca7fb4ddc47a6f3e8b15a7
+- **Head SHA**: a85034603031f2dd1dc340d78d84f71f140672e0
+- **Remote tag**: v0.7.87
+- **Date**: 2026-09-14
+
 ## Verification command chain
 
 Executed in cycle branch `feat/m9-85-cc001-god-module-impl-split`
-at HEAD `158f5b1bdc4a8d33c2b34ef33b66ab8b3cf8a0bf` (base
+at HEAD `a85034603031f2dd1dc340d78d84f71f140672e0` (base
 `2c2a5cc8f8370eb64dca7fb4ddc47a6f3e8b15a7`).
 
 ## Tier 0 — lint gate
@@ -74,10 +108,35 @@ threads; the serial run is clean.
 
 ## Findings
 
-| ID | Severity | Status | Summary |
+| ID | Title | Severity | Status |
 |---|---|---|---|
-| FIND-M9-85-IMPL-SPLIT-3SUBMODULES | info | closed | 11-method `impl SessionStore` split into 3 sibling submodules. counterexample_storage.rs 2720 → 2287 (-433). |
-| FIND-M9-85-NO-PUB-USE-METHODS | info | closed | `pub use` of inherent methods fails E0432 — methods are type-level, not module-level. Dropped the `pub use` lines; methods remain callable via `instance.method_name(...)`. |
+| F1 | impl SessionStore block split into 3 sibling submodules (ce_write / ce_read / ce_test_hooks) | info | CLOSED |
+| F2 | Behaviour preservation: 77/77 chronos-store + 264/264 chronos-services + 35/35 chronos-cli matched pre/post refactor | info | CLOSED |
+| F3 | cargo clippy --workspace clean + cargo fmt --check clean | info | CLOSED |
+| F4 | Round-trip verified via chronos-cli/tests/replay_integration (save → load → list → test hooks) | info | CLOSED |
+| F5 | `pub use` re-export of inherent methods does NOT work (E0432); methods are type-level, not module-level | info | CLOSED |
+| F6 | chronos-native ptrace serial run: 103/103 (per AGENTS.md §6.5) | info | CLOSED |
+
+## Cross-checks
+
+- **REQ-M9-85-01** (three submodules created): PASS — `cargo build -p chronos-store` exits 0 with no warnings.
+- **REQ-M9-85-02** (public surface preserved): PASS — all 10 `pub` methods remain reachable via `<SessionStore>::method_name` or `instance.method_name(...)`. Verified zero path-qualified `counterexample_storage::method_name(...)` callers in workspace via grep.
+- **REQ-M9-85-03** (behaviour preservation): PASS — 77/77 chronos-store lib + 264/264 chronos-services + 35/35 chronos-cli matched baseline.
+- **REQ-M9-85-04** (clippy clean): PASS — `cargo clippy --workspace --all-targets -- -D warnings` exits 0.
+- **REQ-M9-85-05** (downstream compilation): PASS — `cargo build --workspace` exits 0 with no warnings.
+- **REQ-M9-85-06** (net file size reduction): PASS — counterexample_storage.rs 2720 → 2287 (-433 net, -433 from moved impl block).
+
+## Files Inventory
+
+- `crates/chronos-store/src/ce_write.rs` — NEW (148 lines). Contains `impl SessionStore` with 2 write-path methods (`save_counterexample_bundle` + `save_bundle_record_and_events`).
+- `crates/chronos-store/src/ce_read.rs` — NEW (276 lines). Contains `impl SessionStore` with 5 read-path methods (`load_counterexample_bundle`, `load_counterexample_bundle_events`, `count_counterexample_bundle_events`, `get_bundle_events_count`, `list_counterexample_bundles`).
+- `crates/chronos-store/src/ce_test_hooks.rs` — NEW (99 lines). Contains `impl SessionStore` with 3 `#[doc(hidden)] pub fn` test chokepoints (`insert_v2_chunk_for_test`, `count_v3_chunks_for_test`, `insert_bundle_record_for_test`).
+- `crates/chronos-store/src/counterexample_storage.rs` — modified (2720 → 2287 lines, -433). Removed the 11-method `impl SessionStore` block, added 3 submodule declarations via `#[path] + pub mod`.
+- `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` — m9-85 row added (Total cycles 85).
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-85-cc001-god-module-impl-split/` — vault files (exploration-report, proposal, spec, tasks).
+- `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-85-cc001-god-module-impl-split/archive-manifest.md` — archive manifest (added during archive phase).
+- `cycle-artifacts/p-3416cfb8288f8964/m9-85-cc001-god-module-impl-split/` — 7 cycle artifacts (apply-checkpoint.json, implementation-receipt.md, merge-receipt.md, release-receipt.md, release-report.md, verify-findings.json, verify-report.md).
+- Tag `v0.7.87` created at the cycle-artifacts commit `a85034603031f2dd1dc340d78d84f71f140672e0`.
 
 ## Public surface
 

@@ -106,7 +106,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-82 | m9-82-degraded-store-disclosure | A-min | `v0.7.84` | `b8694eff737293bffea4ba62f07e4b206eafc502` | CLOSED |
 | m9-83 | m9-83-cc39-total-cycles | B-direct | `v0.7.85` | `4214fbfe53b912bc6c5a1e9ea0de46931db1c833` | CLOSED |
 | m9-84 | m9-84-cc001-god-module-keys-split | A-lite | `v0.7.86` | `6bd7f02f69c75b1839ed8796af0b644c7d4eb4b0` | CLOSED |
-| m9-85 | m9-85-cc001-god-module-impl-split | A-min | `v0.7.87` | `a850346cc3f74e07fbc19f6a95b0ff5be1d2f99e` | CLOSED |
+| m9-85 | m9-85-cc001-god-module-impl-split | A-min | `v0.7.87` | `a85034603031f2dd1dc340d78d84f71f140672e0` | CLOSED |
 
 ## Metadata
 

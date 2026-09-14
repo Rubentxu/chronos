@@ -16,11 +16,11 @@
 | Base SHA | 2c2a5cc8f8370eb64dca7fb4ddc47a6f3e8b15a7 |
 | Cycle HEAD (pre-merge) | 158f5b1bdc4a8d33c2b34ef33b66ab8b3cf8a0bf |
 | Merge commit | 72e120c |
-| Cycle-artifacts commit | a850346cc3f74e07fbc19f6a95b0ff5be1d2f99e |
-| Main SHA (post-cycle-artifacts, tag-peel) | a850346cc3f74e07fbc19f6a95b0ff5be1d2f99e |
+| Cycle-artifacts commit | a85034603031f2dd1dc340d78d84f71f140672e0 |
+| Main SHA (post-cycle-artifacts, tag-peel) | a85034603031f2dd1dc340d78d84f71f140672e0 |
 | Final fixpoint HEAD (after SHA cascade) | 80836a8 |
 | Remote tag | v0.7.87 |
-| Remote tag_peel | a850346cc3f74e07fbc19f6a95b0ff5be1d2f99e |
+| Remote tag_peel | a85034603031f2dd1dc340d78d84f71f140672e0 |
 | Peel match | clean peel: v0.7.87 points at the cycle-artifacts commit a850346 (one commit before the SHA-cascade fixpoint) |
 
 ## Release notes
