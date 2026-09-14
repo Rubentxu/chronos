@@ -11,18 +11,18 @@
   "branch": "feat/m9-81-counterexample-table-classifier",
   "path": "B-direct",
   "route": "B-direct",
-  "status": "open",
+  "status": "archived",
   "verify_status": "passed",
   "release_status": "released",
-  "archive_status": "pending",
+  "archive_status": "complete",
   "phases": {
     "explore": "complete",
     "spec": "complete",
     "tasks": "complete",
     "apply": "complete",
     "verify": "complete",
-    "release": "pending",
-    "archive": "pending"
+    "release": "complete",
+    "archive": "complete"
   },
   "tier_required": "T1",
   "tiers_run": ["T0", "T1"],

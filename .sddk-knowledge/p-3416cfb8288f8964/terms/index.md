@@ -49,9 +49,7 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 
 ### Findings deferred from m9-72
 
-| ID | Cycle | Título | Owner | Destino |
-|---|---|---|---|---|
-| FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION | m9-72 | `counterexample_storage.rs` keeps four hand-rolled copies of the read-path `TableDoesNotExist` / else-propagate policy that `chronos-store::table_error` now names | unassigned | m9+ |
+(none — FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION closed by m9-81)
 
 ### Findings deferred from m9-74
 
@@ -78,6 +76,12 @@ None — m9-77 wired `session_start{action=attach}`, m9-78 made `session_stop` s
 ### Findings deferred from m9-80
 
 None — m9-80 closed the property-policy ownership refactor (layered split, spec rev 2): domain owns the four `eval_*` / `observe_property_target` primitives; services wraps via 6 new `From` impls. No wire/protocol change. 552 tests pass across all tiers. No new tests introduced.
+
+### Findings closed in m9-81
+
+| ID | Cycle | Título | Notes |
+|---|---|---|---|
+| FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION | m9-72 | `counterexample_storage.rs` keeps four hand-rolled copies of the read-path `TableDoesNotExist` / else-propagate policy that `chronos-store::table_error` now names | Closed by m9-81 — 6 sites refactored to use `chronos_store::table_error::classify_read_table_error().or_not_found(...)` |
 
 ## Terminated terms
 
@@ -116,5 +120,5 @@ None — m9-80 closed the property-policy ownership refactor (layered split, spe
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-14T09:19Z |
-| Last archive | m9-80-property-policy-ownership |
+| Last updated | 2026-09-14T09:29Z |
+| Last archive | m9-81-counterexample-table-classifier |
