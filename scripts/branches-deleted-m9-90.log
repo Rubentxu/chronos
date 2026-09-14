@@ -1,0 +1,15 @@
+# m9-90 stale-branches cleanup log started 2026-09-14T15:55:45.894915+00:00 from branch 'chore/m9-90-stale-branches-cleanup'
+
+# m9-90 stale-branches cleanup log started 2026-09-14T15:55:45.894915+00:00 from branch 'chore/m9-90-stale-branches-cleanup'
+
+[OK] 2026-09-14T15:55:46.118130+00:00 local feat/m9-67-cc-smoke-test @ ef21e1f deleted
+[OK] 2026-09-14T15:55:46.138940+00:00 local feat/m9-68-verify-report-files-inventory-backfill @ d4328cf deleted
+[OK] 2026-09-14T15:55:46.163245+00:00 local feat/m9-69-bounded-join-unit-test @ 57c4a10 deleted
+[OK] 2026-09-14T15:55:46.184237+00:00 local feat/m9-70-mcp-store-isolation @ 54e859f deleted
+[OK] 2026-09-14T15:55:46.204568+00:00 local feat/m9-77-attach-runtime @ 4bd2da3 deleted
+[OK] 2026-09-14T15:55:46.227338+00:00 local feat/m9-78-attach-detach @ a2c70fe deleted
+[OK] 2026-09-14T15:55:46.248522+00:00 remote origin/feat/m9-67-cc-smoke-test @ ef21e1f deleted via push origin :feat/m9-67-cc-smoke-test
+[OK] 2026-09-14T15:55:48.590555+00:00 remote origin/feat/m9-68-verify-report-files-inventory-backfill @ d4328cf deleted via push origin :feat/m9-68-verify-report-files-inventory-backfill
+[OK] 2026-09-14T15:55:51.002661+00:00 remote origin/feat/m9-70-mcp-store-isolation @ 54e859f deleted via push origin :feat/m9-70-mcp-store-isolation
+
+# Summary: 6 local + 3 remote deleted. 0 branches preserved.
