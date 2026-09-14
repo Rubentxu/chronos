@@ -14,10 +14,10 @@
 | Field | Value |
 |---|---|
 | Base SHA | 5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d |
-| Head SHA | e480508c372893ae3e4a9301e708b23c61a312ae |
-| Main SHA | e480508c372893ae3e4a9301e708b23c61a312ae |
+| Head SHA | 6900395d088ff89e7ee67c3260a244b3d864e4e2 |
+| Main SHA | 6900395d088ff89e7ee67c3260a244b3d864e4e2 |
 | Remote tag | v0.7.94 |
-| Remote tag_peel | e480508c372893ae3e4a9301e708b23c61a312ae |
+| Remote tag_peel | 6900395d088ff89e7ee67c3260a244b3d864e4e2 |
 | Peel match | true |
 
 ## SHAs (canonical table)
@@ -27,9 +27,9 @@
 | Branch | chore/m9-92-cc34-cc42-cleanup |
 | Date | 2026-09-14 |
 | Base SHA | 5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d |
-| Head SHA | e480508c372893ae3e4a9301e708b23c61a312ae |
+| Head SHA | 6900395d088ff89e7ee67c3260a244b3d864e4e2 |
 | Remote tag | v0.7.94 |
-| Remote tag_peel | e480508c372893ae3e4a9301e708b23c61a312ae |
+| Remote tag_peel | 6900395d088ff89e7ee67c3260a244b3d864e4e2 |
 | Peel match | true |
 
 ## Release notes
@@ -49,4 +49,4 @@
 - `python3 scripts/regen_manifest_index_shas.py --check`: clean (no stale rows).
 - `cargo fmt --all -- --check`: not required (no Rust touched).
 - `apply-checkpoint.peel_match == true`.
-- `apply-checkpoint.head_sha == release-receipt.Head SHA == merge-receipt.Head SHA == e480508c372893ae3e4a9301e708b23c61a312ae`.
+- `apply-checkpoint.head_sha == release-receipt.Head SHA == merge-receipt.Head SHA == 6900395d088ff89e7ee67c3260a244b3d864e4e2`.

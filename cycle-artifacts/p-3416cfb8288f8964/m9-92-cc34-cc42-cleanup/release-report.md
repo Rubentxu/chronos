@@ -3,8 +3,8 @@
 > **Cycle**: m9-92-cc34-cc42-cleanup
 > **Path**: B-direct (vault-only hardening)
 > **Tag**: v0.7.94
-> **Tag peel (immutable)**: `e480508c372893ae3e4a9301e708b23c61a312ae` (post-cascade HEAD)
-> **Merge SHA (cycle-artifacts)**: e480508c372893ae3e4a9301e708b23c61a312ae
+> **Tag peel (immutable)**: `6900395d088ff89e7ee67c3260a244b3d864e4e2` (post-cascade HEAD)
+> **Merge SHA (cycle-artifacts)**: 6900395d088ff89e7ee67c3260a244b3d864e4e2
 > **Date archived**: 2026-09-14
 > **Status**: released
 
@@ -76,11 +76,11 @@ was merged into `main` with `--no-ff` and deleted after release.
 
 - `apply-checkpoint.head_sha` (re-anchored to cycle-artifacts) ==
   `release-receipt.Head SHA` ==
-  `merge-receipt.Head SHA` == `e480508c372893ae3e4a9301e708b23c61a312ae`.
-- `Remote tag` v0.7.94 peel: `e480508c372893ae3e4a9301e708b23c61a312ae` (post-cascade
+  `merge-receipt.Head SHA` == `6900395d088ff89e7ee67c3260a244b3d864e4e2`.
+- `Remote tag` v0.7.94 peel: `6900395d088ff89e7ee67c3260a244b3d864e4e2` (post-cascade
   HEAD; moved through merge + cascade commits per CC#42 workaround).
 - `apply-checkpoint.peel_match` == `true`.
-- `apply-checkpoint.main_sha` == `apply-checkpoint.head_sha` == `e480508c372893ae3e4a9301e708b23c61a312ae`.
+- `apply-checkpoint.main_sha` == `apply-checkpoint.head_sha` == `6900395d088ff89e7ee67c3260a244b3d864e4e2`.
 - `apply-checkpoint.status` == `"CLOSED"`.
 - `apply-checkpoint.archive_status` == `"complete"`.
 - `cycles/index.md` row added; Total cycles 91 → 92.

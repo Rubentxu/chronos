@@ -13,10 +13,10 @@
 | Field | Value |
 |---|---|
 | Merge type | --no-ff merge into main |
-| Merge commit | e480508c372893ae3e4a9301e708b23c61a312ae |
+| Merge commit | 6900395d088ff89e7ee67c3260a244b3d864e4e2 |
 | Base SHA | 5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d |
-| Head SHA | e480508c372893ae3e4a9301e708b23c61a312ae |
-| Main SHA post-merge | e480508c372893ae3e4a9301e708b23c61a312ae |
+| Head SHA | 6900395d088ff89e7ee67c3260a244b3d864e4e2 |
+| Main SHA post-merge | 6900395d088ff89e7ee67c3260a244b3d864e4e2 |
 
 ## SHAs
 
@@ -25,7 +25,7 @@
 | Branch | chore/m9-92-cc34-cc42-cleanup |
 | Date | 2026-09-14 |
 | Base SHA | 5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d |
-| Head SHA | e480508c372893ae3e4a9301e708b23c61a312ae |
+| Head SHA | 6900395d088ff89e7ee67c3260a244b3d864e4e2 |
 
 ## Notes
 
