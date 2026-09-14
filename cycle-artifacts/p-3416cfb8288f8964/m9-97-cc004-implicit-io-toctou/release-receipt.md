@@ -17,3 +17,4 @@
 `v0.7.99` is pre-created at the cycle-artifact commit under the repository's
 CC#42 fixpoint policy. m9-97 ships no net Rust change and terminates cc-004 as
 falsified by redb's single-writer model.
+| Peel match | true |

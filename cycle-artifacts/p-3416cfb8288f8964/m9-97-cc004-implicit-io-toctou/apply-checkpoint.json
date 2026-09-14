@@ -39,11 +39,12 @@
     "experimental_source_commit": "06fa3a8ebca110671c28af0fa62b050f66d7bae6",
     "revert_commit": "9d2b9f27fffbef8961edb5e9c19af31fbd796e66"
   },
-  "main_sha": "21b2fd127cbda6a1d912c04281935bb5f2d0fdb5",
+  "main_sha": "ddf059193287447dd866ea8818aafcceac660f70",
   "remote_tag": "v0.7.99",
   "remote_tag_peel": "ddf059193287447dd866ea8818aafcceac660f70",
   "tag_peel_sha": "ddf059193287447dd866ea8818aafcceac660f70",
   "peel_match": true,
   "ff_merged": false,
-  "archived_at": "2026-09-14"
+  "archived_at": "2026-09-14",
+  "created_at": "2026-09-14"
 }

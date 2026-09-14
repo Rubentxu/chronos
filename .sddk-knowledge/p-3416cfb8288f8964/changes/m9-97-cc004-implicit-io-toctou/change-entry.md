@@ -2,14 +2,12 @@
 
 ## Subject
 
-| Field | Value |
-|---|---|
-| Cycle | m9-97-cc004-implicit-io-toctou |
-| Path | A-min, reclassified to evidence-backed vault-only closure |
-| Branch | `chore/m9-97-cc004-implicit-io-toctou` |
-| Base SHA | `5600873d05e0ab79f17eed6eec63df96ddd97c88` |
-| Tag | `v0.7.99` |
-| Status | completed |
+- **Cycle**: m9-97-cc004-implicit-io-toctou
+- **Path**: A-min, reclassified to evidence-backed vault-only closure
+- **Branch**: `chore/m9-97-cc004-implicit-io-toctou`
+- **Base SHA**: `5600873d05e0ab79f17eed6eec63df96ddd97c88`
+- **Tag**: `v0.7.99`
+- **Status**: completed
 
 ## Result
 

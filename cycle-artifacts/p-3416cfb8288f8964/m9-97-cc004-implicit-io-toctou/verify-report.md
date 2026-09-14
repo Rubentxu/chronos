@@ -39,3 +39,9 @@ commit during the alleged TOCTOU interval.
 
 No behavior change is released. cc-004 is conclusively rejected under the
 pinned redb transaction model.
+## Cross-checks
+
+- `cargo fmt --all -- --check`: passed.
+- `cargo clippy --workspace --all-targets -- -D warnings`: passed.
+- `cargo test --workspace --lib -- --test-threads=1`: passed.
+- redb 2.6.3 writer serialization evidence verified.

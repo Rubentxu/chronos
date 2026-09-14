@@ -1,5 +1,7 @@
 # Release Report — m9-97-cc004-implicit-io-toctou
 
+> **Path**: A-min, evidence-backed vault-only closure
+
 ## Summary
 
 m9-97 closes the final m9-04 debt item without an unnecessary refactor. redb
