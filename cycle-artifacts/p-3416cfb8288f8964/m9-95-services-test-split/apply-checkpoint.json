@@ -1,0 +1,76 @@
+{
+  "head_sha": "eb96861b17711f7d525cedacccc17905bc17e6e0",
+  "archived_at": "2026-09-14",
+  "peel_match": true,
+  "base_sha": "72bff2808457a4ead6f4caec233dc404a20c35d8",
+  "main_sha": "eb96861b17711f7d525cedacccc17905bc17e6e0",
+  "remote_tag": "v0.7.97",
+  "remote_tag_peel": "eb96861b17711f7d525cedacccc17905bc17e6e0",
+  "tag_peel_sha": "eb96861b17711f7d525cedacccc17905bc17e6e0",
+  "tag_peel_note": "non-standard: tag pre-created at source commit SHA; will move through SHA-cascade fixpoint commits per CC#42 workaround. m9-95 is a B-direct cycle (mechanical refactor only), so no separate cycle-artifacts commit is needed; the tag points at the source commit which is also the cycle-artifacts commit.",
+  "ff_merged": false,
+  "cycle_id": "m9-95-services-test-split",
+  "cycle_record": "p-3416cfb8288f8964/m9-95-services-test-split",
+  "branch": "chore/m9-95-services-test-split",
+  "route": "B-direct",
+  "status": "CLOSED",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "complete",
+  "phases": {
+    "apply": "complete",
+    "verify": "complete",
+    "release": "complete",
+    "archive": "complete"
+  },
+  "tier_required": "T1",
+  "tiers_run": ["T0", "T1", "T2"],
+  "tier_results": {
+    "T0": {
+      "fmt_check": "passed",
+      "clippy_check": "passed",
+      "scope": "workspace"
+    },
+    "T1": {
+      "test_command": "cargo test -p chronos-services --lib --no-fail-fast",
+      "all_passed": true,
+      "test_count": 268,
+      "regression_check": "no regressions; same count as m9-94 baseline"
+    },
+    "T2": {
+      "test_command": "cargo test --workspace --lib --no-fail-fast -- --test-threads=1",
+      "workspace_total": 1042,
+      "regression_check": "no regressions vs m9-94 baseline (also 1042)"
+    }
+  },
+  "created_at": "2026-09-14",
+  "title": "m9-95: services counterexample test-split (extract counterexample.rs tests to sibling)",
+  "summary": "B-direct mechanical refactor. Extracts the 2169-line inline `mod tests { ... }` block from `crates/chronos-services/src/counterexample.rs` (cc-001-god-module, services side; storage side closed by m9-94) into a sibling file `crates/chronos-services/src/ce_services_tests.rs` using the `#[path = \"...\"` submodule pattern established by m9-94. After m9-95: counterexample.rs shrinks from 3955 -> 1794 lines (production code only); ce_services_tests.rs holds the 45 test functions + 4 test helpers. No public API change. No behavior change. All 268 chronos-services lib tests pass; workspace-wide 1042 lib tests pass (matches m9-94 baseline).",
+  "findings_closed": ["FIND-M9-94-SERVICES-COUNTEREXAMPLE-TESTS-MONOLITHIC"],
+  "findings_introduced": {
+    "no_action": [],
+    "followup": [],
+    "external_deferred": [
+      {
+        "id": "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK",
+        "reason": "external sddk CLI bug; not actionable in chronos scope (carried from m9-88)"
+      }
+    ]
+  },
+  "files_changed": [
+    "crates/chronos-services/src/ce_services_tests.rs: NEW (2181 lines; verbatim copy of inline test block + 14-line doc comment header)",
+    "crates/chronos-services/src/counterexample.rs: replaced 2169-line inline `mod tests { ... }` block (lines 1786-3955) with 11-line `#[cfg(test)] #[path = \"ce_services_tests.rs\"] mod tests;` declaration"
+  ],
+  "shas": {
+    "source_commit": "eb96861b17711f7d525cedacccc17905bc17e6e0",
+    "cycle_artifacts_commit": "eb96861b17711f7d525cedacccc17905bc17e6e0"
+  },
+  "carry_forward_findings": [
+    "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK"
+  ],
+  "out_of_scope": [
+    "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK",
+    "cc-001-god-module production code split for counterexample.rs (1785 lines; well-organized into named sections; not needed at this time)",
+    "cc-004-implicit-io-toctou (deferred m10+)"
+  ]
+}
