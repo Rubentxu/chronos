@@ -1,0 +1,36 @@
+{
+  "subject": {
+    "head_sha": "be87e3711534d72b7f6f1534d4a6a74fe463cc4f",
+    "base_sha": "9078ec3136faf07704ff4845d29a901348744988",
+    "cycle_id": "m10-ms-evt-typed",
+    "branch": "feat/m10-ms-evt-typed",
+    "route": "B-direct"
+  },
+  "tier": "T0+T2+T4-smoke",
+  "checks": {
+    "t0": {
+      "status": "passed",
+      "command": "cargo fmt --all -- --check && cargo clippy -p chronos-mcp -p chronos-domain --all-targets -- -D warnings"
+    },
+    "t2": {
+      "status": "passed",
+      "result": "chronos-mcp lib 88 ok, chronos-domain lib 153 ok"
+    },
+    "round_trip_21_variants": {
+      "status": "passed",
+      "evidence": "test_event_type_from_snake_case_round_trip covers all 21 variants via Display -> from_snake_case"
+    },
+    "adr_acceptance_no_parser": {
+      "status": "passed",
+      "command": "grep -c parse_event_type crates/chronos-mcp/src/server.rs",
+      "result": "0"
+    },
+    "t4_smoke": {
+      "status": "passed",
+      "command": "cargo test -p chronos-sandbox --test e2e_connectivity --test analytics_tools -- --test-threads=1",
+      "result": "1/1 + 4/4"
+    }
+  },
+  "verdict": "PASS",
+  "findings": []
+}

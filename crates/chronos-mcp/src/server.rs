@@ -162,7 +162,8 @@ fn default_true() -> bool {
 pub struct QueryEventsParams {
     /// Session ID to query.
     pub session_id: String,
-    /// Filter by event types (e.g., "function_entry", "syscall_enter").
+    /// Filter by event types (v1 string-typed shim; validated against all 21
+    /// `EventType` variants via `EventType::from_snake_case`).
     pub event_types: Option<Vec<String>>,
     /// Filter by thread ID.
     pub thread_id: Option<u64>,
@@ -202,9 +203,11 @@ pub struct EventsReadParams {
     /// Event ID (required when mode=by_id).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub event_id: Option<u64>,
-    /// Filter by event types (mode=query only; e.g. "function_entry").
+    /// Filter by event types (mode=query only; typed snake_case enum, e.g.
+    /// "function_entry"). Unknown names are rejected at JSON-RPC parse time
+    /// with a typed schema error (MS-EVT-TYPED / ADR-0003).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub event_types: Option<Vec<String>>,
+    pub event_types: Option<Vec<EventType>>,
     /// Filter by thread ID (mode=query only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thread_id: Option<u64>,
@@ -879,7 +882,7 @@ impl TripwireConditionType {
             TripwireConditionType::EventType { event_types } => {
                 let mut types = Vec::with_capacity(event_types.len());
                 for s in &event_types {
-                    match ChronosServer::parse_event_type(s) {
+                    match EventType::from_snake_case(s) {
                         Some(t) => types.push(t),
                         None => return Err(s.clone()),
                     }
@@ -1543,23 +1546,6 @@ impl ChronosServer {
             .insert(session_id.to_string(), engine);
     }
 
-    fn parse_event_type(name: &str) -> Option<EventType> {
-        match name {
-            "syscall_enter" => Some(EventType::SyscallEnter),
-            "syscall_exit" => Some(EventType::SyscallExit),
-            "function_entry" => Some(EventType::FunctionEntry),
-            "function_exit" => Some(EventType::FunctionExit),
-            "variable_write" => Some(EventType::VariableWrite),
-            "memory_write" => Some(EventType::MemoryWrite),
-            "signal_delivered" => Some(EventType::SignalDelivered),
-            "breakpoint_hit" => Some(EventType::BreakpointHit),
-            "thread_create" => Some(EventType::ThreadCreate),
-            "thread_exit" => Some(EventType::ThreadExit),
-            "exception_thrown" => Some(EventType::ExceptionThrown),
-            _ => None,
-        }
-    }
-
     /// Remove all in-memory state for a session: query engine, language tag,
     /// and connected-session marker.
     async fn cleanup_session_memory(&self, session_id: &str) {
@@ -1882,7 +1868,7 @@ impl ChronosServer {
         if let Some(ref types) = params.event_types {
             let mut parsed: Vec<EventType> = Vec::with_capacity(types.len());
             for t in types {
-                match Self::parse_event_type(t) {
+                match EventType::from_snake_case(t) {
                     Some(et) => parsed.push(et),
                     None => {
                         return Ok(CallToolResult::error(text_content(format!(
@@ -5186,25 +5172,11 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        // Parse event_type strings (mode=query only).
-        let mut event_types: Option<Vec<EventType>> = None;
-        if let Some(ref types) = params.event_types {
-            if !types.is_empty() {
-                let mut parsed: Vec<EventType> = Vec::with_capacity(types.len());
-                for t in types {
-                    match Self::parse_event_type(t) {
-                        Some(et) => parsed.push(et),
-                        None => {
-                            return Ok(CallToolResult::error(text_content(format!(
-                                "events_read: unknown event_type '{}'. Valid types: syscall_enter, syscall_exit, function_entry, function_exit, variable_write, memory_write, signal_delivered, breakpoint_hit, thread_create, thread_exit, exception_thrown.",
-                                t
-                            ))));
-                        }
-                    }
-                }
-                event_types = Some(parsed);
-            }
-        }
+        // MS-EVT-TYPED: `event_types` arrives as a typed `Vec<EventType>`;
+        // rmcp rejects unknown names at JSON-RPC parse time, so no string
+        // parsing remains on the v2 path.
+        let event_types: Option<Vec<EventType>> =
+            params.event_types.filter(|types| !types.is_empty());
 
         let ctx = EventsReadContext {
             engines: &self.engines,
@@ -5805,20 +5777,46 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_event_type() {
+    fn test_event_type_from_snake_case_round_trip() {
+        // MS-EVT-TYPED: single-owner mapping in chronos-domain; all 21
+        // variants round-trip Display -> from_snake_case -> identity.
+        let all = [
+            EventType::SyscallEnter,
+            EventType::SyscallExit,
+            EventType::FunctionEntry,
+            EventType::FunctionExit,
+            EventType::VariableWrite,
+            EventType::MemoryWrite,
+            EventType::SignalDelivered,
+            EventType::BreakpointHit,
+            EventType::ThreadCreate,
+            EventType::ThreadExit,
+            EventType::ExceptionThrown,
+            EventType::VariableRead,
+            EventType::MemoryAlloc,
+            EventType::MemoryFree,
+            EventType::MemoryRead,
+            EventType::ThreadSwitch,
+            EventType::WatchTrigger,
+            EventType::ExceptionCaught,
+            EventType::InvocationIncomplete,
+            EventType::Custom,
+            EventType::Unknown,
+        ];
         assert_eq!(
-            ChronosServer::parse_event_type("function_entry"),
-            Some(EventType::FunctionEntry)
+            all.len(),
+            21,
+            "EventType variant count changed; update this list"
         );
-        assert_eq!(
-            ChronosServer::parse_event_type("syscall_enter"),
-            Some(EventType::SyscallEnter)
-        );
-        assert_eq!(
-            ChronosServer::parse_event_type("signal_delivered"),
-            Some(EventType::SignalDelivered)
-        );
-        assert_eq!(ChronosServer::parse_event_type("unknown_type"), None);
+        for et in all {
+            let name = et.to_string();
+            assert_eq!(
+                EventType::from_snake_case(&name),
+                Some(et),
+                "round-trip failed for {name}"
+            );
+        }
+        assert_eq!(EventType::from_snake_case("unknown_type"), None);
     }
 
     #[test]

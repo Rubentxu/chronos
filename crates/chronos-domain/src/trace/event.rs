@@ -75,6 +75,38 @@ pub enum EventType {
 }
 
 impl EventType {
+    /// Parse the canonical snake_case name (same spelling as the serde
+    /// representation and `Display`) into an `EventType`. Single owner of
+    /// the string→enum mapping (MS-EVT-TYPED / ADR-0003): v1 shims that
+    /// keep string-typed wire params must delegate here instead of
+    /// maintaining a private 11-variant table.
+    pub fn from_snake_case(name: &str) -> Option<EventType> {
+        match name {
+            "syscall_enter" => Some(EventType::SyscallEnter),
+            "syscall_exit" => Some(EventType::SyscallExit),
+            "function_entry" => Some(EventType::FunctionEntry),
+            "function_exit" => Some(EventType::FunctionExit),
+            "variable_write" => Some(EventType::VariableWrite),
+            "memory_write" => Some(EventType::MemoryWrite),
+            "signal_delivered" => Some(EventType::SignalDelivered),
+            "breakpoint_hit" => Some(EventType::BreakpointHit),
+            "thread_create" => Some(EventType::ThreadCreate),
+            "thread_exit" => Some(EventType::ThreadExit),
+            "exception_thrown" => Some(EventType::ExceptionThrown),
+            "variable_read" => Some(EventType::VariableRead),
+            "memory_alloc" => Some(EventType::MemoryAlloc),
+            "memory_free" => Some(EventType::MemoryFree),
+            "memory_read" => Some(EventType::MemoryRead),
+            "thread_switch" => Some(EventType::ThreadSwitch),
+            "watch_trigger" => Some(EventType::WatchTrigger),
+            "exception_caught" => Some(EventType::ExceptionCaught),
+            "invocation_incomplete" => Some(EventType::InvocationIncomplete),
+            "custom" => Some(EventType::Custom),
+            "unknown" => Some(EventType::Unknown),
+            _ => None,
+        }
+    }
+
     /// Returns true if this is a syscall event.
     pub fn is_syscall(&self) -> bool {
         matches!(self, EventType::SyscallEnter | EventType::SyscallExit)
