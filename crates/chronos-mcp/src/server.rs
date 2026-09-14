@@ -141,6 +141,13 @@ pub struct ChronosServer {
     /// These are real-time WASM debugging sessions via Chrome CDP.
     /// Use `browser_probe_drain` to read events and `browser_probe_stop` to finalize.
     live_browser_probes: Arc<std::sync::Mutex<HashMap<String, BrowserProbeSession>>>,
+    /// Whether the underlying store is in-memory (degraded) instead of
+    /// file-backed (persistent). m9-82 closes FIND-M9-75 by exposing this
+    /// to tool callers via `is_degraded()` and through a top-level
+    /// `degraded` field in the session-persistence tool envelopes
+    /// (`save_session`, `list_sessions`, `load_session`, `delete_session`,
+    /// `drop_session`). Set once at construction; immutable thereafter.
+    degraded: bool,
 }
 
 // ============================================================================
@@ -1444,6 +1451,7 @@ impl ChronosServer {
 
     /// Build a server around an explicitly provided store.
     fn from_store(store: SessionStore) -> Self {
+        let degraded = !store.is_persistent();
         Self {
             engines: Arc::new(Mutex::new(HashMap::new())),
             session_languages: Arc::new(Mutex::new(HashMap::new())),
@@ -1455,7 +1463,21 @@ impl ChronosServer {
             uprobe_counter: Arc::new(std::sync::Mutex::new(HashMap::new())),
             live_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
             live_browser_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            degraded,
         }
+    }
+
+    /// Whether the server is operating in degraded (in-memory, ephemeral)
+    /// mode because the on-disk store could not be opened and the
+    /// `CHRONOS_ALLOW_IN_MEMORY_FALLBACK` opt-in fired.
+    ///
+    /// m9-82: when this is `true`, the session-persistence tool envelopes
+    /// (`save_session`, `list_sessions`, `load_session`, `delete_session`,
+    /// `drop_session`) include `"degraded": true` at the top level so MCP
+    /// callers can confirm the runtime is not persisting to disk.
+    /// Closes FIND-M9-75-MCP-TOOLS-DO-NOT-DISCLOSE-DEGRADED-STORE.
+    pub fn is_degraded(&self) -> bool {
+        self.degraded
     }
 
     /// Open the session store configured for this process.
@@ -1745,6 +1767,30 @@ fn json_content(value: &serde_json::Value) -> Vec<Content> {
     vec![Content::text(
         serde_json::to_string_pretty(value).unwrap_or_default(),
     )]
+}
+
+// m9-82: wrap a session-persistence tool envelope with a top-level
+// `degraded: <bool>` so MCP callers can tell whether the underlying
+// store is in-memory (degraded) or file-backed (persistent). Closes
+// FIND-M9-75-MCP-TOOLS-DO-NOT-DISCLOSE-DEGRADED-STORE. The existing
+// envelope is preserved unchanged; only one field is added.
+//
+// Used by `save_session`, `list_sessions`, `load_session`,
+// `delete_session`, `drop_session`.
+fn session_envelope(degraded: bool, value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(mut map) => {
+            map.insert("degraded".to_string(), serde_json::Value::Bool(degraded));
+            serde_json::Value::Object(map)
+        }
+        // Defensive: if a future caller hands us a non-object (e.g. an
+        // accidental bare array), wrap it so the top-level shape stays a
+        // JSON object — same wire contract.
+        other => serde_json::json!({
+            "result": other,
+            "degraded": degraded,
+        }),
+    }
 }
 
 fn text_content(text: impl Into<String>) -> Vec<Content> {
@@ -2829,7 +2875,10 @@ impl ChronosServer {
                     "duration_ms": result.duration_ms,
                     "hint": "Use load_session to reload this session, or list_sessions to see all saved sessions.",
                 });
-                Ok(CallToolResult::success(json_content(&output)))
+                Ok(CallToolResult::success(json_content(&session_envelope(
+                    self.degraded,
+                    output,
+                ))))
             }
             Err(ServiceError::SessionNotInMemory(s)) => {
                 Ok(CallToolResult::error(text_content(format!(
@@ -2879,7 +2928,10 @@ impl ChronosServer {
                     "created_at": result.created_at,
                     "hint": "Session is now queryable. Use query_events, get_execution_summary, etc.",
                 });
-                Ok(CallToolResult::success(json_content(&output)))
+                Ok(CallToolResult::success(json_content(&session_envelope(
+                    self.degraded,
+                    output,
+                ))))
             }
             Err(ServiceError::LoadFailed(e)) => Ok(CallToolResult::error(text_content(format!(
                 "Failed to load session '{}': {}",
@@ -2920,7 +2972,10 @@ impl ChronosServer {
                         "created_at": s.created_at,
                     })).collect::<Vec<_>>(),
                 });
-                Ok(CallToolResult::success(json_content(&output)))
+                Ok(CallToolResult::success(json_content(&session_envelope(
+                    self.degraded,
+                    output,
+                ))))
             }
             Err(ServiceError::ListFailed(e)) => Ok(CallToolResult::error(text_content(format!(
                 "Failed to list sessions: {}",
@@ -2959,7 +3014,10 @@ impl ChronosServer {
                     "status": "deleted",
                     "message": format!("Session '{}' deleted from persistent storage and memory.", params.session_id),
                 });
-                Ok(CallToolResult::success(json_content(&output)))
+                Ok(CallToolResult::success(json_content(&session_envelope(
+                    self.degraded,
+                    output,
+                ))))
             }
             Err(ServiceError::DeleteFailed(e)) => Ok(CallToolResult::error(text_content(format!(
                 "Failed to delete session '{}': {}",
@@ -2999,14 +3057,20 @@ impl ChronosServer {
                         "status": "dropped",
                         "message": "Session removed from memory. Persistent storage not affected.",
                     });
-                    Ok(CallToolResult::success(json_content(&output)))
+                    Ok(CallToolResult::success(json_content(&session_envelope(
+                        self.degraded,
+                        output,
+                    ))))
                 } else {
                     let output = serde_json::json!({
                         "session_id": params.session_id,
                         "status": "not_found",
                         "message": "Session not found in memory. No action taken.",
                     });
-                    Ok(CallToolResult::success(json_content(&output)))
+                    Ok(CallToolResult::success(json_content(&session_envelope(
+                        self.degraded,
+                        output,
+                    ))))
                 }
             }
             Err(ServiceError::LockPoisoned) => Ok(CallToolResult::error(text_content(
@@ -5681,6 +5745,137 @@ mod tests {
     #[test]
     fn test_server_default() {
         let _server = ChronosServer::default();
+    }
+
+    // ========================================================================
+    // m9-82: degraded-store disclosure (closes FIND-M9-75).
+    //
+    // `ChronosServer::is_degraded()` reports whether the underlying store
+    // is in-memory (true) or file-backed (false). The session-persistence
+    // tool envelopes (save_session / list_sessions / load_session /
+    // delete_session / drop_session) include a top-level `degraded` field
+    // matching this accessor so MCP callers can confirm the runtime is
+    // not persisting to disk.
+    // ========================================================================
+
+    #[test]
+    fn test_server_is_degraded_true_for_in_memory_test_store() {
+        // Under cfg(test), ChronosServer::new() builds the store from
+        // SessionStore::in_memory() (see try_open_default_store under
+        // cfg(test) at ~line 1500). is_degraded() must therefore be true.
+        let server = ChronosServer::new();
+        assert!(
+            server.is_degraded(),
+            "test server builds from in_memory store; expected is_degraded() == true",
+        );
+    }
+
+    #[test]
+    fn test_session_envelope_injects_degraded_at_top_level() {
+        // m9-82: helper preserves the existing object shape and only
+        // adds the `degraded` key. REQ-M9-82-04 (wire-shape additivity).
+        let original = serde_json::json!({
+            "session_id": "abc",
+            "status": "saved",
+            "event_count": 7,
+        });
+        let wrapped = session_envelope(true, original.clone());
+        let obj = wrapped.as_object().expect("must be a JSON object");
+        assert_eq!(obj.get("degraded"), Some(&serde_json::Value::Bool(true)));
+        assert_eq!(obj.get("session_id"), original.get("session_id"));
+        assert_eq!(obj.get("status"), original.get("status"));
+        assert_eq!(obj.get("event_count"), original.get("event_count"));
+        // Same key count minus zero (no fields lost) plus one (degraded).
+        assert_eq!(obj.len(), original.as_object().unwrap().len() + 1);
+    }
+
+    #[test]
+    fn test_session_envelope_wraps_non_object_defensively() {
+        // m9-82: if a future caller passes a bare array/string/number,
+        // the helper must still produce a top-level object so the wire
+        // contract is preserved.
+        let wrapped = session_envelope(false, serde_json::json!([1, 2, 3]));
+        let obj = wrapped.as_object().expect("must be a JSON object");
+        assert_eq!(obj.get("degraded"), Some(&serde_json::Value::Bool(false)));
+        assert!(obj.get("result").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_list_sessions_envelope_includes_degraded_true() {
+        // m9-82: under cfg(test) the server's store is in-memory, so the
+        // list_sessions JSON envelope must carry `degraded: true` at the
+        // top level. Closes REQ-M9-82-03 scenario `list_sessions_includes_degraded`.
+        let server = ChronosServer::new();
+        // Pre-condition: the accessor agrees with what the envelope must say.
+        assert!(server.is_degraded());
+
+        let list_result = server
+            .list_sessions(Parameters(NoParams {}))
+            .await
+            .expect("list_sessions call");
+        assert_ne!(list_result.is_error, Some(true));
+
+        // Round-trip the content through serde_json::Value so we can
+        // assert on the parsed JSON shape rather than the Debug
+        // representation. The tool emits exactly one text content block.
+        let v: serde_json::Value =
+            serde_json::to_value(&list_result.content[0]).expect("content is JSON");
+        let obj = v
+            .get("text")
+            .and_then(|t| t.as_str())
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            .expect("content must round-trip to a JSON object envelope");
+        let obj = obj.as_object().expect("top-level must be a JSON object");
+        assert_eq!(
+            obj.get("degraded"),
+            Some(&serde_json::Value::Bool(true)),
+            "list_sessions envelope must include `degraded: true` for an in-memory store",
+        );
+        // REQ-M9-82-04: existing fields are preserved.
+        assert!(obj.contains_key("session_count"));
+        assert!(obj.contains_key("sessions"));
+    }
+
+    #[tokio::test]
+    async fn test_save_session_envelope_includes_degraded() {
+        // m9-82: save_session envelope must also carry the flag. Use the
+        // existing helper shape (build + save) so the assertion exercises
+        // the real envelope construction path, not a hand-built one.
+        let server = ChronosServer::new();
+        let sid = "m9-82-save-envelope".to_string();
+        let events = vec![make_fn_event(0, 100, 1, "main")];
+        server
+            .build_and_store_engine(&sid, events, Language::C)
+            .await;
+
+        let result = server
+            .save_session(Parameters(SaveSessionParams {
+                session_id: sid.clone(),
+                language: "native".to_string(),
+                target: "/bin/m9-82".to_string(),
+            }))
+            .await
+            .expect("save_session call");
+        assert_ne!(result.is_error, Some(true));
+
+        let v: serde_json::Value =
+            serde_json::to_value(&result.content[0]).expect("content is JSON");
+        let obj = v
+            .get("text")
+            .and_then(|t| t.as_str())
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            .expect("content must round-trip to a JSON object envelope");
+        let obj = obj.as_object().expect("top-level must be a JSON object");
+        assert_eq!(
+            obj.get("degraded"),
+            Some(&serde_json::Value::Bool(true)),
+            "save_session envelope must include `degraded: true` for an in-memory store",
+        );
+        assert_eq!(obj.get("session_id"), Some(&serde_json::Value::String(sid)));
+        assert_eq!(
+            obj.get("status"),
+            Some(&serde_json::Value::String("saved".to_string()))
+        );
     }
 
     // ========================================================================
