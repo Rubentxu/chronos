@@ -160,7 +160,7 @@ No formal spec.md existed for this change; the scoping doc
 | release-receipt | `cycle-artifacts/m9-01-schema-versioning/receipts/release-receipt.json` | `6373a178670915fd49dd175692346fc470c75f33ca9c3c6c0f787f612aa05857` |
 | release-report | `cycle-artifacts/m9-01-schema-versioning/receipts/release-report.md` | `c62e63db1fd66cf01b0f613e22617a77ea2f2d6c8f2c5a15a87cda5e3998be3c` |
 | debt-report | `cycle-artifacts/m9-01-schema-versioning/debt-verify/debt-report.json` | `5351e72d4f7cd9a634348cc4b5e99518ab312826d0f220458728f71de54f599a` |
-| apply-checkpoint | `apply-checkpoint.json` | `463688592ceeb8a6ed6a5a2f63aec4b9511cf8bd73690a88fe2e8c26bff2fbd0` |
+| apply-checkpoint | `apply-checkpoint.json` | `70d9f0e1dca653285bb0f48f7e295a41e612db30ff86894211874082a0372068` |
 | scoping doc | `docs/milestones/m9-01-schema-versioning-scoping.md` | `5da4416eb66b734d8e983a2b71377333fb4775fdb9509263d44f3af8de9edc9d` |
 
 ## Runtime status

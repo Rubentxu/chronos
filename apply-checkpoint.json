@@ -1,34 +1,34 @@
 {
-  "cycle_id": "m9-95-services-test-split",
-  "cycle_record": "p-3416cfb8288f8964/m9-95-services-test-split",
-  "path": "B-direct",
+  "cycle_id": "m9-96-cc001-housekeeping",
+  "cycle_record": "p-3416cfb8288f8964/m9-96-cc001-housekeeping",
+  "path": "A-lite",
   "status": "complete",
-  "head_sha": "8ff34170fe98fd14cc1e10e30e95d842fe67f0f0",
-  "base_sha": "72bff2808457a4ead6f4caec233dc404a20c35d8",
-  "main_sha": "8ff34170fe98fd14cc1e10e30e95d842fe67f0f0",
-  "remote_tag": "v0.7.97",
-  "remote_tag_peel": "8ff34170fe98fd14cc1e10e30e95d842fe67f0f0",
+  "head_sha": "2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a",
+  "base_sha": "2429299541fbbbf6d3653afbf673b9659fb8cd3b",
+  "main_sha": "2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a",
+  "remote_tag": "v0.7.98",
+  "remote_tag_peel": "2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a",
   "peel_match": true,
-  "scope_doc_sha": "8ff34170",
+  "scope_doc_sha": "2e8a00d3",
   "phases": {
     "apply": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-95-services-test-split/implementation-receipt.md",
-      "summary": "Single source commit: 1 file added (ce_services_tests.rs, 2181 LoC) + 1 file modified (counterexample.rs, -2169/+11 LoC). 45 test functions + 4 helpers moved verbatim. No behavior change."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-96-cc001-housekeeping/implementation-receipt.md",
+      "summary": "Single source commit (vault-only): moved cc-001-god-module row from active to terminated in terms/index.md. 0 Rust files modified."
     },
     "verify": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-95-services-test-split/verify-report.md",
-      "summary": "T0+T1+T2 all green. 268 chronos-services lib tests pass (same as m9-94 baseline). 1042 workspace lib tests pass (same as m9-94 baseline). No regressions."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-96-cc001-housekeeping/verify-report.md",
+      "summary": "T0 sanity + vault sweep all green. cargo fmt/clippy clean (no Rust touched). bash check_vault_drift.sh PASS. CC#39 Part C satisfied."
     },
     "release": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-95-services-test-split/release-receipt.md",
-      "summary": "Tag v0.7.97 pre-created at cycle-artifacts commit 8ff34170 per CC#42 workaround. --no-ff merge into main. Cycle branch deleted per CC#53."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-96-cc001-housekeeping/release-receipt.md",
+      "summary": "Tag v0.7.98 pre-created at cycle-artifacts commit 2e8a00d3 per CC#42 workaround. --no-ff merge into main. Cycle branch deleted per CC#53."
     },
     "archive": {
       "status": "complete",
-      "artifact_path": ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-95-services-test-split/archive-manifest.md",
+      "artifact_path": ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-96-cc001-housekeeping/archive-manifest.md",
       "summary": "Archive-manifest with SHA-256 evidence bindings for 12 released artifacts (7 cycle + 5 knowledge)."
     }
   },
@@ -37,10 +37,10 @@
     "drift_lines_post": 0,
     "ccs_fixed": [],
     "ccs_broken": [],
-    "note": "m9-95 is a Rust-only cycle; no vault drift introduced or closed. CC#39 Part B was satisfied by including Cross-checks section from the start."
+    "note": "m9-96 is a vault-only cycle. The cc-001-god-module finding was formally resolved by moving its row from the active findings table to the terminated terms table. No Rust files modified."
   },
   "carry_forward_findings": [
     "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK"
   ],
-  "next_cycle_recommendation": "m9-96 = cc-001-god-module housekeeping (mark finding CLOSED in active-findings.md; 5 cycles have fully split the god-module). Smallest possible cycle (A-lite scope; T0 + cycle artifacts only; no Rust touched). Sets up m10+ backlog clean."
+  "next_cycle_recommendation": "m9-97 = cc-004-implicit-io-toctou (P3 LOW; deferred m10+). The last remaining active debt finding from m9-04. Closes the m9-04 debt family completely."
 }
