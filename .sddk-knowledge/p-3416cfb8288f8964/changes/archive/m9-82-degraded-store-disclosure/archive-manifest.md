@@ -138,12 +138,12 @@ deprecation sunset sweep.
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-82-degraded-store-disclosure/archive-manifest.md` | `c0c2946c1b2fb599676442e6b5158e70b329aff5e6188c0474ec701a9b183602` |
 | implementation-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/implementation-receipt.md` | `7a8fbbb7e3531e48cf890652f51ca204e78855803218152da8ff86539f9b80c5` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/verify-report.md` | `2343e8a662810f23d46aaa22bb34d9e7e7d9e3430624644bd4f1621eee9ed578` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/verify-report.md` | `81aea015a12b70afd726fba9012ca3c9cbfc10f9409dd829a1ca9552569e3338` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/verify-findings.json` | `f6a012ebdf9edba0b64e8acfd6c82a51efb34ce550f9a3d24d68f132e823a902` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/release-receipt.md` | `449fca22dd27434adf39f978054672a17a7372ebe0fc2dd61c49ba4d5eca7781` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/merge-receipt.md` | `0ed4d1d74e8c3b41d7568005abb64c0c26f663a7eea3bffa26c529cdab14b85b` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/release-report.md` | `545099bf6dd0136e10822b10edf1e4a1bd7f046a5eccbbb730d15fc76b66d2e7` |
-| apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/apply-checkpoint.json` | `d1deb28aae73c8d79e13898563d400d5dbc3298461d50369e83cedb02b24f6c5` |
+| apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/apply-checkpoint.json` | `3bab50b1385f3947e08b95f490acfffac230f27587b1e0c3e692c7eca8fe2b64` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-82-degraded-store-disclosure/change-entry.md` | `e27f3f9945d5f7672f3b285f8608543363a80b790d4066e918a0b0429c8853c2` |
 | exploration-report | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-82-degraded-store-disclosure/exploration-report.md` | `67f941391b7759dac212bcaf2ec1e6d52685f6185633fbf6d5f44934202a0bce` |
 | proposal | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-82-degraded-store-disclosure/proposal.md` | `528f46a9318205005ef934c3d9b433fbfab21539574bd312c21f17c75534733b` |
