@@ -19,7 +19,7 @@
 | Main HEAD (after merge) | `b8694eff737293bffea4ba62f07e4b206eafc502` |
 | Merge type | `--no-ff` (preserves cycle topology) |
 | Base SHA | `a0f72c2a7fe36eaeb9c772505dfe563f85f42773` |
-| Origin push | pending (next step) |
+| Origin push | done — `git push origin main v0.7.84` → main `87eeec3`, tag `v0.7.84` clean (peel `b8694ef`) |
 
 ## Cycle identity
 
