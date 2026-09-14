@@ -50,8 +50,6 @@
 //! - **v2 value:** `bincode::serialize(&Vec<TraceEvent>)`
 //!
 
-use std::mem;
-
 use crate::cas::ContentHash;
 use crate::error::StoreError;
 use crate::table_error::classify_read_table_error;
@@ -73,6 +71,38 @@ pub(super) use ce_chunk_keys::{
     bundle_prefix, decode_chunk_key, decode_chunk_key_legacy, decode_chunk_payload,
     decode_chunk_value, encode_chunk_key, encode_chunk_key_legacy, encode_chunk_value,
 };
+
+/// Submodule owning the write-path `impl SessionStore` methods
+/// (`save_counterexample_bundle`, `save_bundle_record_and_events`).
+///
+/// Methods are defined in `impl SessionStore` blocks inside the submodule.
+/// Rust inherent methods are reachable via `store.method_name()` regardless of
+/// which file the `impl` lives in, so the public path is unchanged: callers
+/// still write `store.save_counterexample_bundle(record)`. There is no
+/// `pub use` here because methods are not module-level items.
+#[path = "ce_write.rs"]
+pub mod ce_write;
+
+/// Submodule owning the read-path `impl SessionStore` methods
+/// (`load_counterexample_bundle_events`, `count_counterexample_bundle_events`,
+/// `get_bundle_events_count`, `load_counterexample_bundle`,
+/// `list_counterexample_bundles`).
+///
+/// Methods are defined in `impl SessionStore` inside the submodule and are
+/// reachable via `<SessionStore>::method_name` or `store.method_name()`.
+#[path = "ce_read.rs"]
+pub mod ce_read;
+
+/// Submodule owning the m9-05 R4 test chokepoint methods
+/// (`insert_v2_chunk_for_test`, `count_v3_chunks_for_test`,
+/// `insert_bundle_record_for_test`).
+///
+/// Methods are defined in `impl SessionStore` inside the submodule and are
+/// reachable via `<SessionStore>::method_name` or `store.method_name()`. They
+/// are `#[doc(hidden)] pub` inside the submodule to keep the public docs
+/// clean for `SessionStore`'s user-facing API.
+#[path = "ce_test_hooks.rs"]
+pub mod ce_test_hooks;
 
 /// Table for counterexample bundles.
 ///
@@ -443,469 +473,6 @@ pub struct CounterexampleBundleRecord {
     /// (the envelope) as authoritative.
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
-}
-
-impl crate::storage::SessionStore {
-    /// Save a counterexample bundle record. Returns the (already-existing)
-    /// `bundle_id` for caller convenience (the bundle_id lives in the
-    /// record itself).
-    ///
-    /// **m9-02:** This delegates to the private atomic
-    /// [`save_bundle_record_and_events`](Self::save_bundle_record_and_events)
-    /// which persists the record (with an empty `events` vec) and all events
-    /// as chunked rows in `counterexample_bundle_events` in one write
-    /// transaction.
-    #[allow(clippy::result_large_err)]
-    pub fn save_counterexample_bundle(
-        &self,
-        record: CounterexampleBundleRecord,
-    ) -> Result<String, StoreError> {
-        if record.summary.bundle_id.is_empty() {
-            return Err(StoreError::Serialization(
-                "bundle_id must be non-empty".to_string(),
-            ));
-        }
-        if record.summary.bundle_id.contains('/') || record.summary.bundle_id.contains('\\') {
-            return Err(StoreError::Serialization(format!(
-                "bundle_id `{}` contains path separator",
-                record.summary.bundle_id
-            )));
-        }
-
-        // m9-01 D5: always write the current schema version.
-        let mut record = record;
-        record.schema_version = CURRENT_BUNDLE_SCHEMA_VERSION;
-        record.summary.schema_version = CURRENT_BUNDLE_SCHEMA_VERSION;
-
-        // m9-02 D4: take events out of the record; the atomic wrapper
-        // will persist them to the side table.
-        let events = mem::take(&mut record.events);
-        record.summary.events_count = events.len() as u64;
-
-        self.save_bundle_record_and_events(record, events)
-    }
-
-    /// Persist a record and its events in one atomic write transaction (m9-02 D4).
-    ///
-    /// The `record.events` field is expected to be empty (populated by the
-    /// caller via `mem::take`). This function writes the record to
-    /// `counterexample_bundles` and all `events` as chunked rows in
-    /// `counterexample_bundle_events`.
-    ///
-    /// **m9-04 D6:** Re-save deletes both v3 and v2 prior chunks before
-    /// writing new v3 chunks (atomic dual cleanup). This triggers lazy migration:
-    /// re-saving a v2 bundle leaves only v3 chunks.
-    #[allow(clippy::result_large_err)]
-    fn save_bundle_record_and_events(
-        &self,
-        record: CounterexampleBundleRecord,
-        events: Vec<TraceEvent>,
-    ) -> Result<String, StoreError> {
-        let bundle_id = record.summary.bundle_id.clone();
-
-        let bytes =
-            bincode::serialize(&record).map_err(|e| StoreError::Serialization(e.to_string()))?;
-
-        let tx = self
-            .db()
-            .begin_write()
-            .map_err(|e| StoreError::Database(e.into()))?;
-
-        // Write the record (events field is empty at this point).
-        {
-            let mut table = tx
-                .open_table(COUNTEREXAMPLE_BUNDLES)
-                .map_err(|e| StoreError::Database(e.into()))?;
-            table
-                .insert(bundle_id.as_bytes(), bytes.as_slice())
-                .map_err(|e| StoreError::Database(e.into()))?;
-        }
-
-        // m9-04 D6: delete prior chunks for this bundle (both v3 and v2) before
-        // writing new v3 chunks. Collect v3 keys via `collect_v3_keys_for_bundle`
-        // (m9-05 R2), v2 keys via `collect_bundle_chunks_legacy`.
-        let (prior_v3_keys, prior_v2_keys): (Vec<Vec<u8>>, Vec<Vec<u8>>) = {
-            let read_tx = self
-                .db()
-                .begin_read()
-                .map_err(|e| StoreError::Database(e.into()))?;
-
-            let v3_keys = collect_v3_keys_for_bundle(&read_tx, &bundle_id)?;
-            let v2_keys = collect_bundle_chunks_legacy(&read_tx, &bundle_id)?
-                .into_iter()
-                .map(|(idx, _)| encode_chunk_key_legacy(&bundle_id, idx))
-                .collect();
-
-            (v3_keys, v2_keys)
-        };
-
-        {
-            let mut events_table = tx
-                .open_table(COUNTEREXAMPLE_BUNDLE_EVENTS)
-                .map_err(|e| StoreError::Database(e.into()))?;
-
-            // Delete v3 prior chunks.
-            for key in &prior_v3_keys {
-                events_table
-                    .remove(key.as_slice())
-                    .map_err(|e| StoreError::Database(e.into()))?;
-            }
-            // Delete v2 prior chunks.
-            for key in &prior_v2_keys {
-                events_table
-                    .remove(key.as_slice())
-                    .map_err(|e| StoreError::Database(e.into()))?;
-            }
-            // Write new v3 chunks.
-            for (chunk_idx, chunk) in events.chunks(BUNDLE_EVENTS_CHUNK_SIZE).enumerate() {
-                let key = encode_chunk_key(&bundle_id, chunk_idx as u32);
-                // m9-04 D3: value carries bundle_id for per-chunk identity defense.
-                let value = encode_chunk_value(&bundle_id, chunk);
-                events_table
-                    .insert(key.as_slice(), value.as_slice())
-                    .map_err(|e| StoreError::Database(e.into()))?;
-            }
-        }
-
-        tx.commit().map_err(|e| StoreError::Database(e.into()))?;
-        Ok(bundle_id)
-    }
-
-    /// Load all events for a bundle from the side table, sorted by chunk index.
-    ///
-    /// **m9-04 D7:** Uses `collect_bundle_chunks` which tries v3 range scan first,
-    /// falling back to v2 full scan when v3 returns 0 rows.
-    ///
-    /// Returns `Ok(vec![])` when no chunks exist (the table is absent or
-    /// the bundle has no side-table events).
-    ///
-    /// Internal helper: look up `summary.events_count` from the bundle record (m9-05 R3).
-    /// Returns `events_count` when the bundle record exists, or `0` when the table
-    /// is absent or no record exists for the queried `bundle_id`. Used by
-    /// `load_counterexample_bundle_events` and `count_counterexample_bundle_events`
-    /// to pass the D7 `events_count == 0` guard into `collect_bundle_chunks`.
-    #[allow(clippy::result_large_err)]
-    fn get_bundle_events_count(
-        tx: &redb::ReadTransaction,
-        bundle_id: &str,
-    ) -> Result<u64, StoreError> {
-        let table = match tx.open_table(COUNTEREXAMPLE_BUNDLES) {
-            Ok(t) => t,
-            Err(e) => return classify_read_table_error(e).or_not_found(0_u64),
-        };
-        let bytes_opt = match table.get(bundle_id.as_bytes()) {
-            Ok(o) => o,
-            Err(e) => return Err(StoreError::Database(e.into())),
-        };
-        match bytes_opt {
-            None => Ok(0),
-            Some(guard) => {
-                let record: CounterexampleBundleRecord = bincode::deserialize(guard.value())
-                    .map_err(|e| StoreError::Serialization(e.to_string()))?;
-                Ok(record.summary.events_count)
-            }
-        }
-    }
-
-    #[allow(clippy::result_large_err)]
-    pub fn load_counterexample_bundle_events(
-        &self,
-        bundle_id: &str,
-    ) -> Result<Vec<TraceEvent>, StoreError> {
-        let tx = self
-            .db()
-            .begin_read()
-            .map_err(|e| StoreError::Database(e.into()))?;
-
-        let events_count = Self::get_bundle_events_count(&tx, bundle_id)?;
-        let chunks_data = collect_bundle_chunks(&tx, bundle_id, events_count)?;
-        let mut chunks: Vec<(u32, Vec<TraceEvent>)> = Vec::new();
-        for (idx, bytes) in chunks_data {
-            // m9-05 R1: v3-first / v2-fallback decode ladder extracted into
-            // `decode_chunk_payload`. Drops entries neither layout can decode.
-            if let Some(events) = decode_chunk_payload(&bytes) {
-                chunks.push((idx, events));
-            }
-        }
-
-        chunks.sort_by_key(|(idx, _)| *idx);
-        let mut result = Vec::new();
-        for (_, chunk) in chunks {
-            result.extend(chunk);
-        }
-        Ok(result)
-    }
-
-    /// Count total events across all chunks for a bundle.
-    ///
-    /// **m9-04 D7:** Uses `collect_bundle_chunks` which tries v3 range scan first,
-    /// falling back to v2 full scan when v3 returns 0 rows.
-    ///
-    /// Returns 0 when the side table does not exist or the bundle has no chunks.
-    #[allow(clippy::result_large_err)]
-    pub fn count_counterexample_bundle_events(&self, bundle_id: &str) -> Result<u64, StoreError> {
-        let tx = self
-            .db()
-            .begin_read()
-            .map_err(|e| StoreError::Database(e.into()))?;
-
-        let events_count = Self::get_bundle_events_count(&tx, bundle_id)?;
-        let chunks_data = collect_bundle_chunks(&tx, bundle_id, events_count)?;
-        let mut total: u64 = 0;
-        for (_idx, bytes) in chunks_data {
-            // m9-05 R1: shared with `load_counterexample_bundle_events`.
-            if let Some(events) = decode_chunk_payload(&bytes) {
-                total += events.len() as u64;
-            }
-        }
-        Ok(total)
-    }
-
-    // ========================================================================
-    // m9-05 R4: test chokepoints — narrow `pub` surface for cross-crate tests.
-    //
-    // Pre-m9-05, the cli integration test (`crates/chronos-cli/tests/replay_integration.rs`)
-    // needed to inject v2 chunks and count v3 chunks, which forced a `pub` widening of
-    // `storage.rs::db()` and the two table constants. R4 reverses that widening and exposes
-    // only the two operations the cli test needs.
-    // ========================================================================
-
-    /// Insert a v2-format chunk directly into the side table (m9-05 R4 test chokepoint).
-    ///
-    /// Replaces the cli integration test's direct `db().begin_write()` +
-    /// `open_table(COUNTEREXAMPLE_BUNDLE_EVENTS)` + `insert` dance. Used by
-    /// `m9_04_replay_v2_bundle_uses_legacy_path` to simulate a pre-m9-04 bundle
-    /// that has not yet been re-saved.
-    #[doc(hidden)]
-    #[allow(clippy::result_large_err)]
-    pub fn insert_v2_chunk_for_test(
-        &self,
-        bundle_id: &str,
-        chunk_idx: u32,
-        events: &[TraceEvent],
-    ) -> Result<(), StoreError> {
-        let key = encode_chunk_key_legacy(bundle_id, chunk_idx);
-        let value =
-            bincode::serialize(events).map_err(|e| StoreError::Serialization(e.to_string()))?;
-        let tx = self
-            .db()
-            .begin_write()
-            .map_err(|e| StoreError::Database(e.into()))?;
-        {
-            let mut table = tx
-                .open_table(COUNTEREXAMPLE_BUNDLE_EVENTS)
-                .map_err(|e| StoreError::Database(e.into()))?;
-            table
-                .insert(key.as_slice(), value.as_slice())
-                .map_err(|e| StoreError::Database(e.into()))?;
-        }
-        tx.commit().map_err(|e| StoreError::Database(e.into()))?;
-        Ok(())
-    }
-
-    /// Count v3 chunks for a bundle (m9-05 R4 test chokepoint).
-    ///
-    /// Replaces the cli integration test's direct `db().begin_read()` +
-    /// `collect_bundle_chunks_range` call. Returns 0 when the bundle has no v3 chunks.
-    #[doc(hidden)]
-    #[allow(clippy::result_large_err)]
-    pub fn count_v3_chunks_for_test(&self, bundle_id: &str) -> Result<u64, StoreError> {
-        let tx = self
-            .db()
-            .begin_read()
-            .map_err(|e| StoreError::Database(e.into()))?;
-        let chunks = collect_bundle_chunks_range(&tx, bundle_id)?;
-        Ok(chunks.len() as u64)
-    }
-
-    /// Insert a bundle record directly into `counterexample_bundles` (m9-05 R4 test chokepoint).
-    ///
-    /// Used by `m9_04_replay_v2_bundle_uses_legacy_path` to inject a bundle record
-    /// with `events_count > 0` so the D7 guard lets the v2 fallback run, without
-    /// going through `save_counterexample_bundle` (which would overwrite `events_count`
-    /// based on `events.len()`).
-    #[doc(hidden)]
-    #[allow(clippy::result_large_err)]
-    pub fn insert_bundle_record_for_test(
-        &self,
-        record: &CounterexampleBundleRecord,
-    ) -> Result<(), StoreError> {
-        let bytes =
-            bincode::serialize(record).map_err(|e| StoreError::Serialization(e.to_string()))?;
-        let tx = self
-            .db()
-            .begin_write()
-            .map_err(|e| StoreError::Database(e.into()))?;
-        {
-            let mut table = tx
-                .open_table(COUNTEREXAMPLE_BUNDLES)
-                .map_err(|e| StoreError::Database(e.into()))?;
-            table
-                .insert(record.summary.bundle_id.as_bytes(), bytes.as_slice())
-                .map_err(|e| StoreError::Database(e.into()))?;
-        }
-        tx.commit().map_err(|e| StoreError::Database(e.into()))?;
-        Ok(())
-    }
-
-    /// Load a counterexample bundle by id.
-    ///
-    /// Returns `Ok(None)` when the bundle does not exist (idempotent —
-    /// let the caller decide between LoadFailed vs NotFound). Also
-    /// returns `Ok(None)` when the `counterexample_bundles` table has
-    /// never been written (a fresh in-memory DB or a live DB on which
-    /// no shrink has ever run); redb's read-only `open_table` errors
-    /// `TableDoesNotExist` in that case.
-    #[allow(clippy::result_large_err)]
-    pub fn load_counterexample_bundle(
-        &self,
-        bundle_id: &str,
-    ) -> Result<Option<CounterexampleBundleRecord>, StoreError> {
-        let tx = self
-            .db()
-            .begin_read()
-            .map_err(|e| StoreError::Database(e.into()))?;
-        let table_result = tx.open_table(COUNTEREXAMPLE_BUNDLES);
-        let table = match table_result {
-            Ok(t) => t,
-            Err(e) => {
-                return classify_read_table_error(e)
-                    .or_not_found(None::<CounterexampleBundleRecord>)
-            }
-        };
-        let bytes_opt = match table.get(bundle_id.as_bytes()) {
-            Ok(o) => o,
-            Err(e) => return Err(StoreError::Database(e.into())),
-        };
-        match bytes_opt {
-            None => Ok(None),
-            Some(bytes_guard) => {
-                let bytes: &[u8] = bytes_guard.value();
-                let record: CounterexampleBundleRecord = bincode::deserialize(bytes)
-                    .map_err(|e| StoreError::Serialization(e.to_string()))?;
-                // m9-01 D3: reject bundles written by a newer chronos-store.
-                // This is a hard-reject (not a warning) because silently loading
-                // a future-versioned bundle risks panicking on unknown enum
-                // variants in nested wire types downstream.
-                if record.schema_version > CURRENT_BUNDLE_SCHEMA_VERSION {
-                    // m9-08 (closes FIND-M9-01-DV-COUP-02): previously this
-                    // overload-returned `StoreError::Serialization`, which
-                    // collapsed corrupt-blob failures and forward-compat
-                    // rejections into one variant callers could not
-                    // distinguish without message parsing. Dedicate the
-                    // `SchemaTooNew { found, supported }` variant so callers
-                    // can branch on the error kind itself.
-                    return Err(StoreError::SchemaTooNew {
-                        found: record.schema_version,
-                        supported: CURRENT_BUNDLE_SCHEMA_VERSION,
-                    });
-                }
-                // m9-07 (closes FIND-M9-01-DV-COUP-01): the record and its
-                // nested summary both carry a `schema_version`. `save()`
-                // canonicalizes both to `CURRENT_BUNDLE_SCHEMA_VERSION`, but a
-                // hand-constructed record (e.g. a future migration tool) could
-                // mismatch. The loader reads `record.schema_version` as the
-                // envelope-level authoritative version; assert the summary
-                // matches before returning. Mirrors the invariant asserted at
-                // save time without a second canonicalization site.
-                if record.schema_version != record.summary.schema_version {
-                    return Err(StoreError::Serialization(format!(
-                        "bundle envelope schema_version {} disagrees with summary \
-                         schema_version {}; rejecting as malformed",
-                        record.schema_version, record.summary.schema_version,
-                    )));
-                }
-                Ok(Some(record))
-            }
-        }
-    }
-
-    /// List bundle summaries matching `filter`, oldest-first (uuid::v7
-    /// lexicographic order matches chronological).
-    ///
-    /// m8-05 (B2 note): when `filter.cursor` is `Some(c)`, the iteration
-    /// skips rows whose `bundle_id <= c` before applying other filters
-    /// and `limit`. This gives forward pagination: the first page returns
-    /// up to `limit` rows and sets `next_cursor = last.bundle_id`. The
-    /// next call passes that bundle_id as `cursor` to fetch the
-    /// following page.
-    ///
-    /// Returns `Ok(vec![])` when the `counterexample_bundles` table has
-    /// never been written (redb's read-only `open_table` errors
-    /// `TableDoesNotExist` in that case; we collapse to empty per the
-    /// `load_counterexample_bundle` precedent).
-    #[allow(clippy::result_large_err)]
-    pub fn list_counterexample_bundles(
-        &self,
-        filter: CounterexampleBundleFilter<'_>,
-    ) -> Result<Vec<CounterexampleBundleSummary>, StoreError> {
-        let tx = self
-            .db()
-            .begin_read()
-            .map_err(|e| StoreError::Database(e.into()))?;
-        let table = match tx.open_table(COUNTEREXAMPLE_BUNDLES) {
-            Ok(t) => t,
-            Err(e) => return classify_read_table_error(e).or_not_found(Vec::new()),
-        };
-
-        let mut out: Vec<CounterexampleBundleSummary> = Vec::new();
-        let iter = table.iter().map_err(|e| StoreError::Database(e.into()))?;
-        let limit_usize: Option<usize> = if filter.limit == 0 {
-            None
-        } else {
-            Some(filter.limit as usize)
-        };
-
-        for entry in iter {
-            let (_k, v) = entry.map_err(|e| StoreError::Database(e.into()))?;
-            let bytes: &[u8] = v.value();
-            let record: CounterexampleBundleRecord = match bincode::deserialize(bytes) {
-                Ok(r) => r,
-                // Skip corrupt rows but don't fail the whole list (best-effort).
-                Err(_) => continue,
-            };
-            let s = &record.summary;
-            // m8-05 B2: forward pagination. Skip rows at or before the
-            // cursor's bundle_id (uuid::v7 is monotonic, so the row key
-            // matches chronological order).
-            if let Some(c) = filter.cursor.as_deref() {
-                if s.bundle_id.as_str() <= c {
-                    continue;
-                }
-            }
-            if let Some(w) = filter.workspace_id {
-                if s.workspace_id != w {
-                    continue;
-                }
-            }
-            if let Some(k) = filter.property_kind {
-                if s.property_kind != k {
-                    continue;
-                }
-            }
-            if let Some(since) = filter.since_ms {
-                if s.created_at_ms < since {
-                    continue;
-                }
-            }
-            if let Some(until) = filter.until_ms {
-                if s.created_at_ms > until {
-                    continue;
-                }
-            }
-            out.push(s.clone());
-            if let Some(l) = limit_usize {
-                if out.len() >= l {
-                    break;
-                }
-            }
-        }
-
-        // Sort by uuid::v7 ordering: bundle_id is uuid::v7 (m8-02).
-        // Lexicographic sort on uuid::v7 ≈ chronological order.
-        out.sort_by(|a, b| a.bundle_id.cmp(&b.bundle_id));
-        Ok(out)
-    }
 }
 
 /// Load events for a bundle, handling both legacy (blob-embedded) and
