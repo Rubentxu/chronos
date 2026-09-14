@@ -33,7 +33,7 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 
 | ID | Cycle | Cluster | Severity | Priority | Título | Owner | Destino |
 |---|---|---|---|---|---|---|---|
-| cc-004-implicit-io-toctou | m9-04 | coupling | LOW | P3 | `save_bundle_record_and_events` opens read-then-write; pre-existing TOCTOU pattern (m9-02 R7) | unassigned | m9+ backlog |
+| _empty — `cc-004-implicit-io-toctou` falsified and terminated by m9-97 (see Terminated terms below)_ | | | | | | | |
 
 ### Debt findings from m9-01
 
@@ -121,6 +121,7 @@ None — m9-80 closed the property-policy ownership refactor (layered split, spe
 | FIND-M9-73-SILENT-IN-MEMORY-FALLBACK-MASKS-STORE-OPEN-FAILURE | m9-73 | `chronos-mcp::open_default_store` fell back to an in-memory store when the configured store could not be opened, so a locked store yielded successful saves and empty listings instead of an error (found by falsification of the cycle's own test) | m9-75-fail-closed-store-open (`v0.7.77`) |
 | FIND-M9-75-MCP-TOOLS-DO-NOT-DISCLOSE-DEGRADED-STORE | m9-75 | With `CHRONOS_ALLOW_IN_MEMORY_FALLBACK=1` the degraded in-memory mode is logged but never surfaced in a tool response, so an opted-in client cannot tell from a `save_session` / `list_sessions` payload that nothing is persisted | m9-82-degraded-store-disclosure (`v0.7.84`) |
 | cc-001-god-module | m9-04 | `counterexample_storage.rs` at 2,556 lines; 5 distinct concerns (keys/records/persistence/schema-version/v2-legacy). Production halves split across m9-84..m9-87 into `ce_chunk_keys`/`ce_read`/`ce_write`/`ce_test_hooks`/`ce_types`/`ce_schema` sibling modules; test halves split by m9-94 (`ce_storage_tests.rs`) and m9-95 (`ce_services_tests.rs`). Both parent files now hold focused production code only | m9-96-cc001-housekeeping (`v0.7.98`) |
+| cc-004-implicit-io-toctou | m9-04 | **Falsified by m9-97**. `save_bundle_record_and_events` acquires `begin_write()` before its separate `begin_read()`. In pinned redb 2.6.3, `Database::begin_write()` calls `TransactionTracker::start_write_transaction()` (`db.rs:1025-1033`), which waits while `live_write_transaction.is_some()` (`transaction_tracker.rs:117-128`). A second writer cannot begin or commit in the alleged read-to-delete interval, so the key snapshot cannot become stale due to a concurrent writer. An experimental table-scoped refactor was reverted before publication | m9-97-cc004-implicit-io-toctou (`v0.7.99`) |
 ## Metadata
 
 | Campo | Valor |
