@@ -1,0 +1,106 @@
+{
+  "subject": {
+    "head_sha": "9e15dd3fbfc5319df8bd31ba540d570c8fd75ad8",
+    "base_sha": "645eedb530f1b827a600544d01e501d82b410820",
+    "main_sha": "9e15dd3fbfc5319df8bd31ba540d570c8fd75ad8",
+    "remote_tag": "v0.7.96",
+    "remote_tag_peel": "9e15dd3fbfc5319df8bd31ba540d570c8fd75ad8",
+    "cycle_id": "m9-94-cc001-test-split",
+    "cycle_record": "p-3416cfb8288f8964/m9-94-cc001-test-split",
+    "branch": "chore/m9-94-cc001-test-split",
+    "route": "B-direct"
+  },
+  "tier": "T1",
+  "tiers_run": ["T0", "T1", "T2"],
+  "checks": {
+    "T0_fmt": {
+      "status": "passed",
+      "command": "cargo fmt --all -- --check"
+    },
+    "T0_clippy": {
+      "status": "passed",
+      "command": "cargo clippy --workspace --all-targets -- -D warnings"
+    },
+    "T1_lib_unit_chronos_store": {
+      "status": "passed",
+      "command": "cargo test -p chronos-store --lib --no-fail-fast",
+      "total_passed": 77,
+      "regressions": 0,
+      "note": "Same count as m9-93 baseline (77). No tests lost or duplicated."
+    },
+    "T2_lib_unit_workspace": {
+      "status": "passed",
+      "command": "cargo test --workspace --lib --no-fail-fast -- --test-threads=1",
+      "total_passed": 1042,
+      "regressions": 0,
+      "note": "Same count as m9-93 baseline on main (1042). No regressions introduced by the file reorganization."
+    },
+    "vault_drift_sweep": {
+      "status": "passed",
+      "command": "bash scripts/check_vault_drift.sh",
+      "drift_lines": 0,
+      "note": "m9-94 is a Rust-only cycle; no vault CC drift introduced by the source commit itself. Vault cascade lands in subsequent SHA-fixpoint commits."
+    },
+    "cc3_era_awareness": {
+      "status": "pending",
+      "note": "Will be validated after archive-manifest.md + merge + tag fixpoint"
+    },
+    "cc4_artifact_sha_consistency": {
+      "status": "pending",
+      "command": "python3 scripts/regen_manifest_index_shas.py --check",
+      "note": "Will be validated after archive-manifest.md is written"
+    },
+    "cc8_archive_manifest_head_sha": {
+      "status": "pending",
+      "note": "Will be validated after archive-manifest.md is written"
+    },
+    "cc22_release_receipt_sha_fields": {
+      "status": "pending",
+      "note": "Will be validated after release-receipt.md is written"
+    },
+    "cc23_merge_receipt_sha_fields": {
+      "status": "pending",
+      "note": "Will be validated after merge --no-ff"
+    },
+    "cc39_total_cycles": {
+      "status": "pending",
+      "note": "Will be validated after cycles/index.md bump (94)"
+    },
+    "cc42_remote_tag_peel_match": {
+      "status": "pending",
+      "note": "Will be validated after release-receipt.md + tag fixpoint"
+    },
+    "cc43_release_receipt_head_sha": {
+      "status": "pending",
+      "note": "Will be validated after release-receipt.md is written"
+    },
+    "cc51_cycles_index_has_artifacts_dir": {
+      "status": "pending",
+      "note": "Will be validated after cycles/index.md bump"
+    }
+  },
+  "findings": [
+    {
+      "id": "FIND-M9-94-CC001-TEST-CODE-MONOLITHIC",
+      "status": "closed",
+      "summary": "The 1771-line inline `mod tests { ... }` block in `crates/chronos-store/src/counterexample_storage.rs` was extracted to a sibling file `crates/chronos-store/src/ce_storage_tests.rs` using the `#[path]` submodule pattern. After m9-94 the parent file holds only production code (191 lines); the test block lives in a sibling that is reachable as `counterexample_storage::tests`. No public API change; no test lost or modified."
+    },
+    {
+      "id": "FIND-M9-94-SERVICES-COUNTEREXAMPLE-TESTS-MONOLITHIC",
+      "status": "open",
+      "summary": "`crates/chronos-services/src/counterexample.rs` (3955 lines) still contains a 2169-line inline `mod tests { ... }` block (55% of the file). The same `#[path]` pattern established by m9-94 can be applied. P2, MEDIUM, followup; defer to a future m-cycle.",
+      "followup_target": "m9-95 or later"
+    }
+  ],
+  "carry_forward": [
+    "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK (external-deferred, sddk CLI bug)",
+    "FIND-M9-94-SERVICES-COUNTEREXAMPLE-TESTS-MONOLITHIC (P2, MEDIUM, followup)"
+  ],
+  "out_of_scope": [
+    "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK",
+    "FIND-M9-94-SERVICES-COUNTEREXAMPLE-TESTS-MONOLITHIC",
+    "cc-004-implicit-io-toctou (deferred m10+)"
+  ],
+  "summary": "passed",
+  "all_passed": true
+}

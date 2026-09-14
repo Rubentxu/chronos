@@ -1,0 +1,83 @@
+{
+  "head_sha": "9e15dd3fbfc5319df8bd31ba540d570c8fd75ad8",
+  "archived_at": "2026-09-14",
+  "peel_match": true,
+  "base_sha": "645eedb530f1b827a600544d01e501d82b410820",
+  "main_sha": "9e15dd3fbfc5319df8bd31ba540d570c8fd75ad8",
+  "remote_tag": "v0.7.96",
+  "remote_tag_peel": "9e15dd3fbfc5319df8bd31ba540d570c8fd75ad8",
+  "tag_peel_sha": "9e15dd3fbfc5319df8bd31ba540d570c8fd75ad8",
+  "tag_peel_note": "non-standard: tag pre-created at source commit SHA; will move through SHA-cascade fixpoint commits per CC#42 workaround. m9-94 is a B-direct cycle (mechanical refactor only), so no separate cycle-artifacts commit is needed; the tag points at the source commit which is also the cycle-artifacts commit.",
+  "ff_merged": false,
+  "cycle_id": "m9-94-cc001-test-split",
+  "cycle_record": "p-3416cfb8288f8964/m9-94-cc001-test-split",
+  "branch": "chore/m9-94-cc001-test-split",
+  "route": "B-direct",
+  "status": "CLOSED",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "complete",
+  "phases": {
+    "apply": "complete",
+    "verify": "complete",
+    "release": "complete",
+    "archive": "complete"
+  },
+  "tier_required": "T1",
+  "tiers_run": ["T0", "T1", "T2"],
+  "tier_results": {
+    "T0": {
+      "fmt_check": "passed",
+      "clippy_check": "passed",
+      "scope": "workspace"
+    },
+    "T1": {
+      "test_command": "cargo test -p chronos-store --lib --no-fail-fast",
+      "all_passed": true,
+      "test_count": 77,
+      "regression_check": "no regressions; same count as m9-93"
+    },
+    "T2": {
+      "test_command": "cargo test --workspace --lib --no-fail-fast -- --test-threads=1",
+      "workspace_total": 1042,
+      "regression_check": "no regressions vs main baseline (also 1042)"
+    }
+  },
+  "created_at": "2026-09-14",
+  "title": "m9-94: cc-001 god-module test-split (extract counterexample_storage tests to sibling)",
+  "summary": "B-direct mechanical refactor. Extracts the 1771-line inline `mod tests { ... }` block from `crates/chronos-store/src/counterexample_storage.rs` (cc-001 god-module, production code already split in m9-84..m9-87) into a sibling file `crates/chronos-store/src/ce_storage_tests.rs` using the `#[path = \"...\"]` submodule pattern. After m9-94: counterexample_storage.rs shrinks from 1960 -> 191 lines (production code only); ce_storage_tests.rs holds the 43 test functions + 4 test helpers. No public API change. No behavior change. All 77 chronos-store lib tests pass; workspace-wide 1042 lib tests pass (matches m9-93 baseline).",
+  "findings_closed": ["FIND-M9-94-CC001-TEST-CODE-MONOLITHIC"],
+  "findings_introduced": {
+    "no_action": [],
+    "followup": [
+      {
+        "id": "FIND-M9-94-SERVICES-COUNTEREXAMPLE-TESTS-MONOLITHIC",
+        "reason": "crates/chronos-services/src/counterexample.rs still has 2169-line inline `mod tests { ... }` block (55% of 3955-line file). Same `#[path]` pattern can be applied. Deferred to a future m-cycle after m9-94 establishes the technique."
+      }
+    ],
+    "external_deferred": [
+      {
+        "id": "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK",
+        "reason": "external sddk CLI bug; not actionable in chronos scope (carried from m9-88)"
+      }
+    ]
+  },
+  "files_changed": [
+    "crates/chronos-store/src/ce_storage_tests.rs: NEW (1785 lines; verbatim copy of inline test block + doc comment header)",
+    "crates/chronos-store/src/counterexample_storage.rs: replaced 1773-line inline `mod tests { ... }` block (lines 188-1960) with 3-line `#[cfg(test)] #[path = \"ce_storage_tests.rs\"] mod tests;` declaration"
+  ],
+  "shas": {
+    "source_commit": "3a8494967c366761f10da6caf89745971fce9f78",
+    "cycle_artifacts_commit": "9e15dd3fbfc5319df8bd31ba540d570c8fd75ad8"
+  },
+  "carry_forward_findings": [
+    "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK",
+    "FIND-M9-94-SERVICES-COUNTEREXAMPLE-TESTS-MONOLITHIC"
+  ],
+  "out_of_scope": [
+    "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK",
+    "FIND-M9-94-SERVICES-COUNTEREXAMPLE-TESTS-MONOLITHIC",
+    "cc-004-implicit-io-toctou",
+    "cc-001 production code re-split (already complete in m9-84..m9-87)"
+  ]
+}
