@@ -61,7 +61,7 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 
 | ID | Cycle | Título | Owner | Destino |
 |---|---|---|---|---|
-| FIND-M9-75-MCP-TOOLS-DO-NOT-DISCLOSE-DEGRADED-STORE | m9-75 | With `CHRONOS_ALLOW_IN_MEMORY_FALLBACK=1` the degraded in-memory mode is logged but never surfaced in a tool response, so an opted-in client cannot tell from a `session_save` / `session_list` payload that nothing is persisted | unassigned | m9+ |
+| (none — FIND-M9-75-MCP-TOOLS-DO-NOT-DISCLOSE-DEGRADED-STORE closed by m9-82)
 
 ### Findings deferred from m9-71
 
@@ -82,6 +82,12 @@ None — m9-80 closed the property-policy ownership refactor (layered split, spe
 | ID | Cycle | Título | Notes |
 |---|---|---|---|
 | FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION | m9-72 | `counterexample_storage.rs` keeps four hand-rolled copies of the read-path `TableDoesNotExist` / else-propagate policy that `chronos-store::table_error` now names | Closed by m9-81 — 6 sites refactored to use `chronos_store::table_error::classify_read_table_error().or_not_found(...)` |
+
+### Findings closed in m9-82
+
+| ID | Cycle | Título | Notes |
+|---|---|---|---|
+| FIND-M9-75-MCP-TOOLS-DO-NOT-DISCLOSE-DEGRADED-STORE | m9-75 | With `CHRONOS_ALLOW_IN_MEMORY_FALLBACK=1` the degraded in-memory mode is logged but never surfaced in a tool response, so an opted-in client cannot tell from a `save_session` / `list_sessions` payload that nothing is persisted | Closed by m9-82 — `SessionStore::is_persistent()` + `ChronosServer::is_degraded()` + a top-level `degraded: <bool>` injected into the JSON envelopes of `save_session`, `list_sessions`, `load_session`, `delete_session`, `drop_session` via `session_envelope()` |
 
 ## Terminated terms
 
@@ -114,11 +120,12 @@ None — m9-80 closed the property-policy ownership refactor (layered split, spe
 | FIND-M9-73-CC4-REGEN-RITUAL-NOT-IN-REPO | m9-73 | The CC#4 archive-manifest SHA regeneration lived in agent scratch rather than in `scripts/`, so nothing exercised the gate's own logic (the broken awk of m9-66 went unnoticed) and the naive whole-tree version churned the self-referential row of the pre-m9-11 manifests | m9-76-cc4-regen-tool-in-repo (`v0.7.78`) |
 | FIND-M9-74-V1-SHIMS-RETURN-V2-ENVELOPE | m9-74 | `compare_sessions` and `performance_regression_audit` stopped returning the flat v1 result in m7-03 (`947e73b`) and returned the tagged `session_compare` envelope instead, against their own descriptions and the output enum's doc; hidden behind the CAS timeout until m9-74 fixed it. Found and fixed in-cycle | m9-74-cas-put-many-batching (`v0.7.76`) |
 | FIND-M9-73-SILENT-IN-MEMORY-FALLBACK-MASKS-STORE-OPEN-FAILURE | m9-73 | `chronos-mcp::open_default_store` fell back to an in-memory store when the configured store could not be opened, so a locked store yielded successful saves and empty listings instead of an error (found by falsification of the cycle's own test) | m9-75-fail-closed-store-open (`v0.7.77`) |
+| FIND-M9-75-MCP-TOOLS-DO-NOT-DISCLOSE-DEGRADED-STORE | m9-75 | With `CHRONOS_ALLOW_IN_MEMORY_FALLBACK=1` the degraded in-memory mode is logged but never surfaced in a tool response, so an opted-in client cannot tell from a `save_session` / `list_sessions` payload that nothing is persisted | m9-82-degraded-store-disclosure (`v0.7.84`) |
 ## Metadata
 
 | Campo | Valor |
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-14T09:48Z |
-| Last archive | m9-81-counterexample-table-classifier |
+| Last updated | 2026-09-14T10:44Z |
+| Last archive | m9-82-degraded-store-disclosure |

@@ -103,7 +103,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-79 | m9-79-attach-capability-type | B-direct | `v0.7.81` | `f41abd4580d078a3f5f1255ffd543573a4fa702d` | CLOSED |
 | m9-80 | m9-80-property-policy-ownership | A-min | `v0.7.82` | `7874e5c8e972172c024b07f60746f0e06df92f9d` | CLOSED |
 | m9-81 | m9-81-counterexample-table-classifier | B-direct | `v0.7.83` | `fdc5accf64be1fcf780913243aec0496ad48e7fe` | CLOSED |
-| m9-82 | m9-82-degraded-store-disclosure | A-min | — | — | OPEN (T0 done; T1-T8 pending) |
+| m9-82 | m9-82-degraded-store-disclosure | A-min | `v0.7.84` | `b8694eff737293bffea4ba62f07e4b206eafc502` | CLOSED |
 
 ## Metadata
 
@@ -111,5 +111,5 @@ Chronological record of all SDDK cycles for this project.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-14T09:48Z |
+| Last updated | 2026-09-14T10:44Z |
 | Total cycles | 84 |

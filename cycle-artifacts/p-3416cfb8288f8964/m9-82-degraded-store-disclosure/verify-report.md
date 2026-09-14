@@ -6,7 +6,7 @@
 |---|---|
 | Cycle | `m9-82-degraded-store-disclosure` |
 | Path | A-min |
-| Head SHA | `4e80517` |
+| Head SHA | `4e805174fb872e9f4fa0d1ef9d379ba454091994` |
 | Base SHA | `a0f72c2a7fe36eaeb9c772505dfe563f85f42773` |
 | Tag (when released) | `v0.7.84` (planned; pending release phase) |
 | Merge SHA | pending release phase |
