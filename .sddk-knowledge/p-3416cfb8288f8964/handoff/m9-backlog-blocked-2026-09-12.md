@@ -2054,3 +2054,76 @@ larger-scope work: events_read merge, observe merge,
 session_compare+session_explain split, session_start/stop lifecycle,
 deprecation sunset sweep.
 
+
+## Session 2026-09-14T09:42Z-10:50Z — m9-82 closed end-to-end
+
+### Outcome
+
+- m9-82-degraded-store-disclosure CLOSED end-to-end (`v0.7.84`,
+  merge `b8694ef`, peel match clean, origin push done).
+- Closed FIND-M9-75-MCP-TOOLS-DO-NOT-DISCLOSE-DEGRADED-STORE.
+- All T0 + T2 + focused T3 + T4-smoke green:
+  - chronos-store 74 → 77 lib (+3 is_persistent tests)
+  - chronos-mcp 82 → 87 lib (+5 degraded envelope tests)
+  - chronos-services 264/0 (unchanged)
+  - chronos-sandbox subset (e2e_connectivity 1 + session_persistence 4
+    + session_lifecycle 8): 13/0
+- CC sweep clean for m9-82 changes; only CC#39 (pre-existing
+  Total cycles vs folder count off-by-one — m9-78 missing folder)
+  remains, and was already failing on the cycle base `a0f72c2`.
+- Branch `feat/m9-82-degraded-store-disclosure` deleted.
+
+### Spec correction (mid-impl)
+
+The proposal and earlier spec draft for m9-82 named the session-
+persistence tools with underscores-as-separators (`session_save` /
+`session_list` / `session_load`). The actual MCP tool names registered
+in `server.rs` are `save_session`, `list_sessions`, `load_session`,
+`delete_session`, `drop_session`. The proposal scope/acceptance bullets
+and spec REQ-M9-82-03 were amended mid-cycle with a note documenting
+the correction and extending the contract to all five tools
+symmetrically. Both vault files were committed alongside the wire-layer
+implementation in the same T2 commit (behaviour-equivalent clarification,
+not a behaviour change).
+
+### Workflow notes
+
+Same manual vault-tracked workflow as m9-80 and m9-81: the sddk CLI
+gate evaluator is still blocked by the pre-existing FOREIGN KEY
+constraint bug in the ledger DB (FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK;
+still unassigned, out of scope for m9-82). The manual pattern remains
+the project standard until the CLI ledger is repaired.
+
+The full workspace T3 command (`cargo test --workspace --lib --tests
+--exclude chronos-sandbox --exclude chronos-e2e --no-fail-fast`) was
+attempted but cancelled after 20 minutes (stalled in `chronos-native`
+ptrace tests per AGENTS.md §6.5; documented pre-existing flake, not a
+regression of this cycle). The focused T3
+(`cargo test -p chronos-store -p chronos-mcp -p chronos-services
+--tests --no-fail-fast`) covers all crates touched by m9-82 and
+returned 477/0 across 10 binaries in 28s.
+
+### Carry-forward unchanged
+
+- FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK (still open).
+- FIND-M9-74-NATIVE-PTRACE-TESTS-NEED-SERIAL (still open).
+- **CC#39** off-by-one (still open; pre-existing, now consistently
+  84/82 — i.e. 2 missing folders including m9-78).
+- Pre-existing smoke-test work-copy isolation flake.
+
+### Next roadmap candidate after m9-82
+
+m9+ carry-forwards still unassigned:
+
+- FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK (medium).
+- FIND-M9-74-NATIVE-PTRACE-TESTS-NEED-SERIAL (informational;
+  documented in AGENTS.md §6.5).
+- CC#39 off-by-one cleanup (trivial; investigation: which rows in
+  cycles/index.md have no folder).
+- cc-001-god-module (counterexample_storage.rs at 2,821 lines, 5
+  concerns; A-lite split).
+
+The M7 milestone (deferred from M6 — see `docs/ROADMAP.md`) is
+larger-scope work: events_read merge, observe merge,
+session_compare + session_explain split, session_start/stop lifecycle,
+deprecation sunset sweep.
