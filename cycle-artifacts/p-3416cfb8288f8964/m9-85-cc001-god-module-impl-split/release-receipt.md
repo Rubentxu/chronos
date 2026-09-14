@@ -17,7 +17,7 @@
 | Cycle HEAD (pre-merge) | 158f5b1bdc4a8d33c2b34ef33b66ab8b3cf8a0bf |
 | Merge commit | 72e120c |
 | Cycle-artifacts commit | a850346cc3f74e07fbc19f6a95b0ff5be1d2f99e |
-| Main SHA (post-cascade) | TBD (HEAD after bump commit) |
+| Main SHA (post-cascade, fixpoint) | f94ead9 |
 | Remote tag | v0.7.87 |
 | Remote tag_peel | a850346cc3f74e07fbc19f6a95b0ff5be1d2f99e |
 | Peel match | clean peel: v0.7.87 points at the cycle-artifacts commit a850346 (one commit before the SHA-cascade fixpoint) |
