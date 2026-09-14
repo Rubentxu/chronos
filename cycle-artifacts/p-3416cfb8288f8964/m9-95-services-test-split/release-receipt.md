@@ -14,10 +14,10 @@
 | Field | Value |
 |---|---|
 | Base SHA | 72bff2808457a4ead6f4caec233dc404a20c35d8 |
-| Head SHA | eb96861b17711f7d525cedacccc17905bc17e6e0 |
-| Main SHA | eb96861b17711f7d525cedacccc17905bc17e6e0 |
+| Head SHA | 8ff34170fe98fd14cc1e10e30e95d842fe67f0f0 |
+| Main SHA | 8ff34170fe98fd14cc1e10e30e95d842fe67f0f0 |
 | Remote tag | v0.7.97 |
-| Remote tag_peel | eb96861b17711f7d525cedacccc17905bc17e6e0 |
+| Remote tag_peel | 8ff34170fe98fd14cc1e10e30e95d842fe67f0f0 |
 | Peel match | true |
 
 ## SHAs (canonical table)
@@ -27,9 +27,9 @@
 | Branch | chore/m9-95-services-test-split |
 | Date | 2026-09-14 |
 | Base SHA | 72bff2808457a4ead6f4caec233dc404a20c35d8 |
-| Head SHA | eb96861b17711f7d525cedacccc17905bc17e6e0 |
+| Head SHA | 8ff34170fe98fd14cc1e10e30e95d842fe67f0f0 |
 | Remote tag | v0.7.97 |
-| Remote tag_peel | eb96861b17711f7d525cedacccc17905bc17e6e0 |
+| Remote tag_peel | 8ff34170fe98fd14cc1e10e30e95d842fe67f0f0 |
 | Peel match | true |
 
 ## Release notes
@@ -58,5 +58,5 @@
 - `cargo test -p chronos-services --lib --no-fail-fast`: 268 pass.
 - `cargo test --workspace --lib --no-fail-fast -- --test-threads=1`: 1042 pass.
 - `apply-checkpoint.peel_match == true`.
-- `apply-checkpoint.head_sha == release-receipt.Head SHA == eb96861`.
-- `Remote tag` v0.7.97 peel: `eb96861` (source commit / cycle-artifacts commit).
+- `apply-checkpoint.head_sha == release-receipt.Head SHA == 8ff34170`.
+- `Remote tag` v0.7.97 peel: `8ff34170` (cycle-artifacts commit).

@@ -1,13 +1,13 @@
 {
-  "head_sha": "eb96861b17711f7d525cedacccc17905bc17e6e0",
+  "head_sha": "8ff34170fe98fd14cc1e10e30e95d842fe67f0f0",
   "archived_at": "2026-09-14",
   "peel_match": true,
   "base_sha": "72bff2808457a4ead6f4caec233dc404a20c35d8",
-  "main_sha": "eb96861b17711f7d525cedacccc17905bc17e6e0",
+  "main_sha": "8ff34170fe98fd14cc1e10e30e95d842fe67f0f0",
   "remote_tag": "v0.7.97",
-  "remote_tag_peel": "eb96861b17711f7d525cedacccc17905bc17e6e0",
-  "tag_peel_sha": "eb96861b17711f7d525cedacccc17905bc17e6e0",
-  "tag_peel_note": "non-standard: tag pre-created at source commit SHA; will move through SHA-cascade fixpoint commits per CC#42 workaround. m9-95 is a B-direct cycle (mechanical refactor only), so no separate cycle-artifacts commit is needed; the tag points at the source commit which is also the cycle-artifacts commit.",
+  "remote_tag_peel": "8ff34170fe98fd14cc1e10e30e95d842fe67f0f0",
+  "tag_peel_sha": "8ff34170fe98fd14cc1e10e30e95d842fe67f0f0",
+  "tag_peel_note": "non-standard: tag pre-created at cycle-artifacts commit SHA; will move through SHA-cascade fixpoint commits per CC#42 workaround. m9-95 is a B-direct cycle (mechanical refactor only); the tag points at the cycle-artifacts commit (separate from the source commit eb96861).",
   "ff_merged": false,
   "cycle_id": "m9-95-services-test-split",
   "cycle_record": "p-3416cfb8288f8964/m9-95-services-test-split",
@@ -63,7 +63,7 @@
   ],
   "shas": {
     "source_commit": "eb96861b17711f7d525cedacccc17905bc17e6e0",
-    "cycle_artifacts_commit": "eb96861b17711f7d525cedacccc17905bc17e6e0"
+    "cycle_artifacts_commit": "8ff34170fe98fd14cc1e10e30e95d842fe67f0f0"
   },
   "carry_forward_findings": [
     "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK"

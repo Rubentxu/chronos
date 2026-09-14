@@ -85,8 +85,8 @@ No production behavior is at risk; rollback would be safe at any point.
 - `cargo test -p chronos-services --lib --no-fail-fast`: 268 pass.
 - `cargo test --workspace --lib --no-fail-fast -- --test-threads=1`: 1042 pass (same as m9-94 baseline).
 - `apply-checkpoint.peel_match == true`.
-- `apply-checkpoint.head_sha == release-receipt.Head SHA == eb96861`.
-- `Remote tag` v0.7.97 peel: `eb96861` (cycle-artifacts commit; tag pre-created at cycle-artifacts per CC#42 workaround).
+- `apply-checkpoint.head_sha == release-receipt.Head SHA == 8ff34170`.
+- `Remote tag` v0.7.97 peel: `8ff34170` (cycle-artifacts commit; tag pre-created at cycle-artifacts per CC#42 workaround).
 - `apply-checkpoint.status == "CLOSED"`.
 - `apply-checkpoint.archive_status == "complete"`.
 - `apply-checkpoint.findings_introduced.no_action == []` (cc#19-compliant).
