@@ -8,7 +8,7 @@
 | Path | A-min |
 | Branch | feat/m9-91-counterexample-bundle-events-mcp-tool |
 | Date | 2026-09-14 |
-| Head SHA | 3cd15929dc1558f5ed19d7f874b108b7004073cd |
+| Head SHA | 12eb37a7028e054a6817ba6180765481c38bea15 |
 
 ## SHAs
 
@@ -18,10 +18,10 @@
 | Cycle HEAD (pre-merge) | 18e2a28d0fc1ade564d1c884d9c7228f5864a6f0 |
 | Merge commit | 40a7ba23082c11f5dc2ec6a25a9a8d12cb9a4cfa |
 | Cycle-artifacts commit | fdcb0dc4d9260d387dd8e7ee2eab4b022d10118c |
-| Main SHA (post-cycle-artifacts, tag-peel) | 3cd15929dc1558f5ed19d7f874b108b7004073cd |
+| Main SHA (post-cycle-artifacts, tag-peel) | 12eb37a7028e054a6817ba6180765481c38bea15 |
 | Final fixpoint HEAD (after SHA cascade) | TBD |
 | Remote tag | v0.7.93 |
-| Remote tag_peel | 3cd15929dc1558f5ed19d7f874b108b7004073cd |
+| Remote tag_peel | 12eb37a7028e054a6817ba6180765481c38bea15 |
 | Peel match | TBD (filled post-cascade) — initial peel = cycle-artifacts commit fdcb0dc |
 
 ## Release notes
