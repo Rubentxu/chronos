@@ -129,4 +129,4 @@ Three commits:
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/merge-receipt.md` | `54c887e312366589c08ac19109959ff6d88367b553ab0c6a78535615c762ac76` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-74-cas-put-many-batching/change-entry.md` | `898af1d8a0e49a2fc63a79a5f4b0a1aa9fa60383c48b826d84dad41f06f2263d` |
 | vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `822284b2e06bd4ea027b9e158bbabab882e0f9a3de9ee9c64265e9d8701b9e6f` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `9e806d3ceb45e1f1666632ef9189396b7c9091a3ef71677b8904de2570cf8796` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `bd3b216cda546e80b293dbd6ad526c69f0b71c80ab796a603cdacac8299fce09` |

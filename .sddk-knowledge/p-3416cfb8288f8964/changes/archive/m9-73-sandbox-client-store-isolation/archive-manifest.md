@@ -107,4 +107,4 @@ Two commits:
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/merge-receipt.md` | `9f2ee96b248a5800c1cb96ed16a13dc2e44908d26d2dcf83b07c07644f382647` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-73-sandbox-client-store-isolation/change-entry.md` | `0669b9d2740f447337a475e8cfd9c16bb041ad608ffc732c0e9a53e99fa2e31e` |
 | vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `822284b2e06bd4ea027b9e158bbabab882e0f9a3de9ee9c64265e9d8701b9e6f` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `9e806d3ceb45e1f1666632ef9189396b7c9091a3ef71677b8904de2570cf8796` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `bd3b216cda546e80b293dbd6ad526c69f0b71c80ab796a603cdacac8299fce09` |
