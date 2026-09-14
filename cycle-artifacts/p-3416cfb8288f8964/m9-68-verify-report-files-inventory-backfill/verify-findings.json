@@ -1,7 +1,7 @@
 {
   "schema": "verify-finding.schema.json",
   "subject": {
-    "head_sha": "5edbd56e040ab374b51b4ba9c3d92b7402755485",
+    "head_sha": "d4328cf19db8282100a97b13791f07f134ac0b76",
     "base_sha": "752634cf32a7e9c5196015182e4ea2f58637ec9c",
     "diff_digest": "sha256:f8a86b0150a23869806ba53cc35832cc3eb02af232370ae632fa1de436d2034c",
     "working_tree_clean": true,
@@ -21,7 +21,7 @@
       }
     }
   ],
-  "lens_summary": "m9-68 closes one drift class with one focused B-direct cycle. The cycle is bounded (mechanical backfill of 22 + 21 verify-reports), well-understood (data from git diff), and self-validating (CC#55 detects recurrence; smoke test covers it). Three-commit structure: (1) vault changes (CC#55 + backfill), (2) smoke test update, (3) archive-manifest SHA regen. Self-tested: smoke test 5/5 PASS (~50s); injected missing Files Inventory → CC#55 catches.",
+  "lens_summary": "m9-68 closes one drift class with one focused B-direct cycle. The cycle is bounded (mechanical backfill of 22 + 21 verify-reports), well-understood (data from git diff), and self-validating (CC#55 detects recurrence; smoke test covers it). Three-commit structure: (1) vault changes (CC#55 + backfill), (2) smoke test update, (3) archive-manifest SHA regen. Self-tested: smoke test 5/5 PASS (~50s); injected missing Files Inventory \u2192 CC#55 catches.",
   "cycle_id": "m9-68",
   "verdict": "pass_with_findings"
 }

@@ -1,5 +1,15 @@
 # Merge Receipt — m9-86-cc001-god-module-types-split
 
+
+
+## SHAs
+
+| Field | Value |
+|---|---|
+| Branch | feat/m9-86-cc001-god-module-types-split |
+| Date | 2026-09-14 |
+| Base SHA | 43e48b927eebb30be5cd2c6fcffbd6dcbabcbc7d |
+| Head SHA | 434f2b4db74e94488f180100a8e8c8db50fd7fa3 |
 ## Branch
 
 `feat/m9-86-cc001-god-module-types-split`

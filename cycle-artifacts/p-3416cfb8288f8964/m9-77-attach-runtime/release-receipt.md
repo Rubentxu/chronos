@@ -2,7 +2,7 @@
 
 Cycle | m9-77-attach-runtime
 Base SHA | c53171a (m9-76 post-release head)
-Head SHA | 9d5331659f742e3be98995dfba26ff2a635f98ed
+Head SHA | 4bd2da365d938cff734aa7f287597f854862ea58
 Branch | feat/m9-77-session-attach-runtime
 Date | 2026-09-13T21:24:27Z
 Remote tag | v0.7.79

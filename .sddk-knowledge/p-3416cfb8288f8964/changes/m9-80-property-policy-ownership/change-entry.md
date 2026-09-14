@@ -30,14 +30,14 @@ The 13 unit tests in `hypothesis_test` pass without assertion changes.
 | Path | A-min |
 | Status | CLOSED |
 | Base SHA | `82e219f812655a136e736f443ec8b86695050110` |
-| Head SHA | `8012342534f33b92b9edd8002cda3cf194937fa6` |
+| Head SHA | `7874e5c8e972172c024b07f60746f0e06df92f9d` |
 | Tag | `v0.7.82` |
 | Merge SHA | `7874e5c8e972172c024b07f60746f0e06df92f9d` |
 
 ## Subject
 
 - base_sha: `82e219f`
-- head_sha: `8012342`
+- head_sha: `7874e5c8e972172c024b07f60746f0e06df92f9d`
 - merge_sha: `7874e5c8e972172c024b07f60746f0e06df92f9d`
 - diff_digest: `sha256:24a1e00227dc74a577d254eb1ab5d2d8cb6f6cf6bb5c94ca89ccff180a8f27b6`
 - source commits (since base): `90c7d4c`, `ae6a7df`, `a12e7d6`, `d1e6a52`,

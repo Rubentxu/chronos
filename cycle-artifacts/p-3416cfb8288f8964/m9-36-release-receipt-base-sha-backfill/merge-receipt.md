@@ -5,3 +5,13 @@ Base SHA | d7fd733064999cf93eea429a78939a02a1d4d27c
 Head SHA | ced90eccf62f10e27ef0d76cab5b83bfc933172c
 Branch | fix/m9-36-release-receipt-base-sha-backfill
 Date | 2026-09-12T13:16Z
+
+
+## SHAs
+
+| Field | Value |
+|---|---|
+| Branch |  |
+| Date | 2026-09-12T13:15Z |
+| Base SHA | d7fd733064999cf93eea429a78939a02a1d4d27c |
+| Head SHA | ced90eccf62f10e27ef0d76cab5b83bfc933172c |

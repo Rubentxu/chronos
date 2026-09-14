@@ -10,9 +10,8 @@
   "cycle_id": "m9-83-cc39-total-cycles",
   "cycle_record": "p-3416cfb8288f8964/m9-83-cc39-total-cycles",
   "branch": "fix/m9-83-cc39-total-cycles",
-  "path": "B-direct",
   "route": "B-direct",
-  "status": "archived",
+  "status": "CLOSED",
   "verify_status": "passed",
   "release_status": "released",
   "archive_status": "complete",
@@ -26,7 +25,10 @@
     "archive": "complete"
   },
   "tier_required": "T1",
-  "tiers_run": ["T0", "T1"],
+  "tiers_run": [
+    "T0",
+    "T1"
+  ],
   "tier_results": {
     "T0": {
       "fmt_check": "passed",
@@ -38,16 +40,25 @@
       "cc39_field_count": 83,
       "cc39_row_count": 83,
       "cc39_match": true,
-      "drift_after_fix": ["CC#48 (pre-existing, about script not cycle)", "CC#51 (pre-existing, about script not cycle)"]
+      "drift_after_fix": [
+        "CC#48 (pre-existing, about script not cycle)",
+        "CC#51 (pre-existing, about script not cycle)"
+      ]
     }
   },
-  "carry_forward_findings_closed": ["FIND-M9-83-CC39-TOTAL-CYCLES-OFF-BY-ONE"],
+  "carry_forward_findings_closed": [
+    "FIND-M9-83-CC39-TOTAL-CYCLES-OFF-BY-ONE"
+  ],
   "carry_forward_findings_introduced": [],
   "cc_delta": {
     "added": [],
-    "modified": ["CC#39"],
+    "modified": [
+      "CC#39"
+    ],
     "removed": [],
-    "touched": ["CC#39"]
+    "touched": [
+      "CC#39"
+    ]
   },
   "findings": [
     {
@@ -65,7 +76,9 @@
     {
       "sha": "dca1df3",
       "subject": "m9-83: vault (exploration-report + proposal + spec + tasks)",
-      "files_changed": [".sddk-knowledge/p-3416cfb8288f8964/changes/m9-83-cc39-total-cycles/{exploration-report,proposal,spec,tasks}.md"]
+      "files_changed": [
+        ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-83-cc39-total-cycles/{exploration-report,proposal,spec,tasks}.md"
+      ]
     },
     {
       "sha": "e7167bb",
@@ -85,18 +98,13 @@
       "is_merge": true
     }
   ],
-  "notes": [
-    {
-      "phase": "T0",
-      "summary": "vault files prepared: exploration/proposal/spec/tasks added, cycles/index.md row added OPEN, terms/index.md bumped"
-    },
-    {
-      "phase": "T1",
-      "summary": "literal fix: cycles/index.md Total cycles 84 → 83 (matches row count); CC#39 field/row match verified"
-    },
-    {
-      "phase": "smoke_subset",
-      "summary": "n/a: trivial single-line edit, no sandbox/probe/mcp touched"
-    }
-  ]
+  "archived_at": "2026-09-14",
+  "findings_introduced": {
+    "no_action": []
+  },
+  "peel_match": true,
+  "findings_closed": [],
+  "created_at": "2026-09-14",
+  "title": "m9-83",
+  "summary": "Path: B-direct (trivial literal fix to cycles/index.md single field)."
 }

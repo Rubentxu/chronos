@@ -3,6 +3,7 @@
 ## Cycle
 
 | Cycle | `m9-81-counterexample-table-classifier` |
+| Date | 2026-09-14 |
 
 ## Summary
 
@@ -39,6 +40,7 @@ Path: B-direct. Tiers run: T0 + T1. Wall time: ~30 min.
 | Base SHA | `45b53df132186b09de75b543b87cf0bab23bd26e` |
 | Tag | `v0.7.83` (annotated) |
 | Tag peel (commit) | `fdc5accf64be1fcf780913243aec0496ad48e7fe` |
+| Head SHA | `fdc5accf64be1fcf780913243aec0496ad48e7fe` |
 | Merge commit (--no-ff) | `fdc5accf64be1fcf780913243aec0496ad48e7fe` |
 | Peel match | clean |
 | Merge strategy | `--no-ff` |
@@ -104,18 +106,18 @@ deprecation sunset sweep.
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-81-counterexample-table-classifier/archive-manifest.md` | `c0c2946c1b2fb599676442e6b5158e70b329aff5e6188c0474ec701a9b183602` |
 | implementation-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-81-counterexample-table-classifier/implementation-receipt.md` | `dba3e0dea8c306c8f3884773730961f5225e3a393d94e8b647ea83fb78e3b3d4` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-81-counterexample-table-classifier/verify-report.md` | `ea6bd50b9fa88a222daf314c5d13f8e06e691faf6cf4c27c680385ee339d86f5` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-81-counterexample-table-classifier/verify-findings.json` | `392b20812bfac33d800d6402b5f16fd62dd6d471a475fd3ef11a55062ae273f0` |
-| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-81-counterexample-table-classifier/release-receipt.md` | `83e09049a88f692e5b49f2b46f2e44e4555fdb76d496f639f569f3f3ae7284a2` |
-| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-81-counterexample-table-classifier/merge-receipt.md` | `01d604c1eee6e4f7972b312b41e95f45afbeb8c0403412299142c041c1f1025c` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-81-counterexample-table-classifier/verify-findings.json` | `9b3883717ea937d237db478d727c667f7033405a9d299f741b6eab0c389e7087` |
+| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-81-counterexample-table-classifier/release-receipt.md` | `5ecd9f74127e76e61f7d1c7d784e874a6bb11b0e733c9893a161651705bb8d46` |
+| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-81-counterexample-table-classifier/merge-receipt.md` | `cc2c3b1abf3988b1dd5d2668d1edfd6e87d64bf85108e5df05a62914be75a4be` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-81-counterexample-table-classifier/release-report.md` | `c91c2051adbab46a1772030293a0f1cb34e238b0b94c5077af2bb9b6713d78d7` |
-| apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-81-counterexample-table-classifier/apply-checkpoint.json` | `282d159636f312074e15050603c04ee6264c199345dfbaa2e99da028bc4e6d41` |
+| apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-81-counterexample-table-classifier/apply-checkpoint.json` | `6330806dbc2f50f36f344c010ef04e7309d8b3d6d59a3522625e3e6b4a05d992` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-81-counterexample-table-classifier/change-entry.md` | `38affdb4edb412842e4f52ebb9fccd53d094d356b8cd2db07394b841e9e7a3ab` |
 | exploration-report | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-81-counterexample-table-classifier/exploration-report.md` | `fd081a4691b0d51bb0d400bb31c0de94888dc03864d470256f68bd01487bc612` |
 | proposal | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-81-counterexample-table-classifier/proposal.md` | `95ca700b010ae40a0bff2e37f665195979788f7be38dcd9ae24e41f9a500391a` |
 | spec | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-81-counterexample-table-classifier/spec.md` | `93e79efac2bb8f0dd76e1668f2e045e3b86eb71c5565dc1cfa9a38db65596b2e` |
 | tasks | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-81-counterexample-table-classifier/tasks.md` | `379d708e3f0268b46343ac0dc825ca3c9a7b32b4e90b782efc9960a4556b3748` |
 | vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `c9dedf4ad1c4f1e58621298a139a3c533daba97030dd633cee7c936f1ad01a09` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `d290144dbffbe8ad7f90b5818320bb9386a1c86766b9daecbba05d5c864d414a` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `d0cdd2625028e2332defc96665ef93b302731ad5b3de1d847a0c083874b7913a` |
 | source (chronos-store) | `crates/chronos-store/src/counterexample_storage.rs` | (+11/-13: 6 sites refactored; 1 import swap) |
 
 ## Evidence bindings

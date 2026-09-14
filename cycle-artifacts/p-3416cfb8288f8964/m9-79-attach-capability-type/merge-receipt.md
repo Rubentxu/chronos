@@ -2,6 +2,10 @@
 
 | Field | Value |
 |---|---|
+| Branch | feat/m9-79-attach-capability-type |
+| Date | 2026-09-14 |
+| Base SHA | 009b75037357d069775ad4d7a0661684e27fc9ca |
+| Head SHA | f41abd4580d078a3f5f1255ffd543573a4fa702d |
 | Merge commit | `f41abd4580d078a3f5f1255ffd543573a4fa702d` |
 | Merge type | `--no-ff` (preserved cycle branch topology) |
 | Source branch | `feat/m9-79-attach-capability-type` |
@@ -9,7 +13,6 @@
 | Fast-forwarded? | no |
 | Merged at | 2026-09-14T06:27:45+02:00 |
 | Pushed to origin | yes (`009b750..f41abd4 main -> main`) |
-
 ## Commits introduced
 
 ```

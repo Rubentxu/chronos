@@ -8,6 +8,10 @@
 
 | Field | Value |
 |---|---|
+| Branch | feat/m9-82-degraded-store-disclosure |
+| Date | 2026-09-14 |
+| Base SHA | a0f72c2a7fe36eaeb9c772505dfe563f85f42773 |
+| Head SHA | b8694eff737293bffea4ba62f07e4b206eafc502 |
 | Source branch | `feat/m9-82-degraded-store-disclosure` |
 | Target branch | `main` |
 | Merge strategy | `--no-ff` (preserves cycle topology; merge commit required for peel match) |
@@ -17,7 +21,6 @@
 | Main HEAD (after merge) | `b8694eff737293bffea4ba62f07e4b206eafc502` |
 | Files merged | 12 (2 source files + 4 vault docs + 4 cycle-artifacts + 1 spec.md correction + 1 proposal.md correction) |
 | Lines | 1338 inserted, 13 deleted |
-
 ## Topology preservation
 
 ```

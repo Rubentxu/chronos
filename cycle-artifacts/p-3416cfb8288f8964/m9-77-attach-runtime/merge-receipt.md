@@ -2,13 +2,16 @@
 
 | Field | Value |
 |---|---|
+| Branch | feat/m9-77-session-attach-runtime |
+| Date | 2026-09-14 |
+| Base SHA | c53171a |
+| Head SHA | 4bd2da365d938cff734aa7f287597f854862ea58 |
 | Merge commit | `9d5331659f742e3be98995dfba26ff2a635f98ed` |
 | Merge type | `--no-ff` |
 | Source branch | `feat/m9-77-session-attach-runtime` |
 | Target branch | `main` |
 | Fast-forwarded? | no |
 | Merged at | 2026-09-13T21:24:27+02:00 |
-
 ## Commits introduced
 
 ```

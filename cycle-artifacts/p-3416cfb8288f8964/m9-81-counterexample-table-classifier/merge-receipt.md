@@ -8,6 +8,10 @@
 
 | Field | Value |
 |---|---|
+| Branch | feat/m9-81-counterexample-table-classifier |
+| Date | 2026-09-14 |
+| Base SHA | 45b53df132186b09de75b543b87cf0bab23bd26e |
+| Head SHA | fdc5accf64be1fcf780913243aec0496ad48e7fe |
 | Source branch | `feat/m9-81-counterexample-table-classifier` |
 | Target branch | `main` |
 | Merge strategy | `--no-ff` (preserves cycle topology; merge commit required for peel match) |
@@ -17,7 +21,6 @@
 | Main HEAD (after merge) | `fdc5accf64be1fcf780913243aec0496ad48e7fe` |
 | Files merged | 11 (1 source file + 4 vault docs + 4 cycle-artifacts + 1 terms-index change + 1 cycles-index change) |
 | Lines | 784 inserted, 16 deleted |
-
 ## Topology preservation
 
 ```

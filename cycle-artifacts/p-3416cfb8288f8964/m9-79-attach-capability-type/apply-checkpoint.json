@@ -4,9 +4,8 @@
   "cycle_id": "m9-79-attach-capability-type",
   "cycle_record": "p-3416cfb8288f8964/m9-79-attach-capability-type",
   "branch": "feat/m9-79-attach-capability-type",
-  "path": "B-direct",
   "route": "B-direct",
-  "status": "archived",
+  "status": "CLOSED",
   "verify_status": "passed",
   "release_status": "released",
   "archive_status": "archived",
@@ -73,20 +72,7 @@
   "created_at": "2026-09-14T06:24:15Z",
   "title": "m9-79 attach capability type",
   "summary": "Rename probe_type literal in ChronosSessionLifecycleService::attach from 'ebpf_user' to 'ptrace_attach' so attach sessions report the actual ptrace backend. One source line + matching sandbox assertion + EN/ES manual updates. B-direct, T0+T2+T4, tag v0.7.81, merge f41abd4.",
-  "commits_since_base": [
-    "917fcb036a56d6051af6429dd09225e7d0da4fe6",
-    "eba71a12079d576b20a45005404ea2f7ba62e20e",
-    "f41abd4580d078a3f5f1255ffd543573a4fa702d"
-  ],
-  "notes": [
-    "cycle_path: B-direct (single literal rename + matching test assertion + manual updates)",
-    "scope_decision: ptrace_attach matches chronos-native/src/probe_backend.rs::attach_to_process (which calls PtraceTracer::attach via nix ptrace)",
-    "tier_plan: T0 fmt + clippy; T2 services lib; T4-smoke e2e_connectivity + session_lifecycle attach test (per AGENTS.md \u00a72 B-direct table)",
-    "vault_indexes_updated: cycles/index.md (m9-77..m9-79 rows added; Total 76 -> 79); terms/index.md (Findings deferred from m9-77..m9-79 section + Last updated/archive metadata)",
-    "archive_manifest_cc4_affected_set: m9-02 (index rows), m9-67, m9-68, m9-70, m9-71, m9-72, m9-73, m9-74, m9-75, m9-76 (source/index rows from cycles this batch shares files with), plus the new m9-79 manifest; regenerated to a fixpoint by scripts/regen_manifest_index_shas.py after the artifacts commit lands; the self-referential rows of pre-m9-11 manifests and m9-67/m9-68 are preserved by design",
-    "sddk_reconciliation: m10-ms-race-fix stale ledger entry superseded as external-obsolete before this cycle started; the closure event was emitted with evidence pointing to m9-61-ms-race-fix:tag=v0.7.63:merge=35bccbc (no rebroadcast needed)",
-    "out_of_scope_now: deferred low-severity findings preserved unchanged (FIND-M9-75-MCP-TOOLS-DO-NOT-DISCLOSE-DEGRADED-STORE, FIND-M9-74-NATIVE-PTRACE-TESTS-NEED-SERIAL, FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION, FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION)",
-    "next_recommended: MS-PROPERTY-POLICY (A-min, T2) on a fresh branch from origin/main; ownership of the four observation_log property-policy functions in chronos-domain, one domain owner/re-export or replacement callsites plus a shared chronos-domain fixture"
-  ],
-  "peel_match": true
+  "peel_match": true,
+  "archived_at": "2026-09-14",
+  "remote_tag_peel": "f41abd4580d078a3f5f1255ffd543573a4fa702d"
 }

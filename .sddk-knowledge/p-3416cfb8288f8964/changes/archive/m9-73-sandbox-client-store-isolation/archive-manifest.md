@@ -101,10 +101,10 @@ Two commits:
 | vault maintenance (drift sweep) | `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md` | `0c57c1dacf0f30bd9ac4adf201dcdf9d60ee43ae858dd50276189d140eadb302` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/apply-checkpoint.json` | `35408c5d6ab2a0a9250228401b91f4f0b484cd7874ccb3f8b538bac2b5587931` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/verify-report.md` | `d12ad15ceb8c5673312b86206d0d5eb46a45a3b4d8d4348763bded29ae95e633` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/verify-findings.json` | `aed37a1c47262cd01bdaffa8ee667b499275e526b239bde62a07d2e88f0e96ad` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/verify-findings.json` | `fb47642a7696dbd20cb3c7de5203f1aa496e16f42e872718c41ce8f5dc7dd6b1` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/release-report.md` | `f70cb66b2110e7dfb1d8642a6af63262b64879f54fa70a2d43b202369e53e79a` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/release-receipt.md` | `5872b2538d4b743dfa1c3b5c20894c340172d274b8a30fb657b463c5e311e3a1` |
-| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/merge-receipt.md` | `9c847b30ce3f734c0de4584bcade3a7c06f03d14225bd3ec02f6b9b4672e3294` |
+| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/merge-receipt.md` | `9f2ee96b248a5800c1cb96ed16a13dc2e44908d26d2dcf83b07c07644f382647` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-73-sandbox-client-store-isolation/change-entry.md` | `0669b9d2740f447337a475e8cfd9c16bb041ad608ffc732c0e9a53e99fa2e31e` |
 | vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `c9dedf4ad1c4f1e58621298a139a3c533daba97030dd633cee7c936f1ad01a09` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `d290144dbffbe8ad7f90b5818320bb9386a1c86766b9daecbba05d5c864d414a` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `d0cdd2625028e2332defc96665ef93b302731ad5b3de1d847a0c083874b7913a` |

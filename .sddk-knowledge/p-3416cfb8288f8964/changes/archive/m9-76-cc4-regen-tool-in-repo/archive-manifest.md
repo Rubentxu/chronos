@@ -50,6 +50,7 @@ manual revert of self rows. One commit on
 | Branch | `feat/m9-76-cc4-regen-tool-in-repo` |
 | Tag | `v0.7.78` |
 | Route | B-direct |
+| Date | 2026-09-13T17:57Z |
 
 ## Deliverables
 
@@ -156,10 +157,10 @@ observed to fail for the reason the guard exists:
 | docs (vault drift sweep) | `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md` | `0c57c1dacf0f30bd9ac4adf201dcdf9d60ee43ae858dd50276189d140eadb302` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/apply-checkpoint.json` | `232613564d78f9c0839f732c4b1647cf12f4582602c4073580cbf0cc6e20df0c` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/verify-report.md` | `c10f7d6c66d92dd01420a5dc64846ae717dd874c7e2334b138a9578d987adfcf` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/verify-findings.json` | `e3f3a9b1dd726d8794a6aa7eb11aa0bc91c86d06e1a0b623ef9ee6b72943b28a` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/verify-findings.json` | `fc570b5aed7ff22829251b0a52fce510fc3af0117d1caa18bea89f8088ec8e5b` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/release-report.md` | `4d269ba1b0bff938b0ac7b11706a5d871b1ee553c60ac5747399eaa438f97c93` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/release-receipt.md` | `a0f2475bfc990115cbabf9109f26c06ffcd3b05ade3ef55ee9c53e9c24816182` |
-| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/merge-receipt.md` | `0ccc5642788a57be9e0457ca7dac763211872229f76f679311b9b483a7488051` |
+| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/merge-receipt.md` | `fc364d5b3086d1f82ff641bf28d0cbaff7b8fdadfbbebf8cce0c8241c653269b` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-76-cc4-regen-tool-in-repo/change-entry.md` | `c40623efda64da667293be5d19262f6d627d7c8a54e2e8b5d527bd82b2c778f1` |
 | vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `c9dedf4ad1c4f1e58621298a139a3c533daba97030dd633cee7c936f1ad01a09` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `d290144dbffbe8ad7f90b5818320bb9386a1c86766b9daecbba05d5c864d414a` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `d0cdd2625028e2332defc96665ef93b302731ad5b3de1d847a0c083874b7913a` |

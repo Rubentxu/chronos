@@ -10,9 +10,8 @@
   "cycle_id": "m9-84-cc001-god-module-keys-split",
   "cycle_record": "p-3416cfb8288f8964/m9-84-cc001-god-module-keys-split",
   "branch": "feat/m9-84-cc001-god-module-keys-split",
-  "path": "A-lite",
   "route": "A-lite",
-  "status": "archived",
+  "status": "CLOSED",
   "verify_status": "passed",
   "release_status": "released",
   "archive_status": "complete",
@@ -26,7 +25,12 @@
     "archive": "complete"
   },
   "tier_required": "T1",
-  "tiers_run": ["T0", "T1", "T2", "T3"],
+  "tiers_run": [
+    "T0",
+    "T1",
+    "T2",
+    "T3"
+  ],
   "tier_results": {
     "T0": {
       "fmt_check": "passed",
@@ -38,7 +42,10 @@
       "passed": 77,
       "failed": 0,
       "ignored": 0,
-      "baseline_pre_refactor": {"passed": 77, "failed": 0},
+      "baseline_pre_refactor": {
+        "passed": 77,
+        "failed": 0
+      },
       "regression_check": "matched (77 / 77)"
     },
     "T2": {
@@ -58,7 +65,9 @@
     "added": [],
     "modified": [],
     "removed": [],
-    "touched": ["CC#4"]
+    "touched": [
+      "CC#4"
+    ]
   },
   "findings": [
     {
@@ -88,26 +97,13 @@
       "is_merge": true
     }
   ],
-  "notes": [
-    {
-      "phase": "T0",
-      "summary": "vault files prepared: exploration-report + proposal + spec + tasks added, cycles/index.md row added OPEN"
-    },
-    {
-      "phase": "T1",
-      "summary": "baseline 77/0 captured for chronos-store lib"
-    },
-    {
-      "phase": "T2",
-      "summary": "ce_chunk_keys.rs created; counterexample_storage.rs trimmed by ~101 lines; submodule declared via #[path] + pub(super) use re-export"
-    },
-    {
-      "phase": "T3",
-      "summary": "cargo test -p chronos-store: 77/77 (matched baseline); cargo test -p chronos-services: 264/264; cargo build -p chronos-cli: success; cargo clippy --workspace: clean; cargo fmt: clean"
-    },
-    {
-      "phase": "smoke_subset",
-      "summary": "n/a: no probe/mcp touched; behaviour-preserving lexical refactor"
-    }
-  ]
+  "archived_at": "2026-09-14",
+  "findings_introduced": {
+    "no_action": []
+  },
+  "peel_match": true,
+  "findings_closed": [],
+  "created_at": "2026-09-14",
+  "title": "m9-84",
+  "summary": "Path: A-lite (cross-crate refactor with bounded scope)."
 }

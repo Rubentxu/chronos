@@ -1,12 +1,11 @@
 {
-  "head_sha": "8012342534f33b92b9edd8002cda3cf194937fa6",
+  "head_sha": "7874e5c8e972172c024b07f60746f0e06df92f9d",
   "base_sha": "82e219f812655a136e736f443ec8b86695050110",
   "cycle_id": "m9-80-property-policy-ownership",
   "cycle_record": "p-3416cfb8288f8964/m9-80-property-policy-ownership",
   "branch": "feat/m9-80-property-policy-ownership",
-  "path": "A-min",
   "route": "A-min",
-  "status": "archived",
+  "status": "CLOSED",
   "verify_status": "passed",
   "release_status": "released",
   "archive_status": "complete",
@@ -43,7 +42,16 @@
       "verdict": "PASS",
       "critical_findings": 0,
       "warning_findings": 0,
-      "tiers_run": ["T0_fmt", "T0_clippy", "T1_services_domain_lib", "T2_hypothesis_test_filter", "T3_full_workspace_minus_native", "T3_native_serial", "T4_smoke_sandbox_3_suites", "T5_vault_drift"],
+      "tiers_run": [
+        "T0_fmt",
+        "T0_clippy",
+        "T1_services_domain_lib",
+        "T2_hypothesis_test_filter",
+        "T3_full_workspace_minus_native",
+        "T3_native_serial",
+        "T4_smoke_sandbox_3_suites",
+        "T5_vault_drift"
+      ],
       "smoke_subset": [
         "session_lifecycle::tests::* (4 passed, 28.57s)",
         "analytics_tools::tests::* (11 passed, 79.89s)",
@@ -79,7 +87,7 @@
     ".sddk-knowledge/p-3416cfb8288f8964/cycles/index.md (modified: adds m9-80 row at line 104; Total cycles 80 -> 81; CC#5 + CC#6 + CC#54 inline fixes)",
     ".sddk-knowledge/p-3416cfb8288f8964/handoff/m9-backlog-blocked-2026-09-12.md (modified: appends T0/T1/T2/T3/T4/T5 handoff sections)",
     ".sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md (modified: Last updated refresh)",
-    ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-{02,68,70,71,72,73,74,75,76,79}-*/archive-manifest.md (modified: CC#4 cascade — index SHA rows regenerated to fixpoint by scripts/regen_manifest_index_shas.py after m9-80 row landed in cycles/index.md)",
+    ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-{02,68,70,71,72,73,74,75,76,79}-*/archive-manifest.md (modified: CC#4 cascade \u2014 index SHA rows regenerated to fixpoint by scripts/regen_manifest_index_shas.py after m9-80 row landed in cycles/index.md)",
     "cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/apply-checkpoint.json (added: this file)",
     "cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/implementation-receipt.md (added)",
     "cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/merge-receipt.md (added)",
@@ -97,30 +105,7 @@
   "released_at": "2026-09-14T08:49Z",
   "title": "m9-80 property policy ownership",
   "summary": "Move four property-policy primitives (eval_invariant, eval_existence, eval_call_path, observe_property_target) from chronos_services::hypothesis_test to chronos_domain::property via a layered split (spec rev 2). Domain returns PropertyHypothesisOutcome-family types; services wraps via From impls. No wire / protocol change. A-min, T0+T1+T2+T3+T4+T5, all 6 mechanical spec scenarios verified, 552 tests pass across all tiers, vault PASS. Released as v0.7.82 (merge 7874e5c).",
-  "commits_since_base": [
-    "90c7d4c",
-    "ae6a7df",
-    "a12e7d6",
-    "d1e6a52",
-    "57c1a25",
-    "7990db9",
-    "c6c7efe",
-    "933670d",
-    "26a5cf4",
-    "3d93766",
-    "ccf8811",
-    "34b67b2",
-    "8012342"
-  ],
-  "notes": [
-    "cycle_path: A-min (cross-crate ownership refactor; 1 apply phase each on domain + services)",
-    "scope_decision: layered split (spec rev 2). The original rev 1 said 'byte-for-byte move'; recon at T1 startup revealed that the four functions reference services-layer wire types, which would force chronos-domain -> chronos-services (circular). The layered split is the right design.",
-    "tier_plan: T0 fmt + clippy; T1 services + domain libs; T2 hypothesis_test filter (13/13); T3 full workspace minus native (44 lib suites green) + native serial (103/103); T4-smoke 3 representative sandbox suites (session_lifecycle + analytics_tools + program_scenarios = 23/23 in 167 s wall); T5 vault drift sweep",
-    "smoke_subset_rationale: 3 suites chosen because the cycle touches the HypothesisOutput::{Invariant, Existence, CallPath} wire shape. session_lifecycle exercises session_* actions that call HypothesisTest::test; analytics_tools covers broader analytics; program_scenarios covers probe lifecycle on real binaries (trace-shape regressions).",
-    "vault_indexes_updated: cycles/index.md (m9-80 row added; Total 80 -> 81); 10 archive-manifest.md files in changes/archive/ regenerated to fixpoint via scripts/regen_manifest_index_shas.py (CC#4 cascade)",
-    "archive_manifest_cc4_affected_set: m9-02 (index rows), m9-68, m9-70, m9-71, m9-72, m9-73, m9-74, m9-75, m9-76 (source/index rows from cycles this batch shares files with), plus m9-79 (recent attach-capability-type manifest); 10 archive-manifest.md files in the diff; regenerated to fixpoint after artifacts commit lands; the self-referential rows of pre-m9-11 manifests and m9-67/m9-68 are preserved by design",
-    "tag_convention: patch bump v0.7.81 -> v0.7.82 (no wire/protocol change); clean peel match (tag_peel == merge_commit_sha == HEAD == 7874e5c)",
-    "branch_hygiene: --no-ff merge to preserve cycle topology; delete cycle branch after archive phase",
-    "carry_forward_findings_unchanged: FIND-M9-75, FIND-M9-74, FIND-M9-72, FIND-M9-71, FIND-M9-66 (broken JSON in m9-66 verify-findings.json), pre-existing smoke-test work-copy isolation flake"
-  ]
+  "archived_at": "2026-09-14",
+  "remote_tag_peel": "7874e5c8e972172c024b07f60746f0e06df92f9d",
+  "peel_match": true
 }

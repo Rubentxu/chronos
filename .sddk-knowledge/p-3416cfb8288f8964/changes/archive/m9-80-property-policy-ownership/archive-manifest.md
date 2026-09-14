@@ -53,6 +53,7 @@ unit tests pre-existed; the cycle is a pure refactor).
 | Route | A-min |
 | Merge SHA | `7874e5c8e972172c024b07f60746f0e06df92f9d` |
 | Merge type | `--no-ff` (preserved cycle branch topology) |
+| Date | 2026-09-14 |
 
 ## Deliverables
 
@@ -176,13 +177,13 @@ m9-roadmap project issue for the prioritized list.
 | implementation-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/implementation-receipt.md` | `dc9de098846a3e35df5f810defc7ee3f86fbeb0e458c48f3a219527ea3500968` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/verify-report.md` | `40bec32a8f4885102a1c0dc789722e38e4e13b6b00771f46ef18a118c6438645` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/verify-findings.json` | `bd427da3396f105cd02c462126134c9d8efd154824e7d5af14ca4a1c4dcf42ac` |
-| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/release-receipt.md` | `99c592b6101d340d8b8fd8a7fd02ac47250fb67a42c66be29a5a283f16800c2b` |
-| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/merge-receipt.md` | `265802ca2613a50821f286f717ab428da4b15fcaba44ea83176b1eeccfee4679` |
+| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/release-receipt.md` | `e30e225ab0680c57081276025643aecfd9c474092edd4b4846e3ea67fa2d1c17` |
+| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/merge-receipt.md` | `27fd81a15d1e42154a6dd27fd1a70218417240494e53f29336701be15729c8b3` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/release-report.md` | `94a740505682c1ef639e6217b95a9f2679a68312d9a39dbd431b86902ebe1630` |
-| apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/apply-checkpoint.json` | `cff44f563b53cee206515472c7844ec1f5ebb971993cc93b7d6306f645332b0c` |
-| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-80-property-policy-ownership/change-entry.md` | `0c172bc3e6d0a6afbadb19090e58cf52ee541bfa34fd808d71f15b24dd7d01e0` |
+| apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/apply-checkpoint.json` | `de751090752543c2301a3c7e5a410c0c0c9aa0199bbc1e486907899f41375790` |
+| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-80-property-policy-ownership/change-entry.md` | `a759367b8e085afeb3d2dcd3a0abbb71f7b72c9638651f632726733ee18ef1ff` |
 | vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `c9dedf4ad1c4f1e58621298a139a3c533daba97030dd633cee7c936f1ad01a09` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `d290144dbffbe8ad7f90b5818320bb9386a1c86766b9daecbba05d5c864d414a` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `d0cdd2625028e2332defc96665ef93b302731ad5b3de1d847a0c083874b7913a` |
 | source (domain lib) | `crates/chronos-domain/src/lib.rs` | (8 entries added to `pub use property::{…}` block at line 28) |
 | source (domain property) | `crates/chronos-domain/src/property.rs` | (+777/-165: 7 new types + 4 new pub fns + private `bfs_reach_domain` helper) |
 | source (services hypothesis_test) | `crates/chronos-services/src/hypothesis_test.rs` | (-239/+35: removed 10 private fns; 4 match arms delegate to domain) |

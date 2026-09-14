@@ -1,18 +1,17 @@
 {
-  "head_sha": "9d5331659f742e3be98995dfba26ff2a635f98ed",
+  "head_sha": "4bd2da365d938cff734aa7f287597f854862ea58",
   "base_sha": "c53171a",
   "cycle_id": "m9-77-attach-runtime",
   "cycle_record": "p-3416cfb8288f8964/m9-77-attach-runtime",
   "branch": "feat/m9-77-session-attach-runtime",
-  "path": "A-min",
   "route": "A-min",
-  "status": "archived",
+  "status": "CLOSED",
   "verify_status": "passed",
   "release_status": "released",
   "archive_status": "archived",
   "remote_tag": "v0.7.79",
   "tag_peel_sha": "4bd2da365d938cff734aa7f287597f854862ea58",
-  "main_sha": "9d5331659f742e3be98995dfba26ff2a635f98ed",
+  "main_sha": "4bd2da365d938cff734aa7f287597f854862ea58",
   "tag_peel_note": "v0.7.79 is on the code commit (4bd2da3), not the merge (9d53316); preserved drift from before SDDK reconciliation",
   "ff_merged": false,
   "phases": {
@@ -45,7 +44,7 @@
     "crates/chronos-services/src/probe.rs (+160)",
     "crates/chronos-services/src/error.rs (+7)",
     "crates/chronos-mcp/src/server.rs (+16)",
-    "chronos-sandbox/src/client/tools.rs (±8)",
+    "chronos-sandbox/src/client/tools.rs (\u00b18)",
     "chronos-sandbox/tests/session_lifecycle.rs (+34)",
     "docs/manual-ai/en/08-session-management.md (+22)",
     "docs/manual-ai/es/08-gestion-sesiones.md (+23)"
@@ -58,13 +57,6 @@
   "created_at": "2026-09-13T21:24:27Z",
   "title": "m9-77 attach runtime",
   "summary": "Wire session_start{action=attach} through native probe runtime, services, dispatcher and MCP. Closes the long-standing Unsupported(attach m7+) stub. A-min path, tag v0.7.79, merge 9d53316. Backfill synthesized 2026-09-14 during m9-79 archival sweep.",
-  "commits_since_base": [
-    "4bd2da365d938cff734aa7f287597f854862ea58",
-    "9d5331659f742e3be98995dfba26ff2a635f98ed"
-  ],
-  "notes": [
-    "backfill: cycle shipped before SDDK ledger reconciliation; CC#51 requires the cycle-artifacts folder to exist for the cycles/index.md row",
-    "tag_peel_drift: v0.7.79 points at code commit 4bd2da3, not merge 9d53316; preserved drift, CC#12 does not apply",
-    "next_recommended: m9-78 refines detach safety"
-  ]
+  "remote_tag_peel": "4bd2da365d938cff734aa7f287597f854862ea58",
+  "peel_match": true
 }

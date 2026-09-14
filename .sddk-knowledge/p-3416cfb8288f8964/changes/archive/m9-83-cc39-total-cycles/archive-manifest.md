@@ -9,7 +9,7 @@
 | Branch | fix/m9-83-cc39-total-cycles |
 | Date | 2026-09-14 |
 | Base SHA | a0f72c2a7fe36eaeb9c772505dfe563f85f42773 |
-| Head SHA | 4214fbfe53b912bc6c5a1e9ea0de46931db1c833 |
+| Head SHA | `4214fbfe53b912bc6c5a1e9ea0de46931db1c833` |
 | Remote tag | v0.7.85 |
 | Cycle | m9-83-cc39-total-cycles |
 

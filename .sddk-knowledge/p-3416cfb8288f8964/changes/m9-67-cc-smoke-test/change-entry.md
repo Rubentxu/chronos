@@ -11,13 +11,13 @@ Added `scripts/smoke_test_ccs.sh`, a synthetic-drift injection test that exercis
 | Cycle ID | `m9-67-cc-smoke-test` |
 | Path | B-direct |
 | Status | CLOSED |
-| Base SHA | `67b3d76bb6e90accefb15cb1f3f55f1b4a52b4dc` |
+| Base SHA | `5c83df9ce96862c0c95598d63cddb147e3ea6ab5` |
 | Head SHA | `ef21e1fef358f63cc73e320688ec566c0806c378` |
 | Tag | `v0.7.69` |
 
 ## Subject
 
-- base_sha: `67b3d76bb6e90accefb15cb1f3f55f1b4a52b4dc`
+- base_sha: `5c83df9ce96862c0c95598d63cddb147e3ea6ab5`
 - head_sha: `ef21e1fef358f63cc73e320688ec566c0806c378`
 - cycle: m9-67
 - branch: `feat/m9-67-cc-smoke-test`

@@ -9,7 +9,7 @@
 | Branch | feat/m9-88-cc55-drift-remediation |
 | Date | 2026-09-14 |
 | Base SHA | 0dba57ddf8391acbee5adbd2fb6c6ab30fc179bc |
-| Head SHA | 78ec3861a71b3258cb55f37d70d85f072a039028 |
+| Head SHA | `78ec3861a71b3258cb55f37d70d85f072a039028` |
 | Merge SHA | 8b6a9bc625e55ef9065b851ef5fbb25999fce942 |
 | Remote tag | v0.7.90 |
 | Tag peel SHA | 851dba634c32aa23d05b8a108e4c3e02e71fcb10 |

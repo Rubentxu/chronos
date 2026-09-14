@@ -1,7 +1,7 @@
 {
   "schema": "verify-finding.schema.json",
   "subject": {
-    "head_sha": "dba5f0a",
+    "head_sha": "57c4a10f221bc47e67b81cc5f350739ac8fcfc31",
     "base_sha": "5b6c337abe64217b7bd94b71f0ba2cbcc72df28c",
     "diff_digest": "sha256:8c9737514768e979ee448982af968c78e0c006347669df0637831946af45a325",
     "working_tree_clean": true,
@@ -26,8 +26,8 @@
       "severity": "medium",
       "summary": "chronos-mcp's test_list_sessions_after_save fails deterministically on any machine whose $HOME store is populated. The test uses ChronosServer::new(), which opens the real user store; list_sessions bincode-deserializes every record and hard-fails on a stale-schema record. Pre-existing (reproduces on main at 5b6c337), not caused by m9-69. Tracked as a follow-up cycle.",
       "subject": {
-        "gap": "Two distinct defects discovered while running the workspace T1 gate: (a) chronos-mcp server tests construct ChronosServer::new(), which opens $HOME/.local/share/chronos/sessions.redb instead of an isolated store — so tests write to and depend on the developer's real DB (the file was modified by the test run itself); (b) SessionStore::list_sessions bincode-deserializes every SessionMetadata and returns StoreError::Serialization on the first stale record, which SessionsService::list_sessions propagates as ListFailed because only 'does not exist' is tolerated. Net effect: a populated store makes the test fail even though the test's own save calls succeed.",
-        "fix": "Deferred to a follow-up cycle (both fixes have behavior implications and exceed the B-direct scope of m9-69). Evidence captured: pre-existing reproduction on main; isolation proof via `CHRONOS_DB_PATH=/tmp/t.redb cargo test -p chronos-mcp --lib test_list_sessions_after_save` → 1 passed. Recommended fix: give the server tests an isolated temp store, and make list_sessions resilient to (or version-tagged against) stale records."
+        "gap": "Two distinct defects discovered while running the workspace T1 gate: (a) chronos-mcp server tests construct ChronosServer::new(), which opens $HOME/.local/share/chronos/sessions.redb instead of an isolated store \u2014 so tests write to and depend on the developer's real DB (the file was modified by the test run itself); (b) SessionStore::list_sessions bincode-deserializes every SessionMetadata and returns StoreError::Serialization on the first stale record, which SessionsService::list_sessions propagates as ListFailed because only 'does not exist' is tolerated. Net effect: a populated store makes the test fail even though the test's own save calls succeed.",
+        "fix": "Deferred to a follow-up cycle (both fixes have behavior implications and exceed the B-direct scope of m9-69). Evidence captured: pre-existing reproduction on main; isolation proof via `CHRONOS_DB_PATH=/tmp/t.redb cargo test -p chronos-mcp --lib test_list_sessions_after_save` \u2192 1 passed. Recommended fix: give the server tests an isolated temp store, and make list_sessions resilient to (or version-tagged against) stale records."
       }
     }
   ],

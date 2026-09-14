@@ -123,10 +123,10 @@ Three commits:
 | docs (agents manual) | `AGENTS.md` | `83d09aa421c0c0c06a8dc28d4a5ba27dbb66772f7a1310103f3c133969fe8924` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/apply-checkpoint.json` | `dab499eb017af26c3bf2a2a696d7c2b3dfdb47502f58429e00ace325181610d9` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/verify-report.md` | `06e94982bb2c35c8e592760689758136fdd37b8d7f25b737ceb51d36ffceb6c0` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/verify-findings.json` | `4643b14050f20f91f5bf065016b07945ccfe6c68721212a6475ef2b3d59a5d9c` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/verify-findings.json` | `cf6aac480c21339b0c4aea42893e9a3b339ffffe01d4428ab57a2d3737ac44b0` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/release-report.md` | `a361dc9312a12739c154e841dc3c4cb93eaeeda1054b1dff0cfc6c52b4aaee9a` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/release-receipt.md` | `5de5a22a246d5cb8bb8f8b47260d09b767fd7250f38dcd6362432c36f4c55a53` |
-| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/merge-receipt.md` | `43ef88832b5eb56adce43717fe2454572019ab67a6b54e02a289656ce84b39be` |
+| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/merge-receipt.md` | `54c887e312366589c08ac19109959ff6d88367b553ab0c6a78535615c762ac76` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-74-cas-put-many-batching/change-entry.md` | `898af1d8a0e49a2fc63a79a5f4b0a1aa9fa60383c48b826d84dad41f06f2263d` |
 | vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `c9dedf4ad1c4f1e58621298a139a3c533daba97030dd633cee7c936f1ad01a09` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `d290144dbffbe8ad7f90b5818320bb9386a1c86766b9daecbba05d5c864d414a` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `d0cdd2625028e2332defc96665ef93b302731ad5b3de1d847a0c083874b7913a` |
