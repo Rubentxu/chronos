@@ -14,10 +14,10 @@
 | Field | Value |
 |---|---|
 | Base SHA | 2429299541fbbbf6d3653afbf673b9659fb8cd3b |
-| Head SHA | e3b79d6d65ce7161686547f13a78378f5d29de68 |
-| Main SHA | e3b79d6d65ce7161686547f13a78378f5d29de68 |
+| Head SHA | 2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a |
+| Main SHA | 2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a |
 | Remote tag | v0.7.98 |
-| Remote tag_peel | e3b79d6d65ce7161686547f13a78378f5d29de68 |
+| Remote tag_peel | 2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a |
 | Peel match | true |
 
 ## SHAs (canonical table)
@@ -27,9 +27,9 @@
 | Branch | chore/m9-96-cc001-housekeeping |
 | Date | 2026-09-14 |
 | Base SHA | 2429299541fbbbf6d3653afbf673b9659fb8cd3b |
-| Head SHA | e3b79d6d65ce7161686547f13a78378f5d29de68 |
+| Head SHA | 2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a |
 | Remote tag | v0.7.98 |
-| Remote tag_peel | e3b79d6d65ce7161686547f13a78378f5d29de68 |
+| Remote tag_peel | 2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a |
 | Peel match | true |
 
 ## Release notes
@@ -51,5 +51,5 @@
 - `cargo fmt --all -- --check`: clean.
 - `cargo clippy --workspace --all-targets -- -D warnings`: clean.
 - `apply-checkpoint.peel_match == true`.
-- `apply-checkpoint.head_sha == release-receipt.Head SHA == e3b79d6d`.
-- `Remote tag` v0.7.98 peel: `e3b79d6d` (source commit / cycle-artifacts commit).
+- `apply-checkpoint.head_sha == release-receipt.Head SHA == 2e8a00d3`.
+- `Remote tag` v0.7.98 peel: `2e8a00d3` (cycle-artifacts commit).

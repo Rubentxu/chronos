@@ -71,8 +71,8 @@ No sandbox smoke required (no probe/mcp touched; no Rust changes).
 - `cargo fmt --all -- --check`: clean.
 - `cargo clippy --workspace --all-targets -- -D warnings`: clean.
 - `apply-checkpoint.peel_match == true`.
-- `apply-checkpoint.head_sha == release-receipt.Head SHA == e3b79d6d`.
-- `Remote tag` v0.7.98 peel: `e3b79d6d` (cycle-artifacts commit; tag pre-created at cycle-artifacts per CC#42 workaround).
+- `apply-checkpoint.head_sha == release-receipt.Head SHA == 2e8a00d3`.
+- `Remote tag` v0.7.98 peel: `2e8a00d3` (cycle-artifacts commit; tag pre-created at cycle-artifacts per CC#42 workaround).
 - `apply-checkpoint.status == "CLOSED"`.
 - `apply-checkpoint.archive_status == "complete"`.
 - `apply-checkpoint.findings_introduced.no_action == []` (cc#19-compliant).

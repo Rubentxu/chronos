@@ -15,8 +15,8 @@
 | Merge type | --no-ff merge into main |
 | Merge commit | <merge-sha> (filled after merge) |
 | Base SHA | 2429299541fbbbf6d3653afbf673b9659fb8cd3b |
-| Head SHA | e3b79d6d65ce7161686547f13a78378f5d29de68 |
-| Main SHA post-merge | e3b79d6d65ce7161686547f13a78378f5d29de68 |
+| Head SHA | 2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a |
+| Main SHA post-merge | 2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a |
 
 ## SHAs
 
@@ -25,7 +25,7 @@
 | Branch | chore/m9-96-cc001-housekeeping |
 | Date | 2026-09-14 |
 | Base SHA | 2429299541fbbbf6d3653afbf673b9659fb8cd3b |
-| Head SHA | e3b79d6d65ce7161686547f13a78378f5d29de68 |
+| Head SHA | 2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a |
 
 ## Notes
 

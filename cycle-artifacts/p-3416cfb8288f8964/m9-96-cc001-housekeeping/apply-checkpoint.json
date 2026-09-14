@@ -1,13 +1,13 @@
 {
-  "head_sha": "e3b79d6d65ce7161686547f13a78378f5d29de68",
+  "head_sha": "2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a",
   "archived_at": "2026-09-14",
   "peel_match": true,
   "base_sha": "2429299541fbbbf6d3653afbf673b9659fb8cd3b",
-  "main_sha": "e3b79d6d65ce7161686547f13a78378f5d29de68",
+  "main_sha": "2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a",
   "remote_tag": "v0.7.98",
-  "remote_tag_peel": "e3b79d6d65ce7161686547f13a78378f5d29de68",
-  "tag_peel_sha": "e3b79d6d65ce7161686547f13a78378f5d29de68",
-  "tag_peel_note": "non-standard: tag pre-created at source commit SHA; will move through SHA-cascade fixpoint commits per CC#42 workaround. m9-96 is a vault-only cycle; the source commit = cycle-artifacts commit.",
+  "remote_tag_peel": "2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a",
+  "tag_peel_sha": "2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a",
+  "tag_peel_note": "non-standard: tag pre-created at cycle-artifacts commit SHA; will move through SHA-cascade fixpoint commits per CC#42 workaround. m9-96 is a vault-only cycle (separate source commit e3b79d6d and cycle-artifacts commit 2e8a00d3).",
   "ff_merged": false,
   "cycle_id": "m9-96-cc001-housekeeping",
   "cycle_record": "p-3416cfb8288f8964/m9-96-cc001-housekeeping",
@@ -58,7 +58,7 @@
   ],
   "shas": {
     "source_commit": "e3b79d6d65ce7161686547f13a78378f5d29de68",
-    "cycle_artifacts_commit": "e3b79d6d65ce7161686547f13a78378f5d29de68"
+    "cycle_artifacts_commit": "2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a"
   },
   "carry_forward_findings": [
     "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK"
