@@ -184,7 +184,7 @@ No formal spec.md existed for this change; the scoping doc
 | release-report | `cycle-artifacts/m9-02-events-side-table/receipts/release-report.md` | `6d72bd949bab959236bb3ede04d38f6c9b7d2b300dae55240ab8e522e7a74422` |
 | scoping doc | `docs/milestones/m9-02-events-side-table-scoping.md` | `001c7969d3f416432268cab8a0880460f87b23f6ee20800d9dafb2321afd0653` |
 | design doc | `docs/milestones/m9-02-events-side-table-design.md` | `6c13ff80e0d130463df66071653ae0dfd7ab9d302a36b7a2d35394b52aeb57c9` |
-| apply-checkpoint | `apply-checkpoint.json` | `4bf1684c73486e5a627ab45efa04658bf5d931f9ace7f9775584b4b6df82e5b2` |
+| apply-checkpoint | `apply-checkpoint.json` | `7c92ed3d6cf096eca2a26c8e3b9a983c7f6e3cb2403fe43793c12aadc2ef82e9` |
 | terms index | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `9d4efc2b9969c718daa3132968d5a243e3ab37077144aa59295de3cebbf67358` |
 | cycles index | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `7225176e81a0cf25256748e98548f82f8d5ad0907e22fd7d41433d02550572da` |
 
