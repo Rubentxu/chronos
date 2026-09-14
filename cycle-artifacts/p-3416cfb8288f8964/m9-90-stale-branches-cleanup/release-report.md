@@ -3,9 +3,9 @@
 > **Cycle**: m9-90-stale-branches-cleanup
 > **Path**: B-direct
 > **Tag**: v0.7.92
-> **Merge SHA**: TBD (will be set at release)
+> **Merge SHA**: 56f93d1d7e4fae5a245f00bf56b8f53c1d2056db
 > **Date archived**: 2026-09-14
-> **Status**: in_progress (mid-cycle)
+> **Status**: released
 
 ## What changed
 
@@ -68,10 +68,22 @@ FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK.
 
 ## Status
 
-In progress at write time. Release will:
-1. Update `cycles/index.md` (Total cycles 89 → 90 + m9-90 row).
-2. Merge `chore/m9-90-stale-branches-cleanup` into `main` with `--no-ff`.
-3. Pre-create tag `v0.7.92` at cleanup commit SHA, move to merge SHA.
-4. Push to origin.
-5. Archive to `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-90-stale-branches-cleanup/`.
-6. Write handoff to `.sddk-knowledge/p-3416cfb8288f8964/handoff/m9-90-stale-branches-cleanup-closure-2026-09-14.md`.
+Released as `v0.7.92` at merge commit `56f93d1d7e4fae5a245f00bf56b8f53c1d2056db`.
+The branch `chore/m9-90-stale-branches-cleanup` was merged into `main`
+with `--no-ff` and will be deleted after this report is archived.
+
+## Cross-checks
+
+- `apply-checkpoint.head_sha` == `release-receipt.head_sha` ==
+  `merge-receipt.head SHA` == `56f93d1d7e4fae5a245f00bf56b8f53c1d2056db`.
+- `Remote tag` v0.7.92 peel: `56f93d1d7e4fae5a245f00bf56b8f53c1d2056db`
+  (clean match to merge commit; CC#42 fixpoint-cascade workaround).
+- `apply-checkpoint.peel_match` == `true`.
+- `apply-checkpoint.main_sha` == `apply-checkpoint.head_sha`.
+- `apply-checkpoint.status` == `"CLOSED"`.
+- `apply-checkpoint.archive_status` == `"complete"`.
+- `cycles/index.md` row added; Total cycles 89 → 90.
+- `bash scripts/check_vault_drift.sh`: CC#46 + CC#53 clean.
+- `python3 scripts/clean_m9_90_stale_branches.py --dry-run`: 0 candidates
+  (idempotent — nothing left to delete).
+- `cargo fmt --all -- --check`: clean (no Rust touched).
