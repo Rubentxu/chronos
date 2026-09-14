@@ -1556,3 +1556,33 @@ public wire shape change. T0+T1+T2+T4-smoke (`session_explain/hypothesis`
 
 **Pre-existing findings to carry forward unchanged**:
 FIND-M9-75, FIND-M9-74, FIND-M9-72, FIND-M9-71, FIND-M9-66 (broken JSON).
+
+### Pre-existing smoke-test flake (verified 2026-09-14T06:59Z)
+
+`scripts/smoke_test_ccs.sh` exits non-zero on `main` (commit `16fea63`)
+with three test failures:
+
+```
+- CC#46: drift line missing in output
+- regen: CC#4 gate still failing after rewrite (rc=1)
+- CC#48+CC#54: clean state exit=1 (expected 0)
+```
+
+All three failures reference `DRIFT detected (CC#48): DRIFT: CC#39
+reported 1 drift lines`. The pattern suggests work-copy isolation leak
+in the smoke harness: the test_cc39 work copy's injected drift is
+visible to subsequent tests (regen, CC#48+CC#54) via the same
+`/tmp/check_vault_drift_counts.json` and `/tmp/smoke_test_ccs.*`
+directories.
+
+**Verification on main** (no uncommitted changes; `git stash` clean):
+- `scripts/check_vault_drift.sh` exits 0 (real repo is clean)
+- `scripts/regen_manifest_index_shas.py --check` exits 0
+- `scripts/smoke_test_ccs.sh` exits non-zero (3 test failures)
+
+So the smoke test harness is broken in a way that does not reflect
+the real vault state. This is a **pre-existing flake**, not caused
+by m9-79 or m9-80. The smoke test should not be used as a CI gate
+until the work-copy isolation bug is fixed. Filed as M1+ follow-up;
+do not chase this in m9-80 or any cycle that doesn't explicitly
+touch the smoke harness.
