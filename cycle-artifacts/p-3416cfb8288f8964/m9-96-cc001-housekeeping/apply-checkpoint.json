@@ -1,0 +1,72 @@
+{
+  "head_sha": "2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a",
+  "archived_at": "2026-09-14",
+  "peel_match": true,
+  "base_sha": "2429299541fbbbf6d3653afbf673b9659fb8cd3b",
+  "main_sha": "2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a",
+  "remote_tag": "v0.7.98",
+  "remote_tag_peel": "2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a",
+  "tag_peel_sha": "2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a",
+  "tag_peel_note": "non-standard: tag pre-created at cycle-artifacts commit SHA; will move through SHA-cascade fixpoint commits per CC#42 workaround. m9-96 is a vault-only cycle (separate source commit e3b79d6d and cycle-artifacts commit 2e8a00d3).",
+  "ff_merged": false,
+  "cycle_id": "m9-96-cc001-housekeeping",
+  "cycle_record": "p-3416cfb8288f8964/m9-96-cc001-housekeeping",
+  "branch": "chore/m9-96-cc001-housekeeping",
+  "route": "A-lite",
+  "status": "CLOSED",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "complete",
+  "phases": {
+    "apply": "complete",
+    "verify": "complete",
+    "release": "complete",
+    "archive": "complete"
+  },
+  "tier_required": "T0",
+  "tiers_run": ["T0", "vault"],
+  "tier_results": {
+    "T0": {
+      "fmt_check": "passed",
+      "clippy_check": "passed",
+      "scope": "workspace",
+      "note": "sanity check; no Rust modified"
+    },
+    "vault": {
+      "regen_check": "passed",
+      "drift_sweep": "passed",
+      "command": "bash scripts/check_vault_drift.sh",
+      "drift_lines": 0
+    }
+  },
+  "created_at": "2026-09-14",
+  "title": "m9-96: cc-001 god-module housekeeping (close the finding)",
+  "summary": "A-lite vault-only cycle. Closes `cc-001-god-module` (the only remaining P2 MEDIUM active finding) by moving the row from 'Active terms' → 'Debt findings from m9-04' to 'Terminated terms' in `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md`. The finding has been fully resolved across 6 cycles (m9-84..m9-87 production halves; m9-94 + m9-95 test halves). After m9-96: only `cc-004-implicit-io-toctou` (P3 LOW) remains as an active debt finding from m9-04, deferred to m10+. No Rust source files modified.",
+  "findings_closed": ["cc-001-god-module"],
+  "findings_introduced": {
+    "no_action": [],
+    "followup": [],
+    "external_deferred": [
+      {
+        "id": "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK",
+        "reason": "external sddk CLI bug; not actionable in chronos scope (carried from m9-88)"
+      }
+    ]
+  },
+  "files_changed": [
+    ".sddk-knowledge/p-3416cfb8288f8964/terms/index.md: moved `cc-001-god-module` row from 'Active terms' (line 36) to 'Terminated terms' (after line 122)"
+  ],
+  "shas": {
+    "source_commit": "e3b79d6d65ce7161686547f13a78378f5d29de68",
+    "cycle_artifacts_commit": "2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a"
+  },
+  "carry_forward_findings": [
+    "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK"
+  ],
+  "out_of_scope": [
+    "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK",
+    "cc-004-implicit-io-toctou (P3 LOW; deferred m10+)",
+    "FIND-M9-74-NATIVE-PTRACE-TESTS-NEED-SERIAL (pre-existing flake per AGENTS.md §6.5)",
+    "FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION (non-blocking observation)"
+  ]
+}
