@@ -32,7 +32,7 @@
       "rule_id": "vault.cc5_total_cycles_off",
       "subject": {
         "cycle": "m9-66-bash-cc-meta-check",
-        "gap": "CC#5 (cycles/index.md Total cycles consistency) regex was '^\| (m6 |m[7-9])' which matched all m6/m7/m8 milestone rows (16 extra rows). The CC was silently off-by-16 since the m6/m7/m8 rows were added to cycles/index.md.",
+        "gap": "CC#5 (cycles/index.md Total cycles consistency) regex was '^\\| (m6 |m[7-9])' which matched all m6/m7/m8 milestone rows (16 extra rows). The CC was silently off-by-16 since the m6/m7/m8 rows were added to cycles/index.md.",
         "fix": "Fixed CC#5 to match only m9-* rows, which is what Total cycles represents. After fix: actual=65, declared=65 (was actual=81, declared=65)."
       }
     },

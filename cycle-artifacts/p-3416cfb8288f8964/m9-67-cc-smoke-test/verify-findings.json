@@ -2,7 +2,7 @@
   "schema": "verify-finding.schema.json",
   "subject": {
     "head_sha": "5c83df9ce96862c0c95598d63cddb147e3ea6ab5",
-    "base_sha": "67b3d76bb6e90accefb15cb1f3f55f1b4a52b4dc",
+    "base_sha": "67b3d76a80ec8e766a0689fba810fc499b5cd4a4",
     "diff_digest": "sha256:9fe9cef134d220064184e067a09b5496f38bb2973607f7be661d985a078dc99d",
     "working_tree_clean": true,
     "verified_at": "2026-09-13T10:39:00Z",

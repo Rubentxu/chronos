@@ -11,7 +11,7 @@ Single-commit B-direct cycle that adds `scripts/smoke_test_ccs.sh`, a synthetic-
 
 | Base | Head (final) | Dirty diff digest | CWD | Verified at |
 |---|---|---|---|---|
-| `67b3d76` | `5c83df9ce96862c0c95598d63cddb147e3ea6ab5` | `sha256:9fe9cef134d220064184e067a09b5496f38bb2973607f7be661d985a078dc99d` | `/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos` | 2026-09-13T10:39:00Z |
+| `67b3d76a80ec8e766a0689fba810fc499b5cd4a4` | `5c83df9ce96862c0c95598d63cddb147e3ea6ab5` | `sha256:9fe9cef134d220064184e067a09b5496f38bb2973607f7be661d985a078dc99d` | `/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos` | 2026-09-13T10:39:00Z |
 
 ## Files Inventory
 

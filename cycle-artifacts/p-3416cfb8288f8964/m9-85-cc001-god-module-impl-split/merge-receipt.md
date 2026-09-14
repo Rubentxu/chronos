@@ -8,7 +8,7 @@
 
 - Mode: `--no-ff` (preserves cycle topology).
 - Source: `feat/m9-85-cc001-god-module-impl-split`.
-- Target: `main` (at base SHA `2c2a5cc8f8370eb64dca7fb4ddc47a6f3e8b15a7`).
+- Target: `main` (at base SHA `72e120c2e2bb9774c459ef516dcf3e7b21ef90c3`).
 - Cycle HEAD pre-merge: `158f5b1bdc4a8d33c2b34ef33b66ab8b3cf8a0bf`.
 - Merge commit SHA: TBD (post-merge SHA).
 
