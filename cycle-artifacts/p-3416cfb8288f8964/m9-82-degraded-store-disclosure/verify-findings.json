@@ -1,7 +1,7 @@
 {
   "cycle": "p-3416cfb8288f8964/m9-82-degraded-store-disclosure",
   "cycle_id": "m9-82-degraded-store-disclosure",
-  "head_sha": "4e805174fb872e9f4fa0d1ef9d379ba454091994",
+  "head_sha": "b8694eff737293bffea4ba62f07e4b206eafc502",
   "base_sha": "a0f72c2a7fe36eaeb9c772505dfe563f85f42773",
   "date": "2026-09-14",
   "path": "A-min",
@@ -46,7 +46,7 @@
     {
       "id": "F-M9-82-06",
       "severity": "info",
-      "description": "T4-smoke (chronos-sandbox subset) green: e2e_connectivity 1/0, session_persistence 4/0, session_lifecycle 8/0 = 13/0. CHRONOS_MCP_PATH set to the rebuilt binary so the stale-binary symptom flagged in AGENTS.md §1 cannot mask regressions.",
+      "description": "T4-smoke (chronos-sandbox subset) green: e2e_connectivity 1/0, session_persistence 4/0, session_lifecycle 8/0 = 13/0. CHRONOS_MCP_PATH set to the rebuilt binary so the stale-binary symptom flagged in AGENTS.md \u00a71 cannot mask regressions.",
       "mitigation": "Verified.",
       "status": "CLOSED"
     },

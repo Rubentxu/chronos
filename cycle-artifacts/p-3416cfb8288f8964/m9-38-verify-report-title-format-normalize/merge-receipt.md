@@ -5,3 +5,13 @@ Base SHA | 6bc67812d66548a3e0ee48f5323d45c4a1ed13d8
 Head SHA | e8f805f350b47b7b1cad6c1ac507ae868b13c07e
 Branch | fix/m9-38-verify-report-title-format-normalize
 Date | 2026-09-12T13:23Z
+
+
+## SHAs
+
+| Field | Value |
+|---|---|
+| Branch |  |
+| Date | 2026-09-12T13:22Z |
+| Base SHA | 6bc67812d66548a3e0ee48f5323d45c4a1ed13d8 |
+| Head SHA | e8f805f350b47b7b1cad6c1ac507ae868b13c07e |

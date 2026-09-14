@@ -1,7 +1,7 @@
 {
   "schema": "verify-finding.schema.json",
   "subject": {
-    "head_sha": "5c83df9ce96862c0c95598d63cddb147e3ea6ab5",
+    "head_sha": "ef21e1fef358f63cc73e320688ec566c0806c378",
     "base_sha": "67b3d76a80ec8e766a0689fba810fc499b5cd4a4",
     "diff_digest": "sha256:9fe9cef134d220064184e067a09b5496f38bb2973607f7be661d985a078dc99d",
     "working_tree_clean": true,
@@ -21,7 +21,7 @@
       }
     }
   ],
-  "lens_summary": "m9-67 is a single-commit B-direct cycle that adds a smoke test for the most failure-prone vault drift CCs. The test was developed and validated locally: 4 tests, 0 failures, ~35s wall time. The test uses git clone --shared (not git archive) because many python CCs call git log via subprocess and need a working .git. The script avoids trap-based cleanup because subshell command substitution would inherit the trap and clean up prematurely — cleanup is explicit at script exit.",
+  "lens_summary": "m9-67 is a single-commit B-direct cycle that adds a smoke test for the most failure-prone vault drift CCs. The test was developed and validated locally: 4 tests, 0 failures, ~35s wall time. The test uses git clone --shared (not git archive) because many python CCs call git log via subprocess and need a working .git. The script avoids trap-based cleanup because subshell command substitution would inherit the trap and clean up prematurely \u2014 cleanup is explicit at script exit.",
   "cycle_id": "m9-67",
   "verdict": "pass_with_findings"
 }

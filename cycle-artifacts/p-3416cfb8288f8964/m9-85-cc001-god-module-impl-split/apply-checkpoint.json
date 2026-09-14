@@ -10,9 +10,8 @@
   "ff_merged": false,
   "cycle_record": "p-3416cfb8288f8964/m9-85-cc001-god-module-impl-split",
   "branch": "feat/m9-85-cc001-god-module-impl-split",
-  "path": "A-min",
   "route": "A-min",
-  "status": "released",
+  "status": "CLOSED",
   "verify_status": "passed",
   "release_status": "released",
   "archive_status": "complete",
@@ -116,27 +115,13 @@
       ]
     }
   ],
-  "notes": [
-    {
-      "phase": "T0",
-      "summary": "vault files prepared: exploration-report + proposal + spec + tasks added, cycles/index.md row to be added at release commit"
-    },
-    {
-      "phase": "T1",
-      "summary": "baseline 77/0 captured for chronos-store lib"
-    },
-    {
-      "phase": "T2",
-      "summary": "ce_write.rs (148 lines), ce_read.rs (276 lines), ce_test_hooks.rs (99 lines) created; counterexample_storage.rs trimmed from 2720 to 2287 (-433 lines); submodules declared via #[path] + pub mod (no pub use \u2014 inherent methods are type-level, not module-level)"
-    },
-    {
-      "phase": "T3",
-      "summary": "cargo test -p chronos-store: 77/77 (matched baseline); cargo test -p chronos-services: 264/264; cargo test -p chronos-cli: 35/35 (lib 11 + replay_integration 22 + other 2); cargo clippy --workspace: clean; cargo fmt: clean; cargo test -p chronos-native --lib --test-threads=1: 103/103"
-    },
-    {
-      "phase": "smoke_subset",
-      "summary": "n/a: no probe/mcp touched; behaviour-preserving lexical refactor of inherent methods only; round-trip verified via replay_integration save\u2192load and chronos-store lib tests"
-    }
-  ],
-  "peel_match": true
+  "peel_match": true,
+  "archived_at": "2026-09-14",
+  "findings_introduced": {
+    "no_action": []
+  },
+  "findings_closed": [],
+  "created_at": "2026-09-14",
+  "title": "m9-85",
+  "summary": "cycle-artifacts/p-3416cfb8288f8964/m9-85-cc001-god-module-impl-split/verify-report.md"
 }

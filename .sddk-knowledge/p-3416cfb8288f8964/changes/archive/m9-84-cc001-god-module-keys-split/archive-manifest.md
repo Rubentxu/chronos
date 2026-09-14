@@ -9,7 +9,7 @@
 | Branch | feat/m9-84-cc001-god-module-keys-split |
 | Date | 2026-09-14 |
 | Base SHA | bf5597611dd7a2dc8f80c34a79996ef5531e313f |
-| Head SHA | 6bd7f02f69c75b1839ed8796af0b644c7d4eb4b0 |
+| Head SHA | `6bd7f02f69c75b1839ed8796af0b644c7d4eb4b0` |
 | Remote tag | v0.7.86 |
 | Cycle | m9-84-cc001-god-module-keys-split |
 

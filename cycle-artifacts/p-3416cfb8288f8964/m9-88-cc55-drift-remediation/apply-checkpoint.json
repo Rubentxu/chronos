@@ -1,7 +1,7 @@
 {
-  "head_sha": "78ec3861a71b3258cb55f37d70d85f072a039028",
+  "head_sha": "851dba634c32aa23d05b8a108e4c3e02e71fcb10",
   "base_sha": "0dba57ddf8391acbee5adbd2fb6c6ab30fc179bc",
-  "main_sha": "8b6a9bc625e55ef9065b851ef5fbb25999fce942",
+  "main_sha": "851dba634c32aa23d05b8a108e4c3e02e71fcb10",
   "remote_tag": "v0.7.90",
   "remote_tag_peel": "851dba634c32aa23d05b8a108e4c3e02e71fcb10",
   "tag_peel_sha": "851dba634c32aa23d05b8a108e4c3e02e71fcb10",
@@ -10,9 +10,8 @@
   "cycle_id": "m9-88-cc55-drift-remediation",
   "cycle_record": "p-3416cfb8288f8964/m9-88-cc55-drift-remediation",
   "branch": "feat/m9-88-cc55-drift-remediation",
-  "path": "B-direct",
   "route": "B-direct",
-  "status": "released",
+  "status": "CLOSED",
   "verify_status": "passed",
   "release_status": "released",
   "archive_status": "complete",
@@ -175,26 +174,13 @@
       ]
     }
   ],
-  "notes": [
-    {
-      "phase": "T0",
-      "summary": "no source code changes; lint gate clean"
-    },
-    {
-      "phase": "T1",
-      "summary": "round-trip: chronos-store 77/77, chronos-services 264/264, chronos-cli 35/35, all clean (no source change expected but verified)"
-    },
-    {
-      "phase": "T2",
-      "summary": "4 vault fixes: m9-66 JSON escape, m9-67 off-by-one base_sha (5 files), m9-85 non-existent base_sha (4 files), m9-79 peel_match (1 file)"
-    },
-    {
-      "phase": "T3",
-      "summary": "CC#55 specific test: 0 base_sha / head_sha reachability errors across all m9-NN apply-checkpoint.json files"
-    },
-    {
-      "phase": "smoke_subset",
-      "summary": "n/a: vault-only cycle; no probe/mcp touched; behaviour-preserving for chronos source"
-    }
-  ]
+  "archived_at": "2026-09-14",
+  "findings_introduced": {
+    "no_action": []
+  },
+  "peel_match": true,
+  "findings_closed": [],
+  "created_at": "2026-09-14",
+  "title": "m9-88",
+  "summary": "| Field | Value |"
 }

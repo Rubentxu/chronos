@@ -1,7 +1,7 @@
 {
   "schema": "verify-finding.schema.json",
   "subject": {
-    "head_sha": "845be8d",
+    "head_sha": "f3500a9071d528fd6256c5f65ef00c0ca300b903",
     "base_sha": "09e21107ca0707c0cd40d631eddcdb39cb3669ba",
     "diff_digest": "sha256:9ae416b1e59e605a390a0a162f1b5a9173e611b790e203d63fb8e3aa6a111995",
     "working_tree_clean": true,

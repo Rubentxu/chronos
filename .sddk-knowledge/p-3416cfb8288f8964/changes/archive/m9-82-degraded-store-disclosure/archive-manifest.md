@@ -3,6 +3,7 @@
 ## Cycle
 
 | Cycle | `m9-82-degraded-store-disclosure` |
+| Date | 2026-09-14 |
 
 ## Summary
 
@@ -61,6 +62,7 @@ Path: A-min. Tiers run: T0 + T2 + focused T3 + T4-smoke. Wall time: ~95 min.
 | Base SHA | `a0f72c2a7fe36eaeb9c772505dfe563f85f42773` |
 | Tag | `v0.7.84` (annotated) |
 | Tag peel (commit) | `b8694eff737293bffea4ba62f07e4b206eafc502` |
+| Head SHA | `b8694eff737293bffea4ba62f07e4b206eafc502` |
 | Merge commit (--no-ff) | `b8694eff737293bffea4ba62f07e4b206eafc502` |
 | Peel match | clean |
 | Merge strategy | `--no-ff` |
@@ -139,18 +141,18 @@ deprecation sunset sweep.
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-82-degraded-store-disclosure/archive-manifest.md` | `c0c2946c1b2fb599676442e6b5158e70b329aff5e6188c0474ec701a9b183602` |
 | implementation-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/implementation-receipt.md` | `7a8fbbb7e3531e48cf890652f51ca204e78855803218152da8ff86539f9b80c5` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/verify-report.md` | `81aea015a12b70afd726fba9012ca3c9cbfc10f9409dd829a1ca9552569e3338` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/verify-findings.json` | `f6a012ebdf9edba0b64e8acfd6c82a51efb34ce550f9a3d24d68f132e823a902` |
-| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/release-receipt.md` | `449fca22dd27434adf39f978054672a17a7372ebe0fc2dd61c49ba4d5eca7781` |
-| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/merge-receipt.md` | `0ed4d1d74e8c3b41d7568005abb64c0c26f663a7eea3bffa26c529cdab14b85b` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/verify-findings.json` | `8ad42946e64f41e2d3d6e457a8f9ed24a080d1c22ace325539b53d5421678041` |
+| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/release-receipt.md` | `04a32d053c0358e71169fbcf7ef708a7b44aa88c22bbf2bfa4270e31667e3f15` |
+| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/merge-receipt.md` | `e4ffac9d945814ce39da35bcd0daa253ad6251ef2fe7e40a386b07ae113f9d98` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/release-report.md` | `545099bf6dd0136e10822b10edf1e4a1bd7f046a5eccbbb730d15fc76b66d2e7` |
-| apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/apply-checkpoint.json` | `3bab50b1385f3947e08b95f490acfffac230f27587b1e0c3e692c7eca8fe2b64` |
+| apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/apply-checkpoint.json` | `a49e5fcf146c5d3675f2299d280f97eee8201cdb71699f600c5aedb455625d20` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-82-degraded-store-disclosure/change-entry.md` | `e27f3f9945d5f7672f3b285f8608543363a80b790d4066e918a0b0429c8853c2` |
 | exploration-report | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-82-degraded-store-disclosure/exploration-report.md` | `67f941391b7759dac212bcaf2ec1e6d52685f6185633fbf6d5f44934202a0bce` |
 | proposal | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-82-degraded-store-disclosure/proposal.md` | `528f46a9318205005ef934c3d9b433fbfab21539574bd312c21f17c75534733b` |
 | spec | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-82-degraded-store-disclosure/spec.md` | `a08edb8b2a5bf524dcec12022d59a6558349e2ed3aa78c8253fd4613987a77e1` |
 | tasks | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-82-degraded-store-disclosure/tasks.md` | `88a883a34f0f5197c1db7b3d98c338e6a88e02999461cb71de5bdf337db19e56` |
 | vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `c9dedf4ad1c4f1e58621298a139a3c533daba97030dd633cee7c936f1ad01a09` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `d290144dbffbe8ad7f90b5818320bb9386a1c86766b9daecbba05d5c864d414a` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `d0cdd2625028e2332defc96665ef93b302731ad5b3de1d847a0c083874b7913a` |
 | source (chronos-store) | `crates/chronos-store/src/storage.rs` | (+73/-4: StoreKind enum + kind field + is_persistent() accessor + 3 unit tests) |
 | source (chronos-mcp) | `crates/chronos-mcp/src/server.rs` | (+217/-11: degraded field + is_degraded() accessor + session_envelope() helper + 5 tool-envelope wrappers + 5 unit tests) |
 

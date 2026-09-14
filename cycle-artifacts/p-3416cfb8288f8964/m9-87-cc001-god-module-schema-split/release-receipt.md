@@ -9,12 +9,12 @@
 | Branch | feat/m9-87-cc001-god-module-schema-split |
 | Date | 2026-09-14 |
 | Base SHA | 8df5c57b93bef0ff612a20bad1301b2c5875fb5a |
-| Head SHA | 1bfd6a75493b7dc491866c76e52a2a6978e5af16 |
+| Head SHA | e222d854d97e4adae5f8b20410644609c191e545 |
 | Merge SHA | e222d854d97e4adae5f8b20410644609c191e545 |
 | Remote tag | v0.7.89 |
 | Remote tag_peel | e222d854d97e4adae5f8b20410644609c191e545 |
 | Tag peel SHA | e222d854d97e4adae5f8b20410644609c191e545 |
-
+| Peel match | true |
 ## Publication sequence
 
 1. Branch `feat/m9-87-cc001-god-module-schema-split` was cut from

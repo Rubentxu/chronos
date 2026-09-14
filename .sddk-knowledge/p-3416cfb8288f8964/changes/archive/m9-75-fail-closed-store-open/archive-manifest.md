@@ -143,10 +143,10 @@ One commit:
 | docs (session management, es) | `docs/manual-ai/es/08-gestion-sesiones.md` | `1111d44fe62e66970f84211054fe491bac7aed4c288e49f68b7bc32c4b9d5092` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/apply-checkpoint.json` | `33adf19a9ac0df7a07db20f586a48ee4e280946c6aacb3785bf8b2bf98e52b5e` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/verify-report.md` | `669dd622b5cf1dd3b9e39849e350ce0e31817ac9096971655608d58e68e04253` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/verify-findings.json` | `6de1e6f599ef5e71e300f78ebd243f607697e8e204f1b5ef6e2dcf4ba7c7b629` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/verify-findings.json` | `ca82a31520fab800086e27e8a9560b1639b59e92ecd74cf51fa8b6c62edd62d8` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/release-report.md` | `0e1b6ff0d263e1fed2908a772cf2a215c8f266cd6ae9d1e11e487f8249406fff` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/release-receipt.md` | `21c61bc7dc435b9e6eb1af55955851f2964d82610e8d735baa5efc1dbb00d871` |
-| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/merge-receipt.md` | `2baf807473e5b377f77c14159cdc8e6c0d4ac91c0616706ab93b30f0938d013c` |
+| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/merge-receipt.md` | `5c502c1c4dc0cb496aab2b079043526db35f714a042161472c8c3856144b2072` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-75-fail-closed-store-open/change-entry.md` | `a2816905b483ce610548937181eade69e6cfd72a49dd872c415fc1aa06012e76` |
 | vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `c9dedf4ad1c4f1e58621298a139a3c533daba97030dd633cee7c936f1ad01a09` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `d290144dbffbe8ad7f90b5818320bb9386a1c86766b9daecbba05d5c864d414a` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `d0cdd2625028e2332defc96665ef93b302731ad5b3de1d847a0c083874b7913a` |

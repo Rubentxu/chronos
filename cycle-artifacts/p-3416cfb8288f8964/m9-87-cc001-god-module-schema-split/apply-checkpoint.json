@@ -1,5 +1,5 @@
 {
-  "head_sha": "1bfd6a75493b7dc491866c76e52a2a6978e5af16",
+  "head_sha": "e222d854d97e4adae5f8b20410644609c191e545",
   "base_sha": "8df5c57b93bef0ff612a20bad1301b2c5875fb5a",
   "main_sha": "e222d854d97e4adae5f8b20410644609c191e545",
   "remote_tag": "v0.7.89",
@@ -10,9 +10,8 @@
   "cycle_id": "m9-87-cc001-god-module-schema-split",
   "cycle_record": "p-3416cfb8288f8964/m9-87-cc001-god-module-schema-split",
   "branch": "feat/m9-87-cc001-god-module-schema-split",
-  "path": "A-min",
   "route": "A-min",
-  "status": "released",
+  "status": "CLOSED",
   "verify_status": "passed",
   "release_status": "released",
   "archive_status": "complete",
@@ -26,7 +25,13 @@
     "archive": "complete"
   },
   "tier_required": "T2",
-  "tiers_run": ["T0", "T1", "T2", "T3", "T4_serial_chronos_native"],
+  "tiers_run": [
+    "T0",
+    "T1",
+    "T2",
+    "T3",
+    "T4_serial_chronos_native"
+  ],
   "tier_results": {
     "T0": {
       "fmt_check": "passed",
@@ -38,7 +43,10 @@
       "passed": 77,
       "failed": 0,
       "ignored": 0,
-      "baseline_pre_refactor": {"passed": 77, "failed": 0},
+      "baseline_pre_refactor": {
+        "passed": 77,
+        "failed": 0
+      },
       "regression_check": "matched (77 / 77)"
     },
     "T2": {
@@ -60,7 +68,7 @@
       "test_command": "cargo test -p chronos-native --lib -- --test-threads=1",
       "passed": 103,
       "failed": 0,
-      "note": "ptrace serial run per AGENTS.md §6.5"
+      "note": "ptrace serial run per AGENTS.md \u00a76.5"
     }
   },
   "carry_forward_findings_closed": [],
@@ -69,7 +77,14 @@
     "added": [],
     "modified": [],
     "removed": [],
-    "touched": ["CC#4", "CC#28", "CC#33", "CC#34", "CC#39", "CC#42"]
+    "touched": [
+      "CC#4",
+      "CC#28",
+      "CC#33",
+      "CC#34",
+      "CC#39",
+      "CC#42"
+    ]
   },
   "findings": [
     {
@@ -111,7 +126,7 @@
       "severity": "info",
       "status": "closed",
       "evidence": [
-        "ce_schema.rs tried use crate::ce_chunk_keys::{...} — fails because ce_chunk_keys is a child of counterexample_storage, not crate root.",
+        "ce_schema.rs tried use crate::ce_chunk_keys::{...} \u2014 fails because ce_chunk_keys is a child of counterexample_storage, not crate root.",
         "Fix: change to use crate::counterexample_storage::ce_chunk_keys::{...}."
       ]
     },
@@ -139,26 +154,13 @@
       ]
     }
   ],
-  "notes": [
-    {
-      "phase": "T0",
-      "summary": "vault files prepared: exploration-report + proposal + spec + tasks added"
-    },
-    {
-      "phase": "T1",
-      "summary": "baseline 77/0 captured for chronos-store lib"
-    },
-    {
-      "phase": "T2",
-      "summary": "ce_schema.rs created (240 lines); counterexample_storage.rs trimmed from 2077 to 1954 (-123 lines); 9 items moved (2 TableDefinition consts, 4 collect helpers, BUNDLE_EVENTS_CHUNK_SIZE, CURRENT_BUNDLE_SCHEMA_VERSION, KNOWN_BUNDLE_SCHEMA_VERSIONS, compile-time invariant block); pub use re-export at parent for all 9 items"
-    },
-    {
-      "phase": "T3",
-      "summary": "cargo test -p chronos-store: 77/77; cargo test -p chronos-services: 264/264; cargo test -p chronos-cli: 35/35; cargo test -p chronos-native --lib --test-threads=1: 103/103; cargo clippy --workspace: clean; cargo fmt: clean"
-    },
-    {
-      "phase": "smoke_subset",
-      "summary": "n/a: no probe/mcp touched; behaviour-preserving lexical refactor"
-    }
-  ]
+  "archived_at": "2026-09-14",
+  "findings_introduced": {
+    "no_action": []
+  },
+  "peel_match": true,
+  "findings_closed": [],
+  "created_at": "2026-09-14",
+  "title": "m9-87",
+  "summary": "| Field | Value |"
 }

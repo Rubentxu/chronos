@@ -2,6 +2,10 @@
 
 | Field | Value |
 |---|---|
+| Branch | feat/m9-80-property-policy-ownership |
+| Date | 2026-09-14 |
+| Base SHA | 82e219f812655a136e736f443ec8b86695050110 |
+| Head SHA | 7874e5c8e972172c024b07f60746f0e06df92f9d |
 | Merge commit | `7874e5c8e972172c024b07f60746f0e06df92f9d` |
 | Merge type | `--no-ff` (preserved cycle branch topology) |
 | Source branch | `feat/m9-80-property-policy-ownership` |
@@ -9,7 +13,6 @@
 | Fast-forwarded? | no |
 | Merged at | 2026-09-14T08:49Z |
 | Pushed to origin | yes (`82e219f..7874e5c main -> main`) |
-
 ## Commits introduced
 
 ```
