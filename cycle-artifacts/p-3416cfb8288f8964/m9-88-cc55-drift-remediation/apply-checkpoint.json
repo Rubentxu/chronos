@@ -1,0 +1,200 @@
+{
+  "head_sha": "78ec3861a71b3258cb55f37d70d85f072a039028",
+  "base_sha": "0dba57ddf8391acbee5adbd2fb6c6ab30fc179bc",
+  "main_sha": "8b6a9bc625e55ef9065b851ef5fbb25999fce942",
+  "remote_tag": "v0.7.90",
+  "remote_tag_peel": "851dba634c32aa23d05b8a108e4c3e02e71fcb10",
+  "tag_peel_sha": "851dba634c32aa23d05b8a108e4c3e02e71fcb10",
+  "tag_peel_note": "non-standard: tag points at the merge commit (851dba6), one commit before the SHA-cascade fixpoint. Pattern documented in m9-83 handoff (CC#42 fixpoint-cascade workaround).",
+  "ff_merged": false,
+  "cycle_id": "m9-88-cc55-drift-remediation",
+  "cycle_record": "p-3416cfb8288f8964/m9-88-cc55-drift-remediation",
+  "branch": "feat/m9-88-cc55-drift-remediation",
+  "path": "B-direct",
+  "route": "B-direct",
+  "status": "released",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "complete",
+  "phases": {
+    "explore": "complete",
+    "spec": "complete",
+    "tasks": "complete",
+    "apply": "complete",
+    "verify": "complete",
+    "release": "complete",
+    "archive": "complete"
+  },
+  "tier_required": "T2",
+  "tiers_run": [
+    "T0",
+    "T1",
+    "T2",
+    "T3"
+  ],
+  "tier_results": {
+    "T0": {
+      "fmt_check": "passed",
+      "clippy_check": "passed",
+      "scope": "workspace"
+    },
+    "T1": {
+      "test_command": "cargo test -p chronos-store --lib --no-fail-fast",
+      "passed": 77,
+      "failed": 0,
+      "ignored": 0,
+      "note": "vault-only cycle: no source code changed; tests run for round-trip safety."
+    },
+    "T2": {
+      "test_command": "cargo test -p chronos-services --lib --no-fail-fast",
+      "passed": 264,
+      "failed": 0,
+      "ignored": 0,
+      "note": "round-trip safety check"
+    },
+    "T3": {
+      "test_command": "cargo test -p chronos-cli --no-fail-fast",
+      "lib_passed": 11,
+      "integration_passed": 22,
+      "replay_integration_passed": 2,
+      "total_passed": 35,
+      "failed": 0,
+      "ignored": 0,
+      "note": "round-trip safety check"
+    },
+    "T_cc55_drift": {
+      "test_command": "python3 -c 'import json,os,subprocess; errors=0; [json.load(open(f)) for d in sorted(os.listdir(\"cycle-artifacts/p-3416cfb8288f8964\")) if d.startswith(\"m9-\") and (lambda p: os.path.exists(p))(f:=f\"cycle-artifacts/p-3416cfb8288f8964/{d}/apply-checkpoint.json\")]; [errors := errors + (subprocess.run([\"git\",\"cat-file\",\"-t\",j.get(s)],capture_output=True).returncode) for d in sorted(os.listdir(\"cycle-artifacts/p-3416cfb8288f8964\")) if d.startswith(\"m9-\") for j in [json.load(open(f\"cycle-artifacts/p-3416cfb8288f8964/{d}/apply-checkpoint.json\"))] for s in (\"base_sha\",\"head_sha\") if j.get(s)]; print(errors)'",
+      "result": 0,
+      "note": "CC#55 specific: 0 base_sha / head_sha reachability errors"
+    }
+  },
+  "carry_forward_findings_closed": [],
+  "carry_forward_findings_introduced": [],
+  "cc_delta": {
+    "added": [],
+    "modified": [],
+    "removed": [],
+    "touched": [
+      "CC#55"
+    ]
+  },
+  "findings": [
+    {
+      "id": "FIND-M9-88-M9-66-JSON-ESCAPE",
+      "title": "m9-66 apply-checkpoint.json line 35 had invalid JSON escape (raw \\| on the wire)",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "Original line 35 had: 'gap': 'CC#5 ... regex was '^\\| (m6 |m[7-9])' which ...'",
+        "The '\\|' (raw bytes 0x5C 0x7C) is not a valid JSON escape sequence per RFC 8259. Python 3.14's strict parser rejects it.",
+        "Fix: promote to '\\\\|' (raw bytes 0x5C 0x5C 0x7C) which is a valid escape representing '\\\\|' as the JSON string (which when read by Python is '\\|').",
+        "This was the root cause: the JSON abort on m9-66 silently broke all CCs that load it (CC#3, CC#7, CC#8, CC#11, CC#12, CC#14, CC#15, CC#22, CC#23, CC#29, CC#40, CC#43, CC#55)."
+      ]
+    },
+    {
+      "id": "FIND-M9-88-M9-67-OFF-BY-ONE",
+      "title": "m9-67 base_sha was off-by-one character (67b3d76bb vs 67b3d76a80)",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "Original: 67b3d76bb6e90accefb15cb1f3f55f1b4a52b4dc (8th char: 'b').",
+        "Real parent of head 5c83df9: 67b3d76a80ec8e766a0689fba810fc499b5cd4a4 (8th char: 'a').",
+        "Off-by-one transcription error in the original m9-67 cycle. Cascade-updated apply-checkpoint, merge-receipt, release-receipt, verify-findings, verify-report."
+      ]
+    },
+    {
+      "id": "FIND-M9-88-M9-85-NON-EXISTENT-BASE",
+      "title": "m9-85 base_sha pointed at a non-existent commit (2c2a5cc8f837)",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "Original: 2c2a5cc8f8370eb64dca7fb4ddc47a6f3e8b15a7 \u2014 does not exist in git (cat-file -t fails with exit 128).",
+        "Real parent of head a850346: 72e120c2e2bb9774c459ef516dcf3e7b21ef90c3.",
+        "Transcription error in the original m9-85 cycle. Cascade-updated apply-checkpoint, merge-receipt, release-receipt, verify-report."
+      ]
+    },
+    {
+      "id": "FIND-M9-88-M9-79-PEEL-MATCH",
+      "title": "m9-79 peel_match was None despite head==peel",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "m9-79 head_sha = f41abd4528aafd1e3f8eaca2c8ddb2d20f0a4eb8",
+        "m9-79 remote_tag_peel = f41abd4528aafd1e3f8eaca2c8ddb2d20f0a4eb8",
+        "head==peel, so peel_match should be True (was None).",
+        "Bonus fix: set peel_match=True in apply-checkpoint.json."
+      ]
+    },
+    {
+      "id": "FIND-M9-88-CC-CASCADE-EXPOSES-DRIFT",
+      "title": "Fixing m9-66 JSON unblocks many CCs that surface pre-existing drift",
+      "severity": "info",
+      "status": "open",
+      "evidence": [
+        "After m9-88 fix, the following CCs report drift (previously masked by m9-66 JSON abort):",
+        "  - CC#3 (10 lines): peel_match=None / head!=peel for m9-77..m9-87.",
+        "  - CC#7 (1 line), CC#8 (8 lines): various pre-existing.",
+        "  - CC#11 (27 lines): status='archived'/'released' vs required 'CLOSED', missing archived_at, missing findings_introduced.",
+        "  - CC#12 (5 lines), CC#14 (11 lines), CC#15 (7 lines): pre-existing.",
+        "  - CC#18 (1 line), CC#22 (12 lines), CC#23 (39 lines): pre-existing.",
+        "  - CC#29 (12 lines), CC#39 (1 line): pre-existing.",
+        "  - CC#40 (12 lines), CC#43 (5 lines): pre-existing.",
+        "These drift classes existed before m9-88 but were silently hidden by the m9-66 JSON abort. Out of scope for m9-88 (CC#55 only). Recommend follow-up hardening cycle (m9-89+)."
+      ]
+    },
+    {
+      "id": "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK",
+      "title": "sddk cycle evaluate-gate fails with duplicate_event_id + ENGINE_UNREGISTERED_EVALUATOR (out of scope)",
+      "severity": "info",
+      "status": "deferred-external",
+      "evidence": [
+        "sddk cycle evaluate-gate on this project fails with: 'admission event recording failed (fail-soft): storage error: event_store:duplicate_event_id:authority-approval-system-cli_run-advisory_high_approval' followed by 'error[ENGINE_UNREGISTERED_EVALUATOR]: evaluator sddk.cli is not registered for gate <gate>'.",
+        "Root cause: sddk CLI binary at /home/rubentxu/.local/bin/sddk (external tool, not chronos source).",
+        "Cannot fix without modifying the sddk binary or filing upstream to the SDDK project.",
+        "Workaround: manual vault-tracked workflow (this cycle and all prior m9-* cycles).",
+        "Investigated in m9-88 explore phase; deferred as external follow-up."
+      ]
+    }
+  ],
+  "commits": [
+    {
+      "sha": "78ec3861a71b3258cb55f37d70d85f072a039028",
+      "subject": "m9-88: CC#55 drift remediation (3 fixes)",
+      "files_changed": [
+        "cycle-artifacts/p-3416cfb8288f8964/m9-66-bash-cc-meta-check/apply-checkpoint.json",
+        "cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/apply-checkpoint.json",
+        "cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/merge-receipt.md",
+        "cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/release-receipt.md",
+        "cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/verify-findings.json",
+        "cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/verify-report.md",
+        "cycle-artifacts/p-3416cfb8288f8964/m9-79-attach-capability-type/apply-checkpoint.json",
+        "cycle-artifacts/p-3416cfb8288f8964/m9-85-cc001-god-module-impl-split/apply-checkpoint.json",
+        "cycle-artifacts/p-3416cfb8288f8964/m9-85-cc001-god-module-impl-split/merge-receipt.md",
+        "cycle-artifacts/p-3416cfb8288f8964/m9-85-cc001-god-module-impl-split/release-receipt.md",
+        "cycle-artifacts/p-3416cfb8288f8964/m9-85-cc001-god-module-impl-split/verify-report.md"
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "phase": "T0",
+      "summary": "no source code changes; lint gate clean"
+    },
+    {
+      "phase": "T1",
+      "summary": "round-trip: chronos-store 77/77, chronos-services 264/264, chronos-cli 35/35, all clean (no source change expected but verified)"
+    },
+    {
+      "phase": "T2",
+      "summary": "4 vault fixes: m9-66 JSON escape, m9-67 off-by-one base_sha (5 files), m9-85 non-existent base_sha (4 files), m9-79 peel_match (1 file)"
+    },
+    {
+      "phase": "T3",
+      "summary": "CC#55 specific test: 0 base_sha / head_sha reachability errors across all m9-NN apply-checkpoint.json files"
+    },
+    {
+      "phase": "smoke_subset",
+      "summary": "n/a: vault-only cycle; no probe/mcp touched; behaviour-preserving for chronos source"
+    }
+  ]
+}

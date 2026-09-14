@@ -107,5 +107,5 @@ Three commits:
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-72-read-path-table-error-classification/release-receipt.md` | `f00addd97fb963a2df18e88ae20fc5dec28f12361daf4a5db7e72de961a87d36` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-72-read-path-table-error-classification/merge-receipt.md` | `f357b83a76a52ba3bb5bc77c5a0ea98381cc31dce464558853b35d54856f77a8` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-72-read-path-table-error-classification/change-entry.md` | `bd9b4be16a0db039dbfda4c28c0a6a434858c14512a93d94da6ade8c09301262` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `d2d279f0fc35e6dc3a5825f5d4cb6a2053f2566f8e7cf7126b64a3219613ae42` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `c9dedf4ad1c4f1e58621298a139a3c533daba97030dd633cee7c936f1ad01a09` |
 | vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `d290144dbffbe8ad7f90b5818320bb9386a1c86766b9daecbba05d5c864d414a` |
