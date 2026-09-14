@@ -9,7 +9,7 @@
 | Branch | fix/m9-83-cc39-total-cycles |
 | Date | 2026-09-14 |
 | Base SHA | a0f72c2a7fe36eaeb9c772505dfe563f85f42773 |
-| Head SHA | b656273136ab876de24f5262386f4f44b73f87fb |
+| Head SHA | 4214fbfe53b912bc6c5a1e9ea0de46931db1c833 |
 | Remote tag | v0.7.85 |
 | Cycle | m9-83-cc39-total-cycles |
 
@@ -38,6 +38,6 @@ Single-line edit, no code, no schemas, no release artefact.
 
 - `cycles/index.md` `Total cycles` field reads `83` and matches the row count.
 - `terms/index.md` Last archive = m9-83-cc39-total-cycles.
-- `apply-checkpoint.head_sha` == `release-receipt.head_sha` == `merge-receipt.head SHA` == `b656273136ab876de24f5262386f4f44b73f87fb`.
-- `Remote tag` v0.7.85 peel: `b656273136ab876de24f5262386f4f44b73f87fb` (clean match).
+- `apply-checkpoint.head_sha` == `release-receipt.head_sha` == `merge-receipt.head SHA` == `4214fbfe53b912bc6c5a1e9ea0de46931db1c833`.
+- `Remote tag` v0.7.85 peel: `4214fbfe53b912bc6c5a1e9ea0de46931db1c833` (clean match).
 - `bash scripts/check_vault_drift.sh`: CC#39 clean.

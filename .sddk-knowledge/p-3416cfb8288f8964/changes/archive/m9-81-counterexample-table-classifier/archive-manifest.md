@@ -114,7 +114,7 @@ deprecation sunset sweep.
 | proposal | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-81-counterexample-table-classifier/proposal.md` | `95ca700b010ae40a0bff2e37f665195979788f7be38dcd9ae24e41f9a500391a` |
 | spec | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-81-counterexample-table-classifier/spec.md` | `93e79efac2bb8f0dd76e1668f2e045e3b86eb71c5565dc1cfa9a38db65596b2e` |
 | tasks | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-81-counterexample-table-classifier/tasks.md` | `379d708e3f0268b46343ac0dc825ca3c9a7b32b4e90b782efc9960a4556b3748` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `836784628884de04cb4f7313a3804f34015174f15a205b4ea4e5f6fb1eed01ff` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `a2ac5cea40e1ec7218c8b7f16699c5380a09438a81d8fd6c6215e4cb83cdcda1` |
 | vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `78a10c86210da4f7dc08941ad4e71bec067f0b30e7c92f84248bf70615cd4f93` |
 | source (chronos-store) | `crates/chronos-store/src/counterexample_storage.rs` | (+11/-13: 6 sites refactored; 1 import swap) |
 

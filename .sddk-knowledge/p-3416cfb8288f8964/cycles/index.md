@@ -104,7 +104,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-80 | m9-80-property-policy-ownership | A-min | `v0.7.82` | `7874e5c8e972172c024b07f60746f0e06df92f9d` | CLOSED |
 | m9-81 | m9-81-counterexample-table-classifier | B-direct | `v0.7.83` | `fdc5accf64be1fcf780913243aec0496ad48e7fe` | CLOSED |
 | m9-82 | m9-82-degraded-store-disclosure | A-min | `v0.7.84` | `b8694eff737293bffea4ba62f07e4b206eafc502` | CLOSED |
-| m9-83 | m9-83-cc39-total-cycles | B-direct | `v0.7.85` | `b656273136ab876de24f5262386f4f44b73f87fb` | CLOSED |
+| m9-83 | m9-83-cc39-total-cycles | B-direct | `v0.7.85` | `4214fbfe53b912bc6c5a1e9ea0de46931db1c833` | CLOSED |
 
 ## Metadata
 
