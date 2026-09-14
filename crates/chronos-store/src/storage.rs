@@ -52,9 +52,34 @@ pub struct SessionStore {
     db: Arc<redb::Database>,
     /// The CAS used for event storage.
     cas: ContentStore,
+    /// Whether this store is backed by a file on disk (`Persistent`) or
+    /// an in-memory redb backend (`InMemory`). Exposed via
+    /// [`SessionStore::is_persistent`] so that higher layers can tell
+    /// the operator that the in-memory fallback (m9-75) is in effect.
+    kind: StoreKind,
+}
+
+/// Whether the underlying redb backend is file-backed or in-memory.
+///
+/// m9-82: distinguishes persistent `SessionStore`s from in-memory ones
+/// at runtime so the MCP layer can disclose the degraded mode in tool
+/// responses (closes FIND-M9-75-MCP-TOOLS-DO-NOT-DISCLOSE-DEGRADED-STORE).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum StoreKind {
+    Persistent,
+    InMemory,
 }
 
 impl SessionStore {
+    /// Whether this store is backed by a file on disk.
+    ///
+    /// `true` for a store opened via [`SessionStore::open`] or
+    /// [`SessionStore::try_open`]; `false` for a store opened via
+    /// [`SessionStore::in_memory`].
+    pub fn is_persistent(&self) -> bool {
+        self.kind == StoreKind::Persistent
+    }
+
     /// Accessor to the underlying redb database (m9-05 R4: narrowed to `pub(crate)`).
     ///
     /// Cross-crate test access is provided through narrow typed chokepoints on
@@ -74,7 +99,11 @@ impl SessionStore {
         let db =
             Arc::new(redb::Database::create(path).map_err(|e| StoreError::Database(e.into()))?);
         let cas = ContentStore::new(db.clone());
-        Ok(Self { db, cas })
+        Ok(Self {
+            db,
+            cas,
+            kind: StoreKind::Persistent,
+        })
     }
 
     /// Try to open an existing session store, with graceful handling of lock conflicts.
@@ -92,7 +121,11 @@ impl SessionStore {
             Ok(db) => {
                 let db = Arc::new(db);
                 let cas = ContentStore::new(db.clone());
-                Ok(Self { db, cas })
+                Ok(Self {
+                    db,
+                    cas,
+                    kind: StoreKind::Persistent,
+                })
             }
             Err(e) => {
                 // Check if it's a lock error
@@ -110,7 +143,11 @@ impl SessionStore {
                     if let Ok(db) = redb::Database::open(path) {
                         let db = Arc::new(db);
                         let cas = ContentStore::new(db.clone());
-                        return Ok(Self { db, cas });
+                        return Ok(Self {
+                            db,
+                            cas,
+                            kind: StoreKind::Persistent,
+                        });
                     }
                 }
 
@@ -149,7 +186,11 @@ impl SessionStore {
                 .map_err(|e| StoreError::Database(e.into()))?,
         );
         let cas = ContentStore::new(db.clone());
-        Ok(Self { db, cas })
+        Ok(Self {
+            db,
+            cas,
+            kind: StoreKind::InMemory,
+        })
     }
 
     /// Save all events for a session. Stores events in CAS and records metadata.
@@ -549,6 +590,33 @@ mod tests {
     }
 
     #[test]
+    fn test_session_store_is_persistent_after_in_memory() {
+        // m9-82: in-memory stores must self-report as not persistent so
+        // higher layers can disclose the degraded mode in tool responses
+        // (closes FIND-M9-75-MCP-TOOLS-DO-NOT-DISCLOSE-DEGRADED-STORE).
+        let store = SessionStore::in_memory().unwrap();
+        assert!(!store.is_persistent());
+    }
+
+    #[test]
+    fn test_session_store_is_persistent_after_open() {
+        // m9-82: file-backed stores opened via `open(path)` are persistent.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sessions.redb");
+        let store = SessionStore::open(&path).expect("open must succeed");
+        assert!(store.is_persistent());
+    }
+
+    #[test]
+    fn test_session_store_is_persistent_after_try_open() {
+        // m9-82: file-backed stores opened via `try_open(path)` are persistent.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sessions.redb");
+        let store = SessionStore::try_open(&path).expect("try_open must succeed");
+        assert!(store.is_persistent());
+    }
+
+    #[test]
     fn test_session_store_delete_session() {
         let store = SessionStore::in_memory().unwrap();
         let events = vec![make_event(1, "main")];
@@ -654,6 +722,7 @@ mod tests {
         let store = SessionStore {
             db: db.clone(),
             cas: ContentStore::new(db.clone()),
+            kind: StoreKind::Persistent,
         };
 
         let events: Vec<_> = (0..1_000).map(|i| make_event(i, "batch")).collect();
