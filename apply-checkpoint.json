@@ -1,55 +1,61 @@
 {
-  "cycle_id": "m9-91-counterexample-bundle-events-mcp-tool",
-  "cycle_record": "p-3416cfb8288f8964/m9-91-counterexample-bundle-events-mcp-tool",
-  "path": "A-min",
-  "status": "tasks-complete",
-  "head_sha": "18e2a28d0fc1ade564d1c884d9c7228f5864a6f0",
+  "cycle_id": "m9-92-cc34-cc42-cleanup",
+  "cycle_record": "p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup",
+  "path": "B-direct",
+  "status": "complete",
+  "head_sha": "6900395d088ff89e7ee67c3260a244b3d864e4e2",
   "base_sha": "5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d",
-  "main_sha": "5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d",
-  "remote_tag": "v0.7.93",
-  "scope_doc_sha": "a765d56",
+  "main_sha": "6900395d088ff89e7ee67c3260a244b3d864e4e2",
+  "remote_tag": "v0.7.94",
+  "remote_tag_peel": "6900395d088ff89e7ee67c3260a244b3d864e4e2",
+  "peel_match": true,
+  "scope_doc_sha": "6900395",
   "phases": {
     "explore": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-91-counterexample-bundle-events-mcp-tool/exploration-report.md",
-      "summary": "Discovered the existing m9-02 storage primitive bundle_events_or_legacy already had the v3 side-table shape needed; only the MCP surface was missing. R4 from m9-04 documented the explicit deferral. Service layer has only CounterexampleCounterexampleService::events_count (m8-05 B3); the m9-91 events accessor complements it."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup/",
+      "summary": "Identified 3 pre-existing vault drift lines after m9-91 closure: CC#34 A1, CC#34 A2, CC#42 A. All documented in m9-91 handoff as pre-existing but unresolved."
     },
     "spec": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-91-counterexample-bundle-events-mcp-tool/spec.md",
-      "summary": "4 ADDED requirements pinning the wire envelope, pagination semantics, error path, and behaviour preservation. CounterexampleBundleEventsOutputDto with 4 fields; CounterexampleBundleEventsParams with 3 fields (limit + offset both optional).",
-      "requirements_count": 4,
-      "scenarios_count": 4,
-      "tests_pinned": 3
+      "artifact_path": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-92-cc34-cc42-cleanup/spec.md",
+      "summary": "5 REQs + 4 scenarios + acceptance criteria for CC#34 + CC#42 cleanup. Vault-only B-direct path; no Rust touched."
     },
     "tasks": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-91-counterexample-bundle-events-mcp-tool/tasks.md",
-      "summary": "5 reviewable work units: service method + DTO + MCP tool + verification + release. Single branch off main, 1 atomic conventional commit, ≤500 LoC forecast (well within budget).",
-      "total_tasks": 5,
-      "by_phase": {
-        "phase_1_service": 2,
-        "phase_2_mcp": 1,
-        "phase_3_verification": 1,
-        "phase_4_release": 1
-      },
-      "forecast": {
-        "decision_needed_before_apply": "No",
-        "chained_prs_recommended": "No",
-        "chain_strategy": "stacked-to-main",
-        "budget_risk_400": "Low"
-      }
+      "artifact_path": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-92-cc34-cc42-cleanup/tasks.md",
+      "summary": "4 phases (vault edits, m9-90 re-anchor, cycles/terms index bump, cycle artifacts + archive)."
+    },
+    "apply": {
+      "status": "complete",
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup/implementation-receipt.md",
+      "summary": "Single vault-edit commit + cycle-artifacts commit + SHA-cascade fixpoint commit + merge. m9-90 SHAs re-anchored 2184975a → 5cdb4e1a across 5 vault artifacts."
+    },
+    "verify": {
+      "status": "complete",
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup/verify-report.md",
+      "summary": "bash scripts/check_vault_drift.sh: PASS. 0 drift lines (was 3). No new drift introduced."
+    },
+    "release": {
+      "status": "complete",
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup/release-receipt.md",
+      "summary": "Tag v0.7.94 pre-created at cycle-artifacts commit 6900395d per CC#42 workaround. --no-ff merge into main. Cycle branch deleted per CC#53."
+    },
+    "archive": {
+      "status": "complete",
+      "artifact_path": ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-92-cc34-cc42-cleanup/archive-manifest.md",
+      "summary": "Archive-manifest with SHA-256 evidence bindings for 12 released artifacts (7 cycle + 5 knowledge)."
     }
   },
-  "files_changed": [
-    "crates/chronos-services/src/output.rs",
-    "crates/chronos-services/src/counterexample.rs",
-    "crates/chronos-mcp/src/server.rs"
+  "vault_drift_baseline": {
+    "drift_lines_pre": 3,
+    "drift_lines_post": 0,
+    "ccs_fixed": ["CC#34 A1", "CC#34 A2", "CC#42 A"],
+    "ccs_broken": []
+  },
+  "carry_forward_findings": [
+    "FIND-M9-91-TRACE-EVENT-NO-JSON-SCHEMA",
+    "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK"
   ],
-  "disclosures": {
-    "R1_m9_91_closes_m9_02_r4": "counterexample_bundle_events MCP tool finally surfaces the m9-02 v3 side-table. m9-04 R4 explicitly deferred the tool to m9+; m9-91 closes that deferral.",
-    "R2_m9_91_pagination_in_memory": "Service loads events via bundle_events_or_legacy and applies offset/limit in memory. Limits are bounded by the persisted event count, not paginated at the storage level.",
-    "R3_m9_91_trace_event_no_json_schema": "JsonSchema derive skipped on the events Vec because TraceEvent doesn't implement JsonSchema. Wire format unchanged via serde; schema generation treats events as opaque. Pragmatic fix for a single cycle.",
-    "R4_m9_91_no_chunk_iteration": "Storage layout unchanged. The full events are loaded (m9-02 chokepoint) once; pagination is a slice on the in-memory Vec."
-  }
+  "next_cycle_recommendation": "m9-93 = FIND-M9-91 follow-up (add JsonSchema derive to chronos_domain::TraceEvent; A-min Rust cycle). Closes m9-91's deferred finding before m10+ god-module work."
 }
