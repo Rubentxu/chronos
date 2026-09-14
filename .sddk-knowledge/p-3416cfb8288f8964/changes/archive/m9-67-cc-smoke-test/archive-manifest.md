@@ -58,9 +58,9 @@ Two commits:
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-67-cc-smoke-test/archive-manifest.md` | `b8124c7a507c646bc187a9e97be2a8627d86066acd5ef105c66580adff4fcc0e` |
 | smoke-test script | `scripts/smoke_test_ccs.sh` | `86def49d7e23b4e521687ddcb53a384aac18ec3f91f0e2845396f90d7ac3e7d3` |
-| apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/apply-checkpoint.json` | `4042c770f605fe7baf53a768be05b91f2ed604e5f684e7679663a76999f770b8` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/verify-report.md` | `c62e063b9c721f70241e569e69776581bd4c9f1fde7b722e1abace53e0c01b4c` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/verify-findings.json` | `1f78155b680ea4209b4280bc23428191a2429652d24769c94bf48382742feeab` |
+| apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/apply-checkpoint.json` | `5183cda98f62148ba51000724af3a77e969ac2a7e6057190ebee5085a2427e5e` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/verify-report.md` | `537755570d4da038a3eab6720f869c2ef450dba131614df9f7ecb49bb3210106` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/verify-findings.json` | `9dc00308aee2d3b9b9917540012f9f63bac7e2ece4d947de56e93fcc22bf44ac` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/release-report.md` | `8203ae55fb7bc54fb62a1b9fdbd43c51fa380ef90fdbb5849ca1e2c6897161a6` |
-| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/release-receipt.md` | `b562c06d43de58ac66d1dfd058be7ab719df24c072b33e956a7df94e2367f23c` |
-| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/merge-receipt.md` | `b2d369a29386b590b2fa22c307e57ea4416eff615c6895c6183d7c344f2dc7bb` |
+| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/release-receipt.md` | `0c16606f3a01a618fa2c325555caa59cb0d206e6a4721f2e92cdf134ba95feb1` |
+| merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/merge-receipt.md` | `7f5a5dd1d0a6c7253acfc06410b9ce1bef0f0f059aac523a429656a13874cc39` |
