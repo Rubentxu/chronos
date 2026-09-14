@@ -129,4 +129,4 @@ None — m9-80 closed the property-policy ownership refactor (layered split, spe
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
 | Last updated | 2026-09-14T20:59Z |
-| Last archive | m10-ms-property-policy |
+| Last archive | m10-ms-evt-typed |

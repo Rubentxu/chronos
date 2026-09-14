@@ -121,6 +121,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-97 | m9-97-cc004-implicit-io-toctou | A-min | `v0.7.99` | `ddf059193287447dd866ea8818aafcceac660f70` | CLOSED |
 | m9-98 | m9-98-m902r4-ledger-closure | B-direct | `v0.7.100` | `5922928331a1bc01a794e641be1f3d4585ec7163` | CLOSED |
 | m10 | m10-ms-property-policy | A-min | `v0.7.101` | `95c998e7d3ea6f3ee2ad0c160a54b07f08554ceb` | CLOSED |
+| m10 | m10-ms-evt-typed | B-direct | `v0.7.102` | `0998aa734541e6675ed1645745e2b26060a8a645` | CLOSED |
 
 ## Metadata
 

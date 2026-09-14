@@ -1,6 +1,6 @@
 {
   "subject": {
-    "head_sha": "be87e3711534d72b7f6f1534d4a6a74fe463cc4f",
+    "head_sha": "0998aa734541e6675ed1645745e2b26060a8a645",
     "base_sha": "9078ec3136faf07704ff4845d29a901348744988",
     "cycle_id": "m10-ms-evt-typed",
     "branch": "feat/m10-ms-evt-typed",

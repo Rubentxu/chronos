@@ -2,11 +2,11 @@
   "cycle_id": "m10-ms-evt-typed",
   "route": "B-direct",
   "tier": "T0+T2+T4-smoke",
-  "status": "implementation-complete",
+  "status": "CLOSED",
   "created_at": "2026-09-14",
   "title": "MS-EVT-TYPED: typed event filter wire + single-owner mapping",
   "summary": "Per ADR-0003: EventsReadParams.event_types flipped to Vec<EventType> (parse-time rejection of unknown names); EventType::from_snake_case in domain is single owner (21 variants); parse_event_type deleted from server.rs; v1 shims delegate.",
-  "head_sha": "43f8c8be39a0066aa5f55f53266929cd8d4bdfff",
+  "head_sha": "0998aa734541e6675ed1645745e2b26060a8a645",
   "base_sha": "9078ec3136faf07704ff4845d29a901348744988",
   "branch": "feat/m10-ms-evt-typed",
   "findings_closed": [
@@ -26,5 +26,13 @@
   "notes": [
     "ADR acceptance: grep parse_event_type in server.rs == 0",
     "round-trip test covers all 21 variants"
-  ]
+  ],
+  "main_sha": "0998aa734541e6675ed1645745e2b26060a8a645",
+  "remote_tag": "v0.7.102",
+  "remote_tag_peel": "0998aa734541e6675ed1645745e2b26060a8a645",
+  "peel_match": true,
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "complete",
+  "archived_at": "2026-09-14"
 }
