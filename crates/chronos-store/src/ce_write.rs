@@ -12,9 +12,9 @@
 use std::mem;
 
 use crate::counterexample_storage::{
-    collect_bundle_chunks_legacy, collect_v3_keys_for_bundle, encode_chunk_key,
-    encode_chunk_key_legacy, encode_chunk_value, BUNDLE_EVENTS_CHUNK_SIZE, COUNTEREXAMPLE_BUNDLES,
-    COUNTEREXAMPLE_BUNDLE_EVENTS, CURRENT_BUNDLE_SCHEMA_VERSION,
+    collect_legacy_keys_for_table, collect_v3_keys_for_table, encode_chunk_key, encode_chunk_value,
+    BUNDLE_EVENTS_CHUNK_SIZE, COUNTEREXAMPLE_BUNDLES, COUNTEREXAMPLE_BUNDLE_EVENTS,
+    CURRENT_BUNDLE_SCHEMA_VERSION,
 };
 use crate::error::StoreError;
 use crate::storage::SessionStore;
@@ -60,7 +60,8 @@ impl SessionStore {
         self.save_bundle_record_and_events(record, events)
     }
 
-    /// Persist a record and its events in one atomic write transaction (m9-02 D4).
+    /// Persist a record and its events in one atomic write transaction (m9-02 D4,
+    /// **m9-97 atomic**).
     ///
     /// The `record.events` field is expected to be empty (populated by the
     /// caller via `mem::take`). This function writes the record to
@@ -70,6 +71,14 @@ impl SessionStore {
     /// **m9-04 D6:** Re-save deletes both v3 and v2 prior chunks before
     /// writing new v3 chunks (atomic dual cleanup). This triggers lazy migration:
     /// re-saving a v2 bundle leaves only v3 chunks.
+    ///
+    /// **m9-97:** Discovery (`collect_v3_keys_for_table` /
+    /// `collect_legacy_keys_for_table`), deletion, and new-chunk insertion
+    /// all run on the **same** write-tx-opened `Table` handle. There is no
+    /// separate `ReadTransaction`, which closes `cc-004-implicit-io-toctou`
+    /// (a TOCTOU window where a concurrent writer could commit between the
+    /// read and the write, leaving the local record's `events_count`
+    /// inconsistent with the surviving chunks).
     #[allow(clippy::result_large_err)]
     fn save_bundle_record_and_events(
         &self,
@@ -96,51 +105,41 @@ impl SessionStore {
                 .map_err(|e| StoreError::Database(e.into()))?;
         }
 
-        // m9-04 D6: delete prior chunks for this bundle (both v3 and v2) before
-        // writing new v3 chunks. Collect v3 keys via `collect_v3_keys_for_bundle`
-        // (m9-05 R2), v2 keys via `collect_bundle_chunks_legacy`.
-        let (prior_v3_keys, prior_v2_keys): (Vec<Vec<u8>>, Vec<Vec<u8>>) = {
-            let read_tx = self
-                .db()
-                .begin_read()
+        // m9-97 atomic: open the events table once from the same write tx
+        // and run discovery + delete + insert against the same handle.
+        // No separate read tx is opened, so there is no TOCTOU window
+        // between key discovery and chunk deletion (cc-004-implicit-io-toctou).
+        let mut events_table = tx
+            .open_table(COUNTEREXAMPLE_BUNDLE_EVENTS)
+            .map_err(|e| StoreError::Database(e.into()))?;
+
+        // m9-04 D6: delete prior chunks for this bundle (both v3 and v2)
+        // before writing new v3 chunks. m9-97: discovery is on the same
+        // write tx as the deletion.
+        let prior_v3_keys = collect_v3_keys_for_table(&events_table, &bundle_id)?;
+        let prior_v2_keys = collect_legacy_keys_for_table(&events_table, &bundle_id)?;
+
+        for key in &prior_v3_keys {
+            events_table
+                .remove(key.as_slice())
                 .map_err(|e| StoreError::Database(e.into()))?;
-
-            let v3_keys = collect_v3_keys_for_bundle(&read_tx, &bundle_id)?;
-            let v2_keys = collect_bundle_chunks_legacy(&read_tx, &bundle_id)?
-                .into_iter()
-                .map(|(idx, _)| encode_chunk_key_legacy(&bundle_id, idx))
-                .collect();
-
-            (v3_keys, v2_keys)
-        };
-
-        {
-            let mut events_table = tx
-                .open_table(COUNTEREXAMPLE_BUNDLE_EVENTS)
-                .map_err(|e| StoreError::Database(e.into()))?;
-
-            // Delete v3 prior chunks.
-            for key in &prior_v3_keys {
-                events_table
-                    .remove(key.as_slice())
-                    .map_err(|e| StoreError::Database(e.into()))?;
-            }
-            // Delete v2 prior chunks.
-            for key in &prior_v2_keys {
-                events_table
-                    .remove(key.as_slice())
-                    .map_err(|e| StoreError::Database(e.into()))?;
-            }
-            // Write new v3 chunks.
-            for (chunk_idx, chunk) in events.chunks(BUNDLE_EVENTS_CHUNK_SIZE).enumerate() {
-                let key = encode_chunk_key(&bundle_id, chunk_idx as u32);
-                // m9-04 D3: value carries bundle_id for per-chunk identity defense.
-                let value = encode_chunk_value(&bundle_id, chunk);
-                events_table
-                    .insert(key.as_slice(), value.as_slice())
-                    .map_err(|e| StoreError::Database(e.into()))?;
-            }
         }
+        for key in &prior_v2_keys {
+            events_table
+                .remove(key.as_slice())
+                .map_err(|e| StoreError::Database(e.into()))?;
+        }
+        for (chunk_idx, chunk) in events.chunks(BUNDLE_EVENTS_CHUNK_SIZE).enumerate() {
+            let key = encode_chunk_key(&bundle_id, chunk_idx as u32);
+            // m9-04 D3: value carries bundle_id for per-chunk identity defense.
+            let value = encode_chunk_value(&bundle_id, chunk);
+            events_table
+                .insert(key.as_slice(), value.as_slice())
+                .map_err(|e| StoreError::Database(e.into()))?;
+        }
+        // Drop the table handle so the subsequent `tx.commit()` does not
+        // have to move out from under a still-borrowed `events_table`.
+        drop(events_table);
 
         tx.commit().map_err(|e| StoreError::Database(e.into()))?;
         Ok(bundle_id)

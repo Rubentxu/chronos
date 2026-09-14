@@ -1779,3 +1779,127 @@ fn m9_06_current_schema_version_is_listed_as_known() {
         "CURRENT_BUNDLE_SCHEMA_VERSION ({cur}) must be listed in KNOWN_BUNDLE_SCHEMA_VERSIONS"
     );
 }
+
+// m9-97: concurrent re-saves of the same bundle_id must produce exactly
+// one consistent bundle state. Pre-fix (cc-004-implicit-io-toctou), the
+// read-then-write TOCTOU window let a racing writer's chunks survive
+// the local writer's deletes, leaving `events_count` in the record
+// inconsistent with the surviving chunk count.
+//
+// Post-fix: discovery (`collect_v3_keys_for_table` /
+// `collect_legacy_keys_for_table`), deletion, and new-chunk insertion
+// share one write transaction, so the surviving bundle is either T1's
+// view or T2's view — never a mix.
+//
+// We loop 50 iterations with fresh tempdir-backed stores to amplify the
+// race window. Each iteration uses two threads with different event
+// counts (30 vs 60) so the assertion can detect a mixed state.
+#[test]
+fn m9_97_save_bundle_atomic_under_concurrent_resave() {
+    use std::sync::Arc;
+    use std::thread;
+
+    for iteration in 0..50 {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = Arc::new(
+            crate::storage::SessionStore::open(&dir.path().join("store.redb")).expect("open store"),
+        );
+
+        let bundle_id = format!("concurrent-{iteration}");
+
+        // T1 saves 30 events; T2 saves 60 events. Both use the same
+        // bundle_id so they race on the same key.
+        let t1_store = Arc::clone(&store);
+        let t1_id = bundle_id.clone();
+        let t1 = thread::spawn(move || {
+            let rec = CounterexampleBundleRecord {
+                summary: CounterexampleBundleSummary {
+                    bundle_id: t1_id,
+                    property_kind: "invariant".into(),
+                    workspace_id: "ws".into(),
+                    created_at_ms: 1000,
+                    rounds_used: 1,
+                    has_full_bundle: true,
+                    schema_version: 1,
+                    events_count: 0,
+                },
+                events: (0..30u64).map(|i| make_event(i, "t1")).collect(),
+                minimised: None,
+                event_cas_hashes: vec![],
+                target_hypothesis: None,
+                schema_version: 1,
+            };
+            t1_store.save_counterexample_bundle(rec).unwrap();
+        });
+
+        let t2_store = Arc::clone(&store);
+        let t2_id = bundle_id.clone();
+        let t2 = thread::spawn(move || {
+            let rec = CounterexampleBundleRecord {
+                summary: CounterexampleBundleSummary {
+                    bundle_id: t2_id,
+                    property_kind: "invariant".into(),
+                    workspace_id: "ws".into(),
+                    created_at_ms: 2000,
+                    rounds_used: 2,
+                    has_full_bundle: true,
+                    schema_version: 1,
+                    events_count: 0,
+                },
+                events: (0..60u64).map(|i| make_event(i + 1000, "t2")).collect(),
+                minimised: None,
+                event_cas_hashes: vec![],
+                target_hypothesis: None,
+                schema_version: 1,
+            };
+            t2_store.save_counterexample_bundle(rec).unwrap();
+        });
+
+        t1.join().unwrap();
+        t2.join().unwrap();
+
+        // Read back the bundle. The record's `events_count` (or
+        // `created_at_ms`) must agree with the surviving chunk payload.
+        let loaded = store
+            .load_counterexample_bundle(&bundle_id)
+            .expect("load")
+            .expect("bundle present");
+        let events = store
+            .load_counterexample_bundle_events(&bundle_id)
+            .expect("load events");
+
+        assert_eq!(
+            events.len(),
+            loaded.summary.events_count as usize,
+            "iter {iteration}: events_count ({}) must match surviving chunk count ({})",
+            loaded.summary.events_count,
+            events.len()
+        );
+        assert!(
+            events.len() == 30 || events.len() == 60,
+            "iter {iteration}: surviving chunk count must be exactly one writer's \
+             payload (30 or 60), got {}",
+            events.len()
+        );
+        // The event_ids must be contiguous (no mix of T1 ids 0..29 and
+        // T2 ids 1000..1059). Pre-fix TOCTOU would leave a mix in the
+        // surviving chunks even though the record only references one
+        // writer.
+        if events.len() == 30 {
+            for (i, e) in events.iter().enumerate() {
+                assert_eq!(
+                    e.event_id, i as u64,
+                    "iter {iteration}: T1 winner chunk {i} has wrong event_id"
+                );
+            }
+        } else {
+            for (i, e) in events.iter().enumerate() {
+                assert_eq!(
+                    e.event_id,
+                    i as u64 + 1000,
+                    "iter {iteration}: T2 winner chunk {i} has wrong event_id"
+                );
+            }
+        }
+    }
+}
