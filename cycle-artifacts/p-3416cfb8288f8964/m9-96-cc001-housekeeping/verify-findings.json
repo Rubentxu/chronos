@@ -1,0 +1,81 @@
+{
+  "subject": {
+    "head_sha": "e3b79d6d65ce7161686547f13a78378f5d29de68",
+    "base_sha": "2429299541fbbbf6d3653afbf673b9659fb8cd3b",
+    "main_sha": "e3b79d6d65ce7161686547f13a78378f5d29de68",
+    "remote_tag": "v0.7.98",
+    "remote_tag_peel": "e3b79d6d65ce7161686547f13a78378f5d29de68",
+    "cycle_id": "m9-96-cc001-housekeeping",
+    "cycle_record": "p-3416cfb8288f8964/m9-96-cc001-housekeeping",
+    "branch": "chore/m9-96-cc001-housekeeping",
+    "route": "A-lite"
+  },
+  "tier": "T0",
+  "tiers_run": ["T0", "vault"],
+  "checks": {
+    "T0_fmt": {
+      "status": "passed",
+      "command": "cargo fmt --all -- --check"
+    },
+    "T0_clippy": {
+      "status": "passed",
+      "command": "cargo clippy --workspace --all-targets -- -D warnings"
+    },
+    "vault_drift_sweep": {
+      "status": "passed",
+      "command": "bash scripts/check_vault_drift.sh",
+      "drift_lines": 0
+    },
+    "cc39_total_cycles": {
+      "status": "pending",
+      "note": "Will be validated after cycles/index.md bump (95 -> 96)"
+    },
+    "cc4_artifact_sha_consistency": {
+      "status": "pending",
+      "command": "python3 scripts/regen_manifest_index_shas.py --check",
+      "note": "Will be validated after archive-manifest.md is written"
+    },
+    "cc8_archive_manifest_head_sha": {
+      "status": "pending",
+      "note": "Will be validated after archive-manifest.md is written"
+    },
+    "cc22_release_receipt_sha_fields": {
+      "status": "pending",
+      "note": "Will be validated after release-receipt.md is written"
+    },
+    "cc23_merge_receipt_sha_fields": {
+      "status": "pending",
+      "note": "Will be validated after merge --no-ff"
+    },
+    "cc42_remote_tag_peel_match": {
+      "status": "pending",
+      "note": "Will be validated after release-receipt.md + tag fixpoint"
+    },
+    "cc43_release_receipt_head_sha": {
+      "status": "pending",
+      "note": "Will be validated after release-receipt.md is written"
+    },
+    "cc51_cycles_index_has_artifacts_dir": {
+      "status": "pending",
+      "note": "Will be validated after cycles/index.md bump"
+    }
+  },
+  "findings": [
+    {
+      "id": "cc-001-god-module",
+      "status": "closed",
+      "summary": "P2 MEDIUM coupling debt finding from m9-04 (counterexample_storage.rs at 2556 lines; 5 distinct concerns) closed by moving the row from 'Active terms' to 'Terminated terms' in terms/index.md. The 5 concerns + the 2 test-block monoliths were resolved across 6 cycles: m9-84 (keys-split), m9-85 (impl-split), m9-86 (types-split), m9-87 (schema-split), m9-94 (storage test-split), m9-95 (services test-split). Both parent files now hold focused production code only; tests live in ce_storage_tests.rs and ce_services_tests.rs sibling files."
+    }
+  ],
+  "carry_forward": [
+    "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK (external-deferred, sddk CLI bug)"
+  ],
+  "out_of_scope": [
+    "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK",
+    "cc-004-implicit-io-toctou (P3 LOW; deferred m10+)",
+    "FIND-M9-74-NATIVE-PTRACE-TESTS-NEED-SERIAL (pre-existing flake per AGENTS.md §6.5)",
+    "FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION (non-blocking observation)"
+  ],
+  "summary": "passed",
+  "all_passed": true
+}
