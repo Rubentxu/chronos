@@ -1,12 +1,12 @@
 {
-  "head_sha": "2e2b7bda983a39d8e730162e2d6ffd3e55a03296",
+  "head_sha": "60db8b58bdcf9bb55549dad1e43c9d381b45939c",
   "archived_at": "2026-09-14",
   "peel_match": true,
   "base_sha": "1b8164d209b521e341b6cbc433000d3a4f57aede",
-  "main_sha": "2e2b7bda983a39d8e730162e2d6ffd3e55a03296",
+  "main_sha": "60db8b58bdcf9bb55549dad1e43c9d381b45939c",
   "remote_tag": "v0.7.95",
-  "remote_tag_peel": "2e2b7bda983a39d8e730162e2d6ffd3e55a03296",
-  "tag_peel_sha": "2e2b7bda983a39d8e730162e2d6ffd3e55a03296",
+  "remote_tag_peel": "60db8b58bdcf9bb55549dad1e43c9d381b45939c",
+  "tag_peel_sha": "60db8b58bdcf9bb55549dad1e43c9d381b45939c",
   "tag_peel_note": "non-standard: tag pre-created at cycle-artifacts commit SHA; will move through SHA-cascade fixpoint commits per CC#42 workaround (m9-83 handoff). m9-93 is an A-min Rust cycle so the cascade includes both SHA-bookkeeping commits AND a vault cascade for archive-manifest SHA-256 fixpoint.",
   "ff_merged": false,
   "cycle_id": "m9-93-trace-event-json-schema",
@@ -66,6 +66,16 @@
   "title": "m9-93: TraceEvent JsonSchema derive (closes FIND-M9-91-TRACE-EVENT-NO-JSON-SCHEMA)",
   "summary": "A-min Rust cycle. Adds schemars::JsonSchema derive to chronos_domain::TraceEvent and 11 transitive dependencies (EventData, EventType, RegisterState, WasmModuleInfo, WasmFunctionInfo, SymbolId, InvocationId, SourceLocation, VariableInfo, VariableScope, Language), then drops the m9-91 #[schemars(skip)] on CounterexampleBundleEventsOutputDto.returned_events. Enables schemars's uuid1 feature so InvocationId (Uuid wrapper) can derive JsonSchema. 3 new unit tests added (chronos-domain: 2, chronos-services: 1). No regressions: 742 lib tests pass (was 739 in m9-92, +3 new). T4-smoke: counterexample_tools (12/12) + e2e_connectivity (1/1) green.",
   "findings_closed": ["FIND-M9-91-TRACE-EVENT-NO-JSON-SCHEMA"],
+  "findings_introduced": {
+    "no_action": [],
+    "followup": [],
+    "external_deferred": [
+      {
+        "id": "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK",
+        "reason": "external sddk CLI bug; not actionable in chronos scope (carried from m9-88)"
+      }
+    ]
+  },
   "files_changed": [
     "Cargo.toml (workspace): enabled schemars uuid1 feature",
     "crates/chronos-domain/src/trace/event.rs: +6 derives, +2 unit tests",
@@ -75,7 +85,8 @@
     "crates/chronos-services/src/output.rs: dropped #[schemars(skip)] on returned_events, +1 unit test"
   ],
   "shas": {
-    "source_commit": "2e2b7bda983a39d8e730162e2d6ffd3e55a03296"
+    "source_commit": "2e2b7bda983a39d8e730162e2d6ffd3e55a03296",
+    "cycle_artifacts_commit": "60db8b58bdcf9bb55549dad1e43c9d381b45939c"
   },
   "carry_forward_findings": ["FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK"],
   "out_of_scope": [
