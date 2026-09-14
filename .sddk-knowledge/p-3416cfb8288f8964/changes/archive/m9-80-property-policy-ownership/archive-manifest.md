@@ -179,9 +179,9 @@ m9-roadmap project issue for the prioritized list.
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/release-receipt.md` | `99c592b6101d340d8b8fd8a7fd02ac47250fb67a42c66be29a5a283f16800c2b` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/merge-receipt.md` | `265802ca2613a50821f286f717ab428da4b15fcaba44ea83176b1eeccfee4679` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/release-report.md` | `94a740505682c1ef639e6217b95a9f2679a68312d9a39dbd431b86902ebe1630` |
-| apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/apply-checkpoint.json` | `cd7371f25f439186d81c94451e1db81d7f7bb4af5a01a84ecfb9737af4cdc3e7` |
-| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-80-property-policy-ownership/change-entry.md` | `99590464255848e2efb546ce17e32c0bde097e8f73c77c6e8bc74f7362e0cf85` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `17473304199a5bfa7dfd3ce8b897d526b7566dab64807dda99e2951b119874cd` |
+| apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/apply-checkpoint.json` | `cff44f563b53cee206515472c7844ec1f5ebb971993cc93b7d6306f645332b0c` |
+| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-80-property-policy-ownership/change-entry.md` | `0c172bc3e6d0a6afbadb19090e58cf52ee541bfa34fd808d71f15b24dd7d01e0` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `3956b6404900149d7737786da26d5c4159e9d09126cefd649a36fa137b3f86e0` |
 | vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `fcbeeb1795cd90d56c961f673df4983e854de391123987777c94d616fd950a1e` |
 | source (domain lib) | `crates/chronos-domain/src/lib.rs` | (8 entries added to `pub use property::{…}` block at line 28) |
 | source (domain property) | `crates/chronos-domain/src/property.rs` | (+777/-165: 7 new types + 4 new pub fns + private `bfs_reach_domain` helper) |
