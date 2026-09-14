@@ -1,48 +1,55 @@
 {
-  "cycle_id": "m9-02-events-side-table",
-  "cycle_record": "p-3416cfb8288f8964/m9-02-events-side-table",
-  "path": "A-lite",
+  "cycle_id": "m9-91-counterexample-bundle-events-mcp-tool",
+  "cycle_record": "p-3416cfb8288f8964/m9-91-counterexample-bundle-events-mcp-tool",
+  "path": "A-min",
   "status": "tasks-complete",
-  "head_sha": "b2a2455",
-  "base_sha": "48a9cff",
+  "head_sha": "18e2a28d0fc1ade564d1c884d9c7228f5864a6f0",
+  "base_sha": "5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d",
+  "main_sha": "5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d",
+  "remote_tag": "v0.7.93",
   "scope_doc_sha": "a765d56",
   "phases": {
+    "explore": {
+      "status": "complete",
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-91-counterexample-bundle-events-mcp-tool/exploration-report.md",
+      "summary": "Discovered the existing m9-02 storage primitive bundle_events_or_legacy already had the v3 side-table shape needed; only the MCP surface was missing. R4 from m9-04 documented the explicit deferral. Service layer has only CounterexampleCounterexampleService::events_count (m8-05 B3); the m9-91 events accessor complements it."
+    },
     "spec": {
       "status": "complete",
-      "artifact_path": "/home/rubentxu/.local/share/sddk/projects/p-3416cfb8288f8964/cycle-artifacts/p-3416cfb8288f8964/m9-02-events-side-table/spec.md",
-      "summary": "8 ADDED requirements pinning the 14 scoping tests; no MODIFIED/REMOVED (m9-01 schema_version semantics still apply). Word count 645 (under 650 budget). Coverage: happy path, edge cases, legacy compat, error states.",
-      "requirements_count": 8,
-      "scenarios_count": 8,
-      "tests_pinned": 14
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-91-counterexample-bundle-events-mcp-tool/spec.md",
+      "summary": "4 ADDED requirements pinning the wire envelope, pagination semantics, error path, and behaviour preservation. CounterexampleBundleEventsOutputDto with 4 fields; CounterexampleBundleEventsParams with 3 fields (limit + offset both optional).",
+      "requirements_count": 4,
+      "scenarios_count": 4,
+      "tests_pinned": 3
     },
     "tasks": {
       "status": "complete",
-      "artifact_path": "/home/rubentxu/.local/share/sddk/projects/p-3416cfb8288f8964/cycle-artifacts/p-3416cfb8288f8964/m9-02-events-side-table/tasks.md",
-      "summary": "16 reviewable work units across 4 phases; dependency graph; commit plan; smoke + tiers; out-of-scope. Mandatory Review Workload Forecast lines present. Single branch off main, 4 atomic conventional commits, 350-500 LoC forecast (Medium 400-line budget risk).",
-      "total_tasks": 16,
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-91-counterexample-bundle-events-mcp-tool/tasks.md",
+      "summary": "5 reviewable work units: service method + DTO + MCP tool + verification + release. Single branch off main, 1 atomic conventional commit, ≤500 LoC forecast (well within budget).",
+      "total_tasks": 5,
       "by_phase": {
-        "phase_1_foundation": 3,
-        "phase_2_core_storage": 7,
-        "phase_3_consumers": 3,
-        "phase_4_tests": 14
+        "phase_1_service": 2,
+        "phase_2_mcp": 1,
+        "phase_3_verification": 1,
+        "phase_4_release": 1
       },
       "forecast": {
         "decision_needed_before_apply": "No",
         "chained_prs_recommended": "No",
         "chain_strategy": "stacked-to-main",
-        "budget_risk_400": "Medium"
+        "budget_risk_400": "Low"
       }
     }
   },
-  "files_changed": [],
+  "files_changed": [
+    "crates/chronos-services/src/output.rs",
+    "crates/chronos-services/src/counterexample.rs",
+    "crates/chronos-mcp/src/server.rs"
+  ],
   "disclosures": {
-    "R1_m9_02_schema_version_bump": "CURRENT_BUNDLE_SCHEMA_VERSION moves 1 -> 2 in m9-02 (D3 R1 in scoping).",
-    "R2_m9_02_events_count_default": "Pre-m9-02 bundles deserialize with events_count: 0 via serde default; chronos-services falls back to events.len() only when events is non-empty.",
-    "R3_m9_02_public_save_events_not_atomic": "save_counterexample_bundle_events is a separate public method (for m9+ callers); the canonical save path uses internal atomic wrapper save_bundle_record_and_events.",
-    "R4_m9_02_no_new_mcp_tool": "counterexample_bundle_events tool stays m9+; m9-02 ships the storage primitive only.",
-    "R5_m9_02_no_chunk_compression": "TraceEvent variable-sized payloads; chunk compression deferred to m9+.",
-    "R6_m9_02_list_still_deserializes_blob": "redb lacks sub-value reads; events: vec![] in the post-m9-02 blob keeps list cheap.",
-    "R7_m9_02_resave_overwrites_chunks": "save drops all prior chunks for bundle_id; m9+ append-only would need separate method.",
-    "R8_m9_02_no_per_chunk_public_load": "load_counterexample_bundle_events_chunk is internal; future MCP tool uses concat-then-paginate."
+    "R1_m9_91_closes_m9_02_r4": "counterexample_bundle_events MCP tool finally surfaces the m9-02 v3 side-table. m9-04 R4 explicitly deferred the tool to m9+; m9-91 closes that deferral.",
+    "R2_m9_91_pagination_in_memory": "Service loads events via bundle_events_or_legacy and applies offset/limit in memory. Limits are bounded by the persisted event count, not paginated at the storage level.",
+    "R3_m9_91_trace_event_no_json_schema": "JsonSchema derive skipped on the events Vec because TraceEvent doesn't implement JsonSchema. Wire format unchanged via serde; schema generation treats events as opaque. Pragmatic fix for a single cycle.",
+    "R4_m9_91_no_chunk_iteration": "Storage layout unchanged. The full events are loaded (m9-02 chokepoint) once; pagination is a slice on the in-memory Vec."
   }
 }

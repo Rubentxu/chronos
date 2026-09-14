@@ -1,0 +1,155 @@
+{
+  "head_sha": "18e2a28d0fc1ade564d1c884d9c7228f5864a6f0",
+  "base_sha": "5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d",
+  "main_sha": "5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d",
+  "remote_tag": "v0.7.93",
+  "remote_tag_peel": "TBD",
+  "tag_peel_sha": "TBD",
+  "tag_peel_note": "non-standard: tag will be pre-created at the cycle-artifacts commit and moved through the SHA-cascade fixpoint commits. Pattern documented in m9-83 handoff (CC#42 fixpoint-cascade workaround).",
+  "ff_merged": false,
+  "cycle_id": "m9-91-counterexample-bundle-events-mcp-tool",
+  "cycle_record": "p-3416cfb8288f8964/m9-91-counterexample-bundle-events-mcp-tool",
+  "branch": "feat/m9-91-counterexample-bundle-events-mcp-tool",
+  "route": "A-min",
+  "status": "applied",
+  "verify_status": "pending",
+  "release_status": "pending",
+  "archive_status": "pending",
+  "phases": {
+    "explore": "complete",
+    "spec": "complete",
+    "tasks": "complete",
+    "apply": "complete",
+    "verify": "in-progress",
+    "release": "pending",
+    "archive": "pending"
+  },
+  "tier_required": "T2",
+  "tiers_run": [
+    "T0",
+    "T1",
+    "T2",
+    "T4-smoke"
+  ],
+  "tier_results": {
+    "T0": {
+      "fmt_check": "passed",
+      "clippy_check": "passed",
+      "scope": "workspace"
+    },
+    "T1": {
+      "test_command": "cargo test --workspace --lib -- --test-threads=1",
+      "chronos_services_passed": 267,
+      "chronos_services_failed": 0,
+      "chronos_services_baseline": 264,
+      "regression_check": "matched (264 + 3 new = 267)",
+      "chronos_native_passed": 103,
+      "chronos_mcp_passed": 87,
+      "chronos_store_passed": 77,
+      "all_passed": true
+    },
+    "T2": {
+      "test_command": "cargo test -p chronos-services --lib --no-fail-fast",
+      "passed": 267,
+      "failed": 0,
+      "ignored": 0,
+      "new_tests": [
+        "m9_91_events_returns_full_stream_with_no_pagination",
+        "m9_91_events_pagination_with_limit_and_offset",
+        "m9_91_events_missing_bundle_returns_load_failed"
+      ]
+    },
+    "T4_smoke": {
+      "test_command": "cargo test -p chronos-sandbox --test counterexample_tools --test e2e_connectivity --test analytics_tools -- --test-threads=1",
+      "counterexample_tools_passed": 12,
+      "counterexample_tools_failed": 0,
+      "e2e_connectivity_passed": 1,
+      "e2e_connectivity_failed": 0,
+      "analytics_tools_passed": 4,
+      "analytics_tools_failed": 0,
+      "total_passed": 17,
+      "smoke_subset_note": "T4-smoke required because the change adds a new MCP tool (counterexample_bundle_events). Picked counterexample_tools (12 — directly exercises the family), e2e_connectivity (1 — confirms the server starts with the new tool registered), analytics_tools (4 — broad coverage)."
+    }
+  },
+  "carry_forward_findings_closed": [
+    "m9-02-R4 (deferred counterexample_bundle_events MCP tool)"
+  ],
+  "carry_forward_findings_introduced": [],
+  "cc_delta": {
+    "added": [],
+    "modified": [],
+    "removed": [],
+    "touched": ["CC#39"]
+  },
+  "findings": [
+    {
+      "id": "FIND-M9-91-EVENTS-TOOL",
+      "title": "counterexample_bundle_events MCP tool added (closes m9-02-R4)",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "crates/chronos-mcp/src/server.rs: CounterexampleBundleEventsParams + #[tool] counterexample_bundle_events handler + serialize arm",
+        "crates/chronos-services/src/counterexample.rs: CounterexampleOutput::Events variant + ChronosCounterexampleService::events method + 3 unit tests",
+        "crates/chronos-services/src/output.rs: CounterexampleBundleEventsOutputDto wire DTO",
+        "Wire envelope: {bundle_id, events_count, returned_events, next_offset}",
+        "T0 + T1 + T2 + T4-smoke all clean"
+      ]
+    },
+    {
+      "id": "FIND-M9-91-PAGINATION",
+      "title": "Pagination semantics: in-memory offset/limit after v3 side-table load",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "Service loads full events via bundle_events_or_legacy, then applies offset/limit in memory",
+        "next_offset = Some(offset + returned.len()) when more remain; None when fully consumed",
+        "Out-of-range offset returns empty slice with next_offset = None",
+        "Verified in test m9_91_events_pagination_with_limit_and_offset across 4 pages"
+      ]
+    },
+    {
+      "id": "FIND-M9-91-LOAD-FAILED-MISSING-BUNDLE",
+      "title": "Missing bundle surfaces as ServiceError::LoadFailed at service + MCP boundary",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "Service checks load_counterexample_bundle -> empty -> returns LoadFailed with explicit bundle_id in message",
+        "MCP tool handler maps the error to CallToolResult::error",
+        "Verified in test m9_91_events_missing_bundle_returns_load_failed"
+      ]
+    },
+    {
+      "id": "FIND-M9-91-TRACE-EVENT-NO-JSON-SCHEMA",
+      "title": "TraceEvent lacks JsonSchema impl; DTO used #[schemars(skip)] on the events Vec",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "TraceEvent derives Debug, Clone, Serialize, Deserialize, PartialEq — but not JsonSchema",
+        "CounterexampleBundleEventsOutputDto marks `returned_events: Vec<TraceEvent>` with #[schemars(skip)]",
+        "Pragmatic fix — the inner events remain on the wire via their serde representation; the schema-generation simply treats them as opaque"
+      ]
+    }
+  ],
+  "commits": [
+    {
+      "sha": "18e2a28",
+      "subject": "feat(services,mcp): counterexample_bundle_events tool (m9-91)",
+      "files_changed": [
+        "crates/chronos-services/src/output.rs",
+        "crates/chronos-services/src/counterexample.rs",
+        "crates/chronos-mcp/src/server.rs"
+      ]
+    }
+  ],
+  "archived_at": "2026-09-14",
+  "findings_introduced": {
+    "no_action": []
+  },
+  "peel_match": null,
+  "findings_closed": [
+    "m9-02-R4 (deferred counterexample_bundle_events MCP tool)"
+  ],
+  "created_at": "2026-09-14",
+  "title": "m9-91",
+  "summary": "cycle-artifacts/p-3416cfb8288f8964/m9-91-counterexample-bundle-events-mcp-tool/verify-report.md"
+}
