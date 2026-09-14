@@ -1777,10 +1777,7 @@ fn json_content(value: &serde_json::Value) -> Vec<Content> {
 //
 // Used by `save_session`, `list_sessions`, `load_session`,
 // `delete_session`, `drop_session`.
-fn session_envelope(
-    degraded: bool,
-    value: serde_json::Value,
-) -> serde_json::Value {
+fn session_envelope(degraded: bool, value: serde_json::Value) -> serde_json::Value {
     match value {
         serde_json::Value::Object(mut map) => {
             map.insert("degraded".to_string(), serde_json::Value::Bool(degraded));
@@ -2878,9 +2875,10 @@ impl ChronosServer {
                     "duration_ms": result.duration_ms,
                     "hint": "Use load_session to reload this session, or list_sessions to see all saved sessions.",
                 });
-                Ok(CallToolResult::success(json_content(
-                    &session_envelope(self.degraded, output),
-                )))
+                Ok(CallToolResult::success(json_content(&session_envelope(
+                    self.degraded,
+                    output,
+                ))))
             }
             Err(ServiceError::SessionNotInMemory(s)) => {
                 Ok(CallToolResult::error(text_content(format!(
@@ -2930,9 +2928,10 @@ impl ChronosServer {
                     "created_at": result.created_at,
                     "hint": "Session is now queryable. Use query_events, get_execution_summary, etc.",
                 });
-                Ok(CallToolResult::success(json_content(
-                    &session_envelope(self.degraded, output),
-                )))
+                Ok(CallToolResult::success(json_content(&session_envelope(
+                    self.degraded,
+                    output,
+                ))))
             }
             Err(ServiceError::LoadFailed(e)) => Ok(CallToolResult::error(text_content(format!(
                 "Failed to load session '{}': {}",
@@ -2973,9 +2972,10 @@ impl ChronosServer {
                         "created_at": s.created_at,
                     })).collect::<Vec<_>>(),
                 });
-                Ok(CallToolResult::success(json_content(
-                    &session_envelope(self.degraded, output),
-                )))
+                Ok(CallToolResult::success(json_content(&session_envelope(
+                    self.degraded,
+                    output,
+                ))))
             }
             Err(ServiceError::ListFailed(e)) => Ok(CallToolResult::error(text_content(format!(
                 "Failed to list sessions: {}",
@@ -3014,9 +3014,10 @@ impl ChronosServer {
                     "status": "deleted",
                     "message": format!("Session '{}' deleted from persistent storage and memory.", params.session_id),
                 });
-                Ok(CallToolResult::success(json_content(
-                    &session_envelope(self.degraded, output),
-                )))
+                Ok(CallToolResult::success(json_content(&session_envelope(
+                    self.degraded,
+                    output,
+                ))))
             }
             Err(ServiceError::DeleteFailed(e)) => Ok(CallToolResult::error(text_content(format!(
                 "Failed to delete session '{}': {}",
@@ -3056,18 +3057,20 @@ impl ChronosServer {
                         "status": "dropped",
                         "message": "Session removed from memory. Persistent storage not affected.",
                     });
-                    Ok(CallToolResult::success(json_content(
-                        &session_envelope(self.degraded, output),
-                    )))
+                    Ok(CallToolResult::success(json_content(&session_envelope(
+                        self.degraded,
+                        output,
+                    ))))
                 } else {
                     let output = serde_json::json!({
                         "session_id": params.session_id,
                         "status": "not_found",
                         "message": "Session not found in memory. No action taken.",
                     });
-                    Ok(CallToolResult::success(json_content(
-                        &session_envelope(self.degraded, output),
-                    )))
+                    Ok(CallToolResult::success(json_content(&session_envelope(
+                        self.degraded,
+                        output,
+                    ))))
                 }
             }
             Err(ServiceError::LockPoisoned) => Ok(CallToolResult::error(text_content(
@@ -5869,7 +5872,10 @@ mod tests {
             "save_session envelope must include `degraded: true` for an in-memory store",
         );
         assert_eq!(obj.get("session_id"), Some(&serde_json::Value::String(sid)));
-        assert_eq!(obj.get("status"), Some(&serde_json::Value::String("saved".to_string())));
+        assert_eq!(
+            obj.get("status"),
+            Some(&serde_json::Value::String("saved".to_string()))
+        );
     }
 
     // ========================================================================
