@@ -1,0 +1,139 @@
+{
+  "head_sha": "TBD",
+  "base_sha": "43e48b927eebb30be5cd2c6fcffbd6dcbabcbc7d",
+  "main_sha": "TBD",
+  "remote_tag": "v0.7.88",
+  "remote_tag_peel": "TBD",
+  "tag_peel_sha": "TBD",
+  "tag_peel_note": "tag not yet created — peel SHA assigned post-commit after main cascade fixpoint",
+  "ff_merged": false,
+  "cycle_id": "m9-86-cc001-god-module-types-split",
+  "cycle_record": "p-3416cfb8288f8964/m9-86-cc001-god-module-types-split",
+  "branch": "feat/m9-86-cc001-god-module-types-split",
+  "path": "A-min",
+  "route": "A-min",
+  "status": "in_progress",
+  "verify_status": "passed",
+  "release_status": "pending",
+  "archive_status": "pending",
+  "phases": {
+    "explore": "complete",
+    "spec": "complete",
+    "tasks": "complete",
+    "apply": "complete",
+    "verify": "complete",
+    "release": "pending",
+    "archive": "pending"
+  },
+  "tier_required": "T2",
+  "tiers_run": ["T0", "T1", "T2", "T3"],
+  "tier_results": {
+    "T0": {
+      "fmt_check": "passed",
+      "clippy_check": "passed",
+      "scope": "workspace"
+    },
+    "T1": {
+      "test_command": "cargo test -p chronos-store --lib --no-fail-fast",
+      "passed": 77,
+      "failed": 0,
+      "ignored": 0,
+      "baseline_pre_refactor": {"passed": 77, "failed": 0},
+      "regression_check": "matched (77 / 77)"
+    },
+    "T2": {
+      "test_command": "cargo test -p chronos-services --lib --no-fail-fast",
+      "passed": 264,
+      "failed": 0,
+      "ignored": 0
+    },
+    "T3": {
+      "test_command": "cargo test -p chronos-cli --no-fail-fast",
+      "lib_passed": 11,
+      "integration_passed": 22,
+      "replay_integration_passed": 2,
+      "total_passed": 35,
+      "failed": 0,
+      "ignored": 0
+    },
+    "T4_serial_chronos_native": {
+      "test_command": "cargo test -p chronos-native --lib -- --test-threads=1",
+      "passed": 103,
+      "failed": 0,
+      "note": "ptrace serial run per AGENTS.md §6.5"
+    }
+  },
+  "carry_forward_findings_closed": [],
+  "carry_forward_findings_introduced": [],
+  "cc_delta": {
+    "added": [],
+    "modified": [],
+    "removed": [],
+    "touched": ["CC#4", "CC#28", "CC#33", "CC#34", "CC#39"]
+  },
+  "findings": [
+    {
+      "id": "FIND-M9-86-TYPES-EXTRACT",
+      "title": "ce_types submodule extracted from counterexample_storage.rs (cc-001-god-module third slice)",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "crates/chronos-store/src/ce_types.rs (new, 165 lines): 6 pub types + default_schema_version helper",
+        "crates/chronos-store/src/counterexample_storage.rs (2287 -> 2156 lines, -131)"
+      ]
+    },
+    {
+      "id": "FIND-M9-86-PUB-USE-TYPES",
+      "title": "pub use re-export works for pub structs/enums (module-level items)",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "Unlike m9-85 inherent methods (which are type-level), types are module-level items.",
+        "`pub use ce_types::{CounterexampleBundleRecord, ...}` works correctly — types reachable at parent path.",
+        "Verified all real consumers use `chronos_store::counterexample_storage::TypeName` paths unchanged."
+      ]
+    },
+    {
+      "id": "FIND-M9-86-SERDE-DEFAULT-PATH",
+      "title": "serde default function resolves in struct's module scope",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "`#[serde(default = \"default_schema_version\")]` on the structs in ce_types.rs resolves the function in ce_types.rs's scope (where it now lives).",
+        "Test `m9_02_legacy_bundle_deserializes_with_default_schema_version` passes — legacy bundle gets schema_version=3."
+      ]
+    }
+  ],
+  "commits": [
+    {
+      "sha": "8dcbff8",
+      "subject": "m9-86: extract ce_types submodule from counterexample_storage.rs",
+      "files_changed": [
+        "crates/chronos-store/src/ce_types.rs",
+        "crates/chronos-store/src/counterexample_storage.rs"
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "phase": "T0",
+      "summary": "vault files prepared: exploration-report + proposal + spec + tasks added"
+    },
+    {
+      "phase": "T1",
+      "summary": "baseline 77/0 captured for chronos-store lib"
+    },
+    {
+      "phase": "T2",
+      "summary": "ce_types.rs created (165 lines); counterexample_storage.rs trimmed from 2287 to 2156 (-131 lines); 6 pub types + default_schema_version moved; pub use re-export at parent"
+    },
+    {
+      "phase": "T3",
+      "summary": "cargo test -p chronos-store: 77/77; cargo test -p chronos-services: 264/264; cargo test -p chronos-cli: 35/35; cargo test -p chronos-native --lib --test-threads=1: 103/103; cargo clippy --workspace: clean; cargo fmt: clean"
+    },
+    {
+      "phase": "smoke_subset",
+      "summary": "n/a: no probe/mcp touched; behaviour-preserving lexical refactor"
+    }
+  ]
+}
