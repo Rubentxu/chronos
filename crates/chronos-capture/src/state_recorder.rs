@@ -46,24 +46,15 @@ impl StateObservationRecorder {
     /// Returns `UnsupportedByRecordedEvidence` when the feed has no observations
     /// for the property's target, so an empty feed is never reported as `Pass`.
     pub fn evaluate_outcome(&self, property: &Property) -> PropertySequenceOutcome {
-        let observations = self.observations(&property.observe);
-        if observations.is_empty() {
-            return PropertySequenceOutcome::UnsupportedByRecordedEvidence {
-                index: 0,
-                reason: format!("no recorded observations for `{}`", property.observe),
-            };
-        }
-        property.evaluate_sequence(observations)
+        // Feed-level emptiness policy is owned by `chronos_domain::Property`.
+        property.evaluate_feed(self.observations(&property.observe))
     }
 
     /// Evaluate `property` over the recorded observations and return the
     /// persisted violation bundle when the invariant is violated, else `None`.
     pub fn evaluate_violation(&self, property: &Property) -> Option<PropertyViolation> {
-        let observations = self.observations(&property.observe).to_vec();
-        if observations.is_empty() {
-            return None;
-        }
-        property.evaluate_violation(&observations)
+        // Feed-level emptiness policy is owned by `chronos_domain::Property`.
+        property.evaluate_feed_violation(self.observations(&property.observe))
     }
 }
 

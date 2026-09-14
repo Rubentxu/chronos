@@ -484,6 +484,35 @@ impl Property {
         })
     }
 
+    /// Policy: evaluate this property over an observation **feed** (possibly
+    /// empty). An empty feed yields `UnsupportedByRecordedEvidence` — never a
+    /// false `Pass`. This is the single owner of the feed-level emptiness
+    /// policy; session adapters (`chronos-capture::observation_log`,
+    /// `chronos-capture::state_recorder`) must delegate here instead of
+    /// re-implementing it.
+    pub fn evaluate_feed(&self, observations: &[PropertyValue]) -> PropertySequenceOutcome {
+        if observations.is_empty() {
+            return PropertySequenceOutcome::UnsupportedByRecordedEvidence {
+                index: 0,
+                reason: format!("no recorded observations for `{}`", self.observe),
+            };
+        }
+        self.evaluate_sequence(observations)
+    }
+
+    /// Policy: violation-bundle counterpart of [`Property::evaluate_feed`].
+    /// An empty feed yields `None` (no violation can be asserted without
+    /// evidence, and none may be fabricated).
+    pub fn evaluate_feed_violation(
+        &self,
+        observations: &[PropertyValue],
+    ) -> Option<PropertyViolation> {
+        if observations.is_empty() {
+            return None;
+        }
+        self.evaluate_violation(observations)
+    }
+
     /// Render this property as a declarative DSL text block.
     pub fn to_dsl(&self) -> String {
         let mut s = format!(
@@ -1061,6 +1090,30 @@ mod tests {
             PropertyValue::Number(0.0),
         ]);
         assert_eq!(v, None);
+    }
+
+    // MS-PROPERTY-POLICY (F10): single-owner feed-level policy fixture.
+    // Both capture adapters (observation_log, state_recorder) must agree with
+    // this domain fixture on the empty-feed decision.
+    #[test]
+    fn evaluate_feed_empty_yields_unsupported_never_pass() {
+        let p = order_total_property();
+        match p.evaluate_feed(&[]) {
+            PropertySequenceOutcome::UnsupportedByRecordedEvidence { index, reason } => {
+                assert_eq!(index, 0);
+                assert!(reason.contains("Order.total"), "got: {reason}");
+            }
+            other => panic!("expected Unsupported on empty feed, got {other:?}"),
+        }
+        assert!(p.evaluate_feed_violation(&[]).is_none());
+    }
+
+    #[test]
+    fn evaluate_feed_non_empty_delegates_to_sequence_policy() {
+        let p = order_total_property();
+        let feed = [PropertyValue::Number(59.0), PropertyValue::Number(-1.0)];
+        assert_eq!(p.evaluate_feed(&feed), p.evaluate_sequence(&feed));
+        assert!(p.evaluate_feed_violation(&feed).is_some());
     }
 
     #[test]
