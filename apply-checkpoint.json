@@ -1,49 +1,34 @@
 {
-  "cycle_id": "m9-93-trace-event-json-schema",
-  "cycle_record": "p-3416cfb8288f8964/m9-93-trace-event-json-schema",
-  "path": "A-min",
+  "cycle_id": "m9-94-cc001-test-split",
+  "cycle_record": "p-3416cfb8288f8964/m9-94-cc001-test-split",
+  "path": "B-direct",
   "status": "complete",
-  "head_sha": "60db8b58bdcf9bb55549dad1e43c9d381b45939c",
-  "base_sha": "1b8164d209b521e341b6cbc433000d3a4f57aede",
-  "main_sha": "60db8b58bdcf9bb55549dad1e43c9d381b45939c",
-  "remote_tag": "v0.7.95",
-  "remote_tag_peel": "60db8b58bdcf9bb55549dad1e43c9d381b45939c",
+  "head_sha": "9e15dd3fbfc5319df8bd31ba540d570c8fd75ad8",
+  "base_sha": "645eedb530f1b827a600544d01e501d82b410820",
+  "main_sha": "9e15dd3fbfc5319df8bd31ba540d570c8fd75ad8",
+  "remote_tag": "v0.7.96",
+  "remote_tag_peel": "9e15dd3fbfc5319df8bd31ba540d570c8fd75ad8",
   "peel_match": true,
-  "scope_doc_sha": "60db8b5",
+  "scope_doc_sha": "9e15dd3",
   "phases": {
-    "explore": {
-      "status": "complete",
-      "artifact_path": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-93-trace-event-json-schema/exploration-report.md",
-      "summary": "Identified 12 types in chronos-domain requiring JsonSchema derive + 1 cargo feature flag (schemars uuid1). No architectural changes."
-    },
-    "spec": {
-      "status": "complete",
-      "artifact_path": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-93-trace-event-json-schema/spec.md",
-      "summary": "5 REQs + 4 scenarios + acceptance criteria. REQ-m9-93-1..4 cover the derives + workspace dep; REQ-m9-93-5 covers dropping the schemars(skip) on the DTO."
-    },
-    "tasks": {
-      "status": "complete",
-      "artifact_path": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-93-trace-event-json-schema/tasks.md",
-      "summary": "5 phases: workspace dep, chronos-domain derives, chronos-services cleanup, verification, cycle artifacts + archive."
-    },
     "apply": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-93-trace-event-json-schema/implementation-receipt.md",
-      "summary": "Single source commit: 6 files modified (Cargo.toml + 4 chronos-domain + 1 chronos-services). 12 JsonSchema derives added. 3 new unit tests."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-94-cc001-test-split/implementation-receipt.md",
+      "summary": "Single source commit: 1 file added (ce_storage_tests.rs, 1785 LoC) + 1 file modified (counterexample_storage.rs, -1772/+3 LoC). 43 test functions + 4 helpers moved verbatim. No behavior change."
     },
     "verify": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-93-trace-event-json-schema/verify-report.md",
-      "summary": "T0+T1+T2+T4-smoke all green. 742 lib tests pass (was 739, +3 new). counterexample_tools 12/12. e2e_connectivity 1/1."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-94-cc001-test-split/verify-report.md",
+      "summary": "T0+T1+T2 all green. 77 chronos-store lib tests pass (same as m9-93 baseline). 1042 workspace lib tests pass (same as m9-93 baseline). No regressions."
     },
     "release": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-93-trace-event-json-schema/release-receipt.md",
-      "summary": "Tag v0.7.95 pre-created at cycle-artifacts commit 60db8b58 per CC#42 workaround. --no-ff merge into main. Cycle branch deleted per CC#53."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-94-cc001-test-split/release-receipt.md",
+      "summary": "Tag v0.7.96 pre-created at cycle-artifacts commit 9e15dd3 per CC#42 workaround. --no-ff merge into main. Cycle branch deleted per CC#53."
     },
     "archive": {
       "status": "complete",
-      "artifact_path": ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-93-trace-event-json-schema/archive-manifest.md",
+      "artifact_path": ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-94-cc001-test-split/archive-manifest.md",
       "summary": "Archive-manifest with SHA-256 evidence bindings for 12 released artifacts (7 cycle + 5 knowledge)."
     }
   },
@@ -52,8 +37,11 @@
     "drift_lines_post": 0,
     "ccs_fixed": [],
     "ccs_broken": [],
-    "note": "m9-93 is a Rust-only cycle; no vault drift introduced or closed."
+    "note": "m9-94 is a Rust-only cycle; no vault drift introduced or closed. CC#39 Part B was caught and fixed before archive (release-report.md missing Cross-checks section)."
   },
-  "carry_forward_findings": ["FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK"],
-  "next_cycle_recommendation": "m9-94 = cc-001 god-module follow-up (keys-split is smallest/lowest-risk). cc-004-implicit-io-toctou is too big for A-min and should be the first m10 cycle."
+  "carry_forward_findings": [
+    "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK",
+    "FIND-M9-94-SERVICES-COUNTEREXAMPLE-TESTS-MONOLITHIC"
+  ],
+  "next_cycle_recommendation": "m9-95 = FIND-M9-94-SERVICES-COUNTEREXAMPLE-TESTS-MONOLITHIC follow-up (same #[path] pattern, but on the larger crates/chronos-services/src/counterexample.rs file). cc-004-implicit-io-toctou is too big for B-direct and should be the first m10 cycle."
 }
