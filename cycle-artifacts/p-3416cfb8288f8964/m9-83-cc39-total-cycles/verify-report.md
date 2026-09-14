@@ -2,6 +2,8 @@
 
 ## Summary
 
+Path: B-direct (trivial literal fix to cycles/index.md single field).
+
 m9-83 is a trivial B-direct literal fix to close the pre-existing CC#39 drift.
 The `Total cycles` field in `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md`
 read `84` while the row count was `83` (one cycle listed but no folder).
@@ -16,17 +18,17 @@ touched. CC#39 passes after the fix.
 - **Path**: B-direct (literal fix, scope = cycles/index.md single field)
 - **Branch**: fix/m9-83-cc39-total-cycles
 - **Base SHA**: a0f72c2a7fe36eaeb9c772505dfe563f85f42773
-- **Head SHA**: c9f89774fdd22c9cbb653fc38b785e869997df1e
-- **Remote tag**: — (no tag: trivial fix, no release artefact)
+- **Head SHA**: a21dcc253feb5c8d1af05143d0bc859b9a9dd132
+- **Remote tag**: v0.7.85
 - **Date**: 2026-09-14
 
 ## Findings
 
 | ID | Title | Severity | Status |
 |---|---|---|---|
-| F-M9-83-01 | Pre-cycle `Total cycles` field off-by-one (84 vs 83 rows) | info | CLOSED |
-| F-M9-83-02 | Post-cycle CC#39 field/row match verified | info | CLOSED |
-| F-M9-83-03 | Pre-existing CC#48 + CC#51 drift (script-level, out of scope) | informational | OPEN_OUT_OF_SCOPE |
+| F1 | Pre-cycle `Total cycles` field off-by-one (84 vs 83 rows) | info | CLOSED |
+| F2 | Post-cycle CC#39 field/row match verified | info | CLOSED |
+| F3 | Pre-existing CC#48 + CC#51 drift (script-level, out of scope) | informational | OPEN_OUT_OF_SCOPE |
 
 ## Cross-checks
 

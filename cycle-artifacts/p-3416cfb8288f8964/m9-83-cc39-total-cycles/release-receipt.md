@@ -14,11 +14,11 @@
 | Field | Value |
 |---|---|
 | Base SHA | a0f72c2a7fe36eaeb9c772505dfe563f85f42773 |
-| Head SHA | c9f89774fdd22c9cbb653fc38b785e869997df1e |
-| Main SHA | c9f89774fdd22c9cbb653fc38b785e869997df1e |
-| Remote tag | — |
-| Remote tag_peel | — |
-| Peel match | n/a (no tag: trivial B-direct fix with no code changes) |
+| Head SHA | a21dcc253feb5c8d1af05143d0bc859b9a9dd132 |
+| Main SHA | a21dcc253feb5c8d1af05143d0bc859b9a9dd132 |
+| Remote tag | v0.7.85 |
+| Remote tag_peel | a21dcc253feb5c8d1af05143d0bc859b9a9dd132 |
+| Peel match | clean peel: v0.7.85 points at a21dcc2 (fixpoint commit after --no-ff merge + SHA bump for cascading SHAs) |
 
 ## Release notes
 

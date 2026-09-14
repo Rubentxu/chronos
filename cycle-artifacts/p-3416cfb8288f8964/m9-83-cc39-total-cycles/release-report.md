@@ -9,9 +9,9 @@
 | Branch | fix/m9-83-cc39-total-cycles |
 | Date | 2026-09-14 |
 | Base SHA | a0f72c2a7fe36eaeb9c772505dfe563f85f42773 |
-| Head SHA | c9f89774fdd22c9cbb653fc38b785e869997df1e |
-| Remote tag | — (no tag: trivial fix) |
-| ff_merged | false (--no-ff merge commit c9f8977 on main) |
+| Head SHA | a21dcc253feb5c8d1af05143d0bc859b9a9dd132 |
+| Remote tag | v0.7.85 |
+| ff_merged | false (--no-ff merge commit c9f8977 on main, fixpoint bump a21dcc2) |
 
 ## Cycle value
 
