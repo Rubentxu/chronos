@@ -110,7 +110,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-86 | m9-86-cc001-god-module-types-split | A-min | `v0.7.88` | `434f2b4db74e94488f180100a8e8c8db50fd7fa3` | CLOSED |
 | m9-87 | m9-87-cc001-god-module-schema-split | A-min | `v0.7.89` | `e222d854d97e4adae5f8b20410644609c191e545` | CLOSED |
 | m9-88 | m9-88-cc55-drift-remediation | B-direct | `v0.7.90` | `8b6a9bc625e55ef9065b851ef5fbb25999fce942` | CLOSED |
-| m9-89 | m9-89-cascade-cc-cleanup-m9-77-87 | A-lite | `v0.7.91` | `d0071ee5d6053ca38eca02c2a2f6dba47fc2daca` | CLOSED |
+| m9-89 | m9-89-cascade-cc-cleanup-m9-77-87 | A-lite | `v0.7.91` | `23b175ee01a4fab69531a751d17dfa5cf1b044a1` | CLOSED |
 
 ## Metadata
 

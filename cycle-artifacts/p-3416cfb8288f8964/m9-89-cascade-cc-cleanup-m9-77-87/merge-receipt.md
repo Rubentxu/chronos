@@ -13,10 +13,10 @@
 | Field | Value |
 |---|---|
 | Merge type | --no-ff merge into main |
-| Merge commit | d0071ee5d6053ca38eca02c2a2f6dba47fc2daca |
+| Merge commit | 23b175ee01a4fab69531a751d17dfa5cf1b044a1 |
 | Base SHA | a195367d64bd1caa56dedea82195259deb7b671b |
-| Head SHA | d0071ee5d6053ca38eca02c2a2f6dba47fc2daca |
-| Main SHA post-merge | d0071ee5d6053ca38eca02c2a2f6dba47fc2daca |
+| Head SHA | 23b175ee01a4fab69531a751d17dfa5cf1b044a1 |
+| Main SHA post-merge | 23b175ee01a4fab69531a751d17dfa5cf1b044a1 |
 
 ## SHAs
 
@@ -25,7 +25,7 @@
 | Branch | chore/m9-89-cascade-cc-cleanup-m9-77-87 |
 | Date | 2026-09-14 |
 | Base SHA | a195367d64bd1caa56dedea82195259deb7b671b |
-| Head SHA | d0071ee5d6053ca38eca02c2a2f6dba47fc2daca |
+| Head SHA | 23b175ee01a4fab69531a751d17dfa5cf1b044a1 |
 
 ## Notes
 
@@ -33,8 +33,8 @@
   with `--no-ff` (creates merge commit `71c62e4`). Per repo convention
   all cycles use `--no-ff` so the merge is a reviewable unit.
 - The cycle's published head (where the tag lives) is the
-  SHA-aligned HEAD `d0071ee`, per the CC#42 fixpoint-cascade
+  SHA-aligned HEAD `23b175e`, per the CC#42 fixpoint-cascade
   workaround documented in the m9-83 handoff. The tag was moved
   through `71c62e4` → `2d71950` → `afc926f` → `625d733` → `d0071ee`
-  to track the latest state.
+  → `23b175e` to track the latest state.
 - Branch will be deleted after the cycle closes.

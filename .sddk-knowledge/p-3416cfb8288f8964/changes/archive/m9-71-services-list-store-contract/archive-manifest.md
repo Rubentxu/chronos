@@ -80,5 +80,5 @@ Two commits:
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/release-report.md` | `b532010f348b5552b2b4d57f3104e152ecbd7158c5e88f76ff9bf4185add7fd6` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/release-receipt.md` | `5328e9ef4a76b1f48de59833052b2a65c9c6653c34aa1aa7f5188c85b7b97227` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/merge-receipt.md` | `9e92a663e685bed2f31cf8b64a3ae3b8ad53107164702ac60209121a738c3717` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `9cad561f25d0cd53cf50e39720d29de6913194300894b2c519ffcc63b4840369` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `e535447122b92a694b16d37a37f9653e5fac0b93da0fcfce704c857a9ef9ca1b` |
 | vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `d0cdd2625028e2332defc96665ef93b302731ad5b3de1d847a0c083874b7913a` |

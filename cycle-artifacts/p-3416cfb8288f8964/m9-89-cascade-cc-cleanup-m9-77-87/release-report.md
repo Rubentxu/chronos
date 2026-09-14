@@ -3,7 +3,7 @@
 > **Cycle**: m9-89-cascade-cc-cleanup-m9-77-87
 > **Path**: A-lite (vault-only hardening)
 > **Tag**: `v0.7.91`
-> **Merge SHA**: `d0071ee5d6053ca38eca02c2a2f6dba47fc2daca`
+> **Merge SHA**: `23b175ee01a4fab69531a751d17dfa5cf1b044a1`
 > **Date archived**: 2026-09-14
 > **Status**: released
 
@@ -65,7 +65,7 @@ not actionable in chronos scope).
 
 ## Cross-checks
 
-- `apply-checkpoint.head_sha` == `d0071ee5d6053ca38eca02c2a2f6dba47fc2daca` (merge commit, `git cat-file -e` verified).
+- `apply-checkpoint.head_sha` == `23b175ee01a4fab69531a751d17dfa5cf1b044a1` (merge commit, `git cat-file -e` verified).
 - `apply-checkpoint.base_sha` == `a195367d64bd1caa56dedea82195259deb7b671b` (m9-88 vault commit).
 - `apply-checkpoint.peel_match` == `true` (tag `v0.7.91` peel == merge commit).
 - `apply-checkpoint.main_sha` == `apply-checkpoint.head_sha`.
@@ -78,6 +78,6 @@ not actionable in chronos scope).
 
 ## Status
 
-Released as `v0.7.91` at merge commit `d0071ee5d6053ca38eca02c2a2f6dba47fc2daca`.
+Released as `v0.7.91` at merge commit `23b175ee01a4fab69531a751d17dfa5cf1b044a1`.
 The branch `chore/m9-89-cascade-cc-cleanup-m9-77-87` was merged into `main`
 with `--no-ff` and will be deleted after this report is archived.

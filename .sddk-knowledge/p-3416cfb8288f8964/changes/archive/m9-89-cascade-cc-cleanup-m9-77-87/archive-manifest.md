@@ -9,10 +9,10 @@
 | Branch | chore/m9-89-cascade-cc-cleanup-m9-77-87 |
 | Date | 2026-09-14 |
 | Base SHA | a195367d64bd1caa56dedea82195259deb7b671b |
-| Head SHA | `d0071ee5d6053ca38eca02c2a2f6dba47fc2daca` |
+| Head SHA | `23b175ee01a4fab69531a751d17dfa5cf1b044a1` |
 | Merge SHA | 71c62e46f2cb10af7274fdbbaa584d933c0b73ce |
 | Remote tag | v0.7.91 |
-| Tag peel SHA | d0071ee5d6053ca38eca02c2a2f6dba47fc2daca |
+| Tag peel SHA | 23b175ee01a4fab69531a751d17dfa5cf1b044a1 |
 
 ## Summary
 
@@ -84,8 +84,8 @@ pre-existing JSON escape, unrelated to m9-89) and CC#6/CC#46/CC#53
 ## Cross-checks
 
 - `apply-checkpoint.head_sha` == `release-receipt.head_sha` ==
-  `merge-receipt.head SHA` == `d0071ee5d6053ca38eca02c2a2f6dba47fc2daca`.
-- `Remote tag` v0.7.91 peel: `d0071ee5d6053ca38eca02c2a2f6dba47fc2daca`
+  `merge-receipt.head SHA` == `23b175ee01a4fab69531a751d17dfa5cf1b044a1`.
+- `Remote tag` v0.7.91 peel: `23b175ee01a4fab69531a751d17dfa5cf1b044a1`
   (clean match to current HEAD after CC#42 fixpoint-cascade workaround).
 - `apply-checkpoint.peel_match` == `true`.
 - `apply-checkpoint.main_sha` == `apply-checkpoint.head_sha`.

@@ -4,7 +4,7 @@
 **Path**: A-lite (vault-only hardening)
 **Tag**: v0.7.91
 **Merge commit**: 71c62e46f2cb10af7274fdbbaa584d933c0b73ce
-**Published HEAD (tag)**: d0071ee5d6053ca38eca02c2a2f6dba47fc2daca
+**Published HEAD (tag)**: 23b175ee01a4fab69531a751d17dfa5cf1b044a1
 **Date**: 2026-09-14
 **Status**: CLOSED
 
@@ -81,10 +81,11 @@ b860712 chore(vault): m9-89 cascade CC cleanup across m9-34..m9-88
 afc926f  vault: regen archive-manifest SHA-256 rows (CC#4 fixpoint)
 625d733  (intermediate regen — superseded by d0071ee)
 d0071ee  m9-89: align artifacts to v0.7.91 HEAD 625d7338 (peel match)
+23b175e  m9-89: archive + handoff + SHA alignment to v0.7.91 HEAD d0071ee
 ```
 
 The tag `v0.7.91` was moved through these commits per the CC#42
-fixpoint-cascade workaround. Final tag lives at `d0071ee` (current
+fixpoint-cascade workaround. Final tag lives at `23b175e` (current
 HEAD); peel_match: true.
 
 ## What changed at the apply-checkpoint level
