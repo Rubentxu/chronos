@@ -11,7 +11,6 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 | m9-02-R1 | m9-02 | `schema_version` bumped to 2; bundles with >2 hard-rejected by loader | — | backlog | unassigned | m9+ |
 | m9-02-R2 | m9-02 | Pre-m9-02 bundles get `events_count: 0` via serde default; fallback to `record.events.len()` for count | — | backlog | unassigned | m9+ |
 | m9-02-R3 | m9-02 | Public `save_counterexample_bundle_events` is not atomic w.r.t. the record (only the internal wrapper is) | — | backlog | unassigned | m9+ |
-| m9-02-R4 | m9-02 | `counterexample_bundle_events` MCP tool deferred to m9+ (m9-02 ships storage primitive only) | — | backlog | unassigned | m9+ |
 | m9-02-R5 | m9-02 | No chunk compression (lz4/zstd) — chunk size 256 is acceptable for typical bundles | — | backlog | unassigned | m9+ |
 | m9-02-R6 | m9-02 | `list_counterexample_bundles` still deserializes full blob per row (`events: vec![]` is the optimisation) | — | backlog | unassigned | m9+ |
 | m9-02-R7 | m9-02 | Re-save overwrites all prior chunks (no append semantics) | — | backlog | unassigned | m9+ |
@@ -122,6 +121,7 @@ None — m9-80 closed the property-policy ownership refactor (layered split, spe
 | FIND-M9-75-MCP-TOOLS-DO-NOT-DISCLOSE-DEGRADED-STORE | m9-75 | With `CHRONOS_ALLOW_IN_MEMORY_FALLBACK=1` the degraded in-memory mode is logged but never surfaced in a tool response, so an opted-in client cannot tell from a `save_session` / `list_sessions` payload that nothing is persisted | m9-82-degraded-store-disclosure (`v0.7.84`) |
 | cc-001-god-module | m9-04 | `counterexample_storage.rs` at 2,556 lines; 5 distinct concerns (keys/records/persistence/schema-version/v2-legacy). Production halves split across m9-84..m9-87 into `ce_chunk_keys`/`ce_read`/`ce_write`/`ce_test_hooks`/`ce_types`/`ce_schema` sibling modules; test halves split by m9-94 (`ce_storage_tests.rs`) and m9-95 (`ce_services_tests.rs`). Both parent files now hold focused production code only | m9-96-cc001-housekeeping (`v0.7.98`) |
 | cc-004-implicit-io-toctou | m9-04 | **Falsified by m9-97**. `save_bundle_record_and_events` acquires `begin_write()` before its separate `begin_read()`. In pinned redb 2.6.3, `Database::begin_write()` calls `TransactionTracker::start_write_transaction()` (`db.rs:1025-1033`), which waits while `live_write_transaction.is_some()` (`transaction_tracker.rs:117-128`). A second writer cannot begin or commit in the alleged read-to-delete interval, so the key snapshot cannot become stale due to a concurrent writer. An experimental table-scoped refactor was reverted before publication | m9-97-cc004-implicit-io-toctou (`v0.7.99`) |
+| m9-02-R4 | m9-02 | `counterexample_bundle_events` MCP tool was deferred when m9-02 shipped the storage primitive. m9-91 implemented and registered the tool in `chronos-mcp/src/server.rs`, with unit and T4 smoke coverage; all m9-91 cycle receipts mark it closed. m9-98 corrects the stale active-ledger row | m9-91-counterexample-bundle-events-mcp-tool (`v0.7.93`) |
 ## Metadata
 
 | Campo | Valor |
