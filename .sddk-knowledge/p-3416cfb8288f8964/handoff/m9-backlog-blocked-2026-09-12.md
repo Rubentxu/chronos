@@ -1516,3 +1516,43 @@ fresh branch `feat/ms-property-policy` from `origin/main`:
 
 The branch should be created with the SDDK ledger (`sddk cycle start`)
 rather than ad hoc, so the cycle appears in the vault from phase 0.
+
+---
+
+## Session 2026-09-14T06:50Z — m9-80 cycle opened, exploration complete, paused at spec
+
+**Status of `m9-80-property-policy-ownership`** (ledger `PAUSED/specify`):
+
+- Cycle opened via `sddk cycle start --path A-min --branch feat/m9-80-property-policy-ownership --base dc51b68`
+- Exploration report written and committed: `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-80-property-policy-ownership/exploration-report.md` (`8295ba7`)
+- Phase `explore` transitioned `complete`; lease released; cycle paused at `specify`
+
+**Important drift from the prior handoff**: the entry says
+"observation_log property-policy functions" but `grep -rln 'observation_log' crates/`
+returns zero results. The recon identified the actual four functions as:
+
+| Function | File:Line |
+|---|---|
+| `eval_invariant` | `crates/chronos-services/src/hypothesis_test.rs:110` |
+| `eval_existence` | `crates/chronos-services/src/hypothesis_test.rs:278` |
+| `eval_call_path` | `crates/chronos-services/src/hypothesis_test.rs:403` |
+| `observe_property_target` | `crates/chronos-services/src/hypothesis_test.rs:240` |
+
+These are the only "property-policy-shaped" functions in services that do not
+delegate to `chronos_domain::property::Property::*`. Module hosts 13 unit
+tests, all of which must pass without modification.
+
+**Spec contract to write next**:
+
+1. **REQ-PROP-OWN-001** — the four functions live in
+   `chronos_domain::property`; `Property` re-exported at the crate root.
+2. **REQ-PROP-OWN-002** — `chronos_services::hypothesis_test::test` retains
+   its public signature; its four helpers are thin shims.
+3. **REQ-PROP-OWN-003** — all 13 unit tests pass without assertion changes.
+
+**Scope**: 2 crates (`chronos-domain`, `chronos-services`), ~600 LoC, no
+public wire shape change. T0+T1+T2+T4-smoke (`session_explain/hypothesis`
++ `program_scenarios`).
+
+**Pre-existing findings to carry forward unchanged**:
+FIND-M9-75, FIND-M9-74, FIND-M9-72, FIND-M9-71, FIND-M9-66 (broken JSON).
