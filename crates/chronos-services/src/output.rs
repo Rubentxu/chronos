@@ -2682,3 +2682,54 @@ mod counterexample_dto_tests {
         );
     }
 }
+
+// ============================================================================
+// m9-80: From impls wrapping domain-owned hypothesis outcomes
+// ----------------------------------------------------------------------------
+// The hypothesis policy lives in `chronos_domain::property` (see T0+T1 of
+// the m9-80 cycle). The wire-shape types in this file are constructed from
+// the domain outcomes via these `From` impls. Adding more variants requires
+// only adding the matching `From` impl here.
+// ============================================================================
+
+impl From<chronos_domain::property::PropertyHypothesisVerdict> for HypothesisVerdict {
+    fn from(v: chronos_domain::property::PropertyHypothesisVerdict) -> Self {
+        match v {
+            chronos_domain::property::PropertyHypothesisVerdict::Pass => HypothesisVerdict::Pass,
+            chronos_domain::property::PropertyHypothesisVerdict::Violation { reason } => {
+                HypothesisVerdict::Violation { reason }
+            }
+            chronos_domain::property::PropertyHypothesisVerdict::Unsupported { reason } => {
+                HypothesisVerdict::Unsupported { reason }
+            }
+        }
+    }
+}
+
+impl From<chronos_domain::property::PropertyObservationSource> for HypothesisScope {
+    fn from(s: chronos_domain::property::PropertyObservationSource) -> Self {
+        match s {
+            chronos_domain::property::PropertyObservationSource::EventCount => {
+                HypothesisScope::EventCount
+            }
+            chronos_domain::property::PropertyObservationSource::PropertyValue { .. } => {
+                HypothesisScope::PropertyValue
+            }
+            chronos_domain::property::PropertyObservationSource::LatencyMs => {
+                HypothesisScope::LatencyMs
+            }
+        }
+    }
+}
+
+impl From<chronos_domain::property::InvariantOutcome> for HypothesisOutput {
+    fn from(outcome: chronos_domain::property::InvariantOutcome) -> Self {
+        HypothesisOutput::Invariant {
+            verdict: outcome.verdict.into(),
+            support_event_ids: outcome.support_event_ids,
+            counter_event_ids: outcome.counter_event_ids,
+            scope: outcome.observation.into(),
+            summary: outcome.summary,
+        }
+    }
+}

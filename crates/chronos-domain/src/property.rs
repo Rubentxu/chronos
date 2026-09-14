@@ -9,6 +9,8 @@
 
 use std::fmt;
 
+use crate::trace::{EventData, TraceEvent};
+
 /// Stable identifier for a declared property.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct PropertyId(pub u64);
@@ -1318,4 +1320,181 @@ pub enum PropertyHypothesisOutcome {
     Invariant(InvariantOutcome),
     Existence(ExistenceOutcome),
     CallPath(CallPathOutcome),
+}
+
+// ============================================================================
+// m9-80: Property hypothesis evaluation primitives (domain-owned)
+//
+// The four functions below are the domain-owned implementations of the
+// services-layer hypothesis policy. They live in `chronos_domain::property`
+// because the policy semantics are domain-owned; the services layer wraps
+// them into the wire-shape `HypothesisOutput` via `From` impls (see
+// `crates/chronos-services/src/output.rs`).
+//
+// Each function takes the minimum necessary inputs (events slice +
+// policy-relevant scalars) and returns the domain outcome type.
+// ============================================================================
+
+/// Convert a `PropertyOutcome` (from `Property::evaluate`) into the
+/// domain-owned `PropertyHypothesisVerdict`.
+fn property_outcome_to_verdict(
+    outcome: PropertyOutcome,
+    comparison: &ComparisonOp,
+    constant: &PropertyValue,
+) -> (PropertyHypothesisVerdict, String) {
+    match outcome {
+        PropertyOutcome::Pass => (
+            PropertyHypothesisVerdict::Pass,
+            format!("invariant satisfied ({comparison} {constant})"),
+        ),
+        PropertyOutcome::Violation { message, .. } => (
+            PropertyHypothesisVerdict::Violation {
+                reason: message.clone(),
+            },
+            message,
+        ),
+        PropertyOutcome::UnsupportedByRecordedEvidence { reason } => (
+            PropertyHypothesisVerdict::Unsupported {
+                reason: reason.clone(),
+            },
+            reason,
+        ),
+    }
+}
+
+/// Find the last `PropertyValue` recorded for `target` plus the event IDs
+/// of the matches. Returns `None` if no event matched.
+fn observe_property_target_domain(
+    events: &[TraceEvent],
+    target: &str,
+) -> Option<(PropertyValue, Vec<u64>)> {
+    let mut last: Option<PropertyValue> = None;
+    let mut ids: Vec<u64> = Vec::new();
+    for ev in events {
+        if let EventData::Variable(v) = &ev.data {
+            // Heuristic: match either by variable name (full path segments)
+            // or by trailing path component. `target` is treated as a free
+            // identifier since VariableInfo doesn't carry a target_path.
+            let matches_name = v.name == target
+                || v.name.split('.').next_back() == Some(target)
+                || v.name.ends_with(&format!(".{target}"));
+            if matches_name {
+                let pv = parse_property_value_string(&v.value);
+                last = Some(pv);
+                ids.push(ev.event_id);
+            }
+        }
+    }
+    last.map(|v| (v, ids))
+}
+
+/// Parse a textual variable value into a `PropertyValue` (Number > Bool > Text).
+fn parse_property_value_string(s: &str) -> PropertyValue {
+    if let Ok(n) = s.parse::<f64>() {
+        PropertyValue::Number(n)
+    } else if let Ok(b) = s.parse::<bool>() {
+        PropertyValue::Bool(b)
+    } else {
+        PropertyValue::Text(s.to_string())
+    }
+}
+
+/// Evaluate an `Invariant`-shaped hypothesis against the captured events.
+///
+/// The function takes the minimum inputs needed by the policy:
+/// `events` (the captured trace slice), `comparison` (the comparison
+/// operator, e.g. `Eq`/`Lt`/`Ge`), `constant` (the right-hand side of
+/// the comparison), and `observation` (what scalar to feed into the
+/// comparison: live event count, last recorded value for a target, or
+/// latency).
+///
+/// Returns an [`InvariantOutcome`] that the services layer wraps into
+/// the wire-shape `HypothesisOutput::Invariant` via `From`.
+pub fn eval_invariant(
+    events: &[TraceEvent],
+    comparison: ComparisonOp,
+    constant: PropertyValue,
+    observation: PropertyObservationSource,
+) -> InvariantOutcome {
+    let (verdict, support_event_ids, counter_event_ids, mut summary) = match observation.clone() {
+        PropertyObservationSource::EventCount => {
+            let count = events.len() as f64;
+            let observed = PropertyValue::Number(count);
+            let outcome = Property {
+                id: PropertyId(0),
+                name: "event_count".into(),
+                version: 1,
+                observe: "event_count".into(),
+                trigger: String::new(),
+                invariant: InvariantCheck::Comparison {
+                    op: comparison,
+                    constant: constant.clone(),
+                },
+            }
+            .evaluate(Some(&observed), None);
+            let (v, s) = property_outcome_to_verdict(outcome, &comparison, &constant);
+            (v, Vec::new(), Vec::new(), s)
+        }
+        PropertyObservationSource::PropertyValue { target } => {
+            match observe_property_target_domain(events, &target) {
+                None => (
+                    PropertyHypothesisVerdict::Unsupported {
+                        reason: format!(
+                            "no recorded observation for property target `{target}` in session"
+                        ),
+                    },
+                    Vec::new(),
+                    Vec::new(),
+                    format!(
+                        "scope=property_value target={target}: required observation not captured"
+                    ),
+                ),
+                Some((obs, ids)) => {
+                    let outcome = Property {
+                        id: PropertyId(0),
+                        name: target.clone(),
+                        version: 1,
+                        observe: target.clone(),
+                        trigger: String::new(),
+                        invariant: InvariantCheck::Comparison {
+                            op: comparison,
+                            constant: constant.clone(),
+                        },
+                    }
+                    .evaluate(Some(&obs), None);
+                    let mut counter_local: Vec<u64> = Vec::new();
+                    let (v, mut sm) = property_outcome_to_verdict(outcome, &comparison, &constant);
+                    if matches!(v, PropertyHypothesisVerdict::Violation { .. }) {
+                        for id in &ids {
+                            counter_local.push(*id);
+                        }
+                        sm = format!("{sm}: observed {obs} at events {ids:?}");
+                    }
+                    (v, ids.clone(), counter_local, sm)
+                }
+            }
+        }
+        PropertyObservationSource::LatencyMs => (
+            PropertyHypothesisVerdict::Unsupported {
+                reason: "scope=latency_ms is reserved for a future milestone (m7+): \
+                         chronos_domain::trace::EventData has no latency_ms field today."
+                    .into(),
+            },
+            Vec::new(),
+            Vec::new(),
+            "scope=latency_ms not implemented in m6-04".into(),
+        ),
+    };
+
+    if summary.is_empty() {
+        summary = format!("invariant evaluated (observation={observation:?})");
+    }
+
+    InvariantOutcome {
+        verdict,
+        support_event_ids,
+        counter_event_ids,
+        observation,
+        summary,
+    }
 }

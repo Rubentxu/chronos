@@ -25,9 +25,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use chronos_domain::property::{
-    ComparisonOp, InvariantCheck, Property, PropertyId, PropertyOutcome, PropertyValue,
-};
+use chronos_domain::property::{ComparisonOp, PropertyOutcome, PropertyValue};
 use chronos_domain::trace::{EventData, EventType, TraceEvent};
 use chronos_query::QueryEngine;
 use tokio::sync::Mutex as TokioMutex;
@@ -96,7 +94,51 @@ impl ChronosHypothesisTestService {
         let events = engine.get_all_events();
 
         match input.kind {
-            HypothesisKind::Invariant => Ok(eval_invariant(&input, &events)),
+            HypothesisKind::Invariant => {
+                // Translate the services-layer HypothesisScope into the
+                // domain-owned PropertyObservationSource (m9-80 T1). The
+                // missing-property_target case must short-circuit BEFORE
+                // calling the domain function so that the verdict reason
+                // matches the original semantics exactly.
+                let scope = input.scope.unwrap_or(HypothesisScope::EventCount);
+                let observation = match scope {
+                    HypothesisScope::EventCount => {
+                        chronos_domain::property::PropertyObservationSource::EventCount
+                    }
+                    HypothesisScope::PropertyValue => match input.property_target.clone() {
+                        Some(target) => {
+                            chronos_domain::property::PropertyObservationSource::PropertyValue {
+                                target,
+                            }
+                        }
+                        None => {
+                            // Missing target: short-circuit with the
+                            // original "requires property_target" verdict
+                            // before invoking the domain function.
+                            return Ok(HypothesisOutput::Invariant {
+                                verdict: HypothesisVerdict::Unsupported {
+                                    reason: "scope=property_value requires property_target".into(),
+                                },
+                                support_event_ids: Vec::new(),
+                                counter_event_ids: Vec::new(),
+                                scope: HypothesisScope::PropertyValue,
+                                summary: "scope=property_value requires property_target to be set"
+                                    .into(),
+                            });
+                        }
+                    },
+                    HypothesisScope::LatencyMs => {
+                        chronos_domain::property::PropertyObservationSource::LatencyMs
+                    }
+                };
+                let outcome = chronos_domain::property::eval_invariant(
+                    &events,
+                    input.comparison.unwrap_or(ComparisonOp::Eq),
+                    input.constant.clone().unwrap_or(PropertyValue::Number(0.0)),
+                    observation,
+                );
+                Ok(HypothesisOutput::from(outcome))
+            }
             HypothesisKind::Existence => Ok(eval_existence(&input, &events)),
             HypothesisKind::CallPath => Ok(eval_call_path(&input, &events)),
         }
@@ -107,103 +149,10 @@ impl ChronosHypothesisTestService {
 // Invariant
 // ---------------------------------------------------------------------------
 
-fn eval_invariant(input: &HypothesisInput, events: &[TraceEvent]) -> HypothesisOutput {
-    let scope = input.scope.unwrap_or(HypothesisScope::EventCount);
-    let comparison = input.comparison.unwrap_or(ComparisonOp::Eq);
-    let constant = input.constant.clone().unwrap_or(PropertyValue::Number(0.0));
-
-    let (verdict, support, counter, mut summary): (HypothesisVerdict, Vec<u64>, Vec<u64>, String) =
-        match scope {
-            HypothesisScope::EventCount => {
-                let count = events.len() as f64;
-                let observed = PropertyValue::Number(count);
-                let outcome = Property {
-                    id: PropertyId(0),
-                    name: "event_count".into(),
-                    version: 1,
-                    observe: "event_count".into(),
-                    trigger: String::new(),
-                    invariant: InvariantCheck::Comparison {
-                        op: comparison,
-                        constant: constant.clone(),
-                    },
-                }
-                .evaluate(Some(&observed), None);
-                outcome_to_envelope(outcome, &comparison, &constant, vec![], vec![])
-            }
-            HypothesisScope::PropertyValue => match input.property_target.clone() {
-                None => (
-                    HypothesisVerdict::Unsupported {
-                        reason: "scope=property_value requires property_target".into(),
-                    },
-                    Vec::new(),
-                    Vec::new(),
-                    "scope=property_value requires property_target to be set".into(),
-                ),
-                Some(target) => match observe_property_target(events, &target) {
-                    None => (
-                        HypothesisVerdict::Unsupported {
-                            reason: format!(
-                                "no recorded observation for property target `{target}` in session"
-                            ),
-                        },
-                        Vec::new(),
-                        Vec::new(),
-                        format!(
-                            "scope=property_value target={target}: required observation not captured"
-                        ),
-                    ),
-                    Some((obs, ids)) => {
-                        let outcome = Property {
-                            id: PropertyId(0),
-                            name: target.clone(),
-                            version: 1,
-                            observe: target.clone(),
-                            trigger: String::new(),
-                            invariant: InvariantCheck::Comparison {
-                                op: comparison,
-                                constant: constant.clone(),
-                            },
-                        }
-                        .evaluate(Some(&obs), None);
-                        let mut counter_local: Vec<u64> = Vec::new();
-                        let (v, s, _, mut sm) =
-                            outcome_to_envelope(outcome, &comparison, &constant, ids.clone(), vec![]);
-                        if matches!(v, HypothesisVerdict::Violation { .. }) {
-                            for id in &ids {
-                                counter_local.push(*id);
-                            }
-                            sm = format!("{sm}: observed {obs} at events {ids:?}");
-                        }
-                        (v, s, counter_local, sm)
-                    }
-                },
-            },
-            HypothesisScope::LatencyMs => (
-                HypothesisVerdict::Unsupported {
-                    reason: "scope=latency_ms is reserved for a future milestone (m7+): \
-                             chronos_domain::trace::EventData has no latency_ms field today."
-                        .into(),
-                },
-                Vec::new(),
-                Vec::new(),
-                "scope=latency_ms not implemented in m6-04".into(),
-            ),
-        };
-
-    if summary.is_empty() {
-        summary = format!("invariant evaluated (scope={scope:?})");
-    }
-
-    HypothesisOutput::Invariant {
-        verdict,
-        support_event_ids: support,
-        counter_event_ids: counter,
-        scope,
-        summary,
-    }
-}
-
+// Helpers below are kept because eval_existence (T2) and eval_call_path
+// (T3) still depend on them. They will be deleted in T2/T3 once those
+// functions are also moved to the domain.
+#[allow(dead_code)]
 fn outcome_to_envelope(
     outcome: PropertyOutcome,
     op: &ComparisonOp,
@@ -237,39 +186,8 @@ fn outcome_to_envelope(
     }
 }
 
-fn observe_property_target(
-    events: &[TraceEvent],
-    target: &str,
-) -> Option<(PropertyValue, Vec<u64>)> {
-    let mut last: Option<PropertyValue> = None;
-    let mut ids: Vec<u64> = Vec::new();
-    for ev in events {
-        if let EventData::Variable(v) = &ev.data {
-            // Heuristic: match either by variable name (full path segments)
-            // or by trailing path component. `target` is treated as a free
-            // identifier since VariableInfo doesn't carry a target_path.
-            let matches_name = v.name == target
-                || v.name.split('.').next_back() == Some(target)
-                || v.name.ends_with(&format!(".{target}"));
-            if matches_name {
-                let pv = parse_property_value(&v.value);
-                last = Some(pv);
-                ids.push(ev.event_id);
-            }
-        }
-    }
-    last.map(|v| (v, ids))
-}
-
-fn parse_property_value(s: &str) -> PropertyValue {
-    if let Ok(n) = s.parse::<f64>() {
-        PropertyValue::Number(n)
-    } else if let Ok(b) = s.parse::<bool>() {
-        PropertyValue::Bool(b)
-    } else {
-        PropertyValue::Text(s.to_string())
-    }
-}
+// observe_property_target and parse_property_value moved to
+// chronos_domain::property::observe_property_target_domain (T1).
 
 // ---------------------------------------------------------------------------
 // Existence

@@ -26,10 +26,10 @@ pub use index::{
     PerfCounters, PerformanceIndex, RawEventEntry, ShadowIndex, TemporalIndex,
 };
 pub use property::{
-    CallPathOutcome, ComparisonOp, ExistenceOutcome, InvariantCheck, InvariantOutcome, MutationActor,
-    Property, PropertyExistencePredicate, PropertyHypothesisOutcome, PropertyHypothesisVerdict,
-    PropertyId, PropertyObservationSource, PropertyOutcome, PropertySequenceOutcome, PropertyValue,
-    PropertyViolation, StateTransition,
+    CallPathOutcome, ComparisonOp, ExistenceOutcome, InvariantCheck, InvariantOutcome,
+    MutationActor, Property, PropertyExistencePredicate, PropertyHypothesisOutcome,
+    PropertyHypothesisVerdict, PropertyId, PropertyObservationSource, PropertyOutcome,
+    PropertySequenceOutcome, PropertyValue, PropertyViolation, StateTransition,
 };
 pub use query::{
     EventFilter, PerfEntry, PerfQuery, PerfResult, PerfSortBy, QueryResult, TraceQuery,
