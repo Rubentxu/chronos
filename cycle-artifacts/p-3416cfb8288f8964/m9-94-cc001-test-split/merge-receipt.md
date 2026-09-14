@@ -15,8 +15,8 @@
 | Merge type | --no-ff merge into main |
 | Merge commit | <merge-sha> (filled after merge) |
 | Base SHA | 645eedb530f1b827a600544d01e501d82b410820 |
-| Head SHA | 3a8494967c366761f10da6caf89745971fce9f78 |
-| Main SHA post-merge | 3a8494967c366761f10da6caf89745971fce9f78 |
+| Head SHA | 9e15dd3fbfc5319df8bd31ba540d570c8fd75ad8 |
+| Main SHA post-merge | 9e15dd3fbfc5319df8bd31ba540d570c8fd75ad8 |
 
 ## SHAs
 
@@ -25,7 +25,7 @@
 | Branch | chore/m9-94-cc001-test-split |
 | Date | 2026-09-14 |
 | Base SHA | 645eedb530f1b827a600544d01e501d82b410820 |
-| Head SHA | 3a8494967c366761f10da6caf89745971fce9f78 |
+| Head SHA | 9e15dd3fbfc5319df8bd31ba540d570c8fd75ad8 |
 
 ## Notes
 

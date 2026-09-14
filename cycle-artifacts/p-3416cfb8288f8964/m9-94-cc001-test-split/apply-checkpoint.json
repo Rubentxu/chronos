@@ -1,12 +1,12 @@
 {
-  "head_sha": "3a8494967c366761f10da6caf89745971fce9f78",
+  "head_sha": "9e15dd3fbfc5319df8bd31ba540d570c8fd75ad8",
   "archived_at": "2026-09-14",
   "peel_match": true,
   "base_sha": "645eedb530f1b827a600544d01e501d82b410820",
-  "main_sha": "3a8494967c366761f10da6caf89745971fce9f78",
+  "main_sha": "9e15dd3fbfc5319df8bd31ba540d570c8fd75ad8",
   "remote_tag": "v0.7.96",
-  "remote_tag_peel": "3a8494967c366761f10da6caf89745971fce9f78",
-  "tag_peel_sha": "3a8494967c366761f10da6caf89745971fce9f78",
+  "remote_tag_peel": "9e15dd3fbfc5319df8bd31ba540d570c8fd75ad8",
+  "tag_peel_sha": "9e15dd3fbfc5319df8bd31ba540d570c8fd75ad8",
   "tag_peel_note": "non-standard: tag pre-created at source commit SHA; will move through SHA-cascade fixpoint commits per CC#42 workaround. m9-94 is a B-direct cycle (mechanical refactor only), so no separate cycle-artifacts commit is needed; the tag points at the source commit which is also the cycle-artifacts commit.",
   "ff_merged": false,
   "cycle_id": "m9-94-cc001-test-split",
@@ -68,7 +68,7 @@
   ],
   "shas": {
     "source_commit": "3a8494967c366761f10da6caf89745971fce9f78",
-    "cycle_artifacts_commit": "3a8494967c366761f10da6caf89745971fce9f78"
+    "cycle_artifacts_commit": "9e15dd3fbfc5319df8bd31ba540d570c8fd75ad8"
   },
   "carry_forward_findings": [
     "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK",
