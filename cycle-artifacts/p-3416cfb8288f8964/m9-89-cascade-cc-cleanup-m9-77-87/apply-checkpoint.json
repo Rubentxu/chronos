@@ -8,13 +8,13 @@
   "release_status": "released",
   "archive_status": "complete",
   "archived_at": "2026-09-14",
-  "head_sha": "71c62e46f2cb10af7274fdbbaa584d933c0b73ce",
-  "main_sha": "71c62e46f2cb10af7274fdbbaa584d933c0b73ce",
+  "head_sha": "afc926ff31d7ad47a6a24f124513426ef761c6ee",
+  "main_sha": "afc926ff31d7ad47a6a24f124513426ef761c6ee",
   "base_sha": "a195367d64bd1caa56dedea82195259deb7b671b",
   "remote_tag": "v0.7.91",
-  "remote_tag_peel": "71c62e46f2cb10af7274fdbbaa584d933c0b73ce",
-  "tag_peel_sha": "71c62e46f2cb10af7274fdbbaa584d933c0b73ce",
-  "tag_peel_note": "non-standard: tag points at the merge commit (71c62e4). Pre-created at cascade commit SHA 7e8981b per CC#42 fixpoint-cascade workaround documented in m9-83 handoff.",
+  "remote_tag_peel": "afc926ff31d7ad47a6a24f124513426ef761c6ee",
+  "tag_peel_sha": "afc926ff31d7ad47a6a24f124513426ef761c6ee",
+  "tag_peel_note": "non-standard: tag points at the SHA-256 regen commit (afc926f). Pre-created at cascade commit SHA 7e8981b and moved through 71c62e4 (merge) -> 2d71950 (artifact fixups) -> afc926f (SHA regen) per CC#42 fixpoint-cascade workaround documented in m9-83 handoff.",
   "peel_match": true,
   "ff_merged": false,
   "phases": {
@@ -28,13 +28,13 @@
   },
   "created_at": "2026-09-14T14:43Z",
   "title": "m9-89 cascade cc cleanup m9 77 87",
-  "summary": "Vault-only hardening cycle. No Rust source code touched. Closes 12 cascading CC drift lines across m9-77..m9-88 via mechanical backfill (165 changes across 111 files). Plus CC#4 SHA-256 regenerated. A-lite path, tag v0.7.91, merge 71c62e4.",
+  "summary": "Vault-only hardening cycle. No Rust source code touched. Closes 12 cascading CC drift lines across m9-77..m9-88 via mechanical backfill (165 changes across 111 files). Plus CC#4 SHA-256 regenerated. A-lite path, tag v0.7.91, merge 71c62e4 + follow-up fixup commits 2d71950 (artifact fields) + afc926f (SHA regen).",
   "tier_required": "T0 + T2",
-  "tiers_run": ["T0"],
+  "tiers_run": ["T0", "T1"],
   "tier_results": {
     "T0_fmt": "clean",
     "T0_clippy": "clean",
-    "T1_unit_tests": "in progress"
+    "T1_unit_tests": "1036 passing (--test-threads=1)"
   },
   "findings_introduced": {
     "no_action": [],

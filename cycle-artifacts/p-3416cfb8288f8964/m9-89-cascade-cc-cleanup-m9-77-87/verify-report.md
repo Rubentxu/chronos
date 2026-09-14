@@ -12,10 +12,10 @@ A-lite (vault-only hardening). No Rust source code changes.
 | Branch | chore/m9-89-cascade-cc-cleanup-m9-77-87 |
 | Path | A-lite |
 | Tier required | T0 + T2 |
-| Tier run | T0 (T1 in progress at write time) |
+| Tier run | T0 + T1 (1036 tests passing) |
 | Base SHA | `a195367d64bd1caa56dedea82195259deb7b671b` (m9-88 vault commit) |
-| Head SHA | `71c62e46f2cb10af7274fdbbaa584d933c0b73ce` (m9-89 merge commit) |
-| Main SHA | `71c62e46f2cb10af7274fdbbaa584d933c0b73ce` |
+| Head SHA | `afc926ff31d7ad47a6a24f124513426ef761c6ee` (m9-89 SHA-256 regen commit) |
+| Main SHA | `afc926ff31d7ad47a6a24f124513426ef761c6ee` |
 
 ## Goal
 
@@ -98,10 +98,7 @@ DRIFT: CC#43 reported 5 drift lines
 ## Verification tiers
 
 - **T0 (fmt + clippy)**: clean.
-- **T1 (lib unit tests)**: in progress at write time (background task
-  136772rfrm); expected to match m9-87 baseline (77 store, 264
-  services, 35 cli, 103 native-serial). Vault-only cycle means these
-  tests should not regress — no production code touched.
+- **T1 (lib unit tests, `--test-threads=1`)**: 1036 tests passing (baseline 77 store + 264 services + 35 cli + 103 native-serial + the rest). No regression — vault-only cycle.
 - **T2 (per-crate integration)**: not required for A-lite vault scope;
   vault changes cannot affect runtime behavior.
 - **T4 (sandbox smoke)**: not required for A-lite vault scope.
@@ -118,11 +115,11 @@ See `verify-findings.json` for full structured findings:
 
 ## Cross-checks (CC#24 / CC#31 / CC#32 / CC#33)
 
-- `apply-checkpoint.head_sha` == `71c62e46f2cb10af7274fdbbaa584d933c0b73ce` (m9-89 merge commit).
+- `apply-checkpoint.head_sha` == `afc926ff31d7ad47a6a24f124513426ef761c6ee` (SHA-256 regen commit).
 - `apply-checkpoint.base_sha` == `a195367d64bd1caa56dedea82195259deb7b671b` (m9-88 vault commit; verified via `git cat-file -e`).
-- `apply-checkpoint.remote_tag_peel` == `71c62e46f2cb10af7274fdbbaa584d933c0b73ce` (tag v0.7.91 moved to merge commit per CC#42 fixpoint-cascade workaround).
-- `apply-checkpoint.peel_match` == `true` (tag_peel == merge_commit_sha == HEAD).
-- `apply-checkpoint.main_sha` == `apply-checkpoint.head_sha` (both `71c62e4...`).
+- `apply-checkpoint.remote_tag_peel` == `afc926ff31d7ad47a6a24f124513426ef761c6ee` (tag v0.7.91 moved through merge → artifact fixups → SHA regen per CC#42 fixpoint-cascade workaround).
+- `apply-checkpoint.peel_match` == `true` (tag_peel == HEAD).
+- `apply-checkpoint.main_sha` == `apply-checkpoint.head_sha` (both `afc926f...`).
 - `apply-checkpoint.status` == `"CLOSED"`.
 - `apply-checkpoint.findings_introduced` is a dict with `no_action` subfield.
 - `apply-checkpoint.findings_closed` is a list (2 closed: FIND-M9-89-CASCADE-DRIFT-CLOSED + carry of FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK).
