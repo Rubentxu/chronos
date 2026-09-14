@@ -1,0 +1,180 @@
+{
+  "cycle": "p-3416cfb8288f8964/m9-82-degraded-store-disclosure",
+  "cycle_id": "m9-82-degraded-store-disclosure",
+  "head_sha": "4e805174fb872e9f4fa0d1ef9d379ba454091994",
+  "base_sha": "a0f72c2a7fe36eaeb9c772505dfe563f85f42773",
+  "date": "2026-09-14",
+  "path": "A-min",
+  "verdict": "passed",
+  "summary": "Closes FIND-M9-75-MCP-TOOLS-DO-NOT-DISCLOSE-DEGRADED-STORE. Adds a StoreKind enum to SessionStore (Persistent | InMemory) and a pub fn is_persistent() accessor; adds a ChronosServer::is_degraded() accessor backed by a `degraded: bool` field set once at construction; and wires a `degraded: <bool>` top-level field into the JSON envelopes of save_session, list_sessions, load_session, delete_session, and drop_session via a session_envelope() helper. T0 + T2 + T3 + T4-smoke (chronos-sandbox subset: e2e_connectivity, session_persistence, session_lifecycle) all pass; 5 new tests in chronos-mcp (87/0) and 3 new tests in chronos-store (77/0); downstream chronos-services 264/0. Workspace clippy clean. Spec correction: the proposal and earlier spec draft named the tools with underscores-as-separators (session_save/session_list/session_load); the actual MCP tool names registered in server.rs are save_session, list_sessions, load_session, delete_session, drop_session. Spec and proposal amended mid-cycle with a note.",
+  "findings": [
+    {
+      "id": "F-M9-82-01",
+      "severity": "info",
+      "description": "SessionStore::is_persistent() returns true for open/try_open and false for in_memory. Unit-tested in 3 new tests in crates/chronos-store/src/storage.rs.",
+      "mitigation": "Verified.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "F-M9-82-02",
+      "severity": "info",
+      "description": "ChronosServer::is_degraded() returns true for an in-memory test store and false for a persistent store. Unit-tested in 1 new test in crates/chronos-mcp/src/server.rs.",
+      "mitigation": "Verified.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "F-M9-82-03",
+      "severity": "info",
+      "description": "session_envelope(degraded, value) helper preserves the existing JSON object shape and adds a single top-level `degraded` key. Defensive fallback wraps non-object values into {result, degraded} so the wire contract stays an object.",
+      "mitigation": "Verified with 2 unit tests (object injection + non-object wrap).",
+      "status": "CLOSED"
+    },
+    {
+      "id": "F-M9-82-04",
+      "severity": "info",
+      "description": "Real-tool envelope assertions: list_sessions and save_session both include `degraded: true` at the top level when the server is built from an in-memory store, and the existing fields (session_count, sessions, session_id, status, etc.) are preserved unchanged.",
+      "mitigation": "Verified with 2 round-trip tests that decode the JSON content and assert on the parsed shape.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "F-M9-82-05",
+      "severity": "info",
+      "description": "T0 + clippy clean on the workspace head. cargo fmt --all applied; no drift.",
+      "mitigation": "Verified.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "F-M9-82-06",
+      "severity": "info",
+      "description": "T4-smoke (chronos-sandbox subset) green: e2e_connectivity 1/0, session_persistence 4/0, session_lifecycle 8/0 = 13/0. CHRONOS_MCP_PATH set to the rebuilt binary so the stale-binary symptom flagged in AGENTS.md §1 cannot mask regressions.",
+      "mitigation": "Verified.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "F-M9-82-07",
+      "severity": "info",
+      "description": "Spec correction: the proposal and earlier spec draft named the session-persistence tools with underscores-as-separators (session_save/session_list/session_load). The actual MCP tool names registered in server.rs are save_session, list_sessions, load_session, delete_session, drop_session. Spec REQ-M9-82-03 and the proposal scope/acceptance bullets were amended mid-cycle with a note documenting the correction.",
+      "mitigation": "Spec and proposal amended; the contract now applies to all five tools symmetrically.",
+      "status": "CLOSED"
+    }
+  ],
+  "spec_traceability": [
+    {
+      "req": "REQ-M9-82-01",
+      "scenario": "session_store_is_persistent_after_try_open",
+      "evidence": "grep -n 'pub fn is_persistent' crates/chronos-store/src/storage.rs returns 1 match at line 79",
+      "status": "PASS"
+    },
+    {
+      "req": "REQ-M9-82-01",
+      "scenario": "session_store_kind_set_in_open",
+      "evidence": "grep -n 'kind: StoreKind::Persistent' crates/chronos-store/src/storage.rs returns 4 matches (open + try_open + inner retry path + test inline struct)",
+      "status": "PASS"
+    },
+    {
+      "req": "REQ-M9-82-01",
+      "scenario": "session_store_kind_set_in_in_memory",
+      "evidence": "grep -n 'kind: StoreKind::InMemory' crates/chronos-store/src/storage.rs returns 1 match (in_memory constructor at line 192)",
+      "status": "PASS"
+    },
+    {
+      "req": "REQ-M9-82-01",
+      "scenario": "session_store_is_persistent_unit_test",
+      "evidence": "cargo test -p chronos-store --lib storage::tests::test_session_store_is_persistent passes (3 tests)",
+      "status": "PASS"
+    },
+    {
+      "req": "REQ-M9-82-02",
+      "scenario": "server_carries_degraded_flag",
+      "evidence": "grep -n 'pub fn is_degraded' crates/chronos-mcp/src/server.rs returns 1 match at line 1479",
+      "status": "PASS"
+    },
+    {
+      "req": "REQ-M9-82-02",
+      "scenario": "server_degraded_set_in_try_open_default_store",
+      "evidence": "grep -n 'degraded: is_in_memory' crates/chronos-mcp/src/server.rs returns 0 matches; instead `let degraded = !store.is_persistent();` in from_store at line 1454 and `degraded,` at line 1466",
+      "status": "PASS"
+    },
+    {
+      "req": "REQ-M9-82-03",
+      "scenario": "save_session_includes_degraded",
+      "evidence": "test_save_session_envelope_includes_degraded in crates/chronos-mcp/src/server.rs passes; envelope round-trips to {session_id, status, ..., degraded: true}",
+      "status": "PASS"
+    },
+    {
+      "req": "REQ-M9-82-03",
+      "scenario": "list_sessions_includes_degraded",
+      "evidence": "test_list_sessions_envelope_includes_degraded_true in crates/chronos-mcp/src/server.rs passes; envelope round-trips to {session_count, sessions, ..., degraded: true}",
+      "status": "PASS"
+    },
+    {
+      "req": "REQ-M9-82-03",
+      "scenario": "save_session_includes_degraded_false_for_persistent",
+      "evidence": "test_session_envelope_injects_degraded_at_top_level in crates/chronos-mcp/src/server.rs asserts the helper respects the `false` arg; the integration scenarios exercise only the in-memory branch under cfg(test)",
+      "status": "PASS"
+    },
+    {
+      "req": "REQ-M9-82-04",
+      "scenario": "existing_session_save_tests_still_pass",
+      "evidence": "cargo test -p chronos-mcp --lib --no-fail-fast: 87/0 (was 82 before this cycle; +5 new tests). cargo test -p chronos-store --lib --no-fail-fast: 77/0 (was 74; +3). cargo test -p chronos-services --lib --no-fail-fast: 264/0 (unchanged).",
+      "status": "PASS"
+    },
+    {
+      "req": "REQ-M9-82-05",
+      "scenario": "cargo_fmt_clean",
+      "evidence": "cargo fmt --all applied; cargo fmt --all -- --check exits 0",
+      "status": "PASS"
+    },
+    {
+      "req": "REQ-M9-82-05",
+      "scenario": "cargo_clippy_clean",
+      "evidence": "cargo clippy --workspace --all-targets -- -D warnings exits 0",
+      "status": "PASS"
+    }
+  ],
+  "carry_forward": {
+    "closed": [
+      "FIND-M9-75-MCP-TOOLS-DO-NOT-DISCLOSE-DEGRADED-STORE"
+    ],
+    "new_out_of_scope": []
+  },
+  "tiers_run": [
+    {
+      "tier": "T0",
+      "command": "cargo fmt --all -- --check (after cargo fmt --all applied)",
+      "result": "PASS",
+      "wall_seconds": 1.1
+    },
+    {
+      "tier": "T0",
+      "command": "cargo clippy --workspace --all-targets -- -D warnings",
+      "result": "PASS",
+      "wall_seconds": 11.0
+    },
+    {
+      "tier": "T2",
+      "command": "cargo test -p chronos-store --lib --no-fail-fast",
+      "result": "77 passed / 0 failed (was 74; +3 is_persistent tests)",
+      "wall_seconds": 1.0
+    },
+    {
+      "tier": "T2",
+      "command": "cargo test -p chronos-mcp --lib --no-fail-fast",
+      "result": "87 passed / 0 failed (was 82; +5 degraded tests)",
+      "wall_seconds": 1.0
+    },
+    {
+      "tier": "T2",
+      "command": "cargo test -p chronos-services --lib --no-fail-fast",
+      "result": "264 passed / 0 failed (downstream smoke)",
+      "wall_seconds": 0.5
+    },
+    {
+      "tier": "T4-smoke",
+      "command": "cargo build --bin chronos-mcp && CHRONOS_MCP_PATH=/var/home/rubentxu/cargo-targets/debug/chronos-mcp cargo test -p chronos-sandbox --test e2e_connectivity --test session_persistence --test session_lifecycle --no-fail-fast -- --test-threads=1",
+      "result": "13 passed / 0 failed (e2e_connectivity 1 + session_persistence 4 + session_lifecycle 8)",
+      "wall_seconds": 95.0,
+      "smoke_subset_note": "Chosen because the cycle changes how the server exposes its persistence envelope shape; session_persistence exercises save_session/load_session/list_sessions, session_lifecycle exercises drop_session + delete_session, e2e_connectivity confirms the binary still starts cleanly."
+    }
+  ]
+}

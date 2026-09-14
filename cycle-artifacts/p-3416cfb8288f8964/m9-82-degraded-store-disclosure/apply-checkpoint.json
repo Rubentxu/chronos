@@ -1,0 +1,159 @@
+{
+  "head_sha": "4e805174fb872e9f4fa0d1ef9d379ba454091994",
+  "base_sha": "a0f72c2a7fe36eaeb9c772505dfe563f85f42773",
+  "main_sha": null,
+  "remote_tag": "v0.7.84",
+  "tag_peel_sha": null,
+  "tag_peel_note": "pending release phase",
+  "ff_merged": false,
+  "cycle_id": "m9-82-degraded-store-disclosure",
+  "cycle_record": "p-3416cfb8288f8964/m9-82-degraded-store-disclosure",
+  "branch": "feat/m9-82-degraded-store-disclosure",
+  "path": "A-min",
+  "route": "A-min",
+  "status": "verifying",
+  "verify_status": "passed",
+  "release_status": "pending",
+  "archive_status": "pending",
+  "phases": {
+    "explore": "complete",
+    "spec": "complete",
+    "tasks": "complete",
+    "apply": "complete",
+    "verify": "complete",
+    "release": "pending",
+    "archive": "pending"
+  },
+  "tier_required": "T2",
+  "tiers_run": ["T0", "T2", "T3-focused", "T4-smoke"],
+  "tier_results": {
+    "T0": {
+      "fmt_check": "passed",
+      "clippy_check": "passed",
+      "scope": "workspace"
+    },
+    "T2": {
+      "test_command": "cargo test -p chronos-store -p chronos-mcp -p chronos-services --tests --no-fail-fast",
+      "passed": 477,
+      "failed": 0,
+      "ignored": 0,
+      "baseline_pre_cycle": {
+        "chronos-store lib": 74,
+        "chronos-mcp lib": 82,
+        "chronos-services lib": 264
+      },
+      "post_cycle": {
+        "chronos-store lib": 77,
+        "chronos-mcp lib": 87,
+        "chronos-services lib": 264
+      },
+      "regression_check": "matched (no regressions; +3 chronos-store, +5 chronos-mcp, +0 chronos-services)"
+    },
+    "T4-smoke": {
+      "test_command": "cargo build --bin chronos-mcp && CHRONOS_MCP_PATH=/var/home/rubentxu/cargo-targets/debug/chronos-mcp cargo test -p chronos-sandbox --test e2e_connectivity --test session_persistence --test session_lifecycle --no-fail-fast -- --test-threads=1",
+      "passed": 13,
+      "failed": 0,
+      "ignored": 0,
+      "suites": {
+        "e2e_connectivity": {"passed": 1, "failed": 0},
+        "session_persistence": {"passed": 4, "failed": 0},
+        "session_lifecycle": {"passed": 8, "failed": 0}
+      },
+      "smoke_subset_note": "Chosen because the cycle changes how the server exposes its persistence envelope shape; session_persistence exercises save_session/load_session/list_sessions, session_lifecycle exercises drop_session + delete_session, e2e_connectivity confirms the binary still starts cleanly."
+    }
+  },
+  "carry_forward_findings_closed": ["FIND-M9-75-MCP-TOOLS-DO-NOT-DISCLOSE-DEGRADED-STORE"],
+  "carry_forward_findings_introduced": [],
+  "cc_delta": {
+    "added": [],
+    "modified": [],
+    "removed": [],
+    "touched": ["CC#5", "CC#6", "CC#9", "CC#28", "CC#32", "CC#34", "CC#49", "CC#51", "CC#55"]
+  },
+  "files_inventory": {
+    "source": [
+      {
+        "path": "crates/chronos-store/src/storage.rs",
+        "change": "modified",
+        "lines_added": 73,
+        "lines_removed": 4,
+        "net_delta": 69,
+        "description": "Adds StoreKind enum (Persistent|InMemory), kind field on SessionStore, is_persistent() accessor; sets kind in all three constructors and in the inline SessionStore literal in tests. 3 new unit tests."
+      },
+      {
+        "path": "crates/chronos-mcp/src/server.rs",
+        "change": "modified",
+        "lines_added": 217,
+        "lines_removed": 11,
+        "net_delta": 206,
+        "description": "Adds degraded: bool field on ChronosServer, is_degraded() accessor, session_envelope() helper. Wraps save_session/list_sessions/load_session/delete_session/drop_session envelopes through the helper. 5 new unit tests."
+      }
+    ],
+    "tests": [],
+    "vault": [
+      {
+        "path": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-82-degraded-store-disclosure/exploration-report.md",
+        "kind": "exploration-report"
+      },
+      {
+        "path": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-82-degraded-store-disclosure/proposal.md",
+        "kind": "proposal",
+        "status": "mid-impl correction: tool names updated to save_session/list_sessions/load_session/delete_session/drop_session"
+      },
+      {
+        "path": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-82-degraded-store-disclosure/spec.md",
+        "kind": "spec",
+        "status": "mid-impl correction: REQ-M9-82-03 expanded to all 5 tools"
+      },
+      {
+        "path": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-82-degraded-store-disclosure/tasks.md",
+        "kind": "tasks"
+      },
+      {
+        "path": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-82-degraded-store-disclosure/change-entry.md",
+        "kind": "change-entry",
+        "status": "pending (archive phase)"
+      },
+      {
+        "path": ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-82-degraded-store-disclosure/archive-manifest.md",
+        "kind": "archive-manifest",
+        "status": "pending (archive phase)"
+      },
+      {
+        "path": ".sddk-knowledge/p-3416cfb8288f8964/cycles/index.md",
+        "kind": "cycles-index",
+        "change": "appended m9-82 OPEN row at T0; will flip to CLOSED at T3",
+        "status": "pending T3"
+      },
+      {
+        "path": ".sddk-knowledge/p-3416cfb8288f8964/terms/index.md",
+        "kind": "terms-index",
+        "change": "Last updated bumped; FIND-M9-75 closure pending T3",
+        "status": "pending T3"
+      }
+    ]
+  },
+  "test_invocation_log": [
+    {"command": "cargo fmt --all -- --check", "result": "passed", "ts": "2026-09-14T10:02:00Z"},
+    {"command": "cargo fmt --all", "result": "applied", "ts": "2026-09-14T10:02:46Z"},
+    {"command": "cargo clippy -p chronos-store --all-targets -- -D warnings", "result": "passed", "ts": "2026-09-14T10:01:34Z"},
+    {"command": "cargo clippy -p chronos-store -p chronos-mcp --all-targets -- -D warnings", "result": "passed", "ts": "2026-09-14T10:01:48Z"},
+    {"command": "cargo clippy --workspace --all-targets -- -D warnings", "result": "passed", "ts": "2026-09-14T10:03:15Z"},
+    {"command": "cargo test -p chronos-store --lib --no-fail-fast", "result": "77 passed / 0 failed", "ts": "2026-09-14T09:50:50Z", "baseline_pre_cycle": 74, "baseline_matched": false, "delta": "+3 new is_persistent tests"},
+    {"command": "cargo test -p chronos-mcp --lib --no-fail-fast", "result": "87 passed / 0 failed", "ts": "2026-09-14T10:02:56Z", "baseline_pre_cycle": 82, "baseline_matched": false, "delta": "+5 new degraded tests"},
+    {"command": "cargo test -p chronos-mcp --tests --no-fail-fast", "result": "136 passed / 0 failed across 6 binaries", "ts": "2026-09-14T10:02:05Z"},
+    {"command": "cargo test -p chronos-services --lib --no-fail-fast", "result": "264 passed / 0 failed", "ts": "2026-09-14T10:01:10Z", "scope": "downstream smoke"},
+    {"command": "cargo test -p chronos-store -p chronos-mcp -p chronos-services --tests --no-fail-fast", "result": "477 passed / 0 failed across 10 binaries", "ts": "2026-09-14T10:34:38Z", "scope": "focused T3"},
+    {"command": "cargo build --bin chronos-mcp", "result": "built", "ts": "2026-09-14T10:35:09Z"},
+    {"command": "CHRONOS_MCP_PATH=/var/home/rubentxu/cargo-targets/debug/chronos-mcp cargo test -p chronos-sandbox --test e2e_connectivity --test session_persistence --test session_lifecycle --no-fail-fast -- --test-threads=1", "result": "13 passed / 0 failed (e2e_connectivity 1 + session_persistence 4 + session_lifecycle 8)", "ts": "2026-09-14T10:36:57Z", "scope": "T4-smoke"}
+  ],
+  "notes": [
+    "Cycle uses A-min path (1-3 crates, no architectural fork).",
+    "Cycle crosses two crates: chronos-store (source-of-truth accessor) and chronos-mcp (consumer + wire layer).",
+    "Spec correction: the proposal and earlier spec draft named the session-persistence tools with underscores-as-separators (session_save / session_list / session_load); the actual MCP tool names registered in server.rs are save_session, list_sessions, load_session, delete_session, drop_session. Spec REQ-M9-82-03 and the proposal scope/acceptance bullets were amended mid-cycle with a note documenting the correction and extending the contract to all five tools symmetrically.",
+    "CHRONOS_MCP_PATH was set explicitly to the rebuilt binary path so the stale-binary symptom flagged in AGENTS.md §1 cannot mask regressions in T4-smoke.",
+    "The full workspace T3 command (`cargo test --workspace --lib --tests --exclude chronos-sandbox --exclude chronos-e2e --no-fail-fast`) was attempted but cancelled after 20 minutes (stalled in chronos-native ptrace tests per AGENTS.md §6.5; this is the documented pre-existing flake and not a regression of this cycle). The focused T3 (`cargo test -p chronos-store -p chronos-mcp -p chronos-services --tests --no-fail-fast`) covers all crates touched by this cycle and returned 477/0 across 10 binaries in 28s.",
+    "sddk CLI workflow was not used (same as m9-80, m9-81): the gate evaluator is blocked by a pre-existing FOREIGN KEY constraint bug in /var/home/rubentxu/.local/state/sddk/projects/p-3416cfb8288f8964/ledger.sqlite (FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK; out of scope). The manual vault-tracked workflow used here is the project standard.",
+    "Cycle branch was rebased cleanly on main at T0 (the m9-81 closure had already landed `a0f72c2` on main)."
+  ]
+}
