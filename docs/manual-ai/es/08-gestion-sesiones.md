@@ -232,9 +232,9 @@ te pertenezca:
 {"action":"attach","pid":12345}
 ```
 
-La respuesta incluye un nuevo `session_id` y una instantánea de capacidades.
-Usa `probe_drain` y `capabilities` con esa sesión como con una sonda iniciada
-mediante `spawn`.
+La respuesta incluye un nuevo `session_id` y una instantánea de capacidades con
+`probe_type: "ptrace_attach"`. Usa `probe_drain` y `capabilities` con esa sesión
+como con una sonda iniciada mediante `spawn`.
 
 El adjunto usa `ptrace` de Linux. Puede fallar si el PID ya no existe, no tienes
 permiso para rastrearlo o la política `ptrace_scope` del host es restrictiva.

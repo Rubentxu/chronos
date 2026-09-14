@@ -1299,3 +1299,106 @@ Net CC delta this session: 0 (still 48 python + 7 bash; CC#4 already covered SHA
 consistency, so the smoke suite asserts the same counts while running 6 checks).
 Vault state: canonical, 76 cycles indexed, peel_match verified for m9-76 (`v0.7.78` →
 `613b326`), CC#4 clean across all archive manifests and now enforced by a tool.
+
+## Session 2026-09-13T22:33Z: m9-77..m9-79 attach follow-up and SDDK recovery state
+
+### Published attach work
+
+- **m9-77 attach runtime** is published: implementation `4bd2da3`, tag
+  `v0.7.79`, merge to `main` `9d53316`. It wires
+  `session_start{action=attach}` through native, services, dispatcher and MCP.
+  During its implementation, `run_probe_loop_attach` was corrected to clear
+  `running` after a ptrace attach failure, preventing a permanently stuck
+  backend state.
+- **m9-78 safe detach** is published: implementation `a2c70fe`, tag
+  `v0.7.80`, merge to `main` `009b750`. `session_stop` now wakes an attached
+  target with `SIGSTOP` and lets the ptrace loop `PTRACE_DETACH`; it does not
+  terminate the traced process. Spawned probes retain the SIGKILL path.
+
+### Local m9-79 state, not released
+
+The checked-out branch is `feat/m9-79-attach-capability-type`, clean at:
+
+```text
+917fcb036a56d6051af6429dd09225e7d0da4fe6
+feat(m9-79): distinguish ptrace attach capabilities
+```
+
+It changes the attach capability value from `ebpf_user` to `ptrace_attach` in
+`ChronosSessionLifecycleService::attach`, updates the sandbox assertion, and
+updates the English and Spanish session-management manuals. It has **not**
+been tagged, merged, pushed, or given SDDK cycle artifacts. Re-triage it under
+SDDK before release rather than treating the local commit as publishable.
+
+Focused evidence already obtained before the commit:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy -p chronos-services -p chronos-sandbox --all-targets -- -D warnings
+cargo build -p chronos-mcp
+CHRONOS_MCP_PATH=/var/home/rubentxu/cargo-targets/debug/chronos-mcp \
+  cargo test -p chronos-sandbox --test session_lifecycle \
+  test_session_start_attach_to_running_self -- --test-threads=1
+```
+
+The focused sandbox test passed (1 passed, 15.57s). The test launches an
+external `sleep 30`, attaches to it, calls `session_stop`, and verifies that
+the child remains alive, so it covers m9-78 detach safety as well as the m9-79
+capability assertion.
+
+### SDDK reconciliation required first
+
+The workspace remains adopted:
+
+```text
+sddk: 1.169.0
+project: p-3416cfb8288f8964
+workspace: w-361237634265a0a7d986676e
+```
+
+The persisted ledger still reports:
+
+```text
+cycle_id: p-3416cfb8288f8964/m10-ms-race-fix
+status: OPEN
+phase: verify
+path: A-min
+```
+
+This is stale relative to repository history. `5d4c00d` is already an ancestor
+of `main`; the repository handoff records the same work as closed
+`m9-61-ms-race-fix`, tag `v0.7.63`, merged as `35bccbc`. Historical verify
+artifacts exist under:
+
+```text
+/home/rubentxu/.local/share/sddk/projects/p-3416cfb8288f8964/
+  cycle-artifacts/p-3416cfb8288f8964/m10-ms-race-fix/
+```
+
+`verify-report.md` is `PASS_WITH_WARNINGS` for base `97ce507` through head
+`5d4c00d`; the warnings concern then-stale bounded-join documentation and were
+subsequently addressed by m9-62. `sddk cycle next` currently reports no
+replayable state events. Two attempted `sddk-debt-verify` workers were stopped
+because each remained in `startup queued` for more than ten minutes without
+output or artifacts. No worker remains running.
+
+Tomorrow's first operation should be a **non-publishing SDDK ledger
+reconciliation** for this historical cycle. Do not tag, merge, or push it
+again. Inspect `sddk cycle rebuild`, `sddk cycle supersede`, and the m9-61
+artifacts/receipts to select the valid closure recovery. After that, start the
+canonical next roadmap milestone **MS-PROPERTY-POLICY** on a fresh branch from
+current `origin/main`:
+
+```text
+path: A-min
+branch: feat/ms-property-policy
+tier: T2
+entry: ownership of the four observation_log property-policy functions
+acceptance: one domain owner/re-export or replacement callsites plus shared
+            chronos-domain fixture
+```
+
+Do not switch away from `feat/m9-79-attach-capability-type` until preserving
+or formally triaging its local commit. The next session should begin with
+` sddk version`, `sddk adopt status --root . --scope .`, `git fetch origin
+main`, and an explicit ledger reconciliation decision.

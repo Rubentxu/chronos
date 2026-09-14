@@ -198,7 +198,7 @@ impl ChronosSessionLifecycleService {
             },
         )?;
         let snapshot = CapabilitySnapshot {
-            probe_type: Some("ebpf_user".to_string()),
+            probe_type: Some("ptrace_attach".to_string()),
             language: Some(out.language.clone()),
             bus_capacity: Some(out.bus_capacity),
             bus_fill: Some(0),
