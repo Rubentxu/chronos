@@ -136,8 +136,8 @@ chronos-domain fixture. Branch `feat/ms-property-policy` from
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-79-attach-capability-type/release-receipt.md` | `d36c302ff497de56bb62d9e63e8cbe3fb174c63c4a2ea4ad6fdeff6e52fa6ec9` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-79-attach-capability-type/merge-receipt.md` | `8a8df2b6c0c0163d9d3a3089b351b9253448f6418642fc6fca03c478c8d7dc99` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-79-attach-capability-type/change-entry.md` | `248dd43621039b4ff71807718c52fcc60f311d3ba02a05503340c1ec7743d772` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `f61510df7139b97c9a2ef56d583993402608b532d0b66885b92f2e75fa55ba75` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `4d683b1731cc6aabc9c55a106eeda765e17bfe22e537644950f4b7647efafef1` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `35c2acbe66f6c0d5d78827ee1709aec5f3779c2a6d15235215d5dd2678805859` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `155438525875f548a07f71fde82159b6d4dd50f64c6dd4f8ee841a3b0f5c4429` |
 | source (renamed literal) | `crates/chronos-services/src/session_lifecycle.rs` | (1 line changed at line 198) |
 | test (updated assertion) | `chronos-sandbox/tests/session_lifecycle.rs` | (1 line changed at line 376) |
 | docs (manual EN) | `docs/manual-ai/en/08-session-management.md` | (4 lines rewrapped) |
