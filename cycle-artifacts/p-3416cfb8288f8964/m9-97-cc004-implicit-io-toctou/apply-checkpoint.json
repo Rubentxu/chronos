@@ -5,10 +5,10 @@
   "cycle_record": "p-3416cfb8288f8964/m9-97-cc004-implicit-io-toctou",
   "branch": "chore/m9-97-cc004-implicit-io-toctou",
   "route": "A-min",
-  "status": "RELEASED",
+  "status": "CLOSED",
   "verify_status": "passed",
   "release_status": "released",
-  "archive_status": "pending",
+  "archive_status": "complete",
   "tier_required": "T0+T1",
   "tiers_run": [
     "T0",
@@ -44,5 +44,6 @@
   "remote_tag_peel": "ddf059193287447dd866ea8818aafcceac660f70",
   "tag_peel_sha": "ddf059193287447dd866ea8818aafcceac660f70",
   "peel_match": true,
-  "ff_merged": false
+  "ff_merged": false,
+  "archived_at": "2026-09-14"
 }
