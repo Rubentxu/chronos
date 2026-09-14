@@ -190,8 +190,9 @@ impl ChronosHypothesisTestService {
 // similarly bypass this bridge by returning domain outcomes converted via
 // From impls in output.rs).
 
-// observe_property_target and parse_property_value moved to
-// chronos_domain::property::observe_property_target_domain (T1).
+// observe_property_target and parse_property_value live in
+// chronos_domain::property (T1). services calls them indirectly via
+// chronos_domain::property::eval_invariant.
 
 // ---------------------------------------------------------------------------
 // Existence

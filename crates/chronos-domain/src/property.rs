@@ -1372,7 +1372,7 @@ fn property_outcome_to_verdict(
 
 /// Find the last `PropertyValue` recorded for `target` plus the event IDs
 /// of the matches. Returns `None` if no event matched.
-fn observe_property_target_domain(
+fn observe_property_target(
     events: &[TraceEvent],
     target: &str,
 ) -> Option<(PropertyValue, Vec<u64>)> {
@@ -1444,7 +1444,7 @@ pub fn eval_invariant(
             (v, Vec::new(), Vec::new(), s)
         }
         PropertyObservationSource::PropertyValue { target } => {
-            match observe_property_target_domain(events, &target) {
+            match observe_property_target(events, &target) {
                 None => (
                     PropertyHypothesisVerdict::Unsupported {
                         reason: format!(
