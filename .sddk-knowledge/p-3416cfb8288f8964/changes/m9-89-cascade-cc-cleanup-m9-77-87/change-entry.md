@@ -9,13 +9,13 @@
 | Path | A-lite (vault-only hardening) |
 | Status | CLOSED |
 | Base SHA | `a195367d64bd1caa56dedea82195259deb7b671b` |
-| Head SHA | `625d7338c9e705bc587e7f1b620e8e88bad3e1a9` |
+| Head SHA | `d0071ee5d6053ca38eca02c2a2f6dba47fc2daca` |
 | Tag | `v0.7.91` |
 
 ## Subject
 
 - base_sha: `a195367d64bd1caa56dedea82195259deb7b671b`
-- head_sha: `625d7338c9e705bc587e7f1b620e8e88bad3e1a9`
+- head_sha: `d0071ee5d6053ca38eca02c2a2f6dba47fc2daca`
 - cycle: m9-89
 - branch: `chore/m9-89-cascade-cc-cleanup-m9-77-87`
 
