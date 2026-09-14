@@ -116,6 +116,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-92 | m9-92-cc34-cc42-cleanup | B-direct | `v0.7.94` | `6900395d088ff89e7ee67c3260a244b3d864e4e2` | CLOSED |
 | m9-93 | m9-93-trace-event-json-schema | A-min | `v0.7.95` | `60db8b58bdcf9bb55549dad1e43c9d381b45939c` | CLOSED |
 | m9-94 | m9-94-cc001-test-split | B-direct | `v0.7.96` | `9e15dd3fbfc5319df8bd31ba540d570c8fd75ad8` | CLOSED |
+| m9-95 | m9-95-services-test-split | B-direct | `v0.7.97` | `8ff34170fe98fd14cc1e10e30e95d842fe67f0f0` | CLOSED |
 
 ## Metadata
 
@@ -123,5 +124,5 @@ Chronological record of all SDDK cycles for this project.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-14T20:43Z |
-| Total cycles | 94 |
+| Last updated | 2026-09-14T20:53Z |
+| Total cycles | 95 |
