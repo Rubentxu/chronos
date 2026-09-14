@@ -1,0 +1,113 @@
+{
+  "head_sha": "5f0c3a54ee04716930feb6d6e2c790af16a7e6f7",
+  "base_sha": "bf5597611dd7a2dc8f80c34a79996ef5531e313f",
+  "main_sha": "5f0c3a54ee04716930feb6d6e2c790af16a7e6f7",
+  "remote_tag": "v0.7.86",
+  "remote_tag_peel": "5f0c3a54ee04716930feb6d6e2c790af16a7e6f7",
+  "tag_peel_sha": "5f0c3a54ee04716930feb6d6e2c790af16a7e6f7",
+  "tag_peel_note": "clean peel match: v0.7.86 tag points at the --no-ff merge commit 5f0c3a54 (post-merge SHA cascade fixpoint will be applied in subsequent commits)",
+  "ff_merged": false,
+  "cycle_id": "m9-84-cc001-god-module-keys-split",
+  "cycle_record": "p-3416cfb8288f8964/m9-84-cc001-god-module-keys-split",
+  "branch": "feat/m9-84-cc001-god-module-keys-split",
+  "path": "A-lite",
+  "route": "A-lite",
+  "status": "archived",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "complete",
+  "phases": {
+    "explore": "complete",
+    "spec": "complete",
+    "tasks": "complete",
+    "apply": "complete",
+    "verify": "complete",
+    "release": "complete",
+    "archive": "complete"
+  },
+  "tier_required": "T1",
+  "tiers_run": ["T0", "T1", "T2", "T3"],
+  "tier_results": {
+    "T0": {
+      "fmt_check": "passed",
+      "clippy_check": "passed",
+      "scope": "workspace"
+    },
+    "T1": {
+      "test_command": "cargo test -p chronos-store --lib --no-fail-fast",
+      "passed": 77,
+      "failed": 0,
+      "ignored": 0,
+      "baseline_pre_refactor": {"passed": 77, "failed": 0},
+      "regression_check": "matched (77 / 77)"
+    },
+    "T2": {
+      "test_command": "cargo test -p chronos-services --lib --no-fail-fast",
+      "passed": 264,
+      "failed": 0,
+      "ignored": 0
+    },
+    "T3": {
+      "test_command": "cargo build -p chronos-cli",
+      "result": "success"
+    }
+  },
+  "carry_forward_findings_closed": [],
+  "carry_forward_findings_introduced": [],
+  "cc_delta": {
+    "added": [],
+    "modified": [],
+    "removed": [],
+    "touched": ["CC#4"]
+  },
+  "findings": [
+    {
+      "id": "FIND-M9-84-CE-CHUNK-KEYS-EXTRACT",
+      "title": "ce_chunk_keys submodule extracted from counterexample_storage.rs (cc-001-god-module first slice)",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "crates/chronos-store/src/ce_chunk_keys.rs (new, 134 lines)",
+        "crates/chronos-store/src/counterexample_storage.rs (2821 -> 2720 lines)"
+      ]
+    }
+  ],
+  "commits": [
+    {
+      "sha": "b1b3557",
+      "subject": "m9-84: extract ce_chunk_keys submodule from counterexample_storage.rs",
+      "files_changed": [
+        "crates/chronos-store/src/ce_chunk_keys.rs",
+        "crates/chronos-store/src/counterexample_storage.rs"
+      ]
+    },
+    {
+      "sha": "5f0c3a54ee04716930feb6d6e2c790af16a7e6f7",
+      "subject": "Merge feat/m9-84-cc001-god-module-keys-split into main",
+      "files_changed": [],
+      "is_merge": true
+    }
+  ],
+  "notes": [
+    {
+      "phase": "T0",
+      "summary": "vault files prepared: exploration-report + proposal + spec + tasks added, cycles/index.md row added OPEN"
+    },
+    {
+      "phase": "T1",
+      "summary": "baseline 77/0 captured for chronos-store lib"
+    },
+    {
+      "phase": "T2",
+      "summary": "ce_chunk_keys.rs created; counterexample_storage.rs trimmed by ~101 lines; submodule declared via #[path] + pub(super) use re-export"
+    },
+    {
+      "phase": "T3",
+      "summary": "cargo test -p chronos-store: 77/77 (matched baseline); cargo test -p chronos-services: 264/264; cargo build -p chronos-cli: success; cargo clippy --workspace: clean; cargo fmt: clean"
+    },
+    {
+      "phase": "smoke_subset",
+      "summary": "n/a: no probe/mcp touched; behaviour-preserving lexical refactor"
+    }
+  ]
+}

@@ -127,5 +127,5 @@ None — m9-80 closed the property-policy ownership refactor (layered split, spe
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-14T11:15Z |
-| Last archive | m9-83-cc39-total-cycles |
+| Last updated | 2026-09-14T11:28Z |
+| Last archive | m9-84-cc001-god-module-keys-split |
