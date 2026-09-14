@@ -14,10 +14,10 @@
 | Field | Value |
 |---|---|
 | Base SHA | bf5597611dd7a2dc8f80c34a79996ef5531e313f |
-| Head SHA | 5f0c3a54ee04716930feb6d6e2c790af16a7e6f7 |
-| Main SHA | 5f0c3a54ee04716930feb6d6e2c790af16a7e6f7 |
+| Head SHA | 6bd7f02f69c75b1839ed8796af0b644c7d4eb4b0 |
+| Main SHA | 6bd7f02f69c75b1839ed8796af0b644c7d4eb4b0 |
 | Remote tag | v0.7.86 |
-| Remote tag_peel | 5f0c3a54ee04716930feb6d6e2c790af16a7e6f7 |
+| Remote tag_peel | 6bd7f02f69c75b1839ed8796af0b644c7d4eb4b0 |
 | Peel match | clean peel: v0.7.86 points at the --no-ff merge commit 5f0c3a54 |
 
 ## Release notes

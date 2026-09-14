@@ -148,5 +148,5 @@ One commit:
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/release-receipt.md` | `21c61bc7dc435b9e6eb1af55955851f2964d82610e8d735baa5efc1dbb00d871` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/merge-receipt.md` | `2baf807473e5b377f77c14159cdc8e6c0d4ac91c0616706ab93b30f0938d013c` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-75-fail-closed-store-open/change-entry.md` | `a2816905b483ce610548937181eade69e6cfd72a49dd872c415fc1aa06012e76` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `a2ac5cea40e1ec7218c8b7f16699c5380a09438a81d8fd6c6215e4cb83cdcda1` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `78a10c86210da4f7dc08941ad4e71bec067f0b30e7c92f84248bf70615cd4f93` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `4a96a7d7e423999a6889d722762ed98ec3c5623ecf816b3e4e2d0922b65b77f7` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `876d4b1072ea1bfe6ee23744a5f43cd23ef94686669415df893718499cdb5170` |

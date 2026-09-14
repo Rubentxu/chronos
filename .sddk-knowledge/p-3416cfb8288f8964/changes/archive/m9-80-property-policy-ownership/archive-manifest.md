@@ -181,8 +181,8 @@ m9-roadmap project issue for the prioritized list.
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/release-report.md` | `94a740505682c1ef639e6217b95a9f2679a68312d9a39dbd431b86902ebe1630` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/apply-checkpoint.json` | `cff44f563b53cee206515472c7844ec1f5ebb971993cc93b7d6306f645332b0c` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-80-property-policy-ownership/change-entry.md` | `0c172bc3e6d0a6afbadb19090e58cf52ee541bfa34fd808d71f15b24dd7d01e0` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `a2ac5cea40e1ec7218c8b7f16699c5380a09438a81d8fd6c6215e4cb83cdcda1` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `78a10c86210da4f7dc08941ad4e71bec067f0b30e7c92f84248bf70615cd4f93` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `4a96a7d7e423999a6889d722762ed98ec3c5623ecf816b3e4e2d0922b65b77f7` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `876d4b1072ea1bfe6ee23744a5f43cd23ef94686669415df893718499cdb5170` |
 | source (domain lib) | `crates/chronos-domain/src/lib.rs` | (8 entries added to `pub use property::{…}` block at line 28) |
 | source (domain property) | `crates/chronos-domain/src/property.rs` | (+777/-165: 7 new types + 4 new pub fns + private `bfs_reach_domain` helper) |
 | source (services hypothesis_test) | `crates/chronos-services/src/hypothesis_test.rs` | (-239/+35: removed 10 private fns; 4 match arms delegate to domain) |

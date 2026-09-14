@@ -1,10 +1,10 @@
 {
-  "head_sha": "5f0c3a54ee04716930feb6d6e2c790af16a7e6f7",
+  "head_sha": "6bd7f02f69c75b1839ed8796af0b644c7d4eb4b0",
   "base_sha": "bf5597611dd7a2dc8f80c34a79996ef5531e313f",
-  "main_sha": "5f0c3a54ee04716930feb6d6e2c790af16a7e6f7",
+  "main_sha": "6bd7f02f69c75b1839ed8796af0b644c7d4eb4b0",
   "remote_tag": "v0.7.86",
-  "remote_tag_peel": "5f0c3a54ee04716930feb6d6e2c790af16a7e6f7",
-  "tag_peel_sha": "5f0c3a54ee04716930feb6d6e2c790af16a7e6f7",
+  "remote_tag_peel": "6bd7f02f69c75b1839ed8796af0b644c7d4eb4b0",
+  "tag_peel_sha": "6bd7f02f69c75b1839ed8796af0b644c7d4eb4b0",
   "tag_peel_note": "clean peel match: v0.7.86 tag points at the --no-ff merge commit 5f0c3a54 (post-merge SHA cascade fixpoint will be applied in subsequent commits)",
   "ff_merged": false,
   "cycle_id": "m9-84-cc001-god-module-keys-split",
@@ -82,7 +82,7 @@
       ]
     },
     {
-      "sha": "5f0c3a54ee04716930feb6d6e2c790af16a7e6f7",
+      "sha": "6bd7f02f69c75b1839ed8796af0b644c7d4eb4b0",
       "subject": "Merge feat/m9-84-cc001-god-module-keys-split into main",
       "files_changed": [],
       "is_merge": true
