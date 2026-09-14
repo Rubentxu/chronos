@@ -1,28 +1,28 @@
 {
   "head_sha": "4e805174fb872e9f4fa0d1ef9d379ba454091994",
   "base_sha": "a0f72c2a7fe36eaeb9c772505dfe563f85f42773",
-  "main_sha": null,
+  "main_sha": "e02046ec0a3a48b3e3a64a04c67e8a32bc6c9d1c",
   "remote_tag": "v0.7.84",
-  "tag_peel_sha": null,
-  "tag_peel_note": "pending release phase",
+  "tag_peel_sha": "b8694eff737293bffea4ba62f07e4b206eafc502",
+  "tag_peel_note": "clean peel match: v0.7.84 tag points at merge commit b8694eff (--no-ff merge of feat/m9-82-degraded-store-disclosure into main)",
   "ff_merged": false,
   "cycle_id": "m9-82-degraded-store-disclosure",
   "cycle_record": "p-3416cfb8288f8964/m9-82-degraded-store-disclosure",
   "branch": "feat/m9-82-degraded-store-disclosure",
   "path": "A-min",
   "route": "A-min",
-  "status": "verifying",
+  "status": "archived",
   "verify_status": "passed",
-  "release_status": "pending",
-  "archive_status": "pending",
+  "release_status": "released",
+  "archive_status": "complete",
   "phases": {
     "explore": "complete",
     "spec": "complete",
     "tasks": "complete",
     "apply": "complete",
     "verify": "complete",
-    "release": "pending",
-    "archive": "pending"
+    "release": "complete",
+    "archive": "complete"
   },
   "tier_required": "T2",
   "tiers_run": ["T0", "T2", "T3-focused", "T4-smoke"],
@@ -111,25 +111,21 @@
       },
       {
         "path": ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-82-degraded-store-disclosure/change-entry.md",
-        "kind": "change-entry",
-        "status": "pending (archive phase)"
+        "kind": "change-entry"
       },
       {
         "path": ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-82-degraded-store-disclosure/archive-manifest.md",
-        "kind": "archive-manifest",
-        "status": "pending (archive phase)"
+        "kind": "archive-manifest"
       },
       {
         "path": ".sddk-knowledge/p-3416cfb8288f8964/cycles/index.md",
         "kind": "cycles-index",
-        "change": "appended m9-82 OPEN row at T0; will flip to CLOSED at T3",
-        "status": "pending T3"
+        "change": "appended m9-82 OPEN row at T0; flipped to CLOSED at T3"
       },
       {
         "path": ".sddk-knowledge/p-3416cfb8288f8964/terms/index.md",
         "kind": "terms-index",
-        "change": "Last updated bumped; FIND-M9-75 closure pending T3",
-        "status": "pending T3"
+        "change": "Last updated bumped; FIND-M9-75 closure recorded; row removed from live deferred table"
       }
     ]
   },
