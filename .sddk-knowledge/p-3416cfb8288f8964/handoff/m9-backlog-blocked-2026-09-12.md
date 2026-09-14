@@ -1586,3 +1586,43 @@ by m9-79 or m9-80. The smoke test should not be used as a CI gate
 until the work-copy isolation bug is fixed. Filed as M1+ follow-up;
 do not chase this in m9-80 or any cycle that doesn't explicitly
 touch the smoke harness.
+
+---
+
+## Session 2026-09-14T07:11Z — m9-80 spec + tasks committed; paused at build
+
+**Status of `m9-80-property-policy-ownership`** (ledger `PAUSED/build`):
+
+- Exploration report committed: `8295ba7`
+- Spec committed (`spec.md`, 3 REQs, 9 scenarios, wire-shape impact: none): `3d7f5e5`
+- Tasks committed (`tasks.md`, 5 tasks T1-T5, byte-for-byte moves): `3d7f5e5`
+- Cycle transitioned `OPEN/specify` → `OPEN/build` → `PAUSED/build`
+- Lease released
+
+**Why paused again without an implementation-receipt**: the spec phase
+gate (`requirements-testable`) succeeded and the cycle entered `build`.
+The next frontier transition is `phase.build.complete` with gate
+`implementation-complete` requiring an `implementation-receipt.md`
+artifact. Writing that artifact requires actual Rust code changes
+(move 4 functions byte-for-byte, re-export Property, update match
+arms, run cargo test). This is multiple sub-tasks of real work — not
+appropriate for a continuation session that has already done
+substantial productive planning work.
+
+**Next session handoff** (resume procedure):
+1. `cd /var/mnt/DiscoChino2-fast/Proyectos/rust/chronos`
+2. `sddk cycle lock acquire --owner rubentxu --cycle "p-3416cfb8288f8964/m9-80-property-policy-ownership" --root . --scope .`
+3. `sddk cycle transition --cycle ... --transition cycle.resume --lease-owner rubentxu --fencing-token 1`
+4. Create branch `feat/m9-80-property-policy-ownership` from `3d7f5e5` (or current main)
+5. Apply tasks in order: T1 → T2 → T3 → T4 → T5 (see `tasks.md`)
+6. After T4, write `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/implementation-receipt.md`
+7. `sddk cycle evaluate-gate --gate implementation-complete --evaluator sddk.cli --outcome passed --evidence {...}`
+8. Continue: verify → debt-verify → release → archive
+
+**Key invariant to preserve during apply**: every commit must pass
+`cargo test -p chronos-services --lib` (264 tests including the 13
+hypothesis_test unit tests). No `#[allow(clippy::all)]`, no semantic
+changes — these are byte-for-byte moves.
+
+**Carry-forward unchanged**: FIND-M9-75, FIND-M9-74, FIND-M9-72,
+FIND-M9-71, FIND-M9-66, smoke-test work-copy isolation flake.
