@@ -149,7 +149,7 @@ deprecation sunset sweep.
 | proposal | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-82-degraded-store-disclosure/proposal.md` | `528f46a9318205005ef934c3d9b433fbfab21539574bd312c21f17c75534733b` |
 | spec | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-82-degraded-store-disclosure/spec.md` | `a08edb8b2a5bf524dcec12022d59a6558349e2ed3aa78c8253fd4613987a77e1` |
 | tasks | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-82-degraded-store-disclosure/tasks.md` | `88a883a34f0f5197c1db7b3d98c338e6a88e02999461cb71de5bdf337db19e56` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `4f33250d1b6b9e3229edea9cc535c25e5c272a155f61352584a0824b55e4de6e` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `d2d279f0fc35e6dc3a5825f5d4cb6a2053f2566f8e7cf7126b64a3219613ae42` |
 | vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `d290144dbffbe8ad7f90b5818320bb9386a1c86766b9daecbba05d5c864d414a` |
 | source (chronos-store) | `crates/chronos-store/src/storage.rs` | (+73/-4: StoreKind enum + kind field + is_persistent() accessor + 3 unit tests) |
 | source (chronos-mcp) | `crates/chronos-mcp/src/server.rs` | (+217/-11: degraded field + is_degraded() accessor + session_envelope() helper + 5 tool-envelope wrappers + 5 unit tests) |
