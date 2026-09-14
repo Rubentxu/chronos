@@ -1626,3 +1626,51 @@ changes — these are byte-for-byte moves.
 
 **Carry-forward unchanged**: FIND-M9-75, FIND-M9-74, FIND-M9-72,
 FIND-M9-71, FIND-M9-66, smoke-test work-copy isolation flake.
+
+---
+
+## Session 2026-09-14T07:13Z — m9-80 spec rev 2 (layered split) + tasks rev 2
+
+**Discovery**: At T1 startup, recon showed the four functions reference
+services-layer output types (`HypothesisOutput`, `HypothesisKind`,
+`HypothesisScope`, `HypothesisVerdict`, `ExistencePredicate` defined in
+`crates/chronos-services/src/output.rs:1247-1378`). A literal
+"byte-for-byte" move would force `chronos-domain` to depend on
+`chronos-services`, creating a cycle.
+
+**Revised plan (rev 2)**:
+- `chronos_domain::property` defines `PropertyHypothesisOutcome`
+  (or per-kind variants `InvariantOutcome`, `ExistenceOutcome`,
+  `CallPathOutcome`).
+- The four functions return domain-owned outcomes.
+- `chronos_services::output` adds `impl From<…> for HypothesisOutput`
+  for each kind.
+- `chronos_services::hypothesis_test::test` becomes a coordinator:
+  domain call → `From` conversion.
+
+**Why paused here**: the rev 2 design is correct but requires defining
+the new outcome types (T0) before any of T1-T4 can land. Implementing
+T0 (define types) + T1 (move eval_invariant) + tests = ~30-60 min of
+focused Rust work with iteration on compile errors. Not appropriate for
+a continuation session that has already done substantial planning work.
+
+**Next session resume procedure (rev 2)**:
+1. `cd /var/mnt/DiscoChino2-fast/Proyectos/rust/chronos`
+2. `sddk cycle lock acquire --owner rubentxu --cycle "p-3416cfb8288f8964/m9-80-property-policy-ownership" --root . --scope .`
+3. `sddk cycle transition --cycle ... --transition cycle.resume --lease-owner rubentxu --fencing-token 1`
+4. Create branch `feat/m9-80-property-policy-ownership` from `main`
+5. **Apply T0 first**: define `PropertyHypothesisOutcome` in
+   `chronos_domain::property` + re-export. Compile-check.
+6. Apply T1-T4 in order (rev 2 spec). Each commit must pass
+   `cargo test -p chronos-services --lib` (264 tests).
+7. Apply T5 (fmt + clippy + final tests).
+8. Write `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/implementation-receipt.md`.
+9. `sddk cycle evaluate-gate --gate implementation-complete ... --outcome passed --evidence {...}`.
+10. Continue: verify → debt-verify → release → archive.
+
+**Key invariant during apply (rev 2)**: NO domain → services
+dependency. Every `use` in `chronos_domain::property` MUST resolve to
+either std, a third-party crate, or another `chronos_domain` module.
+A reverse dependency would fail CC#4 cascade and break the build.
+
+**Carry-forward unchanged**: FIND-M9-75/74/72/71/66, smoke-test flake.

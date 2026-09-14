@@ -1,7 +1,7 @@
 # Spec: m9-80 chronos-domain owns the four property-policy primitives
 
-> Spec is the contract. Implementation, layering and file-level diffs live in
-> `proposal.md` and `design.md`; tasks live in `tasks.md`.
+> Spec is the contract. **Revision 2 (2026-09-14T07:13Z)** — see
+> "Design clarification" below for the byte-for-byte → layered split.
 
 ## Background
 
@@ -18,14 +18,46 @@ The cycle's intent is to move the policy ownership to
 `chronos_domain::property` while preserving the public wire shape and
 the 13 unit tests in `hypothesis_test`.
 
-## REQ-M9-80-01 — Domain ownership of the four primitives
+## Design clarification (rev 2, 2026-09-14T07:13Z)
 
-`chronos_domain::property` SHALL expose four `pub fn`s — `eval_invariant`,
-`eval_existence`, `eval_call_path`, `observe_property_target` — that
-take the same arguments and return the same `HypothesisOutput`
-envelopes as the current services-layer implementations. The
-implementations SHALL be **byte-equivalent** for the existing 13 unit
-tests (no behavioural change).
+The original spec said "byte-for-byte move", but recon at T1 startup
+showed the four functions reference services-layer output types
+(`HypothesisOutput`, `HypothesisKind`, `HypothesisScope`,
+`HypothesisVerdict`, `ExistencePredicate` — all defined in
+`crates/chronos-services/src/output.rs` around lines 1247-1378). A
+literal byte-for-byte move would force `chronos-domain` to depend on
+`chronos-services`, creating a cycle.
+
+The clean layered design is:
+
+- **`chronos_domain::property`** owns:
+  - The four functions, each returning a generic
+    `PropertyHypothesisOutcome { verdict_kind, support: Vec<u64>,
+    counter: Vec<u64>, summary: String }` tuple (or, more idiomatically,
+    three distinct enums per kind).
+  - `observe_property_target(events, target) -> Option<(PropertyValue,
+    Vec<u64>)>` returning the observation + event-id list.
+
+- **`chronos_services::output`** owns the wire-shape types
+  (`HypothesisOutput`, `HypothesisVerdict`, etc.) and provides thin
+  `From<PropertyHypothesisOutcome>` conversions.
+
+- **`chronos_services::hypothesis_test`** becomes a coordinator that:
+  1. Calls the domain function to get the policy outcome.
+  2. Wraps it into the wire-shape `HypothesisOutput` via the
+     `From` impl.
+
+This is the right layering. It does require defining
+`PropertyHypothesisOutcome` (and the three per-kind variants) in the
+domain crate, but it avoids the dependency cycle.
+
+## REQ-M9-80-01 — Domain ownership of the policy primitives
+
+`chronos_domain::property` SHALL expose four `pub fn`s —
+`eval_invariant`, `eval_existence`, `eval_call_path`,
+`observe_property_target` — that take the same arguments and return a
+domain-owned outcome type. The policy semantics SHALL be byte-equivalent
+to the current services-layer implementations (no behavioural change).
 
 `Property` SHALL be re-exported from the crate root (`chronos_domain`),
 so that the docstring in `crates/chronos-mcp/src/server.rs:4949` is
@@ -37,12 +69,11 @@ no longer misleading.
   crates/chronos-domain/src/property.rs` returns 4 matches.
 - `domain_lib_root_exports_property` — `grep -E 'pub use (self::)?property::Property'
   crates/chronos-domain/src/lib.rs` returns >=1 match.
-- `services_layer_delegates_to_domain` — `grep -E
-  'chronos_domain::property::(eval_invariant|eval_existence|eval_call_path|observe_property_target)'
-  crates/chronos-services/src/hypothesis_test.rs` returns >=4 matches
-  (one per function, the call site inside `HypothesisTest::test`).
+- `domain_does_not_depend_on_services` — `grep -E '^use chronos_services'
+  crates/chronos-domain/src/*.rs crates/chronos-domain/src/**/*.rs`
+  returns 0 matches.
 
-## REQ-M9-80-02 — Public signature preservation
+## REQ-M9-80-02 — Wire-shape preservation via wrapper
 
 `chronos_services::hypothesis_test::HypothesisTest::test` SHALL retain
 its current signature:
@@ -54,9 +85,12 @@ pub async fn test(
 ) -> Result<HypothesisOutput, ServiceError>
 ```
 
-Internally the four `match` arms SHALL delegate to the domain API
-rather than calling the now-removed services-layer private `fn`s. The
-private `fn eval_invariant`, `fn eval_existence`, `fn eval_call_path`,
+Internally the four `match` arms SHALL:
+1. Call the domain function (in `chronos_domain::property`).
+2. Convert the domain outcome to `HypothesisOutput` via a `From` impl
+   (in `chronos_services::output`).
+
+The private `fn eval_invariant`, `fn eval_existence`, `fn eval_call_path`,
 and `fn observe_property_target` SHALL NOT exist in
 `crates/chronos-services/src/hypothesis_test.rs` after the cycle
 completes.
@@ -66,10 +100,9 @@ completes.
   crates/chronos-services/src/hypothesis_test.rs` returns 0 matches.
 - `hypothesis_test_public_signature_unchanged` — `git diff
   --unified=0 -- crates/chronos-services/src/hypothesis_test.rs | grep
-  '^-    pub async fn test\b'` returns 0 matches (i.e. the line was
-  not removed).
-- `hypothesis_test_match_arms_call_domain` — the four `match` arms in
-  `test` contain `chronos_domain::property::` qualified calls.
+  '^-    pub async fn test\b'` returns 0 matches.
+- `services_output_has_from_impls` — `grep -E 'impl From<PropertyHypothesisOutcome>'
+  crates/chronos-services/src/output.rs` returns >=1 match per kind.
 
 ## REQ-M9-80-03 — Test invariants preserved
 
@@ -94,9 +127,8 @@ also continue to pass.
   underlying capability is reachable via
   `session_explain{kind=hypothesis}`. Introducing a real
   `evaluate_hypothesis` MCP tool is deferred to a future cycle.
-- **No new property policy types.** The domain re-export is `Property`
-  + the four `pub fn`s; existing `PropertySequenceOutcome`,
-  `PropertyViolation`, etc. continue to live as leaf exports.
+- **No new property policy types** beyond the `PropertyHypothesisOutcome`
+  family needed for the layered split.
 - **No generalization of `observe_property_target` into a trait.**
   Defer until a non-hypothesis caller appears.
 
@@ -115,3 +147,23 @@ schema, no JSON envelope, no `session_*` action signature changes.
 The only observable change is that
 `chronos_domain::property::Property` becomes reachable as
 `chronos_domain::Property` (the re-export).
+
+## Revised tasks (replaces the v1 task list)
+
+The five T1-T5 tasks in `tasks.md` need a small revision to reflect
+the layered split:
+
+- **T1** — Define `PropertyHypothesisOutcome` (and per-kind variants)
+  in `chronos_domain::property`. Add unit tests for the outcome type.
+- **T2** — Move `eval_invariant` into `chronos_domain::property`,
+  returning `PropertyHypothesisOutcome::Invariant`. Add `From<…> for
+  HypothesisOutput` in `services::output`.
+- **T3** — Move `eval_existence` and `eval_call_path` (same pattern).
+  Add the corresponding `From` impls.
+- **T4** — Move `observe_property_target`. Add the
+  `From` for the existence path that wraps the observation.
+- **T5** — Update `HypothesisTest::test` to call domain + `From`
+  instead of services-layer private fns. Run full test suite + clippy +
+  fmt.
+
+Tasks.md will be re-edited to match this revision in the next session.

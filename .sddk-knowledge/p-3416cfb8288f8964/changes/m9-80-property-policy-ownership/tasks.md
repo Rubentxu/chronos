@@ -2,57 +2,70 @@
 
 > Tasks are reviewable work units that decompose the spec into PR-sized
 > chunks. Each task has its own commit and its own acceptance criteria.
+>
+> **Revision 2 (2026-09-14T07:13Z)** — split into a layered design
+> (domain returns `PropertyHypothesisOutcome`, services wraps with
+> `From`). See `spec.md` "Design clarification".
 
 ## Task ordering
 
 The tasks are sequenced to keep the working tree green at every step
-(no half-applied state). The dependencies below form a DAG; nothing
-else may be parallelized inside this cycle because the functions are
-co-located and the tests pin the exact same set.
+(no half-applied state). T0 must land first because it defines the
+new outcome type that T1-T3 depend on; T4-T5 are independent.
 
 ```
-T1 ──► T2 ──► T3 ──► T4
-                  │
-                  └─► T5 (parallel reviewer)
+T0 ──► T1 ──► T4 ──► T5
+   \
+    └─► T2 ──► T4
+       \
+        └─► T3 ──► T4
 ```
 
-## T1 — Move `eval_invariant` into `chronos_domain::property`
+## T0 — Define `PropertyHypothesisOutcome` in domain
+
+**Files:**
+- `crates/chronos-domain/src/property.rs` (add the new outcome type)
+- `crates/chronos-domain/src/lib.rs` (re-export it)
+
+**Acceptance:**
+- A new type `PropertyHypothesisOutcome` (or per-kind variants
+  `InvariantOutcome`, `ExistenceOutcome`, `CallPathOutcome`) exists in
+  `chronos_domain::property`
+- The type is re-exported from `chronos_domain::lib`
+- `cargo build -p chronos-domain` exits 0
+- `cargo test -p chronos-domain --lib` exits 0
+
+**Commit message:**
+> m9-80: define PropertyHypothesisOutcome in domain (T0)
+
+## T1 — Move `eval_invariant` into domain (returns InvariantOutcome)
 
 **Files:**
 - `crates/chronos-services/src/hypothesis_test.rs` (remove `fn eval_invariant`)
-- `crates/chronos-domain/src/property.rs` (add `pub fn eval_invariant`)
+- `crates/chronos-domain/src/property.rs` (add `pub fn eval_invariant` returning `InvariantOutcome`)
+- `crates/chronos-services/src/output.rs` (add `impl From<InvariantOutcome> for HypothesisOutput`)
 
 **Acceptance:**
 - `grep -n '^fn eval_invariant\b' crates/chronos-services/src/hypothesis_test.rs` returns 0 matches
 - `grep -n '^pub fn eval_invariant\b' crates/chronos-domain/src/property.rs` returns 1 match
-- `cargo test -p chronos-services --lib hypothesis_test::tests::eval_invariant` exits 0
-- The function body is a literal byte-for-byte move; no logic changes
+- `cargo test -p chronos-services --lib hypothesis_test::tests` exits 0
+- The wire-shape `HypothesisOutput::Invariant { verdict, ... }` is
+  identical before and after (verified by `git diff` on the output
+  assertions in unit tests).
 
 **Commit message:**
 > m9-80: move eval_invariant into chronos_domain::property (T1)
 
-## T2 — Move `eval_existence` into `chronos_domain::property`
+## T2 — Move `eval_existence` into domain
 
-**Files:**
-- `crates/chronos-services/src/hypothesis_test.rs` (remove `fn eval_existence`)
-- `crates/chronos-domain/src/property.rs` (add `pub fn eval_existence`)
-
-**Acceptance:**
-- Same shape as T1, for `eval_existence`
-- All `hypothesis_test` unit tests still pass
+Same pattern as T1, for `eval_existence`.
 
 **Commit message:**
 > m9-80: move eval_existence into chronos_domain::property (T2)
 
-## T3 — Move `eval_call_path` into `chronos_domain::property`
+## T3 — Move `eval_call_path` into domain
 
-**Files:**
-- `crates/chronos-services/src/hypothesis_test.rs` (remove `fn eval_call_path`)
-- `crates/chronos-domain/src/property.rs` (add `pub fn eval_call_path`)
-
-**Acceptance:**
-- Same shape as T1, for `eval_call_path`
-- All `hypothesis_test` unit tests still pass
+Same pattern as T1, for `eval_call_path`.
 
 **Commit message:**
 > m9-80: move eval_call_path into chronos_domain::property (T3)
@@ -63,7 +76,7 @@ T1 ──► T2 ──► T3 ──► T4
 - `crates/chronos-services/src/hypothesis_test.rs` (remove `fn observe_property_target`)
 - `crates/chronos-domain/src/property.rs` (add `pub fn observe_property_target`)
 - `crates/chronos-domain/src/lib.rs` (`pub use property::Property;`)
-- `crates/chronos-services/src/hypothesis_test.rs` (update `match` arms in `test` to call the domain API qualified with `chronos_domain::property::`)
+- `crates/chronos-services/src/hypothesis_test.rs` (update `match` arms in `test` to call domain API qualified with `chronos_domain::property::` and wrap with `From`)
 
 **Acceptance:**
 - `grep -n '^pub use.*property::Property\b' crates/chronos-domain/src/lib.rs` returns 1 match
@@ -80,6 +93,8 @@ T1 ──► T2 ──► T3 ──► T4
 **Files:**
 - `crates/chronos-domain/src/property.rs` (final review)
 - `crates/chronos-domain/src/lib.rs` (final review)
+- `crates/chronos-services/src/hypothesis_test.rs` (final review)
+- `crates/chronos-services/src/output.rs` (final review)
 
 **Acceptance:**
 - `cargo fmt --all -- --check` exits 0
@@ -115,6 +130,6 @@ T1 ──► T2 ──► T3 ──► T4
 
 13 unit tests in `crates/chronos-services/src/hypothesis_test.rs` plus
 all 264 unit tests in `chronos-services --lib` plus the
-`chronos-domain --lib` suite (~30 tests). Plus T4 smoke (sandbox
+`chronos-domain --lib` suite (~30 tests). Plus T5 smoke (sandbox
 subset): `e2e_connectivity` + `session_lifecycle` (one hypothesis
 attach case).
