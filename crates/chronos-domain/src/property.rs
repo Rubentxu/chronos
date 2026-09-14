@@ -1218,3 +1218,104 @@ mod tests {
         }
     }
 }
+
+// ============================================================================
+// m9-80: Property hypothesis policy outcomes (domain-owned)
+//
+// These types are the policy-side result of evaluating a hypothesis against
+// captured events. They live in `chronos_domain::property` (not services)
+// because the policy semantics are domain-owned; the wire-shape
+// `HypothesisOutput` lives in `chronos_services::output` and is constructed
+// from these via `From` impls (see `crates/chronos-services/src/output.rs`).
+//
+// The three variants mirror the three hypothesis kinds (Invariant,
+// Existence, CallPath) but use only domain types (no
+// `HypothesisScope` / `ExistencePredicate` / `HypothesisKind` enum), so the
+// domain crate has no reverse dependency on the services crate.
+// ============================================================================
+
+/// Verdict classification for a hypothesis evaluation.
+///
+/// Mirrors `chronos_services::output::HypothesisVerdict` but lives in the
+/// domain so that the policy primitives (eval_invariant / eval_existence /
+/// eval_call_path) can return it without depending on services types.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "verdict", rename_all = "snake_case")]
+pub enum PropertyHypothesisVerdict {
+    /// The hypothesis held against the recorded evidence.
+    Pass,
+    /// The hypothesis was falsified by the recorded evidence.
+    Violation { reason: String },
+    /// The policy cannot answer the hypothesis with the available evidence
+    /// (e.g. `property_target` not captured for the session).
+    Unsupported { reason: String },
+}
+
+/// What observation to feed into an invariant check.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PropertyObservationSource {
+    /// Use the live event count as the observed scalar.
+    EventCount,
+    /// Use the last recorded value for `target` as the observed scalar.
+    PropertyValue { target: String },
+    /// Reserved for a future milestone; chronos_domain::trace::EventData
+    /// has no latency_ms field today.
+    LatencyMs,
+}
+
+/// Result of evaluating an `Invariant`-shaped hypothesis against events.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct InvariantOutcome {
+    pub verdict: PropertyHypothesisVerdict,
+    pub support_event_ids: Vec<u64>,
+    pub counter_event_ids: Vec<u64>,
+    pub observation: PropertyObservationSource,
+    pub summary: String,
+}
+
+/// Predicate shape for `Existence`-kind hypotheses (mirrors the services
+/// wrapper but kept minimal — only the fields the domain function reads).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PropertyExistencePredicate {
+    /// Match every event with the given `EventType` whose `EventData::Variable`
+    /// has a `name` equal to `var_name`.
+    VariableRead { var_name: String },
+    /// Match every event with the given `EventType`.
+    EventTypeOnly,
+}
+
+/// Result of evaluating an `Existence`-shaped hypothesis.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ExistenceOutcome {
+    pub verdict: PropertyHypothesisVerdict,
+    pub support_event_ids: Vec<u64>,
+    pub counter_event_ids: Vec<u64>,
+    pub predicate: PropertyExistencePredicate,
+    pub summary: String,
+}
+
+/// Result of evaluating a `CallPath`-shaped hypothesis (BFS reachability
+/// in the captured call graph).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct CallPathOutcome {
+    pub verdict: PropertyHypothesisVerdict,
+    pub support_event_ids: Vec<u64>,
+    pub counter_event_ids: Vec<u64>,
+    pub caller: String,
+    pub callee: String,
+    /// If reachable, the resolved path of function names from caller to callee.
+    pub reachable_path: Option<Vec<String>>,
+    pub summary: String,
+}
+
+/// Discriminated union of all hypothesis outcomes. Mirrors
+/// `chronos_services::output::HypothesisOutput` but with domain types only.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PropertyHypothesisOutcome {
+    Invariant(InvariantOutcome),
+    Existence(ExistenceOutcome),
+    CallPath(CallPathOutcome),
+}
