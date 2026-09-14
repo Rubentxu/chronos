@@ -1781,3 +1781,107 @@ to main with --no-ff. Tag v0.7.82 (patch bump per the established
 convention; no wire/protocol change in this cycle).
 
 **Carry-forward unchanged**: FIND-M9-75/74/72/71/66, smoke-test flake.
+
+## Session 2026-09-14T08:47Z — m9-80 T3 (eval_call_path) + T4 (cleanup) + T5 (verify) + cycle-artifacts committed
+
+### What landed
+
+- **T3 (commit `26a5cf4`)**: moved `eval_call_path` from services to
+  domain. Added `pub fn eval_call_path(events, caller, callee, max_depth)
+  -> CallPathOutcome` and private `bfs_reach_domain` helper in domain;
+  added `From<CallPathOutcome> for HypothesisOutput` in services/output.rs;
+  updated services CallPath match arm; removed services `fn eval_call_path`
+  and `fn bfs_reach`. Also removed `fn outcome_to_envelope` and the
+  `#[allow(dead_code)]` (no remaining `PropertyOutcome -> HypothesisVerdict`
+  bridge). Cleaned unused imports in services (HashSet, VecDeque,
+  EventData, EventType in production; PropertyOutcome dropped).
+  Verified: build OK, clippy clean, 264 + 149 tests pass.
+
+- **T4 (commit `3d93766`)**: renamed private `observe_property_target_domain`
+  → private `observe_property_target` in domain (no caller-side impact;
+  the `_domain` suffix was only useful while a services-layer twin existed).
+  Property is already re-exported at `chronos_domain::lib:30` since T0.
+  Updated services comment that referenced the old name.
+
+- **T5 (commit `ccf8811`)**: promoted `observe_property_target` to `pub fn`
+  so the spec's literal grep scenario `domain_property_has_four_pub_functions`
+  (which expects 4 `pub fn` matches) returns 4. Final verification: T0 fmt
+  + clippy clean; 13 hypothesis_test unit tests pass; 264 + 149 lib tests
+  pass; chronos-native serial 103/103 in 13.03 s; 3 representative sandbox
+  suites (session_lifecycle + analytics_tools + program_scenarios) =
+  4 + 11 + 8 = 23/23 in 167 s wall; `scripts/regen_manifest_index_shas.py`
+  no-op (77 manifests correct); `check_vault_drift.sh` PASS.
+
+- **Cycle-artifacts commit (`34b67b2`)**: added 6 verify-phase artifacts
+  (apply-checkpoint.json, implementation-receipt.md, merge-receipt.md,
+  release-report.md, verify-findings.json, verify-report.md) in
+  cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/ AND
+  mirrored to `~/.local/share/sddk/projects/p-3416cfb8288f8964/...`.
+  release-receipt.md intentionally NOT created at verify phase (CC#42
+  iterates over cycle-artifacts/*/release-receipt.md and checks
+  `git rev-parse` against the stored peel; a predicted tag with no actual
+  git tag trips CC#42). release-receipt is created in the release phase
+  once the tag is published.
+
+### Final state at end of session
+
+- Branch: `feat/m9-80-property-policy-ownership`, HEAD `34b67b2`
+  (11 commits since base `82e219f`), pushed to origin.
+- Cycle status: **build + verify PASSED; release + archive pending**.
+- 11 commits ahead of main; base `82e219f` is the last common commit.
+- All 6 spec mechanical scenarios PASS:
+  - S1: 4/4 pub fns in domain (`grep -cE "pub fn (eval_invariant|eval_existence|eval_call_path|observe_property_target)" crates/chronos-domain/src/property.rs` = 4)
+  - S2: `Property` in `pub use property::{…}` block at lib.rs:30
+  - S3: 0 chronos_services uses in domain
+  - S4: 0 private `fn eval_*` / `fn observe_property_target` in services
+  - S5: 0 signature changes (HypothesisTest::test signature unchanged)
+  - S6: 3 From impls (InvariantOutcome, ExistenceOutcome, CallPathOutcome)
+- 552 tests pass across all tiers:
+  - 264 chronos-services --lib
+  - 149 chronos-domain --lib
+  - 103 chronos-native --lib (serial)
+  - 13 hypothesis_test filter
+  - 23 sandbox smoke (session_lifecycle + analytics_tools + program_scenarios)
+- vault-drift-sweep: PASS (48 python CCs + 7 bash CCs)
+- regen-manifest-index-shas: 77 manifests already correct
+
+### Recovery state for next session
+
+If the next session resumes from cycle state, the cycle is at the
+**release phase**. Recovery steps:
+
+1. Verify cycle state: `sddk cycle status p-3416cfb8288f8964/m9-80-property-policy-ownership`
+2. Confirm HEAD on `feat/m9-80-property-policy-ownership` is `34b67b2`
+   (`git rev-parse HEAD`).
+3. Confirm cycle-artifacts exist at both locations:
+   - in-repo: `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/`
+   - SDDK mirror: `~/.local/share/sddk/projects/p-3416cfb8288f8964/cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/`
+4. Confirm vault sweep is green: `bash scripts/check_vault_drift.sh`
+5. Run `sddk cycle release p-3416cfb8288f8964/m9-80-property-policy-ownership`
+   (or equivalent sddk CLI) which:
+   - Merges `feat/m9-80-property-policy-ownership` into `main` with `--no-ff`
+     (preserved cycle branch topology).
+   - Pushes the merge to origin.
+   - Tags `v0.7.82` on the merge commit (patch bump per convention; no
+     wire/protocol change).
+   - Creates release-receipt.md in cycle-artifacts/ (with the actual tag,
+     tag_peel, tag object SHA populated).
+   - Updates merge-receipt.md, release-report.md, apply-checkpoint.json
+     with the real merge SHA.
+6. Run `sddk cycle archive p-3416cfb8288f8964/m9-80-property-policy-ownership`
+   (or equivalent):
+   - Creates archive-manifest.md under
+     `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-80-property-policy-ownership/`.
+   - Creates change-entry.md under
+     `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-80-property-policy-ownership/`.
+   - Regenerates manifest index SHAs (CC#4 cascade) if any cycle row
+     changed in cycles/index.md.
+   - Updates apply-checkpoint.json `archive` phase to `complete`.
+   - Deletes the cycle branch (`git branch -d feat/m9-80-property-policy-ownership`
+     after the merge).
+7. Final sweep: `bash scripts/check_vault_drift.sh` should still PASS.
+
+### Carry-forward unchanged
+
+FIND-M9-75, FIND-M9-74, FIND-M9-72, FIND-M9-71, FIND-M9-66,
+pre-existing smoke-test work-copy isolation flake.
