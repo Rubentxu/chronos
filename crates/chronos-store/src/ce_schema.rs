@@ -10,11 +10,10 @@
 
 use crate::counterexample_storage::ce_chunk_keys::{
     bundle_prefix, decode_chunk_key, decode_chunk_key_legacy, decode_chunk_value,
-    encode_chunk_key_legacy,
 };
 use crate::error::StoreError;
 use crate::table_error::classify_read_table_error;
-use redb::{ReadableTable, Table, TableDefinition};
+use redb::{ReadableTable, TableDefinition};
 
 /// Table for counterexample bundles.
 ///
@@ -175,74 +174,6 @@ pub fn collect_bundle_chunks_legacy(
         }
     }
     Ok(chunks)
-}
-
-/// Collect raw v3 keys for a bundle, given an already-opened events table.
-///
-/// **m9-97:** Sibling of [`collect_v3_keys_for_bundle`] that takes a
-/// `&Table` handle instead of a `&ReadTransaction`. Used by the write path
-/// (`save_bundle_record_and_events`) when the events table is opened from a
-/// `WriteTransaction` so that key discovery and chunk deletion share the
-/// same write transaction. Eliminates the implicit read-then-write TOCTOU
-/// window previously disclosed as `cc-004-implicit-io-toctou`.
-///
-/// Shares the range-scan + identity-verify ladder with
-/// `collect_v3_keys_for_bundle`; both helpers agree on prefix boundaries
-/// (`bundle_prefix(bundle_id)`) and value-identity checks
-/// (`decode_chunk_value(...).0 == bundle_id`).
-#[allow(clippy::result_large_err)]
-pub fn collect_v3_keys_for_table(
-    table: &Table<'_, &[u8], &[u8]>,
-    bundle_id: &str,
-) -> Result<Vec<Vec<u8>>, StoreError> {
-    let prefix = bundle_prefix(bundle_id);
-    let mut start_key = prefix.to_vec();
-    start_key.extend_from_slice(&0u32.to_be_bytes());
-    let mut end_key = prefix.to_vec();
-    end_key.extend_from_slice(&u32::MAX.to_be_bytes());
-
-    let range = table
-        .range(start_key.as_slice()..end_key.as_slice())
-        .map_err(|e| StoreError::Database(e.into()))?;
-
-    let mut keys = Vec::new();
-    for (k, v) in range.flatten() {
-        if decode_chunk_key(k.value()).is_some() {
-            if let Some((ref id, _)) = decode_chunk_value(v.value()) {
-                if id == bundle_id {
-                    keys.push(k.value().to_vec());
-                }
-            }
-        }
-    }
-    Ok(keys)
-}
-
-/// Collect raw v2 (legacy) keys for a bundle, given an already-opened
-/// events table.
-///
-/// **m9-97:** Sibling of [`collect_bundle_chunks_legacy`] used by the write
-/// path. Returns raw key bytes (via [`encode_chunk_key_legacy`]) instead of
-/// `(idx, value)` pairs because the write path only needs the keys to
-/// delete them.
-///
-/// Shares the full-table iter + key-decode ladder with
-/// `collect_bundle_chunks_legacy`.
-#[allow(clippy::result_large_err)]
-pub fn collect_legacy_keys_for_table(
-    table: &Table<'_, &[u8], &[u8]>,
-    bundle_id: &str,
-) -> Result<Vec<Vec<u8>>, StoreError> {
-    let mut keys = Vec::new();
-    for entry in table.iter().map_err(|e| StoreError::Database(e.into()))? {
-        let (k, _) = entry.map_err(|e| StoreError::Database(e.into()))?;
-        if let Some((ref id, idx)) = decode_chunk_key_legacy(k.value()) {
-            if id == bundle_id {
-                keys.push(encode_chunk_key_legacy(id, idx));
-            }
-        }
-    }
-    Ok(keys)
 }
 
 /// Collect all chunks for a bundle (v3 first, v2 fallback).

@@ -144,9 +144,8 @@ pub use ce_types::{
 pub(crate) mod ce_schema;
 pub use ce_schema::{
     collect_bundle_chunks, collect_bundle_chunks_legacy, collect_bundle_chunks_range,
-    collect_legacy_keys_for_table, collect_v3_keys_for_bundle, collect_v3_keys_for_table,
-    BUNDLE_EVENTS_CHUNK_SIZE, COUNTEREXAMPLE_BUNDLES, COUNTEREXAMPLE_BUNDLE_EVENTS,
-    CURRENT_BUNDLE_SCHEMA_VERSION, KNOWN_BUNDLE_SCHEMA_VERSIONS,
+    collect_v3_keys_for_bundle, BUNDLE_EVENTS_CHUNK_SIZE, COUNTEREXAMPLE_BUNDLES,
+    COUNTEREXAMPLE_BUNDLE_EVENTS, CURRENT_BUNDLE_SCHEMA_VERSION, KNOWN_BUNDLE_SCHEMA_VERSIONS,
 };
 
 /// Load events for a bundle, handling both legacy (blob-embedded) and
