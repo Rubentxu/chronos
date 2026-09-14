@@ -1840,6 +1840,25 @@ pub struct CounterexampleEventsCountParams {
     pub bundle_id: String,
 }
 
+/// Params for `counterexample_bundle_events` (m9-91 — closes m9-02-R4).
+///
+/// Reads the events stream of a counterexample bundle via the m9-02
+/// v3 side-table (`crate::counterexample_storage::bundle_events_or_legacy`).
+/// Supports full-stream reads (omit `limit`) and offset/limit pagination.
+///
+/// - `bundle_id`: target bundle. Missing bundle → tool-level error.
+/// - `limit`: optional max events to return. `None` returns the entire
+///   remaining stream starting at `offset`.
+/// - `offset`: zero-based start index. `None` → start at 0.
+#[derive(Debug, serde::Deserialize, JsonSchema)]
+pub struct CounterexampleBundleEventsParams {
+    pub bundle_id: String,
+    /// Maximum events to return in this page. None means "all remaining".
+    pub limit: Option<usize>,
+    /// Zero-based starting index into the events stream. None means 0.
+    pub offset: Option<usize>,
+}
+
 // ============================================================================
 // Tool handlers using rmcp macros
 // ============================================================================
@@ -5542,6 +5561,51 @@ impl ChronosServer {
             )))),
         }
     }
+
+    /// m9-91: closes m9-02-R4. Returns the events stream for a
+    /// counterexample bundle. The corresponding storage primitive
+    /// (`counterexample_storage::bundle_events_or_legacy`) has shipped
+    /// since m9-02; m9-91 adds the MCP surface. The response envelope
+    /// is `CounterexampleBundleEventsOutputDto { bundle_id, events_count,
+    /// returned_events, next_offset }`:
+    ///
+    /// - `events_count` is the total persisted (independent of paging).
+    /// - `returned_events` is the slice (empty if offset is past the end).
+    /// - `next_offset` is `Some(n)` to continue paging, or `None` when
+    ///   no more events remain.
+    ///
+    /// Errors with `LoadFailed` when the bundle_id does not exist.
+    #[tool(
+        name = "counterexample_bundle_events",
+        description = "Return the events stream of a persisted counterexample bundle (m9-91 — closes m9-02-R4). Reads via the m9-02 v3 side-table. Input: {bundle_id, limit?, offset?}. Output: {bundle_id, events_count, returned_events, next_offset}. `events_count` is the total persisted (not the slice size); `next_offset == null` when no more events remain or the offset was already past the end."
+    )]
+    async fn counterexample_bundle_events(
+        &self,
+        params: Parameters<CounterexampleBundleEventsParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let p = params.0;
+        let hyp_ctx = chronos_services::hypothesis_test::HypothesisTestContext {
+            engines: &self.engines,
+        };
+        let counterexample_ctx = chronos_services::counterexample::CounterexampleContext {
+            store: &self.store,
+            hypothesis_ctx: &hyp_ctx,
+        };
+        match chronos_services::counterexample::ChronosCounterexampleService::events(
+            &counterexample_ctx,
+            &p.bundle_id,
+            p.limit,
+            p.offset,
+        ) {
+            Ok(out) => {
+                let v = serialize_counterexample_output(out);
+                Ok(CallToolResult::success(json_content(&v)))
+            }
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "counterexample_bundle_events failed: {e}"
+            )))),
+        }
+    }
 }
 
 /// Serialize a `CounterexampleOutput` into the m8-03 wire DTO envelope.
@@ -5558,9 +5622,10 @@ fn serialize_counterexample_output(
 ) -> serde_json::Value {
     use chronos_services::counterexample::CounterexampleOutput as COut;
     use chronos_services::output::{
-        CounterexampleBundleDto, CounterexampleBundleSummaryDto,
-        CounterexampleEventsCountOutputDto, CounterexampleGetOutputDto,
-        CounterexampleListOutputDto, CounterexampleMinimisedDto, CounterexampleShrinkOutputDto,
+        CounterexampleBundleDto, CounterexampleBundleEventsOutputDto,
+        CounterexampleBundleSummaryDto, CounterexampleEventsCountOutputDto,
+        CounterexampleGetOutputDto, CounterexampleListOutputDto, CounterexampleMinimisedDto,
+        CounterexampleShrinkOutputDto,
     };
 
     match out {
@@ -5707,6 +5772,25 @@ fn serialize_counterexample_output(
             serde_json::to_value(CounterexampleEventsCountOutputDto {
                 bundle_id,
                 events_count,
+            })
+            .unwrap_or_else(|e| serde_json::json!({"error": e.to_string()}))
+        }
+        COut::Events {
+            bundle_id,
+            events_count,
+            returned_events,
+            next_offset,
+        } => {
+            // m9-91: closes m9-02-R4. The events stream accessor for a
+            // counterexample bundle. Returns `{bundle_id, events_count,
+            // returned_events, next_offset}` — events_count is the
+            // total persisted on disk (independent of the slice),
+            // `next_offset == None` means no more events remain.
+            serde_json::to_value(CounterexampleBundleEventsOutputDto {
+                bundle_id,
+                events_count,
+                returned_events,
+                next_offset,
             })
             .unwrap_or_else(|e| serde_json::json!({"error": e.to_string()}))
         }

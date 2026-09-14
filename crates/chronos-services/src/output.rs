@@ -2533,6 +2533,33 @@ pub struct CounterexampleEventsCountOutputDto {
     pub events_count: usize,
 }
 
+/// m9-91: closes m9-02-R4. Wire-shape DTO for the
+/// `counterexample_bundle_events` MCP tool. Returns the full or
+/// paginated events stream of a counterexample bundle.
+///
+/// - `bundle_id`: target bundle.
+/// - `events_count`: total persisted events on disk (independent of the
+///   slice — same value regardless of `limit`/`offset`).
+/// - `returned_events`: the slice (`None`-free Vec; empty if the offset
+///   is past the end).
+/// - `next_offset`: `Some(n)` to continue paging, `None` when no more
+///   events remain (or the offset was already past the end).
+///
+/// The inner `returned_events` Vec is excluded from the schema; it
+/// reuses `chronos_domain::TraceEvent`'s serde representation directly,
+/// and `TraceEvent` does not (yet) implement `JsonSchema` (PRs welcome).
+/// Excluding it is the pragmatic fix and matches the convention used
+/// elsewhere when bundling opaque event payloads onto a wire DTO.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub struct CounterexampleBundleEventsOutputDto {
+    pub bundle_id: String,
+    pub events_count: usize,
+    #[schemars(skip)]
+    pub returned_events: Vec<chronos_domain::TraceEvent>,
+    pub next_offset: Option<usize>,
+}
+
 /// Wire-shape DTO for [`crate::hypothesis_test::HypothesisInput`].
 ///
 /// Reaches the wire in m8-03 because the MCP wrapper for
