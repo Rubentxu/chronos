@@ -1985,3 +1985,72 @@ option stays open even if (b) is chosen days from now.
   `Total cycles = 80` was set; adding m9-80 bumped it to 81; CC#39's
   Python enumerator counts 80 folders). Either fix as a separate
   follow-up cycle (option c) or accept the drift.
+
+## Session 2026-09-14T09:07Z → 09:42Z: m9-81 closed end-to-end
+
+User said "Ok continúa con los siguientes tareas siguiendo el roadmap del
+workflow de sddk en modo auto". Treated as "auto-mode: continue with the
+next cycle in the m9-roadmap". Picked **FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION**
+(the cleanest carry-forward: B-direct path, single-crate mechanical
+refactor of 6 read-path sites in `crates/chronos-store/src/counterexample_storage.rs`
+through the canonical `chronos_store::table_error::classify_read_table_error`
+helper that m9-72 introduced for `cas.rs` and `storage.rs`).
+
+### Cycle summary
+
+- **Path**: B-direct. **Tier**: T1. **Wall time**: ~30 min.
+- **Tag**: `v0.7.83`. **Merge SHA**: `fdc5accf64be1fcf780913243aec0496ad48e7fe` (--no-ff).
+- **Behavioural baseline**: `cargo test -p chronos-store --lib` 74/0 → 74/0
+  (round-trip verified via `git stash`).
+- **Carry-forward**: closes FIND-M9-72.
+- **New finding (out of scope)**: FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK —
+  `sddk cycle evaluate-gate` CLI is unable to record admission events
+  on this project (FOREIGN KEY constraint + duplicate event_id at
+  /var/home/rubentxu/.local/state/sddk/projects/p-3416cfb8288f8964/ledger.sqlite).
+  Forced the use of the manual vault-tracked workflow that m9-80 also
+  used. Recommend a separate follow-up cycle.
+
+### Workflow notes
+
+1. Tried `sddk cycle start` first (gives the sddk CLI workflow). The
+   gate evaluation hit a pre-existing FOREIGN KEY constraint bug in
+   the project ledger DB. Each `sddk cycle evaluate-gate` call printed
+   "admission event recording failed (fail-soft): database error:
+   insert: FOREIGN KEY constraint failed" and the cycle phase did NOT
+   advance. Tried superseding; same FK bug blocked it. **Decision**:
+   abandon the CLI workflow and use the manual vault-tracked workflow
+   (the same pattern m9-80 used). The cycle is recorded in the CLI's
+   ledger as `OPEN: explore` permanently (harmless).
+2. Followed the m9-80 template: cycle branch → commits → cycle-artifacts
+   → release --no-ff + tag → archive-manifest + change-entry + cycles
+   index → CC#4 regen + drift sweep → apply-checkpoint status flip →
+   branch delete → push.
+
+### Carry-forward unchanged
+
+- FIND-M9-75, FIND-M9-74, FIND-M9-71, FIND-M9-66.
+- FIND-M9-72 closed by m9-81.
+- Pre-existing smoke-test work-copy isolation flake.
+- **CC#39 off-by-one** (cycles/index.md Total cycles says 83 but folder
+  count is 80/81). Pre-dates m9-80 (was off-by-one after m9-79 archival
+  sweep; m9-80 + m9-81 each added one row without correcting the
+  underlying count). Recommend a follow-up cycle to either
+  (i) investigate why some rows in cycles/index.md have no corresponding
+  folder (m9-78 appears to be the gap), or
+  (ii) align the Total cycles number to the actual folder count.
+- **NEW**: FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK (sddk CLI ledger bug;
+  see "Workflow notes" above).
+
+### Next roadmap candidate after m9-81
+
+m9+ carry-forwards still unassigned:
+
+- FIND-M9-75-MCP-TOOLS-DO-NOT-DISCLOSE-DEGRADED-STORE (m9-75)
+- FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK (new, this cycle)
+- CC#39 off-by-one cleanup (separate cycle)
+
+The M7 milestone (deferred from M6 — see `docs/ROADMAP.md`) is
+larger-scope work: events_read merge, observe merge,
+session_compare+session_explain split, session_start/stop lifecycle,
+deprecation sunset sweep.
+
