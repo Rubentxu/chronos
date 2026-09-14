@@ -71,6 +71,10 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|---|---|---|
 | FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION | m9-71 | Every archive-manifest that lists `cycles/index.md` / `terms/index.md` SHAs goes stale on the next cycle, so each cycle must rewrite prior manifests' artifact indexes (CC#4); the set grows by one per cycle | unassigned | m9+ |
 
+### Findings deferred from m9-77..m9-79
+
+None — m9-77 wired `session_start{action=attach}`, m9-78 made `session_stop` safe to detach from a traced target, m9-79 distinguished the attach capability value (`probe_type: "ptrace_attach"`) from the misleading `ebpf_user` literal. All three closed in their respective cycles with no deferred findings.
+
 ## Terminated terms
 
 | ID | Cycle | Título | Closed by |
@@ -108,5 +112,5 @@ Terms tracked from released cycles awaiting resolution in milestone m9 or later.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-13T17:57Z |
-| Last archive | m9-76-cc4-regen-tool-in-repo |
+| Last updated | 2026-09-14T06:28Z |
+| Last archive | m9-79-attach-capability-type |

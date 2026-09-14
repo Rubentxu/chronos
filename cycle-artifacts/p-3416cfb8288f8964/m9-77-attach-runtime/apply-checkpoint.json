@@ -1,0 +1,70 @@
+{
+  "head_sha": "9d5331659f742e3be98995dfba26ff2a635f98ed",
+  "base_sha": "c53171a",
+  "cycle_id": "m9-77-attach-runtime",
+  "cycle_record": "p-3416cfb8288f8964/m9-77-attach-runtime",
+  "branch": "feat/m9-77-session-attach-runtime",
+  "path": "A-min",
+  "route": "A-min",
+  "status": "archived",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived",
+  "remote_tag": "v0.7.79",
+  "tag_peel_sha": "4bd2da365d938cff734aa7f287597f854862ea58",
+  "main_sha": "9d5331659f742e3be98995dfba26ff2a635f98ed",
+  "tag_peel_note": "v0.7.79 is on the code commit (4bd2da3), not the merge (9d53316); preserved drift from before SDDK reconciliation",
+  "ff_merged": false,
+  "phases": {
+    "build": {
+      "status": "complete",
+      "commit_sha": "4bd2da365d938cff734aa7f287597f854862ea58",
+      "commit_title": "feat(m9-77): wire session attach to native probe runtime",
+      "summary": "Wires session_start{action=attach} through native, services, dispatcher and MCP. 13 files, +1364/-28."
+    },
+    "verify": {
+      "status": "complete",
+      "verdict": "PASS",
+      "critical_findings": 0,
+      "warning_findings": 0
+    },
+    "release": {
+      "status": "complete",
+      "tag": "v0.7.79",
+      "tag_sha": "622891adef13d31486a2261f6da14d4a830574a3",
+      "merge_commit_sha": "9d5331659f742e3be98995dfba26ff2a635f98ed"
+    },
+    "archive": {
+      "status": "complete",
+      "note": "cycle-artifacts folder synthesized 2026-09-14 during m9-79 archival sweep; cycle shipped before SDDK ledger reconciliation"
+    }
+  },
+  "files_changed": [
+    "crates/chronos-native/src/probe_backend.rs (+105)",
+    "crates/chronos-services/src/session_lifecycle.rs (+92)",
+    "crates/chronos-services/src/probe.rs (+160)",
+    "crates/chronos-services/src/error.rs (+7)",
+    "crates/chronos-mcp/src/server.rs (+16)",
+    "chronos-sandbox/src/client/tools.rs (±8)",
+    "chronos-sandbox/tests/session_lifecycle.rs (+34)",
+    "docs/manual-ai/en/08-session-management.md (+22)",
+    "docs/manual-ai/es/08-gestion-sesiones.md (+23)"
+  ],
+  "findings_closed": [],
+  "findings_introduced": {
+    "no_action": [],
+    "followup": []
+  },
+  "created_at": "2026-09-13T21:24:27Z",
+  "title": "m9-77 attach runtime",
+  "summary": "Wire session_start{action=attach} through native probe runtime, services, dispatcher and MCP. Closes the long-standing Unsupported(attach m7+) stub. A-min path, tag v0.7.79, merge 9d53316. Backfill synthesized 2026-09-14 during m9-79 archival sweep.",
+  "commits_since_base": [
+    "4bd2da365d938cff734aa7f287597f854862ea58",
+    "9d5331659f742e3be98995dfba26ff2a635f98ed"
+  ],
+  "notes": [
+    "backfill: cycle shipped before SDDK ledger reconciliation; CC#51 requires the cycle-artifacts folder to exist for the cycles/index.md row",
+    "tag_peel_drift: v0.7.79 points at code commit 4bd2da3, not merge 9d53316; preserved drift, CC#12 does not apply",
+    "next_recommended: m9-78 refines detach safety"
+  ]
+}

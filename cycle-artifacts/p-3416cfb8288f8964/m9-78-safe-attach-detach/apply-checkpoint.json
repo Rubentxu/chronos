@@ -1,0 +1,66 @@
+{
+  "head_sha": "009b75037357d069775ad4d7a0661684e27fc9ca",
+  "base_sha": "9d5331659f742e3be98995dfba26ff2a635f98ed",
+  "cycle_id": "m9-78-safe-attach-detach",
+  "cycle_record": "p-3416cfb8288f8964/m9-78-safe-attach-detach",
+  "branch": "feat/m9-78-attach-detach",
+  "path": "B-direct",
+  "route": "B-direct",
+  "status": "archived",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived",
+  "remote_tag": "v0.7.80",
+  "tag_peel_sha": "a2c70fe9b68120093313c88386d1ee6c53c5391c",
+  "main_sha": "009b75037357d069775ad4d7a0661684e27fc9ca",
+  "tag_peel_note": "v0.7.80 is on the code commit (a2c70fe), not the merge (009b750); preserved drift from before SDDK reconciliation",
+  "ff_merged": false,
+  "phases": {
+    "build": {
+      "status": "complete",
+      "commit_sha": "a2c70fe9b68120093313c88386d1ee6c53c5391c",
+      "commit_title": "fix(m9-78): detach attached probes without terminating targets",
+      "summary": "session_stop now wakes attached targets with SIGSTOP and lets the ptrace loop PTRACE_DETACH; spawned probes retain SIGKILL. 5 files, +44/-36."
+    },
+    "verify": {
+      "status": "complete",
+      "verdict": "PASS",
+      "critical_findings": 0,
+      "warning_findings": 0
+    },
+    "release": {
+      "status": "complete",
+      "tag": "v0.7.80",
+      "tag_sha": "4cd169a49db2075169ddc73bc7dc84a2137ea873",
+      "merge_commit_sha": "009b75037357d069775ad4d7a0661684e27fc9ca"
+    },
+    "archive": {
+      "status": "complete",
+      "note": "cycle-artifacts folder synthesized 2026-09-14 during m9-79 archival sweep"
+    }
+  },
+  "files_changed": [
+    "crates/chronos-native/src/probe_backend.rs (modified, attached-loop PTRACE_DETACH on stop)",
+    "crates/chronos-services/src/probe.rs (modified, SIGKILL path stays for spawned probes)",
+    "chronos-sandbox/tests/session_lifecycle.rs (modified, focused attach+detach test)",
+    "docs/manual-ai/en/08-session-management.md (modified)",
+    "docs/manual-ai/es/08-gestion-sesiones.md (modified)"
+  ],
+  "findings_closed": [],
+  "findings_introduced": {
+    "no_action": [],
+    "followup": []
+  },
+  "created_at": "2026-09-13T22:02:06Z",
+  "title": "m9-78 safe attach detach",
+  "summary": "Restore the safe-detach contract: session_stop on an attached session wakes the target with SIGSTOP and lets the ptrace loop PTRACE_DETACH instead of killing it. Spawned probes keep SIGKILL. B-direct, tag v0.7.80, merge 009b750. Backfill synthesized 2026-09-14 during m9-79 archival sweep.",
+  "commits_since_base": [
+    "a2c70fe9b68120093313c88386d1ee6c53c5391c",
+    "009b75037357d069775ad4d7a0661684e27fc9ca"
+  ],
+  "notes": [
+    "backfill: cycle shipped before SDDK ledger reconciliation",
+    "tag_peel_drift: v0.7.80 points at code commit a2c70fe, not merge 009b750; preserved drift",
+    "next_recommended: m9-79 distinguishes capability value"
+  ]
+}

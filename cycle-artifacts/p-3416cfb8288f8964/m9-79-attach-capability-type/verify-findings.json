@@ -1,0 +1,12 @@
+{
+  "schema": "verify-finding.schema.json",
+  "subject": {
+    "base": "009b75037357d069775ad4d7a0661684e27fc9ca",
+    "head": "917fcb036a56d6051af6429dd09225e7d0da4fe6",
+    "diff_digest": "74cf3c5328402689af856e791208851334203dbe065dacc400e395b511000f2d",
+    "working_tree_clean": true,
+    "verified_at": "2026-09-14T06:25:00+02:00",
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos"
+  },
+  "findings": []
+}
