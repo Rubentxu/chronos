@@ -1,5 +1,7 @@
 # Verify Report — m9-97-cc004-implicit-io-toctou
 
+> **Path**: A-min, evidence-backed vault-only closure
+
 ## Subject
 
 m9-97 validates and closes cc-004 as a false positive. The existing save path
