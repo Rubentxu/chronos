@@ -1,0 +1,72 @@
+[
+  {
+    "id": "FIND-M9-91-EVENTS-TOOL",
+    "title": "counterexample_bundle_events MCP tool added (closes m9-02-R4)",
+    "severity": "info",
+    "status": "closed",
+    "evidence": [
+      "crates/chronos-mcp/src/server.rs: CounterexampleBundleEventsParams + #[tool] counterexample_bundle_events handler + serialize arm",
+      "crates/chronos-services/src/counterexample.rs: CounterexampleOutput::Events variant + ChronosCounterexampleService::events method + 3 unit tests",
+      "crates/chronos-services/src/output.rs: CounterexampleBundleEventsOutputDto wire DTO",
+      "Wire envelope: {bundle_id, events_count, returned_events, next_offset}",
+      "T0 + T1 + T2 + T4-smoke all clean"
+    ],
+    "verification": {
+      "tier0_fmt_clippy": "clean",
+      "tier1_services": "267/267 (was 264, +3 new)",
+      "tier1_workspace": "all suites green",
+      "tier4_smoke_counterexample_tools": "12/12",
+      "tier4_smoke_e2e_connectivity": "1/1",
+      "tier4_smoke_analytics_tools": "4/4"
+    }
+  },
+  {
+    "id": "FIND-M9-91-PAGINATION",
+    "title": "Pagination semantics: in-memory offset/limit after v3 side-table load",
+    "severity": "info",
+    "status": "closed",
+    "evidence": [
+      "Service loads full events via bundle_events_or_legacy, then applies offset/limit in memory",
+      "next_offset = Some(offset + returned.len()) when more remain; None when fully consumed",
+      "Out-of-range offset returns empty slice with next_offset = None",
+      "Verified in test m9_91_events_pagination_with_limit_and_offset across 4 pages"
+    ],
+    "verification": {
+      "test_m9_91_pagination": "passed",
+      "pagination_strategy": "in-memory after full load",
+      "matches_spec": true
+    }
+  },
+  {
+    "id": "FIND-M9-91-LOAD-FAILED-MISSING-BUNDLE",
+    "title": "Missing bundle surfaces as ServiceError::LoadFailed at service + MCP boundary",
+    "severity": "info",
+    "status": "closed",
+    "evidence": [
+      "Service checks load_counterexample_bundle -> empty -> returns LoadFailed with explicit bundle_id in message",
+      "MCP tool handler maps the error to CallToolResult::error",
+      "Verified in test m9_91_events_missing_bundle_returns_load_failed"
+    ],
+    "verification": {
+      "test_m9_91_missing_bundle": "passed",
+      "error_propagation": "service -> mcp -> wire"
+    }
+  },
+  {
+    "id": "FIND-M9-91-TRACE-EVENT-NO-JSON-SCHEMA",
+    "title": "TraceEvent lacks JsonSchema impl; DTO used #[schemars(skip)] on the events Vec",
+    "severity": "info",
+    "status": "closed",
+    "evidence": [
+      "TraceEvent derives Debug, Clone, Serialize, Deserialize, PartialEq — but not JsonSchema",
+      "CounterexampleBundleEventsOutputDto marks `returned_events: Vec<TraceEvent>` with #[schemars(skip)]",
+      "Pragmatic fix — the inner events remain on the wire via their serde representation; the schema-generation simply treats them as opaque",
+      "Matches the convention used elsewhere when bundling opaque event payloads onto a wire DTO (e.g., replay_tools)"
+    ],
+    "verification": {
+      "compilation": "succeeds with #[schemars(skip)]",
+      "wire_format": "events serialized via TraceEvent's serde representation unchanged",
+      "schema": "events field omitted from generated JSON schema"
+    }
+  }
+]

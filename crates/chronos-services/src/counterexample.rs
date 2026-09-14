@@ -161,6 +161,18 @@ pub enum CounterexampleOutput {
         bundle_id: String,
         events_count: usize,
     },
+    /// m9-91: full events stream accessor for a persisted bundle. Closes
+    /// m9-02-R4 (the MCP tool surface previously only exposed the count,
+    /// not the events themselves). `events_count` is the total persisted
+    /// count; `returned_events` is the slice after `offset`/`limit`
+    /// pagination; `next_offset` is `Some(offset + returned_count)` if
+    /// more events remain, `None` otherwise.
+    Events {
+        bundle_id: String,
+        events_count: usize,
+        returned_events: Vec<chronos_domain::trace::TraceEvent>,
+        next_offset: Option<usize>,
+    },
 }
 
 /// Distinct failure modes for [`ChronosCounterexampleService::shrink`].
@@ -377,6 +389,69 @@ impl ChronosCounterexampleService {
         Ok(CounterexampleOutput::EventsCount {
             bundle_id: bundle_id.to_string(),
             events_count: count as usize,
+        })
+    }
+
+    /// Load the persisted events stream for a counterexample bundle.
+    ///
+    /// m9-91: closes `m9-02-R4` (the MCP tool surface previously only
+    /// exposed the count via [`Self::events_count`], not the events
+    /// themselves). Reads the `counterexample_bundle_events` side table
+    /// via [`chronos_store::SessionStore::load_counterexample_bundle_events`]
+    /// and applies `offset` + `limit` pagination in memory.
+    ///
+    /// - Verifies the bundle exists (via [`chronos_store::SessionStore::load_counterexample_bundle`])
+    ///   before reading events — a missing bundle returns
+    ///   `LoadFailed("no counterexample bundle with id `<id>`")`.
+    /// - `events_count` is the **total** count of persisted events (not
+    ///   the returned slice length).
+    /// - `next_offset` is `Some(offset + returned_events.len())` if more
+    ///   events remain after the slice, `None` otherwise.
+    /// - Pagination defaults to "return all events" (offset=0, limit=∞).
+    pub fn events(
+        ctx: &CounterexampleContext<'_>,
+        bundle_id: &str,
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> Result<CounterexampleOutput, ServiceError> {
+        // Verify the bundle exists before reading events.
+        let bundle = ctx
+            .store
+            .load_counterexample_bundle(bundle_id)
+            .map_err(|e| ServiceError::LoadFailed(format!("counterexample load: {e}")))?;
+        if bundle.is_none() {
+            return Err(ServiceError::LoadFailed(format!(
+                "no counterexample bundle with id `{bundle_id}`"
+            )));
+        }
+        // Load the events stream.
+        let all_events = ctx
+            .store
+            .load_counterexample_bundle_events(bundle_id)
+            .map_err(|e| ServiceError::LoadFailed(format!("counterexample events load: {e}")))?;
+        let events_count = all_events.len();
+        // Apply pagination.
+        let off = offset.unwrap_or(0);
+        let returned_events: Vec<chronos_domain::trace::TraceEvent> = if off >= events_count {
+            Vec::new()
+        } else {
+            let end = match limit {
+                Some(n) => (off + n).min(events_count),
+                None => events_count,
+            };
+            all_events[off..end].to_vec()
+        };
+        let returned_count = returned_events.len();
+        let next_offset = if off + returned_count < events_count {
+            Some(off + returned_count)
+        } else {
+            None
+        };
+        Ok(CounterexampleOutput::Events {
+            bundle_id: bundle_id.to_string(),
+            events_count,
+            returned_events,
+            next_offset,
         })
     }
 
@@ -3621,6 +3696,260 @@ mod tests {
         );
         for (i, evt) in loaded_events.iter().enumerate() {
             assert_eq!(evt.event_id, i as u64, "event {i} must match original");
+        }
+    }
+
+    // m9-91: closes m9-02-R4 — the new `events` accessor returns the full
+    // events stream via the service layer. Verifies (1) the load matches
+    // what was saved in order, (2) `next_offset == None` when the slice
+    // covers the full stream, (3) pagination via `limit` returns the
+    // correct next_offset, (4) a missing bundle returns LoadFailed.
+    #[tokio::test]
+    async fn m9_91_events_returns_full_stream_with_no_pagination() {
+        use crate::hypothesis_test::HypothesisTestContext;
+        use chronos_domain::property::PropertyValue;
+        use chronos_query::QueryEngine;
+        use chronos_store::SessionStore;
+        use std::collections::HashMap;
+        use tokio::sync::Mutex as TokioMutex;
+
+        let store = SessionStore::in_memory().expect("in_memory store");
+        let engines: HashMap<String, QueryEngine> = HashMap::new();
+        let engines = TokioMutex::new(engines);
+        let hyp_ctx = HypothesisTestContext { engines: &engines };
+        let ctx = CounterexampleContext {
+            store: &store,
+            hypothesis_ctx: &hyp_ctx,
+        };
+
+        // Build a bundle with 10 events.
+        let events: Vec<chronos_domain::TraceEvent> = (0u64..10)
+            .map(|id| {
+                chronos_domain::TraceEvent::new(
+                    id,
+                    id * 100,
+                    1,
+                    chronos_domain::EventType::FunctionEntry,
+                    chronos_domain::SourceLocation::new("test.rs", 10, "fn", 0x1000 + id),
+                    chronos_domain::EventData::Function {
+                        name: format!("fn_{id}"),
+                        signature: None,
+                        symbol_id: None,
+                        invocation_id: None,
+                        parent_invocation_id: None,
+                    },
+                )
+            })
+            .collect();
+
+        let saved = ChronosCounterexampleService::save(
+            &ctx,
+            "ws-m9-91-full",
+            HypothesisKind::Invariant,
+            (2, Some(PropertyValue::Number(1.0)), None, None),
+            &HypothesisInput {
+                session_id: "s".to_string(),
+                kind: HypothesisKind::Invariant,
+                scope: None,
+                comparison: None,
+                constant: Some(PropertyValue::Number(1.0)),
+                property_target: None,
+                predicate: None,
+                caller: None,
+                callee: None,
+                max_depth: None,
+            },
+            events.clone(),
+        )
+        .expect("save should succeed");
+        let saved_id = match saved {
+            CounterexampleOutput::Saved { summary, .. } => summary.bundle_id,
+            _ => panic!("expected Saved variant"),
+        };
+
+        // Load via new `events` accessor (no pagination).
+        let result = ChronosCounterexampleService::events(&ctx, &saved_id, None, None)
+            .expect("events should succeed");
+        match result {
+            CounterexampleOutput::Events {
+                bundle_id,
+                events_count,
+                returned_events,
+                next_offset,
+            } => {
+                assert_eq!(bundle_id, saved_id);
+                assert_eq!(events_count, 10, "events_count == total persisted");
+                assert_eq!(returned_events.len(), 10, "default returns all events");
+                assert_eq!(next_offset, None, "no more events after full slice");
+                for (i, evt) in returned_events.iter().enumerate() {
+                    assert_eq!(evt.event_id, i as u64, "event {i} must match original");
+                }
+            }
+            _ => panic!("expected Events variant"),
+        }
+    }
+
+    #[tokio::test]
+    async fn m9_91_events_pagination_with_limit_and_offset() {
+        use crate::hypothesis_test::HypothesisTestContext;
+        use chronos_domain::property::PropertyValue;
+        use chronos_query::QueryEngine;
+        use chronos_store::SessionStore;
+        use std::collections::HashMap;
+        use tokio::sync::Mutex as TokioMutex;
+
+        let store = SessionStore::in_memory().expect("in_memory store");
+        let engines: HashMap<String, QueryEngine> = HashMap::new();
+        let engines = TokioMutex::new(engines);
+        let hyp_ctx = HypothesisTestContext { engines: &engines };
+        let ctx = CounterexampleContext {
+            store: &store,
+            hypothesis_ctx: &hyp_ctx,
+        };
+
+        // 10 events.
+        let events: Vec<chronos_domain::TraceEvent> = (0u64..10)
+            .map(|id| {
+                chronos_domain::TraceEvent::new(
+                    id,
+                    id * 100,
+                    1,
+                    chronos_domain::EventType::FunctionEntry,
+                    chronos_domain::SourceLocation::new("test.rs", 10, "fn", 0x1000 + id),
+                    chronos_domain::EventData::Function {
+                        name: format!("fn_{id}"),
+                        signature: None,
+                        symbol_id: None,
+                        invocation_id: None,
+                        parent_invocation_id: None,
+                    },
+                )
+            })
+            .collect();
+        let saved = ChronosCounterexampleService::save(
+            &ctx,
+            "ws-m9-91-page",
+            HypothesisKind::Invariant,
+            (2, Some(PropertyValue::Number(1.0)), None, None),
+            &HypothesisInput {
+                session_id: "s".to_string(),
+                kind: HypothesisKind::Invariant,
+                scope: None,
+                comparison: None,
+                constant: Some(PropertyValue::Number(1.0)),
+                property_target: None,
+                predicate: None,
+                caller: None,
+                callee: None,
+                max_depth: None,
+            },
+            events.clone(),
+        )
+        .expect("save should succeed");
+        let saved_id = match saved {
+            CounterexampleOutput::Saved { summary, .. } => summary.bundle_id,
+            _ => panic!("expected Saved variant"),
+        };
+
+        // Page 1: offset=0, limit=3 -> events[0..3], next_offset=3.
+        let p1 = ChronosCounterexampleService::events(&ctx, &saved_id, Some(3), Some(0))
+            .expect("page 1 should succeed");
+        match p1 {
+            CounterexampleOutput::Events {
+                events_count,
+                returned_events,
+                next_offset,
+                ..
+            } => {
+                assert_eq!(events_count, 10);
+                assert_eq!(returned_events.len(), 3);
+                assert_eq!(returned_events[0].event_id, 0, "page 1 starts at event 0");
+                assert_eq!(next_offset, Some(3));
+            }
+            _ => panic!("expected Events variant"),
+        }
+
+        // Page 2: offset=3, limit=3 -> events[3..6], next_offset=6.
+        let p2 = ChronosCounterexampleService::events(&ctx, &saved_id, Some(3), Some(3))
+            .expect("page 2 should succeed");
+        match p2 {
+            CounterexampleOutput::Events {
+                events_count,
+                returned_events,
+                next_offset,
+                ..
+            } => {
+                assert_eq!(events_count, 10);
+                assert_eq!(returned_events.len(), 3);
+                assert_eq!(returned_events[0].event_id, 3);
+                assert_eq!(next_offset, Some(6));
+            }
+            _ => panic!("expected Events variant"),
+        }
+
+        // Page 4 (last partial): offset=9, limit=3 -> events[9..10],
+        // next_offset=None.
+        let p4 = ChronosCounterexampleService::events(&ctx, &saved_id, Some(3), Some(9))
+            .expect("page 4 should succeed");
+        match p4 {
+            CounterexampleOutput::Events {
+                events_count,
+                returned_events,
+                next_offset,
+                ..
+            } => {
+                assert_eq!(events_count, 10);
+                assert_eq!(returned_events.len(), 1, "only 1 event left after offset 9");
+                assert_eq!(returned_events[0].event_id, 9);
+                assert_eq!(next_offset, None);
+            }
+            _ => panic!("expected Events variant"),
+        }
+
+        // Out-of-range offset: offset=20 returns empty slice, next_offset=None.
+        let p_oor = ChronosCounterexampleService::events(&ctx, &saved_id, Some(5), Some(20))
+            .expect("out-of-range page should succeed");
+        match p_oor {
+            CounterexampleOutput::Events {
+                events_count,
+                returned_events,
+                next_offset,
+                ..
+            } => {
+                assert_eq!(events_count, 10);
+                assert!(returned_events.is_empty());
+                assert_eq!(next_offset, None);
+            }
+            _ => panic!("expected Events variant"),
+        }
+    }
+
+    #[tokio::test]
+    async fn m9_91_events_missing_bundle_returns_load_failed() {
+        use crate::hypothesis_test::HypothesisTestContext;
+        use chronos_query::QueryEngine;
+        use chronos_store::SessionStore;
+        use std::collections::HashMap;
+        use tokio::sync::Mutex as TokioMutex;
+
+        let store = SessionStore::in_memory().expect("in_memory store");
+        let engines: HashMap<String, QueryEngine> = HashMap::new();
+        let engines = TokioMutex::new(engines);
+        let hyp_ctx = HypothesisTestContext { engines: &engines };
+        let ctx = CounterexampleContext {
+            store: &store,
+            hypothesis_ctx: &hyp_ctx,
+        };
+
+        let result = ChronosCounterexampleService::events(&ctx, "no-such-bundle", None, None);
+        match result {
+            Err(crate::error::ServiceError::LoadFailed(msg)) => {
+                assert!(
+                    msg.contains("no counterexample bundle with id `no-such-bundle`"),
+                    "error message must identify the missing bundle: {msg}",
+                );
+            }
+            other => panic!("expected LoadFailed, got {other:?}"),
         }
     }
 }
