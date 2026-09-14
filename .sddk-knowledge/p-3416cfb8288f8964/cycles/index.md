@@ -120,6 +120,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-96 | m9-96-cc001-housekeeping | A-lite | `v0.7.98` | `2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a` | CLOSED |
 | m9-97 | m9-97-cc004-implicit-io-toctou | A-min | `v0.7.99` | `ddf059193287447dd866ea8818aafcceac660f70` | CLOSED |
 | m9-98 | m9-98-m902r4-ledger-closure | B-direct | `v0.7.100` | `5922928331a1bc01a794e641be1f3d4585ec7163` | CLOSED |
+| m10 | m10-ms-property-policy | A-min | `v0.7.101` | `95c998e7d3ea6f3ee2ad0c160a54b07f08554ceb` | CLOSED |
 
 ## Metadata
 

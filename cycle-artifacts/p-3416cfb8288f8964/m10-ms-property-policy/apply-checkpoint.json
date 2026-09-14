@@ -2,11 +2,11 @@
   "cycle_id": "m10-ms-property-policy",
   "route": "A-min",
   "tier": "T0+T2+T4-smoke",
-  "status": "implementation-complete",
+  "status": "CLOSED",
   "created_at": "2026-09-14",
   "title": "MS-PROPERTY-POLICY: property feed policy single owner",
   "summary": "Property::evaluate_feed / evaluate_feed_violation added to chronos-domain as single owner of the feed-level emptiness policy; capture adapters (observation_log, state_recorder) delegate. Closes architecture slice S3; acceptance F6/F10.",
-  "head_sha": "dca06743742296f353fab201298140713f41e0b8",
+  "head_sha": "95c998e7d3ea6f3ee2ad0c160a54b07f08554ceb",
   "base_sha": "1611064681fe5ea69bac0ed0a5f9fda76e931ced",
   "branch": "feat/m10-ms-property-policy",
   "findings_closed": [
@@ -26,5 +26,13 @@
   "notes": [
     "F6: policy owner is domain; capture session functions delegate to it",
     "F10: shared fixture tests evaluate_feed_* in domain"
-  ]
+  ],
+  "main_sha": "95c998e7d3ea6f3ee2ad0c160a54b07f08554ceb",
+  "remote_tag": "v0.7.101",
+  "remote_tag_peel": "95c998e7d3ea6f3ee2ad0c160a54b07f08554ceb",
+  "peel_match": true,
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "complete",
+  "archived_at": "2026-09-14"
 }
