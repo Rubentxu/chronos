@@ -1,0 +1,39 @@
+{
+  "subject": {
+    "head_sha": "82f60a4ad02b4099ba22bc32ecf27a4c2f24c2d0",
+    "base_sha": "1611064681fe5ea69bac0ed0a5f9fda76e931ced",
+    "cycle_id": "m10-ms-property-policy",
+    "branch": "feat/m10-ms-property-policy",
+    "route": "A-min"
+  },
+  "tier": "T0+T2+T4-smoke",
+  "checks": {
+    "t0": {
+      "status": "passed",
+      "command": "cargo fmt --all -- --check && cargo clippy -p chronos-domain -p chronos-capture -p chronos-services --all-targets -- -D warnings"
+    },
+    "t2": {
+      "status": "passed",
+      "result": "domain 153 ok, capture 26 lib + 2 integration ok, services 268 ok"
+    },
+    "workspace_lib": {
+      "status": "passed",
+      "result": "941 ok, 0 failed (chronos-native rerun serially per AGENTS.md flake: 103 ok)"
+    },
+    "t4_smoke": {
+      "status": "passed",
+      "command": "cargo test -p chronos-sandbox --test e2e_connectivity -- --test-threads=1",
+      "result": "1/1"
+    },
+    "f6_single_owner": {
+      "status": "passed",
+      "evidence": "feed-level emptiness policy exists only in chronos_domain::Property (evaluate_feed/evaluate_feed_violation); capture call sites delegate"
+    },
+    "f10_shared_fixture": {
+      "status": "passed",
+      "evidence": "domain tests evaluate_feed_empty_yields_unsupported_never_pass + evaluate_feed_non_empty_delegates_to_sequence_policy"
+    }
+  },
+  "verdict": "PASS",
+  "findings": []
+}

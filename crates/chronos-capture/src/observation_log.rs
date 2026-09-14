@@ -160,13 +160,8 @@ pub fn evaluate_property_on_session<B: ExecutionLogBackend + ?Sized>(
     property: &Property,
 ) -> Result<PropertySequenceOutcome, PersistError> {
     let values = replay_target(log, session, &property.observe)?;
-    if values.is_empty() {
-        return Ok(PropertySequenceOutcome::UnsupportedByRecordedEvidence {
-            index: 0,
-            reason: format!("no recorded observations for `{}`", property.observe),
-        });
-    }
-    Ok(property.evaluate_sequence(&values))
+    // Feed-level emptiness policy is owned by `chronos_domain::Property`.
+    Ok(property.evaluate_feed(&values))
 }
 
 /// Return the persisted violation bundle when `property` is violated by the
@@ -177,10 +172,8 @@ pub fn property_violation_on_session<B: ExecutionLogBackend + ?Sized>(
     property: &Property,
 ) -> Result<Option<PropertyViolation>, PersistError> {
     let values = replay_target(log, session, &property.observe)?;
-    if values.is_empty() {
-        return Ok(None);
-    }
-    Ok(property.evaluate_violation(&values))
+    // Feed-level emptiness policy is owned by `chronos_domain::Property`.
+    Ok(property.evaluate_feed_violation(&values))
 }
 
 /// Result of evaluating one property over a session observation feed.
