@@ -183,7 +183,7 @@ m9-roadmap project issue for the prioritized list.
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/apply-checkpoint.json` | `de751090752543c2301a3c7e5a410c0c0c9aa0199bbc1e486907899f41375790` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-80-property-policy-ownership/change-entry.md` | `a759367b8e085afeb3d2dcd3a0abbb71f7b72c9638651f632726733ee18ef1ff` |
 | vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `822284b2e06bd4ea027b9e158bbabab882e0f9a3de9ee9c64265e9d8701b9e6f` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `bd3b216cda546e80b293dbd6ad526c69f0b71c80ab796a603cdacac8299fce09` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `d370c78319548ace8a6d055ac1e988ff6fb6231b106f49d81e3c49e77244ea1c` |
 | source (domain lib) | `crates/chronos-domain/src/lib.rs` | (8 entries added to `pub use property::{…}` block at line 28) |
 | source (domain property) | `crates/chronos-domain/src/property.rs` | (+777/-165: 7 new types + 4 new pub fns + private `bfs_reach_domain` helper) |
 | source (services hypothesis_test) | `crates/chronos-services/src/hypothesis_test.rs` | (-239/+35: removed 10 private fns; 4 match arms delegate to domain) |
