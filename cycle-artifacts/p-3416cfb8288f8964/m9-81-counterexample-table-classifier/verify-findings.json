@@ -1,59 +1,151 @@
-# Verify Findings: m9-81
-
-> **Cycle**: `p-3416cfb8288f8964/m9-81-counterexample-table-classifier`
-> **Head SHA**: `a3f59ea0d1bd446cd20c12f3f62863d70deb0f3a`
-> **Base SHA**: `45b53df132186b09de75b543b87cf0bab23bd26e`
-> **Date**: 2026-09-14
-> **Path**: B-direct (T0 + T1)
-
-## Findings
-
-| ID | Severity | Description | Mitigation | Status |
-|---|---|---|---|---|
-| F-M9-81-01 | info | 6 read-path sites in `counterexample_storage.rs` previously hand-rolled the `TableDoesNotExist` / else-propagate policy. After this cycle, all 6 route through `chronos_store::table_error::classify_read_table_error().or_not_found(EMPTY)` (the helper m9-72 introduced). | Refactored; REQ-M9-81-01 PASS. | CLOSED |
-| F-M9-81-02 | info | Behavioural preservation: `cargo test -p chronos-store --lib` returned 74/0 before and after the refactor. Round-trip confirmed via `git stash` (reverted file -> 74/0; restored file -> 74/0). | Verified. | CLOSED |
-| F-M9-81-03 | info | `cargo fmt --all -- --check` failed once mid-cycle (long line at site 5; the `None::<CounterexampleBundleRecord>` annotation exceeded the line width). Resolved by `cargo fmt --all`. | Resolved. | CLOSED |
-| F-M9-81-04 | info | `cargo clippy --workspace --all-targets -- -D warnings` exits 0 on the cycle head. No new lints introduced. | Verified. | CLOSED |
-| F-M9-81-05 | info | Downstream `chronos-services` lib suite still passes (264 / 0) — `chronos_services::counterexample` is the only consumer of `chronos_store::counterexample_storage` and exercises the public API. | Verified. | CLOSED |
-| F-M9-81-06 | informational | The `sddk cycle` CLI gate evaluation is blocked by a pre-existing FOREIGN KEY constraint bug in `/var/home/rubentxu/.local/state/sddk/projects/p-3416cfb8288f8964/ledger.sqlite` (duplicate `event_id` + `FOREIGN KEY constraint failed` warnings on every `evaluate-gate` call). The cycle is tracked manually via the project's standard vault artifacts (the same pattern m9-80 used). | Filed as a separate follow-up; not blocking m9-81. | OPEN (out of scope) |
-
-## Spec ↔ Evidence traceability
-
-| REQ | Scenario | Evidence | Status |
-|---|---|---|---|
-| REQ-M9-81-01 | `ce_storage_uses_canonical_helper_in_collect_bundle_chunks_range` | `grep -n 'classify_read_table_error' crates/chronos-store/src/counterexample_storage.rs` returns 6 hits; first at line 238 (= old site 237 + 1). | PASS |
-| REQ-M9-81-01 | `ce_storage_uses_canonical_helper_in_collect_v3_keys_for_bundle` | hit at line 286 (was 286). | PASS |
-| REQ-M9-81-01 | `ce_storage_uses_canonical_helper_in_collect_bundle_chunks_legacy` | hit at line 325 (was 326). | PASS |
-| REQ-M9-81-01 | `ce_storage_uses_canonical_helper_in_get_bundle_events_count` | hit at line 695 (was 697). | PASS |
-| REQ-M9-81-01 | `ce_storage_uses_canonical_helper_in_load_counterexample_bundle` | hit at line 872 (was 875). | PASS |
-| REQ-M9-81-01 | `ce_storage_uses_canonical_helper_in_list_counterexample_bundles` | hit at line 946 (was 950). | PASS |
-| REQ-M9-81-01 | `ce_storage_drops_inline_table_does_not_exist` | `grep -n 'redb::TableError::TableDoesNotExist\|TableError::TableDoesNotExist' crates/chronos-store/src/counterexample_storage.rs` returns 0 production hits (lines 859/933 are docstring text "TableDoesNotExist"). | PASS |
-| REQ-M9-81-02 | `ce_storage_test_load_counterexample_bundle_passes` | `cargo test -p chronos-store --lib counterexample_storage::tests::load_unknown_returns_none` PASS. | PASS |
-| REQ-M9-81-02 | `ce_storage_test_list_counterexample_bundles_passes` | `cargo test -p chronos-store --lib counterexample_storage::tests::list_with_limit_truncates` PASS; `list_filters_by_property_kind` PASS. | PASS |
-| REQ-M9-81-02 | `ce_storage_test_full_lib_suite_passes` | `cargo test -p chronos-store --lib --no-fail-fast`: 74 passed / 0 failed. | PASS |
-| REQ-M9-81-03 | `cargo fmt --all -- --check` exits 0 | exits 0 after `cargo fmt --all` applied. | PASS |
-| REQ-M9-81-03 | `cargo clippy --workspace --all-targets -- -D warnings` exits 0 | exits 0. | PASS |
-
-## Carry-forward
-
-- **Closed**: FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION (entry in `terms/index.md`).
-- **New (out of scope)**: `FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK` — `sddk cycle evaluate-gate` is unable to record admission events for any cycle on this project because of a pre-existing FOREIGN KEY constraint issue in the ledger DB. Recommend opening as a follow-up cycle once m9-81 reaches archive phase.
-
-## Tiers run
-
-| Tier | Command | Result | Wall time |
-|---|---|---|---|
-| T0 | `cargo fmt --all -- --check` (after `cargo fmt --all`) | PASS | 1.0s |
-| T0 | `cargo clippy --workspace --all-targets -- -D warnings` | PASS | 8.8s |
-| T1 | `cargo test -p chronos-store --lib --no-fail-fast` | 74 / 0 / 0 | 0.78s |
-| T1 (downstream smoke) | `cargo test -p chronos-services --lib --no-fail-fast` | 264 / 0 / 0 | 0.69s |
-
-## Lenses
-
-- **Behaviour lens**: behavioural preservation verified via stash round-trip
-  (74/74 match).
-- **Code-quality lens**: net -2 lines (11 inserts / 13 deletes); one
-  unused import removed; one new import added.
-- **Architectural lens**: the cycle keeps the existing layering
-  (`chronos-store::table_error` is the canonical helper; `cas.rs` /
-  `storage.rs` already use it; `counterexample_storage.rs` now does too).
+{
+  "cycle": "p-3416cfb8288f8964/m9-81-counterexample-table-classifier",
+  "cycle_id": "m9-81-counterexample-table-classifier",
+  "head_sha": "a3f59ea0d1bd446cd20c12f3f62863d70deb0f3a",
+  "base_sha": "45b53df132186b09de75b543b87cf0bab23bd26e",
+  "date": "2026-09-14",
+  "path": "B-direct",
+  "verdict": "passed",
+  "summary": "Closed FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION by routing 6 production read-path sites in crates/chronos-store/src/counterexample_storage.rs through the canonical table_error::classify_read_table_error helper. Behaviour-preserving refactor: 74/0 lib unit test counts match before and after (round-trip verified via git stash). Lint and clippy clean across the workspace.",
+  "findings": [
+    {
+      "id": "F-M9-81-01",
+      "severity": "info",
+      "description": "6 read-path sites in counterexample_storage.rs previously hand-rolled the TableDoesNotExist / else-propagate policy. After this cycle, all 6 route through chronos_store::table_error::classify_read_table_error().or_not_found(EMPTY).",
+      "mitigation": "Refactored; REQ-M9-81-01 PASS.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "F-M9-81-02",
+      "severity": "info",
+      "description": "Behavioural preservation: cargo test -p chronos-store --lib returned 74/0 before and after. Round-trip confirmed via git stash.",
+      "mitigation": "Verified.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "F-M9-81-03",
+      "severity": "info",
+      "description": "cargo fmt --all -- --check failed once mid-cycle (long line at site 5; the None::<CounterexampleBundleRecord> annotation exceeded the line width). Resolved by cargo fmt --all.",
+      "mitigation": "Resolved.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "F-M9-81-04",
+      "severity": "info",
+      "description": "cargo clippy --workspace --all-targets -- -D warnings exits 0 on the cycle head. No new lints introduced.",
+      "mitigation": "Verified.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "F-M9-81-05",
+      "severity": "info",
+      "description": "Downstream chronos-services lib suite still passes (264 / 0).",
+      "mitigation": "Verified.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "F-M9-81-06",
+      "severity": "informational",
+      "description": "The sddk cycle CLI gate evaluation is blocked by a pre-existing FOREIGN KEY constraint bug in /var/home/rubentxu/.local/state/sddk/projects/p-3416cfb8288f8964/ledger.sqlite (duplicate event_id + FOREIGN KEY constraint failed warnings on every evaluate-gate call). The cycle is tracked manually via the project's standard vault artifacts.",
+      "mitigation": "Filed as separate follow-up; not blocking m9-81.",
+      "status": "OPEN_OUT_OF_SCOPE"
+    }
+  ],
+  "spec_traceability": [
+    {
+      "req": "REQ-M9-81-01",
+      "scenario": "ce_storage_uses_canonical_helper_in_collect_bundle_chunks_range",
+      "evidence": "grep returns 6 hits; first at line 238",
+      "status": "PASS"
+    },
+    {
+      "req": "REQ-M9-81-01",
+      "scenario": "ce_storage_uses_canonical_helper_in_collect_v3_keys_for_bundle",
+      "evidence": "hit at line 286",
+      "status": "PASS"
+    },
+    {
+      "req": "REQ-M9-81-01",
+      "scenario": "ce_storage_uses_canonical_helper_in_collect_bundle_chunks_legacy",
+      "evidence": "hit at line 325",
+      "status": "PASS"
+    },
+    {
+      "req": "REQ-M9-81-01",
+      "scenario": "ce_storage_uses_canonical_helper_in_get_bundle_events_count",
+      "evidence": "hit at line 695",
+      "status": "PASS"
+    },
+    {
+      "req": "REQ-M9-81-01",
+      "scenario": "ce_storage_uses_canonical_helper_in_load_counterexample_bundle",
+      "evidence": "hit at line 872",
+      "status": "PASS"
+    },
+    {
+      "req": "REQ-M9-81-01",
+      "scenario": "ce_storage_uses_canonical_helper_in_list_counterexample_bundles",
+      "evidence": "hit at line 946",
+      "status": "PASS"
+    },
+    {
+      "req": "REQ-M9-81-01",
+      "scenario": "ce_storage_drops_inline_table_does_not_exist",
+      "evidence": "0 production hits",
+      "status": "PASS"
+    },
+    {
+      "req": "REQ-M9-81-02",
+      "scenario": "ce_storage_test_full_lib_suite_passes",
+      "evidence": "cargo test -p chronos-store --lib: 74/0 (matches baseline)",
+      "status": "PASS"
+    },
+    {
+      "req": "REQ-M9-81-03",
+      "scenario": "cargo_fmt_clean",
+      "evidence": "cargo fmt --all -- --check exits 0",
+      "status": "PASS"
+    },
+    {
+      "req": "REQ-M9-81-03",
+      "scenario": "cargo_clippy_clean",
+      "evidence": "cargo clippy --workspace --all-targets -- -D warnings exits 0",
+      "status": "PASS"
+    }
+  ],
+  "carry_forward": {
+    "closed": [
+      "FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION"
+    ],
+    "new_out_of_scope": [
+      "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK"
+    ]
+  },
+  "tiers_run": [
+    {
+      "tier": "T0",
+      "command": "cargo fmt --all -- --check (after cargo fmt --all applied)",
+      "result": "PASS",
+      "wall_seconds": 1.0
+    },
+    {
+      "tier": "T0",
+      "command": "cargo clippy --workspace --all-targets -- -D warnings",
+      "result": "PASS",
+      "wall_seconds": 8.8
+    },
+    {
+      "tier": "T1",
+      "command": "cargo test -p chronos-store --lib --no-fail-fast",
+      "result": "74 passed / 0 failed",
+      "wall_seconds": 0.78
+    },
+    {
+      "tier": "T1",
+      "command": "cargo test -p chronos-services --lib --no-fail-fast",
+      "result": "264 passed / 0 failed",
+      "scope": "downstream smoke",
+      "wall_seconds": 0.69
+    }
+  ]
+}

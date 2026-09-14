@@ -1,10 +1,34 @@
-# Verify Report: m9-81 chronos-store::counterexample_storage uses the canonical table_error helper
+# Verify Report — m9-81-counterexample-table-classifier
+
+## Subject
+
+| Field | Value |
+|---|---|
+| Cycle | `m9-81-counterexample-table-classifier` |
+| Path | B-direct |
+| Head SHA | `a3f59ea0d1bd446cd20c12f3f62863d70deb0f3a` |
+| Base SHA | `45b53df132186b09de75b543b87cf0bab23bd26e` |
+| Tag (when released) | `v0.7.83` |
+| Merge SHA | `fdc5accf64be1fcf780913243aec0496ad48e7fe` |
+
+
 
 > **Cycle**: `p-3416cfb8288f8964/m9-81-counterexample-table-classifier`
 > **Path**: B-direct
 > **Head SHA**: `a3f59ea0d1bd446cd20c12f3f62863d70deb0f3a`
 > **Base SHA**: `45b53df132186b09de75b543b87cf0bab23bd26e`
 > **Date**: 2026-09-14
+
+## Summary
+
+m9-81 closes FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION by
+routing 6 production read-path sites in
+`crates/chronos-store/src/counterexample_storage.rs` through the canonical
+`chronos_store::table_error::classify_read_table_error()` helper that
+m9-72 introduced for `cas.rs` and `storage.rs`. Behaviour-preserving
+refactor: 74 / 0 lib unit test counts match before and after.
+
+Path: B-direct. Tiers run: T0 + T1. Wall time: ~30 min.
 
 ## Verdict: PASS
 
@@ -65,7 +89,16 @@ clean across the workspace.
 
 ## Findings
 
-See `verify-findings.json`.
+| ID | Severity | Description | Mitigation | Status |
+|---|---|---|---|---|
+| F1 | info | 6 read-path sites in counterexample_storage.rs previously hand-rolled the TableDoesNotExist / else-propagate policy. After this cycle, all 6 route through chronos_store::table_error::classify_read_table_error().or_not_found(EMPTY). | Refactored; REQ-M9-81-01 PASS. | CLOSED |
+| F2 | info | Behavioural preservation: cargo test -p chronos-store --lib returned 74/0 before and after. Round-trip confirmed via git stash. | Verified. | CLOSED |
+| F3 | info | cargo fmt --all -- --check failed once mid-cycle (long line at site 5; the None::<CounterexampleBundleRecord> annotation exceeded the line width). Resolved by cargo fmt --all. | Resolved. | CLOSED |
+| F4 | info | cargo clippy --workspace --all-targets -- -D warnings exits 0 on the cycle head. No new lints introduced. | Verified. | CLOSED |
+| F5 | info | Downstream chronos-services lib suite still passes (264 / 0). | Verified. | CLOSED |
+| F6 | informational | The sddk cycle CLI gate evaluation is blocked by a pre-existing FOREIGN KEY constraint bug in /var/home/rubentxu/.local/state/sddk/projects/p-3416cfb8288f8964/ledger.sqlite. The cycle is tracked manually via the project's standard vault artifacts. | Filed as separate follow-up; not blocking m9-81. | OPEN_OUT_OF_SCOPE |
+
+See `verify-findings.json` for full JSON form.
 
 ## Recommendations
 

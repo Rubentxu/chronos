@@ -18,6 +18,7 @@
 | Main HEAD (before merge) | `45b53df132186b09de75b543b87cf0bab23bd26e` |
 | Main HEAD (after merge) | `fdc5accf64be1fcf780913243aec0496ad48e7fe` |
 | Merge type | `--no-ff` (preserves cycle topology) |
+| Base SHA | `45b53df132186b09de75b543b87cf0bab23bd26e` |
 | Origin push | done — `git push origin main v0.7.83` → main `a4c4dd9`, tag `v0.7.83` clean |
 
 ## Cycle identity
@@ -25,6 +26,9 @@
 | Field | Value |
 |---|---|
 | Cycle record | `p-3416cfb8288f8964/m9-81-counterexample-table-classifier` |
+| Remote tag | v0.7.83 |
+| Remote tag_peel | fdc5accf64be1fcf780913243aec0496ad48e7fe |
+| Peel match | true (tag_peel == merge_commit_sha == HEAD) |
 | Path | B-direct |
 | Tier required | T1 |
 | Tiers run | T0 + T1 |

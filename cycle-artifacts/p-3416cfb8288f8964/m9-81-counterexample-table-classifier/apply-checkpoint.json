@@ -1,6 +1,11 @@
 {
   "head_sha": "a3f59ea0d1bd446cd20c12f3f62863d70deb0f3a",
   "base_sha": "45b53df132186b09de75b543b87cf0bab23bd26e",
+  "main_sha": "fdc5accf64be1fcf780913243aec0496ad48e7fe",
+  "remote_tag": "v0.7.83",
+  "tag_peel_sha": "fdc5accf64be1fcf780913243aec0496ad48e7fe",
+  "tag_peel_note": "clean peel match: v0.7.83 tag points at merge commit fdc5acc (--no-ff merge of feat/m9-81-counterexample-table-classifier into main)",
+  "ff_merged": false,
   "cycle_id": "m9-81-counterexample-table-classifier",
   "cycle_record": "p-3416cfb8288f8964/m9-81-counterexample-table-classifier",
   "branch": "feat/m9-81-counterexample-table-classifier",
@@ -8,7 +13,7 @@
   "route": "B-direct",
   "status": "open",
   "verify_status": "passed",
-  "release_status": "pending",
+  "release_status": "released",
   "archive_status": "pending",
   "phases": {
     "explore": "complete",
