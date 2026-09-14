@@ -2733,3 +2733,39 @@ impl From<chronos_domain::property::InvariantOutcome> for HypothesisOutput {
         }
     }
 }
+
+impl From<chronos_domain::property::PropertyExistencePredicate> for ExistencePredicate {
+    fn from(p: chronos_domain::property::PropertyExistencePredicate) -> Self {
+        match p {
+            chronos_domain::property::PropertyExistencePredicate::EventTypeEquals {
+                event_type,
+            } => ExistencePredicate::EventTypeEquals { event_type },
+            chronos_domain::property::PropertyExistencePredicate::ThreadEquals { thread_id } => {
+                ExistencePredicate::ThreadEquals { thread_id }
+            }
+            chronos_domain::property::PropertyExistencePredicate::PropertyKeyEquals {
+                target,
+            } => ExistencePredicate::PropertyKeyEquals { target },
+            chronos_domain::property::PropertyExistencePredicate::VariableRead { .. }
+            | chronos_domain::property::PropertyExistencePredicate::EventTypeOnly => {
+                // Fallback: domain VariableRead / EventTypeOnly have no direct
+                // services analogue; map to EventTypeEquals function_entry.
+                ExistencePredicate::EventTypeEquals {
+                    event_type: "function_entry".into(),
+                }
+            }
+        }
+    }
+}
+
+impl From<chronos_domain::property::ExistenceOutcome> for HypothesisOutput {
+    fn from(outcome: chronos_domain::property::ExistenceOutcome) -> Self {
+        HypothesisOutput::Existence {
+            verdict: outcome.verdict.into(),
+            support_event_ids: outcome.support_event_ids,
+            counter_event_ids: outcome.counter_event_ids,
+            predicate: outcome.predicate.into(),
+            summary: outcome.summary,
+        }
+    }
+}

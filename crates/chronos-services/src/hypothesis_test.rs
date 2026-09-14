@@ -139,7 +139,38 @@ impl ChronosHypothesisTestService {
                 );
                 Ok(HypothesisOutput::from(outcome))
             }
-            HypothesisKind::Existence => Ok(eval_existence(&input, &events)),
+            HypothesisKind::Existence => {
+                // Translate the services-layer ExistencePredicate into the
+                // domain-owned PropertyExistencePredicate (m9-80 T2). The
+                // mapping is direct for EventTypeEquals / ThreadEquals /
+                // PropertyKeyEquals; anything else falls back to
+                // EventTypeEquals function_entry (matches the original
+                // default predicate when input.predicate is None).
+                let domain_predicate =
+                    match input.predicate.clone().unwrap_or_else(|| {
+                        ExistencePredicate::EventTypeEquals {
+                            event_type: "function_entry".into(),
+                        }
+                    }) {
+                        ExistencePredicate::EventTypeEquals { event_type } => {
+                            chronos_domain::property::PropertyExistencePredicate::EventTypeEquals {
+                                event_type,
+                            }
+                        }
+                        ExistencePredicate::ThreadEquals { thread_id } => {
+                            chronos_domain::property::PropertyExistencePredicate::ThreadEquals {
+                                thread_id,
+                            }
+                        }
+                        ExistencePredicate::PropertyKeyEquals { target } => {
+                            chronos_domain::property::PropertyExistencePredicate::PropertyKeyEquals {
+                                target,
+                            }
+                        }
+                    };
+                let outcome = chronos_domain::property::eval_existence(&events, domain_predicate);
+                Ok(HypothesisOutput::from(outcome))
+            }
             HypothesisKind::CallPath => Ok(eval_call_path(&input, &events)),
         }
     }
@@ -193,126 +224,8 @@ fn outcome_to_envelope(
 // Existence
 // ---------------------------------------------------------------------------
 
-fn eval_existence(input: &HypothesisInput, events: &[TraceEvent]) -> HypothesisOutput {
-    let predicate =
-        input
-            .predicate
-            .clone()
-            .unwrap_or_else(|| ExistencePredicate::EventTypeEquals {
-                event_type: "function_entry".into(),
-            });
-
-    if events.is_empty() {
-        return HypothesisOutput::Existence {
-            verdict: HypothesisVerdict::Unsupported {
-                reason: "session has no captured events; cannot evaluate existence".into(),
-            },
-            support_event_ids: Vec::new(),
-            counter_event_ids: Vec::new(),
-            predicate,
-            summary: "no captured events in session".into(),
-        };
-    }
-
-    let support = scan_predicate(events, &predicate);
-
-    let (verdict, summary) = if !support.is_empty() {
-        (
-            HypothesisVerdict::Pass,
-            format!(
-                "found {} matching event(s) for {}",
-                support.len(),
-                predicate_label(&predicate)
-            ),
-        )
-    } else {
-        (
-            HypothesisVerdict::Violation {
-                reason: format!(
-                    "no captured event satisfied {}",
-                    predicate_label(&predicate)
-                ),
-            },
-            format!(
-                "0 matching events out of {} total for {}",
-                events.len(),
-                predicate_label(&predicate)
-            ),
-        )
-    };
-
-    HypothesisOutput::Existence {
-        verdict,
-        support_event_ids: support,
-        counter_event_ids: Vec::new(),
-        predicate,
-        summary,
-    }
-}
-
-fn scan_predicate(events: &[TraceEvent], predicate: &ExistencePredicate) -> Vec<u64> {
-    let mut support = Vec::new();
-    for ev in events {
-        let matches = match predicate {
-            ExistencePredicate::EventTypeEquals { event_type } => {
-                event_type_label(ev.event_type) == *event_type
-            }
-            ExistencePredicate::ThreadEquals { thread_id } => ev.thread_id == *thread_id,
-            ExistencePredicate::PropertyKeyEquals { target } => {
-                if let EventData::Variable(v) = &ev.data {
-                    let matches_name = v.name == *target
-                        || v.name.split('.').next_back() == Some(target)
-                        || v.name.ends_with(&format!(".{target}"));
-                    matches_name
-                } else {
-                    false
-                }
-            }
-        };
-        if matches {
-            support.push(ev.event_id);
-        }
-    }
-    support
-}
-
-fn predicate_label(p: &ExistencePredicate) -> String {
-    match p {
-        ExistencePredicate::EventTypeEquals { event_type } => {
-            format!("event_type={event_type}")
-        }
-        ExistencePredicate::ThreadEquals { thread_id } => format!("thread_id={thread_id}"),
-        ExistencePredicate::PropertyKeyEquals { target } => {
-            format!("property_key={target}")
-        }
-    }
-}
-
-fn event_type_label(t: EventType) -> &'static str {
-    match t {
-        EventType::SyscallEnter => "syscall_enter",
-        EventType::SyscallExit => "syscall_exit",
-        EventType::FunctionEntry => "function_entry",
-        EventType::FunctionExit => "function_exit",
-        EventType::VariableWrite => "variable_write",
-        EventType::MemoryWrite => "memory_write",
-        EventType::SignalDelivered => "signal_delivered",
-        EventType::BreakpointHit => "breakpoint_hit",
-        EventType::ThreadCreate => "thread_create",
-        EventType::ThreadExit => "thread_exit",
-        EventType::ExceptionThrown => "exception_thrown",
-        EventType::VariableRead => "variable_read",
-        EventType::MemoryAlloc => "memory_alloc",
-        EventType::MemoryFree => "memory_free",
-        EventType::MemoryRead => "memory_read",
-        EventType::ThreadSwitch => "thread_switch",
-        EventType::WatchTrigger => "watch_trigger",
-        EventType::ExceptionCaught => "exception_caught",
-        EventType::InvocationIncomplete => "invocation_incomplete",
-        EventType::Custom => "custom",
-        EventType::Unknown => "unknown",
-    }
-}
+// fn eval_existence, fn scan_predicate, fn predicate_label, fn event_type_label
+// all moved to chronos_domain::property in T2.
 
 // ---------------------------------------------------------------------------
 // CallPath

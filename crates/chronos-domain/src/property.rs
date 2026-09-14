@@ -9,7 +9,7 @@
 
 use std::fmt;
 
-use crate::trace::{EventData, TraceEvent};
+use crate::trace::{EventData, EventType, TraceEvent};
 
 /// Stable identifier for a declared property.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -1281,8 +1281,15 @@ pub struct InvariantOutcome {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PropertyExistencePredicate {
-    /// Match every event with the given `EventType` whose `EventData::Variable`
-    /// has a `name` equal to `var_name`.
+    /// Match `event_type == event_type` (e.g. `function_entry`).
+    EventTypeEquals { event_type: String },
+    /// Match `thread_id == thread_id`.
+    ThreadEquals { thread_id: u64 },
+    /// Match `property_target == target` (a recorded property key).
+    PropertyKeyEquals { target: String },
+    /// Reserved fallback for the original `VariableRead` shape from T0;
+    /// services-layer ExistencePredicate variants map to one of the above
+    /// or to this fallback when the input does not specify a target.
     VariableRead { var_name: String },
     /// Match every event with the given `EventType`.
     EventTypeOnly,
@@ -1463,7 +1470,8 @@ pub fn eval_invariant(
                     }
                     .evaluate(Some(&obs), None);
                     let mut counter_local: Vec<u64> = Vec::new();
-                    let (v, mut sm) = property_outcome_to_verdict(outcome, &comparison, &constant);
+                    let (v, mut sm) =
+                        property_outcome_to_verdict(outcome, &comparison, &constant);
                     if matches!(v, PropertyHypothesisVerdict::Violation { .. }) {
                         for id in &ids {
                             counter_local.push(*id);
@@ -1495,6 +1503,136 @@ pub fn eval_invariant(
         support_event_ids,
         counter_event_ids,
         observation,
+        summary,
+    }
+}
+
+/// String label for an `EventType` (matches the services-layer
+/// `event_type_label` so that hypothesis summaries are identical
+/// pre- and post-T2).
+fn event_type_label(t: EventType) -> &'static str {
+    match t {
+        EventType::SyscallEnter => "syscall_enter",
+        EventType::SyscallExit => "syscall_exit",
+        EventType::FunctionEntry => "function_entry",
+        EventType::FunctionExit => "function_exit",
+        EventType::VariableWrite => "variable_write",
+        EventType::MemoryWrite => "memory_write",
+        EventType::SignalDelivered => "signal_delivered",
+        EventType::BreakpointHit => "breakpoint_hit",
+        EventType::Custom => "custom",
+        EventType::Unknown => "unknown",
+        _ => "other",
+    }
+}
+
+/// Scan events for those matching the given predicate. Returns the
+/// matching event IDs in order.
+fn scan_predicate_domain(events: &[TraceEvent], predicate: &PropertyExistencePredicate) -> Vec<u64> {
+    let mut support = Vec::new();
+    for ev in events {
+        let matches = match predicate {
+            PropertyExistencePredicate::EventTypeEquals { event_type } => {
+                event_type_label(ev.event_type) == *event_type
+            }
+            PropertyExistencePredicate::ThreadEquals { thread_id } => ev.thread_id == *thread_id,
+            PropertyExistencePredicate::PropertyKeyEquals { target } => {
+                if let EventData::Variable(v) = &ev.data {
+                    v.name == *target
+                        || v.name.split('.').next_back() == Some(target)
+                        || v.name.ends_with(&format!(".{target}"))
+                } else {
+                    false
+                }
+            }
+            PropertyExistencePredicate::VariableRead { var_name } => {
+                if let EventData::Variable(v) = &ev.data {
+                    v.name == *var_name
+                        || v.name.split('.').next_back() == Some(var_name)
+                        || v.name.ends_with(&format!(".{var_name}"))
+                } else {
+                    false
+                }
+            }
+            PropertyExistencePredicate::EventTypeOnly => true,
+        };
+        if matches {
+            support.push(ev.event_id);
+        }
+    }
+    support
+}
+
+/// Short label for a predicate (used in summaries).
+fn predicate_label_domain(p: &PropertyExistencePredicate) -> String {
+    match p {
+        PropertyExistencePredicate::EventTypeEquals { event_type } => {
+            format!("event_type={event_type}")
+        }
+        PropertyExistencePredicate::ThreadEquals { thread_id } => format!("thread_id={thread_id}"),
+        PropertyExistencePredicate::PropertyKeyEquals { target } => {
+            format!("property_key={target}")
+        }
+        PropertyExistencePredicate::VariableRead { var_name } => {
+            format!("var_name={var_name}")
+        }
+        PropertyExistencePredicate::EventTypeOnly => "event_type=any".into(),
+    }
+}
+
+/// Evaluate an `Existence`-shaped hypothesis against the captured events.
+///
+/// Returns an [`ExistenceOutcome`] with the verdict (Pass / Violation /
+/// Unsupported), the matching event IDs, the predicate that was evaluated,
+/// and a human-readable summary.
+pub fn eval_existence(
+    events: &[TraceEvent],
+    predicate: PropertyExistencePredicate,
+) -> ExistenceOutcome {
+    if events.is_empty() {
+        return ExistenceOutcome {
+            verdict: PropertyHypothesisVerdict::Unsupported {
+                reason: "session has no captured events; cannot evaluate existence".into(),
+            },
+            support_event_ids: Vec::new(),
+            counter_event_ids: Vec::new(),
+            predicate,
+            summary: "no captured events in session".into(),
+        };
+    }
+
+    let support = scan_predicate_domain(events, &predicate);
+
+    let (verdict, summary) = if !support.is_empty() {
+        (
+            PropertyHypothesisVerdict::Pass,
+            format!(
+                "found {} matching event(s) for {}",
+                support.len(),
+                predicate_label_domain(&predicate)
+            ),
+        )
+    } else {
+        (
+            PropertyHypothesisVerdict::Violation {
+                reason: format!(
+                    "no captured event satisfied {}",
+                    predicate_label_domain(&predicate)
+                ),
+            },
+            format!(
+                "0 matching events out of {} total for {}",
+                events.len(),
+                predicate_label_domain(&predicate)
+            ),
+        )
+    };
+
+    ExistenceOutcome {
+        verdict,
+        support_event_ids: support,
+        counter_event_ids: Vec::new(),
+        predicate,
         summary,
     }
 }
