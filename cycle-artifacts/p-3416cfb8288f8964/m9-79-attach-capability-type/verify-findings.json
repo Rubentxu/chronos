@@ -6,7 +6,9 @@
     "diff_digest": "74cf3c5328402689af856e791208851334203dbe065dacc400e395b511000f2d",
     "working_tree_clean": true,
     "verified_at": "2026-09-14T06:25:00+02:00",
-    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos"
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
+    "verdict": "passed"
   },
+  "lens_summary": "m9-79 renames the attach capability snapshot literal from 'ebpf_user' to 'ptrace_attach' so attach sessions report the actual ptrace backend. One literal in crates/chronos-services/src/session_lifecycle.rs:198, matching sandbox assertion in chronos-sandbox/tests/session_lifecycle.rs:376, and matching manual updates in en + es. No public API change. T0 fmt + clippy clean; T2 chronos-services --lib 264 passed; T4 e2e_connectivity 1/1 (5.65 s) and session_lifecycle attach test 1/1 (15.26 s). No findings.",
   "findings": []
 }

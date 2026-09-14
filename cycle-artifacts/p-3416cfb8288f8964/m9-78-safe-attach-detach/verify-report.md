@@ -1,4 +1,7 @@
-# Verification Report: m9-78-safe-attach-detach (backfill)
+# Verify Report — m9-78
+
+**Path**: B-direct
+**Cycle**: m9-78-safe-attach-detach
 
 **Note**: Synthesized 2026-09-14 during the m9-79 archival sweep.
 

@@ -1,4 +1,7 @@
-# Verification Report: m9-77-attach-runtime (backfill)
+# Verify Report — m9-77
+
+**Path**: A-min
+**Cycle**: m9-77-attach-runtime
 
 **Note**: This artifact was synthesized during the m9-79 archival sweep
 (2026-09-14). The cycle shipped before the SDDK ledger was reconciled; CC#51

@@ -1,5 +1,8 @@
 # Release Report — m9-79-attach-capability-type
 
+**Path**: B-direct
+**Cycle**: m9-79-attach-capability-type
+
 ## Subject
 
 | Base | Head (verified) | Tag | Tag SHA | Tag peel | CWD | Verified at |

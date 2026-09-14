@@ -98,7 +98,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-74 | m9-74-cas-put-many-batching | B-direct | `v0.7.76` | `c2c0d3738d8295721eff30a12e7601af4010072f` | CLOSED |
 | m9-75 | m9-75-fail-closed-store-open | B-direct | `v0.7.77` | `ac33be59c8c177b7afef79d4440d8841dd7003d1` | CLOSED |
 | m9-76 | m9-76-cc4-regen-tool-in-repo | B-direct | `v0.7.78` | `613b326d24191fd0ceaba5a500ef5b59857bd68d` | CLOSED |
-| m9-77 | m9-77-session-attach-runtime | A-min | `v0.7.79` | `9d533162c7ec01e0d9eb21df09b87a37e0c916b0` | CLOSED |
+| m9-77 | m9-77-attach-runtime | A-min | `v0.7.79` | `9d533162c7ec01e0d9eb21df09b87a37e0c916b0` | CLOSED |
 | m9-78 | m9-78-safe-attach-detach | B-direct | `v0.7.80` | `009b75037357d069775ad4d7a0661684e27fc9ca` | CLOSED |
 | m9-79 | m9-79-attach-capability-type | B-direct | `v0.7.81` | `f41abd4580d078a3f5f1255ffd543573a4fa702d` | CLOSED |
 

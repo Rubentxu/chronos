@@ -1,5 +1,7 @@
 # Release Report — m9-78-safe-attach-detach (backfill)
 
+**Path**: B-direct
+**Cycle**: m9-78-safe-attach-detach
 **Note**: Synthesized 2026-09-14 during the m9-79 archival sweep. Cycle shipped
 2026-09-13T22:02:06Z, before SDDK ledger reconciliation.
 

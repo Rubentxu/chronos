@@ -6,7 +6,9 @@
     "diff_digest": null,
     "working_tree_clean": true,
     "verified_at": "2026-09-13T22:02:00+02:00",
-    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos"
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
+    "verdict": "passed"
   },
+  "lens_summary": "m9-78 restores safe detach on session_stop: SIGSTOP wakes the traced target, the ptrace loop PTRACE_DETACH, and the child process remains alive. Spawned probes keep the SIGKILL path. 5 files, +44/-36. T0 fmt + clippy clean; T1 chronos-native serial 101 passed / 13.02 s; T4 program_scenarios, e2e_connectivity, probe_lifecycle and the focused attach test all green. No findings.",
   "findings": []
 }

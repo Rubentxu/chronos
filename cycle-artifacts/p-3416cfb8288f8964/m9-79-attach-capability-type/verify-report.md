@@ -1,4 +1,7 @@
-# Verification Report: m9-79-attach-capability-type
+# Verify Report — m9-79
+
+**Path**: B-direct
+**Cycle**: m9-79-attach-capability-type
 
 ## Subject
 

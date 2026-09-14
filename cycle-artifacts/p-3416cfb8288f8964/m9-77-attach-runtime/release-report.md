@@ -1,5 +1,7 @@
 # Release Report — m9-77-attach-runtime (backfill)
 
+**Path**: A-min
+**Cycle**: m9-77-attach-runtime
 **Note**: Synthesized 2026-09-14 during the m9-79 archival sweep. Cycle shipped
 2026-09-13T21:24:27Z, before SDDK ledger reconciliation.
 

@@ -24,7 +24,7 @@ constrains the new literal already existed).
 
 | Campo | Valor |
 |---|---|
-| Cycle ID | `m9-79-attach-capability-type` |
+| Cycle | `m9-79-attach-capability-type` |
 | Path | B-direct |
 | Status | CLOSED |
 | Base SHA | `009b75037357d069775ad4d7a0661684e27fc9ca` |
@@ -130,12 +130,12 @@ chronos-domain fixture. Branch `feat/ms-property-policy` from
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-79-attach-capability-type/archive-manifest.md` | `8ab56f6c363795e1187546388665e34eef17cfaeec814f3e15d21e945c6d2c48` |
 | implementation-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-79-attach-capability-type/implementation-receipt.md` | `a908ad3ded6fc9c1876aaf398416bf6bf2bdd48e85ba05b6541996a2057984ff` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-79-attach-capability-type/verify-report.md` | `79ec4399902a9f8c09bb965bb17a431873263e47e7f326063e2825f93daaa54c` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-79-attach-capability-type/verify-findings.json` | `18a0a9f2632a1d5c0241dc9c324db03e1ef8fac53bd1b5c16e8b620167f4e7bf` |
-| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-79-attach-capability-type/release-receipt.md` | `c11a7c278df628ef185c22f5219dc646690f84c0fdbc6ec40e838bc028422a12` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-79-attach-capability-type/verify-report.md` | `f5e4193ba00d6124fc0c706b061b8460c6ddf6625fd9fbd3405b3d29dfb5fdc9` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-79-attach-capability-type/verify-findings.json` | `2d0e3079622b3aba8c81f62dfb85d7577a1f29ca93c4a30a48cc7d0a144dba70` |
+| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-79-attach-capability-type/release-receipt.md` | `d36c302ff497de56bb62d9e63e8cbe3fb174c63c4a2ea4ad6fdeff6e52fa6ec9` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-79-attach-capability-type/merge-receipt.md` | `785020aab42b6dfc02b6e661be11fa6ffd5315077e55a924a9fc24a1a0ac2314` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-79-attach-capability-type/change-entry.md` | `248dd43621039b4ff71807718c52fcc60f311d3ba02a05503340c1ec7743d772` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `a7ec282712b1222061836b6f0ff346d073e143a707db705583a4b2e5b10cf274` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `9efe74c29803ffdfbc694451eb840d0e99767ca22fc287a85aa22c32b5a747f8` |
 | vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `2de1623f94ba85f648bae660840c3989c3ce812eb7f4e43800765715db25bac0` |
 | source (renamed literal) | `crates/chronos-services/src/session_lifecycle.rs` | (1 line changed at line 198) |
 | test (updated assertion) | `chronos-sandbox/tests/session_lifecycle.rs` | (1 line changed at line 376) |
