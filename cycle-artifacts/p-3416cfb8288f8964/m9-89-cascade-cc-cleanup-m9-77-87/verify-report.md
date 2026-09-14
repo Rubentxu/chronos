@@ -13,9 +13,9 @@ A-lite (vault-only hardening). No Rust source code changes.
 | Path | A-lite |
 | Tier required | T0 + T2 |
 | Tier run | T0 (T1 in progress at write time) |
-| Base SHA | `a195367f8b6b9bc6e4286eedd2905c8c6c5d77de` (m9-88 vault commit) |
-| Head SHA | `7e8981bbc1f1aa6177022c9083a24193ffa9679b` (m9-89 artifacts commit) |
-| Main SHA | `7e8981bbc1f1aa6177022c9083a24193ffa9679b` |
+| Base SHA | `a195367d64bd1caa56dedea82195259deb7b671b` (m9-88 vault commit) |
+| Head SHA | `71c62e46f2cb10af7274fdbbaa584d933c0b73ce` (m9-89 merge commit) |
+| Main SHA | `71c62e46f2cb10af7274fdbbaa584d933c0b73ce` |
 
 ## Goal
 
@@ -118,14 +118,14 @@ See `verify-findings.json` for full structured findings:
 
 ## Cross-checks (CC#24 / CC#31 / CC#32 / CC#33)
 
-- `apply-checkpoint.head_sha` == `b860712...` (set; will equal merge SHA at release).
-- `apply-checkpoint.base_sha` == `a195367...` (m9-88 vault commit; verified via `git cat-file -e`).
-- `apply-checkpoint.remote_tag_peel` == null (tag not yet created; will be set at release per CC#42 fixpoint-cascade workaround).
-- `apply-checkpoint.peel_match` == null (will be True at release after tag move).
-- `apply-checkpoint.main_sha` == `apply-checkpoint.head_sha` (both `b860712...`).
-- `apply-checkpoint.status` == `"in_progress"` (mid-cycle; will be `CLOSED` at release).
+- `apply-checkpoint.head_sha` == `71c62e46f2cb10af7274fdbbaa584d933c0b73ce` (m9-89 merge commit).
+- `apply-checkpoint.base_sha` == `a195367d64bd1caa56dedea82195259deb7b671b` (m9-88 vault commit; verified via `git cat-file -e`).
+- `apply-checkpoint.remote_tag_peel` == `71c62e46f2cb10af7274fdbbaa584d933c0b73ce` (tag v0.7.91 moved to merge commit per CC#42 fixpoint-cascade workaround).
+- `apply-checkpoint.peel_match` == `true` (tag_peel == merge_commit_sha == HEAD).
+- `apply-checkpoint.main_sha` == `apply-checkpoint.head_sha` (both `71c62e4...`).
+- `apply-checkpoint.status` == `"CLOSED"`.
 - `apply-checkpoint.findings_introduced` is a dict with `no_action` subfield.
-- `apply-checkpoint.findings_closed` is a list (empty — m9-89 closes 0 findings, only adds).
+- `apply-checkpoint.findings_closed` is a list (2 closed: FIND-M9-89-CASCADE-DRIFT-CLOSED + carry of FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK).
 - `bash scripts/check_vault_drift.sh`: 12 of 12 cascading CCs (3,7,8,11,12,14,15,22,23,29,40,43) clean. Remaining: CC#6 (mid-cycle) + CC#46/CC#53 (deferred).
 - `python3 scripts/regen_manifest_index_shas.py --check`: clean (run after the fix tool; all 86 manifests at fixpoint).
 - `cargo fmt --all -- --check`: clean.

@@ -13,12 +13,12 @@
 
 | Field | Value |
 |---|---|
-| Base SHA | a195367f8b6b9bc6e4286eedd2905c8c6c5d77de |
-| Head SHA | 7e8981bbc1f1aa6177022c9083a24193ffa9679b |
-| Main SHA | 7e8981bbc1f1aa6177022c9083a24193ffa9679b |
+| Base SHA | a195367d64bd1caa56dedea82195259deb7b671b |
+| Head SHA | 71c62e46f2cb10af7274fdbbaa584d933c0b73ce |
+| Main SHA | 71c62e46f2cb10af7274fdbbaa584d933c0b73ce |
 | Remote tag | v0.7.91 |
-| Remote tag_peel | TBD (will be set at release) |
-| Peel match | TBD (will be True after tag move) |
+| Remote tag_peel | 71c62e46f2cb10af7274fdbbaa584d933c0b73ce |
+| Peel match | true (tag_peel == merge_commit_sha == HEAD) |
 
 ## SHAs (canonical table)
 
@@ -26,19 +26,20 @@
 |---|---|
 | Branch | chore/m9-89-cascade-cc-cleanup-m9-77-87 |
 | Date | 2026-09-14 |
-| Base SHA | a195367f8b6b9bc6e4286eedd2905c8c6c5d77de |
-| Head SHA | 7e8981bbc1f1aa6177022c9083a24193ffa9679b |
+| Base SHA | a195367d64bd1caa56dedea82195259deb7b671b |
+| Head SHA | 71c62e46f2cb10af7274fdbbaa584d933c0b73ce |
 | Remote tag | v0.7.91 |
-| Remote tag_peel | TBD (will be set at release) |
-| Peel match | TBD (will be True after tag move) |
+| Remote tag_peel | 71c62e46f2cb10af7274fdbbaa584d933c0b73ce |
+| Peel match | true (tag_peel == merge_commit_sha == HEAD) |
 
 ## Release notes
 
 - Vault-only hardening cycle. No Rust source code touched.
-- Tag `v0.7.91` will be pre-created at the cascade commit
-  (`b860712...`) and moved to the merge commit per the CC#42
-  fixpoint-cascade workaround (m9-83 handoff).
-- Cross-checks satisfied (at apply-time):
+- Tag `v0.7.91` was pre-created at the cascade commit
+  (`7e8981bbc1f1aa6177022c9083a24193ffa9679b`) and moved to the merge
+  commit (`71c62e46f2cb10af7274fdbbaa584d933c0b73ce`) per the CC#42
+  fixpoint-cascade workaround (m9-83 handoff). Peel match: true.
+- Cross-checks satisfied:
   - `bash scripts/check_vault_drift.sh`: 12 of 12 cascading CCs (3, 7,
     8, 11, 12, 14, 15, 22, 23, 29, 40, 43) clean.
   - `cargo fmt --all -- --check`: clean.

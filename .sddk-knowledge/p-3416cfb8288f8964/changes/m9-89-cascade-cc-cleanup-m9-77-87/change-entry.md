@@ -7,15 +7,15 @@
 | Cycle ID | `m9-89-cascade-cc-cleanup-m9-77-87` |
 | Workspace | `p-3416cfb8288f8964` |
 | Path | A-lite (vault-only hardening) |
-| Status | in_progress |
-| Base SHA | `a195367f8b6b9bc6e4286eedd2905c8c6c5d77de` |
-| Head SHA | `7e8981bbc1f1aa6177022c9083a24193ffa9679b` |
+| Status | CLOSED |
+| Base SHA | `a195367d64bd1caa56dedea82195259deb7b671b` |
+| Head SHA | `71c62e46f2cb10af7274fdbbaa584d933c0b73ce` |
 | Tag | `v0.7.91` |
 
 ## Subject
 
-- base_sha: `a195367f8b6b9bc6e4286eedd2905c8c6c5d77de`
-- head_sha: `7e8981bbc1f1aa6177022c9083a24193ffa9679b`
+- base_sha: `a195367d64bd1caa56dedea82195259deb7b671b`
+- head_sha: `71c62e46f2cb10af7274fdbbaa584d933c0b73ce`
 - cycle: m9-89
 - branch: `chore/m9-89-cascade-cc-cleanup-m9-77-87`
 

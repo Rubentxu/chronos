@@ -1,10 +1,11 @@
 # Release Report — m9-89-cascade-cc-cleanup-m9-77-87
 
-> **Cycle**: `p-3416cfb8288f8964/m9-89-cascade-cc-cleanup-m9-77-87`
+> **Cycle**: m9-89-cascade-cc-cleanup-m9-77-87
+> **Path**: A-lite (vault-only hardening)
 > **Tag**: `v0.7.91`
-> **Merge SHA**: TBD (will be set at release)
+> **Merge SHA**: `71c62e46f2cb10af7274fdbbaa584d933c0b73ce`
 > **Date archived**: 2026-09-14
-> **Status**: in_progress (mid-cycle)
+> **Status**: released
 
 ## What changed
 
@@ -38,12 +39,11 @@ tool: `scripts/fix_m9_89_cascade.py`.
 ## Verification
 
 - **T0** (fmt + clippy): clean.
-- **T1** (lib unit tests): in progress; vault-only cycle means baseline
-  preserved (77 store, 264 services, 35 cli, 103 native-serial).
+- **T1** (lib unit tests, `--test-threads=1`): 1036 tests passing; no regression vs main baseline.
 - **T2** (per-crate integration): not required for vault scope.
 - **T4** (sandbox smoke): not required for vault scope.
 - **CC drift sweep**: 12 of 12 cascading CCs clean. Remaining 2 lines
-  are CC#6 (mid-cycle, will resolve at release) and CC#46/CC#53
+  are CC#6 (mid-cycle, resolved at release) and CC#46/CC#53
   (deferred to FIND-M9-71 hardening).
 
 ## Findings
@@ -63,12 +63,21 @@ tool: `scripts/fix_m9_89_cascade.py`.
 None introduced; FIND-M9-81 remains external-deferred (sddk CLI bug,
 not actionable in chronos scope).
 
+## Cross-checks
+
+- `apply-checkpoint.head_sha` == `71c62e46f2cb10af7274fdbbaa584d933c0b73ce` (merge commit, `git cat-file -e` verified).
+- `apply-checkpoint.base_sha` == `a195367d64bd1caa56dedea82195259deb7b671b` (m9-88 vault commit).
+- `apply-checkpoint.peel_match` == `true` (tag `v0.7.91` peel == merge commit).
+- `apply-checkpoint.main_sha` == `apply-checkpoint.head_sha`.
+- `apply-checkpoint.status` == `"CLOSED"`.
+- `apply-checkpoint.archive_status` == `"complete"`.
+- `cycles/index.md` row added; Total cycles 88 → 89.
+- `scripts/regen_manifest_index_shas.py --check`: clean (86 manifests at fixpoint).
+- `cargo fmt --all -- --check`: clean.
+- `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+
 ## Status
 
-In progress at write time. Release will:
-1. Update `cycles/index.md` (Total cycles 88 → 89 + m9-89 row).
-2. Merge `chore/m9-89-cascade-cc-cleanup-m9-77-87` into `main` with `--no-ff`.
-3. Pre-create tag `v0.7.91` at cascade commit SHA, move to merge SHA.
-4. Push to origin.
-5. Archive to `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-89-cascade-cc-cleanup-m9-77-87/`.
-6. Write handoff to `.sddk-knowledge/p-3416cfb8288f8964/handoff/m9-89-cascade-cc-cleanup-m9-77-87-closure-2026-09-14.md`.
+Released as `v0.7.91` at merge commit `71c62e46f2cb10af7274fdbbaa584d933c0b73ce`.
+The branch `chore/m9-89-cascade-cc-cleanup-m9-77-87` was merged into `main`
+with `--no-ff` and will be deleted after this report is archived.
