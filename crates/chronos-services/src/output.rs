@@ -2547,15 +2547,13 @@ pub struct CounterexampleEventsCountOutputDto {
 ///
 /// The inner `returned_events` Vec is excluded from the schema; it
 /// reuses `chronos_domain::TraceEvent`'s serde representation directly,
-/// and `TraceEvent` does not (yet) implement `JsonSchema` (PRs welcome).
-/// Excluding it is the pragmatic fix and matches the convention used
-/// elsewhere when bundling opaque event payloads onto a wire DTO.
+/// and `TraceEvent` does (since m9-93 closed
+/// FIND-M9-91-TRACE-EVENT-NO-JSON-SCHEMA).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, JsonSchema)]
 #[schemars(rename_all = "snake_case")]
 pub struct CounterexampleBundleEventsOutputDto {
     pub bundle_id: String,
     pub events_count: usize,
-    #[schemars(skip)]
     pub returned_events: Vec<chronos_domain::TraceEvent>,
     pub next_offset: Option<usize>,
 }
@@ -2706,6 +2704,32 @@ mod counterexample_dto_tests {
         assert!(
             !dto.has_full_bundle,
             "m8-01 must never report has_full_bundle=true"
+        );
+    }
+
+    // ---- m9-93: JsonSchema derive tests ----
+
+    /// m9-93: REQ-m9-93-5. CounterexampleBundleEventsOutputDto's
+    /// `returned_events` field must appear in the published JSON
+    /// Schema (the m9-91 `#[schemars(skip)]` workaround was removed).
+    #[test]
+    fn bundle_events_dto_schema_includes_returned_events() {
+        let schema = schemars::schema_for!(CounterexampleBundleEventsOutputDto);
+        let json = serde_json::to_value(&schema).expect("serialize schema");
+        let props = json
+            .get("properties")
+            .and_then(|p| p.as_object())
+            .expect("DTO schema must have properties");
+        assert!(
+            props.contains_key("returned_events"),
+            "CounterexampleBundleEventsOutputDto schema missing \
+             `returned_events` (m9-93 closed the m9-91 schemars(skip))"
+        );
+        let returned = &props["returned_events"];
+        assert_eq!(
+            returned.get("type").and_then(|t| t.as_str()),
+            Some("array"),
+            "returned_events must be a JSON Schema array"
         );
     }
 }

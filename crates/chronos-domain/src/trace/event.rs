@@ -16,7 +16,7 @@ pub type TimestampNs = u64;
 pub type ThreadId = u64;
 
 /// The type of a trace event.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[repr(u8)]
 pub enum EventType {
@@ -120,7 +120,7 @@ impl std::fmt::Display for EventType {
 /// `SymbolId` so cross-binary symbol tables can be reconciled without
 /// string comparisons. The `language` tag is preserved so a Python
 /// `factorial` and a C `factorial` cannot collide on the hash blend.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub struct SymbolId {
     /// 64-bit FNV-1a-style hash of the function name (UTF-8 bytes).
     pub name_hash: u64,
@@ -149,7 +149,7 @@ impl SymbolId {
 /// Globally unique across processes (UUID v7 is timestamp-prefixed +
 /// random tail), sortable by capture time. Two distinct recursive calls
 /// of the same function carry distinct `InvocationId`s.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(transparent)]
 pub struct InvocationId(pub Uuid);
 
@@ -228,7 +228,7 @@ pub enum WasmEventKind {
 }
 
 /// Event-specific data carried by a [`TraceEvent`].
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub enum EventData {
     Empty,
 
@@ -416,7 +416,7 @@ pub enum EventData {
 }
 
 /// x86_64 CPU register state snapshot.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, JsonSchema)]
 pub struct RegisterState {
     pub rax: u64,
     pub rbx: u64,
@@ -439,7 +439,7 @@ pub struct RegisterState {
 }
 
 /// WebAssembly module information.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct WasmModuleInfo {
     /// Unique script identifier.
     pub script_id: String,
@@ -454,7 +454,7 @@ pub struct WasmModuleInfo {
 }
 
 /// WebAssembly function information.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct WasmFunctionInfo {
     /// Function index within the module.
     pub function_index: usize,
@@ -469,7 +469,7 @@ pub struct WasmFunctionInfo {
 }
 
 /// A single trace event — the fundamental unit of recorded execution.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct TraceEvent {
     /// Monotonically increasing event identifier within a session.
     pub event_id: EventId,
@@ -1479,5 +1479,52 @@ mod tests {
         let json = serde_json::to_string(&wasm_frame_no_opts).unwrap();
         let deserialized: super::EventData = serde_json::from_str(&json).unwrap();
         assert_eq!(wasm_frame_no_opts, deserialized);
+    }
+
+    // ---- m9-93: JsonSchema derive tests ----
+
+    /// m9-93: REQ-m9-93-1. TraceEvent must implement JsonSchema and
+    /// the schema must expose the 6 expected fields.
+    #[test]
+    fn trace_event_implements_json_schema() {
+        let schema = schemars::schema_for!(super::TraceEvent);
+        let json = serde_json::to_value(&schema).expect("serialize schema");
+        let props = json
+            .get("properties")
+            .and_then(|p| p.as_object())
+            .expect("TraceEvent schema must have properties object");
+        for required in [
+            "event_id",
+            "timestamp_ns",
+            "thread_id",
+            "event_type",
+            "location",
+            "data",
+        ] {
+            assert!(
+                props.contains_key(required),
+                "TraceEvent schema missing property `{required}`"
+            );
+        }
+    }
+
+    /// m9-93: REQ-m9-93-2. EventData must be represented as a oneOf
+    /// (or anyOf) over its ~14 variants.
+    #[test]
+    fn event_data_schema_is_oneof() {
+        let schema = schemars::schema_for!(super::EventData);
+        let json = serde_json::to_value(&schema).expect("serialize schema");
+        let one_of = json
+            .get("oneOf")
+            .or_else(|| json.get("anyOf"))
+            .expect("EventData schema must be a oneOf or anyOf");
+        let variants = one_of.as_array().expect("oneOf/anyOf must be a JSON array");
+        // EventData has 14 variants. Allow schemars to wrap some in
+        // `$ref` subschemas; count those as variants too.
+        assert!(
+            variants.len() >= 10,
+            "EventData schema should enumerate >=10 variants, got {}",
+            variants.len()
+        );
     }
 }

@@ -1,9 +1,10 @@
 //! Source location within a program.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Location in source code corresponding to a trace event.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Default, JsonSchema)]
 pub struct SourceLocation {
     /// Source file path (absolute or relative).
     pub file: Option<String>,

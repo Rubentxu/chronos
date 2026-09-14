@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 /// Programming language of the target program.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, schemars::JsonSchema)]
 pub enum Language {
     C,
     Cpp,

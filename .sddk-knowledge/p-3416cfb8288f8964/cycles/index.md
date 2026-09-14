@@ -114,6 +114,7 @@ Chronological record of all SDDK cycles for this project.
 | m9-90 | m9-90-stale-branches-cleanup | B-direct | `v0.7.92` | `42ee5df1d421b24f63424efc7204fba584080248` | CLOSED |
 | m9-91 | m9-91-counterexample-bundle-events-mcp-tool | A-min | `v0.7.93` | `f08ad351fc1b90d3428629a2a698eecaa8ccce32` | CLOSED |
 | m9-92 | m9-92-cc34-cc42-cleanup | B-direct | `v0.7.94` | `6900395d088ff89e7ee67c3260a244b3d864e4e2` | CLOSED |
+| m9-93 | m9-93-trace-event-json-schema | A-min | `v0.7.95` | `60db8b58bdcf9bb55549dad1e43c9d381b45939c` | CLOSED |
 
 ## Metadata
 
@@ -121,5 +122,5 @@ Chronological record of all SDDK cycles for this project.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-14T16:30Z |
-| Total cycles | 92 |
+| Last updated | 2026-09-14T17:43Z |
+| Total cycles | 93 |

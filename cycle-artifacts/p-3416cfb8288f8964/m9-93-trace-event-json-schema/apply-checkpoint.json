@@ -1,0 +1,97 @@
+{
+  "head_sha": "60db8b58bdcf9bb55549dad1e43c9d381b45939c",
+  "archived_at": "2026-09-14",
+  "peel_match": true,
+  "base_sha": "1b8164d209b521e341b6cbc433000d3a4f57aede",
+  "main_sha": "60db8b58bdcf9bb55549dad1e43c9d381b45939c",
+  "remote_tag": "v0.7.95",
+  "remote_tag_peel": "60db8b58bdcf9bb55549dad1e43c9d381b45939c",
+  "tag_peel_sha": "60db8b58bdcf9bb55549dad1e43c9d381b45939c",
+  "tag_peel_note": "non-standard: tag pre-created at cycle-artifacts commit SHA; will move through SHA-cascade fixpoint commits per CC#42 workaround (m9-83 handoff). m9-93 is an A-min Rust cycle so the cascade includes both SHA-bookkeeping commits AND a vault cascade for archive-manifest SHA-256 fixpoint.",
+  "ff_merged": false,
+  "cycle_id": "m9-93-trace-event-json-schema",
+  "cycle_record": "p-3416cfb8288f8964/m9-93-trace-event-json-schema",
+  "branch": "feat/m9-93-trace-event-json-schema",
+  "route": "A-min",
+  "status": "CLOSED",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "complete",
+  "phases": {
+    "explore": "complete",
+    "spec": "complete",
+    "tasks": "complete",
+    "apply": "complete",
+    "verify": "complete",
+    "release": "complete",
+    "archive": "in-progress"
+  },
+  "tier_required": "T2",
+  "tiers_run": ["T0", "T1", "T2", "T4-smoke"],
+  "tier_results": {
+    "T0": {
+      "fmt_check": "passed",
+      "clippy_check": "passed",
+      "scope": "workspace"
+    },
+    "T1": {
+      "test_command": "cargo test --workspace --lib -- --test-threads=1",
+      "all_passed": true,
+      "new_tests": [
+        "chronos_domain::trace::event::tests::trace_event_implements_json_schema",
+        "chronos_domain::trace::event::tests::event_data_schema_is_oneof",
+        "chronos_services::output::counterexample_dto_tests::bundle_events_dto_schema_includes_returned_events"
+      ]
+    },
+    "T2": {
+      "per_crate": {
+        "chronos-domain": 151,
+        "chronos-services": 268,
+        "chronos-store": 77,
+        "chronos-log": 48,
+        "chronos-index": 8,
+        "chronos-query": 77,
+        "chronos-capture": 26,
+        "chronos-mcp": 87
+      },
+      "workspace_total": 742,
+      "regression_check": "no regressions; +3 new tests vs m9-92"
+    },
+    "T4-smoke": {
+      "counterexample_tools": "passed (12/12)",
+      "e2e_connectivity": "passed (1/1)"
+    }
+  },
+  "created_at": "2026-09-14",
+  "title": "m9-93: TraceEvent JsonSchema derive (closes FIND-M9-91-TRACE-EVENT-NO-JSON-SCHEMA)",
+  "summary": "A-min Rust cycle. Adds schemars::JsonSchema derive to chronos_domain::TraceEvent and 11 transitive dependencies (EventData, EventType, RegisterState, WasmModuleInfo, WasmFunctionInfo, SymbolId, InvocationId, SourceLocation, VariableInfo, VariableScope, Language), then drops the m9-91 #[schemars(skip)] on CounterexampleBundleEventsOutputDto.returned_events. Enables schemars's uuid1 feature so InvocationId (Uuid wrapper) can derive JsonSchema. 3 new unit tests added (chronos-domain: 2, chronos-services: 1). No regressions: 742 lib tests pass (was 739 in m9-92, +3 new). T4-smoke: counterexample_tools (12/12) + e2e_connectivity (1/1) green.",
+  "findings_closed": ["FIND-M9-91-TRACE-EVENT-NO-JSON-SCHEMA"],
+  "findings_introduced": {
+    "no_action": [],
+    "followup": [],
+    "external_deferred": [
+      {
+        "id": "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK",
+        "reason": "external sddk CLI bug; not actionable in chronos scope (carried from m9-88)"
+      }
+    ]
+  },
+  "files_changed": [
+    "Cargo.toml (workspace): enabled schemars uuid1 feature",
+    "crates/chronos-domain/src/trace/event.rs: +6 derives, +2 unit tests",
+    "crates/chronos-domain/src/trace/location.rs: +1 derive",
+    "crates/chronos-domain/src/trace/session.rs: +1 derive",
+    "crates/chronos-domain/src/value/typed.rs: +2 derives",
+    "crates/chronos-services/src/output.rs: dropped #[schemars(skip)] on returned_events, +1 unit test"
+  ],
+  "shas": {
+    "source_commit": "2e2b7bda983a39d8e730162e2d6ffd3e55a03296",
+    "cycle_artifacts_commit": "60db8b58bdcf9bb55549dad1e43c9d381b45939c"
+  },
+  "carry_forward_findings": ["FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK"],
+  "out_of_scope": [
+    "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK",
+    "cc-001-god-module-keys-split",
+    "cc-004-implicit-io-toctou"
+  ]
+}
