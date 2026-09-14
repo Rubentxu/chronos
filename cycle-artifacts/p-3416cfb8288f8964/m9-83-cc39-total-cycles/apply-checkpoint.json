@@ -1,0 +1,85 @@
+{
+  "head_sha": "e5eb0f03c64a3f4a647f3edd0a164b057db98e37",
+  "base_sha": "a0f72c2a7fe36eaeb9c772505dfe563f85f42773",
+  "main_sha": "e5eb0f03c64a3f4a647f3edd0a164b057db98e37",
+  "remote_tag": "—",
+  "remote_tag_peel": "—",
+  "tag_peel_sha": "—",
+  "tag_peel_note": "no tag: trivial B-direct CC#39 fix with no code changes; release-receipt documents no-tag release",
+  "ff_merged": true,
+  "cycle_id": "m9-83-cc39-total-cycles",
+  "cycle_record": "p-3416cfb8288f8964/m9-83-cc39-total-cycles",
+  "branch": "fix/m9-83-cc39-total-cycles",
+  "path": "B-direct",
+  "route": "B-direct",
+  "status": "archived",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "complete",
+  "phases": {
+    "explore": "complete",
+    "spec": "complete",
+    "tasks": "complete",
+    "apply": "complete",
+    "verify": "complete",
+    "release": "complete",
+    "archive": "complete"
+  },
+  "tier_required": "T1",
+  "tiers_run": ["T0", "T1"],
+  "tier_results": {
+    "T0": {
+      "fmt_check": "passed",
+      "clippy_check": "passed",
+      "scope": "cycles/index.md + terms/index.md"
+    },
+    "T1": {
+      "test_command": "python3 scripts/regen_manifest_index_shas.py --check && bash scripts/check_vault_drift.sh",
+      "cc39_field_count": 83,
+      "cc39_row_count": 83,
+      "cc39_match": true,
+      "drift_after_fix": ["CC#48 (pre-existing, about script not cycle)", "CC#51 (pre-existing, about script not cycle)"]
+    }
+  },
+  "carry_forward_findings_closed": ["FIND-M9-83-CC39-TOTAL-CYCLES-OFF-BY-ONE"],
+  "carry_forward_findings_introduced": [],
+  "cc_delta": {
+    "added": [],
+    "modified": ["CC#39"],
+    "removed": [],
+    "touched": ["CC#39"]
+  },
+  "findings": [
+    {
+      "id": "FIND-M9-83-CC39-TOTAL-CYCLES-OFF-BY-ONE",
+      "title": "CC#39 Total cycles field vs row count off-by-one (m9-83 literal fix)",
+      "severity": "low",
+      "status": "closed",
+      "evidence": [
+        ".sddk-knowledge/p-3416cfb8288f8964/cycles/index.md#Total cycles",
+        "scripts/check_vault_drift.sh CC#39"
+      ]
+    }
+  ],
+  "commits": [
+    {
+      "sha": "e5eb0f03c64a3f4a647f3edd0a164b057db98e37",
+      "subject": "chore(vault): regen archive-manifest SHAs to fixpoint (post-apply-checkpoint flip)",
+      "files_changed": ["cycle-artifacts/p-3416cfb8288f8964/*/apply-checkpoint.json"]
+    }
+  ],
+  "notes": [
+    {
+      "phase": "T0",
+      "summary": "vault files prepared: exploration/proposal/spec/tasks added, cycles/index.md row added OPEN, terms/index.md bumped"
+    },
+    {
+      "phase": "T1",
+      "summary": "literal fix: cycles/index.md Total cycles 84 → 83 (matches row count); CC#39 field/row match verified"
+    },
+    {
+      "phase": "smoke_subset",
+      "summary": "n/a: trivial single-line edit, no sandbox/probe/mcp touched"
+    }
+  ]
+}
