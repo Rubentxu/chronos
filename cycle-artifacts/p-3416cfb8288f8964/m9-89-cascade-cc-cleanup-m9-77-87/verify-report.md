@@ -14,8 +14,8 @@ A-lite (vault-only hardening). No Rust source code changes.
 | Tier required | T0 + T2 |
 | Tier run | T0 (T1 in progress at write time) |
 | Base SHA | `a195367f8b6b9bc6e4286eedd2905c8c6c5d77de` (m9-88 vault commit) |
-| Head SHA | `b860712a7b86f0e2c1cd3f7e4ac6b1cf9e3b85a8` (m9-89 cascade commit) |
-| Main SHA | `b860712a7b86f0e2c1cd3f7e4ac6b1cf9e3b85a8` |
+| Head SHA | `7e8981bbc1f1aa6177022c9083a24193ffa9679b` (m9-89 artifacts commit) |
+| Main SHA | `7e8981bbc1f1aa6177022c9083a24193ffa9679b` |
 
 ## Goal
 
