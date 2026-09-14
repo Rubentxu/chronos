@@ -1736,3 +1736,48 @@ build broken if iteration overshoots session budget.
 9. Continue verify → debt-verify → release → archive.
 
 **Carry-forward unchanged**: FIND-M9-75/74/72/71/66, smoke-test flake.
+
+---
+
+## Session 2026-09-14T07:45Z — m9-80 T1 landed (eval_invariant moved)
+
+**T1 complete on branch `feat/m9-80-property-policy-ownership`** (pushed):
+- Commit `7990db9`: moves eval_invariant into chronos_domain::property,
+  adds 3 From impls in services/output.rs (Verdict, Observation,
+  InvariantOutcome -> HypothesisOutput), updates services match arm to
+  delegate. Removes fn eval_invariant / observe_property_target /
+  parse_property_value from services (moved to domain or dead).
+
+**Verification at T1**:
+- `cargo build --workspace`: 1m11s, exit 0
+- `cargo clippy -p chronos-domain -p chronos-services --all-targets -- -D warnings`: exit 0
+- `cargo fmt --all -- --check`: exit 0
+- `cargo test -p chronos-services --lib`: 264 passed
+- `cargo test -p chronos-domain --lib`: 149 passed
+- 13 hypothesis_test unit tests pass without assertion changes
+- check_vault_drift.sh PASS
+
+**Pattern confirmed**: T0 (types) + T1 (one function move + From impls +
+delegation + cleanup) is roughly 30 minutes of focused work with one
+compile-error iteration per function. The pattern is repeatable for T2/T3.
+
+**T2 next** (eval_existence):
+1. Add `pub fn eval_existence(events, predicate) -> ExistenceOutcome`
+   in domain.
+2. Add `impl From<ExistenceOutcome> for HypothesisOutput` and
+   `impl From<PropertyExistencePredicate> for ExistencePredicate` in
+   services/output.rs.
+3. Update Existence match arm in services/hypothesis_test.rs.
+4. Remove `fn eval_existence` from services.
+5. Tests pass: 264 services, 149 domain.
+
+**T3 same pattern for eval_call_path**.
+**T4**: observe_property_target is already in domain (T1). Add the
+Property re-export to chronos_domain lib root (already done in T0).
+Final delegation cleanup.
+**T5**: fmt + clippy + write implementation-receipt.md + verify-report.md +
+release-receipt.md + merge-receipt.md + release-report.md. Merge
+to main with --no-ff. Tag v0.7.82 (patch bump per the established
+convention; no wire/protocol change in this cycle).
+
+**Carry-forward unchanged**: FIND-M9-75/74/72/71/66, smoke-test flake.
