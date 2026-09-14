@@ -9,10 +9,10 @@
 | Branch | feat/m9-91-counterexample-bundle-events-mcp-tool |
 | Date | 2026-09-14 |
 | Base SHA | 5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d |
-| Head SHA | `c7cdaf54872a9b37bd4a70b8f1fbf497b80d4467` |
+| Head SHA | `3cd15929dc1558f5ed19d7f874b108b7004073cd` |
 | Merge SHA | 40a7ba23082c11f5dc2ec6a25a9a8d12cb9a4cfa |
 | Remote tag | v0.7.93 |
-| Tag peel SHA | c7cdaf54872a9b37bd4a70b8f1fbf497b80d4467 (cascade-finalized — matches current HEAD) |
+| Tag peel SHA | 3cd15929dc1558f5ed19d7f874b108b7004073cd (cascade-finalized — matches current HEAD) |
 
 ## Summary
 
@@ -96,7 +96,7 @@ analytics_tools) 17/17 green.
 ## Cross-checks
 
 - `apply-checkpoint.head_sha` == `release-receipt.head_sha` ==
-  `c7cdaf54872a9b37bd4a70b8f1fbf497b80d4467` (post-cascade current HEAD).
+  `3cd15929dc1558f5ed19d7f874b108b7004073cd` (post-cascade current HEAD).
 - `Remote tag` v0.7.93 peel: pre-created at cycle-artifacts commit
   `fdcb0dc4d9260d387dd8e7ee2eab4b022d10118c` per CC#42
   fixpoint-cascade workaround. Tag will move through cascade
