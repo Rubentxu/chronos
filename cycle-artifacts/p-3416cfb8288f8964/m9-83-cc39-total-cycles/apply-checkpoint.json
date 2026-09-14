@@ -1,12 +1,12 @@
 {
-  "head_sha": "e5eb0f03c64a3f4a647f3edd0a164b057db98e37",
+  "head_sha": "c9f89774fdd22c9cbb653fc38b785e869997df1e",
   "base_sha": "a0f72c2a7fe36eaeb9c772505dfe563f85f42773",
-  "main_sha": "e5eb0f03c64a3f4a647f3edd0a164b057db98e37",
+  "main_sha": "c9f89774fdd22c9cbb653fc38b785e869997df1e",
   "remote_tag": "—",
   "remote_tag_peel": "—",
   "tag_peel_sha": "—",
   "tag_peel_note": "no tag: trivial B-direct CC#39 fix with no code changes; release-receipt documents no-tag release",
-  "ff_merged": true,
+  "ff_merged": false,
   "cycle_id": "m9-83-cc39-total-cycles",
   "cycle_record": "p-3416cfb8288f8964/m9-83-cc39-total-cycles",
   "branch": "fix/m9-83-cc39-total-cycles",
@@ -63,9 +63,26 @@
   ],
   "commits": [
     {
-      "sha": "e5eb0f03c64a3f4a647f3edd0a164b057db98e37",
-      "subject": "chore(vault): regen archive-manifest SHAs to fixpoint (post-apply-checkpoint flip)",
-      "files_changed": ["cycle-artifacts/p-3416cfb8288f8964/*/apply-checkpoint.json"]
+      "sha": "dca1df3",
+      "subject": "m9-83: vault (exploration-report + proposal + spec + tasks)",
+      "files_changed": [".sddk-knowledge/p-3416cfb8288f8964/changes/m9-83-cc39-total-cycles/{exploration-report,proposal,spec,tasks}.md"]
+    },
+    {
+      "sha": "e7167bb",
+      "subject": "m9-83: cycle artifacts + Total cycles literal fix",
+      "files_changed": [
+        ".sddk-knowledge/p-3416cfb8288f8964/cycles/index.md",
+        ".sddk-knowledge/p-3416cfb8288f8964/terms/index.md",
+        "cycle-artifacts/p-3416cfb8288f8964/m9-83-cc39-total-cycles/",
+        ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-83-cc39-total-cycles/change-entry.md",
+        ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-83-cc39-total-cycles/archive-manifest.md"
+      ]
+    },
+    {
+      "sha": "c9f89774fdd22c9cbb653fc38b785e869997df1e",
+      "subject": "Merge fix/m9-83-cc39-total-cycles into main",
+      "files_changed": [],
+      "is_merge": true
     }
   ],
   "notes": [
