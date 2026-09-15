@@ -5,9 +5,9 @@
   "verify_status": "passed",
   "release_status": "released",
   "archive_status": "complete",
-  "head_sha": null,
+  "head_sha": "4732567ce805be9447e316f52c70fef8bf55c52a",
   "base_sha": "7130cf6e",
-  "main_sha": null,
+  "main_sha": "4732567ce805be9447e316f52c70fef8bf55c52a",
   "tier_required": "T0 only",
   "created_at": "2026-09-15",
   "title": "m10-vault-index-reconcile",
@@ -24,5 +24,7 @@
   "findings_introduced": {
     "no_action": []
   },
-  "note": "SHAs populated post-commit. This cycle is docs+index only (no Rust changes); head_sha will be the docs commit SHA."
+  "note": "SHAs populated post-commit. This cycle is docs+index only (no Rust changes); head_sha will be the docs commit SHA.",
+  "remote_tag": null,
+  "peel_match": null
 }
