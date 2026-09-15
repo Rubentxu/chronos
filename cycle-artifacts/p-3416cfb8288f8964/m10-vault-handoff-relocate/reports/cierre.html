@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cierre de Ciclo — m10-vault-handoff-relocate</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem; }
+        .container { background: #1e293b; border-radius: 12px; padding: 2rem 3rem; max-width: 640px; width: 100%; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
+        .badge { display: inline-block; background: #10b981; color: #fff; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 0.05em; }
+        h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; color: #f8fafc; }
+        .meta { color: #94a3b8; font-size: 0.875rem; margin-bottom: 1.5rem; }
+        .meta span { display: block; }
+        .summary { background: #334155; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; }
+        .summary p { font-size: 0.9rem; line-height: 1.6; color: #cbd5e1; }
+        .checks { list-style: none; }
+        .checks li { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.5rem 0; font-size: 0.875rem; color: #cbd5e1; }
+        .checks li::before { content: '✓'; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; background: #10b981; color: #fff; border-radius: 50%; font-size: 0.7rem; font-weight: 700; flex-shrink: 0; margin-top: 2px; }
+        .checks li.partial::before { background: #f59e0b; content: '!'; }
+        .checks li.partial { color: #94a3b8; }
+        .footer { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #334155; font-size: 0.75rem; color: #64748b; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="badge">Cerrado</div>
+        <h1>m10-vault-handoff-relocate</h1>
+        <div class="meta">
+            <span><strong>Path:</strong> B-direct</span>
+            <span><strong>Tag:</strong> v0.7.106</span>
+            <span><strong>Fecha:</strong> 2026-09-15T09:29Z</span>
+        </div>
+        <div class="summary">
+            <p>Cierre de ciclo B-direct para remediar CC#18 drift. Se movieron 4 archivos HANDOFF-*.md al subdirectorio handoffs/ usando git mv (preserva historial). Se sintetizó verify-findings.json para m10-vault-last-updated-backfill. CC#18 ahora reporta 0 líneas de drift.</p>
+        </div>
+        <ul class="checks">
+            <li>cargo fmt — clean</li>
+            <li>cargo clippy — clean</li>
+            <li>regen_manifest_index_shas.py — clean (98 manifests)</li>
+            <li>check_vault_drift.sh — CC#18 clean</li>
+            <li class="partial">check_vault_drift.sh — CC#17 y CC#26 (pre-existing, fuera de scope)</li>
+        </ul>
+        <div class="footer">
+            Ciclo cerrado · Tag v0.7.106 · Merge SHA 340d64d969ba3df936f4c3e73720e8192d980d73
+        </div>
+    </div>
+</body>
+</html>
