@@ -1,99 +1,99 @@
 {
-  "all_passed": true,
-  "base_sha": "bf5597611dd7a2dc8f80c34a79996ef5531e313f",
-  "cycle": "p-3416cfb8288f8964/m9-84-cc001-god-module-keys-split",
+  "subject": {
+    "head_sha": "6bd7f02f69c75b1839ed8796af0b644c7d4eb4b0",
+    "base_sha": "bf5597611dd7a2dc8f80c34a79996ef5531e313f",
+    "cycle_id": "m9-84-cc001-god-module-keys-split",
+    "branch": "feat/m9-84-cc001-god-module-keys-split",
+    "route": "A-lite"
+  },
   "cycle_id": "m9-84-cc001-god-module-keys-split",
-  "date": "2026-09-14",
+  "verdict": "passed",
+  "all_passed": true,
+  "lens_summary": {
+    "drift": "5 legacy findings migrated by m10-m9-legacy-schema-migration",
+    "findings_count": 5,
+    "tiers_run": [
+      "T0",
+      "T1",
+      "T2",
+      "T3"
+    ],
+    "source_schema": "m10-legacy-migration-2026-09-15",
+    "legacy_findings_preserved": [
+      {
+        "description": "ce_chunk_keys.rs created with 8 helpers verbatim from counterexample_storage.rs: bundle_prefix, encode_chunk_key, decode_chunk_key, encode_chunk_value, decode_chunk_value, decode_chunk_payload, encode_chunk_key_legacy, decode_chunk_key_legacy.",
+        "id": "F1",
+        "mitigation": "Done.",
+        "severity": "info",
+        "status": "CLOSED"
+      },
+      {
+        "description": "Submodule wired in counterexample_storage.rs via #[path = \"ce_chunk_keys.rs\"] pub(crate) mod ce_chunk_keys; plus pub(super) use re-export of all 8 items.",
+        "id": "F2",
+        "mitigation": "Done.",
+        "severity": "info",
+        "status": "CLOSED"
+      },
+      {
+        "description": "Behaviour preservation: cargo test -p chronos-store --lib returned 77/0 before and after. Round-trip confirmed via git stash.",
+        "id": "F3",
+        "mitigation": "Verified.",
+        "severity": "info",
+        "status": "CLOSED"
+      },
+      {
+        "description": "Downstream compilation: chronos-services (264 lib tests) and chronos-cli build clean. encode_chunk_key_legacy still reachable at chronos_store::counterexample_storage::encode_chunk_key_legacy.",
+        "id": "F4",
+        "mitigation": "Verified.",
+        "severity": "info",
+        "status": "CLOSED"
+      },
+      {
+        "description": "cargo clippy --workspace --all-targets -- -D warnings exits 0. cargo fmt --all -- --check passes.",
+        "id": "F5",
+        "mitigation": "Verified (required one cargo fmt run to fix import-line wrapping in the new pub(super) use line).",
+        "severity": "info",
+        "status": "CLOSED"
+      }
+    ],
+    "legacy_findings_preserved_count": 5,
+    "source_table": "verify-report.md ## Findings"
+  },
   "findings": [
     {
-      "description": "ce_chunk_keys.rs created with 8 helpers verbatim from counterexample_storage.rs: bundle_prefix, encode_chunk_key, decode_chunk_key, encode_chunk_value, decode_chunk_value, decode_chunk_payload, encode_chunk_key_legacy, decode_chunk_key_legacy.",
       "id": "F1",
-      "mitigation": "Done.",
+      "title": "Finding F1 from verify-report.md table",
       "severity": "info",
-      "status": "CLOSED"
+      "status": "closed",
+      "source": "m10-legacy-migration-2026-09-15: derived from verify-report.md table"
     },
     {
-      "description": "Submodule wired in counterexample_storage.rs via #[path = \"ce_chunk_keys.rs\"] pub(crate) mod ce_chunk_keys; plus pub(super) use re-export of all 8 items.",
       "id": "F2",
-      "mitigation": "Done.",
+      "title": "Finding F2 from verify-report.md table",
       "severity": "info",
-      "status": "CLOSED"
+      "status": "closed",
+      "source": "m10-legacy-migration-2026-09-15: derived from verify-report.md table"
     },
     {
-      "description": "Behaviour preservation: cargo test -p chronos-store --lib returned 77/0 before and after. Round-trip confirmed via git stash.",
       "id": "F3",
-      "mitigation": "Verified.",
+      "title": "Finding F3 from verify-report.md table",
       "severity": "info",
-      "status": "CLOSED"
+      "status": "closed",
+      "source": "m10-legacy-migration-2026-09-15: derived from verify-report.md table"
     },
     {
-      "description": "Downstream compilation: chronos-services (264 lib tests) and chronos-cli build clean. encode_chunk_key_legacy still reachable at chronos_store::counterexample_storage::encode_chunk_key_legacy.",
       "id": "F4",
-      "mitigation": "Verified.",
+      "title": "Finding F4 from verify-report.md table",
       "severity": "info",
-      "status": "CLOSED"
+      "status": "closed",
+      "source": "m10-legacy-migration-2026-09-15: derived from verify-report.md table"
     },
     {
-      "description": "cargo clippy --workspace --all-targets -- -D warnings exits 0. cargo fmt --all -- --check passes.",
       "id": "F5",
-      "mitigation": "Verified (required one cargo fmt run to fix import-line wrapping in the new pub(super) use line).",
+      "title": "Finding F5 from verify-report.md table",
       "severity": "info",
-      "status": "CLOSED"
+      "status": "closed",
+      "source": "m10-legacy-migration-2026-09-15: derived from verify-report.md table"
     }
-  ],
-  "head_sha": "6bd7f02f69c75b1839ed8796af0b644c7d4eb4b0",
-  "path": "A-lite",
-  "spec_traceability": [
-    {
-      "evidence": "cargo build -p chronos-store exits 0",
-      "req": "REQ-M9-84-01",
-      "scenario": "ce_chunk_keys_pure_functions_compile",
-      "status": "PASS"
-    },
-    {
-      "evidence": "cargo test -p chronos-services --lib 264/264 pass; cargo build -p chronos-cli success; no downstream import path changes required",
-      "req": "REQ-M9-84-02",
-      "scenario": "public_api_unchanged",
-      "status": "PASS"
-    },
-    {
-      "evidence": "77/77 pre and post (git stash round-trip)",
-      "req": "REQ-M9-84-03",
-      "scenario": "lib_tests_baseline_match",
-      "status": "PASS"
-    },
-    {
-      "evidence": "cargo clippy --workspace --all-targets -- -D warnings exits 0",
-      "req": "REQ-M9-84-04",
-      "scenario": "clippy_clean",
-      "status": "PASS"
-    },
-    {
-      "evidence": "cargo build --workspace exits 0",
-      "req": "REQ-M9-84-05",
-      "scenario": "workspace_compiles",
-      "status": "PASS"
-    },
-    {
-      "evidence": "wc -l: 2821 -> 2720 in counterexample_storage.rs; 134 lines added in ce_chunk_keys.rs (incl. doc comment)",
-      "req": "REQ-M9-84-06",
-      "scenario": "file_size_reduction",
-      "status": "PASS"
-    }
-  ],
-  "subject": {
-    "base_sha": "bf5597611dd7a2dc8f80c34a79996ef5531e313f",
-    "branch": "feat/m9-84-cc001-god-module-keys-split",
-    "cycle_id": "m9-84-cc001-god-module-keys-split",
-    "head_sha": "6bd7f02f69c75b1839ed8796af0b644c7d4eb4b0",
-    "route": "A-min"
-  },
-  "summary": "Closed FIND-M9-84-CE-CHUNK-KEYS-EXTRACT by extracting 8 chunk key/value encoding helpers from counterexample_storage.rs into a new sibling submodule ce_chunk_keys.rs. Behaviour-preserving lexical refactor. counterexample_storage.rs: 2821 -> 2720 lines (-101 net). Public surface unchanged (encode_chunk_key_legacy still reachable). 77/77 chronos-store lib tests pass (matches baseline). 264/264 chronos-services lib tests pass. cargo clippy --workspace clean. cargo fmt clean.",
-  "tier_results": {
-    "T0": "passed",
-    "T1": "passed",
-    "T2": "passed",
-    "T3": "passed"
-  },
-  "verdict": "passed"
+  ]
 }

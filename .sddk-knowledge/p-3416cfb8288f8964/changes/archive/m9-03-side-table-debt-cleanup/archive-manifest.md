@@ -125,4 +125,4 @@ No new specs introduced. Bounded debt-cleanup:
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/merge-receipt.md` | `dadafeafae2b71315551cd09d7225b53fe57eaf83a2e7755fd4516afd6f38804` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/release-receipt.md` | `22e07c410cb3b1203eca682e5c4d1768f4b87b4c376bbd5aa3ddeb31be1d2a59` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/release-report.md` | `ae7b2b1cbaba729f1138dc6a527af0f2822de538c9bf9bb7419d87aa3afd00a8` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/verify-report.md` | `ecbda18a1acf2fd0f7e145c6d361fa9c3e76e80a0e59a7282b7a6ff8fb126703` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-03-side-table-debt-cleanup/verify-report.md` | `5b7e15b3cc5099ba4b8c7936511069251e8ec7e97bacc3e4301bcefc6f7359ff` |

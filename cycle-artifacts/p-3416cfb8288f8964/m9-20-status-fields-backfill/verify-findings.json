@@ -1,24 +1,27 @@
 {
   "all_passed": true,
   "cycle_id": "m9-20",
-  "findings": [
-    {
-      "category": "schema-drift",
-      "id": "F1",
-      "resolution": "For each CLOSED cycle, set verify_status='passed', release_status='released', archive_status='archived'. Values derived from the status=CLOSED fact.",
-      "severity": "low",
-      "summary": "17 prior CLOSED cycles (m9-03..m9-18) had verify_status / release_status / archive_status all set to null. m9-19 introduced these fields but didn't backfill."
-    },
-    {
-      "category": "process",
-      "id": "F2",
-      "resolution": "Cross-check #13 will catch any future 'new field added, no backfill' drift.",
-      "severity": "informational",
-      "summary": "Added cross-check #13 to vault-drift-sweep.md enforcing these three fields on CLOSED cycles."
-    }
-  ],
+  "findings": [],
   "lens_summary": {
-    "drift": "Drift closure cycle. See verify-report.md and change-entry.md."
+    "drift": "Drift closure cycle. See verify-report.md and change-entry.md.",
+    "legacy_findings_preserved": [
+      {
+        "category": "schema-drift",
+        "id": "F1",
+        "resolution": "For each CLOSED cycle, set verify_status='passed', release_status='released', archive_status='archived'. Values derived from the status=CLOSED fact.",
+        "severity": "low",
+        "summary": "17 prior CLOSED cycles (m9-03..m9-18) had verify_status / release_status / archive_status all set to null. m9-19 introduced these fields but didn't backfill."
+      },
+      {
+        "category": "process",
+        "id": "F2",
+        "resolution": "Cross-check #13 will catch any future 'new field added, no backfill' drift.",
+        "severity": "informational",
+        "summary": "Added cross-check #13 to vault-drift-sweep.md enforcing these three fields on CLOSED cycles."
+      }
+    ],
+    "legacy_findings_preserved_count": 2,
+    "findings_count": 0
   },
   "subject": {
     "base_sha": "d66569159fe3e47404aee3b4e13a3c5b883c7d69",

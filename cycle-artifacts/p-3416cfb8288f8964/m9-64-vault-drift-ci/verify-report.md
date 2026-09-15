@@ -46,3 +46,7 @@ Single-commit B-direct cycle that closes a CI gap: added `.github/workflows/vaul
 ## History
 
 m9-64 was prompted by a session-end sweep that confirmed the 52 vault CCs were working but only running manually. The gap: any drift introduced between cycles would not be caught until the next SDDK cycle ran a sweep (typically several days later). m9-64 plugs the gap with minimal surface area: 1 workflow file, 1 shell script, no source code changes.
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

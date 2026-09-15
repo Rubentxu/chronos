@@ -238,3 +238,7 @@ AGENTS.md is a file the next agent reads as authority, the contradiction between
 §1's taxonomy and §2's command was a live defect, so it is fixed in-cycle rather
 than deferred. It ships as its own commit because it is unrelated to the store
 change and would otherwise obscure the diff under review.
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

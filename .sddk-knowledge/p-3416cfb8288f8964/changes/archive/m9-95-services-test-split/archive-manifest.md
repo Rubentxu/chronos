@@ -83,8 +83,8 @@ closed.
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-95-services-test-split/merge-receipt.md` | `d061665dec0e5fe9313e1643dadbb62563058fc6ac352f55379c17236cc035b6` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-95-services-test-split/release-receipt.md` | `00417bef70eeb4f87f999ab38115950f444f6a915df234866ba3be3ac74592a6` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-95-services-test-split/release-report.md` | `9797c10346f20694b4f918896796ce65fee5daaca49a694a30594394b42ff1f2` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-95-services-test-split/verify-findings.json` | `f4340ac3b04d0cc357191293867d86328201059547f7a48163dd7412257d579d` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-95-services-test-split/verify-report.md` | `fb3a87bc57fe278b32971483f3793204484dd802edc4a2c27509aa7b945d7c01` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-95-services-test-split/verify-findings.json` | `b70497578acad2b048958c62de7f97540b4abd3382a94fe7ae72ceb7ff33bc6f` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-95-services-test-split/verify-report.md` | `8b5c2a3c53e5752b375e4a3bd0d4ef1bbcad4548e8f0ed60c2b6bcb7a9f78a11` |
 | proposal | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-95-services-test-split/proposal.md` | `0a9fdf84af7d8d403a050cf14190074d5acd7a0168d35cd1a8d8becdad4d9713` |
 | spec | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-95-services-test-split/spec.md` | `db05a6eabfdc3548518bdd6a35bcd17a43622ebee5ca7842c120300a2b96e442` |
 | tasks | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-95-services-test-split/tasks.md` | `f9410ac784d1fb53f8c9afa2c8baa7491a3480d619117f483956dca1b11d3e0c` |

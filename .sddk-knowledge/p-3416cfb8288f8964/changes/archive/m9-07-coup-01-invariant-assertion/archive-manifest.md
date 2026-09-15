@@ -123,4 +123,4 @@ No new specs introduced. Trivial B-direct cleanup:
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-07-coup-01-invariant-assertion/merge-receipt.md` | `904aebad6b5cd30559b563ac3b27e2f333e8f09116e04761d20d499ac7b796c2` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-07-coup-01-invariant-assertion/release-receipt.md` | `a86eb8af84795eb2d3e0b67d9bdef2e4b6590dd95aee92bcd5b7867902c68868` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-07-coup-01-invariant-assertion/release-report.md` | `e8086f03294eda1ee01af0e997db5155da61668b0f6ee68fdba8773b1dd3af13` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-07-coup-01-invariant-assertion/verify-report.md` | `6298461d2b3a5335636f2405e383e5efac04b81b828c1343a5ee45e543fdb8ef` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-07-coup-01-invariant-assertion/verify-report.md` | `431732c36e5751810e3476bfc66a681d7cf20d06365e90671b7534d5451ec3d2` |

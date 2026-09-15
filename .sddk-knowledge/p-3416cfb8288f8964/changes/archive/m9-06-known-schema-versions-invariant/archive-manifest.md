@@ -125,4 +125,4 @@ No new specs introduced. Trivial B-direct cleanup:
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/merge-receipt.md` | `48362aba98041117605c5cca978c749d688143e1616d335226a17912e5298f10` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/release-receipt.md` | `5cdd56dae6b4d23479446d3fd14e241e33d8c2f885c48a46803fc741bc819b99` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/release-report.md` | `7c500ec81e34726d6ec3c880e015907b16b31461fbbeea5dbd10c836d754840f` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/verify-report.md` | `fd5c2c5ed60764ef29296a61815ce8db6bede76ab747bb2c56d0443a922aa5d8` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-06-known-schema-versions-invariant/verify-report.md` | `8d7e0df55bfb670336b4937537ef428110c8735aeaafc029a46e6ee60c45d405` |

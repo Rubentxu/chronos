@@ -1,19 +1,24 @@
 {
   "all_passed": true,
   "cycle_id": "m9-56",
-  "findings": [
-    {
-      "finding_id": "DRIFT-M9-56-DUPLICATE-CROSS-CHECKS-HEADING",
-      "rule_id": "vault_hygiene.release_report_format_drift",
-      "severity": "low",
-      "subject": {
-        "duplicates_removed": 12,
-        "missing_heading_re_added": 1
-      },
-      "summary": "13 release-report.md files had duplicate ## Cross-checks headings"
-    }
-  ],
-  "lens_summary": "m9-56 closed the duplicate Cross-checks heading drift class.",
+  "findings": [],
+  "lens_summary": {
+    "drift": "m9-56 closed the duplicate Cross-checks heading drift class.",
+    "legacy_findings_preserved": [
+      {
+        "finding_id": "DRIFT-M9-56-DUPLICATE-CROSS-CHECKS-HEADING",
+        "rule_id": "vault_hygiene.release_report_format_drift",
+        "severity": "low",
+        "subject": {
+          "duplicates_removed": 12,
+          "missing_heading_re_added": 1
+        },
+        "summary": "13 release-report.md files had duplicate ## Cross-checks headings"
+      }
+    ],
+    "legacy_findings_preserved_count": 1,
+    "findings_count": 0
+  },
   "schema": "verify-finding.schema.json",
   "subject": {
     "base_sha": "6bdf8ba506a61655edd82c997fca2137665ad8d6",

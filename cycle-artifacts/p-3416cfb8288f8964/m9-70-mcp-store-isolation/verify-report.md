@@ -103,3 +103,7 @@ Each fix was reverted in turn and the corresponding test observed to fail. Witho
 ## History
 
 m9-62 introduced the HIGH-5 bounded-join guard; m9-69 closed that deferral. While running m9-69's T1 gate, `chronos-mcp`'s `test_list_sessions_after_save` was found to fail deterministically on any machine with a populated `$HOME` store; m9-69 recorded `FIND-M9-69-MCP-STORE-ISOLATION` as deferred because both fixes have behavior implications. m9-70 closes it, and in doing so promotes the store's read path to a consistent contract: unreadable records are skipped, a missing table is empty, and tests never touch the developer's database.
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

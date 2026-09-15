@@ -43,3 +43,7 @@ requires the cycle-artifacts folder to exist, hence this backfill.
 - Backfill synthesized 2026-09-14 during the m9-79 archival sweep. The cycle
   itself shipped 2026-09-13T21:24:27Z.
 - The m9-78 cycle (next in the batch) refines the runtime added here.
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

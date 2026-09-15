@@ -198,3 +198,7 @@ apply-checkpoint.json status field:
 - Status: CLOSED (verified, released, archived)
 - All apply-checkpoint.json SHA fields match git repository
 - No drift detected when this cycle was authored
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

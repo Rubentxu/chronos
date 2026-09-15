@@ -99,3 +99,7 @@ No other stable IDs or relations changed in this cycle. The change is localised 
 ## Deviations
 
 None. The cycle is a one-literal rename with matching test assertion and matching manual updates in both languages.
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

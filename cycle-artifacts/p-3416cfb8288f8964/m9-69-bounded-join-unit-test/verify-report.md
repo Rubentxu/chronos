@@ -94,3 +94,7 @@ Also observed: parallel `cargo test -p chronos-native --lib` hangs (documented i
 ## History
 
 m9-62 introduced the HIGH-5 bounded-join guard in `stop_probe` to prevent a wedged probe thread from deadlocking the MCP response path. Its verify-report deferred the unit test because the hardcoded 10s timeout made the timeout branch cost 10s to exercise. m9-67 and m9-68 release-reports repeated the deferral. m9-69 closes it by extracting the pattern behind a parameterized timeout, which makes the branch testable in 0.1s. The deferral is now closed with no production behavior change.
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

@@ -64,13 +64,7 @@ m9-94 (just closed): workspace lib tests 1042; v0.7.96 released.
 
 ## Findings
 
-### Closed
-
-- **FIND-M9-94-SERVICES-COUNTEREXAMPLE-TESTS-MONOLITHIC** (opened m9-94, closed m9-95): the inline test block in `counterexample.rs` is now in a sibling file.
-
-### Carry-forward
-
-- **FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK** (carried from m9-88): external `sddk` CLI bug; cannot be fixed in chronos scope.
+None — clean state. (m10-legacy-migration)
 
 ## Files Inventory
 

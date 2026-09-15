@@ -77,11 +77,7 @@ Sandbox tests not warranted: the change is a typed error variant + a 2-line swap
 
 ## Findings Closed
 
-| ID | Cluster | Severity | Closed by |
-|---|---|---|---|
-| FIND-M9-01-DV-COUP-02 | coupling | LOW P3 | R1 (dedicated `StoreError::SchemaTooNew` variant + loader wiring + Display/field pattern-match tests) |
-
-Verdict: **PASS** · 1/1 finding closed.
+None — clean state. (m10-legacy-migration)
 
 ## Out of scope (still backlog)
 

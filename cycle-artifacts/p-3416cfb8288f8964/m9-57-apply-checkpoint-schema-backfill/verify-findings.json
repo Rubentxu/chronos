@@ -1,33 +1,38 @@
 {
   "all_passed": true,
   "cycle_id": "m9-57",
-  "findings": [
-    {
-      "finding_id": "DRIFT-M9-57-APPLY-CHECKPOINT-MISSING-FIELDS",
-      "rule_id": "vault_hygiene.apply_checkpoint_schema_drift",
-      "severity": "medium",
-      "subject": {
-        "fields_backfilled": 12,
-        "files_modified": 21
+  "findings": [],
+  "lens_summary": {
+    "drift": "m9-57 closed the apply-checkpoint schema drift class and hardened 4 CC regexes.",
+    "legacy_findings_preserved": [
+      {
+        "finding_id": "DRIFT-M9-57-APPLY-CHECKPOINT-MISSING-FIELDS",
+        "rule_id": "vault_hygiene.apply_checkpoint_schema_drift",
+        "severity": "medium",
+        "subject": {
+          "fields_backfilled": 12,
+          "files_modified": 21
+        },
+        "summary": "21 apply-checkpoint.json files missing 12 schema fields each (252 missing fields total)"
       },
-      "summary": "21 apply-checkpoint.json files missing 12 schema fields each (252 missing fields total)"
-    },
-    {
-      "finding_id": "DRIFT-M9-57-OVERLY-STRICT-CC-REGEX",
-      "rule_id": "vault_hygiene.cc_regex_drift",
-      "severity": "low",
-      "subject": {
-        "hardened": [
-          "CC#22",
-          "CC#23",
-          "CC#27",
-          "CC#30"
-        ]
-      },
-      "summary": "4 CC regexes overly strict"
-    }
-  ],
-  "lens_summary": "m9-57 closed the apply-checkpoint schema drift class and hardened 4 CC regexes.",
+      {
+        "finding_id": "DRIFT-M9-57-OVERLY-STRICT-CC-REGEX",
+        "rule_id": "vault_hygiene.cc_regex_drift",
+        "severity": "low",
+        "subject": {
+          "hardened": [
+            "CC#22",
+            "CC#23",
+            "CC#27",
+            "CC#30"
+          ]
+        },
+        "summary": "4 CC regexes overly strict"
+      }
+    ],
+    "legacy_findings_preserved_count": 2,
+    "findings_count": 0
+  },
   "schema": "verify-finding.schema.json",
   "subject": {
     "base_sha": "af49e06fd5509b11805e0d63a330c540294274ea",

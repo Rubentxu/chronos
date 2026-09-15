@@ -168,3 +168,7 @@ If unsure, `e2e_connectivity + analytics_tools` would have been a smaller subset
 - FIND-M9-75, FIND-M9-74, FIND-M9-72, FIND-M9-71: unchanged.
 - FIND-M9-66 (broken JSON in m9-66 verify-findings.json): unchanged.
 - Pre-existing smoke-test work-copy isolation flake: unchanged; `scripts/smoke_test_ccs.sh` not used as a CI gate.
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

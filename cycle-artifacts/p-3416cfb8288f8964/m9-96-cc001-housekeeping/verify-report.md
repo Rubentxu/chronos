@@ -58,15 +58,7 @@ m9-95 (just closed): workspace lib tests 1042; v0.7.97 released.
 
 ## Findings
 
-### Closed
-
-- **cc-001-god-module** (opened m9-04, closed m9-96): P2 MEDIUM
-  coupling debt finding; 5 distinct concerns + 2 test-block
-  monoliths resolved across 6 cycles (m9-84..m9-87 + m9-94 + m9-95).
-
-### Carry-forward
-
-- **FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK** (carried from m9-88): external `sddk` CLI bug; cannot be fixed in chronos scope.
+None — clean state. (m10-legacy-migration)
 
 ## Files Inventory
 

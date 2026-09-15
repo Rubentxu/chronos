@@ -169,3 +169,7 @@ All cross-checks match the baseline + delta recorded in
 2 files directly affected by m9-87; sibling submodules from m9-85
 unchanged. No production code change outside `ce_schema.rs` (a NEW
 sibling submodule).
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

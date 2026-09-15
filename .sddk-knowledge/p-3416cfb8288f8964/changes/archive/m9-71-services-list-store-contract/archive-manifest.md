@@ -75,8 +75,8 @@ Two commits:
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-71-services-list-store-contract/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
 | source (services sessions) | `crates/chronos-services/src/sessions.rs` | `3fa312d9b70dde97276debf0851561d07a675e3670c3e6ac1147df9ced5bf3cd` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/apply-checkpoint.json` | `cc5bb8dddb0d4ab50013f024f2267816c5293e4c230cf1b804708077e46b838b` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/verify-report.md` | `f759d47ee47c580457865f4d2842e48dc1e71ec28fcf281e513d7dc292e4a52d` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/verify-findings.json` | `5471cf07bf9cba88aa9358cd2126e2163a5b3076b62b2538102892b2958e78ad` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/verify-report.md` | `7c71a52040000a94cc8377134ce861c54eb5abdfeacf499a8b73e651a27cfb7b` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/verify-findings.json` | `f4dff9ccff6892cf56f16951a2f6ca083f378ff1716c55f2f2e36657544b57d3` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/release-report.md` | `b532010f348b5552b2b4d57f3104e152ecbd7158c5e88f76ff9bf4185add7fd6` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/release-receipt.md` | `5328e9ef4a76b1f48de59833052b2a65c9c6653c34aa1aa7f5188c85b7b97227` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/merge-receipt.md` | `9e92a663e685bed2f31cf8b64a3ae3b8ad53107164702ac60209121a738c3717` |

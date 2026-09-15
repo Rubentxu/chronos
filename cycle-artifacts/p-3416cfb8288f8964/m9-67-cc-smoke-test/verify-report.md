@@ -88,3 +88,7 @@ Two bugs were discovered in the smoke test script itself during the post-merge r
 2. **Shared output log**: all four tests wrote to a single `out.log`, so a passing test that ran after a failing test could mask the failure. Each test now writes to its own log (`cc4.log`, `cc39.log`, `cc46.log`, `meta.log`).
 
 These are exactly the kind of "silent CC failure" the smoke test is designed to catch — and they would have caused silent failures of the smoke test itself if not caught. The fix is the first cycle whose smoke test validated itself via dynamic reading (CC#39) and per-test logs (CC#48+CC#54).
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

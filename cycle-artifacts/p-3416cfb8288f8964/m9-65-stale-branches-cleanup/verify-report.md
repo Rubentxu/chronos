@@ -100,3 +100,7 @@ Remote not-merged (preserved):    19 branches
 ## History
 
 m9-65 was prompted by the same session-end sweep that triggered m9-63 (CC#52) and m9-64 (vault drift CI). The handoff already noted "stale branches detected (out of scope for SDDK cycles but worth noting in a follow-up". After closing m9-63 (forward-looking defense for stop-then-drain) and m9-64 (CI for vault CCs), the remaining drift was the branches themselves — 49 stale branches across M0-M9 because CC#46 was fix/m9-* only. m9-65 closes that drift with a single, focused cycle.
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

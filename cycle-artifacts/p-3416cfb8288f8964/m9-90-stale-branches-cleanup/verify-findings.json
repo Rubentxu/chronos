@@ -1,47 +1,60 @@
-# Verify Findings — m9-90-stale-branches-cleanup
-
-```json
 {
+  "subject": {
+    "head_sha": "5cdb4e1a2d38b53d53addf3eb04e25650fd01b9d",
+    "base_sha": "20e2649822c0c24509ff6419a48fe3113591ecf0",
+    "cycle_id": "m9-90-stale-branches-cleanup",
+    "branch": "chore/m9-90-stale-branches-cleanup",
+    "route": "B-direct"
+  },
   "cycle_id": "m9-90-stale-branches-cleanup",
-  "findings": [
-    {
-      "id": "FIND-M9-90-STALE-BRANCHES-DELETED",
-      "title": "9 stale feat/m9-* branches deleted (CC#46 + CC#53 closure)",
-      "severity": "info",
-      "status": "closed",
-      "evidence": [
-        "scripts/clean_m9_90_stale_branches.py (220 lines, idempotent, --dry-run, --reset-log)",
-        "scripts/branches-deleted-m9-90.log records 9 successful deletions + 0 preserved",
-        "git branch --list 'feat/m9-*' 'fix/m9-*' 'chore/m9-*' | wc -l = 1 (current cycle branch only)",
-        "git branch -r --list 'origin/feat/m9-*' 'origin/fix/m9-*' 'origin/chore/m9-*' | wc -l = 0",
-        "All 9 deletions verified via `git merge-base --is-ancestor` before action (CC#53 safety check)"
-      ]
-    },
-    {
-      "id": "FIND-M9-90-DEFERRED-CLOSED",
-      "title": "FIND-M9-89-STALE-BRANCHES-DEFERRED + FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION closed",
-      "severity": "info",
-      "status": "closed",
-      "evidence": [
-        "m9-89 left 9 stale feat/m9-* branches deferred (FIND-M9-89-STALE-BRANCHES-DEFERRED)",
-        "m9-65 originally missed these (m9-65 ran before m9-66..m9-78 cycles landed feat branches)",
-        "m9-90's clean_m9_90 tool is the reusable pattern for future stale-branch sweeps",
-        "Closes the deferred portion of FIND-M9-71"
-      ]
-    },
-    {
-      "id": "FIND-M9-90-NO-RUST-CHANGES",
-      "title": "m9-90 is vault-only: zero Rust source code changes",
-      "severity": "info",
-      "status": "closed",
-      "evidence": [
-        "Only files added: scripts/clean_m9_90_stale_branches.py + scripts/branches-deleted-m9-90.log",
-        "T0 fmt + clippy trivially clean (no Rust touched)",
-        "T1 unit tests not required (no runtime behavior change)"
-      ]
-    }
-  ],
   "verdict": "passed",
-  "summary": "m9-90 closes CC#46 + CC#53 by deleting 9 stale feat/m9-* branches (6 local + 3 remote). The clean_m9_90 tool is reusable for future stale-branch sweeps. Vault-only cycle, B-direct path, tag v0.7.92."
+  "all_passed": true,
+  "lens_summary": {
+    "drift": "3 legacy findings migrated by m10-m9-legacy-schema-migration",
+    "findings_count": 3,
+    "tiers_run": [
+      "T0"
+    ],
+    "source_schema": "m10-legacy-migration-2026-09-15",
+    "legacy_findings_preserved": [
+      {
+        "id": "FIND-M9-90-STALE-BRANCHES-DELETED",
+        "title": "9 stale feat/m9-* branches deleted (CC#46 + CC#53 closure)",
+        "severity": "info",
+        "status": "closed",
+        "evidence": [
+          "scripts/clean_m9_90_stale_branches.py (220 lines, idempotent, --dry-run, --reset-log)",
+          "scripts/branches-deleted-m9-90.log records 9 successful deletions + 0 preserved",
+          "git branch --list 'feat/m9-*' 'fix/m9-*' 'chore/m9-*' | wc -l = 1 (current cycle branch only)",
+          "git branch -r --list 'origin/feat/m9-*' 'origin/fix/m9-*' 'origin/chore/m9-*' | wc -l = 0",
+          "All 9 deletions verified via `git merge-base --is-ancestor` before action (CC#53 safety check)"
+        ]
+      },
+      {
+        "id": "FIND-M9-90-DEFERRED-CLOSED",
+        "title": "FIND-M9-89-STALE-BRANCHES-DEFERRED + FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION closed",
+        "severity": "info",
+        "status": "closed",
+        "evidence": [
+          "m9-89 left 9 stale feat/m9-* branches deferred (FIND-M9-89-STALE-BRANCHES-DEFERRED)",
+          "m9-65 originally missed these (m9-65 ran before m9-66..m9-78 cycles landed feat branches)",
+          "m9-90's clean_m9_90 tool is the reusable pattern for future stale-branch sweeps",
+          "Closes the deferred portion of FIND-M9-71"
+        ]
+      },
+      {
+        "id": "FIND-M9-90-NO-RUST-CHANGES",
+        "title": "m9-90 is vault-only: zero Rust source code changes",
+        "severity": "info",
+        "status": "closed",
+        "evidence": [
+          "Only files added: scripts/clean_m9_90_stale_branches.py + scripts/branches-deleted-m9-90.log",
+          "T0 fmt + clippy trivially clean (no Rust touched)",
+          "T1 unit tests not required (no runtime behavior change)"
+        ]
+      }
+    ],
+    "legacy_findings_preserved_count": 3
+  },
+  "findings": []
 }
-```

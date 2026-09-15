@@ -132,5 +132,5 @@ note: CLI ledger not available (sddk not in PATH). Ad-hoc cycle, no CLI storage.
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/merge-receipt.md` | `996fb52bbe26d8b51524eee8e3d0963a8b415300f591c0414849d9e0cf6e8cb8` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/release-receipt.md` | `b2a5c69fd3d062f551dc3f1920791a60ae8ae65d4259a295e0ceb9355c886168` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/release-report.md` | `0f1532a946c2ca617706ab58fadf86ac43319639b4848d78405599bf0a2039fc` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/verify-report.md` | `0698f9267c344518400c35eca4f5a40df4df70dba1e110e32b9b84474738c22a` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/verify-report.md` | `75b389b77ee15ead7c4a90cbc6206f136a1f73df7e83d847969a9b60c62c45d5` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-04-side-table-key-layout/verify-findings.json` | `46e49526afff7748b0954d3047a7ec498979524c247b803ea3ce2a5adba61e16` |

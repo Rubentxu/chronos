@@ -156,8 +156,8 @@ observed to fail for the reason the guard exists:
 | docs (agents manual) | `AGENTS.md` | `83d09aa421c0c0c06a8dc28d4a5ba27dbb66772f7a1310103f3c133969fe8924` |
 | docs (vault drift sweep) | `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md` | `0c57c1dacf0f30bd9ac4adf201dcdf9d60ee43ae858dd50276189d140eadb302` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/apply-checkpoint.json` | `232613564d78f9c0839f732c4b1647cf12f4582602c4073580cbf0cc6e20df0c` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/verify-report.md` | `c10f7d6c66d92dd01420a5dc64846ae717dd874c7e2334b138a9578d987adfcf` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/verify-findings.json` | `92d63a617504a3ba6ddf0501ce786649649bfb22aae7a39e12a302f4731b28ff` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/verify-report.md` | `f1cb8a70dff389ce95e8ea8283b7045ba0ba05adeb47c5b2846f3777fec4988a` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/verify-findings.json` | `50e67041b0abecd8ddf3a8aa48bf11bb89e4a1fb87daa9a305d48c0f3890dbce` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/release-report.md` | `4d269ba1b0bff938b0ac7b11706a5d871b1ee553c60ac5747399eaa438f97c93` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/release-receipt.md` | `a0f2475bfc990115cbabf9109f26c06ffcd3b05ade3ef55ee9c53e9c24816182` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/merge-receipt.md` | `fc364d5b3086d1f82ff641bf28d0cbaff7b8fdadfbbebf8cce0c8241c653269b` |

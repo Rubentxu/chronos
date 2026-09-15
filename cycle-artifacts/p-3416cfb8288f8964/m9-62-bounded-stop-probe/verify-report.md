@@ -42,3 +42,7 @@ Single-commit B-direct cycle that closes the m9-61 follow-up: restores the HIGH-
 ## History
 
 m9-62 was a planned follow-up to m9-61 (recorded in the m9-61 handoff: "Bounded join with timeout"). m9-61's inline `handle.join()` was correct for stop-then-drain ordering but lost the boundedness. m9-62 restores both guarantees without changing the API or the trait contract.
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

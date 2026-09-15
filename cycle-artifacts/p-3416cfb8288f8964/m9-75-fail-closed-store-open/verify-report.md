@@ -166,3 +166,7 @@ starts, which is exactly the plumbing the sandbox buckets exercise.
 - Binary-level acceptance: the same fixture (a directory as the store path) is
   observed to fail closed without the opt-in and to serve with it, so the test
   cannot pass because the fixture happens to be a valid store.
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

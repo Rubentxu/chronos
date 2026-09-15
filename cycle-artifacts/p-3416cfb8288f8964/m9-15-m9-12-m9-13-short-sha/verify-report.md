@@ -83,3 +83,7 @@ apply-checkpoint.json status field:
 ## Files Inventory
 
 Files Inventory not recorded for this cycle (predates the canonical format introduced in m9-32). See the cycle's `release-report.md` `## Files changed` section for the file list.
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

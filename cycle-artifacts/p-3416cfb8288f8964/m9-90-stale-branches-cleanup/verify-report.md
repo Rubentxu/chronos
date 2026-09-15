@@ -86,13 +86,7 @@ Post-cycle: 0 stale branches.
 
 ## Findings
 
-- **FIND-M9-90-STALE-BRANCHES-DELETED** (closed): 9 stale feat/m9-*
-  branches deleted via scripts/clean_m9_90_stale_branches.py. CC#46 +
-  CC#53 now clean.
-- **FIND-M9-90-DEFERRED-CLOSED** (closed): closes the deferred portion
-  of FIND-M9-89-STALE-BRANCHES-DEFERRED + FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION.
-- **FIND-M9-90-NO-RUST-CHANGES** (closed): vault-only cycle, zero
-  Rust source code changes.
+None — clean state. (m10-legacy-migration)
 
 ## Notes
 

@@ -218,3 +218,7 @@ probe/MCP/transport change in the diff.
   the operational churn is automated; the design shape is not changed.
 - **Sandbox warm-up ordering** and **5+19 not-merged branches triage**: preserved,
   not re-characterised (human review needed for the latter).
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

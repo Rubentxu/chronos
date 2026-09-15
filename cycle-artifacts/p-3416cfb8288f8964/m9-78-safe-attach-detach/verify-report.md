@@ -33,3 +33,7 @@ a2c70fe^..a2c70fe`.
 
 - CC#51: cycle-artifacts folder exists for the m9-78 row (this backfill)
 - CC#42: tag-peel `v0.7.80 → a2c70fe` (code commit, not merge `009b750`); preserved drift
+
+## Findings
+
+None — clean state. (m10-legacy-migration)
