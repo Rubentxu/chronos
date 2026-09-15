@@ -5,43 +5,22 @@
 
 ## Active Milestones
 
-> Currently no milestone is `Status: in_progress`. The next v2-spec sub-cycle
-> (M7) candidates are listed below. The reconstruction-roadmap M6
-> (OpenTelemetry correlation + export) is a separate, still-pending
-> milestone documented in
+> No milestone is currently `Status: in_progress`. All m0–m8 reconstruction
+> sub-cycles are closed (m0, m5, m6, m7, m8) and the m9 vault-hygiene +
+> m10-vault-ms-cleanup follow-ups are also closed. The next milestone on
+> the reconstruction roadmap is **M6 (OpenTelemetry correlation + export)**,
+> a separate, still-pending milestone documented in
 > `docs/chronos-agentic-reconstruction/docs/roadmap/ROADMAP.md`. Per the
-> cycle serialization lock, the next milestone will be promoted to
-> `Status: in_progress` only after the previous one releases and archives.
+> cycle serialization lock, M6 will be promoted to `Status: in_progress`
+> only after a future explicit kickoff cycle.
 
-### M7 candidates (v2-spec sub-cycle, deferred from M6)
+## Next milestone
 
-The following work was identified during M6 closure
-(`docs/milestones/m6-close-report.md` §6) and is sequenced for M7:
-
-1. **`events_read` merge** — collapse `query_events` + `get_event` + future
-   cursor-aware reads into a single tool with cursor semantics (spec line
-   15). Today the v1 tools are still active in `chronos-mcp::server`.
-2. **`observe` merge** — collapse the 4 `tripwire_*` tools + `probe_inject`
-   behind a typed subscription model (spec lines 28–42). Tripwire +
-   property + probe injection today is split across 5 v1 tools.
-3. **`session_compare` + `session_explain`** — split out from the
-   overloaded `compare_sessions` + `performance_regression_audit` tools
-   (currently both live in `chronos-services::diff`).
-4. **`session_start` + `session_stop` + `capabilities`** — session
-   lifecycle v2 surface (spec lines 11–13). Today the flow is split
-   across `probe_start` / `probe_stop` / `session_snapshot`.
-5. **Deprecation sunset sweep** — remove the 15 v1 shims added in
-   m6-01..m6-03 after the **2027-09-11** deadline (or extend the
-   deadline if downstream AI agents still call them).
-
-The exact M7 cycle split will be set at M7 kickoff based on empirical
-evidence from the first three cycles.
-
-> **Naming.** "M7" here refers to the v2-spec sub-cycle that follows the
-> M6 sub-cycle. It is **not** the same as the reconstruction-roadmap M7
-> (*Differential execution v2*) in
-> `docs/chronos-agentic-reconstruction/docs/roadmap/ROADMAP.md` line 163.
-> Each is a separate milestone with its own scope and cycle split.
+The reconstruction roadmap's next pending milestone is **M6 (OpenTelemetry
+correlation + export)**, documented in
+`docs/chronos-agentic-reconstruction/docs/roadmap/ROADMAP.md`. No M7
+candidates remain — all v2-spec work was closed in m6 and m7 sub-cycles
+(see closed entries below).
 
 ### Closed milestones
 
@@ -72,6 +51,43 @@ evidence from the first three cycles.
   - Remaining 7 v2 spec tools (events_read, observe, session_compare,
     session_explain, session_start, session_stop, capabilities) deferred
     to M7 (see candidates above).
+- **m7-v2-spec-introspection** — Status: closed 2026-09-11
+  - Close report: `docs/milestones/m7-close-report.md`
+  - Sub-cycle: completes the v2-spec sub-cycle opened by M6. Ships the
+    remaining 7 v2 dispatcher tools (events_read, observe, session_compare,
+    session_explain, session_start, session_stop, capabilities) with 20+
+    deprecated v1 shims preserved until 2027-09-11 sunset. 6 cycles shipped
+    (m7-01..m7-06) plus this close cycle (m7-07).
+  - Follow-ups (`session_start{action=attach}` stub, v1 sunset bookkeeping)
+    deferred to m9+ cycles (closed by m9-77/m9-78/m9-79).
+- **m8-counterexample-shrinking** — Status: closed 2026-09-11
+  - Close report: `docs/milestones/m8-05-proptest-shrinking-pagination-events-tool-m8-close-merge.md`
+  - Sub-cycle: counterexample shrinking foundation + real per-variant
+    proptest shrinking + pagination + events tool + M8 close. 5 cycles
+    shipped (m8-01..m8-05) plus this close cycle (m8-05 close).
+- **m9-vault-hygiene** — Status: closed 2026-09-14
+  - Handoff: `.sddk-knowledge/p-3416cfb8288f8964/handoff/m9-backlog-blocked-2026-09-12.md`
+  - Sub-cycle: vault hygiene + drift remediation across 98 cycles. Closed
+    13 cross-check classes (CC#1..CC#56), introduced smoke test harness
+    (`scripts/smoke_test_ccs.sh`), brought all vault indexes to canonical
+    schema. Net outcome: vault state canonical, 56 CCs documented, peel_match
+    verified for all cycles.
+- **m10-vault-ms-cleanup** — Status: closed 2026-09-15
+  - Handoffs: `cycle-artifacts/p-3416cfb8288f8964/handoffs/HANDOFF-2026-09-15*.md`
+  - Sub-cycle: vault hygiene follow-ups after m9-* close + capability
+    discovery refinements (ms- prefix = "milestone slice"). 8 cycles
+    shipped (m10-ms-cap-discovery, m10-ms-cap-discovery-followup,
+    m10-ms-cap-discovery-followup-2, m10-vault-handoff-relocate,
+    m10-vault-last-updated-backfill, m10-cc17-cc26-schema-fix,
+    m10-cc30-cc34-cc35-cc36-cc41-cc43-schema-fix, m10-m9-legacy-schema-migration).
+  - Plus 2 milestones closed (m10-ms-evt-typed, m10-ms-property-policy)
+    and 1 housekeeping cycle (m10-stale-branch-cleanup-2).
+  - All v0.7.103..v0.7.110 tags peel correctly. Carry-forward:
+    `m10-spec-coverage-glue` (latent).
+  - Note: the `m10-` prefix here is an internal cycle-artifact namespace
+    distinct from the reconstruction-roadmap M10 (Execution Explorer).
+    See `docs/chronos-agentic-reconstruction/docs/roadmap/ROADMAP.md` for
+    the official M10 milestone, which remains pending.
 
 ## M0 backlog (decomposed)
 
