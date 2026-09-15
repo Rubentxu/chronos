@@ -81,30 +81,8 @@ impl TraceDiff {
     ///
     /// If `normalizer` is provided and the `address_normalization` feature is enabled,
     /// addresses are normalized to symbol+offset form before hashing, enabling
-    /// consistent comparison across ASLR-enabled processes.
-    #[cfg(feature = "address_normalization")]
-    pub fn compare<N: AddressNormalizer>(
-        session_a_id: &str,
-        session_b_id: &str,
-        events_a: &[TraceEvent],
-        events_b: &[TraceEvent],
-        meta_a: &SessionMetadata,
-        meta_b: &SessionMetadata,
-        normalizer: Option<&N>,
-    ) -> DiffReport {
-        Self::compare_impl(
-            session_a_id,
-            session_b_id,
-            events_a,
-            events_b,
-            meta_a,
-            meta_b,
-            normalizer,
-        )
-    }
-
-    /// Implementation without generic normalizer parameter for non-feature-gated build.
-    #[cfg(not(feature = "address_normalization"))]
+    /// consistent comparison across ASLR-enabled processes. When the feature is not
+    /// enabled, `normalizer` is accepted but ignored; pass `None`.
     pub fn compare(
         session_a_id: &str,
         session_b_id: &str,
@@ -112,6 +90,8 @@ impl TraceDiff {
         events_b: &[TraceEvent],
         meta_a: &SessionMetadata,
         meta_b: &SessionMetadata,
+        #[cfg(feature = "address_normalization")] normalizer: Option<&dyn AddressNormalizer>,
+        #[cfg(not(feature = "address_normalization"))] _normalizer_ignored: Option<()>,
     ) -> DiffReport {
         Self::compare_impl(
             session_a_id,
@@ -120,12 +100,14 @@ impl TraceDiff {
             events_b,
             meta_a,
             meta_b,
+            #[cfg(feature = "address_normalization")]
+            normalizer,
         )
     }
 
     /// Core compare implementation.
     #[cfg(feature = "address_normalization")]
-    fn compare_impl<N: AddressNormalizer>(
+    fn compare_impl<N: AddressNormalizer + ?Sized>(
         session_a_id: &str,
         session_b_id: &str,
         events_a: &[TraceEvent],
@@ -142,7 +124,7 @@ impl TraceDiff {
         let hashes_a: std::collections::HashSet<String> = events_a
             .iter()
             .map(|e| {
-                let hash = if let Some(n) = normalizer {
+                if let Some(n) = normalizer {
                     hash_event_normalized(
                         e,
                         n,
@@ -152,15 +134,14 @@ impl TraceDiff {
                     )
                 } else {
                     hash_event(e)
-                };
-                hash
+                }
             })
             .collect();
 
         let hashes_b: std::collections::HashSet<String> = events_b
             .iter()
             .map(|e| {
-                let hash = if let Some(n) = normalizer {
+                if let Some(n) = normalizer {
                     hash_event_normalized(
                         e,
                         n,
@@ -170,8 +151,7 @@ impl TraceDiff {
                     )
                 } else {
                     hash_event(e)
-                };
-                hash
+                }
             })
             .collect();
 
@@ -344,7 +324,7 @@ fn hash_event(event: &TraceEvent) -> String {
 
 /// Hash an event with address normalization.
 #[cfg(feature = "address_normalization")]
-fn hash_event_normalized<N: AddressNormalizer>(
+fn hash_event_normalized<N: AddressNormalizer + ?Sized>(
     event: &TraceEvent,
     normalizer: &N,
     warnings: &mut Vec<String>,
@@ -417,7 +397,7 @@ mod tests {
         let events = vec![make_event(1, "main"), make_event(2, "helper")];
         let meta = make_meta("a", 500);
 
-        let report = TraceDiff::compare("a", "b", &events, &events, &meta, &meta);
+        let report = TraceDiff::compare("a", "b", &events, &events, &meta, &meta, None);
         assert_eq!(report.common_count, 2);
         assert!(report.only_in_a.is_empty());
         assert!(report.only_in_b.is_empty());
@@ -431,7 +411,7 @@ mod tests {
         let meta_a = make_meta("a", 500);
         let meta_b = make_meta("b", 600);
 
-        let report = TraceDiff::compare("a", "b", &events_a, &events_b, &meta_a, &meta_b);
+        let report = TraceDiff::compare("a", "b", &events_a, &events_b, &meta_a, &meta_b, None);
         assert_eq!(report.common_count, 0);
         assert_eq!(report.only_in_a.len(), 1);
         assert_eq!(report.only_in_b.len(), 1);
@@ -445,7 +425,7 @@ mod tests {
         let meta_a = make_meta("a", 500);
         let meta_b = make_meta("b", 600);
 
-        let report = TraceDiff::compare("a", "b", &events_a, &events_b, &meta_a, &meta_b);
+        let report = TraceDiff::compare("a", "b", &events_a, &events_b, &meta_a, &meta_b, None);
         assert_eq!(report.common_count, 1);
         assert_eq!(report.only_in_a.len(), 1);
         assert_eq!(report.only_in_b.len(), 1);
@@ -459,7 +439,7 @@ mod tests {
         let meta_a = make_meta("a", 500);
         let meta_b = make_meta("b", 800);
 
-        let report = TraceDiff::compare("a", "b", &events, &events, &meta_a, &meta_b);
+        let report = TraceDiff::compare("a", "b", &events, &events, &meta_a, &meta_b, None);
         let td = report.timing_delta.unwrap();
         assert_eq!(td.duration_ms_a, 500);
         assert_eq!(td.duration_ms_b, 800);
@@ -472,7 +452,7 @@ mod tests {
         let events = vec![make_event(1, "main")];
         let meta = make_meta("a", 500);
 
-        let report = TraceDiff::compare("a", "b", &events, &events, &meta, &meta);
+        let report = TraceDiff::compare("a", "b", &events, &events, &meta, &meta, None);
         let json = serde_json::to_string(&report).unwrap();
         let roundtrip: DiffReport = serde_json::from_str(&json).unwrap();
 
