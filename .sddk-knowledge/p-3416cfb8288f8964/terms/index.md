@@ -21,3 +21,15 @@ None at this time.
 
 See `adrs/` for architectural decision records.
 See `changes/archive/` for closed cycle manifests.
+
+## Metadata
+
+| Campo | Valor |
+|---|---|
+| Project | chronos |
+| Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
+| Last updated | 2026-09-15T08:58Z |
+| Last archive | m10-ms-cap-discovery-followup |
+| Active findings | 0 |
+| Backlog findings | 0 |
+| Terminated findings | 2 |
