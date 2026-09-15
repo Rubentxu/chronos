@@ -442,6 +442,12 @@ const MINIMAL_TOOL_NAMES: &[&str] = &[
 
 /// Complete list of all registered tool names (61 total).
 /// Used by `build_tool_availability` to populate the full `tool_availability` map.
+///
+/// Authoritative source: the live `#[rmcp::tool_router]` registration on
+/// `ChronosServer`. The const below mirrors the router's name list; the
+/// `toolset_sync_check` test asserts the two stay in lockstep. If you
+/// add or remove a `#[tool(name = …)]`, extend or trim this list
+/// accordingly.
 pub const ALL_TOOL_NAMES: &[&str] = &[
     "query_events",
     "get_event",
@@ -2386,7 +2392,7 @@ pub struct CounterexampleBundleEventsParams {
 // Tool handlers using rmcp macros
 // ============================================================================
 
-#[rmcp::tool_router]
+#[rmcp::tool_router(vis = "pub")]
 impl ChronosServer {
     #[tool(
         name = "query_events",
@@ -8899,11 +8905,19 @@ mod cap_discovery_tests {
 
     #[test]
     fn all_tool_names_count_61() {
-        // All 61 tools are registered.
+        // All 61 tools are registered. Sourced from the live `#[tool]`
+        // router so this assertion cannot drift relative to the actual
+        // tool registrations in this file.
+        let from_router = ChronosServer::tool_router().list_all().len();
         assert_eq!(
             ALL_TOOL_NAMES.len(),
-            61,
-            "ALL_TOOL_NAMES must have 61 entries"
+            from_router,
+            "ALL_TOOL_NAMES length ({actual}) disagrees with the live \
+             #[tool] router count ({from_router}). The \
+             toolset_sync_check::all_tool_names_matches_router test \
+             should have caught this; investigate before relaxing \
+             either side.",
+            actual = ALL_TOOL_NAMES.len(),
         );
     }
 
@@ -8982,12 +8996,21 @@ mod cap_discovery_tests {
 }
 
 /// Build-time assertion: every entry in `ALL_TOOL_NAMES` is declared via
-/// `#[tool(name = "...")]` in this file.
+/// `#[tool(name = "...")]` in this file, and vice versa.
 ///
-/// Closes FIND-DEBT-002 (coupling): a future cycle that adds a new
-/// `#[tool]` without adding it to `ALL_TOOL_NAMES` will fail this test
-/// when `cargo test -p chronos-mcp` is run, instead of drifting silently
-/// at runtime.
+/// Closes FIND-DEBT-002 (coupling) and the original MS-CAP-DISCOVERY
+/// followup concern: a future cycle that adds a new `#[tool]` without
+/// adding it to `ALL_TOOL_NAMES` (or trims `ALL_TOOL_NAMES` without
+/// removing the corresponding `#[tool]`) will fail this test when
+/// `cargo test -p chronos-mcp` is run, instead of drifting silently at
+/// runtime.
+///
+/// Implementation note: rmcp 1.5's `#[tool_router]` macro generates a
+/// `pub fn tool_router()` method on the impl block that returns a
+/// `ToolRouter<Self>`. Calling `.list_all()` on it yields the live
+/// `Vec<Tool>` populated from every `#[tool]` attribute in this file.
+/// That router list is the single source of truth; `ALL_TOOL_NAMES` is
+/// a const mirror used by `build_tool_availability` and friends.
 ///
 /// Spec: REQ-CAP-007 `AllToolNamesBuildAssertion`.
 ///
@@ -8997,97 +9020,48 @@ mod cap_discovery_tests {
 mod toolset_sync_check {
     use super::*;
 
-    // All `#[tool(name = "...")]` registrations in this file.
-    // These are extracted from the `#[tool]` attribute list above.
-    const REGISTERED_TOOLS: &[&str] = &[
-        "query_events",
-        "get_event",
-        "get_call_stack",
-        "get_execution_summary",
-        "execution_query",
-        "state_diff",
-        "state_query",
-        "list_threads",
-        "debug_call_graph",
-        "debug_find_variable_origin",
-        "debug_find_crash",
-        "debug_detect_races",
-        "inspect_causality",
-        "debug_expand_hotspot",
-        "debug_get_saliency_scores",
-        "save_session",
-        "load_session",
-        "list_sessions",
-        "delete_session",
-        "drop_session",
-        "evaluate_expression",
-        "debug_get_variables",
-        "debug_get_memory",
-        "debug_get_registers",
-        "debug_diff",
-        "debug_analyze_memory",
-        "forensic_memory_audit",
-        "tripwire_create",
-        "tripwire_list",
-        "tripwire_delete",
-        "tripwire_query",
-        "probe_start",
-        "probe_stop",
-        "session_start",
-        "session_stop",
-        "capabilities",
-        "probe_drain",
-        "probe_drain_log",
-        "probe_compaction_metrics",
-        "session_snapshot",
-        "probe_inject",
-        "probe_status",
-        "browser_probe_start",
-        "browser_probe_stop",
-        "browser_probe_drain",
-        "performance_regression_audit",
-        "compare_sessions",
-        "session_compare",
-        "session_explain",
-        "mutation_lens",
-        "causal_slice",
-        "hypothesis_test",
-        "session_export",
-        "trace_slice",
-        "events_read",
-        "observe",
-        "counterexample_shrink",
-        "counterexample_get",
-        "counterexample_list",
-        "counterexample_events_count",
-        "counterexample_bundle_events",
-    ];
-
-    /// Assert that EVERY `#[tool]` registration is covered by ALL_TOOL_NAMES.
-    /// Catches any future addition to #[tool] that forgets to extend
-    /// ALL_TOOL_NAMES.
-    #[test]
-    fn all_tool_names_covers_registrations() {
-        let all_names_set: std::collections::HashSet<_> = ALL_TOOL_NAMES.iter().copied().collect();
-        for name in REGISTERED_TOOLS {
-            assert!(
-                all_names_set.contains(name),
-                "Tool `{name}` is declared via #[tool] but missing from \
-                 ALL_TOOL_NAMES. Update ALL_TOOL_NAMES to keep capability \
-                 discovery in sync."
-            );
-        }
+    /// Return the live list of `#[tool]`-registered names by introspecting
+    /// the macro-generated `ToolRouter`. This is the single source of
+    /// truth for what tools the server exposes.
+    fn router_tool_names() -> Vec<String> {
+        ChronosServer::tool_router()
+            .list_all()
+            .into_iter()
+            .map(|t| t.name.to_string())
+            .collect()
     }
 
-    /// Assert that every ALL_TOOL_NAMES entry has a corresponding #[tool]
-    /// registration (defensive completeness check).
+    /// Assert that the router's tool list and `ALL_TOOL_NAMES` are in
+    /// lockstep. Replaces the old `REGISTERED_TOOLS` mirror and the two
+    /// `all_tool_names_covers_registrations` / `all_tool_names_have_registration`
+    /// tests that depended on a hand-maintained duplicate.
     #[test]
-    fn all_tool_names_have_registration() {
-        for name in ALL_TOOL_NAMES {
-            assert!(
-                REGISTERED_TOOLS.contains(name),
-                "Tool `{name}` is in ALL_TOOL_NAMES but has no #[tool] registration."
-            );
-        }
+    fn all_tool_names_matches_router() {
+        let from_router: std::collections::HashSet<_> = router_tool_names().into_iter().collect();
+        let from_const: std::collections::HashSet<_> =
+            ALL_TOOL_NAMES.iter().copied().map(String::from).collect();
+
+        let missing_from_const: Vec<_> = from_router.difference(&from_const).collect();
+        let extra_in_const: Vec<_> = from_const.difference(&from_router).collect();
+
+        assert!(
+            missing_from_const.is_empty() && extra_in_const.is_empty(),
+            "ALL_TOOL_NAMES is out of sync with the #[tool] router.\n\
+             Tools declared via #[tool] but missing from ALL_TOOL_NAMES: {missing_from_const:?}\n\
+             Entries in ALL_TOOL_NAMES but with no corresponding #[tool]: {extra_in_const:?}\n\
+             Update ALL_TOOL_NAMES to keep capability discovery in sync."
+        );
+    }
+
+    /// Asserts the router has at least 50 tools — a tripwire against
+    /// accidental bulk deletion of `#[tool]` registrations.
+    #[test]
+    fn router_has_expected_minimum_tool_count() {
+        let count = router_tool_names().len();
+        assert!(
+            count >= 50,
+            "Router has only {count} tools, expected at least 50. \
+             Did someone delete a chunk of #[tool] registrations?"
+        );
     }
 }
