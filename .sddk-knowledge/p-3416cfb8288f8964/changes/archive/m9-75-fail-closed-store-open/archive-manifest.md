@@ -143,7 +143,7 @@ One commit:
 | docs (session management, es) | `docs/manual-ai/es/08-gestion-sesiones.md` | `1111d44fe62e66970f84211054fe491bac7aed4c288e49f68b7bc32c4b9d5092` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/apply-checkpoint.json` | `33adf19a9ac0df7a07db20f586a48ee4e280946c6aacb3785bf8b2bf98e52b5e` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/verify-report.md` | `669dd622b5cf1dd3b9e39849e350ce0e31817ac9096971655608d58e68e04253` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/verify-findings.json` | `ca82a31520fab800086e27e8a9560b1639b59e92ecd74cf51fa8b6c62edd62d8` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/verify-findings.json` | `001d73bf1bc4d3f2ab1cbc7255f2a1d83cf9ce16ba8df944ebdc19eaa3eb780f` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/release-report.md` | `0e1b6ff0d263e1fed2908a772cf2a215c8f266cd6ae9d1e11e487f8249406fff` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/release-receipt.md` | `21c61bc7dc435b9e6eb1af55955851f2964d82610e8d735baa5efc1dbb00d871` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/merge-receipt.md` | `5c502c1c4dc0cb496aab2b079043526db35f714a042161472c8c3856144b2072` |

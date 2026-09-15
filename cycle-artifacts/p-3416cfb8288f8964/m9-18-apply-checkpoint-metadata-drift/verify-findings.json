@@ -1,28 +1,33 @@
 {
-  "cycle_id": "m9-18-apply-checkpoint-metadata-drift",
-  "subject": {
-    "head": "6dce3736df06d4fe09db861ad43a3667c0f0bc25",
-    "head_sha": "6dce3736df06d4fe09db861ad43a3667c0f0bc25",
-    "base_sha": "cc995cdd2cf41bd0638a548fc3db169763bfc38d"
-  },
-  "findings": [],
   "_legacy": {
-    "lens_summary": {
-      "spec-compliance": 0,
-      "test-quality": 0,
-      "vault-hygiene": 0,
-      "documentation-discipline": 0
-    },
-    "verdict": "PASS",
     "evidence_keys": [
       "vault_drift_sweep_checks",
       "t0_lint",
       "diff_size",
       "drift_sites_fixed"
-    ]
+    ],
+    "lens_summary": {
+      "documentation-discipline": 0,
+      "spec-compliance": 0,
+      "test-quality": 0,
+      "vault-hygiene": 0
+    },
+    "verdict": "PASS"
   },
-  "verdict": "pass",
+  "all_passed": true,
+  "cycle_id": "m9-18-apply-checkpoint-metadata-drift",
+  "findings": [],
   "lens_summary": {
     "drift": "Drift closure cycle. See verify-report.md and change-entry.md."
-  }
+  },
+  "subject": {
+    "base_sha": "cc995cdd2cf41bd0638a548fc3db169763bfc38d",
+    "branch": "feat/m9-18-apply-checkpoint-metadata-drift",
+    "cycle_id": "m9-18-apply-checkpoint-metadata-drift",
+    "head": "6dce3736df06d4fe09db861ad43a3667c0f0bc25",
+    "head_sha": "6dce3736df06d4fe09db861ad43a3667c0f0bc25",
+    "route": "A-min"
+  },
+  "summary": "passed",
+  "verdict": "pass"
 }

@@ -176,7 +176,7 @@ m9-roadmap project issue for the prioritized list.
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-80-property-policy-ownership/archive-manifest.md` | `91147d4716cfaeb89a0f868cc18956e2d3f6fe77f2717ba3f8aad15711d22353` |
 | implementation-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/implementation-receipt.md` | `dc9de098846a3e35df5f810defc7ee3f86fbeb0e458c48f3a219527ea3500968` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/verify-report.md` | `40bec32a8f4885102a1c0dc789722e38e4e13b6b00771f46ef18a118c6438645` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/verify-findings.json` | `bd427da3396f105cd02c462126134c9d8efd154824e7d5af14ca4a1c4dcf42ac` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/verify-findings.json` | `a6bd68944ffe00afd3d0f5fd112626e65f963bc4063d260b36246f465be1857e` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/release-receipt.md` | `e30e225ab0680c57081276025643aecfd9c474092edd4b4846e3ea67fa2d1c17` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/merge-receipt.md` | `27fd81a15d1e42154a6dd27fd1a70218417240494e53f29336701be15729c8b3` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-80-property-policy-ownership/release-report.md` | `94a740505682c1ef639e6217b95a9f2679a68312d9a39dbd431b86902ebe1630` |

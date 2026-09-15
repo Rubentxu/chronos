@@ -1,27 +1,32 @@
 {
-  "schema": "verify-finding.schema.json",
-  "subject": {
-    "head_sha": "8dc1063d1a8f24bd2f59fac501b848003eec63d5",
-    "base_sha": "52ee9a2f2ba6233f03e46c7e5c139721779ba8d4",
-    "diff_digest": "sha256:d16e6646b10d71284c9225da9d89819528613dd56d88f4e77661f878654d6bb4",
-    "working_tree_clean": true,
-    "verified_at": "2026-09-13T09:54:00Z",
-    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
-    "verdict": "passed"
-  },
+  "all_passed": true,
+  "cycle_id": "m9-63",
   "findings": [
     {
       "finding_id": "FIND-M9-63-MISSING-STOP-DRAIN-CC",
       "rule_id": "chronos.lifecycle.stop_drain_ordering_static_check",
       "severity": "low",
-      "summary": "No static enforcement of the stop-then-drain contract at service-layer call sites; refactoring could silently re-introduce the race",
       "subject": {
-        "gap": "m9-61 reordered the 2 known call sites but had no retroactive detection. A new ProbeBackend consumer or refactor could re-introduce the race silently.",
-        "fix": "CC#52 added: regex+brace-walk over service files looking for fn ... stop bodies where drain_raw_events() is invoked before stop_probe()"
-      }
+        "fix": "CC#52 added: regex+brace-walk over service files looking for fn ... stop bodies where drain_raw_events() is invoked before stop_probe()",
+        "gap": "m9-61 reordered the 2 known call sites but had no retroactive detection. A new ProbeBackend consumer or refactor could re-introduce the race silently."
+      },
+      "summary": "No static enforcement of the stop-then-drain contract at service-layer call sites; refactoring could silently re-introduce the race"
     }
   ],
   "lens_summary": "m9-63 closes the second m9-61 follow-up: a static cross-check for stop-then-drain ordering. One-file change (vault-drift-sweep.md). No source code changes. CC#48 meta-check confirms 52 CCs all clean.",
-  "cycle_id": "m9-63",
+  "schema": "verify-finding.schema.json",
+  "subject": {
+    "base_sha": "52ee9a2f2ba6233f03e46c7e5c139721779ba8d4",
+    "branch": "feat/m9-63-stop-drain-cc",
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
+    "cycle_id": "m9-63-stop-drain-cc",
+    "diff_digest": "sha256:d16e6646b10d71284c9225da9d89819528613dd56d88f4e77661f878654d6bb4",
+    "head_sha": "8dc1063d1a8f24bd2f59fac501b848003eec63d5",
+    "route": "A-min",
+    "verdict": "passed",
+    "verified_at": "2026-09-13T09:54:00Z",
+    "working_tree_clean": true
+  },
+  "summary": "passed",
   "verdict": "pass_with_findings"
 }

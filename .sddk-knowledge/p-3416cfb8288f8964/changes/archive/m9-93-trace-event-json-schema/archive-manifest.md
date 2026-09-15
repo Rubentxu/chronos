@@ -77,13 +77,13 @@ closed.
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-93-trace-event-json-schema/merge-receipt.md` | `5dd8aec3c7601070f7f96248a87578e9e24d757a0fe0a399936b4235355a61f5` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-93-trace-event-json-schema/release-receipt.md` | `6e5960250a05064fb7787ee350dd454df5c51580f7535a2345d99406ec03d96d` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-93-trace-event-json-schema/release-report.md` | `857a4520b19b599cce952e5833c2a74c04655df233c560a1a03c146df4349685` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-93-trace-event-json-schema/verify-findings.json` | `a6f34282fa428c5b3bc766e739e826693d23ccd5a5df669727a5e517465601ce` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-93-trace-event-json-schema/verify-findings.json` | `a0be3050a7c628c27e60d472b21725a5f07da00faa56a6a372aced8dc9387aa0` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-93-trace-event-json-schema/verify-report.md` | `8a8f39528964b0b9d53c32998b5092e41de8467b738245e07e2d5a9dc3286fcb` |
 | proposal | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-93-trace-event-json-schema/proposal.md` | `8382243062d1a1d87946329d4c4517e30cd7520a07686ff093def2b48a786953` |
 | spec | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-93-trace-event-json-schema/spec.md` | `0a8b258b5bb2ddf206f4a39bda7b7fd9da9812630b6ee4c87456750673bd9e2f` |
 | tasks | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-93-trace-event-json-schema/tasks.md` | `4e2cb74c80304be9df4186fdca792002c88732b90a2f124f4e73d72a8097d4f3` |
 | exploration-report | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-93-trace-event-json-schema/exploration-report.md` | `3600c8d27acb78921810916f1beff96de82969d2c3e33c0d5823a38aa1285f04` |
-| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-93-trace-event-json-schema/change-entry.md` | `e698e63c93fdac9734ac191343639675569474ab88dc7ffaf8dcb79a4564a624` |
+| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-93-trace-event-json-schema/change-entry.md` | `92ba2f45d2ff884ced1dc37cec73223c41c2911e3771de0003e4809ccc65d606` |
 
 ## Evidence bindings
 

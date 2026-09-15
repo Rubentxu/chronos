@@ -1,104 +1,109 @@
 {
-  "schema_version": "sddk.verify-finding/v1",
+  "all_passed": true,
   "cycle_id": "m9-04-side-table-key-layout",
-  "path": "A-min",
-  "subject": {
-    "base_sha": "eb2cccd6fdfcd4b00bf980453bc40c606fa69885",
-    "head_sha": "d6b3b8c51c50d2ce6d0fe4f8c804cf793137f0dc",
-    "diff_digest_sha256": "de2fa4a767a4c14090409e68cc63f6ffdf7ddae4ca070c63c46e703366059e1a",
-    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
-    "verified_at": "2026-09-12T01:21:00+02:00",
-    "dirty": false
-  },
-  "verdict": "PASS",
-  "mandatory_gates": {
-    "subject_identity": "PASS",
-    "behavioral_compliance": "PASS",
-    "real_implementation": "PASS",
-    "documentation_discipline": "PASS",
-    "test_strength": "PASS",
-    "regression_and_build": "PASS",
-    "production_readiness": "PASS",
-    "design_and_solid": "PASS",
-    "task_completeness": "PASS",
-    "pre_commit_discipline": "PASS",
-    "apply_push_discipline": "PASS"
-  },
   "findings": [],
+  "lens_summary": {
+    "drift": "Drift closure cycle. See verify-report.md and change-entry.md."
+  },
+  "mandatory_gates": {
+    "apply_push_discipline": "PASS",
+    "behavioral_compliance": "PASS",
+    "design_and_solid": "PASS",
+    "documentation_discipline": "PASS",
+    "pre_commit_discipline": "PASS",
+    "production_readiness": "PASS",
+    "real_implementation": "PASS",
+    "regression_and_build": "PASS",
+    "subject_identity": "PASS",
+    "task_completeness": "PASS",
+    "test_strength": "PASS"
+  },
+  "path": "A-min",
   "remediation_summary": {
-    "previous_round_verdict": "FAIL",
-    "previous_round_findings_count": 6,
-    "previous_round_critical": 1,
-    "previous_round_warnings": 3,
-    "previous_round_suggestions": 2,
-    "remediation_commit_sha": "379759ed3d5dcc46e84c9b0bc153bab23e360b61",
+    "incidental_bug_fix": {
+      "description": "project_report in crates/chronos-cli/src/replay.rs:243 read bundle.events.len() instead of bundle.summary.events_count. After m9-02, events live in the side table (bundle.events is empty for post-m9-02 bundles), so the events_in_bundle count in ReplayReport was always 0. Fixed to use bundle.summary.events_count as usize.",
+      "evidence": [
+        "crates/chronos-cli/src/replay.rs:243 events_in_bundle: bundle.summary.events_count as usize",
+        "crates/chronos-cli/tests/replay_integration.rs:106-108 asserts report.events_in_bundle == 5 after save+replay round-trip"
+      ],
+      "severity": "medium (incidental)"
+    },
     "previous_findings_resolution": [
       {
-        "previous_finding_id": "sha256:task-completeness-missing-integration-tests",
-        "previous_severity": "critical",
-        "resolution": "RESOLVED",
         "evidence": [
           "crates/chronos-services/src/counterexample.rs:3537 m9_04_save_load_roundtrip_through_services (services wrapper round-trip)",
           "crates/chronos-cli/tests/replay_integration.rs:25 m9_04_replay_uses_v3_layout (v3 chokepoint via run_replay)",
           "crates/chronos-cli/tests/replay_integration.rs:126 m9_04_replay_v2_bundle_uses_legacy_path (v2 fallback via run_replay)"
-        ]
+        ],
+        "previous_finding_id": "sha256:task-completeness-missing-integration-tests",
+        "previous_severity": "critical",
+        "resolution": "RESOLVED"
       },
       {
-        "previous_finding_id": "sha256:test-quality-range-bound-tautology",
-        "previous_severity": "medium",
-        "resolution": "RESOLVED",
         "evidence": [
           "crates/chronos-store/src/counterexample_storage.rs:2068 m9_04_range_scan_covers_all_chunk_indices rewritten: inserts A=4 + B=10 chunks, asserts range(A) returns only A's 4 chunks, asserts range(B) returns only B's 10 chunks. T1 store 56/56 passed."
-        ]
+        ],
+        "previous_finding_id": "sha256:test-quality-range-bound-tautology",
+        "previous_severity": "medium",
+        "resolution": "RESOLVED"
       },
       {
-        "previous_finding_id": "sha256:test-quality-collision-not-forced",
-        "previous_severity": "medium",
-        "resolution": "RESOLVED",
         "evidence": [
           "crates/chronos-store/src/counterexample_storage.rs:2354 __force_collision_prefix helper bypasses blake3 to write chosen 16-byte prefix",
           "crates/chronos-store/src/counterexample_storage.rs:2365 m9_04_forced_prefix_collision_is_contained_by_identity_check: forces a real prefix collision between real_bundle and fake_bundle keys; verifies the per-chunk bundle_id identity filter drops the foreign chunk. T1 store 56/56 passed."
-        ]
+        ],
+        "previous_finding_id": "sha256:test-quality-collision-not-forced",
+        "previous_severity": "medium",
+        "resolution": "RESOLVED"
       },
       {
-        "previous_finding_id": "sha256:spec-divergence-d7-events-count-guard",
-        "previous_severity": "low",
-        "resolution": "RESOLVED",
         "evidence": [
           "crates/chronos-store/src/counterexample_storage.rs:289 collect_bundle_chunks now takes events_count: Option<u64>; when Some(0) returns empty (skip v2 fallback); when None always tries v2 (direct-injection test path); when Some(n>0) tries v2 fallback when v3 is empty",
           "crates/chronos-store/src/counterexample_storage.rs:624 SessionStore::get_bundle_events_count helper reads summary.events_count from bundle record",
           "crates/chronos-store/src/counterexample_storage.rs:660 load_counterexample_bundle_events passes events_count through",
           "crates/chronos-store/src/counterexample_storage.rs:696 count_counterexample_bundle_events passes events_count through",
           "v2 fallback test (m9_04_v2_bundle_with_zero_events_count_loads_normally) now operates via direct-injection (no bundle record), exercises fallback path; new m9_04_replay_v2_bundle_uses_legacy_path pins the production chokepoint with events_count > 0"
-        ]
+        ],
+        "previous_finding_id": "sha256:spec-divergence-d7-events-count-guard",
+        "previous_severity": "low",
+        "resolution": "RESOLVED"
       },
       {
-        "previous_finding_id": "sha256:disclosure-r4-no-test-pinning",
-        "previous_severity": "low",
-        "resolution": "RESOLVED",
         "evidence": [
           "crates/chronos-store/src/counterexample_storage.rs: m9_04_r4_v2_bundle_never_resaved_uses_legacy_path: injects a v2 chunk + bundle record directly (events_count = 1), reads twice, asserts both reads return identical events via the fallback path. T1 store 56/56 passed."
-        ]
+        ],
+        "previous_finding_id": "sha256:disclosure-r4-no-test-pinning",
+        "previous_severity": "low",
+        "resolution": "RESOLVED"
       },
       {
-        "previous_finding_id": "sha256:disclosure-r6-no-test-pinning",
-        "previous_severity": "low",
-        "resolution": "RESOLVED",
         "evidence": [
           "crates/chronos-store/src/counterexample_storage.rs: m9_04_known_bundle_schema_versions_pinned: asserts KNOWN_BUNDLE_SCHEMA_VERSIONS contains [1, 2, 3] with len == 3. T1 store 56/56 passed."
-        ]
+        ],
+        "previous_finding_id": "sha256:disclosure-r6-no-test-pinning",
+        "previous_severity": "low",
+        "resolution": "RESOLVED"
       }
     ],
-    "incidental_bug_fix": {
-      "description": "project_report in crates/chronos-cli/src/replay.rs:243 read bundle.events.len() instead of bundle.summary.events_count. After m9-02, events live in the side table (bundle.events is empty for post-m9-02 bundles), so the events_in_bundle count in ReplayReport was always 0. Fixed to use bundle.summary.events_count as usize.",
-      "severity": "medium (incidental)",
-      "evidence": [
-        "crates/chronos-cli/src/replay.rs:243 events_in_bundle: bundle.summary.events_count as usize",
-        "crates/chronos-cli/tests/replay_integration.rs:106-108 asserts report.events_in_bundle == 5 after save+replay round-trip"
-      ]
-    }
+    "previous_round_critical": 1,
+    "previous_round_findings_count": 6,
+    "previous_round_suggestions": 2,
+    "previous_round_verdict": "FAIL",
+    "previous_round_warnings": 3,
+    "remediation_commit_sha": "379759ed3d5dcc46e84c9b0bc153bab23e360b61"
   },
-  "lens_summary": {
-    "drift": "Drift closure cycle. See verify-report.md and change-entry.md."
-  }
+  "schema_version": "sddk.verify-finding/v1",
+  "subject": {
+    "base_sha": "eb2cccd6fdfcd4b00bf980453bc40c606fa69885",
+    "branch": "feat/m9-04-side-table-key-layout",
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
+    "cycle_id": "m9-04-side-table-key-layout",
+    "diff_digest_sha256": "de2fa4a767a4c14090409e68cc63f6ffdf7ddae4ca070c63c46e703366059e1a",
+    "dirty": false,
+    "head_sha": "d6b3b8c51c50d2ce6d0fe4f8c804cf793137f0dc",
+    "route": "A-min",
+    "verified_at": "2026-09-12T01:21:00+02:00"
+  },
+  "summary": "passed",
+  "verdict": "PASS"
 }

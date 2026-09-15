@@ -1,41 +1,46 @@
 {
+  "all_passed": true,
   "cycle_id": "m9-42",
-  "subject": {
-    "head_sha": "cf078cab0afde21ec7042ea5785ab1dffc7420aa",
-    "base_sha": "60d2f78a66df75962a0f6a9bd0d0d06a9fee6092"
-  },
-  "verdict": "pass",
   "findings": [
     {
-      "id": "F1",
-      "severity": "low",
       "category": "schema-drift",
       "description": "11 change-entry.md files (m9-03..m9-13) had Subject as markdown table; should be bullet list.",
+      "id": "F1",
+      "severity": "low",
       "status": "RESOLVED"
     },
     {
-      "id": "F2",
-      "severity": "low",
       "category": "schema-drift",
       "description": "18 change-entry.md files (m9-01..m9-18) lacked `## Cross-check` section.",
+      "id": "F2",
+      "severity": "low",
       "status": "RESOLVED"
     },
     {
-      "id": "F3",
-      "severity": "low",
       "category": "schema-drift",
       "description": "m9-03 verify-findings.json lacked `cycle_id` field.",
+      "id": "F3",
+      "severity": "low",
       "status": "RESOLVED"
     },
     {
-      "id": "F4",
-      "severity": "informational",
       "category": "process",
       "description": "Added cross-check #34 to vault-drift-sweep.md enforcing all 3 schemas.",
+      "id": "F4",
+      "severity": "informational",
       "status": "RESOLVED"
     }
   ],
   "lens_summary": {
     "drift": "Three drift classes closed: Subject table to bullets (11), Cross-check section (18), m9-03 verify-findings cycle_id (1). Added cross-check #34."
-  }
+  },
+  "subject": {
+    "base_sha": "60d2f78a66df75962a0f6a9bd0d0d06a9fee6092",
+    "branch": "feat/m9-42-subject-bullets-and-cross-check",
+    "cycle_id": "m9-42-subject-bullets-and-cross-check",
+    "head_sha": "cf078cab0afde21ec7042ea5785ab1dffc7420aa",
+    "route": "A-min"
+  },
+  "summary": "passed",
+  "verdict": "pass"
 }

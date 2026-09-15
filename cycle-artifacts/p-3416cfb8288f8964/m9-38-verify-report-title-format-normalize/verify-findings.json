@@ -1,48 +1,53 @@
 {
+  "all_passed": true,
   "cycle_id": "m9-38",
-  "subject": {
-    "head_sha": "e8f805f350b47b7b1cad6c1ac507ae868b13c07e",
-    "base_sha": "6bc67812d66548a3e0ee48f5323d45c4a1ed13d8"
-  },
-  "verdict": "pass",
   "findings": [
     {
-      "id": "F1",
-      "severity": "low",
       "category": "schema-drift",
       "description": "29 verify-report.md files used non-canonical title format.",
+      "id": "F1",
+      "severity": "low",
       "status": "RESOLVED"
     },
     {
-      "id": "F2",
-      "severity": "low",
       "category": "schema-drift",
       "description": "24 verify-findings.json files lacked top-level `verdict` field.",
+      "id": "F2",
+      "severity": "low",
       "status": "RESOLVED"
     },
     {
-      "id": "F3",
-      "severity": "low",
       "category": "schema-drift",
       "description": "18 archive-manifest.md files used `Cycle ID` instead of `Cycle`.",
+      "id": "F3",
+      "severity": "low",
       "status": "RESOLVED"
     },
     {
-      "id": "F4",
-      "severity": "low",
       "category": "schema-drift",
       "description": "18 change-entry.md files used `## Ciclo` instead of `## Summary`.",
+      "id": "F4",
+      "severity": "low",
       "status": "RESOLVED"
     },
     {
-      "id": "F5",
-      "severity": "informational",
       "category": "process",
       "description": "Added cross-check #30 to vault-drift-sweep.md enforcing all 4 schemas.",
+      "id": "F5",
+      "severity": "informational",
       "status": "RESOLVED"
     }
   ],
   "lens_summary": {
     "drift": "Four drift classes closed: verify-report.md title (29 files), verify-findings verdict (24 files), archive-manifest Cycle field (18 files), change-entry Summary section (18 files). Added cross-check #30."
-  }
+  },
+  "subject": {
+    "base_sha": "6bc67812d66548a3e0ee48f5323d45c4a1ed13d8",
+    "branch": "feat/m9-38-verify-report-title-format-normalize",
+    "cycle_id": "m9-38-verify-report-title-format-normalize",
+    "head_sha": "e8f805f350b47b7b1cad6c1ac507ae868b13c07e",
+    "route": "A-min"
+  },
+  "summary": "passed",
+  "verdict": "pass"
 }

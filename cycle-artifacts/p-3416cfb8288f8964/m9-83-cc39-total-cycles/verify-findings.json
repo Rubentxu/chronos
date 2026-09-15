@@ -1,4 +1,5 @@
 {
+  "all_passed": true,
   "base_sha": "a0f72c2a7fe36eaeb9c772505dfe563f85f42773",
   "cycle": "p-3416cfb8288f8964/m9-83-cc39-total-cycles",
   "cycle_id": "m9-83-cc39-total-cycles",
@@ -46,7 +47,7 @@
     "base_sha": "e5eb0f03c64a3f4a647f3edd0a164b057db98e37",
     "branch": "feat/m9-83-cc39-total-cycles",
     "cycle_id": "m9-83-cc39-total-cycles",
-    "head_sha": "c9f89774fdd22c9cbb653fc38b785e869997df1e",
+    "head_sha": "4214fbfe53b912bc6c5a1e9ea0de46931db1c833",
     "route": "A-min"
   },
   "summary": "Closed FIND-M9-83-CC39-TOTAL-CYCLES-OFF-BY-ONE: bumped cycles/index.md `Total cycles` field from 84 \u2192 83 to match the row count. CC#39 field/row match verified. No code, probe, mcp, or sandbox touched; trivial B-direct literal fix.",

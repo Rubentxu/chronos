@@ -1,28 +1,33 @@
 {
+  "all_passed": true,
   "cycle_id": "m9-26",
-  "subject": {
-    "head": "a7d43e012be509fc44edae1ab2f05397e3452037",
-    "head_sha": "a7d43e012be509fc44edae1ab2f05397e3452037",
-    "base_sha": "38e0e3aaacc9471b1c2550e548f2c24ae3f71025"
-  },
   "findings": [
     {
-      "id": "F1",
-      "severity": "low",
       "category": "schema-drift",
-      "summary": "m9-04 verify-findings.json had cycle_id with workspace prefix 'p-3416cfb8288f8964/'. m9-23 stripped apply-checkpoint.json but missed verify-findings.json.",
-      "resolution": "Strip workspace prefix from cycle_id in m9-04 verify-findings.json."
+      "id": "F1",
+      "resolution": "Strip workspace prefix from cycle_id in m9-04 verify-findings.json.",
+      "severity": "low",
+      "summary": "m9-04 verify-findings.json had cycle_id with workspace prefix 'p-3416cfb8288f8964/'. m9-23 stripped apply-checkpoint.json but missed verify-findings.json."
     },
     {
-      "id": "F2",
-      "severity": "informational",
       "category": "process",
-      "summary": "Extended cross-check #16 to cover verify-findings.json in addition to apply-checkpoint.json.",
-      "resolution": "Cross-check #16 now catches both files."
+      "id": "F2",
+      "resolution": "Cross-check #16 now catches both files.",
+      "severity": "informational",
+      "summary": "Extended cross-check #16 to cover verify-findings.json in addition to apply-checkpoint.json."
     }
   ],
-  "verdict": "pass_with_findings",
   "lens_summary": {
     "drift": "Drift closure cycle. See verify-report.md and change-entry.md."
-  }
+  },
+  "subject": {
+    "base_sha": "38e0e3aaacc9471b1c2550e548f2c24ae3f71025",
+    "branch": "feat/m9-26-verify-findings-cycle-id-strip",
+    "cycle_id": "m9-26-verify-findings-cycle-id-strip",
+    "head": "a7d43e012be509fc44edae1ab2f05397e3452037",
+    "head_sha": "a7d43e012be509fc44edae1ab2f05397e3452037",
+    "route": "A-min"
+  },
+  "summary": "passed",
+  "verdict": "pass_with_findings"
 }

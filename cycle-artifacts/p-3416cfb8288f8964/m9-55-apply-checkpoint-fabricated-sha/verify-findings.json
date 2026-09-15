@@ -1,22 +1,15 @@
 {
-  "schema": "verify-finding.schema.json",
-  "subject": {
-    "head_sha": "6ca0afddccb018c0d66bfbb35fa44dbc58ec2db4",
-    "base_sha": "cbb93847228a9062de8e093dfe452c257233228c",
-    "diff_digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "working_tree_clean": true,
-    "verified_at": "2026-09-12T17:27:00Z",
-    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
-    "verdict": "passed"
-  },
+  "all_passed": true,
+  "cycle_id": "m9-55-apply-checkpoint-fabricated-sha",
   "findings": [
     {
       "finding_id": "FIND-M9-55-FABRICATED-BASE-SHA",
+      "lens_summary": "Detection: ran `git cat-file -e $base_sha` for every apply-checkpoint's base_sha field; m9-38 returned non-zero. Cause: transcription error during m9-38 fix, the literal SHA had 6 different hex chars from the real commit `6bc67812d66548a3e0ee48f5323d45c4a1ed13d8` (parent of m9-38 head on the fix/m9-38-* branch). Fix: replace fabricated SHA with real SHA in all 7 files; verify with `git cat-file -t` returns 'commit'.",
       "rule_id": "vault_hygiene.sha_fabrication",
       "severity": "high",
-      "summary": "m9-38's base_sha (6bc6781465f9dff5a59bd4d8e8a99930dba3e7e5) does not exist in git, propagated to 7 artifact files",
       "subject": {
         "cycle": "m9-38-verify-report-title-format-normalize",
+        "fabricated_sha": "6bc6781465f9dff5a59bd4d8e8a99930dba3e7e5",
         "files": [
           "cycle-artifacts/p-3416cfb8288f8964/m9-38-verify-report-title-format-normalize/apply-checkpoint.json",
           "cycle-artifacts/p-3416cfb8288f8964/m9-38-verify-report-title-format-normalize/merge-receipt.md",
@@ -26,13 +19,25 @@
           ".sddk-knowledge/p-3416cfb8288f8964/changes/m9-38-verify-report-title-format-normalize/change-entry.md",
           ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-38-verify-report-title-format-normalize/archive-manifest.md"
         ],
-        "fabricated_sha": "6bc6781465f9dff5a59bd4d8e8a99930dba3e7e5",
         "real_sha": "6bc67812d66548a3e0ee48f5323d45c4a1ed13d8"
       },
-      "lens_summary": "Detection: ran `git cat-file -e $base_sha` for every apply-checkpoint's base_sha field; m9-38 returned non-zero. Cause: transcription error during m9-38 fix, the literal SHA had 6 different hex chars from the real commit `6bc67812d66548a3e0ee48f5323d45c4a1ed13d8` (parent of m9-38 head on the fix/m9-38-* branch). Fix: replace fabricated SHA with real SHA in all 7 files; verify with `git cat-file -t` returns 'commit'."
+      "summary": "m9-38's base_sha (6bc6781465f9dff5a59bd4d8e8a99930dba3e7e5) does not exist in git, propagated to 7 artifact files"
     }
   ],
   "lens_summary": "Pre-existing vault hygiene check missed fabricated base_sha across m9-38 artifacts. Fix: replace 7 references to non-existent SHA with the real commit parent-of-head, add cross-check #47.",
-  "cycle_id": "m9-55-apply-checkpoint-fabricated-sha",
+  "schema": "verify-finding.schema.json",
+  "subject": {
+    "base_sha": "cbb93847228a9062de8e093dfe452c257233228c",
+    "branch": "feat/m9-55-apply-checkpoint-fabricated-sha",
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
+    "cycle_id": "m9-55-apply-checkpoint-fabricated-sha",
+    "diff_digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "head_sha": "6ca0afddccb018c0d66bfbb35fa44dbc58ec2db4",
+    "route": "A-min",
+    "verdict": "passed",
+    "verified_at": "2026-09-12T17:27:00Z",
+    "working_tree_clean": true
+  },
+  "summary": "passed",
   "verdict": "pass_with_findings"
 }

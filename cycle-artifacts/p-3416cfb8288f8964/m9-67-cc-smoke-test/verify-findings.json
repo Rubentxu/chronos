@@ -1,27 +1,32 @@
 {
-  "schema": "verify-finding.schema.json",
-  "subject": {
-    "head_sha": "ef21e1fef358f63cc73e320688ec566c0806c378",
-    "base_sha": "67b3d76a80ec8e766a0689fba810fc499b5cd4a4",
-    "diff_digest": "sha256:9fe9cef134d220064184e067a09b5496f38bb2973607f7be661d985a078dc99d",
-    "working_tree_clean": true,
-    "verified_at": "2026-09-13T10:39:00Z",
-    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
-    "verdict": "passed"
-  },
+  "all_passed": true,
+  "cycle_id": "m9-67",
   "findings": [
     {
       "finding_id": "FIND-M9-67-NO-CC-SMOKE-TEST",
       "rule_id": "vault.no_smoke_test_for_ccs",
       "severity": "medium",
-      "summary": "No automated mechanism to catch silent failures of critical vault drift CCs. m9-65 and m9-66 each discovered drift that had been accumulating silently for many cycles. Added scripts/smoke_test_ccs.sh to inject synthetic drift and verify the meta-check chain still catches it.",
       "subject": {
-        "gap": "m9-65 discovered 49 stale branches because CC#46 only matched fix/m9-* (missing chore/*, feat/mX-*, ms-*). m9-66 discovered 54 stale SHAs because CC#4 had a broken awk regex. Both drifted silently for many cycles. No automated test exercises the CC detection chain end-to-end.",
-        "fix": "Added scripts/smoke_test_ccs.sh that clones the repo into a /tmp work dir, injects synthetic drift into CC#4 (wrong SHA in archive-manifest), CC#39 (wrong Total cycles in cycles/index.md), CC#46 (fake fix/m9-99-smoke-test branch), and verifies the CC#48+CC#54 meta-checks pass on clean state. Each test asserts exit code and DRIFT line. Cost: ~35 seconds."
-      }
+        "fix": "Added scripts/smoke_test_ccs.sh that clones the repo into a /tmp work dir, injects synthetic drift into CC#4 (wrong SHA in archive-manifest), CC#39 (wrong Total cycles in cycles/index.md), CC#46 (fake fix/m9-99-smoke-test branch), and verifies the CC#48+CC#54 meta-checks pass on clean state. Each test asserts exit code and DRIFT line. Cost: ~35 seconds.",
+        "gap": "m9-65 discovered 49 stale branches because CC#46 only matched fix/m9-* (missing chore/*, feat/mX-*, ms-*). m9-66 discovered 54 stale SHAs because CC#4 had a broken awk regex. Both drifted silently for many cycles. No automated test exercises the CC detection chain end-to-end."
+      },
+      "summary": "No automated mechanism to catch silent failures of critical vault drift CCs. m9-65 and m9-66 each discovered drift that had been accumulating silently for many cycles. Added scripts/smoke_test_ccs.sh to inject synthetic drift and verify the meta-check chain still catches it."
     }
   ],
   "lens_summary": "m9-67 is a single-commit B-direct cycle that adds a smoke test for the most failure-prone vault drift CCs. The test was developed and validated locally: 4 tests, 0 failures, ~35s wall time. The test uses git clone --shared (not git archive) because many python CCs call git log via subprocess and need a working .git. The script avoids trap-based cleanup because subshell command substitution would inherit the trap and clean up prematurely \u2014 cleanup is explicit at script exit.",
-  "cycle_id": "m9-67",
+  "schema": "verify-finding.schema.json",
+  "subject": {
+    "base_sha": "67b3d76a80ec8e766a0689fba810fc499b5cd4a4",
+    "branch": "feat/m9-67-cc-smoke-test",
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
+    "cycle_id": "m9-67-cc-smoke-test",
+    "diff_digest": "sha256:9fe9cef134d220064184e067a09b5496f38bb2973607f7be661d985a078dc99d",
+    "head_sha": "ef21e1fef358f63cc73e320688ec566c0806c378",
+    "route": "A-min",
+    "verdict": "passed",
+    "verified_at": "2026-09-13T10:39:00Z",
+    "working_tree_clean": true
+  },
+  "summary": "passed",
   "verdict": "pass_with_findings"
 }

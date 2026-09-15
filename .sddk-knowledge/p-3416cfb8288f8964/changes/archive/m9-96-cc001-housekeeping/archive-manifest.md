@@ -83,13 +83,13 @@ table to the terminated terms table.
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-96-cc001-housekeeping/merge-receipt.md` | `b463115e62afd298d869cc1397acdd8dea4b69b95a43926c23e84b6108508ece` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-96-cc001-housekeeping/release-receipt.md` | `1569bb85093f3e2c93f368ebd4327ee966a14206756229f2cc78b6a80dcffff9` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-96-cc001-housekeeping/release-report.md` | `d717995bda2c10bd99e9d0e157a3bc252e5cc5f8ff201a68374b87b3c675634f` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-96-cc001-housekeeping/verify-findings.json` | `e001c50da9cf5ff56006f4593a0b3195a579e096eef60083bdb222b5e6063c83` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-96-cc001-housekeeping/verify-findings.json` | `5212b4249543712cad253a4de76f59ab91e050311a127e286966094cd6144260` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-96-cc001-housekeeping/verify-report.md` | `bd7a2f5b4349161f78e857c71591e9abb432e29bb1a6fd68875b17befdee495e` |
 | proposal | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-96-cc001-housekeeping/proposal.md` | `c9aa553a8fe09ead12abfa14caa6746989b65943851c53fd9376210a49d1acd4` |
 | spec | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-96-cc001-housekeeping/spec.md` | `7a03d99024e0fbf5e99546893219bdbe2dc7507725c3c715037313b1926f87a0` |
 | tasks | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-96-cc001-housekeeping/tasks.md` | `9f942a18a2226c6c3803c634a191a037b9c79acb1578ff27b25c754017fcc33f` |
 | exploration-report | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-96-cc001-housekeeping/exploration-report.md` | `f94f331df0464f18b5eb0fdee714b8930ec8eecfbeb2c6f932bdbeb37e3cfeb5` |
-| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-96-cc001-housekeeping/change-entry.md` | `e19a6169306293067841cb3694df5d8e58d3141bdbe563336c7da9cebfed18d2` |
+| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-96-cc001-housekeeping/change-entry.md` | `0af3cd3395f5b53a50c6c8a303fac74095b3e08423e4a5d7920d225969dd4cd1` |
 
 ## Evidence bindings
 

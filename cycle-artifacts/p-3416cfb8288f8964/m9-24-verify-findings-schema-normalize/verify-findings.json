@@ -1,28 +1,33 @@
 {
+  "all_passed": true,
   "cycle_id": "m9-24",
-  "subject": {
-    "head": "8e0bfbf79d761452d7c186d855066b54a8176ace",
-    "head_sha": "8e0bfbf79d761452d7c186d855066b54a8176ace",
-    "base_sha": "dd389257d6fdf402a21845449e7d66727beafa6e"
-  },
   "findings": [
     {
-      "id": "F1",
-      "severity": "low",
       "category": "schema-drift",
-      "summary": "8 prior cycles (m9-11..m9-18) had verify-findings.json with legacy schema (subject_sha at top level).",
-      "resolution": "Normalize to new schema with subject dict. Preserve legacy fields under _legacy."
+      "id": "F1",
+      "resolution": "Normalize to new schema with subject dict. Preserve legacy fields under _legacy.",
+      "severity": "low",
+      "summary": "8 prior cycles (m9-11..m9-18) had verify-findings.json with legacy schema (subject_sha at top level)."
     },
     {
-      "id": "F2",
-      "severity": "informational",
       "category": "process",
-      "summary": "Added cross-check #17 to vault-drift-sweep.md.",
-      "resolution": "Cross-check #17 enforces subject must be a dict."
+      "id": "F2",
+      "resolution": "Cross-check #17 enforces subject must be a dict.",
+      "severity": "informational",
+      "summary": "Added cross-check #17 to vault-drift-sweep.md."
     }
   ],
-  "verdict": "pass_with_findings",
   "lens_summary": {
     "drift": "Drift closure cycle. See verify-report.md and change-entry.md."
-  }
+  },
+  "subject": {
+    "base_sha": "dd389257d6fdf402a21845449e7d66727beafa6e",
+    "branch": "feat/m9-24-verify-findings-schema-normalize",
+    "cycle_id": "m9-24-verify-findings-schema-normalize",
+    "head": "8e0bfbf79d761452d7c186d855066b54a8176ace",
+    "head_sha": "8e0bfbf79d761452d7c186d855066b54a8176ace",
+    "route": "A-min"
+  },
+  "summary": "passed",
+  "verdict": "pass_with_findings"
 }

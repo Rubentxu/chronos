@@ -1,24 +1,35 @@
 {
-  "schema": "verify-finding.schema.json",
-  "subject": {
-    "head_sha": "c8772352e912cc769a3f2143ee1df18051e99d35",
-    "base_sha": "a0995886ab25dfc6b11396fd7b521c489c64344c",
-    "diff_digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "working_tree_clean": true,
-    "verified_at": "2026-09-12T19:07:00Z",
-    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
-    "verdict": "passed"
-  },
+  "all_passed": true,
+  "cycle_id": "m9-60",
   "findings": [
     {
       "finding_id": "FIND-M9-60-MISSING-CYCLE-ARTIFACTS",
       "rule_id": "vault_hygiene.cycle_artifacts_existence",
       "severity": "medium",
-      "summary": "2 B-direct cycles (m9-56, m9-57) in cycles/index.md missing cycle-artifacts/ folder",
-      "subject": {"missing_count": 2, "files": ["m9-56-release-report-duplicate-cross-checks", "m9-57-apply-checkpoint-schema-backfill"]}
+      "subject": {
+        "files": [
+          "m9-56-release-report-duplicate-cross-checks",
+          "m9-57-apply-checkpoint-schema-backfill"
+        ],
+        "missing_count": 2
+      },
+      "summary": "2 B-direct cycles (m9-56, m9-57) in cycles/index.md missing cycle-artifacts/ folder"
     }
   ],
   "lens_summary": "m9-60 closes the cycle-artifacts existence drift class. 2 cycles synthesized 6 artifacts each from their git commits and tag peels.",
-  "cycle_id": "m9-60",
+  "schema": "verify-finding.schema.json",
+  "subject": {
+    "base_sha": "a0995886ab25dfc6b11396fd7b521c489c64344c",
+    "branch": "feat/m9-60-cycle-artifacts-existence",
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
+    "cycle_id": "m9-60-cycle-artifacts-existence",
+    "diff_digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "head_sha": "c8772352e912cc769a3f2143ee1df18051e99d35",
+    "route": "A-min",
+    "verdict": "passed",
+    "verified_at": "2026-09-12T19:07:00Z",
+    "working_tree_clean": true
+  },
+  "summary": "passed",
   "verdict": "pass_with_findings"
 }

@@ -1,41 +1,46 @@
 {
+  "all_passed": true,
   "cycle_id": "m9-44",
-  "subject": {
-    "head_sha": "36d728a2036159fb485c8a6034a7b02b35fbdb57",
-    "base_sha": "95b2dfb77f5032cb1af9a09c388e398fe063d5eb"
-  },
-  "verdict": "pass",
   "findings": [
     {
-      "id": "F1",
-      "severity": "low",
       "category": "schema-drift",
       "description": "37 verify-report.md files lacked `**Path**` field.",
+      "id": "F1",
+      "severity": "low",
       "status": "RESOLVED"
     },
     {
-      "id": "F2",
-      "severity": "low",
       "category": "schema-drift",
       "description": "24 verify-findings.json files lacked `lens_summary` field.",
+      "id": "F2",
+      "severity": "low",
       "status": "RESOLVED"
     },
     {
-      "id": "F3",
-      "severity": "low",
       "category": "schema-drift",
       "description": "m9-09, m9-10 verify-report.md had non-canonical Findings prose.",
+      "id": "F3",
+      "severity": "low",
       "status": "RESOLVED"
     },
     {
-      "id": "F4",
-      "severity": "informational",
       "category": "process",
       "description": "Added cross-check #36 to vault-drift-sweep.md.",
+      "id": "F4",
+      "severity": "informational",
       "status": "RESOLVED"
     }
   ],
   "lens_summary": {
     "drift": "Three drift classes closed: verify-report.md Path (37), verify-findings.json lens_summary (24), verify-report.md Findings prose (2). Added cross-check #36."
-  }
+  },
+  "subject": {
+    "base_sha": "95b2dfb77f5032cb1af9a09c388e398fe063d5eb",
+    "branch": "feat/m9-44-verify-report-path-lens-summary",
+    "cycle_id": "m9-44-verify-report-path-lens-summary",
+    "head_sha": "36d728a2036159fb485c8a6034a7b02b35fbdb57",
+    "route": "A-min"
+  },
+  "summary": "passed",
+  "verdict": "pass"
 }

@@ -1,20 +1,24 @@
 {
-  "schema": "sddk.verify-finding/v1",
-  "subject": {
-    "head_sha": "2c98ce9a1df65d44ae865376fee46eb0d95ac425",
-    "base_sha": "6f375fd96dbc0c03fe36b473d306f1e54d078b08"
-  },
-  "findings": [],
-  "summary": {
-    "verdict": "PASS",
-    "path": "B-direct",
-    "blocking_findings": 0,
-    "warnings": 0,
-    "suggestions": 0
-  },
-  "verdict": "pass",
+  "all_passed": true,
   "cycle_id": "m9-03-side-table-debt-cleanup",
+  "findings": [],
   "lens_summary": {
     "drift": "Side-table debt cleanup. No specific drift closure - debt cleanup cycle."
-  }
+  },
+  "schema": "sddk.verify-finding/v1",
+  "subject": {
+    "base_sha": "6f375fd96dbc0c03fe36b473d306f1e54d078b08",
+    "branch": "feat/m9-03-side-table-debt-cleanup",
+    "cycle_id": "m9-03-side-table-debt-cleanup",
+    "head_sha": "2c98ce9a1df65d44ae865376fee46eb0d95ac425",
+    "route": "A-min"
+  },
+  "summary": {
+    "blocking_findings": 0,
+    "path": "B-direct",
+    "suggestions": 0,
+    "verdict": "PASS",
+    "warnings": 0
+  },
+  "verdict": "pass"
 }

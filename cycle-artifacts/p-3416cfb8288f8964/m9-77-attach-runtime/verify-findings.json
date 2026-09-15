@@ -1,14 +1,22 @@
 {
+  "all_passed": true,
+  "cycle_id": "m9-77-attach-runtime",
+  "findings": [],
+  "lens_summary": "m9-77 wires session_start{action=attach} through native, services, dispatcher and MCP. During implementation run_probe_loop_attach was corrected to clear the running flag after a ptrace attach failure, preventing a permanently stuck backend state. 13 files, +1364/-28. T0 fmt + clippy clean; T2 services lib 263; T4 e2e_connectivity 1/1, program_scenarios 11/11, session_lifecycle attach test 1/1. No findings.",
   "schema": "verify-finding.schema.json",
   "subject": {
     "base": "c53171a",
-    "head": "9d5331659f742e3be98995dfba26ff2a635f98ed",
-    "diff_digest": null,
-    "working_tree_clean": true,
-    "verified_at": "2026-09-13T21:24:00+02:00",
+    "base_sha": "c53171a",
+    "branch": "feat/m9-77-attach-runtime",
     "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
-    "verdict": "passed"
+    "cycle_id": "m9-77-attach-runtime",
+    "diff_digest": null,
+    "head_sha": "4bd2da365d938cff734aa7f287597f854862ea58",
+    "route": "A-min",
+    "verdict": "passed",
+    "verified_at": "2026-09-13T21:24:00+02:00",
+    "working_tree_clean": true
   },
-  "lens_summary": "m9-77 wires session_start{action=attach} through native, services, dispatcher and MCP. During implementation run_probe_loop_attach was corrected to clear the running flag after a ptrace attach failure, preventing a permanently stuck backend state. 13 files, +1364/-28. T0 fmt + clippy clean; T2 services lib 263; T4 e2e_connectivity 1/1, program_scenarios 11/11, session_lifecycle attach test 1/1. No findings.",
-  "findings": []
+  "summary": "passed",
+  "verdict": "pass"
 }

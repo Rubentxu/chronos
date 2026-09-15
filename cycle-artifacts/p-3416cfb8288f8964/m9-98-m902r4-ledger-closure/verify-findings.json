@@ -1,26 +1,32 @@
 {
-  "subject": {
-    "head_sha": "5922928331a1bc01a794e641be1f3d4585ec7163",
-    "base_sha": "9239a87cbadc9571f17512415847b86b589292b9",
-    "cycle_id": "m9-98-m902r4-ledger-closure",
-    "branch": "chore/m9-98-m902r4-ledger-closure",
-    "route": "B-direct"
-  },
-  "tier": "vault-only",
+  "all_passed": true,
   "checks": {
     "m9_02_r4_already_closed": {
-      "status": "passed",
-      "evidence": "m9-91 implementation, verify, release, and apply receipts all declare counterexample_bundle_events closes m9-02-R4"
+      "evidence": "m9-91 implementation, verify, release, and apply receipts all declare counterexample_bundle_events closes m9-02-R4",
+      "status": "passed"
     },
     "manifest_regen": {
-      "status": "passed",
-      "command": "python3 scripts/regen_manifest_index_shas.py --check"
+      "command": "python3 scripts/regen_manifest_index_shas.py --check",
+      "status": "passed"
     },
     "vault_drift": {
-      "status": "passed",
-      "command": "bash scripts/check_vault_drift.sh"
+      "command": "bash scripts/check_vault_drift.sh",
+      "status": "passed"
     }
   },
-  "verdict": "PASS",
-  "findings": []
+  "cycle_id": "m9-98-m902r4-ledger-closure",
+  "findings": [],
+  "lens_summary": {
+    "drift": "m9-98-m902r4-ledger-closure: cycle closed cleanly, no findings introduced."
+  },
+  "subject": {
+    "base_sha": "9239a87cbadc9571f17512415847b86b589292b9",
+    "branch": "chore/m9-98-m902r4-ledger-closure",
+    "cycle_id": "m9-98-m902r4-ledger-closure",
+    "head_sha": "5922928331a1bc01a794e641be1f3d4585ec7163",
+    "route": "B-direct"
+  },
+  "summary": "passed",
+  "tier": "vault-only",
+  "verdict": "PASS"
 }
