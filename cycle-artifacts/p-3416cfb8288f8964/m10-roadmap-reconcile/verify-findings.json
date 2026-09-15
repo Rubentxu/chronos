@@ -1,0 +1,31 @@
+{
+  "subject": {
+    "head_sha": "7130cf6e8548a26d2c5e1c8d4b9f3a7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a",
+    "base_sha": "492246b2",
+    "cycle_id": "m10-roadmap-reconcile"
+  },
+  "cycle_id": "m10-roadmap-reconcile",
+  "verdict": "passed",
+  "all_passed": true,
+  "lens_summary": {
+    "drift": "Closed roadmap-doc-stale-milestones drift class. Added m7/m8/m9/m10 to docs/ROADMAP.md closed section. No code changes.",
+    "findings_count": 1,
+    "tiers_run": [
+      "T0"
+    ],
+    "source_schema": "m10-roadmap-reconcile"
+  },
+  "findings": [
+    {
+      "id": "FIND-M10-ROADMAP-STALE-MILESTONES",
+      "severity": "low",
+      "status": "closed",
+      "title": "docs/ROADMAP.md missing m7/m8 closed milestones + stale M7 candidates",
+      "evidence": [
+        "docs/milestones/m7-close-report.md line 3: Status COMPLETE 2026-09-11",
+        "docs/milestones/m8-05-proptest-shrinking-...m8-close-merge.md line 8: COMPLETE",
+        "docs/ROADMAP.md updated to reflect current state"
+      ]
+    }
+  ]
+}

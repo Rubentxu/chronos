@@ -1,0 +1,21 @@
+{
+  "cycle_id": "m10-roadmap-reconcile",
+  "route": "B-direct",
+  "status": "CLOSED",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "complete",
+  "head_sha": "7130cf6e4dc8545d8ddf6108048f1ca914209c61",
+  "base_sha": "492246b2",
+  "main_sha": "7130cf6e4dc8545d8ddf6108048f1ca914209c61",
+  "tier_required": "T0 only",
+  "created_at": "2026-09-15",
+  "title": "m10-roadmap-reconcile",
+  "summary": "docs-only edit: add m7/m8/m9/m10 to closed milestones; remove stale M7 candidates.",
+  "findings_closed": [
+    "FIND-M10-ROADMAP-STALE-MILESTONES"
+  ],
+  "findings_introduced": {
+    "no_action": []
+  }
+}

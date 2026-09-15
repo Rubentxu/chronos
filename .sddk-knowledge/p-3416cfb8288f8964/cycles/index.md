@@ -22,6 +22,8 @@ Append-only index of all completed cycles in this vault.
 | m10 | m10-ms-evt-typed | B-direct | v0.7.102 | `0998aa734541e6675ed1645745e2b26060a8a645` | CLOSED |
 | m10 | m10-ms-property-policy | A-min | v0.7.101 | `95c998e7d3ea6f3ee2ad0c160a54b07f08554ceb` | CLOSED |
 | m10 | m10-stale-branch-cleanup-2 | B-direct | — | `5a76fd1d17f363a36cc62969dffcca0280ce9c7d` | CLOSED |
+| m10 | m10-roadmap-reconcile | B-direct | — | `7130cf6e4dc8545d8ddf6108048f1ca914209c61` | CLOSED |
+| m10 | m10-vault-index-reconcile | B-direct | — | `dee1a3d328ad06f5e710afbfcde9887d5d9bbf69` | CLOSED |
 
 See `changes/archive/` for full archive manifests of closed cycles.
 
@@ -32,6 +34,6 @@ See `changes/archive/` for full archive manifests of closed cycles.
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
 | Last updated | 2026-09-15T14:30Z |
-| Total cycles | 11 (m10-* rows above; m9-* milestones tracked separately in cycle-artifacts/) |
-| m10 cycles | 11 (rows above) |
-| Last archive | m10-roadmap-reconcile |
+| Total cycles | 98 (legacy convention; out of sync with m10-* additions — tracked separately as carry-forward) |
+| m10 cycles | 13 (rows above) |
+| Last archive | m10-vault-index-reconcile |

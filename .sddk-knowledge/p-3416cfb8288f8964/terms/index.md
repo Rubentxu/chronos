@@ -28,8 +28,8 @@ See `changes/archive/` for closed cycle manifests.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-15T10:30Z |
-| Last archive | m10-cc30-cc34-cc35-cc36-cc41-cc43-schema-fix |
+| Last updated | 2026-09-15T14:30Z |
+| Last archive | m10-vault-index-reconcile |
 | Active findings | 0 |
 | Backlog findings | 0 |
 | Terminated findings | 2 |
