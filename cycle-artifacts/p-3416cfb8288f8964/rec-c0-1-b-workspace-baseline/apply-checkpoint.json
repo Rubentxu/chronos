@@ -2,7 +2,9 @@
   "cycle_id": "rec-c0-1-b-workspace-baseline",
   "scope": "REC-C0.1-B (prove complete workspace test baseline after #21 lands)",
   "branch": "feat/rec-convergence-truth-gate",
-  "issues": ["#20"],
+  "issues": [
+    "#20"
+  ],
   "path": "B-direct",
   "verification": {
     "cargo_fmt": "PASS",
@@ -18,5 +20,25 @@
     "test_probe_inject_without_root_returns_error"
   ],
   "pre_existing_root_cause": "These assume a host without BPF capabilities; the local host permits uprobe attach for user rubentxu. Identical failure on main HEAD with byte-identical probe_inject.rs content.",
-  "completion_state": "verified"
+  "completion_state": "verified",
+  "title": "REC C0 1 b workspace baseline",
+  "summary": "REC-C0 cycle — see cycle folder for evidence.",
+  "head_sha": "c580d8a956153fcb56ded827a7342d70b87917c3",
+  "base_sha": "8e4f54fb11cbba8491b39a84dbcc4b8974d4af99",
+  "main_sha": "c580d8a956153fcb56ded827a7342d70b87917c3",
+  "remote_tag_peel": "c580d8a956153fcb56ded827a7342d70b87917c3",
+  "peel_match": true,
+  "status": "CLOSED",
+  "findings_introduced": {
+    "no_action": []
+  },
+  "verified_at": "2026-09-15T18:51:16+02:00",
+  "released_at": "2026-09-15T18:51:16+02:00",
+  "archived_at": "2026-09-15T18:51:16+02:00",
+  "created_at": "2026-09-15T18:51:16+02:00",
+  "route": "B-direct",
+  "remote_tag": "",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived"
 }

@@ -3,7 +3,9 @@
   "scope": "REC-C0.2 / REC-C3.2-C",
   "branch": "feat/rec-convergence-truth-gate",
   "commit": "7e3702d7",
-  "issues": ["#21"],
+  "issues": [
+    "#21"
+  ],
   "path": "A-min",
   "files_deleted": [
     "crates/chronos-domain/src/tripwire/webhook.rs (186 lines)"
@@ -26,5 +28,25 @@
   "remaining_debt_out_of_scope": [
     "cargo check --workspace --all-targets --all-features fails on chronos-store (bench cas_bench: 7-arg constructor where the type now has 6) and chronos-ebpf (cannot find value 'config' on --features ebpf). Both errors were MASKED before REC-C0 because cargo stopped at the broken chronos-domain webhook module. Now visible, not introduced by REC-C0. Tracked separately as M-series follow-ups; not addressed by REC-C0."
   ],
-  "completion_state": "applied"
+  "completion_state": "applied",
+  "title": "REC C0 2 c domain cleanup",
+  "summary": "chronos-domain no longer contains any HTTP, reqwest, tokio, serde_json, or webhook URL validation logic. chronos-domain Cargo.toml has only thiserror, serde, uuid, schemars. The webhook delivery is reachable only via chronos-webhook adapter through the NotificationSink port.",
+  "head_sha": "7e3702d7ae171c510d1611439b354c7a35edb2e0",
+  "base_sha": "3619c123196d2f125629a0b141bb92b613738b0c",
+  "main_sha": "7e3702d7ae171c510d1611439b354c7a35edb2e0",
+  "remote_tag_peel": "7e3702d7ae171c510d1611439b354c7a35edb2e0",
+  "peel_match": true,
+  "status": "CLOSED",
+  "findings_introduced": {
+    "no_action": []
+  },
+  "verified_at": "2026-09-15T18:31:17+02:00",
+  "released_at": "2026-09-15T18:31:17+02:00",
+  "archived_at": "2026-09-15T18:31:17+02:00",
+  "created_at": "2026-09-15T18:31:17+02:00",
+  "route": "A-min",
+  "remote_tag": "",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived"
 }

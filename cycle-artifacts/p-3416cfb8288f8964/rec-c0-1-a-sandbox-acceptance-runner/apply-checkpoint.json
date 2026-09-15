@@ -4,7 +4,9 @@
   "branch": "feat/rec-convergence-truth-gate",
   "started_at": "2026-09-15T16:00:00Z",
   "head_sha_before": "8e4f54fb",
-  "issues": ["#20"],
+  "issues": [
+    "#20"
+  ],
   "path": "B-direct",
   "invariant_repaired": "Sandbox M0 acceptance gate must not couple to CARGO_TARGET_DIR or the internal layout of target/debug/deps/. The previous meta-test re-invoked its own binary by scanning CARGO_BIN_EXE_m0_acceptance, then CARGO_TARGET_DIR/debug/deps/m0_acceptance-*, which silently failed when CARGO_TARGET_DIR pointed outside target/.",
   "root_cause": "m0_10_sandbox_m0_acceptance_suite_passes inside chronos-sandbox/tests/m0_acceptance.rs reconstructed the running test binary path from environment variables and Cargo's internal target/debug/deps layout. The reconstruction assumed CARGO_TARGET_DIR resolved to a directory containing the test executable, which is brittle and breaks under any non-default target directory. Cargo does not rewrite CARGO_TARGET_DIR into child processes automatically, so the test was unable to find its own binary in 3 of the 4 common scenarios.",
@@ -48,5 +50,25 @@
     }
   ],
   "next_subcycle_unlocked": "REC-C0.1-B (prove complete workspace test baseline after Issue #21 lands) and REC-C0.2-A (extract NotificationSink port + remove chronos-domain->reqwest dependency).",
-  "completion_state": "applied"
+  "completion_state": "applied",
+  "title": "REC C0 1 a sandbox acceptance runner",
+  "summary": "Sandbox M0 acceptance gate must not couple to CARGO_TARGET_DIR or the internal layout of target/debug/deps/. The previous meta-test re-invoked its own binary by scanning CARGO_BIN_EXE_m0_acceptance, then CARGO_TARGET_DIR/debug/deps/m0_acceptance-*, which silently failed when C...",
+  "head_sha": "11962e71d393931339c4ad09556ea0ae2086c9ad",
+  "base_sha": "9cc44ce37224e8e35b069a160c140e0f0bf7e016",
+  "main_sha": "11962e71d393931339c4ad09556ea0ae2086c9ad",
+  "remote_tag_peel": "11962e71d393931339c4ad09556ea0ae2086c9ad",
+  "peel_match": true,
+  "status": "CLOSED",
+  "findings_introduced": {
+    "no_action": []
+  },
+  "verified_at": "2026-09-15T18:22:57+02:00",
+  "released_at": "2026-09-15T18:22:57+02:00",
+  "archived_at": "2026-09-15T18:22:57+02:00",
+  "created_at": "2026-09-15T18:22:57+02:00",
+  "route": "B-direct",
+  "remote_tag": "",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived"
 }

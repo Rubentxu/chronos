@@ -44,3 +44,5 @@ jobs:
           python-version: '3.11'
       - name: Check for drift
         run: ./scripts/check_vault_drift.sh
+      - name: Validate cycle-artifact completeness (rec-c0-* and new cycles)
+        run: python3 ./scripts/validate_cycle_artifacts.py

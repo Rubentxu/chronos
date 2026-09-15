@@ -25,6 +25,13 @@ Append-only index of all completed cycles in this vault.
 | m10 | m10-roadmap-reconcile | B-direct | — | `7130cf6e4dc8545d8ddf6108048f1ca914209c61` | CLOSED |
 | m10 | m10-vault-index-reconcile | B-direct | — | `dee1a3d328ad06f5e710afbfcde9887d5d9bbf69` | CLOSED |
 
+| rec-c0 | rec-c0-1-a-sandbox-acceptance-runner | B-direct | — | `11962e71d393931339c4ad09556ea0ae2086c9ad` | CLOSED |
+| rec-c0 | rec-c0-1-b-workspace-baseline | B-direct | — | — | CLOSED |
+| rec-c0 | rec-c0-2-a-notification-sink-port | A-min | — | `a3dabc149c5d92f345b7f7f06b85b9c4f5de71b3` | CLOSED |
+| rec-c0 | rec-c0-2-b-webhook-adapter | A-min | — | `3619c123196d2f125629a0b141bb92b613738b0c` | CLOSED |
+| rec-c0 | rec-c0-2-c-domain-cleanup | A-min | — | `7e3702d7ae171c510d1611439b354c7a35edb2e0` | CLOSED |
+| rec-c0 | rec-c0-2-d-uat-verification | A-min | — | `c580d8a956153fcb56ded827a7342d70b87917c3` | CLOSED |
+
 See `changes/archive/` for full archive manifests of closed cycles.
 
 ## Metadata
