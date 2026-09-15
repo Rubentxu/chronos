@@ -5,7 +5,7 @@
 
 use crate::error::BrowserError;
 use std::process::{Child, Command};
-use tracing::{debug, info};
+use tracing::info;
 
 /// Environment variable for Chrome path
 const CHROME_PATH_ENV: &str = "CHROME_PATH";
@@ -219,44 +219,76 @@ impl Drop for ChromeProcess {
 // Chrome binary discovery
 // ============================================================================
 
-/// Find the Chrome binary path
+/// Locate the Chrome binary within a configured environment.
+///
+/// Decoupled from the host environment (PATH, well-known paths) so the
+/// search can be controlled from tests without depending on what is
+/// installed on the host. `find_chrome_binary` is the default entry
+/// point that constructs a `ChromeLocator` from the host.
+#[derive(Debug, Clone)]
+pub struct ChromeLocator {
+    /// Override resolved from `CHROME_PATH` env var, if present and the
+    /// file exists on disk.
+    pub env_override: Option<String>,
+    /// Candidate paths / basenames to look up via `which`.
+    pub candidates: Vec<String>,
+}
+
+impl ChromeLocator {
+    /// Build a locator that mirrors the host search: env var first,
+    /// then the platform-default candidate list.
+    pub fn from_host() -> Self {
+        let env_override = std::env::var(CHROME_PATH_ENV)
+            .ok()
+            .filter(|p| std::path::Path::new(p).exists());
+        let candidates = if cfg!(target_os = "macos") {
+            vec![
+                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome".to_string(),
+                "/Applications/Chromium.app/Contents/MacOS/Chromium".to_string(),
+            ]
+        } else {
+            vec![
+                "google-chrome".to_string(),
+                "chromium-browser".to_string(),
+                "chromium".to_string(),
+                "/usr/bin/google-chrome".to_string(),
+                "/usr/bin/chromium-browser".to_string(),
+                "/usr/bin/chromium".to_string(),
+                "/snap/bin/chromium".to_string(),
+            ]
+        };
+        Self {
+            env_override,
+            candidates,
+        }
+    }
+
+    /// Resolve a Chrome binary path using only the candidates provided.
+    /// Returns `ChromeNotFound` if neither the env override (if set)
+    /// nor any of the candidates resolves to an executable on disk.
+    pub fn resolve(&self) -> Result<String, BrowserError> {
+        if let Some(path) = &self.env_override {
+            if std::path::Path::new(path).exists() {
+                return Ok(path.clone());
+            }
+            // Env override points to a non-existent path; fall through to
+            // candidate search. This matches the previous behaviour and
+            // ensures a misconfigured CHROME_PATH does not silently win.
+        }
+        for candidate in &self.candidates {
+            if which::which(candidate).is_ok() {
+                return Ok(candidate.clone());
+            }
+        }
+        Err(BrowserError::ChromeNotFound(
+            "Could not find Chrome or Chromium in the configured locator".into(),
+        ))
+    }
+}
+
+/// Find the Chrome binary path using the default host locator.
 fn find_chrome_binary() -> Result<String, BrowserError> {
-    // Check environment variable first
-    if let Ok(path) = std::env::var(CHROME_PATH_ENV) {
-        if std::path::Path::new(&path).exists() {
-            debug!("Using Chrome from {} env variable", CHROME_PATH_ENV);
-            return Ok(path);
-        }
-    }
-
-    // Try common Chrome binary paths
-    let candidates = if cfg!(target_os = "macos") {
-        vec![
-            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-            "/Applications/Chromium.app/Contents/MacOS/Chromium",
-        ]
-    } else {
-        vec![
-            "google-chrome",
-            "chromium-browser",
-            "chromium",
-            "/usr/bin/google-chrome",
-            "/usr/bin/chromium-browser",
-            "/usr/bin/chromium",
-            "/snap/bin/chromium",
-        ]
-    };
-
-    for candidate in candidates {
-        if which::which(candidate).is_ok() {
-            debug!("Found Chrome at: {}", candidate);
-            return Ok(candidate.to_string());
-        }
-    }
-
-    Err(BrowserError::ChromeNotFound(
-        "Could not find Chrome or Chromium in PATH".into(),
-    ))
+    ChromeLocator::from_host().resolve()
 }
 
 #[cfg(test)]
@@ -265,11 +297,39 @@ mod tests {
 
     #[test]
     fn test_chrome_not_found_error() {
-        // Set an invalid path to force ChromeNotFound error
-        std::env::set_var(CHROME_PATH_ENV, "/nonexistent/path/to/chrome");
-        let result = find_chrome_binary();
-        std::env::remove_var(CHROME_PATH_ENV);
+        // Construct a locator with NO env override and NO candidates.
+        // Resolution must deterministically return ChromeNotFound,
+        // regardless of whether the host has Chrome installed.
+        let locator = ChromeLocator {
+            env_override: None,
+            candidates: Vec::new(),
+        };
+        let result = locator.resolve();
+        assert!(matches!(result, Err(BrowserError::ChromeNotFound(_))));
+    }
 
+    #[test]
+    fn test_chrome_locator_with_candidate_resolves_to_that_candidate() {
+        // /bin/true exists on every Linux/macOS CI runner and is non-Chrome,
+        // so we use it as a stand-in to verify candidate-driven resolution
+        // is honoured without depending on the host PATH.
+        let locator = ChromeLocator {
+            env_override: None,
+            candidates: vec!["/bin/true".to_string()],
+        };
+        let result = locator.resolve();
+        assert!(matches!(result, Ok(ref p) if p == "/bin/true"));
+    }
+
+    #[test]
+    fn test_chrome_locator_env_override_path_must_exist() {
+        // An env override pointing to a non-existent path is treated as
+        // "no override" — fall back to the candidate list.
+        let locator = ChromeLocator {
+            env_override: Some("/nonexistent/path/to/chrome".to_string()),
+            candidates: Vec::new(),
+        };
+        let result = locator.resolve();
         assert!(matches!(result, Err(BrowserError::ChromeNotFound(_))));
     }
 
