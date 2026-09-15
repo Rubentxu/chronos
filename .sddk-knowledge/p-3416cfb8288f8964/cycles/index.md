@@ -15,3 +15,15 @@ Append-only index of all completed cycles in this vault.
 | m10 | m10-ms-cap-discovery-followup | A-min | v0.7.104 | `11efb266bc10dd21f48e606b403740cefaeb6da2` | CLOSED |
 
 See `changes/archive/` for full archive manifests of closed cycles.
+
+## Metadata
+
+| Campo | Valor |
+|---|---|
+| Project | chronos |
+| Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
+| Last updated | 2026-09-15T08:58Z |
+| Total cycles | 98 |
+| m9 cycles | 98 (full count under `cycle-artifacts/p-3416cfb8288f8964/m9-*/`) |
+| m10 cycles | 2 (rows above; `m10-ms-cap-discovery` and `m10-ms-cap-discovery-followup`) |
+| Last archive | m10-ms-cap-discovery-followup |
