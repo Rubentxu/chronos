@@ -11,7 +11,6 @@ verified_requires = ["evidence", "uat", "verify"]
 # fails when a new forbidden edge appears AND when a removed edge remains in
 # this baseline, forcing the debt inventory to shrink with the code.
 known_dependency_violations = [
-  "chronos-domain->reqwest",
   "chronos-services->chronos-store",
   "chronos-services->chronos-ebpf",
   "chronos-services->chronos-native",
