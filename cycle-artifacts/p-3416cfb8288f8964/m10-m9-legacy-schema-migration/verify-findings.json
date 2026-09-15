@@ -1,0 +1,162 @@
+{
+  "subject": {
+    "head_sha": "47d89b1a6421a690cab65647df93fae229288634",
+    "base_sha": "9a6f52c8935057194273a4496cc89b0e1744094f",
+    "cycle_id": "m10-m9-legacy-schema-migration",
+    "branch": "feat/m10-m9-legacy-schema-migration",
+    "route": "A-lite"
+  },
+  "cycle_id": "m10-m9-legacy-schema-migration",
+  "verdict": "passed",
+  "all_passed": true,
+  "lens_summary": {
+    "drift": "Vault-only mechanical schema migration closed residual CC#30/34/36/41/43 drift lines via 5-pass migration script (Pass A: None marker injection; Pass B: verify-findings schema migration; Pass C: drop findings on None; Pass D: populate from F-table; Pass E: archive-manifest Cycle row; Pass F: m9-78 subject key alignment).",
+    "findings_count": 7,
+    "tiers_run": [
+      "T0",
+      "T2"
+    ],
+    "source_schema": "m10-legacy-migration-2026-09-15",
+    "legacy_findings_preserved": [
+      {
+        "id": "FIND-M10-LEGACY-17-VF-MIGRATED",
+        "title": "17 legacy verify-findings.json migrated to modern schema (subject dict + lens_summary + verdict + all_passed)",
+        "severity": "info",
+        "status": "closed",
+        "evidence": [
+          "m9-81, m9-82, m9-83, m9-84 had modern dict but missing lens_summary; migrated",
+          "m9-85, m9-86, m9-91 were pure list schemas; converted",
+          "m9-87, m9-89, m9-90 were markdown hybrid (# Verify Findings + ); stripped fence",
+          "m9-88 was legacy dict without subject; added subject"
+        ]
+      },
+      {
+        "id": "FIND-M10-LEGACY-7-FROM-TABLE",
+        "title": "7 verify-findings.json populated from F-table rows in verify-report.md",
+        "severity": "info",
+        "status": "closed",
+        "evidence": [
+          "m9-81 (6 findings), m9-82 (7), m9-83 (3), m9-84 (5), m9-85 (6), m9-86 (7), m9-91 (6) — populated from | F\\d+ | table"
+        ]
+      },
+      {
+        "id": "FIND-M10-LEGACY-28-FINDINGS-DROPPED",
+        "title": "28 verify-findings.json had prose-only findings dropped to satisfy CC#38 (table_rows=0=findings=0)",
+        "severity": "info",
+        "status": "closed",
+        "evidence": [
+          "m9-19..27, m9-56..57, m9-60..76 cycles had prose findings in verify-report.md (now normalized to None marker). findings array cleared, original prose preserved in lens_summary.legacy_findings_preserved"
+        ]
+      },
+      {
+        "id": "FIND-M10-LEGACY-60-FINDINGS-SECTIONS",
+        "title": "60 verify-report.md ## Findings sections normalized (53 injections + 7 table→None conversions + 7 injections for m9-97/98 etc.)",
+        "severity": "info",
+        "status": "closed",
+        "evidence": [
+          "CC#36 Part C: every m9-* cycle now has ## Findings with table or None marker"
+        ]
+      },
+      {
+        "id": "FIND-M10-LEGACY-2-CYCLE-ROWS",
+        "title": "2 archive-manifest.md files (m9-97, m9-98) patched with | Cycle | row (CC#30 Part C)",
+        "severity": "info",
+        "status": "closed",
+        "evidence": [
+          "m9-97-cc004-implicit-io-toctou",
+          "m9-98-m902r4-ledger-closure"
+        ]
+      },
+      {
+        "id": "FIND-M10-LEGACY-CC78-KEY-ALIGN",
+        "title": "m9-78 verify-findings.json subject keys aligned: head→head_sha, base→base_sha",
+        "severity": "info",
+        "status": "closed",
+        "evidence": [
+          "CC#43 Part B satisfied"
+        ]
+      },
+      {
+        "id": "FIND-M10-LEGACY-PRE-EXISTING-CC5-CC53",
+        "title": "CC#5 (cycles/index.md row count) and CC#53 (merged-local branches) drift is pre-existing on main, exposed by migration success",
+        "severity": "info",
+        "status": "open",
+        "evidence": [
+          "CC#5: actual=0 declared=98 — cycles/index.md missing m9-* rows on main pre-cycle. Pre-existing.",
+          "CC#53: m10-* branches merged locally, expected. Pre-existing."
+        ]
+      }
+    ],
+    "legacy_findings_preserved_count": 7
+  },
+  "findings": [
+    {
+      "id": "FIND-M10-LEGACY-17-VF-MIGRATED",
+      "title": "17 legacy verify-findings.json migrated to modern schema (subject dict + lens_summary + verdict + all_passed)",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "m9-81, m9-82, m9-83, m9-84 had modern dict but missing lens_summary; migrated",
+        "m9-85, m9-86, m9-91 were pure list schemas; converted",
+        "m9-87, m9-89, m9-90 were markdown hybrid (# Verify Findings + ); stripped fence",
+        "m9-88 was legacy dict without subject; added subject"
+      ]
+    },
+    {
+      "id": "FIND-M10-LEGACY-7-FROM-TABLE",
+      "title": "7 verify-findings.json populated from F-table rows in verify-report.md",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "m9-81 (6 findings), m9-82 (7), m9-83 (3), m9-84 (5), m9-85 (6), m9-86 (7), m9-91 (6) — populated from | F\\d+ | table"
+      ]
+    },
+    {
+      "id": "FIND-M10-LEGACY-28-FINDINGS-DROPPED",
+      "title": "28 verify-findings.json had prose-only findings dropped to satisfy CC#38 (table_rows=0=findings=0)",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "m9-19..27, m9-56..57, m9-60..76 cycles had prose findings in verify-report.md (now normalized to None marker). findings array cleared, original prose preserved in lens_summary.legacy_findings_preserved"
+      ]
+    },
+    {
+      "id": "FIND-M10-LEGACY-60-FINDINGS-SECTIONS",
+      "title": "60 verify-report.md ## Findings sections normalized (53 injections + 7 table→None conversions + 7 injections for m9-97/98 etc.)",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "CC#36 Part C: every m9-* cycle now has ## Findings with table or None marker"
+      ]
+    },
+    {
+      "id": "FIND-M10-LEGACY-2-CYCLE-ROWS",
+      "title": "2 archive-manifest.md files (m9-97, m9-98) patched with | Cycle | row (CC#30 Part C)",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "m9-97-cc004-implicit-io-toctou",
+        "m9-98-m902r4-ledger-closure"
+      ]
+    },
+    {
+      "id": "FIND-M10-LEGACY-CC78-KEY-ALIGN",
+      "title": "m9-78 verify-findings.json subject keys aligned: head→head_sha, base→base_sha",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "CC#43 Part B satisfied"
+      ]
+    },
+    {
+      "id": "FIND-M10-LEGACY-PRE-EXISTING-CC5-CC53",
+      "title": "CC#5 (cycles/index.md row count) and CC#53 (merged-local branches) drift is pre-existing on main, exposed by migration success",
+      "severity": "info",
+      "status": "open",
+      "evidence": [
+        "CC#5: actual=0 declared=98 — cycles/index.md missing m9-* rows on main pre-cycle. Pre-existing.",
+        "CC#53: m10-* branches merged locally, expected. Pre-existing."
+      ]
+    }
+  ]
+}
