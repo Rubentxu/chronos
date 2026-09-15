@@ -13,6 +13,7 @@ Append-only index of all completed cycles in this vault.
 | m8-07 | m8-07-hypothesis-reconstruction-fidelity | — | — | — | CLOSED |
 | m10 | m10-ms-cap-discovery | A-min | v0.7.103 | `3f7abc351974835a215767b9f491dad3aef3474e` | CLOSED |
 | m10 | m10-ms-cap-discovery-followup | A-min | v0.7.104 | `11efb266bc10dd21f48e606b403740cefaeb6da2` | CLOSED |
+| m10 | m10-vault-last-updated-backfill | B-direct | v0.7.105 | `fa92a6ee40aea67a9dbac9301a14fafd3c15b7af` | CLOSED |
 
 See `changes/archive/` for full archive manifests of closed cycles.
 
@@ -22,8 +23,8 @@ See `changes/archive/` for full archive manifests of closed cycles.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-15T08:58Z |
+| Last updated | 2026-09-15T09:05Z |
 | Total cycles | 98 |
 | m9 cycles | 98 (full count under `cycle-artifacts/p-3416cfb8288f8964/m9-*/`) |
-| m10 cycles | 2 (rows above; `m10-ms-cap-discovery` and `m10-ms-cap-discovery-followup`) |
-| Last archive | m10-ms-cap-discovery-followup |
+| m10 cycles | 3 (rows above) |
+| Last archive | m10-vault-last-updated-backfill |

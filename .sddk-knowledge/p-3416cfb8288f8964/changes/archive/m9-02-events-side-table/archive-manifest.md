@@ -185,8 +185,8 @@ No formal spec.md existed for this change; the scoping doc
 | scoping doc | `docs/milestones/m9-02-events-side-table-scoping.md` | `001c7969d3f416432268cab8a0880460f87b23f6ee20800d9dafb2321afd0653` |
 | design doc | `docs/milestones/m9-02-events-side-table-design.md` | `6c13ff80e0d130463df66071653ae0dfd7ab9d302a36b7a2d35394b52aeb57c9` |
 | apply-checkpoint | `apply-checkpoint.json` | `70d9f0e1dca653285bb0f48f7e295a41e612db30ff86894211874082a0372068` |
-| terms index | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `8618155ee9dee1bbaa237e9b2dac087bbfcb8b473ccc74d0a7c32679b3901273` |
-| cycles index | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `f44b0978a99533c7c805d95f7dcc4f18a1ff6f5f263c455a5c592b4298a5f947` |
+| terms index | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `45b16a1938be3ea0186f2bfe01df04fcee03935840d79cc8819b128047d286f0` |
+| cycles index | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `8a91c2581d9cb69f5e96eb15f0ded4bba111bcc7d9692c774404f67f9daab853` |
 
 ## Runtime status
 

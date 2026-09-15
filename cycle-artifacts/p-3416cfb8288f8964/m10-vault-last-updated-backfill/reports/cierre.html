@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Cierre m10-vault-last-updated-backfill — chronos</title>
+<style>
+  body{font-family:-apple-system,system-ui,sans-serif;max-width:780px;margin:2em auto;color:#222;padding:0 1em;line-height:1.5}
+  h1,h2,h3{color:#0b3}
+  pre{background:#f4f4f4;padding:1em;overflow-x:auto;border-left:3px solid #0b3}
+  code{background:#eee;padding:.1em .3em;border-radius:.2em}
+  table{border-collapse:collapse;width:100%;margin:1em 0}
+  th,td{border:1px solid #ddd;padding:.5em;text-align:left}
+  th{background:#f4f4f4}
+  .meta{color:#666;font-size:.9em}
+</style>
+</head>
+<body>
+
+<h1>Cierre de ciclo SDDK — <code>m10-vault-last-updated-backfill</code></h1>
+
+<p class="meta">
+  <strong>Proyecto</strong>: chronos &nbsp;
+  <strong>Cycle ID</strong>: <code>p-3416cfb8288f8964/m10-vault-last-updated-backfill</code> &nbsp;
+  <strong>Path</strong>: B-direct &nbsp;
+  <strong>Tag</strong>: <code>v0.7.105</code> &nbsp;
+  <strong>Base SHA</strong>: <code>b70b78ef…</code> &nbsp;
+  <strong>Merge SHA</strong>: <code>fa92a6ee40aea67a9dbac9301a14fafd3c15b7af</code> &nbsp;
+  <strong>Cerrado</strong>: 2026-09-15T09:04Z
+</p>
+
+<h2>Resumen ejecutivo</h2>
+<p>Ciclo B-direct para restaurar el bloque <code>## Metadata</code> en
+<code>cycles/index.md</code> y <code>terms/index.md</code>, recuperando
+los campos <code>Last updated | &lt;iso&gt;</code> y
+<code>Total cycles | &lt;int&gt;</code> que las cascadas de archivo
+previas en m10 eliminaron silenciosamente. Cerrado en un único commit
+(<code>943f9afe</code>) para mantener B-direct predecible (una sola
+unidad de revisión, AGENTS.md §5). Tag <code>v0.7.105</code> empujado
+a origin, peel validado contra el HEAD de main. Sin cambios en código.
+</p>
+
+<h2>Ficheros tocados</h2>
+<table>
+  <tr><th>Path</th><th>Líneas</th></tr>
+  <tr><td><code>.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md</code></td><td>+12/-0</td></tr>
+  <tr><td><code>.sddk-knowledge/p-3416cfb8288f8964/terms/index.md</code></td><td>+14/-1</td></tr>
+  <tr><td><code>.sddk-knowledge/.../m9-{02,70,71,72,73,74,75,76,79,80,81,82}-*/archive-manifest.md</code> (×12)</td><td>rewrite SHA</td></tr>
+  <tr><th>Total</th><th>14 files, +49/-25</th></tr>
+</table>
+
+<h2>Resultados de gates</h2>
+<table>
+  <tr><th>Gate</th><th>Resultado</th><th>Notas</th></tr>
+  <tr><td><code>cargo fmt --all -- --check</code></td><td>pass</td><td>código no tocado</td></tr>
+  <tr><td><code>cargo clippy --workspace --all-targets -- -D warnings</code></td><td>pass</td><td>código no tocado</td></tr>
+  <tr><td><code>cargo test -p chronos-mcp --lib --tests</code></td><td>pass</td><td>148 tests, 0 failures</td></tr>
+  <tr><td><code>cargo test -p chronos-services --lib --tests</code></td><td>pass</td><td>274 tests, 0 failures</td></tr>
+  <tr><td><code>scripts/regen_manifest_index_shas.py --check</code></td><td>pass</td><td>98 manifests, 0 stale</td></tr>
+  <tr><td><code>scripts/check_vault_drift.sh</code></td><td>parcial</td><td>CC#18 (3 líneas false-positive sobre HANDOFF-*.md) pre-existente</td></tr>
+  <tr><td>CC#39 Total cycles match</td><td>pass</td><td>98 = expected</td></tr>
+  <tr><td>CC#42 Last updated on cycles</td><td>pass</td><td><code>Last updated | 2026-09-15T08:58Z</code></td></tr>
+  <tr><td>CC#42 Last updated on terms</td><td>pass</td><td><code>Last updated | 2026-09-15T08:58Z</code></td></tr>
+</table>
+
+<h2>Phase gates evaluados</h2>
+<ol>
+  <li><code>implementation-complete</code> (B-direct) — pass, receipt <code>gate-implementation-complete-0730a50f1c1709b0-1</code></li>
+  <li><code>tests-pass</code> (B-direct) — pass, receipt <code>gate-tests-pass-d762d6a4180f2410-1</code></li>
+  <li><code>policy-compliant</code> (B-direct) — pass, receipt <code>gate-policy-compliant-d762d6a4180f2410-1</code></li>
+  <li><code>no-pending-effects</code> — pass, receipt <code>gate-no-pending-effects-12f3490236c9500a-1</code></li>
+  <li><code>release-uat-approved</code> — pass, receipt <code>gate-release-uat-approved-12f3490236c9500a-1</code></li>
+</ol>
+
+<h2>Transiciones aplicadas</h2>
+<ol>
+  <li><code>cycle.start</code> → OPEN/Build (branch feat/m10-vault-last-updated-backfill @ b70b78ef)</li>
+  <li><code>phase.build.complete.b-direct</code> → OPEN/Verify (1 receipt)</li>
+  <li><code>phase.verify.complete.b-direct</code> → RELEASE_PENDING/Release (2 receipts)</li>
+  <li><code>release.complete</code> → RELEASED/Archive (2 receipts, tag v0.7.105 published)</li>
+  <li><code>archive.complete</code> → CLOSED (post: cierre.html + manifest finalized)</li>
+</ol>
+
+<h2>Carry-forward (próximos ciclos)</h2>
+<ol>
+  <li><strong>m10-vault-handoff-relocate (B-direct)</strong> — mover los
+    ficheros <code>HANDOFF-*.md</code> fuera de
+    <code>cycle-artifacts/p-3416cfb8288f8964/</code> o bien ajustar
+    CC#18 en el vault-drift-sweep para filtrar con
+    <code>os.path.isdir()</code>. Cierra las 3 líneas residuales.</li>
+  <li><strong>m10-cycles-index-recovery (A-min/A-lite, opcional)</strong> —
+    restaurar las filas de m6-*, m7-*, m8-* que la forma slim ha
+    eliminado. Solo si la pérdida de filas impacta futuros audits.</li>
+</ol>
+
+<h2>Predecesor / sucesor</h2>
+<ul>
+  <li><strong>Predecesor</strong>: m10-ms-cap-discovery-followup (v0.7.104, sha 11efb266) — el ciclo que cerró los dos hallazgos MEDIUM heredados de m10-ms-cap-discovery.</li>
+  <li><strong>Sucesor</strong>: <code>m10-vault-handoff-relocate</code> (B-direct) o <code>m10-spec-coverage-glue</code> (A-full), pendiente de decisión del usuario.</li>
+</ul>
+
+<h2>Notas</h2>
+<ul>
+  <li>El ciclo <code>m10-ms-cap-discovery-followup</code> (cierre previo) vivía en el punto de partida de este ciclo; este ciclo existe porque la cascada slim
+    generada por el agente de archivo de m10-ms-cap-discovery-followup
+    dejó huérfanos los campos <code>Last updated</code> y
+    <code>Total cycles</code> en los índices de vault.</li>
+  <li>Cuando el próximo ciclo sea agendado, el siguiente hash (HEAD actual <code>fa92a6ee</code>) debería servir como base.</li>
+</ul>
+
+<hr>
+<p class="meta">Generado automáticamente por el agente archive de
+<code>m10-vault-last-updated-backfill</code>. Sin red. Sin CDN. Sin
+scripts de terceros.</p>
+
+</body>
+</html>
