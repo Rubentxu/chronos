@@ -86,4 +86,19 @@ pre-existente (no introducido por esta sesión, documentado).
 **Estado del modo auto: exhausted legítimamente.** Mantener warm standby
 para nuevas m10-* requests o trigger explícito del usuario.
 
+## Lección aprendida: housekeeping cycles deben llevar artifacts canónicos
+
+Mini-ciclo `m10-stale-branch-cleanup-2` (B-direct housekeeping, 0 código):
+borró 7 `feat/m10-*` branches merged-to-main y cerró CC#53. Pero al
+añadir `cycle-artifacts/p-3416cfb8288f8964/m10-stale-branch-cleanup-2/`,
+CC#18 (verify-findings.json must exist for all CLOSED cycles) flagged
+drift introducido por el propio ciclo. Resuelto sintetizando los 2
+artifacts canónicos (apply-checkpoint.json + verify-findings.json) en
+el siguiente commit, per AGENTS.md §4.
+
+**Convención hacia adelante**: cualquier ciclo que abra una carpeta nueva
+en `cycle-artifacts/p-3416cfb8288f8964/<slug>/` debe sintetizar al
+menos `apply-checkpoint.json` + `verify-findings.json` antes del commit
+inicial — incluso housekeeping cycles. Esto evita CC#18 false-positive.
+
 — mouse
