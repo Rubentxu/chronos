@@ -1,0 +1,31 @@
+{
+  "subject": {
+    "head_sha": "5a76fd1d",
+    "base_sha": "f4466f0e",
+    "cycle_id": "m10-stale-branch-cleanup-2",
+    "branch": "<housekeeping: no cycle branch>",
+    "route": "B-direct"
+  },
+  "cycle_id": "m10-stale-branch-cleanup-2",
+  "verdict": "passed",
+  "all_passed": true,
+  "lens_summary": {
+    "drift": "CC#53 closed: 7 feat/m10-* branches deleted locally. CC#5 (Total cycles 98 vs 0 m9-* rows) remains pre-existing (not introduced).",
+    "findings_count": 1,
+    "tiers_run": [
+      "T0"
+    ],
+    "source_schema": "m10-stale-branch-cleanup-2"
+  },
+  "findings": [
+    {
+      "id": "FIND-M10-STALE-BRANCH-CLEANUP-2",
+      "title": "CC#53 closed: deleted 7 feat/m10-* merged-to-main branches",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "git branch -d of 7 feat/m10-* branches; all confirmed via git merge-base --is-ancestor before deletion; remotes already pruned"
+      ]
+    }
+  ]
+}
