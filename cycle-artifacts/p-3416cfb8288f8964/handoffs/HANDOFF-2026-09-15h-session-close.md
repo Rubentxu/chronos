@@ -101,4 +101,50 @@ en `cycle-artifacts/p-3416cfb8288f8964/<slug>/` debe sintetizar al
 menos `apply-checkpoint.json` + `verify-findings.json` antes del commit
 inicial — incluso housekeeping cycles. Esto evita CC#18 false-positive.
 
+## Sesión 2026-09-15T14:30Z — reconciliación ROADMAP + vault index
+
+Tras revisión exhaustiva del proyecto (sddk ledger, ROADMAP.md,
+cycle-artifacts/, handoffs/, milestones/, 56 CCs documentados), se
+identificaron gaps reales que el modo auto había reportado
+incorrectamente como "exhausted". Cerrados en 2 ciclos B-direct:
+
+### m10-roadmap-reconcile (B-direct, docs-only)
+
+- `docs/ROADMAP.md` listado sólo m0/m5/m6 como cerrados; el resto
+  (m7/m8/m9 + el `m10-vault-ms-cleanup`) estaban en sus close reports
+  pero no en el roadmap principal.
+- Añadidos m7-v2-spec-introspection, m8-counterexample-shrinking,
+  m9-vault-hygiene, m10-vault-ms-cleanup a la sección Closed milestones.
+- Eliminada la sección "M7 candidates" (trabajo cerrado en m6/m7).
+- Corregida la confusión entre el namespace `m10-` de cycle-artifacts
+  y el M10 (Execution Explorer) del reconstruction roadmap.
+- Commit: `7130cf6e`, pusheado.
+
+### m10-vault-index-reconcile (B-direct, vault-only)
+
+- `cycles/index.md` listado sólo 6 de los 11+ m10-* cycles cerrados
+  (CC#51 violation pre-existente).
+- Añadidos los 5 m10-* faltantes con SHAs reales (verificadas vía
+  `git rev-parse`, no fabrication): m10-m9-legacy-schema-migration,
+  m10-ms-cap-discovery-followup-2, m10-ms-evt-typed,
+  m10-ms-property-policy, m10-stale-branch-cleanup-2.
+- Añadidos también m10-roadmap-reconcile + m10-vault-index-reconcile
+  como rows propios (CC#6 requiere "last CLOSED row" sincronizado).
+- `terms/index.md` `Last archive` actualizado a m10-vault-index-reconcile.
+- CC#4 SHA-256 cascade regenerado (12 rows × 100 manifests).
+- Cerrados CC#6, CC#8, CC#18 (introducidos/recurrentes en esta sesión).
+- CC#5 sigue pre-existente (regex `^| m9-` vs metadata `Total cycles | 98`;
+  M1+ follow-up).
+- Commits: `4732567c`, `dee1a3d3`, `8ea43862`, `11e9c445`, `8329a06b`,
+  pusheados.
+
+### Estado final tras esta sesión
+
+- `bash scripts/check_vault_drift.sh`: CC#54 sólo reporta CC#5
+  pre-existente. CC#48 clean.
+- Trunk: HEAD `8329a06b` en `main`, pushed.
+- 8 tags m10 peel OK (v0.7.103..v0.7.110).
+- 56 CCs documentadas, CC#5 único drift restante (M1+ follow-up).
+- Carry-forwards latentes: `m10-spec-coverage-glue`; CC#5 regex fix.
+
 — mouse
