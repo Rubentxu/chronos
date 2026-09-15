@@ -29,7 +29,7 @@ use crate::output::{
     CapabilitiesInput, CapabilitiesOutput, CapabilitySnapshot, DynamicCapabilities,
     LanguageAdapterStatus, ObserveInput, ObserveScope, ObserveVerb, ProjectionKind,
     SessionLifecycleProvenance, SessionStartAction, SessionStartInput, SessionStartOutput,
-    SessionStopInput, SessionStopOutput, StaticCapabilities, TargetSpec,
+    SessionStopInput, SessionStopOutput, StaticCapabilities, TargetSpec, ToolAvailability,
 };
 use crate::probe::{ProbeContext, ProbeService};
 use chronos_domain::trace::{EventType, Language};
@@ -128,6 +128,7 @@ impl ChronosSessionLifecycleService {
             active_subscriptions: vec![],
             tail_sealed: false,
             sealed_at: None,
+            ..Default::default()
         };
         Ok(SessionStartOutput {
             session_id: out.session_id,
@@ -163,6 +164,7 @@ impl ChronosSessionLifecycleService {
             active_subscriptions: vec![],
             tail_sealed: meta.tail_sealed,
             sealed_at: meta.sealed_at,
+            ..Default::default()
         };
         Ok(SessionStartOutput {
             session_id,
@@ -206,6 +208,7 @@ impl ChronosSessionLifecycleService {
             active_subscriptions: vec![],
             tail_sealed: false,
             sealed_at: None,
+            ..Default::default()
         };
         Ok(SessionStartOutput {
             session_id: out.session_id,
@@ -330,6 +333,7 @@ impl ChronosSessionLifecycleService {
                     active_subscriptions: vec![],
                     tail_sealed: sealed_at.is_some(),
                     sealed_at,
+                    ..Default::default()
                 };
                 Ok(SessionStopOutput {
                     session_id,
@@ -357,6 +361,7 @@ impl ChronosSessionLifecycleService {
                     active_subscriptions: vec![],
                     tail_sealed: meta.tail_sealed,
                     sealed_at: meta.sealed_at,
+                    ..Default::default()
                 };
                 Ok(SessionStopOutput {
                     session_id,
@@ -383,10 +388,20 @@ impl ChronosSessionLifecycleService {
     /// it takes `&SessionStore` directly for clean unit-testability.
     /// The wrapper `capabilities_with_context` (below) preserves the
     /// full-context signature for the MCP server.
+    ///
+    /// `tool_availability` is optional; pass `Some(map)` to populate the
+    /// per-tool availability record in the response. `probed_at` is always
+    /// set to the current epoch-ms.
     pub fn capabilities(
         store: &chronos_store::SessionStore,
         input: CapabilitiesInput,
+        tool_availability: Option<HashMap<String, ToolAvailability>>,
     ) -> Result<CapabilitiesOutput, ServiceError> {
+        let probed_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+
         if input.target.is_none() && input.session_id.is_none() {
             return Err(ServiceError::InvalidInput(
                 "capabilities requires at least one of `target` or `session_id`".to_string(),
@@ -407,6 +422,8 @@ impl ChronosSessionLifecycleService {
         Ok(CapabilitiesOutput {
             static_capabilities: static_caps,
             dynamic_capabilities: dynamic_caps,
+            tool_availability: tool_availability.unwrap_or_default(),
+            probed_at: Some(probed_at),
             provenance: lifecycle_provenance("capabilities"),
         })
     }
@@ -419,10 +436,20 @@ impl ChronosSessionLifecycleService {
     /// `SessionMetadata` from `LiveProbeSession` so the dynamic
     /// capability snapshot can be returned even before the first
     /// `session_stop` call.
+    ///
+    /// `tool_availability` is optional; pass `Some(map)` to populate the
+    /// per-tool availability record in the response. `probed_at` is always
+    /// set to the current epoch-ms.
     pub fn capabilities_with_context(
         ctx: &SessionLifecycleContext<'_>,
         input: CapabilitiesInput,
+        tool_availability: Option<HashMap<String, ToolAvailability>>,
     ) -> Result<CapabilitiesOutput, ServiceError> {
+        let probed_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+
         if input.target.is_none() && input.session_id.is_none() {
             return Err(ServiceError::InvalidInput(
                 "capabilities requires at least one of `target` or `session_id`".to_string(),
@@ -455,6 +482,8 @@ impl ChronosSessionLifecycleService {
                             return Ok(CapabilitiesOutput {
                                 static_capabilities: static_caps,
                                 dynamic_capabilities: Some(Self::dynamic_capabilities(&stub_meta)),
+                                tool_availability: tool_availability.clone().unwrap_or_default(),
+                                probed_at: Some(probed_at),
                                 provenance: lifecycle_provenance("capabilities"),
                             });
                         }
@@ -472,6 +501,8 @@ impl ChronosSessionLifecycleService {
         Ok(CapabilitiesOutput {
             static_capabilities: static_caps,
             dynamic_capabilities: dynamic_caps,
+            tool_availability: tool_availability.unwrap_or_default(),
+            probed_at: Some(probed_at),
             provenance: lifecycle_provenance("capabilities"),
         })
     }
@@ -747,7 +778,7 @@ mod tests {
             }),
             session_id: None,
         };
-        let out = ChronosSessionLifecycleService::capabilities(&store, input).unwrap();
+        let out = ChronosSessionLifecycleService::capabilities(&store, input, None).unwrap();
         assert!(out.static_capabilities.is_some());
         assert!(out.dynamic_capabilities.is_none());
         let s = out.static_capabilities.unwrap();
@@ -764,7 +795,7 @@ mod tests {
             target: None,
             session_id: Some("cap-1".to_string()),
         };
-        let out = ChronosSessionLifecycleService::capabilities(&store, input).unwrap();
+        let out = ChronosSessionLifecycleService::capabilities(&store, input, None).unwrap();
         assert!(out.static_capabilities.is_none());
         let d = out.dynamic_capabilities.unwrap();
         assert!(d.query_engine_ready);
@@ -783,7 +814,7 @@ mod tests {
             }),
             session_id: Some("cap-2".to_string()),
         };
-        let out = ChronosSessionLifecycleService::capabilities(&store, input).unwrap();
+        let out = ChronosSessionLifecycleService::capabilities(&store, input, None).unwrap();
         assert!(out.static_capabilities.is_some());
         assert!(out.dynamic_capabilities.is_some());
     }
@@ -795,7 +826,7 @@ mod tests {
             target: None,
             session_id: None,
         };
-        let err = ChronosSessionLifecycleService::capabilities(&store, input).unwrap_err();
+        let err = ChronosSessionLifecycleService::capabilities(&store, input, None).unwrap_err();
         assert!(matches!(err, ServiceError::InvalidInput(_)));
     }
 
@@ -806,7 +837,7 @@ mod tests {
             target: None,
             session_id: Some("no-such".to_string()),
         };
-        let err = ChronosSessionLifecycleService::capabilities(&store, input).unwrap_err();
+        let err = ChronosSessionLifecycleService::capabilities(&store, input, None).unwrap_err();
         assert!(matches!(err, ServiceError::LoadFailed(_)));
     }
 

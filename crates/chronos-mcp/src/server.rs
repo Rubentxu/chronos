@@ -148,6 +148,383 @@ pub struct ChronosServer {
     /// (`save_session`, `list_sessions`, `load_session`, `delete_session`,
     /// `drop_session`). Set once at construction; immutable thereafter.
     degraded: bool,
+    /// Active toolset profile. Controls which tools are listed and which
+    /// language-specific tools are available. Set from `CHRONOS_ACTIVE_TOOLSET`
+    /// env var at construction. Valid values: `auto`, `native`, `ebpf`,
+    /// `python`, `java`, `go`, `js`, `minimal`. Unknown values default to `auto`.
+    active_toolset: String,
+}
+
+// ============================================================================
+// Toolset filtering constants (MS-CAP-DISCOVERY / REQ-CAP-004, REQ-CAP-005)
+// ============================================================================
+
+/// Tools available in the `native` toolset profile.
+/// These are the core tools that do not require a language runtime or browser.
+/// Kept ≤ 25 as required by REQ-CAP-005.
+const NATIVE_TOOL_NAMES: &[&str] = &[
+    // Session lifecycle (5)
+    "session_start",
+    "session_stop",
+    "session_snapshot",
+    "session_export",
+    "session_compare",
+    // Storage (5)
+    "save_session",
+    "load_session",
+    "list_sessions",
+    "delete_session",
+    "drop_session",
+    // Probe lifecycle (7)
+    "probe_start",
+    "probe_stop",
+    "probe_drain",
+    "probe_drain_log",
+    "probe_compaction_metrics",
+    "probe_inject",
+    "probe_status",
+    // Analysis / core read tools (8)
+    "events_read",
+    "execution_query",
+    "state_query",
+    "state_diff",
+    "observe",
+    "capabilities",
+    "list_threads",
+    "session_explain",
+];
+
+/// Tools available in the `ebpf` toolset profile.
+const EBPF_TOOL_NAMES: &[&str] = &[
+    "session_start",
+    "session_stop",
+    "session_snapshot",
+    "session_export",
+    "session_compare",
+    "session_explain",
+    "save_session",
+    "load_session",
+    "list_sessions",
+    "delete_session",
+    "drop_session",
+    "probe_start",
+    "probe_stop",
+    "probe_drain",
+    "probe_drain_log",
+    "probe_compaction_metrics",
+    "probe_inject",
+    "probe_status",
+    "events_read",
+    "execution_query",
+    "state_query",
+    "state_diff",
+    "observe",
+    "capabilities",
+    "list_threads",
+    "debug_detect_races",
+    "inspect_causality",
+    "compare_sessions",
+    "causal_slice",
+    "trace_slice",
+    "mutation_lens",
+    "hypothesis_test",
+    "performance_regression_audit",
+    "counterexample_shrink",
+    "counterexample_get",
+    "counterexample_list",
+    "counterexample_events_count",
+    "counterexample_bundle_events",
+];
+
+/// Tools available in the `python` toolset profile.
+const PYTHON_TOOL_NAMES: &[&str] = &[
+    "session_start",
+    "session_stop",
+    "session_snapshot",
+    "session_export",
+    "session_compare",
+    "session_explain",
+    "save_session",
+    "load_session",
+    "list_sessions",
+    "delete_session",
+    "drop_session",
+    "probe_start",
+    "probe_stop",
+    "probe_drain",
+    "probe_drain_log",
+    "probe_compaction_metrics",
+    "probe_inject",
+    "probe_status",
+    "events_read",
+    "execution_query",
+    "state_query",
+    "state_diff",
+    "observe",
+    "capabilities",
+    "list_threads",
+    "debug_detect_races",
+    "inspect_causality",
+    "compare_sessions",
+    "causal_slice",
+    "trace_slice",
+    "mutation_lens",
+    "hypothesis_test",
+    "performance_regression_audit",
+    "evaluate_expression",
+    "debug_get_variables",
+    "counterexample_shrink",
+    "counterexample_get",
+    "counterexample_list",
+    "counterexample_events_count",
+    "counterexample_bundle_events",
+];
+
+/// Tools available in the `java` toolset profile.
+const JAVA_TOOL_NAMES: &[&str] = &[
+    "session_start",
+    "session_stop",
+    "session_snapshot",
+    "session_export",
+    "session_compare",
+    "session_explain",
+    "save_session",
+    "load_session",
+    "list_sessions",
+    "delete_session",
+    "drop_session",
+    "probe_start",
+    "probe_stop",
+    "probe_drain",
+    "probe_drain_log",
+    "probe_compaction_metrics",
+    "probe_inject",
+    "probe_status",
+    "events_read",
+    "execution_query",
+    "state_query",
+    "state_diff",
+    "observe",
+    "capabilities",
+    "list_threads",
+    "debug_detect_races",
+    "inspect_causality",
+    "compare_sessions",
+    "causal_slice",
+    "trace_slice",
+    "mutation_lens",
+    "hypothesis_test",
+    "performance_regression_audit",
+    "evaluate_expression",
+    "debug_get_variables",
+    "counterexample_shrink",
+    "counterexample_get",
+    "counterexample_list",
+    "counterexample_events_count",
+    "counterexample_bundle_events",
+];
+
+/// Tools available in the `go` toolset profile.
+const GO_TOOL_NAMES: &[&str] = &[
+    "session_start",
+    "session_stop",
+    "session_snapshot",
+    "session_export",
+    "session_compare",
+    "session_explain",
+    "save_session",
+    "load_session",
+    "list_sessions",
+    "delete_session",
+    "drop_session",
+    "probe_start",
+    "probe_stop",
+    "probe_drain",
+    "probe_drain_log",
+    "probe_compaction_metrics",
+    "probe_inject",
+    "probe_status",
+    "events_read",
+    "execution_query",
+    "state_query",
+    "state_diff",
+    "observe",
+    "capabilities",
+    "list_threads",
+    "debug_detect_races",
+    "inspect_causality",
+    "compare_sessions",
+    "causal_slice",
+    "trace_slice",
+    "mutation_lens",
+    "hypothesis_test",
+    "performance_regression_audit",
+    "evaluate_expression",
+    "debug_get_variables",
+    "counterexample_shrink",
+    "counterexample_get",
+    "counterexample_list",
+    "counterexample_events_count",
+    "counterexample_bundle_events",
+];
+
+/// Tools available in the `js` (JavaScript) toolset profile.
+const JS_TOOL_NAMES: &[&str] = &[
+    "session_start",
+    "session_stop",
+    "session_snapshot",
+    "session_export",
+    "session_compare",
+    "session_explain",
+    "save_session",
+    "load_session",
+    "list_sessions",
+    "delete_session",
+    "drop_session",
+    "probe_start",
+    "probe_stop",
+    "probe_drain",
+    "probe_drain_log",
+    "probe_compaction_metrics",
+    "probe_inject",
+    "probe_status",
+    "events_read",
+    "execution_query",
+    "state_query",
+    "state_diff",
+    "observe",
+    "capabilities",
+    "list_threads",
+    "debug_detect_races",
+    "inspect_causality",
+    "compare_sessions",
+    "causal_slice",
+    "trace_slice",
+    "mutation_lens",
+    "hypothesis_test",
+    "performance_regression_audit",
+    "evaluate_expression",
+    "debug_get_variables",
+    "counterexample_shrink",
+    "counterexample_get",
+    "counterexample_list",
+    "counterexample_events_count",
+    "counterexample_bundle_events",
+];
+
+/// Minimal toolset: only session lifecycle + capabilities.
+const MINIMAL_TOOL_NAMES: &[&str] = &[
+    "session_start",
+    "session_stop",
+    "session_snapshot",
+    "session_export",
+    "session_compare",
+    "session_explain",
+    "save_session",
+    "load_session",
+    "list_sessions",
+    "delete_session",
+    "drop_session",
+    "probe_start",
+    "probe_stop",
+    "probe_drain",
+    "probe_drain_log",
+    "probe_compaction_metrics",
+    "probe_inject",
+    "probe_status",
+    "events_read",
+    "execution_query",
+    "state_query",
+    "state_diff",
+    "observe",
+    "capabilities",
+];
+
+/// Complete list of all registered tool names (61 total).
+/// Used by `build_tool_availability` to populate the full `tool_availability` map.
+pub const ALL_TOOL_NAMES: &[&str] = &[
+    "query_events",
+    "get_event",
+    "get_call_stack",
+    "get_execution_summary",
+    "execution_query",
+    "state_diff",
+    "state_query",
+    "list_threads",
+    "debug_call_graph",
+    "debug_find_variable_origin",
+    "debug_find_crash",
+    "debug_detect_races",
+    "inspect_causality",
+    "debug_expand_hotspot",
+    "debug_get_saliency_scores",
+    "save_session",
+    "load_session",
+    "list_sessions",
+    "delete_session",
+    "drop_session",
+    "evaluate_expression",
+    "debug_get_variables",
+    "debug_get_memory",
+    "debug_get_registers",
+    "debug_diff",
+    "debug_analyze_memory",
+    "forensic_memory_audit",
+    "tripwire_create",
+    "tripwire_list",
+    "tripwire_delete",
+    "tripwire_query",
+    "probe_start",
+    "probe_stop",
+    "session_start",
+    "session_stop",
+    "capabilities",
+    "probe_drain",
+    "probe_drain_log",
+    "probe_compaction_metrics",
+    "session_snapshot",
+    "probe_inject",
+    "probe_status",
+    "browser_probe_start",
+    "browser_probe_stop",
+    "browser_probe_drain",
+    "performance_regression_audit",
+    "compare_sessions",
+    "session_compare",
+    "session_explain",
+    "mutation_lens",
+    "causal_slice",
+    "hypothesis_test",
+    "session_export",
+    "trace_slice",
+    "events_read",
+    "observe",
+    "counterexample_shrink",
+    "counterexample_get",
+    "counterexample_list",
+    "counterexample_events_count",
+    "counterexample_bundle_events",
+];
+
+/// Return the required capabilities for a given tool name.
+/// Empty Vec means the tool requires no specific capability.
+fn tool_required_capabilities(tool_name: &str) -> Vec<String> {
+    match tool_name {
+        // Language runtime required
+        "evaluate_expression" => vec!["language/any".to_string()],
+        "debug_get_variables" => vec!["language/any".to_string()],
+        "debug_get_memory" => vec!["language/any".to_string()],
+        "debug_get_registers" => vec!["language/any".to_string()],
+        "debug_diff" => vec!["language/any".to_string()],
+        "debug_analyze_memory" => vec!["language/any".to_string()],
+        "forensic_memory_audit" => vec!["language/any".to_string()],
+        // Browser required
+        "browser_probe_start" => vec!["browser".to_string()],
+        "browser_probe_stop" => vec!["browser".to_string()],
+        "browser_probe_drain" => vec!["browser".to_string()],
+        // All others are native / universal
+        _ => vec![],
+    }
 }
 
 // ============================================================================
@@ -1455,6 +1832,8 @@ impl ChronosServer {
     /// Build a server around an explicitly provided store.
     fn from_store(store: SessionStore) -> Self {
         let degraded = !store.is_persistent();
+        let active_toolset =
+            std::env::var("CHRONOS_ACTIVE_TOOLSET").unwrap_or_else(|_| "auto".to_string());
         Self {
             engines: Arc::new(Mutex::new(HashMap::new())),
             session_languages: Arc::new(Mutex::new(HashMap::new())),
@@ -1467,6 +1846,32 @@ impl ChronosServer {
             live_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
             live_browser_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
             degraded,
+            active_toolset,
+        }
+    }
+
+    /// Build a server around the default store with a forced `active_toolset`.
+    ///
+    /// Exists only to make tests deterministic — production code must not
+    /// override the toolset via code; use `CHRONOS_ACTIVE_TOOLSET` instead.
+    #[cfg(test)]
+    pub fn with_toolset(toolset: &str) -> Self {
+        match Self::try_open_default_store() {
+            Ok(store) => Self {
+                engines: Arc::new(Mutex::new(HashMap::new())),
+                session_languages: Arc::new(Mutex::new(HashMap::new())),
+                store: Arc::new(store),
+                background_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
+                connected_sessions: Arc::new(std::sync::Mutex::new(HashSet::new())),
+                active_session: Arc::new(Mutex::new(None)),
+                tripwire_manager: Arc::new(TripwireManager::new()),
+                uprobe_counter: Arc::new(std::sync::Mutex::new(HashMap::new())),
+                live_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
+                live_browser_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
+                degraded: false,
+                active_toolset: toolset.to_string(),
+            },
+            Err(e) => panic!("{e}"),
         }
     }
 
@@ -1481,6 +1886,121 @@ impl ChronosServer {
     /// Closes FIND-M9-75-MCP-TOOLS-DO-NOT-DISCLOSE-DEGRADED-STORE.
     pub fn is_degraded(&self) -> bool {
         self.degraded
+    }
+
+    /// Returns the active toolset profile (e.g. "auto", "native", "python").
+    pub fn active_toolset(&self) -> &str {
+        &self.active_toolset
+    }
+
+    /// Returns true if the given tool name is listed in the `tools/list`
+    /// response for the current `active_toolset` profile.
+    ///
+    /// Fallback path for REQ-CAP-005: since rmcp does not expose a hook into
+    /// `tools/list` dispatch, this method is called by tool handlers that need
+    /// filtering (currently `evaluate_expression`). The `capabilities` tool
+    /// response encodes the full availability map so callers can check before
+    /// attempting a call.
+    pub fn is_tool_listed(&self, tool_name: &str) -> bool {
+        let listed = match self.active_toolset.as_str() {
+            "auto" => true,
+            "native" => NATIVE_TOOL_NAMES.contains(&tool_name),
+            "ebpf" => EBPF_TOOL_NAMES.contains(&tool_name),
+            "python" => PYTHON_TOOL_NAMES.contains(&tool_name),
+            "java" => JAVA_TOOL_NAMES.contains(&tool_name),
+            "go" => GO_TOOL_NAMES.contains(&tool_name),
+            "js" => JS_TOOL_NAMES.contains(&tool_name),
+            "minimal" => MINIMAL_TOOL_NAMES.contains(&tool_name),
+            // Unrecognised → treat as auto (per REQ-CAP-004)
+            _ => true,
+        };
+        listed
+    }
+
+    /// Build the per-tool availability map for the `capabilities` response.
+    ///
+    /// `target_language` is the optional target language from the caller.
+    /// If `None`, all tools that are listed by the active toolset are marked
+    /// available; language-specific tools are marked available with an
+    /// `available: true` but `required_capabilities` filled in.
+    pub fn build_tool_availability(
+        &self,
+        all_tool_names: &[&str],
+        target_language: Option<&str>,
+    ) -> std::collections::HashMap<String, chronos_services::output::ToolAvailability> {
+        let mut map = std::collections::HashMap::new();
+        for name in all_tool_names {
+            let required = tool_required_capabilities(name);
+            let listed = self.is_tool_listed(name);
+            // Determine availability:
+            // - If the tool is NOT listed in the current toolset → unavailable.
+            // - If listed BUT requires a language runtime and target != that runtime
+            //   → unavailable (only for non-auto toolsets; for auto, mark available
+            //   with required_capabilities set so caller can see the requirement).
+            let available = if listed {
+                // For auto toolset: all listed tools are available (but requirements are noted).
+                // For specific toolsets: also check language compatibility.
+                if self.active_toolset == "auto" {
+                    true
+                } else {
+                    // Specific toolset: language-specific tools are only available
+                    // if the target language matches the required language.
+                    if required.is_empty() {
+                        true
+                    } else {
+                        // Tool requires a language runtime
+                        if let Some(lang) = target_language {
+                            required.iter().any(|r| r.contains(lang))
+                        } else {
+                            // No target specified: assume compatible
+                            true
+                        }
+                    }
+                }
+            } else {
+                false
+            };
+
+            let reason = if !listed {
+                Some(format!(
+                    "tool '{}' is not in the active toolset '{}'",
+                    name, self.active_toolset
+                ))
+            } else if !available {
+                let langs: Vec<_> = required
+                    .iter()
+                    .filter(|r| r.starts_with("language/"))
+                    .map(|r| &r[9..])
+                    .collect();
+                if !langs.is_empty() {
+                    let target = target_language.unwrap_or("(unspecified)");
+                    Some(format!(
+                        "'{}' requires a {} runtime; active toolset is '{}' but target is '{}'",
+                        name,
+                        langs.join(" or "),
+                        self.active_toolset,
+                        target
+                    ))
+                } else {
+                    Some(format!(
+                        "'{}' is not available in toolset '{}'",
+                        name, self.active_toolset
+                    ))
+                }
+            } else {
+                None
+            };
+
+            map.insert(
+                name.to_string(),
+                chronos_services::output::ToolAvailability {
+                    available,
+                    required_capabilities: required,
+                    reason_if_unavailable: reason,
+                },
+            );
+        }
+        map
     }
 
     /// Open the session store configured for this process.
@@ -3097,6 +3617,12 @@ impl ChronosServer {
         &self,
         params: Parameters<EvaluateExpressionParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        // REQ-CAP-005 fallback: check toolset listing before executing.
+        if !self.is_tool_listed("evaluate_expression") {
+            return Ok(CallToolResult::error(text_content(
+                "evaluate_expression is not available in the current active toolset (see CHRONOS_ACTIVE_TOOLSET)",
+            )));
+        }
         let params = params.0;
 
         let ctx = StateQueryContext {
@@ -3178,6 +3704,12 @@ impl ChronosServer {
         &self,
         params: Parameters<DebugGetVariablesParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        // REQ-CAP-005 fallback: check toolset listing before executing.
+        if !self.is_tool_listed("debug_get_variables") {
+            return Ok(CallToolResult::error(text_content(
+                "debug_get_variables is not available in the current active toolset (see CHRONOS_ACTIVE_TOOLSET)",
+            )));
+        }
         let params = params.0;
 
         let result =
@@ -3210,6 +3742,12 @@ impl ChronosServer {
         &self,
         params: Parameters<DebugGetMemoryParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        // REQ-CAP-005 fallback: check toolset listing before executing.
+        if !self.is_tool_listed("debug_get_memory") {
+            return Ok(CallToolResult::error(text_content(
+                "debug_get_memory is not available in the current active toolset (see CHRONOS_ACTIVE_TOOLSET)",
+            )));
+        }
         let params = params.0;
 
         let ctx = StateQueryContext {
@@ -3272,6 +3810,12 @@ impl ChronosServer {
         &self,
         params: Parameters<DebugGetRegistersParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        // REQ-CAP-005 fallback: check toolset listing before executing.
+        if !self.is_tool_listed("debug_get_registers") {
+            return Ok(CallToolResult::error(text_content(
+                "debug_get_registers is not available in the current active toolset (see CHRONOS_ACTIVE_TOOLSET)",
+            )));
+        }
         let params = params.0;
 
         let ctx = StateQueryContext {
@@ -3345,6 +3889,12 @@ impl ChronosServer {
         &self,
         params: Parameters<DebugDiffParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        // REQ-CAP-005 fallback: check toolset listing before executing.
+        if !self.is_tool_listed("debug_diff") {
+            return Ok(CallToolResult::error(text_content(
+                "debug_diff is not available in the current active toolset (see CHRONOS_ACTIVE_TOOLSET)",
+            )));
+        }
         let params = params.0;
 
         let result = DebugReadService::diff(
@@ -3404,6 +3954,12 @@ impl ChronosServer {
         &self,
         params: Parameters<DebugAnalyzeMemoryParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        // REQ-CAP-005 fallback: check toolset listing before executing.
+        if !self.is_tool_listed("debug_analyze_memory") {
+            return Ok(CallToolResult::error(text_content(
+                "debug_analyze_memory is not available in the current active toolset (see CHRONOS_ACTIVE_TOOLSET)",
+            )));
+        }
         let params = params.0;
 
         let ctx = StateQueryContext {
@@ -3463,6 +4019,12 @@ impl ChronosServer {
         &self,
         params: Parameters<ForensicMemoryAuditParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        // REQ-CAP-005 fallback: check toolset listing before executing.
+        if !self.is_tool_listed("forensic_memory_audit") {
+            return Ok(CallToolResult::error(text_content(
+                "forensic_memory_audit is not available in the current active toolset (see CHRONOS_ACTIVE_TOOLSET)",
+            )));
+        }
         let params = params.0;
 
         let ctx = TraceSliceContext {
@@ -4154,6 +4716,7 @@ impl ChronosServer {
                     active_subscriptions: vec![],
                     tail_sealed: sealed_at.is_some(),
                     sealed_at,
+                    ..Default::default()
                 };
                 let out = SessionStopOutput {
                     session_id,
@@ -4196,6 +4759,7 @@ impl ChronosServer {
                     active_subscriptions: vec![],
                     tail_sealed: meta.tail_sealed,
                     sealed_at: meta.sealed_at,
+                    ..Default::default()
                 };
                 let out = SessionStopOutput {
                     session_id: session_id.clone(),
@@ -4240,6 +4804,10 @@ impl ChronosServer {
                 }),
             session_id: params.session_id.clone(),
         };
+        // Extract target language for tool availability computation.
+        let target_language = params.target.as_ref().and_then(|t| t.language.as_deref());
+        // Build tool availability map (MS-CAP-DISCOVERY REQ-CAP-001/002/003).
+        let tool_availability = self.build_tool_availability(ALL_TOOL_NAMES, target_language);
         // Use the full-context entrypoint so `capabilities{session_id}`
         // can resolve live-only sessions (those still in
         // `live_probes` but not yet persisted to `SessionStore`)
@@ -4261,7 +4829,11 @@ impl ChronosServer {
             probe: &probe_ctx,
             observe: &observe_ctx,
         };
-        match ChronosSessionLifecycleService::capabilities_with_context(&lifecycle_ctx, v2_input) {
+        match ChronosSessionLifecycleService::capabilities_with_context(
+            &lifecycle_ctx,
+            v2_input,
+            Some(tool_availability),
+        ) {
             Ok(out) => {
                 let json = serde_json::to_value(&out).map_err(|e| {
                     rmcp::ErrorData::internal_error(format!("capabilities serialize: {}", e), None)
@@ -4707,6 +5279,12 @@ impl ChronosServer {
         &self,
         params: Parameters<BrowserProbeStartParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        // REQ-CAP-005 fallback: check toolset listing before executing.
+        if !self.is_tool_listed("browser_probe_start") {
+            return Ok(CallToolResult::error(text_content(
+                "browser_probe_start is not available in the current active toolset (see CHRONOS_ACTIVE_TOOLSET)",
+            )));
+        }
         let params = params.0;
 
         let ctx = BrowserProbeContext {
@@ -4745,6 +5323,12 @@ impl ChronosServer {
         &self,
         params: Parameters<BrowserProbeStopParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        // REQ-CAP-005 fallback: check toolset listing before executing.
+        if !self.is_tool_listed("browser_probe_stop") {
+            return Ok(CallToolResult::error(text_content(
+                "browser_probe_stop is not available in the current active toolset (see CHRONOS_ACTIVE_TOOLSET)",
+            )));
+        }
         let params = params.0;
 
         let ctx = BrowserProbeContext {
@@ -4791,6 +5375,12 @@ impl ChronosServer {
         &self,
         params: Parameters<BrowserProbeDrainParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        // REQ-CAP-005 fallback: check toolset listing before executing.
+        if !self.is_tool_listed("browser_probe_drain") {
+            return Ok(CallToolResult::error(text_content(
+                "browser_probe_drain is not available in the current active toolset (see CHRONOS_ACTIVE_TOOLSET)",
+            )));
+        }
         let params = params.0;
 
         let ctx = BrowserProbeContext {
@@ -8287,6 +8877,7 @@ mod tests {
     }
 }
 
+
 /// ServerHandler implementation with custom server identity.
 /// This overrides the auto-generated one from #[tool_router(server_handler)]
 /// to provide correct name/version instead of rmcp defaults.
@@ -8296,3 +8887,111 @@ mod tests {
     instructions = "Time-travel debugging server for AI agents. Use probe_start to capture program execution, then query with query_events, get_call_stack, debug_detect_races, inspect_causality, etc."
 )]
 impl rmcp::handler::server::ServerHandler for ChronosServer {}
+
+// ---- MS-CAP-DISCOVERY: toolset / capability-awareness tests ----
+
+#[cfg(test)]
+mod cap_discovery_tests {
+    use super::*;
+
+    #[test]
+    fn active_toolset_defaults_to_auto() {
+        // Without CHRONOS_ACTIVE_TOOLSET, server uses "auto".
+        let server = ChronosServer::new();
+        assert_eq!(server.active_toolset(), "auto");
+    }
+
+    #[test]
+    fn native_toolset_count_leq_25() {
+        // REQ-CAP-005: native toolset must have ≤ 25 tools.
+        assert!(
+            NATIVE_TOOL_NAMES.len() <= 25,
+            "native toolset has {} tools, must be ≤ 25",
+            NATIVE_TOOL_NAMES.len()
+        );
+    }
+
+    #[test]
+    fn all_tool_names_count_61() {
+        // All 61 tools are registered.
+        assert_eq!(
+            ALL_TOOL_NAMES.len(),
+            61,
+            "ALL_TOOL_NAMES must have 61 entries"
+        );
+    }
+
+    #[test]
+    fn tool_availability_map_has_61_entries() {
+        let server = ChronosServer::new();
+        let map = server.build_tool_availability(ALL_TOOL_NAMES, Some("rust"));
+        assert_eq!(map.len(), 61, "tool_availability must have 61 entries");
+    }
+
+    #[test]
+    fn tool_availability_evaluate_expression_requires_language() {
+        let server = ChronosServer::new();
+        let map = server.build_tool_availability(ALL_TOOL_NAMES, Some("rust"));
+        let avail = map.get("evaluate_expression").unwrap();
+        assert!(
+            !avail.required_capabilities.is_empty(),
+            "evaluate_expression should require capabilities"
+        );
+        assert!(
+            avail
+                .required_capabilities
+                .iter()
+                .any(|r| r.contains("language")),
+            "evaluate_expression requires a language capability"
+        );
+    }
+
+    #[test]
+    fn native_toolset_marks_browser_tools_unavailable() {
+        let server = ChronosServer::with_toolset("native");
+
+        assert!(!server.is_tool_listed("browser_probe_start"));
+        assert!(!server.is_tool_listed("browser_probe_stop"));
+        assert!(!server.is_tool_listed("browser_probe_drain"));
+        // But native tools ARE listed.
+        assert!(server.is_tool_listed("events_read"));
+        assert!(server.is_tool_listed("capabilities"));
+    }
+
+    #[test]
+    fn auto_toolset_lists_all_tools() {
+        let server = ChronosServer::with_toolset("auto");
+
+        assert!(server.is_tool_listed("browser_probe_start"));
+        assert!(server.is_tool_listed("evaluate_expression"));
+        assert!(server.is_tool_listed("events_read"));
+    }
+
+    #[test]
+    fn garbage_toolset_defaults_to_auto() {
+        // REQ-CAP-004: unrecognised toolset treated as auto.
+        let server = ChronosServer::with_toolset("garbage");
+
+        assert!(server.is_tool_listed("browser_probe_start"));
+        assert!(server.is_tool_listed("evaluate_expression"));
+    }
+
+    #[test]
+    fn python_toolset_excludes_browser_probe() {
+        let server = ChronosServer::with_toolset("python");
+
+        assert!(!server.is_tool_listed("browser_probe_start"));
+        assert!(!server.is_tool_listed("browser_probe_stop"));
+        assert!(!server.is_tool_listed("browser_probe_drain"));
+    }
+
+    #[test]
+    fn native_toolset_excludes_language_tools() {
+        let server = ChronosServer::with_toolset("native");
+
+        assert!(!server.is_tool_listed("evaluate_expression"));
+        assert!(!server.is_tool_listed("debug_get_variables"));
+        assert!(!server.is_tool_listed("debug_get_memory"));
+    }
+}
+

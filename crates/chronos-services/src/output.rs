@@ -2077,6 +2077,13 @@ pub struct CapabilitiesOutput {
     pub static_capabilities: Option<StaticCapabilities>,
     #[serde(default)]
     pub dynamic_capabilities: Option<DynamicCapabilities>,
+    /// Map of tool name → availability record. Built lazily at response time
+    /// from the active toolset configuration.
+    #[serde(default)]
+    pub tool_availability: HashMap<String, ToolAvailability>,
+    /// Epoch-ms timestamp at which this response was built.
+    #[serde(default)]
+    pub probed_at: Option<u64>,
     pub provenance: SessionLifecycleProvenance,
 }
 
@@ -2091,8 +2098,36 @@ pub struct TargetSpec {
     pub language: Option<Language>,
 }
 
-/// Snapshot of what evidence mechanisms a session currently exposes.
+/// Per-tool availability record surfaced in `capabilities` responses.
+///
+/// Each entry describes whether a named tool is currently callable and, if not,
+/// which capabilities are missing and why.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ToolAvailability {
+    /// Whether this tool is callable right now.
+    pub available: bool,
+    /// Logical capabilities this tool requires (e.g. `["native/runtime", "python/runtime"]`).
+    #[serde(default)]
+    pub required_capabilities: Vec<String>,
+    /// Human-readable reason why the tool is unavailable. Always non-empty when
+    /// `available == false`.
+    #[serde(default)]
+    pub reason_if_unavailable: Option<String>,
+}
+
+impl Default for ToolAvailability {
+    fn default() -> Self {
+        // Default: tool is available, no requirements, no reason.
+        Self {
+            available: true,
+            required_capabilities: Vec::new(),
+            reason_if_unavailable: None,
+        }
+    }
+}
+
+/// Snapshot of what evidence mechanisms a session currently exposes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct CapabilitySnapshot {
     #[serde(default)]
     pub probe_type: Option<String>,
@@ -2110,6 +2145,14 @@ pub struct CapabilitySnapshot {
     pub tail_sealed: bool,
     #[serde(default)]
     pub sealed_at: Option<u64>,
+    /// Map of tool name → availability record. Built at snapshot time from the
+    /// active toolset configuration.
+    #[serde(default)]
+    pub tool_availability: HashMap<String, ToolAvailability>,
+    /// Epoch-ms timestamp at which this snapshot was built. Used to surface
+    /// snapshot staleness to callers.
+    #[serde(default)]
+    pub probed_at: Option<u64>,
 }
 
 /// Static capability surface (per-target, pre-session).
@@ -2833,4 +2876,72 @@ impl From<chronos_domain::property::CallPathOutcome> for HypothesisOutput {
             summary: outcome.summary,
         }
     }
+}
+
+// ---- MS-CAP-DISCOVERY: capability snapshot + tool availability tests ----
+
+#[test]
+fn capability_snapshot_default_serde_compat() {
+    // Verify that CapabilitySnapshot with defaults serialises/deserialises
+    // without breaking old clients (both new fields are #[serde(default)]).
+    let snap = CapabilitySnapshot::default();
+    let json = serde_json::to_value(&snap).unwrap();
+    assert!(json.get("tool_availability").is_some());
+    assert!(json.get("probed_at").is_some());
+    assert!(json["tool_availability"].is_object());
+    assert!(json["tool_availability"].as_object().unwrap().is_empty());
+    // Old clients can still parse the shape.
+    #[derive(serde::Deserialize)]
+    #[allow(dead_code)]
+    struct OldShape {
+        #[serde(default)]
+        probe_type: Option<String>,
+    }
+    let _: OldShape = serde_json::from_value(json.clone()).unwrap();
+}
+
+#[test]
+fn tool_availability_struct_serde() {
+    // REQ-CAP-003: ToolAvailability carries available + required_capabilities + reason.
+    let avail = ToolAvailability {
+        available: false,
+        required_capabilities: vec!["language/python".to_string()],
+        reason_if_unavailable: Some("requires python runtime".to_string()),
+    };
+    let json = serde_json::to_value(&avail).unwrap();
+    assert_eq!(json["available"], false);
+    assert_eq!(json["required_capabilities"][0], "language/python");
+    assert_eq!(json["reason_if_unavailable"], "requires python runtime");
+    let round: ToolAvailability = serde_json::from_value(json).unwrap();
+    assert!(!round.available);
+    assert_eq!(round.required_capabilities.len(), 1);
+    assert!(round.reason_if_unavailable.is_some());
+}
+
+#[test]
+fn tool_availability_default_is_available() {
+    // Default-constructed ToolAvailability is available with empty required_capabilities.
+    let avail = ToolAvailability::default();
+    assert!(avail.available);
+    assert!(avail.required_capabilities.is_empty());
+    assert!(avail.reason_if_unavailable.is_none());
+}
+
+#[test]
+fn capabilities_output_has_tool_availability_and_probed_at() {
+    // CapabilitiesOutput carries the new fields with serde(default).
+    let out = CapabilitiesOutput {
+        static_capabilities: None,
+        dynamic_capabilities: None,
+        tool_availability: HashMap::new(),
+        probed_at: Some(1_700_000_000_000u64),
+        provenance: SessionLifecycleProvenance {
+            engine_version: "test".to_string(),
+            source: "test".to_string(),
+        },
+    };
+    let json = serde_json::to_value(&out).unwrap();
+    assert!(json.get("tool_availability").is_some());
+    assert!(json.get("probed_at").is_some());
+    assert_eq!(json["probed_at"], 1_700_000_000_000i64);
 }
