@@ -8,6 +8,7 @@ pub mod bus;
 pub mod causal_slice;
 pub mod error;
 pub mod index;
+pub mod ports;
 pub mod property;
 pub mod query;
 pub mod semantic;
@@ -24,6 +25,10 @@ pub use index::{
     CausalityEntry, CausalityIndex, CompressedTrace, CompressionLevel, DetailData,
     ExecutiveSummary, FunctionDetail, FunctionPerf, HotspotData, HotspotEntry, MicroscopyData,
     PerfCounters, PerformanceIndex, RawEventEntry, ShadowIndex, TemporalIndex,
+};
+pub use ports::{
+    NotificationDeliveryError, NotificationRequest, NotificationSink, NotificationTarget,
+    NullNotificationSink,
 };
 pub use property::{
     CallPathOutcome, ComparisonOp, ExistenceOutcome, InvariantCheck, InvariantOutcome,

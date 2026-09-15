@@ -1,0 +1,44 @@
+{
+  "cycle_id": "rec-c0-2-a-notification-sink-port",
+  "scope": "REC-C0.2 / REC-C3.2-A",
+  "branch": "feat/rec-convergence-truth-gate",
+  "commit": "a3dabc14",
+  "issues": [
+    "#21"
+  ],
+  "path": "A-min",
+  "files_added": [
+    "crates/chronos-domain/src/ports/mod.rs",
+    "crates/chronos-domain/src/ports/notification.rs"
+  ],
+  "files_modified": [
+    "crates/chronos-domain/src/lib.rs"
+  ],
+  "invariant_repaired": "chronos_domain now declares an explicit outbound port (NotificationSink) for delivery to external observers. The port is sync, transport-neutral, and depends only on thiserror + serde. It separates *what must be delivered* (domain) from *how it is delivered* (adapter).",
+  "verification": {
+    "cargo_check_chronos_domain": "PASS",
+    "cargo_test_chronos_domain_lib": "PASS (156/156; +3 from new port tests)",
+    "no_new_forbidden_edges": true
+  },
+  "completion_state": "applied",
+  "title": "REC C0 2 a notification sink port",
+  "summary": "chronos_domain now declares an explicit outbound port (NotificationSink) for delivery to external observers. The port is sync, transport-neutral, and depends only on thiserror + serde. It separates *what must be delivered* (domain) from *how it is delivered* (adapter).",
+  "head_sha": "a3dabc149c5d92f345b7f7f06b85b9c4f5de71b3",
+  "base_sha": "11962e71d393931339c4ad09556ea0ae2086c9ad",
+  "main_sha": "a3dabc149c5d92f345b7f7f06b85b9c4f5de71b3",
+  "remote_tag_peel": "a3dabc149c5d92f345b7f7f06b85b9c4f5de71b3",
+  "peel_match": true,
+  "status": "CLOSED",
+  "findings_introduced": {
+    "no_action": []
+  },
+  "verified_at": "2026-09-15T18:24:15+02:00",
+  "released_at": "2026-09-15T18:24:15+02:00",
+  "archived_at": "2026-09-15T18:24:15+02:00",
+  "created_at": "2026-09-15T18:24:15+02:00",
+  "route": "A-min",
+  "remote_tag": "",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived"
+}

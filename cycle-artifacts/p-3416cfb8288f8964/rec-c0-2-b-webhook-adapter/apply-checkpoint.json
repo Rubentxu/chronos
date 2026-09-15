@@ -1,0 +1,46 @@
+{
+  "cycle_id": "rec-c0-2-b-webhook-adapter",
+  "scope": "REC-C0.2 / REC-C3.2-B",
+  "branch": "feat/rec-convergence-truth-gate",
+  "commit": "3619c123",
+  "issues": [
+    "#21"
+  ],
+  "path": "A-min",
+  "files_added": [
+    "crates/chronos-webhook/Cargo.toml",
+    "crates/chronos-webhook/src/lib.rs",
+    "crates/chronos-webhook/src/sink.rs"
+  ],
+  "files_modified": [
+    "Cargo.toml (workspace member + workspace dep)",
+    "crates/chronos-domain/src/ports/notification.rs (rustfmt)"
+  ],
+  "invariant_repaired": "HTTP transport (reqwest, retries, timeouts, JSON envelope) lives in a dedicated driven adapter crate, reachable only via the chronos_domain::ports::NotificationSink port. chronos-domain has no reqwest dependency.",
+  "verification": {
+    "cargo_test_chronos_webhook": "PASS (4/4: success / 4xx / 5xx retry / target override)",
+    "cargo_clippy_workspace": "PASS",
+    "no_new_forbidden_edges": true
+  },
+  "completion_state": "applied",
+  "title": "REC C0 2 b webhook adapter",
+  "summary": "HTTP transport (reqwest, retries, timeouts, JSON envelope) lives in a dedicated driven adapter crate, reachable only via the chronos_domain::ports::NotificationSink port. chronos-domain has no reqwest dependency.",
+  "head_sha": "3619c123196d2f125629a0b141bb92b613738b0c",
+  "base_sha": "a3dabc149c5d92f345b7f7f06b85b9c4f5de71b3",
+  "main_sha": "3619c123196d2f125629a0b141bb92b613738b0c",
+  "remote_tag_peel": "3619c123196d2f125629a0b141bb92b613738b0c",
+  "peel_match": true,
+  "status": "CLOSED",
+  "findings_introduced": {
+    "no_action": []
+  },
+  "verified_at": "2026-09-15T18:26:29+02:00",
+  "released_at": "2026-09-15T18:26:29+02:00",
+  "archived_at": "2026-09-15T18:26:29+02:00",
+  "created_at": "2026-09-15T18:26:29+02:00",
+  "route": "A-min",
+  "remote_tag": "",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived"
+}

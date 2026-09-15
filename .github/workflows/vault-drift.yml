@@ -29,9 +29,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The drift sweep's CC#3/CC#8/CC#42/CC#47 cross-checks validate
+          # SHAs against `git cat-file -e`, requiring the SHAs to be
+          # reachable in the checked-out tree. The default `fetch-depth: 1`
+          # is incompatible with that specification and produces hundreds
+          # of false-positive drift lines (CC#8 reported 491 drift lines on
+          # PR #19 before this fix). Fetch the full history + tags.
+          fetch-depth: 0
+          fetch-tags: true
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - name: Check for drift
         run: ./scripts/check_vault_drift.sh
+      - name: Validate cycle-artifact completeness (rec-c0-* and new cycles)
+        run: python3 ./scripts/validate_cycle_artifacts.py

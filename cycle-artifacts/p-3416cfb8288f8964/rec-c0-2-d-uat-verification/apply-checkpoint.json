@@ -1,0 +1,47 @@
+{
+  "cycle_id": "rec-c0-2-d-uat-verification",
+  "scope": "REC-C0.2 / REC-C3.2-D (UAT + acceptance for #21)",
+  "branch": "feat/rec-convergence-truth-gate",
+  "issues": [
+    "#21"
+  ],
+  "path": "A-min",
+  "files_added": [
+    "cycle-artifacts/p-3416cfb8288f8964/rec-c0-2-d-uat-verification/verification.log"
+  ],
+  "acceptance": {
+    "python3 scripts/check_architecture_contracts.py": "PASS (forbidden baseline shrunk from 6 to 5; chronos-domain->reqwest waiver gone; CHRONOS_CONTRACT_BASE_REF=main also PASS, no new legacy tokens added in diff)",
+    "cargo check --workspace --all-targets --all-features on chronos-domain": "PASS (the 10 errors in chronos-domain/src/tripwire/webhook.rs are gone; the remaining failures are in chronos-store/chronos-ebpf and pre-existed — cargo was stopping at webhook before, now it gets further)",
+    "cargo test -p chronos-domain -- --test-threads=1": "PASS (156/156)",
+    "cargo test --workspace --tests -- --test-threads=1": "PASS for all non-pre-existing-failure tests (3 probe_inject.rs tests fail identically on main HEAD with byte-identical content; documented environmental flake)",
+    "cargo test -p chronos-webhook --lib": "PASS (4/4)",
+    "chronos-domain/Cargo.toml contains no reqwest": "PASS",
+    "chronos-domain/Cargo.toml contains no url": "PASS"
+  },
+  "remaining_debt_out_of_scope": [
+    "probe_inject.rs sandbox tests: pre-existing flakes caused by host kernel allowing uprobe attach for user rubentxu; identical on main HEAD (c76b1096)",
+    "cargo check --workspace --all-targets --all-features fails on chronos-store bench and chronos-ebpf: pre-existing errors masked by the webhook module compile failure. Tracked separately; not part of REC-C0 scope.",
+    "Other 5 transitional architecture violations still listed in known_dependency_violations: chronos-services->{chronos-store, chronos-ebpf, chronos-native, chronos-browser} and chronos-store->chronos-native. These are REC-C3 / REC-C5 scope, not REC-C0."
+  ],
+  "completion_state": "verified",
+  "title": "REC C0 2 d uat verification",
+  "summary": "REC-C0 cycle — see cycle folder for evidence.",
+  "head_sha": "c580d8a956153fcb56ded827a7342d70b87917c3",
+  "base_sha": "7e3702d7ae171c510d1611439b354c7a35edb2e0",
+  "main_sha": "c580d8a956153fcb56ded827a7342d70b87917c3",
+  "remote_tag_peel": "c580d8a956153fcb56ded827a7342d70b87917c3",
+  "peel_match": true,
+  "status": "CLOSED",
+  "findings_introduced": {
+    "no_action": []
+  },
+  "verified_at": "2026-09-15T18:51:16+02:00",
+  "released_at": "2026-09-15T18:51:16+02:00",
+  "archived_at": "2026-09-15T18:51:16+02:00",
+  "created_at": "2026-09-15T18:51:16+02:00",
+  "route": "A-min",
+  "remote_tag": "",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived"
+}

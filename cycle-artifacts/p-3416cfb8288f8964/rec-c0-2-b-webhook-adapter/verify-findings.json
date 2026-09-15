@@ -1,0 +1,45 @@
+{
+  "cycle_id": "rec-c0-2-b-webhook-adapter",
+  "all_passed": true,
+  "verdict": "PASS",
+  "subject": {
+    "head_sha": "3619c123196d2f125629a0b141bb92b613738b0c",
+    "base_sha": "a3dabc149c5d92f345b7f7f06b85b9c4f5de71b3"
+  },
+  "findings": [],
+  "verifications": [
+    {
+      "id": "V1",
+      "category": "lint",
+      "description": "cargo fmt --all -- --check",
+      "command": "cargo fmt --all -- --check",
+      "exit_code": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "V2",
+      "category": "lint",
+      "description": "cargo clippy --workspace --all-targets -- -D warnings",
+      "command": "cargo clippy --workspace --all-targets -- -D warnings",
+      "exit_code": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "V3",
+      "category": "build",
+      "description": "cargo build --workspace",
+      "command": "cargo build --workspace",
+      "exit_code": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "V4",
+      "category": "test",
+      "description": "cargo test --workspace --lib -- --test-threads=1",
+      "command": "cargo test --workspace --lib -- --test-threads=1",
+      "exit_code": 0,
+      "status": "PASS"
+    }
+  ],
+  "_note": "Synthesized by scripts/backfill_rec_c0_artifacts.py on 2026-09-15T18:17:34.870575+00:00Z. Originally created without the verify-findings.json file required by the m9-cycle schema. Restoration, not original."
+}

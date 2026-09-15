@@ -312,10 +312,12 @@ pub fn perf_event_open(
     cpu: i32,
     sample_period: Option<u64>,
 ) -> Result<OwnedFd, PerfCounterError> {
-    let mut attr = PerfEventAttr::default();
-    attr.type_ = type_;
-    attr.size = std::mem::size_of::<PerfEventAttr>() as u32;
-    attr.config = config;
+    let mut attr = PerfEventAttr {
+        type_,
+        size: std::mem::size_of::<PerfEventAttr>() as u32,
+        config,
+        ..Default::default()
+    };
 
     if let Some(period) = sample_period {
         attr.sample_period_or_freq = period;

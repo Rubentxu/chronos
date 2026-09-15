@@ -1,108 +1,102 @@
 # Chronos roadmap
 
-> **Status:** reconstruction phase. See `docs/chronos-agentic-reconstruction/`
-> for the full target architecture, milestones M0–M11, and implementation backlog.
+> **Status:** reconstruction convergence phase. See `docs/chronos-agentic-reconstruction/`
+> for the target architecture, compliance ledger, convergence gates and official milestones.
 
-## Active Milestones
+## Active milestone
 
-> No milestone is currently `Status: in_progress`. All m0–m8 reconstruction
-> sub-cycles are closed (m0, m5, m6, m7, m8) and the m9 vault-hygiene +
-> m10-vault-ms-cleanup follow-ups are also closed. The next milestone on
-> the reconstruction roadmap is **M6 (OpenTelemetry correlation + export)**,
-> a separate, still-pending milestone documented in
-> `docs/chronos-agentic-reconstruction/docs/roadmap/ROADMAP.md`. Per the
-> cycle serialization lock, M6 will be promoted to `Status: in_progress`
-> only after a future explicit kickoff cycle.
+**REC-C0 — Restore the truth baseline — Status: in_progress**
 
-## Next milestone
+The 2026-09-15 source audit found that the reconstruction delivered real foundations but still contains material contract gaps and parallel legacy architecture. Official reconstruction M6 is therefore **blocked** until REC-C0..REC-C7 close.
 
-The reconstruction roadmap's next pending milestone is **M6 (OpenTelemetry
-correlation + export)**, documented in
-`docs/chronos-agentic-reconstruction/docs/roadmap/ROADMAP.md`. No M7
-candidates remain — all v2-spec work was closed in m6 and m7 sub-cycles
-(see closed entries below).
+Immediate work:
 
-### Closed milestones
+- restore default CI/coverage to green;
+- compile/test feature-only code explicitly;
+- make `/reconstruction-contracts.toml` the current requirement truth ledger;
+- enforce architecture dependency and legacy-use ratchets in CI;
+- reconcile README/API capability claims with verified behavior;
+- then cut agent-visible evidence over to the authoritative ExecutionLog.
 
-- **m0-truth-first-foundation** — Status: closed
-  - Reconstruction roadmap: `docs/chronos-agentic-reconstruction/docs/roadmap/ROADMAP.md`
-  - Spec contracts C1–C7 were satisfied; the M0 issue decomposition
-    (`vault/cycles/m0-truth-first-foundation/m0-01.md` .. `m0-10.md`) was
-    consumed as part of milestone acceptance.
-- **m5-agent-api-v2** — Status: closed 2026-09-10
-  - Close report: `docs/milestones/m5-close-report.md`
-  - Scoping: `docs/milestones/m5-agent-api-v2-scoping.md`
-  - Exit criterion (*no new application algorithm belongs directly in
-    `chronos-mcp::server`*) satisfied. 12 service modules in
-    `chronos-services` (~6,241 LoC); `server.rs` at 5,546 LoC / 44 tool
-    wrappers; 9 cycles shipped (m5-01..m5-09) plus this close cycle
-    (m5-10).
-  - v2-spec surface reduction (44 → 8–12 tools) deferred to M6 (see
-    closed entry below).
-- **m6-v2-spec-surface-reduction** — Status: closed 2026-09-11
-  - Close report: `docs/milestones/m6-close-report.md`
-  - Sub-cycle: v2-spec surface reduction (deferred from M5). Distinct
-    from the reconstruction-roadmap M6 (OpenTelemetry export, pending).
-  - Exit criterion (5 v2 dispatcher tools live, 15 v1 tools preserved as
-    deprecated shims) satisfied. 18 service modules in `chronos-services`
-    (9,503 LoC, +3,262 from M5 close); `server.rs` at 6,041 LoC / 49 tool
-    wrappers (+5 v2 dispatcher tools); 5 cycles shipped
-    (m6-01..m6-05) plus this close cycle (m6-06).
-  - Remaining 7 v2 spec tools (events_read, observe, session_compare,
-    session_explain, session_start, session_stop, capabilities) deferred
-    to M7 (see candidates above).
-- **m7-v2-spec-introspection** — Status: closed 2026-09-11
-  - Close report: `docs/milestones/m7-close-report.md`
-  - Sub-cycle: completes the v2-spec sub-cycle opened by M6. Ships the
-    remaining 7 v2 dispatcher tools (events_read, observe, session_compare,
-    session_explain, session_start, session_stop, capabilities) with 20+
-    deprecated v1 shims preserved until 2027-09-11 sunset. 6 cycles shipped
-    (m7-01..m7-06) plus this close cycle (m7-07).
-  - Follow-ups (`session_start{action=attach}` stub, v1 sunset bookkeeping)
-    deferred to m9+ cycles (closed by m9-77/m9-78/m9-79).
-- **m8-counterexample-shrinking** — Status: closed 2026-09-11
-  - Close report: `docs/milestones/m8-05-proptest-shrinking-pagination-events-tool-m8-close-merge.md`
-  - Sub-cycle: counterexample shrinking foundation + real per-variant
-    proptest shrinking + pagination + events tool + M8 close. 5 cycles
-    shipped (m8-01..m8-05) plus this close cycle (m8-05 close).
-- **m9-vault-hygiene** — Status: closed 2026-09-14
-  - Handoff: `.sddk-knowledge/p-3416cfb8288f8964/handoff/m9-backlog-blocked-2026-09-12.md`
-  - Sub-cycle: vault hygiene + drift remediation across 98 cycles. Closed
-    13 cross-check classes (CC#1..CC#56), introduced smoke test harness
-    (`scripts/smoke_test_ccs.sh`), brought all vault indexes to canonical
-    schema. Net outcome: vault state canonical, 56 CCs documented, peel_match
-    verified for all cycles.
-- **m10-vault-ms-cleanup** — Status: closed 2026-09-15
-  - Handoffs: `cycle-artifacts/p-3416cfb8288f8964/handoffs/HANDOFF-2026-09-15*.md`
-  - Sub-cycle: vault hygiene follow-ups after m9-* close + capability
-    discovery refinements (ms- prefix = "milestone slice"). 8 cycles
-    shipped (m10-ms-cap-discovery, m10-ms-cap-discovery-followup,
-    m10-ms-cap-discovery-followup-2, m10-vault-handoff-relocate,
-    m10-vault-last-updated-backfill, m10-cc17-cc26-schema-fix,
-    m10-cc30-cc34-cc35-cc36-cc41-cc43-schema-fix, m10-m9-legacy-schema-migration).
-  - Plus 2 milestones closed (m10-ms-evt-typed, m10-ms-property-policy)
-    and 1 housekeeping cycle (m10-stale-branch-cleanup-2).
-  - All v0.7.103..v0.7.110 tags peel correctly. Carry-forward:
-    `m10-spec-coverage-glue` (latent).
-  - Note: the `m10-` prefix here is an internal cycle-artifact namespace
-    distinct from the reconstruction-roadmap M10 (Execution Explorer).
-    See `docs/chronos-agentic-reconstruction/docs/roadmap/ROADMAP.md` for
-    the official M10 milestone, which remains pending.
+Primary plan:
 
-## M0 backlog (decomposed)
+`docs/chronos-agentic-reconstruction/docs/reconstruction/CONVERGENCE_PLAN.md`
 
-See `vault/cycles/m0-truth-first-foundation/m0-01.md` .. `m0-10.md` (XDG state).
-Each ticket links to a UAT gate from the reconstruction milestone acceptance
-(`docs/chronos-agentic-reconstruction/docs/roadmap/MILESTONE_ACCEPTANCE.md`).
+Acceptance:
 
-## Future milestones (M1–M11)
+`docs/chronos-agentic-reconstruction/docs/roadmap/MILESTONE_ACCEPTANCE.md`
 
-See `docs/chronos-agentic-reconstruction/docs/roadmap/ROADMAP.md` for the
-ordered milestone list. Each milestone becomes one or more SDDK cycles with
-its own proposal, spec, design, tasks, apply, verify, release, and archive.
+## Convergence sequence
+
+1. **REC-C0 — Restore the truth baseline** — ACTIVE
+2. **REC-C1 — ExecutionLog cutover and truthful reads**
+3. **REC-C2 — Legacy evidence/event-path deletion**
+4. **REC-C3 — Hexagonal boundary closure**
+5. **REC-C4 — SOLID + connascence reduction**
+6. **REC-C5 — Canonical Agent API convergence**
+7. **REC-C6 — Close unfinished M1–M4 reconstruction contracts**
+8. **REC-C7 — Reconstruction convergence close**
+
+Only REC-C7 can unblock official reconstruction **M6 OpenTelemetry correlation + export**.
+
+## Closed historical delivery cycles
+
+The following cycle/milestone records remain historically closed. Their close state does **not** automatically mean that every reconstruction requirement is currently verified; residual obligations are tracked in `reconstruction-contracts.toml` and owned by REC-C gates.
+
+- **m0-truth-first-foundation** — closed
+- **m5-agent-api-v2** — closed 2026-09-10
+- **m6-v2-spec-surface-reduction** — closed 2026-09-11
+  - internal API sub-cycle; distinct from official reconstruction M6.
+- **m7-v2-spec-introspection** — closed 2026-09-11
+  - internal API sub-cycle; distinct from official reconstruction M7.
+- **m8-counterexample-shrinking** — closed 2026-09-11
+  - foundation delivered; official roadmap M8 still requires end-to-end test-intelligence completion.
+- **m9-vault-hygiene** — closed 2026-09-14
+  - repository governance/vault hygiene; distinct from official reconstruction M9.
+- **m10-vault-ms-cleanup** — closed 2026-09-15
+  - repository governance namespace; distinct from official reconstruction M10 Execution Explorer.
+
+## Naming rule
+
+From this point forward:
+
+- `REC-C*` = reconstruction convergence gates;
+- `M*` = official product reconstruction milestones;
+- governance/vault/housekeeping cycles must use a non-product prefix and must not be presented as completion of an official `M*` milestone.
+
+This removes the previous ambiguity where an internal `m10-*` cycle could be confused with M10 Execution Explorer.
+
+## Specification truth
+
+Machine-readable current compliance:
+
+`/reconstruction-contracts.toml`
+
+Architecture/spec fitness gate:
+
+```bash
+python3 scripts/check_architecture_contracts.py
+```
+
+REC-C7 strict close:
+
+```bash
+python3 scripts/check_architecture_contracts.py --strict-no-gaps
+cargo check --workspace --all-targets --all-features
+cargo test --workspace -- --test-threads=1
+```
+
+## Official future milestones after convergence
+
+1. **M6 — OpenTelemetry correlation + export**
+2. **M7 — Differential execution v2**
+3. **M8 — Counterexample shrinking and test intelligence**
+4. **M9 — Concurrency intelligence / happens-before**
+5. **M10 — Execution Explorer**
+6. **M11 — Additional language depth**
+
+See `docs/chronos-agentic-reconstruction/docs/roadmap/ROADMAP.md` for detailed scope and gates.
 
 ## Cycle serialization lock
 
-Per A-full workflow step 0.2, only one milestone is `Status: in_progress` at
-any time. The cycle that owns it must complete (release + archive) or be
-explicitly marked blocked/abandoned before another milestone starts.
+Only one product/convergence milestone is `Status: in_progress` at a time. The owning cycle must complete, be explicitly blocked, or be abandoned before another product/convergence milestone is promoted. Repository housekeeping may run independently only when it cannot alter product-delivery claims or acceptance evidence.
