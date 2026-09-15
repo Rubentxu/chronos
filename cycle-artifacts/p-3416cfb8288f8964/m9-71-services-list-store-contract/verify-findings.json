@@ -1,48 +1,53 @@
 {
-  "schema": "verify-finding.schema.json",
-  "subject": {
-    "head_sha": "f8abe7b91b70a7efb2633248d2e8aaea08b3c98a",
-    "base_sha": "e9b6277170cb8059f5cd0340a3f66a5144558faf",
-    "diff_digest": "sha256:9ff4b678f5b4ebeb8d2a281c1b80d2d387ed809d62daccdbbfe424115125ca63",
-    "working_tree_clean": true,
-    "verified_at": "2026-09-13T12:38:00Z",
-    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
-    "verdict": "passed"
-  },
+  "all_passed": true,
+  "cycle_id": "m9-71",
   "findings": [
     {
-      "finding_id": "FIND-M9-70-SERVICES-TABLE-STRING-MATCH",
-      "rule_id": "code.error_text_matching",
-      "severity": "low",
-      "summary": "Closed. chronos-services::sessions::list_sessions no longer substring-matches the store's rendered error text to fake an empty listing: it propagates the error verbatim, and the store owns the 'no sessions yet' contract. The existing list_sessions_empty test goes from vacuous (passes with or without the store fix) to load-bearing, verified by reverting the store-side absent-table handling.",
-      "subject": {
-        "gap": "list_sessions matched err_str.contains(\"does not exist\") || err_str.contains(\"not exist\") and returned an empty ListResult on a hit. The match keys off a human-readable message rather than redb's typed TableError::TableDoesNotExist, and after m9-70 made chronos-store return Ok(vec![]) for a virgin database the branch became unreachable for the only case it existed to serve. It would also have swallowed a genuine store error whose text happened to contain 'not exist'.",
-        "fix": "list_sessions propagates the store error through ? with ServiceError::ListFailed(e.to_string()); the doc comment now states that the empty-store case is the store's contract. list_sessions_empty documents why it is load-bearing and how it was falsified."
-      },
       "evidence": {
         "falsification": "Two-sided proof that the guard is real and the old test was vacuous. (a) With the workaround deleted (this cycle) and the store-side absent-table handling from m9-70 reverted: cargo test -p chronos-services --lib list_sessions_empty FAILS with ListFailed(\"Database error: Table 'sessions' does not exist\") at sessions.rs:465. (b) With the workaround present (pre-m9-71) and the same store revert: the identical test PASSES (1 passed; 0 failed) - i.e. before this cycle the test could not distinguish a correct store contract from a missing one.",
         "post_fix": "cargo test -p chronos-services --lib => 263 passed; 0 failed. cargo test -p chronos-store --lib => 62 passed. cargo test -p chronos-mcp --tests => 77 lib + 49 integration passed. T4-smoke: e2e_connectivity 1 + session_persistence 4 = 5 passed, 0 failed."
-      }
+      },
+      "finding_id": "FIND-M9-70-SERVICES-TABLE-STRING-MATCH",
+      "rule_id": "code.error_text_matching",
+      "severity": "low",
+      "subject": {
+        "fix": "list_sessions propagates the store error through ? with ServiceError::ListFailed(e.to_string()); the doc comment now states that the empty-store case is the store's contract. list_sessions_empty documents why it is load-bearing and how it was falsified.",
+        "gap": "list_sessions matched err_str.contains(\"does not exist\") || err_str.contains(\"not exist\") and returned an empty ListResult on a hit. The match keys off a human-readable message rather than redb's typed TableError::TableDoesNotExist, and after m9-70 made chronos-store return Ok(vec![]) for a virgin database the branch became unreachable for the only case it existed to serve. It would also have swallowed a genuine store error whose text happened to contain 'not exist'."
+      },
+      "summary": "Closed. chronos-services::sessions::list_sessions no longer substring-matches the store's rendered error text to fake an empty listing: it propagates the error verbatim, and the store owns the 'no sessions yet' contract. The existing list_sessions_empty test goes from vacuous (passes with or without the store fix) to load-bearing, verified by reverting the store-side absent-table handling."
     }
   ],
   "findings_introduced": {
-    "no_action": [],
     "deferred": [
       {
         "finding_id": "FIND-M9-71-LOAD-SESSION-TABLE-ERROR-COLLAPSE",
+        "note": "SessionStore::load_session handles the absent-table case with Err(_) => StoreError::SessionNotFound(...) in both read paths, while list_sessions and session_exists in the same file match redb::TableError::TableDoesNotExist explicitly. Harmless today (a read transaction's open_table realistically only fails with TableDoesNotExist) but it would misreport any future redb error variant as 'session not found', and it leaves three sibling read paths disagreeing about the same concern. Recorded so a future cycle can normalize the classification. No behavior change either way, and no test can currently distinguish the two forms.",
         "rule_id": "code.error_classification_collapse",
-        "severity": "low",
-        "note": "SessionStore::load_session handles the absent-table case with Err(_) => StoreError::SessionNotFound(...) in both read paths, while list_sessions and session_exists in the same file match redb::TableError::TableDoesNotExist explicitly. Harmless today (a read transaction's open_table realistically only fails with TableDoesNotExist) but it would misreport any future redb error variant as 'session not found', and it leaves three sibling read paths disagreeing about the same concern. Recorded so a future cycle can normalize the classification. No behavior change either way, and no test can currently distinguish the two forms."
+        "severity": "low"
       },
       {
         "finding_id": "FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION",
+        "note": "Found by this cycle's own drift gate, not by inspection: the first post-release drift sweep failed CC#4 with 'DRIFT: m9-70-.../archive-manifest.md :: cycles/index.md' because m9-70's artifact index still listed the pre-m9-71 index SHAs. CC#4 checks every SHA in every archive-manifest artifact index against the live file, so each cycle that edits a vault index must rewrite the index rows of every prior manifest that lists them; the affected set grows by one per cycle (O(n^2) in cycles). Candidate fixes: keep mutable vault indexes out of artifact indexes, or exempt vault-index paths in CC#4. Pure maintenance cost, no behavior impact.",
         "rule_id": "vault.archive_manifest_index_sha_chaintension",
-        "severity": "low",
-        "note": "Found by this cycle's own drift gate, not by inspection: the first post-release drift sweep failed CC#4 with 'DRIFT: m9-70-.../archive-manifest.md :: cycles/index.md' because m9-70's artifact index still listed the pre-m9-71 index SHAs. CC#4 checks every SHA in every archive-manifest artifact index against the live file, so each cycle that edits a vault index must rewrite the index rows of every prior manifest that lists them; the affected set grows by one per cycle (O(n^2) in cycles). Candidate fixes: keep mutable vault indexes out of artifact indexes, or exempt vault-index paths in CC#4. Pure maintenance cost, no behavior impact."
+        "severity": "low"
       }
-    ]
+    ],
+    "no_action": []
   },
   "lens_summary": "m9-71 is a one-file, one-function B-direct cycle that finishes the story m9-70 started. m9-70 moved the 'a virgin sessions table means zero sessions' decision into chronos-store, which left the matching workaround in chronos-services unreachable dead code; this cycle deletes it and pins the contract where it now lives. The cycle's value is not a behavior change (there is none post-m9-70) but the conversion of a vacuous test into a real one: list_sessions_empty passed both with and without the store fix before, and now fails the moment the store regresses. That was demonstrated in both directions before the patch was committed, not asserted. Gates: T0 fmt + clippy -D warnings clean; T2 chronos-services 263, chronos-store 62, chronos-mcp 77 + 49; T4-smoke e2e_connectivity + session_persistence 5/5 (the change is observable through the session_list tool surface, so the smoke run is required even though the diff is a services-layer simplification); vault drift sweep PASS (47 python + 7 bash CCs); CC smoke 5/5. No new vault CC: this removes a workaround and adds no structural class.",
-  "cycle_id": "m9-71",
+  "schema": "verify-finding.schema.json",
+  "subject": {
+    "base_sha": "e9b6277170cb8059f5cd0340a3f66a5144558faf",
+    "branch": "feat/m9-71-services-list-store-contract",
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
+    "cycle_id": "m9-71-services-list-store-contract",
+    "diff_digest": "sha256:9ff4b678f5b4ebeb8d2a281c1b80d2d387ed809d62daccdbbfe424115125ca63",
+    "head_sha": "f8abe7b91b70a7efb2633248d2e8aaea08b3c98a",
+    "route": "A-min",
+    "verdict": "passed",
+    "verified_at": "2026-09-13T12:38:00Z",
+    "working_tree_clean": true
+  },
+  "summary": "passed",
   "verdict": "passed"
 }

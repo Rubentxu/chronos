@@ -1,4 +1,5 @@
 {
+  "all_passed": true,
   "cycle_id": "m9-66",
   "findings": [
     {
@@ -38,8 +39,9 @@
     "base_sha": "c46851baf07c13d2e6d680e35b54c14bd7698b76",
     "branch": "chore/m9-66-bash-cc-meta-check",
     "cycle_id": "m9-66-bash-cc-meta-check",
-    "head_sha": "b749735568f0ffffe1afb951411ec0ea482d7e78",
+    "head_sha": "963a143aacd5e005fb39593afea060106f172c00",
     "route": "A-min"
   },
+  "summary": "passed",
   "verdict": "pass_with_findings"
 }

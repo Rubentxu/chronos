@@ -1,84 +1,76 @@
 {
-  "subject": {
-    "head_sha": "8ff34170fe98fd14cc1e10e30e95d842fe67f0f0",
-    "base_sha": "72bff2808457a4ead6f4caec233dc404a20c35d8",
-    "main_sha": "8ff34170fe98fd14cc1e10e30e95d842fe67f0f0",
-    "remote_tag": "v0.7.97",
-    "remote_tag_peel": "8ff34170fe98fd14cc1e10e30e95d842fe67f0f0",
-    "cycle_id": "m9-95-services-test-split",
-    "cycle_record": "p-3416cfb8288f8964/m9-95-services-test-split",
-    "branch": "chore/m9-95-services-test-split",
-    "route": "B-direct"
-  },
-  "tier": "T1",
-  "tiers_run": ["T0", "T1", "T2"],
+  "all_passed": true,
+  "carry_forward": [
+    "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK (external-deferred, sddk CLI bug)"
+  ],
   "checks": {
-    "T0_fmt": {
-      "status": "passed",
-      "command": "cargo fmt --all -- --check"
-    },
     "T0_clippy": {
-      "status": "passed",
-      "command": "cargo clippy --workspace --all-targets -- -D warnings"
+      "command": "cargo clippy --workspace --all-targets -- -D warnings",
+      "status": "passed"
+    },
+    "T0_fmt": {
+      "command": "cargo fmt --all -- --check",
+      "status": "passed"
     },
     "T1_lib_unit_chronos_services": {
-      "status": "passed",
       "command": "cargo test -p chronos-services --lib --no-fail-fast",
-      "total_passed": 268,
+      "note": "Same count as m9-94 baseline (268). No tests lost or duplicated.",
       "regressions": 0,
-      "note": "Same count as m9-94 baseline (268). No tests lost or duplicated."
+      "status": "passed",
+      "total_passed": 268
     },
     "T2_lib_unit_workspace": {
-      "status": "passed",
       "command": "cargo test --workspace --lib --no-fail-fast -- --test-threads=1",
-      "total_passed": 1042,
+      "note": "Same count as m9-94 baseline (1042). No regressions introduced by the file reorganization.",
       "regressions": 0,
-      "note": "Same count as m9-94 baseline (1042). No regressions introduced by the file reorganization."
-    },
-    "vault_drift_sweep": {
       "status": "passed",
-      "command": "bash scripts/check_vault_drift.sh",
-      "drift_lines": 0,
-      "note": "m9-95 is a Rust-only cycle; no vault CC drift introduced by the source commit itself. Vault cascade lands in subsequent SHA-fixpoint commits."
-    },
-    "cc3_era_awareness": {
-      "status": "pending",
-      "note": "Will be validated after archive-manifest.md + merge + tag fixpoint"
-    },
-    "cc4_artifact_sha_consistency": {
-      "status": "pending",
-      "command": "python3 scripts/regen_manifest_index_shas.py --check",
-      "note": "Will be validated after archive-manifest.md is written"
-    },
-    "cc8_archive_manifest_head_sha": {
-      "status": "pending",
-      "note": "Will be validated after archive-manifest.md is written"
+      "total_passed": 1042
     },
     "cc22_release_receipt_sha_fields": {
-      "status": "pending",
-      "note": "Will be validated after release-receipt.md is written"
+      "note": "Will be validated after release-receipt.md is written",
+      "status": "pending"
     },
     "cc23_merge_receipt_sha_fields": {
-      "status": "pending",
-      "note": "Will be validated after merge --no-ff"
+      "note": "Will be validated after merge --no-ff",
+      "status": "pending"
     },
     "cc39_total_cycles": {
-      "status": "pending",
-      "note": "Will be validated after cycles/index.md bump (95)"
+      "note": "Will be validated after cycles/index.md bump (95)",
+      "status": "pending"
+    },
+    "cc3_era_awareness": {
+      "note": "Will be validated after archive-manifest.md + merge + tag fixpoint",
+      "status": "pending"
     },
     "cc42_remote_tag_peel_match": {
-      "status": "pending",
-      "note": "Will be validated after release-receipt.md + tag fixpoint"
+      "note": "Will be validated after release-receipt.md + tag fixpoint",
+      "status": "pending"
     },
     "cc43_release_receipt_head_sha": {
-      "status": "pending",
-      "note": "Will be validated after release-receipt.md is written"
+      "note": "Will be validated after release-receipt.md is written",
+      "status": "pending"
+    },
+    "cc4_artifact_sha_consistency": {
+      "command": "python3 scripts/regen_manifest_index_shas.py --check",
+      "note": "Will be validated after archive-manifest.md is written",
+      "status": "pending"
     },
     "cc51_cycles_index_has_artifacts_dir": {
-      "status": "pending",
-      "note": "Will be validated after cycles/index.md bump"
+      "note": "Will be validated after cycles/index.md bump",
+      "status": "pending"
+    },
+    "cc8_archive_manifest_head_sha": {
+      "note": "Will be validated after archive-manifest.md is written",
+      "status": "pending"
+    },
+    "vault_drift_sweep": {
+      "command": "bash scripts/check_vault_drift.sh",
+      "drift_lines": 0,
+      "note": "m9-95 is a Rust-only cycle; no vault CC drift introduced by the source commit itself. Vault cascade lands in subsequent SHA-fixpoint commits.",
+      "status": "passed"
     }
   },
+  "cycle_id": "m9-95-services-test-split",
   "findings": [
     {
       "id": "FIND-M9-94-SERVICES-COUNTEREXAMPLE-TESTS-MONOLITHIC",
@@ -86,14 +78,28 @@
       "summary": "The 2169-line inline `mod tests { ... }` block in `crates/chronos-services/src/counterexample.rs` was extracted to a sibling file `crates/chronos-services/src/ce_services_tests.rs` using the `#[path]` submodule pattern established by m9-94. After m9-95 the parent file holds only production code (1794 lines); the test block lives in a sibling that is reachable as `counterexample::tests`. No public API change; no test lost or modified."
     }
   ],
-  "carry_forward": [
-    "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK (external-deferred, sddk CLI bug)"
-  ],
   "out_of_scope": [
     "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK",
     "cc-001-god-module production code split for counterexample.rs (well-organized into named sections; not needed at this time)",
     "cc-004-implicit-io-toctou (deferred m10+)"
   ],
+  "subject": {
+    "base_sha": "72bff2808457a4ead6f4caec233dc404a20c35d8",
+    "branch": "chore/m9-95-services-test-split",
+    "cycle_id": "m9-95-services-test-split",
+    "cycle_record": "p-3416cfb8288f8964/m9-95-services-test-split",
+    "head_sha": "8ff34170fe98fd14cc1e10e30e95d842fe67f0f0",
+    "main_sha": "8ff34170fe98fd14cc1e10e30e95d842fe67f0f0",
+    "remote_tag": "v0.7.97",
+    "remote_tag_peel": "8ff34170fe98fd14cc1e10e30e95d842fe67f0f0",
+    "route": "B-direct"
+  },
   "summary": "passed",
-  "all_passed": true
+  "tier": "T1",
+  "tiers_run": [
+    "T0",
+    "T1",
+    "T2"
+  ],
+  "verdict": "pass"
 }

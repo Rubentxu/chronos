@@ -1,4 +1,5 @@
 {
+  "all_passed": true,
   "base_sha": "bf5597611dd7a2dc8f80c34a79996ef5531e313f",
   "cycle": "p-3416cfb8288f8964/m9-84-cc001-god-module-keys-split",
   "cycle_id": "m9-84-cc001-god-module-keys-split",
@@ -84,7 +85,7 @@
     "base_sha": "bf5597611dd7a2dc8f80c34a79996ef5531e313f",
     "branch": "feat/m9-84-cc001-god-module-keys-split",
     "cycle_id": "m9-84-cc001-god-module-keys-split",
-    "head_sha": "5f0c3a54ee04716930feb6d6e2c790af16a7e6f7",
+    "head_sha": "6bd7f02f69c75b1839ed8796af0b644c7d4eb4b0",
     "route": "A-min"
   },
   "summary": "Closed FIND-M9-84-CE-CHUNK-KEYS-EXTRACT by extracting 8 chunk key/value encoding helpers from counterexample_storage.rs into a new sibling submodule ce_chunk_keys.rs. Behaviour-preserving lexical refactor. counterexample_storage.rs: 2821 -> 2720 lines (-101 net). Public surface unchanged (encode_chunk_key_legacy still reachable). 77/77 chronos-store lib tests pass (matches baseline). 264/264 chronos-services lib tests pass. cargo clippy --workspace clean. cargo fmt clean.",

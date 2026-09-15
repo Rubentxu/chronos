@@ -1,56 +1,61 @@
 {
-  "schema": "verify-finding.schema.json",
-  "subject": {
-    "head_sha": "54e859ffe43c09cc2217c8943233f27016bbe76b",
-    "base_sha": "682817b520010dfa15512fb461a9eeb679009708",
-    "diff_digest": "sha256:5897a0c7f8f33ebeb5c0667f5f1e309b1a89bb5ff76dba70ea9e22a4d5a93a24",
-    "working_tree_clean": true,
-    "verified_at": "2026-09-13T12:12:00Z",
-    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
-    "verdict": "passed"
-  },
+  "all_passed": true,
+  "cycle_id": "m9-70",
   "findings": [
     {
-      "finding_id": "FIND-M9-69-MCP-STORE-ISOLATION",
-      "rule_id": "test.store_env_coupling",
-      "severity": "medium",
-      "summary": "Closed. chronos-mcp's unit suite built every server on the developer's real $HOME store, and SessionStore::list_sessions hard-failed on the first stale-schema record, so test_list_sessions_after_save failed deterministically on populated machines. Three layers now fix it: best-effort listing, absent-table-is-empty reads, and a hermetic cfg(test) store. Each layer has a test that fails before its fix.",
-      "subject": {
-        "gap": "ChronosServer::new() opened $HOME/.local/share/chronos/sessions.redb under cfg(test), so the unit suite wrote to and depended on the developer's real database. That store holds records written by older binaries; bincode is not self-describing, so a stale SessionMetadata layout is undeserializable. list_sessions returned StoreError::Serialization on the first such record, which chronos-services propagated as ListFailed (its only tolerated case was 'does not exist'), turning a foreign record into a hard test failure. Observed pre-fix: a fresh test server listed 21 sessions from the developer's store.",
-        "fix": "1) list_sessions skips undeserializable records with a tracing::warn instead of failing the call. 2) Reading a database with no tables yet returns an empty list / false rather than TableDoesNotExist (a genuine fresh-install bug: session_list errored on a brand-new sessions.redb). 3) ChronosServer::new() was split into from_store() plus two open_default_store() variants: production keeps $CHRONOS_DB_PATH/$HOME, cfg(test) returns a fresh in-memory store (a real file is still selectable via CHRONOS_DB_PATH). All 36 ChronosServer::new() sites in the unit suite are now hermetic."
-      },
       "evidence": {
         "falsification": "Reverting layer 1+2: test_session_store_list_sessions_skips_unreadable_record and test_list_sessions_on_virgin_store_is_empty both FAIL (1 passed; 2 failed) in chronos-store. Simulating the pre-fix cfg(test) store (reads $HOME): test_default_test_server_does_not_read_the_developer_store FAILS with 'fresh test server must start with an empty store, found 21 session(s)'.",
         "post_fix": "cargo test -p chronos-store --lib => 62 passed; 0 failed. cargo test -p chronos-mcp --lib => 77 passed; 0 failed (including test_list_sessions_after_save, which failed on main). cargo test -p chronos-mcp --tests => 49 passed across 6 integration binaries."
-      }
+      },
+      "finding_id": "FIND-M9-69-MCP-STORE-ISOLATION",
+      "rule_id": "test.store_env_coupling",
+      "severity": "medium",
+      "subject": {
+        "fix": "1) list_sessions skips undeserializable records with a tracing::warn instead of failing the call. 2) Reading a database with no tables yet returns an empty list / false rather than TableDoesNotExist (a genuine fresh-install bug: session_list errored on a brand-new sessions.redb). 3) ChronosServer::new() was split into from_store() plus two open_default_store() variants: production keeps $CHRONOS_DB_PATH/$HOME, cfg(test) returns a fresh in-memory store (a real file is still selectable via CHRONOS_DB_PATH). All 36 ChronosServer::new() sites in the unit suite are now hermetic.",
+        "gap": "ChronosServer::new() opened $HOME/.local/share/chronos/sessions.redb under cfg(test), so the unit suite wrote to and depended on the developer's real database. That store holds records written by older binaries; bincode is not self-describing, so a stale SessionMetadata layout is undeserializable. list_sessions returned StoreError::Serialization on the first such record, which chronos-services propagated as ListFailed (its only tolerated case was 'does not exist'), turning a foreign record into a hard test failure. Observed pre-fix: a fresh test server listed 21 sessions from the developer's store."
+      },
+      "summary": "Closed. chronos-mcp's unit suite built every server on the developer's real $HOME store, and SessionStore::list_sessions hard-failed on the first stale-schema record, so test_list_sessions_after_save failed deterministically on populated machines. Three layers now fix it: best-effort listing, absent-table-is-empty reads, and a hermetic cfg(test) store. Each layer has a test that fails before its fix."
     },
     {
-      "finding_id": "FIND-M9-70-VIRGIN-STORE-READ-ERROR",
-      "rule_id": "code.read_error_on_absent_table",
-      "severity": "low",
-      "summary": "Closed in-cycle. Found by the new hermetic test: reading a session database that has no tables yet returned TableDoesNotExist instead of an empty result, so session_list errored on a brand-new install instead of reporting zero sessions.",
-      "subject": {
-        "gap": "$HOME/.local/share/chronos/sessions.redb is created on first start but contains no tables until the first save_session. SessionStore::list_sessions and SessionStore::session_exists opened SESSION_META unconditionally and mapped the redb TableDoesNotExist error into StoreError::Database, which chronos-services only tolerated via a substring match on the error text ('does not exist'). A fresh install therefore answered session_list with an error rather than [].",
-        "fix": "Both read paths now match redb::TableError::TableDoesNotExist and return the empty answer (Ok(vec![]) / Ok(false)); any other table error still propagates."
-      },
       "evidence": {
         "falsification": "With the absent-table handling reverted, test_list_sessions_on_virgin_store_is_empty FAILS with StoreError::Database(TableDoesNotExist(\"sessions\")).",
         "post_fix": "test_list_sessions_on_virgin_store_is_empty and test_session_exists_on_virgin_store_is_false pass: assert!(store.list_sessions().unwrap().is_empty()) / assert!(!store.session_exists(\"anything\").unwrap())."
-      }
+      },
+      "finding_id": "FIND-M9-70-VIRGIN-STORE-READ-ERROR",
+      "rule_id": "code.read_error_on_absent_table",
+      "severity": "low",
+      "subject": {
+        "fix": "Both read paths now match redb::TableError::TableDoesNotExist and return the empty answer (Ok(vec![]) / Ok(false)); any other table error still propagates.",
+        "gap": "$HOME/.local/share/chronos/sessions.redb is created on first start but contains no tables until the first save_session. SessionStore::list_sessions and SessionStore::session_exists opened SESSION_META unconditionally and mapped the redb TableDoesNotExist error into StoreError::Database, which chronos-services only tolerated via a substring match on the error text ('does not exist'). A fresh install therefore answered session_list with an error rather than []."
+      },
+      "summary": "Closed in-cycle. Found by the new hermetic test: reading a session database that has no tables yet returned TableDoesNotExist instead of an empty result, so session_list errored on a brand-new install instead of reporting zero sessions."
     }
   ],
   "findings_introduced": {
-    "no_action": [],
     "deferred": [
       {
         "finding_id": "FIND-M9-70-SERVICES-TABLE-STRING-MATCH",
+        "note": "chronos-services::sessions::list_sessions tolerates a missing table by substring-matching the error message (`err_str.contains(\"does not exist\")`). With the chronos-store fix that branch is now unreachable for the virgin-store case, so the workaround is redundant defence-in-depth. Left in place deliberately (it still guards if the store layer regresses) and recorded here so a future cycle can decide whether to delete it or replace it with a typed match. Out of scope for m9-70 (no behavior change either way).",
         "rule_id": "code.error_text_matching",
-        "severity": "low",
-        "note": "chronos-services::sessions::list_sessions tolerates a missing table by substring-matching the error message (`err_str.contains(\"does not exist\")`). With the chronos-store fix that branch is now unreachable for the virgin-store case, so the workaround is redundant defence-in-depth. Left in place deliberately (it still guards if the store layer regresses) and recorded here so a future cycle can decide whether to delete it or replace it with a typed match. Out of scope for m9-70 (no behavior change either way)."
+        "severity": "low"
       }
-    ]
+    ],
+    "no_action": []
   },
   "lens_summary": "m9-70 is a two-file B-direct cycle that closes FIND-M9-69-MCP-STORE-ISOLATION (deferred by m9-69) and, while doing so, uncovers and closes a second, lower-severity defect in the same read path. Verification is falsification-first: each of the three fixes was reverted in turn and the corresponding test was observed to fail, which is what makes the guards meaningful rather than decorative. Pre-fix the hermeticity test observed 21 sessions from the developer's real store; post-fix all three crates' unit and integration suites are green (chronos-store 62, chronos-mcp 77 + 49 integration, chronos-services 263) and clippy passes with -D warnings. Production behavior is intentionally unchanged: the production store-opening logic is byte-identical, only relocated into a cfg(not(test)) function. T4-smoke is included because the change is visible through the MCP tool surface (session_list on a fresh store). No new vault CC: local robustness plus test isolation, no new structural drift class.",
-  "cycle_id": "m9-70",
+  "schema": "verify-finding.schema.json",
+  "subject": {
+    "base_sha": "682817b520010dfa15512fb461a9eeb679009708",
+    "branch": "feat/m9-70-mcp-store-isolation",
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
+    "cycle_id": "m9-70-mcp-store-isolation",
+    "diff_digest": "sha256:5897a0c7f8f33ebeb5c0667f5f1e309b1a89bb5ff76dba70ea9e22a4d5a93a24",
+    "head_sha": "54e859ffe43c09cc2217c8943233f27016bbe76b",
+    "route": "A-min",
+    "verdict": "passed",
+    "verified_at": "2026-09-13T12:12:00Z",
+    "working_tree_clean": true
+  },
+  "summary": "passed",
   "verdict": "passed"
 }

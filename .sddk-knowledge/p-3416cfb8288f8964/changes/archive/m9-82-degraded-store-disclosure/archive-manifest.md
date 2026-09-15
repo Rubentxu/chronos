@@ -141,7 +141,7 @@ deprecation sunset sweep.
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-82-degraded-store-disclosure/archive-manifest.md` | `c0c2946c1b2fb599676442e6b5158e70b329aff5e6188c0474ec701a9b183602` |
 | implementation-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/implementation-receipt.md` | `7a8fbbb7e3531e48cf890652f51ca204e78855803218152da8ff86539f9b80c5` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/verify-report.md` | `81aea015a12b70afd726fba9012ca3c9cbfc10f9409dd829a1ca9552569e3338` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/verify-findings.json` | `9989271198198dec8bab31f148e750cfa72097639642dafbb7d6675b63472da4` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/verify-findings.json` | `a3383389f6f894eef28cd9461d25b27417621a90da1ee1516facbec69031266e` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/release-receipt.md` | `04a32d053c0358e71169fbcf7ef708a7b44aa88c22bbf2bfa4270e31667e3f15` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/merge-receipt.md` | `e4ffac9d945814ce39da35bcd0daa253ad6251ef2fe7e40a386b07ae113f9d98` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-82-degraded-store-disclosure/release-report.md` | `545099bf6dd0136e10822b10edf1e4a1bd7f046a5eccbbb730d15fc76b66d2e7` |

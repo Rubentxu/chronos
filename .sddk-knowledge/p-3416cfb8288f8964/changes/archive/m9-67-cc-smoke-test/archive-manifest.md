@@ -60,7 +60,7 @@ Two commits:
 | smoke-test script | `scripts/smoke_test_ccs.sh` | `86def49d7e23b4e521687ddcb53a384aac18ec3f91f0e2845396f90d7ac3e7d3` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/apply-checkpoint.json` | `5183cda98f62148ba51000724af3a77e969ac2a7e6057190ebee5085a2427e5e` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/verify-report.md` | `537755570d4da038a3eab6720f869c2ef450dba131614df9f7ecb49bb3210106` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/verify-findings.json` | `0a406f9bf8ef91abcc984fc2d10392e795e71b758d71da4e6e670664eb880f51` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/verify-findings.json` | `7b371feec14c97e28c64b370b21e5f2d862972e871d6f456ffec56b11efc0b0f` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/release-report.md` | `8203ae55fb7bc54fb62a1b9fdbd43c51fa380ef90fdbb5849ca1e2c6897161a6` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/release-receipt.md` | `0c16606f3a01a618fa2c325555caa59cb0d206e6a4721f2e92cdf134ba95feb1` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/merge-receipt.md` | `be5691f0a1dc003d9c13573574f8de8ca8de59b82da81c0cb68588c9be82e7f0` |

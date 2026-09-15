@@ -1,27 +1,32 @@
 {
-  "schema": "verify-finding.schema.json",
-  "subject": {
-    "head_sha": "5d4c00d36b14e56349b615e0a1d65186b273c510",
-    "base_sha": "97ce507d209eb1bb5d61a4d5b41c0f8bc068343a",
-    "diff_digest": "sha256:135db361379b125d946ee04ddb38c2a220ced1113122dcf2171873c2cbe3cd3a",
-    "working_tree_clean": true,
-    "verified_at": "2026-09-13T09:21:00Z",
-    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
-    "verdict": "passed"
-  },
+  "all_passed": true,
+  "cycle_id": "m9-61",
   "findings": [
     {
       "finding_id": "FIND-MS-RACE-FIX-DRAIN-STOP",
       "rule_id": "chronos.lifecycle.stop_drain_ordering",
       "severity": "high",
-      "summary": "Drain invoked while probe thread still emitting events; emitted events lost in race window",
       "subject": {
-        "race_window": "drain_raw_events() returns before probe thread sees running=false and exits",
-        "manifestation": "Captured event count < emitted event count on session stop"
-      }
+        "manifestation": "Captured event count < emitted event count on session stop",
+        "race_window": "drain_raw_events() returns before probe thread sees running=false and exits"
+      },
+      "summary": "Drain invoked while probe thread still emitting events; emitted events lost in race window"
     }
   ],
   "lens_summary": "m9-61 closes the drain/stop race by making stop_probe blocking and reordering service-layer calls to stop-then-drain. Single commit; pure refactor + trait doc update; no API signature change.",
-  "cycle_id": "m9-61",
+  "schema": "verify-finding.schema.json",
+  "subject": {
+    "base_sha": "97ce507d209eb1bb5d61a4d5b41c0f8bc068343a",
+    "branch": "feat/m9-61-ms-race-fix",
+    "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
+    "cycle_id": "m9-61-ms-race-fix",
+    "diff_digest": "sha256:135db361379b125d946ee04ddb38c2a220ced1113122dcf2171873c2cbe3cd3a",
+    "head_sha": "5d4c00d36b14e56349b615e0a1d65186b273c510",
+    "route": "A-min",
+    "verdict": "passed",
+    "verified_at": "2026-09-13T09:21:00Z",
+    "working_tree_clean": true
+  },
+  "summary": "passed",
   "verdict": "pass_with_findings"
 }

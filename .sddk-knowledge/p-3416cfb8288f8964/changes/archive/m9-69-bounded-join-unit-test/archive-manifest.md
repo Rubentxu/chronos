@@ -63,7 +63,7 @@ Two commits:
 | source (probe backend) | `crates/chronos-native/src/probe_backend.rs` | `2d8ee1faaed4fdf21bfdebfb18a8029ff60ce1cd0eb8c7d9063f17ef82e63ed1` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-69-bounded-join-unit-test/apply-checkpoint.json` | `ce9cfca6537a6ae896517e6beda238930833d14a82615d1711e110a75a987248` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-69-bounded-join-unit-test/verify-report.md` | `cbfffa93c7768a5dd15e2e49bf534684a15dfc82f82adc9a7ec333c18d3aeaef` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-69-bounded-join-unit-test/verify-findings.json` | `0b677749baa3c712d038f2f145518710a4ffb7058f69626ee69c8ede920933ca` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-69-bounded-join-unit-test/verify-findings.json` | `d8cdad5f7574abc1cd781c6cd9d219f19770858f25777b781556a80384e20a27` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-69-bounded-join-unit-test/release-report.md` | `9a1a096ad52bee9b2850b819fcca36b81235ddc593bf5fa0b74538edaf0afb65` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-69-bounded-join-unit-test/release-receipt.md` | `8f81b76621e20bdbccbc5f6a511f6e11cad264852ac612ad9baff45ec3a110df` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-69-bounded-join-unit-test/merge-receipt.md` | `3e996c04c5d170fd13b47e53af439181ac59b0a2cfe8197364275065e8b355c7` |

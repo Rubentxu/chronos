@@ -1,1 +1,40 @@
-{"subject":{"head_sha":"9d2b9f27fffbef8961edb5e9c19af31fbd796e66","base_sha":"5600873d05e0ab79f17eed6eec63df96ddd97c88","cycle_id":"m9-97-cc004-implicit-io-toctou","branch":"chore/m9-97-cc004-implicit-io-toctou","route":"A-min"},"tier":"T0+T1+vault","checks":{"net_rust_diff":{"status":"passed","command":"git diff --stat 5600873d..HEAD","result":"empty"},"writer_serialization":{"status":"passed","evidence":"redb 2.6.3 transaction_tracker.rs:117-128 waits while live_write_transaction is set"},"t0":{"status":"passed","command":"cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings"},"t1":{"status":"passed","command":"cargo test --workspace --lib -- --test-threads=1"}},"findings":[{"id":"cc-004-implicit-io-toctou","status":"falsified","summary":"The alleged read-to-write race cannot occur because redb serializes writers before the separate read transaction is opened."}],"summary":"passed","all_passed":true}
+{
+  "all_passed": true,
+  "checks": {
+    "net_rust_diff": {
+      "command": "git diff --stat 5600873d..HEAD",
+      "result": "empty",
+      "status": "passed"
+    },
+    "t0": {
+      "command": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings",
+      "status": "passed"
+    },
+    "t1": {
+      "command": "cargo test --workspace --lib -- --test-threads=1",
+      "status": "passed"
+    },
+    "writer_serialization": {
+      "evidence": "redb 2.6.3 transaction_tracker.rs:117-128 waits while live_write_transaction is set",
+      "status": "passed"
+    }
+  },
+  "cycle_id": "m9-97-cc004-implicit-io-toctou",
+  "findings": [
+    {
+      "id": "cc-004-implicit-io-toctou",
+      "status": "falsified",
+      "summary": "The alleged read-to-write race cannot occur because redb serializes writers before the separate read transaction is opened."
+    }
+  ],
+  "subject": {
+    "base_sha": "5600873d05e0ab79f17eed6eec63df96ddd97c88",
+    "branch": "chore/m9-97-cc004-implicit-io-toctou",
+    "cycle_id": "m9-97-cc004-implicit-io-toctou",
+    "head_sha": "ddf059193287447dd866ea8818aafcceac660f70",
+    "route": "A-min"
+  },
+  "summary": "passed",
+  "tier": "T0+T1+vault",
+  "verdict": "pass"
+}

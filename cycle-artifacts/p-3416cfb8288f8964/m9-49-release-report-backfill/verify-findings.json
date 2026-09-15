@@ -1,34 +1,39 @@
 {
+  "all_passed": true,
   "cycle_id": "m9-49",
-  "subject": {
-    "head_sha": "058399dca8bd333595abbd84f8620d93e5a8de1f",
-    "base_sha": "23d96ffe771070369d72f269d15f202fd9390620"
-  },
-  "verdict": "pass",
   "findings": [
     {
-      "id": "F1",
-      "severity": "low",
       "category": "schema-drift",
       "description": "m9-03 verify-findings.json was missing `lens_summary` field.",
+      "id": "F1",
+      "severity": "low",
       "status": "RESOLVED"
     },
     {
-      "id": "F2",
-      "severity": "low",
       "category": "schema-drift",
       "description": "15 release-report.md files (m9-19..m9-33) had legacy format without canonical fields/sections.",
+      "id": "F2",
+      "severity": "low",
       "status": "RESOLVED"
     },
     {
-      "id": "F3",
-      "severity": "informational",
       "category": "process",
       "description": "Added cross-check #41 to vault-drift-sweep.md.",
+      "id": "F3",
+      "severity": "informational",
       "status": "RESOLVED"
     }
   ],
   "lens_summary": {
     "drift": "m9-03 verify-findings lens_summary added. m9-19..m9-33 release-report.md backfilled with canonical schema. Cross-check #41 added."
-  }
+  },
+  "subject": {
+    "base_sha": "23d96ffe771070369d72f269d15f202fd9390620",
+    "branch": "feat/m9-49-release-report-backfill",
+    "cycle_id": "m9-49-release-report-backfill",
+    "head_sha": "058399dca8bd333595abbd84f8620d93e5a8de1f",
+    "route": "A-min"
+  },
+  "summary": "passed",
+  "verdict": "pass"
 }

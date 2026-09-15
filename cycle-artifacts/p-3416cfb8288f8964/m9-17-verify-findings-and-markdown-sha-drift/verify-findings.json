@@ -1,28 +1,33 @@
 {
-  "cycle_id": "m9-17-verify-findings-and-markdown-sha-drift",
-  "subject": {
-    "head": "134dc7525312275c447db8f5996740ff7c102a02",
-    "head_sha": "134dc7525312275c447db8f5996740ff7c102a02",
-    "base_sha": "0ed8f874f7b6f973505fc3997475fc398fcfa4cc"
-  },
-  "findings": [],
   "_legacy": {
-    "lens_summary": {
-      "spec-compliance": 0,
-      "test-quality": 0,
-      "vault-hygiene": 0,
-      "documentation-discipline": 0
-    },
-    "verdict": "PASS",
     "evidence_keys": [
       "vault_drift_sweep_checks",
       "t0_lint",
       "diff_size",
       "schema_v1_accepted"
-    ]
+    ],
+    "lens_summary": {
+      "documentation-discipline": 0,
+      "spec-compliance": 0,
+      "test-quality": 0,
+      "vault-hygiene": 0
+    },
+    "verdict": "PASS"
   },
-  "verdict": "pass",
+  "all_passed": true,
+  "cycle_id": "m9-17-verify-findings-and-markdown-sha-drift",
+  "findings": [],
   "lens_summary": {
     "drift": "Drift closure cycle. See verify-report.md and change-entry.md."
-  }
+  },
+  "subject": {
+    "base_sha": "0ed8f874f7b6f973505fc3997475fc398fcfa4cc",
+    "branch": "feat/m9-17-verify-findings-and-markdown-sha-drift",
+    "cycle_id": "m9-17-verify-findings-and-markdown-sha-drift",
+    "head": "134dc7525312275c447db8f5996740ff7c102a02",
+    "head_sha": "134dc7525312275c447db8f5996740ff7c102a02",
+    "route": "A-min"
+  },
+  "summary": "passed",
+  "verdict": "pass"
 }

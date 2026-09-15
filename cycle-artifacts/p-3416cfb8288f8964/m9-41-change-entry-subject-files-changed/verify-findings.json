@@ -1,55 +1,60 @@
 {
+  "all_passed": true,
   "cycle_id": "m9-41",
-  "subject": {
-    "head_sha": "62f1121e0d10eb2be2bdb60d6a45c958aa56806e",
-    "base_sha": "a055f9c565dc66155c5fc56f2211a11a87139935"
-  },
-  "verdict": "pass",
   "findings": [
     {
-      "id": "F1",
-      "severity": "low",
       "category": "schema-drift",
       "description": "33 change-entry.md files were missing `## Subject` section.",
+      "id": "F1",
+      "severity": "low",
       "status": "RESOLVED"
     },
     {
-      "id": "F2",
-      "severity": "low",
       "category": "schema-drift",
       "description": "33 change-entry.md files were missing `## Files changed` section.",
+      "id": "F2",
+      "severity": "low",
       "status": "RESOLVED"
     },
     {
-      "id": "F3",
-      "severity": "low",
       "category": "schema-drift",
       "description": "27 archive-manifest.md files were missing `## Summary` section.",
+      "id": "F3",
+      "severity": "low",
       "status": "RESOLVED"
     },
     {
-      "id": "F4",
-      "severity": "low",
       "category": "schema-drift",
       "description": "6 verify-report.md files (m9-28..m9-33) were missing `## Subject` section.",
+      "id": "F4",
+      "severity": "low",
       "status": "RESOLVED"
     },
     {
-      "id": "F5",
-      "severity": "informational",
       "category": "process",
       "description": "Added cross-check #33 to vault-drift-sweep.md enforcing all 4 schemas.",
+      "id": "F5",
+      "severity": "informational",
       "status": "RESOLVED"
     },
     {
-      "id": "F6",
-      "severity": "low",
       "category": "metadata-drift",
       "description": "38 change-entry.md Subject sections used short SHAs; expanded to full SHAs.",
+      "id": "F6",
+      "severity": "low",
       "status": "RESOLVED"
     }
   ],
   "lens_summary": {
     "drift": "Four drift classes closed: change-entry.md Subject (33), Files changed (33), archive-manifest Summary (27), verify-report Subject (6). Short SHAs expanded to full SHAs. Added cross-check #33."
-  }
+  },
+  "subject": {
+    "base_sha": "a055f9c565dc66155c5fc56f2211a11a87139935",
+    "branch": "feat/m9-41-change-entry-subject-files-changed",
+    "cycle_id": "m9-41-change-entry-subject-files-changed",
+    "head_sha": "62f1121e0d10eb2be2bdb60d6a45c958aa56806e",
+    "route": "A-min"
+  },
+  "summary": "passed",
+  "verdict": "pass"
 }

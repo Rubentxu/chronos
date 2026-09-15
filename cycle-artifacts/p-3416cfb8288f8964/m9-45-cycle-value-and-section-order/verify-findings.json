@@ -1,34 +1,39 @@
 {
+  "all_passed": true,
   "cycle_id": "m9-45",
-  "subject": {
-    "head_sha": "3e70b34628fcc2652cc6b8f5064975c8f7cc5926",
-    "base_sha": "89bd06beb701eb9eb236e4a28df9cd2db9943586"
-  },
-  "verdict": "pass",
   "findings": [
     {
-      "id": "F1",
-      "severity": "low",
       "category": "schema-drift",
       "description": "9 change-entry.md files had `## Cross-check` before `## Subject`.",
+      "id": "F1",
+      "severity": "low",
       "status": "RESOLVED"
     },
     {
-      "id": "F2",
-      "severity": "low",
       "category": "schema-drift",
       "description": "11 release-report.md files had `**Cycle**:` with spaces.",
+      "id": "F2",
+      "severity": "low",
       "status": "RESOLVED"
     },
     {
-      "id": "F3",
-      "severity": "informational",
       "category": "process",
       "description": "Added cross-check #37 to vault-drift-sweep.md.",
+      "id": "F3",
+      "severity": "informational",
       "status": "RESOLVED"
     }
   ],
   "lens_summary": {
     "drift": "Two drift classes closed: change-entry.md section order (9), release-report.md cycle value (11). Added cross-check #37."
-  }
+  },
+  "subject": {
+    "base_sha": "89bd06beb701eb9eb236e4a28df9cd2db9943586",
+    "branch": "feat/m9-45-cycle-value-and-section-order",
+    "cycle_id": "m9-45-cycle-value-and-section-order",
+    "head_sha": "3e70b34628fcc2652cc6b8f5064975c8f7cc5926",
+    "route": "A-min"
+  },
+  "summary": "passed",
+  "verdict": "pass"
 }

@@ -1,27 +1,32 @@
 {
+  "all_passed": true,
   "cycle_id": "m9-35",
-  "subject": {
-    "head_sha": "d7fd733064999cf93eea429a78939a02a1d4d27c",
-    "base_sha": "dbea58e61921eecb4b1b90f6f94dad21fea2e440"
-  },
-  "verdict": "pass",
   "findings": [
     {
-      "id": "F1",
-      "severity": "low",
       "category": "schema-drift",
       "description": "9 release-report.md files (m9-19..m9-27) used `# m9-NN: Release Report` format instead of canonical `# Release Report \u2014 m9-NN`.",
+      "id": "F1",
+      "severity": "low",
       "status": "RESOLVED"
     },
     {
-      "id": "F2",
-      "severity": "informational",
       "category": "process",
       "description": "Added cross-check #27 to vault-drift-sweep.md enforcing the canonical title format.",
+      "id": "F2",
+      "severity": "informational",
       "status": "RESOLVED"
     }
   ],
   "lens_summary": {
     "drift": "9 release-report.md files (m9-19..m9-27) used '# m9-NN: Release Report' format; m9-28+ uses '# Release Report \u2014 m9-NN'. Normalized m9-19..m9-27 to canonical format. Added cross-check #27."
-  }
+  },
+  "subject": {
+    "base_sha": "dbea58e61921eecb4b1b90f6f94dad21fea2e440",
+    "branch": "feat/m9-35-release-report-title-format-normalize",
+    "cycle_id": "m9-35-release-report-title-format-normalize",
+    "head_sha": "d7fd733064999cf93eea429a78939a02a1d4d27c",
+    "route": "A-min"
+  },
+  "summary": "passed",
+  "verdict": "pass"
 }

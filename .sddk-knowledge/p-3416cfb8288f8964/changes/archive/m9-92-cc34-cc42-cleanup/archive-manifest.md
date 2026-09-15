@@ -82,13 +82,13 @@ No Rust source touched, no tests required (T0 only).
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup/merge-receipt.md` | `9c5dc8b57a093b35adde6816addd7cae07ec7dbdf8ec9a5ad830f1bd977e3e7e` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup/release-receipt.md` | `e98d5f535fadee82d79f52b0625010a2d03c3504e99647589e0ddc0c4dfe696e` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup/release-report.md` | `324f5742b1aadb831e95b9914d699870026b55f6f1900d49837581b9725598c5` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup/verify-findings.json` | `4b233cb15862983cf449b73b3b47eff76876b6f651ccf1adb901f2036df64bf9` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup/verify-findings.json` | `1726c795ae22e05ecca9359089264b8c3534841ee38894230a854ac31bc037b0` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup/verify-report.md` | `3d9b7fdaa4436a251a7466ddf1bd6967b715ecc9d3b54ef3a576a6cdc6ee20f7` |
 | proposal | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-92-cc34-cc42-cleanup/proposal.md` | `59087761f8e2a30eab970fa3a4c2aa4cd35bf5243a28996c4daf6ce00f92a483` |
 | spec | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-92-cc34-cc42-cleanup/spec.md` | `40dfa73f90a699a310f6248c0aaa3258915c2920e4dad712b0e5f5c4ed93e4dd` |
 | tasks | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-92-cc34-cc42-cleanup/tasks.md` | `58301e54e19cce5a2f66eb4c9c4585c8aa5508e5508d08bc379300c0c8373c19` |
 | exploration-report | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-92-cc34-cc42-cleanup/exploration-report.md` | `dd1ddb46a8c9c318c82c3ce5d3c907ab604b9c45d1ce5c407bb8ade689e61ad0` |
-| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-92-cc34-cc42-cleanup/change-entry.md` | `67663a4562c4ff6ac27df9958097e4a0695e30e98b2fc279671faa4a8348700b` |
+| change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-92-cc34-cc42-cleanup/change-entry.md` | `d7080e614578907265e045fdc510acf1919363e7a74455ef313b69b63d873255` |
 
 ## Evidence bindings
 

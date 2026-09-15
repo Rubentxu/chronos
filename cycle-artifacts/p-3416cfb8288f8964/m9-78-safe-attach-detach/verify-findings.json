@@ -1,14 +1,22 @@
 {
+  "all_passed": true,
+  "cycle_id": "m9-78-safe-attach-detach",
+  "findings": [],
+  "lens_summary": "m9-78 restores safe detach on session_stop: SIGSTOP wakes the traced target, the ptrace loop PTRACE_DETACH, and the child process remains alive. Spawned probes keep the SIGKILL path. 5 files, +44/-36. T0 fmt + clippy clean; T1 chronos-native serial 101 passed / 13.02 s; T4 program_scenarios, e2e_connectivity, probe_lifecycle and the focused attach test all green. No findings.",
   "schema": "verify-finding.schema.json",
   "subject": {
     "base": "9d5331659f742e3be98995dfba26ff2a635f98ed",
-    "head": "009b75037357d069775ad4d7a0661684e27fc9ca",
-    "diff_digest": null,
-    "working_tree_clean": true,
-    "verified_at": "2026-09-13T22:02:00+02:00",
+    "base_sha": "9d5331659f742e3be98995dfba26ff2a635f98ed",
+    "branch": "feat/m9-78-safe-attach-detach",
     "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos",
-    "verdict": "passed"
+    "cycle_id": "m9-78-safe-attach-detach",
+    "diff_digest": null,
+    "head": "009b75037357d069775ad4d7a0661684e27fc9ca",
+    "route": "A-min",
+    "verdict": "passed",
+    "verified_at": "2026-09-13T22:02:00+02:00",
+    "working_tree_clean": true
   },
-  "lens_summary": "m9-78 restores safe detach on session_stop: SIGSTOP wakes the traced target, the ptrace loop PTRACE_DETACH, and the child process remains alive. Spawned probes keep the SIGKILL path. 5 files, +44/-36. T0 fmt + clippy clean; T1 chronos-native serial 101 passed / 13.02 s; T4 program_scenarios, e2e_connectivity, probe_lifecycle and the focused attach test all green. No findings.",
-  "findings": []
+  "summary": "passed",
+  "verdict": "pass"
 }
