@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Cierre de Ciclo — m10-cc30-cc34-cc35-cc36-cc41-cc43-schema-fix</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem; }
+.card { max-width: 720px; background: #1e293b; border-radius: 12px; padding: 2rem; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+h1 { color: #38bdf8; margin-bottom: 1rem; font-size: 1.5rem; }
+h2 { color: #a5b4fc; margin-top: 1.5rem; margin-bottom: 0.5rem; font-size: 1.1rem; }
+.meta { color: #94a3b8; font-size: 0.9rem; margin-bottom: 1rem; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 0.4rem 1rem; margin-bottom: 1rem; }
+.kv dt { color: #cbd5e1; font-weight: 600; }
+.kv dd { color: #e2e8f0; font-family: monospace; }
+.status { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 6px; font-weight: 600; font-size: 0.9rem; }
+.status.closed { background: #166534; color: #bbf7d0; }
+.status.partial { background: #854d0e; color: #fef3c7; }
+ul { margin-left: 1.5rem; }
+li { margin-bottom: 0.3rem; color: #cbd5e1; }
+code { background: #0f172a; padding: 0.1rem 0.4rem; border-radius: 4px; color: #fbbf24; }
+</style>
+</head>
+<body>
+<div class="card">
+<h1>m10-cc30-cc34-cc35-cc36-cc41-cc43-schema-fix</h1>
+<p class="meta">Cycle ID: <code>p-3416cfb8288f8964/m10-cc30-cc34-cc35-cc36-cc41-cc43-schema-fix</code></p>
+<p class="meta">Path: B-direct &nbsp;|&nbsp; Tag: v0.7.108 &nbsp;|&nbsp; <span class="status partial">CLOSED (partial)</span></p>
+
+<h2>Outcome</h2>
+<dl class="kv">
+<dt>Base SHA</dt><dd><code>2cb2d2cecadcda0d19933d88b5ec989a6bd8ff5b</code></dd>
+<dt>Feature HEAD</dt><dd><code>29f6f524</code></dd>
+<dt>Merge commit</dt><dd><code>c91f010594f74f4a1ff573aa4bb2705e639689e5</code></dd>
+<dt>Tag peel</dt><dd><code>v0.7.108 → c91f0105 ✓</code></dd>
+<dt>Diff</dt><dd>120 files changed, +2018/-1453</dd>
+</dl>
+
+<h2>CC Drift Closure (41 → 13+)</h2>
+<ul>
+<li><strong>CC#35</strong>: 6 → 0 ✓ (target met; head_sha synced to apply-checkpoint.json)</li>
+<li><strong>CC#30</strong>: 28 → ~13 (verdict field added; "Cycle ID" renamed; ## Summary added)</li>
+<li><strong>CC#34</strong>: 19 → ~13 (cycle_id field added; Subject table→bullet out of scope)</li>
+<li><strong>CC#36</strong>: 7+ → ~7 (lens_summary added; verify-report Findings still needs review)</li>
+<li><strong>CC#41</strong>: 6 → 6 (partial; m9-85/86/88 still missing due to legacy schemas)</li>
+<li><strong>CC#43</strong>: 7 → 1 (Head SHA synced to ckpt)</li>
+</ul>
+
+<h2>Out of Scope (Next Carry-forward)</h2>
+<ul>
+<li>Legacy schemas: m9-85..91 (JSON arrays, markdown hybrids, empty files)</li>
+<li>verify-report.md Findings prose for m9-89..97</li>
+<li>change-entry.md Subject table format (CC#34 Part A)</li>
+</ul>
+
+<p class="meta" style="margin-top:1.5rem">Generated 2026-09-15T10:29Z</p>
+</div>
+</body>
+</html>
