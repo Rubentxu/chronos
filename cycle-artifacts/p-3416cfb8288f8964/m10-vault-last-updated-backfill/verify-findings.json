@@ -1,1 +1,15 @@
-{"_note": "B-direct cycle legitimately skips verify phase (AGENTS.md Section 2 tier table). Synthesized from apply-checkpoint.json head_sha=fa92a6ee40aea67a9dbac9301a14fafd3c15b7af as documented in m10-vault-handoff-relocate (cycle id p-3416cfb8288f8964/m10-vault-handoff-relocate).","summary":"skipped","all_passed":true,"cycle_id":"m10-vault-last-updated-backfill","head_sha":"fa92a6ee40aea67a9dbac9301a14fafd3c15b7af","base_sha":"b70b78ef1c1374f5ccc85e3faf6831753b080a42"}
+{
+  "_note": "B-direct cycle legitimately skips verify phase (AGENTS.md Section 2 tier table). Synthesized from apply-checkpoint.json head_sha=fa92a6ee40aea67a9dbac9301a14fafd3c15b7af as documented in m10-vault-handoff-relocate (cycle id p-3416cfb8288f8964/m10-vault-handoff-relocate).",
+  "all_passed": true,
+  "base_sha": "b70b78ef1c1374f5ccc85e3faf6831753b080a42",
+  "cycle_id": "m10-vault-last-updated-backfill",
+  "head_sha": "fa92a6ee40aea67a9dbac9301a14fafd3c15b7af",
+  "subject": {
+    "base_sha": "b70b78ef1c1374f5ccc85e3faf6831753b080a42",
+    "branch": "feat/m10-vault-last-updated-backfill",
+    "cycle_id": "m10-vault-last-updated-backfill",
+    "head_sha": "fa92a6ee40aea67a9dbac9301a14fafd3c15b7af",
+    "route": "B-direct"
+  },
+  "summary": "skipped"
+}
