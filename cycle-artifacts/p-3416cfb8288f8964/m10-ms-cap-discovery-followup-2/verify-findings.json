@@ -1,0 +1,68 @@
+{
+  "subject": {
+    "head_sha": "e51d9e82cb14a2d47de4aec58f2edb06c81ac888",
+    "base_sha": "46417ce9a224df5e2027b4553e07243a2d6795db",
+    "cycle_id": "m10-ms-cap-discovery-followup-2",
+    "branch": "feat/m10-ms-cap-discovery-followup-2",
+    "route": "A-min"
+  },
+  "cycle_id": "m10-ms-cap-discovery-followup-2",
+  "verdict": "passed",
+  "all_passed": true,
+  "lens_summary": {
+    "drift": "Refactor: 1 file changed, +71/-97 lines. Closes the parallel-list drift risk for capability discovery by deriving tool list assertions from the live #[tool_router] registration. 99/99 chronos-mcp tests + 103/103 chronos-native serial tests pass.",
+    "findings_count": 5,
+    "tiers_run": [
+      "T0",
+      "T2"
+    ],
+    "source_schema": "m10-ms-cap-discovery-followup-2"
+  },
+  "findings": [
+    {
+      "id": "FIND-M10-MS-CAP-FU2-ROUTER-INTROSPECTION",
+      "title": "rmcp 1.5 ToolRouter::list_all() exposes the live tool list",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "Probe test in tests/test_router_list_all.rs confirmed: 61 tools returned, names match REGISTERED_TOOLS exactly"
+      ]
+    },
+    {
+      "id": "FIND-M10-MS-CAP-FU2-REGISTERED-TOOLS-REMOVED",
+      "title": "REGISTERED_TOOLS mirror constant deleted",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "61-line hand-maintained mirror in toolset_sync_check module deleted"
+      ]
+    },
+    {
+      "id": "FIND-M10-MS-CAP-FU2-NEW-SYNC-TEST",
+      "title": "all_tool_names_matches_router set-equality test added",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "Test compares ALL_TOOL_NAMES set vs router.list_all() set; failure message lists missing/extra entries"
+      ]
+    },
+    {
+      "id": "FIND-M10-MS-CAP-FU2-VIS-PUB",
+      "title": "tool_router() promoted to public via #[rmcp::tool_router(vis = \"pub\")]",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "Allows ChronosServer::tool_router() to be called from outside the impl block (test modules, future external tooling)"
+      ]
+    },
+    {
+      "id": "FIND-M10-MS-CAP-FU2-MIN-TRIPWIRE",
+      "title": "router_has_expected_minimum_tool_count tripwire test added (>= 50)",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "Catches accidental bulk deletion of #[tool] registrations"
+      ]
+    }
+  ]
+}

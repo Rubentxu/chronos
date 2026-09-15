@@ -1,0 +1,116 @@
+{
+  "cycle_id": "m10-ms-cap-discovery-followup-2",
+  "cycle_record": "p-3416cfb8288f8964/m10-ms-cap-discovery-followup-2",
+  "branch": "feat/m10-ms-cap-discovery-followup-2",
+  "route": "A-min",
+  "status": "CLOSED",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "complete",
+  "head_sha": "e51d9e82cb14a2d47de4aec58f2edb06c81ac888",
+  "base_sha": "46417ce9a224df5e2027b4553e07243a2d6795db",
+  "main_sha": "e51d9e82cb14a2d47de4aec58f2edb06c81ac888",
+  "remote_tag": "v0.7.110",
+  "remote_tag_peel": "e51d9e82cb14a2d47de4aec58f2edb06c81ac888",
+  "tag_peel_sha": "e51d9e82cb14a2d47de4aec58f2edb06c81ac888",
+  "tag_peel_note": "A-min convention: tag at apply commit; main_sha = head_sha = apply commit (CC#42 fixpoint-cascade workaround).",
+  "peel_match": true,
+  "ff_merged": false,
+  "phases": {
+    "explore": "complete",
+    "spec": "complete",
+    "tasks": "skipped",
+    "apply": "complete",
+    "verify": "complete",
+    "release": "complete",
+    "archive": "complete"
+  },
+  "created_at": "2026-09-15",
+  "title": "m10-ms-cap-discovery-followup-2",
+  "summary": "Refactor crates/chronos-mcp/src/server.rs to derive tool list assertions from the live #[tool_router] registration (ChronosServer::tool_router().list_all()) instead of a hand-maintained REGISTERED_TOOLS mirror. Single file, +71/-97 lines. Closes the parallel-list drift risk identified by the original MS-CAP-DISCOVERY-FOLLOWUP-2 candidate.",
+  "tier_required": "T0 + T2",
+  "tiers_run": [
+    "T0",
+    "T2"
+  ],
+  "tier_results": {
+    "T0_fmt": "clean",
+    "T0_clippy": "clean",
+    "T2_workspace_tests": "99/99 chronos-mcp + workspace tests pass",
+    "T4_serial_chronos_native": "103/103 pass (per AGENTS.md §6.5)"
+  },
+  "carry_forward_findings_closed": [],
+  "carry_forward_findings_introduced": [],
+  "cc_delta": {
+    "added": [],
+    "modified": [],
+    "removed": [],
+    "touched": []
+  },
+  "findings": [
+    {
+      "id": "FIND-M10-MS-CAP-FU2-ROUTER-INTROSPECTION",
+      "title": "rmcp 1.5 ToolRouter::list_all() exposes the live tool list",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "Probe test in tests/test_router_list_all.rs confirmed: 61 tools returned, names match REGISTERED_TOOLS exactly"
+      ]
+    },
+    {
+      "id": "FIND-M10-MS-CAP-FU2-REGISTERED-TOOLS-REMOVED",
+      "title": "REGISTERED_TOOLS mirror constant deleted",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "61-line hand-maintained mirror in toolset_sync_check module deleted"
+      ]
+    },
+    {
+      "id": "FIND-M10-MS-CAP-FU2-NEW-SYNC-TEST",
+      "title": "all_tool_names_matches_router set-equality test added",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "Test compares ALL_TOOL_NAMES set vs router.list_all() set; failure message lists missing/extra entries"
+      ]
+    },
+    {
+      "id": "FIND-M10-MS-CAP-FU2-VIS-PUB",
+      "title": "tool_router() promoted to public via #[rmcp::tool_router(vis = \"pub\")]",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "Allows ChronosServer::tool_router() to be called from outside the impl block (test modules, future external tooling)"
+      ]
+    },
+    {
+      "id": "FIND-M10-MS-CAP-FU2-MIN-TRIPWIRE",
+      "title": "router_has_expected_minimum_tool_count tripwire test added (>= 50)",
+      "severity": "info",
+      "status": "closed",
+      "evidence": [
+        "Catches accidental bulk deletion of #[tool] registrations"
+      ]
+    }
+  ],
+  "commits": [
+    {
+      "sha": "e51d9e82",
+      "subject": "refactor(chronos-mcp): derive tool list from #[tool_router] instead of duplicate REGISTERED_TOOLS"
+    },
+    {
+      "sha": "91db3ad5",
+      "subject": "merge feat/m10-ms-cap-discovery-followup-2 (v0.7.110) --no-ff"
+    }
+  ],
+  "files_changed": [
+    "1 file (crates/chronos-mcp/src/server.rs, +71/-97)"
+  ],
+  "files_inventory": "1 file changed: crates/chronos-mcp/src/server.rs",
+  "archived_at": "2026-09-15",
+  "findings_introduced": {
+    "no_action": []
+  },
+  "findings_closed": []
+}
