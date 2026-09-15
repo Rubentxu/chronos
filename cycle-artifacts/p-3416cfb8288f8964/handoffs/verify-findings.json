@@ -1,1 +1,10 @@
-{"_note": "This is a documentation directory containing session handoff documents, not a cycle directory. Added by m10-vault-handoff-relocate (CC#18 fix)."}
+{
+  "_note": "This is a documentation directory containing session handoff documents, not a cycle directory. Added by m10-vault-handoff-relocate (CC#18 fix).",
+  "subject": {
+    "base_sha": "09eae57e93cb0ce8f705da0c7734a62de80ca408",
+    "branch": "(no branch \u2014 documentation dir)",
+    "cycle_id": "handoffs-marker",
+    "head_sha": "09eae57e93cb0ce8f705da0c7734a62de80ca408",
+    "route": "marker"
+  }
+}

@@ -1,1 +1,15 @@
-{"_note": "B-direct cycle that relocated HANDOFF files and synthesized verify-findings for m10-vault-last-updated-backfill. CC#18 close. This is the cycle artifact directory itself (not the handoffs subdirectory).","summary":"completed","all_passed":true,"cycle_id":"m10-vault-handoff-relocate","head_sha":"340d64d969ba3df936f4c3e73720e8192d980d73","base_sha":"94c1d59d7c8728bdb0bf97df1cef1e3311a57cc5"}
+{
+  "_note": "B-direct cycle that relocated HANDOFF files and synthesized verify-findings for m10-vault-last-updated-backfill. CC#18 close. This is the cycle artifact directory itself (not the handoffs subdirectory).",
+  "all_passed": true,
+  "base_sha": "94c1d59d7c8728bdb0bf97df1cef1e3311a57cc5",
+  "cycle_id": "m10-vault-handoff-relocate",
+  "head_sha": "340d64d969ba3df936f4c3e73720e8192d980d73",
+  "subject": {
+    "base_sha": "94c1d59d7c8728bdb0bf97df1cef1e3311a57cc5",
+    "branch": "feat/m10-vault-handoff-relocate",
+    "cycle_id": "m10-vault-handoff-relocate",
+    "head_sha": "340d64d969ba3df936f4c3e73720e8192d980d73",
+    "route": "B-direct"
+  },
+  "summary": "completed"
+}
