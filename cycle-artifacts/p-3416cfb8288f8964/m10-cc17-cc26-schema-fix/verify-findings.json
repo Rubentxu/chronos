@@ -1,0 +1,11 @@
+{
+  "subject": {
+    "head_sha": "ab0b873179e18ca3c9ccc04d47abe1d78bcb5e17",
+    "base_sha": "09eae57e93cb0ce8f705da0c7734a62de80ca408",
+    "cycle_id": "m10-cc17-cc26-schema-fix",
+    "branch": "feat/m10-cc17-cc26-schema-fix",
+    "route": "B-direct"
+  },
+  "summary": "passed",
+  "all_passed": true
+}

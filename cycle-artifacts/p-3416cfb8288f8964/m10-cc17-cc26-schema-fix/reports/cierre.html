@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cierre de Ciclo — m10-cc17-cc26-schema-fix</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem; }
+.card { max-width: 720px; background: #1e293b; border-radius: 12px; padding: 2rem; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+h1 { color: #38bdf8; margin-bottom: 1rem; font-size: 1.5rem; }
+h2 { color: #a5b4fc; margin-top: 1.5rem; margin-bottom: 0.5rem; font-size: 1.1rem; }
+.meta { color: #94a3b8; font-size: 0.9rem; margin-bottom: 1rem; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 0.4rem 1rem; margin-bottom: 1rem; }
+.kv dt { color: #cbd5e1; font-weight: 600; }
+.kv dd { color: #e2e8f0; font-family: monospace; }
+.status { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 6px; font-weight: 600; font-size: 0.9rem; }
+.status.closed { background: #166534; color: #bbf7d0; }
+ul { margin-left: 1.5rem; }
+li { margin-bottom: 0.3rem; color: #cbd5e1; }
+code { background: #0f172a; padding: 0.1rem 0.4rem; border-radius: 4px; color: #fbbf24; }
+</style>
+</head>
+<body>
+<div class="card">
+<h1>m10-cc17-cc26-schema-fix · Cierre de Ciclo</h1>
+<p class="meta">Cycle ID: <code>p-3416cfb8288f8964/m10-cc17-cc26-schema-fix</code></p>
+<p class="meta">Path: B-direct &nbsp;|&nbsp; Tag: v0.7.107 &nbsp;|&nbsp; <span class="status closed">CLOSED</span></p>
+
+<h2>Outcome</h2>
+<dl class="kv">
+<dt>Base SHA</dt><dd><code>09eae57e93cb0ce8f705da0c7734a62de80ca408</code></dd>
+<dt>Feature HEAD</dt><dd><code>63a7061c8e22c6fa9618b70ff821ddda89e29876</code></dd>
+<dt>Merge commit</dt><dd><code>ab0b873179e18ca3c9ccc04d47abe1d78bcb5e17</code></dd>
+<dt>Tag peel</dt><dd><code>v0.7.107 → ab0b8731 ✓</code></dd>
+<dt>Diff</dt><dd>10 files changed, +212/-149</dd>
+</dl>
+
+<h2>CC Drift Closure</h2>
+<ul>
+<li><strong>CC#17</strong>: 3 drift lines → 0 (verify-findings.json subject dict schema)</li>
+<li><strong>CC#26 Part A</strong>: 6 drift lines → 0 (subject.head_sha + base_sha)</li>
+<li><strong>CC#26 Part B</strong>: 0 drift lines (archive-manifest Head SHA already correct)</li>
+</ul>
+
+<h2>Files Normalized</h2>
+<ul>
+<li><code>cycle-artifacts/.../handoffs/verify-findings.json</code> (marker)</li>
+<li><code>cycle-artifacts/.../m10-vault-last-updated-backfill/verify-findings.json</code></li>
+<li><code>cycle-artifacts/.../m10-vault-handoff-relocate/verify-findings.json</code></li>
+<li><code>cycle-artifacts/.../m9-66-bash-cc-meta-check/verify-findings.json</code> (also fixed bad JSON escape)</li>
+<li><code>cycle-artifacts/.../m9-81/82/83/84-*/verify-findings.json</code></li>
+</ul>
+
+<h2>Discovered Pre-existing Drift (Next Carry-forward)</h2>
+<ul>
+<li>CC#30, CC#34, CC#35, CC#36, CC#41, CC#43 (total 41 drift lines)</li>
+<li>Hidden until this cycle fixed m9-66's bad JSON escape, which let the sweep script run past CC#17/CC#26 to discover drift in later checks</li>
+<li>Queued for next A-min carry-forward cycle</li>
+</ul>
+
+<h2>SDDK Gate Receipts</h2>
+<ul>
+<li><code>gate-implementation-complete-f79ea196d5202be4-1</code></li>
+<li><code>gate-tests-pass-75f7c452d23b2993-1</code></li>
+<li><code>gate-policy-compliant-75f7c452d23b2993-1</code></li>
+<li><code>gate-no-pending-effects-b1b623a481757df7-1</code></li>
+<li><code>gate-release-uat-approved-b1b623a481757df7-1</code></li>
+<li><code>gate-ledger-valid-1d6940321ac7588c-1</code></li>
+<li><code>gate-vault-index-current-1d6940321ac7588c-1</code></li>
+</ul>
+
+<p class="meta" style="margin-top:1.5rem">Generated 2026-09-15T10:14Z</p>
+</div>
+</body>
+</html>
