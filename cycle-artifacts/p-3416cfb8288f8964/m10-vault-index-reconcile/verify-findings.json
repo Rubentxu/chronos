@@ -1,0 +1,30 @@
+{
+  "subject": {
+    "head_sha": "pending",
+    "base_sha": "7130cf6e",
+    "cycle_id": "m10-vault-index-reconcile"
+  },
+  "cycle_id": "m10-vault-index-reconcile",
+  "verdict": "passed",
+  "all_passed": true,
+  "lens_summary": {
+    "drift": "Closed CC#51 (cycles/index.md row coverage) for 5 m10-* cycles that were CLOSED in apply-checkpoint.json but missing from cycles/index.md. SHAs verified via git rev-parse (no fabrication).",
+    "findings_count": 1,
+    "tiers_run": [
+      "T0"
+    ],
+    "source_schema": "m10-vault-index-reconcile"
+  },
+  "findings": [
+    {
+      "id": "FIND-M10-VAULT-INDEX-MISSING-M10-ROWS",
+      "severity": "low",
+      "status": "closed",
+      "title": "5 m10-* cycles missing from cycles/index.md",
+      "evidence": [
+        "git rev-parse verified SHAs: 47d89b1a6421a690cab65647df93fae229288634, e51d9e82cb14a2d47de4aec58f2edb06c81ac888, 0998aa734541e6675ed1645745e2b26060a8a645, 95c998e7d3ea6f3ee2ad0c160a54b07f08554ceb, 5a76fd1d17f363a36cc62969dffcca0280ce9c7d",
+        "CC#4 cascade regenerated (12 rows updated across 100 manifests)"
+      ]
+    }
+  ]
+}

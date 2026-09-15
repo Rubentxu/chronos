@@ -17,6 +17,11 @@ Append-only index of all completed cycles in this vault.
 | m10 | m10-vault-last-updated-backfill | B-direct | v0.7.105 | `fa92a6ee40aea67a9dbac9301a14fafd3c15b7af` | CLOSED |
 | m10 | m10-cc17-cc26-schema-fix | B-direct | v0.7.107 | `ab0b873179e18ca3c9ccc04d47abe1d78bcb5e17` | CLOSED |
 | m10 | m10-cc30-cc34-cc35-cc36-cc41-cc43-schema-fix | B-direct | v0.7.108 | `c91f010594f74f4a1ff573aa4bb2705e639689e5` | CLOSED |
+| m10 | m10-m9-legacy-schema-migration | A-lite | v0.7.109 | `47d89b1a6421a690cab65647df93fae229288634` | CLOSED |
+| m10 | m10-ms-cap-discovery-followup-2 | A-min | v0.7.110 | `e51d9e82cb14a2d47de4aec58f2edb06c81ac888` | CLOSED |
+| m10 | m10-ms-evt-typed | B-direct | v0.7.102 | `0998aa734541e6675ed1645745e2b26060a8a645` | CLOSED |
+| m10 | m10-ms-property-policy | A-min | v0.7.101 | `95c998e7d3ea6f3ee2ad0c160a54b07f08554ceb` | CLOSED |
+| m10 | m10-stale-branch-cleanup-2 | B-direct | — | `5a76fd1d17f363a36cc62969dffcca0280ce9c7d` | CLOSED |
 
 See `changes/archive/` for full archive manifests of closed cycles.
 
@@ -26,8 +31,7 @@ See `changes/archive/` for full archive manifests of closed cycles.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-15T10:30Z |
-| Total cycles | 98 |
-| m9 cycles | 98 (full count under `cycle-artifacts/p-3416cfb8288f8964/m9-*/`) |
-| m10 cycles | 6 (rows above) |
-| Last archive | m10-cc30-cc34-cc35-cc36-cc41-cc43-schema-fix |
+| Last updated | 2026-09-15T14:30Z |
+| Total cycles | 11 (m10-* rows above; m9-* milestones tracked separately in cycle-artifacts/) |
+| m10 cycles | 11 (rows above) |
+| Last archive | m10-roadmap-reconcile |

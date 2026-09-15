@@ -1,0 +1,28 @@
+{
+  "cycle_id": "m10-vault-index-reconcile",
+  "route": "B-direct",
+  "status": "CLOSED",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "complete",
+  "head_sha": null,
+  "base_sha": "7130cf6e",
+  "main_sha": null,
+  "tier_required": "T0 only",
+  "created_at": "2026-09-15",
+  "title": "m10-vault-index-reconcile",
+  "summary": "Close CC#51 (cycles/index.md row coverage): add 5 m10-* cycles that were closed but not listed (m10-m9-legacy-schema-migration, m10-ms-cap-discovery-followup-2, m10-ms-evt-typed, m10-ms-property-policy, m10-stale-branch-cleanup-2). Update Total cycles and m10 cycles counts. Regenerate CC#4 SHA-256 cascade.",
+  "cc_delta": {
+    "closed": [
+      "CC#51 (partial)"
+    ],
+    "introduced": []
+  },
+  "findings_closed": [
+    "FIND-M10-VAULT-INDEX-MISSING-M10-ROWS"
+  ],
+  "findings_introduced": {
+    "no_action": []
+  },
+  "note": "SHAs populated post-commit. This cycle is docs+index only (no Rust changes); head_sha will be the docs commit SHA."
+}
