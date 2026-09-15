@@ -1,0 +1,40 @@
+name: Architecture Contracts
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  reconstruction-contracts:
+    name: Reconstruction contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Select comparison base
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "CHRONOS_CONTRACT_BASE_REF=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_ENV"
+          else
+            echo "CHRONOS_CONTRACT_BASE_REF=${{ github.event.before }}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Check architecture + specification contracts
+        run: python3 scripts/check_architecture_contracts.py
+
+      - name: Compile every feature combination surface
+        run: cargo check --workspace --all-targets --all-features
+
+      - name: Verify reconstruction docs do not drift from machine ledger
+        run: |
+          test -f reconstruction-contracts.toml
+          grep -q 'REC-C0' docs/ROADMAP.md
+          grep -q 'REC-C7' docs/chronos-agentic-reconstruction/docs/roadmap/ROADMAP.md
