@@ -1917,6 +1917,23 @@ impl ChronosServer {
         listed
     }
 
+    /// Single source of truth for the toolset-guard error message.
+    ///
+    /// Toolset filtering is delegated to `is_tool_listed`; the formatting of the
+    /// rejection error lives here. Closes FIND-DEBT-001 (overeng) by replacing 10
+    /// byte-identical inline blocks at dispatch handlers.
+    ///
+    /// Spec: REQ-CAP-008 `ToolsetGuardSingleSource`.
+    fn toolset_guard(&self, tool_name: &str) -> Option<CallToolResult> {
+        if self.is_tool_listed(tool_name) {
+            None
+        } else {
+            Some(CallToolResult::error(text_content(format!(
+                "{tool_name} is not available in the current active toolset (see CHRONOS_ACTIVE_TOOLSET)"
+            ))))
+        }
+    }
+
     /// Build the per-tool availability map for the `capabilities` response.
     ///
     /// `target_language` is the optional target language from the caller.
@@ -3617,11 +3634,8 @@ impl ChronosServer {
         &self,
         params: Parameters<EvaluateExpressionParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        // REQ-CAP-005 fallback: check toolset listing before executing.
-        if !self.is_tool_listed("evaluate_expression") {
-            return Ok(CallToolResult::error(text_content(
-                "evaluate_expression is not available in the current active toolset (see CHRONOS_ACTIVE_TOOLSET)",
-            )));
+        if let Some(err) = self.toolset_guard("evaluate_expression") {
+            return Ok(err);
         }
         let params = params.0;
 
@@ -3704,11 +3718,8 @@ impl ChronosServer {
         &self,
         params: Parameters<DebugGetVariablesParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        // REQ-CAP-005 fallback: check toolset listing before executing.
-        if !self.is_tool_listed("debug_get_variables") {
-            return Ok(CallToolResult::error(text_content(
-                "debug_get_variables is not available in the current active toolset (see CHRONOS_ACTIVE_TOOLSET)",
-            )));
+        if let Some(err) = self.toolset_guard("debug_get_variables") {
+            return Ok(err);
         }
         let params = params.0;
 
@@ -3742,11 +3753,8 @@ impl ChronosServer {
         &self,
         params: Parameters<DebugGetMemoryParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        // REQ-CAP-005 fallback: check toolset listing before executing.
-        if !self.is_tool_listed("debug_get_memory") {
-            return Ok(CallToolResult::error(text_content(
-                "debug_get_memory is not available in the current active toolset (see CHRONOS_ACTIVE_TOOLSET)",
-            )));
+        if let Some(err) = self.toolset_guard("debug_get_memory") {
+            return Ok(err);
         }
         let params = params.0;
 
@@ -3810,11 +3818,8 @@ impl ChronosServer {
         &self,
         params: Parameters<DebugGetRegistersParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        // REQ-CAP-005 fallback: check toolset listing before executing.
-        if !self.is_tool_listed("debug_get_registers") {
-            return Ok(CallToolResult::error(text_content(
-                "debug_get_registers is not available in the current active toolset (see CHRONOS_ACTIVE_TOOLSET)",
-            )));
+        if let Some(err) = self.toolset_guard("debug_get_registers") {
+            return Ok(err);
         }
         let params = params.0;
 
@@ -3889,11 +3894,8 @@ impl ChronosServer {
         &self,
         params: Parameters<DebugDiffParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        // REQ-CAP-005 fallback: check toolset listing before executing.
-        if !self.is_tool_listed("debug_diff") {
-            return Ok(CallToolResult::error(text_content(
-                "debug_diff is not available in the current active toolset (see CHRONOS_ACTIVE_TOOLSET)",
-            )));
+        if let Some(err) = self.toolset_guard("debug_diff") {
+            return Ok(err);
         }
         let params = params.0;
 
@@ -3954,11 +3956,8 @@ impl ChronosServer {
         &self,
         params: Parameters<DebugAnalyzeMemoryParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        // REQ-CAP-005 fallback: check toolset listing before executing.
-        if !self.is_tool_listed("debug_analyze_memory") {
-            return Ok(CallToolResult::error(text_content(
-                "debug_analyze_memory is not available in the current active toolset (see CHRONOS_ACTIVE_TOOLSET)",
-            )));
+        if let Some(err) = self.toolset_guard("debug_analyze_memory") {
+            return Ok(err);
         }
         let params = params.0;
 
@@ -4019,11 +4018,8 @@ impl ChronosServer {
         &self,
         params: Parameters<ForensicMemoryAuditParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        // REQ-CAP-005 fallback: check toolset listing before executing.
-        if !self.is_tool_listed("forensic_memory_audit") {
-            return Ok(CallToolResult::error(text_content(
-                "forensic_memory_audit is not available in the current active toolset (see CHRONOS_ACTIVE_TOOLSET)",
-            )));
+        if let Some(err) = self.toolset_guard("forensic_memory_audit") {
+            return Ok(err);
         }
         let params = params.0;
 
@@ -5279,11 +5275,8 @@ impl ChronosServer {
         &self,
         params: Parameters<BrowserProbeStartParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        // REQ-CAP-005 fallback: check toolset listing before executing.
-        if !self.is_tool_listed("browser_probe_start") {
-            return Ok(CallToolResult::error(text_content(
-                "browser_probe_start is not available in the current active toolset (see CHRONOS_ACTIVE_TOOLSET)",
-            )));
+        if let Some(err) = self.toolset_guard("browser_probe_start") {
+            return Ok(err);
         }
         let params = params.0;
 
@@ -5323,11 +5316,8 @@ impl ChronosServer {
         &self,
         params: Parameters<BrowserProbeStopParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        // REQ-CAP-005 fallback: check toolset listing before executing.
-        if !self.is_tool_listed("browser_probe_stop") {
-            return Ok(CallToolResult::error(text_content(
-                "browser_probe_stop is not available in the current active toolset (see CHRONOS_ACTIVE_TOOLSET)",
-            )));
+        if let Some(err) = self.toolset_guard("browser_probe_stop") {
+            return Ok(err);
         }
         let params = params.0;
 
@@ -5375,11 +5365,8 @@ impl ChronosServer {
         &self,
         params: Parameters<BrowserProbeDrainParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        // REQ-CAP-005 fallback: check toolset listing before executing.
-        if !self.is_tool_listed("browser_probe_drain") {
-            return Ok(CallToolResult::error(text_content(
-                "browser_probe_drain is not available in the current active toolset (see CHRONOS_ACTIVE_TOOLSET)",
-            )));
+        if let Some(err) = self.toolset_guard("browser_probe_drain") {
+            return Ok(err);
         }
         let params = params.0;
 
@@ -8877,7 +8864,6 @@ mod tests {
     }
 }
 
-
 /// ServerHandler implementation with custom server identity.
 /// This overrides the auto-generated one from #[tool_router(server_handler)]
 /// to provide correct name/version instead of rmcp defaults.
@@ -8995,3 +8981,113 @@ mod cap_discovery_tests {
     }
 }
 
+/// Build-time assertion: every entry in `ALL_TOOL_NAMES` is declared via
+/// `#[tool(name = "...")]` in this file.
+///
+/// Closes FIND-DEBT-002 (coupling): a future cycle that adds a new
+/// `#[tool]` without adding it to `ALL_TOOL_NAMES` will fail this test
+/// when `cargo test -p chronos-mcp` is run, instead of drifting silently
+/// at runtime.
+///
+/// Spec: REQ-CAP-007 `AllToolNamesBuildAssertion`.
+///
+/// When adding/removing `#[tool(name = …)]` registrations, extend or trim
+/// `ALL_TOOL_NAMES` accordingly.
+#[cfg(test)]
+mod toolset_sync_check {
+    use super::*;
+
+    // All `#[tool(name = "...")]` registrations in this file.
+    // These are extracted from the `#[tool]` attribute list above.
+    const REGISTERED_TOOLS: &[&str] = &[
+        "query_events",
+        "get_event",
+        "get_call_stack",
+        "get_execution_summary",
+        "execution_query",
+        "state_diff",
+        "state_query",
+        "list_threads",
+        "debug_call_graph",
+        "debug_find_variable_origin",
+        "debug_find_crash",
+        "debug_detect_races",
+        "inspect_causality",
+        "debug_expand_hotspot",
+        "debug_get_saliency_scores",
+        "save_session",
+        "load_session",
+        "list_sessions",
+        "delete_session",
+        "drop_session",
+        "evaluate_expression",
+        "debug_get_variables",
+        "debug_get_memory",
+        "debug_get_registers",
+        "debug_diff",
+        "debug_analyze_memory",
+        "forensic_memory_audit",
+        "tripwire_create",
+        "tripwire_list",
+        "tripwire_delete",
+        "tripwire_query",
+        "probe_start",
+        "probe_stop",
+        "session_start",
+        "session_stop",
+        "capabilities",
+        "probe_drain",
+        "probe_drain_log",
+        "probe_compaction_metrics",
+        "session_snapshot",
+        "probe_inject",
+        "probe_status",
+        "browser_probe_start",
+        "browser_probe_stop",
+        "browser_probe_drain",
+        "performance_regression_audit",
+        "compare_sessions",
+        "session_compare",
+        "session_explain",
+        "mutation_lens",
+        "causal_slice",
+        "hypothesis_test",
+        "session_export",
+        "trace_slice",
+        "events_read",
+        "observe",
+        "counterexample_shrink",
+        "counterexample_get",
+        "counterexample_list",
+        "counterexample_events_count",
+        "counterexample_bundle_events",
+    ];
+
+    /// Assert that EVERY `#[tool]` registration is covered by ALL_TOOL_NAMES.
+    /// Catches any future addition to #[tool] that forgets to extend
+    /// ALL_TOOL_NAMES.
+    #[test]
+    fn all_tool_names_covers_registrations() {
+        let all_names_set: std::collections::HashSet<_> = ALL_TOOL_NAMES.iter().copied().collect();
+        for name in REGISTERED_TOOLS {
+            assert!(
+                all_names_set.contains(name),
+                "Tool `{name}` is declared via #[tool] but missing from \
+                 ALL_TOOL_NAMES. Update ALL_TOOL_NAMES to keep capability \
+                 discovery in sync."
+            );
+        }
+    }
+
+    /// Assert that every ALL_TOOL_NAMES entry has a corresponding #[tool]
+    /// registration (defensive completeness check).
+    #[test]
+    fn all_tool_names_have_registration() {
+        for name in ALL_TOOL_NAMES {
+            assert!(
+                REGISTERED_TOOLS.contains(name),
+                "Tool `{name}` is in ALL_TOOL_NAMES but has no #[tool] registration."
+            );
+        }
+    }
+}
