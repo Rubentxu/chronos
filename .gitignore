@@ -51,3 +51,4 @@ $JCODE_SCRATCH_DIR/
 
 # Loose docs artifacts (working drafts; committed when promoted)
 docs/*.zip
+/.cargo-target/
