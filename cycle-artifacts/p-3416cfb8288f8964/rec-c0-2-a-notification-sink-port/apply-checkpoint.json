@@ -1,0 +1,22 @@
+{
+  "cycle_id": "rec-c0-2-a-notification-sink-port",
+  "scope": "REC-C0.2 / REC-C3.2-A",
+  "branch": "feat/rec-convergence-truth-gate",
+  "commit": "a3dabc14",
+  "issues": ["#21"],
+  "path": "A-min",
+  "files_added": [
+    "crates/chronos-domain/src/ports/mod.rs",
+    "crates/chronos-domain/src/ports/notification.rs"
+  ],
+  "files_modified": [
+    "crates/chronos-domain/src/lib.rs"
+  ],
+  "invariant_repaired": "chronos_domain now declares an explicit outbound port (NotificationSink) for delivery to external observers. The port is sync, transport-neutral, and depends only on thiserror + serde. It separates *what must be delivered* (domain) from *how it is delivered* (adapter).",
+  "verification": {
+    "cargo_check_chronos_domain": "PASS",
+    "cargo_test_chronos_domain_lib": "PASS (156/156; +3 from new port tests)",
+    "no_new_forbidden_edges": true
+  },
+  "completion_state": "applied"
+}

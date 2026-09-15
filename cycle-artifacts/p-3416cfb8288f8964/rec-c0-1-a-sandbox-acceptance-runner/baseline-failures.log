@@ -1,0 +1,47 @@
+Baseline failure mode for m0_10_sandbox_m0_acceptance_suite_passes (now removed).
+
+Originally reported in cycle REC-C0.1-A (Issue #20) on branch
+feat/rec-convergence-truth-gate at 8e4f54fb (cycle entrypoint) before
+the fix.
+
+Direct quote from `cargo test --workspace --tests -- --test-threads=1`:
+
+  test m0_10_sandbox_m0_acceptance_suite_passes ... FAILED
+  failures:
+  ---- m0_10_sandbox_m0_acceptance_suite_passes stdout ----
+  thread 'm0_10_sandbox_m0_acceptance_suite_passes' (2352848) panicked at
+    chronos-sandbox/tests/m0_acceptance.rs:624:10:
+  m0-10: could not locate compiled m0_acceptance test binary
+    (tried CARGO_BIN_EXE_m0_acceptance, then CARGO_TARGET_DIR/debug/deps/m0_acceptance-*)
+  test result: FAILED. 5 passed; 1 failed; 10 ignored; 0 measured; 0 filtered out;
+    finished in 33.68s
+
+Root cause analysis (cycle REC-C0.1-A):
+
+  The meta-test tried to discover its own binary by reading
+  `CARGO_BIN_EXE_m0_acceptance` (only set inside the test binary's own
+  process), then falling back to a manual scan of `<CARGO_TARGET_DIR>/
+  debug/deps/m0_acceptance-*`. The fallback assumed cargo wrote the
+  executable to `<CARGO_TARGET_DIR>/debug/deps`, but cargo does not
+  propagate `CARGO_TARGET_DIR` into child processes automatically and
+  does not expose that path in any public API. When the host's target
+  directory differed from `target/` (here it was
+  `/home/rubentxu/cargo-targets/...`), the scan came up empty and the
+  test panicked before exercising any of the seven `m0_*_impl`
+  scenarios.
+
+Replacement (cycle REC-C0.1-A outcome):
+
+  Removed the meta-test entirely. The canonical acceptance gate is now
+  the external command
+
+    cargo test -p chronos-sandbox --test m0_acceptance \
+      -- --include-ignored --test-threads=1
+
+  which runs every `m0_*_impl` body inside the same compiled binary
+  cargo just produced — no path guessing required. The new
+  `m0_10_sandbox_m0_acceptance_gate_is_current_exe_resolvable` test
+  pins the property that makes the external gate reliable:
+  `current_exe()` resolves the running test binary without inspecting
+  `CARGO_TARGET_DIR`, and `--list` answers under three scenarios
+  (CARGO_TARGET_DIR unset, default, custom tmpdir).

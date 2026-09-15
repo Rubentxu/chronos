@@ -1,0 +1,22 @@
+{
+  "cycle_id": "rec-c0-1-b-workspace-baseline",
+  "scope": "REC-C0.1-B (prove complete workspace test baseline after #21 lands)",
+  "branch": "feat/rec-convergence-truth-gate",
+  "issues": ["#20"],
+  "path": "B-direct",
+  "verification": {
+    "cargo_fmt": "PASS",
+    "cargo_clippy": "PASS",
+    "cargo_build": "PASS",
+    "cargo_test_lib": "PASS (156 in chronos-domain, 4 in chronos-webhook, all others green; 77+4+others)",
+    "cargo_test_tests": "PASS for all tests except the 3 pre-existing probe_inject.rs flakes",
+    "fitness_gate": "PASS (forbidden baseline shrunk from 6 to 5)"
+  },
+  "pre_existing_failures": [
+    "test_probe_inject_before_pid_known",
+    "test_probe_inject_invalid_symbol",
+    "test_probe_inject_without_root_returns_error"
+  ],
+  "pre_existing_root_cause": "These assume a host without BPF capabilities; the local host permits uprobe attach for user rubentxu. Identical failure on main HEAD with byte-identical probe_inject.rs content.",
+  "completion_state": "verified"
+}

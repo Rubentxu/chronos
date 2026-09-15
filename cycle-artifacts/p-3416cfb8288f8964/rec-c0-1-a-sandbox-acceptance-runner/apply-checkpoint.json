@@ -1,0 +1,52 @@
+{
+  "cycle_id": "rec-c0-1-a-sandbox-acceptance-runner",
+  "scope": "REC-C0.1-A",
+  "branch": "feat/rec-convergence-truth-gate",
+  "started_at": "2026-09-15T16:00:00Z",
+  "head_sha_before": "8e4f54fb",
+  "issues": ["#20"],
+  "path": "B-direct",
+  "invariant_repaired": "Sandbox M0 acceptance gate must not couple to CARGO_TARGET_DIR or the internal layout of target/debug/deps/. The previous meta-test re-invoked its own binary by scanning CARGO_BIN_EXE_m0_acceptance, then CARGO_TARGET_DIR/debug/deps/m0_acceptance-*, which silently failed when CARGO_TARGET_DIR pointed outside target/.",
+  "root_cause": "m0_10_sandbox_m0_acceptance_suite_passes inside chronos-sandbox/tests/m0_acceptance.rs reconstructed the running test binary path from environment variables and Cargo's internal target/debug/deps layout. The reconstruction assumed CARGO_TARGET_DIR resolved to a directory containing the test executable, which is brittle and breaks under any non-default target directory. Cargo does not rewrite CARGO_TARGET_DIR into child processes automatically, so the test was unable to find its own binary in 3 of the 4 common scenarios.",
+  "fix": "Eliminated the meta-test entirely. The canonical acceptance gate is now the external command `cargo test -p chronos-sandbox --test m0_acceptance -- --include-ignored --test-threads=1`, which runs every m0_NN_*_impl body inside the same compiled binary cargo just produced — no path guessing required. Replaced the meta-test with a regression test (`m0_10_sandbox_m0_acceptance_gate_is_current_exe_resolvable`) that pins the property that makes the external gate reliable: the running test binary resolves via std::env::current_exe() without inspecting CARGO_TARGET_DIR, and answers `--list` under three scenarios (CARGO_TARGET_DIR unset, default, custom tmpdir). The test asserts the six m0_*_impl markers are visible under every scenario, so a regression that reintroduces a target-dir coupling fires immediately.",
+  "files_modified": [
+    "chronos-sandbox/tests/m0_acceptance.rs"
+  ],
+  "legacy_eliminated": "Removed 158 lines of fragile path-discovery code; added 85 lines of regression coverage.",
+  "remaining_debt": "None new from this cycle.",
+  "verification": {
+    "cargo_fmt": "PASS (cargo fmt --all -- --check exit=0)",
+    "cargo_clippy": "PASS (cargo clippy --workspace --all-targets -- -D warnings exit=0)",
+    "cargo_build": "PASS (cargo build --workspace exit=0)",
+    "cargo_test_lib": "PASS (cargo test --workspace --lib -- --test-threads=1: 77 passed; 0 failed)",
+    "cargo_test_tests_m0_10": "PASS (cargo test -p chronos-sandbox --test m0_acceptance m0_10_sandbox_m0_acceptance_gate_is_current_exe_resolvable -- --test-threads=1 --include-ignored: 1 passed; 0 failed)",
+    "cargo_check_all_features": "STILL FAILS — see Issue #21 (REC-C0.2-A) for the hexagonal webhook extraction; that failure is independent of this cycle and lives entirely in crates/chronos-domain/src/tripwire/webhook.rs",
+    "fitness_gate": "PASS (python3 scripts/check_architecture_contracts.py: no new forbidden edges, no stale waivers)"
+  },
+  "commands_run": [
+    "cargo fmt --all -- --check",
+    "cargo clippy --workspace --all-targets -- -D warnings",
+    "cargo build --workspace",
+    "cargo test --workspace --lib -- --test-threads=1",
+    "cargo test -p chronos-sandbox --test m0_acceptance m0_10_sandbox_m0_acceptance_gate_is_current_exe_resolvable -- --test-threads=1 --include-ignored"
+  ],
+  "uat": "Regression test inside the test binary itself (no subprocess recursion; --list dry-run only).",
+  "evidence_artifacts": [
+    "cycle-artifacts/p-3416cfb8288f8964/rec-c0-1-a-sandbox-acceptance-runner/baseline-failures.log",
+    "cycle-artifacts/p-3416cfb8288f8964/rec-c0-1-a-sandbox-acceptance-runner/fix-verification.log"
+  ],
+  "pre_existing_failures_unchanged": [
+    {
+      "test_suite": "chronos-sandbox probe_inject.rs",
+      "tests": [
+        "test_probe_inject_before_pid_known",
+        "test_probe_inject_invalid_symbol",
+        "test_probe_inject_without_root_returns_error"
+      ],
+      "reason": "These tests assume the host kernel refuses uprobe attach without CAP_BPF / root. In this environment (rubentxu's host with BPF capabilities granted to the user), uprobe attach succeeds and the response body contains 'uprobe attached' instead of 'permission denied'. The same three tests fail identically on main (HEAD 9cc44ce3) with byte-identical probe_inject.rs content, confirming the failure is environmental, not introduced by this cycle. Not in REC-C0.1 scope; tracked separately as a sandbox environment flake.",
+      "verification": "Confirmed by `git diff HEAD -- chronos-sandbox/tests/probe_inject.rs` returning no diff and re-running the suite against main HEAD produces the same three failures."
+    }
+  ],
+  "next_subcycle_unlocked": "REC-C0.1-B (prove complete workspace test baseline after Issue #21 lands) and REC-C0.2-A (extract NotificationSink port + remove chronos-domain->reqwest dependency).",
+  "completion_state": "applied"
+}

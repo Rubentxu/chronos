@@ -192,7 +192,6 @@ fn function_from_semantic(event: &crate::SemanticEvent) -> Option<String> {
     }
 }
 
-
 #[derive(Debug)]
 pub struct TripwireManager {
     tripwires: std::sync::RwLock<Vec<Tripwire>>,

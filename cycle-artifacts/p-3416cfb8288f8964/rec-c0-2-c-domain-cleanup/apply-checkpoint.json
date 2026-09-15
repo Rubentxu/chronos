@@ -1,0 +1,30 @@
+{
+  "cycle_id": "rec-c0-2-c-domain-cleanup",
+  "scope": "REC-C0.2 / REC-C3.2-C",
+  "branch": "feat/rec-convergence-truth-gate",
+  "commit": "7e3702d7",
+  "issues": ["#21"],
+  "path": "A-min",
+  "files_deleted": [
+    "crates/chronos-domain/src/tripwire/webhook.rs (186 lines)"
+  ],
+  "files_modified": [
+    "crates/chronos-domain/Cargo.toml (removed reqwest optional, removed webhook feature, removed url dep)",
+    "crates/chronos-domain/src/tripwire.rs (removed #[cfg(feature=webhook)] pub mod webhook, removed TripwireSubscription, removed TripwireError variants tied to webhook, removed validate_callback_url, removed unused thiserror::Error import)",
+    "reconstruction-contracts.toml (removed chronos-domain->reqwest waiver)"
+  ],
+  "invariant_repaired": "chronos-domain no longer contains any HTTP, reqwest, tokio, serde_json, or webhook URL validation logic. chronos-domain Cargo.toml has only thiserror, serde, uuid, schemars. The webhook delivery is reachable only via chronos-webhook adapter through the NotificationSink port.",
+  "verification": {
+    "cargo_check_chronos_domain": "PASS (webhook feature is gone; --all-features no longer mentions webhook)",
+    "cargo_test_chronos_domain_lib": "PASS (156/156; previous 153 preserved; webhook-related tests removed)",
+    "cargo_clippy_workspace": "PASS",
+    "fitness_gate": "PASS (forbidden baseline shrunk from 6 to 5)",
+    "no_legacy_token_added": true,
+    "no_reqwest_in_domain_cargo": true,
+    "no_url_in_domain_cargo": true
+  },
+  "remaining_debt_out_of_scope": [
+    "cargo check --workspace --all-targets --all-features fails on chronos-store (bench cas_bench: 7-arg constructor where the type now has 6) and chronos-ebpf (cannot find value 'config' on --features ebpf). Both errors were MASKED before REC-C0 because cargo stopped at the broken chronos-domain webhook module. Now visible, not introduced by REC-C0. Tracked separately as M-series follow-ups; not addressed by REC-C0."
+  ],
+  "completion_state": "applied"
+}
