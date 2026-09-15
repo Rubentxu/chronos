@@ -134,7 +134,7 @@ One commit:
 | Kind | Path | SHA-256 |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-75-fail-closed-store-open/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
-| source (mcp server) | `crates/chronos-mcp/src/server.rs` | `9e35b2a6f5f070ea20fbf8d8c5bc3e48ee3ecd1e8ca47c8a979102799b88b5c9` |
+| source (mcp server) | `crates/chronos-mcp/src/server.rs` | `5e49aa0cc862c3f8faff1c45fb925efe84b6063235f8f391be02d3f443cedc67` |
 | source (mcp binary) | `crates/chronos-mcp/src/bin/chronos-mcp.rs` | `3797defa83c8218db6610047fece4b6ed67aa9b183e5c1f5193f2f10eeda1492` |
 | source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `054ad67e3b4fd871de0725b515b53a1d7f4ec06bc059eae1edbc7f222315fb97` |
 | test (store open failure) | `chronos-sandbox/tests/store_open_failure.rs` | `5f0461f8db78b9de6d27d9ba92c3c06e0ebbe3cf62eb990e69f7c9e1e4c7bec9` |
@@ -148,5 +148,5 @@ One commit:
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/release-receipt.md` | `21c61bc7dc435b9e6eb1af55955851f2964d82610e8d735baa5efc1dbb00d871` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/merge-receipt.md` | `5c502c1c4dc0cb496aab2b079043526db35f714a042161472c8c3856144b2072` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-75-fail-closed-store-open/change-entry.md` | `a2816905b483ce610548937181eade69e6cfd72a49dd872c415fc1aa06012e76` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `4f07d3ac61128c67614801f79f29c167ff2635deddae98df69b02bee21e1c475` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `661dae52d9aff7f740e7a720529c6fbf93848e95aa59eeaa871d7e842568c636` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `2ccfbb229fe92af1f647440596a5bc4ee76a55571949ede31bd3c56b25bad5df` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `befab10ccae378abd04549f0e1316c38cc93157509e62a1e5d5c1edc71c9ccdc` |
