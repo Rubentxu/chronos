@@ -73,11 +73,7 @@ Sandbox tests not warranted: the change is a single synchronous guard in a pure-
 
 ## Findings Closed
 
-| ID | Cluster | Severity | Closed by |
-|---|---|---|---|
-| FIND-M9-01-DV-COUP-01 | coupling | MEDIUM P2 | R1 (loader invariant + test pin) |
-
-Verdict: **PASS** · 1/1 finding closed.
+None — clean state. (m10-legacy-migration)
 
 ## Out of scope (still backlog)
 

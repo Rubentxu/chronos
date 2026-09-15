@@ -1,19 +1,24 @@
 {
   "all_passed": true,
   "cycle_id": "m9-62",
-  "findings": [
-    {
-      "finding_id": "FIND-M9-61-UNBOUNDED-JOIN",
-      "rule_id": "chronos.lifecycle.stop_probe_bounded_join",
-      "severity": "medium",
-      "subject": {
-        "fix": "HIGH-5 pattern restored with stop-then-drain semantics: spawn waiter, mpsc::channel, recv_timeout(Duration::from_secs(10)), abandon on timeout with warn! log",
-        "issue": "Post-m9-61 inline handle.join() had no timeout bound. The previous HIGH-5 pattern (async spawn + recv_timeout(10s)) was lost when switching to inline join."
-      },
-      "summary": "NativeProbeBackend::stop_probe joined probe thread inline without timeout; if wedged, MCP server blocks indefinitely"
-    }
-  ],
-  "lens_summary": "m9-62 closes the m9-61 follow-up: bounded join restored in stop_probe. Single-commit B-direct; pure refactor; no API change; restores the contract that stop_probe is bounded.",
+  "findings": [],
+  "lens_summary": {
+    "drift": "m9-62 closes the m9-61 follow-up: bounded join restored in stop_probe. Single-commit B-direct; pure refactor; no API change; restores the contract that stop_probe is bounded.",
+    "legacy_findings_preserved": [
+      {
+        "finding_id": "FIND-M9-61-UNBOUNDED-JOIN",
+        "rule_id": "chronos.lifecycle.stop_probe_bounded_join",
+        "severity": "medium",
+        "subject": {
+          "fix": "HIGH-5 pattern restored with stop-then-drain semantics: spawn waiter, mpsc::channel, recv_timeout(Duration::from_secs(10)), abandon on timeout with warn! log",
+          "issue": "Post-m9-61 inline handle.join() had no timeout bound. The previous HIGH-5 pattern (async spawn + recv_timeout(10s)) was lost when switching to inline join."
+        },
+        "summary": "NativeProbeBackend::stop_probe joined probe thread inline without timeout; if wedged, MCP server blocks indefinitely"
+      }
+    ],
+    "legacy_findings_preserved_count": 1,
+    "findings_count": 0
+  },
   "schema": "verify-finding.schema.json",
   "subject": {
     "base_sha": "bedfebd90e8092f8f0716742ff0bede5e4dc7b68",

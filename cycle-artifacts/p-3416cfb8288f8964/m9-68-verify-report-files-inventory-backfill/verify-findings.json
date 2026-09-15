@@ -1,19 +1,24 @@
 {
   "all_passed": true,
   "cycle_id": "m9-68",
-  "findings": [
-    {
-      "finding_id": "FIND-M9-68-FILES-INVENTORY-MISSING",
-      "rule_id": "vault.files_inventory_missing",
-      "severity": "low",
-      "subject": {
-        "fix": "Backfilled '## Files Inventory' sections for m9-32..m9-53 (data from 'git diff --numstat base_sha..head_sha' for each cycle; grouped when > 8 files in the same category). Added brief backfill notes for m9-11..m9-31. Added CC#55 (python, auto-executed by CC#48) that catches future regressions.",
-        "gap": "The '## Files Inventory' section was introduced in m9-32 but never propagated retroactively to that cycle (and all subsequent cycles until m9-68). 22 cycles (m9-32..m9-53) had no section; 21 cycles (m9-11..m9-31) predate the format entirely."
-      },
-      "summary": "22 verify-report.md files (m9-32..m9-53) were missing the canonical '## Files Inventory' section. 21 older verify-reports (m9-11..m9-31) predate the format. Added backfill + CC#55."
-    }
-  ],
-  "lens_summary": "m9-68 closes one drift class with one focused B-direct cycle. The cycle is bounded (mechanical backfill of 22 + 21 verify-reports), well-understood (data from git diff), and self-validating (CC#55 detects recurrence; smoke test covers it). Three-commit structure: (1) vault changes (CC#55 + backfill), (2) smoke test update, (3) archive-manifest SHA regen. Self-tested: smoke test 5/5 PASS (~50s); injected missing Files Inventory \u2192 CC#55 catches.",
+  "findings": [],
+  "lens_summary": {
+    "drift": "m9-68 closes one drift class with one focused B-direct cycle. The cycle is bounded (mechanical backfill of 22 + 21 verify-reports), well-understood (data from git diff), and self-validating (CC#55 detects recurrence; smoke test covers it). Three-commit structure: (1) vault changes (CC#55 + backfill), (2) smoke test update, (3) archive-manifest SHA regen. Self-tested: smoke test 5/5 PASS (~50s); injected missing Files Inventory → CC#55 catches.",
+    "legacy_findings_preserved": [
+      {
+        "finding_id": "FIND-M9-68-FILES-INVENTORY-MISSING",
+        "rule_id": "vault.files_inventory_missing",
+        "severity": "low",
+        "subject": {
+          "fix": "Backfilled '## Files Inventory' sections for m9-32..m9-53 (data from 'git diff --numstat base_sha..head_sha' for each cycle; grouped when > 8 files in the same category). Added brief backfill notes for m9-11..m9-31. Added CC#55 (python, auto-executed by CC#48) that catches future regressions.",
+          "gap": "The '## Files Inventory' section was introduced in m9-32 but never propagated retroactively to that cycle (and all subsequent cycles until m9-68). 22 cycles (m9-32..m9-53) had no section; 21 cycles (m9-11..m9-31) predate the format entirely."
+        },
+        "summary": "22 verify-report.md files (m9-32..m9-53) were missing the canonical '## Files Inventory' section. 21 older verify-reports (m9-11..m9-31) predate the format. Added backfill + CC#55."
+      }
+    ],
+    "legacy_findings_preserved_count": 1,
+    "findings_count": 0
+  },
   "schema": "verify-finding.schema.json",
   "subject": {
     "base_sha": "752634cf32a7e9c5196015182e4ea2f58637ec9c",

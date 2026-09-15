@@ -1,50 +1,126 @@
-[
-  {
-    "id": "FIND-M9-86-TYPES-EXTRACT",
-    "title": "ce_types submodule extracted from counterexample_storage.rs (cc-001-god-module third slice)",
-    "severity": "info",
-    "status": "closed",
-    "evidence": [
-      "crates/chronos-store/src/ce_types.rs (new, 165 lines): 6 pub types + default_schema_version helper",
-      "crates/chronos-store/src/counterexample_storage.rs (2287 -> 2156 lines, -131)"
-    ],
-    "verification": {
-      "tier1": "77/77",
-      "tier2": "264/264",
-      "tier3": "35/35",
-      "tier4_chronos_native_serial": "103/103",
-      "clippy": "clean",
-      "fmt": "clean"
-    }
+{
+  "subject": {
+    "head_sha": "434f2b4db74e94488f180100a8e8c8db50fd7fa3",
+    "base_sha": "43e48b927eebb30be5cd2c6fcffbd6dcbabcbc7d",
+    "cycle_id": "m9-86-cc001-god-module-types-split",
+    "branch": "feat/m9-86-cc001-god-module-types-split",
+    "route": "A-min"
   },
-  {
-    "id": "FIND-M9-86-PUB-USE-TYPES",
-    "title": "pub use re-export works for pub structs/enums (module-level items)",
-    "severity": "info",
-    "status": "closed",
-    "evidence": [
-      "Unlike m9-85 inherent methods (which are type-level), types are module-level items.",
-      "`pub use ce_types::{CounterexampleBundleRecord, ...}` works correctly — types reachable at parent path.",
-      "Verified all real consumers use `chronos_store::counterexample_storage::TypeName` paths unchanged."
+  "cycle_id": "m9-86-cc001-god-module-types-split",
+  "verdict": "passed",
+  "all_passed": true,
+  "lens_summary": {
+    "drift": "3 legacy findings migrated by m10-m9-legacy-schema-migration",
+    "findings_count": 7,
+    "tiers_run": [
+      "T0",
+      "T1",
+      "T2",
+      "T3"
     ],
-    "verification": {
-      "build": "succeeds after pub use re-export",
-      "tests": "all 4 tiers pass",
-      "clippy": "clean"
-    }
+    "source_schema": "m10-legacy-migration-2026-09-15",
+    "legacy_findings_preserved": [
+      {
+        "id": "FIND-M9-86-TYPES-EXTRACT",
+        "title": "ce_types submodule extracted from counterexample_storage.rs (cc-001-god-module third slice)",
+        "severity": "info",
+        "status": "closed",
+        "evidence": [
+          "crates/chronos-store/src/ce_types.rs (new, 165 lines): 6 pub types + default_schema_version helper",
+          "crates/chronos-store/src/counterexample_storage.rs (2287 -> 2156 lines, -131)"
+        ],
+        "verification": {
+          "tier1": "77/77",
+          "tier2": "264/264",
+          "tier3": "35/35",
+          "tier4_chronos_native_serial": "103/103",
+          "clippy": "clean",
+          "fmt": "clean"
+        }
+      },
+      {
+        "id": "FIND-M9-86-PUB-USE-TYPES",
+        "title": "pub use re-export works for pub structs/enums (module-level items)",
+        "severity": "info",
+        "status": "closed",
+        "evidence": [
+          "Unlike m9-85 inherent methods (which are type-level), types are module-level items.",
+          "`pub use ce_types::{CounterexampleBundleRecord, ...}` works correctly — types reachable at parent path.",
+          "Verified all real consumers use `chronos_store::counterexample_storage::TypeName` paths unchanged."
+        ],
+        "verification": {
+          "build": "succeeds after pub use re-export",
+          "tests": "all 4 tiers pass",
+          "clippy": "clean"
+        }
+      },
+      {
+        "id": "FIND-M9-86-SERDE-DEFAULT-PATH",
+        "title": "serde default function resolves in struct's module scope",
+        "severity": "info",
+        "status": "closed",
+        "evidence": [
+          "`#[serde(default = \"default_schema_version\")]` on the structs in ce_types.rs resolves the function in ce_types.rs's scope (where it now lives).",
+          "Test `m9_02_legacy_bundle_deserializes_with_default_schema_version` passes — legacy bundle gets schema_version=3."
+        ],
+        "verification": {
+          "test_m9_02_legacy": "passed",
+          "default_function_path": "resolves correctly in ce_types.rs"
+        }
+      }
+    ],
+    "legacy_findings_preserved_count": 3,
+    "source_table": "verify-report.md ## Findings"
   },
-  {
-    "id": "FIND-M9-86-SERDE-DEFAULT-PATH",
-    "title": "serde default function resolves in struct's module scope",
-    "severity": "info",
-    "status": "closed",
-    "evidence": [
-      "`#[serde(default = \"default_schema_version\")]` on the structs in ce_types.rs resolves the function in ce_types.rs's scope (where it now lives).",
-      "Test `m9_02_legacy_bundle_deserializes_with_default_schema_version` passes — legacy bundle gets schema_version=3."
-    ],
-    "verification": {
-      "test_m9_02_legacy": "passed",
-      "default_function_path": "resolves correctly in ce_types.rs"
+  "findings": [
+    {
+      "id": "F1",
+      "title": "Finding F1 from verify-report.md table",
+      "severity": "info",
+      "status": "closed",
+      "source": "m10-legacy-migration-2026-09-15: derived from verify-report.md table"
+    },
+    {
+      "id": "F2",
+      "title": "Finding F2 from verify-report.md table",
+      "severity": "info",
+      "status": "closed",
+      "source": "m10-legacy-migration-2026-09-15: derived from verify-report.md table"
+    },
+    {
+      "id": "F3",
+      "title": "Finding F3 from verify-report.md table",
+      "severity": "info",
+      "status": "closed",
+      "source": "m10-legacy-migration-2026-09-15: derived from verify-report.md table"
+    },
+    {
+      "id": "F4",
+      "title": "Finding F4 from verify-report.md table",
+      "severity": "info",
+      "status": "closed",
+      "source": "m10-legacy-migration-2026-09-15: derived from verify-report.md table"
+    },
+    {
+      "id": "F5",
+      "title": "Finding F5 from verify-report.md table",
+      "severity": "info",
+      "status": "closed",
+      "source": "m10-legacy-migration-2026-09-15: derived from verify-report.md table"
+    },
+    {
+      "id": "F6",
+      "title": "Finding F6 from verify-report.md table",
+      "severity": "info",
+      "status": "closed",
+      "source": "m10-legacy-migration-2026-09-15: derived from verify-report.md table"
+    },
+    {
+      "id": "F7",
+      "title": "Finding F7 from verify-report.md table",
+      "severity": "info",
+      "status": "closed",
+      "source": "m10-legacy-migration-2026-09-15: derived from verify-report.md table"
     }
-  }
-]
+  ]
+}

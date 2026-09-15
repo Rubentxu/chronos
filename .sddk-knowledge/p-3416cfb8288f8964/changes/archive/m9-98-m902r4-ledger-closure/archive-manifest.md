@@ -9,6 +9,7 @@ m9-91 had already delivered, tested, and released the `counterexample_bundle_eve
 
 | Field | Value |
 |---|---|
+| Cycle | `m9-98-m902r4-ledger-closure` |
 | Date | 2026-09-14 |
 | Path | B-direct |
 | Base SHA | `9239a87cbadc9571f17512415847b86b589292b9` |

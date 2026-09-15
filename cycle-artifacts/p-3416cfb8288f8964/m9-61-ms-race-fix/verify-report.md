@@ -53,3 +53,7 @@ Single-commit B-direct cycle closes a drain/stop race in the probe lifecycle. Dr
 ## History
 
 m9-61 was a hotfix discovered while integrating the probe lifecycle into session_lifecycle MCP tools. The race was observable as missing events at session stop when the target binary was emitting at high frequency (e.g. test_busyloop). MS-RACE-FIX is the internal tracker name; the cycle lives in m9 (concurrency intelligence section of the roadmap).
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

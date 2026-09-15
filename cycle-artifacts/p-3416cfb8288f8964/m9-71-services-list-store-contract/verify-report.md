@@ -158,3 +158,7 @@ that decision is deferred as its own finding.
 | 2026-09-13T12:30Z | Vacuity proved: pre-m9-71 + store revert = PASS |
 | 2026-09-13T12:31Z | T0 pass; T2 pass (263 / 62 / 77 + 49); T4-smoke 5/5 |
 | 2026-09-13T12:35Z | Drift sweep pass; CC smoke 5/5 |
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

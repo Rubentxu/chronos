@@ -231,3 +231,7 @@ serial recipe) because the previous row understated it as a 50% flake.
   `## Cross-checks`.
 - Diff scope: 6 files, +536/−41, all of them named in the Files Inventory
   table above (source, tests, docs); no file changed outside that list.
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

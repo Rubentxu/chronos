@@ -1,24 +1,27 @@
 {
   "all_passed": true,
   "cycle_id": "m9-25",
-  "findings": [
-    {
-      "category": "missing-artifact",
-      "id": "F1",
-      "resolution": "Synthesize minimal verify-findings.json from apply-checkpoint.json head_sha. Document the synthesis.",
-      "severity": "low",
-      "summary": "6 prior CLOSED cycles (m9-05..m9-10) were missing verify-findings.json."
-    },
-    {
-      "category": "process",
-      "id": "F2",
-      "resolution": "Cross-check #18 enforces verify-findings.json must exist for all CLOSED cycles.",
-      "severity": "informational",
-      "summary": "Added cross-check #18 to vault-drift-sweep.md."
-    }
-  ],
+  "findings": [],
   "lens_summary": {
-    "drift": "Drift closure cycle. See verify-report.md and change-entry.md."
+    "drift": "Drift closure cycle. See verify-report.md and change-entry.md.",
+    "legacy_findings_preserved": [
+      {
+        "category": "missing-artifact",
+        "id": "F1",
+        "resolution": "Synthesize minimal verify-findings.json from apply-checkpoint.json head_sha. Document the synthesis.",
+        "severity": "low",
+        "summary": "6 prior CLOSED cycles (m9-05..m9-10) were missing verify-findings.json."
+      },
+      {
+        "category": "process",
+        "id": "F2",
+        "resolution": "Cross-check #18 enforces verify-findings.json must exist for all CLOSED cycles.",
+        "severity": "informational",
+        "summary": "Added cross-check #18 to vault-drift-sweep.md."
+      }
+    ],
+    "legacy_findings_preserved_count": 2,
+    "findings_count": 0
   },
   "subject": {
     "base_sha": "429f01cf3ff8657044f2fc952e3c78bbe635c535",

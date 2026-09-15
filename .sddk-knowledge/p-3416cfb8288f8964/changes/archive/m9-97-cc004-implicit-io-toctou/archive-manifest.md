@@ -9,6 +9,7 @@ model prevents the alleged interleaving. No net Rust change ships.
 
 | Field | Value |
 |---|---|
+| Cycle | `m9-97-cc004-implicit-io-toctou` |
 | Date | 2026-09-14 |
 | Path | A-min, evidence-backed vault-only closure |
 | Base SHA | `5600873d05e0ab79f17eed6eec63df96ddd97c88` |

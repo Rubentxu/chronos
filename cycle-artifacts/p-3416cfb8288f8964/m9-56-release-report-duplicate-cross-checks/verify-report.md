@@ -25,3 +25,7 @@
 ## History
 
 m9-56 was discovered during the post-m9-55 sweep. CC#39 enforced the existence of ## Cross-checks but not uniqueness; m9-56 closes that gap.
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

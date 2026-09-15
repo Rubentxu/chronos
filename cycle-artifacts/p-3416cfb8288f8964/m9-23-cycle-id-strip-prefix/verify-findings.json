@@ -1,24 +1,27 @@
 {
   "all_passed": true,
   "cycle_id": "m9-23-cycle-id-strip-prefix",
-  "findings": [
-    {
-      "category": "schema-drift",
-      "id": "F1",
-      "resolution": "Strip workspace prefix from cycle_id on all 16 cycles.",
-      "severity": "low",
-      "summary": "16 prior cycles (m9-03..m9-18) had cycle_id with workspace prefix 'p-3416cfb8288f8964/'. m9-19+ use bare slugs."
-    },
-    {
-      "category": "process",
-      "id": "F2",
-      "resolution": "Cross-check #16 prevents future cycle_id drift.",
-      "severity": "informational",
-      "summary": "Added cross-check #16 to vault-drift-sweep.md."
-    }
-  ],
+  "findings": [],
   "lens_summary": {
-    "drift": "Drift closure cycle. See verify-report.md and change-entry.md."
+    "drift": "Drift closure cycle. See verify-report.md and change-entry.md.",
+    "legacy_findings_preserved": [
+      {
+        "category": "schema-drift",
+        "id": "F1",
+        "resolution": "Strip workspace prefix from cycle_id on all 16 cycles.",
+        "severity": "low",
+        "summary": "16 prior cycles (m9-03..m9-18) had cycle_id with workspace prefix 'p-3416cfb8288f8964/'. m9-19+ use bare slugs."
+      },
+      {
+        "category": "process",
+        "id": "F2",
+        "resolution": "Cross-check #16 prevents future cycle_id drift.",
+        "severity": "informational",
+        "summary": "Added cross-check #16 to vault-drift-sweep.md."
+      }
+    ],
+    "legacy_findings_preserved_count": 2,
+    "findings_count": 0
   },
   "subject": {
     "base_sha": "f5fbbd7584398d0fda1f090fe9295bcb9fdde045",

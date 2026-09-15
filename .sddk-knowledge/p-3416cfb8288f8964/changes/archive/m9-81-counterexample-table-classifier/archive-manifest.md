@@ -106,7 +106,7 @@ deprecation sunset sweep.
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-81-counterexample-table-classifier/archive-manifest.md` | `c0c2946c1b2fb599676442e6b5158e70b329aff5e6188c0474ec701a9b183602` |
 | implementation-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-81-counterexample-table-classifier/implementation-receipt.md` | `dba3e0dea8c306c8f3884773730961f5225e3a393d94e8b647ea83fb78e3b3d4` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-81-counterexample-table-classifier/verify-report.md` | `ea6bd50b9fa88a222daf314c5d13f8e06e691faf6cf4c27c680385ee339d86f5` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-81-counterexample-table-classifier/verify-findings.json` | `7cdd538b2e4c4ef503c9c39d2013fa5f3f617218b3fc85c631c19b7f3d5a9f99` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-81-counterexample-table-classifier/verify-findings.json` | `424c729d8a104b5c755de842176f71c0a833ce9ad628ecca72ca12980c2a59e9` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-81-counterexample-table-classifier/release-receipt.md` | `5ecd9f74127e76e61f7d1c7d784e874a6bb11b0e733c9893a161651705bb8d46` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-81-counterexample-table-classifier/merge-receipt.md` | `cc2c3b1abf3988b1dd5d2668d1edfd6e87d64bf85108e5df05a62914be75a4be` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-81-counterexample-table-classifier/release-report.md` | `c91c2051adbab46a1772030293a0f1cb34e238b0b94c5077af2bb9b6713d78d7` |

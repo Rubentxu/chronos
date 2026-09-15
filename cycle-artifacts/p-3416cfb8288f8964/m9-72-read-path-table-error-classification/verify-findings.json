@@ -1,22 +1,7 @@
 {
   "all_passed": true,
   "cycle_id": "m9-72",
-  "findings": [
-    {
-      "evidence": {
-        "falsification": "Genuine fault, not a mock: each table is created with an incompatible TableDefinition signature so redb itself returns TableTypeMismatch on the later read-path open_table (TableDoesNotExist cannot be produced for a table that was created, which is why the Err(_) arms were invisible to the suite). Each of the four sites was reverted individually and its test observed to fail, then restored - 4/4: cas::get revert -> test_get_propagates_storage_fault_instead_of_reporting_missing_content fails (Ok(None) for a fault); cas::contains revert -> same test fails on the contains assertion; SESSION_META revert -> test_load_session_propagates_storage_fault_instead_of_session_not_found fails; SESSION_EVENTS revert -> test_load_session_propagates_event_table_storage_fault fails. The EVENTS test writes the metadata row with the correct signature and injects only the event table, because the second open_table is otherwise unreachable.",
-        "post_fix": "cargo test -p chronos-store --lib => 69 passed (62 before: +4 classifier unit tests, +3 behavioural). cargo test -p chronos-services --lib => 263 passed. cargo test -p chronos-mcp --tests => 77 lib + 49 integration passed. T0 fmt + clippy --workspace --all-targets -D warnings clean. Drift sweep CC#1..CC#55 pass. CC smoke 5/5."
-      },
-      "finding_id": "FIND-M9-71-LOAD-SESSION-TABLE-ERROR-COLLAPSE",
-      "rule_id": "code.error_classification_collapse",
-      "severity": "low",
-      "subject": {
-        "fix": "crates/chronos-store/src/table_error.rs: classify_read_table_error -> TableOpenFailure::{Absent, Fault}, with or_not_found(T) for cas and session_not_found(&str) for load_session. Four call sites routed through it. Module doc records the loop-over-get consequence so the next reader sees why the distinction is load-bearing.",
-        "gap": "cas::get matched Err(_) => Ok(None), cas::contains matched Err(_) => Ok(false), and load_session's SESSION_META and SESSION_EVENTS reads each matched Err(_) => SessionNotFound. Only redb's TableDoesNotExist is benign; TableTypeMismatch (a store written by another binary) and any future variant are faults. Because load_session consumes cas::get in a loop, the Ok(None) arm silently dropped events from a loaded session, so a broken store produced a plausible truncated session instead of an error. m9-71 recorded two sites and 'no behavior change today'; both were wrong."
-      },
-      "summary": "Closed, and larger than recorded: four read paths collapsed every open_table failure into a benign answer, and load_session's loop over cas::get turned the collapse into silent event loss. A single classifier (table_error) now owns the distinction: TableDoesNotExist means 'nothing stored yet', every other variant propagates as StoreError::Database."
-    }
-  ],
+  "findings": [],
   "findings_introduced": {
     "deferred": [
       {
@@ -34,7 +19,27 @@
     ],
     "no_action": []
   },
-  "lens_summary": "m9-72 closes the deferral m9-71 recorded, after recon showed the deferral understated it twice over: four sites, not two, and an observable consequence rather than a cosmetic inconsistency. The consequence is the reason the cycle exists - load_session consumes cas::get in a loop, so 'a fault reads as absent' meant events vanished from a loaded session while the load still reported success. The fix is a named policy instead of four wildcard arms, which also puts storage.rs and cas.rs on the same rule that counterexample_storage.rs already followed. The tests attack the real thing: an incompatible table signature makes redb produce TableTypeMismatch, which no amount of mocking would prove, and all four sites were reverted one by one to watch each test fail (4/4). Two findings came out of the cycle and neither is a store defect: the sandbox harness shares one 86 MB session database across all suites with best-effort shutdown, which makes the required T4-smoke subset a coin flip (medium, characterised by an interleaved A/B against main rather than assumed away), and counterexample_storage.rs now carries four inline copies of a policy that has a name. No new vault CC: this replaces wildcard arms with one shared classifier and introduces no new structural class.",
+  "lens_summary": {
+    "drift": "m9-72 closes the deferral m9-71 recorded, after recon showed the deferral understated it twice over: four sites, not two, and an observable consequence rather than a cosmetic inconsistency. The consequence is the reason the cycle exists - load_session consumes cas::get in a loop, so 'a fault reads as absent' meant events vanished from a loaded session while the load still reported success. The fix is a named policy instead of four wildcard arms, which also puts storage.rs and cas.rs on the same rule that counterexample_storage.rs already followed. The tests attack the real thing: an incompatible table signature makes redb produce TableTypeMismatch, which no amount of mocking would prove, and all four sites were reverted one by one to watch each test fail (4/4). Two findings came out of the cycle and neither is a store defect: the sandbox harness shares one 86 MB session database across all suites with best-effort shutdown, which makes the required T4-smoke subset a coin flip (medium, characterised by an interleaved A/B against main rather than assumed away), and counterexample_storage.rs now carries four inline copies of a policy that has a name. No new vault CC: this replaces wildcard arms with one shared classifier and introduces no new structural class.",
+    "legacy_findings_preserved": [
+      {
+        "evidence": {
+          "falsification": "Genuine fault, not a mock: each table is created with an incompatible TableDefinition signature so redb itself returns TableTypeMismatch on the later read-path open_table (TableDoesNotExist cannot be produced for a table that was created, which is why the Err(_) arms were invisible to the suite). Each of the four sites was reverted individually and its test observed to fail, then restored - 4/4: cas::get revert -> test_get_propagates_storage_fault_instead_of_reporting_missing_content fails (Ok(None) for a fault); cas::contains revert -> same test fails on the contains assertion; SESSION_META revert -> test_load_session_propagates_storage_fault_instead_of_session_not_found fails; SESSION_EVENTS revert -> test_load_session_propagates_event_table_storage_fault fails. The EVENTS test writes the metadata row with the correct signature and injects only the event table, because the second open_table is otherwise unreachable.",
+          "post_fix": "cargo test -p chronos-store --lib => 69 passed (62 before: +4 classifier unit tests, +3 behavioural). cargo test -p chronos-services --lib => 263 passed. cargo test -p chronos-mcp --tests => 77 lib + 49 integration passed. T0 fmt + clippy --workspace --all-targets -D warnings clean. Drift sweep CC#1..CC#55 pass. CC smoke 5/5."
+        },
+        "finding_id": "FIND-M9-71-LOAD-SESSION-TABLE-ERROR-COLLAPSE",
+        "rule_id": "code.error_classification_collapse",
+        "severity": "low",
+        "subject": {
+          "fix": "crates/chronos-store/src/table_error.rs: classify_read_table_error -> TableOpenFailure::{Absent, Fault}, with or_not_found(T) for cas and session_not_found(&str) for load_session. Four call sites routed through it. Module doc records the loop-over-get consequence so the next reader sees why the distinction is load-bearing.",
+          "gap": "cas::get matched Err(_) => Ok(None), cas::contains matched Err(_) => Ok(false), and load_session's SESSION_META and SESSION_EVENTS reads each matched Err(_) => SessionNotFound. Only redb's TableDoesNotExist is benign; TableTypeMismatch (a store written by another binary) and any future variant are faults. Because load_session consumes cas::get in a loop, the Ok(None) arm silently dropped events from a loaded session, so a broken store produced a plausible truncated session instead of an error. m9-71 recorded two sites and 'no behavior change today'; both were wrong."
+        },
+        "summary": "Closed, and larger than recorded: four read paths collapsed every open_table failure into a benign answer, and load_session's loop over cas::get turned the collapse into silent event loss. A single classifier (table_error) now owns the distinction: TableDoesNotExist means 'nothing stored yet', every other variant propagates as StoreError::Database."
+      }
+    ],
+    "legacy_findings_preserved_count": 1,
+    "findings_count": 0
+  },
   "schema": "verify-finding.schema.json",
   "subject": {
     "base_sha": "09e21107ca0707c0cd40d631eddcdb39cb3669ba",

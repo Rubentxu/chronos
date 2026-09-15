@@ -122,3 +122,7 @@ Both rows are recorded in `AGENTS.md` §6.5 so future cycles do not chase them a
 - **FIND-M9-72-COUNTEREXAMPLE-INLINE-TABLE-CLASSIFICATION** (low): unchanged.
 - **FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION** (low): unchanged; the affected set grew again this cycle.
 - **Sandbox warm-up ordering** and **5+19 not-merged branches**: unchanged.
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

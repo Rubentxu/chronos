@@ -1,29 +1,34 @@
 {
   "all_passed": true,
   "cycle_id": "m9-69",
-  "findings": [
-    {
-      "finding_id": "FIND-M9-69-BOUNDED-JOIN-UNTESTED",
-      "rule_id": "code.untested_timeout_branch",
-      "severity": "medium",
-      "subject": {
-        "fix": "Extracted the pattern into `pub(crate) fn bounded_join_with_timeout(handle: JoinHandle<()>, timeout: Duration) -> BoundedJoinResult` (variants Joined/Timeout/Panicked). stop_probe calls it with Duration::from_secs(10) and matches the three results onto the identical log lines it emitted before. Added `bounded_join_returns_joined_when_thread_exits_quickly` and `bounded_join_returns_timeout_when_thread_overruns`; the latter spawns a 10s sleeper, calls the helper with a 100ms budget, and asserts Timeout within 250ms. Both tests run in 0.10s total.",
-        "gap": "m9-62 introduced stop_probe's bounded join (spawn waiter + recv_timeout(10s)) to prevent a wedged probe thread from deadlocking the MCP response path. The timeout branch is the entire reason the guard exists, yet no test exercised it: with the timeout hardcoded at 10s, a test would have to wait 10s. m9-62's verify-report deferred the test; m9-67 and m9-68 repeated the deferral."
+  "findings": [],
+  "lens_summary": {
+    "drift": "m9-69 is a two-commit B-direct cycle that removes a testing blocker by parameterizing a timeout. Verification: T0 fmt+clippy clean; T1 chronos-native serial 101/101 (including the 2 new tests, 0.10s); T1 workspace serial 1003 passed / 1 failed, where the single failure is a pre-existing environment-coupled chronos-mcp store test reproduced on main. The cycle is self-contained: the only production change is that stop_probe calls an extracted helper with the same 10s budget and emits the same three log lines. No sandbox smoke required (no probe/mcp plumbing change). No new vault CC (local refactor + test; no new drift class).",
+    "legacy_findings_preserved": [
+      {
+        "finding_id": "FIND-M9-69-BOUNDED-JOIN-UNTESTED",
+        "rule_id": "code.untested_timeout_branch",
+        "severity": "medium",
+        "subject": {
+          "fix": "Extracted the pattern into `pub(crate) fn bounded_join_with_timeout(handle: JoinHandle<()>, timeout: Duration) -> BoundedJoinResult` (variants Joined/Timeout/Panicked). stop_probe calls it with Duration::from_secs(10) and matches the three results onto the identical log lines it emitted before. Added `bounded_join_returns_joined_when_thread_exits_quickly` and `bounded_join_returns_timeout_when_thread_overruns`; the latter spawns a 10s sleeper, calls the helper with a 100ms budget, and asserts Timeout within 250ms. Both tests run in 0.10s total.",
+          "gap": "m9-62 introduced stop_probe's bounded join (spawn waiter + recv_timeout(10s)) to prevent a wedged probe thread from deadlocking the MCP response path. The timeout branch is the entire reason the guard exists, yet no test exercised it: with the timeout hardcoded at 10s, a test would have to wait 10s. m9-62's verify-report deferred the test; m9-67 and m9-68 repeated the deferral."
+        },
+        "summary": "The HIGH-5 bounded-join timeout branch in stop_probe had no unit test because the 10s timeout was hardcoded, making the branch cost 10s to exercise. Extracted the pattern into a parameterized pub(crate) helper and added two sub-second tests that prove both the join and timeout paths."
       },
-      "summary": "The HIGH-5 bounded-join timeout branch in stop_probe had no unit test because the 10s timeout was hardcoded, making the branch cost 10s to exercise. Extracted the pattern into a parameterized pub(crate) helper and added two sub-second tests that prove both the join and timeout paths."
-    },
-    {
-      "finding_id": "FIND-M9-69-MCP-STORE-ISOLATION",
-      "rule_id": "test.store_env_coupling",
-      "severity": "medium",
-      "subject": {
-        "fix": "Deferred to a follow-up cycle (both fixes have behavior implications and exceed the B-direct scope of m9-69). Evidence captured: pre-existing reproduction on main; isolation proof via `CHRONOS_DB_PATH=/tmp/t.redb cargo test -p chronos-mcp --lib test_list_sessions_after_save` \u2192 1 passed. Recommended fix: give the server tests an isolated temp store, and make list_sessions resilient to (or version-tagged against) stale records.",
-        "gap": "Two distinct defects discovered while running the workspace T1 gate: (a) chronos-mcp server tests construct ChronosServer::new(), which opens $HOME/.local/share/chronos/sessions.redb instead of an isolated store \u2014 so tests write to and depend on the developer's real DB (the file was modified by the test run itself); (b) SessionStore::list_sessions bincode-deserializes every SessionMetadata and returns StoreError::Serialization on the first stale record, which SessionsService::list_sessions propagates as ListFailed because only 'does not exist' is tolerated. Net effect: a populated store makes the test fail even though the test's own save calls succeed."
-      },
-      "summary": "chronos-mcp's test_list_sessions_after_save fails deterministically on any machine whose $HOME store is populated. The test uses ChronosServer::new(), which opens the real user store; list_sessions bincode-deserializes every record and hard-fails on a stale-schema record. Pre-existing (reproduces on main at 5b6c337), not caused by m9-69. Tracked as a follow-up cycle."
-    }
-  ],
-  "lens_summary": "m9-69 is a two-commit B-direct cycle that removes a testing blocker by parameterizing a timeout. Verification: T0 fmt+clippy clean; T1 chronos-native serial 101/101 (including the 2 new tests, 0.10s); T1 workspace serial 1003 passed / 1 failed, where the single failure is a pre-existing environment-coupled chronos-mcp store test reproduced on main. The cycle is self-contained: the only production change is that stop_probe calls an extracted helper with the same 10s budget and emits the same three log lines. No sandbox smoke required (no probe/mcp plumbing change). No new vault CC (local refactor + test; no new drift class).",
+      {
+        "finding_id": "FIND-M9-69-MCP-STORE-ISOLATION",
+        "rule_id": "test.store_env_coupling",
+        "severity": "medium",
+        "subject": {
+          "fix": "Deferred to a follow-up cycle (both fixes have behavior implications and exceed the B-direct scope of m9-69). Evidence captured: pre-existing reproduction on main; isolation proof via `CHRONOS_DB_PATH=/tmp/t.redb cargo test -p chronos-mcp --lib test_list_sessions_after_save` → 1 passed. Recommended fix: give the server tests an isolated temp store, and make list_sessions resilient to (or version-tagged against) stale records.",
+          "gap": "Two distinct defects discovered while running the workspace T1 gate: (a) chronos-mcp server tests construct ChronosServer::new(), which opens $HOME/.local/share/chronos/sessions.redb instead of an isolated store — so tests write to and depend on the developer's real DB (the file was modified by the test run itself); (b) SessionStore::list_sessions bincode-deserializes every SessionMetadata and returns StoreError::Serialization on the first stale record, which SessionsService::list_sessions propagates as ListFailed because only 'does not exist' is tolerated. Net effect: a populated store makes the test fail even though the test's own save calls succeed."
+        },
+        "summary": "chronos-mcp's test_list_sessions_after_save fails deterministically on any machine whose $HOME store is populated. The test uses ChronosServer::new(), which opens the real user store; list_sessions bincode-deserializes every record and hard-fails on a stale-schema record. Pre-existing (reproduces on main at 5b6c337), not caused by m9-69. Tracked as a follow-up cycle."
+      }
+    ],
+    "legacy_findings_preserved_count": 2,
+    "findings_count": 0
+  },
   "schema": "verify-finding.schema.json",
   "subject": {
     "base_sha": "5b6c337abe64217b7bd94b71f0ba2cbcc72df28c",

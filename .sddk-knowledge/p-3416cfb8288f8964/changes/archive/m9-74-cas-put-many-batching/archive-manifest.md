@@ -122,8 +122,8 @@ Three commits:
 | source (mcp server, tool wire shapes) | `crates/chronos-mcp/src/server.rs` | `5e49aa0cc862c3f8faff1c45fb925efe84b6063235f8f391be02d3f443cedc67` |
 | docs (agents manual) | `AGENTS.md` | `83d09aa421c0c0c06a8dc28d4a5ba27dbb66772f7a1310103f3c133969fe8924` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/apply-checkpoint.json` | `dab499eb017af26c3bf2a2a696d7c2b3dfdb47502f58429e00ace325181610d9` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/verify-report.md` | `06e94982bb2c35c8e592760689758136fdd37b8d7f25b737ceb51d36ffceb6c0` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/verify-findings.json` | `55ad44ff587d9c177a73fc179f38245e21803f2fdfca6f720eec95e80349d77b` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/verify-report.md` | `2e2037009420c18c53cbcd718d6dd66941b394edb661e6ac5fa0d05257fbdcbf` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/verify-findings.json` | `ab23e7466a09bb1a876496e94bb09200d16da722bbc21caeec9914ce9551b3b5` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/release-report.md` | `a361dc9312a12739c154e841dc3c4cb93eaeeda1054b1dff0cfc6c52b4aaee9a` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/release-receipt.md` | `5de5a22a246d5cb8bb8f8b47260d09b767fd7250f38dcd6362432c36f4c55a53` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/merge-receipt.md` | `54c887e312366589c08ac19109959ff6d88367b553ab0c6a78535615c762ac76` |

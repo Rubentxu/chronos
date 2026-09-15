@@ -27,3 +27,7 @@ changes; tier = vault-only.
 | `.sddk-knowledge/.../terms/index.md` | m9-02-R4 moved active -> terminated (refs m9-91) |
 | `.sddk-knowledge/.../changes/m9-98-m902r4-ledger-closure/` | change-entry.md added |
 | `cycle-artifacts/.../m9-98-m902r4-ledger-closure/` | cycle artifacts (checkpoint, receipts, verify) |
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

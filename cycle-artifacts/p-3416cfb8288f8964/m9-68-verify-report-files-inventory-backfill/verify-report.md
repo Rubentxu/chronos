@@ -76,3 +76,7 @@ m9-68 closes the deferred follow-up tracked in m9-65's, m9-66's, and m9-67's rel
 3. Adds a 5th smoke test that validates CC#55 end-to-end.
 
 The backfill is reproducible from git history (each section is generated from `git diff --numstat base_sha..head_sha`), so reviewers can audit any row against the actual commit.
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

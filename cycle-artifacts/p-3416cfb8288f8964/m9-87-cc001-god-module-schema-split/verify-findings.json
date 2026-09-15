@@ -1,64 +1,84 @@
-# Verify Findings — m9-87-cc001-god-module-schema-split
-
-```json
 {
-  "findings": [
-    {
-      "id": "FIND-M9-87-SCHEMA-EXTRACT",
-      "title": "ce_schema submodule extracted from counterexample_storage.rs (cc-001 god-module fourth slice)",
-      "severity": "info",
-      "status": "closed",
-      "evidence": [
-        "crates/chronos-store/src/ce_schema.rs (new, 240 lines): 2 TableDefinition consts, 4 collect helpers, BUNDLE_EVENTS_CHUNK_SIZE, CURRENT_BUNDLE_SCHEMA_VERSION, KNOWN_BUNDLE_SCHEMA_VERSIONS, compile-time invariant block",
-        "crates/chronos-store/src/counterexample_storage.rs (2077 -> 1954 lines, -123)",
-        "Parent re-exports all 9 items via `pub use ce_schema::{...}` for sibling submodule access and external callers"
-      ]
-    },
-    {
-      "id": "FIND-M9-87-PRIVATE-TO-PUB-PROMOTION",
-      "title": "pub(super) does not satisfy pub use re-export; private items must be promoted to pub",
-      "severity": "info",
-      "status": "closed",
-      "evidence": [
-        "E0364 error: `pub use ce_schema::{...}` of `pub(super)` items fails because pub(super) items are not visible at the parent's pub use re-export site.",
-        "Fix: promote `collect_bundle_chunks`, `collect_bundle_chunks_legacy`, `collect_v3_keys_for_bundle`, `COUNTEREXAMPLE_BUNDLES`, `COUNTEREXAMPLE_BUNDLE_EVENTS`, `KNOWN_BUNDLE_SCHEMA_VERSIONS` to `pub` in ce_schema.rs.",
-        "This matches the pattern used in m9-84 (ce_chunk_keys.rs) and m9-86 (ce_types.rs): all submodule items are pub, parent re-exports via pub use."
-      ]
-    },
-    {
-      "id": "FIND-M9-87-CFG-TEST-UNUSED-IMPORTS",
-      "title": "cfg(test) allow(unused_imports) used for test-only re-exports of removed code",
-      "severity": "info",
-      "status": "closed",
-      "evidence": [
-        "counterexample_storage.rs test code uses `bundle_prefix`, `decode_chunk_key`, `decode_chunk_value` directly (m9-04 layout tests).",
-        "These items became unused in production after the schema section was moved to ce_schema.rs.",
-        "Wrapped the parent's pub(super) use of these 3 items in `#[cfg(test)] #[allow(unused_imports)]` to silence the warning while preserving test reachability."
-      ]
-    },
-    {
-      "id": "FIND-M9-87-CRATE-ROOT-PATH-NOT-VISIBLE",
-      "title": "crate::ce_chunk_keys is not a valid path from sibling submodules",
-      "severity": "info",
-      "status": "closed",
-      "evidence": [
-        "ce_schema.rs tried `use crate::ce_chunk_keys::{...}` — fails because ce_chunk_keys is a child of counterexample_storage, not crate root.",
-        "Fix: change to `use crate::counterexample_storage::ce_chunk_keys::{...}`."
-      ]
-    },
-    {
-      "id": "FIND-M9-87-CC001-DECOMPOSITION-PROGRESS",
-      "title": "cc-001 god-module decomposition: counterexample_storage.rs 2720 -> 1954 lines across m9-84/m9-85/m9-86/m9-87",
-      "severity": "info",
-      "status": "closed",
-      "evidence": [
-        "m9-84 baseline: 2821 lines (after ce_chunk_keys split: 2720 lines, -101)",
-        "m9-85: 2720 -> 2287 lines (-433, impl block extracted to ce_write/ce_read/ce_test_hooks)",
-        "m9-86: 2287 -> 2077 lines (-210, types extracted to ce_types)",
-        "m9-87: 2077 -> 1954 lines (-123, schema extracted to ce_schema)",
-        "Total: -766 lines (-28%) across 4 cycles. Remaining ~1954 lines is mostly impl blocks across the 3 method submodules + free helpers + integration tests."
-      ]
-    }
-  ]
+  "subject": {
+    "head_sha": "e222d854d97e4adae5f8b20410644609c191e545",
+    "base_sha": "8df5c57b93bef0ff612a20bad1301b2c5875fb5a",
+    "cycle_id": "m9-87-cc001-god-module-schema-split",
+    "branch": "feat/m9-87-cc001-god-module-schema-split",
+    "route": "A-min"
+  },
+  "cycle_id": "m9-87-cc001-god-module-schema-split",
+  "verdict": "passed",
+  "all_passed": true,
+  "lens_summary": {
+    "drift": "5 legacy findings migrated by m10-m9-legacy-schema-migration",
+    "findings_count": 5,
+    "tiers_run": [
+      "T0",
+      "T1",
+      "T2",
+      "T3",
+      "T4_serial_chronos_native"
+    ],
+    "source_schema": "m10-legacy-migration-2026-09-15",
+    "legacy_findings_preserved": [
+      {
+        "id": "FIND-M9-87-SCHEMA-EXTRACT",
+        "title": "ce_schema submodule extracted from counterexample_storage.rs (cc-001 god-module fourth slice)",
+        "severity": "info",
+        "status": "closed",
+        "evidence": [
+          "crates/chronos-store/src/ce_schema.rs (new, 240 lines): 2 TableDefinition consts, 4 collect helpers, BUNDLE_EVENTS_CHUNK_SIZE, CURRENT_BUNDLE_SCHEMA_VERSION, KNOWN_BUNDLE_SCHEMA_VERSIONS, compile-time invariant block",
+          "crates/chronos-store/src/counterexample_storage.rs (2077 -> 1954 lines, -123)",
+          "Parent re-exports all 9 items via `pub use ce_schema::{...}` for sibling submodule access and external callers"
+        ]
+      },
+      {
+        "id": "FIND-M9-87-PRIVATE-TO-PUB-PROMOTION",
+        "title": "pub(super) does not satisfy pub use re-export; private items must be promoted to pub",
+        "severity": "info",
+        "status": "closed",
+        "evidence": [
+          "E0364 error: `pub use ce_schema::{...}` of `pub(super)` items fails because pub(super) items are not visible at the parent's pub use re-export site.",
+          "Fix: promote `collect_bundle_chunks`, `collect_bundle_chunks_legacy`, `collect_v3_keys_for_bundle`, `COUNTEREXAMPLE_BUNDLES`, `COUNTEREXAMPLE_BUNDLE_EVENTS`, `KNOWN_BUNDLE_SCHEMA_VERSIONS` to `pub` in ce_schema.rs.",
+          "This matches the pattern used in m9-84 (ce_chunk_keys.rs) and m9-86 (ce_types.rs): all submodule items are pub, parent re-exports via pub use."
+        ]
+      },
+      {
+        "id": "FIND-M9-87-CFG-TEST-UNUSED-IMPORTS",
+        "title": "cfg(test) allow(unused_imports) used for test-only re-exports of removed code",
+        "severity": "info",
+        "status": "closed",
+        "evidence": [
+          "counterexample_storage.rs test code uses `bundle_prefix`, `decode_chunk_key`, `decode_chunk_value` directly (m9-04 layout tests).",
+          "These items became unused in production after the schema section was moved to ce_schema.rs.",
+          "Wrapped the parent's pub(super) use of these 3 items in `#[cfg(test)] #[allow(unused_imports)]` to silence the warning while preserving test reachability."
+        ]
+      },
+      {
+        "id": "FIND-M9-87-CRATE-ROOT-PATH-NOT-VISIBLE",
+        "title": "crate::ce_chunk_keys is not a valid path from sibling submodules",
+        "severity": "info",
+        "status": "closed",
+        "evidence": [
+          "ce_schema.rs tried `use crate::ce_chunk_keys::{...}` — fails because ce_chunk_keys is a child of counterexample_storage, not crate root.",
+          "Fix: change to `use crate::counterexample_storage::ce_chunk_keys::{...}`."
+        ]
+      },
+      {
+        "id": "FIND-M9-87-CC001-DECOMPOSITION-PROGRESS",
+        "title": "cc-001 god-module decomposition: counterexample_storage.rs 2720 -> 1954 lines across m9-84/m9-85/m9-86/m9-87",
+        "severity": "info",
+        "status": "closed",
+        "evidence": [
+          "m9-84 baseline: 2821 lines (after ce_chunk_keys split: 2720 lines, -101)",
+          "m9-85: 2720 -> 2287 lines (-433, impl block extracted to ce_write/ce_read/ce_test_hooks)",
+          "m9-86: 2287 -> 2077 lines (-210, types extracted to ce_types)",
+          "m9-87: 2077 -> 1954 lines (-123, schema extracted to ce_schema)",
+          "Total: -766 lines (-28%) across 4 cycles. Remaining ~1954 lines is mostly impl blocks across the 3 method submodules + free helpers + integration tests."
+        ]
+      }
+    ],
+    "legacy_findings_preserved_count": 5
+  },
+  "findings": []
 }
-```

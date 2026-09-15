@@ -83,3 +83,7 @@ The pattern — "fix a broken CC, then have to fix what it would have caught" �
 ## History
 
 m9-66 was prompted by a session-end drift sweep that detected CC#5's off-by-16 silent failure (Total cycles said 65 but the regex counted 81). Investigating CC#5's broken regex revealed CC#4 was also broken (silently never fired) — opening the door to 54 stale SHAs that had been accumulating since m9-11 introduced the archive-manifest table format. Adding CC#54 closes the meta-check gap so future broken-CCs don't go unnoticed for cycles at a time.
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

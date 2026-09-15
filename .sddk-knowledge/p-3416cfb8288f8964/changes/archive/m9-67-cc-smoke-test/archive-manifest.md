@@ -59,8 +59,8 @@ Two commits:
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-67-cc-smoke-test/archive-manifest.md` | `b8124c7a507c646bc187a9e97be2a8627d86066acd5ef105c66580adff4fcc0e` |
 | smoke-test script | `scripts/smoke_test_ccs.sh` | `86def49d7e23b4e521687ddcb53a384aac18ec3f91f0e2845396f90d7ac3e7d3` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/apply-checkpoint.json` | `5183cda98f62148ba51000724af3a77e969ac2a7e6057190ebee5085a2427e5e` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/verify-report.md` | `537755570d4da038a3eab6720f869c2ef450dba131614df9f7ecb49bb3210106` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/verify-findings.json` | `7b371feec14c97e28c64b370b21e5f2d862972e871d6f456ffec56b11efc0b0f` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/verify-report.md` | `16eb45c3e38360f49fe9e4282be1d22ee646fa2cf37b622445c1f6ee147b9499` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/verify-findings.json` | `d85b7e67540743cb96b0f4591ec040b47df8a9d60336ddd82e7663148596aa94` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/release-report.md` | `8203ae55fb7bc54fb62a1b9fdbd43c51fa380ef90fdbb5849ca1e2c6897161a6` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/release-receipt.md` | `0c16606f3a01a618fa2c325555caa59cb0d206e6a4721f2e92cdf134ba95feb1` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-67-cc-smoke-test/merge-receipt.md` | `be5691f0a1dc003d9c13573574f8de8ca8de59b82da81c0cb68588c9be82e7f0` |

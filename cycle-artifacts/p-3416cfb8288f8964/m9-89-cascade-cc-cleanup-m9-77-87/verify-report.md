@@ -105,13 +105,7 @@ DRIFT: CC#43 reported 5 drift lines
 
 ## Findings (CC#38 / CC#41)
 
-See `verify-findings.json` for full structured findings:
-
-- **FIND-M9-89-CASCADE-DRIFT-CLOSED** (info): all 12 cascading CC drift lines closed.
-- **FIND-M9-89-FIND-M9-81-DEFERRED** (info): FIND-M9-81 sddk CLI bug remains external-deferred.
-- **FIND-M9-89-STALE-BRANCHES-DEFERRED** (low): CC#46/CC#53 stale branches from m9-67..m9-78 deferred to FIND-M9-71 hardening cycle.
-- **FIND-M9-89-VAULT-ONLY** (info): zero Rust source code changes; T0 clean.
-- **FIND-M9-89-FIX-TOOL-REUSABLE** (info): scripts/audit + scripts/fix are reusable for future vault-drift hardening.
+None — clean state. (m10-legacy-migration)
 
 ## Cross-checks (CC#24 / CC#31 / CC#32 / CC#33)
 

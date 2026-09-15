@@ -47,3 +47,7 @@ m9-63 was a planned follow-up to m9-61, recorded in the m9-61 handoff:
 > "**CC enforcement**: add a static check that `ProbeBackend::stop_probe` callers do not invoke `drain_raw_events` before `stop_probe` returns."
 
 m9-63 closes that follow-up by adding CC#52. The race itself remains closed (m9-61 + m9-62). CC#52 is forward-looking defense: any future refactor or new consumer is caught at drift-sweep time.
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

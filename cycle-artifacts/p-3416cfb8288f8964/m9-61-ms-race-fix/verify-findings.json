@@ -1,19 +1,24 @@
 {
   "all_passed": true,
   "cycle_id": "m9-61",
-  "findings": [
-    {
-      "finding_id": "FIND-MS-RACE-FIX-DRAIN-STOP",
-      "rule_id": "chronos.lifecycle.stop_drain_ordering",
-      "severity": "high",
-      "subject": {
-        "manifestation": "Captured event count < emitted event count on session stop",
-        "race_window": "drain_raw_events() returns before probe thread sees running=false and exits"
-      },
-      "summary": "Drain invoked while probe thread still emitting events; emitted events lost in race window"
-    }
-  ],
-  "lens_summary": "m9-61 closes the drain/stop race by making stop_probe blocking and reordering service-layer calls to stop-then-drain. Single commit; pure refactor + trait doc update; no API signature change.",
+  "findings": [],
+  "lens_summary": {
+    "drift": "m9-61 closes the drain/stop race by making stop_probe blocking and reordering service-layer calls to stop-then-drain. Single commit; pure refactor + trait doc update; no API signature change.",
+    "legacy_findings_preserved": [
+      {
+        "finding_id": "FIND-MS-RACE-FIX-DRAIN-STOP",
+        "rule_id": "chronos.lifecycle.stop_drain_ordering",
+        "severity": "high",
+        "subject": {
+          "manifestation": "Captured event count < emitted event count on session stop",
+          "race_window": "drain_raw_events() returns before probe thread sees running=false and exits"
+        },
+        "summary": "Drain invoked while probe thread still emitting events; emitted events lost in race window"
+      }
+    ],
+    "legacy_findings_preserved_count": 1,
+    "findings_count": 0
+  },
   "schema": "verify-finding.schema.json",
   "subject": {
     "base_sha": "97ce507d209eb1bb5d61a4d5b41c0f8bc068343a",

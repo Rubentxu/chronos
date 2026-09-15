@@ -61,8 +61,8 @@ m9-68 closes the drift class `verify-report-files-inventory-missing` by backfill
 | smoke-test script | `scripts/smoke_test_ccs.sh` | `86def49d7e23b4e521687ddcb53a384aac18ec3f91f0e2845396f90d7ac3e7d3` |
 | vault drift sweep spec | `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md` | `0c57c1dacf0f30bd9ac4adf201dcdf9d60ee43ae858dd50276189d140eadb302` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-68-verify-report-files-inventory-backfill/apply-checkpoint.json` | `50b5cf24fccd3fe82cfa0f3a72799ed4ab17cf9b43594ad735fefc628756a15c` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-68-verify-report-files-inventory-backfill/verify-report.md` | `6fb1fe061bb7f4702f13e6660a164efa4a1b3861774024c5ffb12dc375d5e650` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-68-verify-report-files-inventory-backfill/verify-findings.json` | `4dfb08f5705ec0d79e13ecdc46b3b3a4375a52207a5d5b2101ee8e905b8cb624` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-68-verify-report-files-inventory-backfill/verify-report.md` | `da6e697f9259666a5f37b6cc6b200acbe7b2d370ea77fd3b38d9339351876e53` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-68-verify-report-files-inventory-backfill/verify-findings.json` | `6e4caaee1351e60925adac90810ce5892aa3220d707612dcf06c0474fa4669c3` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-68-verify-report-files-inventory-backfill/release-report.md` | `57680506eb646f9dce79d28c887233d481932371f606c7a36d77575987a0d2bd` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-68-verify-report-files-inventory-backfill/release-receipt.md` | `bfd0bba3ba5d73f1b2631c06eeed6fa4d555b358ef1b5d5a0e15d8eda79221d1` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-68-verify-report-files-inventory-backfill/merge-receipt.md` | `c2641aa0e0c58c2b91f4d13b4a30839e4d0c938d053ef1dab4afdd03aa843499` |

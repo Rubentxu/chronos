@@ -1,68 +1,91 @@
 {
-  "findings": [
-    {
-      "id": "FIND-M9-88-M9-66-JSON-ESCAPE",
-      "title": "m9-66 apply-checkpoint.json line 35 had invalid JSON escape (raw \\| on the wire)",
-      "severity": "info",
-      "status": "closed",
-      "evidence": [
-        "Original line 35 had a raw '\\|' (bytes 0x5C 0x7C) which is not a valid JSON escape.",
-        "Promoted to '\\\\|' (bytes 0x5C 0x5C 0x7C) — valid escape representing the regex characters '^\\|'.",
-        "json.load() now succeeds on m9-66 apply-checkpoint."
-      ]
-    },
-    {
-      "id": "FIND-M9-88-M9-67-OFF-BY-ONE",
-      "title": "m9-67 base_sha off-by-one character (67b3d76bb vs 67b3d76a80)",
-      "severity": "info",
-      "status": "closed",
-      "evidence": [
-        "Original: 67b3d76bb6e90accefb15cb1f3f55f1b4a52b4dc (does not exist in git).",
-        "Real parent of head 5c83df9: 67b3d76a80ec8e766a0689fba810fc499b5cd4a4.",
-        "Cascade-updated 5 files (apply-checkpoint, merge-receipt, release-receipt, verify-findings, verify-report)."
-      ]
-    },
-    {
-      "id": "FIND-M9-88-M9-85-NON-EXISTENT-BASE",
-      "title": "m9-85 base_sha pointed at non-existent commit",
-      "severity": "info",
-      "status": "closed",
-      "evidence": [
-        "Original: 2c2a5cc8f8370eb64dca7fb4ddc47a6f3e8b15a7 (does not exist).",
-        "Real parent of head a850346: 72e120c2e2bb9774c459ef516dcf3e7b21ef90c3.",
-        "Cascade-updated 4 files."
-      ]
-    },
-    {
-      "id": "FIND-M9-88-M9-79-PEEL-MATCH",
-      "title": "m9-79 peel_match was None despite head==peel",
-      "severity": "info",
-      "status": "closed",
-      "evidence": [
-        "head_sha and remote_tag_peel both equal f41abd45...",
-        "Set peel_match=true."
-      ]
-    },
-    {
-      "id": "FIND-M9-88-CASCADE-DRIFT-SURFACED",
-      "title": "Fixing m9-66 JSON unblocks downstream CCs exposing pre-existing drift",
-      "severity": "info",
-      "status": "open",
-      "evidence": [
-        "After m9-88 fix, CC#3, CC#7, CC#8, CC#11, CC#12, CC#14, CC#15, CC#18, CC#22, CC#23, CC#29, CC#39, CC#40, CC#43 report pre-existing drift that was masked by the m9-66 JSON abort.",
-        "Total ~150 drift lines across these CCs.",
-        "Out of scope for m9-88 (CC#55 only). Recommend follow-up hardening cycle (m9-89+)."
-      ]
-    },
-    {
-      "id": "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK",
-      "title": "sddk CLI evaluate-gate fails with duplicate_event_id (deferred-external)",
-      "severity": "info",
-      "status": "deferred-external",
-      "evidence": [
-        "External sddk CLI binary bug, not chronos source.",
-        "Workaround: manual vault-tracked workflow."
-      ]
-    }
-  ]
+  "subject": {
+    "head_sha": "851dba634c32aa23d05b8a108e4c3e02e71fcb10",
+    "base_sha": "0dba57ddf8391acbee5adbd2fb6c6ab30fc179bc",
+    "cycle_id": "m9-88-cc55-drift-remediation",
+    "branch": "feat/m9-88-cc55-drift-remediation",
+    "route": "B-direct"
+  },
+  "cycle_id": "m9-88-cc55-drift-remediation",
+  "verdict": "passed",
+  "all_passed": true,
+  "lens_summary": {
+    "drift": "6 legacy findings migrated by m10-m9-legacy-schema-migration",
+    "findings_count": 6,
+    "tiers_run": [
+      "T0",
+      "T1",
+      "T2",
+      "T3"
+    ],
+    "source_schema": "m10-legacy-migration-2026-09-15",
+    "legacy_findings_preserved": [
+      {
+        "id": "FIND-M9-88-M9-66-JSON-ESCAPE",
+        "title": "m9-66 apply-checkpoint.json line 35 had invalid JSON escape (raw \\| on the wire)",
+        "severity": "info",
+        "status": "closed",
+        "evidence": [
+          "Original line 35 had a raw '\\|' (bytes 0x5C 0x7C) which is not a valid JSON escape.",
+          "Promoted to '\\\\|' (bytes 0x5C 0x5C 0x7C) — valid escape representing the regex characters '^\\|'.",
+          "json.load() now succeeds on m9-66 apply-checkpoint."
+        ]
+      },
+      {
+        "id": "FIND-M9-88-M9-67-OFF-BY-ONE",
+        "title": "m9-67 base_sha off-by-one character (67b3d76bb vs 67b3d76a80)",
+        "severity": "info",
+        "status": "closed",
+        "evidence": [
+          "Original: 67b3d76bb6e90accefb15cb1f3f55f1b4a52b4dc (does not exist in git).",
+          "Real parent of head 5c83df9: 67b3d76a80ec8e766a0689fba810fc499b5cd4a4.",
+          "Cascade-updated 5 files (apply-checkpoint, merge-receipt, release-receipt, verify-findings, verify-report)."
+        ]
+      },
+      {
+        "id": "FIND-M9-88-M9-85-NON-EXISTENT-BASE",
+        "title": "m9-85 base_sha pointed at non-existent commit",
+        "severity": "info",
+        "status": "closed",
+        "evidence": [
+          "Original: 2c2a5cc8f8370eb64dca7fb4ddc47a6f3e8b15a7 (does not exist).",
+          "Real parent of head a850346: 72e120c2e2bb9774c459ef516dcf3e7b21ef90c3.",
+          "Cascade-updated 4 files."
+        ]
+      },
+      {
+        "id": "FIND-M9-88-M9-79-PEEL-MATCH",
+        "title": "m9-79 peel_match was None despite head==peel",
+        "severity": "info",
+        "status": "closed",
+        "evidence": [
+          "head_sha and remote_tag_peel both equal f41abd45...",
+          "Set peel_match=true."
+        ]
+      },
+      {
+        "id": "FIND-M9-88-CASCADE-DRIFT-SURFACED",
+        "title": "Fixing m9-66 JSON unblocks downstream CCs exposing pre-existing drift",
+        "severity": "info",
+        "status": "open",
+        "evidence": [
+          "After m9-88 fix, CC#3, CC#7, CC#8, CC#11, CC#12, CC#14, CC#15, CC#18, CC#22, CC#23, CC#29, CC#39, CC#40, CC#43 report pre-existing drift that was masked by the m9-66 JSON abort.",
+          "Total ~150 drift lines across these CCs.",
+          "Out of scope for m9-88 (CC#55 only). Recommend follow-up hardening cycle (m9-89+)."
+        ]
+      },
+      {
+        "id": "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK",
+        "title": "sddk CLI evaluate-gate fails with duplicate_event_id (deferred-external)",
+        "severity": "info",
+        "status": "deferred-external",
+        "evidence": [
+          "External sddk CLI binary bug, not chronos source.",
+          "Workaround: manual vault-tracked workflow."
+        ]
+      }
+    ],
+    "legacy_findings_preserved_count": 6
+  },
+  "findings": []
 }

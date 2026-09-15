@@ -131,7 +131,7 @@ chronos-domain fixture. Branch `feat/ms-property-policy` from
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-79-attach-capability-type/archive-manifest.md` | `8ab56f6c363795e1187546388665e34eef17cfaeec814f3e15d21e945c6d2c48` |
 | implementation-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-79-attach-capability-type/implementation-receipt.md` | `a908ad3ded6fc9c1876aaf398416bf6bf2bdd48e85ba05b6541996a2057984ff` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-79-attach-capability-type/verify-report.md` | `f5e4193ba00d6124fc0c706b061b8460c6ddf6625fd9fbd3405b3d29dfb5fdc9` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-79-attach-capability-type/verify-report.md` | `f3dc81ca8ae0ddb978c2da1d7fc788a1e9b35ed7e8b1dc158fe0f573df2f9144` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-79-attach-capability-type/verify-findings.json` | `903af88120af21aaac8e98b87298719b43457ae7fd9a641e8c31edf9078eb6ee` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-79-attach-capability-type/release-receipt.md` | `d36c302ff497de56bb62d9e63e8cbe3fb174c63c4a2ea4ad6fdeff6e52fa6ec9` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-79-attach-capability-type/merge-receipt.md` | `8a8df2b6c0c0163d9d3a3089b351b9253448f6418642fc6fca03c478c8d7dc99` |

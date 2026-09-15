@@ -84,14 +84,8 @@ Sandbox tests not warranted: no MCP/probe plumbing touched, no session/lifecycle
 
 ## Findings Closed
 
-| ID | Cluster | Severity | Closed by |
-|---|---|---|---|
-| overeng-001-v3-chunk-decode-dup | overeng | MEDIUM | R1 |
-| overeng-002-v3-range-scan-verify-dup | overeng | LOW | R2 |
-| overeng-003-events-count-none-branch | overeng | LOW | R3 |
-| cc-003-wrong-direction-visibility | coupling | MEDIUM | R4 |
+None — clean state. (m10-legacy-migration)
 
-Verdict: **PASS** · 4/4 apply-target findings closed.
 ## Cross-checks
 
 Note: This cycle predates the cross-check annotation format introduced

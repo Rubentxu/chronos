@@ -1,19 +1,24 @@
 {
   "all_passed": true,
   "cycle_id": "m9-64",
-  "findings": [
-    {
-      "finding_id": "FIND-M9-64-NO-VAULT-CI",
-      "rule_id": "ci.vault_drift_sweep_automation",
-      "severity": "medium",
-      "subject": {
-        "fix": "CI workflow .github/workflows/vault-drift.yml executes scripts/check_vault_drift.sh on every push to main and every PR that touches vault files. The script runs CC#48 meta-check (which executes every other CC) and exits 1 on drift.",
-        "gap": "Vault files (.sddk-knowledge/.../vault-drift-sweep.md, cycles/index.md, change-entry.md, archive-manifest.md, cycle-artifacts/*) had no CI automation. Drift was only detected when an SDDK cycle ran a manual sweep."
-      },
-      "summary": "The 52 vault CCs only ran manually during SDDK cycles; a regression in vault files would not be caught until the next drift sweep"
-    }
-  ],
-  "lens_summary": "m9-64 closes the gap where vault CCs only ran manually. Single-commit B-direct: 1 workflow file + 1 shell script. No source code changes. Self-tested with synthetic m9-99 drift injection: script correctly returns exit 1 + DRIFT report.",
+  "findings": [],
+  "lens_summary": {
+    "drift": "m9-64 closes the gap where vault CCs only ran manually. Single-commit B-direct: 1 workflow file + 1 shell script. No source code changes. Self-tested with synthetic m9-99 drift injection: script correctly returns exit 1 + DRIFT report.",
+    "legacy_findings_preserved": [
+      {
+        "finding_id": "FIND-M9-64-NO-VAULT-CI",
+        "rule_id": "ci.vault_drift_sweep_automation",
+        "severity": "medium",
+        "subject": {
+          "fix": "CI workflow .github/workflows/vault-drift.yml executes scripts/check_vault_drift.sh on every push to main and every PR that touches vault files. The script runs CC#48 meta-check (which executes every other CC) and exits 1 on drift.",
+          "gap": "Vault files (.sddk-knowledge/.../vault-drift-sweep.md, cycles/index.md, change-entry.md, archive-manifest.md, cycle-artifacts/*) had no CI automation. Drift was only detected when an SDDK cycle ran a manual sweep."
+        },
+        "summary": "The 52 vault CCs only ran manually during SDDK cycles; a regression in vault files would not be caught until the next drift sweep"
+      }
+    ],
+    "legacy_findings_preserved_count": 1,
+    "findings_count": 0
+  },
   "schema": "verify-finding.schema.json",
   "subject": {
     "base_sha": "598c914b4427657c264949037787cbae191db533",

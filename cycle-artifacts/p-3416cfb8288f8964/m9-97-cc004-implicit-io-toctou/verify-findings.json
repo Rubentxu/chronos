@@ -1,40 +1,31 @@
 {
-  "all_passed": true,
-  "checks": {
-    "net_rust_diff": {
-      "command": "git diff --stat 5600873d..HEAD",
-      "result": "empty",
-      "status": "passed"
-    },
-    "t0": {
-      "command": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings",
-      "status": "passed"
-    },
-    "t1": {
-      "command": "cargo test --workspace --lib -- --test-threads=1",
-      "status": "passed"
-    },
-    "writer_serialization": {
-      "evidence": "redb 2.6.3 transaction_tracker.rs:117-128 waits while live_write_transaction is set",
-      "status": "passed"
-    }
-  },
-  "cycle_id": "m9-97-cc004-implicit-io-toctou",
-  "findings": [
-    {
-      "id": "cc-004-implicit-io-toctou",
-      "status": "falsified",
-      "summary": "The alleged read-to-write race cannot occur because redb serializes writers before the separate read transaction is opened."
-    }
-  ],
   "subject": {
-    "base_sha": "5600873d05e0ab79f17eed6eec63df96ddd97c88",
-    "branch": "chore/m9-97-cc004-implicit-io-toctou",
-    "cycle_id": "m9-97-cc004-implicit-io-toctou",
     "head_sha": "ddf059193287447dd866ea8818aafcceac660f70",
+    "base_sha": "5600873d05e0ab79f17eed6eec63df96ddd97c88",
+    "cycle_id": "m9-97-cc004-implicit-io-toctou",
+    "branch": "chore/m9-97-cc004-implicit-io-toctou",
     "route": "A-min"
   },
-  "summary": "passed",
-  "tier": "T0+T1+vault",
-  "verdict": "pass"
+  "cycle_id": "m9-97-cc004-implicit-io-toctou",
+  "verdict": "passed",
+  "all_passed": true,
+  "lens_summary": {
+    "drift": "1 legacy findings migrated by m10-m9-legacy-schema-migration",
+    "findings_count": 1,
+    "tiers_run": [
+      "T0",
+      "T1",
+      "vault"
+    ],
+    "source_schema": "m10-legacy-migration-2026-09-15",
+    "legacy_findings_preserved": [
+      {
+        "id": "cc-004-implicit-io-toctou",
+        "status": "falsified",
+        "summary": "The alleged read-to-write race cannot occur because redb serializes writers before the separate read transaction is opened."
+      }
+    ],
+    "legacy_findings_preserved_count": 1
+  },
+  "findings": []
 }

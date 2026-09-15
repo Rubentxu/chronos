@@ -56,14 +56,7 @@ m9-92 (just closed): workspace lib tests 739; v0.7.94 released.
 
 ## Findings
 
-### Closed
-
-- **FIND-M9-91-TRACE-EVENT-NO-JSON-SCHEMA** (opened m9-91, closed m9-93).
-- **FIND-M9-93-TRACE-EVENT-SCHEMA** (closed): TraceEvent + EventData schemas are now introspectable; EventData exposes a oneOf with all 14 variants.
-
-### Carry-forward
-
-- **FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK** (carried from m9-88): external `sddk` CLI bug; cannot be fixed in chronos scope.
+None — clean state. (m10-legacy-migration)
 
 ## Files Inventory
 

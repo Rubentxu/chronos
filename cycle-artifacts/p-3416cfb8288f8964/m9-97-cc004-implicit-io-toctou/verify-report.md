@@ -47,3 +47,7 @@ pinned redb transaction model.
 - `cargo clippy --workspace --all-targets -- -D warnings`: passed.
 - `cargo test --workspace --lib -- --test-threads=1`: passed.
 - redb 2.6.3 writer serialization evidence verified.
+
+## Findings
+
+None — clean state. (m10-legacy-migration)

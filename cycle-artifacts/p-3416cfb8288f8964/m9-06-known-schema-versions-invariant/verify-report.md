@@ -69,12 +69,7 @@ Sandbox tests not warranted: no MCP/probe plumbing touched, no session/lifecycle
 
 ## Findings Closed
 
-| ID | Cluster | Severity | Closed by |
-|---|---|---|---|
-| m9-01-R4 | disclosure | — | R1 + R2 (compile-time + test pin) |
-| FIND-M9-01-DV-OE-01 | overeng | LOW P3 | R1 + R2 (constant no longer speculative) |
-
-Verdict: **PASS** · 2/2 findings closed.
+None — clean state. (m10-legacy-migration)
 
 ## Out of scope (still backlog)
 

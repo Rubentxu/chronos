@@ -100,8 +100,8 @@ Two commits:
 | script (cc smoke test) | `scripts/smoke_test_ccs.sh` | `86def49d7e23b4e521687ddcb53a384aac18ec3f91f0e2845396f90d7ac3e7d3` |
 | vault maintenance (drift sweep) | `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md` | `0c57c1dacf0f30bd9ac4adf201dcdf9d60ee43ae858dd50276189d140eadb302` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/apply-checkpoint.json` | `35408c5d6ab2a0a9250228401b91f4f0b484cd7874ccb3f8b538bac2b5587931` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/verify-report.md` | `d12ad15ceb8c5673312b86206d0d5eb46a45a3b4d8d4348763bded29ae95e633` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/verify-findings.json` | `8224c9bf7b3bbc4e5e5b55d2926861e773857b399e08f55375256cf7b39c6fc3` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/verify-report.md` | `2bf8eaaf02d38409f4a7259e506c7e3d421f67fcc3383f82e5f85a9113009f5f` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/verify-findings.json` | `2bd75fa34fbd5eada906ea91c664d7b8719ad3fa9de2d973fadfc4609c7e4c9b` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/release-report.md` | `f70cb66b2110e7dfb1d8642a6af63262b64879f54fa70a2d43b202369e53e79a` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/release-receipt.md` | `5872b2538d4b743dfa1c3b5c20894c340172d274b8a30fb657b463c5e311e3a1` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/merge-receipt.md` | `9f2ee96b248a5800c1cb96ed16a13dc2e44908d26d2dcf83b07c07644f382647` |

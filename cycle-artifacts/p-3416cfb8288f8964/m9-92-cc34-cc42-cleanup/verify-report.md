@@ -68,16 +68,7 @@ Expected: 0 drift lines (was 3 pre-cycle).
 
 ## Findings
 
-### Closed
-
-- **FIND-M9-92-CC34-CC42-CLOSED**: 3 pre-existing drift lines closed.
-- **FIND-M9-92-M9-90-REANCHORED**: m9-90 SHAs re-anchored to immutable v0.7.92 tag location.
-- **FIND-M9-92-NO-RUST-CHANGES**: vault-only B-direct cycle.
-
-### Carry-forward
-
-- **FIND-M9-91-TRACE-EVENT-NO-JSON-SCHEMA**: separate Rust cycle for adding `JsonSchema` to `chronos_domain::TraceEvent`. Not in m9-92 scope.
-- **FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK**: external `sddk` CLI bug; not actionable in chronos scope. Carried from m9-88.
+None — clean state. (m10-legacy-migration)
 
 ## Summary
 

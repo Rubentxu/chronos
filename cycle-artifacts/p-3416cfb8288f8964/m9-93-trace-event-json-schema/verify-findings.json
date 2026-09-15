@@ -1,133 +1,37 @@
 {
-  "all_passed": true,
-  "carry_forward": [
-    "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK (external-deferred, sddk CLI bug)"
-  ],
-  "checks": {
-    "T0_clippy": {
-      "command": "cargo clippy --workspace --all-targets -- -D warnings",
-      "status": "passed"
-    },
-    "T0_fmt": {
-      "command": "cargo fmt --all -- --check",
-      "status": "passed"
-    },
-    "T1_lib_unit": {
-      "command": "cargo test --workspace --lib -- --test-threads=1",
-      "new_tests": [
-        "chronos_domain::trace::event::tests::trace_event_implements_json_schema",
-        "chronos_domain::trace::event::tests::event_data_schema_is_oneof",
-        "chronos_services::output::counterexample_dto_tests::bundle_events_dto_schema_includes_returned_events"
-      ],
-      "per_crate": {
-        "chronos-capture": 26,
-        "chronos-domain": 151,
-        "chronos-index": 8,
-        "chronos-log": 48,
-        "chronos-mcp": 87,
-        "chronos-query": 77,
-        "chronos-services": 268,
-        "chronos-store": 77
-      },
-      "regressions": 0,
-      "status": "passed",
-      "total_passed": 742
-    },
-    "T4_smoke_counterexample_tools": {
-      "failed": 0,
-      "passed": 12,
-      "status": "passed"
-    },
-    "T4_smoke_e2e_connectivity": {
-      "failed": 0,
-      "passed": 1,
-      "status": "passed"
-    },
-    "cc22_release_receipt_sha_fields": {
-      "head_sha_match": true,
-      "remote_tag_peel_match": true,
-      "status": "passed"
-    },
-    "cc23_merge_receipt_sha_fields": {
-      "note": "Will be validated after merge --no-ff",
-      "status": "pending"
-    },
-    "cc39_total_cycles": {
-      "note": "Will be validated after cycles/index.md bump",
-      "status": "pending"
-    },
-    "cc3_era_awareness": {
-      "notes": "head_sha == remote_tag_peel == 60db8b58; era=docs-peel (cycle source = 'm9-93: cycle artifacts + knowledge files', not fix-peel); peel_match=true.",
-      "status": "passed"
-    },
-    "cc42_remote_tag_peel_match": {
-      "git_rev_parse_v0.7.95^{commit}": "60db8b58bdcf9bb55549dad1e43c9d381b45939c",
-      "match": true,
-      "release_receipt_peel": "60db8b58bdcf9bb55549dad1e43c9d381b45939c",
-      "status": "passed"
-    },
-    "cc43_release_receipt_head_sha": {
-      "apply_checkpoint_head": "60db8b58bdcf9bb55549dad1e43c9d381b45939c",
-      "match": true,
-      "release_receipt_head": "60db8b58bdcf9bb55549dad1e43c9d381b45939c",
-      "status": "passed"
-    },
-    "cc4_artifact_sha_consistency": {
-      "command": "python3 scripts/regen_manifest_index_shas.py --check",
-      "exit_code": 0,
-      "status": "passed"
-    },
-    "cc51_cycles_index_has_artifacts_dir": {
-      "cycle_artifacts_dir_exists": true,
-      "status": "passed"
-    },
-    "cc8_archive_manifest_head_sha": {
-      "note": "Will be validated after archive-manifest.md is written",
-      "status": "pending"
-    },
-    "vault_drift_sweep": {
-      "command": "bash scripts/check_vault_drift.sh",
-      "drift_lines": 0,
-      "note": "m9-93 is a Rust-only cycle; no vault CC drift introduced",
-      "status": "passed"
-    }
-  },
-  "cycle_id": "m9-93-trace-event-json-schema",
-  "findings": [
-    {
-      "id": "FIND-M9-91-TRACE-EVENT-NO-JSON-SCHEMA",
-      "status": "closed",
-      "summary": "12 chronos-domain types now derive JsonSchema; the m9-91 #[schemars(skip)] workaround on CounterexampleBundleEventsOutputDto.returned_events was removed. The event stream shape is now visible to MCP clients."
-    },
-    {
-      "id": "FIND-M9-93-TRACE-EVENT-SCHEMA",
-      "status": "closed",
-      "summary": "TraceEvent + EventData schemas are now introspectable. EventData exposes a oneOf with all 14 variants."
-    }
-  ],
-  "out_of_scope": [
-    "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK",
-    "cc-001-god-module-keys-split (deferred m10+)",
-    "cc-004-implicit-io-toctou (deferred m10+)"
-  ],
   "subject": {
-    "base_sha": "1b8164d209b521e341b6cbc433000d3a4f57aede",
-    "branch": "feat/m9-93-trace-event-json-schema",
-    "cycle_id": "m9-93-trace-event-json-schema",
-    "cycle_record": "p-3416cfb8288f8964/m9-93-trace-event-json-schema",
     "head_sha": "60db8b58bdcf9bb55549dad1e43c9d381b45939c",
-    "main_sha": "60db8b58bdcf9bb55549dad1e43c9d381b45939c",
-    "remote_tag": "v0.7.95",
-    "remote_tag_peel": "60db8b58bdcf9bb55549dad1e43c9d381b45939c",
+    "base_sha": "1b8164d209b521e341b6cbc433000d3a4f57aede",
+    "cycle_id": "m9-93-trace-event-json-schema",
+    "branch": "feat/m9-93-trace-event-json-schema",
     "route": "A-min"
   },
-  "summary": "passed",
-  "tier": "T2",
-  "tiers_run": [
-    "T0",
-    "T1",
-    "T2",
-    "T4-smoke"
-  ],
-  "verdict": "pass"
+  "cycle_id": "m9-93-trace-event-json-schema",
+  "verdict": "passed",
+  "all_passed": true,
+  "lens_summary": {
+    "drift": "2 legacy findings migrated by m10-m9-legacy-schema-migration",
+    "findings_count": 2,
+    "tiers_run": [
+      "T0",
+      "T1",
+      "T2",
+      "T4-smoke"
+    ],
+    "source_schema": "m10-legacy-migration-2026-09-15",
+    "legacy_findings_preserved": [
+      {
+        "id": "FIND-M9-91-TRACE-EVENT-NO-JSON-SCHEMA",
+        "status": "closed",
+        "summary": "12 chronos-domain types now derive JsonSchema; the m9-91 #[schemars(skip)] workaround on CounterexampleBundleEventsOutputDto.returned_events was removed. The event stream shape is now visible to MCP clients."
+      },
+      {
+        "id": "FIND-M9-93-TRACE-EVENT-SCHEMA",
+        "status": "closed",
+        "summary": "TraceEvent + EventData schemas are now introspectable. EventData exposes a oneOf with all 14 variants."
+      }
+    ],
+    "legacy_findings_preserved_count": 2
+  },
+  "findings": []
 }

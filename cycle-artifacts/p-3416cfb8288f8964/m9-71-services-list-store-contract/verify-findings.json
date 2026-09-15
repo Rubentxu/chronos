@@ -1,22 +1,7 @@
 {
   "all_passed": true,
   "cycle_id": "m9-71",
-  "findings": [
-    {
-      "evidence": {
-        "falsification": "Two-sided proof that the guard is real and the old test was vacuous. (a) With the workaround deleted (this cycle) and the store-side absent-table handling from m9-70 reverted: cargo test -p chronos-services --lib list_sessions_empty FAILS with ListFailed(\"Database error: Table 'sessions' does not exist\") at sessions.rs:465. (b) With the workaround present (pre-m9-71) and the same store revert: the identical test PASSES (1 passed; 0 failed) - i.e. before this cycle the test could not distinguish a correct store contract from a missing one.",
-        "post_fix": "cargo test -p chronos-services --lib => 263 passed; 0 failed. cargo test -p chronos-store --lib => 62 passed. cargo test -p chronos-mcp --tests => 77 lib + 49 integration passed. T4-smoke: e2e_connectivity 1 + session_persistence 4 = 5 passed, 0 failed."
-      },
-      "finding_id": "FIND-M9-70-SERVICES-TABLE-STRING-MATCH",
-      "rule_id": "code.error_text_matching",
-      "severity": "low",
-      "subject": {
-        "fix": "list_sessions propagates the store error through ? with ServiceError::ListFailed(e.to_string()); the doc comment now states that the empty-store case is the store's contract. list_sessions_empty documents why it is load-bearing and how it was falsified.",
-        "gap": "list_sessions matched err_str.contains(\"does not exist\") || err_str.contains(\"not exist\") and returned an empty ListResult on a hit. The match keys off a human-readable message rather than redb's typed TableError::TableDoesNotExist, and after m9-70 made chronos-store return Ok(vec![]) for a virgin database the branch became unreachable for the only case it existed to serve. It would also have swallowed a genuine store error whose text happened to contain 'not exist'."
-      },
-      "summary": "Closed. chronos-services::sessions::list_sessions no longer substring-matches the store's rendered error text to fake an empty listing: it propagates the error verbatim, and the store owns the 'no sessions yet' contract. The existing list_sessions_empty test goes from vacuous (passes with or without the store fix) to load-bearing, verified by reverting the store-side absent-table handling."
-    }
-  ],
+  "findings": [],
   "findings_introduced": {
     "deferred": [
       {
@@ -34,7 +19,27 @@
     ],
     "no_action": []
   },
-  "lens_summary": "m9-71 is a one-file, one-function B-direct cycle that finishes the story m9-70 started. m9-70 moved the 'a virgin sessions table means zero sessions' decision into chronos-store, which left the matching workaround in chronos-services unreachable dead code; this cycle deletes it and pins the contract where it now lives. The cycle's value is not a behavior change (there is none post-m9-70) but the conversion of a vacuous test into a real one: list_sessions_empty passed both with and without the store fix before, and now fails the moment the store regresses. That was demonstrated in both directions before the patch was committed, not asserted. Gates: T0 fmt + clippy -D warnings clean; T2 chronos-services 263, chronos-store 62, chronos-mcp 77 + 49; T4-smoke e2e_connectivity + session_persistence 5/5 (the change is observable through the session_list tool surface, so the smoke run is required even though the diff is a services-layer simplification); vault drift sweep PASS (47 python + 7 bash CCs); CC smoke 5/5. No new vault CC: this removes a workaround and adds no structural class.",
+  "lens_summary": {
+    "drift": "m9-71 is a one-file, one-function B-direct cycle that finishes the story m9-70 started. m9-70 moved the 'a virgin sessions table means zero sessions' decision into chronos-store, which left the matching workaround in chronos-services unreachable dead code; this cycle deletes it and pins the contract where it now lives. The cycle's value is not a behavior change (there is none post-m9-70) but the conversion of a vacuous test into a real one: list_sessions_empty passed both with and without the store fix before, and now fails the moment the store regresses. That was demonstrated in both directions before the patch was committed, not asserted. Gates: T0 fmt + clippy -D warnings clean; T2 chronos-services 263, chronos-store 62, chronos-mcp 77 + 49; T4-smoke e2e_connectivity + session_persistence 5/5 (the change is observable through the session_list tool surface, so the smoke run is required even though the diff is a services-layer simplification); vault drift sweep PASS (47 python + 7 bash CCs); CC smoke 5/5. No new vault CC: this removes a workaround and adds no structural class.",
+    "legacy_findings_preserved": [
+      {
+        "evidence": {
+          "falsification": "Two-sided proof that the guard is real and the old test was vacuous. (a) With the workaround deleted (this cycle) and the store-side absent-table handling from m9-70 reverted: cargo test -p chronos-services --lib list_sessions_empty FAILS with ListFailed(\"Database error: Table 'sessions' does not exist\") at sessions.rs:465. (b) With the workaround present (pre-m9-71) and the same store revert: the identical test PASSES (1 passed; 0 failed) - i.e. before this cycle the test could not distinguish a correct store contract from a missing one.",
+          "post_fix": "cargo test -p chronos-services --lib => 263 passed; 0 failed. cargo test -p chronos-store --lib => 62 passed. cargo test -p chronos-mcp --tests => 77 lib + 49 integration passed. T4-smoke: e2e_connectivity 1 + session_persistence 4 = 5 passed, 0 failed."
+        },
+        "finding_id": "FIND-M9-70-SERVICES-TABLE-STRING-MATCH",
+        "rule_id": "code.error_text_matching",
+        "severity": "low",
+        "subject": {
+          "fix": "list_sessions propagates the store error through ? with ServiceError::ListFailed(e.to_string()); the doc comment now states that the empty-store case is the store's contract. list_sessions_empty documents why it is load-bearing and how it was falsified.",
+          "gap": "list_sessions matched err_str.contains(\"does not exist\") || err_str.contains(\"not exist\") and returned an empty ListResult on a hit. The match keys off a human-readable message rather than redb's typed TableError::TableDoesNotExist, and after m9-70 made chronos-store return Ok(vec![]) for a virgin database the branch became unreachable for the only case it existed to serve. It would also have swallowed a genuine store error whose text happened to contain 'not exist'."
+        },
+        "summary": "Closed. chronos-services::sessions::list_sessions no longer substring-matches the store's rendered error text to fake an empty listing: it propagates the error verbatim, and the store owns the 'no sessions yet' contract. The existing list_sessions_empty test goes from vacuous (passes with or without the store fix) to load-bearing, verified by reverting the store-side absent-table handling."
+      }
+    ],
+    "legacy_findings_preserved_count": 1,
+    "findings_count": 0
+  },
   "schema": "verify-finding.schema.json",
   "subject": {
     "base_sha": "e9b6277170cb8059f5cd0340a3f66a5144558faf",

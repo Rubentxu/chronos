@@ -1,22 +1,27 @@
 {
   "all_passed": true,
   "cycle_id": "m9-60",
-  "findings": [
-    {
-      "finding_id": "FIND-M9-60-MISSING-CYCLE-ARTIFACTS",
-      "rule_id": "vault_hygiene.cycle_artifacts_existence",
-      "severity": "medium",
-      "subject": {
-        "files": [
-          "m9-56-release-report-duplicate-cross-checks",
-          "m9-57-apply-checkpoint-schema-backfill"
-        ],
-        "missing_count": 2
-      },
-      "summary": "2 B-direct cycles (m9-56, m9-57) in cycles/index.md missing cycle-artifacts/ folder"
-    }
-  ],
-  "lens_summary": "m9-60 closes the cycle-artifacts existence drift class. 2 cycles synthesized 6 artifacts each from their git commits and tag peels.",
+  "findings": [],
+  "lens_summary": {
+    "drift": "m9-60 closes the cycle-artifacts existence drift class. 2 cycles synthesized 6 artifacts each from their git commits and tag peels.",
+    "legacy_findings_preserved": [
+      {
+        "finding_id": "FIND-M9-60-MISSING-CYCLE-ARTIFACTS",
+        "rule_id": "vault_hygiene.cycle_artifacts_existence",
+        "severity": "medium",
+        "subject": {
+          "files": [
+            "m9-56-release-report-duplicate-cross-checks",
+            "m9-57-apply-checkpoint-schema-backfill"
+          ],
+          "missing_count": 2
+        },
+        "summary": "2 B-direct cycles (m9-56, m9-57) in cycles/index.md missing cycle-artifacts/ folder"
+      }
+    ],
+    "legacy_findings_preserved_count": 1,
+    "findings_count": 0
+  },
   "schema": "verify-finding.schema.json",
   "subject": {
     "base_sha": "a0995886ab25dfc6b11396fd7b521c489c64344c",

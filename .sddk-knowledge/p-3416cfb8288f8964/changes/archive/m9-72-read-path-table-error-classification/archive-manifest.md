@@ -101,8 +101,8 @@ Three commits:
 | source (store storage) | `crates/chronos-store/src/storage.rs` | `6c42c78f4ea8e5b73bb3d7ffd5a228396a12a1e6052c8fc6b8354c816469a113` |
 | docs (agents manual) | `AGENTS.md` | `83d09aa421c0c0c06a8dc28d4a5ba27dbb66772f7a1310103f3c133969fe8924` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-72-read-path-table-error-classification/apply-checkpoint.json` | `0475383cd18fbccf83e647f29bf17ddfaeefab66300c489c96147a761f8daa28` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-72-read-path-table-error-classification/verify-report.md` | `1c12aabb3d5d693b2c9a4f075d836d518f80b05ee2a8eb499d623b3f9d262f53` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-72-read-path-table-error-classification/verify-findings.json` | `e434d4c39953050bbc8da5ef427750129d6190d37449a4954df35ba56f6deec2` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-72-read-path-table-error-classification/verify-report.md` | `e2f4694b3b6105b75b1d72b1af71db43e12cf8ab4ba1349b41f889319eec637b` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-72-read-path-table-error-classification/verify-findings.json` | `4258d8ec331d27a0a2b062910908e2c0fe9e186d9019ea9b8dddea00c4fd226d` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-72-read-path-table-error-classification/release-report.md` | `bc34b242176d6fd041a4105eff75a7e51c0eea92ccf50983240942f4c535303f` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-72-read-path-table-error-classification/release-receipt.md` | `f00addd97fb963a2df18e88ae20fc5dec28f12361daf4a5db7e72de961a87d36` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-72-read-path-table-error-classification/merge-receipt.md` | `310fdbfa1108ecd039d0241eacef0804fab7d805ac50de984f8868d4a0f0531a` |

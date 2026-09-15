@@ -1,79 +1,94 @@
-# Verify Findings — m9-89-cascade-cc-cleanup-m9-77-87
-
-```json
 {
+  "subject": {
+    "head_sha": "47a10f8d7f44fa4ca16f8f8be902045463505784",
+    "base_sha": "a195367d64bd1caa56dedea82195259deb7b671b",
+    "cycle_id": "m9-89-cascade-cc-cleanup-m9-77-87",
+    "branch": "chore/m9-89-cascade-cc-cleanup-m9-77-87",
+    "route": "A-lite"
+  },
   "cycle_id": "m9-89-cascade-cc-cleanup-m9-77-87",
-  "findings": [
-    {
-      "id": "FIND-M9-89-CASCADE-DRIFT-CLOSED",
-      "title": "12 cascading CC drift lines closed across m9-77..m9-88 + m9-67 change-entry",
-      "severity": "info",
-      "status": "closed",
-      "evidence": [
-        "CC#3: peel_match backfilled on 9 cycles; head_sha aligned with peel in 6 docs-peel-era cycles (m9-77, m9-80, m9-81, m9-82, m9-87, m9-88)",
-        "CC#7: change-entry Base/Head SHA corrected on m9-67 (base 67b3d76 → 5c83df9) and m9-80 (head 8012342 → 7874e5c)",
-        "CC#8: archive-manifest Head SHA field added on m9-81, m9-82; backticked on m9-83..m9-87 for canonical format",
-        "CC#11: status=archived normalized to CLOSED on 11 cycles; archived_at backfilled; findings_introduced normalized to dict with no_action subfield",
-        "CC#12: main_sha corrected to equal head_sha on 4 cycles (m9-80, m9-81, m9-82, m9-87)",
-        "CC#14: legacy fields removed (path, notes, commits_since_base, runtime_status, tag) across 12 cycles",
-        "CC#15: created_at, title, summary backfilled for 7 cycles (m9-81..m9-87)",
-        "CC#22: release-receipt Head SHA / Peel match fields added on 8 cycles",
-        "CC#23: merge-receipt Head SHA / Base SHA / Branch / Date table format added on 52 cycles (m9-34..m9-86)",
-        "CC#29: 'path' field removed from apply-checkpoint.json; change-entry Subject head_sha corrected on m9-80",
-        "CC#40: findings_closed [] backfilled; archive-manifest Date field added on 8 cycles",
-        "CC#43: release-receipt Head SHA corrected (no backticks per CC#43 regex) on 4 cycles (m9-81, m9-82, m9-85, m9-86)",
-        "CC#4: archive-manifest SHA-256 rows regenerated via scripts/regen_manifest_index_shas.py"
-      ],
-      "verification": {
-        "before_fix_drift_lines": 197,
-        "after_fix_drift_lines": 2,
-        "remaining_drift": "CC#6 (mid-cycle, will resolve when m9-89 row is added to cycles/index.md) + CC#46/CC#53 stale-branches (deferred to FIND-M9-71 hardening cycle)"
-      }
-    },
-    {
-      "id": "FIND-M9-89-FIND-M9-81-DEFERRED",
-      "title": "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK remains out-of-scope (sddk CLI binary, external)",
-      "severity": "info",
-      "status": "closed (carried over from m9-88)",
-      "evidence": [
-        "m9-88 close: root cause is in the external `sddk` CLI binary (deterministic event_id collision + unregistered evaluator). Cannot be fixed in chronos scope.",
-        "Marked as deferred-external in m9-88 apply-checkpoint.json findings_introduced.no_action."
-      ]
-    },
-    {
-      "id": "FIND-M9-89-STALE-BRANCHES-DEFERRED",
-      "title": "CC#46/CC#53 stale branches (feat/m9-67..m9-78) deferred to FIND-M9-71 hardening",
-      "severity": "low",
-      "status": "deferred",
-      "evidence": [
-        "12 local + 12 remote merged-into-main branches from m9-67..m9-78 cycles remain un-deleted.",
-        "Per FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION, branch cleanup is its own dedicated cycle (not bundled with vault drift cleanup)."
-      ]
-    },
-    {
-      "id": "FIND-M9-89-VAULT-ONLY",
-      "title": "m9-89 is a vault-only cycle — zero Rust source code changes",
-      "severity": "info",
-      "status": "closed",
-      "evidence": [
-        "111 files modified, all under cycle-artifacts/, .sddk-knowledge/, scripts/.",
-        "The only Rust-relevant file added is scripts/fix_m9_89_cascade.py — a Python vault-hygiene tool, not part of the cargo workspace.",
-        "T0 clippy clean confirms no Rust code touched."
-      ]
-    },
-    {
-      "id": "FIND-M9-89-FIX-TOOL-REUSABLE",
-      "title": "scripts/fix_m9_89_cascade.py is reusable for future vault-drift hardening cycles",
-      "severity": "info",
-      "status": "closed",
-      "evidence": [
-        "scripts/audit_m9_89_cascade.py — audit-only tool, outputs JSON drift report.",
-        "scripts/fix_m9_89_cascade.py — applies mechanical backfills idempotently.",
-        "Both have --dry-run mode for safe preview.",
-        "Unit tests for scripts/regen_manifest_index_shas.py (CC#4 fixpoint tool, m9-76) cover the SHA regeneration half."
-      ]
-    }
-  ],
   "verdict": "passed",
-  "summary": "m9-89 cascade closes 12 CC drift lines (#3, #7, #8, #11, #12, #14, #15, #22, #23, #29, #40, #43) plus #4 via SHA regeneration. 197 → 2 remaining drift lines; both are expected mid-cycle (CC#6 will resolve at release) or pre-existing deferred (CC#46/53 stale-branches). Vault-only cycle; no production code touched; T0 clean."
+  "all_passed": true,
+  "lens_summary": {
+    "drift": "5 legacy findings migrated by m10-m9-legacy-schema-migration",
+    "findings_count": 5,
+    "tiers_run": [
+      "T0",
+      "T1"
+    ],
+    "source_schema": "m10-legacy-migration-2026-09-15",
+    "legacy_findings_preserved": [
+      {
+        "id": "FIND-M9-89-CASCADE-DRIFT-CLOSED",
+        "title": "12 cascading CC drift lines closed across m9-77..m9-88 + m9-67 change-entry",
+        "severity": "info",
+        "status": "closed",
+        "evidence": [
+          "CC#3: peel_match backfilled on 9 cycles; head_sha aligned with peel in 6 docs-peel-era cycles (m9-77, m9-80, m9-81, m9-82, m9-87, m9-88)",
+          "CC#7: change-entry Base/Head SHA corrected on m9-67 (base 67b3d76 → 5c83df9) and m9-80 (head 8012342 → 7874e5c)",
+          "CC#8: archive-manifest Head SHA field added on m9-81, m9-82; backticked on m9-83..m9-87 for canonical format",
+          "CC#11: status=archived normalized to CLOSED on 11 cycles; archived_at backfilled; findings_introduced normalized to dict with no_action subfield",
+          "CC#12: main_sha corrected to equal head_sha on 4 cycles (m9-80, m9-81, m9-82, m9-87)",
+          "CC#14: legacy fields removed (path, notes, commits_since_base, runtime_status, tag) across 12 cycles",
+          "CC#15: created_at, title, summary backfilled for 7 cycles (m9-81..m9-87)",
+          "CC#22: release-receipt Head SHA / Peel match fields added on 8 cycles",
+          "CC#23: merge-receipt Head SHA / Base SHA / Branch / Date table format added on 52 cycles (m9-34..m9-86)",
+          "CC#29: 'path' field removed from apply-checkpoint.json; change-entry Subject head_sha corrected on m9-80",
+          "CC#40: findings_closed [] backfilled; archive-manifest Date field added on 8 cycles",
+          "CC#43: release-receipt Head SHA corrected (no backticks per CC#43 regex) on 4 cycles (m9-81, m9-82, m9-85, m9-86)",
+          "CC#4: archive-manifest SHA-256 rows regenerated via scripts/regen_manifest_index_shas.py"
+        ],
+        "verification": {
+          "before_fix_drift_lines": 197,
+          "after_fix_drift_lines": 2,
+          "remaining_drift": "CC#6 (mid-cycle, will resolve when m9-89 row is added to cycles/index.md) + CC#46/CC#53 stale-branches (deferred to FIND-M9-71 hardening cycle)"
+        }
+      },
+      {
+        "id": "FIND-M9-89-FIND-M9-81-DEFERRED",
+        "title": "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK remains out-of-scope (sddk CLI binary, external)",
+        "severity": "info",
+        "status": "closed (carried over from m9-88)",
+        "evidence": [
+          "m9-88 close: root cause is in the external `sddk` CLI binary (deterministic event_id collision + unregistered evaluator). Cannot be fixed in chronos scope.",
+          "Marked as deferred-external in m9-88 apply-checkpoint.json findings_introduced.no_action."
+        ]
+      },
+      {
+        "id": "FIND-M9-89-STALE-BRANCHES-DEFERRED",
+        "title": "CC#46/CC#53 stale branches (feat/m9-67..m9-78) deferred to FIND-M9-71 hardening",
+        "severity": "low",
+        "status": "deferred",
+        "evidence": [
+          "12 local + 12 remote merged-into-main branches from m9-67..m9-78 cycles remain un-deleted.",
+          "Per FIND-M9-71-ARCHIVE-MANIFEST-INDEX-SHA-CHAINTENSION, branch cleanup is its own dedicated cycle (not bundled with vault drift cleanup)."
+        ]
+      },
+      {
+        "id": "FIND-M9-89-VAULT-ONLY",
+        "title": "m9-89 is a vault-only cycle — zero Rust source code changes",
+        "severity": "info",
+        "status": "closed",
+        "evidence": [
+          "111 files modified, all under cycle-artifacts/, .sddk-knowledge/, scripts/.",
+          "The only Rust-relevant file added is scripts/fix_m9_89_cascade.py — a Python vault-hygiene tool, not part of the cargo workspace.",
+          "T0 clippy clean confirms no Rust code touched."
+        ]
+      },
+      {
+        "id": "FIND-M9-89-FIX-TOOL-REUSABLE",
+        "title": "scripts/fix_m9_89_cascade.py is reusable for future vault-drift hardening cycles",
+        "severity": "info",
+        "status": "closed",
+        "evidence": [
+          "scripts/audit_m9_89_cascade.py — audit-only tool, outputs JSON drift report.",
+          "scripts/fix_m9_89_cascade.py — applies mechanical backfills idempotently.",
+          "Both have --dry-run mode for safe preview.",
+          "Unit tests for scripts/regen_manifest_index_shas.py (CC#4 fixpoint tool, m9-76) cover the SHA regeneration half."
+        ]
+      }
+    ],
+    "legacy_findings_preserved_count": 5
+  },
+  "findings": []
 }

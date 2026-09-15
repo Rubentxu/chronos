@@ -82,8 +82,8 @@ No Rust source touched, no tests required (T0 only).
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup/merge-receipt.md` | `9c5dc8b57a093b35adde6816addd7cae07ec7dbdf8ec9a5ad830f1bd977e3e7e` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup/release-receipt.md` | `e98d5f535fadee82d79f52b0625010a2d03c3504e99647589e0ddc0c4dfe696e` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup/release-report.md` | `324f5742b1aadb831e95b9914d699870026b55f6f1900d49837581b9725598c5` |
-| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup/verify-findings.json` | `1726c795ae22e05ecca9359089264b8c3534841ee38894230a854ac31bc037b0` |
-| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup/verify-report.md` | `3d9b7fdaa4436a251a7466ddf1bd6967b715ecc9d3b54ef3a576a6cdc6ee20f7` |
+| verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup/verify-findings.json` | `d2fd9b9d8302c0e0784bc1ba25b88d5e1addb83c0be6db83a0bcf46ada3bc815` |
+| verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-92-cc34-cc42-cleanup/verify-report.md` | `f07326e1f38335e5afe4d98762ca5ab9bf73fc33f7f738c74f60edb900ed0a24` |
 | proposal | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-92-cc34-cc42-cleanup/proposal.md` | `59087761f8e2a30eab970fa3a4c2aa4cd35bf5243a28996c4daf6ce00f92a483` |
 | spec | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-92-cc34-cc42-cleanup/spec.md` | `40dfa73f90a699a310f6248c0aaa3258915c2920e4dad712b0e5f5c4ed93e4dd` |
 | tasks | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-92-cc34-cc42-cleanup/tasks.md` | `58301e54e19cce5a2f66eb4c9c4585c8aa5508e5508d08bc379300c0c8373c19` |
