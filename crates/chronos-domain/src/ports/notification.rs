@@ -96,10 +96,7 @@ pub trait NotificationSink: Send + Sync {
     /// Attempt to deliver one notification. The semantics of partial
     /// failure (e.g. multi-target fan-out) are adapter-defined; for the
     /// default webhook adapter, the request has exactly one target.
-    fn deliver(
-        &self,
-        request: &NotificationRequest,
-    ) -> Result<(), NotificationDeliveryError>;
+    fn deliver(&self, request: &NotificationRequest) -> Result<(), NotificationDeliveryError>;
 }
 
 /// The default no-op sink. Useful for tests, for the
@@ -109,10 +106,7 @@ pub trait NotificationSink: Send + Sync {
 pub struct NullNotificationSink;
 
 impl NotificationSink for NullNotificationSink {
-    fn deliver(
-        &self,
-        _request: &NotificationRequest,
-    ) -> Result<(), NotificationDeliveryError> {
+    fn deliver(&self, _request: &NotificationRequest) -> Result<(), NotificationDeliveryError> {
         Ok(())
     }
 }
