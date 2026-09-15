@@ -34,6 +34,6 @@ See `changes/archive/` for full archive manifests of closed cycles.
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
 | Last updated | 2026-09-15T14:30Z |
-| Total cycles | 98 (legacy convention; out of sync with m10-* additions — tracked separately as carry-forward) |
+| Total cycles | 98 |
 | m10 cycles | 13 (rows above) |
 | Last archive | m10-vault-index-reconcile |
