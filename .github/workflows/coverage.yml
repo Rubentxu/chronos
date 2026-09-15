@@ -14,7 +14,19 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install cargo-tarpaulin
         run: cargo install cargo-tarpaulin
+      # chronos-sandbox tests spawn the chronos-mcp binary as a subprocess.
+      # cargo tarpaulin --workspace recompiles transitive deps with
+      # `--cfg tarpaulin`, which invalidates the chronos-mcp binary in
+      # target/debug/ and silently removes it on the first pass. Pre-build
+      # the binary in its normal (non-tarpaulin) configuration so the
+      # sandbox tests can find it via CHRONOS_MCP_PATH. See AGENTS.md §1.
+      - name: Pre-build chronos-mcp binary
+        run: cargo build --bin chronos-mcp
       - name: Run coverage
+        # CHRONOS_MCP_PATH makes the McpTestClient binary lookup explicit
+        # and avoids relying on the cargo test CARGO_BIN_EXE_chronos-mcp
+        # hint (which tarpaulin does not propagate to spawned test exes).
         run: ./scripts/run_coverage.sh
         env:
+          CHRONOS_MCP_PATH: ${{ github.workspace }}/target/debug/chronos-mcp
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
