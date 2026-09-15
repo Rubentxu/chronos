@@ -54,35 +54,22 @@ impl McpSession {
 
     /// Get the path to a compiled C fixture binary.
     ///
-    /// Searches in the following order:
-    /// 1. OUT_DIR environment variable (set by build script)
-    /// 2. Relative to the test binary location (for when running via `cargo test`)
+    /// Resolution is delegated to [`crate::FixtureResolver`], which reads
+    /// the absolute fixture root from the compile-time env var
+    /// `CHRONOS_FIXTURE_DIR` (published by `chronos-sandbox/build.rs`).
+    ///
+    /// Returns `None` only when the fixture binary is missing on disk;
+    /// the path itself is always derivable at compile time and never
+    /// depends on `OUT_DIR`, `current_exe()`, or `CARGO_TARGET_DIR`.
+    ///
+    /// See `chronos-sandbox/src/fixture_resolver.rs` for the contract.
     pub fn fixture_path(name: &str) -> Option<PathBuf> {
-        // Try OUT_DIR from build script
-        if let Ok(out_dir) = std::env::var("OUT_DIR") {
-            let path = PathBuf::from(out_dir).join(name);
-            if path.exists() {
-                return Some(path);
-            }
+        let path = crate::FixtureResolver::fixture(name);
+        if path.exists() {
+            Some(path)
+        } else {
+            None
         }
-        // Try relative to test binary
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(dir) = exe.parent() {
-                // Navigate up from target/debug/deps/ to target/debug/
-                let path = dir.join(name);
-                if path.exists() {
-                    return Some(path);
-                }
-                // Try going up one more level
-                if let Some(parent) = dir.parent() {
-                    let path = parent.join(name);
-                    if path.exists() {
-                        return Some(path);
-                    }
-                }
-            }
-        }
-        None
     }
 
     // =========================================================================
