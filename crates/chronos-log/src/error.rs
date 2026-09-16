@@ -55,6 +55,15 @@ pub enum LogError {
         segment_end: u64,
         retained_from: u64,
     },
+    /// Strict replay refused to reconstruct the log (REC-C1.5.2).
+    ///
+    /// The retained region contains an unexplained hole or an integrity
+    /// violation, so no handle may be published. Typed so callers can react
+    /// programmatically instead of parsing a string.
+    ReplayIntegrity {
+        session_id: String,
+        kind: Box<crate::replay::ReplayIntegrityError>,
+    },
     /// Backend-specific failure. The wrapped string is human-readable
     /// and intended for logs / error payloads — not for programmatic
     /// matching.
@@ -111,6 +120,11 @@ impl fmt::Display for LogError {
                 f,
                 "segment {}..={} crosses the retention boundary {}",
                 segment_start, segment_end, retained_from
+            ),
+            LogError::ReplayIntegrity { session_id, kind } => write!(
+                f,
+                "replay integrity failure for session {:?}: {}",
+                session_id, kind
             ),
             LogError::Backend(msg) => write!(f, "backend error: {}", msg),
         }

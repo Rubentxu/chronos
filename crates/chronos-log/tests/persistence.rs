@@ -126,9 +126,11 @@ fn spec_case_06_crash_safe_segments() {
     let segments = log.flushed_segments();
     assert_eq!(segments.len(), 2, "two segments flushed");
 
-    // Truncate the first segment by 8 bytes. This guarantees the
-    // payload's BLAKE3 checksum won't match the (now shorter)
-    // payload, so the replay skips this segment.
+    // Truncate the first segment by 8 bytes so its BLAKE3 checksum cannot
+    // validate. REC-C1.5.2: replay is STRICT, so this must now REJECT the
+    // reopen instead of skipping the segment and recovering the rest. Skipping
+    // would leave a hole in the retained seq space with no `Gap`, which is
+    // exactly the state C1.4 must never see as `Complete`.
     let path = segments[0].2.clone();
     let len = std::fs::metadata(&path).unwrap().len();
     assert!(len > 8, "segment is too small to truncate");
@@ -143,14 +145,19 @@ fn spec_case_06_crash_safe_segments() {
     drop(log);
 
     cfg.replay_on_open = true;
-    let log2 = SegmentedExecutionLog::open(session.clone(), cfg).unwrap();
-    // The corrupt first segment is skipped; the second segment
-    // (seq=2) is recovered. tail_seq should be Some(EventSeq(2)).
-    assert_eq!(
-        log2.tail_seq(),
-        Some(EventSeq(2)),
-        "second segment was recovered despite first being corrupt"
-    );
+    match SegmentedExecutionLog::open(session.clone(), cfg) {
+        Ok(_) => panic!("a corrupt retained segment must not be published"),
+        Err(chronos_log::LogError::ReplayIntegrity { kind, .. }) => assert!(
+            matches!(
+                *kind,
+                chronos_log::ReplayIntegrityError::CorruptSegment { .. }
+            ),
+            "expected CorruptSegment, got {kind:?}"
+        ),
+        Err(other) => panic!("expected ReplayIntegrity, got {other:?}"),
+    }
+    // No partial state is observable: the handle was never returned. A salvage
+    // mode, if ever wanted, must be an explicit separate API, never the default.
 
     let _ = std::fs::remove_dir_all(&dir);
 }

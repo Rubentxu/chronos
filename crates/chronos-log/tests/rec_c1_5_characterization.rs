@@ -4,10 +4,13 @@
 //! "just another read": both make Chronos remember an execution differently
 //! before and after a restart.
 //!
-//! CHAR-RET was flipped by C1.5.1 into the positive RET-1..RET-10 suite below:
-//! the durable retention watermark makes the same request answer identically
-//! before and after a restart. CHAR-REPLAY remains a characterization, to be
-//! flipped by C1.5.2 (strict replay).
+//! CHAR-RET was flipped by C1.5.1 into the positive RET-1..RET-10 suite: the
+//! durable retention watermark makes the same request answer identically before
+//! and after a restart.
+//!
+//! CHAR-REPLAY was flipped by C1.5.2 into the positive REP-1/REP-2/REP-10/REP-12
+//! suite: a reopen either publishes a fully validated retained region or
+//! publishes nothing at all.
 //!
 //! Run with: `cargo test -p chronos-log --test rec_c1_5_characterization -- --ignored`
 
@@ -342,66 +345,124 @@ fn ret_10_legacy_dir_without_manifest_is_not_inferred() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// CHAR-REPLAY: a corrupt segment is skipped and replay continues.
-///
-/// The skipped bytes vanish from the seq space with no `Gap`, which breaks the
-/// C1.4 premise that inside the allocated range a missing seq can only come from
-/// a recorded gap. After such a reopen, `Complete` could be claimed over a real
-/// hole.
+/// REP-1: a corrupt retained segment rejects replay. (This replaces the C1.5.0
+/// characterization `char_corrupt_segment_is_skipped_and_creates_a_silent_hole`:
+/// the skipping behaviour no longer exists.)
 #[test]
-#[ignore = "REC-C1.5.0 characterization: replay skips corrupt segments instead of failing closed"]
-fn char_corrupt_segment_is_skipped_and_creates_a_silent_hole() {
-    let dir = tmpdir("corrupt");
-    let session = SessionId::new("corrupt");
-    let log = SegmentedExecutionLog::open(session.clone(), config(&dir, 1)).expect("open");
-    append_n(&log, &session, 300);
-    log.flush().expect("flush");
-    drop(log);
-
-    // Corrupt the BODY of the first segment while leaving its header intact:
-    // a truncated file already fails closed at header read, which is why the
-    // interesting case is "header fine, contents/checksum bad".
+fn rep_1_corrupt_segment_rejects_replay() {
+    let (dir, session) = three_segments("rep1");
     let first_path = segment_path(&dir, &session, chronos_log::EventSeq::ZERO);
-    assert!(
-        first_path.exists(),
-        "expected a segment at seq#0: {first_path:?}"
-    );
     let mut bytes = std::fs::read(&first_path).expect("read seg");
     let flip_at = bytes.len() * 3 / 4;
     bytes[flip_at] ^= 0xFF;
-    std::fs::write(&first_path, &bytes).expect("write corrupted seg");
+    std::fs::write(&first_path, &bytes).expect("corrupt seg");
 
-    // Reopen: current behaviour is "warn + skip", so this SUCCEEDS.
-    let reopened = SegmentedExecutionLog::open(session.clone(), config(&dir, 1));
+    let err = match SegmentedExecutionLog::open(session.clone(), config(&dir, 1)) {
+        Ok(_) => panic!("corrupt retained segment must not be published"),
+        Err(e) => e,
+    };
     assert!(
-        reopened.is_ok(),
-        "characterization: a corrupt segment is tolerated today; got {:?}",
-        reopened.err()
+        matches!(
+            err,
+            chronos_log::LogError::ReplayIntegrity { ref kind, .. }
+                if matches!(**kind, chronos_log::ReplayIntegrityError::CorruptSegment { .. })
+        ),
+        "expected CorruptSegment, got {err:?}"
     );
-    let reopened = reopened.expect("reopen");
-
-    let page = reopened
-        .read_from_seq(chronos_log::EventSeq::ZERO, 5)
-        .expect("read");
-    println!(
-        "CHAR-REPLAY reopened first_seq={:?} gaps={}",
-        page.records.first().map(|r| r.seq.0),
-        page.gaps.len()
-    );
-
-    // The hole is real: the seqs in the truncated segment are gone while the
-    // surviving segment still answers, and NO gap records the loss.
-    assert!(
-        page.gaps.is_empty(),
-        "characterization: the lost region is not recorded as a Gap"
-    );
-    let hole_is_real = page.records.first().map(|r| r.seq.0 > 0).unwrap_or(true);
-    assert!(
-        hole_is_real,
-        "characterization changed: replay no longer silently drops records"
-    );
-
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// REP-2: a segment entirely deleted from the middle is a MissingRange, not a
+/// silent hole. This is the case the C1.5.1 review asked for: the loader used to
+/// enumerate only what exists.
+#[test]
+fn rep_2_deleted_middle_segment_is_missing_range() {
+    let (dir, session) = three_segments("rep2");
+    let middle = segment_path(&dir, &session, chronos_log::EventSeq::new(1));
+    assert!(middle.exists(), "expected a middle segment: {middle:?}");
+    std::fs::remove_file(&middle).expect("delete middle segment");
+
+    let err = match SegmentedExecutionLog::open(session.clone(), config(&dir, 1)) {
+        Ok(_) => panic!("a hole in the retained region must not be published"),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            err,
+            chronos_log::LogError::ReplayIntegrity {
+                ref kind, ..
+            } if matches!(**kind, chronos_log::ReplayIntegrityError::MissingRange { .. })
+        ),
+        "expected MissingRange, got {err:?}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// REP-10: retired leftovers from C1.5.1 stay out of the plan and are NOT
+/// integrity failures.
+#[test]
+fn rep_10_retired_leftovers_are_ignored_by_replay() {
+    let dir = tmpdir("rep10");
+    let session = SessionId::new("rep10");
+    let log = SegmentedExecutionLog::open(session.clone(), config(&dir, 1)).expect("open");
+    append_n(&log, &session, 20);
+    log.flush().expect("flush");
+
+    // Keep a faithful copy of the earliest segment, then retain past it.
+    let retired_path = segment_path(&dir, &session, chronos_log::EventSeq::ZERO);
+    let retired_bytes = std::fs::read(&retired_path).expect("read");
+    let retained = log
+        .retain_up_to(chronos_log::EventSeq::new(4))
+        .expect("retain")
+        .retained_from;
+    std::fs::write(&retired_path, &retired_bytes).expect("plant leftover");
+    drop(log);
+
+    // Reopen must succeed: the leftover is reclaimable garbage, not an
+    // integrity problem in the live region.
+    let reopened = SegmentedExecutionLog::open(session.clone(), config(&dir, 1))
+        .expect("leftovers must not fail strict replay");
+    assert_eq!(reopened.retained_from(), retained);
+    let page = reopened
+        .read_from_seq(retained, 3)
+        .expect("live region readable");
+    assert_eq!(page.records.first().map(|r| r.seq), Some(retained));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// REP-12: a failure never publishes partial state. The handle is not returned
+/// at all, so there is nothing to observe half-built.
+#[test]
+fn rep_12_no_partial_state_is_published_on_failure() {
+    let (dir, session) = three_segments("rep12");
+    let last = segment_path(&dir, &session, chronos_log::EventSeq::new(2));
+    let mut bytes = std::fs::read(&last).expect("read seg");
+    let flip_at = bytes.len() * 3 / 4;
+    bytes[flip_at] ^= 0xFF;
+    std::fs::write(&last, &bytes).expect("corrupt last segment");
+
+    // A valid prefix exists (segments 0 and 1), but the reopen must fail as a
+    // whole: no plan, no backend, no handle.
+    let err = match SegmentedExecutionLog::open(session.clone(), config(&dir, 1)) {
+        Ok(_) => panic!("partial reconstruction must not be published"),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(err, chronos_log::LogError::ReplayIntegrity { .. }),
+        "{err:?}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Three one-record segments (seqs 0, 1, 2), originals of the REP tests.
+fn three_segments(tag: &str) -> (std::path::PathBuf, SessionId) {
+    let dir = tmpdir(tag);
+    let session = SessionId::new(tag);
+    let log = SegmentedExecutionLog::open(session.clone(), config(&dir, 1)).expect("open");
+    append_n(&log, &session, 3);
+    log.flush().expect("flush");
+    assert_eq!(log.flushed_segments().len(), 3, "expected three segments");
+    (dir, session)
 }
 
 /// CONTROL: with no corruption and no compaction, a restart preserves both the

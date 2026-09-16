@@ -51,9 +51,7 @@ use crate::error::LogError;
 use crate::gap::{Gap, GapReason};
 use crate::memory::InMemoryExecutionLog;
 use crate::record::{ExecutionKind, ExecutionPayload, ExecutionRecord, SessionId};
-use crate::segment::{
-    read_header, read_segment, sanitize_session, segment_path, write_segment, SegmentEntry,
-};
+use crate::segment::{read_header, sanitize_session, write_segment, SegmentEntry};
 use crate::seq::EventSeq;
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
@@ -708,72 +706,58 @@ impl SegmentedExecutionLog {
     /// Populate `target` with the on-disk segments and *merge* them
     /// into the in-memory backend. Used by `open()` to restore seq
     /// allocator state before returning a usable handle.
+    /// Build and validate the replay plan for this log (REC-C1.5.2).
+    ///
+    /// Nothing is applied here: validation completes first, so a corrupt or
+    /// discontinuous retained region cannot leave a partially reconstructed
+    /// backend behind.
+    pub fn build_replay_plan(&self) -> Result<crate::replay::ReplayPlan, LogError> {
+        crate::replay::build_replay_plan(
+            &self.config.segment_dir,
+            &self.session_id,
+            self.retained_from(),
+        )
+        .map_err(|kind| LogError::ReplayIntegrity {
+            session_id: self.session_id.as_str().to_string(),
+            kind: Box::new(kind),
+        })
+    }
+
+    /// Strict replay: validate everything, then apply atomically.
+    ///
+    /// This is the ONLY replay primitive. The previous lenient paths
+    /// (`replay_into_inner`, `populate_with_replay`) both skipped unreadable
+    /// segments, so a side door could reconstruct a different truth.
     pub fn replay_into_inner(&self) -> Result<(), LogError> {
-        let retained = self.retained_from();
+        let plan = self.build_replay_plan()?;
+        self.apply_plan(&plan)
+    }
+
+    fn apply_plan(&self, plan: &crate::replay::ReplayPlan) -> Result<(), LogError> {
+        // Apply to a FRESH backend built from the plan, then swap it in: a
+        // failure cannot publish a half-reconstructed log.
+        let fresh = InMemoryExecutionLog::new();
+        crate::replay::apply_replay_plan(plan, &fresh)?;
+
         let mut inner = self.inner.lock().expect("poisoned");
-        for meta in self.list_segment_headers()? {
-            if meta.end_seq < retained {
-                // Reclaimable garbage, not live evidence: a crash between the
-                // manifest commit and the file removal is expected.
-                continue;
-            }
-            let path = segment_path(&self.config.segment_dir, &self.session_id, meta.start_seq);
-            let entries = match read_segment(&path) {
-                Ok(d) => d.entries,
-                Err(e) => {
-                    eprintln!(
-                        "SegmentedExecutionLog::replay: skipping corrupt \
-                         segment {:?}: {}",
-                        path, e
-                    );
-                    continue;
-                }
-            };
-            for entry in entries {
-                match entry {
-                    SegmentEntry::Record(r) => {
-                        inner.backend.replay_record(&r)?;
-                    }
-                    SegmentEntry::Gap(g) => {
-                        inner.backend.record_gap(self.session_id.clone(), g)?;
-                    }
-                }
-            }
-        }
-        // Mark each loaded segment as flushed so segment bookkeeping
-        // matches reality after a cold boot.
-        let mut headers = self.list_segment_headers()?;
-        headers.sort_by_key(|m| m.start_seq.0);
-        for meta in headers {
+        inner.backend = fresh;
+        inner.flushed_segments.clear();
+        inner.last_flushed_tail = None;
+        for seg in &plan.segments {
             inner.flushed_segments.push(FlushedSegment {
-                start_seq: meta.start_seq,
-                end_seq: meta.end_seq,
-                path: segment_path(&self.config.segment_dir, &self.session_id, meta.start_seq),
+                start_seq: seg.start_seq,
+                end_seq: seg.end_seq,
+                path: seg.path.clone(),
             });
-            inner.last_flushed_tail = Some(meta.end_seq);
+            inner.last_flushed_tail = Some(seg.end_seq);
         }
         Ok(())
     }
 
     fn populate_with_replay(&self, target: &InMemoryExecutionLog) -> Result<(), LogError> {
-        for meta in self.list_segment_headers()? {
-            let path = segment_path(&self.config.segment_dir, &self.session_id, meta.start_seq);
-            let entries = match read_segment(&path) {
-                Ok(d) => d.entries,
-                Err(_) => continue,
-            };
-            for entry in entries {
-                match entry {
-                    SegmentEntry::Record(r) => {
-                        target.append(NewExecutionRecord::from(&r))?;
-                    }
-                    SegmentEntry::Gap(g) => {
-                        target.record_gap(self.session_id.clone(), g)?;
-                    }
-                }
-            }
-        }
-        Ok(())
+        // Same strict primitive as `replay_into_inner`: one validated plan.
+        let plan = self.build_replay_plan()?;
+        crate::replay::apply_replay_plan(&plan, target)
     }
 
     /// Replay and rebuild the in-memory backend (used by tests
@@ -1364,7 +1348,11 @@ mod tests {
     }
 
     #[test]
-    fn corrupt_segment_is_skipped() {
+    fn corrupt_segment_rejects_replay() {
+        // REC-C1.5.2: this test used to assert that a corrupt segment was
+        // SKIPPED and replay continued, which left a silent hole in the seq
+        // space with no `Gap`. Replay is now strict: the log must not be
+        // published at all.
         let dir = tempdir();
         let session = SessionId::new("cs");
         let mut cfg = SegmentedConfig::with_dir(&dir);
@@ -1377,24 +1365,29 @@ mod tests {
         log.flush().unwrap();
         let segments = log.flushed_segments();
         assert_eq!(segments.len(), 2);
-        // Corrupt the first segment's payload by appending bytes
-        // to it. BLAKE3 mismatch will skip it on the next replay.
+        // Corrupt the first segment's payload; the checksum no longer matches.
         let (_start, _end, path) = segments[0].clone();
-        let mut f = std::fs::OpenOptions::new()
-            .append(true)
-            .open(&path)
-            .unwrap();
-        use std::io::Write;
-        f.write_all(&[0xFFu8; 64]).unwrap();
-        drop(f);
+        let mut bytes = std::fs::read(&path).unwrap();
+        let flip_at = bytes.len() * 3 / 4;
+        bytes[flip_at] ^= 0xFF;
+        std::fs::write(&path, &bytes).unwrap();
         drop(log);
 
         cfg.replay_on_open = true;
-        let log2 = SegmentedExecutionLog::open(session.clone(), cfg).unwrap();
-        // The first segment is skipped, only seq=2 from segment
-        // #2 remains. The replayed log has tail_seq 2; we just
-        // verify *something* survived.
-        assert!(log2.tail_seq().is_some());
+        match SegmentedExecutionLog::open(session.clone(), cfg) {
+            Ok(_) => panic!("a corrupt retained segment must not be published"),
+            Err(LogError::ReplayIntegrity { session_id, kind }) => {
+                assert_eq!(session_id, "cs");
+                assert!(
+                    matches!(
+                        *kind,
+                        crate::replay::ReplayIntegrityError::CorruptSegment { .. }
+                    ),
+                    "expected CorruptSegment, got {kind:?}"
+                );
+            }
+            Err(other) => panic!("expected ReplayIntegrity, got {other:?}"),
+        }
         std::fs::remove_dir_all(&dir).ok();
     }
 

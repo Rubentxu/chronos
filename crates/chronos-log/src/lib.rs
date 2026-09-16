@@ -24,6 +24,7 @@ pub mod error;
 pub mod gap;
 pub mod memory;
 pub mod record;
+pub mod replay;
 pub mod segment;
 pub mod segmented;
 pub mod seq;
@@ -34,6 +35,9 @@ pub use error::LogError;
 pub use gap::{Gap, GapReason};
 pub use memory::InMemoryExecutionLog;
 pub use record::{ExecutionKind, ExecutionPayload, ExecutionRecord, SessionId};
+pub use replay::{
+    apply_replay_plan, build_replay_plan, plan_gaps, ReplayIntegrityError, ReplayPlan,
+};
 pub use segment::{segment_path, write_segment, DecodedSegment, SegmentEntry, SegmentMetadata};
 pub use segmented::{CompactionMetrics, SegmentedConfig, SegmentedExecutionLog};
 pub use seq::EventSeq;
