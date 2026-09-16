@@ -28,10 +28,19 @@ ACTIVE PRODUCT GATE  : REC-C1.5 (restart / reopen / retention / stale cursor /
                            the boundary fails closed. No inference from absence
                            (RetentionMetadataMissing). RET-1..RET-10 + CONTROL green;
                            CHAR-RET flipped.
-                         C1.5.2 strict replay/recovery (corrupt segment -> hard
-                           ReplayIntegrityError; the log never enters the registry;
-                           no warn+skip on the agentic path; salvage would be an
-                           explicit degraded mode, not this gate)
+                         C1.5.2 strict replay/recovery  LANDED (3cc511ef)
+                           Two-phase: build_replay_plan() validates everything, then
+                           apply_replay_plan() builds a FRESH backend and swaps it in,
+                           so a failure publishes nothing (no partial state). Beyond
+                           the checksum, seq-space semantics are validated inside each
+                           segment and continuity across segments (first live segment
+                           starts at retained_from; next.start == prev.end + 1).
+                           Typed ReplayIntegrityError variants via
+                           LogError::ReplayIntegrity{session_id,kind}. Corruption is
+                           never converted into a Gap. All three replay entrypoints
+                           share the one strict primitive. C1.5.1 leftovers stay out
+                           of the plan. REP-1/2/3/5/6/7/8/9/10/12 + CONTROL green; the
+                           two tests documenting skip-and-continue were flipped.
                          C1.5.3 tail state (open | sealed | unclean/unknown; a
                            leftover .seg.tmp must not vanish semantically)
                          C1.5.4 reopen + registry bootstrap (rebuild the registry
