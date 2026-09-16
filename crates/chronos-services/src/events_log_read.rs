@@ -116,9 +116,11 @@ pub struct LogReadPage {
     pub records: Vec<TraceEvent>,
     /// The cursor for the next read (opaque externally).
     pub next: EventsCursorV1,
-    /// The highest seq the read examined. `next.next_seq() == scanned.0 + 1`
-    /// when anything was examined, and equals the incoming position otherwise.
-    pub scanned: EventSeq,
+    /// The next position, same vocabulary as `LogPage::position_after` and
+    /// `EventsCursorV1::next_seq`: `next.next_seq() == position_after`. Named for
+    /// what it is — the position AFTER the last examined record — not "highest
+    /// examined", which was an off-by-one waiting to happen.
+    pub position_after: EventSeq,
     /// Gaps the read passed over, for C1.4 to interpret.
     pub gaps: Vec<Gap>,
     pub completeness: Completeness,
@@ -152,56 +154,59 @@ pub fn read_page(
     let mut position = cursor.next_seq();
     let mut matched: Vec<TraceEvent> = Vec::new();
     let mut gaps: Vec<Gap> = Vec::new();
-    let mut unparseable: u64 = 0;
 
     while matched.len() < limit {
+        let start_position = position;
         let page: LogPage = handle
             .read_from_seq(position, SCAN_CHUNK)
             .map_err(|e| ServiceError::DrainFailed(format!("{e:?}")))?;
         gaps.extend(page.gaps.iter().cloned());
 
         let mut stopped_early = false;
-        let mut examined_any = false;
         for record in &page.records {
             if matched.len() >= limit {
                 stopped_early = true;
                 break;
             }
+            // A record we cannot decode is NOT skippable: advancing past it
+            // would drop evidence and hand the agent a cursor that pretends the
+            // read was complete. Fail closed and emit no new cursor.
+            let event = decode(record).ok_or_else(|| ServiceError::EvidenceDecodeFailed {
+                session_id: log.session_id().as_str().to_string(),
+                seq: record.seq.0,
+                payload_tag: payload_tag(record),
+            })?;
             // The position advances exactly to the last record actually
-            // examined. Never to the end of the inner chunk: claiming to have
-            // examined records we did not compare would silently lose them for
-            // a caller that changes filters on the next read.
-            examined_any = true;
+            // examined, never to the end of the inner chunk.
             position = EventSeq::new(record.seq.0 + 1);
-            match decode(record) {
-                Some(event) if filters.matches(&event) => matched.push(event),
-                Some(_) => {}
-                None => unparseable += 1,
+            if filters.matches(&event) {
+                matched.push(event);
             }
         }
 
         if stopped_early || matched.len() >= limit {
             break;
         }
-        if page.exhausted && !examined_any {
-            // Nothing at or after `position`; the reader is caught up. Gaps that
-            // reach the position are consumed so progress is monotonic.
+        if page.exhausted {
             position = page.position_after;
             break;
         }
-        if page.position_after <= position {
-            // Safety: the backend reported no forward progress. Stop rather than
-            // spin; the caller sees the position it already had.
+        // Consumed the whole chunk: jump to its end (this is what carries the
+        // reader over gaps) and continue. SCAN_CHUNK stays an internal detail.
+        if page.position_after > position {
+            position = page.position_after;
+        }
+        if position <= start_position {
+            // The backend reported no forward progress. Stop rather than spin;
+            // the caller keeps the position it already had.
             break;
         }
-        position = page.position_after;
     }
 
     // Only gaps the reader actually passed over belong to this page.
     gaps.retain(|g| g.last_missing.0 < position.0);
     gaps.sort_by_key(|g| g.first_missing.0);
     gaps.dedup_by_key(|g| g.first_missing.0);
-    let _ = unparseable;
 
     let next = cursor
         .clone()
@@ -210,10 +215,15 @@ pub fn read_page(
     Ok(LogReadPage {
         records: matched,
         next,
-        scanned: position,
+        position_after: position,
         gaps,
         completeness: Completeness::Unknown,
     })
+}
+
+/// The producer-declared payload tag, for diagnostics on decode failure.
+fn payload_tag(record: &ExecutionRecord) -> String {
+    record.payload.tag.clone()
 }
 
 /// Decode a log record's payload into a `TraceEvent`.
@@ -243,10 +253,15 @@ pub fn find_by_id(
             return Ok(None);
         }
         for record in &page.records {
-            if let Some(event) = decode(record) {
-                if event.event_id == event_id {
-                    return Ok(Some(event));
-                }
+            // Same fail-closed rule as `read_page`: a record we cannot interpret
+            // is not the same as "the event is not here".
+            let event = decode(record).ok_or_else(|| ServiceError::EvidenceDecodeFailed {
+                session_id: log.session_id().as_str().to_string(),
+                seq: record.seq.0,
+                payload_tag: payload_tag(record),
+            })?;
+            if event.event_id == event_id {
+                return Ok(Some(event));
             }
         }
         if page.exhausted {
@@ -263,7 +278,7 @@ mod rec_c1_3_tests {
 
     use super::*;
     use chronos_domain::{EventType, SourceLocation};
-    use chronos_log::{NewExecutionRecord, SessionId};
+    use chronos_log::{ExecutionPayload, NewExecutionRecord, SessionId};
 
     fn log(tag: &str, events: &[(EventType, u64, u32)]) -> SessionExecutionLog {
         let dir = std::env::temp_dir().join(format!(
@@ -295,7 +310,7 @@ mod rec_c1_3_tests {
                 .append(NewExecutionRecord {
                     session_id: handle.session_id().clone(),
                     monotonic_ns: *ts,
-                    payload: chronos_log::ExecutionPayload::new(
+                    payload: ExecutionPayload::new(
                         serde_json::to_vec(&event).unwrap(),
                         "trace_event",
                     ),
@@ -307,6 +322,38 @@ mod rec_c1_3_tests {
         }
         handle.flush().ok();
         owned
+    }
+
+    /// Append one decodable event at an explicit id/seq position.
+    fn push(
+        handle: &std::sync::Arc<chronos_log::SegmentedExecutionLog>,
+        i: u64,
+        event_type: EventType,
+    ) {
+        let event = TraceEvent::new(
+            i,
+            i * 10,
+            i,
+            event_type,
+            SourceLocation {
+                file: Some("f.rs".to_string()),
+                line: Some(i as u32),
+                column: None,
+                function: Some(format!("fn_{i}")),
+                address: 0,
+            },
+            chronos_domain::EventData::Empty,
+        );
+        handle
+            .append(NewExecutionRecord {
+                session_id: handle.session_id().clone(),
+                monotonic_ns: i * 10,
+                payload: ExecutionPayload::new(serde_json::to_vec(&event).unwrap(), "trace_event"),
+                invocation_id: None,
+                parent_invocation_id: None,
+                symbol_id: None,
+            })
+            .expect("append");
     }
 
     fn entries(n: usize, event_type: EventType) -> Vec<(EventType, u64, u32)> {
@@ -411,6 +458,156 @@ mod rec_c1_3_tests {
             EventSeq::new(148),
             "cursor must point past the last examined record, not at 3"
         );
+    }
+
+    #[test]
+    fn t1_limit_larger_than_one_inner_chunk_is_honoured() {
+        // SCAN_CHUNK is an internal detail (512). A caller asking for 1000 must
+        // receive 1000, not one chunk's worth.
+        let owned = log("t1", &entries(1200, EventType::FunctionEntry));
+        let page = read_page(
+            &owned,
+            &owned.cursor_start(),
+            1000,
+            &LogReadFilters::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            page.records.len(),
+            1000,
+            "limit must not be capped by SCAN_CHUNK"
+        );
+        assert_eq!(
+            page.records
+                .iter()
+                .map(|e| e.event_id)
+                .collect::<Vec<u64>>(),
+            (0..1000).collect::<Vec<u64>>()
+        );
+        assert_eq!(page.next.next_seq(), EventSeq::new(1000));
+        assert_eq!(page.position_after, EventSeq::new(1000));
+    }
+
+    #[test]
+    fn t2_matches_beyond_the_first_chunk_are_found() {
+        // Matches at 103 (chunk 1), 721 and 1147 (later chunks).
+        let mut events = entries(1200, EventType::FunctionEntry);
+        for idx in [103usize, 721, 1147] {
+            events[idx].0 = EventType::FunctionExit;
+        }
+        let owned = log("t2", &events);
+        let filters = LogReadFilters {
+            event_types: Some(vec![EventType::FunctionExit]),
+            ..Default::default()
+        };
+        let page = read_page(&owned, &owned.cursor_start(), 3, &filters).unwrap();
+        assert_eq!(
+            page.records
+                .iter()
+                .map(|e| e.event_id)
+                .collect::<Vec<u64>>(),
+            vec![103, 721, 1147],
+            "the scan must continue past the first chunk"
+        );
+        assert_eq!(page.next.next_seq(), EventSeq::new(1148));
+    }
+
+    #[test]
+    fn t3_scan_continues_after_a_gap_between_chunks() {
+        use chronos_log::{Gap, GapReason};
+        // Realistic gap shape: records up to 599, a recorded gap 600..=700, then
+        // the producer continues at 701. (Appending a gap AFTER later records
+        // would put it out of seq order in the entry list; real producers cannot
+        // do that, and both this reader and `read_after` assume seq order.)
+        let dir = std::env::temp_dir().join(format!(
+            "rec-c1-3-t3-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let owned = SessionExecutionLog::open(&dir, SessionId::new("t3")).expect("log");
+        let handle = owned.handle();
+        for i in 0..600u64 {
+            push(&handle, i, EventType::FunctionEntry);
+        }
+        handle
+            .record_gap(Gap::new(
+                EventSeq::new(600),
+                EventSeq::new(700),
+                GapReason::AdapterBufferOverflow,
+                "test",
+            ))
+            .expect("gap");
+        for i in 701..1400u64 {
+            push(&handle, i, EventType::FunctionEntry);
+        }
+        handle.flush().ok();
+
+        // Chunk 1 ends at 511, so both the gap and everything after it live in
+        // later chunks: the scan must keep going.
+        let page = read_page(
+            &owned,
+            &owned.cursor_start(),
+            1000,
+            &LogReadFilters::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            page.records.len(),
+            1000,
+            "records after the gap are reachable"
+        );
+        assert!(
+            page.position_after > EventSeq::new(700),
+            "position must clear the gap, got {:?}",
+            page.position_after
+        );
+        assert_eq!(page.gaps.len(), 1, "the gap is reported, not hidden");
+        assert_eq!(page.gaps[0].last_missing, EventSeq::new(700));
+    }
+
+    #[test]
+    fn an_undecodable_record_fails_closed_and_emits_no_cursor() {
+        let mut events = entries(5, EventType::FunctionEntry);
+        events[2].1 = 20;
+        let owned = log("badpayload", &events);
+        let handle = owned.handle();
+        // Poison one record's payload.
+        handle
+            .append(NewExecutionRecord {
+                session_id: handle.session_id().clone(),
+                monotonic_ns: 999,
+                payload: ExecutionPayload::new(b"not-json-at-all".to_vec(), "unknown_producer"),
+                invocation_id: None,
+                parent_invocation_id: None,
+                symbol_id: None,
+            })
+            .expect("append");
+        handle.flush().ok();
+
+        let err = read_page(
+            &owned,
+            &owned.cursor_start(),
+            50,
+            &LogReadFilters::default(),
+        )
+        .unwrap_err();
+        match err {
+            ServiceError::EvidenceDecodeFailed {
+                seq, payload_tag, ..
+            } => {
+                assert_eq!(seq, 5);
+                assert_eq!(payload_tag, "unknown_producer");
+            }
+            other => panic!("expected EvidenceDecodeFailed, got {other:?}"),
+        }
+
+        // `find_by_id` follows the same rule: an unreadable record is not the
+        // same as "the event is not here".
+        let err = find_by_id(&owned, 9999).unwrap_err();
+        assert!(matches!(err, ServiceError::EvidenceDecodeFailed { .. }));
     }
 
     #[test]

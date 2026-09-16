@@ -113,6 +113,18 @@ pub enum ServiceError {
     #[error("session {0} owns no ExecutionLog")]
     NoExecutionLog(String),
 
+    /// A durable record could not be decoded into a `TraceEvent` (REC-C1.3).
+    ///
+    /// The read fails closed: skipping the record and advancing the cursor would
+    /// hide evidence loss from the agent, which is precisely the Silent Lie the
+    /// reconstruction exists to remove.
+    #[error("evidence at seq {seq} of session {session_id} could not be decoded (payload tag {payload_tag:?})")]
+    EvidenceDecodeFailed {
+        session_id: String,
+        seq: u64,
+        payload_tag: String,
+    },
+
     /// A log was handed to a session under an identity the log does not carry
     /// (REC-C1.2a). Duplicated identity must never become canonical.
     #[error("ExecutionLog identity mismatch: session {expected} but log holds {actual}")]
