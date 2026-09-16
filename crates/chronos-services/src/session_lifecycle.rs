@@ -942,8 +942,12 @@ mod tests {
         let engines: &'static TokioMutex<HashMap<String, chronos_query::QueryEngine>> =
             Box::leak(Box::new(TokioMutex::new(HashMap::new())));
 
+        let execution_logs: &'static crate::session_log::SessionExecutionLogRegistry = Box::leak(
+            Box::new(crate::session_log::SessionExecutionLogRegistry::new()),
+        );
         let probe: &'static ProbeContext<'static> = Box::leak(Box::new(ProbeContext {
             live_probes,
+            execution_logs,
             engines,
             session_languages: langs,
             tripwire_manager: tripwire,

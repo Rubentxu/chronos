@@ -20,11 +20,11 @@ known_dependency_violations = [
 
 # REC-C0 baseline scope — explicit gate classification for the 27 residual
 # workspace failures observed at REC-C0.5-D close-out (2026-09-16):
-#   20 privileged (PTR-001..003), 5 deferred (DEF-001).
+#   20 privileged (PTR-001..003), 0 deferred.
 # The sentinel removed DEF-002 (tripwires), DEF-003 (ptrace_tracer),
 # and CE-001 (counterexample_tools) as stale waivers — all three
 # suites now pass under their documented run recipes. The remaining
-# deferred bucket contains events_read pagination (DEF-001, REC-C1)
+# deferred bucket is now EMPTY: DEF-001 (events_read pagination) was retired
 # and no anonymous or budget-based allowances.
 # This section makes the closure criterion mechanical: each failure has
 # bucket + owner_gate + reason; REC-C0 only blocks on "mandatory" items.
@@ -42,11 +42,11 @@ known_dependency_violations = [
 [baseline_scope]
 # REC-C0 baseline scope — explicit gate classification for the 27 residual
 # workspace failures observed at REC-C0.5-D close-out (2026-09-16):
-#   20 privileged (PTR-001..003), 5 deferred (DEF-001).
+#   20 privileged (PTR-001..003), 0 deferred.
 # The sentinel removed DEF-002 (tripwires), DEF-003 (ptrace_tracer),
 # and CE-001 (counterexample_tools) as stale waivers — all three
 # suites now pass under their documented run recipes. The remaining
-# deferred bucket contains events_read pagination (DEF-001, REC-C1)
+# deferred bucket is now EMPTY: DEF-001 (events_read pagination) was retired
 # and no anonymous or budget-based allowances.
 # This section makes the closure criterion mechanical: each failure has
 # bucket + owner_gate + reason; REC-C0 only blocks on "mandatory" items.
@@ -93,21 +93,21 @@ owner_gate = "bucket D"
 reason = "frame capture requires ptrace attach; deferred to REC-C1/bucket D per cycle scoping."
 
 [baseline_scope.deferred]
-description = "Real bugs owned by later gates. Every deferred failure has a concrete test ID. The Debt Sentinel requires the observed failure set to equal the declared set exactly and fails on stale waivers, unclassified regressions, missing tests, incomplete runs, or configuration drift."
+description = "Real bugs owned by later gates. Every deferred failure has a concrete test ID. The Debt Sentinel requires the observed failure set to equal the declared set exactly and fails on stale waivers, unclassified regressions, missing tests, incomplete runs, or configuration drift. The bucket is empty as of REC-C1.3: DEF-001 was the last deferred failure."
 
-[[baseline_scope.deferred.failures]]
-id = "DEF-001"
-suite = "chronos-sandbox/tests/query_filters.rs + chronos-sandbox/tests/query_edge_cases.rs"
-tests = [
-  "query_filters::test_query_events_offset_pagination",
-  "query_filters::test_query_events_offset_beyond_total",
-  "query_filters::test_query_events_limit_exact_pagination",
-  "query_edge_cases::test_query_events_offset_beyond_total",
-  "query_edge_cases::test_query_events_pagination_all_events",
-]
-count = 5
-owner_gate = "REC-C1"
-reason = "events_read pagination/offset correctness; TRUTH-002/003 gap."
+# DEF-001 (events_read pagination/offset) REMOVED on 2026-09-16 by REC-C1.3.
+# The five declared failures all pass after the cutover:
+#   query_filters::test_query_events_offset_pagination          PASS
+#   query_filters::test_query_events_offset_beyond_total        PASS
+#   query_filters::test_query_events_limit_exact_pagination     PASS
+#   query_edge_cases::test_query_events_offset_beyond_total     PASS
+#   query_edge_cases::test_query_events_pagination_all_events   PASS
+# Evidence: `cargo test -p chronos-sandbox --test query_filters --test
+# query_edge_cases -- --test-threads=1` -> 19 passed; 0 failed (both suites
+# fully green). The C1.0 characterizations that asserted the wrong behaviour all
+# went red at the same time, which is the stale-waiver signal; they were not
+# deleted but rewritten as positive contract tests in
+# `chronos-sandbox/tests/rec_c1_characterization.rs`.
 
 # DEF-002 (tripwires) REMOVED on 2026-09-16 by the REC-C0.5-D sentinel.
 # Local `cargo test -p chronos-sandbox --test tripwire_tools` reports
@@ -143,9 +143,15 @@ notes = "chronos-log exists and native can dual-write, but EventBus-only and Que
 [[requirement]]
 id = "TRUTH-002"
 title = "Agent-visible reads use authoritative EventSeq cursors"
-status = "gap"
+status = "verified"
 owner_gate = "REC-C1"
-notes = "events_read currently accepts but does not apply its cursor to the query position."
+evidence = [
+  "crates/chronos-services/src/events_cursor.rs",
+  "crates/chronos-services/src/events_log_read.rs",
+  "crates/chronos-log/src/memory.rs::read_from_seq",
+]
+notes = "REC-C1.3: events_read resolves the session-owned ExecutionLog through SessionExecutionLogRegistry and reads stateless EventSeq pages; the wire cursor is the opaque EventsCursorV1 and filters never move the position."
+verify = "cargo test -p chronos-services --lib rec_c1_3; cargo test -p chronos-sandbox --test rec_c1_characterization -- --test-threads=1"
 
 [[requirement]]
 id = "TRUTH-003"

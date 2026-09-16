@@ -34,24 +34,23 @@
 //! position at the MCP boundary and then calls this same dispatcher, so there
 //! is exactly one real read implementation.
 
-use std::collections::HashMap;
-
 use chronos_domain::{EventType, TraceEvent};
-use std::sync::Mutex;
 
 use crate::error::ServiceError;
 use crate::events_cursor::{EventsCursorError, EventsCursorV1};
 use crate::events_log_read::{find_by_id, read_page, LogReadFilters};
 use crate::output::{EventsReadKind, EventsReadOutput, EventsReadProvenance, QueryEventsResult};
-use crate::probe::LiveProbeSession;
-use crate::session_log::SessionExecutionLog;
+use crate::session_log::{SessionExecutionLog, SessionExecutionLogRegistry};
 
 /// Borrowed handle to the live-probe map (shared with the MCP server).
 ///
 /// REC-C1.3: reads come from the session-owned log, so the context needs the
 /// sessions — not the engine map.
 pub struct EventsReadContext<'a> {
-    pub live_probes: &'a Mutex<HashMap<String, LiveProbeSession>>,
+    /// REC-C1.3: reads resolve the log from the registry, which outlives the
+    /// live-probe map. There is exactly one source; no live/finalized/engine
+    /// chain to maintain.
+    pub execution_logs: &'a SessionExecutionLogRegistry,
 }
 
 /// Input for [`ChronosEventsReadService::read`].
@@ -107,14 +106,7 @@ impl ChronosEventsReadService {
         ctx: &EventsReadContext<'_>,
         session_id: &str,
     ) -> Result<SessionExecutionLog, ServiceError> {
-        let probes = ctx
-            .live_probes
-            .lock()
-            .map_err(|_| ServiceError::LockPoisoned)?;
-        let live = probes
-            .get(session_id)
-            .ok_or_else(|| ServiceError::SessionNotFound(session_id.to_string()))?;
-        Ok(live.execution_log.clone())
+        ctx.execution_logs.get(session_id)
     }
 
     async fn query(
@@ -237,11 +229,10 @@ mod tests {
     use crate::output::EventsReadKind;
     use chronos_domain::{EventData, EventType, SourceLocation};
     use chronos_log::{ExecutionPayload, NewExecutionRecord, SessionId};
-    use std::sync::Arc;
-
     struct Fixture {
-        ctx_probes: Arc<Mutex<HashMap<String, LiveProbeSession>>>,
+        registry: SessionExecutionLogRegistry,
         session_id: String,
+        _log: SessionExecutionLog,
     }
 
     impl Fixture {
@@ -292,36 +283,18 @@ mod tests {
             }
             handle.flush().ok();
 
-            let mut map = HashMap::new();
-            map.insert(
-                session_id.clone(),
-                crate::probe::LiveProbeSession {
-                    backend: chronos_native::NativeProbeBackend::new(
-                        chronos_domain::bus::EventBus::new_shared(16),
-                    )
-                    .attach_execution_log(owned.handle()),
-                    session: chronos_domain::CaptureSession::new(
-                        0,
-                        chronos_domain::Language::Rust,
-                        chronos_domain::CaptureConfig::new("noop"),
-                    ),
-                    language: chronos_domain::Language::Rust,
-                    target: "noop".into(),
-                    attached: false,
-                    ebpf_adapter: None,
-                    ebpf_attachment: None,
-                    execution_log: owned,
-                },
-            );
+            let registry = SessionExecutionLogRegistry::new();
+            registry.register(owned.clone()).expect("register");
             Self {
-                ctx_probes: Arc::new(Mutex::new(map)),
+                registry,
                 session_id,
+                _log: owned,
             }
         }
 
         fn ctx(&self) -> EventsReadContext<'_> {
             EventsReadContext {
-                live_probes: &self.ctx_probes,
+                execution_logs: &self.registry,
             }
         }
 
@@ -425,13 +398,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unknown_session_is_reported_not_silently_empty() {
+    async fn unknown_session_reports_unavailable_not_a_fallback() {
         let fx = Fixture::new("missing", 3);
         let mut input = fx.input(10, None);
         input.session_id = "nope".into();
         let err = ChronosEventsReadService::read(&fx.ctx(), input)
             .await
             .unwrap_err();
-        assert!(matches!(err, ServiceError::SessionNotFound(_)), "{err:?}");
+        assert!(
+            matches!(err, ServiceError::ExecutionLogUnavailable { .. }),
+            "a missing log must never fall back to another source: {err:?}"
+        );
     }
 }

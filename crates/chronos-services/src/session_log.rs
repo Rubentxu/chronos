@@ -161,6 +161,115 @@ impl SessionExecutionLog {
     }
 }
 
+/// Session-scoped registry of `ExecutionLog` handles (REC-C1.3).
+///
+/// ## Why a registry and not a second map of finalized logs
+///
+/// The log used to be reachable only through `live_probes`, so `probe_stop`
+/// destroyed the only route to it and a read of a stopped session could only
+/// answer `SessionNotFound`. Keeping a *second* `finalized_logs` map would mean
+/// two places that can hold the log and a lifecycle transition to move it,
+/// including a window ("removed from live, not yet inserted into finalized")
+/// where a read fails.
+///
+/// The registry instead lives for the whole logical life of the session:
+///
+/// ```text
+/// session_start -> registry.register(clone of the SAME handle)
+/// probe_stop    -> live_probes.remove() ; registry untouched
+/// drop/delete   -> cleanup_session_memory removes the entry
+/// ```
+///
+/// Reads never change source when the session changes state, and there is no
+/// alternative-source chain to maintain.
+#[derive(Default)]
+pub struct SessionExecutionLogRegistry {
+    logs: std::sync::Mutex<std::collections::HashMap<String, SessionExecutionLog>>,
+}
+
+impl std::fmt::Debug for SessionExecutionLogRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let ids: Vec<String> = self
+            .logs
+            .lock()
+            .map(|m| m.keys().cloned().collect())
+            .unwrap_or_default();
+        f.debug_struct("SessionExecutionLogRegistry")
+            .field("sessions", &ids)
+            .finish()
+    }
+}
+
+impl SessionExecutionLogRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register `log` under its own session id.
+    ///
+    /// The key is always `log.session_id()`, so a handle can never be indexed
+    /// under an identity it does not carry. Re-registering the SAME handle is
+    /// idempotent; registering a DIFFERENT handle for an existing session is an
+    /// error rather than a silent replacement, because that would swap the
+    /// evidence a reader is watching.
+    pub fn register(&self, log: SessionExecutionLog) -> Result<(), ServiceError> {
+        let key = log.session_id().as_str().to_string();
+        let mut map = self.logs.lock().map_err(|_| ServiceError::LockPoisoned)?;
+        if let Some(existing) = map.get(&key) {
+            if std::sync::Arc::ptr_eq(&existing.handle(), &log.handle()) {
+                return Ok(());
+            }
+            return Err(ServiceError::ExecutionLogIdentityMismatch {
+                expected: key.clone(),
+                actual: format!("a different ExecutionLog handle for {key}"),
+            });
+        }
+        map.insert(key, log);
+        Ok(())
+    }
+
+    /// The session's log, or a typed error.
+    ///
+    /// Deliberately NOT `SessionNotFound`: a session may be perfectly known to
+    /// other surfaces while having no `ExecutionLog` here (a session loaded from
+    /// the store today rebuilds a `QueryEngine`, not a log). Reopening that log
+    /// is REC-C1.5, and until then the honest answer is "unavailable", never a
+    /// fallback to another source.
+    pub fn get(&self, session_id: &str) -> Result<SessionExecutionLog, ServiceError> {
+        let map = self.logs.lock().map_err(|_| ServiceError::LockPoisoned)?;
+        map.get(session_id).cloned().ok_or_else(|| {
+            ServiceError::ExecutionLogUnavailable {
+                session_id: session_id.to_string(),
+                reason: "no ExecutionLog registered for this session (a session loaded                          from the session store has none yet; reopen belongs to REC-C1.5)"
+                    .to_string(),
+            }
+        })
+    }
+
+    /// Remove and return the session's log (drop/delete cleanup).
+    pub fn remove(&self, session_id: &str) -> Option<SessionExecutionLog> {
+        self.logs
+            .lock()
+            .ok()
+            .and_then(|mut map| map.remove(session_id))
+    }
+
+    pub fn contains(&self, session_id: &str) -> bool {
+        self.logs
+            .lock()
+            .map(|map| map.contains_key(session_id))
+            .unwrap_or(false)
+    }
+
+    pub fn len(&self) -> usize {
+        self.logs.lock().map(|map| map.len()).unwrap_or(0)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,6 +309,69 @@ mod tests {
         assert!(EventsCursorV1::decode_for_session(&cursor.encode(), &sid).is_ok());
         let other = SessionId::new("someone-else");
         assert!(EventsCursorV1::decode_for_session(&cursor.encode(), &other).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn registry_keys_by_the_logs_own_identity_and_is_idempotent() {
+        let dir = tmpdir("reg");
+        let log = SessionExecutionLog::open(&dir, SessionId::new("sess-reg")).expect("log");
+        let registry = SessionExecutionLogRegistry::new();
+        registry.register(log.clone()).expect("register");
+        assert!(registry.contains("sess-reg"));
+        // Same handle again: idempotent, not an error.
+        registry
+            .register(log.clone())
+            .expect("idempotent re-register");
+        let got = registry.get("sess-reg").expect("get");
+        assert!(Arc::ptr_eq(&got.handle(), &log.handle()), "same Arc");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn registry_refuses_to_swap_the_handle_for_an_existing_session() {
+        let dir_a = tmpdir("swap-a");
+        let dir_b = tmpdir("swap-b");
+        let first = SessionExecutionLog::open(&dir_a, SessionId::new("dup")).expect("a");
+        let second = SessionExecutionLog::open(&dir_b, SessionId::new("dup")).expect("b");
+        let registry = SessionExecutionLogRegistry::new();
+        registry.register(first.clone()).expect("first");
+        let err = registry.register(second).unwrap_err();
+        assert!(
+            matches!(err, ServiceError::ExecutionLogIdentityMismatch { .. }),
+            "{err:?}"
+        );
+        // The original is still the registered one.
+        assert!(Arc::ptr_eq(
+            &registry.get("dup").unwrap().handle(),
+            &first.handle()
+        ));
+        let _ = std::fs::remove_dir_all(&dir_a);
+        let _ = std::fs::remove_dir_all(&dir_b);
+    }
+
+    #[test]
+    fn registry_reports_unavailable_distinctly_from_unknown() {
+        let registry = SessionExecutionLogRegistry::new();
+        let err = registry.get("never-existed").unwrap_err();
+        match err {
+            ServiceError::ExecutionLogUnavailable { session_id, reason } => {
+                assert_eq!(session_id, "never-existed");
+                assert!(reason.contains("REC-C1.5"), "{reason}");
+            }
+            other => panic!("expected ExecutionLogUnavailable, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn registry_remove_drops_the_entry() {
+        let dir = tmpdir("rm");
+        let log = SessionExecutionLog::open(&dir, SessionId::new("gone")).expect("log");
+        let registry = SessionExecutionLogRegistry::new();
+        registry.register(log).expect("register");
+        assert!(registry.remove("gone").is_some());
+        assert!(!registry.contains("gone"));
+        assert!(registry.get("gone").is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

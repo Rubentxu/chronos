@@ -125,6 +125,15 @@ pub enum ServiceError {
         payload_tag: String,
     },
 
+    /// The session has no `ExecutionLog` available in this process.
+    ///
+    /// Distinct from `SessionNotFound`: the session may be known to other
+    /// surfaces (a session loaded from the store) while its log is not open
+    /// here. Reopening is REC-C1.5; until then this is reported honestly instead
+    /// of falling back to another source.
+    #[error("ExecutionLog unavailable for session {session_id}: {reason}")]
+    ExecutionLogUnavailable { session_id: String, reason: String },
+
     /// The log backend reported "not exhausted" while making no forward
     /// progress (REC-C1.3).
     ///

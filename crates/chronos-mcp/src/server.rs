@@ -132,6 +132,9 @@ pub struct ChronosServer {
     /// index). Guarded by a std Mutex; used by the observe dispatcher to
     /// generate stable `uprobe-<session>-<n>` ids.
     uprobe_counter: Arc<std::sync::Mutex<HashMap<String, usize>>>,
+    /// REC-C1.3: session-scoped ExecutionLog registry. Outlives `live_probes`
+    /// so a stopped session's log stays readable without a second source.
+    execution_logs: Arc<chronos_services::session_log::SessionExecutionLogRegistry>,
     /// Live probe sessions: session_id → LiveProbeSession.
     /// These are real-time probe sessions using `NativeProbeBackend` where events
     /// stream to an `EventBus` ring buffer. Use `probe_drain` to read current events
@@ -1848,6 +1851,9 @@ impl ChronosServer {
             active_session: Arc::new(Mutex::new(None)),
             tripwire_manager: Arc::new(TripwireManager::new()),
             uprobe_counter: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            execution_logs: Arc::new(
+                chronos_services::session_log::SessionExecutionLogRegistry::new(),
+            ),
             live_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
             live_browser_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
             degraded,
@@ -1871,6 +1877,9 @@ impl ChronosServer {
                 active_session: Arc::new(Mutex::new(None)),
                 tripwire_manager: Arc::new(TripwireManager::new()),
                 uprobe_counter: Arc::new(std::sync::Mutex::new(HashMap::new())),
+                execution_logs: Arc::new(
+                    chronos_services::session_log::SessionExecutionLogRegistry::new(),
+                ),
                 live_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
                 live_browser_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
                 degraded: false,
@@ -2091,6 +2100,9 @@ impl ChronosServer {
     /// Remove all in-memory state for a session: query engine, language tag,
     /// and connected-session marker.
     async fn cleanup_session_memory(&self, session_id: &str) {
+        // REC-C1.3: drop/delete ends the log's in-memory life. Segment files are
+        // NOT removed here; retention policy belongs to REC-C1.5.
+        self.execution_logs.remove(session_id);
         self.engines.lock().await.remove(session_id);
         self.session_languages.lock().await.remove(session_id);
         if let Ok(mut sessions) = self.connected_sessions.lock() {
@@ -2437,11 +2449,14 @@ impl ChronosServer {
         let cursor = if params.offset == 0 {
             None
         } else {
-            let sid = self.live_probes.lock().ok().and_then(|probes| {
-                probes
-                    .get(&params.session_id)
-                    .map(|live| live.execution_log.session_id().clone())
-            });
+            // Registry, not live_probes: a stopped session's log must still be
+            // addressable, otherwise `offset` silently degrades to a fresh read
+            // (which is exactly the bug this cutover removes).
+            let sid = self
+                .execution_logs
+                .get(&params.session_id)
+                .ok()
+                .map(|log| log.session_id().clone());
             sid.and_then(|session| {
                 chronos_services::events_cursor::EventsCursorV1::start(session)
                     .advanced_to(chronos_log::EventSeq::new(params.offset as u64))
@@ -2453,7 +2468,7 @@ impl ChronosServer {
         // REC-C1.3: the authoritative read needs the sessions (session-owned
         // logs), not the engine map.
         let ctx = EventsReadContext {
-            live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
         };
         let input = EventsReadInput {
             session_id: params.session_id.clone(),
@@ -2521,7 +2536,7 @@ impl ChronosServer {
         // REC-C1.3: the authoritative read needs the sessions (session-owned
         // logs), not the engine map.
         let ctx = EventsReadContext {
-            live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
         };
         let input = EventsReadInput {
             session_id: params.session_id.clone(),
@@ -2876,7 +2891,8 @@ impl ChronosServer {
             Err(ServiceError::NoExecutionLog(_))
             | Err(ServiceError::ExecutionLogIdentityMismatch { .. })
             | Err(ServiceError::EvidenceDecodeFailed { .. })
-            | Err(ServiceError::EvidenceReadStalled { .. }) => {
+            | Err(ServiceError::EvidenceReadStalled { .. })
+            | Err(ServiceError::ExecutionLogUnavailable { .. }) => {
                 return Ok(CallToolResult::error(text_content(
                     "internal error: unexpected ExecutionLog error",
                 )));
@@ -4128,6 +4144,7 @@ impl ChronosServer {
         let label_for_v2 = params.label.clone();
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -4190,6 +4207,7 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -4282,6 +4300,7 @@ impl ChronosServer {
         }
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -4346,6 +4365,7 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -4448,6 +4468,7 @@ impl ChronosServer {
         };
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -4509,6 +4530,7 @@ impl ChronosServer {
         // drain_subscriptions=true` defaults matching v1 behavior).
         let ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -4602,6 +4624,7 @@ impl ChronosServer {
         };
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -4662,6 +4685,7 @@ impl ChronosServer {
         };
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -4840,6 +4864,7 @@ impl ChronosServer {
         // by synthesising a stub metadata from the LiveProbeSession.
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -4909,6 +4934,7 @@ impl ChronosServer {
 
         let ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -4994,6 +5020,7 @@ impl ChronosServer {
 
         let ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -5074,6 +5101,7 @@ impl ChronosServer {
 
         let ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -5129,6 +5157,7 @@ impl ChronosServer {
 
         let ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -5182,6 +5211,7 @@ impl ChronosServer {
 
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -5287,6 +5317,7 @@ impl ChronosServer {
 
         let ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -5813,7 +5844,7 @@ impl ChronosServer {
         // REC-C1.3: the authoritative read needs the sessions (session-owned
         // logs), not the engine map.
         let ctx = EventsReadContext {
-            live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
         };
         let input = EventsReadInput {
             session_id: params.session_id,
@@ -5855,6 +5886,11 @@ impl ChronosServer {
             Err(ServiceError::NoExecutionLog(s)) => Ok(CallToolResult::error(text_content(
                 format!("session '{s}' owns no ExecutionLog"),
             ))),
+            Err(ServiceError::ExecutionLogUnavailable { session_id, reason }) => {
+                Ok(CallToolResult::error(text_content(format!(
+                    "ExecutionLog unavailable for session '{session_id}': {reason}"
+                ))))
+            }
             Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
     }
@@ -5933,6 +5969,7 @@ impl ChronosServer {
         // Build the ProbeContext for the dispatcher.
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,

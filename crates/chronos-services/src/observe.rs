@@ -432,6 +432,7 @@ mod tests {
         engines: tokio::sync::Mutex<HashMap<String, chronos_query::QueryEngine>>,
         session_languages: Arc<tokio::sync::Mutex<HashMap<String, chronos_domain::Language>>>,
         active_session: tokio::sync::Mutex<Option<String>>,
+        execution_logs: crate::session_log::SessionExecutionLogRegistry,
     }
 
     impl TestRig {
@@ -444,6 +445,7 @@ mod tests {
                 engines: tokio::sync::Mutex::new(HashMap::new()),
                 session_languages: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
                 active_session: tokio::sync::Mutex::new(None),
+                execution_logs: crate::session_log::SessionExecutionLogRegistry::new(),
             }
         }
 
@@ -451,6 +453,7 @@ mod tests {
         fn probe_ctx<'a>(&'a self) -> ProbeContext<'a> {
             ProbeContext {
                 live_probes: &self.live_probes,
+                execution_logs: &self.execution_logs,
                 engines: &self.engines,
                 session_languages: &self.session_languages,
                 tripwire_manager: &self.manager,

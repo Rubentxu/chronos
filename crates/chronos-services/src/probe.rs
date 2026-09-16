@@ -75,6 +75,9 @@ pub struct EbpfAttachmentInfo {
 pub struct ProbeContext<'a> {
     /// Live probe sessions: `session_id` → `LiveProbeSession`.
     pub live_probes: &'a Mutex<HashMap<String, LiveProbeSession>>,
+    /// Session-scoped ExecutionLog registry (REC-C1.3). Outlives `live_probes`
+    /// so a stopped session's log stays readable.
+    pub execution_logs: &'a crate::session_log::SessionExecutionLogRegistry,
     /// Finalized session engines: `session_id` → `QueryEngine`.
     /// Kept here so `probe_stop` can hand off the events to the indexer path
     /// (the actual `build_and_store_engine` call still happens in the server,
@@ -189,6 +192,17 @@ pub enum ProbeInjectResult {
     },
 }
 
+/// Publish a session's log handle in the registry (REC-C1.3).
+///
+/// The registry stores a clone of the very handle the session owns, so there is
+/// one log and one identity, never a copy.
+fn register_session_log(
+    ctx: &ProbeContext<'_>,
+    log: &crate::session_log::SessionExecutionLog,
+) -> Result<(), ServiceError> {
+    ctx.execution_logs.register(log.clone())
+}
+
 /// Resolve the directory for a session-owned ExecutionLog.
 ///
 /// `explicit` wins when the caller configured one; otherwise the session gets a
@@ -274,6 +288,11 @@ impl ProbeService {
             ebpf_attachment: None,
             execution_log: owned_log,
         };
+        // Publish the SAME handle in the registry before the session becomes
+        // visible to callers: a reader can then resolve the log for the whole
+        // logical life of the session, live or stopped.
+        crate::probe::register_session_log(ctx, &live_probe.execution_log)?;
+
         ctx.live_probes
             .lock()
             .map_err(|_| ServiceError::LockPoisoned)?
