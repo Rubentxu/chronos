@@ -52,3 +52,19 @@ REMOTE   : future; same port, same semantics    -> out of scope until P2
 2. No silent escalation (requirement > capability = hard error).
 3. Cleanup verified (destroy returns verified-clean, not best-effort).
 4. No backend types in domain/application contracts (adapter-owned extensions).
+
+## Status header (added after S0.1a)
+
+```text
+stability          = experimental
+owner              = SANDBOX-S0
+promotion_gate     = S0.1 complete (all four adapters agree on the scenario contract)
+not-yet-a-crate    = lives in docs/design, not in a workspace crate
+```
+
+Open question raised by S0.1a results: does `collect()` belong to the
+environment port at all, or to an evidence layer that consumes a
+`ExecutionHandle`? Evidence so far (runner had to hand-roll artifact capture
+in every adapter) suggests evidence collection is a *separate* concern and
+should not be an `ExecutionEnvironment` method. To be decided by S0.1b/c/d,
+not now.
