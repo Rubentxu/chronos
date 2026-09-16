@@ -170,11 +170,150 @@ struct FlushedSegment {
 ///
 /// Cheap to clone (clone shares the same on-disk directory and
 /// in-memory state).
+/// Durable retention metadata for one execution log (REC-C1.5.1).
+///
+/// `retained_from` is the authoritative LOGICAL boundary: the earliest
+/// queryable `EventSeq`. Deleting segment files is only physical reclamation,
+/// and `retained_from` is what a reader is answered against, before and after a
+/// restart.
+pub const MANIFEST_FILE_NAME: &str = "execution-log.manifest.json";
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct ExecutionLogManifest {
+    pub schema_version: u32,
+    pub session_id: String,
+    pub retained_from: u64,
+    pub created_at_unix_ms: u128,
+}
+
+impl ExecutionLogManifest {
+    pub const SCHEMA_VERSION: u32 = 1;
+
+    pub fn new(session_id: &SessionId, retained_from: EventSeq) -> Self {
+        Self {
+            schema_version: Self::SCHEMA_VERSION,
+            session_id: session_id.as_str().to_string(),
+            retained_from: retained_from.0,
+            created_at_unix_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or(0),
+        }
+    }
+}
+
+pub fn manifest_path(dir: &std::path::Path) -> PathBuf {
+    dir.join(MANIFEST_FILE_NAME)
+}
+
+/// Persist `manifest` atomically: tmp file -> fsync -> rename -> fsync(dir).
+///
+/// The order matters for crash safety: the watermark must be committed BEFORE
+/// any physical reclamation, so a crash can only ever leave "present on disk but
+/// logically retired", never "deleted without a record of why".
+pub fn write_manifest_atomic(
+    dir: &std::path::Path,
+    manifest: &ExecutionLogManifest,
+) -> Result<(), LogError> {
+    use std::io::Write;
+    let final_path = manifest_path(dir);
+    let tmp_path = dir.join(format!("{}.tmp", MANIFEST_FILE_NAME));
+    let bytes = serde_json::to_vec_pretty(manifest)
+        .map_err(|e| LogError::Backend(format!("serialize manifest: {e}")))?;
+    {
+        let mut f = std::fs::File::create(&tmp_path)
+            .map_err(|e| LogError::Backend(format!("create {:?}: {e}", tmp_path)))?;
+        f.write_all(&bytes)
+            .map_err(|e| LogError::Backend(format!("write {:?}: {e}", tmp_path)))?;
+        f.sync_all()
+            .map_err(|e| LogError::Backend(format!("fsync {:?}: {e}", tmp_path)))?;
+    }
+    std::fs::rename(&tmp_path, &final_path).map_err(|e| {
+        LogError::Backend(format!("rename {:?} -> {:?}: {e}", tmp_path, final_path))
+    })?;
+    // fsync the directory so the rename itself is durable.
+    if let Ok(d) = std::fs::File::open(dir) {
+        let _ = d.sync_all();
+    }
+    Ok(())
+}
+
+/// Lowest `start_seq` among the session's segment files, if any.
+fn first_segment_start(
+    dir: &std::path::Path,
+    session_id: &SessionId,
+) -> Result<Option<EventSeq>, LogError> {
+    let prefix = format!("{}-", sanitize_session(session_id));
+    let mut lowest: Option<EventSeq> = None;
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(LogError::Backend(format!("read_dir {dir:?}: {e}"))),
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.starts_with(&prefix) || !name.ends_with(".seg") {
+            continue;
+        }
+        // "<session>-<start_seq>.seg"
+        if let Some(rest) = name
+            .strip_prefix(&prefix)
+            .and_then(|r| r.strip_suffix(".seg"))
+        {
+            if let Ok(seq) = rest.parse::<u64>() {
+                let seq = EventSeq::new(seq);
+                lowest = Some(match lowest {
+                    Some(prev) if prev <= seq => prev,
+                    _ => seq,
+                });
+            }
+        }
+    }
+    Ok(lowest)
+}
+
+pub fn read_manifest(dir: &std::path::Path) -> Result<Option<ExecutionLogManifest>, LogError> {
+    let path = manifest_path(dir);
+    match std::fs::read(&path) {
+        Ok(bytes) => serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(|e| LogError::Backend(format!("parse {:?}: {e}", path))),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(LogError::Backend(format!("read {:?}: {e}", path))),
+    }
+}
+
+/// Outcome of a retention pass.
+///
+/// Separates LOGICAL retention (the watermark is committed; readers already see
+/// the new boundary) from PHYSICAL reclamation (files may still be present).
+/// Collapsing the two into a bare `Result` would hide exactly the distinction
+/// that matters after a partial failure.
+#[derive(Debug, Clone)]
+pub struct CompactionOutcome {
+    pub retained_from: EventSeq,
+    pub removed: Vec<PathBuf>,
+    pub reclaim_failures: Vec<(PathBuf, String)>,
+}
+
+impl Default for CompactionOutcome {
+    fn default() -> Self {
+        Self {
+            retained_from: EventSeq::ZERO,
+            removed: Vec::new(),
+            reclaim_failures: Vec::new(),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct SegmentedExecutionLog {
     inner: Arc<Mutex<Inner>>,
     session_id: SessionId,
     config: SegmentedConfig,
+    /// Logical retention boundary (authoritative). `EventSeq::ZERO` means
+    /// nothing has been retired.
+    retained_from: Arc<Mutex<EventSeq>>,
 }
 
 impl SegmentedExecutionLog {
@@ -192,11 +331,60 @@ impl SegmentedExecutionLog {
             metrics: CompactionMetricsInner::default(),
             loaded_projection: None,
         };
+        let retained_from = match read_manifest(&config.segment_dir)? {
+            Some(m) => {
+                if m.schema_version != ExecutionLogManifest::SCHEMA_VERSION {
+                    return Err(LogError::Backend(format!(
+                        "unsupported execution-log manifest schema {}",
+                        m.schema_version
+                    )));
+                }
+                // One identity, not two: the manifest is authoritative and a
+                // disagreement with the requested session is a hard error.
+                if m.session_id != session_id.as_str() {
+                    return Err(LogError::IdentityMismatch {
+                        requested: session_id.as_str().to_string(),
+                        manifest: m.session_id,
+                    });
+                }
+                EventSeq::new(m.retained_from)
+            }
+            None => {
+                // No manifest: infer ONLY when inference is safe.
+                let first = first_segment_start(&config.segment_dir, &session_id)?;
+                match first {
+                    // Nothing on disk: a brand-new log legitimately starts at 0.
+                    None => {
+                        let m = ExecutionLogManifest::new(&session_id, EventSeq::ZERO);
+                        write_manifest_atomic(&config.segment_dir, &m)?;
+                        EventSeq::ZERO
+                    }
+                    // A legacy log whose history starts at seq#0 can be migrated
+                    // conservatively: nothing has been retired.
+                    Some(seq) if seq == EventSeq::ZERO => {
+                        let m = ExecutionLogManifest::new(&session_id, EventSeq::ZERO);
+                        write_manifest_atomic(&config.segment_dir, &m)?;
+                        EventSeq::ZERO
+                    }
+                    // History that does not start at 0 could mean "retained" or
+                    // "files missing". Refuse to fabricate the difference.
+                    Some(seq) => {
+                        return Err(LogError::RetentionMetadataMissing {
+                            dir: config.segment_dir.display().to_string(),
+                            first_segment_seq: seq.0,
+                        })
+                    }
+                }
+            }
+        };
+
         let this = Self {
             inner: Arc::new(Mutex::new(inner)),
             session_id,
             config,
+            retained_from: Arc::new(Mutex::new(retained_from)),
         };
+        this.assert_layout_matches_retention()?;
         if this.config.replay_on_open {
             this.replay_into_inner()?;
             this.replay_cursors_into_inner()?;
@@ -205,6 +393,30 @@ impl SegmentedExecutionLog {
             this.auto_load_projection()?;
         }
         Ok(this)
+    }
+
+    /// The authoritative logical retention boundary (earliest queryable seq).
+    pub fn retained_from(&self) -> EventSeq {
+        *self.retained_from.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Every surviving segment must lie entirely at or after `retained_from`.
+    ///
+    /// A segment straddling the boundary means the manifest and the layout are
+    /// incompatible; partially trimming a segment would invent evidence, so this
+    /// fails closed.
+    fn assert_layout_matches_retention(&self) -> Result<(), LogError> {
+        let retained = self.retained_from();
+        for meta in self.list_segment_headers()? {
+            if meta.start_seq < retained && meta.end_seq >= retained {
+                return Err(LogError::SegmentCrossesRetention {
+                    segment_start: meta.start_seq.0,
+                    segment_end: meta.end_seq.0,
+                    retained_from: retained.0,
+                });
+            }
+        }
+        Ok(())
     }
 
     pub fn session_id(&self) -> &SessionId {
@@ -456,6 +668,16 @@ impl SegmentedExecutionLog {
         from_seq: EventSeq,
         limit: usize,
     ) -> Result<crate::cursor::LogPage, crate::error::LogError> {
+        // The watermark is checked BEFORE touching records, so a retired range
+        // is answered identically before and after a restart even while physical
+        // reclamation is still in flight.
+        let retained = self.retained_from();
+        if from_seq < retained {
+            return Err(LogError::PositionBeforeRetention {
+                requested_next_seq: from_seq,
+                retained_from: retained,
+            });
+        }
         let inner = self.inner.lock().expect("poisoned");
         inner
             .backend
@@ -487,8 +709,14 @@ impl SegmentedExecutionLog {
     /// into the in-memory backend. Used by `open()` to restore seq
     /// allocator state before returning a usable handle.
     pub fn replay_into_inner(&self) -> Result<(), LogError> {
+        let retained = self.retained_from();
         let mut inner = self.inner.lock().expect("poisoned");
         for meta in self.list_segment_headers()? {
+            if meta.end_seq < retained {
+                // Reclaimable garbage, not live evidence: a crash between the
+                // manifest commit and the file removal is expected.
+                continue;
+            }
             let path = segment_path(&self.config.segment_dir, &self.session_id, meta.start_seq);
             let entries = match read_segment(&path) {
                 Ok(d) => d.entries,
@@ -603,29 +831,77 @@ impl SegmentedExecutionLog {
     /// `segments_removed_total` and `bytes_reclaimed_total`
     /// accumulate across runs.
     pub fn compact_up_to(&self, cutoff: EventSeq) -> Result<Vec<PathBuf>, LogError> {
-        let mut removed = Vec::new();
-        let mut removed_bytes = 0u64;
-        let mut survivors = Vec::new();
+        Ok(self.retain_up_to(cutoff)?.removed)
+    }
+
+    /// Retire history up to `cutoff`, in the only crash-safe order.
+    ///
+    /// ```text
+    /// compute the new boundary
+    ///   -> persist manifest atomically (commit)
+    ///   -> activate the boundary in memory
+    ///   -> reclaim segment files
+    /// ```
+    ///
+    /// A crash can therefore leave "present on disk but logically retired" (safe,
+    /// conservative) but never "deleted with no record of why".
+    ///
+    /// The boundary is NOT `cutoff + 1`: it advances only over segments that are
+    /// WHOLLY retired, so `retained_from` stays aligned with the physical unit of
+    /// retention. With segments 0..=255 and 256..=511, `compact_up_to(499)`
+    /// yields `retained_from = 256`.
+    pub fn retain_up_to(&self, cutoff: EventSeq) -> Result<CompactionOutcome, LogError> {
+        let mut outcome = CompactionOutcome {
+            retained_from: self.retained_from(),
+            ..Default::default()
+        };
+
+        // 1. Compute the new boundary from the contiguous fully-retired prefix.
+        let mut new_boundary = self.retained_from();
+        {
+            let inner = self.inner.lock().expect("poisoned");
+            let mut segs: Vec<_> = inner.flushed_segments.clone();
+            segs.sort_by_key(|s| s.start_seq.0);
+            for seg in segs {
+                if seg.end_seq <= cutoff && seg.start_seq >= new_boundary {
+                    new_boundary = EventSeq::new(seg.end_seq.0 + 1);
+                } else if seg.end_seq > cutoff {
+                    break;
+                }
+            }
+        }
+
+        if new_boundary <= self.retained_from() {
+            // Nothing to retire: no manifest write, no deletion.
+            return Ok(outcome);
+        }
+
+        // 2. Commit the watermark BEFORE any deletion.
+        let manifest = ExecutionLogManifest::new(&self.session_id, new_boundary);
+        write_manifest_atomic(&self.config.segment_dir, &manifest)?;
+        *self.retained_from.lock().unwrap_or_else(|e| e.into_inner()) = new_boundary;
+        outcome.retained_from = new_boundary;
+
+        // 3. Reclaim files. A failure here does NOT roll the watermark back:
+        // re-exposing evidence already declared retired would be worse, and the
+        // leftovers are inert (reopen skips segments below the boundary).
         let mut inner = self.inner.lock().expect("poisoned");
+        let mut survivors = Vec::new();
+        let mut removed_bytes = 0u64;
         for seg in inner.flushed_segments.drain(..) {
-            if seg.end_seq <= cutoff {
+            if seg.end_seq < new_boundary {
                 let size = std::fs::metadata(&seg.path).map(|m| m.len()).unwrap_or(0);
                 match std::fs::remove_file(&seg.path) {
                     Ok(()) => {
-                        removed.push(seg.path);
                         removed_bytes += size;
+                        outcome.removed.push(seg.path);
                     }
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                        // Already gone (concurrent delete, manual
-                        // rm). Drop the bookkeeping entry.
-                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
                     Err(e) => {
-                        // Put the segment back so we don't lose
-                        // the bookkeeping on a transient I/O
-                        // failure.
-                        let path = seg.path.clone();
+                        outcome
+                            .reclaim_failures
+                            .push((seg.path.clone(), e.to_string()));
                         survivors.push(seg);
-                        return Err(LogError::Backend(format!("remove_file {:?}: {}", path, e)));
                     }
                 }
             } else {
@@ -633,38 +909,24 @@ impl SegmentedExecutionLog {
             }
         }
         inner.flushed_segments = survivors;
-        // Recompute last_flushed_tail as the max end_seq of the
-        // survivors. If all segments were deleted, fall back to
-        // the buffer's natural state (the allocator may still
-        // have unflushed entries that will be flushed next time).
-        inner.last_flushed_tail = inner.flushed_segments.iter().map(|s| s.end_seq).max();
-        // Update metrics (atomic so they survive the lock drop).
-        if !removed.is_empty() {
-            use std::sync::atomic::Ordering;
-            inner
-                .metrics
-                .compaction_runs
-                .fetch_add(1, Ordering::Relaxed);
-            inner
-                .metrics
-                .segments_removed
-                .fetch_add(removed.len() as u64, Ordering::Relaxed);
-            inner
-                .metrics
-                .bytes_reclaimed
-                .fetch_add(removed_bytes, Ordering::Relaxed);
-            // Drop the in-memory identity-index entries for the
-            // evicted seqs so subsequent reads don't try to
-            // resolve seqs that no longer have a backing record.
-            // Satisfies REQ-IndexesPrunedOnCompaction.
-            inner.backend.prune_secondary_indexes_up_to(cutoff);
-        }
-        Ok(removed)
+        // Metrics describe PHYSICAL reclamation for this logical pass. Counters
+        // are updated only when the pass actually retired something, so an
+        // ineffective pass is not reported as a compaction run.
+        inner
+            .metrics
+            .compaction_runs
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        inner.metrics.segments_removed.fetch_add(
+            outcome.removed.len() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        inner
+            .metrics
+            .bytes_reclaimed
+            .fetch_add(removed_bytes, std::sync::atomic::Ordering::Relaxed);
+        Ok(outcome)
     }
 
-    /// Convenience: pick the cutoff from `min_consumer_cursor()`
-    /// and run `compact_up_to` if a cursor exists. If no consumer
-    /// has read yet, returns an empty list (compaction is unsafe).
     pub fn maybe_compact(&self) -> Result<Vec<PathBuf>, LogError> {
         match self.min_consumer_cursor() {
             Some(cutoff) => self.compact_up_to(cutoff),

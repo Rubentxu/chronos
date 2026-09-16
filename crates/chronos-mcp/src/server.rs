@@ -2929,7 +2929,7 @@ impl ChronosServer {
                     "internal error: unexpected invalid cursor",
                 )));
             }
-            Err(ServiceError::CursorStale) => {
+            Err(ServiceError::CursorStale { .. }) => {
                 return Ok(CallToolResult::error(text_content(
                     "internal error: unexpected cursor stale",
                 )));
@@ -4983,9 +4983,13 @@ impl ChronosServer {
             Err(ServiceError::ProbeNotFound(s)) => Ok(CallToolResult::error(text_content(
                 format!("Live probe session '{}' not found.", s),
             ))),
-            Err(ServiceError::CursorStale) => Ok(CallToolResult::error(text_content(
-                "Cursor is stale; re-anchor with a fresh probe_drain (no cursor).".to_string(),
-            ))),
+            Err(ServiceError::CursorStale {
+                requested_next_seq,
+                retained_from_seq,
+            }) => Ok(CallToolResult::error(text_content(format!(
+                "Cursor at seq {requested_next_seq} is stale; the earliest available position is \
+{retained_from_seq}. This is retention, not evidence loss: re-anchor deliberately."
+            )))),
             Err(ServiceError::DrainFailed(msg)) => Ok(CallToolResult::error(text_content(
                 format!("Failed to drain events: {}", msg),
             ))),

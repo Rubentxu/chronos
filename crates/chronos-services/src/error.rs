@@ -158,9 +158,17 @@ pub enum ServiceError {
     #[error("invalid cursor payload")]
     InvalidCursorPayload,
 
-    /// The cursor was decoded but its total_pushed is older than the live bus.
-    #[error("cursor stale")]
-    CursorStale,
+    /// The cursor points before the durable retention boundary (REC-C1.5.1).
+    ///
+    /// Not evidence loss: the range was retired by policy. Carries both numbers
+    /// so the caller can re-anchor deliberately instead of being silently moved.
+    #[error(
+        "cursor at seq {requested_next_seq} is before the retention boundary {retained_from_seq}"
+    )]
+    CursorStale {
+        requested_next_seq: u64,
+        retained_from_seq: u64,
+    },
 
     /// A non-destructive drain encountered a backend error.
     #[error("drain failed: {0}")]

@@ -500,8 +500,16 @@ impl ProbeService {
                     let stale = matches!(status, chronos_domain::CursorStatus::Stale);
                     (events, new_cursor, stale)
                 }
-                Err(chronos_domain::TraceError::CursorStale { .. }) => {
-                    return Err(ServiceError::CursorStale);
+                Err(chronos_domain::TraceError::CursorStale { expected, current }) => {
+                    // Legacy EventBus drain staleness is a DIFFERENT thing from
+                    // retention: the in-memory buffer moved past the cursor. It
+                    // is reported with its own numbers rather than being dressed
+                    // up as a retention boundary, which would be a Silent Lie
+                    // about why the read failed.
+                    return Err(ServiceError::InvalidInput(format!(
+                        "cursor is stale for the legacy drain path: expected total_pushed={expected}, \
+                         current={current}; re-anchor with a fresh probe_drain"
+                    )));
                 }
                 Err(e) => {
                     return Err(ServiceError::DrainFailed(e.to_string()));

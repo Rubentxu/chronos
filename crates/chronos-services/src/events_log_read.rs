@@ -263,11 +263,7 @@ pub fn read_page(
         limit,
         filters,
         handle.tail_seq(),
-        |position, chunk| {
-            handle
-                .read_from_seq(position, chunk)
-                .map_err(|e| ServiceError::DrainFailed(format!("{e:?}")))
-        },
+        |position, chunk| handle.read_from_seq(position, chunk).map_err(map_log_error),
     )
 }
 
@@ -409,6 +405,24 @@ fn payload_tag(record: &ExecutionRecord) -> String {
     record.payload.tag.clone()
 }
 
+/// Map a log error onto the service surface.
+///
+/// Retention is NOT evidence loss: a cursor before the boundary becomes a typed
+/// `CursorStale` carrying both numbers, so the caller can re-anchor deliberately
+/// instead of being silently moved.
+fn map_log_error(e: chronos_log::LogError) -> ServiceError {
+    match e {
+        chronos_log::LogError::PositionBeforeRetention {
+            requested_next_seq,
+            retained_from,
+        } => ServiceError::CursorStale {
+            requested_next_seq: requested_next_seq.0,
+            retained_from_seq: retained_from.0,
+        },
+        other => ServiceError::DrainFailed(format!("{other:?}")),
+    }
+}
+
 /// Decode a log record's payload into a `TraceEvent`.
 ///
 /// The ExecutionLog payload is JSON-encoded `TraceEvent` (the m1-03 producer
@@ -429,9 +443,7 @@ pub fn find_by_id(
     let handle = log.handle();
     let session_id = log.session_id().as_str().to_string();
     find_by_id_with(&session_id, event_id, |position, chunk| {
-        handle
-            .read_from_seq(position, chunk)
-            .map_err(|e| ServiceError::DrainFailed(format!("{e:?}")))
+        handle.read_from_seq(position, chunk).map_err(map_log_error)
     })
 }
 
