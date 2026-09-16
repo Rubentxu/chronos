@@ -135,6 +135,7 @@ pub struct ChronosServer {
     /// REC-C1.3: session-scoped ExecutionLog registry. Outlives `live_probes`
     /// so a stopped session's log stays readable without a second source.
     execution_logs: Arc<chronos_services::session_log::SessionExecutionLogRegistry>,
+    execution_log_root: std::path::PathBuf,
     /// Live probe sessions: session_id → LiveProbeSession.
     /// These are real-time probe sessions using `NativeProbeBackend` where events
     /// stream to an `EventBus` ring buffer. Use `probe_drain` to read current events
@@ -1864,6 +1865,7 @@ impl ChronosServer {
             execution_logs: Arc::new(
                 chronos_services::session_log::SessionExecutionLogRegistry::new(),
             ),
+            execution_log_root: chronos_log::resolve_execution_log_root(),
             live_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
             live_browser_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
             degraded,
@@ -1890,6 +1892,7 @@ impl ChronosServer {
                 execution_logs: Arc::new(
                     chronos_services::session_log::SessionExecutionLogRegistry::new(),
                 ),
+                execution_log_root: chronos_log::resolve_execution_log_root(),
                 live_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
                 live_browser_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
                 degraded: false,
@@ -3453,6 +3456,8 @@ impl ChronosServer {
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
             store: &self.store,
+            execution_log_registry: &self.execution_logs,
+            execution_log_root: &self.execution_log_root,
         };
 
         match SessionsService::save_session(
@@ -3513,6 +3518,8 @@ impl ChronosServer {
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
             store: &self.store,
+            execution_log_registry: &self.execution_logs,
+            execution_log_root: &self.execution_log_root,
         };
 
         match SessionsService::load_session(&params.session_id, &ctx).await {
@@ -3556,6 +3563,8 @@ impl ChronosServer {
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
             store: &self.store,
+            execution_log_registry: &self.execution_logs,
+            execution_log_root: &self.execution_log_root,
         };
 
         match SessionsService::list_sessions(&ctx).await {
@@ -3601,6 +3610,8 @@ impl ChronosServer {
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
             store: &self.store,
+            execution_log_registry: &self.execution_logs,
+            execution_log_root: &self.execution_log_root,
         };
 
         match SessionsService::delete_session(&params.session_id, &ctx).await {
@@ -3643,6 +3654,8 @@ impl ChronosServer {
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
             store: &self.store,
+            execution_log_registry: &self.execution_logs,
+            execution_log_root: &self.execution_log_root,
         };
 
         match SessionsService::drop_session(&params.session_id, &ctx).await {

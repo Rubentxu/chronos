@@ -260,6 +260,8 @@ pub struct ListResult {
 pub struct DeleteResult {
     /// Deleted session identifier.
     pub session_id: String,
+    /// Durable ExecutionLog directories removed by the operation.
+    pub paths_removed: Vec<std::path::PathBuf>,
 }
 
 /// Result of dropping a session from in-memory state.

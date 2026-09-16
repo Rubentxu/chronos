@@ -10,6 +10,7 @@ use std::collections::HashSet;
 use chronos_domain::{Language, SourceLocation, TraceEvent};
 use chronos_query::QueryEngine;
 use chronos_services::error::ServiceError;
+use chronos_services::session_log::SessionExecutionLogRegistry;
 use chronos_services::sessions::{SessionsContext, SessionsService};
 use tokio::sync::Mutex;
 
@@ -88,6 +89,8 @@ fn make_context<'a>(
         session_languages: languages,
         connected_sessions: connected,
         store,
+        execution_log_registry: Box::leak(Box::new(SessionExecutionLogRegistry::new())),
+        execution_log_root: Box::leak(Box::new(std::env::temp_dir())),
     }
 }
 
