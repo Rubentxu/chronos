@@ -6,10 +6,15 @@
 //! covers the originals in query_filters.rs / query_edge_cases.rs); run with
 //! `-- --ignored` to observe current behavior.
 //!
-//! Contract under test (TRUTH-002/003):
-//!   offset MUST move the read position in the authoritative log;
-//!   offset beyond total MUST yield empty;
-//!   paging with limit MUST partition the log without overlap or duplication.
+//! SCOPE: these characterize the LEGACY `query_events` surface only. The
+//! target contract is `events_read` with an authoritative `EventsCursorV1`
+//! (schema_version + session_id + next_seq) — NOT a better `offset`. If the
+//! compatibility wrapper can be translated cleanly later, fine; but no
+//! architecture is invested in making `offset` the new truth.
+//!
+//! Causal assertions: each test pins the CAUSE, not a symptom.
+//!   offset ignored  => query(offset=0) == query(offset=N) exactly
+//!   tail ignored    => result equals offset=0 page, never empty
 //!
 //! When the ExecutionLog cutover lands, flip each `assert_characterization_*`
 //! to the corrected assertion and remove the matching DEF-001 entry from
@@ -61,13 +66,13 @@ async fn char_offset_pagination_current_behavior() {
         .expect("page2");
     let p1: Vec<u64> = page1.iter().map(|e| e.event_id).collect();
     let p2: Vec<u64> = page2.iter().map(|e| e.event_id).collect();
-    let overlap: Vec<&u64> = p1.iter().filter(|id| p2.contains(id)).collect();
-    println!("CHAR-1 total={total} page1={} page2={} overlap={}", p1.len(), p2.len(), overlap.len());
-    // Characterization assertion: CURRENT behavior is overlap > 0 when both
-    // pages are full. Flip to == 0 when TRUTH-002 lands.
-    if p1.len() == 10 && p2.len() == 10 {
-        assert!(!overlap.is_empty(), "characterization changed: offset now appears applied — update this test and close DEF-001 item");
-    }
+    println!("CHAR-1 total={total} page1={} page2={}", p1.len(), p2.len());
+    // CAUSAL assertion: with offset ignored, page(offset=10) equals page(offset=0)
+    // exactly. Flip to assert_ne!(p1, p2) + no-overlap when offset is honoured.
+    assert!(
+        !p1.is_empty() && p1 == p2,
+        "characterization changed: pages differ, offset now appears applied — retire this DEF-001 item"
+    );
     client.shutdown().await.ok();
 }
 
@@ -77,13 +82,23 @@ async fn char_offset_pagination_current_behavior() {
 #[ignore = "REC-C1.0 characterization: offset beyond total returns data (TRUTH-002)"]
 async fn char_offset_beyond_total_current_behavior() {
     let (mut client, session_id, total) = setup_probe().await;
+    let base = client
+        .query_events(&session_id, QueryFilter { limit: 10, offset: 0, ..Default::default() })
+        .await
+        .expect("base query");
     let far = client
         .query_events(&session_id, QueryFilter { limit: 10, offset: 1_000_000, ..Default::default() })
         .await
         .expect("far offset query");
-    println!("CHAR-2 total={total} far_offset_returned={}", far.len());
-    // Characterization: CURRENT returns non-empty. Flip to is_empty() at cutover.
-    assert!(!far.is_empty(), "characterization changed: offset beyond total now empty — close DEF-001 item");
+    let a: Vec<u64> = base.iter().map(|e| e.event_id).collect();
+    let b: Vec<u64> = far.iter().map(|e| e.event_id).collect();
+    println!("CHAR-2 total={total} offset0={} offset1e6={}", a.len(), b.len());
+    // CAUSAL: offset beyond tail returns EXACTLY the offset=0 page (offset ignored).
+    // Flip to assert!(far.is_empty()) at cutover.
+    assert!(
+        !b.is_empty() && a == b,
+        "characterization changed: offset beyond tail no longer mirrors offset=0 — retire this DEF-001 item"
+    );
     client.shutdown().await.ok();
 }
 
@@ -106,11 +121,13 @@ async fn char_limit_exact_pagination_current_behavior() {
     let p2: Vec<u64> = page2.iter().map(|e| e.event_id).collect();
     let dup: Vec<&u64> = p1.iter().filter(|id| p2.contains(id)).collect();
     println!("CHAR-3 p1={} p2={} boundary_duplicates={}", p1.len(), p2.len(), dup.len());
-    // Characterization: CURRENT allows duplicates/skips at boundaries.
-    // Flip to assert!(dup.is_empty()) when pagination is authoritative.
-    if p1.len() == 7 && p2.len() == 7 {
-        assert!(!dup.is_empty() || p2[0] == p1[6] + 1 || p2[0] > p1[6], "characterization changed: exact-limit pagination now partitions cleanly — close DEF-001 item");
-    }
+    // EXACT characterization: observed duplication is total (7 of 7), i.e. the
+    // two pages are identical. Flip to assert!(dup.is_empty()) at cutover.
+    assert!(
+        p1.len() == 7 && dup.len() == p1.len(),
+        "characterization changed: exact-limit pages no longer fully duplicate — retire this DEF-001 item"
+    );
+    assert_eq!(p1, p2, "characterization changed: page(offset=7) differs from page(offset=0)");
     client.shutdown().await.ok();
 }
 
@@ -121,12 +138,18 @@ async fn char_limit_exact_pagination_current_behavior() {
 #[ignore = "REC-C1.0 characterization (edge surface): offset beyond total returns data"]
 async fn char_offset_beyond_total_edge_surface() {
     let (mut client, session_id, total) = setup_probe().await;
+    let base = client
+        .query_events(&session_id, QueryFilter { limit: 10, offset: 0, ..Default::default() })
+        .await
+        .expect("base query");
     let far = client
         .query_events(&session_id, QueryFilter { limit: 10, offset: 500_000, ..Default::default() })
         .await
         .expect("far query");
-    println!("CHAR-4 total={total} returned={}", far.len());
-    assert!(!far.is_empty(), "characterization changed — close DEF-001 item");
+    let a: Vec<u64> = base.iter().map(|e| e.event_id).collect();
+    let b: Vec<u64> = far.iter().map(|e| e.event_id).collect();
+    println!("CHAR-4 total={total} offset0={} offset5e5={}", a.len(), b.len());
+    assert!(!b.is_empty() && a == b, "characterization changed — retire this DEF-001 item");
     client.shutdown().await.ok();
 }
 
@@ -152,8 +175,12 @@ async fn char_pagination_tail_termination_current_behavior() {
         pages += 1;
     }
     println!("CHAR-5 total={total} fetched={fetched} pages={pages}");
-    // Characterization: CURRENT fetched exceeds total by a large factor.
-    // Flip to fetched <= total + tolerance when the tail terminates reads.
-    assert!(fetched > total + 50, "characterization changed: pagination now terminates at tail — close DEF-001 item");
+    // CAUSAL: the walker never terminates early — every page is full, so the
+    // loop only stops at its own page cap. Flip to a bounded walk
+    // (fetched <= total + tolerance) when the tail terminates reads.
+    assert!(
+        last_page_len == page_size && fetched > total,
+        "characterization changed: pagination now terminates at tail — retire this DEF-001 item"
+    );
     client.shutdown().await.ok();
 }

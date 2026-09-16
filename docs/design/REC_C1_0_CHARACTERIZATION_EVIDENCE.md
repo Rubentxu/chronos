@@ -27,17 +27,38 @@ Conclusion: `query_events` ignores `offset` entirely and always returns the firs
 `limit` events; the tail is never reached. Both DEF-001 suites are the same bug
 expressed twice.
 
-## Ratchet plan
+## Ratchet rule (evidence-driven, no pre-assigned counts)
 
-Each subphase flips its test to the corrected assertion and removes the matching
-`DEF-001` item from `reconstruction-contracts.toml`:
+Do NOT pre-assign how many DEF-001 items each subphase retires. All five are
+variants of one pagination/offset defect and C1.3 may well retire all five at
+once. After each subphase:
 
-| Subphase | Expected DEF-001 count after | Tests turned green |
-|---|---|---|
-| C1.0 (now) | 5 | none (baseline locked) |
-| C1.3 events_read cutover | 2 | CHAR-1, CHAR-3 (offset honoured) |
-| C1.4 gap/completeness | 1 | CHAR-2, CHAR-4 (empty beyond tail) |
-| C1.5 restart/resume + retention | 0 | CHAR-5 (tail termination) |
+```text
+run the exact declared DEF-001 test set
+        |
+  a declared failure that now passes => stale waiver
+        |
+  remove it from reconstruction-contracts.toml immediately
+        |
+  remaining count = observed reality
+```
 
-Counts are provisional; the principle is that every DEF-001 entry must be
-retired by a subphase that demonstrates the specific behavior it names.
+C1.4 (gap/completeness) and C1.5 (restart/resume + retention) require NEW
+tests for those concepts; they must not be gated on offset tests kept alive
+artificially.
+
+## Scope boundary (added in C1.0a hardening)
+
+These tests characterize the LEGACY `query_events` surface. The target contract
+is `events_read` with `EventsCursorV1 { schema_version, session_id, next_seq }`
+(C1.1). No architecture is invested in promoting `offset` to the new truth.
+
+## Causal assertions (C1.0a)
+
+Each test now pins the cause instead of a symptom:
+
+- CHAR-1: `page(offset=0) == page(offset=10)` exactly (not "some overlap").
+- CHAR-2/4: `page(offset=1e6|5e5) == page(offset=0)` exactly (not `!is_empty()`).
+- CHAR-3: all 7 returned ids duplicate AND `p1 == p2` (not an `||` that a correct
+  paginator could also satisfy).
+- CHAR-5: the walk stops only at its own page cap with every page full.
