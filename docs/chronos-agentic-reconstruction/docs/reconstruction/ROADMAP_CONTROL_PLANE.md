@@ -6,15 +6,33 @@ never advance at once again.
 ## Declared windows
 
 ```text
-ACTIVE PRODUCT GATE  : REC-C1.5 (restart / retention / stale cursor / reopen)
-                       C1.4 CLOSED: completeness is scoped to the examined range
-                       and evidence-derived (Complete needs a continuity proof;
-                       intersecting gaps -> GapDetected; no proof -> Unknown;
-                       Partial/Unsupported defined but never produced yet).
-                       Pagination stays orthogonal to evidence loss. Tests: 22 in
-                       the module incl. an exhaustive gap x range invariant sweep,
-                       plus 24 sandbox tests across three suites.
-                       TRUTH-001/002/003 all verified; DEF-001 retired.
+ACTIVE PRODUCT GATE  : REC-C1.5 (restart / reopen / retention / stale cursor /
+                       recovery integrity) - the last REC-C1 gate where a bug can
+                       make Chronos remember a run differently before and after a
+                       restart. Sub-gates, no parallel gates:
+                         C1.5.0 characterization      LANDED (c22732b2)
+                           CHAR-RET: compaction is not durable -> same request
+                             answers first_seq=0 before restart and 500 after,
+                             with no gap and no watermark.
+                           CHAR-REPLAY: a body-corrupt segment is SKIPPED ->
+                             open() succeeds, reads start at seq 1 with ZERO gaps.
+                           CONTROL: a clean restart preserves SessionId + seqs.
+                         C1.5.1 retention watermark (retained_from, durable,
+                           atomic; cursor < watermark -> CursorStale before AND
+                           after restart; never GapDetected, never silent re-anchor)
+                         C1.5.2 strict replay/recovery (corrupt segment -> hard
+                           ReplayIntegrityError; the log never enters the registry;
+                           no warn+skip on the agentic path; salvage would be an
+                           explicit degraded mode, not this gate)
+                         C1.5.3 tail state (open | sealed | unclean/unknown; a
+                           leftover .seg.tmp must not vanish semantically)
+                         C1.5.4 reopen + registry bootstrap (rebuild the registry
+                           from validated durable data, same SessionId; no
+                           QueryEngine fallback; no automatic get_or_reopen per
+                           read, so drop_session stays meaningful)
+                       Also: ById over a truncated history must not answer "not
+                       found" for an id that retention removed ->
+                       EvidenceUnavailableDueToRetention.
 ACTIVE RESEARCH GATE : SANDBOX-S0.2 CLOSED (frozen as experimental contract)
                        six contracts in docs/design/EXECUTION_CONTRACTS.md,
                        collect() removed from ExecutionEnvironment,
