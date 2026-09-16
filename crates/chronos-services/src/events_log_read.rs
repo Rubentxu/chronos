@@ -78,7 +78,7 @@ pub struct LogReadFilters {
 impl LogReadFilters {
     fn matches(&self, r: &TraceEvent) -> bool {
         if let Some(types) = &self.event_types {
-            if !types.iter().any(|t| *t == r.event_type) {
+            if !types.contains(&r.event_type) {
                 return false;
             }
         }
