@@ -6,19 +6,22 @@ never advance at once again.
 ## Declared windows
 
 ```text
-ACTIVE PRODUCT GATE  : REC-C1.4 (gap/completeness semantics)
-                       C1.3 CLOSED: session-scoped SessionExecutionLogRegistry
-                       outlives live_probes; events_read reads the registry only
-                       (no live/finalized/engine chain); opaque cursor on the
-                       wire; completeness "unknown"; DEF-001 retired with all
-                       five declared failures passing and the characterizations
-                       rewritten as positive contract tests (19+5 green).
-ACTIVE RESEARCH GATE : SANDBOX-S0.2 (execution contract)
-                       part 1 landed: content-addressed QEMU cache with
-                       validated manifest; namespace renamed to
-                       chronos.execution.*. PENDING: scenario/result/capability/
-                       workspace/provenance/lifecycle contract set and removal
-                       of collect() from the ExecutionEnvironment draft.
+ACTIVE PRODUCT GATE  : REC-C1.5 (restart / retention / stale cursor / reopen)
+                       C1.4 CLOSED: completeness is scoped to the examined range
+                       and evidence-derived (Complete needs a continuity proof;
+                       intersecting gaps -> GapDetected; no proof -> Unknown;
+                       Partial/Unsupported defined but never produced yet).
+                       Pagination stays orthogonal to evidence loss. Tests: 22 in
+                       the module incl. an exhaustive gap x range invariant sweep,
+                       plus 24 sandbox tests across three suites.
+                       TRUTH-001/002/003 all verified; DEF-001 retired.
+ACTIVE RESEARCH GATE : SANDBOX-S0.2 CLOSED (frozen as experimental contract)
+                       six contracts in docs/design/EXECUTION_CONTRACTS.md,
+                       collect() removed from ExecutionEnvironment,
+                       three-vocabulary invariants, cache CAS + namespace rename,
+                       ten executable negative cases green.
+                       Next research slot intentionally left EMPTY: S0.3 is not
+                       opened until C1.4/C1.5 need it.
 
 DONE
   REC-C1.0 / C1.0a characterization (5 DEF-001 locked causally)
