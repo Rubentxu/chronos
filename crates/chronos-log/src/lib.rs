@@ -29,7 +29,7 @@ pub mod segmented;
 pub mod seq;
 
 pub use backend::{ExecutionLog, ExecutionLogBackend, NewExecutionRecord};
-pub use cursor::{ConsumerCursor, LogConsumerId, ReadResult};
+pub use cursor::{ConsumerCursor, LogConsumerId, LogPage, ReadResult};
 pub use error::LogError;
 pub use gap::{Gap, GapReason};
 pub use memory::InMemoryExecutionLog;

@@ -8,6 +8,55 @@ use crate::record::ExecutionRecord;
 use crate::seq::EventSeq;
 use serde::{Deserialize, Serialize};
 
+/// One stateless page of log evidence (REC-C1.3).
+///
+/// ## Why not `read_after`
+///
+/// `read_after` carries per-consumer state: if two readers share a consumer id
+/// they tread on each other, and if each reader mints its own consumer id the
+/// backend's staleness detection stops being meaningful (it only considers a
+/// cursor stale when state already exists for that consumer). The agent-visible
+/// cursor already carries the whole position (`SessionId` + `EventSeq`), so the
+/// read path is stateless: the caller passes a position in and gets a position
+/// out.
+///
+/// ## Position vs completeness
+///
+/// `position_after` is the next `EventSeq` to examine. It advances over records
+/// AND over the ends of any observed [`Gap`]s: a reader that stalls before a gap
+/// could never make progress past lost evidence. Whether a gap makes the read
+/// `Partial`/`GapDetected`/`Unknown` is a *completeness* question and is
+/// answered elsewhere (REC-C1.4); this type only reports what was seen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogPage {
+    /// Records selected by the caller's position, in seq order.
+    pub records: Vec<ExecutionRecord>,
+    /// Gaps whose range intersects `[from_seq, position_after)`.
+    pub gaps: Vec<Gap>,
+    /// The position to pass on the next read. Equal to the input position when
+    /// nothing was examined at or after it.
+    pub position_after: EventSeq,
+    /// True when there was nothing at or after the input position: the reader
+    /// is caught up with the log as it exists now.
+    pub exhausted: bool,
+    // NOTE: `limit` limits RECORDS, so a page may stop before examining a gap
+    // that starts after the last returned record. That is not a stall: the next
+    // read starts exactly at `position_after`, meets the gap, and clears it. The
+    // invariant is that consecutive reads always make progress.
+}
+
+impl LogPage {
+    /// An empty page that does not move the position.
+    pub fn empty_at(position: EventSeq) -> Self {
+        Self {
+            records: Vec::new(),
+            gaps: Vec::new(),
+            position_after: position,
+            exhausted: true,
+        }
+    }
+}
+
 /// Stable identifier for one consumer of the log.
 ///
 /// Each agent / index worker / persistence worker / UI client gets

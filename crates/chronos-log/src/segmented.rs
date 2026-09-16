@@ -449,6 +449,19 @@ impl SegmentedExecutionLog {
             .read_after(self.session_id.clone(), consumer.clone(), cursor)
     }
 
+    /// Stateless page read (REC-C1.3). Delegates to the inner backend without
+    /// touching any per-consumer cursor state.
+    pub fn read_from_seq(
+        &self,
+        from_seq: EventSeq,
+        limit: usize,
+    ) -> Result<crate::cursor::LogPage, crate::error::LogError> {
+        let inner = self.inner.lock().expect("poisoned");
+        inner
+            .backend
+            .read_from_seq(&self.session_id, from_seq, limit)
+    }
+
     pub fn tail_seq(&self) -> Option<EventSeq> {
         let inner = self.inner.lock().expect("poisoned");
         inner.backend.tail_seq(&self.session_id)
