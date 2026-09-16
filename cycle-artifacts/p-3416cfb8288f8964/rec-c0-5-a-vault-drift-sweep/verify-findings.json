@@ -1,0 +1,120 @@
+{
+  "cycle_id": "rec-c0-5-a-vault-drift-sweep",
+  "all_passed": true,
+  "verdict": "PASS",
+  "subject": {
+    "head_sha": "cbbfebe50a03c4d401e5701725cb3e96c3362b25",
+    "base_sha": "d7039e90c415647b41a097f1fb8cf9bcbee9da3f"
+  },
+  "findings": [],
+  "verifications": [
+    {
+      "id": "V1",
+      "category": "vault-drift",
+      "description": "bash scripts/check_vault_drift.sh — full CC sweep",
+      "command": "bash scripts/check_vault_drift.sh",
+      "status": "PASS",
+      "details": "vault-drift-sweep: PASS (48 python CCs all clean, 7 bash CCs all clean)"
+    },
+    {
+      "id": "V2",
+      "category": "vault-drift",
+      "description": "python3 scripts/regen_manifest_index_shas.py --check (CC#4 repair tool agreement)",
+      "command": "python3 scripts/regen_manifest_index_shas.py --check",
+      "status": "PASS"
+    },
+    {
+      "id": "V3",
+      "category": "unit",
+      "description": "python3 -m pytest scripts/tests/test_regen_manifest_index_shas.py (CC#4 repair tool self-tests)",
+      "command": "python3 -m pytest scripts/tests/test_regen_manifest_index_shas.py",
+      "passed": 13,
+      "failed": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "V4",
+      "category": "smoke",
+      "description": "bash scripts/smoke_test_ccs.sh (synthetic drift injection on CC#4/39/46/55/regen/meta-checks)",
+      "command": "bash scripts/smoke_test_ccs.sh",
+      "tests_run": 6,
+      "failures": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "V5",
+      "category": "artifact-validation",
+      "description": "python3 scripts/validate_cycle_artifacts.py (cycle artifact completeness)",
+      "command": "python3 scripts/validate_cycle_artifacts.py",
+      "status": "PASS",
+      "details": "Cycle-artifact completeness gate PASSED on 6 cycle(s)"
+    },
+    {
+      "id": "V6",
+      "category": "lint",
+      "description": "cargo fmt --all -- --check",
+      "command": "cargo fmt --all -- --check",
+      "status": "PASS"
+    },
+    {
+      "id": "V7",
+      "category": "lint",
+      "description": "cargo clippy --workspace --all-targets -- -D warnings",
+      "command": "cargo clippy --workspace --all-targets -- -D warnings",
+      "status": "PASS"
+    },
+    {
+      "id": "V8",
+      "category": "unit",
+      "description": "cargo test --workspace --lib --exclude chronos-native --exclude chronos-e2e --no-fail-fast",
+      "command": "cargo test --workspace --lib --exclude chronos-native --exclude chronos-e2e --no-fail-fast",
+      "status": "PASS",
+      "details": "All 16 crates green; chronos-native excluded per AGENTS.md §6.5 (ptrace flakes need --test-threads=1)"
+    },
+    {
+      "id": "V9",
+      "category": "regression",
+      "description": "cargo test -p chronos-sandbox --test e2e_connectivity",
+      "command": "cargo test -p chronos-sandbox --test e2e_connectivity",
+      "passed": 1,
+      "failed": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "V10",
+      "category": "regression",
+      "description": "cargo test -p chronos-sandbox --test boundary_conditions",
+      "command": "cargo test -p chronos-sandbox --test boundary_conditions",
+      "passed": 9,
+      "failed": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "V11",
+      "category": "regression",
+      "description": "cargo test -p chronos-sandbox --test fixture_resolver",
+      "command": "cargo test -p chronos-sandbox --test fixture_resolver",
+      "passed": 4,
+      "failed": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "V12",
+      "category": "regression",
+      "description": "cargo test -p chronos-sandbox --test probe_lifecycle",
+      "command": "cargo test -p chronos-sandbox --test probe_lifecycle",
+      "passed": 5,
+      "failed": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "V13",
+      "category": "regression",
+      "description": "cargo test -p chronos-sandbox --test probe_inject (REC-C0.5-B regression)",
+      "command": "cargo test -p chronos-sandbox --test probe_inject",
+      "passed": 4,
+      "failed": 0,
+      "status": "PASS"
+    }
+  ]
+}

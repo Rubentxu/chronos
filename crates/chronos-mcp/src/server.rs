@@ -5219,6 +5219,31 @@ impl ChronosServer {
                 "probe_inject: unsupported: {}",
                 s
             )))),
+            // REC-C0.5-B: capability-aware probe_inject error mapping.
+            //
+            // The three typed reasons are surfaced with a stable
+            // `capability: <kebab-slot>` prefix so callers can match the
+            // discriminator programmatically (the legacy ad-hoc text
+            // matching in `chronos-sandbox/tests/probe_inject.rs` is
+            // retired). The full human message follows after the prefix.
+            Err(ServiceError::ProbeStarting) => Ok(CallToolResult::error(text_content(
+                "probe_inject: capability: probe-starting — probe is still starting up; \
+                 retry shortly"
+                    .to_string(),
+            ))),
+            Err(ServiceError::EbpfUnsupported(reason)) => {
+                Ok(CallToolResult::error(text_content(format!(
+                    "probe_inject: capability: ebpf-uprobe — {} \
+                     (requires root or CAP_BPF/CAP_PERFMON, kernel >= 5.8)",
+                    reason
+                ))))
+            }
+            Err(ServiceError::InjectionFailed(reason)) => {
+                Ok(CallToolResult::error(text_content(format!(
+                    "probe_inject: capability: ebpf-uprobe — uprobe attach failed: {}",
+                    reason
+                ))))
+            }
             Err(e) => Ok(CallToolResult::error(text_content(format!(
                 "probe_inject: internal error: unexpected probe inject error: {}",
                 e

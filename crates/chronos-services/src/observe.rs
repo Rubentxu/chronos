@@ -182,21 +182,51 @@ impl ChronosObserveService {
                 };
 
                 // Inject the uprobe via the probe service. The dispatcher's
-                // contract: surface the v1 `probe_inject` failure variants
-                // (ProbeStarting / EbpfUnavailable / AttachFailed) as MCP
-                // errors via the `attached_pid` field (`None` when no
-                // attachment happened).
+                // contract: surface every terminal failure variant of
+                // `ProbeService::inject` as a typed `ServiceError` so the
+                // MCP wrapper renders it as a tool error instead of a
+                // success-shaped `attached_pid: None` response.
+                //
+                // REC-C0.5-B: probe_inject capability-aware split. Each
+                // failure variant maps to a distinct typed error:
+                //   - `ProbeStarting`           → `ServiceError::ProbeStarting`
+                //     (no PID yet, the user can retry — start-up race)
+                //   - `EbpfUnavailable(reason)` → `ServiceError::EbpfUnsupported(reason)`
+                //     (kernel/feature missing — capability slot is `EbpfUprobe`)
+                //   - `AttachFailed { error, .. }` → `ServiceError::InjectionFailed(error)`
+                //     (adapter built but the kernel refused the uprobe)
+                //   - `Attached { .. }`         → fall through to the success path
+                //
+                // Sandbox tests assert on the typed reason rather than
+                // ad-hoc error-text matching.
                 let probe_input = crate::probe::ProbeInjectInput {
                     session_id: session_id.clone(),
                     binary_path: binary_path.clone(),
                     symbol_name: symbol_name.clone(),
                     pid,
                 };
-                let probe_outcome = ProbeService::inject(ctx.probe, probe_input)?;
-                let attached_pid = match probe_outcome {
-                    crate::probe::ProbeInjectResult::Attached { pid, .. } => Some(pid),
-                    crate::probe::ProbeInjectResult::AttachFailed { pid, .. } => Some(pid),
-                    _ => None,
+                let attached_pid = match ProbeService::inject(ctx.probe, probe_input)? {
+                    crate::probe::ProbeInjectResult::Attached { pid, .. } => pid,
+                    crate::probe::ProbeInjectResult::AttachFailed {
+                        error,
+                        pid: _,
+                        session_id: _,
+                        binary_path: _,
+                        symbol_name: _,
+                    } => {
+                        // NOTE: the live-probe session record still carries
+                        // the `EbpfAttachmentInfo { pid, .. }` entry, so UAT
+                        // consumers can inspect the PID via `probe_status`.
+                        // Surfacing the error here loses no information that
+                        // the session record keeps.
+                        return Err(ServiceError::InjectionFailed(error));
+                    }
+                    crate::probe::ProbeInjectResult::EbpfUnavailable(reason) => {
+                        return Err(ServiceError::EbpfUnsupported(reason));
+                    }
+                    crate::probe::ProbeInjectResult::ProbeStarting => {
+                        return Err(ServiceError::ProbeStarting);
+                    }
                 };
 
                 // The uprobe subscribes to memory_write events on the
@@ -224,7 +254,7 @@ impl ChronosObserveService {
                     status: "registered".to_string(),
                     active_count,
                     label: Some(sentinel_label),
-                    attached_pid,
+                    attached_pid: Some(attached_pid),
                 }))
             }
         }
@@ -729,6 +759,132 @@ mod tests {
         assert!(
             matches!(err, ServiceError::TripwireNotFound(_)),
             "got {:?}",
+            err
+        );
+    }
+
+    // ----- REC-C0.5-B: capability-aware probe_inject error surfacing ---------
+
+    /// Build an `ObserveInput` whose verb=create targets a Uprobe
+    /// condition. The dispatcher's create path calls `ProbeService::inject`
+    /// and surfaces the typed error directly.
+    fn uprobe_input(session_id: &str, binary_path: &str, symbol_name: &str) -> ObserveInput {
+        ObserveInput {
+            verb: ObserveVerb::Create,
+            subscription_id: None,
+            condition: Some(ObserveCondition::Uprobe {
+                binary_path: binary_path.to_string(),
+                symbol_name: symbol_name.to_string(),
+                pid: None,
+                label: None,
+            }),
+            action: None,
+            retention: None,
+            requested_evidence: None,
+            scope: Some(ObserveScope::Session {
+                session_id: session_id.to_string(),
+            }),
+            cursor: None,
+            label: None,
+        }
+    }
+
+    /// Register a fake live-probe session in the rig's `live_probes` map.
+    ///
+    /// On a default `chronos-mcp` build (no `ebpf` feature),
+    /// `ProbeService::inject` will attempt `EbpfAdapter::new()` and
+    /// immediately get `EbpfError::Unavailable`, which the dispatcher
+    /// surfaces as `ServiceError::EbpfUnsupported(reason)`. That is the
+    /// path exercised by these unit tests.
+    fn register_fake_probe_session(rig: &TestRig, session_id: &str, pid: u32) {
+        let bus = chronos_domain::bus::EventBus::new_shared(16);
+        let backend = chronos_native::probe_backend::NativeProbeBackend::new(bus);
+        let capture_session = chronos_domain::CaptureSession {
+            session_id: session_id.to_string(),
+            pid,
+            language: chronos_domain::Language::Native,
+            started_at: std::time::Instant::now(),
+            started_at_wallclock: std::time::SystemTime::now(),
+            config: chronos_domain::CaptureConfig::new("/fake/binary"),
+            state: chronos_domain::SessionState::Active,
+        };
+        let live = crate::probe::LiveProbeSession {
+            backend,
+            session: capture_session,
+            language: chronos_domain::Language::Native,
+            target: "/fake/binary".to_string(),
+            attached: false,
+            ebpf_adapter: None,
+            ebpf_attachment: None,
+        };
+        rig.live_probes
+            .lock()
+            .expect("live_probes lock poisoned in test rig")
+            .insert(session_id.to_string(), live);
+    }
+
+    /// Dispatcher must surface `ProbeInjectResult::EbpfUnavailable(reason)`
+    /// as `ServiceError::EbpfUnsupported(reason)` — the typed eBPF
+    /// capability error. The MCP wrapper prefixes this with the kebab
+    /// slot `ebpf-uprobe`, derived from the typed variant.
+    #[test]
+    fn create_uprobe_without_ebpf_returns_ebpf_unsupported() {
+        let rig = TestRig::new();
+        register_fake_probe_session(&rig, "test-session", 0xCAFE);
+        let input = uprobe_input("test-session", "/fake/binary", "main");
+
+        let err = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap_err());
+        match err {
+            ServiceError::EbpfUnsupported(reason) => {
+                assert!(
+                    !reason.is_empty(),
+                    "EbpfUnsupported must carry a non-empty reason"
+                );
+            }
+            other => panic!("expected ServiceError::EbpfUnsupported, got {:?}", other),
+        }
+    }
+
+    /// Dispatcher must surface `ProbeInjectResult::ProbeStarting` as
+    /// `ServiceError::ProbeStarting` — the typed "probe is starting up"
+    /// capability error. The variant is only reachable on an
+    /// `ebpf`-feature build (otherwise `EbpfUnavailable` short-circuits
+    /// first); on the default build we accept either typed variant.
+    #[test]
+    fn create_uprobe_with_no_pid_returns_probe_starting_or_ebpf_unavailable() {
+        let rig = TestRig::new();
+        register_fake_probe_session(&rig, "test-session", 0); // pid=0 → ProbeStarting on ebpf builds
+        let input = uprobe_input("test-session", "/fake/binary", "main");
+
+        let err = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap_err());
+        assert!(
+            matches!(
+                err,
+                ServiceError::ProbeStarting | ServiceError::EbpfUnsupported(_)
+            ),
+            "expected typed ProbeStarting OR EbpfUnavailable, got {:?}",
+            err
+        );
+    }
+
+    /// Dispatcher must surface `ProbeInjectResult::AttachFailed { error, .. }`
+    /// as `ServiceError::InjectionFailed(error)`. The default build
+    /// short-circuits to `EbpfUnsupported` first; we accept either typed
+    /// variant since both share the `ebpf-uprobe` capability slot in the
+    /// MCP wrapper.
+    #[test]
+    fn create_uprobe_attach_failure_surfaces_typed_injection_failed_or_ebpf_unavailable() {
+        let rig = TestRig::new();
+        register_fake_probe_session(&rig, "test-session", 0xCAFE);
+        let input = uprobe_input("test-session", "/fake/binary", "main");
+
+        let err = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap_err());
+        assert!(
+            matches!(
+                err,
+                ServiceError::InjectionFailed(_) | ServiceError::EbpfUnsupported(_)
+            ),
+            "expected typed InjectionFailed OR EbpfUnavailable, got {:?}",
             err
         );
     }

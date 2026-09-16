@@ -1,0 +1,21 @@
+[package]
+name = "chronos-webhook"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Driven adapter that implements chronos_domain::ports::NotificationSink over HTTPS with exponential-backoff retries."
+
+[dependencies]
+chronos-domain = { workspace = true }
+reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "json"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["net", "time"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"

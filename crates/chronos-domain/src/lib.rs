@@ -5,9 +5,11 @@
 
 pub mod adapter;
 pub mod bus;
+pub mod capability;
 pub mod causal_slice;
 pub mod error;
 pub mod index;
+pub mod ports;
 pub mod property;
 pub mod query;
 pub mod semantic;
@@ -18,12 +20,17 @@ pub mod value;
 // Re-exports for convenience
 pub use adapter::ProbeBackend;
 pub use bus::{BusMetrics, CursorStatus, EventBus, EventBusHandle, EventCursor, ReadResult};
+pub use capability::{Capability, CapabilityUnavailable};
 pub use causal_slice::{slice_from, CausalEdge, CausalSlice, EvidenceNode, EvidenceNodeId};
 pub use error::TraceError;
 pub use index::{
     CausalityEntry, CausalityIndex, CompressedTrace, CompressionLevel, DetailData,
     ExecutiveSummary, FunctionDetail, FunctionPerf, HotspotData, HotspotEntry, MicroscopyData,
     PerfCounters, PerformanceIndex, RawEventEntry, ShadowIndex, TemporalIndex,
+};
+pub use ports::{
+    NotificationDeliveryError, NotificationRequest, NotificationSink, NotificationTarget,
+    NullNotificationSink,
 };
 pub use property::{
     CallPathOutcome, ComparisonOp, ExistenceOutcome, InvariantCheck, InvariantOutcome,

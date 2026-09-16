@@ -1,0 +1,109 @@
+{
+  "_note": "REC-C0.5-B is APPLIED (not yet released+archived). This verify-findings.json exists to satisfy CC#18 (verify-findings.json must exist for every cycle folder). It will be regenerated at release+archive time via the standard release tool, which will replace this placeholder. Until then, the contents are the raw gate-by-gate breakdown captured during the apply phase.",
+  "cycle_id": "rec-c0-5-b-probe-inject-capability",
+  "all_passed": true,
+  "verdict": "PASS",
+  "subject": {
+    "head_sha": "98f9dba4f35ee3e0edf61c2132bd9d84edd25fdb",
+    "base_sha": "a03c7d064b7c3531e6e65a3565a2e0c5ce7cf9a4"
+  },
+  "findings": [],
+  "verifications": [
+    {
+      "id": "V1",
+      "category": "lint",
+      "description": "cargo fmt --all -- --check",
+      "command": "cargo fmt --all -- --check",
+      "exit_code": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "V2",
+      "category": "lint",
+      "description": "cargo clippy --workspace --all-targets -- -D warnings",
+      "command": "cargo clippy --workspace --all-targets -- -D warnings",
+      "exit_code": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "V3",
+      "category": "lint",
+      "description": "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+      "command": "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+      "exit_code": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "V4",
+      "category": "unit",
+      "description": "cargo test -p chronos-services --lib (includes 3 new observe::tests::create_uprobe_* tests)",
+      "command": "cargo test -p chronos-services --lib",
+      "passed": 275,
+      "failed": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "V5",
+      "category": "unit",
+      "description": "cargo test -p chronos-domain --lib (includes 3 new capability::tests tests)",
+      "command": "cargo test -p chronos-domain --lib",
+      "passed": 159,
+      "failed": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "V6",
+      "category": "integration",
+      "description": "cargo test -p chronos-sandbox --test probe_inject (was 1/4, now 4/4)",
+      "command": "CHRONOS_MCP_PATH=/var/home/rubentxu/cargo-targets/debug/chronos-mcp cargo test -p chronos-sandbox --test probe_inject",
+      "passed": 4,
+      "failed": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "V7",
+      "category": "integration",
+      "description": "cargo test -p chronos-sandbox --test probe_inject_privileged_uat (gated; silently passes without CHRONOS_PRIVILEGED_UAT)",
+      "command": "CHRONOS_MCP_PATH=/var/home/rubentxu/cargo-targets/debug/chronos-mcp cargo test -p chronos-sandbox --test probe_inject_privileged_uat",
+      "passed": 1,
+      "failed": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "V8",
+      "category": "regression",
+      "description": "cargo test -p chronos-sandbox --test probe_lifecycle",
+      "command": "cargo test -p chronos-sandbox --test probe_lifecycle",
+      "passed": 5,
+      "failed": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "V9",
+      "category": "regression",
+      "description": "cargo test -p chronos-sandbox --test boundary_conditions",
+      "command": "cargo test -p chronos-sandbox --test boundary_conditions",
+      "passed": 9,
+      "failed": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "V10",
+      "category": "regression",
+      "description": "cargo test -p chronos-sandbox --test fixture_resolver",
+      "command": "cargo test -p chronos-sandbox --test fixture_resolver",
+      "passed": 4,
+      "failed": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "V11",
+      "category": "regression",
+      "description": "cargo test -p chronos-sandbox --test e2e_connectivity",
+      "command": "cargo test -p chronos-sandbox --test e2e_connectivity",
+      "passed": 1,
+      "failed": 0,
+      "status": "PASS"
+    }
+  ]
+}

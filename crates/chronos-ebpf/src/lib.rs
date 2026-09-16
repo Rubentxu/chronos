@@ -222,7 +222,7 @@ impl ProbeBackend for EbpfAdapter {
                 .map(|e| {
                     let fn_name = match &e.data {
                         EventData::EbpfUprobeHit { symbol_name, .. } => symbol_name.clone(),
-                        _ => e.location.function.clone(),
+                        _ => e.location.function.clone().unwrap_or_default(),
                     };
                     let kind = match e.event_type {
                         EventType::FunctionEntry => SemanticEventKind::FunctionCalled {
@@ -280,7 +280,7 @@ impl ProbeBackend for EbpfAdapter {
                 .map(|e| {
                     let fn_name = match &e.data {
                         EventData::EbpfUprobeHit { symbol_name, .. } => symbol_name.clone(),
-                        _ => e.location.function.clone(),
+                        _ => e.location.function.clone().unwrap_or_default(),
                     };
                     let kind = match e.event_type {
                         EventType::FunctionEntry => SemanticEventKind::FunctionCalled {
@@ -365,7 +365,10 @@ impl CaptureTraceAdapter for EbpfAdapter {
     ///
     /// Forks and execs the target binary, then attaches eBPF uprobes to
     /// the functions specified in `config.function_filter`.
-    fn start_capture(&self, _config: CaptureConfig) -> Result<CaptureSession, TraceError> {
+    fn start_capture(
+        &self,
+        #[cfg_attr(not(feature = "ebpf"), allow(unused_variables))] config: CaptureConfig,
+    ) -> Result<CaptureSession, TraceError> {
         #[cfg(feature = "ebpf")]
         {
             use std::process::{Command, Stdio};
@@ -380,7 +383,7 @@ impl CaptureTraceAdapter for EbpfAdapter {
             }
 
             // Fork and exec the target
-            let mut child = Command::new(&config.target)
+            let child = Command::new(&config.target)
                 .args(&config.args)
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
@@ -394,7 +397,7 @@ impl CaptureTraceAdapter for EbpfAdapter {
 
             // Attach uprobes to the specified functions
             self.attach_probes(pid as i32, &config.target, &config)
-                .map_err(|e| TraceError::capture_failed(e))?;
+                .map_err(TraceError::capture_failed)?;
 
             let session = CaptureSession::new(pid, Language::Ebpf, config);
             Ok(session)
@@ -412,8 +415,7 @@ impl CaptureTraceAdapter for EbpfAdapter {
         #[cfg(feature = "ebpf")]
         {
             // Detach all uprobes
-            self.detach_probes()
-                .map_err(|e| TraceError::capture_failed(e))?;
+            self.detach_probes().map_err(TraceError::capture_failed)?;
 
             // Try to terminate the process
             let pid = _session.pid as i32;
@@ -444,7 +446,7 @@ impl CaptureTraceAdapter for EbpfAdapter {
         {
             // Attach uprobes to the specified functions
             self.attach_probes(_pid as i32, &_config.target, &_config)
-                .map_err(|e| TraceError::capture_failed(e))?;
+                .map_err(TraceError::capture_failed)?;
 
             let session = CaptureSession::new(_pid, Language::Ebpf, _config);
             Ok(session)

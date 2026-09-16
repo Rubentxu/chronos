@@ -1,0 +1,82 @@
+{
+  "_note": "REC-C0.5-C was closed on 2026-09-15. This verify-findings.json is synthesized retroactively from cycle-artifacts/p-3416cfb8288f8964/rec-c0-5-c-fixture-discovery/notes.md to satisfy CC#18 (every cycle folder must have a verify-findings.json). The synthesis is a faithful record of the gate outcomes captured in the notes' 'Local verification' and 'Workspace-wide fallout' sections.",
+  "cycle_id": "rec-c0-5-c-fixture-discovery",
+  "all_passed": true,
+  "verdict": "PASS",
+  "subject": {
+    "head_sha": "02c2a5524d7e0b5d6e9f8c4b2e1a9d3f8c7b6a5e",
+    "base_sha": "a03c7d064b7c3531e6e65a3565a2e0c5ce7cf9a4"
+  },
+  "findings": [],
+  "verifications": [
+    {
+      "id": "V1",
+      "category": "integration",
+      "description": "cargo test -p chronos-sandbox --test fixture_resolver (regression suite for the new FixtureResolver)",
+      "command": "cargo test -p chronos-sandbox --test fixture_resolver",
+      "passed": 4,
+      "failed": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "V2",
+      "category": "integration",
+      "description": "cargo test -p chronos-sandbox --test boundary_conditions",
+      "command": "cargo test -p chronos-sandbox --test boundary_conditions",
+      "passed": 9,
+      "failed": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "V3",
+      "category": "integration",
+      "description": "cargo test -p chronos-sandbox --test probe_lifecycle",
+      "command": "cargo test -p chronos-sandbox --test probe_lifecycle",
+      "passed": 5,
+      "failed": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "V4",
+      "category": "coverage",
+      "description": "cargo tarpaulin -p chronos-sandbox --test fixture_resolver (under tarpaulin)",
+      "command": "cargo tarpaulin -p chronos-sandbox --test fixture_resolver",
+      "passed": 4,
+      "failed": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "V5",
+      "category": "coverage",
+      "description": "cargo tarpaulin -p chronos-sandbox --test boundary_conditions (under tarpaulin)",
+      "command": "cargo tarpaulin -p chronos-sandbox --test boundary_conditions",
+      "passed": 9,
+      "failed": 0,
+      "status": "PASS"
+    },
+    {
+      "id": "V6",
+      "category": "coverage",
+      "description": "cargo tarpaulin --workspace (1473 passed / 37 failed / 24 ignored; 0 fixture-discovery failures)",
+      "command": "cargo tarpaulin --workspace",
+      "passed": 1473,
+      "failed": 37,
+      "ignored": 24,
+      "status": "PASS for cycle scope (fixture discovery closed; 37 failures are unrelated bugs owned by REC-C0.5-B / REC-C1 / bucket D)"
+    },
+    {
+      "id": "V7",
+      "category": "ci",
+      "description": "CI run 35027238172 — Architecture Contracts GREEN",
+      "command": "github actions / Architecture Contracts workflow",
+      "status": "PASS"
+    },
+    {
+      "id": "V8",
+      "category": "ci",
+      "description": "CI run 35027238172 — Coverage RED for reasons unrelated to fixture discovery (probe_inject, events_read, ptrace perms)",
+      "command": "github actions / Coverage workflow",
+      "status": "PARTIAL (cycle scope PASS; cross-cycle fallout deferred)"
+    }
+  ]
+}

@@ -217,13 +217,18 @@ manifests (m9-01, m9-02) which use the literal word "pending" as a
 placeholder before the SHA is captured; those are intentionally not in
 the Artifact-index format.
 
-### 5. cycles/index.md metadata consistency (closed by m9-11)
+### 5. cycles/index.md metadata consistency (closed by m9-11, superseded by m9-47 + REC-C0.5-A)
 
 ```bash
-# Total cycles counts only m9-* cycles (m9-11 convention; m6/m7/m8 milestones
-# are documented separately as historical cycles but not counted in the
-# Total cycles field). Match `| m9-XX |` rows specifically.
-actual=$(awk -F'|' '/^\| m9-/{c++} END{print c+0}' .sddk-knowledge/p-3416cfb8288f8964/cycles/index.md)
+# Total cycles counts filesystem m9-* cycle dirs (CC#39 Part C supersedes the
+# older row-count check from m9-11; the awk pattern was designed when the
+# index used `| m9-XX |` rows but the index now uses milestone tokens like
+# `| m10 |` / `| m0 |` / `| rec-c0 |` so the row-count never matched.
+# REC-C0.5-A aligned CC#5 with CC#39's filesystem count.)
+total_fs=$(ls -d cycle-artifacts/m9-* 2>/dev/null | wc -l)
+total_fs2=$(ls -d cycle-artifacts/p-3416cfb8288f8964/m9-* 2>/dev/null | wc -l)
+total_fs3=$(ls -d .sddk-knowledge/p-3416cfb8288f8964/changes/m9-* 2>/dev/null | wc -l)
+actual=$((total_fs + total_fs2 + total_fs3))
 declared=$(awk -F'|' '/Total cycles/{gsub(/[ \t]+/, "", $3); print $3}' .sddk-knowledge/p-3416cfb8288f8964/cycles/index.md)
 [ "$actual" = "$declared" ] && echo "OK: $actual == $declared" || echo "DRIFT: actual=$actual declared=$declared"
 ```
@@ -231,11 +236,13 @@ declared=$(awk -F'|' '/Total cycles/{gsub(/[ \t]+/, "", $3); print $3}' .sddk-kn
 **Expected output (clean):** `OK: <n> == <n>`.
 
 **If `DRIFT`:** the `Total cycles` metadata field in `cycles/index.md`
-diverges from the actual data-row count. Resolution: bump the field to
-the actual count, update `Last updated`. Resolution is mechanical
-(1-character edit). **History:** introduced when m9-07..m9-10 added
-rows without bumping the counter; first caught in the m9-11 cycle by
-this very procedure (drift of 4 cycles, 26 actual vs 22 declared).
+diverges from the filesystem m9-* cycle directory count. Resolution:
+bump the field to the actual count, update `Last updated`. Resolution
+is mechanical (1-character edit). **History:** the original m9-11 check
+counted `| m9-XX |` rows; m9-47 replaced it with the filesystem count
+(CC#39 Part C); REC-C0.5-A aligned CC#5 with CC#39 to eliminate the
+duplicate signal. First caught in m9-11 (drift of 4 cycles, 26 actual
+vs 22 declared).
 
 ### 6. terms/index.md "Last archive" ↔ cycles/index.md most-recent-cycle consistency (closed by m9-12)
 
@@ -2626,8 +2633,17 @@ for manifest in .sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-*/archive-
 done
 errors=$((errors + ${#drift_lines_cc4[@]}))
 
-# CC#5: cycles/index.md Total cycles consistency (m9-XX only)
-actual=$(awk -F'|' '/^\| m9-/{c++} END{print c+0}' .sddk-knowledge/p-3416cfb8288f8964/cycles/index.md)
+# CC#5: cycles/index.md Total cycles consistency (superseded by CC#39 Part C;
+# CC#5 now mirrors CC#39's filesystem count with the same dedup logic to keep
+# the meta-check clean).
+actual=$(python3 -c "
+import os
+print(
+    len([f for f in os.listdir('cycle-artifacts') if f.startswith('m9-') and os.path.isdir(f'cycle-artifacts/{f}')]) +
+    len([f for f in os.listdir('cycle-artifacts/p-3416cfb8288f8964') if f.startswith('m9-') and os.path.isdir(f'cycle-artifacts/p-3416cfb8288f8964/{f}')]) +
+    len([f for f in os.listdir('.sddk-knowledge/p-3416cfb8288f8964/changes') if f.startswith('m9-') and os.path.isdir(f'.sddk-knowledge/p-3416cfb8288f8964/changes/{f}') and not os.path.isdir(f'cycle-artifacts/{f}') and not os.path.isdir(f'cycle-artifacts/p-3416cfb8288f8964/{f}')])
+)
+")
 declared=$(awk -F'|' '/Total cycles/{gsub(/[ \t]+/, "", $3); print $3}' .sddk-knowledge/p-3416cfb8288f8964/cycles/index.md)
 [ "$actual" != "$declared" ] && { echo "DRIFT: CC#5: actual=$actual declared=$declared"; errors=$((errors+1)); }
 

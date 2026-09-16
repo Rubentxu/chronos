@@ -401,8 +401,7 @@ mod tests {
         let result = crate::kernel_version_check();
         // This might pass or fail depending on actual kernel version
         // The important thing is it doesn't panic
-        if result.is_err() {
-            let err = result.unwrap_err();
+        if let Err(err) = result {
             assert!(matches!(err, EbpfError::Unavailable { .. }));
         }
     }

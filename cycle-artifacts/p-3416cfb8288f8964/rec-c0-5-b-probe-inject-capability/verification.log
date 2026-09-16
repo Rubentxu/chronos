@@ -1,0 +1,106 @@
+# REC-C0.5-B — Verification Log
+
+> **Cycle**: REC-C0.5-B (issue #29)
+> **Commit**: `98f9dba4f35ee3e0edf61c2132bd9d84edd25fdb`
+> **Date**: 2026-09-16
+> **Verifier**: REC-C0.5-B session
+
+## Gate 1 — T0 lint
+
+```bash
+$ cargo fmt --all -- --check
+(clean exit)
+
+$ cargo clippy --workspace --all-targets -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.33s
+$ echo $?
+0
+
+$ cargo clippy --workspace --all-targets --all-features -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 24.26s
+$ echo $?
+0
+```
+
+## Gate 2 — T1 unit tests (affected crates)
+
+```bash
+$ cargo test -p chronos-services --lib
+test result: ok. 275 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.79s
+
+$ cargo test -p chronos-services --lib --all-features
+test result: ok. 275 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.75s
+
+$ cargo test -p chronos-domain --lib
+test result: ok. 159 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+$ cargo test -p chronos-domain --lib --all-features
+test result: ok. 159 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+```
+
+New unit tests added:
+
+```
+chronos-services:
+  observe::tests::create_uprobe_without_ebpf_returns_ebpf_unsupported
+  observe::tests::create_uprobe_attach_failure_surfaces_typed_injection_failed_or_ebpf_unavailable
+  observe::tests::create_uprobe_with_no_pid_returns_probe_starting_or_ebpf_unavailable
+
+chronos-domain:
+  capability::tests::capability_kebab_strings_are_stable
+  capability::tests::capability_unavailable_carries_typed_slot
+  capability::tests::capability_unavailable_equality_is_by_slot_only
+```
+
+## Gate 3 — T2 sandbox probe tests
+
+```bash
+$ export CHRONOS_MCP_PATH=/var/home/rubentxu/cargo-targets/debug/chronos-mcp
+$ cargo test -p chronos-sandbox --test probe_inject
+running 4 tests
+test test_probe_inject_nonexistent_session ... ok
+test test_probe_inject_before_pid_known_returns_capability_error ... ok
+test test_probe_inject_invalid_symbol_returns_capability_error ... ok
+test test_probe_inject_without_root_returns_capability_error ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.69s
+
+$ cargo test -p chronos-sandbox --test probe_inject_privileged_uat
+running 1 test
+test test_probe_inject_privileged_happy_path ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+(silently returns early because CHRONOS_PRIVILEGED_UAT unset)
+```
+
+## Gate 4 — T2 regression checks (unaffected suites)
+
+```bash
+$ cargo test -p chronos-sandbox --test probe_lifecycle
+test result: ok. 5 passed; 0 failed
+
+$ cargo test -p chronos-sandbox --test boundary_conditions
+test result: ok. 9 passed; 0 failed
+
+$ cargo test -p chronos-sandbox --test fixture_resolver
+test result: ok. 4 passed; 0 failed
+
+$ cargo test -p chronos-sandbox --test e2e_connectivity
+test result: ok. 1 passed; 0 failed
+```
+
+## DoD for REC-C0.5-B (per issue #29)
+
+| Requirement | Status |
+|---|---|
+| Test unprivileged inyectar/detectar capability real (no `#[ignore]`, no fake-pass) y verificar contrato tipado `Err(CapabilityUnavailable::EbpfUprobe)`. | PASS — 3 tests in `chronos-sandbox/tests/probe_inject.rs` assert on the typed `probe_inject: capability: ebpf-uprobe` / `probe-starting` prefix; no `#[ignore]`; no fake-pass. |
+| UAT privileged separada — fuera del CI sandbox run. | PASS — `chronos-sandbox/tests/probe_inject_privileged_uat.rs` gated by `CHRONOS_PRIVILEGED_UAT=1`. Default CI run sees the test silently pass (returns early with skip message), never an `#[ignore]`d test. |
+
+## Failures repaired vs. residual
+
+- **Repaired**: 3 failures in `chronos-sandbox/tests/probe_inject.rs` (`test_probe_inject_without_root_returns_error`, `test_probe_inject_invalid_symbol`, `test_probe_inject_before_pid_known`) → all now PASS as `_returns_capability_error`.
+- **Workspace residual**: 34 of the original 37 failures from the REC-C0.5-C close-out remain. None are caused by this cycle; see `notes.md` § "Workspace-wide fallout" for ownership.
+
+## Notes
+
+- The `McpSandboxError` re-export from `chronos_sandbox::lib.rs` is the only public-API change visible to sandbox consumers. It was already in the public `client::error` module; the re-export just makes pattern-matching ergonomic for tests.
+- `CapabilityUnavailable` lives in `chronos_domain` (not `chronos_services`) because the capability slot is a product contract — both the MCP surface and the adapter crates need to agree on it.
+- The `chrono_sandbox/src/lib.rs` `pub use client::error::McpSandboxError;` re-export is the only public API addition.

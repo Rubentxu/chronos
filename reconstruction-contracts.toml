@@ -1,0 +1,281 @@
+version = 1
+updated = "2026-09-15"
+active_gate = "REC-C0"
+
+[policy]
+allowed_statuses = ["verified", "partial", "gap", "planned", "blocked"]
+verified_requires = ["evidence", "uat", "verify"]
+
+[architecture]
+# Transitional violations observed at the convergence baseline. The checker
+# fails when a new forbidden edge appears AND when a removed edge remains in
+# this baseline, forcing the debt inventory to shrink with the code.
+known_dependency_violations = [
+  "chronos-services->chronos-store",
+  "chronos-services->chronos-ebpf",
+  "chronos-services->chronos-native",
+  "chronos-services->chronos-browser",
+  "chronos-store->chronos-native",
+]
+
+# REC-C0 baseline scope — explicit gate classification for the 27 residual
+# workspace failures observed at REC-C0.5-D close-out (2026-09-16):
+#   20 privileged (PTR-001..003), 5 deferred (DEF-001).
+# The sentinel removed DEF-002 (tripwires), DEF-003 (ptrace_tracer),
+# and CE-001 (counterexample_tools) as stale waivers — all three
+# suites now pass under their documented run recipes. The remaining
+# deferred bucket contains events_read pagination (DEF-001, REC-C1)
+# and no anonymous or budget-based allowances.
+# This section makes the closure criterion mechanical: each failure has
+# bucket + owner_gate + reason; REC-C0 only blocks on "mandatory" items.
+#
+# REC-C0 closure criterion:
+#   - All "mandatory" gate workflows GREEN on remote CI:
+#       Architecture Contracts, CI, Coverage, Vault Drift Sweep
+#   - REC-C0.5-A/B/C/D either GREEN or correctly separated into the
+#     "privileged" bucket with CHRONOS_PRIVILEGED_UAT=1 contract, or
+#     verified by the Sandbox Debt Sentinel (sandbox-debt-sentinel.yml)
+#     that the deferred-debt reality matches the declared manifest.
+# REC-C1 (events_read / ExecutionLog cutover) is NOT a REC-C0 blocker —
+# the corresponding TRUTH-* / LOG-* requirements above already carry
+# owner_gate="REC-C1", and that gate starts after the PR #19 merge.
+[baseline_scope]
+# REC-C0 baseline scope — explicit gate classification for the 27 residual
+# workspace failures observed at REC-C0.5-D close-out (2026-09-16):
+#   20 privileged (PTR-001..003), 5 deferred (DEF-001).
+# The sentinel removed DEF-002 (tripwires), DEF-003 (ptrace_tracer),
+# and CE-001 (counterexample_tools) as stale waivers — all three
+# suites now pass under their documented run recipes. The remaining
+# deferred bucket contains events_read pagination (DEF-001, REC-C1)
+# and no anonymous or budget-based allowances.
+# This section makes the closure criterion mechanical: each failure has
+# bucket + owner_gate + reason; REC-C0 only blocks on "mandatory" items.
+#
+# REC-C0 closure criterion:
+#   - All "mandatory" gate workflows GREEN on remote CI:
+#       Architecture Contracts, CI, Coverage, Vault Drift Sweep
+#   - REC-C0.5-A/B/C/D either GREEN or correctly separated into the
+#     "privileged" bucket with CHRONOS_PRIVILEGED_UAT=1 contract, or
+#     verified by the Sandbox Debt Sentinel (sandbox-debt-sentinel.yml)
+#     that the deferred-debt reality matches the declared manifest.
+# REC-C1 (events_read / ExecutionLog cutover) is NOT a REC-C0 blocker —
+# the corresponding TRUTH-* / LOG-* requirements above already carry
+# owner_gate="REC-C1", and that gate starts after the PR #19 merge.
+
+[baseline_scope.mandatory]
+description = "Required GREEN before REC-C0 remote closure. Each workflow must report success on the merge candidate."
+workflows = ["Architecture Contracts", "CI", "Coverage", "Vault Drift Sweep"]
+
+[baseline_scope.privileged]
+description = "Requires CHRONOS_PRIVILEGED_UAT=1 (or kernel ptrace perms) to exercise. Sandbox CI does NOT run these; they live in bucket D."
+workflows = ["Sandbox Smoke Tests (privileged subset)"]
+contract = "Privileged UAT files (e.g. chronos-sandbox/tests/probe_inject_privileged_uat.rs) gated by CHRONOS_PRIVILEGED_UAT=1; silent early-return when unset, no #[ignore]."
+
+[[baseline_scope.privileged.failures]]
+id = "PTR-001"
+suite = "chronos-sandbox/tests/probe_inject_privileged_uat.rs"
+count = 1
+owner_gate = "bucket D"
+reason = "requires kernel ptrace + CAP_BPF; sandbox CI has neither."
+
+[[baseline_scope.privileged.failures]]
+id = "PTR-002"
+suite = "chronos-e2e/tests/test_ptrace_capture.rs"
+count = 13
+owner_gate = "bucket D"
+reason = "test_ptrace_capture hangs without ptrace perms in this environment."
+
+[[baseline_scope.privileged.failures]]
+id = "PTR-003"
+suite = "chronos-native/tests/m2_function_frame_capture.rs"
+count = 6
+owner_gate = "bucket D"
+reason = "frame capture requires ptrace attach; deferred to REC-C1/bucket D per cycle scoping."
+
+[baseline_scope.deferred]
+description = "Real bugs owned by later gates. Every deferred failure has a concrete test ID. The Debt Sentinel requires the observed failure set to equal the declared set exactly and fails on stale waivers, unclassified regressions, missing tests, incomplete runs, or configuration drift."
+
+[[baseline_scope.deferred.failures]]
+id = "DEF-001"
+suite = "chronos-sandbox/tests/query_filters.rs + chronos-sandbox/tests/query_edge_cases.rs"
+tests = [
+  "query_filters::test_query_events_offset_pagination",
+  "query_filters::test_query_events_offset_beyond_total",
+  "query_filters::test_query_events_limit_exact_pagination",
+  "query_edge_cases::test_query_events_offset_beyond_total",
+  "query_edge_cases::test_query_events_pagination_all_events",
+]
+count = 5
+owner_gate = "REC-C1"
+reason = "events_read pagination/offset correctness; TRUTH-002/003 gap."
+
+# DEF-002 (tripwires) REMOVED on 2026-09-16 by the REC-C0.5-D sentinel.
+# Local `cargo test -p chronos-sandbox --test tripwire_tools` reports
+# 5/5 PASS and remote CI run 35074696707 also showed tripwire_tools
+# with no failures. The original DEF-002 entry was based on a stale
+# observation; the tripwire regression was already fixed before the
+# sentinel shipped. The LEGACY-001/002 requirement status remains
+# 'gap' at owner_gate=REC-C2 — the LEGACY work is still incomplete
+# even though the tripwire-tools integration tests pass.
+
+# DEF-003 (ptrace_tracer lib unit) REMOVED on 2026-09-16 by the
+# REC-C0.5-D sentinel. Local `cargo test -p chronos-native --lib
+# ptrace_tracer -- --test-threads=1` reports all 4 declared tests
+# PASS. AGENTS.md §6.5 documents the recipe: run with --test-threads=1
+# to avoid the parallel-execution flakes. The ptrace suite is still
+# considered privileged (kernel ptrace attach required for the
+# integration tests in chronos-e2e and chronos-native), but the lib
+# unit tests are deterministic under the documented recipe.
+
+# CE-001 REMOVED on 2026-09-16 by the REC-C0.5-D sentinel. The
+# counterexample shrink tests are deterministic after commit b4fe4e8d
+# (probe_drain().len()+1 threshold), confirmed PASS in CI run
+# 35074696707 and locally 12/12. They no longer belong in the
+# deferred bucket.
+
+[[requirement]]
+id = "TRUTH-001"
+title = "ExecutionLog is authoritative for every agentic session"
+status = "partial"
+owner_gate = "REC-C1"
+notes = "chronos-log exists and native can dual-write, but EventBus-only and QueryEngine-authoritative paths remain."
+
+[[requirement]]
+id = "TRUTH-002"
+title = "Agent-visible reads use authoritative EventSeq cursors"
+status = "gap"
+owner_gate = "REC-C1"
+notes = "events_read currently accepts but does not apply its cursor to the query position."
+
+[[requirement]]
+id = "TRUTH-003"
+title = "Completeness and gaps are evidence-derived"
+status = "gap"
+owner_gate = "REC-C1"
+notes = "Public v2 reads can report complete without authoritative gap knowledge."
+
+[[requirement]]
+id = "LOG-001"
+title = "Append-only monotonic EventSeq and independent consumers"
+status = "verified"
+owner_gate = "REC-C1"
+evidence = ["crates/chronos-log", "crates/chronos-sandbox/tests/m1_acceptance.rs"]
+uat = ["m1_01_execution_log_core_impl", "m1_04_execution_log_durable_cursors_and_decoders_impl"]
+verify = "cargo test -p chronos-sandbox --test m1_acceptance -- --test-threads=1"
+
+[[requirement]]
+id = "LOG-002"
+title = "Bounded evidence loss is represented as Gap"
+status = "verified"
+owner_gate = "REC-C1"
+evidence = ["crates/chronos-log/tests/persistence.rs"]
+uat = ["M1 persistence overflow-to-gap acceptance"]
+verify = "cargo test -p chronos-log --tests -- --test-threads=1"
+
+[[requirement]]
+id = "LEGACY-001"
+title = "No agent/query dependency on EventBus destructive reads"
+status = "gap"
+owner_gate = "REC-C2"
+
+[[requirement]]
+id = "LEGACY-002"
+title = "TripwireFired is ExecutionLog evidence and no independent fired queue remains"
+status = "gap"
+owner_gate = "REC-C2"
+
+[[requirement]]
+id = "HEX-001"
+title = "Domain contains no HTTP/runtime infrastructure"
+status = "gap"
+owner_gate = "REC-C3"
+notes = "chronos-domain still owns optional reqwest webhook delivery."
+
+[[requirement]]
+id = "HEX-002"
+title = "Application services depend on ports, not concrete tracing/storage adapters"
+status = "gap"
+owner_gate = "REC-C3"
+
+[[requirement]]
+id = "HEX-003"
+title = "Storage does not depend on native tracer implementation"
+status = "gap"
+owner_gate = "REC-C3"
+
+[[requirement]]
+id = "SOLID-001"
+title = "Debugger backends expose small capability interfaces"
+status = "gap"
+owner_gate = "REC-C4"
+notes = "Wide TraceAdapter still uses UnsupportedOperation defaults."
+
+[[requirement]]
+id = "CONN-001"
+title = "Sequence, monotonic time and wall-clock time have distinct semantics"
+status = "partial"
+owner_gate = "REC-C4"
+
+[[requirement]]
+id = "CONN-002"
+title = "Inner identities are strongly typed"
+status = "partial"
+owner_gate = "REC-C4"
+notes = "InvocationId/SymbolId/EventSeq exist; session/probe/subscription identities remain mixed with strings in several boundaries."
+
+[[requirement]]
+id = "API-001"
+title = "Canonical v2 agent API is small and composable"
+status = "partial"
+owner_gate = "REC-C5"
+
+[[requirement]]
+id = "API-002"
+title = "MCP wrappers contain transport mapping only"
+status = "partial"
+owner_gate = "REC-C5"
+
+[[requirement]]
+id = "PROP-001"
+title = "Runtime property violation is supported by recorded mutation evidence"
+status = "verified"
+owner_gate = "REC-C6"
+evidence = ["crates/chronos-query", "crates/chronos-services/src/analysis.rs"]
+uat = ["m3-uat-order-total"]
+verify = "cargo test -p chronos-query -- --test-threads=1"
+
+[[requirement]]
+id = "M4A-001"
+title = "Go adaptive instrumentation: OTel discovery, OBI, Auto SDK and otelc"
+status = "gap"
+owner_gate = "REC-C6"
+
+[[requirement]]
+id = "M4B-001"
+title = "Rust adaptive instrumentation: telemetry reuse, eBPF, XRay/USDT decisions and semantic probes"
+status = "partial"
+owner_gate = "REC-C6"
+
+[[requirement]]
+id = "OTEL-001"
+title = "External trace/span context correlates to Chronos invocation evidence"
+status = "planned"
+owner_gate = "M6"
+
+[[requirement]]
+id = "DIFF-001"
+title = "Differential execution locates semantic divergence despite timing/order noise"
+status = "planned"
+owner_gate = "M7"
+
+[[requirement]]
+id = "CONC-001"
+title = "Race classification uses happens-before evidence"
+status = "planned"
+owner_gate = "M9"
+
+[[requirement]]
+id = "UI-001"
+title = "Execution Explorer visualizes Chronos evidence without becoming a second IDE"
+status = "planned"
+owner_gate = "M10"
