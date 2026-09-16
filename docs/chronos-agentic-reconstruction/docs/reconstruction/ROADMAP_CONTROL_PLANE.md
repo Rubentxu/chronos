@@ -17,9 +17,17 @@ ACTIVE PRODUCT GATE  : REC-C1.5 (restart / reopen / retention / stale cursor /
                            CHAR-REPLAY: a body-corrupt segment is SKIPPED ->
                              open() succeeds, reads start at seq 1 with ZERO gaps.
                            CONTROL: a clean restart preserves SessionId + seqs.
-                         C1.5.1 retention watermark (retained_from, durable,
-                           atomic; cursor < watermark -> CursorStale before AND
-                           after restart; never GapDetected, never silent re-anchor)
+                         C1.5.1 retention watermark      LANDED (0be29519)
+                           retained_from is the LOGICAL boundary; file deletion is
+                           only physical reclamation. Crash-safe order: commit the
+                           manifest atomically, activate in memory, then reclaim.
+                           Boundary advances only over WHOLLY retired segments
+                           (never cutoff+1). Reads below it -> PositionBeforeRetention
+                           -> ServiceError::CursorStale{requested,retained_from}.
+                           Reopen skips sub-watermark leftovers; a segment straddling
+                           the boundary fails closed. No inference from absence
+                           (RetentionMetadataMissing). RET-1..RET-10 + CONTROL green;
+                           CHAR-RET flipped.
                          C1.5.2 strict replay/recovery (corrupt segment -> hard
                            ReplayIntegrityError; the log never enters the registry;
                            no warn+skip on the agentic path; salvage would be an
