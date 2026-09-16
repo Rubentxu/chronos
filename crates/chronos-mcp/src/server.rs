@@ -2860,7 +2860,8 @@ impl ChronosServer {
             // REC-C1.2/C1.2a/C1.3 variants (cannot occur from list_threads).
             Err(ServiceError::NoExecutionLog(_))
             | Err(ServiceError::ExecutionLogIdentityMismatch { .. })
-            | Err(ServiceError::EvidenceDecodeFailed { .. }) => {
+            | Err(ServiceError::EvidenceDecodeFailed { .. })
+            | Err(ServiceError::EvidenceReadStalled { .. }) => {
                 return Ok(CallToolResult::error(text_content(
                     "internal error: unexpected ExecutionLog error",
                 )));

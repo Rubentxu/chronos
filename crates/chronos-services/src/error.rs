@@ -125,6 +125,17 @@ pub enum ServiceError {
         payload_tag: String,
     },
 
+    /// The log backend reported "not exhausted" while making no forward
+    /// progress (REC-C1.3).
+    ///
+    /// That is a contract violation, not a normal state. Treating it as a
+    /// normal empty page would hand the caller the same cursor again (an
+    /// infinite read loop for `ById`), so the read fails closed instead.
+    #[error(
+        "evidence read stalled: session {session_id} reported more data at position {position} without advancing"
+    )]
+    EvidenceReadStalled { session_id: String, position: u64 },
+
     /// A log was handed to a session under an identity the log does not carry
     /// (REC-C1.2a). Duplicated identity must never become canonical.
     #[error("ExecutionLog identity mismatch: session {expected} but log holds {actual}")]

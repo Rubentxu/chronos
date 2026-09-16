@@ -149,17 +149,42 @@ pub fn read_page(
             log.session_id().as_str()
         )));
     }
-
     let handle = log.handle();
+    let session_id = log.session_id().as_str().to_string();
+    read_page_with(&session_id, cursor, limit, filters, |position, chunk| {
+        handle
+            .read_from_seq(position, chunk)
+            .map_err(|e| ServiceError::DrainFailed(format!("{e:?}")))
+    })
+}
+
+/// The read loop, generic over the batch reader so its contract can be tested
+/// against a deliberately misbehaving backend.
+///
+/// Contract enforced here:
+///
+/// ```text
+/// page.exhausted == true                                  -> stop normally
+/// page.exhausted == false && position_after > start       -> continue
+/// page.exhausted == false && position_after <= start      -> EvidenceReadStalled
+/// ```
+pub(crate) fn read_page_with<F>(
+    session_id: &str,
+    cursor: &EventsCursorV1,
+    limit: usize,
+    filters: &LogReadFilters,
+    mut read: F,
+) -> Result<LogReadPage, ServiceError>
+where
+    F: FnMut(EventSeq, usize) -> Result<LogPage, ServiceError>,
+{
     let mut position = cursor.next_seq();
     let mut matched: Vec<TraceEvent> = Vec::new();
     let mut gaps: Vec<Gap> = Vec::new();
 
     while matched.len() < limit {
         let start_position = position;
-        let page: LogPage = handle
-            .read_from_seq(position, SCAN_CHUNK)
-            .map_err(|e| ServiceError::DrainFailed(format!("{e:?}")))?;
+        let page = read(position, SCAN_CHUNK)?;
         gaps.extend(page.gaps.iter().cloned());
 
         let mut stopped_early = false;
@@ -168,16 +193,16 @@ pub fn read_page(
                 stopped_early = true;
                 break;
             }
-            // A record we cannot decode is NOT skippable: advancing past it
-            // would drop evidence and hand the agent a cursor that pretends the
-            // read was complete. Fail closed and emit no new cursor.
+            // A record we cannot decode is NOT skippable: advancing past it would
+            // drop evidence and hand the agent a cursor that pretends the read was
+            // complete. Fail closed and emit no new cursor.
             let event = decode(record).ok_or_else(|| ServiceError::EvidenceDecodeFailed {
-                session_id: log.session_id().as_str().to_string(),
+                session_id: session_id.to_string(),
                 seq: record.seq.0,
                 payload_tag: payload_tag(record),
             })?;
-            // The position advances exactly to the last record actually
-            // examined, never to the end of the inner chunk.
+            // The position advances exactly to the last record actually examined,
+            // never to the end of the inner chunk.
             position = EventSeq::new(record.seq.0 + 1);
             if filters.matches(&event) {
                 matched.push(event);
@@ -191,15 +216,18 @@ pub fn read_page(
             position = page.position_after;
             break;
         }
-        // Consumed the whole chunk: jump to its end (this is what carries the
-        // reader over gaps) and continue. SCAN_CHUNK stays an internal detail.
         if page.position_after > position {
+            // Consumed the whole chunk: jump to its end. This is what carries the
+            // reader over gaps, and keeps SCAN_CHUNK an internal detail.
             position = page.position_after;
         }
         if position <= start_position {
-            // The backend reported no forward progress. Stop rather than spin;
-            // the caller keeps the position it already had.
-            break;
+            // "More data" with no forward progress is a backend contract
+            // violation. Returning the same cursor would loop forever.
+            return Err(ServiceError::EvidenceReadStalled {
+                session_id: session_id.to_string(),
+                position: position.0,
+            });
         }
     }
 
@@ -244,11 +272,29 @@ pub fn find_by_id(
     event_id: u64,
 ) -> Result<Option<TraceEvent>, ServiceError> {
     let handle = log.handle();
+    let session_id = log.session_id().as_str().to_string();
+    find_by_id_with(&session_id, event_id, |position, chunk| {
+        handle
+            .read_from_seq(position, chunk)
+            .map_err(|e| ServiceError::DrainFailed(format!("{e:?}")))
+    })
+}
+
+/// Same batch contract as [`read_page_with`], applied to a by-id scan.
+///
+/// Without the stall check a misbehaving backend could make this loop forever.
+pub(crate) fn find_by_id_with<F>(
+    session_id: &str,
+    event_id: u64,
+    mut read: F,
+) -> Result<Option<TraceEvent>, ServiceError>
+where
+    F: FnMut(EventSeq, usize) -> Result<LogPage, ServiceError>,
+{
     let mut position = EventSeq::ZERO;
     loop {
-        let page = handle
-            .read_from_seq(position, SCAN_CHUNK)
-            .map_err(|e| ServiceError::DrainFailed(format!("{e:?}")))?;
+        let start_position = position;
+        let page = read(position, SCAN_CHUNK)?;
         if page.records.is_empty() && page.exhausted {
             return Ok(None);
         }
@@ -256,7 +302,7 @@ pub fn find_by_id(
             // Same fail-closed rule as `read_page`: a record we cannot interpret
             // is not the same as "the event is not here".
             let event = decode(record).ok_or_else(|| ServiceError::EvidenceDecodeFailed {
-                session_id: log.session_id().as_str().to_string(),
+                session_id: session_id.to_string(),
                 seq: record.seq.0,
                 payload_tag: payload_tag(record),
             })?;
@@ -267,7 +313,15 @@ pub fn find_by_id(
         if page.exhausted {
             return Ok(None);
         }
-        position = page.position_after;
+        if page.position_after > position {
+            position = page.position_after;
+        }
+        if position <= start_position {
+            return Err(ServiceError::EvidenceReadStalled {
+                session_id: session_id.to_string(),
+                position: position.0,
+            });
+        }
     }
 }
 
@@ -624,5 +678,78 @@ mod rec_c1_3_tests {
         let b = log("sess-b", &entries(3, EventType::FunctionEntry));
         let err = read_page(&a, &b.cursor_start(), 10, &LogReadFilters::default()).unwrap_err();
         assert!(matches!(err, ServiceError::NoExecutionLog(_)), "{err:?}");
+    }
+}
+
+/// REC-C1.3 — negative tests against a deliberately misbehaving backend.
+///
+/// The batch reader is injected so the reader's *contract* can be exercised:
+/// `exhausted == false` with no forward progress must be an error, never a
+/// normal page that hands the same cursor back (which would loop forever in
+/// `find_by_id`).
+#[cfg(test)]
+mod rec_c1_3_stall_tests {
+    use super::*;
+    use chronos_log::LogPage;
+
+    fn faulty_reader() -> impl FnMut(EventSeq, usize) -> Result<LogPage, ServiceError> + Copy {
+        |position, _chunk| {
+            // Claims "more data" while never advancing the position.
+            Ok(LogPage {
+                records: Vec::new(),
+                gaps: Vec::new(),
+                position_after: position,
+                exhausted: false,
+            })
+        }
+    }
+
+    #[test]
+    fn t4_read_page_stalls_loudly_and_emits_no_cursor() {
+        let cursor = EventsCursorV1::start(chronos_log::SessionId::new("stall"));
+        let err = read_page_with(
+            "stall",
+            &cursor,
+            10,
+            &LogReadFilters::default(),
+            faulty_reader(),
+        )
+        .unwrap_err();
+        match err {
+            ServiceError::EvidenceReadStalled {
+                session_id,
+                position,
+            } => {
+                assert_eq!(session_id, "stall");
+                assert_eq!(position, 0);
+            }
+            other => panic!("expected EvidenceReadStalled, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn t5_find_by_id_stalls_loudly_and_never_loops() {
+        let err = find_by_id_with("stall", 42, faulty_reader()).unwrap_err();
+        assert!(
+            matches!(err, ServiceError::EvidenceReadStalled { .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn an_exhausted_backend_is_still_a_normal_empty_result() {
+        // `exhausted == true` is the legitimate "caught up" answer and must not
+        // be turned into an error.
+        let cursor = EventsCursorV1::start(chronos_log::SessionId::new("ok"));
+        let page = read_page_with(
+            "ok",
+            &cursor,
+            10,
+            &LogReadFilters::default(),
+            |position, _| Ok(LogPage::empty_at(position)),
+        )
+        .unwrap();
+        assert!(page.records.is_empty());
+        assert_eq!(page.next.next_seq(), EventSeq::ZERO);
     }
 }
