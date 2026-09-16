@@ -6,8 +6,18 @@ never advance at once again.
 ## Declared windows
 
 ```text
-ACTIVE PRODUCT GATE  : REC-C1.3 (events_read cutover)         -> C1.2a closed, traps recorded
-ACTIVE RESEARCH GATE : SANDBOX-S0.2 (scenario/result contract) -> C1c closed, 4 placements agree
+ACTIVE PRODUCT GATE  : REC-C1.3 (events_read cutover)
+                       core landed: stateless EventSeq read page + gap-aware
+                       position + cursor rules + tests. PENDING: wire the
+                       events_read tool / deprecated shim onto it (drop
+                       QueryEngine, DebugTraceService, CursorDto, hardcoded
+                       completeness) and re-run the 5 DEF-001.
+ACTIVE RESEARCH GATE : SANDBOX-S0.2 (execution contract)
+                       part 1 landed: content-addressed QEMU cache with
+                       validated manifest; namespace renamed to
+                       chronos.execution.*. PENDING: scenario/result/capability/
+                       workspace/provenance/lifecycle contract set and removal
+                       of collect() from the ExecutionEnvironment draft.
 
 DONE
   REC-C1.0 / C1.0a characterization (5 DEF-001 locked causally)
