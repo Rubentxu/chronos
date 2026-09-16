@@ -18,29 +18,31 @@ known_dependency_violations = [
   "chronos-store->chronos-native",
 ]
 
-# REC-C0 baseline scope — explicit gate classification for the 34 residual
-# workspace failures observed at REC-C0.5-A close-out (2026-09-16).
+# REC-C0 baseline scope — explicit gate classification for the 38 residual
+# workspace failures observed at REC-C0.5-A/D close-out (2026-09-16):
+#   20 privileged (PTR-001..003), 18 deferred (DEF-001..004 + CE-001).
 # This section makes the closure criterion mechanical: each failure has
 # bucket + owner_gate + reason; REC-C0 only blocks on "mandatory" items.
 #
 # REC-C0 closure criterion:
 #   - All "mandatory" gate workflows GREEN on remote CI:
 #       Architecture Contracts, CI, Coverage, Vault Drift Sweep
-#   - REC-C0.5-A/B/C either GREEN or correctly separated into the
+#   - REC-C0.5-A/B/C/D either GREEN or correctly separated into the
 #     "privileged" bucket with CHRONOS_PRIVILEGED_UAT=1 contract.
 # REC-C1 (events_read / ExecutionLog cutover) is NOT a REC-C0 blocker —
 # the corresponding TRUTH-* / LOG-* requirements above already carry
 # owner_gate="REC-C1", and that gate starts after the PR #19 merge.
 [baseline_scope]
-# REC-C0 baseline scope — explicit gate classification for the 34 residual
-# workspace failures observed at REC-C0.5-A close-out (2026-09-16).
+# REC-C0 baseline scope — explicit gate classification for the 38 residual
+# workspace failures observed at REC-C0.5-A/D close-out (2026-09-16):
+#   20 privileged (PTR-001..003), 18 deferred (DEF-001..004 + CE-001).
 # This section makes the closure criterion mechanical: each failure has
 # bucket + owner_gate + reason; REC-C0 only blocks on "mandatory" items.
 #
 # REC-C0 closure criterion:
 #   - All "mandatory" gate workflows GREEN on remote CI:
 #       Architecture Contracts, CI, Coverage, Vault Drift Sweep
-#   - REC-C0.5-A/B/C either GREEN or correctly separated into the
+#   - REC-C0.5-A/B/C/D either GREEN or correctly separated into the
 #     "privileged" bucket with CHRONOS_PRIVILEGED_UAT=1 contract.
 # REC-C1 (events_read / ExecutionLog cutover) is NOT a REC-C0 blocker —
 # the corresponding TRUTH-* / LOG-* requirements above already carry
@@ -106,6 +108,23 @@ suite = "lib unit tests (misc)"
 count = 2
 owner_gate = "triage"
 reason = "Pending triage; not blocking REC-C0 baseline scope."
+
+# REC-C0.5-D (commit b4fe4e8d): ce1/ce7/ce10 fixed locally by reading the live
+# event count from probe_drain instead of hardcoding 1000.0. Local run is 12/12
+# PASS, but REMOTE CI has not yet run on this commit; listed here under
+# deferred until the next CI run shows the bucket C bucket covers them. If CI
+# shows GREEN, promote CE-001 to mandatory and reduce the deferred bucket by 3.
+[[baseline_scope.deferred.failures]]
+id = "CE-001"
+suite = "chronos-sandbox/tests/counterexample_tools.rs"
+tests = [
+  "counterexample_tools::ce1_shrink_constant_target",
+  "counterexample_tools::ce7_shrink_response_uses_new_saved_envelope",
+  "counterexample_tools::ce10_shrink_number_target_real_shrinking",
+]
+count = 3
+owner_gate = "REC-C0.5-D (next CI run)"
+reason = "Hardcoded constant: 1000.0 made the hypothesis already pass on CI's busyloop capture (>=1000 events). Replaced with probe_drain().len()+1 so violation is guaranteed at start. Local 12/12 PASS; awaiting remote CI verification on commit b4fe4e8d."
 
 [[requirement]]
 id = "TRUTH-001"
