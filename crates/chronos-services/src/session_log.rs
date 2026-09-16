@@ -191,6 +191,13 @@ impl SessionExecutionLog {
             .maybe_compact()
             .map_err(|e| ServiceError::DrainFailed(format!("{e:?}")))
     }
+
+    /// Durably seal this session's execution log after a clean lifecycle stop.
+    pub fn seal(&self) -> Result<chronos_log::SealedTail, ServiceError> {
+        self.log
+            .seal()
+            .map_err(|e| ServiceError::ProbeStartFailed(format!("seal execution log: {e}")))
+    }
 }
 
 /// Session-scoped registry of `ExecutionLog` handles (REC-C1.3).

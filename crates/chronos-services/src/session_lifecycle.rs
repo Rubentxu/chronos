@@ -285,16 +285,22 @@ impl ChronosSessionLifecycleService {
         // idempotent path; caller synthesises output from persisted
         // metadata.
         let persistence = match ProbeService::stop(ctx.probe, &input.session_id) {
-            Ok(r) => SessionStopPersistence::Stopped {
-                session_id: input.session_id,
-                events: r.events,
-                language: r.language,
-                target: r.target,
-                total_events: r.total_events as u64,
-                duration_ms: r.duration_ms,
-                ebpf_detached: r.ebpf_detached,
-                sealed_at,
-            },
+            Ok(r) => {
+                if input.seal_tail {
+                    let log = ctx.probe.execution_logs.get(&input.session_id)?;
+                    log.seal()?;
+                }
+                SessionStopPersistence::Stopped {
+                    session_id: input.session_id,
+                    events: r.events,
+                    language: r.language,
+                    target: r.target,
+                    total_events: r.total_events as u64,
+                    duration_ms: r.duration_ms,
+                    ebpf_detached: r.ebpf_detached,
+                    sealed_at,
+                }
+            }
             Err(ServiceError::ProbeNotFound(_)) => SessionStopPersistence::AlreadyStopped {
                 session_id: input.session_id,
             },
