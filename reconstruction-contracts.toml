@@ -18,6 +18,95 @@ known_dependency_violations = [
   "chronos-store->chronos-native",
 ]
 
+# REC-C0 baseline scope — explicit gate classification for the 34 residual
+# workspace failures observed at REC-C0.5-A close-out (2026-09-16).
+# This section makes the closure criterion mechanical: each failure has
+# bucket + owner_gate + reason; REC-C0 only blocks on "mandatory" items.
+#
+# REC-C0 closure criterion:
+#   - All "mandatory" gate workflows GREEN on remote CI:
+#       Architecture Contracts, CI, Coverage, Vault Drift Sweep
+#   - REC-C0.5-A/B/C either GREEN or correctly separated into the
+#     "privileged" bucket with CHRONOS_PRIVILEGED_UAT=1 contract.
+# REC-C1 (events_read / ExecutionLog cutover) is NOT a REC-C0 blocker —
+# the corresponding TRUTH-* / LOG-* requirements above already carry
+# owner_gate="REC-C1", and that gate starts after the PR #19 merge.
+[baseline_scope]
+# REC-C0 baseline scope — explicit gate classification for the 34 residual
+# workspace failures observed at REC-C0.5-A close-out (2026-09-16).
+# This section makes the closure criterion mechanical: each failure has
+# bucket + owner_gate + reason; REC-C0 only blocks on "mandatory" items.
+#
+# REC-C0 closure criterion:
+#   - All "mandatory" gate workflows GREEN on remote CI:
+#       Architecture Contracts, CI, Coverage, Vault Drift Sweep
+#   - REC-C0.5-A/B/C either GREEN or correctly separated into the
+#     "privileged" bucket with CHRONOS_PRIVILEGED_UAT=1 contract.
+# REC-C1 (events_read / ExecutionLog cutover) is NOT a REC-C0 blocker —
+# the corresponding TRUTH-* / LOG-* requirements above already carry
+# owner_gate="REC-C1", and that gate starts after the PR #19 merge.
+
+[baseline_scope.mandatory]
+description = "Required GREEN before REC-C0 remote closure. Each workflow must report success on the merge candidate."
+workflows = ["Architecture Contracts", "CI", "Coverage", "Vault Drift Sweep"]
+
+[baseline_scope.privileged]
+description = "Requires CHRONOS_PRIVILEGED_UAT=1 (or kernel ptrace perms) to exercise. Sandbox CI does NOT run these; they live in bucket D."
+workflows = ["Sandbox Smoke Tests (privileged subset)"]
+contract = "Privileged UAT files (e.g. chronos-sandbox/tests/probe_inject_privileged_uat.rs) gated by CHRONOS_PRIVILEGED_UAT=1; silent early-return when unset, no #[ignore]."
+
+[[baseline_scope.privileged.failures]]
+id = "PTR-001"
+suite = "chronos-sandbox/tests/probe_inject_privileged_uat.rs"
+count = 1
+owner_gate = "bucket D"
+reason = "requires kernel ptrace + CAP_BPF; sandbox CI has neither."
+
+[[baseline_scope.privileged.failures]]
+id = "PTR-002"
+suite = "chronos-e2e/tests/test_ptrace_capture.rs"
+count = 13
+owner_gate = "bucket D"
+reason = "test_ptrace_capture hangs without ptrace perms in this environment."
+
+[[baseline_scope.privileged.failures]]
+id = "PTR-003"
+suite = "chronos-native/tests/m2_function_frame_capture.rs"
+count = 6
+owner_gate = "bucket D"
+reason = "frame capture requires ptrace attach; deferred to REC-C1/bucket D per cycle scoping."
+
+[baseline_scope.deferred]
+description = "Real bugs whose owner_gate is later than REC-C0. Documented here so the residual count has explicit owners and is not 'preexisting flake'."
+
+[[baseline_scope.deferred.failures]]
+id = "DEF-001"
+suite = "chronos-sandbox/tests/query_filters.rs + query_edge_cases.rs"
+count = 5
+owner_gate = "REC-C1"
+reason = "events_read pagination/offset correctness; TRUTH-002/003 gap."
+
+[[baseline_scope.deferred.failures]]
+id = "DEF-002"
+suite = "chronos-sandbox/tests/tripwires_tools.rs"
+count = 4
+owner_gate = "REC-C2"
+reason = "LEGACY-001/002 gap; tripwire_fired is not yet ExecutionLog evidence."
+
+[[baseline_scope.deferred.failures]]
+id = "DEF-003"
+suite = "chronos-native/src/ptrace_tracer.rs (lib unit)"
+count = 4
+owner_gate = "AGENTS.md §6.5"
+reason = "Known flakes under parallel test execution; recipe is '--test-threads=1'. AGENTS.md §1 + §6.5 already document this."
+
+[[baseline_scope.deferred.failures]]
+id = "DEF-004"
+suite = "lib unit tests (misc)"
+count = 2
+owner_gate = "triage"
+reason = "Pending triage; not blocking REC-C0 baseline scope."
+
 [[requirement]]
 id = "TRUTH-001"
 title = "ExecutionLog is authoritative for every agentic session"

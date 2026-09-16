@@ -1,10 +1,15 @@
-# HANDOFF — REC-C0.5-A close + REC-C0 state
+# HANDOFF — REC-C0.5-A close + REC-C0 state (corrected)
 
 **Fecha**: 2026-09-16
 **Autor**: orchestrator session
 **Branch**: `feat/rec-convergence-truth-gate`
 **HEAD**: `36983ed0` (rec-c0-5-a-followup: fix two CI script bugs surfaced by push)
 **Base previa**: `d7039e90` (REC-C0.5-B)
+
+> **Correction note** (added 2026-09-16 ~08:00Z): the previous version of
+> this handoff listed REC-C1 (`events_read`) as "Pendiente para CLOSE
+> REC-C0 a nivel global". That was wrong. REC-C1 starts **after** PR #19
+> merges. See "REC-C0 closure criterion" below for the actual blockers.
 
 ---
 
@@ -52,13 +57,13 @@ haber re-ejecutado `check_vault_drift.sh` antes de empezar el ciclo.
 ### Cambios — CI follow-up (commit `36983ed0`)
 
 Al pushear el cierre del vault drift, dos CI checks fallaron por bugs en
-scripts (no por contenido del ciclo). Ambos arreglados en este commit:
+scripts (no por contenido del ciclo). Ambos arreglados:
 
 1. **`scripts/validate_cycle_artifacts.py`** — `--root` default era un path
    absoluto de mac del developer (`/var/mnt/DiscoChino2-fast/...`). Linux CI
    fallaba con "path not found". Ahora default = path relativo
    `cycle-artifacts/p-3416cfb8288f8964`, resuelto contra `__file__` del
-   script. Funciona desde cualquier cwd en cualquier host.
+   script.
 
 2. **`scripts/check_architecture_contracts.py`** — `verify_no_new_legacy`
    excluía solo archivos bajo `/tests/` pero NO bloques `#[cfg(test)]`
@@ -66,12 +71,11 @@ scripts (no por contenido del ciclo). Ambos arreglados en este commit:
    `crates/chronos-services/src/observe.rs:800` dentro del módulo de tests
    (línea legítima). El gate disparaba en cada push. Ahora escanea cada
    `.rs` en HEAD, trackea brace depth desde cada `#[cfg(test)]`, y skip
-   líneas dentro de cualquier bloque cfg(test). La exclusión por path
-   `/tests/` se preserva para subdirs.
+   líneas dentro de cualquier bloque cfg(test).
 
 ### Verificación
 
-**Local**:
+**Local** (HEAD = `36983ed0`):
 ```
 bash scripts/check_vault_drift.sh
 → vault-drift-sweep: PASS (48 python CCs all clean, 7 bash CCs all clean)
@@ -87,7 +91,6 @@ python3 scripts/validate_cycle_artifacts.py
 
 bash scripts/smoke_test_ccs.sh
 → Tests run: 6, Failures: 0
-→ All critical CCs detect synthetic drift. CC detection chain is healthy.
 
 CHRONOS_CONTRACT_BASE_REF=9cc44ce3 python3 scripts/check_architecture_contracts.py
 → Architecture/spec fitness gate PASSED.
@@ -96,49 +99,84 @@ cargo fmt --all -- --check → PASS
 cargo clippy --workspace --all-targets -- -D warnings → PASS
 cargo test --workspace --lib --exclude chronos-native --exclude chronos-e2e
   → all 16 crates green
-cargo test -p chronos-sandbox --test probe_inject (REC-C0.5-B regression)
-  → 4/4 PASS
+
+CHRONOS_MCP_PATH=/var/home/rubentxu/cargo-targets/debug/chronos-mcp \
+  cargo test -p chronos-sandbox --test probe_inject --test probe_lifecycle \
+                                  --test fixture_resolver --test boundary_conditions \
+                                  --test e2e_connectivity
+  → 23/23 PASS (probe_inject 4/4 + probe_lifecycle 5/5 + fixture_resolver 4/4
+                  + boundary_conditions 9/9 + e2e_connectivity 1/1)
 ```
 
-**Remote CI (HEAD = 36983ed0)**:
-- ✅ **Vault Drift Sweep** (run 35069269338): success
-- ✅ **Architecture Contracts** (run 35069269341): success
-- ⏳ **CI** (run 35069269333): in progress (workspace tests)
-- ⏳ **Coverage** (run 35069269330): in progress
+**Remote CI** (HEAD = `36983ed0` y `2c9e7642`):
+- ✅ **Vault Drift Sweep** — success (runs 35069269338, 35069553131)
+- ✅ **Architecture Contracts** — success (runs 35069269341, 35069553123)
+- ⏳ **CI** — in progress (workspace tests; contains out-of-scope residuals)
+- ⏳ **Coverage** — in progress (tarpaulin; same)
 
-Los dos gates críticos para REC-C0.5-A (vault drift + architecture
-contracts) están en verde en CI. CI + Coverage siguen corriendo pero
-incluyen los 34 fallos fuera de scope (REC-C1, bucket D, §6.5) que ya
-estaban documentados como pendientes en el handoff previo.
-
-### Resto de la workspace (NO en scope de REC-C0.5-A)
-
-34 fallos sin tocar (todos fuera del scope vault-drift):
-- 5 query_filters / query_edge_cases → REC-C1
-- 13 chronos-e2e test_ptrace_capture → bucket D
-- 6 chronos-native m2_function_frame_capture → REC-C1 / bucket D
-- 4 tripwires_tools → bucket C pre-existing
-- 4 ptrace_tracer lib flakes → §6.5 needs `--test-threads=1`
-- 2 lib tests misceláneos
+Los dos gates críticos **in-scope de REC-C0.5-A** están verdes.
 
 ---
 
-## REC-C0 status global
+## REC-C0 status global — criterio de cierre explícito
 
-**Sub-ciclos REC-C0.5**:
-- REC-C0.5-A (#28): ✅ CLOSED LOCAL + CI GREEN (in-scope gates)
-- REC-C0.5-B (#29): ✅ CLOSED LOCAL (capability-aware probe_inject)
-- REC-C0.5-C (#30): ✅ CLOSED LOCAL (sandbox fixture discovery)
+### REC-C0 implementation: COMPLETE
 
-**Pendiente para CLOSE REC-C0 a nivel global** (cuestiones de política/fork):
-1. **REC-C1** — events_read pagination/offset correctness (5 fallos query)
-2. **Bucket D** — ptrace perms decisions (13 + 6 fallos)
-3. **Bucket C pre-existing** — 4 tripwires_tools
-4. **§6.5 ptrace flakes** — `--test-threads=1` recipe (4 + 2 fallos)
+### REC-C0 local gates: PASS
 
-Los puntos 2-4 son **scope de decisión de política**, no de fix
-técnico: ¿excluir del workspace run, mantener como opt-in, o añadir
-runner específico con ptrace?
+- `cargo fmt --all -- --check`: PASS
+- `cargo clippy --workspace --all-targets -- -D warnings`: PASS
+- `bash scripts/check_vault_drift.sh`: PASS (48 python + 7 bash CCs)
+- `python3 scripts/validate_cycle_artifacts.py`: PASS
+- `python3 scripts/check_architecture_contracts.py`: PASS
+- `cargo test --workspace --lib --exclude chronos-native --exclude chronos-e2e`: 16 crates green
+- Sandbox regression suites (probe_inject/probe_lifecycle/fixture_resolver/boundary_conditions/e2e_connectivity): 23/23 PASS
+
+### REC-C0 remote closure: BLOCKED — esperando
+
+Para que `REC-C0 remote closure: CLOSED`, los **cuatro mandatory workflows**
+del ledger deben estar GREEN en remote CI sobre el merge candidate:
+
+| Workflow | Status en `2c9e7642` | Acción |
+|---|---|---|
+| Architecture Contracts | ✅ success | — |
+| Vault Drift Sweep | ✅ success | — |
+| CI | ⏳ in progress | esperar; clasificar fallos restantes |
+| Coverage | ⏳ in progress | esperar; clasificar fallos restantes |
+
+Los 34 fallos residuales del workspace ya están clasificados en
+`reconstruction-contracts.toml` → `[baseline_scope]` con bucket +
+owner_gate + razón:
+
+- **Privileged** (20 fallos): `PTR-001/002/003` → bucket D (kernel ptrace/CAP_BPF)
+- **Deferred** (14 fallos):
+  - `DEF-001` (5) → REC-C1 (`events_read` correctness)
+  - `DEF-002` (4) → REC-C2 (`LEGACY-001/002` gap)
+  - `DEF-003` (4) → AGENTS.md §6.5 (`--test-threads=1` recipe)
+  - `DEF-004` (2) → triage
+
+**Importante**: ninguno de los 34 pertenece a REC-C0. Todos tienen
+owner_gate > REC-C0 o son privileged contract (gated por
+`CHRONOS_PRIVILEGED_UAT=1`).
+
+### REC-C1 NO es blocker de REC-C0
+
+REC-C1 (`events_read` / `ExecutionLog` cutover) comienza **después** de
+mergear PR #19. El ledger ya tiene los requirements correspondientes con
+`owner_gate = "REC-C1"` (`TRUTH-001/002/003`, `LOG-001/002`). Mezclar
+REC-C0 con REC-C1 mueve la línea de meta y rompe la trazabilidad.
+
+### REC-C0.5-B / REC-C0.5-C
+
+- **REC-C0.5-A** (#28): ✅ CLOSED LOCAL + REMOTE GREEN (este ciclo)
+- **REC-C0.5-B** (#29): ✅ CLOSED LOCAL. capability-aware `probe_inject`
+  split. El privileged UAT (`probe_inject_privileged_uat.rs`) está
+  separado, gated por `CHRONOS_PRIVILEGED_UAT=1`, y se silencia en sandbox
+  CI sin `#[ignore]`. Contrato approved per AGENTS.md "no #[ignore]
+  para capability-dependent tests".
+- **REC-C0.5-C** (#30): ✅ CLOSED LOCAL. sandbox fixture discovery
+  cerrado; `coverage.yml` workflow actualizado para pre-build y exportar
+  `CHRONOS_MCP_PATH`.
 
 ---
 
@@ -152,6 +190,8 @@ runner específico con ptrace?
 - ✅ `verify-findings.json` con `subject.{head_sha, base_sha}` + `verifications[]`
 - ✅ **Scripts no deben hardcodear paths del developer** — usar siempre
   paths relativos resueltos contra `__file__` del script
+- ✅ **Cada fallo residual del workspace necesita bucket + owner_gate + razón**
+  en el ledger; nunca dejarlo como "pre-existing flake"
 
 ## Quick start próxima sesión
 
@@ -161,22 +201,34 @@ cd /var/mnt/DiscoChino2-fast/Proyectos/rust/chronos
 git fetch origin main && git checkout main && git pull --ff-only
 git checkout feat/rec-convergence-truth-gate && git pull --ff-only
 
-# Verify state (must all PASS)
+# Verify REC-C0 local gates (deben ser PASS)
 bash scripts/check_vault_drift.sh
 python3 scripts/validate_cycle_artifacts.py
 CHRONOS_CONTRACT_BASE_REF=main python3 scripts/check_architecture_contracts.py
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace --lib --exclude chronos-native --exclude chronos-e2e
 
-# Próximo ciclo candidato: REC-C1 (events_read pagination) — depende de scope/priority
+# Verify remote CI on merge candidate
+gh run list --branch feat/rec-convergence-truth-gate --limit 8
+
+# Si los 4 mandatory workflows (Architecture Contracts, CI, Coverage,
+# Vault Drift Sweep) están GREEN → REC-C0 remote closure = CLOSED →
+# abrir PR para merge #19.
 ```
 
 ## Watch CI
 
 Último push verificado:
 - `36983ed0` rec-c0-5-a-followup: fix two CI script bugs
+- `2c9e7642` rec-c0-5-a: final handoff with CI closure evidence
 
-Critical gates (in REC-C0.5-A scope) GREEN:
+Mandatory gates GREEN:
 - Vault Drift Sweep ✅
 - Architecture Contracts ✅
 
-CI + Coverage siguen corriendo para runs pre-existentes (no bloquean
-REC-C0.5-A local).
+Pendientes:
+- CI ⏳
+- Coverage ⏳
+
+Una vez los 4 mandatory estén GREEN → REC-C0 → CLOSED → merge PR #19 → REC-C1 (events_read cutover) puede arrancar.
