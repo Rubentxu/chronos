@@ -31,6 +31,8 @@ import tempfile
 import time
 from pathlib import Path
 
+import qemu_assets as qa
+
 RESULT_SCHEMA = "sddk.sandbox.result/v2"
 
 # Capability status vocabulary. Deliberately tiny; Chronos evidence classes are
@@ -127,6 +129,11 @@ class HostAdapter:
 
     def __init__(self, ws: Workspace):
         self.ws = ws
+        self._scenario_steps: list = []
+
+    def configure(self, scenario: dict) -> None:
+        """Hook for adapters that must know the scenario during prepare()."""
+        self._scenario_steps = scenario["steps"]
         self._marker_probe_ok: bool | None = None
 
     def capabilities(self) -> dict:
@@ -306,9 +313,15 @@ class PodmanAdapter(HostAdapter):
         return caps
 
     def resolve_image(self) -> tuple[str | None, dict]:
-        """Local-only digest resolution. Returns (ref, observation)."""
+        """Local-only resolution to an IMMUTABLE execution identity.
+
+        S0.1b+ hardening: resolving a digest in `prepare()` and then executing by
+        mutable tag leaves a window (prepare: tag -> image A; retag; execute:
+        tag -> image B). `execute()` therefore runs by the resolved image ID and
+        the same identity is recorded in provenance.
+        """
         proc = subprocess.run(
-            ["podman", "image", "inspect", self.image, "--format", "{{.Digest}}"],
+            ["podman", "image", "inspect", self.image, "--format", "{{.Id}}"],
             capture_output=True, text=True,
         )
         if proc.returncode != 0:
@@ -317,22 +330,34 @@ class PodmanAdapter(HostAdapter):
                 provenance="podman image inspect",
                 reason=f"image {self.image} not present locally and pulling is forbidden",
             )
-        digest = proc.stdout.strip().splitlines()[-1].strip() if proc.stdout.strip() else ""
-        if not digest:
-            return None, cap(UNKNOWN, reason="inspect returned no digest")
-        return digest, cap(SUPPORTED, provenance=f"{self.image}@{digest}")
+        image_id = proc.stdout.strip().splitlines()[-1].strip() if proc.stdout.strip() else ""
+        if not image_id:
+            return None, cap(UNKNOWN, reason="inspect returned no image id")
+        digest_proc = subprocess.run(
+            ["podman", "image", "inspect", self.image, "--format", "{{.Digest}}"],
+            capture_output=True, text=True,
+        )
+        digest = digest_proc.stdout.strip().splitlines()[-1].strip() if digest_proc.stdout.strip() else ""
+        return image_id, cap(
+            SUPPORTED,
+            provenance=f"{self.image} (id={image_id[:19]}…, manifest={digest[:19]}…)",
+            image_id=image_id,
+            manifest_digest=digest,
+        )
 
     def prepare(self) -> tuple[float, dict]:
         t0 = time.monotonic()
         self.ws.materialize()
         digest, obs = self.resolve_image()
         self._image_digest = digest
+        self._image_id = digest
         self._image_obs = obs
         dt = (time.monotonic() - t0) * 1000.0
         return dt, {
             "image": self.image,
-            "image_digest": digest,
+            "image_id": digest,
             "image_status": obs["status"],
+            "image_provenance": obs.get("provenance"),
             "staging": "tar-stream-in/out (no bind mounts, no host relabel)",
             "source_ro": str(self.ws.source_ro),
             "work_rw": str(self.ws.work_rw),
@@ -411,7 +436,8 @@ class PodmanAdapter(HostAdapter):
         # Run by local name with --pull=never: the resolved digest above is the
         # manifest digest for provenance, while `podman run` wants the local
         # image reference. --pull=never guarantees no registry contact.
-        podman_cmd += [self.image, "/bin/sh", "-c", script]
+        # Execute by the IMMUTABLE id resolved in prepare(), never by tag.
+        podman_cmd += [self._image_id or self.image, "/bin/sh", "-c", script]
 
         started = time.monotonic()
         proc = subprocess.run(
@@ -500,6 +526,245 @@ class PodmanAdapter(HostAdapter):
 
 
 
+
+class QemuAdapter(HostAdapter):
+    """QEMU/KVM: KERNEL class. Same scenario, same assertions, same schema.
+
+    S0.1c gate rules:
+
+    * The accelerator must be KVM. Without a usable /dev/kvm the environment is
+      `unsupported`; there is NO silent TCG fallback (TCG would be a different
+      placement and is not evaluated here).
+    * Base is READ-ONLY: the initramfs file is never written during a run. The
+      ephemeral overlay is the guest's own ramfs, discarded at poweroff.
+    * No host shares: the scenario is copied INTO the initramfs at prepare time
+      and artifacts come back over the serial console. There is no virtio share
+      of the host filesystem.
+    * Boot readiness is the guest's own `__S0_READY__` marker, never a sleep.
+    * Cleanup is verified: no QEMU process survives and the per-run initramfs is
+      removed.
+    """
+
+    name = "qemu"
+
+    C_WORK = "/s0/work"
+    C_ART = "/s0/artifacts"
+    C_TMP = "/s0/tmp"
+
+    def container_env(self) -> dict[str, str]:
+        return {
+            "S0_SOURCE": "/s0/source",
+            "S0_WORK": self.C_WORK,
+            "S0_ARTIFACTS": self.C_ART,
+            "S0_TMP": self.C_TMP,
+            "S0_MARKER": f"{self.C_WORK}/child-marker.txt",
+        }
+
+    def capabilities(self) -> dict:
+        caps = super().capabilities()
+        caps.update({
+            "pid_isolation": cap(SUPPORTED, provenance="guest kernel"),
+            "fs_isolation": cap(SUPPORTED, provenance="read-only initramfs + guest ramfs"),
+            "net_isolation": cap(SUPPORTED, provenance="no NIC attached"),
+            "kernel_class": cap(SUPPORTED, provenance="ephemeral guest kernel via KVM"),
+            "ebpf": cap(UNKNOWN, reason="not-probed inside the guest (S0.7)"),
+        })
+        return caps
+
+    def prepare(self) -> tuple[float, dict]:
+        t0 = time.monotonic()
+        self.ws.materialize()
+        self._scenario_script = self._render_scenario()
+
+        self._qemu = qa.qemu_binary()
+        self._kernel = qa.host_kernel()
+        self._kvm = qa.kvm_available()
+        self._qemu_version = qa.qemu_version(self._qemu) if self._qemu else "unavailable"
+        self._kernel_sha = qa._sha256_file(self._kernel) if self._kernel else ""
+
+        self._initrd = None
+        self._initrd_sha = ""
+        note = ""
+        if not self._kvm:
+            note = "KVM accelerator unavailable; refusing to fall back to TCG"
+        elif not self._qemu:
+            note = "no qemu binary on this host"
+        elif not self._kernel:
+            note = "no host kernel image found under /usr/lib/modules/*/vmlinuz"
+        if self._qemu and self._kernel and self._kvm:
+            cache = Path(os.environ.get("S0_QEMU_CACHE", Path.home() / ".cache/s0run-qemu"))
+            img = Path(self.ws.tmp_ephemeral).parent / "initramfs.cpio.gz"
+            self._initrd, self._initrd_sha, note = qa.build_base_initramfs(
+                os.environ.get("S0_QEMU_IMAGE", "docker.io/library/alpine:3.20"),
+                cache,
+                scenario_script=self._scenario_script,
+            )
+
+        dt = (time.monotonic() - t0) * 1000.0
+        return dt, {
+            "accelerator": "kvm" if self._kvm else "unsupported",
+            "qemu": self._qemu_version,
+            "kernel": str(self._kernel) if self._kernel else None,
+            "kernel_sha256": self._kernel_sha,
+            "initramfs_sha256": self._initrd_sha,
+            "initramfs": str(self._initrd) if self._initrd else None,
+            "staging": "scenario copied into initramfs; artifacts over serial",
+            "note": note,
+            "source_ro": str(self.ws.source_ro),
+            "work_rw": str(self.ws.work_rw),
+            "artifacts_rw": str(self.ws.artifacts_rw),
+            "tmp_ephemeral": str(self.ws.tmp_ephemeral),
+        }
+
+    def _render_scenario(self) -> str:
+        import shlex
+        # The guest has no host environment, so the S0_* contract is exported
+        # explicitly: the same scenario text addresses guest paths without
+        # knowing it is running in a VM.
+        exports = "\n".join(f"export {k}={shlex.quote(v)}" for k, v in self.container_env().items())
+        lines = [
+            "mkdir -p /s0/work /s0/artifacts /s0/tmp /s0/source",
+            exports,
+            "cd /s0/work",
+            "set +e",
+        ]
+        for step in self._scenario_steps:
+            cmd = " ".join(shlex.quote(a) for a in step["run"])
+            lines.append(f'echo "{qa.BEGIN_MARK}{step["id"]}"')
+            lines.append(cmd)
+            lines.append(f'echo "{qa.END_MARK}{step["id"]}:$?"')
+        return "\n".join(lines) + "\n"
+
+    def execute(self, scenario: dict, env: dict[str, str]) -> tuple[float, list[dict]]:
+        import base64
+        import tarfile
+
+        # prepare() already rendered the scenario into the initramfs; do not
+        # rebuild here. A missing asset is a hard error, not a retry.
+        if not self._qemu or not self._kernel or not self._kvm or not self._initrd:
+            return 0.0, [{
+                "step": "<boot>", "exit": None, "elapsed_ms": 0.0, "stdout": "", "stderr": "",
+                "executed_as": ["qemu"],
+                "errors": ["KVM accelerator unavailable; no TCG fallback by design"],
+            }]
+
+        cmd = [
+            self._qemu, "-enable-kvm", "-m", os.environ.get("S0_QEMU_MEM", "512"),
+            "-nographic", "-no-reboot",
+            "-kernel", str(self._kernel), "-initrd", str(self._initrd),
+            "-append", f"console=ttyS0 rdinit=/init panic=-1",
+        ]
+        started = time.monotonic()
+        proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True)
+        self._proc = proc
+
+        ready_timeout = float(os.environ.get("S0_QEMU_READY_TIMEOUT", "60"))
+        out_lines: list[str] = []
+        ready = False
+        saw_artifacts = False
+        try:
+            for line in proc.stdout:  # streaming: readiness is a marker, not a sleep
+                out_lines.append(line)
+                if qa.READY_MARK in line:
+                    ready = True
+                    self._boot_ms = (time.monotonic() - started) * 1000.0
+                if qa.ART_MARK in line:
+                    saw_artifacts = True
+                if ready and saw_artifacts:
+                    break
+                if (time.monotonic() - started) > ready_timeout:
+                    proc.kill()
+                    break
+        finally:
+            try:
+                proc.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+
+        elapsed = (time.monotonic() - started) * 1000.0
+        out = "".join(out_lines)
+
+        if not ready:
+            return elapsed, [{
+                "step": "<boot>", "exit": None, "elapsed_ms": round(elapsed, 2),
+                "stdout": out[-2000:], "stderr": "", "executed_as": ["qemu"],
+                "errors": ["guest never reported readiness; no results accepted"],
+            }]
+
+        body, _, art_b64 = out.partition(qa.ART_MARK)
+        try:
+            raw = base64.b64decode(art_b64.strip().splitlines()[0] if art_b64.strip() else b"")
+            if raw:
+                with tarfile.open(fileobj=io.BytesIO(raw), mode="r") as tf:
+                    tf.extractall(str(self.ws.artifacts_rw), filter="fully_trusted")
+        except Exception as exc:  # noqa: BLE001
+            return elapsed, [{
+                "step": "<artifacts>", "exit": None, "elapsed_ms": round(elapsed, 2),
+                "stdout": "", "stderr": "", "executed_as": ["qemu"],
+                "errors": [f"artifact copy-out failed: {exc}"],
+            }]
+
+        results = []
+        for step in scenario["steps"]:
+            sid = step["id"]
+            begin = f"{qa.BEGIN_MARK}{sid}\n"
+            end = f"{qa.END_MARK}{sid}:"
+            try:
+                seg = body.split(begin, 1)[1]
+                seg, tail = seg.split(end, 1)
+                rc = int(tail.split("\n", 1)[0].strip())
+            except (IndexError, ValueError) as exc:
+                results.append({
+                    "step": sid, "exit": None, "elapsed_ms": 0.0, "stdout": "", "stderr": "",
+                    "errors": [f"cannot parse guest output for step {sid}: {exc}"],
+                    "executed_as": ["qemu"],
+                })
+                continue
+            errs = []
+            for needle in step.get("expect_stdout_contains", []):
+                if needle not in seg:
+                    errs.append(f"stdout missing {needle!r}")
+            expected_exit = step.get("expect_exit", 0)
+            if rc != expected_exit:
+                errs.append(f"exit {rc} != {expected_exit}")
+            results.append({
+                "step": sid, "exit": rc, "elapsed_ms": 0.0, "stdout": seg, "stderr": "",
+                "errors": errs, "executed_as": ["qemu"],
+            })
+        return elapsed, results
+
+    def remaining_processes(self) -> dict:
+        proc = getattr(self, "_proc", None)
+        alive = proc is not None and proc.poll() is None
+        return observation(SUPPORTED, value=1 if alive else 0, method="qemu process poll")
+
+    def destroy(self, cleanup_paths: list[str]) -> tuple[float, list[str]]:
+        t0 = time.monotonic()
+        leftover: list[str] = []
+        proc = getattr(self, "_proc", None)
+        if proc is not None and proc.poll() is None:
+            proc.kill()
+            proc.wait()
+            leftover.append(f"qemu pid {proc.pid} had to be killed")
+        initrd = getattr(self, "_initrd", None)
+        if initrd is not None:
+            import shutil as _sh
+            path = Path(initrd)
+            # The per-run assets live in "<run-id>.cpio.gz" plus the staging dir
+            # "<run-id>/". Both must be gone after destroy.
+            run_dir = path.with_suffix("") if path.name.endswith(".cpio.gz") else path.parent
+            if run_dir.name.startswith("run-"):
+                _sh.rmtree(run_dir, ignore_errors=True)
+            if path.exists():
+                path.unlink()
+            if path.exists() or run_dir.exists():
+                leftover.append(str(path))
+        dt = (time.monotonic() - t0) * 1000.0
+        return dt, leftover
+
+
 def run(scenario: dict, env_name: str, out_dir: Path) -> dict:
     if env_name not in ADAPTERS:
         raise SystemExit(f"unknown environment {env_name!r}; known: {list(ADAPTERS)}")
@@ -511,18 +776,24 @@ def run(scenario: dict, env_name: str, out_dir: Path) -> dict:
             "capabilities": {}, "metrics": {}, "artifacts": [],
         }
 
-    adapter_cls = {"host": HostAdapter, "bwrap": BwrapAdapter, "podman": PodmanAdapter}.get(env_name)
+    adapter_cls = {
+        "host": HostAdapter,
+        "bwrap": BwrapAdapter,
+        "podman": PodmanAdapter,
+        "qemu": QemuAdapter,
+    }.get(env_name)
     if adapter_cls is None:
         return {
             "schema": RESULT_SCHEMA, "environment": env_name,
             "scenario": scenario["scenario_id"], "result": "skip",
-            "reason": f"adapter for {env_name} not implemented yet (S0.1c/d)",
+            "reason": f"adapter for {env_name} not implemented",
             "capabilities": {}, "metrics": {}, "artifacts": [],
         }
 
     ws = Workspace(out_dir / env_name)
     inst = adapter_cls(ws)
     env = ws.env()
+    inst.configure(scenario)
     prepare_ms, prepared = inst.prepare()
     caps = inst.capabilities()
     exec_ms, steps = inst.execute(scenario, env)
