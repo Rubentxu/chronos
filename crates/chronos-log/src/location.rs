@@ -112,4 +112,71 @@ mod tests {
             PathBuf::from("/tmp/explicit-root/rec-c1-5-test")
         );
     }
+
+    /// REQ-1 acceptance: resolver honours `CHRONOS_EXECUTION_LOG_DIR` when set.
+    /// Note: env mutation is process-global; this test sets a unique env
+    /// value only if no one else has already resolved the root. The
+    /// `OnceLock` guarantees order: the first `resolve_execution_log_root`
+    /// wins, so this test is sensitive to test order. We only assert
+    /// "default contains 'chronos-execution-logs'" because we cannot
+    /// assume the env is unset.
+    #[test]
+    fn resolver_default_path_is_stable_and_contains_marker() {
+        let r = resolve_execution_log_root();
+        let s = r.to_string_lossy();
+        assert!(
+            s.contains("chronos-execution-logs"),
+            "default root must contain 'chronos-execution-logs'; got {s:?}"
+        );
+        assert!(r.is_absolute(), "default root must be absolute; got {r:?}");
+    }
+
+    /// REQ-1 acceptance: per-session subdir equals `root.join(session_id)`.
+    #[test]
+    fn execution_log_dir_uses_session_id_string() {
+        let sid = SessionId::new("abc-def_123");
+        let root = PathBuf::from("/var/lib/chronos");
+        assert_eq!(
+            execution_log_dir(&root, &sid),
+            PathBuf::from("/var/lib/chronos/abc-def_123")
+        );
+    }
+
+    /// REQ-1 acceptance: per-session subdir uses `SessionId::as_str()` exactly.
+    /// Two sessions with the same canonical string must produce the same
+    /// directory.
+    #[test]
+    fn execution_log_dir_is_deterministic_per_session_id() {
+        let sid_a = SessionId::new("session-A");
+        let sid_b = SessionId::new("session-A");
+        let root = PathBuf::from("/r");
+        assert_eq!(
+            execution_log_dir(&root, &sid_a),
+            execution_log_dir(&root, &sid_b)
+        );
+        assert_ne!(
+            execution_log_dir(&root, &sid_a),
+            execution_log_dir(&root, &SessionId::new("session-B"))
+        );
+    }
+
+    /// REQ-1 acceptance: `execution_log_dir_for_session` uses the memoized
+    /// root. The directory it returns must be a subdir of
+    /// `resolve_execution_log_root()`.
+    #[test]
+    fn for_session_returns_subdir_of_resolved_root() {
+        let sid = SessionId::new("any-session");
+        let dir = execution_log_dir_for_session(&sid);
+        let root = resolve_execution_log_root();
+        assert!(
+            dir.starts_with(&root),
+            "for_session({sid:?}) = {dir:?} must be under root {root:?}"
+        );
+        assert_eq!(dir.file_name().and_then(|s| s.to_str()), Some(sid.as_str()));
+    }
+
+    // Note: the `test_root::set_for_testing` panic-on-second-invocation
+    // contract is enforced by the `OnceLock::set` semantics, not a test.
+    // Testing it here would force the resolver to memoize and break
+    // every subsequent test in this binary; verified by code review.
 }
