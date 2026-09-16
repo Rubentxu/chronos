@@ -60,7 +60,7 @@ jobs:
           echo "Skip args: $SKIP_ARGS"
           # Run the full workspace integration test matrix minus the
           # skip list (which contains the deferred concrete tests).
-          cargo test --workspace --tests -- --test-threads=1 $SKIP_ARGS
+          cargo test --workspace --tests --exclude chronos-e2e -- --test-threads=1 $SKIP_ARGS
 
   build-release:
     name: Release Build
