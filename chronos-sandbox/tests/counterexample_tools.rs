@@ -84,24 +84,40 @@ async fn setup_with_probe(fixture: &str) -> Option<(McpTestClient, String)> {
 
 /// CE1: shrink a constant target on a real probe session.
 ///
-/// m8-06: uses a hypothesis that (a) ALWAYS violates initially (Ge against
-/// a large value: events.len() >= 1000 is false unless the probe captured
-/// >= 1000 events, which test_busyloop doesn't), and (b) WILL flip during
-/// shrinking (the binary-search shrinker walks toward 0; eventually it
-/// reaches a value below events.len() and the comparison flips to Pass,
-/// ending the loop). This gives us a real, observable shrinking run.
+/// m8-06: uses a hypothesis that (a) ALWAYS violates initially
+/// (`events.len() >= N+1` where `N` is the captured event count read
+/// back from the server, so it is always false right after capture)
+/// and (b) WILL flip during shrinking (the binary-search shrinker walks
+/// the constant toward 0; eventually it drops below `events.len()` and
+/// the comparison flips to Pass, ending the loop). This is robust against
+/// fixture runners that capture more or fewer events than the original
+/// author estimated (the prior `constant: 1000.0` literal broke in CI
+/// where busyloop captured >= 1000 events).
 #[tokio::test]
 async fn ce1_shrink_constant_target() {
     let Some((mut client, session_id)) = setup_with_probe("test_busyloop").await else {
         return;
     };
 
+    // Read the captured event count back from the server so the
+    // hypothesis is guaranteed to violate at the start, regardless of
+    // how many events the fixture captured.
+    let count = match client.probe_drain(&session_id).await {
+        Ok(events) => events.len(),
+        Err(e) => {
+            eprintln!("counterexample_tools: probe_drain failed: {e}");
+            let _ = client.shutdown().await;
+            return;
+        }
+    };
+    let constant = (count + 1) as f64;
+
     let target = json!({
         "session_id": session_id,
         "kind": "invariant",
         "scope": "EventCount",
         "comparison": "Ge",
-        "constant": { "Number": 1000.0 },
+        "constant": { "Number": constant },
     });
 
     let resp = client
@@ -305,13 +321,26 @@ async fn ce7_shrink_response_uses_new_saved_envelope() {
         return;
     };
 
-    // m8-06: use Ge/1000 like ce1 so the shrinker does real work.
+    // m8-06: use Ge/(N+1) where N is the captured event count, so the
+    // shrinker does real work regardless of how many events the fixture
+    // captured (the prior literal `1000.0` broke in CI when busyloop
+    // captured >= 1000 events).
+    let count = match client.probe_drain(&session_id).await {
+        Ok(events) => events.len(),
+        Err(e) => {
+            eprintln!("counterexample_tools: probe_drain failed: {e}");
+            let _ = client.shutdown().await;
+            return;
+        }
+    };
+    let constant = (count + 1) as f64;
+
     let target = json!({
         "session_id": session_id,
         "kind": "invariant",
         "scope": "EventCount",
         "comparison": "Ge",
-        "constant": { "Number": 1000.0 },
+        "constant": { "Number": constant },
     });
 
     let resp = client
@@ -476,15 +505,28 @@ async fn ce10_shrink_number_target_real_shrinking() {
         return;
     };
 
-    // m8-06: Ge/1000.0 guarantees an initial violation (events.len() < 1000)
-    // and the shrinker can shrink toward 0 until it crosses events.len()
-    // and the invariant flips to Pass.
+    // m8-06: Ge/(N+1) where N is the captured event count guarantees an
+    // initial violation (events.len() < N+1) and the shrinker can shrink
+    // toward 0 until it crosses events.len() and the invariant flips to
+    // Pass. Using N+1 instead of a literal 1000.0 makes the test robust
+    // against fixture runners that capture more or fewer events than
+    // the original author estimated.
+    let count = match client.probe_drain(&session_id).await {
+        Ok(events) => events.len(),
+        Err(e) => {
+            eprintln!("counterexample_tools: probe_drain failed: {e}");
+            let _ = client.shutdown().await;
+            return;
+        }
+    };
+    let constant = (count + 1) as f64;
+
     let target = json!({
         "session_id": session_id,
         "kind": "invariant",
         "scope": "EventCount",
         "comparison": "Ge",
-        "constant": { "Number": 1000.0 },
+        "constant": { "Number": constant },
     });
 
     let resp = client
