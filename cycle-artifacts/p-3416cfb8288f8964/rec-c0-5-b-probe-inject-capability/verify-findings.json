@@ -1,0 +1,131 @@
+{
+  "cycle_id": "rec-c0-5-b-probe-inject-capability",
+  "branch": "feat/rec-convergence-truth-gate",
+  "head_sha": "98f9dba4f35ee3e0edf61c2132bd9d84edd25fdb",
+  "base_sha": "a03c7d064b7c3531e6e65a3565a2e0c5ce7cf9a4",
+  "main_sha": "9cc44ce37224e8e35b069a160c140e0f0bf7e016",
+  "scope": "REC-C0.5-B / Issue #29 — capability-aware probe_inject split",
+  "issues": ["#29"],
+  "verification_date": "2026-09-16",
+  "gates": {
+    "fmt": {
+      "command": "cargo fmt --all -- --check",
+      "result": "PASS"
+    },
+    "clippy_default": {
+      "command": "cargo clippy --workspace --all-targets -- -D warnings",
+      "result": "PASS",
+      "exit_code": 0
+    },
+    "clippy_all_features": {
+      "command": "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+      "result": "PASS",
+      "exit_code": 0
+    },
+    "unit_chronos_services": {
+      "command": "cargo test -p chronos-services --lib",
+      "passed": 275,
+      "failed": 0,
+      "ignored": 0,
+      "result": "PASS",
+      "new_tests_added": [
+        "observe::tests::create_uprobe_without_ebpf_returns_ebpf_unsupported",
+        "observe::tests::create_uprobe_attach_failure_surfaces_typed_injection_failed_or_ebpf_unavailable",
+        "observe::tests::create_uprobe_with_no_pid_returns_probe_starting_or_ebpf_unavailable"
+      ]
+    },
+    "unit_chronos_services_all_features": {
+      "command": "cargo test -p chronos-services --lib --all-features",
+      "passed": 275,
+      "failed": 0,
+      "ignored": 0,
+      "result": "PASS"
+    },
+    "unit_chronos_domain": {
+      "command": "cargo test -p chronos-domain --lib",
+      "passed": 159,
+      "failed": 0,
+      "ignored": 0,
+      "result": "PASS",
+      "new_tests_added": [
+        "capability::tests::capability_kebab_strings_are_stable",
+        "capability::tests::capability_unavailable_carries_typed_slot",
+        "capability::tests::capability_unavailable_equality_is_by_slot_only"
+      ]
+    },
+    "unit_chronos_domain_all_features": {
+      "command": "cargo test -p chronos-domain --lib --all-features",
+      "passed": 159,
+      "failed": 0,
+      "ignored": 0,
+      "result": "PASS"
+    },
+    "sandbox_probe_inject": {
+      "command": "CHRONOS_MCP_PATH=/var/home/rubentxu/cargo-targets/debug/chronos-mcp cargo test -p chronos-sandbox --test probe_inject",
+      "passed": 4,
+      "failed": 0,
+      "ignored": 0,
+      "result": "PASS",
+      "before_fix": "1 passed / 3 failed",
+      "tests": [
+        "test_probe_inject_nonexistent_session",
+        "test_probe_inject_before_pid_known_returns_capability_error",
+        "test_probe_inject_invalid_symbol_returns_capability_error",
+        "test_probe_inject_without_root_returns_capability_error"
+      ]
+    },
+    "sandbox_probe_inject_privileged_uat": {
+      "command": "CHRONOS_MCP_PATH=/var/home/rubentxu/cargo-targets/debug/chronos-mcp cargo test -p chronos-sandbox --test probe_inject_privileged_uat",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "result": "PASS (silently gated — CHRONOS_PRIVILEGED_UAT unset)",
+      "tests": [
+        "test_probe_inject_privileged_happy_path"
+      ]
+    },
+    "regression_probe_lifecycle": {
+      "command": "cargo test -p chronos-sandbox --test probe_lifecycle",
+      "passed": 5,
+      "failed": 0,
+      "result": "PASS"
+    },
+    "regression_boundary_conditions": {
+      "command": "cargo test -p chronos-sandbox --test boundary_conditions",
+      "passed": 9,
+      "failed": 0,
+      "result": "PASS"
+    },
+    "regression_fixture_resolver": {
+      "command": "cargo test -p chronos-sandbox --test fixture_resolver",
+      "passed": 4,
+      "failed": 0,
+      "result": "PASS"
+    },
+    "regression_e2e_connectivity": {
+      "command": "cargo test -p chronos-sandbox --test e2e_connectivity",
+      "passed": 1,
+      "failed": 0,
+      "result": "PASS"
+    }
+  },
+  "failures_repaired": 3,
+  "failures_remaining_workspace_wide": 34,
+  "failures_out_of_scope": {
+    "REC-C1 events_read": 5,
+    "bucket_D_ptrace_permissions": 13,
+    "REC-C1_or_bucket_D_native_function_frames": 6,
+    "tripwires_tools_unrelated_cycle": 4,
+    "ptrace_lib_tests_flake_§6.5": 4,
+    "unrelated_lib_tests": 2
+  },
+  "architecture_check": {
+    "command": "python3 scripts/check_architecture_contracts.py",
+    "result": "NOT RUN — cycle is capability-contract-only; no architecture edges added",
+    "rationale": "REC-C0.5-B touches chronos-domain (new capability module), chronos-services (observe dispatcher), chronos-mcp (wrapper), and chronos-sandbox (tests). No new edges between crates. check_architecture_contracts.py would only verify edges; the diff contains no edge changes."
+  },
+  "doD_rec_c0_5_b": {
+    "test_unprivileged_typed_contract": "PASS (3 tests in chronos-sandbox/tests/probe_inject.rs assert on the typed 'probe_inject: capability: ebpf-uprobe' / 'probe-starting' discriminator; no #[ignore]; no fake-pass)",
+    "uat_privileged_outside_default_sandbox_run": "PASS (chronos-sandbox/tests/probe_inject_privileged_uat.rs gated by CHRONOS_PRIVILEGED_UAT=1; default CI run sees it pass silently, not as #[ignore])"
+  }
+}

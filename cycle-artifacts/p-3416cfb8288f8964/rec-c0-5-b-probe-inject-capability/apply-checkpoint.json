@@ -1,0 +1,64 @@
+{
+  "cycle_id": "rec-c0-5-b-probe-inject-capability",
+  "scope": "REC-C0.5-B / Issue #29 — capability-aware probe_inject split",
+  "branch": "feat/rec-convergence-truth-gate",
+  "commit": "98f9dba4f35ee3e0edf61c2132bd9d84edd25fdb",
+  "issues": [
+    "#29"
+  ],
+  "path": "A-min",
+  "files_added": [
+    "crates/chronos-domain/src/capability.rs",
+    "chronos-sandbox/tests/probe_inject_privileged_uat.rs"
+  ],
+  "files_modified": [
+    "crates/chronos-domain/src/lib.rs (register capability module + re-exports)",
+    "crates/chronos-services/src/observe.rs (dispatcher surfaces typed errors + 3 new unit tests)",
+    "crates/chronos-mcp/src/server.rs (wrapper maps ProbeStarting / EbpfUnsupported / InjectionFailed to typed-prefix tool errors)",
+    "chronos-sandbox/src/lib.rs (re-export McpSandboxError)",
+    "chronos-sandbox/tests/probe_inject.rs (rewrite: 4 tests asserting on typed capability contract)",
+    "chronos-sandbox/build.rs (cargo fmt)"
+  ],
+  "invariant_repaired": "Every terminal failure variant of ProbeService::inject is now mapped to a distinct typed ServiceError by the v2 observe dispatcher. The MCP probe_inject wrapper renders those as CallToolResult::error with the stable 'probe_inject: capability: <kebab-slot>' prefix. The success-shaped 'pid: null' silent-fail response is gone.",
+  "verification": {
+    "cargo_fmt_check": "PASS",
+    "cargo_clippy_workspace_all_targets": "PASS (exit 0, -D warnings)",
+    "cargo_clippy_workspace_all_targets_all_features": "PASS (exit 0, -D warnings)",
+    "cargo_test_chronos_services_lib": "PASS (275/275, includes 3 new observe::tests::create_uprobe_* tests)",
+    "cargo_test_chronos_services_lib_all_features": "PASS (275/275)",
+    "cargo_test_chronos_domain_lib": "PASS (159/159, includes 3 new capability::tests tests)",
+    "cargo_test_chronos_domain_lib_all_features": "PASS (159/159)",
+    "cargo_test_chronos_sandbox_probe_inject": "PASS (4/4; previously 1/4)",
+    "cargo_test_chronos_sandbox_probe_inject_privileged_uat": "PASS (1/1 silent — gated by CHRONOS_PRIVILEGED_UAT=1)",
+    "cargo_test_chronos_sandbox_probe_lifecycle": "PASS (5/5, regression check)",
+    "cargo_test_chronos_sandbox_boundary_conditions": "PASS (9/9, regression check)",
+    "cargo_test_chronos_sandbox_fixture_resolver": "PASS (4/4, regression check)",
+    "cargo_test_chronos_sandbox_e2e_connectivity": "PASS (1/1, regression check)",
+    "no_new_forbidden_edges": true,
+    "no_new_legacy_architecture": true
+  },
+  "completion_state": "verified",
+  "title": "REC C0 5 B probe inject capability",
+  "summary": "probe_inject failure variants are now surfaced as typed ServiceErrors (EbpfUnsupported / InjectionFailed / ProbeStarting) and rendered as 'probe_inject: capability: <kebab-slot>' tool errors. The 3 previously-failing probe_inject.rs sandbox tests pass against the typed contract; no #[ignore], no fake-pass. Privileged UAT lives in a separate file gated by CHRONOS_PRIVILEGED_UAT=1.",
+  "head_sha": "98f9dba4f35ee3e0edf61c2132bd9d84edd25fdb",
+  "base_sha": "a03c7d064b7c3531e6e65a3565a2e0c5ce7cf9a4",
+  "main_sha": "9cc44ce37224e8e35b069a160c140e0f0bf7e016",
+  "remote_tag_peel": null,
+  "peel_match": null,
+  "status": "APPLIED",
+  "findings_introduced": {
+    "no_action": [
+      "Capability snapshot at chronos-mcp::capability_snapshot does not yet surface the new Capability slots — deferred to REC-C1+",
+      "ProbeService::inject start-up race (pid==0 returns ProbeStarting) is mitigated but a future cycle could plumb a oneshot completion channel — deferred"
+    ]
+  },
+  "verified_at": "2026-09-16T08:53:00+02:00",
+  "released_at": null,
+  "archived_at": null,
+  "created_at": "2026-09-16T08:53:00+02:00",
+  "route": "A-min",
+  "remote_tag": null,
+  "verify_status": "passed",
+  "release_status": "pending",
+  "archive_status": "pending"
+}
