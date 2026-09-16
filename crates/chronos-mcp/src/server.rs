@@ -606,12 +606,11 @@ pub struct EventsReadParams {
     /// Maximum events to return (mode=query only).
     #[serde(default = "default_limit")]
     pub limit: usize,
-    /// Opaque cursor for the next page. Wire shape:
-    /// `{ "total_pushed": u64, "snapshot_len": u64 }`. Same encoding
-    /// as the existing `probe_drain` cursor. Omitted for the first
-    /// page (the dispatcher issues a fresh cursor).
+    /// Opaque cursor for the next page (`ecv1:<schema>:<len>:<session>:<seq>`,
+    /// as returned in `next_cursor`). Omitted for the first page, which starts
+    /// at seq#0 inclusive. A cursor minted for another session is refused.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cursor: Option<chronos_services::output::CursorDto>,
+    pub cursor: Option<String>,
 }
 
 /// Parameters for the v2 `observe` tool (m7-02).
@@ -2426,21 +2425,35 @@ impl ChronosServer {
             }
         }
 
-        // m7-01 shim: translate v1 offset/limit into a cursor at the
-        // dispatcher boundary. The v1 path is best-effort: completeness
-        // is "best_effort" because the offset/limit model is not the
-        // same as the cursor model. Future m7+ may tighten this.
+        // REC-C1.3 compatibility translation: v1 `offset` is expressed as a
+        // canonical cursor position and handed to the ONE real reader. There is
+        // no second implementation over the ExecutionLog, and no offset reaches
+        // the read path.
+        //
+        // NOTE on semantics: the pre-C1.3 implementation ignored `offset`
+        // entirely, so there is no historical "offset within the filtered set"
+        // behaviour to preserve. Deprecated `query_events`: pagination now
+        // follows canonical ExecutionLog position semantics.
         let cursor = if params.offset == 0 {
             None
         } else {
-            Some(chronos_services::output::CursorDto {
-                total_pushed: Some(params.offset as u64),
-                snapshot_len: Some(params.limit as u64),
+            let sid = self.live_probes.lock().ok().and_then(|probes| {
+                probes
+                    .get(&params.session_id)
+                    .map(|live| live.execution_log.session_id().clone())
+            });
+            sid.and_then(|session| {
+                chronos_services::events_cursor::EventsCursorV1::start(session)
+                    .advanced_to(chronos_log::EventSeq::new(params.offset as u64))
+                    .ok()
+                    .map(|c| c.encode())
             })
         };
 
+        // REC-C1.3: the authoritative read needs the sessions (session-owned
+        // logs), not the engine map.
         let ctx = EventsReadContext {
-            engines: &self.engines,
+            live_probes: &self.live_probes,
         };
         let input = EventsReadInput {
             session_id: params.session_id.clone(),
@@ -2505,8 +2518,10 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
+        // REC-C1.3: the authoritative read needs the sessions (session-owned
+        // logs), not the engine map.
         let ctx = EventsReadContext {
-            engines: &self.engines,
+            live_probes: &self.live_probes,
         };
         let input = EventsReadInput {
             session_id: params.session_id.clone(),
@@ -5795,8 +5810,10 @@ impl ChronosServer {
         let event_types: Option<Vec<EventType>> =
             params.event_types.filter(|types| !types.is_empty());
 
+        // REC-C1.3: the authoritative read needs the sessions (session-owned
+        // logs), not the engine map.
         let ctx = EventsReadContext {
-            engines: &self.engines,
+            live_probes: &self.live_probes,
         };
         let input = EventsReadInput {
             session_id: params.session_id,
@@ -5820,11 +5837,23 @@ impl ChronosServer {
                 format!("Session '{}' not found", s),
             ))),
             Err(ServiceError::InvalidInput(s)) => Ok(CallToolResult::error(text_content(s))),
-            Err(ServiceError::CursorStale) => Ok(CallToolResult::error(text_content(
-                "cursor is stale: the session has advanced past this cursor's total_pushed",
-            ))),
             Err(ServiceError::InvalidCursorPayload) => Ok(CallToolResult::error(text_content(
-                "invalid cursor payload: expected {total_pushed, snapshot_len}",
+                "invalid cursor: expected an opaque cursor previously returned in next_cursor",
+            ))),
+            Err(ServiceError::EvidenceDecodeFailed {
+                session_id,
+                seq,
+                payload_tag,
+            }) => Ok(CallToolResult::error(text_content(format!(
+                "evidence at seq {seq} of session '{session_id}' could not be decoded                  (payload tag {payload_tag:?}); the read failed closed and no cursor was issued"
+            )))),
+            Err(ServiceError::EvidenceReadStalled { session_id, position }) => {
+                Ok(CallToolResult::error(text_content(format!(
+                    "evidence read stalled for session '{session_id}' at position {position}:                      the log reported more data without advancing"
+                ))))
+            }
+            Err(ServiceError::NoExecutionLog(s)) => Ok(CallToolResult::error(text_content(
+                format!("session '{s}' owns no ExecutionLog"),
             ))),
             Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
