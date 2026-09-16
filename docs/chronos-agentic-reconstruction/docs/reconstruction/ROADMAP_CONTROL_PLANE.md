@@ -6,22 +6,13 @@ never advance at once again.
 ## Declared windows
 
 ```text
-ACTIVE PRODUCT GATE  : REC-C1.3 (events_read cutover)
-                       core landed and hardened: stateless EventSeq read page,
-                       gap-aware position, cursor rules, multi-chunk scan
-                       (SCAN_CHUNK no longer leaks into page semantics),
-                       fail-closed decode (no cursor emitted past unreadable
-                       evidence), no-progress is a typed error in both readers,
-                       uniform position vocabulary. WIRE LANDED but BLOCKED:
-                       after probe_stop the session leaves live_probes, so the
-                       session-owned log is unreachable for finalized sessions
-                       (8 sandbox failures: "Session ... not found or not
-                       finalized"). Needs a finalized-session log handle
-                       (retain past stop, or persist/reopen from the store)
-                       before the 5 DEF-001 can be re-rated. The old
-                       events_read tool / deprecated shim onto it (drop
-                       QueryEngine, DebugTraceService, CursorDto, hardcoded
-                       completeness) and re-run the 5 DEF-001.
+ACTIVE PRODUCT GATE  : REC-C1.4 (gap/completeness semantics)
+                       C1.3 CLOSED: session-scoped SessionExecutionLogRegistry
+                       outlives live_probes; events_read reads the registry only
+                       (no live/finalized/engine chain); opaque cursor on the
+                       wire; completeness "unknown"; DEF-001 retired with all
+                       five declared failures passing and the characterizations
+                       rewritten as positive contract tests (19+5 green).
 ACTIVE RESEARCH GATE : SANDBOX-S0.2 (execution contract)
                        part 1 landed: content-addressed QEMU cache with
                        validated manifest; namespace renamed to
