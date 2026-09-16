@@ -99,6 +99,7 @@ pub mod session_compare;
 pub mod session_explain;
 pub mod session_export;
 pub mod session_lifecycle;
+pub mod session_log;
 pub mod sessions;
 pub mod state_query;
 pub mod trace_slice;

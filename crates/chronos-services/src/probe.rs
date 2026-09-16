@@ -49,6 +49,26 @@ pub struct LiveProbeSession {
     pub ebpf_adapter: Option<Arc<chronos_ebpf::EbpfAdapter>>,
     /// Most recent eBPF attachment metadata (binary_path, symbol_name, pid).
     pub ebpf_attachment: Option<EbpfAttachmentInfo>,
+    /// REC-C1.2: the session OWNS its ExecutionLog. Readers take it from here;
+    /// the native backend keeps a clone only for writing. There is no backend
+    /// read fallback.
+    pub execution_log: Option<crate::session_log::SessionExecutionLog>,
+}
+
+impl LiveProbeSession {
+    /// The session-owned log, or a typed error.
+    ///
+    /// C1.3 will make every authoritative read go through this; the error is
+    /// the honest answer for a session that has no log rather than a silent
+    /// empty result.
+    pub fn require_execution_log(
+        &self,
+        session_id: &str,
+    ) -> Result<&crate::session_log::SessionExecutionLog, ServiceError> {
+        self.execution_log
+            .as_ref()
+            .ok_or_else(|| ServiceError::NoExecutionLog(session_id.to_string()))
+    }
 }
 
 /// Metadata for the eBPF attachment of a live probe session.
@@ -225,6 +245,17 @@ impl ProbeService {
         );
 
         // Store the live probe session
+        // REC-C1.2: the session adopts the log the backend opened (same Arc, so
+        // the backend keeps writing to the same place). From here on, reads go
+        // through the session, never through the backend.
+        let adopted_log = backend.execution_log().map(|handle| {
+            crate::session_log::SessionExecutionLog::adopt(
+                None,
+                chronos_log::SessionId::new(session_id.clone()),
+                handle,
+            )
+        });
+
         let live_probe = LiveProbeSession {
             backend,
             session,
@@ -233,6 +264,7 @@ impl ProbeService {
             attached: false,
             ebpf_adapter: None,
             ebpf_attachment: None,
+            execution_log: adopted_log,
         };
         ctx.live_probes
             .lock()
@@ -315,6 +347,15 @@ impl ProbeService {
             ))
         })?;
         let session_id = uuid::Uuid::new_v4().to_string();
+        // REC-C1.2: same ownership rule as `start` — the session adopts the
+        // backend's log, and readers go through the session.
+        let adopted_log = backend.execution_log().map(|handle| {
+            crate::session_log::SessionExecutionLog::adopt(
+                None,
+                chronos_log::SessionId::new(session_id.clone()),
+                handle,
+            )
+        });
         let live = crate::probe::LiveProbeSession {
             backend,
             session,
@@ -323,6 +364,7 @@ impl ProbeService {
             attached: true,
             ebpf_adapter: None,
             ebpf_attachment: None,
+            execution_log: adopted_log,
         };
         ctx.live_probes
             .lock()
@@ -483,9 +525,11 @@ impl ProbeService {
         let live_probe = probes
             .get(session_id)
             .ok_or_else(|| ServiceError::ProbeNotFound(session_id.to_string()))?;
-        live_probe
-            .backend
-            .read_execution_log_records_with_stats(since, limit)
+        // REC-C1.2: read through the session-owned log, not the backend. The
+        // decoding logic is shared (chronos_native::read_log_with_stats), so
+        // there is no second implementation to drift.
+        let owned = live_probe.require_execution_log(session_id)?;
+        chronos_native::read_log_with_stats(&owned.handle(), since, limit)
             .map_err(|e| ServiceError::DrainFailed(e.to_string()))
     }
 
@@ -504,10 +548,11 @@ impl ProbeService {
         let live_probe = probes
             .get(session_id)
             .ok_or_else(|| ServiceError::ProbeNotFound(session_id.to_string()))?;
-        live_probe
-            .backend
-            .compaction_metrics()
-            .map_err(|e| ServiceError::DrainFailed(e.to_string()))
+        // REC-C1.2: counters come from the session-owned log, not the backend.
+        Ok(live_probe
+            .execution_log
+            .as_ref()
+            .map(|owned| owned.compaction_metrics()))
     }
 
     /// Drain raw events from a live probe session and return them + the
@@ -734,4 +779,92 @@ mod _ensure_compiles {
     // (no unresolved imports). The probe service is incrementally extracted
     // across multiple commits; until each method lands its imports are
     // silenced by the `#[allow(unused_imports)]` above.
+}
+
+#[cfg(test)]
+mod rec_c1_2_tests {
+    //! REC-C1.2 — the session owns its ExecutionLog; there is no backend
+    //! fallback. A session without a log must say so, not return empty data.
+
+    use super::*;
+    use chronos_domain::bus::EventBus;
+    use chronos_domain::{CaptureConfig, CaptureSession};
+    use chronos_log::{SegmentedConfig, SegmentedExecutionLog};
+
+    fn stub_session(
+        execution_log: Option<crate::session_log::SessionExecutionLog>,
+    ) -> LiveProbeSession {
+        let bus = EventBus::new_shared(64);
+        let backend = NativeProbeBackend::new(bus);
+        let session = CaptureSession::new(0, Language::Rust, CaptureConfig::new("noop"));
+        LiveProbeSession {
+            backend,
+            session,
+            language: Language::Rust,
+            target: "noop".to_string(),
+            attached: false,
+            ebpf_adapter: None,
+            ebpf_attachment: None,
+            execution_log,
+        }
+    }
+
+    #[test]
+    fn session_without_log_reports_typed_error() {
+        let live = stub_session(None);
+        let err = live.require_execution_log("sess-x").unwrap_err();
+        match err {
+            ServiceError::NoExecutionLog(s) => assert_eq!(s, "sess-x"),
+            other => panic!("expected NoExecutionLog, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn backend_attached_log_is_not_used_as_a_fallback() {
+        // The backend has a log attached (the pre-C1.2 read source) but the
+        // session does not own one. The read must still fail: ownership is the
+        // only path, otherwise C1.3 would inherit a hidden fallback.
+        let bus = EventBus::new_shared(64);
+        let backend = NativeProbeBackend::new(bus);
+        let dir = std::env::temp_dir().join(format!("rec-c1-2-nofb-{}", std::process::id()));
+        let log = SegmentedExecutionLog::open(
+            chronos_log::SessionId::new("sess-y"),
+            SegmentedConfig::with_dir(&dir),
+        )
+        .unwrap();
+        {
+            let mut slot = backend
+                .execution_log_slot_for_test()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            *slot = Some(std::sync::Arc::new(log));
+        }
+
+        let mut live = stub_session(None);
+        live.backend = backend;
+        assert!(
+            live.require_execution_log("sess-y").is_err(),
+            "backend-attached log must NOT satisfy a session read"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn owned_log_satisfies_the_read_and_shares_the_handle() {
+        let dir = std::env::temp_dir().join(format!("rec-c1-2-owned-{}", std::process::id()));
+        let owned = crate::session_log::SessionExecutionLog::open(
+            &dir,
+            chronos_log::SessionId::new("sess-z"),
+        )
+        .unwrap();
+        let expected = owned.handle();
+        let live = stub_session(Some(owned));
+        let got = live.require_execution_log("sess-z").expect("owned log");
+        assert!(
+            std::sync::Arc::ptr_eq(&got.handle(), &expected),
+            "the session must expose the very handle writers hold"
+        );
+        assert_eq!(got.cursor_start().session_id().as_str(), "sess-z");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

@@ -816,6 +816,7 @@ mod tests {
             attached: false,
             ebpf_adapter: None,
             ebpf_attachment: None,
+            execution_log: None,
         };
         rig.live_probes
             .lock()

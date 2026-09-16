@@ -105,6 +105,14 @@ pub enum ServiceError {
     #[error("probe start failed: {0}")]
     ProbeStartFailed(String),
 
+    /// The session does not own an `ExecutionLog` (REC-C1.2).
+    ///
+    /// Reads must go through the session-owned log; there is deliberately no
+    /// backend fallback. A session without a log cannot serve authoritative
+    /// reads, and saying so is the honest answer.
+    #[error("session {0} owns no ExecutionLog")]
+    NoExecutionLog(String),
+
     /// A `probe_stop` call failed to drain / detach.
     #[error("probe stop error: {0}")]
     ProbeStopError(String),

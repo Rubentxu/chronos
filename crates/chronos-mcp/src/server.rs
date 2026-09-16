@@ -2857,6 +2857,12 @@ impl ChronosServer {
                     "internal error: unexpected tripwire not found",
                 )));
             }
+            // REC-C1.2 variant (cannot occur from list_threads).
+            Err(ServiceError::NoExecutionLog(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected missing ExecutionLog",
+                )));
+            }
             Err(ServiceError::Unsupported(_)) => {
                 return Ok(CallToolResult::error(text_content(
                     "internal error: unexpected unsupported error",
@@ -8590,6 +8596,7 @@ mod tests {
             attached: false,
             ebpf_adapter: None,
             ebpf_attachment: None,
+            execution_log: None,
         };
         {
             let mut probes = server.live_probes.lock().unwrap();
@@ -8683,9 +8690,19 @@ mod tests {
         }
 
         // Register the backend as a live probe session.
+        //
+        // REC-C1.2: the session OWNS the log. The backend keeps its clone only
+        // for writing, and the read path reads through the session — there is no
+        // backend read fallback. So this fixture must hand the session the log,
+        // exactly as `ProbeService::start` does.
         let server = Arc::new(ChronosServer::new());
         let dummy_session =
             CaptureSession::new(0, chronos_domain::Language::C, CaptureConfig::new("noop"));
+        let owned_log = chronos_services::session_log::SessionExecutionLog::adopt(
+            Some(dir.clone()),
+            LogSessionId::new(&log_session_id),
+            log.clone(),
+        );
         let live = LiveProbeSession {
             backend,
             session: dummy_session,
@@ -8694,6 +8711,7 @@ mod tests {
             attached: false,
             ebpf_adapter: None,
             ebpf_attachment: None,
+            execution_log: Some(owned_log),
         };
         server
             .live_probes

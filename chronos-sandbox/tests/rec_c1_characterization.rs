@@ -57,11 +57,25 @@ async fn setup_probe() -> (McpTestClient, String, usize) {
 async fn char_offset_pagination_current_behavior() {
     let (mut client, session_id, total) = setup_probe().await;
     let page1 = client
-        .query_events(&session_id, QueryFilter { limit: 10, offset: 0, ..Default::default() })
+        .query_events(
+            &session_id,
+            QueryFilter {
+                limit: 10,
+                offset: 0,
+                ..Default::default()
+            },
+        )
         .await
         .expect("page1");
     let page2 = client
-        .query_events(&session_id, QueryFilter { limit: 10, offset: 10, ..Default::default() })
+        .query_events(
+            &session_id,
+            QueryFilter {
+                limit: 10,
+                offset: 10,
+                ..Default::default()
+            },
+        )
         .await
         .expect("page2");
     let p1: Vec<u64> = page1.iter().map(|e| e.event_id).collect();
@@ -83,16 +97,34 @@ async fn char_offset_pagination_current_behavior() {
 async fn char_offset_beyond_total_current_behavior() {
     let (mut client, session_id, total) = setup_probe().await;
     let base = client
-        .query_events(&session_id, QueryFilter { limit: 10, offset: 0, ..Default::default() })
+        .query_events(
+            &session_id,
+            QueryFilter {
+                limit: 10,
+                offset: 0,
+                ..Default::default()
+            },
+        )
         .await
         .expect("base query");
     let far = client
-        .query_events(&session_id, QueryFilter { limit: 10, offset: 1_000_000, ..Default::default() })
+        .query_events(
+            &session_id,
+            QueryFilter {
+                limit: 10,
+                offset: 1_000_000,
+                ..Default::default()
+            },
+        )
         .await
         .expect("far offset query");
     let a: Vec<u64> = base.iter().map(|e| e.event_id).collect();
     let b: Vec<u64> = far.iter().map(|e| e.event_id).collect();
-    println!("CHAR-2 total={total} offset0={} offset1e6={}", a.len(), b.len());
+    println!(
+        "CHAR-2 total={total} offset0={} offset1e6={}",
+        a.len(),
+        b.len()
+    );
     // CAUSAL: offset beyond tail returns EXACTLY the offset=0 page (offset ignored).
     // Flip to assert!(far.is_empty()) at cutover.
     assert!(
@@ -110,24 +142,46 @@ async fn char_offset_beyond_total_current_behavior() {
 async fn char_limit_exact_pagination_current_behavior() {
     let (mut client, session_id, _total) = setup_probe().await;
     let page1 = client
-        .query_events(&session_id, QueryFilter { limit: 7, offset: 0, ..Default::default() })
+        .query_events(
+            &session_id,
+            QueryFilter {
+                limit: 7,
+                offset: 0,
+                ..Default::default()
+            },
+        )
         .await
         .expect("p1");
     let page2 = client
-        .query_events(&session_id, QueryFilter { limit: 7, offset: 7, ..Default::default() })
+        .query_events(
+            &session_id,
+            QueryFilter {
+                limit: 7,
+                offset: 7,
+                ..Default::default()
+            },
+        )
         .await
         .expect("p2");
     let p1: Vec<u64> = page1.iter().map(|e| e.event_id).collect();
     let p2: Vec<u64> = page2.iter().map(|e| e.event_id).collect();
     let dup: Vec<&u64> = p1.iter().filter(|id| p2.contains(id)).collect();
-    println!("CHAR-3 p1={} p2={} boundary_duplicates={}", p1.len(), p2.len(), dup.len());
+    println!(
+        "CHAR-3 p1={} p2={} boundary_duplicates={}",
+        p1.len(),
+        p2.len(),
+        dup.len()
+    );
     // EXACT characterization: observed duplication is total (7 of 7), i.e. the
     // two pages are identical. Flip to assert!(dup.is_empty()) at cutover.
     assert!(
         p1.len() == 7 && dup.len() == p1.len(),
         "characterization changed: exact-limit pages no longer fully duplicate — retire this DEF-001 item"
     );
-    assert_eq!(p1, p2, "characterization changed: page(offset=7) differs from page(offset=0)");
+    assert_eq!(
+        p1, p2,
+        "characterization changed: page(offset=7) differs from page(offset=0)"
+    );
     client.shutdown().await.ok();
 }
 
@@ -139,17 +193,38 @@ async fn char_limit_exact_pagination_current_behavior() {
 async fn char_offset_beyond_total_edge_surface() {
     let (mut client, session_id, total) = setup_probe().await;
     let base = client
-        .query_events(&session_id, QueryFilter { limit: 10, offset: 0, ..Default::default() })
+        .query_events(
+            &session_id,
+            QueryFilter {
+                limit: 10,
+                offset: 0,
+                ..Default::default()
+            },
+        )
         .await
         .expect("base query");
     let far = client
-        .query_events(&session_id, QueryFilter { limit: 10, offset: 500_000, ..Default::default() })
+        .query_events(
+            &session_id,
+            QueryFilter {
+                limit: 10,
+                offset: 500_000,
+                ..Default::default()
+            },
+        )
         .await
         .expect("far query");
     let a: Vec<u64> = base.iter().map(|e| e.event_id).collect();
     let b: Vec<u64> = far.iter().map(|e| e.event_id).collect();
-    println!("CHAR-4 total={total} offset0={} offset5e5={}", a.len(), b.len());
-    assert!(!b.is_empty() && a == b, "characterization changed — retire this DEF-001 item");
+    println!(
+        "CHAR-4 total={total} offset0={} offset5e5={}",
+        a.len(),
+        b.len()
+    );
+    assert!(
+        !b.is_empty() && a == b,
+        "characterization changed — retire this DEF-001 item"
+    );
     client.shutdown().await.ok();
 }
 
@@ -167,7 +242,14 @@ async fn char_pagination_tail_termination_current_behavior() {
     let mut last_page_len = page_size;
     while last_page_len == page_size && pages < 60 {
         let page = client
-            .query_events(&session_id, QueryFilter { limit: page_size, offset: pages * page_size, ..Default::default() })
+            .query_events(
+                &session_id,
+                QueryFilter {
+                    limit: page_size,
+                    offset: pages * page_size,
+                    ..Default::default()
+                },
+            )
             .await
             .expect("page");
         last_page_len = page.len();
