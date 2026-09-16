@@ -41,8 +41,19 @@ ACTIVE PRODUCT GATE  : REC-C1.5 (restart / reopen / retention / stale cursor /
                            share the one strict primitive. C1.5.1 leftovers stay out
                            of the plan. REP-1/2/3/5/6/7/8/9/10/12 + CONTROL green; the
                            two tests documenting skip-and-continue were flipped.
-                         C1.5.3 tail state (open | sealed | unclean/unknown; a
-                           leftover .seg.tmp must not vanish semantically)
+                         C1.5.3 tail state              LANDED (1c4521c1)
+                           Four states (Open | Sealed | Unclean | Unknown) with the
+                           rule "positive evidence of abnormal end -> Unclean; lack of
+                           evidence -> Unknown". tail_state does NOT change the truth of
+                           the validated region, so C1.4 keeps saying Complete for a
+                           fully-known range. seal() flushes, refuses on a live temp,
+                           fsyncs the segment dir, captures the durable tail, then
+                           persists Sealed; writes after a seal are LogSealed. The seal
+                           is the only witness of a missing LAST segment
+                           (TailIntegrityMismatch). Manifest v2 + read-modify-write
+                           updates (retention changes only retained_from). write_segment
+                           now fsyncs the parent dir after the rename. TAIL-1..TAIL-14
+                           green alongside RET-*/REP-*/CONTROL.
                          C1.5.4 reopen + registry bootstrap (rebuild the registry
                            from validated durable data, same SessionId; no
                            QueryEngine fallback; no automatic get_or_reopen per
