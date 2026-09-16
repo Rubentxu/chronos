@@ -6,6 +6,13 @@ never advance at once again.
 ## Declared windows
 
 ```text
+STATUS               : REC-C1.5 sub-gates C1.5.0..C1.5.4 all landed. Remaining for
+                       REC-C1.5 closure: the restart UAT (10k events, cursor reuse,
+                       CursorStale on both sides of the restart, and a Sealed
+                       variant), the MCP-server startup wiring of the bootstrap
+                       (bootstrap must complete before serving events_read), and
+                       delete_session wired to the durable removal in the tool.
+
 ACTIVE PRODUCT GATE  : REC-C1.5 (restart / reopen / retention / stale cursor /
                        recovery integrity) - the last REC-C1 gate where a bug can
                        make Chronos remember a run differently before and after a
@@ -54,10 +61,20 @@ ACTIVE PRODUCT GATE  : REC-C1.5 (restart / reopen / retention / stale cursor /
                            updates (retention changes only retained_from). write_segment
                            now fsyncs the parent dir after the rename. TAIL-1..TAIL-14
                            green alongside RET-*/REP-*/CONTROL.
-                         C1.5.4 reopen + registry bootstrap (rebuild the registry
-                           from validated durable data, same SessionId; no
-                           QueryEngine fallback; no automatic get_or_reopen per
-                           read, so drop_session stays meaningful)
+                         C1.5.4 discovery/reopen/bootstrap  LANDED (b1ec5659)
+                           Deterministic discovery keyed on the manifest identity
+                           (never directory name / SessionStore), duplicates refused
+                           before publishing, segments without a manifest reported as
+                           UnmanagedLegacyLog with no inferred identity. Strict
+                           open_existing never creates. Two-phase bootstrap: validate
+                           all, then publish; a corrupt session is registered as
+                           Unavailable(reason) and does not block the others, so
+                           events_read says ExecutionLogUnavailable, never
+                           SessionNotFound. No read-time reopen. delete_session is
+                           durable (directory removed); drop_session stays in-memory.
+                           ById under retention answers
+                           EvidenceUnavailableDueToRetention instead of a false
+                           "not found" (final C1.5 acceptance item). BOOT-1..13 green.
                        Also: ById over a truncated history must not answer "not
                        found" for an id that retention removed ->
                        EvidenceUnavailableDueToRetention.
