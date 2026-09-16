@@ -819,7 +819,7 @@ mod tests {
             attached: false,
             ebpf_adapter: None,
             ebpf_attachment: None,
-            execution_log: crate::session_log::SessionExecutionLog::open(
+            execution_log: crate::session_log::SessionExecutionLog::create(
                 // Unique per test: a shared path races with the C1.5.1 manifest
                 // write (create_dir_all + atomic rename) across parallel tests.
                 std::env::temp_dir().join(format!(

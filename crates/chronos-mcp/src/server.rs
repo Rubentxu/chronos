@@ -2892,7 +2892,8 @@ impl ChronosServer {
             | Err(ServiceError::ExecutionLogIdentityMismatch { .. })
             | Err(ServiceError::EvidenceDecodeFailed { .. })
             | Err(ServiceError::EvidenceReadStalled { .. })
-            | Err(ServiceError::ExecutionLogUnavailable { .. }) => {
+            | Err(ServiceError::ExecutionLogUnavailable { .. })
+            | Err(ServiceError::EvidenceUnavailableDueToRetention { .. }) => {
                 return Ok(CallToolResult::error(text_content(
                     "internal error: unexpected ExecutionLog error",
                 )));
@@ -5890,6 +5891,12 @@ impl ChronosServer {
             Err(ServiceError::NoExecutionLog(s)) => Ok(CallToolResult::error(text_content(
                 format!("session '{s}' owns no ExecutionLog"),
             ))),
+            Err(ServiceError::EvidenceUnavailableDueToRetention { retained_from }) => {
+                Ok(CallToolResult::error(text_content(format!(
+                    "evidence unavailable: this session's history is retained only from seq \
+{retained_from}, so an id from the retired range cannot be reported as absent"
+                ))))
+            }
             Err(ServiceError::ExecutionLogUnavailable { session_id, reason }) => {
                 Ok(CallToolResult::error(text_content(format!(
                     "ExecutionLog unavailable for session '{session_id}': {reason}"
@@ -8672,7 +8679,7 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        let owned_for_round = chronos_services::session_log::SessionExecutionLog::open(
+        let owned_for_round = chronos_services::session_log::SessionExecutionLog::create(
             &log_dir,
             chronos_log::SessionId::new("rec-c1-2a-compaction"),
         )

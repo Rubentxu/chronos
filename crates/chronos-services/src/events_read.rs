@@ -246,7 +246,7 @@ mod tests {
                     .as_nanos()
             ));
             let session_id = format!("sess-{tag}");
-            let owned = crate::session_log::SessionExecutionLog::open(
+            let owned = crate::session_log::SessionExecutionLog::create(
                 &dir,
                 SessionId::new(session_id.clone()),
             )

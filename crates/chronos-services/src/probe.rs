@@ -258,7 +258,7 @@ impl ProbeService {
         //   3. hand the backend only a clone for writing.
         // If (2) fails, session_start fails: no EventBus-only silent session.
         let session_id = uuid::Uuid::new_v4().to_string();
-        let owned_log = crate::session_log::SessionExecutionLog::open(
+        let owned_log = crate::session_log::SessionExecutionLog::create(
             execution_log_dir(input.execution_log_dir.as_deref(), &session_id),
             chronos_log::SessionId::new(session_id.clone()),
         )?;
@@ -369,7 +369,7 @@ impl ProbeService {
         // REC-C1.2a: same canonical order as `start` — mint id, own the log,
         // then let the backend write through a clone.
         let session_id = uuid::Uuid::new_v4().to_string();
-        let owned_log = crate::session_log::SessionExecutionLog::open(
+        let owned_log = crate::session_log::SessionExecutionLog::create(
             execution_log_dir(input.execution_log_dir.as_deref(), &session_id),
             chronos_log::SessionId::new(session_id.clone()),
         )?;
@@ -832,7 +832,7 @@ mod rec_c1_2_tests {
                 .unwrap()
                 .as_nanos()
         ));
-        crate::session_log::SessionExecutionLog::open(&dir, chronos_log::SessionId::new(tag))
+        crate::session_log::SessionExecutionLog::create(&dir, chronos_log::SessionId::new(tag))
             .expect("test log")
     }
 
@@ -918,7 +918,7 @@ mod rec_c1_2_tests {
         // A directory that cannot be created must fail session creation, not
         // silently fall back to an EventBus-only session.
         let bad_root = "/proc/definitely-not-creatable/chronos";
-        let err = crate::session_log::SessionExecutionLog::open(
+        let err = crate::session_log::SessionExecutionLog::create(
             std::path::Path::new(bad_root),
             chronos_log::SessionId::new("sess-fail"),
         )

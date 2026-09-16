@@ -209,6 +209,13 @@ impl ExecutionLogManifest {
     }
 }
 
+/// Default config for a log directory (used by discovery/bootstrap).
+pub fn seg_config_for(dir: &std::path::Path) -> SegmentedConfig {
+    let mut c = SegmentedConfig::with_dir(dir.to_path_buf());
+    c.replay_on_open = true;
+    c
+}
+
 pub fn manifest_path(dir: &std::path::Path) -> PathBuf {
     dir.join(MANIFEST_FILE_NAME)
 }
@@ -326,6 +333,42 @@ pub struct SegmentedExecutionLog {
 }
 
 impl SegmentedExecutionLog {
+    /// Reopen an EXISTING durable log (REC-C1.5.4).
+    ///
+    /// Bootstrap must never be able to create history. Every step that `open()`
+    /// would happily do (create the directory, create or migrate missing
+    /// metadata, infer a boundary) is refused here:
+    ///
+    /// ```text
+    /// directory missing  -> error
+    /// manifest missing   -> error
+    /// identity mismatch  -> error
+    /// replay invalid     -> error
+    /// tail invalid       -> error
+    /// ```
+    ///
+    /// The failure this prevents: a directory that disappears between discovery
+    /// and reopen must not silently become "a brand-new empty log with the same
+    /// SessionId", which would be a catastrophic Silent Lie.
+    pub fn open_existing(session_id: SessionId, config: SegmentedConfig) -> Result<Self, LogError> {
+        if !config.segment_dir.is_dir() {
+            return Err(LogError::Backend(format!(
+                "reopen refused: {:?} is not an existing execution-log directory",
+                config.segment_dir
+            )));
+        }
+        if read_manifest(&config.segment_dir)?.is_none() {
+            return Err(LogError::RetentionMetadataMissing {
+                dir: config.segment_dir.display().to_string(),
+                first_segment_seq: first_segment_start(&config.segment_dir, &session_id)?
+                    .unwrap_or(EventSeq::ZERO)
+                    .0,
+            });
+        }
+        // From here the strict path applies: no creation, no inference.
+        Self::open(session_id, config)
+    }
+
     pub fn open(session_id: SessionId, config: SegmentedConfig) -> Result<Self, LogError> {
         std::fs::create_dir_all(&config.segment_dir)
             .map_err(|e| LogError::Backend(format!("mkdir {:?}: {}", config.segment_dir, e)))?;

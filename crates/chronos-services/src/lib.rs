@@ -90,6 +90,7 @@ pub mod error;
 pub mod events_cursor;
 pub mod events_log_read;
 pub mod events_read;
+pub mod execution_log_bootstrap;
 pub mod execution_query;
 pub mod hypothesis_test;
 pub mod observe;

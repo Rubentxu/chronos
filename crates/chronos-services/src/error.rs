@@ -134,6 +134,16 @@ pub enum ServiceError {
     #[error("ExecutionLog unavailable for session {session_id}: {reason}")]
     ExecutionLogUnavailable { session_id: String, reason: String },
 
+    /// A by-id lookup found nothing in the RETAINED region while history has
+    /// been retired (REC-C1.5).
+    ///
+    /// The event may have lived in the retired range, so "not found" would be a
+    /// false claim about the whole session.
+    #[error(
+        "evidence for that id is unavailable: history is retained only from seq {retained_from}"
+    )]
+    EvidenceUnavailableDueToRetention { retained_from: u64 },
+
     /// The log backend reported "not exhausted" while making no forward
     /// progress (REC-C1.3).
     ///

@@ -66,11 +66,33 @@ impl std::fmt::Debug for SessionExecutionLog {
 }
 
 impl SessionExecutionLog {
-    /// Open (creating if needed) the log for `session_id` under `dir`.
+    /// Reopen an EXISTING durable log (REC-C1.5.4).
     ///
-    /// Called once, when the session is created. After this the session is the
-    /// owner; everybody else borrows.
-    pub fn open(dir: impl AsRef<Path>, session_id: SessionId) -> Result<Self, ServiceError> {
+    /// Never creates, never infers. Bootstrap uses this exclusively, so a
+    /// directory that disappears between discovery and reopen fails instead of
+    /// silently becoming "a brand-new empty log with the same SessionId".
+    pub fn reopen_existing(
+        dir: impl AsRef<Path>,
+        session_id: SessionId,
+    ) -> Result<Self, ServiceError> {
+        let dir = dir.as_ref().to_path_buf();
+        let log = SegmentedExecutionLog::open_existing(
+            session_id.clone(),
+            SegmentedConfig::with_dir(dir.clone()),
+        )
+        .map_err(|e| ServiceError::ProbeStartFailed(format!("reopen {}: {e}", dir.display())))?;
+        Ok(Self {
+            session_id,
+            dir: Some(dir),
+            log: Arc::new(log),
+        })
+    }
+
+    /// Create (or open) the log for a NEW session under `dir`.
+    ///
+    /// This is the `session_start` path only. Bootstrap must use
+    /// [`SessionExecutionLog::reopen_existing`].
+    pub fn create(dir: impl AsRef<Path>, session_id: SessionId) -> Result<Self, ServiceError> {
         let dir = dir.as_ref().to_path_buf();
         std::fs::create_dir_all(&dir).map_err(|e| {
             ServiceError::ProbeStartFailed(format!(
@@ -130,6 +152,16 @@ impl SessionExecutionLog {
         &self.session_id
     }
 
+    /// Earliest queryable seq for this log (REC-C1.5.1).
+    pub fn retained_from(&self) -> chronos_log::EventSeq {
+        self.log.retained_from()
+    }
+
+    /// What is known about the end of the execution (REC-C1.5.3).
+    pub fn tail_state(&self) -> chronos_log::TailState {
+        self.log.tail_state()
+    }
+
     pub fn dir(&self) -> Option<&Path> {
         self.dir.as_deref()
     }
@@ -182,9 +214,32 @@ impl SessionExecutionLog {
 ///
 /// Reads never change source when the session changes state, and there is no
 /// alternative-source chain to maintain.
+/// What the registry knows about a session's log.
+///
+/// One table, not two maps: a session whose log exists but could not be
+/// validated is `Unavailable(reason)`, which is a different answer from "unknown
+/// session" and never a fallback to another source.
+#[derive(Clone)]
+pub enum ExecutionLogRegistration {
+    Available(SessionExecutionLog),
+    Unavailable { reason: String },
+}
+
+impl std::fmt::Debug for ExecutionLogRegistration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Available(l) => f.debug_tuple("Available").field(l).finish(),
+            Self::Unavailable { reason } => f
+                .debug_struct("Unavailable")
+                .field("reason", reason)
+                .finish(),
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct SessionExecutionLogRegistry {
-    logs: std::sync::Mutex<std::collections::HashMap<String, SessionExecutionLog>>,
+    logs: std::sync::Mutex<std::collections::HashMap<String, ExecutionLogRegistration>>,
 }
 
 impl std::fmt::Debug for SessionExecutionLogRegistry {
@@ -216,15 +271,17 @@ impl SessionExecutionLogRegistry {
         let key = log.session_id().as_str().to_string();
         let mut map = self.logs.lock().map_err(|_| ServiceError::LockPoisoned)?;
         if let Some(existing) = map.get(&key) {
-            if std::sync::Arc::ptr_eq(&existing.handle(), &log.handle()) {
-                return Ok(());
+            if let ExecutionLogRegistration::Available(existing) = existing {
+                if std::sync::Arc::ptr_eq(&existing.handle(), &log.handle()) {
+                    return Ok(());
+                }
             }
             return Err(ServiceError::ExecutionLogIdentityMismatch {
                 expected: key.clone(),
                 actual: format!("a different ExecutionLog handle for {key}"),
             });
         }
-        map.insert(key, log);
+        map.insert(key, ExecutionLogRegistration::Available(log));
         Ok(())
     }
 
@@ -237,17 +294,45 @@ impl SessionExecutionLogRegistry {
     /// fallback to another source.
     pub fn get(&self, session_id: &str) -> Result<SessionExecutionLog, ServiceError> {
         let map = self.logs.lock().map_err(|_| ServiceError::LockPoisoned)?;
-        map.get(session_id).cloned().ok_or_else(|| {
-            ServiceError::ExecutionLogUnavailable {
-                session_id: session_id.to_string(),
-                reason: "no ExecutionLog registered for this session (a session loaded                          from the session store has none yet; reopen belongs to REC-C1.5)"
-                    .to_string(),
+        match map.get(session_id) {
+            Some(ExecutionLogRegistration::Available(log)) => Ok(log.clone()),
+            Some(ExecutionLogRegistration::Unavailable { reason }) => {
+                Err(ServiceError::ExecutionLogUnavailable {
+                    session_id: session_id.to_string(),
+                    reason: reason.clone(),
+                })
             }
-        })
+            None => Err(ServiceError::ExecutionLogUnavailable {
+                session_id: session_id.to_string(),
+                reason: "no ExecutionLog registered for this session (a session loaded \
+                         from the session store has none yet; reopen belongs to REC-C1.5)"
+                    .to_string(),
+            }),
+        }
+    }
+
+    /// Record that a durable log exists but could not be validated.
+    ///
+    /// Keeps ONE table: `events_read` on that session reports
+    /// `ExecutionLogUnavailable(reason)` instead of pretending the session is
+    /// unknown.
+    pub fn register_unavailable(
+        &self,
+        session_id: &str,
+        reason: impl Into<String>,
+    ) -> Result<(), ServiceError> {
+        let mut map = self.logs.lock().map_err(|_| ServiceError::LockPoisoned)?;
+        map.insert(
+            session_id.to_string(),
+            ExecutionLogRegistration::Unavailable {
+                reason: reason.into(),
+            },
+        );
+        Ok(())
     }
 
     /// Remove and return the session's log (drop/delete cleanup).
-    pub fn remove(&self, session_id: &str) -> Option<SessionExecutionLog> {
+    pub fn remove(&self, session_id: &str) -> Option<ExecutionLogRegistration> {
         self.logs
             .lock()
             .ok()
@@ -290,7 +375,7 @@ mod tests {
     fn open_owns_session_identity_and_dir() {
         let dir = tmpdir("open");
         let sid = SessionId::new("sess-c12");
-        let owned = SessionExecutionLog::open(&dir, sid.clone()).expect("open");
+        let owned = SessionExecutionLog::create(&dir, sid.clone()).expect("open");
         assert_eq!(owned.session_id(), &sid);
         assert_eq!(owned.dir(), Some(dir.as_path()));
         assert!(dir.exists(), "open must materialise the directory");
@@ -301,7 +386,7 @@ mod tests {
     fn cursor_is_minted_from_the_owned_session() {
         let dir = tmpdir("cursor");
         let sid = SessionId::new("sess-cursor");
-        let owned = SessionExecutionLog::open(&dir, sid.clone()).expect("open");
+        let owned = SessionExecutionLog::create(&dir, sid.clone()).expect("open");
         let cursor = owned.cursor_start();
         assert_eq!(cursor.session_id(), &sid);
         assert_eq!(cursor.next_seq(), chronos_log::EventSeq::ZERO);
@@ -315,7 +400,7 @@ mod tests {
     #[test]
     fn registry_keys_by_the_logs_own_identity_and_is_idempotent() {
         let dir = tmpdir("reg");
-        let log = SessionExecutionLog::open(&dir, SessionId::new("sess-reg")).expect("log");
+        let log = SessionExecutionLog::create(&dir, SessionId::new("sess-reg")).expect("log");
         let registry = SessionExecutionLogRegistry::new();
         registry.register(log.clone()).expect("register");
         assert!(registry.contains("sess-reg"));
@@ -332,8 +417,8 @@ mod tests {
     fn registry_refuses_to_swap_the_handle_for_an_existing_session() {
         let dir_a = tmpdir("swap-a");
         let dir_b = tmpdir("swap-b");
-        let first = SessionExecutionLog::open(&dir_a, SessionId::new("dup")).expect("a");
-        let second = SessionExecutionLog::open(&dir_b, SessionId::new("dup")).expect("b");
+        let first = SessionExecutionLog::create(&dir_a, SessionId::new("dup")).expect("a");
+        let second = SessionExecutionLog::create(&dir_b, SessionId::new("dup")).expect("b");
         let registry = SessionExecutionLogRegistry::new();
         registry.register(first.clone()).expect("first");
         let err = registry.register(second).unwrap_err();
@@ -366,7 +451,7 @@ mod tests {
     #[test]
     fn registry_remove_drops_the_entry() {
         let dir = tmpdir("rm");
-        let log = SessionExecutionLog::open(&dir, SessionId::new("gone")).expect("log");
+        let log = SessionExecutionLog::create(&dir, SessionId::new("gone")).expect("log");
         let registry = SessionExecutionLogRegistry::new();
         registry.register(log).expect("register");
         assert!(registry.remove("gone").is_some());
@@ -402,7 +487,7 @@ mod tests {
     #[test]
     fn closed_handle_is_shared_with_writers_not_transferred() {
         let dir = tmpdir("shared");
-        let owned = SessionExecutionLog::open(&dir, SessionId::new("sess-shared")).expect("open");
+        let owned = SessionExecutionLog::create(&dir, SessionId::new("sess-shared")).expect("open");
         let a = owned.handle();
         let b = owned.handle();
         assert!(
@@ -417,7 +502,7 @@ mod tests {
     #[test]
     fn compaction_metrics_start_at_zero_and_compaction_is_safe() {
         let dir = tmpdir("compact");
-        let owned = SessionExecutionLog::open(&dir, SessionId::new("sess-c")).expect("open");
+        let owned = SessionExecutionLog::create(&dir, SessionId::new("sess-c")).expect("open");
         let m = owned.compaction_metrics();
         assert_eq!(m.segments_removed_total, 0);
         let removed = owned.maybe_compact().expect("compact");
@@ -428,7 +513,7 @@ mod tests {
     #[test]
     fn debug_does_not_leak_the_handle() {
         let dir = tmpdir("debug");
-        let owned = SessionExecutionLog::open(&dir, SessionId::new("sess-d")).expect("open");
+        let owned = SessionExecutionLog::create(&dir, SessionId::new("sess-d")).expect("open");
         let s = format!("{owned:?}");
         assert!(s.contains("sess-d"));
         assert!(s.contains("SessionExecutionLog"));

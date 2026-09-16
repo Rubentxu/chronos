@@ -442,9 +442,27 @@ pub fn find_by_id(
 ) -> Result<Option<TraceEvent>, ServiceError> {
     let handle = log.handle();
     let session_id = log.session_id().as_str().to_string();
-    find_by_id_with(&session_id, event_id, |position, chunk| {
-        handle.read_from_seq(position, chunk).map_err(map_log_error)
-    })
+    // Scan only the RETAINED region: starting at 0 would be refused by the
+    // watermark, and the retired range is not evidence we may return from.
+    let result = find_by_id_with(
+        &session_id,
+        event_id,
+        log.retained_from(),
+        |position, chunk| handle.read_from_seq(position, chunk).map_err(map_log_error),
+    )?;
+    if result.is_some() {
+        return Ok(result);
+    }
+    // Not found in the retained region. If history has been retired, the event
+    // may have lived there, and `None` would claim the whole session was
+    // searched. Refusing is the honest answer.
+    let retained = log.retained_from();
+    if retained > EventSeq::ZERO {
+        return Err(ServiceError::EvidenceUnavailableDueToRetention {
+            retained_from: retained.0,
+        });
+    }
+    Ok(None)
 }
 
 /// Same batch contract as [`read_page_with`], applied to a by-id scan.
@@ -453,12 +471,13 @@ pub fn find_by_id(
 pub(crate) fn find_by_id_with<F>(
     session_id: &str,
     event_id: u64,
+    from_seq: EventSeq,
     mut read: F,
 ) -> Result<Option<TraceEvent>, ServiceError>
 where
     F: FnMut(EventSeq, usize) -> Result<LogPage, ServiceError>,
 {
-    let mut position = EventSeq::ZERO;
+    let mut position = from_seq;
     loop {
         let start_position = position;
         let page = read(position, SCAN_CHUNK)?;
@@ -510,7 +529,7 @@ mod rec_c1_3_tests {
                 .unwrap()
                 .as_nanos()
         ));
-        let owned = SessionExecutionLog::open(&dir, SessionId::new(tag)).expect("log");
+        let owned = SessionExecutionLog::create(&dir, SessionId::new(tag)).expect("log");
         let handle = owned.handle();
         for (i, (event_type, ts, thread)) in events.iter().enumerate() {
             let event = TraceEvent::new(
@@ -592,7 +611,7 @@ mod rec_c1_3_tests {
     pub(super) fn gappy_owned() -> (SessionExecutionLog, std::path::PathBuf) {
         use chronos_log::{Gap, GapReason};
         let dir = tmpdir("gappy");
-        let owned = SessionExecutionLog::open(&dir, SessionId::new("gappy")).expect("log");
+        let owned = SessionExecutionLog::create(&dir, SessionId::new("gappy")).expect("log");
         let handle = owned.handle();
         push(&handle, 0, EventType::FunctionEntry);
         handle
@@ -781,7 +800,7 @@ mod rec_c1_3_tests {
                 .unwrap()
                 .as_nanos()
         ));
-        let owned = SessionExecutionLog::open(&dir, SessionId::new("t3")).expect("log");
+        let owned = SessionExecutionLog::create(&dir, SessionId::new("t3")).expect("log");
         let handle = owned.handle();
         for i in 0..600u64 {
             push(&handle, i, EventType::FunctionEntry);
@@ -870,6 +889,40 @@ mod rec_c1_3_tests {
         let found = find_by_id(&owned, 3).unwrap().expect("event 3 exists");
         assert_eq!(found.event_id, 3);
         assert!(find_by_id(&owned, 99).unwrap().is_none());
+    }
+
+    #[test]
+    fn c15_by_id_under_retention_never_claims_not_found() {
+        use chronos_log::SessionId as LogSessionId;
+        let dir = tmpdir("byid-retention");
+        let owned = SessionExecutionLog::create(&dir, LogSessionId::new("byid-ret")).expect("log");
+        let handle = owned.handle();
+        // Two segments, so the first ten seqs can be retired as a whole unit.
+        for i in 0..10u64 {
+            push(&handle, i, EventType::FunctionEntry);
+        }
+        handle.flush().ok();
+        for i in 10..20u64 {
+            push(&handle, i, EventType::FunctionEntry);
+        }
+        handle.flush().ok();
+        let retired = handle
+            .retain_up_to(EventSeq::new(9))
+            .expect("retire the first ten seqs");
+        assert!(retired.retained_from > EventSeq::ZERO, "retention happened");
+
+        // An id inside the retained range is found normally.
+        assert!(find_by_id(&owned, 15).unwrap().is_some());
+        // An id that could have lived in the retired range must NOT be reported
+        // as absent: we cannot claim the whole session was searched.
+        let err = find_by_id(&owned, 12345).unwrap_err();
+        match err {
+            ServiceError::EvidenceUnavailableDueToRetention { retained_from } => {
+                assert_eq!(retained_from, owned.retained_from().0);
+            }
+            other => panic!("expected EvidenceUnavailableDueToRetention, got {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -987,7 +1040,7 @@ mod rec_c1_3_stall_tests {
     fn c14_two_gaps_are_reported_ordered_and_not_collapsed() {
         use chronos_log::{Gap, GapReason};
         let dir = tmpdir("c14-two-gaps");
-        let owned = SessionExecutionLog::open(&dir, SessionId::new("two-gaps")).expect("log");
+        let owned = SessionExecutionLog::create(&dir, SessionId::new("two-gaps")).expect("log");
         let handle = owned.handle();
         for i in 0..6u64 {
             push(&handle, i, EventType::FunctionEntry);
@@ -1124,7 +1177,7 @@ mod rec_c1_3_stall_tests {
 
     #[test]
     fn t5_find_by_id_stalls_loudly_and_never_loops() {
-        let err = find_by_id_with("stall", 42, faulty_reader()).unwrap_err();
+        let err = find_by_id_with("stall", 42, EventSeq::ZERO, faulty_reader()).unwrap_err();
         assert!(
             matches!(err, ServiceError::EvidenceReadStalled { .. }),
             "{err:?}"

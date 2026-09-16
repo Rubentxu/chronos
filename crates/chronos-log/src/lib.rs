@@ -20,6 +20,7 @@ pub mod backend;
 pub mod call_graph;
 pub mod checkpoint;
 pub mod cursor;
+pub mod discovery;
 pub mod error;
 pub mod gap;
 pub mod memory;
@@ -32,6 +33,7 @@ pub mod tail;
 
 pub use backend::{ExecutionLog, ExecutionLogBackend, NewExecutionRecord};
 pub use cursor::{ConsumerCursor, LogConsumerId, LogPage, ReadResult};
+pub use discovery::{discover_execution_logs, DiscoveredLog, DiscoveryReport, UnmanagedLegacyLog};
 pub use error::LogError;
 pub use gap::{Gap, GapReason};
 pub use memory::InMemoryExecutionLog;
