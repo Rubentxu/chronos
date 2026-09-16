@@ -1,44 +1,68 @@
 {
-  "cycle_id": "rec-c0-convergence-truth-gate",
-  "cycle_record": "p-3416cfb8288f8964/rec-c0-convergence-truth-gate",
-  "path": "A-full",
-  "status": "closed",
-  "head_sha": "b25681993ffe65e81353e9656e3e884532933ad7",
-  "base_sha": "main",
+  "cycle_id": "rec-c1-5-closure",
+  "cycle_record": "p-3416cfb8288f8964/rec-c1-5-closure",
+  "path": "a-lite",
+  "status": "in_progress",
+  "head_sha": "ee376e10",
+  "base_sha": "17367f2d",
   "notes": [
-    "SDDK cycle registered via sddk CLI; phases explore/specify/design/plan/build/verify completed through ledger transitions with gate receipts (seeds gate-*...-1).",
-    "Gates T0/T1/T2 green on head 1fbb6e3a: fmt+clippy exit 0 (digest e9ec1f03), full lib pass incl. serial chronos-native 103 pass (digest 94a05dcc, 79bac030).",
-    "T4-smoke: counterexample_tools all pass; query_edge_cases 8/10 with 2 failures reproduced identically on main worktree 9cc44ce3 => pre-existing, disclosed in implementation-receipt, severity minor/priority medium, NOT a regression.",
-    "Coverage engine: Tarpaulin --engine llvm committed (c853b0a4) and Coverage workflow publishing on both pushed SHAs.",
-    "Non-blocking side evidence: SANDBOX-S0.1 characterization committed (1fbb6e3a).",
-    "Release pending remote CI all-green on 1fbb6e3a (CI + Coverage in progress at verify time); release.complete gates require merge-receipt + release-receipt.",
-    "Cycle CLOSED via sddk ledger (sequence 16). DEF-001 (5 tests) carried to REC-C1.",
-    "Cycle CLOSED: release.complete applied after all-5 CI green on 47abebcf; merge --no-ff b2568199 (base 9cc44ce3 verified); post-merge verification PASS (T0/T1/T4-smoke fresh on main); tag v0.7.111 peel OK; archive-manifest committed f8590f3d."
+    "Cycle opened via sddk CLI; path A-lite; phase transitions recorded in the ledger up to phase.design.complete.a-lite.",
+    "Exploration re-anchored: discovered that efb44989 (main) carries only the roadmap doc, while the C1.5.4 code lives on design/rec-c1-truth-cutover (HEAD 17367f2d). Working branch feat/rec-c1.5-closure branched from 17367f2d so the actual code is present.",
+    "User-supplied 11-step plan reviewed; steps 1 (BootstrapPlan carries validated handles) and 2 (delete uses pure discovery) are already implemented in 17367f2d (C1.5.4-fix). Cycle delivers steps 3..11.",
+    "Artefacts written under cycle-artifacts/p-3416cfb8288f8964/rec-c1-5-closure/: exploration-report.md, specification.md, design.md, tasks.md. All three (exploration, spec, design) registered in the artifact store; tasks.md kept on disk only (A-lite does not require a plan transition).",
+    "Step 3 (canonical ExecutionLog root resolver) APPLIED in commit 2c4da9ba on feat/rec-c1.5-closure. cargo check + cargo clippy -D warnings clean; cargo test -p chronos-log --lib location 2/2 green; cargo fmt --check clean. probe::execution_log_dir migrated to the resolver; tests seam under cfg(test).",
+    "Step 3 EDGE CASES added in commit ee376e10: 6/6 unit tests green for the resolver (idempotency, default fallback marker + absolute path, session_id punctuation, deterministic per-id, for_session subdir-of-root). Removed a self-panic test that would have poisoned the suite via the OnceLock; the panic contract is enforced by OnceLock::set semantics and verified by code review.",
+    "Step 4 MCP startup wiring APPLIED: added ChronosServerInitError with typed StoreOpen and ExecutionLogBootstrap variants; ChronosServer::try_new now bootstraps the canonical ExecutionLog root before returning; new() preserves panic wrapper; with_toolset remains test-only and does not bootstrap. cargo fmt/check and cargo check -p chronos-mcp pass; MCP lib tests 99/99 pass.",
+    "Stash cleared (10333 files of .cargo-target/ build artifacts + 3 pre-existing m9-70/74/75 archive-manifest drift; all noise; main was clean).",
+    "No user response received after commit 2c4da9ba; session paused at the apply phase boundary to allow review of step 3 before committing to the larger step-4..11 work.",
+    "Remaining for cycle closure: steps 4..11 (startup wiring + delete_session durable + 3 real-process UAT + readiness invariant test + full regression + ledger closure). Estimated 6-8 hours of in-line work; recommended to resume in a fresh session after reviewing 2c4da9ba."
   ],
-  "prior_cycle_record": "m9-96-cc001-housekeeping",
-  "main_sha": "b25681993ffe65e81353e9656e3e884532933ad7",
-  "remote_tag": "v0.7.111",
-  "remote_tag_peel": "b25681993ffe65e81353e9656e3e884532933ad7",
-  "peel_match": true,
-  "scope_doc_sha": "2e8a00d3",
+  "prior_cycle_record": "rec-c0-convergence-truth-gate",
+  "main_sha": "efb44989",
+  "remote_tag": null,
+  "remote_tag_peel": null,
+  "peel_match": false,
+  "scope_doc_sha": "efb44989",
   "phases": {
-    "apply": {
+    "explore": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-96-cc001-housekeeping/implementation-receipt.md",
-      "summary": "Single source commit (vault-only): moved cc-001-god-module row from active to terminated in terms/index.md. 0 Rust files modified."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c1-5-closure/exploration-report.md",
+      "summary": "Re-anchored to 17367f2d; confirmed C1.5.0..C1.5.4 + C1.5.4-fix landed; remaining 9 steps identified."
+    },
+    "specify": {
+      "status": "complete",
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c1-5-closure/specification.md",
+      "summary": "REQ-1..8 covering canonical root resolver, MCP startup wiring, delete_session durable, readiness invariant, three real-process UAT (resume, identical stale, sealed), and ById-retention acceptance."
+    },
+    "design": {
+      "status": "complete",
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c1-5-closure/design.md",
+      "summary": "4 architecture decisions: location module in chronos_log, OnceLock-based test seam, ChronosServerInitError type, store-delete -> durable-delete -> memory cleanup order."
+    },
+    "plan": {
+      "status": "complete",
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c1-5-closure/tasks.md",
+      "summary": "9 numbered steps (3..11) with sub-tasks; reviewable-work-unit commits; ADR candidates none."
+    },
+    "apply": {
+      "status": "in_progress",
+      "artifact_path": null,
+      "summary": "Step 3 (root resolver) committed in 2c4da9ba + edge-case tests in ee376e10. 6/6 resolver tests + 133/133 chronos-log + 333/333 chronos-services all green. Steps 4..11 pending."
     },
     "verify": {
-      "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-96-cc001-housekeeping/verify-report.md",
-      "summary": "T0 sanity + vault sweep all green. cargo fmt/clippy clean (no Rust touched). bash check_vault_drift.sh PASS. CC#39 Part C satisfied."
+      "status": "pending",
+      "artifact_path": null,
+      "summary": "T0 fmt+clippy pending final apply; T1 lib unit; T2 per-crate; T4-smoke with restart_uat once written."
     },
     "release": {
-      "status": "complete",
-      "summary": "Gates no-pending-effects+release-uat-approved passed; --no-ff merge b2568199 into main (base 9cc44ce3 verified); post-merge verification PASS; tag v0.7.111 pushed, peel==merge."
+      "status": "pending",
+      "artifact_path": null,
+      "summary": "Merge --no-ff feat/rec-c1.5-closure into main after design/rec-c1-truth-cutover is propagated; tag; archive."
     },
     "archive": {
-      "status": "complete",
-      "summary": "archive.complete applied with ledger-valid+vault-index-current receipts; archive-manifest binds 8 artifacts to release."
+      "status": "pending",
+      "artifact_path": null,
+      "summary": "After release success."
     }
   },
   "vault_drift_baseline": {
@@ -46,10 +70,8 @@
     "drift_lines_post": 0,
     "ccs_fixed": [],
     "ccs_broken": [],
-    "note": "m9-96 is a vault-only cycle. The cc-001-god-module finding was formally resolved by moving its row from the active findings table to the terminated terms table. No Rust files modified."
+    "note": "Vault untouched in this session; only Rust code in crates/chronos-log and crates/chronos-services was modified."
   },
-  "carry_forward_findings": [
-    "FIND-M9-81-SDDK-CYCLE-GATE-FK-BLOCK"
-  ],
-  "next_cycle_recommendation": "m9-97 = cc-004-implicit-io-toctou (P3 LOW; deferred m10+). The last remaining active debt finding from m9-04. Closes the m9-04 debt family completely."
+  "carry_forward_findings": [],
+  "next_cycle_recommendation": "Resume rec-c1-5-closure on the same branch feat/rec-c1.5-closure (HEAD 2c4da9ba) with steps 4..11. Do not start a new cycle."
 }

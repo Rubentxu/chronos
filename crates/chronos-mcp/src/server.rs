@@ -1819,8 +1819,18 @@ impl ChronosServer {
     /// store that cannot be opened instead of degrading. See
     /// [`StoreOpenError`] for the policy and
     /// `CHRONOS_ALLOW_IN_MEMORY_FALLBACK` for the explicit opt-in.
-    pub fn try_new() -> Result<Self, StoreOpenError> {
-        Ok(Self::from_store(Self::try_open_default_store()?))
+    pub fn try_new() -> Result<Self, crate::init_error::ChronosServerInitError> {
+        let store = Self::try_open_default_store()?;
+        let server = Self::from_store(store);
+        let root = chronos_log::resolve_execution_log_root();
+        chronos_services::execution_log_bootstrap::bootstrap_execution_logs(
+            &root,
+            &server.execution_logs,
+        )
+        .map_err(|cause| {
+            crate::init_error::ChronosServerInitError::ExecutionLogBootstrap { root, cause }
+        })?;
+        Ok(server)
     }
 
     /// Infallible convenience wrapper around [`ChronosServer::try_new`].
