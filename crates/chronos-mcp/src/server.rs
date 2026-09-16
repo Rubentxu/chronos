@@ -3615,13 +3615,14 @@ impl ChronosServer {
         };
 
         match SessionsService::delete_session(&params.session_id, &ctx).await {
-            Ok(_result) => {
+            Ok(result) => {
                 // Also purge all in-memory state for this session.
                 self.cleanup_session_memory(&params.session_id).await;
 
                 let output = serde_json::json!({
                     "session_id": params.session_id,
                     "status": "deleted",
+                    "paths_removed": result.paths_removed,
                     "message": format!("Session '{}' deleted from persistent storage and memory.", params.session_id),
                 });
                 Ok(CallToolResult::success(json_content(&session_envelope(
