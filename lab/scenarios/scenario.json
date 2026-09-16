@@ -1,0 +1,13 @@
+{
+  "scenario_id": "s0-minimal-observer",
+  "description": "Run the same logical command in every environment class and collect identical evidence shape.",
+  "required_capabilities": ["fs_subset", "proc_isolation_optional"],
+  "workspace": {"kind": "empty_dir"},
+  "command": { "argv": ["true"], "timeout_ms": 10000 },
+  "evidence": {
+    "capture": ["exit_code", "duration_ms", "stdout_empty", "stderr_empty"],
+    "environment_facts": ["pid_namespace", "mount_namespace", "network_namespace", "hostname_isolated"]
+  },
+  "cleanup": "verify_workspace_removed",
+  "notes": "Backend-neutral: adapters translate this to host/bwrap/podman/qemu without changing evidence semantics."
+}
