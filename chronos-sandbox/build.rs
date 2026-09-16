@@ -108,9 +108,7 @@ fn main() {
     // Canonicalize so the path is stable across symlinks (e.g. /var/home vs
     // /home/rubentxu on the same machine) and so the assertion in the
     // regression test compares exactly the path build.rs wrote.
-    let canonical = out_path
-        .canonicalize()
-        .unwrap_or_else(|_| out_path.clone());
+    let canonical = out_path.canonicalize().unwrap_or_else(|_| out_path.clone());
     let canonical_str = canonical.to_str().expect("fixture root is valid UTF-8");
     println!("cargo:rustc-env=CHRONOS_FIXTURE_DIR={}", canonical_str);
 

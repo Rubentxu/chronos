@@ -20,5 +20,6 @@ pub mod client;
 pub mod fixture_resolver;
 pub mod programs;
 
+pub use client::error::McpSandboxError;
 pub use client::{McpSession, McpTestClient};
 pub use fixture_resolver::FixtureResolver;
