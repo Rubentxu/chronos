@@ -63,8 +63,9 @@ pub enum EventsCursorError {
 /// Authoritative read cursor: `(schema_version, session_id, next_seq)`.
 ///
 /// `next_seq` is the sequence number the reader wants **next**, i.e. the
-/// highest already-processed seq plus one. Strictly monotonic readers advance
-/// it with [`EventsCursorV1::advance_to`].
+/// highest already-processed seq plus one. Readers position it with
+/// [`EventsCursorV1::advanced_to`], which returns a new cursor: the cursor is a
+/// value object, the reader owns the decision of when to move.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EventsCursorV1 {
     schema_version: u16,
@@ -94,11 +95,24 @@ impl EventsCursorV1 {
         self.next_seq
     }
 
-    /// Advance the cursor to a strictly greater position.
+    /// Consume this cursor and return the cursor positioned at `next_seq`.
     ///
-    /// Rejects going backwards: a cursor that can silently move back would let
-    /// a reader re-read (or worse, skip) events and still look healthy.
-    pub fn advance_to(&self, next_seq: EventSeq) -> Result<Self, EventsCursorError> {
+    /// Value semantics, not in-place mutation: taking `self` makes it explicit
+    /// that the old cursor is no longer the reader's active position. The
+    /// cursor validates one invariant and nothing else:
+    ///
+    /// ```text
+    /// new.next_seq >= old.next_seq
+    /// ```
+    ///
+    /// `==` is allowed because re-checkpointing the same position is
+    /// idempotent (retries/replay must not force an artificial error);
+    /// `<` is refused because a cursor that can silently move backwards lets a
+    /// reader re-read — or skip — events while still looking healthy.
+    ///
+    /// The cursor never reads, never skips, and holds no policy: deciding
+    /// *when* to advance belongs to the reader.
+    pub fn advanced_to(self, next_seq: EventSeq) -> Result<Self, EventsCursorError> {
         if next_seq < self.next_seq {
             return Err(EventsCursorError::Malformed {
                 reason: format!(
@@ -109,7 +123,7 @@ impl EventsCursorV1 {
         }
         Ok(Self {
             schema_version: self.schema_version,
-            session_id: self.session_id.clone(),
+            session_id: self.session_id,
             next_seq,
         })
     }
@@ -233,7 +247,7 @@ mod tests {
     #[test]
     fn roundtrip_is_stable() {
         let c = EventsCursorV1::start(sid("sess-abc"))
-            .advance_to(EventSeq::new(42))
+            .advanced_to(EventSeq::new(42))
             .unwrap();
         let encoded = c.encode();
         assert_eq!(encoded, "ecv1:1:8:sess-abc:42");
@@ -245,7 +259,7 @@ mod tests {
     fn roundtrip_survives_colons_and_unicode_in_session_id() {
         for raw in ["a:b:c", "sesión-ü", "", "x".repeat(300).as_str()] {
             let c = EventsCursorV1::start(sid(raw))
-                .advance_to(EventSeq::new(7))
+                .advanced_to(EventSeq::new(7))
                 .unwrap();
             let decoded = EventsCursorV1::decode(&c.encode()).unwrap();
             assert_eq!(decoded.session_id().as_str(), raw, "raw={raw:?}");
@@ -341,16 +355,23 @@ mod tests {
     }
 
     #[test]
-    fn advance_is_monotonic_and_same_session() {
+    fn advanced_to_is_monotonic_and_value_semantic() {
         let c = EventsCursorV1::start(sid("s"))
-            .advance_to(EventSeq::new(10))
+            .advanced_to(EventSeq::new(10))
             .unwrap();
-        let fwd = c.advance_to(EventSeq::new(11)).unwrap();
+        let fwd = c.clone().advanced_to(EventSeq::new(11)).unwrap();
         assert_eq!(fwd.next_seq(), EventSeq::new(11));
         assert_eq!(fwd.session_id(), c.session_id());
-        // same position is allowed (idempotent re-issue), backwards is not
-        assert!(c.advance_to(EventSeq::new(10)).is_ok());
-        assert!(c.advance_to(EventSeq::new(9)).is_err());
+        // `==` is allowed: re-checkpointing is idempotent for retries/replay.
+        assert_eq!(
+            c.clone().advanced_to(EventSeq::new(10)).unwrap(),
+            c,
+            "idempotent re-checkpoint must be accepted"
+        );
+        // `<` is refused.
+        assert!(c.clone().advanced_to(EventSeq::new(9)).is_err());
+        // value semantics: the original is untouched and still usable.
+        assert_eq!(c.next_seq(), EventSeq::new(10));
     }
 
     #[test]
