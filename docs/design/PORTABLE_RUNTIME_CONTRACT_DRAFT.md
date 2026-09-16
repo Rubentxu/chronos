@@ -53,6 +53,13 @@ REMOTE   : future; same port, same semantics    -> out of scope until P2
 3. Cleanup verified (destroy returns verified-clean, not best-effort).
 4. No backend types in domain/application contracts (adapter-owned extensions).
 
+## SUPERSEDED for the port shape by EXECUTION_CONTRACTS.md (S0.2)
+
+The six-contract set and the final `ExecutionEnvironment` shape
+(`prepare`/`execute`/`destroy`, with `EvidenceCollector` split out) now live in
+`docs/design/EXECUTION_CONTRACTS.md`. This file remains as the historical draft
+that the spike tested; do not extend it.
+
 ## Status header (added after S0.1a)
 
 ```text

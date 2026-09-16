@@ -1,0 +1,26 @@
+{
+  "schema": "chronos.execution.result/v1",
+  "environment": "podman",
+  "scenario": "example",
+  "result": "pass",
+  "capabilities": {
+    "pid_isolation": { "status": "supported", "provenance": "container pid namespace" },
+    "ptrace": { "status": "unknown", "reason": "not-probed in this placement" }
+  },
+  "metrics": {
+    "prepare_ms": 56.0,
+    "execution_ms": 610.0,
+    "cleanup_ms": 55.0,
+    "remaining_processes": { "status": "supported", "value": 0, "method": "podman --rm + clean exit" },
+    "leftover_paths": [],
+    "steps_run": 1
+  },
+  "artifacts": [],
+  "prepared": {
+    "image": "docker.io/library/alpine:3.20",
+    "image_id": "bf8527eb54c3680e728d5b4b383a8ba730d72dae7236fbc8dff97ed6b224a731",
+    "image_status": "supported",
+    "staging": "tar-stream-in/out (no bind mounts, no host relabel)"
+  },
+  "errors": []
+}

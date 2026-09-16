@@ -1,0 +1,13 @@
+{
+  "schema": "chronos.execution.scenario/v1",
+  "scenario_id": "example",
+  "steps": [
+    {
+      "id": "step-1",
+      "run": ["sh", "-c", "echo hi"],
+      "expect_stdout_contains": ["hi"],
+      "expect_exit": 0
+    }
+  ],
+  "cleanup_required": []
+}
