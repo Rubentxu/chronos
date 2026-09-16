@@ -2,7 +2,7 @@
   "cycle_id": "rec-c0-convergence-truth-gate",
   "cycle_record": "p-3416cfb8288f8964/rec-c0-convergence-truth-gate",
   "path": "A-full",
-  "status": "complete",
+  "status": "closed",
   "head_sha": "b25681993ffe65e81353e9656e3e884532933ad7",
   "base_sha": "main",
   "notes": [
@@ -12,7 +12,8 @@
     "Coverage engine: Tarpaulin --engine llvm committed (c853b0a4) and Coverage workflow publishing on both pushed SHAs.",
     "Non-blocking side evidence: SANDBOX-S0.1 characterization committed (1fbb6e3a).",
     "Release pending remote CI all-green on 1fbb6e3a (CI + Coverage in progress at verify time); release.complete gates require merge-receipt + release-receipt.",
-    "Cycle CLOSED via sddk ledger (sequence 16). DEF-001 (5 tests) carried to REC-C1."
+    "Cycle CLOSED via sddk ledger (sequence 16). DEF-001 (5 tests) carried to REC-C1.",
+    "Cycle CLOSED: release.complete applied after all-5 CI green on 47abebcf; merge --no-ff b2568199 (base 9cc44ce3 verified); post-merge verification PASS (T0/T1/T4-smoke fresh on main); tag v0.7.111 peel OK; archive-manifest committed f8590f3d."
   ],
   "prior_cycle_record": "m9-96-cc001-housekeeping",
   "main_sha": "b25681993ffe65e81353e9656e3e884532933ad7",
