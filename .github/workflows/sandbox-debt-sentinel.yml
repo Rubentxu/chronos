@@ -1,0 +1,91 @@
+name: Sandbox Debt Sentinel
+
+# REC-C0.5-D (Opción A+): the Debt Sentinel is the governance surface for
+# the deferred-debt bucket declared in `reconstruction-contracts.toml`
+# under `[baseline_scope.deferred]`. It runs the deferred tests as-is
+# (no skip), then compares the observed failure set against the
+# declared manifest. GREEN means the observed failures match the
+# declared baseline exactly — it does NOT mean "no debt exists".
+#
+# The sentinel FAILS (RED) when:
+#   (a) a declared deferred test starts passing (stale waiver)
+#   (b) a test fails that is not declared in any concrete entry
+#       and not absorbed by a triage_budget (unclassified regression)
+#   (c) a declared test ID no longer exists in the workspace (contract drift)
+#   (d) the unclassified failure count exceeds a triage_budget entry
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  CHRONOS_MCP_PATH: /home/runner/work/chronos/chronos/target/debug/chronos-mcp
+
+jobs:
+  sentinel:
+    name: Deferred debt verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-sentinel-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build chronos-mcp
+        run: cargo build --bin chronos-mcp
+      - name: Derive manifest from ledger
+        run: |
+          python3 scripts/derive_test_buckets.py --check-inventory --out-dir .sddk-state/test-buckets
+          echo "=== Manifest ==="
+          cat .sddk-state/test-buckets/sentinel-manifest.json
+      - name: Run each declared deferred test exactly
+        # Prebuild completes before per-test timeouts begin. The runner invokes
+        # `--test <target> <name> -- --exact`, never a suite-wide filter.
+        run: |
+          python3 scripts/run_deferred_tests.py \
+            --manifest .sddk-state/test-buckets/sentinel-manifest.json \
+            --output .sddk-state/test-buckets/observed.json \
+            --timeout-seconds 120
+          cat .sddk-state/test-buckets/observed.json
+      - name: Parse observed failures
+        id: parse
+        run: |
+          python3 scripts/sentinel_check.py \
+            --manifest .sddk-state/test-buckets/sentinel-manifest.json \
+            --observations .sddk-state/test-buckets/observed.json \
+            --report .sddk-state/test-buckets/sentinel-report.md
+          echo "=== Sentinel report ==="
+          cat .sddk-state/test-buckets/sentinel-report.md
+      - name: Upload sentinel report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandbox-debt-sentinel-report
+          path: |
+            .sddk-state/test-buckets/sentinel-report.md
+            .sddk-state/test-buckets/observed.json
+            .sddk-state/test-buckets/*.log
+      - name: Sentinel verdict
+        if: always()
+        run: |
+          if [ -f .sddk-state/test-buckets/sentinel-verdict ]; then
+            verdict=$(cat .sddk-state/test-buckets/sentinel-verdict)
+            echo "Sentinel verdict: $verdict"
+            if [ "$verdict" != "GREEN" ]; then
+              echo "::error::Sandbox Debt Sentinel reports $verdict. See artifact sandbox-debt-sentinel-report for details."
+              exit 1
+            fi
+          else
+            echo "::error::Sentinel did not produce a verdict file."
+            exit 1
+          fi

@@ -35,8 +35,32 @@ jobs:
         run: cargo build --workspace
       - name: Test (unit + doc tests)
         run: cargo test --workspace --lib -- --test-threads=1
-      - name: Test (integration, skip ignored)
-        run: cargo test --workspace --tests -- --test-threads=1
+      # REC-C0.5-D: CI Test (integration) is scoped to the MANDATORY
+      # deterministic surface only. Deferred-debt tests (DEF-001..004, CE-001)
+      # are owned by later gates and live in the sandbox-debt-sentinel.yml
+      # workflow, where they MUST fail when they fail — that is the
+      # sentinel signal. See reconstruction-contracts.toml [baseline_scope].
+      - name: Test (integration, mandatory surface)
+        run: |
+          set -euo pipefail
+          # REC-C0.5-D (Opción A+): scope CI Test (integration) to the
+          # MANDATORY deterministic surface. The classification is derived
+          # from `reconstruction-contracts.toml` via
+          # scripts/derive_test_buckets.py — adding or removing a
+          # deferred failure in the ledger automatically updates both
+          # this skip list and the Debt Sentinel manifest.
+          #
+          # The Debt Sentinel workflow (.github/workflows/sandbox-debt-sentinel.yml)
+          # verifies that the deferred tests we skip here STILL fail in
+          # the exact way the ledger declares. GREEN is reality == ledger,
+          # not "no debt exists".
+          python3 scripts/derive_test_buckets.py --check-inventory --out-dir .sddk-state/test-buckets
+          SKIP_ARGS=$(awk '{printf " --skip %s", $1}' .sddk-state/test-buckets/cargo-skip.txt)
+          echo "Mandatory surface: running cargo test --workspace --tests with skip patterns"
+          echo "Skip args: $SKIP_ARGS"
+          # Run the full workspace integration test matrix minus the
+          # skip list (which contains the deferred concrete tests).
+          cargo test --workspace --tests --test-threads=1 -- $SKIP_ARGS
 
   build-release:
     name: Release Build

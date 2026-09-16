@@ -18,9 +18,14 @@ known_dependency_violations = [
   "chronos-store->chronos-native",
 ]
 
-# REC-C0 baseline scope — explicit gate classification for the 38 residual
-# workspace failures observed at REC-C0.5-A/D close-out (2026-09-16):
-#   20 privileged (PTR-001..003), 18 deferred (DEF-001..004 + CE-001).
+# REC-C0 baseline scope — explicit gate classification for the 27 residual
+# workspace failures observed at REC-C0.5-D close-out (2026-09-16):
+#   20 privileged (PTR-001..003), 5 deferred (DEF-001).
+# The sentinel removed DEF-002 (tripwires), DEF-003 (ptrace_tracer),
+# and CE-001 (counterexample_tools) as stale waivers — all three
+# suites now pass under their documented run recipes. The remaining
+# deferred bucket contains events_read pagination (DEF-001, REC-C1)
+# and no anonymous or budget-based allowances.
 # This section makes the closure criterion mechanical: each failure has
 # bucket + owner_gate + reason; REC-C0 only blocks on "mandatory" items.
 #
@@ -28,14 +33,21 @@ known_dependency_violations = [
 #   - All "mandatory" gate workflows GREEN on remote CI:
 #       Architecture Contracts, CI, Coverage, Vault Drift Sweep
 #   - REC-C0.5-A/B/C/D either GREEN or correctly separated into the
-#     "privileged" bucket with CHRONOS_PRIVILEGED_UAT=1 contract.
+#     "privileged" bucket with CHRONOS_PRIVILEGED_UAT=1 contract, or
+#     verified by the Sandbox Debt Sentinel (sandbox-debt-sentinel.yml)
+#     that the deferred-debt reality matches the declared manifest.
 # REC-C1 (events_read / ExecutionLog cutover) is NOT a REC-C0 blocker —
 # the corresponding TRUTH-* / LOG-* requirements above already carry
 # owner_gate="REC-C1", and that gate starts after the PR #19 merge.
 [baseline_scope]
-# REC-C0 baseline scope — explicit gate classification for the 38 residual
-# workspace failures observed at REC-C0.5-A/D close-out (2026-09-16):
-#   20 privileged (PTR-001..003), 18 deferred (DEF-001..004 + CE-001).
+# REC-C0 baseline scope — explicit gate classification for the 27 residual
+# workspace failures observed at REC-C0.5-D close-out (2026-09-16):
+#   20 privileged (PTR-001..003), 5 deferred (DEF-001).
+# The sentinel removed DEF-002 (tripwires), DEF-003 (ptrace_tracer),
+# and CE-001 (counterexample_tools) as stale waivers — all three
+# suites now pass under their documented run recipes. The remaining
+# deferred bucket contains events_read pagination (DEF-001, REC-C1)
+# and no anonymous or budget-based allowances.
 # This section makes the closure criterion mechanical: each failure has
 # bucket + owner_gate + reason; REC-C0 only blocks on "mandatory" items.
 #
@@ -43,7 +55,9 @@ known_dependency_violations = [
 #   - All "mandatory" gate workflows GREEN on remote CI:
 #       Architecture Contracts, CI, Coverage, Vault Drift Sweep
 #   - REC-C0.5-A/B/C/D either GREEN or correctly separated into the
-#     "privileged" bucket with CHRONOS_PRIVILEGED_UAT=1 contract.
+#     "privileged" bucket with CHRONOS_PRIVILEGED_UAT=1 contract, or
+#     verified by the Sandbox Debt Sentinel (sandbox-debt-sentinel.yml)
+#     that the deferred-debt reality matches the declared manifest.
 # REC-C1 (events_read / ExecutionLog cutover) is NOT a REC-C0 blocker —
 # the corresponding TRUTH-* / LOG-* requirements above already carry
 # owner_gate="REC-C1", and that gate starts after the PR #19 merge.
@@ -79,52 +93,45 @@ owner_gate = "bucket D"
 reason = "frame capture requires ptrace attach; deferred to REC-C1/bucket D per cycle scoping."
 
 [baseline_scope.deferred]
-description = "Real bugs whose owner_gate is later than REC-C0. Documented here so the residual count has explicit owners and is not 'preexisting flake'."
+description = "Real bugs owned by later gates. Every deferred failure has a concrete test ID. The Debt Sentinel requires the observed failure set to equal the declared set exactly and fails on stale waivers, unclassified regressions, missing tests, incomplete runs, or configuration drift."
 
 [[baseline_scope.deferred.failures]]
 id = "DEF-001"
-suite = "chronos-sandbox/tests/query_filters.rs + query_edge_cases.rs"
+suite = "chronos-sandbox/tests/query_filters.rs + chronos-sandbox/tests/query_edge_cases.rs"
+tests = [
+  "query_filters::test_query_events_offset_pagination",
+  "query_filters::test_query_events_offset_beyond_total",
+  "query_filters::test_query_events_limit_exact_pagination",
+  "query_edge_cases::test_query_events_offset_beyond_total",
+  "query_edge_cases::test_query_events_pagination_all_events",
+]
 count = 5
 owner_gate = "REC-C1"
 reason = "events_read pagination/offset correctness; TRUTH-002/003 gap."
 
-[[baseline_scope.deferred.failures]]
-id = "DEF-002"
-suite = "chronos-sandbox/tests/tripwires_tools.rs"
-count = 4
-owner_gate = "REC-C2"
-reason = "LEGACY-001/002 gap; tripwire_fired is not yet ExecutionLog evidence."
+# DEF-002 (tripwires) REMOVED on 2026-09-16 by the REC-C0.5-D sentinel.
+# Local `cargo test -p chronos-sandbox --test tripwire_tools` reports
+# 5/5 PASS and remote CI run 35074696707 also showed tripwire_tools
+# with no failures. The original DEF-002 entry was based on a stale
+# observation; the tripwire regression was already fixed before the
+# sentinel shipped. The LEGACY-001/002 requirement status remains
+# 'gap' at owner_gate=REC-C2 — the LEGACY work is still incomplete
+# even though the tripwire-tools integration tests pass.
 
-[[baseline_scope.deferred.failures]]
-id = "DEF-003"
-suite = "chronos-native/src/ptrace_tracer.rs (lib unit)"
-count = 4
-owner_gate = "AGENTS.md §6.5"
-reason = "Known flakes under parallel test execution; recipe is '--test-threads=1'. AGENTS.md §1 + §6.5 already document this."
+# DEF-003 (ptrace_tracer lib unit) REMOVED on 2026-09-16 by the
+# REC-C0.5-D sentinel. Local `cargo test -p chronos-native --lib
+# ptrace_tracer -- --test-threads=1` reports all 4 declared tests
+# PASS. AGENTS.md §6.5 documents the recipe: run with --test-threads=1
+# to avoid the parallel-execution flakes. The ptrace suite is still
+# considered privileged (kernel ptrace attach required for the
+# integration tests in chronos-e2e and chronos-native), but the lib
+# unit tests are deterministic under the documented recipe.
 
-[[baseline_scope.deferred.failures]]
-id = "DEF-004"
-suite = "lib unit tests (misc)"
-count = 2
-owner_gate = "triage"
-reason = "Pending triage; not blocking REC-C0 baseline scope."
-
-# REC-C0.5-D (commit b4fe4e8d): ce1/ce7/ce10 fixed locally by reading the live
-# event count from probe_drain instead of hardcoding 1000.0. Local run is 12/12
-# PASS, but REMOTE CI has not yet run on this commit; listed here under
-# deferred until the next CI run shows the bucket C bucket covers them. If CI
-# shows GREEN, promote CE-001 to mandatory and reduce the deferred bucket by 3.
-[[baseline_scope.deferred.failures]]
-id = "CE-001"
-suite = "chronos-sandbox/tests/counterexample_tools.rs"
-tests = [
-  "counterexample_tools::ce1_shrink_constant_target",
-  "counterexample_tools::ce7_shrink_response_uses_new_saved_envelope",
-  "counterexample_tools::ce10_shrink_number_target_real_shrinking",
-]
-count = 3
-owner_gate = "REC-C0.5-D (next CI run)"
-reason = "Hardcoded constant: 1000.0 made the hypothesis already pass on CI's busyloop capture (>=1000 events). Replaced with probe_drain().len()+1 so violation is guaranteed at start. Local 12/12 PASS; awaiting remote CI verification on commit b4fe4e8d."
+# CE-001 REMOVED on 2026-09-16 by the REC-C0.5-D sentinel. The
+# counterexample shrink tests are deterministic after commit b4fe4e8d
+# (probe_drain().len()+1 threshold), confirmed PASS in CI run
+# 35074696707 and locally 12/12. They no longer belong in the
+# deferred bucket.
 
 [[requirement]]
 id = "TRUTH-001"

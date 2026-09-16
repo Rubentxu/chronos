@@ -29,12 +29,18 @@ fi
 # produces "error: invalid value '<PATH>' for '--out [<FMT>...]'", which
 # is what previously broke the Coverage workflow.
 mkdir -p ./metrics/coverage
+# Deferred test filters are derived and inventory-validated from the ledger.
+python3 scripts/derive_test_buckets.py --check-inventory --out-dir .sddk-state/test-buckets
+mapfile -t DEFERRED_SKIPS < .sddk-state/test-buckets/cargo-skip.txt
+TARPAULIN_TEST_ARGS=()
+for skip in "${DEFERRED_SKIPS[@]}"; do TARPAULIN_TEST_ARGS+=(--skip "$skip"); done
 cargo tarpaulin \
     --workspace \
     --out Html \
     --out Json \
     --out Xml \
-    --output-dir ./metrics/coverage/
+    --output-dir ./metrics/coverage/ \
+    -- "${TARPAULIN_TEST_ARGS[@]}"
 
 # Upload to codecov if token present.
 if [ -n "$CODECOV_TOKEN" ]; then
