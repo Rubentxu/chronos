@@ -41,9 +41,15 @@ use crate::session_log::{SessionExecutionLog, SessionExecutionLogRegistry};
 /// One bootstrap outcome for an identity we could name.
 #[derive(Debug, Clone)]
 pub enum BootstrapEntry {
+    /// Carries the ALREADY-VALIDATED handle.
+    ///
+    /// Reopening during `apply` would reintroduce a TOCTOU window: the plan could
+    /// say `Available` while the registry ends up `Unavailable` because the
+    /// filesystem changed in between. The plan must be exactly what is published.
     Available {
         session_id: String,
         dir: PathBuf,
+        log: SessionExecutionLog,
     },
     Unavailable {
         session_id: String,
@@ -95,9 +101,10 @@ pub fn build_bootstrap_plan(root: &Path) -> Result<BootstrapPlan, ServiceError> 
         let session_id = found.session_id.clone();
         match SessionExecutionLog::reopen_existing(&found.dir, SessionId::new(session_id.as_str()))
         {
-            Ok(_) => plan.entries.push(BootstrapEntry::Available {
+            Ok(log) => plan.entries.push(BootstrapEntry::Available {
                 session_id: session_id.as_str().to_string(),
                 dir: found.dir,
+                log,
             }),
             Err(e) => plan.entries.push(BootstrapEntry::Unavailable {
                 session_id: session_id.as_str().to_string(),
@@ -109,38 +116,22 @@ pub fn build_bootstrap_plan(root: &Path) -> Result<BootstrapPlan, ServiceError> 
     Ok(plan)
 }
 
-/// Phase 2: publish a validated plan into the registry, atomically.
+/// Phase 2: publish a validated plan into the registry.
 ///
-/// Reopens happen inside this function (a second `reopen_existing` is cheap and
-/// keeps the plan a plain description), but they all happen BEFORE the first
-/// insert, so the registry is never partially populated by phases.
+/// No IO and no reopen: the plan already holds the validated handles, so what is
+/// published is exactly what was validated. Reopening here would reopen the
+/// TOCTOU window where the plan says `Available` and the registry ends up
+/// `Unavailable`.
 pub fn apply_bootstrap_plan(
     registry: &SessionExecutionLogRegistry,
     plan: &BootstrapPlan,
 ) -> Result<(), ServiceError> {
-    // Validate everything first: nothing is registered until all candidates have
-    // been resolved.
-    let mut to_publish: Vec<(String, Result<SessionExecutionLog, String>)> = Vec::new();
     for entry in &plan.entries {
         match entry {
-            BootstrapEntry::Available { session_id, dir } => {
-                let outcome =
-                    SessionExecutionLog::reopen_existing(dir, SessionId::new(session_id.as_str()))
-                        .map_err(|e| e.to_string());
-                to_publish.push((session_id.clone(), outcome));
-            }
+            BootstrapEntry::Available { log, .. } => registry.register(log.clone())?,
             BootstrapEntry::Unavailable {
                 session_id, reason, ..
-            } => {
-                to_publish.push((session_id.clone(), Err(reason.clone())));
-            }
-        }
-    }
-
-    for (session_id, outcome) in to_publish {
-        match outcome {
-            Ok(log) => registry.register(log)?,
-            Err(reason) => registry.register_unavailable(&session_id, reason)?,
+            } => registry.register_unavailable(session_id, reason.clone())?,
         }
     }
     Ok(())
@@ -162,29 +153,45 @@ pub fn bootstrap_execution_logs(
 /// rediscovers it. `delete_session` must make the session stop being
 /// discoverable, otherwise the next bootstrap resurrects it.
 ///
-/// Partial failures are reported rather than hidden: the handle is already out
-/// of the registry, and anything left on disk would be rediscovered.
+/// This uses PURE DISCOVERY, never `build_bootstrap_plan`: reopening a session
+/// is not an observational operation (it can recover a persisted `Open` into
+/// `Unclean` and persist that), and deleting A must not mutate B.
+///
+/// Duplicate identities are covered too: discovery removes them from
+/// `report.logs` and keeps them in `report.duplicates`, so a delete of an
+/// ambiguous identity would otherwise be impossible.
+///
+/// Partial failures are reported, never hidden: the handle is already out of the
+/// registry and anything left on disk would be rediscovered.
 pub fn delete_durable_execution_log(
     registry: &SessionExecutionLogRegistry,
     root: &Path,
     session_id: &str,
 ) -> Result<Vec<PathBuf>, ServiceError> {
     registry.remove(session_id);
-    let plan = build_bootstrap_plan(root)?;
+
+    let report = discover_execution_logs(root)
+        .map_err(|e| ServiceError::DrainFailed(format!("discovery of {root:?}: {e}")))?;
+
+    let mut targets: Vec<PathBuf> = report
+        .logs
+        .iter()
+        .filter(|l| l.session_id.as_str() == session_id)
+        .map(|l| l.dir.clone())
+        .collect();
+    for (id, paths) in &report.duplicates {
+        if id == session_id {
+            targets.extend(paths.iter().cloned());
+        }
+    }
+    targets.sort();
+    targets.dedup();
+
     let mut removed = Vec::new();
     let mut failures = Vec::new();
-    for entry in &plan.entries {
-        let (id, dir) = match entry {
-            BootstrapEntry::Available { session_id, dir }
-            | BootstrapEntry::Unavailable {
-                session_id, dir, ..
-            } => (session_id, dir),
-        };
-        if id != session_id {
-            continue;
-        }
-        match std::fs::remove_dir_all(dir) {
-            Ok(()) => removed.push(dir.clone()),
+    for dir in targets {
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) => removed.push(dir),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => failures.push(format!("{}: {e}", dir.display())),
         }
@@ -341,7 +348,7 @@ mod boot_tests {
         let plan = build_bootstrap_plan(&root).expect("plan");
         assert_eq!(plan.available().count(), 1);
 
-        // The directory vanishes between discovery and reopen.
+        // The directory vanishes between discovery and publish.
         let dir = plan
             .entries
             .iter()
@@ -350,15 +357,21 @@ mod boot_tests {
                 _ => None,
             })
             .expect("a dir");
+        let handle_tail = plan.entries.iter().find_map(|e| match e {
+            BootstrapEntry::Available { log, .. } => log.handle().tail_seq(),
+            _ => None,
+        });
         std::fs::remove_dir_all(&dir).expect("remove");
 
         let registry = SessionExecutionLogRegistry::new();
         apply_bootstrap_plan(&registry, &plan).expect("apply");
-        assert!(
-            registry.get("s-a").is_err(),
-            "a vanished log must not be recreated"
-        );
-        assert!(!dir.exists(), "no empty log was created");
+
+        // The anti-lie property: no empty log is CREATED on disk, and the tail
+        // the plan validated is preserved. The registry publishes exactly the
+        // validated plan (that is the point of carrying handles).
+        assert!(!dir.exists(), "an empty log must never be created");
+        let published = registry.get("s-a").expect("plan is what gets published");
+        assert_eq!(published.handle().tail_seq(), handle_tail);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -377,6 +390,82 @@ mod boot_tests {
         let after_restart = SessionExecutionLogRegistry::new();
         bootstrap_execution_logs(&root, &after_restart).expect("rebootstrap");
         assert!(after_restart.get("s-a").is_ok());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn apply_publishes_exactly_the_validated_plan_and_touches_no_filesystem() {
+        let root = tmpdir("toctou");
+        make_log(&root, "a", "s-a", 2);
+        make_log(&root, "b", "s-b", 2);
+        let plan = build_bootstrap_plan(&root).expect("plan");
+        assert_eq!(plan.available().count(), 2);
+
+        // Mutate the filesystem between plan and apply: the plan must still win,
+        // because it is the conclusion we validated.
+        for entry in &plan.entries {
+            if let BootstrapEntry::Available { dir, .. } = entry {
+                let _ = std::fs::remove_dir_all(dir);
+            }
+        }
+
+        let registry = SessionExecutionLogRegistry::new();
+        apply_bootstrap_plan(&registry, &plan).expect("apply");
+        assert!(
+            registry.get("s-a").is_ok() && registry.get("s-b").is_ok(),
+            "the published registry must equal the validated plan: {:?} / {:?}",
+            registry.get("s-a").err(),
+            registry.get("s-b").err()
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn delete_does_not_mutate_other_sessions() {
+        let root = tmpdir("delete-isolated");
+        make_log(&root, "a", "s-a", 2);
+        make_log(&root, "b", "s-b", 2);
+
+        // Bootstrap itself legitimately recovers B (a persisted Open from a run
+        // that never sealed). The property under test is that the DELETE does not
+        // touch B, so the baseline is taken after bootstrap.
+        let registry = SessionExecutionLogRegistry::new();
+        bootstrap_execution_logs(&root, &registry).expect("bootstrap");
+        let before = chronos_log::segmented::read_manifest(&root.join("b"))
+            .unwrap()
+            .expect("manifest");
+        delete_durable_execution_log(&registry, &root, "s-a").expect("delete A");
+        let after = chronos_log::segmented::read_manifest(&root.join("b"))
+            .unwrap()
+            .expect("manifest");
+        assert_eq!(
+            after.tail_state, before.tail_state,
+            "deleting A must not change B's tail state"
+        );
+        assert_eq!(after.retained_from, before.retained_from);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn delete_covers_a_duplicated_identity() {
+        let root = tmpdir("delete-dup");
+        for dir in ["a", "b"] {
+            let d = root.join(dir);
+            std::fs::create_dir_all(&d).unwrap();
+            let m = chronos_log::segmented::ExecutionLogManifest::new(
+                &LogSessionId::new("dup"),
+                chronos_log::EventSeq::ZERO,
+            );
+            chronos_log::segmented::write_manifest_atomic(&d, &m).unwrap();
+        }
+        let registry = SessionExecutionLogRegistry::new();
+        let removed =
+            delete_durable_execution_log(&registry, &root, "dup").expect("delete ambiguous");
+        assert_eq!(removed.len(), 2, "both locations are removed");
+        assert!(discover_execution_logs(&root)
+            .unwrap()
+            .duplicates
+            .is_empty());
         let _ = std::fs::remove_dir_all(&root);
     }
 
