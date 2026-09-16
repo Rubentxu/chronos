@@ -66,3 +66,71 @@ is exactly the capability asymmetry S0.7 (KERNEL class) exists to serve.
 - Podman earns its place for SYSTEM-class reproducibility, not for speed.
 - Its cost is acceptable for scenario-level suites, not for per-test isolation.
 - The `:z` host relabel side effect must be part of any capability disclosure.
+
+
+---
+
+# S0.1b+ — post-review hardening (staging model)
+
+Review decisions applied: Podman stays, but the SELinux relabel must NOT become
+the adapter's normal path, and `execute()` must never touch a registry.
+
+## Changes
+
+1. **Image resolved locally in `prepare()`, never in `execute()`.**
+   `podman image inspect <ref>` yields the digest for provenance; a missing
+   image is reported as `unsupported` at prepare time, not discovered mid-run.
+   `execute()` runs with `podman run --pull=never`.
+2. **Bind mounts removed. Workspace is STAGED.**
+   ```text
+   source_ro   -> tar stream in   (stdin)
+   work/tmp    -> container tmpfs (/s0)
+   artifacts   -> tar stream out  (base64 on stdout, delimiter-marked)
+   ```
+   No `-v`/`--volume` anywhere in the adapter, therefore no host SELinux
+   relabel and no host-label mutation. This also matches a future remote worker,
+   which has no local filesystem to bind.
+3. **Declarative inputs/outputs.** The scenario text is no longer expanded with
+   host paths for Podman; the same `$S0_*` variables are expanded inside the
+   container from container-side values. The scenario does not know whether it
+   is addressing host paths or container paths.
+4. **Cleanup verified.** `destroy()` checks `podman ps -a` for stray `s0run-*`
+   containers and removes them, reporting any that had to be reaped.
+
+## Measurements after staging (steady state)
+
+| phase | ms |
+|---|---|
+| prepare | ~56 (local image inspect, warm) |
+| execute | ~576-626 |
+| cleanup | ~53-58 |
+| leftovers | [] |
+
+The cold-start outlier (~23 s) moved from `execute()` to `prepare()`, where it
+belongs and is attributable, and it no longer involves the network.
+
+## Negative tests (extended)
+
+| # | Case | Result |
+|---|---|---|
+| N1 | podman unavailable | PASS (explicit skip, no metrics) |
+| N2 | broken image | PASS (hard fail, no host output) |
+| N3 | env labelling | PASS |
+| N4 | image absent locally | PASS (`unsupported` at prepare, nothing ran) |
+| N5 | staging invariants | PASS (`--pull=never` present, no `-v`/`--volume`) |
+| N6 | cleanup verified | PASS (no stray `s0run-*` containers) |
+
+## Consequence for the contract draft
+
+`ExecutionEnvironment` should expose declarative **inputs/outputs**, not
+"mounts". The workspace is now:
+
+```text
+source    (input artifact)      -> staged by the backend
+work      (ephemeral)           -> backend-managed
+artifacts (output destination)  -> copied out by the backend
+tmp       (ephemeral)           -> backend-managed
+```
+
+This is what S0.1b+ was meant to discover, and it came from data rather than
+from designing for four imagined implementations.

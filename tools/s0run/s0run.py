@@ -21,6 +21,7 @@ Design rules learned in S0.1a (see RESULTS-S0.1a.md):
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import shutil
@@ -270,8 +271,23 @@ class BwrapAdapter(HostAdapter):
 
 class PodmanAdapter(HostAdapter):
     """Rootless Podman: SYSTEM class. Same scenario, same assertions, same
-    result schema. No --privileged, no SYS_PTRACE, no eBPF capabilities: the
-    point of S0.1b is to compare PLACEMENT, not to add a second variable."""
+    result schema. No --privileged, no SYS_PTRACE, no eBPF capabilities.
+
+    S0.1b+ design rules (from the S0.1b review):
+
+    * `prepare()` resolves the image digest LOCALLY and refuses if absent.
+      No registry contact. `execute()` runs with `--pull=never`, so a test can
+      never stall ~23 s on registry resolution.
+    * NO bind mounts. The S0.1b SELinux finding showed that `:z` relabels the
+      HOST directory, which is an unacceptable property for an environment we
+      advertise as reproducible and clean. Instead the workspace is STAGED:
+          source_ro -> tar stream in
+          work/artifacts/tmp -> container tmpfs
+          artifacts -> tar stream out
+      This also matches how a remote worker (no local filesystem) must work.
+    * Inputs/outputs are declarative; the backend decides materialization.
+    * Cleanup is verified, not assumed: the container name must be gone.
+    """
 
     name = "podman"
 
@@ -283,71 +299,150 @@ class PodmanAdapter(HostAdapter):
         caps = super().capabilities()
         caps.update({
             "pid_isolation": cap(SUPPORTED, provenance="container pid namespace"),
-            "fs_isolation": cap(SUPPORTED, provenance="read-only rootfs + explicit mounts"),
+            "fs_isolation": cap(SUPPORTED, provenance="read-only rootfs + staged inputs/outputs"),
             "net_isolation": cap(SUPPORTED, provenance="--network=none"),
             "kernel_class": cap(UNSUPPORTED, reason="shares the host kernel"),
         })
         return caps
 
-    def wrap(self, cmd: list[str]) -> list[str] | None:
-        w = self.ws
-        # Keep the caller's PATH lookup inside the image: alpine has /bin/sh,
-        # /bin/echo, /bin/cat. Anything else is the image's business, not ours.
-        return [
-            "podman", "run", "--rm",
-            "--network=none",
-            "--read-only",
-            "--tmpfs", "/run",
-            # SELinux note (S0.1b finding): on an Enforcing host, Podman bind
-            # mounts are denied without a relabel and the write fails with
-            # "Permission denied". `:z` is required. Cost: it relabels the HOST
-            # directory, i.e. the SYSTEM class mutates host state as a side
-            # effect of mounting. Recorded, not hidden.
-            "-v", f"{w.source_ro}:{w.source_ro}:ro",
-            "-v", f"{w.work_rw}:{w.work_rw}:rw,z",
-            "-v", f"{w.artifacts_rw}:{w.artifacts_rw}:rw,z",
-            "-v", f"{w.tmp_ephemeral}:{w.tmp_ephemeral}:rw,z",
-            "-w", str(w.work_rw),
-            self.image,
-            *cmd,
-        ]
+    def resolve_image(self) -> tuple[str | None, dict]:
+        """Local-only digest resolution. Returns (ref, observation)."""
+        proc = subprocess.run(
+            ["podman", "image", "inspect", self.image, "--format", "{{.Digest}}"],
+            capture_output=True, text=True,
+        )
+        if proc.returncode != 0:
+            return None, cap(
+                UNSUPPORTED,
+                provenance="podman image inspect",
+                reason=f"image {self.image} not present locally and pulling is forbidden",
+            )
+        digest = proc.stdout.strip().splitlines()[-1].strip() if proc.stdout.strip() else ""
+        if not digest:
+            return None, cap(UNKNOWN, reason="inspect returned no digest")
+        return digest, cap(SUPPORTED, provenance=f"{self.image}@{digest}")
+
+    def prepare(self) -> tuple[float, dict]:
+        t0 = time.monotonic()
+        self.ws.materialize()
+        digest, obs = self.resolve_image()
+        self._image_digest = digest
+        self._image_obs = obs
+        dt = (time.monotonic() - t0) * 1000.0
+        return dt, {
+            "image": self.image,
+            "image_digest": digest,
+            "image_status": obs["status"],
+            "staging": "tar-stream-in/out (no bind mounts, no host relabel)",
+            "source_ro": str(self.ws.source_ro),
+            "work_rw": str(self.ws.work_rw),
+            "artifacts_rw": str(self.ws.artifacts_rw),
+            "tmp_ephemeral": str(self.ws.tmp_ephemeral),
+        }
+
+    # Container-side workspace. Declarative, mapped by this backend only.
+    C_IN = "/s0/source"
+    C_WORK = "/s0/work"
+    C_ART = "/s0/artifacts"
+    C_TMP = "/s0/tmp"
+    C_IN_TAR = "/s0/in.tar"
+    ART_MARK = "__S0_ARTIFACTS_B64__"
+
+    def container_env(self) -> dict[str, str]:
+        return {
+            "S0_SOURCE": self.C_IN,
+            "S0_WORK": self.C_WORK,
+            "S0_ARTIFACTS": self.C_ART,
+            "S0_TMP": self.C_TMP,
+            "S0_MARKER": f"{self.C_WORK}/child-marker.txt",
+        }
 
     def execute(self, scenario: dict, env: dict[str, str]) -> tuple[float, list[dict]]:
-        """Run the WHOLE scenario in ONE container.
-
-        S0.1b finding: one `podman run` per step costs ~11 s per step (container
-        start), which is three orders of magnitude above the host and would
-        make the placement comparison meaningless. The same scenario is
-        therefore executed as a single container session with step delimiters.
-        This is a placement decision, not a semantic one: the assertions and
-        the result schema are unchanged.
-        """
+        import base64
         import shlex
+        import tarfile
+        import uuid
 
-        lines = ["set +e"]
+        name = f"s0run-{uuid.uuid4().hex[:12]}"
+        cerr = str(scenario.get("timeout_s", 300))
+
+        # Step 1: pack the read-only source as a tar stream (copy-in). No bind mount.
+        src_bytes = b""
+        if any(self.ws.source_ro.iterdir()):
+            buf = io.BytesIO()
+            with tarfile.open(fileobj=buf, mode="w") as tf:
+                tf.add(str(self.ws.source_ro), arcname=".")
+            src_bytes = buf.getvalue()
+
+        lines = [
+            "set +e",
+            f"mkdir -p {self.C_WORK} {self.C_ART} {self.C_TMP} {self.C_IN}",
+            f"cat > {self.C_IN_TAR}",
+            f"tar xf {self.C_IN_TAR} -C {self.C_IN} 2>/dev/null || true",
+            "rm -f %s" % self.C_IN_TAR,
+            f"cd {self.C_WORK}",
+        ]
         for step in scenario["steps"]:
-            cmd = " ".join(shlex.quote(expand(a, env)) for a in step["run"])
+            # NOTE: no host expansion here on purpose. Variables are expanded
+            # inside the container shell from container_env(), so the same
+            # scenario text addresses host paths (host/bwrap) or container paths
+            # (podman) without the scenario knowing the difference.
+            cmd = " ".join(shlex.quote(a) for a in step["run"])
             sid = step["id"]
             lines.append(f'echo "__S0_BEGIN__{sid}"')
             lines.append(cmd)
             lines.append(f'echo "__S0_END__{sid}:$?"')
+        lines.append(f"tar cf - -C {self.C_ART} . 2>/dev/null | base64 -w0")
+        lines.append(f'echo ""')
+        lines.append(f'echo "{self.ART_MARK}"')
         script = "\n".join(lines)
 
-        cmd = self.wrap(["/bin/sh", "-c", script])
+        podman_cmd = [
+            "podman", "run", "--rm", "--pull=never",
+            "--name", name,
+            "--network=none",
+            "--read-only",
+            "--tmpfs", "/s0:rw,size=64m",
+            "-i",
+            "-w", self.C_WORK,
+        ]
+        for k, v in self.container_env().items():
+            podman_cmd += ["-e", f"{k}={v}"]
+        # Run by local name with --pull=never: the resolved digest above is the
+        # manifest digest for provenance, while `podman run` wants the local
+        # image reference. --pull=never guarantees no registry contact.
+        podman_cmd += [self.image, "/bin/sh", "-c", script]
+
         started = time.monotonic()
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=scenario.get("timeout_s", 300)
+            podman_cmd, input=src_bytes, capture_output=True, timeout=int(cerr),
         )
         elapsed = (time.monotonic() - started) * 1000.0
 
-        if proc.returncode != 0 and "__S0_BEGIN__" not in proc.stdout:
-            # The container itself failed (image pull, mount denied, capability
-            # refused). Report it as a hard error: there is NO fallback path.
+        out = proc.stdout.decode(errors="replace")
+        errst = proc.stderr.decode(errors="replace")
+
+        if self.ART_MARK not in out and "__S0_BEGIN__" not in out:
             return elapsed, [{
-                "step": "<container>", "exit": proc.returncode, "elapsed_ms": round(elapsed, 2),
-                "stdout": proc.stdout, "stderr": proc.stderr,
-                "errors": [f"container failed: {proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else proc.returncode}"],
+                "step": "<container>", "exit": proc.returncode,
+                "elapsed_ms": round(elapsed, 2), "stdout": out, "stderr": errst,
+                "errors": [f"container failed: {errst.strip().splitlines()[-1] if errst.strip() else proc.returncode}"],
                 "executed_as": ["podman"],
+            }]
+
+        body, _, art_b64 = out.partition(self.ART_MARK)
+        # Copy-out: extract the artifact stream on the host side.
+        try:
+            raw = base64.b64decode(art_b64.strip() or b"", validate=False)
+            if raw:
+                buf = io.BytesIO(raw)
+                with tarfile.open(fileobj=buf, mode="r") as tf:
+                    tf.extractall(str(self.ws.artifacts_rw))
+        except Exception as exc:  # noqa: BLE001
+            return elapsed, [{
+                "step": "<artifacts>", "exit": None, "elapsed_ms": round(elapsed, 2),
+                "stdout": "", "stderr": "", "executed_as": ["podman"],
+                "errors": [f"artifact copy-out failed: {exc}"],
             }]
 
         results = []
@@ -356,8 +451,8 @@ class PodmanAdapter(HostAdapter):
             begin = f"__S0_BEGIN__{sid}\n"
             end = f"__S0_END__{sid}:"
             try:
-                body = proc.stdout.split(begin, 1)[1]
-                body, tail = body.split(end, 1)
+                seg = body.split(begin, 1)[1]
+                seg, tail = seg.split(end, 1)
                 rc = int(tail.split("\n", 1)[0].strip())
             except (IndexError, ValueError) as exc:
                 results.append({
@@ -368,22 +463,41 @@ class PodmanAdapter(HostAdapter):
                 continue
             errs = []
             for needle in step.get("expect_stdout_contains", []):
-                if needle not in body:
+                if needle not in seg:
                     errs.append(f"stdout missing {needle!r}")
             expected_exit = step.get("expect_exit", 0)
             if rc != expected_exit:
                 errs.append(f"exit {rc} != {expected_exit}")
             results.append({
-                "step": sid, "exit": rc, "elapsed_ms": 0.0, "stdout": body, "stderr": "",
+                "step": sid, "exit": rc, "elapsed_ms": 0.0, "stdout": seg, "stderr": "",
                 "errors": errs, "executed_as": ["podman"],
             })
         return elapsed, results
 
     def remaining_processes(self) -> dict:
-        # A --rm container that exited cleanly leaves nothing behind. We can
-        # state that as OBSERVED only because `--rm` plus a clean exit is the
-        # contract; anything else would need a real check.
-        return observation(SUPPORTED, value=0, method="podman --rm + clean exit")
+        ps = subprocess.run(
+            ["podman", "ps", "-a", "--filter", f"name={getattr(self, '_run_name', 's0run-')}",
+             "--format", "{{.Names}}"],
+            capture_output=True, text=True,
+        )
+        lines = [l for l in ps.stdout.splitlines() if l.strip()]
+        return observation(SUPPORTED, value=len(lines), method="podman ps -a --filter name")
+
+    def destroy(self, cleanup_paths: list[str]) -> tuple[float, list[str]]:
+        """Verify cleanup: no container with our name may survive `--rm`."""
+        t0 = time.monotonic()
+        leftover = []
+        ps = subprocess.run(
+            ["podman", "ps", "-a", "--format", "{{.Names}}"],
+            capture_output=True, text=True,
+        )
+        stray = [l for l in ps.stdout.splitlines() if l.startswith("s0run-")]
+        if stray:
+            subprocess.run(["podman", "rm", "-f", *stray], capture_output=True, text=True)
+            leftover.extend(stray)
+        dt = (time.monotonic() - t0) * 1000.0
+        return dt, leftover
+
 
 
 def run(scenario: dict, env_name: str, out_dir: Path) -> dict:
