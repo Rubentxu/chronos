@@ -2,8 +2,8 @@
   "cycle_id": "rec-c0-convergence-truth-gate",
   "cycle_record": "p-3416cfb8288f8964/rec-c0-convergence-truth-gate",
   "path": "A-full",
-  "status": "release_pending",
-  "head_sha": "1fbb6e3a45bb0a23b698b5847e3a11ccad9b43a0",
+  "status": "complete",
+  "head_sha": "b25681993ffe65e81353e9656e3e884532933ad7",
   "base_sha": "main",
   "notes": [
     "SDDK cycle registered via sddk CLI; phases explore/specify/design/plan/build/verify completed through ledger transitions with gate receipts (seeds gate-*...-1).",
@@ -11,12 +11,13 @@
     "T4-smoke: counterexample_tools all pass; query_edge_cases 8/10 with 2 failures reproduced identically on main worktree 9cc44ce3 => pre-existing, disclosed in implementation-receipt, severity minor/priority medium, NOT a regression.",
     "Coverage engine: Tarpaulin --engine llvm committed (c853b0a4) and Coverage workflow publishing on both pushed SHAs.",
     "Non-blocking side evidence: SANDBOX-S0.1 characterization committed (1fbb6e3a).",
-    "Release pending remote CI all-green on 1fbb6e3a (CI + Coverage in progress at verify time); release.complete gates require merge-receipt + release-receipt."
+    "Release pending remote CI all-green on 1fbb6e3a (CI + Coverage in progress at verify time); release.complete gates require merge-receipt + release-receipt.",
+    "Cycle CLOSED via sddk ledger (sequence 16). DEF-001 (5 tests) carried to REC-C1."
   ],
   "prior_cycle_record": "m9-96-cc001-housekeeping",
-  "main_sha": "2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a",
-  "remote_tag": "v0.7.98",
-  "remote_tag_peel": "2e8a00d33f0878d4446f4cb13f64ca4f01fb3f4a",
+  "main_sha": "b25681993ffe65e81353e9656e3e884532933ad7",
+  "remote_tag": "v0.7.111",
+  "remote_tag_peel": "b25681993ffe65e81353e9656e3e884532933ad7",
   "peel_match": true,
   "scope_doc_sha": "2e8a00d3",
   "phases": {
@@ -32,13 +33,11 @@
     },
     "release": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/m9-96-cc001-housekeeping/release-receipt.md",
-      "summary": "Tag v0.7.98 pre-created at cycle-artifacts commit 2e8a00d3 per CC#42 workaround. --no-ff merge into main. Cycle branch deleted per CC#53."
+      "summary": "Gates no-pending-effects+release-uat-approved passed; --no-ff merge b2568199 into main (base 9cc44ce3 verified); post-merge verification PASS; tag v0.7.111 pushed, peel==merge."
     },
     "archive": {
       "status": "complete",
-      "artifact_path": ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-96-cc001-housekeeping/archive-manifest.md",
-      "summary": "Archive-manifest with SHA-256 evidence bindings for 12 released artifacts (7 cycle + 5 knowledge)."
+      "summary": "archive.complete applied with ledger-valid+vault-index-current receipts; archive-manifest binds 8 artifacts to release."
     }
   },
   "vault_drift_baseline": {
