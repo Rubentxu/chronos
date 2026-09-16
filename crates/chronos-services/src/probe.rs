@@ -208,12 +208,14 @@ fn register_session_log(
 /// `explicit` wins when the caller configured one; otherwise the session gets a
 /// per-session directory under a stable root. Every agentic session owns a log,
 /// so this always returns a path — there is no "log disabled" branch.
+///
+/// REC-C1.5 closure: the default root comes from
+/// [`chronos_log::resolve_execution_log_root`], the single canonical resolver
+/// shared by session start, bootstrap, and durable delete.
 fn execution_log_dir(explicit: Option<&std::path::Path>, session_id: &str) -> PathBuf {
     let root = match explicit {
         Some(dir) => dir.to_path_buf(),
-        None => std::env::var_os("CHRONOS_EXECUTION_LOG_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| std::env::temp_dir().join("chronos-execution-logs")),
+        None => chronos_log::resolve_execution_log_root(),
     };
     root.join(session_id)
 }

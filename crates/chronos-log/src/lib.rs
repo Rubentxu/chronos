@@ -23,6 +23,7 @@ pub mod cursor;
 pub mod discovery;
 pub mod error;
 pub mod gap;
+pub mod location;
 pub mod memory;
 pub mod record;
 pub mod replay;
@@ -36,6 +37,7 @@ pub use cursor::{ConsumerCursor, LogConsumerId, LogPage, ReadResult};
 pub use discovery::{discover_execution_logs, DiscoveredLog, DiscoveryReport, UnmanagedLegacyLog};
 pub use error::LogError;
 pub use gap::{Gap, GapReason};
+pub use location::{execution_log_dir, execution_log_dir_for_session, resolve_execution_log_root};
 pub use memory::InMemoryExecutionLog;
 pub use record::{ExecutionKind, ExecutionPayload, ExecutionRecord, SessionId};
 pub use replay::{
