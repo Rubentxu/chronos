@@ -87,6 +87,7 @@ pub mod debug_trace;
 pub mod debug_trace_specialized;
 pub mod diff;
 pub mod error;
+pub mod events_cursor;
 pub mod events_read;
 pub mod execution_query;
 pub mod hypothesis_test;
