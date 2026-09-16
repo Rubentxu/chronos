@@ -124,7 +124,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument(
         "--root",
-        default="/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos/cycle-artifacts/p-3416cfb8288f8964",
+        default="cycle-artifacts/p-3416cfb8288f8964",
     )
     p.add_argument(
         "--strict",
@@ -132,6 +132,12 @@ def main():
         help="also enforce on m9-* / m10-* legacy cycles (default: skip those)",
     )
     args = p.parse_args()
+
+    # Resolve relative paths against the script's repo root so the same
+    # default works in both developer machines (any cwd) and CI runners.
+    if not os.path.isabs(args.root):
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        args.root = os.path.normpath(os.path.join(script_dir, "..", args.root))
 
     if not os.path.isdir(args.root):
         print(f"ERROR: {args.root} not found", file=sys.stderr)

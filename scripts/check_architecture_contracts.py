@@ -139,6 +139,43 @@ def git_diff(base: str) -> str:
     return result.stdout
 
 
+def _cfg_test_lines(path: Path) -> set[int]:
+    """Return 1-indexed line numbers inside any `#[cfg(test)]` block.
+
+    The legacy-token scan must skip test code. The path-based exclusion
+    (`/tests/`) catches files under `tests/` directories, but Rust also
+    allows `#[cfg(test)] mod tests { ... }` inside any source file. We
+    scan the file at HEAD and track brace depth from each opening
+    `#[cfg(test)]` so we know which lines are inside the test scope.
+    """
+    if not path.exists() or not path.is_file():
+        return set()
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return set()
+    in_cfg_test = False
+    depth = 0
+    test_lines: set[int] = set()
+    for idx, raw in enumerate(text.splitlines(), start=1):
+        line = raw.strip()
+        if not in_cfg_test:
+            if line == "#[cfg(test)]" or line.startswith("#[cfg(test)] "):
+                in_cfg_test = True
+                depth = 0
+        if in_cfg_test:
+            test_lines.add(idx)
+            for ch in raw:
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        in_cfg_test = False
+                        break
+    return test_lines
+
+
 def verify_no_new_legacy(errors: list[str]) -> None:
     base = os.environ.get("CHRONOS_CONTRACT_BASE_REF")
     if not base:
@@ -151,21 +188,55 @@ def verify_no_new_legacy(errors: list[str]) -> None:
         error(f"cannot evaluate legacy additions against {base}: {exc}", errors)
         return
 
+    # Cache: for each file, the set of 1-indexed line numbers inside any
+    # `#[cfg(test)]` block at HEAD. The diff is --unified=0 so added line
+    # numbers map 1:1 to file line numbers at HEAD.
+    cfg_test_cache: dict[str, set[int]] = {}
+
+    def is_test_line(file_path: str, line_no: int) -> bool:
+        if file_path not in cfg_test_cache:
+            cfg_test_cache[file_path] = _cfg_test_lines(ROOT / file_path)
+        return line_no in cfg_test_cache[file_path]
+
     current_file: str | None = None
+    current_added_line_no = 0
     for line in diff.splitlines():
         if line.startswith("+++ b/"):
             current_file = line[6:]
+            current_added_line_no = 0
             continue
         if not current_file or not current_file.endswith(".rs"):
             continue
         if "/tests/" in current_file or current_file.endswith("/tests.rs"):
             continue
-        if not line.startswith("+") or line.startswith("+++"):
+        if line.startswith("+++") or line.startswith("---"):
             continue
-        added = line[1:]
-        for token in LEGACY_ADDITION_TOKENS:
-            if token in added:
-                error(f"new legacy token {token!r} in {current_file}: {added.strip()}", errors)
+        # Diff --unified=0: hunk headers `@@ -a,b +c,d @@` give the new-side
+        # start line `c`. Added lines (`+`) follow at consecutive new line
+        # numbers until the next hunk or non-`+` line.
+        if line.startswith("@@"):
+            import re as _re
+
+            m = _re.search(r"\+(\d+)", line)
+            if m:
+                current_added_line_no = int(m.group(1)) - 1
+            continue
+        if line.startswith("+"):
+            current_added_line_no += 1
+            added = line[1:]
+            if is_test_line(current_file, current_added_line_no):
+                continue
+            for token in LEGACY_ADDITION_TOKENS:
+                if token in added:
+                    error(
+                        f"new legacy token {token!r} in {current_file}:{current_added_line_no}: {added.strip()}",
+                        errors,
+                    )
+        elif not line.startswith("-"):
+            # Context lines (no prefix or space prefix) also advance the
+            # new-side line counter so the next `+` line gets the right
+            # line number.
+            current_added_line_no += 1
 
 
 def verify_roadmap_markers(errors: list[str]) -> None:
