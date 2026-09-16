@@ -7,8 +7,11 @@ never advance at once again.
 
 ```text
 ACTIVE PRODUCT GATE  : REC-C1.3 (events_read cutover)
-                       core landed: stateless EventSeq read page + gap-aware
-                       position + cursor rules + tests. PENDING: wire the
+                       core landed and hardened: stateless EventSeq read page,
+                       gap-aware position, cursor rules, multi-chunk scan
+                       (SCAN_CHUNK no longer leaks into page semantics),
+                       fail-closed decode (no cursor emitted past unreadable
+                       evidence), uniform position vocabulary. PENDING: wire the
                        events_read tool / deprecated shim onto it (drop
                        QueryEngine, DebugTraceService, CursorDto, hardcoded
                        completeness) and re-run the 5 DEF-001.
