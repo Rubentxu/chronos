@@ -116,6 +116,9 @@ impl ChronosSessionLifecycleService {
             cwd: spawn_fields.cwd,
             bus_capacity,
             track_function_frames: Some(spawn_fields.track_function_frames),
+            // REC-C1.2a: session_start may point the session's ExecutionLog at a
+            // specific root; otherwise the default root applies.
+            execution_log_dir: None,
         };
         let out = ProbeService::start(ctx.probe, probe_input).await?;
         let lang = out.language.clone();
@@ -197,6 +200,7 @@ impl ChronosSessionLifecycleService {
                 pid,
                 trace_syscalls: false, // default; matches m7-04 spawn default
                 bus_capacity: 4096,
+                execution_log_dir: None,
             },
         )?;
         let snapshot = CapabilitySnapshot {

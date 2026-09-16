@@ -203,6 +203,17 @@ impl NativeProbeBackend {
         Ok(Some(log.compaction_metrics()))
     }
 
+    /// Attach an ExecutionLog that the CALLER owns (REC-C1.2a).
+    ///
+    /// This is the canonical path: the session creates the log, keeps
+    /// ownership, and hands the backend only a clone for writing. The backend
+    /// therefore never invents a second identity for the canonical log, and the
+    /// record `session_id` comes from `log.session_id()`.
+    pub fn attach_execution_log(self, log: std::sync::Arc<SegmentedExecutionLog>) -> Self {
+        *self.execution_log.lock().unwrap_or_else(|e| e.into_inner()) = Some(log);
+        self
+    }
+
     /// Test-only accessor that returns the underlying `Arc<Mutex<…>>`
     /// holding the optional `ExecutionLog`. Lets integration tests
     /// attach a pre-built log so they can exercise
@@ -268,16 +279,21 @@ impl NativeProbeBackend {
     /// Push a `TraceEvent` to the legacy EventBus and, if an
     /// ExecutionLog is attached, also to it. Errors from the log
     /// path are logged but never abort the probe loop.
+    /// REC-C1.2a: the log record's `session_id` is taken from the log itself.
+    ///
+    /// The old signature took a separate `session_log_id` string, which allowed
+    /// the record identity to drift from the identity of the log it was written
+    /// to (duplicated identity, exactly the connascence C1.2a removes).
     fn dual_push(
         event_bus: &EventBusHandle,
         log: Option<&SegmentedExecutionLog>,
-        session_log_id: &str,
         trace_event: &TraceEvent,
         timestamp_ns: u64,
     ) {
         event_bus.push_raw(trace_event.clone());
         if let Some(log) = log {
-            let rec = trace_event_to_log_record(session_log_id, timestamp_ns, trace_event);
+            let rec =
+                trace_event_to_log_record(log.session_id().as_str(), timestamp_ns, trace_event);
             if let Err(e) = log.append(rec) {
                 debug!("m1-03: ExecutionLog append failed (continuing): {}", e);
             }
@@ -375,42 +391,61 @@ impl NativeProbeBackend {
         // stable id for the ExecutionLog directory.
         let session = CaptureSession::new(0, language, config.clone());
 
-        // m1-03: open the ExecutionLog first so the spawned thread
-        // can move a clone of the Arc into the closure.
-        let log_session_id = format!("native-{}", session.session_id);
-        let log_for_thread: Option<std::sync::Arc<SegmentedExecutionLog>> = match self
-            .execution_log_dir
+        // REC-C1.2a: an ExecutionLog attached by the caller (the session owns it)
+        // takes precedence. In that case the backend does NOT invent an
+        // identity: the record `session_id` comes from the log itself.
+        let caller_owned_log: Option<std::sync::Arc<SegmentedExecutionLog>> = self
+            .execution_log
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .clone()
-        {
-            Some(base_dir) => {
-                let log_dir = base_dir.join(&log_session_id);
-                match SegmentedExecutionLog::open(
-                    chronos_log::SessionId::new(&log_session_id),
-                    SegmentedConfig::with_dir(&log_dir),
-                ) {
-                    Ok(log) => {
-                        let arc = std::sync::Arc::new(log);
-                        *self.execution_log.lock().unwrap_or_else(|e| e.into_inner()) =
-                            Some(arc.clone());
-                        info!(
-                            "m1-03: ExecutionLog attached at {:?} for session {}",
-                            log_dir, log_session_id
-                        );
-                        Some(arc)
-                    }
-                    Err(e) => {
-                        warn!(
-                            "m1-03: failed to open ExecutionLog at {:?}: {}. \
+            .clone();
+
+        // Legacy m1-03 path: the backend opens its own log from a configured
+        // directory. Kept for compatibility; not the canonical path.
+        let legacy_log_id = format!("native-{}", session.session_id);
+        let log_for_thread: Option<std::sync::Arc<SegmentedExecutionLog>> = match caller_owned_log {
+            Some(arc) => {
+                info!(
+                    "REC-C1.2a: using caller-owned ExecutionLog for session {}",
+                    arc.session_id().as_str()
+                );
+                Some(arc)
+            }
+            None => match self
+                .execution_log_dir
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone()
+            {
+                Some(base_dir) => {
+                    let log_session_id = legacy_log_id.clone();
+                    let log_dir = base_dir.join(&log_session_id);
+                    match SegmentedExecutionLog::open(
+                        chronos_log::SessionId::new(&log_session_id),
+                        SegmentedConfig::with_dir(&log_dir),
+                    ) {
+                        Ok(log) => {
+                            let arc = std::sync::Arc::new(log);
+                            *self.execution_log.lock().unwrap_or_else(|e| e.into_inner()) =
+                                Some(arc.clone());
+                            info!(
+                                "m1-03: ExecutionLog attached at {:?} for session {}",
+                                log_dir, log_session_id
+                            );
+                            Some(arc)
+                        }
+                        Err(e) => {
+                            warn!(
+                                "m1-03: failed to open ExecutionLog at {:?}: {}. \
                              Continuing with legacy EventBus only.",
-                            log_dir, e
-                        );
-                        None
+                                log_dir, e
+                            );
+                            None
+                        }
                     }
                 }
-            }
-            None => None,
+                None => None,
+            },
         };
 
         // Spawn background thread to run the event loop
@@ -438,7 +473,6 @@ impl NativeProbeBackend {
                     resolver_pipeline,
                     language,
                     log_for_thread,
-                    log_session_id,
                     move |pid: i32| {
                         *traced_pid_thread.lock().unwrap_or_else(|e| e.into_inner()) = Some(pid);
                     },
@@ -609,7 +643,6 @@ impl NativeProbeBackend {
         resolver_pipeline: ResolverPipeline,
         language: Language,
         execution_log: Option<std::sync::Arc<SegmentedExecutionLog>>,
-        log_session_id: String,
         on_pid_launched: impl FnOnce(i32),
     ) {
         Self::run_probe_loop(
@@ -622,7 +655,6 @@ impl NativeProbeBackend {
             resolver_pipeline,
             language,
             execution_log,
-            log_session_id,
             on_pid_launched,
         );
     }
@@ -639,7 +671,6 @@ impl NativeProbeBackend {
         resolver_pipeline: ResolverPipeline,
         _language: Language,
         execution_log: Option<std::sync::Arc<SegmentedExecutionLog>>,
-        log_session_id: String,
         on_pid_launched: impl FnOnce(i32),
     ) {
         let mut tracer = PtraceTracer::new(ptrace_config.clone());
@@ -717,7 +748,6 @@ impl NativeProbeBackend {
                         Self::dual_push(
                             &event_bus,
                             execution_log.as_deref(),
-                            &log_session_id,
                             &trace_event,
                             timestamp_ns,
                         );
@@ -790,7 +820,6 @@ impl NativeProbeBackend {
                 Self::dual_push(
                     &event_bus,
                     execution_log.as_deref(),
-                    &log_session_id,
                     &trace_event,
                     timestamp_ns,
                 );

@@ -113,6 +113,11 @@ pub enum ServiceError {
     #[error("session {0} owns no ExecutionLog")]
     NoExecutionLog(String),
 
+    /// A log was handed to a session under an identity the log does not carry
+    /// (REC-C1.2a). Duplicated identity must never become canonical.
+    #[error("ExecutionLog identity mismatch: session {expected} but log holds {actual}")]
+    ExecutionLogIdentityMismatch { expected: String, actual: String },
+
     /// A `probe_stop` call failed to drain / detach.
     #[error("probe stop error: {0}")]
     ProbeStopError(String),

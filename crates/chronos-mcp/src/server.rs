@@ -2857,10 +2857,11 @@ impl ChronosServer {
                     "internal error: unexpected tripwire not found",
                 )));
             }
-            // REC-C1.2 variant (cannot occur from list_threads).
-            Err(ServiceError::NoExecutionLog(_)) => {
+            // REC-C1.2/C1.2a variants (cannot occur from list_threads).
+            Err(ServiceError::NoExecutionLog(_))
+            | Err(ServiceError::ExecutionLogIdentityMismatch { .. }) => {
                 return Ok(CallToolResult::error(text_content(
-                    "internal error: unexpected missing ExecutionLog",
+                    "internal error: unexpected ExecutionLog error",
                 )));
             }
             Err(ServiceError::Unsupported(_)) => {
@@ -8588,6 +8589,22 @@ mod tests {
         // reads `backend`, so we stub the other fields with
         // dummies that compile.
         let dummy_session = CaptureSession::new(0, Language::Rust, CaptureConfig::new("noop"));
+        // REC-C1.2a: a session always owns a log (the type is not `Option`), so
+        // the pre-C1.2a "no log attached" fixture is not representable. What the
+        // round must still tolerate is a log with nothing to compact.
+        let log_dir = std::env::temp_dir().join(format!(
+            "rec-c1-2a-compaction-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let owned_for_round = chronos_services::session_log::SessionExecutionLog::open(
+            &log_dir,
+            chronos_log::SessionId::new("rec-c1-2a-compaction"),
+        )
+        .expect("test log");
         let live = LiveProbeSession {
             backend: backend_no_log,
             session: dummy_session,
@@ -8596,7 +8613,7 @@ mod tests {
             attached: false,
             ebpf_adapter: None,
             ebpf_attachment: None,
-            execution_log: None,
+            execution_log: owned_for_round,
         };
         {
             let mut probes = server.live_probes.lock().unwrap();
@@ -8698,11 +8715,12 @@ mod tests {
         let server = Arc::new(ChronosServer::new());
         let dummy_session =
             CaptureSession::new(0, chronos_domain::Language::C, CaptureConfig::new("noop"));
-        let owned_log = chronos_services::session_log::SessionExecutionLog::adopt(
+        let owned_log = chronos_services::session_log::SessionExecutionLog::try_adopt(
             Some(dir.clone()),
             LogSessionId::new(&log_session_id),
             log.clone(),
-        );
+        )
+        .expect("caller identity must match the log's identity");
         let live = LiveProbeSession {
             backend,
             session: dummy_session,
@@ -8711,7 +8729,7 @@ mod tests {
             attached: false,
             ebpf_adapter: None,
             ebpf_attachment: None,
-            execution_log: Some(owned_log),
+            execution_log: owned_log,
         };
         server
             .live_probes

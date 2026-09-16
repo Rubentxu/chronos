@@ -816,7 +816,11 @@ mod tests {
             attached: false,
             ebpf_adapter: None,
             ebpf_attachment: None,
-            execution_log: None,
+            execution_log: crate::session_log::SessionExecutionLog::open(
+                std::env::temp_dir().join(format!("rec-c1-2a-observe-{}", std::process::id())),
+                chronos_log::SessionId::new("rec-c1-2a-observe"),
+            )
+            .expect("test log"),
         };
         rig.live_probes
             .lock()

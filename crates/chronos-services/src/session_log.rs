@@ -93,21 +93,37 @@ impl SessionExecutionLog {
         })
     }
 
-    /// Take ownership of a log that was opened elsewhere.
+    /// Take ownership of a log that was opened elsewhere, *validating* that the
+    /// caller's `session_id` really is the identity the log carries.
     ///
-    /// The session becomes the single read source; the previous holder keeps a
-    /// clone for writing (`Arc::ptr_eq(handle(), original)` still holds, so
-    /// writes and reads see the same log).
-    pub fn adopt(
+    /// REC-C1.2a: the pre-C1.2a `adopt()` accepted an external `SessionId`
+    /// without checking `handle.session_id()`. That allowed this to exist:
+    ///
+    /// ```text
+    /// SessionExecutionLog { session_id = <service uuid> }
+    ///         └── handle { session_id = "native-1234" }
+    /// ```
+    ///
+    /// and `cursor_start()` would then mint a cursor for an identity the log
+    /// does not contain. Duplicated identity is exactly what must not become
+    /// canonical, so the mismatch is a hard error.
+    pub fn try_adopt(
         dir: Option<PathBuf>,
         session_id: SessionId,
         handle: Arc<SegmentedExecutionLog>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, ServiceError> {
+        let log_session = handle.session_id().clone();
+        if log_session != session_id {
+            return Err(ServiceError::ExecutionLogIdentityMismatch {
+                expected: session_id.as_str().to_string(),
+                actual: log_session.as_str().to_string(),
+            });
+        }
+        Ok(Self {
             session_id,
             dir,
             log: handle,
-        }
+        })
     }
 
     pub fn session_id(&self) -> &SessionId {
@@ -184,6 +200,30 @@ mod tests {
         assert!(EventsCursorV1::decode_for_session(&cursor.encode(), &sid).is_ok());
         let other = SessionId::new("someone-else");
         assert!(EventsCursorV1::decode_for_session(&cursor.encode(), &other).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn try_adopt_rejects_identity_mismatch() {
+        let dir = tmpdir("mismatch");
+        let real = SessionId::new("native-1234");
+        let handle = Arc::new(
+            SegmentedExecutionLog::open(real.clone(), SegmentedConfig::with_dir(&dir)).unwrap(),
+        );
+        let err =
+            SessionExecutionLog::try_adopt(None, SessionId::new("service-uuid"), handle.clone())
+                .unwrap_err();
+        match err {
+            ServiceError::ExecutionLogIdentityMismatch { expected, actual } => {
+                assert_eq!(expected, "service-uuid");
+                assert_eq!(actual, "native-1234");
+            }
+            other => panic!("expected identity mismatch, got {other:?}"),
+        }
+        // The matching identity is accepted, and it is the log's own.
+        let ok = SessionExecutionLog::try_adopt(None, real, handle).expect("matching identity");
+        assert_eq!(ok.session_id().as_str(), "native-1234");
+        assert_eq!(ok.cursor_start().session_id().as_str(), "native-1234");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
