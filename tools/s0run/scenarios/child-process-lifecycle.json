@@ -1,20 +1,37 @@
 {
-  "schema": "sddk.sandbox.scenario/v1",
+  "schema": "chronos.execution.scenario/v1",
   "scenario_id": "child-process-lifecycle",
   "description": "Baseline: parent spawns child, child writes marker, both exit. No Chronos involvement yet.",
   "steps": [
     {
       "id": "parent",
-      "run": ["sh", "-c", "echo parent-start; (echo child-started; echo child-marker > \"$S0_MARKER\"; echo child-done) & wait; echo parent-done"],
-      "expect_stdout_contains": ["parent-start", "child-started", "child-done", "parent-done"],
+      "run": [
+        "sh",
+        "-c",
+        "echo parent-start; (echo child-started; echo child-marker > \"$S0_MARKER\"; echo child-done) & wait; echo parent-done"
+      ],
+      "expect_stdout_contains": [
+        "parent-start",
+        "child-started",
+        "child-done",
+        "parent-done"
+      ],
       "expect_exit": 0
     },
     {
       "id": "marker-check",
-      "run": ["sh", "-c", "cat \"$S0_MARKER\""],
-      "expect_stdout_contains": ["child-marker"],
+      "run": [
+        "sh",
+        "-c",
+        "cat \"$S0_MARKER\""
+      ],
+      "expect_stdout_contains": [
+        "child-marker"
+      ],
       "expect_exit": 0
     }
   ],
-  "cleanup_required": ["$S0_MARKER"]
+  "cleanup_required": [
+    "$S0_MARKER"
+  ]
 }

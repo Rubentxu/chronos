@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import os
 import shutil
 import subprocess
@@ -89,6 +90,32 @@ def host_kernel() -> Path | None:
     return None
 
 
+SCHEMA_VERSION = 1
+
+
+def cache_key(image_id: str, init_sha: str, arch: str) -> str:
+    """Content-addressed cache key (S0.2).
+
+    The pre-S0.2 cache was keyed by nothing: it reused `cache/rootfs` and
+    `cache/s0-base.cpio.gz` whenever those paths existed. That allowed
+
+        image A -> build cache ; image becomes B ; cache A reused
+
+    which is a Silent Lie: the run would claim provenance for B while executing
+    A's filesystem. Every input that changes the artifact is now part of the key.
+    """
+    h = hashlib.sha256()
+    h.update(f"schema={SCHEMA_VERSION}\n".encode())
+    h.update(f"image={image_id}\n".encode())
+    h.update(f"init={init_sha}\n".encode())
+    h.update(f"arch={arch}\n".encode())
+    return h.hexdigest()[:24]
+
+
+def _arch() -> str:
+    return os.uname().machine
+
+
 def build_base_initramfs(
     image: str, cache_dir: Path, scenario_script: str | None = None
 ) -> tuple[Path | None, str, str]:
@@ -99,11 +126,27 @@ def build_base_initramfs(
     base is never mutated by a run.
     """
     cache_dir.mkdir(parents=True, exist_ok=True)
-    base = cache_dir / "s0-base.cpio.gz"
-    rootfs = cache_dir / "rootfs"
+    init_sha = hashlib.sha256(INIT_SCRIPT.encode()).hexdigest()
+
+    # Resolve the immutable image id first: it is the primary cache input.
+    inspect = subprocess.run(
+        ["podman", "image", "inspect", image, "--format", "{{.Id}}"],
+        capture_output=True, text=True,
+    )
+    if inspect.returncode != 0:
+        return None, "", f"image {image} not present locally (pulling is forbidden)"
+    image_id = inspect.stdout.strip().splitlines()[-1].strip() if inspect.stdout.strip() else ""
+    if not image_id:
+        return None, "", f"image {image} has no local id"
+
+    key = cache_key(image_id, init_sha, _arch())
+    entry = cache_dir / key
+    base = entry / "base.cpio.gz"
+    rootfs = entry / "rootfs"
+    manifest = entry / "manifest.json"
     note = ""
 
-    if not rootfs.exists() or not base.exists():
+    if not manifest.exists() or not rootfs.exists() or not base.exists():
         container = f"s0-initramfs-{os.getpid()}"
         subprocess.run(["podman", "rm", "-f", container], capture_output=True)
         create = subprocess.run(
@@ -128,15 +171,37 @@ def build_base_initramfs(
             init.chmod(0o755)
             (rootfs / "s0").mkdir(exist_ok=True)
             _pack(rootfs, base)
+            manifest.write_text(json.dumps({
+                "schema": SCHEMA_VERSION,
+                "source_image": image,
+                "source_image_id": image_id,
+                "init_sha256": init_sha,
+                "architecture": _arch(),
+                "base_sha256": _sha256_file(base),
+                "cache_key": key,
+            }, indent=2) + "\n")
         finally:
             subprocess.run(["podman", "rm", "-f", container], capture_output=True)
 
     if scenario_script is None:
         return base, _sha256_file(base), note
 
+    # Cache validation: a stale or foreign entry must MISS, never be reused.
+    try:
+        recorded = json.loads(manifest.read_text())
+    except Exception as exc:  # noqa: BLE001
+        return None, "", f"cache manifest unreadable ({exc}); entry rejected"
+    if (
+        recorded.get("source_image_id") != image_id
+        or recorded.get("init_sha256") != init_sha
+        or recorded.get("architecture") != _arch()
+        or recorded.get("schema") != SCHEMA_VERSION
+    ):
+        return None, "", "cache entry does not match inputs; refusing reuse"
+
     # Per-run initramfs: copy the cached rootfs, inject the scenario, repack.
-    # The base (cached rootfs + s0-base.cpio.gz) is never mutated by a run.
-    run_dir = cache_dir / f"run-{os.getpid()}-{abs(hash(scenario_script)) % 10**6}"
+    # The cached base is never mutated by a run.
+    run_dir = cache_dir / f"run-{key}-{os.getpid()}-{abs(hash(scenario_script)) % 10**6}"
     if run_dir.exists():
         shutil.rmtree(run_dir)
     shutil.copytree(rootfs, run_dir, symlinks=True)

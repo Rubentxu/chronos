@@ -33,7 +33,12 @@ from pathlib import Path
 
 import qemu_assets as qa
 
-RESULT_SCHEMA = "sddk.sandbox.result/v2"
+# S0.2: the contract belongs to Chronos, not to the SDDK workflow that
+# governs development. Renamed BEFORE it has consumers, so no external API
+# migration is ever needed. `chronos.execution.*` also fits the future
+# Portable Execution Runtime, which is not a sandbox.
+SCENARIO_SCHEMA = "chronos.execution.scenario/v1"
+RESULT_SCHEMA = "chronos.execution.result/v1"
 
 # Capability status vocabulary. Deliberately tiny; Chronos evidence classes are
 # NOT imported here — the spike stays light.
@@ -83,7 +88,7 @@ ADAPTERS = {
 def load_scenario(path: Path) -> dict:
     with path.open() as fh:
         doc = json.load(fh)
-    if doc.get("schema") != "sddk.sandbox.scenario/v1":
+    if doc.get("schema") != SCENARIO_SCHEMA:
         raise SystemExit(f"unsupported scenario schema: {doc.get('schema')!r}")
     return doc
 
