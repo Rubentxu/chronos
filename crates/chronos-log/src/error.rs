@@ -55,6 +55,20 @@ pub enum LogError {
         segment_end: u64,
         retained_from: u64,
     },
+    /// The log was sealed and cannot accept new evidence (REC-C1.5.3).
+    ///
+    /// Without this the seal would be a label, not a guarantee.
+    LogSealed(String),
+    /// A sealed tail disagrees with what replay reconstructed (REC-C1.5.3).
+    ///
+    /// C1.5.2 catches a missing segment between two survivors; only the seal can
+    /// reveal a missing LAST segment, because nothing follows it to reveal the
+    /// hole.
+    TailIntegrityMismatch {
+        session_id: String,
+        expected: Option<u64>,
+        actual: Option<u64>,
+    },
     /// Strict replay refused to reconstruct the log (REC-C1.5.2).
     ///
     /// The retained region contains an unexplained hole or an integrity
@@ -120,6 +134,20 @@ impl fmt::Display for LogError {
                 f,
                 "segment {}..={} crosses the retention boundary {}",
                 segment_start, segment_end, retained_from
+            ),
+            LogError::LogSealed(session_id) => write!(
+                f,
+                "session {:?} is sealed; no further writes are accepted",
+                session_id
+            ),
+            LogError::TailIntegrityMismatch {
+                session_id,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "sealed tail mismatch for session {:?}: manifest {:?}, replay {:?}",
+                session_id, expected, actual
             ),
             LogError::ReplayIntegrity { session_id, kind } => write!(
                 f,

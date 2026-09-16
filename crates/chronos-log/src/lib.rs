@@ -28,6 +28,7 @@ pub mod replay;
 pub mod segment;
 pub mod segmented;
 pub mod seq;
+pub mod tail;
 
 pub use backend::{ExecutionLog, ExecutionLogBackend, NewExecutionRecord};
 pub use cursor::{ConsumerCursor, LogConsumerId, LogPage, ReadResult};
@@ -41,3 +42,4 @@ pub use replay::{
 pub use segment::{segment_path, write_segment, DecodedSegment, SegmentEntry, SegmentMetadata};
 pub use segmented::{CompactionMetrics, SegmentedConfig, SegmentedExecutionLog};
 pub use seq::EventSeq;
+pub use tail::{recover_tail_state, SealError, SealedTail, TailState};

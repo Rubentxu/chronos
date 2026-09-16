@@ -221,6 +221,14 @@ pub fn write_segment(
             tmp_path, final_path, e
         ))
     })?;
+    // REC-C1.5.3: make the rename itself durable. Without this a seal could
+    // claim a tail whose directory entry is still in the page cache, and a crash
+    // would silently lose the last segment.
+    if let Some(parent) = final_path.parent() {
+        if let Ok(d) = fs::File::open(parent) {
+            let _ = d.sync_all();
+        }
+    }
     Ok(final_path)
 }
 
@@ -228,10 +236,14 @@ pub fn write_segment(
 /// `Err(LogError::Backend(_))` if the header is malformed, the
 /// checksum does not match, or the payload fails to decode.
 ///
-/// Incomplete / truncated segments are reported by returning the
-/// entries that *did* decode (so the caller can truncate the
-/// trailing garbage). m1-02 truncates by truncating the file to
-/// the last complete record boundary.
+/// REC-C1.5.2: this is a STRICT read. A truncated or corrupt segment is an
+/// error, not a partial decode — a reopen either validates the whole retained
+/// region or publishes nothing, so an incomplete segment can never leave a
+/// silent hole in the seq space.
+///
+/// Historical note: this used to return whatever decoded and let the caller
+/// truncate to the last complete record boundary. Lenient callers could then
+/// silently skip a segment; strict replay (C1.5.2) removed that path.
 pub fn read_segment(path: &Path) -> Result<DecodedSegment, LogError> {
     let mut f =
         File::open(path).map_err(|e| LogError::Backend(format!("open {:?}: {}", path, e)))?;

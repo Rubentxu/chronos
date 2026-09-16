@@ -181,11 +181,19 @@ pub struct ExecutionLogManifest {
     pub schema_version: u32,
     pub session_id: String,
     pub retained_from: u64,
-    pub created_at_unix_ms: u128,
+    pub created_at_unix_ms: u64,
+    /// What is known about the END of the execution (REC-C1.5.3).
+    ///
+    /// `None` only in a v1 manifest; a reopen turns that into
+    /// `TailState::Unknown` rather than guessing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_state: Option<crate::tail::TailState>,
 }
 
 impl ExecutionLogManifest {
-    pub const SCHEMA_VERSION: u32 = 1;
+    /// v2: carries tail state. v1 manifests (without the field) remain readable.
+    pub const SCHEMA_VERSION: u32 = 2;
+    pub const LEGACY_SCHEMA_VERSION: u32 = 1;
 
     pub fn new(session_id: &SessionId, retained_from: EventSeq) -> Self {
         Self {
@@ -194,8 +202,9 @@ impl ExecutionLogManifest {
             retained_from: retained_from.0,
             created_at_unix_ms: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis())
+                .map(|d| d.as_millis() as u64)
                 .unwrap_or(0),
+            tail_state: Some(crate::tail::TailState::Open),
         }
     }
 }
@@ -312,6 +321,8 @@ pub struct SegmentedExecutionLog {
     /// Logical retention boundary (authoritative). `EventSeq::ZERO` means
     /// nothing has been retired.
     retained_from: Arc<Mutex<EventSeq>>,
+    /// What we know about the end of the execution (REC-C1.5.3).
+    tail_state: Arc<Mutex<crate::tail::TailState>>,
 }
 
 impl SegmentedExecutionLog {
@@ -329,9 +340,16 @@ impl SegmentedExecutionLog {
             metrics: CompactionMetricsInner::default(),
             loaded_projection: None,
         };
+        // Assigned exactly once on every path that returns a boundary.
+        let persisted_tail: Option<crate::tail::TailState>;
+        // Did THIS open create the manifest? A brand-new log is `Open` because
+        // this run is open, not because a previous run failed to seal.
+        let mut created_now = false;
         let retained_from = match read_manifest(&config.segment_dir)? {
             Some(m) => {
-                if m.schema_version != ExecutionLogManifest::SCHEMA_VERSION {
+                if m.schema_version != ExecutionLogManifest::SCHEMA_VERSION
+                    && m.schema_version != ExecutionLogManifest::LEGACY_SCHEMA_VERSION
+                {
                     return Err(LogError::Backend(format!(
                         "unsupported execution-log manifest schema {}",
                         m.schema_version
@@ -345,6 +363,15 @@ impl SegmentedExecutionLog {
                         manifest: m.session_id,
                     });
                 }
+                persisted_tail = if m.schema_version == ExecutionLogManifest::LEGACY_SCHEMA_VERSION
+                {
+                    // Legacy metadata: no proof either way. Never guessed.
+                    Some(crate::tail::TailState::Unknown {
+                        reason: "legacy-v1: manifest carried no tail state".to_string(),
+                    })
+                } else {
+                    m.tail_state.clone()
+                };
                 EventSeq::new(m.retained_from)
             }
             None => {
@@ -355,13 +382,31 @@ impl SegmentedExecutionLog {
                     None => {
                         let m = ExecutionLogManifest::new(&session_id, EventSeq::ZERO);
                         write_manifest_atomic(&config.segment_dir, &m)?;
+                        persisted_tail = m.tail_state.clone();
+                        created_now = true;
                         EventSeq::ZERO
                     }
                     // A legacy log whose history starts at seq#0 can be migrated
                     // conservatively: nothing has been retired.
                     Some(seq) if seq == EventSeq::ZERO => {
-                        let m = ExecutionLogManifest::new(&session_id, EventSeq::ZERO);
+                        // A legacy log whose history starts at seq#0: we can
+                        // migrate the boundary safely, but there is no proof of
+                        // how it ended, so the tail stays Unknown.
+                        let m = ExecutionLogManifest {
+                            schema_version: ExecutionLogManifest::SCHEMA_VERSION,
+                            session_id: session_id.as_str().to_string(),
+                            retained_from: 0,
+                            created_at_unix_ms: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_millis() as u64)
+                                .unwrap_or(0),
+                            tail_state: Some(crate::tail::TailState::unknown(
+                                "legacy-v1: manifest carried no tail state",
+                            )),
+                        };
                         write_manifest_atomic(&config.segment_dir, &m)?;
+                        persisted_tail = m.tail_state.clone();
+                        created_now = true;
                         EventSeq::ZERO
                     }
                     // History that does not start at 0 could mean "retained" or
@@ -381,16 +426,144 @@ impl SegmentedExecutionLog {
             session_id,
             config,
             retained_from: Arc::new(Mutex::new(retained_from)),
+            tail_state: Arc::new(Mutex::new(crate::tail::TailState::Open)),
         };
         this.assert_layout_matches_retention()?;
         if this.config.replay_on_open {
             this.replay_into_inner()?;
             this.replay_cursors_into_inner()?;
         }
+
+        // REC-C1.5.3: conclude the tail state from the evidence available, then
+        // verify a seal against what replay actually rebuilt.
+        let reconstructed_tail = this.tail_seq();
+        let live_temp = this.live_segment_temp_exists()?;
+        let recovery = if created_now {
+            // Nothing was persisted before this open, so nothing can be accused
+            // of an abnormal end. Only a live temp (an interrupted write from
+            // another process touching this session) can still say otherwise.
+            let state = persisted_tail
+                .clone()
+                .unwrap_or(crate::tail::TailState::Open);
+            crate::tail::recover_tail_state(Some(&state), live_temp, reconstructed_tail)
+                .without_previous_run_blame()
+        } else {
+            crate::tail::recover_tail_state(persisted_tail.as_ref(), live_temp, reconstructed_tail)
+        };
+        if let crate::tail::TailState::Sealed { tail_seq, .. } = &recovery.state {
+            let expected = tail_seq.map(EventSeq::new);
+            // A sealed tail is the only witness of a missing LAST segment:
+            // nothing follows it to reveal the hole.
+            if expected != reconstructed_tail {
+                return Err(LogError::TailIntegrityMismatch {
+                    session_id: this.session_id.as_str().to_string(),
+                    expected: expected.map(|s| s.0),
+                    actual: reconstructed_tail.map(|s| s.0),
+                });
+            }
+        }
+        if recovery.recovered {
+            // Persist the recovered verdict so later reopens see the same thing.
+            this.update_manifest(|m| m.tail_state = Some(recovery.state.clone()))?;
+        }
+        *this.tail_state.lock().unwrap_or_else(|e| e.into_inner()) = recovery.state;
         if this.config.auto_load_call_graph_checkpoint {
             this.auto_load_projection()?;
         }
         Ok(this)
+    }
+
+    /// Tail state as concluded at open time (REC-C1.5.3).
+    pub fn tail_state(&self) -> crate::tail::TailState {
+        self.tail_state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    /// Read the on-disk manifest, apply `f` to its `retained_from`/`tail_state`,
+    /// and write it back atomically.
+    ///
+    /// REC-C1.5.3: manifest updates must be read-modify-write. Constructing a
+    /// fresh manifest regenerated `created_at` and would destroy `tail_state`, so
+    /// `Sealed + compaction` could silently stop being `Sealed`.
+    fn update_manifest<F>(&self, f: F) -> Result<(), LogError>
+    where
+        F: FnOnce(&mut ExecutionLogManifest),
+    {
+        let mut manifest = read_manifest(&self.config.segment_dir)?
+            .unwrap_or_else(|| ExecutionLogManifest::new(&self.session_id, self.retained_from()));
+        f(&mut manifest);
+        write_manifest_atomic(&self.config.segment_dir, &manifest)
+    }
+
+    /// Does a live segment temp exist? `write_segment` stages as
+    /// `<session>-<start_seq>.tmp` before renaming to `.seg`, so a surviving temp
+    /// in the live region is evidence of an interrupted write.
+    ///
+    /// Temps below `retained_from` are retired garbage and say nothing about the
+    /// tail. `execution-log.manifest.json.tmp` is a different thing entirely (an
+    /// incomplete metadata update, not an interrupted execution tail).
+    fn live_segment_temp_exists(&self) -> Result<bool, LogError> {
+        let safe = sanitize_session(&self.session_id);
+        let prefix = format!("{safe}-");
+        let retained = self.retained_from();
+        let entries = match std::fs::read_dir(&self.config.segment_dir) {
+            Ok(e) => e,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(e) => return Err(LogError::Backend(format!("read_dir: {e}"))),
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.ends_with(".tmp") || !name.starts_with(&prefix) {
+                continue;
+            }
+            if let Some(rest) = name
+                .strip_prefix(&prefix)
+                .and_then(|r| r.strip_suffix(".tmp"))
+            {
+                if let Ok(seq) = rest.parse::<u64>() {
+                    if crate::tail::temp_is_live_evidence(EventSeq::new(seq), retained) {
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    /// Seal the run durably (REC-C1.5.3).
+    ///
+    /// Order matters: flush everything, refuse if a live temp remains, fsync the
+    /// segment directory (so the last rename is durable), capture the durable
+    /// tail, then persist `Sealed`. Writing `Sealed` before the directory fsync
+    /// could claim `tail=999` and lose that very directory entry in a crash.
+    ///
+    /// After this, `append`/`record_gap` are refused: a seal that still accepts
+    /// writes guarantees nothing.
+    pub fn seal(&self) -> Result<crate::tail::SealedTail, LogError> {
+        // 1. Flush everything.
+        self.flush()?;
+        // 2. No live temp may remain: the flush must be complete.
+        if self.live_segment_temp_exists()? {
+            return Err(LogError::Backend(format!(
+                "{:?}",
+                crate::tail::SealError::LiveSegmentTemp {
+                    path: self.config.segment_dir.display().to_string()
+                }
+            )));
+        }
+        // 3. Make the last rename durable.
+        if let Ok(d) = std::fs::File::open(&self.config.segment_dir) {
+            let _ = d.sync_all();
+        }
+        // 4. Capture the durable tail.
+        let tail = self.tail_seq();
+        // 5. Persist the seal, preserving everything else in the manifest.
+        let sealed = crate::tail::TailState::sealed(tail);
+        self.update_manifest(|m| m.tail_state = Some(sealed.clone()))?;
+        *self.tail_state.lock().unwrap_or_else(|e| e.into_inner()) = sealed;
+        Ok(crate::tail::SealedTail { tail_seq: tail })
     }
 
     /// The authoritative logical retention boundary (earliest queryable seq).
@@ -594,6 +767,18 @@ impl SegmentedExecutionLog {
     /// record a gap if `memory_budget_bytes` is configured and the
     /// projected bytes exceed it.
     pub fn append(&self, record: NewExecutionRecord) -> Result<EventSeq, LogError> {
+        self.refuse_if_sealed()?;
+        self.append_inner(record)
+    }
+
+    fn refuse_if_sealed(&self) -> Result<(), LogError> {
+        if self.tail_state().is_sealed() {
+            return Err(LogError::LogSealed(self.session_id.as_str().to_string()));
+        }
+        Ok(())
+    }
+
+    fn append_inner(&self, record: NewExecutionRecord) -> Result<EventSeq, LogError> {
         let mut inner = self.inner.lock().expect("poisoned");
 
         // Case 5: overflow → gap.
@@ -637,6 +822,11 @@ impl SegmentedExecutionLog {
 
     /// Record an explicit gap.
     pub fn record_gap(&self, gap: Gap) -> Result<(), LogError> {
+        self.refuse_if_sealed()?;
+        self.record_gap_inner(gap)
+    }
+
+    fn record_gap_inner(&self, gap: Gap) -> Result<(), LogError> {
         let mut inner = self.inner.lock().expect("poisoned");
         inner
             .backend
@@ -860,9 +1050,9 @@ impl SegmentedExecutionLog {
             return Ok(outcome);
         }
 
-        // 2. Commit the watermark BEFORE any deletion.
-        let manifest = ExecutionLogManifest::new(&self.session_id, new_boundary);
-        write_manifest_atomic(&self.config.segment_dir, &manifest)?;
+        // 2. Commit the watermark BEFORE any deletion, preserving everything else
+        // (created_at, tail_state): retention must not re-seal or un-seal a run.
+        self.update_manifest(|m| m.retained_from = new_boundary.0)?;
         *self.retained_from.lock().unwrap_or_else(|e| e.into_inner()) = new_boundary;
         outcome.retained_from = new_boundary;
 

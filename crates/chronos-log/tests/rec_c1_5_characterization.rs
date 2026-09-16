@@ -154,7 +154,9 @@ fn ret_2_3_watermark_is_exact_and_aligned_with_whole_segments() {
         .expect("manifest present");
     assert_eq!(manifest.retained_from, outcome.retained_from.0);
     assert_eq!(manifest.session_id, session.as_str());
-    assert_eq!(manifest.schema_version, 1);
+    // v2 carries tail state (REC-C1.5.3); v1 manifests stay readable.
+    assert_eq!(manifest.schema_version, 2);
+    assert!(manifest.tail_state.is_some(), "v2 records the tail state");
 
     // A second pass does not move the boundary backwards, and a no-op pass
     // (nothing wholly retired) leaves it alone.
@@ -173,7 +175,14 @@ fn ret_4_failed_manifest_write_reclaims_nothing() {
     let log = SegmentedExecutionLog::open(session.clone(), config(&dir, 1)).expect("open");
     append_n(&log, &session, 20);
     log.flush().expect("flush");
-    let before_files = std::fs::read_dir(&dir).unwrap().count();
+    let seg_count = |d: &std::path::Path| {
+        std::fs::read_dir(d)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".seg"))
+            .count()
+    };
+    let before_segs = seg_count(&dir);
 
     // Make the manifest path unusable so the atomic write cannot succeed.
     let mpath = dir.join(chronos_log::segmented::MANIFEST_FILE_NAME);
@@ -184,9 +193,9 @@ fn ret_4_failed_manifest_write_reclaims_nothing() {
     println!("RET-4 manifest failure: {err}");
     assert_eq!(log.retained_from(), chronos_log::EventSeq::ZERO);
     assert_eq!(
-        std::fs::read_dir(&dir).unwrap().count(),
-        before_files + 1,
-        "no segment was reclaimed (the extra entry is the blocking directory)"
+        seg_count(&dir),
+        before_segs,
+        "no segment was reclaimed when the watermark could not be persisted"
     );
 
     let _ = std::fs::remove_dir_all(&dir);
