@@ -3,7 +3,7 @@
   "cycle_record": "p-3416cfb8288f8964/rec-c1-5-closure",
   "path": "a-lite",
   "status": "in_progress",
-  "head_sha": "ee376e10",
+  "head_sha": "6644bdbb",
   "base_sha": "17367f2d",
   "notes": [
     "Cycle opened via sddk CLI; path A-lite; phase transitions recorded in the ledger up to phase.design.complete.a-lite.",
@@ -13,6 +13,7 @@
     "Step 3 (canonical ExecutionLog root resolver) APPLIED in commit 2c4da9ba on feat/rec-c1.5-closure. cargo check + cargo clippy -D warnings clean; cargo test -p chronos-log --lib location 2/2 green; cargo fmt --check clean. probe::execution_log_dir migrated to the resolver; tests seam under cfg(test).",
     "Step 3 EDGE CASES added in commit ee376e10: 6/6 unit tests green for the resolver (idempotency, default fallback marker + absolute path, session_id punctuation, deterministic per-id, for_session subdir-of-root). Removed a self-panic test that would have poisoned the suite via the OnceLock; the panic contract is enforced by OnceLock::set semantics and verified by code review.",
     "Step 4 MCP startup wiring APPLIED: added ChronosServerInitError with typed StoreOpen and ExecutionLogBootstrap variants; ChronosServer::try_new now bootstraps the canonical ExecutionLog root before returning; new() preserves panic wrapper; with_toolset remains test-only and does not bootstrap. cargo fmt/check and cargo check -p chronos-mcp pass; MCP lib tests 99/99 pass.",
+    "Step 5 durable delete wiring APPLIED in commit 6644bdbb: SessionsContext carries registry/root, delete_session performs store delete followed by pure durable log deletion, DeleteResult reports paths_removed, and all services/MCP integration test targets compile with --no-run.",
     "Stash cleared (10333 files of .cargo-target/ build artifacts + 3 pre-existing m9-70/74/75 archive-manifest drift; all noise; main was clean).",
     "No user response received after commit 2c4da9ba; session paused at the apply phase boundary to allow review of step 3 before committing to the larger step-4..11 work.",
     "Remaining for cycle closure: steps 4..11 (startup wiring + delete_session durable + 3 real-process UAT + readiness invariant test + full regression + ledger closure). Estimated 6-8 hours of in-line work; recommended to resume in a fresh session after reviewing 2c4da9ba."
