@@ -35,6 +35,7 @@ mapfile -t DEFERRED_SKIPS < .sddk-state/test-buckets/cargo-skip.txt
 TARPAULIN_TEST_ARGS=()
 for skip in "${DEFERRED_SKIPS[@]}"; do TARPAULIN_TEST_ARGS+=(--skip "$skip"); done
 cargo tarpaulin \
+    --engine llvm \
     --workspace \
     --out Html \
     --out Json \
