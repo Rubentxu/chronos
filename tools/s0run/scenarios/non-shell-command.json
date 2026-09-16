@@ -1,0 +1,19 @@
+{
+  "schema": "sddk.sandbox.scenario/v1",
+  "scenario_id": "non-shell-command",
+  "description": "Regression scenario for the S0.1a silent-fallback bug: a non-shell command must run INSIDE bwrap, not on the host.",
+  "steps": [
+    {
+      "id": "direct-binary",
+      "run": ["/bin/echo", "direct-hello"],
+      "expect_stdout_contains": ["direct-hello"],
+      "expect_exit": 0
+    },
+    {
+      "id": "pid-namespace-visible",
+      "run": ["/bin/sh", "-c", "ps -e -o pid= | wc -l"],
+      "expect_exit": 0
+    }
+  ],
+  "cleanup_required": []
+}
