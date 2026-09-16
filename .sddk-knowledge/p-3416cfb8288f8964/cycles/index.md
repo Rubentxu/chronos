@@ -31,6 +31,8 @@ Append-only index of all completed cycles in this vault.
 | rec-c0 | rec-c0-2-b-webhook-adapter | A-min | — | `3619c123196d2f125629a0b141bb92b613738b0c` | CLOSED |
 | rec-c0 | rec-c0-2-c-domain-cleanup | A-min | — | `7e3702d7ae171c510d1611439b354c7a35edb2e0` | CLOSED |
 | rec-c0 | rec-c0-2-d-uat-verification | A-min | — | `c580d8a956153fcb56ded827a7342d70b87917c3` | CLOSED |
+| rec-c0 | rec-c0-5-b-probe-inject-capability | A-min | — | `98f9dba4f35ee3e0edf61c2132bd9d84edd25fdb` | CLOSED |
+| rec-c0 | rec-c0-5-c-fixture-discovery | A-min | — | `02c2a5528687d8a6f8045665f61b9c8a03c499fa` | CLOSED |
 
 See `changes/archive/` for full archive manifests of closed cycles.
 
@@ -40,7 +42,7 @@ See `changes/archive/` for full archive manifests of closed cycles.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-15T14:30Z |
+| Last updated | 2026-09-16T07:00Z |
 | Total cycles | 98 |
 | m10 cycles | 13 (rows above) |
-| Last archive | m10-vault-index-reconcile |
+| Last archive | rec-c0-5-c-fixture-discovery |

@@ -74,12 +74,12 @@ Two commits:
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-70-mcp-store-isolation/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
 | source (session store) | `crates/chronos-store/src/storage.rs` | `6c42c78f4ea8e5b73bb3d7ffd5a228396a12a1e6052c8fc6b8354c816469a113` |
-| source (mcp server) | `crates/chronos-mcp/src/server.rs` | `11638154b89b1242dd535ac07e1a0a0bbd137648130ac0e66f16381b71debc35` |
+| source (mcp server) | `crates/chronos-mcp/src/server.rs` | `327484cb096a77d0c98cd4c8c62dfe94fc273a129a0cfc9599e3c60ccb709bfb` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-70-mcp-store-isolation/apply-checkpoint.json` | `619c7367dc623d47ff703fade38c0d042e02b776c8fb0c46f378d4bf3226ab0d` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-70-mcp-store-isolation/verify-report.md` | `ded260435052b8cb7a3737a0462fa0e9498a97f0990d66324a428e7ca1a57403` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-70-mcp-store-isolation/verify-findings.json` | `8ea37a0a336953dd7cec411e85b13f60d4cb06b6ce10ca7b77abf3ea0f2b9ef4` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-70-mcp-store-isolation/release-report.md` | `90ce13f216e0304ed976e58fa1b033bbc54822b0f47835bd7d1e0306fba5e79a` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-70-mcp-store-isolation/release-receipt.md` | `aad24fa2ab687befb3a2acb52018b395de6935b259f4bdb392c821089a2799a4` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-70-mcp-store-isolation/merge-receipt.md` | `3df919a052069e0829ac84668c6ac95e5d3219fe83186ea02149820b2c0a494b` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `f0a5dde1a7495991172e7f2f9cfa0b1157cd07999dae8a385bd9ee58f6a3443b` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `dbaad93a9c7de67dfa0030ab0400ca9c61fc3ed6bb86100444f5d13f47a07aeb` |
 | vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `03221130e4cfca65f7b145f2907767c3c01a4e27a966af20dfec38249774de8d` |

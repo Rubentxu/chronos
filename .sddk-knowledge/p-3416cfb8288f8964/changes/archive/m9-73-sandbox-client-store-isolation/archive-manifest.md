@@ -91,14 +91,14 @@ Two commits:
 | Kind | Path | SHA-256 |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-73-sandbox-client-store-isolation/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
-| source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `054ad67e3b4fd871de0725b515b53a1d7f4ec06bc059eae1edbc7f222315fb97` |
+| source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `e35f6f6a1202e147e8066a437d09f751ec4c57266231eb2084940971d05dc54f` |
 | source (sandbox process spawn) | `chronos-sandbox/src/client/process.rs` | `8306aa18d6b688e30c7531c3ee00365e936191a0e20df9ba2c0317b4975f236c` |
 | test (store isolation) | `chronos-sandbox/tests/client_store_isolation.rs` | `a48c78a31a5a1517418e560a2982b2ec39ea435f78b627cda79d38133ce56495` |
 | test (session edge cases) | `chronos-sandbox/tests/session_edge_cases.rs` | `79d913f406259d2ffaa2c2537aab2a9c0c8a4e7c90628e7c737b0043e374bae0` |
 | test (counterexample tools) | `chronos-sandbox/tests/counterexample_tools.rs` | `debf760f268a40297bbb85923ad0ebb7d54d2342dbf1596395d37231a1f6a4b9` |
 | docs (agents manual) | `AGENTS.md` | `83d09aa421c0c0c06a8dc28d4a5ba27dbb66772f7a1310103f3c133969fe8924` |
 | script (cc smoke test) | `scripts/smoke_test_ccs.sh` | `86def49d7e23b4e521687ddcb53a384aac18ec3f91f0e2845396f90d7ac3e7d3` |
-| vault maintenance (drift sweep) | `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md` | `0c57c1dacf0f30bd9ac4adf201dcdf9d60ee43ae858dd50276189d140eadb302` |
+| vault maintenance (drift sweep) | `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md` | `0b5e5dcee918ea5a7d8aa6c1838b732c593f9c8db295aa26d37715f761f0159e` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/apply-checkpoint.json` | `35408c5d6ab2a0a9250228401b91f4f0b484cd7874ccb3f8b538bac2b5587931` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/verify-report.md` | `2bf8eaaf02d38409f4a7259e506c7e3d421f67fcc3383f82e5f85a9113009f5f` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/verify-findings.json` | `2bd75fa34fbd5eada906ea91c664d7b8719ad3fa9de2d973fadfc4609c7e4c9b` |
@@ -106,5 +106,5 @@ Two commits:
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/release-receipt.md` | `5872b2538d4b743dfa1c3b5c20894c340172d274b8a30fb657b463c5e311e3a1` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/merge-receipt.md` | `9f2ee96b248a5800c1cb96ed16a13dc2e44908d26d2dcf83b07c07644f382647` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-73-sandbox-client-store-isolation/change-entry.md` | `0669b9d2740f447337a475e8cfd9c16bb041ad608ffc732c0e9a53e99fa2e31e` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `f0a5dde1a7495991172e7f2f9cfa0b1157cd07999dae8a385bd9ee58f6a3443b` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `dbaad93a9c7de67dfa0030ab0400ca9c61fc3ed6bb86100444f5d13f47a07aeb` |
 | vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `03221130e4cfca65f7b145f2907767c3c01a4e27a966af20dfec38249774de8d` |
