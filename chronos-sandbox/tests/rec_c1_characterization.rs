@@ -45,16 +45,34 @@ async fn setup_probe() -> (McpTestClient, String, usize) {
 async fn contract_offset_advances_the_read_position() {
     let (mut client, session_id, total) = setup_probe().await;
     let page1 = client
-        .query_events(&session_id, QueryFilter { limit: 10, offset: 0, ..Default::default() })
+        .query_events(
+            &session_id,
+            QueryFilter {
+                limit: 10,
+                offset: 0,
+                ..Default::default()
+            },
+        )
         .await
         .expect("page1");
     let page2 = client
-        .query_events(&session_id, QueryFilter { limit: 10, offset: 10, ..Default::default() })
+        .query_events(
+            &session_id,
+            QueryFilter {
+                limit: 10,
+                offset: 10,
+                ..Default::default()
+            },
+        )
         .await
         .expect("page2");
     let p1: Vec<u64> = page1.iter().map(|e| e.event_id).collect();
     let p2: Vec<u64> = page2.iter().map(|e| e.event_id).collect();
-    println!("CONTRACT-1 total={total} page1={} page2={}", p1.len(), p2.len());
+    println!(
+        "CONTRACT-1 total={total} page1={} page2={}",
+        p1.len(),
+        p2.len()
+    );
     let overlap: Vec<&u64> = p1.iter().filter(|id| p2.contains(id)).collect();
     assert!(overlap.is_empty(), "pages must not overlap: {overlap:?}");
     if !p1.is_empty() && !p2.is_empty() {
@@ -68,7 +86,14 @@ async fn contract_offset_advances_the_read_position() {
 async fn contract_offset_beyond_total_returns_empty() {
     let (mut client, session_id, total) = setup_probe().await;
     let far = client
-        .query_events(&session_id, QueryFilter { limit: 10, offset: 1_000_000, ..Default::default() })
+        .query_events(
+            &session_id,
+            QueryFilter {
+                limit: 10,
+                offset: 1_000_000,
+                ..Default::default()
+            },
+        )
         .await
         .expect("far offset query");
     println!("CONTRACT-2 total={total} far_offset_returned={}", far.len());
@@ -82,18 +107,40 @@ async fn contract_offset_beyond_total_returns_empty() {
 async fn contract_limit_pages_partition_without_duplicates() {
     let (mut client, session_id, _total) = setup_probe().await;
     let page1 = client
-        .query_events(&session_id, QueryFilter { limit: 7, offset: 0, ..Default::default() })
+        .query_events(
+            &session_id,
+            QueryFilter {
+                limit: 7,
+                offset: 0,
+                ..Default::default()
+            },
+        )
         .await
         .expect("p1");
     let page2 = client
-        .query_events(&session_id, QueryFilter { limit: 7, offset: 7, ..Default::default() })
+        .query_events(
+            &session_id,
+            QueryFilter {
+                limit: 7,
+                offset: 7,
+                ..Default::default()
+            },
+        )
         .await
         .expect("p2");
     let p1: Vec<u64> = page1.iter().map(|e| e.event_id).collect();
     let p2: Vec<u64> = page2.iter().map(|e| e.event_id).collect();
     let dup: Vec<&u64> = p1.iter().filter(|id| p2.contains(id)).collect();
-    println!("CONTRACT-3 p1={} p2={} boundary_duplicates={}", p1.len(), p2.len(), dup.len());
-    assert!(dup.is_empty(), "consecutive pages must not duplicate: {dup:?}");
+    println!(
+        "CONTRACT-3 p1={} p2={} boundary_duplicates={}",
+        p1.len(),
+        p2.len(),
+        dup.len()
+    );
+    assert!(
+        dup.is_empty(),
+        "consecutive pages must not duplicate: {dup:?}"
+    );
     client.shutdown().await.ok();
 }
 
@@ -102,7 +149,14 @@ async fn contract_limit_pages_partition_without_duplicates() {
 async fn contract_offset_beyond_total_edge_surface_returns_empty() {
     let (mut client, session_id, total) = setup_probe().await;
     let far = client
-        .query_events(&session_id, QueryFilter { limit: 10, offset: 500_000, ..Default::default() })
+        .query_events(
+            &session_id,
+            QueryFilter {
+                limit: 10,
+                offset: 500_000,
+                ..Default::default()
+            },
+        )
         .await
         .expect("far query");
     println!("CONTRACT-4 total={total} returned={}", far.len());
@@ -122,7 +176,11 @@ async fn contract_pagination_terminates_at_the_tail() {
         let page = client
             .query_events(
                 &session_id,
-                QueryFilter { limit: page_size, offset: pages * page_size, ..Default::default() },
+                QueryFilter {
+                    limit: page_size,
+                    offset: pages * page_size,
+                    ..Default::default()
+                },
             )
             .await
             .expect("page");

@@ -172,7 +172,7 @@ impl ChronosEventsReadService {
             session_id,
             result,
             next_cursor,
-            completeness: page.completeness.as_str().to_string(),
+            completeness: page.completeness,
             gap_summary: if gap_summary.is_empty() {
                 None
             } else {
@@ -330,7 +330,12 @@ mod tests {
             } => {
                 assert_eq!(result.result.events.len(), 10);
                 assert_eq!(result.result.events[0].event_id, 0, "seq#0 included");
-                assert_eq!(completeness, "unknown", "never 'complete' before C1.4");
+                assert_eq!(
+                    completeness.status.as_str(),
+                    "complete",
+                    "a bounded examined range with no gap is provably complete"
+                );
+                assert_eq!(completeness.scope, "examined_range");
                 assert_eq!(provenance.source, "execution_log");
                 let cursor = next_cursor.expect("more evidence remains");
                 assert!(

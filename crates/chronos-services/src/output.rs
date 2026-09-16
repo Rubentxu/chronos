@@ -1589,10 +1589,12 @@ pub enum EventsReadOutput {
         /// internal `EventSeq` concept, and exposing it here would leak that the
         /// cursor is a sequence number.
         next_cursor: Option<String>,
-        /// `"unknown"` until REC-C1.4 proves gap/completeness detection. It is
-        /// never `"complete"` on the log-backed path: completeness that nothing
-        /// backs is a Silent Lie.
-        completeness: String,
+        /// Completeness verdict for the examined range, with its scope.
+        ///
+        /// `Complete` requires a continuity proof for the range; the absence of a
+        /// recorded gap is not by itself a proof. `GapDetected` carries the range
+        /// too, so a caller never has to guess what "complete" refers to.
+        completeness: crate::events_log_read::CompletenessReport,
         /// Always `None` in m7-01 (see honest disclosure above).
         gap_summary: Option<Vec<serde_json::Value>>,
         provenance: EventsReadProvenance,

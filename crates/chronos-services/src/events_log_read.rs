@@ -46,22 +46,127 @@ use crate::error::ServiceError;
 use crate::events_cursor::EventsCursorV1;
 use crate::session_log::SessionExecutionLog;
 
-/// How complete the returned evidence is.
+/// How complete the evidence in the examined range is.
 ///
-/// Deliberately minimal in C1.3: `Complete` is NOT available yet, because no
-/// gap/completeness proof exists. A `Complete` that nothing backs would be a
-/// Silent Lie.
+/// ```text
+/// Complete      the backend can demonstrate that no evidence is missing
+///               inside the examined range
+/// GapDetected   one or more explicit gaps intersect the examined range
+/// Partial       loss is known but cannot be delimited to a range
+/// Unknown       neither completeness nor loss can be demonstrated
+/// Unsupported   reserved for a source that cannot evaluate completeness at all
+/// ```
+///
+/// REC-C1.4 produces only `Complete`, `GapDetected` and `Unknown`. `Partial`
+/// and `Unsupported` exist because future sources will need them, and inventing
+/// a producer now just to justify the enum would be the opposite of the point.
+///
+/// ## The central rule
+///
+/// ```text
+/// absence_of_known_gap != proof_of_completeness
+/// ```
+///
+/// A range is `Complete` only when the log can demonstrate continuity for it.
+/// For the ExecutionLog that proof is structural: `append` assigns dense seqs,
+/// so inside the allocated range (`<= tail_seq`) a missing seq can only come
+/// from a recorded gap. Outside the allocated range, or when the log cannot
+/// report its own tail, there is no proof → `Unknown`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Completeness {
-    /// This build cannot prove completeness yet (REC-C1.4 will).
+    Complete,
+    GapDetected,
+    Partial,
     Unknown,
+    Unsupported,
 }
 
 impl Completeness {
     pub fn as_str(self) -> &'static str {
         match self {
+            Completeness::Complete => "complete",
+            Completeness::GapDetected => "gap_detected",
+            Completeness::Partial => "partial",
             Completeness::Unknown => "unknown",
+            Completeness::Unsupported => "unsupported",
         }
+    }
+}
+
+/// A completeness verdict, always scoped to an explicit range.
+///
+/// "Complete" without saying *of what* is ambiguous: a live session keeps
+/// producing events, yet the range just examined can be fully observed. The
+/// scope is therefore part of the answer, and pagination is orthogonal to it —
+/// `Complete` with more evidence after the range is perfectly coherent, which is
+/// what `next_cursor` expresses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompletenessReport {
+    pub status: Completeness,
+    /// Always `"examined_range"` today; named so a future scope cannot be
+    /// confused with this one.
+    pub scope: &'static str,
+    pub from_seq: u64,
+    /// Exclusive upper bound of the examined range.
+    pub to_seq_exclusive: u64,
+}
+
+impl CompletenessReport {
+    pub const SCOPE_EXAMINED_RANGE: &'static str = "examined_range";
+
+    pub fn is_complete(&self) -> bool {
+        self.status == Completeness::Complete
+    }
+
+    /// The scope name this report refers to (serialized as `scope`).
+    pub fn scope_name(&self) -> &'static str {
+        self.scope
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for CompletenessReport {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        struct Raw {
+            status: String,
+            #[serde(default)]
+            scope: String,
+            from_seq: u64,
+            to_seq_exclusive: u64,
+        }
+        let raw = Raw::deserialize(de)?;
+        // An unknown scope must not be silently reinterpreted as this one.
+        if !raw.scope.is_empty() && raw.scope != CompletenessReport::SCOPE_EXAMINED_RANGE {
+            return Err(serde::de::Error::custom(format!(
+                "unsupported completeness scope {:?}",
+                raw.scope
+            )));
+        }
+        let status = match raw.status.as_str() {
+            "complete" => Completeness::Complete,
+            "gap_detected" => Completeness::GapDetected,
+            "partial" => Completeness::Partial,
+            "unsupported" => Completeness::Unsupported,
+            _ => Completeness::Unknown,
+        };
+        Ok(CompletenessReport {
+            status,
+            scope: CompletenessReport::SCOPE_EXAMINED_RANGE,
+            from_seq: raw.from_seq,
+            to_seq_exclusive: raw.to_seq_exclusive,
+        })
+    }
+}
+
+impl serde::Serialize for CompletenessReport {
+    fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut st = ser.serialize_struct("CompletenessReport", 4)?;
+        st.serialize_field("status", self.status.as_str())?;
+        st.serialize_field("scope", self.scope)?;
+        st.serialize_field("from_seq", &self.from_seq)?;
+        st.serialize_field("to_seq_exclusive", &self.to_seq_exclusive)?;
+        st.end()
     }
 }
 
@@ -123,7 +228,8 @@ pub struct LogReadPage {
     pub position_after: EventSeq,
     /// Gaps the read passed over, for C1.4 to interpret.
     pub gaps: Vec<Gap>,
-    pub completeness: Completeness,
+    /// Verdict for the range this read examined, with its scope.
+    pub completeness: CompletenessReport,
 }
 
 /// Scan chunk size. Bounds the work per inner page without changing semantics:
@@ -151,11 +257,18 @@ pub fn read_page(
     }
     let handle = log.handle();
     let session_id = log.session_id().as_str().to_string();
-    read_page_with(&session_id, cursor, limit, filters, |position, chunk| {
-        handle
-            .read_from_seq(position, chunk)
-            .map_err(|e| ServiceError::DrainFailed(format!("{e:?}")))
-    })
+    read_page_with(
+        &session_id,
+        cursor,
+        limit,
+        filters,
+        handle.tail_seq(),
+        |position, chunk| {
+            handle
+                .read_from_seq(position, chunk)
+                .map_err(|e| ServiceError::DrainFailed(format!("{e:?}")))
+        },
+    )
 }
 
 /// The read loop, generic over the batch reader so its contract can be tested
@@ -173,6 +286,7 @@ pub(crate) fn read_page_with<F>(
     cursor: &EventsCursorV1,
     limit: usize,
     filters: &LogReadFilters,
+    tail_seq: Option<EventSeq>,
     mut read: F,
 ) -> Result<LogReadPage, ServiceError>
 where
@@ -240,13 +354,54 @@ where
         .clone()
         .advanced_to(position)
         .map_err(|_| ServiceError::InvalidCursorPayload)?;
+
+    let from_seq = cursor.next_seq();
+    let completeness = completeness_for(session_id, from_seq, position, &gaps, tail_seq);
+
     Ok(LogReadPage {
         records: matched,
         next,
         position_after: position,
         gaps,
-        completeness: Completeness::Unknown,
+        completeness,
     })
+}
+
+/// Decide the completeness verdict for `[from_seq, to_seq_exclusive)`.
+///
+/// Only gaps that INTERSECT the examined range contaminate it: a gap before the
+/// cursor or one that starts after the position we stopped at says nothing about
+/// the evidence actually used.
+pub(crate) fn completeness_for(
+    _session_id: &str,
+    from_seq: EventSeq,
+    to_seq_exclusive: EventSeq,
+    gaps: &[Gap],
+    tail: Option<EventSeq>,
+) -> CompletenessReport {
+    let report = |status: Completeness| CompletenessReport {
+        status,
+        scope: CompletenessReport::SCOPE_EXAMINED_RANGE,
+        from_seq: from_seq.0,
+        to_seq_exclusive: to_seq_exclusive.0,
+    };
+
+    // An empty examined range used no evidence, so no gap can contaminate it.
+    let range_is_empty = to_seq_exclusive.0 <= from_seq.0;
+    let intersects = |g: &Gap| {
+        !range_is_empty && g.first_missing.0 < to_seq_exclusive.0 && g.last_missing.0 >= from_seq.0
+    };
+    if gaps.iter().any(intersects) {
+        return report(Completeness::GapDetected);
+    }
+
+    // Continuity proof: inside the allocated range the seq space is dense by
+    // construction, so the absence of a recorded gap IS the proof. Without a
+    // known tail there is nothing to prove against.
+    match tail {
+        Some(tail) if to_seq_exclusive.0 <= tail.0 + 1 => report(Completeness::Complete),
+        _ => report(Completeness::Unknown),
+    }
 }
 
 /// The producer-declared payload tag, for diagnostics on decode failure.
@@ -334,7 +489,7 @@ mod rec_c1_3_tests {
     use chronos_domain::{EventType, SourceLocation};
     use chronos_log::{ExecutionPayload, NewExecutionRecord, SessionId};
 
-    fn log(tag: &str, events: &[(EventType, u64, u32)]) -> SessionExecutionLog {
+    pub(super) fn log(tag: &str, events: &[(EventType, u64, u32)]) -> SessionExecutionLog {
         let dir = std::env::temp_dir().join(format!(
             "rec-c1-3-{tag}-{}-{}",
             std::process::id(),
@@ -379,7 +534,7 @@ mod rec_c1_3_tests {
     }
 
     /// Append one decodable event at an explicit id/seq position.
-    fn push(
+    pub(super) fn push(
         handle: &std::sync::Arc<chronos_log::SegmentedExecutionLog>,
         i: u64,
         event_type: EventType,
@@ -410,7 +565,38 @@ mod rec_c1_3_tests {
             .expect("append");
     }
 
-    fn entries(n: usize, event_type: EventType) -> Vec<(EventType, u64, u32)> {
+    pub(super) fn tmpdir(tag: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "rec-c1-4-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    /// Log with records 0, then a gap 1..=3, then record 4.
+    pub(super) fn gappy_owned() -> (SessionExecutionLog, std::path::PathBuf) {
+        use chronos_log::{Gap, GapReason};
+        let dir = tmpdir("gappy");
+        let owned = SessionExecutionLog::open(&dir, SessionId::new("gappy")).expect("log");
+        let handle = owned.handle();
+        push(&handle, 0, EventType::FunctionEntry);
+        handle
+            .record_gap(Gap::new(
+                EventSeq::new(1),
+                EventSeq::new(3),
+                GapReason::AdapterBufferOverflow,
+                "test",
+            ))
+            .expect("gap");
+        push(&handle, 4, EventType::FunctionEntry);
+        handle.flush().ok();
+        (owned, dir)
+    }
+
+    pub(super) fn entries(n: usize, event_type: EventType) -> Vec<(EventType, u64, u32)> {
         (0..n).map(|i| (event_type, i as u64 * 10, 1u32)).collect()
     }
 
@@ -422,7 +608,9 @@ mod rec_c1_3_tests {
         assert_eq!(page.records.len(), 3, "seq#0 must be delivered");
         assert_eq!(page.records[0].event_id, 0);
         assert_eq!(page.next.next_seq(), EventSeq::new(3));
-        assert_eq!(page.completeness, Completeness::Unknown);
+        // The whole log was examined and the log knows its tail (3 records, no
+        // gaps), so this range is provably complete.
+        assert_eq!(page.completeness.status, Completeness::Complete);
     }
 
     #[test]
@@ -689,8 +877,9 @@ mod rec_c1_3_tests {
 /// `find_by_id`).
 #[cfg(test)]
 mod rec_c1_3_stall_tests {
+    use super::rec_c1_3_tests::{entries, gappy_owned, log, push, tmpdir};
     use super::*;
-    use chronos_log::LogPage;
+    use chronos_log::{LogPage, SessionId};
 
     fn faulty_reader() -> impl FnMut(EventSeq, usize) -> Result<LogPage, ServiceError> + Copy {
         |position, _chunk| {
@@ -704,6 +893,199 @@ mod rec_c1_3_stall_tests {
         }
     }
 
+    // ---- C1.4 completeness DoD -------------------------------------------
+
+    #[test]
+    fn c14_continuous_range_is_complete() {
+        let owned = log("c14-cont", &entries(10, EventType::FunctionEntry));
+        let page = read_page(&owned, &owned.cursor_start(), 5, &LogReadFilters::default()).unwrap();
+        assert_eq!(page.completeness.status, Completeness::Complete);
+        assert_eq!(page.completeness.scope, "examined_range");
+        assert_eq!(page.completeness.from_seq, 0);
+        assert_eq!(page.completeness.to_seq_exclusive, 5);
+        // Orthogonality: Complete while more evidence exists after the range.
+        assert!(page.next.next_seq() < EventSeq::new(10));
+    }
+
+    #[test]
+    fn c14_gap_inside_the_range_is_gap_detected_with_an_exact_range() {
+        let (owned, _) = gappy_owned();
+        let page = read_page(
+            &owned,
+            &owned.cursor_start(),
+            10,
+            &LogReadFilters::default(),
+        )
+        .unwrap();
+        assert_eq!(page.completeness.status, Completeness::GapDetected);
+        assert_eq!(page.completeness.from_seq, 0);
+        assert_eq!(page.completeness.to_seq_exclusive, page.position_after.0);
+        assert_eq!(page.gaps.len(), 1);
+    }
+
+    #[test]
+    fn c14_gap_before_the_cursor_does_not_contaminate_the_page() {
+        let (owned, _) = gappy_owned();
+        // The gap is 1..=3; start well past it.
+        let cursor = owned.cursor_start().advanced_to(EventSeq::new(4)).unwrap();
+        let page = read_page(&owned, &cursor, 10, &LogReadFilters::default()).unwrap();
+        assert_eq!(
+            page.completeness.status,
+            Completeness::Complete,
+            "a gap already behind the cursor says nothing about this range"
+        );
+        assert!(page.gaps.is_empty());
+    }
+
+    #[test]
+    fn c14_gap_after_the_stop_point_does_not_contaminate_yet() {
+        let (owned, _) = gappy_owned();
+        // Stop before reaching the gap (which lives at 1..=3): limit 1.
+        let page = read_page(&owned, &owned.cursor_start(), 1, &LogReadFilters::default()).unwrap();
+        assert_eq!(page.position_after, EventSeq::new(1));
+        assert_eq!(
+            page.completeness.status,
+            Completeness::Complete,
+            "the gap is ahead of the examined range"
+        );
+    }
+
+    #[test]
+    fn c14_filters_that_span_a_gap_are_gap_detected() {
+        // Matches at seq 0 and 5, with a gap 1..=3 between them.
+        let (owned, _) = gappy_owned();
+        let filters = LogReadFilters::default();
+        let page = read_page(&owned, &owned.cursor_start(), 2, &filters).unwrap();
+        assert_eq!(
+            page.records
+                .iter()
+                .map(|e| e.event_id)
+                .collect::<Vec<u64>>(),
+            vec![0, 4],
+            "both requested results exist"
+        );
+        assert_eq!(
+            page.completeness.status,
+            Completeness::GapDetected,
+            "getting `limit` results does NOT mean the evidence used was complete"
+        );
+    }
+
+    #[test]
+    fn c14_two_gaps_are_reported_ordered_and_not_collapsed() {
+        use chronos_log::{Gap, GapReason};
+        let dir = tmpdir("c14-two-gaps");
+        let owned = SessionExecutionLog::open(&dir, SessionId::new("two-gaps")).expect("log");
+        let handle = owned.handle();
+        for i in 0..6u64 {
+            push(&handle, i, EventType::FunctionEntry);
+        }
+        handle
+            .record_gap(Gap::new(
+                EventSeq::new(6),
+                EventSeq::new(7),
+                GapReason::AdapterBufferOverflow,
+                "a",
+            ))
+            .unwrap();
+        for i in 8..12u64 {
+            push(&handle, i, EventType::FunctionEntry);
+        }
+        handle
+            .record_gap(Gap::new(
+                EventSeq::new(12),
+                EventSeq::new(14),
+                GapReason::KernelRingOverflow,
+                "b",
+            ))
+            .unwrap();
+        for i in 15..20u64 {
+            push(&handle, i, EventType::FunctionEntry);
+        }
+        handle.flush().ok();
+
+        let page = read_page(
+            &owned,
+            &owned.cursor_start(),
+            100,
+            &LogReadFilters::default(),
+        )
+        .unwrap();
+        assert_eq!(page.gaps.len(), 2, "both gaps reported: {:?}", page.gaps);
+        assert!(
+            page.gaps[0].first_missing.0 < page.gaps[1].first_missing.0,
+            "gaps ordered by position"
+        );
+        assert_eq!(page.completeness.status, Completeness::GapDetected);
+    }
+
+    #[test]
+    fn c14_no_proof_available_is_unknown_never_complete() {
+        // A log that cannot report its own tail cannot demonstrate continuity.
+        let report = completeness_for("s", EventSeq::new(0), EventSeq::new(5), &[], None);
+        assert_eq!(report.status, Completeness::Unknown);
+    }
+
+    #[test]
+    fn c14_invariant_gaps_in_range_never_yield_complete() {
+        use chronos_log::{Gap, GapReason};
+        // Small exhaustive sweep of gap placements against every examined range.
+        for gap_first in 0..6u64 {
+            for gap_last in gap_first..6u64 {
+                let gaps = vec![Gap::new(
+                    EventSeq::new(gap_first),
+                    EventSeq::new(gap_last),
+                    GapReason::CorruptSegment,
+                    "t",
+                )];
+                for from in 0..8u64 {
+                    for to in from..8u64 {
+                        let r = completeness_for(
+                            "s",
+                            EventSeq::new(from),
+                            EventSeq::new(to),
+                            &gaps,
+                            Some(EventSeq::new(9)),
+                        );
+                        // Empty ranges intersect nothing, so the comparison must
+                        // be driven by the intersection predicate itself.
+                        let intersects = to > from && gap_first < to && gap_last >= from;
+                        if intersects {
+                            assert_ne!(
+                                r.status,
+                                Completeness::Complete,
+                                "gap {gap_first}..={gap_last} intersects [{from},{to})"
+                            );
+                        }
+                        assert_eq!(
+                            r.status == Completeness::GapDetected,
+                            intersects,
+                            "verdict must match intersection for [{from},{to})"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn c14_only_complete_gapdetected_and_unknown_are_produced() {
+        let owned = log("c14-set", &entries(3, EventType::FunctionEntry));
+        let page = read_page(
+            &owned,
+            &owned.cursor_start(),
+            10,
+            &LogReadFilters::default(),
+        )
+        .unwrap();
+        assert!(matches!(
+            page.completeness.status,
+            Completeness::Complete | Completeness::GapDetected | Completeness::Unknown
+        ));
+        assert_ne!(page.completeness.status, Completeness::Partial);
+        assert_ne!(page.completeness.status, Completeness::Unsupported);
+    }
+
     #[test]
     fn t4_read_page_stalls_loudly_and_emits_no_cursor() {
         let cursor = EventsCursorV1::start(chronos_log::SessionId::new("stall"));
@@ -712,6 +1094,7 @@ mod rec_c1_3_stall_tests {
             &cursor,
             10,
             &LogReadFilters::default(),
+            Some(EventSeq::new(0)),
             faulty_reader(),
         )
         .unwrap_err();
@@ -746,6 +1129,7 @@ mod rec_c1_3_stall_tests {
             &cursor,
             10,
             &LogReadFilters::default(),
+            Some(EventSeq::new(0)),
             |position, _| Ok(LogPage::empty_at(position)),
         )
         .unwrap();

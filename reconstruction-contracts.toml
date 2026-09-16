@@ -156,9 +156,14 @@ verify = "cargo test -p chronos-services --lib rec_c1_3; cargo test -p chronos-s
 [[requirement]]
 id = "TRUTH-003"
 title = "Completeness and gaps are evidence-derived"
-status = "gap"
+status = "verified"
 owner_gate = "REC-C1"
-notes = "Public v2 reads can report complete without authoritative gap knowledge."
+evidence = [
+  "crates/chronos-services/src/events_log_read.rs::completeness_for",
+  "crates/chronos-services/src/events_log_read.rs::CompletenessReport",
+]
+notes = "REC-C1.4: completeness is scoped to the examined range and derived from evidence. Complete requires a continuity proof (dense seq space within the allocated tail plus no intersecting recorded gap); intersecting gaps yield GapDetected with the range; no proof yields Unknown. Partial/Unsupported are defined but never produced yet. Pagination stays orthogonal (Complete + next_cursor is coherent)."
+verify = "cargo test -p chronos-services --lib events_log_read::"
 
 [[requirement]]
 id = "LOG-001"
