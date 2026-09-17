@@ -27,7 +27,9 @@ ACTIVE PRODUCT GATE  : REC-C1.8 (C1 Handoff) - the gate that freezes C1
                           REC-C1 stream uses C1.8 as the gate name,
                           not as a work item.)
 ACTIVE PRODUCT GATE  : REC-C1.7 CLOSED on tag rec-c1-7-projection-authority-acceptance
-                       (9ee74f09). QueryEngine is now a reconstructible
+                       (annotated tag object 5f603bff peels to merge
+                        6190390d; merge commit is the cycle's published
+                        SHA). QueryEngine is now a reconstructible
                        projection of SessionExecutionLog via the canonical
                        chronos_services::projection::build_engine (shared
                        decoder with events_log_read); execution_query /
