@@ -1085,6 +1085,58 @@ mod tests {
         );
     }
 
+    /// REC-C2.1.6: the legacy fired queue is gone.
+    ///
+    /// `TripwireManager` now exposes definitions plus the pure
+    /// `matching`/`matching_semantic` queries. There is no `fired_buffer`, no
+    /// `record_fired`, no `drain_fired` — the compiler enforces that, and the
+    /// legacy-evb ratchet asserts `fired_buffer 4 -> 0` / `drain_fired 1 -> 0`.
+    ///
+    /// The observable property this test pins: repeated reads through the same
+    /// explicit cursor are idempotent WITHOUT any hidden manager state. If the
+    /// read depended on a draining buffer, the second read would come back
+    /// empty.
+    #[tokio::test]
+    async fn repeated_log_reads_are_idempotent_without_manager_state() {
+        let rig = armed_rig("observe-idempotent").await;
+        rig.ingest("observe-idempotent", &fn_event("main_work", 1, 10));
+
+        let first = rig
+            .observe(tripwire_input(ObserveVerb::List))
+            .await
+            .unwrap();
+        let ObserveOutput::List(first) = first else {
+            panic!("expected List")
+        };
+        assert_eq!(first.fired_count, 1);
+        let checkpoint = first.next_cursor.clone().expect("cursor");
+
+        // Repeating the SAME read yields the same firing: nothing was consumed.
+        let repeat = rig
+            .observe(tripwire_input(ObserveVerb::List))
+            .await
+            .unwrap();
+        let ObserveOutput::List(repeat) = repeat else {
+            panic!("expected List")
+        };
+        assert_eq!(
+            repeat.fired_count, 1,
+            "no hidden buffer to drain: the same read sees the same evidence"
+        );
+
+        // Continuing from the checkpoint does NOT re-deliver the old firing.
+        let mut input = tripwire_input(ObserveVerb::List);
+        input.cursor = Some(checkpoint);
+        let advanced = rig.observe(input).await.unwrap();
+        let ObserveOutput::List(advanced) = advanced else {
+            panic!("expected List")
+        };
+        assert_eq!(advanced.fired_count, 0, "the cursor already covered it");
+
+        // The manager is definitions-only; reads never mutated it.
+        assert_eq!(rig.manager.active_count(), 1);
+    }
+
     /// FIND-C2.0-02: the wire `fire_count` is derived from the log, so the
     /// mutable `Tripwire.fire_count` (which is never incremented) is
     /// irrelevant. Three firings in the log must report 3 even though the

@@ -316,19 +316,6 @@ pub struct TripwireFiredSummary {
     pub thread_id: u64,
 }
 
-/// Result of listing active tripwires and draining fired events.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TripwireListResult {
-    /// All currently registered tripwires.
-    pub tripwires: Vec<TripwireSummary>,
-    /// Fired notifications drained from the buffer.
-    pub fired_events: Vec<TripwireFiredSummary>,
-    /// Total number of active tripwires.
-    pub total_active: usize,
-    /// Number of fired events returned.
-    pub fired_count: usize,
-}
-
 /// Result of querying active tripwires without draining fired events.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct QueryResult {
@@ -2494,36 +2481,6 @@ mod tests {
         let round = serde_json::from_value::<TripwireFiredSummary>(json).unwrap();
         assert_eq!(round.event_id, 99);
         assert_eq!(round.thread_id, 42);
-    }
-
-    #[test]
-    fn tripwire_list_result_roundtrips() {
-        use super::{TripwireFiredSummary, TripwireListResult, TripwireSummary};
-        let lr = TripwireListResult {
-            tripwires: vec![TripwireSummary {
-                id: "tripwire-1".into(),
-                label: Some("main-watch".into()),
-                condition: "EventType([FunctionEntry])".into(),
-                fire_count: 3,
-            }],
-            fired_events: vec![TripwireFiredSummary {
-                tripwire_id: "tripwire-1".into(),
-                condition_description: "EventType([FunctionEntry])".into(),
-                event_id: 50,
-                timestamp_ns: 500_000_000,
-                thread_id: 1,
-            }],
-            total_active: 1,
-            fired_count: 1,
-        };
-        let json = serde_json::to_value(&lr).unwrap();
-        assert_eq!(json["total_active"], 1u64);
-        assert_eq!(json["fired_count"], 1u64);
-        assert_eq!(json["tripwires"][0]["id"], "tripwire-1");
-        assert_eq!(json["fired_events"][0]["event_id"], 50u64);
-        let round = serde_json::from_value::<TripwireListResult>(json).unwrap();
-        assert_eq!(round.total_active, 1);
-        assert_eq!(round.fired_count, 1);
     }
 
     #[test]

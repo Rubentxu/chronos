@@ -1,7 +1,7 @@
 {
   "schema": "chronos.legacy-evb-inventory.v1",
   "note": "Shrinking inventory of production EventBus / legacy-queue coupling. Regenerate with `scripts/check_legacy_evb.py --write`; the checker fails on new uses, stale waivers, and (under --strict) any CANONICAL destructive read.",
-  "baseline_total": 36,
+  "baseline_total": 31,
   "entries": [
     {
       "key": "crates/chronos-domain/src/bus.rs::EventBus::event_bus_type#1",
@@ -110,54 +110,6 @@
       "owner": "REC-C2.3",
       "replacement": "",
       "removal_gate": "REC-C2.3"
-    },
-    {
-      "key": "crates/chronos-domain/src/tripwire.rs::TripwireManager::fired_buffer#1",
-      "path": "crates/chronos-domain/src/tripwire.rs",
-      "symbol": "TripwireManager",
-      "token": "fired_buffer",
-      "kind": "queue",
-      "line": 209,
-      "class": "CANONICAL",
-      "owner": "REC-C2.1",
-      "replacement": "",
-      "removal_gate": "REC-C2.1"
-    },
-    {
-      "key": "crates/chronos-domain/src/tripwire.rs::new::fired_buffer#1",
-      "path": "crates/chronos-domain/src/tripwire.rs",
-      "symbol": "new",
-      "token": "fired_buffer",
-      "kind": "queue",
-      "line": 246,
-      "class": "CANONICAL",
-      "owner": "REC-C2.1",
-      "replacement": "",
-      "removal_gate": "REC-C2.1"
-    },
-    {
-      "key": "crates/chronos-domain/src/tripwire.rs::record_fired::fired_buffer#1",
-      "path": "crates/chronos-domain/src/tripwire.rs",
-      "symbol": "record_fired",
-      "token": "fired_buffer",
-      "kind": "queue",
-      "line": 360,
-      "class": "CANONICAL",
-      "owner": "REC-C2.1",
-      "replacement": "",
-      "removal_gate": "REC-C2.1"
-    },
-    {
-      "key": "crates/chronos-domain/src/tripwire.rs::drain_fired::fired_buffer#1",
-      "path": "crates/chronos-domain/src/tripwire.rs",
-      "symbol": "drain_fired",
-      "token": "fired_buffer",
-      "kind": "queue",
-      "line": 371,
-      "class": "CANONICAL",
-      "owner": "REC-C2.1",
-      "replacement": "",
-      "removal_gate": "REC-C2.1"
     },
     {
       "key": "crates/chronos-native/src/probe_backend.rs::chronos_domain::event_bus_type#1",
@@ -417,23 +369,11 @@
       "symbol": "session_snapshot",
       "token": "drain_raw_events",
       "kind": "destructive",
-      "line": 608,
+      "line": 607,
       "class": "CANONICAL",
       "owner": "REC-C2.2",
       "replacement": "",
       "removal_gate": "REC-C2.2"
-    },
-    {
-      "key": "crates/chronos-services/src/tripwires.rs::list::drain_fired#1",
-      "path": "crates/chronos-services/src/tripwires.rs",
-      "symbol": "list",
-      "token": "drain_fired",
-      "kind": "destructive",
-      "line": 58,
-      "class": "CANONICAL",
-      "owner": "REC-C2.1",
-      "replacement": "",
-      "removal_gate": "REC-C2.1"
     }
   ]
 }

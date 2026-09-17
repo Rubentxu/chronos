@@ -14,8 +14,7 @@ use chronos_domain::tripwire::{TripwireCondition, TripwireId, TripwireManager};
 
 use crate::error::ServiceError;
 use crate::output::{
-    CreateResult, QueryResult, TripwireDeleteResult, TripwireFiredSummary, TripwireListResult,
-    TripwireSummary,
+    CreateResult, QueryResult, TripwireDeleteResult, TripwireSummary,
 };
 
 /// A zero-sized service struct. All state is accessed via the `manager` reference.
@@ -48,53 +47,6 @@ impl TripwiresService {
         })
     }
 
-    /// List all active tripwires and drain all accumulated fire notifications.
-    ///
-    /// This is a **destructive** read: `TripwireManager::drain_fired()` clears the
-    /// internal fired-buffer, so each fire notification is delivered exactly once.
-    /// Use [`query`](Self::query) if you need a non-destructive snapshot.
-    pub fn list(manager: &Arc<TripwireManager>) -> TripwireListResult {
-        let tripwires = manager.list();
-        let fired = manager.drain_fired();
-
-        let summaries: Vec<TripwireSummary> = tripwires
-            .iter()
-            .map(|tw| TripwireSummary {
-                id: tw.id.to_string(),
-                label: tw.label.clone(),
-                condition: format!("{:?}", tw.condition),
-                fire_count: tw.fire_count,
-            })
-            .collect();
-
-        let fired_events: Vec<TripwireFiredSummary> = fired
-            .iter()
-            .map(|f| TripwireFiredSummary {
-                tripwire_id: f.tripwire_id.to_string(),
-                condition_description: f.condition_description.clone(),
-                event_id: f.event_id,
-                timestamp_ns: f.timestamp_ns,
-                thread_id: f.thread_id,
-            })
-            .collect();
-
-        let total_active = summaries.len();
-        let fired_count = fired_events.len();
-
-        TripwireListResult {
-            tripwires: summaries,
-            fired_events,
-            total_active,
-            fired_count,
-        }
-    }
-
-    /// Delete a tripwire by its ID string (format: `"tripwire-<number>"`).
-    ///
-    /// # Errors
-    /// - `InvalidTripwireIdFormat` if the string does not match `"tripwire-<number>"`.
-    /// - `TripwireNotFound` if `manager.remove()` returns `false` (ID parsed OK but
-    ///   no tripwire with that ID is registered).
     pub fn delete(
         tripwire_id: &str,
         manager: &Arc<TripwireManager>,
@@ -361,7 +313,7 @@ mod tests {
         // other tests already created tripwires on this manager? Actually no:
         // each test creates a *fresh* manager, so the active count starts at 0.
         // The remaining_active must equal (count_before - 1).
-        let before = TripwiresService::list(&manager).total_active;
+        let before = manager.active_count();
 
         let result = TripwiresService::delete(&r2.tripwire_id, &manager).unwrap();
 
@@ -469,106 +421,6 @@ mod tests {
     // list — happy paths
     // -------------------------------------------------------------------------
 
-    #[test]
-    fn list_empty() {
-        reset();
-        let manager = Arc::new(TripwireManager::new());
-
-        let result = TripwiresService::list(&manager);
-
-        assert!(result.tripwires.is_empty());
-        assert!(result.fired_events.is_empty());
-        assert_eq!(result.total_active, 0);
-        assert_eq!(result.fired_count, 0);
-    }
-
-    #[test]
-    fn list_two_tripwires() {
-        reset();
-        let manager = Arc::new(TripwireManager::new());
-
-        let r1 = TripwiresService::create(
-            try_into_condition(vec!["function_entry".into()]).unwrap(),
-            Some("entry-watch".into()),
-            &manager,
-        )
-        .unwrap();
-
-        let r2 = TripwiresService::create(
-            TripwireCondition::FunctionName {
-                pattern: "main".into(),
-            },
-            None,
-            &manager,
-        )
-        .unwrap();
-
-        let result = TripwiresService::list(&manager);
-
-        assert_eq!(result.total_active, 2);
-        assert_eq!(result.fired_count, 0);
-
-        // Verify both created tripwires are present, regardless of their
-        // global-counter-dependent IDs.
-        let ids: Vec<_> = result.tripwires.iter().map(|tw| tw.id.clone()).collect();
-        assert!(ids.contains(&r1.tripwire_id), "list should contain r1");
-        assert!(ids.contains(&r2.tripwire_id), "list should contain r2");
-
-        // r1 was created with the "entry-watch" label; r2 with None.
-        let labeled = result
-            .tripwires
-            .iter()
-            .find(|tw| tw.id == r1.tripwire_id)
-            .expect("r1 must be in the list");
-        assert_eq!(labeled.label.as_deref(), Some("entry-watch"));
-    }
-
-    #[test]
-    fn list_drains_fired() {
-        reset();
-        let manager = Arc::new(TripwireManager::new());
-
-        let r1 = TripwiresService::create(
-            try_into_condition(vec!["function_entry".into()]).unwrap(),
-            None,
-            &manager,
-        )
-        .unwrap();
-
-        // First list drains the empty buffer
-        let r1_list = TripwiresService::list(&manager);
-        assert_eq!(r1_list.fired_count, 0);
-
-        // Simulate a fire by manually calling evaluate
-        use chronos_domain::{SourceLocation, TraceEvent};
-        let event = TraceEvent {
-            event_id: 1,
-            timestamp_ns: 100,
-            thread_id: 1,
-            event_type: chronos_domain::EventType::FunctionEntry,
-            location: SourceLocation::default(),
-            data: chronos_domain::EventData::Function {
-                name: "main".into(),
-                signature: None,
-                symbol_id: None,
-                invocation_id: None,
-                parent_invocation_id: None,
-            },
-        };
-        manager.evaluate(&event);
-
-        // Second list drains the fired event
-        let r2 = TripwiresService::list(&manager);
-        assert_eq!(r2.fired_count, 1);
-        // Only the just-created tripwire should have fired, regardless
-        // of its global-counter-dependent ID.
-        assert_eq!(r2.fired_events[0].tripwire_id, r1.tripwire_id);
-
-        // Third list shows empty buffer (drained)
-        let r3 = TripwiresService::list(&manager);
-        assert_eq!(r3.fired_count, 0);
-    }
-
     // -------------------------------------------------------------------------
     // query — happy paths
     // -------------------------------------------------------------------------
@@ -624,10 +476,7 @@ mod tests {
         // Second query — still 1, nothing drained
         let r2 = TripwiresService::query(&manager);
         assert_eq!(r2.total_active, 1);
-
-        // list also returns 1 (list is destructive but the manager is fresh)
-        let r3 = TripwiresService::list(&manager);
-        assert_eq!(r3.total_active, 1);
+        assert_eq!(manager.active_count(), 1);
     }
 
     // -------------------------------------------------------------------------
@@ -669,10 +518,6 @@ mod tests {
         // The survivor is the second tripwire created (r2), regardless
         // of its global-counter-dependent ID.
         assert_eq!(query.tripwires[0].id, r2.tripwire_id);
-
-        // List
-        let list = TripwiresService::list(&manager);
-        assert_eq!(list.total_active, 1);
-        assert_eq!(list.fired_count, 0);
+        assert_eq!(manager.active_count(), 1);
     }
 }
