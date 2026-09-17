@@ -18,8 +18,18 @@
   "title": "rec-c2.2-accepted-raw-seam",
   "summary": "The accepted-Raw seam. chronos-native persists a Raw record and returns its authoritative EventSeq; services subscribes an observer that derives durable TripwireFired evidence; the live fan-out happens last. dual_push is renamed accept_and_publish (the old name described the dual-write REC-C2 retires) and both spawn and attach go through the same seam. Closes FIND-C2.1-03 with a productive UAT: a real probe produces a real firing that survives restart with the same firing_seq/source_seq.",
   "blockers": [],
-  "findings_introduced": {"no_action": [], "applied": ["FIND-C2.1-03"]},
-  "commits": [],
+  "findings_introduced": {
+    "no_action": [],
+    "applied": [
+      "FIND-C2.1-03"
+    ]
+  },
+  "commits": [
+    {
+      "sha": "PENDING",
+      "title": "feat(rec-c2.2): semantic projection of durable evidence (C2.2.2 groundwork)"
+    }
+  ],
   "gates": {
     "T0_fmt": "PASS",
     "T0_clippy": "PASS (cargo clippy --workspace --all-targets -- -D warnings)",
@@ -29,7 +39,11 @@
     "legacy_evb_ratchet": "PASS (28 tracked, baseline 28, CANONICAL=6)",
     "arch_gate_default": "PASS"
   },
-  "smoke_subset": ["rec_c2_2_producer_derivation", "rec_c2_1_restart_identity", "e2e_connectivity"],
+  "smoke_subset": [
+    "rec_c2_2_producer_derivation",
+    "rec_c2_1_restart_identity",
+    "e2e_connectivity"
+  ],
   "verify_commands": [
     "cargo test -p chronos-native --lib probe_backend::tests::c2_2 -- --test-threads=1",
     "cargo test -p chronos-sandbox --test rec_c2_2_producer_derivation -- --test-threads=1"
@@ -39,5 +53,5 @@
     "CC#39_pre_existing_intentional": "index Total cycles vs m9-only dir count; structural, pre-existing; gov-* owns it.",
     "CC#18_rec_c1_7_pre_existing": "rec-c1-7 missing verify-findings.json (C1.7 gap); gov-* owns it."
   },
-  "notes": "IN PROGRESS. C2.2.0 and C2.2.1 landed together: splitting the seam and converging attach are the same change, because attach was a second EventBus-only producer with no ExecutionLog. C2.2.2-5 remain (probe_drain/snapshot consumers and the 6 CANONICAL destructive reads). The ratchet shrank 31 -> 28 because renaming dual_push removed the misnamed dual-write symbol entirely."
+  "notes": "IN PROGRESS. C2.2.0/C2.2.1 landed. C2.2.2 landed its semantic projector (project_semantic, pure, no bus) and documented the remaining log-backed drain + wire/cursor change and its blast radius in tasks.md. C2.2.3-5 remain."
 }

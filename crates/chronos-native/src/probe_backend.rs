@@ -196,6 +196,29 @@ impl NativeProbeBackend {
     /// Configure a directory where `ExecutionLog` segment files
     /// will be written for each new session. Pass `None` to disable
     /// the dual-write to the log.
+    /// REC-C2.2.2 — project a durable `TraceEvent` into its `SemanticEvent` view.
+    ///
+    /// A **pure projection**: it runs the resolver pipeline and never touches
+    /// the EventBus. `probe_drain` will build its wire events from
+    /// `ExecutionLog` `Raw` records through this, so semanticisation stops
+    /// being a second decision about what occurred and becomes a *view* of the
+    /// durable evidence. The EventBus may transport the same view live, but it
+    /// is not its backing store.
+    pub fn project_semantic(&self, event: &TraceEvent) -> chronos_domain::SemanticEvent {
+        let pid = u32::try_from(
+            self.traced_pid
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or(0),
+        )
+        .unwrap_or(0);
+        let ctx = ResolveContext {
+            pid,
+            binary_path: None,
+        };
+        self.resolver_pipeline.resolve(event, &ctx)
+    }
+
     /// REC-C2.2.0: install the accepted-Raw observer (canonical path).
     pub fn with_accepted_raw_observer(mut self, observer: AcceptedRawObserver) -> Self {
         self.accepted_raw_observer = Some(observer);
@@ -1181,8 +1204,8 @@ mod tests {
         let event = TraceEvent::signal(1, 100, 1, 11, "SIGSEGV", 0);
 
         // Accepted path: append succeeds, so the bus may observe it.
-        let accepted =
-            NativeProbeBackend::accept_and_publish(&bus, Some(&log), &event, 123, None).expect("accepted");
+        let accepted = NativeProbeBackend::accept_and_publish(&bus, Some(&log), &event, 123, None)
+            .expect("accepted");
         assert!(accepted.is_some(), "the log assigned a seq");
         assert_eq!(bus.snapshot_raw().len(), 1, "accepted ⇒ published");
 
@@ -1196,6 +1219,24 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// REC-C2.2.2 — semanticisation is a projection of durable evidence, not
+    /// a second decision about occurrence: projecting a `TraceEvent` never
+    /// consults the EventBus, and the bus staying empty changes nothing.
+    #[test]
+    fn c2_2_projecting_semantics_reads_no_bus() {
+        let bus = chronos_domain::bus::EventBus::new_shared(16);
+        let backend = NativeProbeBackend::new(bus.clone());
+        let event = TraceEvent::signal(1, 100, 1, 11, "SIGSEGV", 0);
+
+        let semantic = backend.project_semantic(&event);
+        assert_eq!(semantic.source_event_id, event.event_id);
+        assert_eq!(semantic.thread_id, event.thread_id);
+        assert!(
+            bus.snapshot().is_empty(),
+            "projection must not depend on, or populate, the bus"
+        );
     }
 
     /// REC-C2.2.0 — the accepted-Raw seam.
@@ -1254,9 +1295,14 @@ mod tests {
             seen_after.lock().unwrap().push((seq.0, 0));
         });
         log.seal().expect("seal");
-        assert!(
-            NativeProbeBackend::accept_and_publish(&bus, Some(&log), &event, 124, Some(&observer2)).is_err()
-        );
+        assert!(NativeProbeBackend::accept_and_publish(
+            &bus,
+            Some(&log),
+            &event,
+            124,
+            Some(&observer2)
+        )
+        .is_err());
         assert_eq!(
             seen.lock().unwrap().len(),
             1,
