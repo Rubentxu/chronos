@@ -1672,6 +1672,22 @@ impl McpTestClient {
         Ok(())
     }
 
+    /// Force-kill the MCP server process without graceful shutdown.
+    ///
+    /// REC-C1.5 (UAT-R1): simulate an unclean session termination by sending
+    /// SIGKILL while the session is still in progress. The MCP process exits
+    /// abruptly without running any clean-stop / seal / flush hooks, so the
+    /// next process boot must observe `TailState::Unclean` for the session.
+    ///
+    /// The caller is responsible for dropping `self` afterwards; this method
+    /// only consumes the inner process handle.
+    pub async fn force_kill(&mut self) -> Result<(), McpSandboxError> {
+        if let Some(p) = self.process.as_mut() {
+            p.force_kill().await?;
+        }
+        Ok(())
+    }
+
     /// Default DB path used by the MCP server (`CHRONOS_DB_PATH` or
     /// `$HOME/.local/share/chronos/sessions.redb`).
     pub fn default_db_path() -> std::path::PathBuf {
