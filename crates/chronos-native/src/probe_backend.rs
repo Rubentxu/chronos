@@ -204,7 +204,23 @@ impl NativeProbeBackend {
     /// being a second decision about what occurred and becomes a *view* of the
     /// durable evidence. The EventBus may transport the same view live, but it
     /// is not its backing store.
-    pub fn project_semantic(&self, event: &TraceEvent) -> chronos_domain::SemanticEvent {
+    /// The caller supplies the session's resolution context, so a replay of the
+    /// same durable `Raw` produces the same projection the producer produced.
+    /// Reconstructing `ResolveContext` from ambient state is exactly how a
+    /// projection silently diverges between capture and replay.
+    pub fn project_semantic(
+        &self,
+        event: &TraceEvent,
+        ctx: &ResolveContext,
+    ) -> chronos_domain::SemanticEvent {
+        self.resolver_pipeline.resolve(event, ctx)
+    }
+
+    /// The resolution context this backend captured with.
+    ///
+    /// A deterministic projection needs this context to be reconstructible
+    /// from session metadata, not from accidental EventBus state.
+    pub fn resolve_context(&self, binary_path: Option<String>) -> ResolveContext {
         let pid = u32::try_from(
             self.traced_pid
                 .lock()
@@ -212,11 +228,7 @@ impl NativeProbeBackend {
                 .unwrap_or(0),
         )
         .unwrap_or(0);
-        let ctx = ResolveContext {
-            pid,
-            binary_path: None,
-        };
-        self.resolver_pipeline.resolve(event, &ctx)
+        ResolveContext { pid, binary_path }
     }
 
     /// REC-C2.2.0: install the accepted-Raw observer (canonical path).
@@ -1230,7 +1242,7 @@ mod tests {
         let backend = NativeProbeBackend::new(bus.clone());
         let event = TraceEvent::signal(1, 100, 1, 11, "SIGSEGV", 0);
 
-        let semantic = backend.project_semantic(&event);
+        let semantic = backend.project_semantic(&event, &backend.resolve_context(None));
         assert_eq!(semantic.source_event_id, event.event_id);
         assert_eq!(semantic.thread_id, event.thread_id);
         assert!(

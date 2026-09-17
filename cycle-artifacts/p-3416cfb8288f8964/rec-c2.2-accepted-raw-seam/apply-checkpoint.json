@@ -28,6 +28,10 @@
     {
       "sha": "fdb9a8f6",
       "title": "feat(rec-c2.2): semantic projection of durable evidence (C2.2.2 groundwork)"
+    },
+    {
+      "sha": "PENDING",
+      "title": "feat(rec-c2.2): canonical drain reader + explicit ResolveContext (C2.2.2)"
     }
   ],
   "gates": {
