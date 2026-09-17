@@ -22,7 +22,9 @@
     "no_action": [],
     "applied": [
       "FIND-C2.1-01",
-      "FIND-C2.1-02"
+      "FIND-C2.1-02",
+      "FIND-C2.0-01 (partly: retained no longer destroys)",
+      "FIND-C2.0-02 (read side done; wire count in C2.1.5)"
     ]
   },
   "findings_detail": {
@@ -41,6 +43,10 @@
     {
       "sha": "ce13cb4e",
       "title": "feat(rec-c2.1): async observe boundary + canonical session resolution (C2.1.4a)"
+    },
+    {
+      "sha": "50fd47fa",
+      "title": "feat(rec-c2.1): firing reads from the ExecutionLog + EventsCursorV1 (C2.1.4b)"
     }
   ],
   "gates": {
@@ -48,7 +54,7 @@
     "T0_clippy": "PASS (cargo clippy --workspace --all-targets -- -D warnings)",
     "T1_workspace_lib_plus_tests": "PASS (workspace --lib excluding sandbox/e2e/native all green; chronos-services 353)",
     "T_chronos_native_serial": "PASS (105 passed; --test-threads=1)",
-    "T4_smoke_subset": "PASS (probe_inject 1/1, e2e_connectivity 4/4, rec_c1_8_uat_c1_01_exact 2/2)",
+    "T4_smoke_subset": "PASS (probe_inject 1/1, e2e_connectivity 4/4)",
     "legacy_evb_ratchet": "PASS (36 tracked, baseline 36, CANONICAL=11)",
     "arch_gate_default": "PASS"
   },

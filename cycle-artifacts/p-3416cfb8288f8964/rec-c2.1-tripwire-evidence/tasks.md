@@ -10,7 +10,7 @@
 | C2.1.2 persist-first source acceptance | DONE | `dual_push` appends first, publishes only on success; no-log path stays COMPATIBILITY; attach-loop path untouched (COMPATIBILITY, C2.2) |
 | C2.1.3 derive from accepted Raw + recursion barrier | DONE | `tripwire_evidence::{derive_firings_from_record, derive_firings_from_event, read_firings}`; barrier dispatches on `ExecutionKind`; failures reported, never a `Gap` |
 | C2.1.4a async boundary + `resolve_session` | **DONE** | `observe` is async; explicit scope wins; `active_session` fallback; guard dropped before any I/O; 4 direct tests incl. lock-release; 25 call sites / 20 tests migrated |
-| C2.1.4b log-backed firing reads + `EventsCursorV1` | **PENDING** | groundwork (`read_firings_page`, `firing_counts`) already landed |
+| C2.1.4b log-backed firing reads + `EventsCursorV1` | **DONE** | list reads the log; strict cursor errors; scan budget; `session_id` + checkpoint cursor on the wire; FIRING-PAGE-1..4; fixtures migrated off `fired_buffer` |
 | C2.1.5 `fire_count` derived; `retained_until_session_end` honest | **PENDING** | depends on C2.1.4 |
 | C2.1.6 remove `fired_buffer` | **PENDING** | depends on C2.1.5 |
 | C2.1.7 real-process restart UAT + ratchet update | **PENDING** | depends on C2.1.4-6 |
@@ -62,3 +62,21 @@ Option 1 is preferred; it deserves its own commit and a full test pass.
 `fired_buffer` 4 -> 4 (removal is C2.1.6). CANONICAL destructive reads 11 -> 11
 (`drain_fired` is the C2.1.4/6 target). The inventory dropped 37 -> 36 because a
 string-literal false positive was corrected — the ratchet demanded the shrink.
+
+## State after C2.1.4b
+
+```text
+Tripwire definitions -> TripwireManager   (plain snapshot, no drain)
+Firing evidence      -> ExecutionLog only
+List progress        -> caller-owned EventSeq cursor (ecv1:...)
+```
+
+`fired_buffer` still exists physically and is still *written* by
+`TripwireManager::evaluate`/`evaluate_semantic` (probe_drain calls the latter),
+but nothing in the production read path reads it any more:
+`TripwiresService::list` is now referenced only from its own tests. That makes
+C2.1.6 a pure deletion: `TripwiresService::list`, `fired_buffer`,
+`record_fired`, `drain_fired`, and the evaluate side effect.
+
+The ratchet does not move yet (`fired_buffer` 4 -> 4, `drain_fired` 1 -> 1)
+because those symbols still exist; the count drops in C2.1.6.
