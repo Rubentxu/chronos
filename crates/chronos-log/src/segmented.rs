@@ -51,9 +51,7 @@ use crate::error::LogError;
 use crate::gap::{Gap, GapReason};
 use crate::memory::InMemoryExecutionLog;
 use crate::record::{ExecutionKind, ExecutionPayload, ExecutionRecord, SessionId};
-use crate::segment::{
-    read_header, read_segment, sanitize_session, segment_path, write_segment, SegmentEntry,
-};
+use crate::segment::{read_header, sanitize_session, write_segment, SegmentEntry};
 use crate::seq::EventSeq;
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
@@ -170,14 +168,207 @@ struct FlushedSegment {
 ///
 /// Cheap to clone (clone shares the same on-disk directory and
 /// in-memory state).
+/// Durable retention metadata for one execution log (REC-C1.5.1).
+///
+/// `retained_from` is the authoritative LOGICAL boundary: the earliest
+/// queryable `EventSeq`. Deleting segment files is only physical reclamation,
+/// and `retained_from` is what a reader is answered against, before and after a
+/// restart.
+pub const MANIFEST_FILE_NAME: &str = "execution-log.manifest.json";
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct ExecutionLogManifest {
+    pub schema_version: u32,
+    pub session_id: String,
+    pub retained_from: u64,
+    pub created_at_unix_ms: u64,
+    /// What is known about the END of the execution (REC-C1.5.3).
+    ///
+    /// `None` only in a v1 manifest; a reopen turns that into
+    /// `TailState::Unknown` rather than guessing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_state: Option<crate::tail::TailState>,
+}
+
+impl ExecutionLogManifest {
+    /// v2: carries tail state. v1 manifests (without the field) remain readable.
+    pub const SCHEMA_VERSION: u32 = 2;
+    pub const LEGACY_SCHEMA_VERSION: u32 = 1;
+
+    pub fn new(session_id: &SessionId, retained_from: EventSeq) -> Self {
+        Self {
+            schema_version: Self::SCHEMA_VERSION,
+            session_id: session_id.as_str().to_string(),
+            retained_from: retained_from.0,
+            created_at_unix_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0),
+            tail_state: Some(crate::tail::TailState::Open),
+        }
+    }
+}
+
+/// Default config for a log directory (used by discovery/bootstrap).
+pub fn seg_config_for(dir: &std::path::Path) -> SegmentedConfig {
+    let mut c = SegmentedConfig::with_dir(dir.to_path_buf());
+    c.replay_on_open = true;
+    c
+}
+
+pub fn manifest_path(dir: &std::path::Path) -> PathBuf {
+    dir.join(MANIFEST_FILE_NAME)
+}
+
+/// Persist `manifest` atomically: tmp file -> fsync -> rename -> fsync(dir).
+///
+/// The order matters for crash safety: the watermark must be committed BEFORE
+/// any physical reclamation, so a crash can only ever leave "present on disk but
+/// logically retired", never "deleted without a record of why".
+pub fn write_manifest_atomic(
+    dir: &std::path::Path,
+    manifest: &ExecutionLogManifest,
+) -> Result<(), LogError> {
+    use std::io::Write;
+    let final_path = manifest_path(dir);
+    let tmp_path = dir.join(format!("{}.tmp", MANIFEST_FILE_NAME));
+    let bytes = serde_json::to_vec_pretty(manifest)
+        .map_err(|e| LogError::Backend(format!("serialize manifest: {e}")))?;
+    {
+        let mut f = std::fs::File::create(&tmp_path)
+            .map_err(|e| LogError::Backend(format!("create {:?}: {e}", tmp_path)))?;
+        f.write_all(&bytes)
+            .map_err(|e| LogError::Backend(format!("write {:?}: {e}", tmp_path)))?;
+        f.sync_all()
+            .map_err(|e| LogError::Backend(format!("fsync {:?}: {e}", tmp_path)))?;
+    }
+    std::fs::rename(&tmp_path, &final_path).map_err(|e| {
+        LogError::Backend(format!("rename {:?} -> {:?}: {e}", tmp_path, final_path))
+    })?;
+    // fsync the directory so the rename itself is durable.
+    if let Ok(d) = std::fs::File::open(dir) {
+        let _ = d.sync_all();
+    }
+    Ok(())
+}
+
+/// Lowest `start_seq` among the session's segment files, if any.
+fn first_segment_start(
+    dir: &std::path::Path,
+    session_id: &SessionId,
+) -> Result<Option<EventSeq>, LogError> {
+    let prefix = format!("{}-", sanitize_session(session_id));
+    let mut lowest: Option<EventSeq> = None;
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(LogError::Backend(format!("read_dir {dir:?}: {e}"))),
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.starts_with(&prefix) || !name.ends_with(".seg") {
+            continue;
+        }
+        // "<session>-<start_seq>.seg"
+        if let Some(rest) = name
+            .strip_prefix(&prefix)
+            .and_then(|r| r.strip_suffix(".seg"))
+        {
+            if let Ok(seq) = rest.parse::<u64>() {
+                let seq = EventSeq::new(seq);
+                lowest = Some(match lowest {
+                    Some(prev) if prev <= seq => prev,
+                    _ => seq,
+                });
+            }
+        }
+    }
+    Ok(lowest)
+}
+
+pub fn read_manifest(dir: &std::path::Path) -> Result<Option<ExecutionLogManifest>, LogError> {
+    let path = manifest_path(dir);
+    match std::fs::read(&path) {
+        Ok(bytes) => serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(|e| LogError::Backend(format!("parse {:?}: {e}", path))),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(LogError::Backend(format!("read {:?}: {e}", path))),
+    }
+}
+
+/// Outcome of a retention pass.
+///
+/// Separates LOGICAL retention (the watermark is committed; readers already see
+/// the new boundary) from PHYSICAL reclamation (files may still be present).
+/// Collapsing the two into a bare `Result` would hide exactly the distinction
+/// that matters after a partial failure.
+#[derive(Debug, Clone)]
+pub struct CompactionOutcome {
+    pub retained_from: EventSeq,
+    pub removed: Vec<PathBuf>,
+    pub reclaim_failures: Vec<(PathBuf, String)>,
+}
+
+impl Default for CompactionOutcome {
+    fn default() -> Self {
+        Self {
+            retained_from: EventSeq::ZERO,
+            removed: Vec::new(),
+            reclaim_failures: Vec::new(),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct SegmentedExecutionLog {
     inner: Arc<Mutex<Inner>>,
     session_id: SessionId,
     config: SegmentedConfig,
+    /// Logical retention boundary (authoritative). `EventSeq::ZERO` means
+    /// nothing has been retired.
+    retained_from: Arc<Mutex<EventSeq>>,
+    /// What we know about the end of the execution (REC-C1.5.3).
+    tail_state: Arc<Mutex<crate::tail::TailState>>,
 }
 
 impl SegmentedExecutionLog {
+    /// Reopen an EXISTING durable log (REC-C1.5.4).
+    ///
+    /// Bootstrap must never be able to create history. Every step that `open()`
+    /// would happily do (create the directory, create or migrate missing
+    /// metadata, infer a boundary) is refused here:
+    ///
+    /// ```text
+    /// directory missing  -> error
+    /// manifest missing   -> error
+    /// identity mismatch  -> error
+    /// replay invalid     -> error
+    /// tail invalid       -> error
+    /// ```
+    ///
+    /// The failure this prevents: a directory that disappears between discovery
+    /// and reopen must not silently become "a brand-new empty log with the same
+    /// SessionId", which would be a catastrophic Silent Lie.
+    pub fn open_existing(session_id: SessionId, config: SegmentedConfig) -> Result<Self, LogError> {
+        if !config.segment_dir.is_dir() {
+            return Err(LogError::Backend(format!(
+                "reopen refused: {:?} is not an existing execution-log directory",
+                config.segment_dir
+            )));
+        }
+        if read_manifest(&config.segment_dir)?.is_none() {
+            return Err(LogError::RetentionMetadataMissing {
+                dir: config.segment_dir.display().to_string(),
+                first_segment_seq: first_segment_start(&config.segment_dir, &session_id)?
+                    .unwrap_or(EventSeq::ZERO)
+                    .0,
+            });
+        }
+        // From here the strict path applies: no creation, no inference.
+        Self::open(session_id, config)
+    }
+
     pub fn open(session_id: SessionId, config: SegmentedConfig) -> Result<Self, LogError> {
         std::fs::create_dir_all(&config.segment_dir)
             .map_err(|e| LogError::Backend(format!("mkdir {:?}: {}", config.segment_dir, e)))?;
@@ -192,19 +383,254 @@ impl SegmentedExecutionLog {
             metrics: CompactionMetricsInner::default(),
             loaded_projection: None,
         };
+        // Assigned exactly once on every path that returns a boundary.
+        let persisted_tail: Option<crate::tail::TailState>;
+        // Did THIS open create the manifest? A brand-new log is `Open` because
+        // this run is open, not because a previous run failed to seal.
+        let mut created_now = false;
+        let retained_from = match read_manifest(&config.segment_dir)? {
+            Some(m) => {
+                if m.schema_version != ExecutionLogManifest::SCHEMA_VERSION
+                    && m.schema_version != ExecutionLogManifest::LEGACY_SCHEMA_VERSION
+                {
+                    return Err(LogError::Backend(format!(
+                        "unsupported execution-log manifest schema {}",
+                        m.schema_version
+                    )));
+                }
+                // One identity, not two: the manifest is authoritative and a
+                // disagreement with the requested session is a hard error.
+                if m.session_id != session_id.as_str() {
+                    return Err(LogError::IdentityMismatch {
+                        requested: session_id.as_str().to_string(),
+                        manifest: m.session_id,
+                    });
+                }
+                persisted_tail = if m.schema_version == ExecutionLogManifest::LEGACY_SCHEMA_VERSION
+                {
+                    // Legacy metadata: no proof either way. Never guessed.
+                    Some(crate::tail::TailState::Unknown {
+                        reason: "legacy-v1: manifest carried no tail state".to_string(),
+                    })
+                } else {
+                    m.tail_state.clone()
+                };
+                EventSeq::new(m.retained_from)
+            }
+            None => {
+                // No manifest: infer ONLY when inference is safe.
+                let first = first_segment_start(&config.segment_dir, &session_id)?;
+                match first {
+                    // Nothing on disk: a brand-new log legitimately starts at 0.
+                    None => {
+                        let m = ExecutionLogManifest::new(&session_id, EventSeq::ZERO);
+                        write_manifest_atomic(&config.segment_dir, &m)?;
+                        persisted_tail = m.tail_state.clone();
+                        created_now = true;
+                        EventSeq::ZERO
+                    }
+                    // A legacy log whose history starts at seq#0 can be migrated
+                    // conservatively: nothing has been retired.
+                    Some(seq) if seq == EventSeq::ZERO => {
+                        // A legacy log whose history starts at seq#0: we can
+                        // migrate the boundary safely, but there is no proof of
+                        // how it ended, so the tail stays Unknown.
+                        let m = ExecutionLogManifest {
+                            schema_version: ExecutionLogManifest::SCHEMA_VERSION,
+                            session_id: session_id.as_str().to_string(),
+                            retained_from: 0,
+                            created_at_unix_ms: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_millis() as u64)
+                                .unwrap_or(0),
+                            tail_state: Some(crate::tail::TailState::unknown(
+                                "legacy-v1: manifest carried no tail state",
+                            )),
+                        };
+                        write_manifest_atomic(&config.segment_dir, &m)?;
+                        persisted_tail = m.tail_state.clone();
+                        created_now = true;
+                        EventSeq::ZERO
+                    }
+                    // History that does not start at 0 could mean "retained" or
+                    // "files missing". Refuse to fabricate the difference.
+                    Some(seq) => {
+                        return Err(LogError::RetentionMetadataMissing {
+                            dir: config.segment_dir.display().to_string(),
+                            first_segment_seq: seq.0,
+                        })
+                    }
+                }
+            }
+        };
+
         let this = Self {
             inner: Arc::new(Mutex::new(inner)),
             session_id,
             config,
+            retained_from: Arc::new(Mutex::new(retained_from)),
+            tail_state: Arc::new(Mutex::new(crate::tail::TailState::Open)),
         };
+        this.assert_layout_matches_retention()?;
         if this.config.replay_on_open {
             this.replay_into_inner()?;
             this.replay_cursors_into_inner()?;
         }
+
+        // REC-C1.5.3: conclude the tail state from the evidence available, then
+        // verify a seal against what replay actually rebuilt.
+        let reconstructed_tail = this.tail_seq();
+        let live_temp = this.live_segment_temp_exists()?;
+        let recovery = if created_now {
+            // Nothing was persisted before this open, so nothing can be accused
+            // of an abnormal end. Only a live temp (an interrupted write from
+            // another process touching this session) can still say otherwise.
+            let state = persisted_tail
+                .clone()
+                .unwrap_or(crate::tail::TailState::Open);
+            crate::tail::recover_tail_state(Some(&state), live_temp, reconstructed_tail)
+                .without_previous_run_blame()
+        } else {
+            crate::tail::recover_tail_state(persisted_tail.as_ref(), live_temp, reconstructed_tail)
+        };
+        if let crate::tail::TailState::Sealed { tail_seq, .. } = &recovery.state {
+            let expected = tail_seq.map(EventSeq::new);
+            // A sealed tail is the only witness of a missing LAST segment:
+            // nothing follows it to reveal the hole.
+            if expected != reconstructed_tail {
+                return Err(LogError::TailIntegrityMismatch {
+                    session_id: this.session_id.as_str().to_string(),
+                    expected: expected.map(|s| s.0),
+                    actual: reconstructed_tail.map(|s| s.0),
+                });
+            }
+        }
+        if recovery.recovered {
+            // Persist the recovered verdict so later reopens see the same thing.
+            this.update_manifest(|m| m.tail_state = Some(recovery.state.clone()))?;
+        }
+        *this.tail_state.lock().unwrap_or_else(|e| e.into_inner()) = recovery.state;
         if this.config.auto_load_call_graph_checkpoint {
             this.auto_load_projection()?;
         }
         Ok(this)
+    }
+
+    /// Tail state as concluded at open time (REC-C1.5.3).
+    pub fn tail_state(&self) -> crate::tail::TailState {
+        self.tail_state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    /// Read the on-disk manifest, apply `f` to its `retained_from`/`tail_state`,
+    /// and write it back atomically.
+    ///
+    /// REC-C1.5.3: manifest updates must be read-modify-write. Constructing a
+    /// fresh manifest regenerated `created_at` and would destroy `tail_state`, so
+    /// `Sealed + compaction` could silently stop being `Sealed`.
+    fn update_manifest<F>(&self, f: F) -> Result<(), LogError>
+    where
+        F: FnOnce(&mut ExecutionLogManifest),
+    {
+        let mut manifest = read_manifest(&self.config.segment_dir)?
+            .unwrap_or_else(|| ExecutionLogManifest::new(&self.session_id, self.retained_from()));
+        f(&mut manifest);
+        write_manifest_atomic(&self.config.segment_dir, &manifest)
+    }
+
+    /// Does a live segment temp exist? `write_segment` stages as
+    /// `<session>-<start_seq>.tmp` before renaming to `.seg`, so a surviving temp
+    /// in the live region is evidence of an interrupted write.
+    ///
+    /// Temps below `retained_from` are retired garbage and say nothing about the
+    /// tail. `execution-log.manifest.json.tmp` is a different thing entirely (an
+    /// incomplete metadata update, not an interrupted execution tail).
+    fn live_segment_temp_exists(&self) -> Result<bool, LogError> {
+        let safe = sanitize_session(&self.session_id);
+        let prefix = format!("{safe}-");
+        let retained = self.retained_from();
+        let entries = match std::fs::read_dir(&self.config.segment_dir) {
+            Ok(e) => e,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(e) => return Err(LogError::Backend(format!("read_dir: {e}"))),
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.ends_with(".tmp") || !name.starts_with(&prefix) {
+                continue;
+            }
+            if let Some(rest) = name
+                .strip_prefix(&prefix)
+                .and_then(|r| r.strip_suffix(".tmp"))
+            {
+                if let Ok(seq) = rest.parse::<u64>() {
+                    if crate::tail::temp_is_live_evidence(EventSeq::new(seq), retained) {
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    /// Seal the run durably (REC-C1.5.3).
+    ///
+    /// Order matters: flush everything, refuse if a live temp remains, fsync the
+    /// segment directory (so the last rename is durable), capture the durable
+    /// tail, then persist `Sealed`. Writing `Sealed` before the directory fsync
+    /// could claim `tail=999` and lose that very directory entry in a crash.
+    ///
+    /// After this, `append`/`record_gap` are refused: a seal that still accepts
+    /// writes guarantees nothing.
+    pub fn seal(&self) -> Result<crate::tail::SealedTail, LogError> {
+        // 1. Flush everything.
+        self.flush()?;
+        // 2. No live temp may remain: the flush must be complete.
+        if self.live_segment_temp_exists()? {
+            return Err(LogError::Backend(format!(
+                "{:?}",
+                crate::tail::SealError::LiveSegmentTemp {
+                    path: self.config.segment_dir.display().to_string()
+                }
+            )));
+        }
+        // 3. Make the last rename durable.
+        if let Ok(d) = std::fs::File::open(&self.config.segment_dir) {
+            let _ = d.sync_all();
+        }
+        // 4. Capture the durable tail.
+        let tail = self.tail_seq();
+        // 5. Persist the seal, preserving everything else in the manifest.
+        let sealed = crate::tail::TailState::sealed(tail);
+        self.update_manifest(|m| m.tail_state = Some(sealed.clone()))?;
+        *self.tail_state.lock().unwrap_or_else(|e| e.into_inner()) = sealed;
+        Ok(crate::tail::SealedTail { tail_seq: tail })
+    }
+
+    /// The authoritative logical retention boundary (earliest queryable seq).
+    pub fn retained_from(&self) -> EventSeq {
+        *self.retained_from.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Every surviving segment must lie entirely at or after `retained_from`.
+    ///
+    /// A segment straddling the boundary means the manifest and the layout are
+    /// incompatible; partially trimming a segment would invent evidence, so this
+    /// fails closed.
+    fn assert_layout_matches_retention(&self) -> Result<(), LogError> {
+        let retained = self.retained_from();
+        for meta in self.list_segment_headers()? {
+            if meta.start_seq < retained && meta.end_seq >= retained {
+                return Err(LogError::SegmentCrossesRetention {
+                    segment_start: meta.start_seq.0,
+                    segment_end: meta.end_seq.0,
+                    retained_from: retained.0,
+                });
+            }
+        }
+        Ok(())
     }
 
     pub fn session_id(&self) -> &SessionId {
@@ -384,6 +810,18 @@ impl SegmentedExecutionLog {
     /// record a gap if `memory_budget_bytes` is configured and the
     /// projected bytes exceed it.
     pub fn append(&self, record: NewExecutionRecord) -> Result<EventSeq, LogError> {
+        self.refuse_if_sealed()?;
+        self.append_inner(record)
+    }
+
+    fn refuse_if_sealed(&self) -> Result<(), LogError> {
+        if self.tail_state().is_sealed() {
+            return Err(LogError::LogSealed(self.session_id.as_str().to_string()));
+        }
+        Ok(())
+    }
+
+    fn append_inner(&self, record: NewExecutionRecord) -> Result<EventSeq, LogError> {
         let mut inner = self.inner.lock().expect("poisoned");
 
         // Case 5: overflow → gap.
@@ -427,6 +865,11 @@ impl SegmentedExecutionLog {
 
     /// Record an explicit gap.
     pub fn record_gap(&self, gap: Gap) -> Result<(), LogError> {
+        self.refuse_if_sealed()?;
+        self.record_gap_inner(gap)
+    }
+
+    fn record_gap_inner(&self, gap: Gap) -> Result<(), LogError> {
         let mut inner = self.inner.lock().expect("poisoned");
         inner
             .backend
@@ -447,6 +890,29 @@ impl SegmentedExecutionLog {
         inner
             .backend
             .read_after(self.session_id.clone(), consumer.clone(), cursor)
+    }
+
+    /// Stateless page read (REC-C1.3). Delegates to the inner backend without
+    /// touching any per-consumer cursor state.
+    pub fn read_from_seq(
+        &self,
+        from_seq: EventSeq,
+        limit: usize,
+    ) -> Result<crate::cursor::LogPage, crate::error::LogError> {
+        // The watermark is checked BEFORE touching records, so a retired range
+        // is answered identically before and after a restart even while physical
+        // reclamation is still in flight.
+        let retained = self.retained_from();
+        if from_seq < retained {
+            return Err(LogError::PositionBeforeRetention {
+                requested_next_seq: from_seq,
+                retained_from: retained,
+            });
+        }
+        let inner = self.inner.lock().expect("poisoned");
+        inner
+            .backend
+            .read_from_seq(&self.session_id, from_seq, limit)
     }
 
     pub fn tail_seq(&self) -> Option<EventSeq> {
@@ -473,66 +939,58 @@ impl SegmentedExecutionLog {
     /// Populate `target` with the on-disk segments and *merge* them
     /// into the in-memory backend. Used by `open()` to restore seq
     /// allocator state before returning a usable handle.
+    /// Build and validate the replay plan for this log (REC-C1.5.2).
+    ///
+    /// Nothing is applied here: validation completes first, so a corrupt or
+    /// discontinuous retained region cannot leave a partially reconstructed
+    /// backend behind.
+    pub fn build_replay_plan(&self) -> Result<crate::replay::ReplayPlan, LogError> {
+        crate::replay::build_replay_plan(
+            &self.config.segment_dir,
+            &self.session_id,
+            self.retained_from(),
+        )
+        .map_err(|kind| LogError::ReplayIntegrity {
+            session_id: self.session_id.as_str().to_string(),
+            kind: Box::new(kind),
+        })
+    }
+
+    /// Strict replay: validate everything, then apply atomically.
+    ///
+    /// This is the ONLY replay primitive. The previous lenient paths
+    /// (`replay_into_inner`, `populate_with_replay`) both skipped unreadable
+    /// segments, so a side door could reconstruct a different truth.
     pub fn replay_into_inner(&self) -> Result<(), LogError> {
+        let plan = self.build_replay_plan()?;
+        self.apply_plan(&plan)
+    }
+
+    fn apply_plan(&self, plan: &crate::replay::ReplayPlan) -> Result<(), LogError> {
+        // Apply to a FRESH backend built from the plan, then swap it in: a
+        // failure cannot publish a half-reconstructed log.
+        let fresh = InMemoryExecutionLog::new();
+        crate::replay::apply_replay_plan(plan, &fresh)?;
+
         let mut inner = self.inner.lock().expect("poisoned");
-        for meta in self.list_segment_headers()? {
-            let path = segment_path(&self.config.segment_dir, &self.session_id, meta.start_seq);
-            let entries = match read_segment(&path) {
-                Ok(d) => d.entries,
-                Err(e) => {
-                    eprintln!(
-                        "SegmentedExecutionLog::replay: skipping corrupt \
-                         segment {:?}: {}",
-                        path, e
-                    );
-                    continue;
-                }
-            };
-            for entry in entries {
-                match entry {
-                    SegmentEntry::Record(r) => {
-                        inner.backend.replay_record(&r)?;
-                    }
-                    SegmentEntry::Gap(g) => {
-                        inner.backend.record_gap(self.session_id.clone(), g)?;
-                    }
-                }
-            }
-        }
-        // Mark each loaded segment as flushed so segment bookkeeping
-        // matches reality after a cold boot.
-        let mut headers = self.list_segment_headers()?;
-        headers.sort_by_key(|m| m.start_seq.0);
-        for meta in headers {
+        inner.backend = fresh;
+        inner.flushed_segments.clear();
+        inner.last_flushed_tail = None;
+        for seg in &plan.segments {
             inner.flushed_segments.push(FlushedSegment {
-                start_seq: meta.start_seq,
-                end_seq: meta.end_seq,
-                path: segment_path(&self.config.segment_dir, &self.session_id, meta.start_seq),
+                start_seq: seg.start_seq,
+                end_seq: seg.end_seq,
+                path: seg.path.clone(),
             });
-            inner.last_flushed_tail = Some(meta.end_seq);
+            inner.last_flushed_tail = Some(seg.end_seq);
         }
         Ok(())
     }
 
     fn populate_with_replay(&self, target: &InMemoryExecutionLog) -> Result<(), LogError> {
-        for meta in self.list_segment_headers()? {
-            let path = segment_path(&self.config.segment_dir, &self.session_id, meta.start_seq);
-            let entries = match read_segment(&path) {
-                Ok(d) => d.entries,
-                Err(_) => continue,
-            };
-            for entry in entries {
-                match entry {
-                    SegmentEntry::Record(r) => {
-                        target.append(NewExecutionRecord::from(&r))?;
-                    }
-                    SegmentEntry::Gap(g) => {
-                        target.record_gap(self.session_id.clone(), g)?;
-                    }
-                }
-            }
-        }
-        Ok(())
+        // Same strict primitive as `replay_into_inner`: one validated plan.
+        let plan = self.build_replay_plan()?;
+        crate::replay::apply_replay_plan(&plan, target)
     }
 
     /// Replay and rebuild the in-memory backend (used by tests
@@ -590,29 +1048,77 @@ impl SegmentedExecutionLog {
     /// `segments_removed_total` and `bytes_reclaimed_total`
     /// accumulate across runs.
     pub fn compact_up_to(&self, cutoff: EventSeq) -> Result<Vec<PathBuf>, LogError> {
-        let mut removed = Vec::new();
-        let mut removed_bytes = 0u64;
-        let mut survivors = Vec::new();
+        Ok(self.retain_up_to(cutoff)?.removed)
+    }
+
+    /// Retire history up to `cutoff`, in the only crash-safe order.
+    ///
+    /// ```text
+    /// compute the new boundary
+    ///   -> persist manifest atomically (commit)
+    ///   -> activate the boundary in memory
+    ///   -> reclaim segment files
+    /// ```
+    ///
+    /// A crash can therefore leave "present on disk but logically retired" (safe,
+    /// conservative) but never "deleted with no record of why".
+    ///
+    /// The boundary is NOT `cutoff + 1`: it advances only over segments that are
+    /// WHOLLY retired, so `retained_from` stays aligned with the physical unit of
+    /// retention. With segments 0..=255 and 256..=511, `compact_up_to(499)`
+    /// yields `retained_from = 256`.
+    pub fn retain_up_to(&self, cutoff: EventSeq) -> Result<CompactionOutcome, LogError> {
+        let mut outcome = CompactionOutcome {
+            retained_from: self.retained_from(),
+            ..Default::default()
+        };
+
+        // 1. Compute the new boundary from the contiguous fully-retired prefix.
+        let mut new_boundary = self.retained_from();
+        {
+            let inner = self.inner.lock().expect("poisoned");
+            let mut segs: Vec<_> = inner.flushed_segments.clone();
+            segs.sort_by_key(|s| s.start_seq.0);
+            for seg in segs {
+                if seg.end_seq <= cutoff && seg.start_seq >= new_boundary {
+                    new_boundary = EventSeq::new(seg.end_seq.0 + 1);
+                } else if seg.end_seq > cutoff {
+                    break;
+                }
+            }
+        }
+
+        if new_boundary <= self.retained_from() {
+            // Nothing to retire: no manifest write, no deletion.
+            return Ok(outcome);
+        }
+
+        // 2. Commit the watermark BEFORE any deletion, preserving everything else
+        // (created_at, tail_state): retention must not re-seal or un-seal a run.
+        self.update_manifest(|m| m.retained_from = new_boundary.0)?;
+        *self.retained_from.lock().unwrap_or_else(|e| e.into_inner()) = new_boundary;
+        outcome.retained_from = new_boundary;
+
+        // 3. Reclaim files. A failure here does NOT roll the watermark back:
+        // re-exposing evidence already declared retired would be worse, and the
+        // leftovers are inert (reopen skips segments below the boundary).
         let mut inner = self.inner.lock().expect("poisoned");
+        let mut survivors = Vec::new();
+        let mut removed_bytes = 0u64;
         for seg in inner.flushed_segments.drain(..) {
-            if seg.end_seq <= cutoff {
+            if seg.end_seq < new_boundary {
                 let size = std::fs::metadata(&seg.path).map(|m| m.len()).unwrap_or(0);
                 match std::fs::remove_file(&seg.path) {
                     Ok(()) => {
-                        removed.push(seg.path);
                         removed_bytes += size;
+                        outcome.removed.push(seg.path);
                     }
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                        // Already gone (concurrent delete, manual
-                        // rm). Drop the bookkeeping entry.
-                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
                     Err(e) => {
-                        // Put the segment back so we don't lose
-                        // the bookkeeping on a transient I/O
-                        // failure.
-                        let path = seg.path.clone();
+                        outcome
+                            .reclaim_failures
+                            .push((seg.path.clone(), e.to_string()));
                         survivors.push(seg);
-                        return Err(LogError::Backend(format!("remove_file {:?}: {}", path, e)));
                     }
                 }
             } else {
@@ -620,38 +1126,24 @@ impl SegmentedExecutionLog {
             }
         }
         inner.flushed_segments = survivors;
-        // Recompute last_flushed_tail as the max end_seq of the
-        // survivors. If all segments were deleted, fall back to
-        // the buffer's natural state (the allocator may still
-        // have unflushed entries that will be flushed next time).
-        inner.last_flushed_tail = inner.flushed_segments.iter().map(|s| s.end_seq).max();
-        // Update metrics (atomic so they survive the lock drop).
-        if !removed.is_empty() {
-            use std::sync::atomic::Ordering;
-            inner
-                .metrics
-                .compaction_runs
-                .fetch_add(1, Ordering::Relaxed);
-            inner
-                .metrics
-                .segments_removed
-                .fetch_add(removed.len() as u64, Ordering::Relaxed);
-            inner
-                .metrics
-                .bytes_reclaimed
-                .fetch_add(removed_bytes, Ordering::Relaxed);
-            // Drop the in-memory identity-index entries for the
-            // evicted seqs so subsequent reads don't try to
-            // resolve seqs that no longer have a backing record.
-            // Satisfies REQ-IndexesPrunedOnCompaction.
-            inner.backend.prune_secondary_indexes_up_to(cutoff);
-        }
-        Ok(removed)
+        // Metrics describe PHYSICAL reclamation for this logical pass. Counters
+        // are updated only when the pass actually retired something, so an
+        // ineffective pass is not reported as a compaction run.
+        inner
+            .metrics
+            .compaction_runs
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        inner.metrics.segments_removed.fetch_add(
+            outcome.removed.len() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        inner
+            .metrics
+            .bytes_reclaimed
+            .fetch_add(removed_bytes, std::sync::atomic::Ordering::Relaxed);
+        Ok(outcome)
     }
 
-    /// Convenience: pick the cutoff from `min_consumer_cursor()`
-    /// and run `compact_up_to` if a cursor exists. If no consumer
-    /// has read yet, returns an empty list (compaction is unsafe).
     pub fn maybe_compact(&self) -> Result<Vec<PathBuf>, LogError> {
         match self.min_consumer_cursor() {
             Some(cutoff) => self.compact_up_to(cutoff),
@@ -1089,7 +1581,11 @@ mod tests {
     }
 
     #[test]
-    fn corrupt_segment_is_skipped() {
+    fn corrupt_segment_rejects_replay() {
+        // REC-C1.5.2: this test used to assert that a corrupt segment was
+        // SKIPPED and replay continued, which left a silent hole in the seq
+        // space with no `Gap`. Replay is now strict: the log must not be
+        // published at all.
         let dir = tempdir();
         let session = SessionId::new("cs");
         let mut cfg = SegmentedConfig::with_dir(&dir);
@@ -1102,24 +1598,29 @@ mod tests {
         log.flush().unwrap();
         let segments = log.flushed_segments();
         assert_eq!(segments.len(), 2);
-        // Corrupt the first segment's payload by appending bytes
-        // to it. BLAKE3 mismatch will skip it on the next replay.
+        // Corrupt the first segment's payload; the checksum no longer matches.
         let (_start, _end, path) = segments[0].clone();
-        let mut f = std::fs::OpenOptions::new()
-            .append(true)
-            .open(&path)
-            .unwrap();
-        use std::io::Write;
-        f.write_all(&[0xFFu8; 64]).unwrap();
-        drop(f);
+        let mut bytes = std::fs::read(&path).unwrap();
+        let flip_at = bytes.len() * 3 / 4;
+        bytes[flip_at] ^= 0xFF;
+        std::fs::write(&path, &bytes).unwrap();
         drop(log);
 
         cfg.replay_on_open = true;
-        let log2 = SegmentedExecutionLog::open(session.clone(), cfg).unwrap();
-        // The first segment is skipped, only seq=2 from segment
-        // #2 remains. The replayed log has tail_seq 2; we just
-        // verify *something* survived.
-        assert!(log2.tail_seq().is_some());
+        match SegmentedExecutionLog::open(session.clone(), cfg) {
+            Ok(_) => panic!("a corrupt retained segment must not be published"),
+            Err(LogError::ReplayIntegrity { session_id, kind }) => {
+                assert_eq!(session_id, "cs");
+                assert!(
+                    matches!(
+                        *kind,
+                        crate::replay::ReplayIntegrityError::CorruptSegment { .. }
+                    ),
+                    "expected CorruptSegment, got {kind:?}"
+                );
+            }
+            Err(other) => panic!("expected ReplayIntegrity, got {other:?}"),
+        }
         std::fs::remove_dir_all(&dir).ok();
     }
 

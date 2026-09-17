@@ -1,6 +1,6 @@
 //! `ExecutionLogBackend` trait + high-level `ExecutionLog<B>` wrapper.
 
-use crate::cursor::{ConsumerCursor, LogConsumerId, ReadResult};
+use crate::cursor::{ConsumerCursor, LogConsumerId, LogPage, ReadResult};
 use crate::error::LogError;
 use crate::gap::Gap;
 use crate::record::{ExecutionRecord, SessionId};
@@ -61,6 +61,34 @@ pub trait ExecutionLogBackend: Send + Sync {
         consumer: LogConsumerId,
         cursor: Option<ConsumerCursor>,
     ) -> Result<ReadResult, LogError>;
+
+    /// Stateless page read (REC-C1.3).
+    ///
+    /// Examines entries at or after `from_seq`, returns up to `limit` records,
+    /// and reports the position to continue from. Unlike [`read_after`] this
+    /// touches no per-consumer state, so two readers with different positions
+    /// are independent by construction.
+    ///
+    /// `position_after` advances over the end of any observed gap, so a reader
+    /// can always make progress past lost evidence.
+    ///
+    /// `from_seq == EventSeq::ZERO` means "start at seq#0" and therefore
+    /// includes seq#0: there is no artificial `next_seq`/`last_seq` bridge and
+    /// no off-by-one.
+    ///
+    /// Backends that cannot serve a stateless scan must return an error rather
+    /// than emulating one with consumer state.
+    fn read_from_seq(
+        &self,
+        session_id: &SessionId,
+        from_seq: EventSeq,
+        limit: usize,
+    ) -> Result<LogPage, LogError> {
+        let _ = (session_id, from_seq, limit);
+        Err(LogError::Backend(
+            "read_from_seq is not implemented by this backend".into(),
+        ))
+    }
 
     /// Returns the highest seq currently allocated on `session_id`,
     /// or `None` if the session is empty (no records, no gaps).

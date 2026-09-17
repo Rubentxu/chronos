@@ -432,6 +432,7 @@ mod tests {
         engines: tokio::sync::Mutex<HashMap<String, chronos_query::QueryEngine>>,
         session_languages: Arc<tokio::sync::Mutex<HashMap<String, chronos_domain::Language>>>,
         active_session: tokio::sync::Mutex<Option<String>>,
+        execution_logs: crate::session_log::SessionExecutionLogRegistry,
     }
 
     impl TestRig {
@@ -444,6 +445,7 @@ mod tests {
                 engines: tokio::sync::Mutex::new(HashMap::new()),
                 session_languages: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
                 active_session: tokio::sync::Mutex::new(None),
+                execution_logs: crate::session_log::SessionExecutionLogRegistry::new(),
             }
         }
 
@@ -451,6 +453,7 @@ mod tests {
         fn probe_ctx<'a>(&'a self) -> ProbeContext<'a> {
             ProbeContext {
                 live_probes: &self.live_probes,
+                execution_logs: &self.execution_logs,
                 engines: &self.engines,
                 session_languages: &self.session_languages,
                 tripwire_manager: &self.manager,
@@ -816,6 +819,20 @@ mod tests {
             attached: false,
             ebpf_adapter: None,
             ebpf_attachment: None,
+            execution_log: crate::session_log::SessionExecutionLog::create(
+                // Unique per test: a shared path races with the C1.5.1 manifest
+                // write (create_dir_all + atomic rename) across parallel tests.
+                std::env::temp_dir().join(format!(
+                    "rec-c1-2a-observe-{}-{}",
+                    std::process::id(),
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_nanos()
+                )),
+                chronos_log::SessionId::new("rec-c1-2a-observe"),
+            )
+            .expect("test log"),
         };
         rig.live_probes
             .lock()

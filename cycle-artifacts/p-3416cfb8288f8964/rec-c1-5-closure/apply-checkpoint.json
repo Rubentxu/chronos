@@ -1,0 +1,61 @@
+{
+  "cycle_id": "rec-c1-5-closure",
+  "route": "A-lite",
+  "status": "CLOSED",
+  "verify_status": "passed",
+  "release_status": "ready",
+  "archive_status": "pending",
+  "head_sha": "1a1ec68ad662aa0cb1bf74cdf3122aea4d11871e",
+  "base_sha": "17367f2d",
+  "main_sha": null,
+  "branch": "feat/rec-c1.5-closure",
+  "tier_required": "T3",
+  "created_at": "2026-09-17",
+  "title": "rec-c1-5-closure",
+  "summary": "Close REC-C1.5: root resolver, MCP startup bootstrap, durable delete, durable seal. Three real-process UATs (R1 unclean restart, R2 identical-stale cursor, R3 sealed persistence) plus the durability invariant on UAT-R4 delete. Step 9 readiness test (try_new populates the registry). Step 10 full regression: T0 fmt+clippy clean, T1 lib+tests 1262/0, chronos-native serial 115/0, bootstrap_readiness 1/0, T4-smoke 9/0 across restart_uat + e2e_connectivity + analytics_tools. Vault drift CC#56 closed in this cycle.",
+  "cc_delta": {
+    "closed": [
+      "CC#56 (continued correctness — sandbox tests no longer mutate process env)"
+    ],
+    "introduced": []
+  },
+  "findings_closed": [
+    "FIND-REC-C1.5-MCP-STARTUP-NEEDS-BOOTSTRAP",
+    "FIND-REC-C1.5-DELETION-MUST-BE-DURABLE",
+    "FIND-REC-C1.5-CLEAN-STOP-MUST-SEAL",
+    "FIND-REC-C1.5-EXEC-LOG-ROOT-MUST-BE-CANONICAL",
+    "FIND-REC-C1.5-READINESS-INVARIANT"
+  ],
+  "findings_introduced": {
+    "no_action": []
+  },
+  "commits": [
+    {"sha": "2c4da9ba", "step": "3", "title": "feat(rec-c1.5): canonical ExecutionLog root resolver"},
+    {"sha": "ee376e10", "step": "3", "title": "test(rec-c1.5): edge cases for the canonical ExecutionLog root resolver"},
+    {"sha": "94bd092a", "step": "4", "title": "feat(rec-c1.5): bootstrap execution logs during MCP startup"},
+    {"sha": "6644bdbb", "step": "5", "title": "feat(rec-c1.5): make session deletion remove durable logs"},
+    {"sha": "849184ee", "step": "5", "title": "chore(rec-c1.5): checkpoint durable deletion wiring"},
+    {"sha": "38e02be4", "step": "5b", "title": "feat(rec-c1.5): durably seal logs on clean session stop"},
+    {"sha": "d3ea101b", "step": "5b", "title": "chore(rec-c1.5): checkpoint clean-stop seal integration"},
+    {"sha": "1bb32f05", "step": "5", "title": "feat(rec-c1.5): expose durable deletion paths"},
+    {"sha": "1b7d0e1f", "step": "8", "title": "test(rec-c1.5): add two-process sealed restart UAT"},
+    {"sha": "e2cd57a5", "step": "5", "title": "test(rec-c1.5): add durable delete restart UAT"},
+    {"sha": "3acb3040", "step": "8", "title": "chore(rec-c1.5): persist restart UAT checkpoint"},
+    {"sha": "e75b5f6a", "step": "6", "title": "test(rec-c1.5): add real-process unclean restart UAT"},
+    {"sha": "23023651", "step": "7", "title": "test(rec-c1.5): add identical-stale restart UAT"},
+    {"sha": "a2aee5b9", "step": "9", "title": "test(rec-c1.5): add try_new readiness invariant"},
+    {"sha": "1a1ec68a", "step": "10", "title": "style(rec-c1.5): apply fmt + clippy cleanup"}
+  ],
+  "gates": {
+    "T0_fmt": "PASS",
+    "T0_clippy": "PASS",
+    "T1_workspace_lib_plus_tests": "PASS (1262 passed, 0 failed; 13 ignored; excludes chronos-sandbox, chronos-e2e, chronos-native)",
+    "T_chronos_native_serial": "PASS (115 passed, 0 failed; --test-threads=1)",
+    "T_chronos_mcp_bootstrap_readiness": "PASS (1 passed, 0 failed)",
+    "T4_smoke": "PASS (9 passed, 0 failed across restart_uat + e2e_connectivity + analytics_tools; --test-threads=1)",
+    "smoke_subset_note": "Per AGENTS.md \u00a72 this cycle exclusively touches chronos-log, chronos-services, chronos-mcp, and chronos-sandbox (the executable boundary). restart_uat exercises the changed boundary; e2e_connectivity confirms server start with bootstrap; analytics_tools confirms read paths under the new bootstrap shape."
+  },
+  "remote_tag": null,
+  "peel_match": null,
+  "note": "Cycle SHAs populated post-merge. The branch feat/rec-c1.5-closure is ready for sddk release + archive."
+}

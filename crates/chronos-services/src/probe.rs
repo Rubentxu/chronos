@@ -49,6 +49,12 @@ pub struct LiveProbeSession {
     pub ebpf_adapter: Option<Arc<chronos_ebpf::EbpfAdapter>>,
     /// Most recent eBPF attachment metadata (binary_path, symbol_name, pid).
     pub ebpf_attachment: Option<EbpfAttachmentInfo>,
+    /// REC-C1.2a: the session OWNS its ExecutionLog, mandatorily.
+    ///
+    /// Not `Option`: an agentic session that cannot own a log is not
+    /// constructed at all (the entrypoint fails instead). The native backend
+    /// keeps a clone only for writing, and there is no backend read fallback.
+    pub execution_log: crate::session_log::SessionExecutionLog,
 }
 
 /// Metadata for the eBPF attachment of a live probe session.
@@ -69,6 +75,9 @@ pub struct EbpfAttachmentInfo {
 pub struct ProbeContext<'a> {
     /// Live probe sessions: `session_id` → `LiveProbeSession`.
     pub live_probes: &'a Mutex<HashMap<String, LiveProbeSession>>,
+    /// Session-scoped ExecutionLog registry (REC-C1.3). Outlives `live_probes`
+    /// so a stopped session's log stays readable.
+    pub execution_logs: &'a crate::session_log::SessionExecutionLogRegistry,
     /// Finalized session engines: `session_id` → `QueryEngine`.
     /// Kept here so `probe_stop` can hand off the events to the indexer path
     /// (the actual `build_and_store_engine` call still happens in the server,
@@ -102,6 +111,10 @@ pub struct ProbeStartInput {
     pub cwd: Option<String>,
     pub bus_capacity: usize,
     pub track_function_frames: Option<bool>,
+    /// Root directory for this session's ExecutionLog (REC-C1.2a). The log is
+    /// mandatory: when this is `None` a default root is used, and if the log
+    /// cannot be opened the start fails rather than degrading to EventBus-only.
+    pub execution_log_dir: Option<PathBuf>,
 }
 
 /// Input for `ProbeService::start_attach` (m9-77).
@@ -115,6 +128,8 @@ pub struct ProbeAttachInput {
     pub pid: u32,
     pub trace_syscalls: bool,
     pub bus_capacity: usize,
+    /// See [`ProbeStartInput::execution_log_dir`].
+    pub execution_log_dir: Option<PathBuf>,
 }
 
 /// Output for `ProbeService::start_attach` (m9-77).
@@ -177,6 +192,34 @@ pub enum ProbeInjectResult {
     },
 }
 
+/// Publish a session's log handle in the registry (REC-C1.3).
+///
+/// The registry stores a clone of the very handle the session owns, so there is
+/// one log and one identity, never a copy.
+fn register_session_log(
+    ctx: &ProbeContext<'_>,
+    log: &crate::session_log::SessionExecutionLog,
+) -> Result<(), ServiceError> {
+    ctx.execution_logs.register(log.clone())
+}
+
+/// Resolve the directory for a session-owned ExecutionLog.
+///
+/// `explicit` wins when the caller configured one; otherwise the session gets a
+/// per-session directory under a stable root. Every agentic session owns a log,
+/// so this always returns a path — there is no "log disabled" branch.
+///
+/// REC-C1.5 closure: the default root comes from
+/// [`chronos_log::resolve_execution_log_root`], the single canonical resolver
+/// shared by session start, bootstrap, and durable delete.
+fn execution_log_dir(explicit: Option<&std::path::Path>, session_id: &str) -> PathBuf {
+    let root = match explicit {
+        Some(dir) => dir.to_path_buf(),
+        None => chronos_log::resolve_execution_log_root(),
+    };
+    root.join(session_id)
+}
+
 /// Native probe service — business logic for `probe_start`, `probe_stop`,
 /// `probe_drain`, `probe_drain_log`, `probe_compaction_metrics`,
 /// `session_snapshot`, `probe_inject`, `probe_status`.
@@ -210,7 +253,20 @@ impl ProbeService {
         // Create a fresh EventBus for this session
         let bus = EventBus::new_shared(input.bus_capacity);
         let language = ctx_infer_language(&input.program);
-        let backend = NativeProbeBackend::new(bus).with_language(language);
+
+        // REC-C1.2a: canonical ownership order.
+        //   1. mint the canonical SessionId,
+        //   2. open the ExecutionLog the session will own,
+        //   3. hand the backend only a clone for writing.
+        // If (2) fails, session_start fails: no EventBus-only silent session.
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let owned_log = crate::session_log::SessionExecutionLog::create(
+            execution_log_dir(input.execution_log_dir.as_deref(), &session_id),
+            chronos_log::SessionId::new(session_id.clone()),
+        )?;
+        let backend = NativeProbeBackend::new(bus)
+            .with_language(language)
+            .attach_execution_log(owned_log.handle());
 
         // Start the probe (non-blocking — spawns background thread)
         let track_function_frames = input.track_function_frames.unwrap_or(false);
@@ -218,13 +274,12 @@ impl ProbeService {
             .start_probe(config, track_function_frames)
             .map_err(|e| ServiceError::ProbeStartFailed(e.to_string()))?;
 
-        let session_id = uuid::Uuid::new_v4().to_string();
         info!(
             "Live probe started for '{}' (session: {}, bus capacity: {})",
             input.program, session_id, input.bus_capacity
         );
 
-        // Store the live probe session
+        // Store the live probe session. The log is mandatory and session-owned.
         let live_probe = LiveProbeSession {
             backend,
             session,
@@ -233,7 +288,13 @@ impl ProbeService {
             attached: false,
             ebpf_adapter: None,
             ebpf_attachment: None,
+            execution_log: owned_log,
         };
+        // Publish the SAME handle in the registry before the session becomes
+        // visible to callers: a reader can then resolve the log for the whole
+        // logical life of the session, live or stopped.
+        crate::probe::register_session_log(ctx, &live_probe.execution_log)?;
+
         ctx.live_probes
             .lock()
             .map_err(|_| ServiceError::LockPoisoned)?
@@ -307,14 +368,22 @@ impl ProbeService {
             max_duration_ms: None,
         };
         let bus = EventBus::new_shared(input.bus_capacity);
-        let backend = NativeProbeBackend::new(bus).with_language(language);
+        // REC-C1.2a: same canonical order as `start` — mint id, own the log,
+        // then let the backend write through a clone.
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let owned_log = crate::session_log::SessionExecutionLog::create(
+            execution_log_dir(input.execution_log_dir.as_deref(), &session_id),
+            chronos_log::SessionId::new(session_id.clone()),
+        )?;
+        let backend = NativeProbeBackend::new(bus)
+            .with_language(language)
+            .attach_execution_log(owned_log.handle());
         let session = backend.attach_probe(input.pid, config).map_err(|e| {
             ServiceError::AttachFailed(format!(
                 "NativeProbeBackend::attach_probe({}) failed: {}",
                 input.pid, e
             ))
         })?;
-        let session_id = uuid::Uuid::new_v4().to_string();
         let live = crate::probe::LiveProbeSession {
             backend,
             session,
@@ -323,6 +392,7 @@ impl ProbeService {
             attached: true,
             ebpf_adapter: None,
             ebpf_attachment: None,
+            execution_log: owned_log,
         };
         ctx.live_probes
             .lock()
@@ -432,8 +502,16 @@ impl ProbeService {
                     let stale = matches!(status, chronos_domain::CursorStatus::Stale);
                     (events, new_cursor, stale)
                 }
-                Err(chronos_domain::TraceError::CursorStale { .. }) => {
-                    return Err(ServiceError::CursorStale);
+                Err(chronos_domain::TraceError::CursorStale { expected, current }) => {
+                    // Legacy EventBus drain staleness is a DIFFERENT thing from
+                    // retention: the in-memory buffer moved past the cursor. It
+                    // is reported with its own numbers rather than being dressed
+                    // up as a retention boundary, which would be a Silent Lie
+                    // about why the read failed.
+                    return Err(ServiceError::InvalidInput(format!(
+                        "cursor is stale for the legacy drain path: expected total_pushed={expected}, \
+                         current={current}; re-anchor with a fresh probe_drain"
+                    )));
                 }
                 Err(e) => {
                     return Err(ServiceError::DrainFailed(e.to_string()));
@@ -483,9 +561,12 @@ impl ProbeService {
         let live_probe = probes
             .get(session_id)
             .ok_or_else(|| ServiceError::ProbeNotFound(session_id.to_string()))?;
-        live_probe
-            .backend
-            .read_execution_log_records_with_stats(since, limit)
+        // REC-C1.2/C1.2a: read through the session-owned log, not the backend.
+        // NOTE (C1.3 trap): this helper reads fresh with a fixed consumer and
+        // filters `since` by hand. It does NOT implement EventsCursorV1 and must
+        // not become the canonical cursor reader.
+        let owned = &live_probe.execution_log;
+        chronos_native::read_log_with_stats(&owned.handle(), since, limit)
             .map_err(|e| ServiceError::DrainFailed(e.to_string()))
     }
 
@@ -504,10 +585,8 @@ impl ProbeService {
         let live_probe = probes
             .get(session_id)
             .ok_or_else(|| ServiceError::ProbeNotFound(session_id.to_string()))?;
-        live_probe
-            .backend
-            .compaction_metrics()
-            .map_err(|e| ServiceError::DrainFailed(e.to_string()))
+        // REC-C1.2a: counters come from the session-owned log, not the backend.
+        Ok(Some(live_probe.execution_log.compaction_metrics()))
     }
 
     /// Drain raw events from a live probe session and return them + the
@@ -734,4 +813,121 @@ mod _ensure_compiles {
     // (no unresolved imports). The probe service is incrementally extracted
     // across multiple commits; until each method lands its imports are
     // silenced by the `#[allow(unused_imports)]` above.
+}
+
+#[cfg(test)]
+mod rec_c1_2_tests {
+    //! REC-C1.2 / C1.2a — the session owns its ExecutionLog mandatorily, the
+    //! log carries one identity, and there is no backend read fallback.
+
+    use super::*;
+    use chronos_domain::bus::EventBus;
+    use chronos_domain::{CaptureConfig, CaptureSession};
+    use chronos_log::{SegmentedConfig, SegmentedExecutionLog};
+
+    fn test_log(tag: &str) -> crate::session_log::SessionExecutionLog {
+        let dir = std::env::temp_dir().join(format!(
+            "rec-c1-2a-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        crate::session_log::SessionExecutionLog::create(&dir, chronos_log::SessionId::new(tag))
+            .expect("test log")
+    }
+
+    fn stub_session(execution_log: crate::session_log::SessionExecutionLog) -> LiveProbeSession {
+        let bus = EventBus::new_shared(64);
+        let backend = NativeProbeBackend::new(bus).attach_execution_log(execution_log.handle());
+        let session = CaptureSession::new(0, Language::Rust, CaptureConfig::new("noop"));
+        LiveProbeSession {
+            backend,
+            session,
+            language: Language::Rust,
+            target: "noop".to_string(),
+            attached: false,
+            ebpf_adapter: None,
+            ebpf_attachment: None,
+            execution_log,
+        }
+    }
+
+    #[test]
+    fn session_log_is_mandatory_and_owned_by_construction() {
+        // The type is not `Option`, so "a session without a log" is not even
+        // representable. This test pins the invariant that the canonical
+        // constructor hands the session a log whose identity matches.
+        let live = stub_session(test_log("mandatory"));
+        assert_eq!(live.execution_log.session_id().as_str(), "mandatory");
+        assert_eq!(
+            live.execution_log.cursor_start().session_id().as_str(),
+            "mandatory"
+        );
+    }
+
+    #[test]
+    fn backend_and_session_share_one_log_identity() {
+        let live = stub_session(test_log("shared"));
+        let backend_log = live.backend.execution_log().expect("backend holds a clone");
+        assert!(
+            std::sync::Arc::ptr_eq(&backend_log, &live.execution_log.handle()),
+            "backend must write to the very log the session owns"
+        );
+        assert_eq!(
+            backend_log.session_id(),
+            live.execution_log.session_id(),
+            "writer and owner must agree on identity"
+        );
+    }
+
+    #[test]
+    fn log_record_identity_comes_from_the_log_not_a_second_string() {
+        // C1.2a removed the redundant `session_log_id` parameter from dual_push;
+        // the record identity is `log.session_id()`. This asserts the property
+        // that mattered: the log's own identity is authoritative.
+        let live = stub_session(test_log("identity"));
+        let log = live.execution_log.handle();
+        assert_eq!(log.session_id().as_str(), "identity");
+    }
+
+    #[test]
+    fn identity_mismatch_is_rejected_at_adoption() {
+        let dir = std::env::temp_dir().join(format!("rec-c1-2a-mm-{}", std::process::id()));
+        let handle = std::sync::Arc::new(
+            SegmentedExecutionLog::open(
+                chronos_log::SessionId::new("native-9999"),
+                SegmentedConfig::with_dir(&dir),
+            )
+            .unwrap(),
+        );
+        let err = crate::session_log::SessionExecutionLog::try_adopt(
+            None,
+            chronos_log::SessionId::new("service-uuid"),
+            handle,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            ServiceError::ExecutionLogIdentityMismatch { .. }
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn session_creation_with_an_unopenable_log_root_fails_loudly() {
+        // A directory that cannot be created must fail session creation, not
+        // silently fall back to an EventBus-only session.
+        let bad_root = "/proc/definitely-not-creatable/chronos";
+        let err = crate::session_log::SessionExecutionLog::create(
+            std::path::Path::new(bad_root),
+            chronos_log::SessionId::new("sess-fail"),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, ServiceError::ProbeStartFailed(_)),
+            "expected a loud failure, got {err:?}"
+        );
+    }
 }

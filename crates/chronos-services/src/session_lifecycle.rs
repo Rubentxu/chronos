@@ -116,6 +116,9 @@ impl ChronosSessionLifecycleService {
             cwd: spawn_fields.cwd,
             bus_capacity,
             track_function_frames: Some(spawn_fields.track_function_frames),
+            // REC-C1.2a: session_start may point the session's ExecutionLog at a
+            // specific root; otherwise the default root applies.
+            execution_log_dir: None,
         };
         let out = ProbeService::start(ctx.probe, probe_input).await?;
         let lang = out.language.clone();
@@ -197,6 +200,7 @@ impl ChronosSessionLifecycleService {
                 pid,
                 trace_syscalls: false, // default; matches m7-04 spawn default
                 bus_capacity: 4096,
+                execution_log_dir: None,
             },
         )?;
         let snapshot = CapabilitySnapshot {
@@ -281,16 +285,22 @@ impl ChronosSessionLifecycleService {
         // idempotent path; caller synthesises output from persisted
         // metadata.
         let persistence = match ProbeService::stop(ctx.probe, &input.session_id) {
-            Ok(r) => SessionStopPersistence::Stopped {
-                session_id: input.session_id,
-                events: r.events,
-                language: r.language,
-                target: r.target,
-                total_events: r.total_events as u64,
-                duration_ms: r.duration_ms,
-                ebpf_detached: r.ebpf_detached,
-                sealed_at,
-            },
+            Ok(r) => {
+                if input.seal_tail {
+                    let log = ctx.probe.execution_logs.get(&input.session_id)?;
+                    log.seal()?;
+                }
+                SessionStopPersistence::Stopped {
+                    session_id: input.session_id,
+                    events: r.events,
+                    language: r.language,
+                    target: r.target,
+                    total_events: r.total_events as u64,
+                    duration_ms: r.duration_ms,
+                    ebpf_detached: r.ebpf_detached,
+                    sealed_at,
+                }
+            }
             Err(ServiceError::ProbeNotFound(_)) => SessionStopPersistence::AlreadyStopped {
                 session_id: input.session_id,
             },
@@ -938,8 +948,12 @@ mod tests {
         let engines: &'static TokioMutex<HashMap<String, chronos_query::QueryEngine>> =
             Box::leak(Box::new(TokioMutex::new(HashMap::new())));
 
+        let execution_logs: &'static crate::session_log::SessionExecutionLogRegistry = Box::leak(
+            Box::new(crate::session_log::SessionExecutionLogRegistry::new()),
+        );
         let probe: &'static ProbeContext<'static> = Box::leak(Box::new(ProbeContext {
             live_probes,
+            execution_logs,
             engines,
             session_languages: langs,
             tripwire_manager: tripwire,

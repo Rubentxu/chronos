@@ -1672,6 +1672,22 @@ impl McpTestClient {
         Ok(())
     }
 
+    /// Force-kill the MCP server process without graceful shutdown.
+    ///
+    /// REC-C1.5 (UAT-R1): simulate an unclean session termination by sending
+    /// SIGKILL while the session is still in progress. The MCP process exits
+    /// abruptly without running any clean-stop / seal / flush hooks, so the
+    /// next process boot must observe `TailState::Unclean` for the session.
+    ///
+    /// The caller is responsible for dropping `self` afterwards; this method
+    /// only consumes the inner process handle.
+    pub async fn force_kill(&mut self) -> Result<(), McpSandboxError> {
+        if let Some(p) = self.process.as_mut() {
+            p.force_kill().await?;
+        }
+        Ok(())
+    }
+
     /// Default DB path used by the MCP server (`CHRONOS_DB_PATH` or
     /// `$HOME/.local/share/chronos/sessions.redb`).
     pub fn default_db_path() -> std::path::PathBuf {
@@ -1712,6 +1728,34 @@ impl McpTestClient {
         let (process, stdin, reader) =
             crate::client::process::factory::start_with_env(&mcp_path, Self::db_env(&db_path))
                 .await?;
+        let session = McpSession::new(stdin, reader).await?;
+        Ok(Self {
+            process: Some(process),
+            session: Some(session),
+            db_dir: None,
+            db_path: Some(db_path),
+        })
+    }
+
+    /// Spawn the MCP server with an explicit DB path AND an explicit
+    /// execution-log root.
+    ///
+    /// Both are passed through the child process environment — never via
+    /// `std::env::set_var` on the test binary itself, which would mutate
+    /// the entire process (CC#56 in the vault drift sweep; m9-73 closed
+    /// the previous instance of this failure mode on `CHRONOS_DB_PATH`).
+    pub async fn start_with_db_and_exec_log_root(
+        db_path: std::path::PathBuf,
+        exec_log_root: std::path::PathBuf,
+    ) -> Result<Self, McpSandboxError> {
+        let mcp_path = Self::resolve_mcp_path();
+        let mut env = Self::db_env(&db_path);
+        env.insert(
+            "CHRONOS_EXECUTION_LOG_DIR".to_string(),
+            exec_log_root.to_string_lossy().to_string(),
+        );
+        let (process, stdin, reader) =
+            crate::client::process::factory::start_with_env(&mcp_path, env).await?;
         let session = McpSession::new(stdin, reader).await?;
         Ok(Self {
             process: Some(process),

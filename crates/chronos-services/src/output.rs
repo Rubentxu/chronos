@@ -23,7 +23,12 @@ pub use chronos_domain::property::{ComparisonOp, PropertyValue};
 /// metadata (`total_matching`, `next_offset`) in addition to the event list.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryEventsResult {
-    /// The raw query result from the engine.
+    /// The read result.
+    ///
+    /// On the authoritative (log-backed) path, `total_matching` is the number
+    /// of events returned **in this page**, not a global total: the global
+    /// answer belongs to `completeness`, which is `"unknown"` until REC-C1.4.
+    /// `next_offset` is always `None` — pagination is the opaque cursor's job.
     pub result: chronos_domain::query::QueryResult,
 }
 
@@ -255,6 +260,8 @@ pub struct ListResult {
 pub struct DeleteResult {
     /// Deleted session identifier.
     pub session_id: String,
+    /// Durable ExecutionLog directories removed by the operation.
+    pub paths_removed: Vec<std::path::PathBuf>,
 }
 
 /// Result of dropping a session from in-memory state.
@@ -1547,10 +1554,9 @@ impl EventsReadKind {
 /// version, etc.) is m7+ territory.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EventsReadProvenance {
-    /// Always `"query_engine"` in m7-01 — the v2 dispatcher only reads
-    /// from the finalised-session `QueryEngine`. The live ring buffer
-    /// (`probe_drain`) is a separate read path until m7-02 (`observe`
-    /// merge) unifies them.
+    /// `"execution_log"` on the authoritative path (REC-C1.3): the read comes
+    /// from the session-owned `ExecutionLog`, not from `QueryEngine` or the
+    /// EventBus.
     pub source: String,
     /// The session this read is bound to. Mirrors the top-level
     /// `session_id` echo but is structurally nested for forward
@@ -1578,19 +1584,19 @@ pub enum EventsReadOutput {
         session_id: String,
         #[serde(flatten)]
         result: QueryEventsResult,
-        /// Opaque cursor for the next page. `None` when the result set
-        /// was fully returned by this call. The encoding matches the
-        /// existing `CursorDto` shape (`{total_pushed, snapshot_len}`).
-        /// A fresh cursor is issued when the caller did not provide
-        /// one (`cursor == None`); the dispatcher returns
-        /// `ServiceError::CursorStale` if the caller's cursor is older
-        /// than the session's current `total_pushed`.
-        next_cursor: Option<CursorDto>,
-        /// `"complete"` for the cursor path, `"best_effort"` for the
-        /// offset/limit compatibility shim path. Forward-compatible:
-        /// m7+ may add `"gap"` to signal a known gap window in the
-        /// captured trace.
-        completeness: String,
+        /// Opaque cursor for the next page (`EventsCursorV1::encode`), or
+        /// `None` when no evidence remains at or after the returned position.
+        ///
+        /// Deliberately a string, not a typed position: `position_after` is an
+        /// internal `EventSeq` concept, and exposing it here would leak that the
+        /// cursor is a sequence number.
+        next_cursor: Option<String>,
+        /// Completeness verdict for the examined range, with its scope.
+        ///
+        /// `Complete` requires a continuity proof for the range; the absence of a
+        /// recorded gap is not by itself a proof. `GapDetected` carries the range
+        /// too, so a caller never has to guess what "complete" refers to.
+        completeness: crate::events_log_read::CompletenessReport,
         /// Always `None` in m7-01 (see honest disclosure above).
         gap_summary: Option<Vec<serde_json::Value>>,
         provenance: EventsReadProvenance,

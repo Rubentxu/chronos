@@ -28,7 +28,7 @@ pub use capture_runner::{
 pub use dwarf::{BasicLocationEvaluator, DwarfLocationEvaluator, DwarfReader};
 pub use int3_injector::{InstalledBreakpoint, Int3Injector, INT3};
 pub use native_adapter::NativeAdapter;
-pub use probe_backend::NativeProbeBackend;
+pub use probe_backend::{read_log_with_stats, NativeProbeBackend};
 pub use ptrace_tracer::{PtraceConfig, PtraceEvent, PtraceTracer};
 pub use symbol_resolver::{SymbolInfo, SymbolResolver, SymbolResolverError};
 pub use syscall_table::resolve_syscall;

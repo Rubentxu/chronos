@@ -132,6 +132,10 @@ pub struct ChronosServer {
     /// index). Guarded by a std Mutex; used by the observe dispatcher to
     /// generate stable `uprobe-<session>-<n>` ids.
     uprobe_counter: Arc<std::sync::Mutex<HashMap<String, usize>>>,
+    /// REC-C1.3: session-scoped ExecutionLog registry. Outlives `live_probes`
+    /// so a stopped session's log stays readable without a second source.
+    execution_logs: Arc<chronos_services::session_log::SessionExecutionLogRegistry>,
+    execution_log_root: std::path::PathBuf,
     /// Live probe sessions: session_id → LiveProbeSession.
     /// These are real-time probe sessions using `NativeProbeBackend` where events
     /// stream to an `EventBus` ring buffer. Use `probe_drain` to read current events
@@ -606,12 +610,11 @@ pub struct EventsReadParams {
     /// Maximum events to return (mode=query only).
     #[serde(default = "default_limit")]
     pub limit: usize,
-    /// Opaque cursor for the next page. Wire shape:
-    /// `{ "total_pushed": u64, "snapshot_len": u64 }`. Same encoding
-    /// as the existing `probe_drain` cursor. Omitted for the first
-    /// page (the dispatcher issues a fresh cursor).
+    /// Opaque cursor for the next page (`ecv1:<schema>:<len>:<session>:<seq>`,
+    /// as returned in `next_cursor`). Omitted for the first page, which starts
+    /// at seq#0 inclusive. A cursor minted for another session is refused.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cursor: Option<chronos_services::output::CursorDto>,
+    pub cursor: Option<String>,
 }
 
 /// Parameters for the v2 `observe` tool (m7-02).
@@ -1817,8 +1820,18 @@ impl ChronosServer {
     /// store that cannot be opened instead of degrading. See
     /// [`StoreOpenError`] for the policy and
     /// `CHRONOS_ALLOW_IN_MEMORY_FALLBACK` for the explicit opt-in.
-    pub fn try_new() -> Result<Self, StoreOpenError> {
-        Ok(Self::from_store(Self::try_open_default_store()?))
+    pub fn try_new() -> Result<Self, crate::init_error::ChronosServerInitError> {
+        let store = Self::try_open_default_store()?;
+        let server = Self::from_store(store);
+        let root = chronos_log::resolve_execution_log_root();
+        chronos_services::execution_log_bootstrap::bootstrap_execution_logs(
+            &root,
+            &server.execution_logs,
+        )
+        .map_err(|cause| {
+            crate::init_error::ChronosServerInitError::ExecutionLogBootstrap { root, cause }
+        })?;
+        Ok(server)
     }
 
     /// Infallible convenience wrapper around [`ChronosServer::try_new`].
@@ -1849,6 +1862,10 @@ impl ChronosServer {
             active_session: Arc::new(Mutex::new(None)),
             tripwire_manager: Arc::new(TripwireManager::new()),
             uprobe_counter: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            execution_logs: Arc::new(
+                chronos_services::session_log::SessionExecutionLogRegistry::new(),
+            ),
+            execution_log_root: chronos_log::resolve_execution_log_root(),
             live_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
             live_browser_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
             degraded,
@@ -1872,6 +1889,10 @@ impl ChronosServer {
                 active_session: Arc::new(Mutex::new(None)),
                 tripwire_manager: Arc::new(TripwireManager::new()),
                 uprobe_counter: Arc::new(std::sync::Mutex::new(HashMap::new())),
+                execution_logs: Arc::new(
+                    chronos_services::session_log::SessionExecutionLogRegistry::new(),
+                ),
+                execution_log_root: chronos_log::resolve_execution_log_root(),
                 live_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
                 live_browser_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
                 degraded: false,
@@ -1879,6 +1900,20 @@ impl ChronosServer {
             },
             Err(e) => panic!("{e}"),
         }
+    }
+
+    /// Handle to the session-scoped `ExecutionLog` registry built during
+    /// `try_new` (`bootstrap_execution_logs`).
+    ///
+    /// Used by tooling that needs to confirm the registry is populated
+    /// (RECs C1.5.5 — readiness invariant tests). This is the same data
+    /// `events_read` consults at read time; making it readable to test
+    /// helpers does not expose anything `events_read` does not already
+    /// surface to MCP callers.
+    pub fn execution_log_registry(
+        &self,
+    ) -> &std::sync::Arc<chronos_services::session_log::SessionExecutionLogRegistry> {
+        &self.execution_logs
     }
 
     /// Whether the server is operating in degraded (in-memory, ephemeral)
@@ -2092,6 +2127,9 @@ impl ChronosServer {
     /// Remove all in-memory state for a session: query engine, language tag,
     /// and connected-session marker.
     async fn cleanup_session_memory(&self, session_id: &str) {
+        // REC-C1.3: drop/delete ends the log's in-memory life. Segment files are
+        // NOT removed here; retention policy belongs to REC-C1.5.
+        self.execution_logs.remove(session_id);
         self.engines.lock().await.remove(session_id);
         self.session_languages.lock().await.remove(session_id);
         if let Ok(mut sessions) = self.connected_sessions.lock() {
@@ -2426,21 +2464,38 @@ impl ChronosServer {
             }
         }
 
-        // m7-01 shim: translate v1 offset/limit into a cursor at the
-        // dispatcher boundary. The v1 path is best-effort: completeness
-        // is "best_effort" because the offset/limit model is not the
-        // same as the cursor model. Future m7+ may tighten this.
+        // REC-C1.3 compatibility translation: v1 `offset` is expressed as a
+        // canonical cursor position and handed to the ONE real reader. There is
+        // no second implementation over the ExecutionLog, and no offset reaches
+        // the read path.
+        //
+        // NOTE on semantics: the pre-C1.3 implementation ignored `offset`
+        // entirely, so there is no historical "offset within the filtered set"
+        // behaviour to preserve. Deprecated `query_events`: pagination now
+        // follows canonical ExecutionLog position semantics.
         let cursor = if params.offset == 0 {
             None
         } else {
-            Some(chronos_services::output::CursorDto {
-                total_pushed: Some(params.offset as u64),
-                snapshot_len: Some(params.limit as u64),
+            // Registry, not live_probes: a stopped session's log must still be
+            // addressable, otherwise `offset` silently degrades to a fresh read
+            // (which is exactly the bug this cutover removes).
+            let sid = self
+                .execution_logs
+                .get(&params.session_id)
+                .ok()
+                .map(|log| log.session_id().clone());
+            sid.and_then(|session| {
+                chronos_services::events_cursor::EventsCursorV1::start(session)
+                    .advanced_to(chronos_log::EventSeq::new(params.offset as u64))
+                    .ok()
+                    .map(|c| c.encode())
             })
         };
 
+        // REC-C1.3: the authoritative read needs the sessions (session-owned
+        // logs), not the engine map.
         let ctx = EventsReadContext {
-            engines: &self.engines,
+            execution_logs: &self.execution_logs,
         };
         let input = EventsReadInput {
             session_id: params.session_id.clone(),
@@ -2505,8 +2560,10 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
+        // REC-C1.3: the authoritative read needs the sessions (session-owned
+        // logs), not the engine map.
         let ctx = EventsReadContext {
-            engines: &self.engines,
+            execution_logs: &self.execution_logs,
         };
         let input = EventsReadInput {
             session_id: params.session_id.clone(),
@@ -2857,6 +2914,17 @@ impl ChronosServer {
                     "internal error: unexpected tripwire not found",
                 )));
             }
+            // REC-C1.2/C1.2a/C1.3 variants (cannot occur from list_threads).
+            Err(ServiceError::NoExecutionLog(_))
+            | Err(ServiceError::ExecutionLogIdentityMismatch { .. })
+            | Err(ServiceError::EvidenceDecodeFailed { .. })
+            | Err(ServiceError::EvidenceReadStalled { .. })
+            | Err(ServiceError::ExecutionLogUnavailable { .. })
+            | Err(ServiceError::EvidenceUnavailableDueToRetention { .. }) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected ExecutionLog error",
+                )));
+            }
             Err(ServiceError::Unsupported(_)) => {
                 return Ok(CallToolResult::error(text_content(
                     "internal error: unexpected unsupported error",
@@ -2889,7 +2957,7 @@ impl ChronosServer {
                     "internal error: unexpected invalid cursor",
                 )));
             }
-            Err(ServiceError::CursorStale) => {
+            Err(ServiceError::CursorStale { .. }) => {
                 return Ok(CallToolResult::error(text_content(
                     "internal error: unexpected cursor stale",
                 )));
@@ -3402,6 +3470,8 @@ impl ChronosServer {
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
             store: &self.store,
+            execution_log_registry: &self.execution_logs,
+            execution_log_root: &self.execution_log_root,
         };
 
         match SessionsService::save_session(
@@ -3462,6 +3532,8 @@ impl ChronosServer {
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
             store: &self.store,
+            execution_log_registry: &self.execution_logs,
+            execution_log_root: &self.execution_log_root,
         };
 
         match SessionsService::load_session(&params.session_id, &ctx).await {
@@ -3505,6 +3577,8 @@ impl ChronosServer {
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
             store: &self.store,
+            execution_log_registry: &self.execution_logs,
+            execution_log_root: &self.execution_log_root,
         };
 
         match SessionsService::list_sessions(&ctx).await {
@@ -3550,16 +3624,19 @@ impl ChronosServer {
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
             store: &self.store,
+            execution_log_registry: &self.execution_logs,
+            execution_log_root: &self.execution_log_root,
         };
 
         match SessionsService::delete_session(&params.session_id, &ctx).await {
-            Ok(_result) => {
+            Ok(result) => {
                 // Also purge all in-memory state for this session.
                 self.cleanup_session_memory(&params.session_id).await;
 
                 let output = serde_json::json!({
                     "session_id": params.session_id,
                     "status": "deleted",
+                    "paths_removed": result.paths_removed,
                     "message": format!("Session '{}' deleted from persistent storage and memory.", params.session_id),
                 });
                 Ok(CallToolResult::success(json_content(&session_envelope(
@@ -3592,6 +3669,8 @@ impl ChronosServer {
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
             store: &self.store,
+            execution_log_registry: &self.execution_logs,
+            execution_log_root: &self.execution_log_root,
         };
 
         match SessionsService::drop_session(&params.session_id, &ctx).await {
@@ -4104,6 +4183,7 @@ impl ChronosServer {
         let label_for_v2 = params.label.clone();
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -4166,6 +4246,7 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -4258,6 +4339,7 @@ impl ChronosServer {
         }
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -4322,6 +4404,7 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -4424,6 +4507,7 @@ impl ChronosServer {
         };
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -4485,6 +4569,7 @@ impl ChronosServer {
         // drain_subscriptions=true` defaults matching v1 behavior).
         let ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -4578,6 +4663,7 @@ impl ChronosServer {
         };
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -4638,6 +4724,7 @@ impl ChronosServer {
         };
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -4816,6 +4903,7 @@ impl ChronosServer {
         // by synthesising a stub metadata from the LiveProbeSession.
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -4885,6 +4973,7 @@ impl ChronosServer {
 
         let ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -4933,9 +5022,13 @@ impl ChronosServer {
             Err(ServiceError::ProbeNotFound(s)) => Ok(CallToolResult::error(text_content(
                 format!("Live probe session '{}' not found.", s),
             ))),
-            Err(ServiceError::CursorStale) => Ok(CallToolResult::error(text_content(
-                "Cursor is stale; re-anchor with a fresh probe_drain (no cursor).".to_string(),
-            ))),
+            Err(ServiceError::CursorStale {
+                requested_next_seq,
+                retained_from_seq,
+            }) => Ok(CallToolResult::error(text_content(format!(
+                "Cursor at seq {requested_next_seq} is stale; the earliest available position is \
+{retained_from_seq}. This is retention, not evidence loss: re-anchor deliberately."
+            )))),
             Err(ServiceError::DrainFailed(msg)) => Ok(CallToolResult::error(text_content(
                 format!("Failed to drain events: {}", msg),
             ))),
@@ -4970,6 +5063,7 @@ impl ChronosServer {
 
         let ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -5050,6 +5144,7 @@ impl ChronosServer {
 
         let ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -5105,6 +5200,7 @@ impl ChronosServer {
 
         let ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -5158,6 +5254,7 @@ impl ChronosServer {
 
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -5263,6 +5360,7 @@ impl ChronosServer {
 
         let ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -5786,8 +5884,10 @@ impl ChronosServer {
         let event_types: Option<Vec<EventType>> =
             params.event_types.filter(|types| !types.is_empty());
 
+        // REC-C1.3: the authoritative read needs the sessions (session-owned
+        // logs), not the engine map.
         let ctx = EventsReadContext {
-            engines: &self.engines,
+            execution_logs: &self.execution_logs,
         };
         let input = EventsReadInput {
             session_id: params.session_id,
@@ -5811,12 +5911,35 @@ impl ChronosServer {
                 format!("Session '{}' not found", s),
             ))),
             Err(ServiceError::InvalidInput(s)) => Ok(CallToolResult::error(text_content(s))),
-            Err(ServiceError::CursorStale) => Ok(CallToolResult::error(text_content(
-                "cursor is stale: the session has advanced past this cursor's total_pushed",
-            ))),
             Err(ServiceError::InvalidCursorPayload) => Ok(CallToolResult::error(text_content(
-                "invalid cursor payload: expected {total_pushed, snapshot_len}",
+                "invalid cursor: expected an opaque cursor previously returned in next_cursor",
             ))),
+            Err(ServiceError::EvidenceDecodeFailed {
+                session_id,
+                seq,
+                payload_tag,
+            }) => Ok(CallToolResult::error(text_content(format!(
+                "evidence at seq {seq} of session '{session_id}' could not be decoded                  (payload tag {payload_tag:?}); the read failed closed and no cursor was issued"
+            )))),
+            Err(ServiceError::EvidenceReadStalled { session_id, position }) => {
+                Ok(CallToolResult::error(text_content(format!(
+                    "evidence read stalled for session '{session_id}' at position {position}:                      the log reported more data without advancing"
+                ))))
+            }
+            Err(ServiceError::NoExecutionLog(s)) => Ok(CallToolResult::error(text_content(
+                format!("session '{s}' owns no ExecutionLog"),
+            ))),
+            Err(ServiceError::EvidenceUnavailableDueToRetention { retained_from }) => {
+                Ok(CallToolResult::error(text_content(format!(
+                    "evidence unavailable: this session's history is retained only from seq \
+{retained_from}, so an id from the retired range cannot be reported as absent"
+                ))))
+            }
+            Err(ServiceError::ExecutionLogUnavailable { session_id, reason }) => {
+                Ok(CallToolResult::error(text_content(format!(
+                    "ExecutionLog unavailable for session '{session_id}': {reason}"
+                ))))
+            }
             Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
     }
@@ -5895,6 +6018,7 @@ impl ChronosServer {
         // Build the ProbeContext for the dispatcher.
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
             engines: &self.engines,
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
@@ -8582,6 +8706,22 @@ mod tests {
         // reads `backend`, so we stub the other fields with
         // dummies that compile.
         let dummy_session = CaptureSession::new(0, Language::Rust, CaptureConfig::new("noop"));
+        // REC-C1.2a: a session always owns a log (the type is not `Option`), so
+        // the pre-C1.2a "no log attached" fixture is not representable. What the
+        // round must still tolerate is a log with nothing to compact.
+        let log_dir = std::env::temp_dir().join(format!(
+            "rec-c1-2a-compaction-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let owned_for_round = chronos_services::session_log::SessionExecutionLog::create(
+            &log_dir,
+            chronos_log::SessionId::new("rec-c1-2a-compaction"),
+        )
+        .expect("test log");
         let live = LiveProbeSession {
             backend: backend_no_log,
             session: dummy_session,
@@ -8590,6 +8730,7 @@ mod tests {
             attached: false,
             ebpf_adapter: None,
             ebpf_attachment: None,
+            execution_log: owned_for_round,
         };
         {
             let mut probes = server.live_probes.lock().unwrap();
@@ -8683,9 +8824,20 @@ mod tests {
         }
 
         // Register the backend as a live probe session.
+        //
+        // REC-C1.2: the session OWNS the log. The backend keeps its clone only
+        // for writing, and the read path reads through the session — there is no
+        // backend read fallback. So this fixture must hand the session the log,
+        // exactly as `ProbeService::start` does.
         let server = Arc::new(ChronosServer::new());
         let dummy_session =
             CaptureSession::new(0, chronos_domain::Language::C, CaptureConfig::new("noop"));
+        let owned_log = chronos_services::session_log::SessionExecutionLog::try_adopt(
+            Some(dir.clone()),
+            LogSessionId::new(&log_session_id),
+            log.clone(),
+        )
+        .expect("caller identity must match the log's identity");
         let live = LiveProbeSession {
             backend,
             session: dummy_session,
@@ -8694,6 +8846,7 @@ mod tests {
             attached: false,
             ebpf_adapter: None,
             ebpf_attachment: None,
+            execution_log: owned_log,
         };
         server
             .live_probes

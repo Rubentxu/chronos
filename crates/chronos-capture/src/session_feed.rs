@@ -48,6 +48,15 @@ impl ExecutionLogBackend for SegmentedLogBackend {
         self.seg.read_after(&consumer, cursor)
     }
 
+    fn read_from_seq(
+        &self,
+        _session_id: &SessionId,
+        from_seq: chronos_log::EventSeq,
+        limit: usize,
+    ) -> Result<chronos_log::LogPage, LogError> {
+        self.seg.read_from_seq(from_seq, limit)
+    }
+
     fn tail_seq(&self, _session_id: &SessionId) -> Option<chronos_log::EventSeq> {
         self.seg.tail_seq()
     }

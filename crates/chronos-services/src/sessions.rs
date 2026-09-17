@@ -9,6 +9,7 @@
 //! returns `Ok` for `delete_session` and `drop_session`.
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use chronos_domain::Language;
 use chronos_index::builder::IndexBuilder;
@@ -16,7 +17,9 @@ use chronos_query::QueryEngine;
 use tokio::sync::Mutex;
 
 use crate::error::ServiceError;
+use crate::execution_log_bootstrap::delete_durable_execution_log;
 use crate::output::{DeleteResult, DropResult, ListResult, LoadResult, SaveResult, SessionSummary};
+use crate::session_log::SessionExecutionLogRegistry;
 use chronos_store::{SessionMetadata, SessionStore};
 
 /// Borrow struct holding all state needed by `SessionsService` methods.
@@ -34,6 +37,9 @@ pub struct SessionsContext<'a> {
     pub connected_sessions: &'a std::sync::Mutex<HashSet<String>>,
     /// Persistent session store.
     pub store: &'a SessionStore,
+    /// Canonical durable ExecutionLog registry and root.
+    pub execution_log_registry: &'a SessionExecutionLogRegistry,
+    pub execution_log_root: &'a Path,
 }
 
 impl std::fmt::Debug for SessionsContext<'_> {
@@ -208,8 +214,15 @@ impl SessionsService {
             .delete_session(session_id)
             .map_err(|e| ServiceError::DeleteFailed(e.to_string()))?;
 
+        let paths_removed = delete_durable_execution_log(
+            ctx.execution_log_registry,
+            ctx.execution_log_root,
+            session_id,
+        )?;
+
         Ok(DeleteResult {
             session_id: session_id.to_string(),
+            paths_removed,
         })
     }
 
@@ -317,6 +330,8 @@ mod tests {
             session_languages: languages,
             connected_sessions: connected,
             store,
+            execution_log_registry: Box::leak(Box::new(SessionExecutionLogRegistry::new())),
+            execution_log_root: Box::leak(Box::new(std::env::temp_dir())),
         }
     }
 

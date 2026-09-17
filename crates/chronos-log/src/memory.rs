@@ -13,7 +13,7 @@
 //! scope is API plus invariants; lock-free redesign is m1-02.
 
 use crate::backend::{ExecutionLogBackend, NewExecutionRecord};
-use crate::cursor::{ConsumerCursor, LogConsumerId, ReadResult};
+use crate::cursor::{ConsumerCursor, LogConsumerId, LogPage, ReadResult};
 use crate::error::LogError;
 use crate::gap::Gap;
 use crate::record::{ExecutionKind, ExecutionPayload, ExecutionRecord, SessionId};
@@ -524,6 +524,73 @@ impl ExecutionLogBackend for InMemoryExecutionLog {
         })
     }
 
+    fn read_from_seq(
+        &self,
+        session_id: &SessionId,
+        from_seq: EventSeq,
+        limit: usize,
+    ) -> Result<LogPage, LogError> {
+        // Stateless: no cursor is read or written. Two callers with different
+        // `from_seq` cannot interfere.
+        let entries = {
+            let records = self.records.lock().expect("records lock poisoned");
+            match records.get(session_id).cloned() {
+                Some(e) => e,
+                None => return Ok(LogPage::empty_at(from_seq)),
+            }
+        };
+
+        let mut out_records: Vec<ExecutionRecord> = Vec::new();
+        let mut out_gaps: Vec<Gap> = Vec::new();
+        let mut examined_any = false;
+        let mut max_examined = from_seq;
+
+        for entry in entries {
+            match entry {
+                RecordEntry::Record(r) => {
+                    if r.seq < from_seq {
+                        continue;
+                    }
+                    if out_records.len() >= limit {
+                        break;
+                    }
+                    examined_any = true;
+                    if r.seq > max_examined {
+                        max_examined = r.seq;
+                    }
+                    out_records.push(r);
+                }
+                RecordEntry::Gap(g) => {
+                    // A gap is examined when its range reaches the position.
+                    if g.last_missing < from_seq {
+                        continue;
+                    }
+                    if out_records.len() >= limit {
+                        break;
+                    }
+                    examined_any = true;
+                    out_gaps.push(g.clone());
+                    // Advance over the gap: a reader must not stall before
+                    // lost evidence.
+                    if g.last_missing > max_examined {
+                        max_examined = g.last_missing;
+                    }
+                }
+            }
+        }
+
+        Ok(LogPage {
+            records: out_records,
+            gaps: out_gaps,
+            position_after: if examined_any {
+                EventSeq::new(max_examined.0 + 1)
+            } else {
+                from_seq
+            },
+            exhausted: !examined_any,
+        })
+    }
+
     fn tail_seq(&self, session_id: &SessionId) -> Option<EventSeq> {
         let next_seq = self.next_seq.lock().expect("next_seq lock poisoned");
         let allocator = next_seq.get(session_id).copied()?;
@@ -846,5 +913,144 @@ mod tests {
         let mut seqs: Vec<u64> = after.iter().map(|r| r.seq.0).collect();
         seqs.sort();
         assert_eq!(seqs, vec![3, 4]);
+    }
+}
+
+/// REC-C1.3 — stateless page reader tests.
+///
+/// These pin the contract the agent-visible cursor depends on:
+/// `from_seq == 0` includes seq#0; a page advances the position exactly; two
+/// readers with different positions are independent; and a position advances
+/// OVER an observed gap instead of stalling before it.
+#[cfg(test)]
+mod rec_c1_3_read_from_seq {
+    use super::*;
+    use crate::gap::GapReason;
+
+    fn seeded(n: usize) -> (InMemoryExecutionLog, SessionId) {
+        let log = InMemoryExecutionLog::new();
+        let s = SessionId::new("rec-c1-3");
+        for i in 0..n {
+            log.append_raw(s.clone(), i as u64, "ev").unwrap();
+        }
+        (log, s)
+    }
+
+    #[test]
+    fn from_zero_includes_seq_zero() {
+        let (log, s) = seeded(3);
+        let page = log.read_from_seq(&s, EventSeq::ZERO, 10).unwrap();
+        let seqs: Vec<u64> = page.records.iter().map(|r| r.seq.0).collect();
+        assert_eq!(seqs, vec![0, 1, 2], "seq#0 must be delivered, not skipped");
+        assert_eq!(page.position_after, EventSeq::new(3));
+        assert!(!page.exhausted);
+    }
+
+    #[test]
+    fn page_boundary_is_exact_and_resume_starts_there() {
+        let (log, s) = seeded(25);
+        let p1 = log.read_from_seq(&s, EventSeq::ZERO, 10).unwrap();
+        assert_eq!(p1.records.first().unwrap().seq, EventSeq::new(0));
+        assert_eq!(p1.records.last().unwrap().seq, EventSeq::new(9));
+        assert_eq!(p1.position_after, EventSeq::new(10));
+
+        let p2 = log.read_from_seq(&s, p1.position_after, 10).unwrap();
+        assert_eq!(p2.records.first().unwrap().seq, EventSeq::new(10));
+        assert_eq!(p2.records.last().unwrap().seq, EventSeq::new(19));
+        assert_eq!(p2.position_after, EventSeq::new(20));
+
+        // Exact resume at 10 reproduces page 2, with no duplicate or skip.
+        let resumed = log.read_from_seq(&s, EventSeq::new(10), 10).unwrap();
+        assert_eq!(
+            resumed.records.iter().map(|r| r.seq.0).collect::<Vec<_>>(),
+            p2.records.iter().map(|r| r.seq.0).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn two_readers_with_different_positions_are_independent() {
+        let (log, s) = seeded(100);
+        let a = log.read_from_seq(&s, EventSeq::new(10), 5).unwrap();
+        let b = log.read_from_seq(&s, EventSeq::new(40), 5).unwrap();
+        assert_eq!(a.records.first().unwrap().seq, EventSeq::new(10));
+        assert_eq!(b.records.first().unwrap().seq, EventSeq::new(40));
+        // Reading A again is unaffected by B having read.
+        let a2 = log.read_from_seq(&s, EventSeq::new(10), 5).unwrap();
+        assert_eq!(a.records, a2.records);
+    }
+
+    #[test]
+    fn caught_up_reader_does_not_move_its_position() {
+        let (log, s) = seeded(4);
+        let page = log.read_from_seq(&s, EventSeq::new(9), 10).unwrap();
+        assert!(page.records.is_empty());
+        assert!(page.exhausted);
+        assert_eq!(page.position_after, EventSeq::new(9), "no phantom progress");
+    }
+
+    #[test]
+    fn position_advances_over_an_observed_gap() {
+        // seq space: 0, then a gap 1..=3, then record 4.
+        let (log, s) = gappy_log();
+        let page = log.read_from_seq(&s, EventSeq::ZERO, 10).unwrap();
+        assert_eq!(
+            page.records.iter().map(|r| r.seq.0).collect::<Vec<_>>(),
+            vec![0, 4],
+            "evidence after the gap stays reachable in the same page"
+        );
+        assert_eq!(page.gaps.len(), 1);
+        assert_eq!(page.gaps[0].last_missing, EventSeq::new(3));
+        // position_after = (highest seq examined) + 1, gaps included.
+        assert_eq!(page.position_after, EventSeq::new(5));
+    }
+
+    #[test]
+    fn a_record_limited_page_still_reaches_the_gap_on_the_next_read() {
+        // `limit` limits RECORDS. A page can therefore stop before examining a
+        // gap; the next read starts exactly at `position_after`, meets the gap
+        // and clears it. Progress is monotonic across consecutive reads.
+        let (log, s) = gappy_log();
+        let p1 = log.read_from_seq(&s, EventSeq::ZERO, 1).unwrap();
+        assert_eq!(
+            p1.records.iter().map(|r| r.seq.0).collect::<Vec<_>>(),
+            vec![0]
+        );
+        assert_eq!(
+            p1.gaps.len(),
+            0,
+            "limit reached before the gap was examined"
+        );
+        assert!(p1.position_after > EventSeq::ZERO, "position must move");
+
+        let p2 = log.read_from_seq(&s, p1.position_after, 1).unwrap();
+        assert!(
+            p2.position_after > p1.position_after,
+            "no stall between pages"
+        );
+        assert_eq!(p2.gaps.len(), 1, "the gap is examined on the next page");
+        assert_eq!(
+            p2.records.iter().map(|r| r.seq.0).collect::<Vec<_>>(),
+            vec![4],
+            "and the record after the gap is delivered"
+        );
+        assert_eq!(p2.position_after, EventSeq::new(5));
+    }
+
+    fn gappy_log() -> (InMemoryExecutionLog, SessionId) {
+        let log = InMemoryExecutionLog::new();
+        let s = SessionId::new("gappy");
+        log.append_raw(s.clone(), 0, "before").unwrap();
+        log.record_gap(
+            s.clone(),
+            Gap::new(
+                EventSeq::new(1),
+                EventSeq::new(3),
+                GapReason::AdapterBufferOverflow,
+                "test",
+            ),
+        )
+        .unwrap();
+        log.append_raw(s.clone(), 4, "after").unwrap();
+        (log, s)
     }
 }

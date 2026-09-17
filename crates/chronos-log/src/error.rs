@@ -27,6 +27,57 @@ pub enum LogError {
     /// last_missing`, or it overlaps an existing allocated seq
     /// range).
     InvalidGap { reason: String },
+    /// The requested position is older than the retention boundary
+    /// (REC-C1.5.1).
+    ///
+    /// Retention is a LOGICAL boundary: from the instant a range is declared
+    /// retained the answer is the same before and after a restart, even while
+    /// physical reclamation is still in flight. This is deliberately NOT a gap:
+    /// the evidence was retired by policy, not lost, and no silent re-anchor is
+    /// performed.
+    PositionBeforeRetention {
+        requested_next_seq: EventSeq,
+        retained_from: EventSeq,
+    },
+    /// Retention metadata is absent and the layout does not allow it to be
+    /// inferred (REC-C1.5.1).
+    ///
+    /// A directory without a manifest whose first segment does not start at
+    /// seq#0 could mean "history legitimately retained" or "files are missing".
+    /// Rather than fabricate truth from absence, the reopen refuses.
+    RetentionMetadataMissing { dir: String, first_segment_seq: u64 },
+    /// A manifest's session identity disagrees with the requested one.
+    IdentityMismatch { requested: String, manifest: String },
+    /// A surviving segment crosses the retention boundary, so the manifest and
+    /// the on-disk layout are incompatible (REC-C1.5.1).
+    SegmentCrossesRetention {
+        segment_start: u64,
+        segment_end: u64,
+        retained_from: u64,
+    },
+    /// The log was sealed and cannot accept new evidence (REC-C1.5.3).
+    ///
+    /// Without this the seal would be a label, not a guarantee.
+    LogSealed(String),
+    /// A sealed tail disagrees with what replay reconstructed (REC-C1.5.3).
+    ///
+    /// C1.5.2 catches a missing segment between two survivors; only the seal can
+    /// reveal a missing LAST segment, because nothing follows it to reveal the
+    /// hole.
+    TailIntegrityMismatch {
+        session_id: String,
+        expected: Option<u64>,
+        actual: Option<u64>,
+    },
+    /// Strict replay refused to reconstruct the log (REC-C1.5.2).
+    ///
+    /// The retained region contains an unexplained hole or an integrity
+    /// violation, so no handle may be published. Typed so callers can react
+    /// programmatically instead of parsing a string.
+    ReplayIntegrity {
+        session_id: String,
+        kind: Box<crate::replay::ReplayIntegrityError>,
+    },
     /// Backend-specific failure. The wrapped string is human-readable
     /// and intended for logs / error payloads — not for programmatic
     /// matching.
@@ -50,6 +101,59 @@ impl fmt::Display for LogError {
                 write!(f, "append failed for session `{}`: {}", session, reason)
             }
             LogError::InvalidGap { reason } => write!(f, "invalid gap: {}", reason),
+            LogError::PositionBeforeRetention {
+                requested_next_seq,
+                retained_from,
+            } => write!(
+                f,
+                "position {} is before the retention boundary {}",
+                requested_next_seq, retained_from
+            ),
+            LogError::RetentionMetadataMissing {
+                dir,
+                first_segment_seq,
+            } => write!(
+                f,
+                "retention metadata missing in {:?}: first segment starts at {} \
+                 (cannot distinguish retained history from missing files)",
+                dir, first_segment_seq
+            ),
+            LogError::IdentityMismatch {
+                requested,
+                manifest,
+            } => write!(
+                f,
+                "execution log identity mismatch: requested {:?}, manifest {:?}",
+                requested, manifest
+            ),
+            LogError::SegmentCrossesRetention {
+                segment_start,
+                segment_end,
+                retained_from,
+            } => write!(
+                f,
+                "segment {}..={} crosses the retention boundary {}",
+                segment_start, segment_end, retained_from
+            ),
+            LogError::LogSealed(session_id) => write!(
+                f,
+                "session {:?} is sealed; no further writes are accepted",
+                session_id
+            ),
+            LogError::TailIntegrityMismatch {
+                session_id,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "sealed tail mismatch for session {:?}: manifest {:?}, replay {:?}",
+                session_id, expected, actual
+            ),
+            LogError::ReplayIntegrity { session_id, kind } => write!(
+                f,
+                "replay integrity failure for session {:?}: {}",
+                session_id, kind
+            ),
             LogError::Backend(msg) => write!(f, "backend error: {}", msg),
         }
     }

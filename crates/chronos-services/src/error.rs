@@ -105,6 +105,61 @@ pub enum ServiceError {
     #[error("probe start failed: {0}")]
     ProbeStartFailed(String),
 
+    /// The session does not own an `ExecutionLog` (REC-C1.2).
+    ///
+    /// Reads must go through the session-owned log; there is deliberately no
+    /// backend fallback. A session without a log cannot serve authoritative
+    /// reads, and saying so is the honest answer.
+    #[error("session {0} owns no ExecutionLog")]
+    NoExecutionLog(String),
+
+    /// A durable record could not be decoded into a `TraceEvent` (REC-C1.3).
+    ///
+    /// The read fails closed: skipping the record and advancing the cursor would
+    /// hide evidence loss from the agent, which is precisely the Silent Lie the
+    /// reconstruction exists to remove.
+    #[error("evidence at seq {seq} of session {session_id} could not be decoded (payload tag {payload_tag:?})")]
+    EvidenceDecodeFailed {
+        session_id: String,
+        seq: u64,
+        payload_tag: String,
+    },
+
+    /// The session has no `ExecutionLog` available in this process.
+    ///
+    /// Distinct from `SessionNotFound`: the session may be known to other
+    /// surfaces (a session loaded from the store) while its log is not open
+    /// here. Reopening is REC-C1.5; until then this is reported honestly instead
+    /// of falling back to another source.
+    #[error("ExecutionLog unavailable for session {session_id}: {reason}")]
+    ExecutionLogUnavailable { session_id: String, reason: String },
+
+    /// A by-id lookup found nothing in the RETAINED region while history has
+    /// been retired (REC-C1.5).
+    ///
+    /// The event may have lived in the retired range, so "not found" would be a
+    /// false claim about the whole session.
+    #[error(
+        "evidence for that id is unavailable: history is retained only from seq {retained_from}"
+    )]
+    EvidenceUnavailableDueToRetention { retained_from: u64 },
+
+    /// The log backend reported "not exhausted" while making no forward
+    /// progress (REC-C1.3).
+    ///
+    /// That is a contract violation, not a normal state. Treating it as a
+    /// normal empty page would hand the caller the same cursor again (an
+    /// infinite read loop for `ById`), so the read fails closed instead.
+    #[error(
+        "evidence read stalled: session {session_id} reported more data at position {position} without advancing"
+    )]
+    EvidenceReadStalled { session_id: String, position: u64 },
+
+    /// A log was handed to a session under an identity the log does not carry
+    /// (REC-C1.2a). Duplicated identity must never become canonical.
+    #[error("ExecutionLog identity mismatch: session {expected} but log holds {actual}")]
+    ExecutionLogIdentityMismatch { expected: String, actual: String },
+
     /// A `probe_stop` call failed to drain / detach.
     #[error("probe stop error: {0}")]
     ProbeStopError(String),
@@ -113,9 +168,17 @@ pub enum ServiceError {
     #[error("invalid cursor payload")]
     InvalidCursorPayload,
 
-    /// The cursor was decoded but its total_pushed is older than the live bus.
-    #[error("cursor stale")]
-    CursorStale,
+    /// The cursor points before the durable retention boundary (REC-C1.5.1).
+    ///
+    /// Not evidence loss: the range was retired by policy. Carries both numbers
+    /// so the caller can re-anchor deliberately instead of being silently moved.
+    #[error(
+        "cursor at seq {requested_next_seq} is before the retention boundary {retained_from_seq}"
+    )]
+    CursorStale {
+        requested_next_seq: u64,
+        retained_from_seq: u64,
+    },
 
     /// A non-destructive drain encountered a backend error.
     #[error("drain failed: {0}")]
