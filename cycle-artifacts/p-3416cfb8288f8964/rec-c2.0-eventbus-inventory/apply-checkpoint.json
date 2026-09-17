@@ -1,20 +1,20 @@
 {
   "cycle_id": "rec-c2.0-eventbus-inventory",
   "route": "A-min",
-  "status": "in_progress",
-  "verify_status": null,
-  "release_status": null,
-  "archive_status": null,
-  "head_sha": null,
+  "status": "CLOSED",
+  "verify_status": "passed",
+  "release_status": "passed",
+  "archive_status": "ready",
+  "head_sha": "4c7df70e70e268f05de5708d7bdfdb0ede9a30f1",
   "base_sha": "063cbdf8",
-  "main_sha": "063cbdf8",
+  "main_sha": "4c7df70e70e268f05de5708d7bdfdb0ede9a30f1",
   "tag": "rec-c2.0-eventbus-inventory",
   "branch": "feat/rec-c2.0-eventbus-inventory",
-  "remote_tag": null,
-  "peel_match": null,
+  "remote_tag": "rec-c2.0-eventbus-inventory",
+  "peel_match": false,
   "tier_required": "T3+gate",
   "created_at": "2026-09-17",
-  "closed_at": null,
+  "closed_at": "2026-09-17",
   "title": "rec-c2.0-eventbus-inventory",
   "summary": "Opens REC-C2. Machine-readable inventory of every production EventBus / legacy-queue coupling (37 occurrences: 26 COMPATIBILITY, 11 CANONICAL) plus a four-rule ratchet wired into the architecture gate. Six characterizations measure today's reality: dual_push publishes to the bus before a best-effort log append (CHAR-C2-01); observe(list) drains fired evidence globally (CHAR-C2-02); retained_until_session_end destroys rather than retains (CHAR-C2-03); fire_count is never incremented (CHAR-C2-04); the fired buffer has no consumer scoping (CHAR-C2-05); probe_stop/session_snapshot read the bus destructively (CHAR-C2-06). No runtime behavior change.",
   "blockers": [],
@@ -32,20 +32,27 @@
     "FIND-C2.0-03": "check_architecture_contracts.py was RED on main@063cbdf8 (pre-existing): TRUTH-001/002/003 are status=verified but lacked the policy-required uat field. Repaired in-cycle (minimum patch) by adding the uat arrays; the UATs already existed and were named in notes."
   },
   "commits": [
-    {"sha": "e60c5c2e", "title": "feat(rec-c2.0): EventBus legacy inventory + four-rule ratchet + 6 characterizations"}
+    {
+      "sha": "e60c5c2e",
+      "title": "feat(rec-c2.0): EventBus legacy inventory + four-rule ratchet + 6 characterizations"
+    },
+    {
+      "sha": "4c7df70e",
+      "title": "Merge REC-C2.0 \u2014 EventBus legacy inventory + ratchet (REC-C2 opened)"
+    }
   ],
   "gates": {
     "T0_fmt": "PASS (cargo fmt --all -- --check)",
     "T0_clippy": "PASS (cargo clippy --workspace --all-targets -- -D warnings)",
     "T1_workspace_lib_plus_tests": "PASS (workspace --lib excluding sandbox/e2e/native: 16 groups 0 failed; chronos-domain 161, chronos-services 350)",
-    "T_chronos_native_serial": "PASS (105 passed; --test-threads=1 per AGENTS.md §6.5)",
+    "T_chronos_native_serial": "PASS (105 passed; --test-threads=1 per AGENTS.md \u00a76.5)",
     "arch_gate_default": "PASS (python3 scripts/check_architecture_contracts.py)",
     "arch_gate_strict_legacy": "FAIL by design with exactly 7 CANONICAL destructive reads (the gate REC-C2 must clear)",
     "legacy_evb_ratchet": "PASS (37 tracked, baseline 37, CANONICAL=11); both new-use and stale-waiver rules mutation-verified"
   },
   "pre_existing_flakes_handled": [
-    "chronos-native lib tests require --test-threads=1 (ptrace collisions; documented in AGENTS.md §6.5)",
-    "check_architecture_contracts.py was RED on main (TRUTH-001/002/003 missing uat) — repaired in-cycle, documented as FIND-C2.0-03"
+    "chronos-native lib tests require --test-threads=1 (ptrace collisions; documented in AGENTS.md \u00a76.5)",
+    "check_architecture_contracts.py was RED on main (TRUTH-001/002/003 missing uat) \u2014 repaired in-cycle, documented as FIND-C2.0-03"
   ],
   "smoke_subset": [],
   "verify_commands": [
@@ -60,5 +67,5 @@
     "CC#39_pre_existing_intentional": "cycles/index.md Total cycles vs m9-only filesystem count; structural delta, pre-existing. gov-* owns it (do NOT silently mask).",
     "CC#18_rec_c1_7_pre_existing": "rec-c1-7-projection-authority-acceptance missing verify-findings.json (C1.7 gap). gov-* owns the backfill."
   },
-  "notes": "Opened at the user's direction immediately after M1 closure. C2.0 is inventory + measurement only: no EventBus removal, no behavior change. The ratchet makes the legacy surface monotonically shrinking and names the 7 CANONICAL destructive reads REC-C2 must clear (--strict-legacy). Two real defects surfaced (FIND-C2.0-01/02) and became REC-C2.1 DoD items; the pre-existing red architecture gate (FIND-C2.0-03) was repaired in-cycle per AGENTS.md §4. Next: REC-C2.1 (TripwireFired as ExecutionLog evidence; persist first, derive second, fan-out last)."
+  "notes": "Opened at the user's direction immediately after M1 closure. C2.0 is inventory + measurement only: no EventBus removal, no behavior change. The ratchet makes the legacy surface monotonically shrinking and names the 7 CANONICAL destructive reads REC-C2 must clear (--strict-legacy). Two real defects surfaced (FIND-C2.0-01/02) and became REC-C2.1 DoD items; the pre-existing red architecture gate (FIND-C2.0-03) was repaired in-cycle per AGENTS.md \u00a74. Next: REC-C2.1 (TripwireFired as ExecutionLog evidence; persist first, derive second, fan-out last)."
 }

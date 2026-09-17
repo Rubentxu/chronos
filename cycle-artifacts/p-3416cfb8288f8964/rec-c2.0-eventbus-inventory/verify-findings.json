@@ -1,6 +1,6 @@
 {
   "subject": {
-    "head_sha": "PENDING_MERGE_SHA",
+    "head_sha": "4c7df70e70e268f05de5708d7bdfdb0ede9a30f1",
     "base_sha": "063cbdf8",
     "cycle_id": "rec-c2.0-eventbus-inventory"
   },
@@ -10,7 +10,13 @@
   "lens_summary": {
     "drift": "REC-C2.0 turns the legacy EventBus surface into a measured, monotonically shrinking inventory (37 production occurrences) and arms a four-rule ratchet in the architecture gate. No runtime behavior changes. Six characterizations measure today's reality and surface two real defects (retained_until_session_end destroys evidence; fire_count never increments) that become REC-C2.1 DoD items. A pre-existing red architecture gate (TRUTH-001/002/003 missing the policy-required uat field) was repaired in-cycle.",
     "findings_count": 3,
-    "tiers_run": ["T0", "T3", "T_chronos_native_serial", "arch-gate", "legacy-evb-ratchet"],
+    "tiers_run": [
+      "T0",
+      "T3",
+      "T_chronos_native_serial",
+      "arch-gate",
+      "legacy-evb-ratchet"
+    ],
     "source_schema": "rec-c2.0-eventbus-inventory"
   },
   "findings": [
@@ -22,7 +28,7 @@
       "evidence": [
         "chronos-services/src/observe.rs:279 calls TripwiresService::list unconditionally, which calls manager.drain_fired() (chronos-services/src/tripwires.rs:58).",
         "chronos-services/src/observe.rs:302 then returns ([], 0) for RetainedUntilSessionEnd.",
-        "Test: observe::tests::char_c2_03_retained_until_session_end_loses_the_evidence — the retained read returns 0 and the following drained read also returns 0.",
+        "Test: observe::tests::char_c2_03_retained_until_session_end_loses_the_evidence \u2014 the retained read returns 0 and the following drained read also returns 0.",
         "Owner: REC-C2.1. Fix: retain for real (consumer cursor over immutable evidence) or reject as Unsupported."
       ]
     },
@@ -34,7 +40,7 @@
       "evidence": [
         "chronos-domain/src/tripwire.rs:119 initializes fire_count: 0; Tripwire::fire/fire_semantic take &self and return TripwireFired without touching it.",
         "TripwireManager::evaluate/evaluate_semantic call record_fired (buffer append) and never write back to the Tripwire.",
-        "Test: tripwire::tests::char_c2_04_fire_count_is_always_zero — 3 firings, list()[0].fire_count == 0.",
+        "Test: tripwire::tests::char_c2_04_fire_count_is_always_zero \u2014 3 firings, list()[0].fire_count == 0.",
         "Owner: REC-C2.1. Fix: derive the count from persisted TripwireFired evidence."
       ]
     },
@@ -46,7 +52,7 @@
       "evidence": [
         "Pre-existing on main@063cbdf8 (verified by stash + re-run): scripts/check_architecture_contracts.py reported 'verified contract missing uat' for TRUTH-001/002/003.",
         "Policy: reconstruction-contracts.toml [policy] verified_requires = [evidence, uat, verify].",
-        "Repaired in-cycle (minimum patch, AGENTS.md §4 default): the uat arrays were added; the UATs already existed and were named in each contract's notes.",
+        "Repaired in-cycle (minimum patch, AGENTS.md \u00a74 default): the uat arrays were added; the UATs already existed and were named in each contract's notes.",
         "Gate now PASSES."
       ]
     }
@@ -55,8 +61,8 @@
     {
       "suite": "chronos-native lib",
       "test": "ptrace_tracer::tests::*",
-      "status": "PRE-EXISTING in parallel mode per AGENTS.md §6.5; PASS serial.",
-      "tracked": "AGENTS.md §6.5"
+      "status": "PRE-EXISTING in parallel mode per AGENTS.md \u00a76.5; PASS serial.",
+      "tracked": "AGENTS.md \u00a76.5"
     },
     {
       "suite": "vault drift CC#39",
