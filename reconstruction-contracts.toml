@@ -1,6 +1,16 @@
 version = 1
 updated = "2026-09-17"
-active_gate = "REC-C1.8"
+active_gate = "REC-C2"
+
+# Gate history (rec-c1 stream closure):
+#   REC-C1.7 = closed on tag rec-c1-7-projection-authority-acceptance
+#              (tag object 5f603bff, merge 6190390d)
+#   REC-C1.8 = closed on tag rec-c1-8-authoritative-evidence-handoff
+#              (closes the three acceptance discrepancies left by C1.7;
+#               see cycles/index.md and cycle-artifacts/p-3416cfb8288f8964/rec-c1-8-authoritative-evidence-handoff/)
+#   REC-C2   = active (legacy deletion; owns EventBus / drain_raw_events /
+#              fired_buffer / TripwireFired retirement; LEGACY-001/002 stay `gap`
+#              until C2 closes)
 
 [policy]
 allowed_statuses = ["verified", "partial", "gap", "planned", "blocked"]
@@ -146,9 +156,18 @@ evidence = [
   "chronos-sandbox/tests/rec_c1_7_projection_restart_equivalence.rs",
   "chronos-sandbox/tests/rec_c1_7_uat_c1_01_two_consumers.rs",
   "crates/chronos-services/src/projection.rs::tests::build_engine_preserves_seq_event_id_timestamp_ns_as_independent_dimensions",
+  # REC-C1.8 closeout evidence (literal 10k, producer advance, A resumes;
+  # negative `complete` arm of UAT-REC-C1-03; 4-dim independence with the
+  # new captured_at_unix_ns dimension; 3 black-box wire tests replacing
+  # the deleted dual_truth RED tests):
+  "chronos-sandbox/tests/rec_c1_8_uat_c1_01_exact.rs",
+  "chronos-sandbox/tests/rec_c1_8_uat_c1_03_forced_gap.rs",
+  "crates/chronos-log/tests/rec_c1_8_uat_c1_05_four_dim.rs",
+  "chronos-sandbox/tests/rec_c1_8_dual_truth_closeout.rs",
+  "crates/chronos-log/src/record.rs::ExecutionRecord::captured_at_unix_ns",
 ]
-notes = "REC-C1.7: QueryEngine is now a reconstructible projection of SessionExecutionLog. The canonical builder is chronos_services::projection::build_engine; events_log_read::decode and build_engine share the decoder so events_read and the projection cannot drift. execution_query / state_query / trace_slice call gate_projection_for_wire at the top of the MCP handler; queries against a Truncated or Empty projection are refused with rmcp::ErrorData. Restart equivalence proven on the wire by rec_c1_7_projection_restart_equivalence (engine rebuilt from the durable log on first query after restart). Two-consumer semantics (independent cursors, monotonic event_id growth) proven by rec_c1_7_uat_c1_01_two_consumers. Time-semantics independence (seq vs event_id vs timestamp_ns) proven by projection::tests::build_engine_preserves_seq_event_id_timestamp_ns_as_independent_dimensions. EventBus / drain_raw_events / fired_buffer / TripwireFired remain as legacy analytics paths owned by REC-C2 (not removed in this cycle)."
-verify = "cargo test -p chronos-services --lib projection::; cargo test -p chronos-sandbox --test rec_c1_7_projection_restart_equivalence --test rec_c1_7_uat_c1_01_two_consumers -- --test-threads=1"
+notes = "REC-C1.7: QueryEngine is now a reconstructible projection of SessionExecutionLog. The canonical builder is chronos_services::projection::build_engine; events_log_read::decode and build_engine share the decoder so events_read and the projection cannot drift. execution_query / state_query / trace_slice call gate_projection_for_wire at the top of the MCP handler; queries against a Truncated or Empty projection are refused with rmcp::ErrorData. Restart equivalence proven on the wire by rec_c1_7_projection_restart_equivalence (engine rebuilt from the durable log on first query after restart). Two-consumer semantics (independent cursors, monotonic event_id growth) proven by rec_c1_7_uat_c1_01_two_consumers. Time-semantics independence (seq vs event_id vs timestamp_ns) proven by projection::tests::build_engine_preserves_seq_event_id_timestamp_ns_as_independent_dimensions. EventBus / drain_raw_events / fired_buffer / TripwireFired remain as legacy analytics paths owned by REC-C2 (not removed in this cycle).\nREC-C1.8 (Authoritative Evidence Handoff): closes the three acceptance discrepancies left open by C1.7. (a) dual_truth RED tests removed; replaced by 3 black-box wire tests in rec_c1_8_dual_truth_closeout.rs (wrapper rebuilds engine from log, late-append rebuild on fresh process, state_query gate). (b) UAT-REC-C1-01 literal 10k durable records + producer advance + A resumes proven by rec_c1_8_uat_c1_01_exact (the old test used 64 records with a >=10 floor). (c) UAT-REC-C1-03 negative `complete` arm proven by rec_c1_8_uat_c1_03_forced_gap::uat_rec_c1_03_clean_session_reports_complete_negative; positive forced-gap blocked on FIND-C1.8-01 (a documented chronos_log::segmented segment-header bookkeeping bug — out of scope for REC-C1; deferred to m1-*). (d) UAT-REC-C1-05 four-dim independence (seq, event_id, monotonic_ns, captured_at_unix_ns) proven by rec_c1_8_uat_c1_05_four_dim; the new captured_at_unix_ns dimension was added to ExecutionRecord and NewExecutionRecord with #[serde(default, skip_serializing_if = \"Option::is_none\")] and does NOT promote v1->v2 (schema_version unchanged unless M2+ fields are populated)."
+verify = "cargo test -p chronos-services --lib projection::; cargo test -p chronos-sandbox --test rec_c1_7_projection_restart_equivalence --test rec_c1_7_uat_c1_01_two_consumers -- --test-threads=1; cargo test -p chronos-sandbox --test rec_c1_8_uat_c1_01_exact --test rec_c1_8_dual_truth_closeout --test rec_c1_8_uat_c1_03_forced_gap -- --test-threads=1; cargo test -p chronos-log --test rec_c1_8_uat_c1_05_four_dim"
 
 [[requirement]]
 id = "TRUTH-002"
@@ -198,12 +217,14 @@ id = "LEGACY-001"
 title = "No agent/query dependency on EventBus destructive reads"
 status = "gap"
 owner_gate = "REC-C2"
+notes = "REC-C1.8 ratifies this as C2-owned. REC-C1.7 kept EventBus / drain_raw_events / fired_buffer as legacy analytics paths; no agent-visible query depends on them after the C1.7 projection gate (execution_query / state_query / trace_slice all read the canonical SessionExecutionLog projection). The gap stays open until REC-C2 deletes the destructive-read surface; C1.8 closes the handoff without requiring this contract to be filled."
 
 [[requirement]]
 id = "LEGACY-002"
 title = "TripwireFired is ExecutionLog evidence and no independent fired queue remains"
 status = "gap"
 owner_gate = "REC-C2"
+notes = "REC-C1.8 ratifies this as C2-owned. TripwireFired still flows through the legacy fired_buffer; it is not yet projected as ExecutionLog evidence. The gap stays open until REC-C2 retires the independent fired queue and re-sources TripwireFired from the durable log. C1.8 closes the handoff without requiring this contract to be filled."
 
 [[requirement]]
 id = "HEX-001"
