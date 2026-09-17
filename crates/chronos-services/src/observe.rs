@@ -52,11 +52,12 @@ use std::collections::HashMap;
 use std::sync::Mutex as StdMutex;
 
 use crate::error::ServiceError;
+use crate::events_cursor::EventsCursorV1;
 use crate::output::{
     ObserveCondition, ObserveCreateResult, ObserveDeleteResult, ObserveListResult, ObserveOutput,
     ObserveProvenance, ObserveRetention, ObserveRetention::Drained as RetDrained,
     ObserveRetention::RetainedUntilSessionEnd as RetRetainedUntilSessionEnd, ObserveScope,
-    ObserveVerb, SubscriptionDto,
+    ObserveVerb, SubscriptionDto, TripwireFiredSummary,
 };
 use crate::probe::{ProbeContext, ProbeService};
 use crate::tripwires::TripwiresService;
@@ -66,6 +67,13 @@ use crate::tripwires::TripwiresService;
 // result, scope, verb, etc.) are intentionally NOT re-exported — those
 // are return-type payloads and stay opaque to callers.
 pub use crate::output::ObserveInput;
+
+/// Maximum firings handed back by a single `verb=list` page.
+///
+/// The page is also bounded by `tripwire_evidence::DEFAULT_SCAN_BUDGET`
+/// examined records, so a sparse firing cannot turn a small request into an
+/// unbounded scan.
+const MAX_FIRINGS_PER_PAGE: usize = 200;
 
 /// Borrowed handle to the live state the dispatcher needs.
 ///
@@ -298,18 +306,22 @@ impl ChronosObserveService {
 
     // -- list ------------------------------------------------------------------
 
+    /// Page firing evidence out of the session's `ExecutionLog`.
+    ///
+    /// REC-C2.1.4b. Firings are read from the log, never from the legacy
+    /// `fired_buffer`; the destructive `TripwiresService::list()` is no longer
+    /// called here (it drained globally, which stole evidence from other
+    /// consumers — CHAR-C2-02).
+    ///
+    /// ```text
+    /// Tripwire definitions -> TripwireManager (non-destructive snapshot)
+    /// Firing evidence      -> ExecutionLog only
+    /// List progress        -> caller-owned EventSeq cursor
+    /// ```
     async fn list(
         ctx: &ObserveContext<'_>,
         input: ObserveInput,
     ) -> Result<ObserveOutput, ServiceError> {
-        // REC-C2.1.4a: resolve the canonical session at the async boundary.
-        // Explicit `scope` wins; `active_session` is only a fallback. Today the
-        // value is resolved and discarded (behavior is unchanged); C2.1.4b
-        // reads firings from this session's ExecutionLog via
-        // `read_firings_page`. `Err` is tolerated for now so `list` keeps
-        // working without a session during the transition.
-        let _resolved_session = Self::resolve_session(ctx, input.scope.as_ref()).await;
-
         // Validate retention up front. v2 supports `drained` (default) and
         // `retained_until_session_end`; `permanent` is rejected.
         let retention = input.retention.unwrap_or_default();
@@ -320,41 +332,89 @@ impl ChronosObserveService {
         }
         Self::validate_requested_evidence(&input.requested_evidence)?;
 
-        // `verb=list` is destructive — calls `TripwiresService::list` which
-        // drains the fired-events buffer. `verb=query` uses the same code
-        // path but with a non-destructive variant.
-        let tripwire_list = TripwiresService::list(ctx.tripwire_manager);
+        // Canonical session (explicit scope wins; active_session is a fallback).
+        let session_id = Self::resolve_session(ctx, input.scope.as_ref()).await?;
+        let log = ctx.probe.execution_logs.get(&session_id)?;
+        let retained_from = log.retained_from();
 
-        let subscriptions = tripwire_list
-            .tripwires
+        // Cursor handling. A malformed token, a token for another session, or a
+        // token below the retention watermark is a typed error; a cursor is
+        // NEVER silently re-anchored.
+        let from = match input.cursor.as_deref() {
+            Some(token) => {
+                let cursor = EventsCursorV1::decode_for_session(
+                    token,
+                    &chronos_log::SessionId::new(&session_id),
+                )
+                .map_err(|e| ServiceError::InvalidInput(format!("observe cursor: {e}")))?;
+                let next = cursor.next_seq();
+                if next < retained_from {
+                    return Err(ServiceError::InvalidInput(format!(
+                        "observe cursor is stale: next_seq {} is below the retained boundary {}; \
+                         re-anchor with a fresh cursor",
+                        next.0, retained_from.0
+                    )));
+                }
+                next
+            }
+            // No cursor: start at the first retained seq (not necessarily 0).
+            None => retained_from,
+        };
+
+        let page = crate::tripwire_evidence::read_firings_page(
+            &log,
+            from,
+            MAX_FIRINGS_PER_PAGE,
+            crate::tripwire_evidence::DEFAULT_SCAN_BUDGET,
+        )?;
+
+        // Definitions come from the manager as a plain snapshot: no drain.
+        // `fire_count` stays the legacy counter until C2.1.5 derives it.
+        let tripwires = ctx.tripwire_manager.list();
+        let subscriptions = tripwires
             .into_iter()
             .map(|tw| SubscriptionDto {
                 kind: "tripwire".to_string(),
-                id: tw.id,
+                id: tw.id.to_string(),
                 label: tw.label,
-                condition: tw.condition,
+                condition: format!("{:?}", tw.condition),
                 fire_count: tw.fire_count,
             })
             .collect();
+        let total_active = ctx.tripwire_manager.active_count();
 
-        // Honour the retention setting: `drained` returns the fired
-        // events; `retained_until_session_end` returns an empty list
-        // (the buffer is kept intact, but in m7-02 we approximate this
-        // by returning [] — see honest_disclosure below).
-        let (fired_events, fired_count) = match retention {
-            RetDrained => (
-                tripwire_list.fired_events.clone(),
-                tripwire_list.fired_count,
-            ),
-            RetRetainedUntilSessionEnd => (Vec::new(), 0),
+        let fired_events: Vec<TripwireFiredSummary> = match retention {
+            RetDrained => page
+                .firings
+                .iter()
+                .map(|(_, ev)| TripwireFiredSummary {
+                    tripwire_id: ev.tripwire_id.to_string(),
+                    condition_description: format!("{:?}", ev.condition),
+                    event_id: ev.source_event_id.unwrap_or(0),
+                    timestamp_ns: ev.source_timestamp_ns,
+                    thread_id: ev.source_thread_id,
+                })
+                .collect(),
+            // Retention is evidence lifecycle, not delivery: the firings stay
+            // in the log either way. This branch does not hand them back yet.
+            RetRetainedUntilSessionEnd => Vec::new(),
             ObserveRetention::Permanent => unreachable!("rejected above"),
         };
+        let fired_count = fired_events.len();
 
-        let total_active = tripwire_list.total_active;
-        let next_cursor = None; // cursor for fired events is reserved for m7+
+        // Always a checkpoint, even at the tail: the log may gain a firing next
+        // second and the client must keep a position. Filters/pagination never
+        // move the meaning of the position.
+        let next_cursor = Some(
+            EventsCursorV1::start(chronos_log::SessionId::new(&session_id))
+                .advanced_to(page.position_after)
+                .map_err(|e| ServiceError::InvalidInput(format!("observe cursor advance: {e}")))?
+                .encode(),
+        );
+
         let provenance = ObserveProvenance {
             engine_version: "chronos-0.1.0".to_string(),
-            query_strategy: "IndexLookup".to_string(),
+            query_strategy: "ExecutionLogScan".to_string(),
             retention_in_effect: format!("{:?}", retention),
         };
 
@@ -363,6 +423,7 @@ impl ChronosObserveService {
             fired_events,
             total_active,
             fired_count,
+            session_id: Some(session_id),
             next_cursor,
             provenance,
         }))
@@ -398,6 +459,9 @@ impl ChronosObserveService {
             fired_events: Vec::new(),
             total_active: tripwire_query.total_active,
             fired_count: 0,
+            // `query` is a non-destructive subscription snapshot; it does not
+            // resolve a session and does not page firings (that is `list`).
+            session_id: None,
             next_cursor: None,
             provenance,
         }))
@@ -506,6 +570,63 @@ mod tests {
                 tripwire_manager: &self.manager,
                 active_session: &self.active_session,
             }
+        }
+
+        /// REC-C2.1.4b: open a session `ExecutionLog` and make it active.
+        ///
+        /// `observe(list)` reads firings from the log, so tests must set up a
+        /// real log instead of filling the legacy `fired_buffer`.
+        async fn open_session(&self, session_id: &str) {
+            let dir = std::env::temp_dir().join(format!(
+                "chronos-c21-observe-{}-{}-{}",
+                session_id,
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0)
+            ));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).expect("mkdir");
+            let raw = chronos_log::SegmentedExecutionLog::open(
+                chronos_log::SessionId::new(session_id),
+                chronos_log::SegmentedConfig::with_dir(&dir),
+            )
+            .expect("open log");
+            let adopted = crate::session_log::SessionExecutionLog::try_adopt(
+                Some(dir),
+                chronos_log::SessionId::new(session_id),
+                std::sync::Arc::new(raw),
+            )
+            .expect("adopt");
+            self.execution_logs.register(adopted).expect("register");
+            *self.active_session.lock().await = Some(session_id.to_string());
+        }
+
+        /// Append a `Raw` record for `event` and derive any firings from it.
+        ///
+        /// This is the REC-C2.1 production flow: accept the source first, then
+        /// derive durable `TripwireFired` evidence. No `fired_buffer` involved.
+        fn ingest(&self, session_id: &str, event: &chronos_domain::TraceEvent) {
+            use chronos_log::ExecutionKind as K;
+            let log = self.execution_logs.get(session_id).expect("log");
+            let payload = chronos_log::ExecutionPayload::new(
+                serde_json::to_vec(event).expect("encode"),
+                "trace_event",
+            );
+            let seq = log
+                .handle()
+                .append(chronos_log::NewExecutionRecord {
+                    session_id: log.session_id().clone(),
+                    kind: K::Raw,
+                    monotonic_ns: event.timestamp_ns,
+                    payload,
+                    ..Default::default()
+                })
+                .expect("append raw");
+            log.handle().flush().ok();
+            crate::tripwire_evidence::derive_firings_from_event(&log, &self.manager, seq, event)
+                .expect("derive");
         }
 
         /// REC-C2.1.4a: drive the service through its real async boundary.
@@ -635,6 +756,7 @@ mod tests {
     #[tokio::test]
     async fn list_with_no_subscriptions_returns_empty() {
         let rig = TestRig::new();
+        rig.open_session("observe-empty").await;
         let input = tripwire_input(ObserveVerb::List);
         let out = rig.observe(input).await.unwrap();
         match out {
@@ -644,6 +766,15 @@ mod tests {
                 assert_eq!(l.total_active, 0);
                 assert_eq!(l.fired_count, 0);
                 assert_eq!(l.provenance.retention_in_effect, "Drained");
+                // REC-C2.1.4b: the resolved session and a checkpoint are visible.
+                assert_eq!(l.session_id.as_deref(), Some("observe-empty"));
+                assert!(
+                    l.next_cursor
+                        .as_deref()
+                        .is_some_and(|c| c.starts_with("ecv1:")),
+                    "a valid read always yields a checkpoint cursor: {:?}",
+                    l.next_cursor
+                );
             }
             other => panic!("expected List, got {:?}", other),
         }
@@ -652,6 +783,7 @@ mod tests {
     #[tokio::test]
     async fn list_after_create_includes_subscription() {
         let rig = TestRig::new();
+        rig.open_session("observe-after-create").await;
 
         // Create one.
         let mut create_input = tripwire_input(ObserveVerb::Create);
@@ -677,6 +809,7 @@ mod tests {
     #[tokio::test]
     async fn list_with_retained_returns_empty_fired_events() {
         let rig = TestRig::new();
+        rig.open_session("observe-retained").await;
         let mut input = tripwire_input(ObserveVerb::List);
         input.retention = Some(ObserveRetention::RetainedUntilSessionEnd);
         let out = rig.observe(input).await.unwrap();
@@ -703,116 +836,6 @@ mod tests {
     // REC-C2.0 characterizations (measure reality; not aspirational).
     // ------------------------------------------------------------------
 
-    /// Fire the ONE tripwire registered by the rig, so `fired_buffer` holds
-    /// exactly one freshly measured firing.
-    fn fire_once(rig: &TestRig) {
-        use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
-        // `TripwireCondition::FunctionName` matches on
-        // `event.location.function`, so the fixture must populate it.
-        let location = SourceLocation {
-            function: Some("main".to_string()),
-            ..SourceLocation::default()
-        };
-        let event = TraceEvent {
-            event_id: 7,
-            timestamp_ns: 700,
-            thread_id: 1,
-            event_type: EventType::FunctionEntry,
-            location,
-            data: EventData::Function {
-                name: "main".into(),
-                signature: None,
-                symbol_id: None,
-                invocation_id: None,
-                parent_invocation_id: None,
-            },
-        };
-        // The condition is FunctionName { pattern: "main*" }.
-        let fired = rig.manager.evaluate(&event);
-        assert_eq!(fired.len(), 1, "fixture must fire exactly one tripwire");
-    }
-
-    // ------------------------------------------------------------------
-    // REC-C2.1.4a: session resolution.
-    // ------------------------------------------------------------------
-
-    impl TestRig {
-        async fn set_active_session(&self, id: Option<&str>) {
-            *self.active_session.lock().await = id.map(|s| s.to_string());
-        }
-
-        async fn resolve(&self, scope: Option<ObserveScope>) -> Result<String, ServiceError> {
-            let probe = self.probe_ctx();
-            let ctx = ObserveContext {
-                tripwire_manager: &self.manager,
-                probe: &probe,
-                uprobe_counter: &self.uprobe_counter,
-            };
-            ChronosObserveService::resolve_session(&ctx, scope.as_ref()).await
-        }
-    }
-
-    /// Explicit `scope=session{..}` wins, even when a *different* session is
-    /// active. `active_session` is a fallback, never an override.
-    #[tokio::test]
-    async fn resolve_session_explicit_scope_wins_over_active_session() {
-        let rig = TestRig::new();
-        rig.set_active_session(Some("active-one")).await;
-        let resolved = rig
-            .resolve(Some(ObserveScope::Session {
-                session_id: "explicit-two".to_string(),
-            }))
-            .await
-            .expect("explicit scope resolves");
-        assert_eq!(resolved, "explicit-two");
-    }
-
-    /// With no scope, the active session is the fallback.
-    #[tokio::test]
-    async fn resolve_session_falls_back_to_active_session() {
-        let rig = TestRig::new();
-        rig.set_active_session(Some("active-one")).await;
-        assert_eq!(rig.resolve(None).await.expect("fallback"), "active-one");
-        // `scope=global` also falls through to the active session.
-        assert_eq!(
-            rig.resolve(Some(ObserveScope::Global))
-                .await
-                .expect("global falls back"),
-            "active-one"
-        );
-    }
-
-    /// With neither an explicit scope nor an active session, absence is typed.
-    #[tokio::test]
-    async fn resolve_session_without_any_source_is_typed_absence() {
-        let rig = TestRig::new();
-        rig.set_active_session(None).await;
-        let err = rig.resolve(None).await.expect_err("must refuse");
-        assert!(
-            matches!(err, ServiceError::NoActiveSession),
-            "expected NoActiveSession, got {err:?}"
-        );
-    }
-
-    /// The resolved id must not be produced while the lock is held: after
-    /// resolution the guard is gone, so an unrelated lock acquisition
-    /// succeeds immediately instead of deadlocking.
-    #[tokio::test]
-    async fn resolve_session_releases_the_active_session_lock() {
-        let rig = TestRig::new();
-        rig.set_active_session(Some("active-one")).await;
-        let _ = rig.resolve(None).await.expect("resolves");
-        // If the guard were still held, this would block forever. Bound it so
-        // a regression fails fast instead of hanging the suite.
-        let acquired =
-            tokio::time::timeout(std::time::Duration::from_secs(2), rig.active_session.lock())
-                .await;
-        assert!(
-            acquired.is_ok(),
-            "the active_session lock was still held after resolve_session returned"
-        );
-    }
-
     /// Register the rig's single `main*` tripwire through the public verb.
     async fn create_one_tripwire(rig: &TestRig) {
         let mut input = tripwire_input(ObserveVerb::Create);
@@ -823,68 +846,212 @@ mod tests {
         rig.observe(input).await.unwrap();
     }
 
-    /// CHAR-C2-02: `observe(verb=list)` consumes fired evidence globally.
-    /// The first `list` returns the firing and empties the shared buffer;
-    /// a second `list` — which a *different* consumer would issue — sees
-    /// nothing. There is no per-consumer cursor.
-    #[tokio::test]
-    async fn char_c2_02_observe_list_drains_fired_evidence_globally() {
-        let rig = TestRig::new();
-        create_one_tripwire(&rig).await;
-        fire_once(&rig);
+    // ------------------------------------------------------------------
+    // REC-C2.1.4b: firing pages out of the ExecutionLog.
+    // ------------------------------------------------------------------
 
-        let mut first_input = tripwire_input(ObserveVerb::List);
-        first_input.retention = Some(ObserveRetention::Drained);
-        let first = rig.observe(first_input).await.unwrap();
-        let second_input = {
-            let mut i = tripwire_input(ObserveVerb::List);
-            i.retention = Some(ObserveRetention::Drained);
-            i
-        };
-        let second = rig.observe(second_input).await.unwrap();
-
-        match (first, second) {
-            (ObserveOutput::List(a), ObserveOutput::List(b)) => {
-                assert_eq!(a.fired_count, 1, "first consumer observes the firing");
-                assert_eq!(
-                    b.fired_count, 0,
-                    "char: the second consumer observes nothing — the first list drained it"
-                );
-            }
-            other => panic!("expected two List outputs, got {:?}", other),
+    /// A `FunctionEntry` whose `location.function` is matched (or not) by the
+    /// rig's `main*` condition.
+    fn fn_event(name: &str, event_id: u64, ts: u64) -> chronos_domain::TraceEvent {
+        use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
+        TraceEvent {
+            event_id,
+            timestamp_ns: ts,
+            thread_id: 1,
+            event_type: EventType::FunctionEntry,
+            location: SourceLocation {
+                function: Some(name.to_string()),
+                ..SourceLocation::default()
+            },
+            data: EventData::Function {
+                name: name.into(),
+                signature: None,
+                symbol_id: None,
+                invocation_id: None,
+                parent_invocation_id: None,
+            },
         }
     }
 
-    /// CHAR-C2-03: `retention=retained_until_session_end` claims to keep the
-    /// evidence, but `list` drains `fired_buffer` *before* applying the
-    /// retention setting and then returns `[]`. The measured result: the
-    /// "retained" read loses the evidence for everyone, including itself.
-    #[tokio::test]
-    async fn char_c2_03_retained_until_session_end_loses_the_evidence() {
+    fn cursor_seq(token: &str) -> u64 {
+        EventsCursorV1::decode(token)
+            .expect("decode cursor")
+            .next_seq()
+            .0
+    }
+
+    /// Register the rig's one `main*` tripwire and open a session log.
+    async fn armed_rig(session: &str) -> TestRig {
         let rig = TestRig::new();
+        rig.open_session(session).await;
         create_one_tripwire(&rig).await;
-        fire_once(&rig);
+        rig
+    }
 
-        // First read asks for retention.
-        let mut retained_input = tripwire_input(ObserveVerb::List);
-        retained_input.retention = Some(ObserveRetention::RetainedUntilSessionEnd);
-        let retained = rig.observe(retained_input).await.unwrap();
+    /// FIRING-PAGE-1: `Raw Raw Firing Raw Raw` — the cursor lands after the
+    /// last record EXAMINED, not after the firing.
+    #[tokio::test]
+    async fn firing_page_1_cursor_is_after_the_last_record_examined() {
+        let rig = armed_rig("firing-page-1").await;
+        rig.ingest("firing-page-1", &fn_event("a_other", 1, 10));
+        rig.ingest("firing-page-1", &fn_event("b_other", 2, 20));
+        rig.ingest("firing-page-1", &fn_event("main_work", 3, 30)); // Raw + Firing
+        rig.ingest("firing-page-1", &fn_event("d_other", 4, 40));
+        rig.ingest("firing-page-1", &fn_event("e_other", 5, 50));
 
-        // A later drained read should still see the retained evidence.
-        let mut drained_input = tripwire_input(ObserveVerb::List);
-        drained_input.retention = Some(ObserveRetention::Drained);
-        let after = rig.observe(drained_input).await.unwrap();
+        let out = rig
+            .observe(tripwire_input(ObserveVerb::List))
+            .await
+            .unwrap();
+        let ObserveOutput::List(l) = out else {
+            panic!("expected List")
+        };
+        assert_eq!(l.fired_count, 1, "exactly one firing exists");
+        // Records: 0 Raw, 1 Raw, 2 Raw, 3 Firing, 4 Raw, 5 Raw -> examined 6.
+        let after = cursor_seq(l.next_cursor.as_deref().expect("checkpoint"));
+        assert_eq!(
+            after, 6,
+            "cursor must be after the last examined record (6), not after the firing (4)"
+        );
+    }
 
-        match (retained, after) {
-            (ObserveOutput::List(r), ObserveOutput::List(a)) => {
-                assert_eq!(r.fired_count, 0, "char: the retained read returns nothing");
-                assert_eq!(
-                    a.fired_count, 0,
-                    "char: and the evidence is gone for the next reader too — it was drained, not retained"
-                );
-            }
-            other => panic!("expected two List outputs, got {:?}", other),
-        }
+    /// FIRING-PAGE-2: two consumers starting from the same cursor both receive
+    /// the firing; one does not consume it for the other.
+    #[tokio::test]
+    async fn firing_page_2_two_consumers_do_not_steal_from_each_other() {
+        let rig = armed_rig("firing-page-2").await;
+        rig.ingest("firing-page-2", &fn_event("main_work", 1, 10));
+
+        let a = rig
+            .observe(tripwire_input(ObserveVerb::List))
+            .await
+            .unwrap();
+        let b = rig
+            .observe(tripwire_input(ObserveVerb::List))
+            .await
+            .unwrap();
+        let (ObserveOutput::List(a), ObserveOutput::List(b)) = (a, b) else {
+            panic!("expected two List outputs")
+        };
+        assert_eq!(a.fired_count, 1, "consumer A sees the firing");
+        assert_eq!(
+            b.fired_count, 1,
+            "consumer B sees it too — evidence is immutable, nothing is drained"
+        );
+    }
+
+    /// FIRING-PAGE-3: a page with records examined but no firings is valid and
+    /// still advances the cursor.
+    #[tokio::test]
+    async fn firing_page_3_page_without_firings_still_advances() {
+        let rig = armed_rig("firing-page-3").await;
+        rig.ingest("firing-page-3", &fn_event("main_work", 1, 10)); // firing at seq 1
+        rig.ingest("firing-page-3", &fn_event("a_other", 2, 20));
+        rig.ingest("firing-page-3", &fn_event("b_other", 3, 30));
+
+        // Page 1: everything.
+        let first = rig
+            .observe(tripwire_input(ObserveVerb::List))
+            .await
+            .unwrap();
+        let ObserveOutput::List(first) = first else {
+            panic!("expected List")
+        };
+        let checkpoint = first.next_cursor.expect("cursor");
+
+        // Page 2 from the checkpoint: nothing new to examine, no firings.
+        let mut input = tripwire_input(ObserveVerb::List);
+        input.cursor = Some(checkpoint.clone());
+        let second = rig.observe(input).await.unwrap();
+        let ObserveOutput::List(second) = second else {
+            panic!("expected List")
+        };
+        assert_eq!(second.fired_count, 0, "no new firings");
+        assert_eq!(
+            cursor_seq(second.next_cursor.as_deref().expect("cursor")),
+            cursor_seq(&checkpoint),
+            "an idempotent page keeps the same position"
+        );
+    }
+
+    /// FIRING-PAGE-4: a consumer parked at the tail keeps its cursor and picks
+    /// up ONLY the new firing after the producer advances.
+    #[tokio::test]
+    async fn firing_page_4_tail_cursor_sees_only_new_firings() {
+        let rig = armed_rig("firing-page-4").await;
+        rig.ingest("firing-page-4", &fn_event("main_work", 1, 10)); // firing at seq 1
+
+        let first = rig
+            .observe(tripwire_input(ObserveVerb::List))
+            .await
+            .unwrap();
+        let ObserveOutput::List(first) = first else {
+            panic!("expected List")
+        };
+        assert_eq!(first.fired_count, 1);
+        let parked = first.next_cursor.expect("cursor at tail");
+
+        // Producer advance: another matching event -> Raw + Firing.
+        rig.ingest("firing-page-4", &fn_event("main_work", 2, 20));
+
+        let mut input = tripwire_input(ObserveVerb::List);
+        input.cursor = Some(parked);
+        let next = rig.observe(input).await.unwrap();
+        let ObserveOutput::List(next) = next else {
+            panic!("expected List")
+        };
+        assert_eq!(
+            next.fired_count, 1,
+            "the parked cursor picks up exactly the new firing, not the old one"
+        );
+    }
+
+    /// A retained read no longer destroys: the evidence stays in the log, and a
+    /// later drained read from the same position still sees it (CHAR-C2-03 is
+    /// fixed by making firing evidence immutable).
+    #[tokio::test]
+    async fn retained_read_no_longer_destroys_the_evidence() {
+        let rig = armed_rig("observe-retained-keeps").await;
+        rig.ingest("observe-retained-keeps", &fn_event("main_work", 1, 10));
+
+        let mut retained = tripwire_input(ObserveVerb::List);
+        retained.retention = Some(ObserveRetention::RetainedUntilSessionEnd);
+        let retained_out = rig.observe(retained).await.unwrap();
+        let ObserveOutput::List(retained_out) = retained_out else {
+            panic!("expected List")
+        };
+        assert_eq!(
+            retained_out.fired_count, 0,
+            "retained does not hand them back"
+        );
+
+        // The evidence is still there for a drained reader.
+        let drained_out = rig
+            .observe(tripwire_input(ObserveVerb::List))
+            .await
+            .unwrap();
+        let ObserveOutput::List(drained_out) = drained_out else {
+            panic!("expected List")
+        };
+        assert_eq!(
+            drained_out.fired_count, 1,
+            "the firing survived the retained read — nothing was drained"
+        );
+    }
+
+    /// A cursor from another session is a typed error, never a silent
+    /// re-anchor.
+    #[tokio::test]
+    async fn foreign_session_cursor_is_rejected() {
+        let rig = armed_rig("observe-session-a").await;
+        let foreign = EventsCursorV1::start(chronos_log::SessionId::new("some-other")).encode();
+        let mut input = tripwire_input(ObserveVerb::List);
+        input.cursor = Some(foreign);
+        let err = rig.observe(input).await.expect_err("must refuse");
+        assert!(
+            matches!(err, ServiceError::InvalidInput(_)),
+            "expected a typed cursor error, got {err:?}"
+        );
     }
 
     // ----- verb=query ---------------------------------------------------------

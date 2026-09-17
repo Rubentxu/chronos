@@ -507,8 +507,12 @@ pub struct ObserveInput {
     pub requested_evidence: Option<ObserveRequestedEvidence>,
     /// Scope (session id or global). Required for `create`.
     pub scope: Option<ObserveScope>,
-    /// Optional cursor for `verb=list` (matches the m7-01 cursor pattern).
-    pub cursor: Option<crate::output::CursorDto>,
+    /// Optional opaque cursor for `verb=list` (`ecv1:<schema>:<len>:<session>:<seq>`).
+    ///
+    /// REC-C2.1.4b: an `EventsCursorV1` token, not the legacy bus cursor. It
+    /// names the session and the next `EventSeq` to read, so a stale or
+    /// foreign-session cursor is a typed error rather than a silent re-anchor.
+    pub cursor: Option<String>,
     /// Optional human-readable label (alternative to `condition.label`).
     pub label: Option<String>,
 }
@@ -545,8 +549,20 @@ pub struct ObserveListResult {
     pub total_active: usize,
     /// Number of fired events returned.
     pub fired_count: usize,
-    /// Next cursor (only set when more pages exist and `cursor` was supplied).
-    pub next_cursor: Option<crate::output::CursorDto>,
+    /// The session whose `ExecutionLog` the firings were read from.
+    ///
+    /// Visible on purpose: a caller that omitted `scope` (or used `global`)
+    /// must be able to tell which session it actually read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    /// Checkpoint for the next `verb=list` call (`ecv1:...`).
+    ///
+    /// Always present on a valid read, **including at the tail**: a live log
+    /// may gain a firing a second later, and a client must keep a position from
+    /// which to continue. On a sealed log the same cursor stays valid and
+    /// idempotent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
     /// Provenance / source info (engine version + retention used).
     pub provenance: ObserveProvenance,
 }

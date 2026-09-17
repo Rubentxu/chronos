@@ -671,9 +671,13 @@ pub struct ObserveParams {
     /// Required for `verb=create` + `condition.kind=uprobe`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<ObserveScopeWire>,
-    /// Optional cursor for `verb=list` (matches m7-01 events_read cursor).
+    /// Optional opaque cursor for `verb=list` (`ecv1:<schema>:<len>:<session>:<seq>`).
+    ///
+    /// REC-C2.1.4b: firings are paged out of the ExecutionLog, so the cursor is
+    /// an `EventsCursorV1` token (session + next EventSeq), not the legacy bus
+    /// cursor.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cursor: Option<chronos_services::output::CursorDto>,
+    pub cursor: Option<String>,
     /// Optional human-readable label (alternative to `condition.label`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,

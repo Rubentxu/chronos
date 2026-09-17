@@ -140,65 +140,100 @@ pub fn derive_firings_from_event(
     Ok(report)
 }
 
-/// Read every durable firing recorded in a session's log.
+/// One page of firing evidence.
+#[derive(Debug, Clone)]
+pub struct FiringPage {
+    /// Firings found in this page, in seq order.
+    pub firings: Vec<(EventSeq, TripwireFiredEvidence)>,
+    /// Position to use as the next cursor: **after the last record examined**,
+    /// firing or not.
+    pub position_after: EventSeq,
+    /// How many records this page looked at.
+    pub examined: u64,
+    /// True when the scan reached the end of what the log currently holds.
+    pub exhausted: bool,
+}
+
+/// Default cap on records examined per page.
 ///
-/// This is the read side `observe` moves onto (C2.1.4): firings are evidence
-/// in the log, not buffer state.
+/// A page is bounded by **two** budgets, not one. `max_firings` alone does not
+/// bound cost: a sparse firing in a two-million-record log would let a request
+/// for 10 firings scan to the end. Filtering must not turn a query into an
+/// unbounded scan, so a page may legitimately return
+/// `0 firings, 50_000 examined, advanced cursor, exhausted=false`.
+pub const DEFAULT_SCAN_BUDGET: u64 = 50_000;
+
+/// Read every durable firing recorded in a session's log.
 pub fn read_firings(
     log: &SessionExecutionLog,
     from: EventSeq,
     limit: usize,
 ) -> Result<Vec<(EventSeq, TripwireFiredEvidence)>, ServiceError> {
-    Ok(read_firings_page(log, from, limit)?.0)
+    Ok(read_firings_page(log, from, limit, DEFAULT_SCAN_BUDGET)?.firings)
 }
 
 /// Paged firing read with the C1 cursor semantics.
-///
-/// Returns the firings found and the position to use as the next cursor.
 ///
 /// **The returned position is after the last record _examined_, not after the
 /// last firing _found_.** Filters change what you get back; they never change
 /// what the position means (REC-C1.3). Advancing to the last firing's seq would
 /// make a page that ends on a non-firing record either re-scan or skip.
+///
+/// Stops at whichever budget is hit first: `max_firings` collected or
+/// `max_examined_records` looked at.
 pub fn read_firings_page(
     log: &SessionExecutionLog,
     from: EventSeq,
     max_firings: usize,
-) -> Result<(Vec<(EventSeq, TripwireFiredEvidence)>, EventSeq), ServiceError> {
-    let mut firings: Vec<(EventSeq, TripwireFiredEvidence)> = Vec::new();
+    max_examined_records: u64,
+) -> Result<FiringPage, ServiceError> {
+    let mut page = FiringPage {
+        firings: Vec::new(),
+        position_after: from,
+        examined: 0,
+        exhausted: false,
+    };
     let mut position = from;
     let mut remaining_pages = 64u64;
 
-    while remaining_pages > 0 {
+    while remaining_pages > 0 && page.examined < max_examined_records {
         remaining_pages -= 1;
-        let page = log
+        let read = log
             .handle()
             .read_from_seq(position, 512)
             .map_err(|e| ServiceError::DrainFailed(format!("read firings: {e}")))?;
 
-        for record in &page.records {
+        for record in &read.records {
+            if page.examined >= max_examined_records {
+                return Ok(page);
+            }
             // Advance past every record we examine, firing or not.
             position = EventSeq::new(record.seq.0 + 1);
+            page.examined += 1;
             if record.kind == ExecutionKind::TripwireFired {
                 if let Ok(Some(ev)) = TripwireFiredEvidence::from_payload(&record.payload) {
-                    firings.push((record.seq, ev));
-                    if firings.len() >= max_firings {
-                        return Ok((firings, position));
+                    page.firings.push((record.seq, ev));
+                    page.position_after = position;
+                    if page.firings.len() >= max_firings {
+                        return Ok(page);
                     }
                 }
             }
+            page.position_after = position;
         }
 
-        if page.exhausted {
+        if read.exhausted {
+            page.exhausted = true;
             break;
         }
-        if page.position_after < position {
+        if read.position_after < position {
             break;
         }
-        position = page.position_after;
+        position = read.position_after;
+        page.position_after = position;
     }
 
-    Ok((firings, position))
+    Ok(page)
 }
 
 /// Count firings per subscription by scanning the log.
@@ -270,6 +305,27 @@ mod tests {
             location,
             data: EventData::Function {
                 name: "main_work".into(),
+                signature: None,
+                symbol_id: None,
+                invocation_id: None,
+                parent_invocation_id: None,
+            },
+        }
+    }
+
+    fn non_matching_event(id: u64) -> TraceEvent {
+        use chronos_domain::{EventData, EventType, SourceLocation};
+        TraceEvent {
+            event_id: id,
+            timestamp_ns: id * 1000,
+            thread_id: 1,
+            event_type: EventType::FunctionEntry,
+            location: SourceLocation {
+                function: Some(format!("other_{id}")),
+                ..SourceLocation::default()
+            },
+            data: EventData::Function {
+                name: format!("other_{id}"),
                 signature: None,
                 symbol_id: None,
                 invocation_id: None,
@@ -352,6 +408,33 @@ mod tests {
         assert_eq!(ev.source_seq, source_seq, "identity of the cause");
         assert_eq!(ev.source_event_id, Some(83));
         assert_eq!(ev.label, None);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A page is bounded by BOTH budgets: a sparse firing must not turn a
+    /// small request into an unbounded scan.
+    #[test]
+    fn firing_page_is_bounded_by_the_scan_budget() {
+        let dir = tempdir("budget");
+        let session = "rec-c2-1-budget";
+        let log = open_log(&dir, session);
+        let mgr = manager_with_main();
+
+        // 30 raw records that never match the tripwire.
+        for i in 0..30u64 {
+            append_raw(&log, &non_matching_event(i));
+        }
+
+        let page = read_firings_page(&log, EventSeq::ZERO, 10, 10).expect("page");
+        assert!(page.firings.is_empty(), "nothing matched");
+        assert_eq!(page.examined, 10, "the scan budget caps the work");
+        assert_eq!(page.position_after, EventSeq::new(10), "cursor advanced");
+        assert!(!page.exhausted, "there is still more log to read");
+        assert!(
+            mgr.matching(&non_matching_event(0)).is_empty(),
+            "fixture sanity: non-matching events really do not match"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
