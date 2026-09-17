@@ -4,12 +4,14 @@
   "status": "CLOSED",
   "verify_status": "passed",
   "release_status": "released",
-  "archive_status": "pending",
+  "archive_status": "ready",
   "head_sha": "83ee38e2",
   "base_sha": "5bbf7748",
   "merge_sha": "83ee38e2",
   "tag": "rec-c1-6-lifecycle-retention-wire",
   "branch": "feat/rec-c1.6-lifecycle-retention-wire",
+  "remote_tag": "rec-c1-6-lifecycle-retention-wire",
+  "peel_match": true,
   "tier_required": "T3+T4",
   "created_at": "2026-09-17",
   "closed_at": "2026-09-17",
@@ -49,7 +51,8 @@
     {"suite": "session_lifecycle", "test": "test_session_start_attach_to_running_self", "status": "PRE-EXISTING on main 5bbf7748 (verified by checking out bare main and re-running; fails with 'ExecutionLog unavailable' after attach — same error before and after C1.6 changes). Filtered with --skip in T3.", "tracked": "AGENTS.md §6.5"},
     {"suite": "chronos-native lib", "test": "ptrace_tracer::tests::*", "status": "PRE-EXISTING flake in parallel mode per AGENTS.md §6.5. Run serial in T_chronos_native_serial — 103/103 PASS including the ptrace suite.", "tracked": "AGENTS.md §6.5"}
   ],
-  "remote_tag": null,
-  "peel_match": null,
-  "notes": "Closure in cycle. Group A done in two commits (7197c40e carries the typed refusal + unit tests + MCP arm; 7afb47ad wires the liveness marker that the precondition reads from). Group B done in two commits (1da26f5c pins the types and unit tests; 580a8f45 threads them through events_read and surfaces a structured CursorStale). C1 (fmt + clippy) landed in d1891ed3. C2 (T0/T3/T4-smoke) is documented in the gates block above. C3 (this file), C4 (merge + tag), C5 (vault drift) follow."
+  "remote_tag": "rec-c1-6-lifecycle-retention-wire",
+  "peel_match": true,
+  "archive_convention": "rec-c1 stream (matching rec-c1-5-closure): archive_status='ready' instead of 'archived' — no archive-manifest.md is written under .sddk-knowledge/changes/archive/rec-c1-6-lifecycle-retention-wire/. The rec-c1-* cycles do not sync delta-specs to .sddk-knowledge/changes/; the durable knowledge artifact for this cycle is the cycle-artifacts/rec-c1-6-lifecycle-retention-wire/ folder (proposal.md, design.md, tasks.md, implementation-receipt.md, verify-findings.json, release-receipt.md, apply-checkpoint.json).",
+  "notes": "CYCLE CLOSED. Group A (lifecycle-safe delete) done in two commits (7197c40e typed refusal + unit tests + MCP arm; 7afb47ad wires the liveness marker that the precondition reads from). Group B (retention/tail on the wire) done in two commits (1da26f5c pins the types and unit tests; 580a8f45 threads them through events_read and surfaces a structured CursorStale). C1 fmt+clippy landed in d1891ed3. C2 T0/T3/T4-smoke documented in gates block above. C3 apply-checkpoint finalized (status=CLOSED, archive_status=ready, tag pushed, peel_match=true). C4 merged to main as 83ee38e2. C5 vault drift: CC#11 PASS (status uppercase, archive_convention documented); CC#39 pre-existing 1-cycle drift NOT introduced by this cycle, documented and tracked as M1+ follow-up."
 }
