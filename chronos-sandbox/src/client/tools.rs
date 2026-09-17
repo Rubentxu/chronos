@@ -1737,6 +1737,34 @@ impl McpTestClient {
         })
     }
 
+    /// Spawn the MCP server with an explicit DB path AND an explicit
+    /// execution-log root.
+    ///
+    /// Both are passed through the child process environment — never via
+    /// `std::env::set_var` on the test binary itself, which would mutate
+    /// the entire process (CC#56 in the vault drift sweep; m9-73 closed
+    /// the previous instance of this failure mode on `CHRONOS_DB_PATH`).
+    pub async fn start_with_db_and_exec_log_root(
+        db_path: std::path::PathBuf,
+        exec_log_root: std::path::PathBuf,
+    ) -> Result<Self, McpSandboxError> {
+        let mcp_path = Self::resolve_mcp_path();
+        let mut env = Self::db_env(&db_path);
+        env.insert(
+            "CHRONOS_EXECUTION_LOG_DIR".to_string(),
+            exec_log_root.to_string_lossy().to_string(),
+        );
+        let (process, stdin, reader) =
+            crate::client::process::factory::start_with_env(&mcp_path, env).await?;
+        let session = McpSession::new(stdin, reader).await?;
+        Ok(Self {
+            process: Some(process),
+            session: Some(session),
+            db_dir: None,
+            db_path: Some(db_path),
+        })
+    }
+
     /// Replay a previously saved counterexample bundle and return the report.
     ///
     /// Spawns `chronos test replay <bundle_id>` as a subprocess against

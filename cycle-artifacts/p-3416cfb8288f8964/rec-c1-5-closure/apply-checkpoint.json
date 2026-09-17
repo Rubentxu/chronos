@@ -1,126 +1,61 @@
 {
-  "cycle_id": "p-3416cfb8288f8964/rec-c1-5-closure",
-  "branch": "feat/rec-c1.5-closure",
+  "cycle_id": "rec-c1-5-closure",
+  "route": "A-lite",
+  "status": "CLOSED",
+  "verify_status": "passed",
+  "release_status": "ready",
+  "archive_status": "pending",
   "head_sha": "1a1ec68ad662aa0cb1bf74cdf3122aea4d11871e",
   "base_sha": "17367f2d",
-  "path": "A-lite",
-  "status": "ready-to-close",
+  "main_sha": null,
+  "branch": "feat/rec-c1.5-closure",
+  "tier_required": "T3",
+  "created_at": "2026-09-17",
+  "title": "rec-c1-5-closure",
+  "summary": "Close REC-C1.5: root resolver, MCP startup bootstrap, durable delete, durable seal. Three real-process UATs (R1 unclean restart, R2 identical-stale cursor, R3 sealed persistence) plus the durability invariant on UAT-R4 delete. Step 9 readiness test (try_new populates the registry). Step 10 full regression: T0 fmt+clippy clean, T1 lib+tests 1262/0, chronos-native serial 115/0, bootstrap_readiness 1/0, T4-smoke 9/0 across restart_uat + e2e_connectivity + analytics_tools. Vault drift CC#56 closed in this cycle.",
+  "cc_delta": {
+    "closed": [
+      "CC#56 (continued correctness — sandbox tests no longer mutate process env)"
+    ],
+    "introduced": []
+  },
+  "findings_closed": [
+    "FIND-REC-C1.5-MCP-STARTUP-NEEDS-BOOTSTRAP",
+    "FIND-REC-C1.5-DELETION-MUST-BE-DURABLE",
+    "FIND-REC-C1.5-CLEAN-STOP-MUST-SEAL",
+    "FIND-REC-C1.5-EXEC-LOG-ROOT-MUST-BE-CANONICAL",
+    "FIND-REC-C1.5-READINESS-INVARIANT"
+  ],
+  "findings_introduced": {
+    "no_action": []
+  },
   "commits": [
-    {
-      "sha": "2c4da9ba",
-      "step": "3",
-      "title": "feat(rec-c1.5): canonical ExecutionLog root resolver",
-      "summary": "Added chronos-log::location::{resolve_execution_log_root, execution_log_dir} (OnceLock-backed, memoized) plus the cfg(test) set_execution_log_root_for_testing seam. Migrated session create, bootstrap, and durable delete to read through it.",
-      "evidence": "cargo test -p chronos-log --lib"
-    },
-    {
-      "sha": "ee376e10",
-      "step": "3",
-      "title": "test(rec-c1.5): edge cases for the canonical ExecutionLog root resolver",
-      "summary": "Env round-trip, two-call equality, override seam, default-fallback determinism.",
-      "evidence": "4 unit tests in chronos-log/src/location.rs"
-    },
-    {
-      "sha": "94bd092a",
-      "step": "4",
-      "title": "feat(rec-c1.5): bootstrap execution logs during MCP startup",
-      "summary": "try_new now calls bootstrap_execution_logs before returning. Surface typed ChronosServerInitError::ExecutionLogBootstrap on failure.",
-      "evidence": "cargo test -p chronos-mcp --lib"
-    },
-    {
-      "sha": "6644bdbb",
-      "step": "5",
-      "title": "feat(rec-c1.5): make session deletion remove durable logs",
-      "summary": "SessionsService::delete_session now also removes the durable ExecutionLog on disk via delete_durable_execution_log. DeleteResult.paths_removed surfaces what was deleted.",
-      "evidence": "tests in services + restart_uat UAT-R4"
-    },
-    {
-      "sha": "849184ee",
-      "step": "5",
-      "title": "chore(rec-c1.5): checkpoint durable deletion wiring",
-      "summary": "Vault artifact checkpoint.",
-      "evidence": "no code change"
-    },
-    {
-      "sha": "38e02be4",
-      "step": "5b",
-      "title": "feat(rec-c1.5): durably seal logs on clean session stop",
-      "summary": "Clean-stop path now writes tail_state=Sealed to the manifest; restart reads Sealed and skips the bootstrap reopen path. UAT-R3 proves this.",
-      "evidence": "restart_uat r3_clean_session_stop_seals_and_restart_bootstraps_it"
-    },
-    {
-      "sha": "d3ea101b",
-      "step": "5b",
-      "title": "chore(rec-c1.5): checkpoint clean-stop seal integration",
-      "summary": "Vault artifact checkpoint.",
-      "evidence": "no code change"
-    },
-    {
-      "sha": "1bb32f05",
-      "step": "5",
-      "title": "feat(rec-c1.5): expose durable deletion paths",
-      "summary": "Surface delete_durable_execution_log in SessionExecutionLogRegistry::remove so the durable side is exercised before filesystem removal.",
-      "evidence": "tests in services + restart_uat r4"
-    },
-    {
-      "sha": "1b7d0e1f",
-      "step": "8",
-      "title": "test(rec-c1.5): add two-process sealed restart UAT",
-      "summary": "r3_clean_session_stop_seals_and_restart_bootstraps_it: A emits → session_stop(true,true) → B sees tail_state=Sealed + identical events page.",
-      "evidence": "restart_uat UAT-R3 (committed 1b7d0e1f)"
-    },
-    {
-      "sha": "e2cd57a5",
-      "step": "5",
-      "title": "test(rec-c1.5): add durable delete restart UAT",
-      "summary": "r4_delete_session_is_absent_after_restart: A creates session → A deletes it → B sees SessionNotFound (or Unavailable), never the deleted logs.",
-      "evidence": "restart_uat UAT-R4 (committed e2cd57a5)"
-    },
-    {
-      "sha": "3acb3040",
-      "step": "8",
-      "title": "chore(rec-c1.5): persist restart UAT checkpoint",
-      "summary": "Apply-checkpoint checkpoint.",
-      "evidence": "no code change"
-    },
-    {
-      "sha": "e75b5f6a",
-      "step": "6",
-      "title": "test(rec-c1.5): add real-process unclean restart UAT",
-      "summary": "Added McpTestClient::force_kill helper. r1_unclean_restart_reproduces_same_events_page: A emits → SIGKILL A → B reads identical events pages + manifest tail_state != Sealed.",
-      "evidence": "restart_uat UAT-R1"
-    },
-    {
-      "sha": "23023651",
-      "step": "7",
-      "title": "test(rec-c1.5): add identical-stale restart UAT",
-      "summary": "r2_stale_cursor_is_identical_before_and_after_restart: pre-seed retained_from=5, A reads seq=0 → CursorStale, B reads seq=0 → same CursorStale numbers.",
-      "evidence": "restart_uat UAT-R2"
-    },
-    {
-      "sha": "a2aee5b9",
-      "step": "9",
-      "title": "test(rec-c1.5): add try_new readiness invariant",
-      "summary": "Add ChronosServer::execution_log_registry accessor (Arc<SessionExecutionLogRegistry>). Added bootstrap_readiness integration test that seeds two sessions, calls try_new, asserts registry.len()==2 and both ids present. Regression-verified by commenting bootstrap out — test fails with len=0.",
-      "evidence": "cargo test -p chronos-mcp --test bootstrap_readiness"
-    },
-    {
-      "sha": "1a1ec68a",
-      "step": "10",
-      "title": "style(rec-c1.5): apply fmt + clippy cleanup",
-      "summary": "T0 fmt + clippy --workspace --all-targets -- -D warnings clean.",
-      "evidence": "cargo fmt --all -- --check; cargo clippy --workspace --all-targets -- -D warnings"
-    }
+    {"sha": "2c4da9ba", "step": "3", "title": "feat(rec-c1.5): canonical ExecutionLog root resolver"},
+    {"sha": "ee376e10", "step": "3", "title": "test(rec-c1.5): edge cases for the canonical ExecutionLog root resolver"},
+    {"sha": "94bd092a", "step": "4", "title": "feat(rec-c1.5): bootstrap execution logs during MCP startup"},
+    {"sha": "6644bdbb", "step": "5", "title": "feat(rec-c1.5): make session deletion remove durable logs"},
+    {"sha": "849184ee", "step": "5", "title": "chore(rec-c1.5): checkpoint durable deletion wiring"},
+    {"sha": "38e02be4", "step": "5b", "title": "feat(rec-c1.5): durably seal logs on clean session stop"},
+    {"sha": "d3ea101b", "step": "5b", "title": "chore(rec-c1.5): checkpoint clean-stop seal integration"},
+    {"sha": "1bb32f05", "step": "5", "title": "feat(rec-c1.5): expose durable deletion paths"},
+    {"sha": "1b7d0e1f", "step": "8", "title": "test(rec-c1.5): add two-process sealed restart UAT"},
+    {"sha": "e2cd57a5", "step": "5", "title": "test(rec-c1.5): add durable delete restart UAT"},
+    {"sha": "3acb3040", "step": "8", "title": "chore(rec-c1.5): persist restart UAT checkpoint"},
+    {"sha": "e75b5f6a", "step": "6", "title": "test(rec-c1.5): add real-process unclean restart UAT"},
+    {"sha": "23023651", "step": "7", "title": "test(rec-c1.5): add identical-stale restart UAT"},
+    {"sha": "a2aee5b9", "step": "9", "title": "test(rec-c1.5): add try_new readiness invariant"},
+    {"sha": "1a1ec68a", "step": "10", "title": "style(rec-c1.5): apply fmt + clippy cleanup"}
   ],
   "gates": {
     "T0_fmt": "PASS",
     "T0_clippy": "PASS",
-    "T1_workspace_lib_plus_tests": "PASS (1262 passed, 0 failed)",
-    "T_chronos_native_serial": "PASS (115 passed, 0 failed)",
+    "T1_workspace_lib_plus_tests": "PASS (1262 passed, 0 failed; 13 ignored; excludes chronos-sandbox, chronos-e2e, chronos-native)",
+    "T_chronos_native_serial": "PASS (115 passed, 0 failed; --test-threads=1)",
     "T_chronos_mcp_bootstrap_readiness": "PASS (1 passed, 0 failed)",
-    "T4_smoke": "PASS (restart_uat + e2e_connectivity + analytics_tools = 9 passed, 0 failed)",
-    "smoke_subset_note": "Per AGENTS.md \u00a72 the subset was selected from diff scope: this cycle exclusively touches chronos-log, chronos-services, chronos-mcp, and chronos-sandbox (the test of executable boundary). restart_uat exercises the changed boundary; e2e_connectivity confirms server start; analytics_tools confirms read paths under the new bootstrap shape."
+    "T4_smoke": "PASS (9 passed, 0 failed across restart_uat + e2e_connectivity + analytics_tools; --test-threads=1)",
+    "smoke_subset_note": "Per AGENTS.md \u00a72 this cycle exclusively touches chronos-log, chronos-services, chronos-mcp, and chronos-sandbox (the executable boundary). restart_uat exercises the changed boundary; e2e_connectivity confirms server start with bootstrap; analytics_tools confirms read paths under the new bootstrap shape."
   },
-  "outstanding": [],
-  "notes": "Pre-cycle see previous checkpoint at e2cd57a5; head_sha updated post-R5 commit (a2aee5b9) and post-style cleanup (1a1ec68a)."
+  "remote_tag": null,
+  "peel_match": null,
+  "note": "Cycle SHAs populated post-merge. The branch feat/rec-c1.5-closure is ready for sddk release + archive."
 }

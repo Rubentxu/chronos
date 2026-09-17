@@ -50,12 +50,13 @@ async fn r3_clean_session_stop_seals_and_restart_bootstraps_it() {
     let root = unique_root();
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();
-    std::env::set_var("CHRONOS_EXECUTION_LOG_DIR", &root);
 
     let db = root.join("sessions.redb");
     let fixture = McpSession::fixture_path("test_add").expect("fixture");
 
-    let mut first = McpTestClient::start_with_db_path(db.clone()).await.unwrap();
+    let mut first = McpTestClient::start_with_db_and_exec_log_root(db.clone(), root.clone())
+        .await
+        .unwrap();
     let started = first
         .session_start_spawn(fixture.to_str().unwrap(), vec![])
         .await
@@ -70,7 +71,9 @@ async fn r3_clean_session_stop_seals_and_restart_bootstraps_it() {
     );
     first.shutdown().await.unwrap();
 
-    let mut second = McpTestClient::start_with_db_path(db).await.unwrap();
+    let mut second = McpTestClient::start_with_db_and_exec_log_root(db, root.clone())
+        .await
+        .unwrap();
     let loaded = second
         .session_start_load(&started.session_id)
         .await
@@ -86,11 +89,12 @@ async fn r4_delete_session_is_absent_after_restart() {
     let root = unique_root().join("r4");
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();
-    std::env::set_var("CHRONOS_EXECUTION_LOG_DIR", &root);
     let db = root.join("sessions.redb");
     let fixture = McpSession::fixture_path("test_add").expect("fixture");
 
-    let mut first = McpTestClient::start_with_db_path(db.clone()).await.unwrap();
+    let mut first = McpTestClient::start_with_db_and_exec_log_root(db.clone(), root.clone())
+        .await
+        .unwrap();
     let started = first
         .session_start_spawn(fixture.to_str().unwrap(), vec![])
         .await
@@ -116,7 +120,9 @@ async fn r4_delete_session_is_absent_after_restart() {
     assert!(!paths.is_empty());
     first.shutdown().await.unwrap();
 
-    let mut second = McpTestClient::start_with_db_path(db).await.unwrap();
+    let mut second = McpTestClient::start_with_db_and_exec_log_root(db, root.clone())
+        .await
+        .unwrap();
     let missing = second.session_start_load(&started.session_id).await;
     assert!(
         missing.is_err(),
@@ -147,12 +153,13 @@ async fn r1_unclean_restart_reproduces_same_events_page() {
     let root = unique_root().join("r1");
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();
-    std::env::set_var("CHRONOS_EXECUTION_LOG_DIR", &root);
     let db = root.join("sessions.redb");
     let fixture = McpSession::fixture_path("test_add").expect("fixture");
 
     // Process A: start session, capture two pages of events_read, then SIGKILL.
-    let mut first = McpTestClient::start_with_db_path(db.clone()).await.unwrap();
+    let mut first = McpTestClient::start_with_db_and_exec_log_root(db.clone(), root.clone())
+        .await
+        .unwrap();
     let started = first
         .session_start_spawn(fixture.to_str().unwrap(), vec![])
         .await
@@ -196,7 +203,9 @@ async fn r1_unclean_restart_reproduces_same_events_page() {
 
     // Process B: fresh MCP server against the same root and DB.
     // Bootstrap republishes the durable ExecutionLog directory into the registry.
-    let mut second = McpTestClient::start_with_db_path(db).await.unwrap();
+    let mut second = McpTestClient::start_with_db_and_exec_log_root(db, root.clone())
+        .await
+        .unwrap();
 
     // Read the same pages again. The cursor from A is opaque and may not be
     // portable across processes (it references session_id only), so we
@@ -263,7 +272,6 @@ async fn r2_stale_cursor_is_identical_before_and_after_restart() {
     let root = unique_root().join("r2");
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();
-    std::env::set_var("CHRONOS_EXECUTION_LOG_DIR", &root);
     let db = root.join("sessions.redb");
     let _fixture = McpSession::fixture_path("test_add").expect("fixture");
 
@@ -319,7 +327,9 @@ async fn r2_stale_cursor_is_identical_before_and_after_restart() {
 
     // Process A: bootstrap republishes the pre-seeded ExecutionLog directory
     // into the registry with the watermark already advanced to 5.
-    let mut first = McpTestClient::start_with_db_path(db.clone()).await.unwrap();
+    let mut first = McpTestClient::start_with_db_and_exec_log_root(db.clone(), root.clone())
+        .await
+        .unwrap();
     let stale_a = read_stale(&mut first, &session_id).await;
     assert_eq!(
         stale_a.requested_next_seq, 0,
@@ -337,7 +347,9 @@ async fn r2_stale_cursor_is_identical_before_and_after_restart() {
     // Process B: fresh MCP server against the same root and DB. The manifest
     // is read back as-is by bootstrap (no inference), so the watermark and
     // the cursor stale mapping are byte-for-byte the same.
-    let mut second = McpTestClient::start_with_db_path(db).await.unwrap();
+    let mut second = McpTestClient::start_with_db_and_exec_log_root(db, root.clone())
+        .await
+        .unwrap();
     let stale_b = read_stale(&mut second, &session_id).await;
 
     assert_eq!(

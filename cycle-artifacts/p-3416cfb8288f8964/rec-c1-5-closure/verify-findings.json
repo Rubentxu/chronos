@@ -1,0 +1,75 @@
+{
+  "subject": {
+    "head_sha": "1a1ec68ad662aa0cb1bf74cdf3122aea4d11871e",
+    "base_sha": "17367f2d",
+    "cycle_id": "rec-c1-5-closure"
+  },
+  "cycle_id": "rec-c1-5-closure",
+  "verdict": "passed",
+  "all_passed": true,
+  "lens_summary": {
+    "drift": "REC-C1.5 closure: every step in the user-approved plan lands with green evidence. Bootstrap invariant R5 regression-verified by commenting out bootstrap_execution_logs (test reports registry_len=0 vs expected 2).",
+    "findings_count": 5,
+    "tiers_run": [
+      "T0",
+      "T1",
+      "T3",
+      "T4-smoke"
+    ],
+    "source_schema": "rec-c1-5-closure"
+  },
+  "findings": [
+    {
+      "id": "FIND-REC-C1.5-EXEC-LOG-ROOT-MUST-BE-CANONICAL",
+      "severity": "high",
+      "status": "closed",
+      "title": "ExecutionLog root resolver must be canonical (env-overridable, OnceLock-backed)",
+      "evidence": [
+        "crates/chronos-log/src/location.rs::resolve_execution_log_root + execution_log_dir",
+        "4 unit tests in chronos-log covering env round-trip, two-call equality, override seam, default-fallback determinism"
+      ]
+    },
+    {
+      "id": "FIND-REC-C1.5-MCP-STARTUP-NEEDS-BOOTSTRAP",
+      "severity": "high",
+      "status": "closed",
+      "title": "MCP startup must call bootstrap_execution_logs (no caller-driven step required)",
+      "evidence": [
+        "crates/chronos-mcp/src/server.rs::try_new invokes bootstrap_execution_logs",
+        "ChronosServerInitError::ExecutionLogBootstrap surfaces typed failure",
+        "bootstrap_readiness integration test regression-verified"
+      ]
+    },
+    {
+      "id": "FIND-REC-C1.5-DELETION-MUST-BE-DURABLE",
+      "severity": "high",
+      "status": "closed",
+      "title": "delete_session must remove durable ExecutionLog (not just in-memory handle)",
+      "evidence": [
+        "SessionsService::delete_session calls delete_durable_execution_log",
+        "DeleteResult.paths_removed surfaces what was actually removed",
+        "UAT-R4: delete + restart → next reader sees SessionNotFound"
+      ]
+    },
+    {
+      "id": "FIND-REC-C1.5-CLEAN-STOP-MUST-SEAL",
+      "severity": "high",
+      "status": "closed",
+      "title": "Clean session stop must write tail_state=Sealed to manifest",
+      "evidence": [
+        "session_stop(true, true) writes manifest.tail_state=Sealed + sealed_at",
+        "UAT-R3: clean stop → restart reads Sealed and skips bootstrap reopen"
+      ]
+    },
+    {
+      "id": "FIND-REC-C1.5-READINESS-INVARIANT",
+      "severity": "medium",
+      "status": "closed",
+      "title": "try_new must immediately populate the registry (no caller bootstrap)",
+      "evidence": [
+        "ChronosServer::execution_log_registry accessor exposes the registry",
+        "bootstrap_readiness::new_immediately_populates_registry_from_disk assertion fails (registry_len=0) when bootstrap_execution_logs is commented out"
+      ]
+    }
+  ]
+}
