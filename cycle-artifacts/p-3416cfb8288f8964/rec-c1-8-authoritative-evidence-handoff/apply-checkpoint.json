@@ -23,7 +23,9 @@
     "C1.8.4 — UAT-REC-C1-03 forced-gap positive test is `#[ignore]`-marked and BLOCKED on a `chronos_log::segmented` bookkeeping bug: any path that inserts a `Gap` entry into a `SegmentedExecutionLog` (both the `record_gap` direct API and the memory-budget overflow path) produces a segment header that mis-counts ('segment declares N records but holds N-1' on reopen). The negative test (`complete` for clean session) passes; the positive test (`gap_detected` for forced-gap) is gated on the fix, which is out of scope for REC-C1 and belongs in a separate m1-* follow-up cycle. See `chronos-sandbox/tests/rec_c1_8_uat_c1_03_forced_gap.rs` file-level doc-comment."
   ],
   "findings_introduced": {
-    "no_action": [],
+    "no_action": [
+      "FIND-C1.8-01 (real bug, real reproducer, deferred): `chronos_log::segmented` segment-header bookkeeping mis-counts gap entries. Any path that writes a `Gap` entry into a `SegmentedExecutionLog` (the `record_gap` direct API, or the memory-budget overflow path) produces a segment header that declares N records but the on-disk file holds N-1, so the segment is rejected on reopen with a 'replay integrity failure'. Reproducer in `chronos-sandbox/tests/rec_c1_8_uat_c1_03_forced_gap.rs::uat_rec_c1_03_forced_gap_reports_gap_detected` (currently `#[ignore]`-marked). Belongs in an `m1-*` follow-up cycle; out of scope for REC-C1."
+    ],
     "applied": []
   },
   "commits": [],

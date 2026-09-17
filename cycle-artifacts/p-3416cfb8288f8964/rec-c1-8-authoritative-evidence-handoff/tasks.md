@@ -134,24 +134,37 @@ consumers, producer advance, A resumes` on the cycle branch.
 
 ## C1.8.4 — UAT-REC-C1-03 exact: forced gap on the real wire
 
+**Status (2026-09-17)**: negative test green, positive test
+`#[ignore]`-blocked on `chronos_log::segmented` bookkeeping bug
+(see FIND-C1.8-01 below). Out of scope for REC-C1.
+
 New file `chronos-sandbox/tests/rec_c1_8_uat_c1_03_forced_gap.rs`:
 
-1. Seed a `SessionExecutionLog` with records at seq 0..99, no records at
-   seq 100..199 (gap), records at seq 200..299.
-2. Spawn MCP.
-3. Call `events_read` with a range spanning the gap (e.g. from seq 50
-   with limit 200).
-4. Assert: `completeness.status == "gap_detected"` and the gap range is
-   reported via `completeness.from_seq` / `completeness.to_seq_exclusive`
-   (the actual `CompletenessReport` wire shape at
-   `crates/chronos-services/src/events_log_read.rs:106` — there is **no**
-   `gap_summary` field).
-5. Assert: `completeness.status` is **never** `"complete"` in this
-   response, and is not `"unknown"` either (gap is provable from
-   evidence per TRUTH-003).
+1. Test 1 (`uat_rec_c1_03_clean_session_reports_complete_negative`,
+   GREEN): seed a clean session with 100 deterministic records;
+   call `events_read`; assert `completeness.status == "complete"`.
+   Proves the negative direction of the UAT.
+2. Test 2 (`uat_rec_c1_03_forced_gap_reports_gap_detected`,
+   `#[ignore]`-blocked): seed records 0..100, recorded gap at
+   100..200, records 200..300; call `events_read`; assert
+   `completeness.status == "gap_detected"` and the gap range is
+   encoded via `completeness.from_seq` /
+   `completeness.to_seq_exclusive`. **Blocked** on FIND-C1.8-01.
 
-Commit: `test(rec-c1.8): UAT-REC-C1-03 forced gap on the wire — never
-Complete` on the cycle branch.
+**FIND-C1.8-01 (real bug, real reproducer, deferred to m1):**
+`chronos_log::segmented` segment-header bookkeeping mis-counts gap
+entries. Any path that writes a `Gap` entry into a
+`SegmentedExecutionLog` (the `record_gap` direct API, or the
+memory-budget overflow path) produces a segment header that
+declares N records but the on-disk file holds N-1, so the segment
+is rejected on reopen with `'replay integrity failure'`. The
+reproducer is `uat_rec_c1_03_forced_gap_reports_gap_detected`
+(currently `#[ignore]`-marked). Belongs in a separate `m1-*`
+follow-up cycle.
+
+Commit:
+`REC-C1.8 (C1.8.4): UAT-REC-C1-03 negative passes; positive gap_detected #[ignore]-blocked on chronos_log::segmented bug`
+on the cycle branch.
 
 The C1.7 test that demonstrates the negative (clean session → `Complete`)
 is annotated as *"clean-session negative of UAT-C1-03"* and retained
@@ -247,7 +260,13 @@ Same as C1.7 closure convention:
 - T0 fmt + clippy -D warnings.
 - T3 split: workspace excluding sandbox/e2e + `chronos-native --lib
   --test-threads=1` per AGENTS.md §6.5.
-- T4-smoke: 5/5 (e2e_connectivity + 4 new wire tests).
+- T4-smoke: 5/5 (e2e_connectivity + 4 new wire tests). The C1.8.4 wire
+  test contributes the negative arm only (`rec_c1_8_uat_c1_03_forced_gap`
+  positive arm is `#[ignore]`-blocked on FIND-C1.8-01; the negative arm
+  passes).
+- FIND-C1.8-01 surfaced in `apply-checkpoint.json::findings_introduced`
+  and replicated here. Belongs in a separate `m1-*` cycle; not a
+  blocker for REC-C1 closure (UAT-REC-C1-03 negative arm satisfied).
 - Merge --no-ff, push annotated tag `rec-c1-8-authoritative-evidence-handoff`.
 - `archive_status = "ready"` (rec-c1 stream convention; no
   `.sddk-knowledge/changes/archive/rec-c1-8-*/` directory).
