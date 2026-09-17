@@ -1,0 +1,126 @@
+{
+  "cycle_id": "p-3416cfb8288f8964/rec-c1-5-closure",
+  "branch": "feat/rec-c1.5-closure",
+  "head_sha": "1a1ec68ad662aa0cb1bf74cdf3122aea4d11871e",
+  "base_sha": "17367f2d",
+  "path": "A-lite",
+  "status": "ready-to-close",
+  "commits": [
+    {
+      "sha": "2c4da9ba",
+      "step": "3",
+      "title": "feat(rec-c1.5): canonical ExecutionLog root resolver",
+      "summary": "Added chronos-log::location::{resolve_execution_log_root, execution_log_dir} (OnceLock-backed, memoized) plus the cfg(test) set_execution_log_root_for_testing seam. Migrated session create, bootstrap, and durable delete to read through it.",
+      "evidence": "cargo test -p chronos-log --lib"
+    },
+    {
+      "sha": "ee376e10",
+      "step": "3",
+      "title": "test(rec-c1.5): edge cases for the canonical ExecutionLog root resolver",
+      "summary": "Env round-trip, two-call equality, override seam, default-fallback determinism.",
+      "evidence": "4 unit tests in chronos-log/src/location.rs"
+    },
+    {
+      "sha": "94bd092a",
+      "step": "4",
+      "title": "feat(rec-c1.5): bootstrap execution logs during MCP startup",
+      "summary": "try_new now calls bootstrap_execution_logs before returning. Surface typed ChronosServerInitError::ExecutionLogBootstrap on failure.",
+      "evidence": "cargo test -p chronos-mcp --lib"
+    },
+    {
+      "sha": "6644bdbb",
+      "step": "5",
+      "title": "feat(rec-c1.5): make session deletion remove durable logs",
+      "summary": "SessionsService::delete_session now also removes the durable ExecutionLog on disk via delete_durable_execution_log. DeleteResult.paths_removed surfaces what was deleted.",
+      "evidence": "tests in services + restart_uat UAT-R4"
+    },
+    {
+      "sha": "849184ee",
+      "step": "5",
+      "title": "chore(rec-c1.5): checkpoint durable deletion wiring",
+      "summary": "Vault artifact checkpoint.",
+      "evidence": "no code change"
+    },
+    {
+      "sha": "38e02be4",
+      "step": "5b",
+      "title": "feat(rec-c1.5): durably seal logs on clean session stop",
+      "summary": "Clean-stop path now writes tail_state=Sealed to the manifest; restart reads Sealed and skips the bootstrap reopen path. UAT-R3 proves this.",
+      "evidence": "restart_uat r3_clean_session_stop_seals_and_restart_bootstraps_it"
+    },
+    {
+      "sha": "d3ea101b",
+      "step": "5b",
+      "title": "chore(rec-c1.5): checkpoint clean-stop seal integration",
+      "summary": "Vault artifact checkpoint.",
+      "evidence": "no code change"
+    },
+    {
+      "sha": "1bb32f05",
+      "step": "5",
+      "title": "feat(rec-c1.5): expose durable deletion paths",
+      "summary": "Surface delete_durable_execution_log in SessionExecutionLogRegistry::remove so the durable side is exercised before filesystem removal.",
+      "evidence": "tests in services + restart_uat r4"
+    },
+    {
+      "sha": "1b7d0e1f",
+      "step": "8",
+      "title": "test(rec-c1.5): add two-process sealed restart UAT",
+      "summary": "r3_clean_session_stop_seals_and_restart_bootstraps_it: A emits → session_stop(true,true) → B sees tail_state=Sealed + identical events page.",
+      "evidence": "restart_uat UAT-R3 (committed 1b7d0e1f)"
+    },
+    {
+      "sha": "e2cd57a5",
+      "step": "5",
+      "title": "test(rec-c1.5): add durable delete restart UAT",
+      "summary": "r4_delete_session_is_absent_after_restart: A creates session → A deletes it → B sees SessionNotFound (or Unavailable), never the deleted logs.",
+      "evidence": "restart_uat UAT-R4 (committed e2cd57a5)"
+    },
+    {
+      "sha": "3acb3040",
+      "step": "8",
+      "title": "chore(rec-c1.5): persist restart UAT checkpoint",
+      "summary": "Apply-checkpoint checkpoint.",
+      "evidence": "no code change"
+    },
+    {
+      "sha": "e75b5f6a",
+      "step": "6",
+      "title": "test(rec-c1.5): add real-process unclean restart UAT",
+      "summary": "Added McpTestClient::force_kill helper. r1_unclean_restart_reproduces_same_events_page: A emits → SIGKILL A → B reads identical events pages + manifest tail_state != Sealed.",
+      "evidence": "restart_uat UAT-R1"
+    },
+    {
+      "sha": "23023651",
+      "step": "7",
+      "title": "test(rec-c1.5): add identical-stale restart UAT",
+      "summary": "r2_stale_cursor_is_identical_before_and_after_restart: pre-seed retained_from=5, A reads seq=0 → CursorStale, B reads seq=0 → same CursorStale numbers.",
+      "evidence": "restart_uat UAT-R2"
+    },
+    {
+      "sha": "a2aee5b9",
+      "step": "9",
+      "title": "test(rec-c1.5): add try_new readiness invariant",
+      "summary": "Add ChronosServer::execution_log_registry accessor (Arc<SessionExecutionLogRegistry>). Added bootstrap_readiness integration test that seeds two sessions, calls try_new, asserts registry.len()==2 and both ids present. Regression-verified by commenting bootstrap out — test fails with len=0.",
+      "evidence": "cargo test -p chronos-mcp --test bootstrap_readiness"
+    },
+    {
+      "sha": "1a1ec68a",
+      "step": "10",
+      "title": "style(rec-c1.5): apply fmt + clippy cleanup",
+      "summary": "T0 fmt + clippy --workspace --all-targets -- -D warnings clean.",
+      "evidence": "cargo fmt --all -- --check; cargo clippy --workspace --all-targets -- -D warnings"
+    }
+  ],
+  "gates": {
+    "T0_fmt": "PASS",
+    "T0_clippy": "PASS",
+    "T1_workspace_lib_plus_tests": "PASS (1262 passed, 0 failed)",
+    "T_chronos_native_serial": "PASS (115 passed, 0 failed)",
+    "T_chronos_mcp_bootstrap_readiness": "PASS (1 passed, 0 failed)",
+    "T4_smoke": "PASS (restart_uat + e2e_connectivity + analytics_tools = 9 passed, 0 failed)",
+    "smoke_subset_note": "Per AGENTS.md \u00a72 the subset was selected from diff scope: this cycle exclusively touches chronos-log, chronos-services, chronos-mcp, and chronos-sandbox (the test of executable boundary). restart_uat exercises the changed boundary; e2e_connectivity confirms server start; analytics_tools confirms read paths under the new bootstrap shape."
+  },
+  "outstanding": [],
+  "notes": "Pre-cycle see previous checkpoint at e2cd57a5; head_sha updated post-R5 commit (a2aee5b9) and post-style cleanup (1a1ec68a)."
+}
