@@ -1,0 +1,62 @@
+{
+  "subject": {
+    "head_sha": "5bd67b79a2cc7784261577ff2043bc50fa9ff472",
+    "base_sha": "4e0a1344",
+    "cycle_id": "m1-gap-segment-accounting-repair"
+  },
+  "cycle_id": "m1-gap-segment-accounting-repair",
+  "verdict": "passed",
+  "all_passed": true,
+  "lens_summary": {
+    "drift": "Single root cause, fully characterized before the fix. The segment header count was written as the number of persisted SegmentEntry items (records + gaps, from buffer.len()) while the replay validator counted ExecutionRecord entries only, so any gap-bearing segment failed reopen with RecordCountMismatch. Measured: declared 4, actual 3. Fixed by making the unit explicit and shared: header field renamed record_count -> entry_count, writer emits buffer.len(), replay counts every entry. No data migration (the writer always emitted the entry count). The C1.8 forced-gap UAT is un-ignored and GREEN.",
+    "findings_count": 0,
+    "tiers_run": [
+      "T0",
+      "T3",
+      "T_chronos_native_serial",
+      "T4-smoke"
+    ],
+    "source_schema": "m1-gap-segment-accounting-repair"
+  },
+  "findings": [],
+  "pre_existing_flakes_observed": [
+    {
+      "suite": "chronos-native lib",
+      "test": "ptrace_tracer::tests::*",
+      "status": "PRE-EXISTING in parallel mode per AGENTS.md §6.5; PASS serial in T_chronos_native_serial.",
+      "tracked": "AGENTS.md §6.5"
+    },
+    {
+      "suite": "vault drift CC#39",
+      "test": "cycles/index.md Total cycles vs m9-* filesystem count",
+      "status": "PRE-EXISTING; the check compares an all-cycles total against an m9-only directory count, so its delta is structural. Grows by 1 per cycle. Belongs in a separate gov-* cycle.",
+      "tracked": "cycle-artifacts/p-3416cfb8288f8964/m1-gap-segment-accounting-repair/apply-checkpoint.json::cc_drift"
+    },
+    {
+      "suite": "vault drift CC#18",
+      "test": "rec-c1-7-projection-authority-acceptance missing verify-findings.json",
+      "status": "PRE-EXISTING C1.7 gap; this cycle authors its own verify-findings.json. gov-* owns the C1.7 backfill.",
+      "tracked": "cycle-artifacts/p-3416cfb8288f8964/m1-gap-segment-accounting-repair/apply-checkpoint.json::cc_drift"
+    }
+  ],
+  "regression_battery": {
+    "T0_fmt": "PASS (cargo fmt --all -- --check)",
+    "T0_clippy": "PASS (cargo clippy --workspace --all-targets -- -D warnings)",
+    "T1_workspace_lib_plus_tests": "PASS (workspace --lib excluding sandbox/e2e/native: 16 groups, 0 failed)",
+    "chronos_log": "PASS (lib 76/76; all integration groups green)",
+    "T_chronos_native_serial": "103/103 PASS (--test-threads=1)",
+    "T4_smoke": {
+      "m1_gap_segment_accounting": "7/7 PASS (characterization + GAP-PERSIST-1..6)",
+      "rec_c1_8_uat_c1_03_forced_gap": "2/2 PASS, 0 ignored",
+      "e2e_connectivity": "1/1 PASS",
+      "rec_c1_8_dual_truth_closeout": "3/3 PASS",
+      "rec_c1_8_uat_c1_01_exact": "2/2 PASS",
+      "total": "15/15 PASS, 0 ignored"
+    }
+  },
+  "out_of_scope_observed": [
+    "REC-C2 (legacy deletion) remains queued behind this repair; not started here.",
+    "CC#18 (rec-c1-7 backfill) and CC#39 (index total vs m9 dirs) stay in gov-*; neither surfaced nor masked here.",
+    "Two pre-existing replay tests (rep_6, rep_7) encoded the old records-only unit for gap-bearing segments; corrected in-cycle to entry counts. They passed before only because they hand-built segments against the validator instead of the real writer."
+  ]
+}

@@ -7,6 +7,7 @@ Append-only index of all completed cycles in this vault.
 | m0 | m0-truth-first-foundation | A-full | — | — | CLOSED |
 | m0-01 | m0-01-live-pagination | A-min | — | — | CLOSED |
 | m1 | m1-execution-log-vertical-slice | — | — | — | CLOSED |
+| m1 | m1-gap-segment-accounting-repair | A-min | m1-gap-segment-accounting-repair | `5bd67b79` | CLOSED |
 | m2 | m2-function-level-capture | — | — | — | CLOSED |
 | m2-native-live-probe-frame-capture | m2-native-live-probe-frame-capture | A-min | — | — | CLOSED |
 | m2-native-live-probe-frame-capture-v2 | m2-native-live-probe-frame-capture-v2 | — | — | — | CLOSED |
@@ -47,8 +48,9 @@ See `changes/archive/` for full archive manifests of closed cycles.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-17T13:38Z |
-| Total cycles | 102 |
+| Last updated | 2026-09-17T14:03Z |
+| Total cycles | 103 |
 | m10 cycles | 13 (rows above) |
+| m1 cycles | 2 (m1-execution-log-vertical-slice, m1-gap-segment-accounting-repair) |
 | rec-c1 cycles | 4 (rec-c1-5-closure, rec-c1-6-lifecycle-retention-wire, rec-c1-7-projection-authority-acceptance, rec-c1-8-authoritative-evidence-handoff) |
-| Last archive | rec-c1-8-authoritative-evidence-handoff (apply-checkpoint archive_status=ready; durable knowledge sync deferred to gov-* cycle per CC#39) |
+| Last archive | m1-gap-segment-accounting-repair (apply-checkpoint archive_status=ready; durable knowledge sync deferred to gov-* cycle per CC#39) |
