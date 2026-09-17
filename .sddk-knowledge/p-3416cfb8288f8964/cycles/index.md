@@ -36,7 +36,7 @@ Append-only index of all completed cycles in this vault.
 
 | rec-c1 | rec-c1-5-closure | A-lite | rec-c1.5-closure | `5bbf774888c3bced7967e3e060859d9a78d7035a` | CLOSED |
 | rec-c1 | rec-c1-6-lifecycle-retention-wire | A-lite | rec-c1-6-lifecycle-retention-wire | `d1891ed3` | CLOSED |
-| rec-c1 | rec-c1-7-projection-authority-acceptance | A-lite | rec-c1-7-projection-authority-acceptance | — | ACTIVE |
+| rec-c1 | rec-c1-7-projection-authority-acceptance | A-lite | rec-c1-7-projection-authority-acceptance | `6190390d` | CLOSED |
 
 See `changes/archive/` for full archive manifests of closed cycles.
 
@@ -46,8 +46,8 @@ See `changes/archive/` for full archive manifests of closed cycles.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-17T10:14Z |
+| Last updated | 2026-09-17T11:39Z |
 | Total cycles | 101 |
 | m10 cycles | 13 (rows above) |
 | rec-c1 cycles | 3 (rec-c1-5-closure, rec-c1-6-lifecycle-retention-wire, rec-c1-7-projection-authority-acceptance) |
-| Last archive | rec-c1-6-lifecycle-retention-wire |
+| Last archive | rec-c1-7-projection-authority-acceptance (apply-checkpoint archive_status=ready; durable knowledge sync deferred to gov-* cycle per CC#39) |
