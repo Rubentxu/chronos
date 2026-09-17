@@ -86,7 +86,6 @@ pub mod debug_read;
 pub mod debug_trace;
 pub mod debug_trace_specialized;
 pub mod diff;
-pub mod dual_truth_characterization;
 pub mod error;
 pub mod events_cursor;
 pub mod events_log_read;
