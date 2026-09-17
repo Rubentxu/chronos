@@ -47,6 +47,10 @@
     {
       "sha": "50fd47fa",
       "title": "feat(rec-c2.1): firing reads from the ExecutionLog + EventsCursorV1 (C2.1.4b)"
+    },
+    {
+      "sha": "d2fce95d",
+      "title": "feat(rec-c2.1): derived fire_count + explicit count completeness (C2.1.5)"
     }
   ],
   "gates": {

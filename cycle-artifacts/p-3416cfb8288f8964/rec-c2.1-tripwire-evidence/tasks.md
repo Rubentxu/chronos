@@ -11,7 +11,8 @@
 | C2.1.3 derive from accepted Raw + recursion barrier | DONE | `tripwire_evidence::{derive_firings_from_record, derive_firings_from_event, read_firings}`; barrier dispatches on `ExecutionKind`; failures reported, never a `Gap` |
 | C2.1.4a async boundary + `resolve_session` | **DONE** | `observe` is async; explicit scope wins; `active_session` fallback; guard dropped before any I/O; 4 direct tests incl. lock-release; 25 call sites / 20 tests migrated |
 | C2.1.4b log-backed firing reads + `EventsCursorV1` | **DONE** | list reads the log; strict cursor errors; scan budget; `session_id` + checkpoint cursor on the wire; FIRING-PAGE-1..4; fixtures migrated off `fired_buffer` |
-| C2.1.5 `fire_count` derived; `retained_until_session_end` honest | **PENDING** | depends on C2.1.4 |
+| C2.1.5a bounded/progress-aware scan + count completeness facts | **DONE** | hidden 64-page cap removed; typed stall; FiringCountSnapshot |
+| C2.1.5b async `query` + derived `fire_count` + honest retention | **DONE** | FIND-C2.0-01/02 closed |
 | C2.1.6 remove `fired_buffer` | **PENDING** | depends on C2.1.5 |
 | C2.1.7 real-process restart UAT + ratchet update | **PENDING** | depends on C2.1.4-6 |
 
@@ -80,3 +81,17 @@ C2.1.6 a pure deletion: `TripwiresService::list`, `fired_buffer`,
 
 The ratchet does not move yet (`fired_buffer` 4 -> 4, `drain_fired` 1 -> 1)
 because those symbols still exist; the count drops in C2.1.6.
+
+## State after C2.1.5
+
+```text
+firing occurrence -> ExecutionLog
+firing delivery   -> EventSeq cursor
+fire_count        -> ExecutionLog projection (+ completeness facts)
+retention         -> never destructive, never a delivery filter
+Tripwire.fire_count -> present but not authoritative anywhere
+```
+
+`fired_buffer` is still written by `TripwireManager::evaluate`/`evaluate_semantic`
+(probe_drain calls the latter) and is read only by `TripwiresService::list`,
+which is now referenced only from its own tests. C2.1.6 is the deletion.
