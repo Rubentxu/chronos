@@ -654,6 +654,116 @@ mod tests {
         assert!(matches!(err, ServiceError::Unsupported(_)), "got {:?}", err);
     }
 
+    // ------------------------------------------------------------------
+    // REC-C2.0 characterizations (measure reality; not aspirational).
+    // ------------------------------------------------------------------
+
+    /// Fire the ONE tripwire registered by the rig, so `fired_buffer` holds
+    /// exactly one freshly measured firing.
+    fn fire_once(rig: &TestRig) {
+        use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
+        // `TripwireCondition::FunctionName` matches on
+        // `event.location.function`, so the fixture must populate it.
+        let location = SourceLocation {
+            function: Some("main".to_string()),
+            ..SourceLocation::default()
+        };
+        let event = TraceEvent {
+            event_id: 7,
+            timestamp_ns: 700,
+            thread_id: 1,
+            event_type: EventType::FunctionEntry,
+            location,
+            data: EventData::Function {
+                name: "main".into(),
+                signature: None,
+                symbol_id: None,
+                invocation_id: None,
+                parent_invocation_id: None,
+            },
+        };
+        // The condition is FunctionName { pattern: "main*" }.
+        let fired = rig.manager.evaluate(&event);
+        assert_eq!(fired.len(), 1, "fixture must fire exactly one tripwire");
+    }
+
+    /// Register the rig's single `main*` tripwire through the public verb.
+    fn create_one_tripwire(rig: &TestRig) {
+        let mut input = tripwire_input(ObserveVerb::Create);
+        input.condition = Some(ObserveCondition::Tripwire {
+            condition: tripwire_condition(),
+            label: None,
+        });
+        rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap());
+    }
+
+    /// CHAR-C2-02: `observe(verb=list)` consumes fired evidence globally.
+    /// The first `list` returns the firing and empties the shared buffer;
+    /// a second `list` — which a *different* consumer would issue — sees
+    /// nothing. There is no per-consumer cursor.
+    #[test]
+    fn char_c2_02_observe_list_drains_fired_evidence_globally() {
+        let rig = TestRig::new();
+        create_one_tripwire(&rig);
+        fire_once(&rig);
+
+        let mut first_input = tripwire_input(ObserveVerb::List);
+        first_input.retention = Some(ObserveRetention::Drained);
+        let first = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, first_input).unwrap());
+        let second_input = {
+            let mut i = tripwire_input(ObserveVerb::List);
+            i.retention = Some(ObserveRetention::Drained);
+            i
+        };
+        let second =
+            rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, second_input).unwrap());
+
+        match (first, second) {
+            (ObserveOutput::List(a), ObserveOutput::List(b)) => {
+                assert_eq!(a.fired_count, 1, "first consumer observes the firing");
+                assert_eq!(
+                    b.fired_count, 0,
+                    "char: the second consumer observes nothing — the first list drained it"
+                );
+            }
+            other => panic!("expected two List outputs, got {:?}", other),
+        }
+    }
+
+    /// CHAR-C2-03: `retention=retained_until_session_end` claims to keep the
+    /// evidence, but `list` drains `fired_buffer` *before* applying the
+    /// retention setting and then returns `[]`. The measured result: the
+    /// "retained" read loses the evidence for everyone, including itself.
+    #[test]
+    fn char_c2_03_retained_until_session_end_loses_the_evidence() {
+        let rig = TestRig::new();
+        create_one_tripwire(&rig);
+        fire_once(&rig);
+
+        // First read asks for retention.
+        let mut retained_input = tripwire_input(ObserveVerb::List);
+        retained_input.retention = Some(ObserveRetention::RetainedUntilSessionEnd);
+        let retained =
+            rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, retained_input).unwrap());
+
+        // A later drained read should still see the retained evidence.
+        let mut drained_input = tripwire_input(ObserveVerb::List);
+        drained_input.retention = Some(ObserveRetention::Drained);
+        let after =
+            rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, drained_input).unwrap());
+
+        match (retained, after) {
+            (ObserveOutput::List(r), ObserveOutput::List(a)) => {
+                assert_eq!(r.fired_count, 0, "char: the retained read returns nothing");
+                assert_eq!(
+                    a.fired_count, 0,
+                    "char: and the evidence is gone for the next reader too — it was drained, not retained"
+                );
+            }
+            other => panic!("expected two List outputs, got {:?}", other),
+        }
+    }
+
     // ----- verb=query ---------------------------------------------------------
 
     #[test]

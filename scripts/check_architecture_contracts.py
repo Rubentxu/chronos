@@ -259,12 +259,32 @@ def verify_roadmap_markers(errors: list[str]) -> None:
                 error(f"{path.relative_to(ROOT)} missing convergence marker {marker}", errors)
 
 
+def verify_legacy_evb_inventory(errors: list[str], strict: bool) -> None:
+    """Run the REC-C2 legacy EventBus/queue ratchet as part of this gate."""
+    script = ROOT / "scripts" / "check_legacy_evb.py"
+    if not script.exists():
+        error("missing scripts/check_legacy_evb.py", errors)
+        return
+    cmd = [sys.executable, str(script)]
+    if strict:
+        cmd.append("--strict")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        tail = (result.stdout or result.stderr or "").strip()
+        error(f"legacy-evb ratchet failed:\n{tail}", errors)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--strict-no-gaps",
         action="store_true",
         help="REC-C7 close mode: fail remaining partial/gap/blocked REC-C contracts",
+    )
+    parser.add_argument(
+        "--strict-legacy",
+        action="store_true",
+        help="REC-C2 close mode: fail on any CANONICAL destructive EventBus read",
     )
     args = parser.parse_args()
 
@@ -277,6 +297,7 @@ def main() -> int:
     verify_ledger(ledger, errors, args.strict_no_gaps)
     verify_dependency_baseline(ledger, errors)
     verify_no_new_legacy(errors)
+    verify_legacy_evb_inventory(errors, args.strict_legacy)
     verify_roadmap_markers(errors)
 
     if errors:

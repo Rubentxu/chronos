@@ -1033,6 +1033,89 @@ impl NativeProbeBackend {
 mod tests {
     use super::*;
 
+    // ------------------------------------------------------------------
+    // REC-C2.0 characterizations (measure reality; not aspirational).
+    // ------------------------------------------------------------------
+
+    /// CHAR-C2-01: `dual_push` publishes to the EventBus FIRST and the
+    /// ExecutionLog append is best-effort. If the append fails, the bus
+    /// still carries the event — Chronos acts on an observation that was
+    /// never accepted as durable evidence.
+    ///
+    /// Forcing the failure: seal the log, so `append` refuses. This is the
+    /// measured ordering the REC-C2 migration must invert
+    /// ("persist first, derive second, fan-out last").
+    #[test]
+    fn char_c2_01_bus_is_published_even_when_log_append_fails() {
+        let dir = std::env::temp_dir().join(format!(
+            "chronos-c2-char01-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let session = chronos_log::SessionId::new("char-c2-01");
+        let log = SegmentedExecutionLog::open(
+            session.clone(),
+            chronos_log::SegmentedConfig::with_dir(&dir),
+        )
+        .expect("open log");
+        // Seal so every subsequent append is refused.
+        log.seal().expect("seal");
+        assert!(log.append(new_record_for(&session, 0)).is_err());
+
+        let bus = chronos_domain::bus::EventBus::new_shared(64);
+        let event = TraceEvent::signal(1, 100, 1, 11, "SIGSEGV", 0);
+        NativeProbeBackend::dual_push(&bus, Some(&log), &event, 123);
+
+        // MEASURED: the bus observed the event even though the durable
+        // append failed.
+        let published = bus.snapshot_raw();
+        assert_eq!(
+            published.len(),
+            1,
+            "char: the bus published the event regardless of the log append failure"
+        );
+        assert_eq!(published[0].event_id, 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// CHAR-C2-06: `drain_raw_events()` is a destructive `snapshot_raw()`.
+    /// Two consumers of the same session cannot both read it: the first
+    /// drains the ring and the second observes nothing. This is the path
+    /// `probe_stop` and `session_snapshot` use to build the QueryEngine.
+    #[test]
+    fn char_c2_06_drain_raw_events_is_destructive_across_consumers() {
+        let bus = chronos_domain::bus::EventBus::new_shared(64);
+        let backend = NativeProbeBackend::new(bus.clone());
+        bus.push_raw(TraceEvent::signal(1, 100, 1, 11, "SIGSEGV", 0));
+        bus.push_raw(TraceEvent::signal(2, 200, 1, 11, "SIGSEGV", 0));
+
+        let first = backend.drain_raw_events();
+        let second = backend.drain_raw_events();
+
+        assert_eq!(first.len(), 2, "first consumer sees both events");
+        assert!(
+            second.is_empty(),
+            "char: the second consumer loses every event (destructive snapshot)"
+        );
+    }
+
+    fn new_record_for(
+        session: &chronos_log::SessionId,
+        seq: u64,
+    ) -> chronos_log::NewExecutionRecord {
+        chronos_log::NewExecutionRecord {
+            session_id: session.clone(),
+            monotonic_ns: seq,
+            payload: chronos_log::ExecutionPayload::new(vec![], "char"),
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn test_native_probe_backend_creation() {
         let bus = chronos_domain::bus::EventBus::new_shared(100);
