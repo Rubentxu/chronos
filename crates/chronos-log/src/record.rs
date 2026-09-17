@@ -74,12 +74,29 @@ pub struct ExecutionRecord {
     /// `None` for v1 records or events without a function context.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub symbol_id: Option<chronos_domain::SymbolId>,
+    /// REC-C1.8: optional wall-clock capture timestamp in nanoseconds
+    /// since the Unix epoch. Producers MAY fill this when they have
+    /// access to a wall clock at capture time (sandboxed, offline, or
+    /// post-processed replays do not); they MAY leave it `None`. The
+    /// field is intentionally independent from `monotonic_ns`
+    /// (session-relative, always populated) — readers MUST be able to
+    /// read each dimension without coupling. UAT-REC-C1-05 closes on
+    /// the four-dimension independence invariant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub captured_at_unix_ns: Option<u64>,
 }
 
 impl ExecutionRecord {
     /// Logical schema version of the record. `"chronos_exec_v1"` when
     /// the invocation/symbol fields are all `None`; `"chronos_exec_v2"`
     /// when any of them is populated.
+    ///
+    /// REC-C1.8: `captured_at_unix_ns` does NOT promote v1 → v2; a
+    /// v1-shape record that happens to carry a wall-clock capture
+    /// timestamp is still `"chronos_exec_v1"`. Promotion is reserved
+    /// for the invocation/symbol triple (the M2+ fields), which
+    /// distinguish record types — wall-clock is a producer-optional
+    /// dimension that any record can carry without changing its type.
     pub fn schema_version(&self) -> &'static str {
         if self.invocation_id.is_some()
             || self.parent_invocation_id.is_some()

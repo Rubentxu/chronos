@@ -375,6 +375,7 @@ mod rep_tests {
             invocation_id: None,
             parent_invocation_id: None,
             symbol_id: None,
+            captured_at_unix_ns: None,
         }
     }
 

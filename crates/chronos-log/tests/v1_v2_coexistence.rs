@@ -48,6 +48,7 @@ fn v2_records_round_trip_with_populated_fields() {
         invocation_id: Some(inv_id),
         parent_invocation_id: Some(parent_id),
         symbol_id: Some(sym_id),
+        captured_at_unix_ns: None,
     };
 
     let dir = std::env::temp_dir().join(format!("chronos-log-v2-{}", Uuid::new_v4()));

@@ -222,6 +222,7 @@ mod tests {
             invocation_id: invocation,
             parent_invocation_id: parent,
             symbol_id: symbol,
+            captured_at_unix_ns: None,
         }
     }
 

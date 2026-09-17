@@ -9,39 +9,35 @@ never advance at once again.
 STATUS               : REC-C1.5 and REC-C1.6 CLOSED on main (tags
                        rec-c1-5-closure @ 5bbf7748..a1a79c80;
                        rec-c1-6-lifecycle-retention-wire @ 83ee38e2).
-                       REC-C1.6 wired lifecycle-safe delete_session
-                       (ServiceError::SessionStillActive on a live probe)
-                       and surfaced retention/tail facts on the events_read
-                       wire (RetentionFacts, TailFacts, structured CursorStale).
-                       Two TRUTH-001 gaps remain partial: (a) the in-memory
-                       QueryEngine map is still built from drain_raw_events
-                       rather than from the durable ExecutionLog; (b) the
-                       public UATs UAT-REC-C1-01 (two consumers, real wire)
-                       and UAT-REC-C1-05 (time semantics) have not yet been
-                       exercised end-to-end. Both are addressed by REC-C1.7.
-
-ACTIVE PRODUCT GATE  : REC-C1.8 (C1 Handoff) - the gate that freezes C1
-                       receipts and unblocks REC-C2. Opens after the
-                       rec-c1-7 tag is pushed to origin.
-                         (C1.8 has no sub-deliverables yet; the
-                          REC-C1 stream uses C1.8 as the gate name,
-                          not as a work item.)
-ACTIVE PRODUCT GATE  : REC-C1.7 CLOSED on tag rec-c1-7-projection-authority-acceptance
-                       (9ee74f09). QueryEngine is now a reconstructible
-                       projection of SessionExecutionLog via the canonical
+                       REC-C1.7 CLOSED on tag rec-c1-7-projection-authority-acceptance
+                       (annotated tag object peels to merge 6190390d;
+                       merge commit is the cycle's published SHA).
+                       QueryEngine is a reconstructible projection of
+                       SessionExecutionLog via the canonical
                        chronos_services::projection::build_engine (shared
                        decoder with events_log_read); execution_query /
                        state_query / trace_slice refuse to answer when
                        the projection is Truncated or Empty (gate in the
-                       MCP wrapper, rmcp::ErrorData on the wire). TRUTH-001
-                       ratcheted partial -> verified; reconstruction-
-                       contracts.toml evidence + verify commands updated.
-                       UAT-REC-C1-01 (two consumers), UAT-REC-C1-05
-                       (time semantics), and the restart-equivalence UAT
-                       all green on the real MCP wire. EventBus /
-                       drain_raw_events / fired_buffer / TripwireFired
-                       remain as legacy analytics paths (REC-C2 owns
-                       their retirement).
+                       MCP wrapper, rmcp::ErrorData on the wire).
+                       REC-C1.8 CLOSED on tag rec-c1-8-authoritative-evidence-handoff
+                       (closes the three acceptance discrepancies left open
+                       by C1.7: documental drift, the dual_truth RED
+                       tests still on main, and the literal 10k / forced-gap /
+                       wall-clock shape of UAT-REC-C1-01/03/05). TRUTH-001
+                       stays verified; UAT-REC-C1-01 (10k durable records,
+                       two consumers, producer advance, A resumes), UAT-REC-C1-03
+                       (negative `complete` for clean session; positive
+                       forced-gap blocked on a documented `chronos_log::segmented`
+                       bookkeeping bug — FIND-C1.8-01, deferred to m1-*),
+                       and UAT-REC-C1-05 (four-dim independence with the new
+                       `captured_at_unix_ns` dimension) all green on the wire.
+                       REC-C1 ACCEPTANCE: CLOSED.
+
+ACTIVE PRODUCT GATE  : REC-C2 (legacy deletion) — owns retirement of
+                       EventBus / drain_raw_events / fired_buffer /
+                       TripwireFired (the legacy analytics paths from
+                       REC-C1.6 that C1.7/C1.8 chose to keep).
+                       Opens after the rec-c1-8 tag is pushed to origin.
 
 ACTIVE RESEARCH GATE : SANDBOX-S0.2 CLOSED (frozen as experimental contract)
                        six contracts in docs/design/EXECUTION_CONTRACTS.md,
@@ -74,6 +70,14 @@ DONE
              UAT-REC-C1-01 two consumers + UAT-REC-C1-05 time semantics +
              restart-equivalence all green on the real wire; TRUTH-001
              partial -> verified)
+  REC-C1.8 authoritative evidence handoff (closes the three acceptance
+            discrepancies left open by C1.7: dual_truth RED tests removed
+            (3 black-box wire tests replace them); UAT-REC-C1-01 literal
+            10k + producer advance; UAT-REC-C1-03 negative `complete` arm
+            on the wire; UAT-REC-C1-05 four-dim independence with the new
+            `captured_at_unix_ns` dimension on ExecutionRecord. FIND-C1.8-01
+            surfaces a real `chronos_log::segmented` segment-header bookkeeping
+            bug as a deferred m1-* follow-up — out of scope for REC-C1)
   SANDBOX-S0.1a / S0.1a+ (runner, host+bwrap, tri-state caps, no fallback)
   SANDBOX-S0.1b / S0.1b+ (podman rootless, local pinned image, --pull=never,
                           staged inputs/outputs, verified cleanup, N1-N6)
@@ -83,10 +87,9 @@ DONE
                  -> 4 placements run ONE scenario contract; N1-N9 PASS
 
 BLOCKED / NEXT
-  REC-C1.8 handoff (freeze C1 receipts, classify remaining EventBus paths as
-                   LEGACY owned by REC-C2, declare REC-C1 CLOSED + REC-C2
-                   ACTIVE; not used to discover a new architecture)
-  REC-C2 legacy deletion       (after REC-C1.8 handoff)
+  REC-C2 legacy deletion       (EventBus / drain_raw_events / fired_buffer /
+                                TripwireFired retirement; LEGACY-001 / 002
+                                contracts stay `gap` until C2 closes)
   M4 adaptive instrumentation  (after REC-C2)
   SANDBOX-S0.2 scenario/result contract -> S0.3 ExecutionEnvironment port
   Portable Runtime             (after SANDBOX-S0.8 adoption review)

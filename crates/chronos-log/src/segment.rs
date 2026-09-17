@@ -516,6 +516,7 @@ fn bincode_decode_record(mut body: &[u8]) -> Result<ExecutionRecord, LogError> {
         invocation_id,
         parent_invocation_id,
         symbol_id,
+        captured_at_unix_ns: None,
     })
 }
 
@@ -594,6 +595,7 @@ mod tests {
             invocation_id: None,
             parent_invocation_id: None,
             symbol_id: None,
+            captured_at_unix_ns: None,
         })
     }
 
@@ -640,6 +642,7 @@ mod tests {
                 invocation_id: Some(inv),
                 parent_invocation_id: Some(parent),
                 symbol_id: Some(sym("main")),
+                captured_at_unix_ns: None,
             }),
             SegmentEntry::Record(ExecutionRecord {
                 session_id: SessionId::new("v2"),
@@ -650,6 +653,7 @@ mod tests {
                 invocation_id: Some(InvocationId::now()),
                 parent_invocation_id: Some(inv),
                 symbol_id: Some(sym("alpha")),
+                captured_at_unix_ns: None,
             }),
             // v1-style record (no identity) must still decode as None.
             record(2, "plain"),
@@ -661,6 +665,8 @@ mod tests {
             decoded[0],
             SegmentEntry::Record(ExecutionRecord {
                 symbol_id: Some(_),
+
+                captured_at_unix_ns: None,
                 ..
             })
         ));

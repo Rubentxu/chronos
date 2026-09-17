@@ -47,6 +47,7 @@ fn append_n(log: &SegmentedExecutionLog, session: &SessionId, n: u64) {
             invocation_id: None,
             parent_invocation_id: None,
             symbol_id: None,
+            captured_at_unix_ns: None,
         })
         .expect("append");
     }
