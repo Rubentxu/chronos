@@ -207,6 +207,22 @@ pub fn require_full_history(result: ProjectionResult) -> Result<ProjectionResult
     }
 }
 
+/// Meta-only variant of `require_full_history` for the canonical
+/// services: they already hold the `QueryEngine` separately in the
+/// engines map; the gate only needs to inspect the meta, so we
+/// avoid the round-trip through `ProjectionResult` (which would
+/// move the engine).
+pub fn meta_is_full(meta: &ProjectionMeta) -> Result<(), ServiceError> {
+    match meta.completeness {
+        ProjectionCompleteness::Full | ProjectionCompleteness::Empty => Ok(()),
+        ProjectionCompleteness::Truncated { retained_from } => {
+            Err(ServiceError::EvidenceUnavailableDueToRetention {
+                retained_from: retained_from.0,
+            })
+        }
+    }
+}
+
 /// Whether `e` is infrastructure noise the engine must not index.
 ///
 /// Mirrors the filter in `server.rs::build_and_store_engine`. Moved

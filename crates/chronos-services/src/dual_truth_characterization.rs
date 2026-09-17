@@ -114,7 +114,12 @@ async fn dual_truth_execution_query_says_session_not_found_while_log_has_records
     // yet (no probe ever ran, no stop drain happened, no projection).
     let engines: Arc<TokioMutex<HashMap<String, QueryEngine>>> =
         Arc::new(TokioMutex::new(HashMap::new()));
-    let ctx = ExecutionQueryContext { engines: &engines };
+    let empty_meta: Arc<TokioMutex<HashMap<String, crate::projection::ProjectionMeta>>> =
+        Arc::new(TokioMutex::new(HashMap::new()));
+    let ctx = ExecutionQueryContext {
+        engines: &engines,
+        projection_meta: &empty_meta,
+    };
 
     // 3. Agent calls `execution_query` (kind=execution_summary). Today
     // the engine map is the only source, so this returns
@@ -159,7 +164,12 @@ async fn dual_truth_trace_slice_says_session_not_found_while_log_has_records() {
 
     let engines: Arc<TokioMutex<HashMap<String, QueryEngine>>> =
         Arc::new(TokioMutex::new(HashMap::new()));
-    let ctx = TraceSliceContext { engines: &engines };
+    let empty_meta: Arc<TokioMutex<HashMap<String, crate::projection::ProjectionMeta>>> =
+        Arc::new(TokioMutex::new(HashMap::new()));
+    let ctx = TraceSliceContext {
+        engines: &engines,
+        projection_meta: &empty_meta,
+    };
 
     let input = TraceSliceInput {
         session_id: session_id_str,
@@ -211,6 +221,8 @@ async fn dual_truth_engine_built_before_late_append_misses_late_records() {
     let engine = engine_from(first_snapshot);
     let engines: Arc<TokioMutex<HashMap<String, QueryEngine>>> =
         Arc::new(TokioMutex::new(HashMap::new()));
+    let empty_meta: Arc<TokioMutex<HashMap<String, crate::projection::ProjectionMeta>>> =
+        Arc::new(TokioMutex::new(HashMap::new()));
     engines.lock().await.insert(session_id_str.clone(), engine);
 
     // 2. THREE MORE records are appended to the durable log after the
@@ -242,7 +254,10 @@ async fn dual_truth_engine_built_before_late_append_misses_late_records() {
     // 3. Agent queries execution_query. Today the engine (3 events)
     // wins; the log (6 events) is ignored. After C1.7.2 the engine
     // is rebuilt from the log and returns 6.
-    let ctx = ExecutionQueryContext { engines: &engines };
+    let ctx = ExecutionQueryContext {
+        engines: &engines,
+        projection_meta: &empty_meta,
+    };
     let input = ExecutionQueryInput {
         session_id: session_id_str,
         kind: ExecutionQueryKind::ExecutionSummary,
