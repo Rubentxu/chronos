@@ -20,52 +20,28 @@ STATUS               : REC-C1.5 and REC-C1.6 CLOSED on main (tags
                        and UAT-REC-C1-05 (time semantics) have not yet been
                        exercised end-to-end. Both are addressed by REC-C1.7.
 
-ACTIVE PRODUCT GATE  : REC-C1.7 (Projection Authority + final REC-C1
-                       behavioral acceptance) - the last gate that touches
-                       projection plumbing before the C1.8 handoff freezes
-                       C1 receipts and unblocks REC-C2.
-                         C1.7.0 reconciliation                    ACTIVE
-                           docs/ROADMAP + reconstruction-contracts.toml
-                           bumped to REC-C1.7; cycles/index.md row added
-                           (Total cycles 100 -> 101; pre-existing CC#39
-                           drift grows from 1 to 2, intentionally surfaced).
-                         C1.7.1 dual-truth characterization      PLANNED (RED)
-                           Two non-implementing tests that prove
-                           execution_query / state_query / trace_slice
-                           currently diverge from SessionExecutionLog when
-                           the engine map was built from a drain that
-                           missed records appended afterwards.
-                         C1.7.2 chronos_services::projection      PLANNED
-                           Single canonical build_engine(&log). Reuses
-                           events_log_read::decode (JSON-TraceEvent).
-                           5 unit tests: empty / full / truncated /
-                           decode-failure / noisy-filter.
-                         C1.7.3 wire projection into MCP + gate    PLANNED
-                           build_and_store_engine takes &SessionExecutionLog
-                           (was: Vec<TraceEvent>). execution_query /
-                           state_query / trace_slice call
-                           require_full_history and return
-                           EvidenceUnavailableDueToRetention on
-                           Truncated projections.
-                         C1.7.4 restart-equivalence UAT           PLANNED
-                           1,000 records -> capture execution_query /
-                           state_query / trace_slice -> drop engine map,
-                           reopen log, re-run, assert semantic equality.
-                         C1.7.5 UAT-REC-C1-01 public, real wire    PLANNED
-                           10,000 records, two independent consumers via
-                           events_read; producer advance; pause/resume;
-                           forced gap returns GapDetected, never Complete.
-                         C1.7.6 UAT-REC-C1-05 time semantics      PLANNED
-                           seq/event_id/timestamp_ns deliberately
-                           uncorrelated (40, 90, 130 / 10_000_500,
-                           25_320_700, 25_999_001). No encoder/projection
-                           substitutes one for another.
-                         C1.7.7 TRUTH-001 ratchet                 PLANNED
-                           partial -> verified with UAT and verify
-                           command; EventBus / fired_buffer /
-                           drain_raw_events / TripwireFired remain
-                           as legacy paths owned by REC-C2 (not deleted
-                           in this cycle).
+ACTIVE PRODUCT GATE  : REC-C1.8 (C1 Handoff) - the gate that freezes C1
+                       receipts and unblocks REC-C2. Opens after the
+                       rec-c1-7 tag is pushed to origin.
+                         (C1.8 has no sub-deliverables yet; the
+                          REC-C1 stream uses C1.8 as the gate name,
+                          not as a work item.)
+ACTIVE PRODUCT GATE  : REC-C1.7 CLOSED on tag rec-c1-7-projection-authority-acceptance
+                       (9ee74f09). QueryEngine is now a reconstructible
+                       projection of SessionExecutionLog via the canonical
+                       chronos_services::projection::build_engine (shared
+                       decoder with events_log_read); execution_query /
+                       state_query / trace_slice refuse to answer when
+                       the projection is Truncated or Empty (gate in the
+                       MCP wrapper, rmcp::ErrorData on the wire). TRUTH-001
+                       ratcheted partial -> verified; reconstruction-
+                       contracts.toml evidence + verify commands updated.
+                       UAT-REC-C1-01 (two consumers), UAT-REC-C1-05
+                       (time semantics), and the restart-equivalence UAT
+                       all green on the real MCP wire. EventBus /
+                       drain_raw_events / fired_buffer / TripwireFired
+                       remain as legacy analytics paths (REC-C2 owns
+                       their retirement).
 
 ACTIVE RESEARCH GATE : SANDBOX-S0.2 CLOSED (frozen as experimental contract)
                        six contracts in docs/design/EXECUTION_CONTRACTS.md,
@@ -92,6 +68,12 @@ DONE
   REC-C1.6 lifecycle-safe delete + retention/tail facts on wire (T0..T4-smoke
             green; 11/11 in T4-smoke including lifecycle_delete, wire_retention_facts,
             restart_uat, e2e_connectivity)
+  REC-C1.7 projection authority + final REC-C1 behavioral acceptance
+            (chronos_services::projection::build_engine canonical builder;
+             MCP-wrapper gate on execution_query/state_query/trace_slice;
+             UAT-REC-C1-01 two consumers + UAT-REC-C1-05 time semantics +
+             restart-equivalence all green on the real wire; TRUTH-001
+             partial -> verified)
   SANDBOX-S0.1a / S0.1a+ (runner, host+bwrap, tri-state caps, no fallback)
   SANDBOX-S0.1b / S0.1b+ (podman rootless, local pinned image, --pull=never,
                           staged inputs/outputs, verified cleanup, N1-N6)
