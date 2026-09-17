@@ -5,7 +5,7 @@
   "verify_status": null,
   "release_status": null,
   "archive_status": null,
-  "head_sha": "a111cb68",
+  "head_sha": "585dfc45",
   "base_sha": "e4fd938c",
   "main_sha": "e4fd938c",
   "tag": "rec-c2.2-accepted-raw-seam",
@@ -21,7 +21,10 @@
   "findings_introduced": {
     "no_action": [
       "FIND-C2.2-02: FunctionName tripwire matching diverges between the raw matcher (TripwireCondition::matches(&TraceEvent), which requires TraceEvent.location.function) and the retired live semantic matcher (matching_semantic, which fell back to SemanticEvent.description). Surfaced by the C2.2.2 switchover: drain now reports the persisted firing count, so a FunctionName pattern can no longer match a ptrace syscall stream that carries no function location (m0_04 used to pass only because of the description fallback). This is a behaviour NARROWING, not a regression: tripwire_list's derived fire_count is durable too, so probe_drain and the tripwire view now agree instead of contradicting each other. m0_04 was rewritten to assert the canonical law (count == persisted evidence, invariant under a later subscription) and the narrowing is documented in the test. Whether FunctionName should also consider syscall names is a matcher-semantics decision that belongs to its own cycle, not to the drain switchover.",
-      "FIND-C2.2-03: 'partial' completeness status is now never produced by any reader (canonical_drain or events_read). Kept in the vocabulary deliberately for parity with C1; a future reader that can prove evidence loss inside the examined range is the intended owner."
+      "FIND-C2.2-03: 'partial' completeness status is now never produced by any reader (canonical_drain or events_read). Kept in the vocabulary deliberately for parity with C1; a future reader that can prove evidence loss inside the examined range is the intended owner.",
+      "FIND-C2.2-04: browser sessions have NO ExecutionLog. chronos-browser does not depend on chronos-log and BrowserProbeContext carries no log registry, so browser captures have no durable evidence home; the adapter buffer is bounded and drops the oldest events at capacity. C2.2.4 removed the destructive read and stopped probe_stop from emptying the buffer that browser_probe_drain reads, but 'ExecutionLog owns occurrence' is still not true for browser captures. Needs the browser capture loop to append through an accepted-Raw seam: own cycle.",
+      "FIND-C2.2-05: m0_04 was passing VACUOUSLY since C2.2.2. tripwire_create rejects 'SyscallEnter' (valid: 'syscall_enter') and m0_04's error branch returned early, so the test exited before its assertion and reported PASS. Fixed in C2.2.5: valid event type, and expect/assert instead of .ok()/return at every subscription call site (also in probe_drain_canonical.rs). Lesson recorded: a green test that cannot fail is worse than a red one. Also: m0_04's exact firing-count equality across two live reads was not a system property (live page boundary race, measured 98 -> 100); the property moved to UAT-C2-01 (bounded growth) and probe_drain_canonical (no inflation of a persisted range).",
+      "UAT-C2-01/02/03 were named in proposal.md/tasks.md but never defined anywhere in the repo. C2.2.5 defines them from the cycle's laws and executes them; the definition is the deliverable."
     ],
     "applied": [
       "FIND-C2.1-03"
@@ -29,27 +32,56 @@
   },
   "commits": [
     {
+      "sha": "02538c2e",
+      "title": "feat(rec-c2.2): accepted-Raw seam + producer convergence (C2.2.0/C2.2.1)"
+    },
+    {
       "sha": "fdb9a8f6",
       "title": "feat(rec-c2.2): semantic projection of durable evidence (C2.2.2 groundwork)"
+    },
+    {
+      "sha": "f97b4a9d",
+      "title": "chore(rec-c2.2): record C2.2.2 groundwork sha"
     },
     {
       "sha": "0d3c4049",
       "title": "feat(rec-c2.2): canonical drain reader + explicit ResolveContext (C2.2.2)"
     },
     {
+      "sha": "c0af3249",
+      "title": "chore(rec-c2.2): record C2.2.2 reader sha"
+    },
+    {
       "sha": "a111cb68",
       "title": "feat(rec-c2.2): probe_drain reads the canonical log, fail-closed and C1-consistent"
+    },
+    {
+      "sha": "328ead47",
+      "title": "chore(rec-c2.2): checkpoint the switchover + two hardenings (FIND-C2.2-02/03)"
+    },
+    {
+      "sha": "341e787a",
+      "title": "feat(rec-c2.2): probe_stop and session_snapshot read the log, not the ring (C2.2.3)"
+    },
+    {
+      "sha": "71c452d8",
+      "title": "feat(rec-c2.2): delete the destructive read API; ratchet CANONICAL 6 -> 0 (C2.2.4)"
+    },
+    {
+      "sha": "585dfc45",
+      "title": "test(rec-c2.2): define and run UAT-C2-01/02/03; fix a false green (C2.2.5)"
     }
   ],
   "gates": {
     "T0_fmt": "PASS",
     "T0_clippy": "PASS (cargo clippy --workspace --all-targets -- -D warnings, clean)",
     "T2_services_lib": "PASS (366 passed; canonical_drain:: 7/7 incl. DRAIN-7)",
-    "T3_workspace": "PASS (workspace --lib --tests excluding sandbox/e2e/native, exit 0, 0 failed)",
+    "T3_workspace": "PASS (workspace --lib --tests excluding sandbox/e2e/native, no failures)",
     "T3_native_serial": "PASS (chronos-native --lib -- --test-threads=1: 107 passed)",
     "T4_smoke": "PASS (probe_drain_canonical 4/4, e2e_connectivity 1/1, m0_acceptance 6 passed/10 ignored, probe_lifecycle 5/5, session_persistence 4/4, rec_c2_2_producer_derivation 1/1)",
-    "ratchet": "PASS (27 production uses, baseline 28, CANONICAL=6; -1 by real removal of the read_since call site in ProbeService::drain)",
-    "arch_contracts": "PASS"
+    "ratchet": "PASS (21 production uses, baseline 28, CANONICAL=0; --strict REC-C2 close mode PASSES)",
+    "arch_contracts": "PASS",
+    "crate_suites": "PASS (domain 44, browser 159, ebpf 30 + integration, services 370)"
   },
   "smoke_subset": [
     "probe_drain_canonical",
