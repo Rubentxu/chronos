@@ -382,7 +382,6 @@ fn m1_03_execution_log_migration_impl() {
     use std::sync::Arc;
 
     let dir = tempdir("m1-03");
-    let backend_unused_eventbus_arg_removed = (); // REC-C2.3: bus removed
     let backend = NativeProbeBackend::new().with_execution_log_dir(Some(dir.clone()));
 
     // -- 1. Producer path: simulate what `dual_push` writes. ------
@@ -554,7 +553,6 @@ fn m1_04_execution_log_durable_cursors_and_decoders_impl() {
 
     // -- 2. Decoder counters on the consumer path --------------
     let dir2 = tempdir("m1-04-counters");
-    let backend_unused_eventbus_arg_removed = (); // REC-C2.3: bus removed
     let backend = NativeProbeBackend::new().with_execution_log_dir(Some(dir2.clone()));
     let log_dir = dir2.join("native-m1-04-uat-counters");
     let log = Arc::new(

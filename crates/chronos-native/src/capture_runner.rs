@@ -784,8 +784,10 @@ fn run_capture_loop(
 ///
 /// Unlike the collect-all wrapper [`run_function_frame_capture`], this variant
 /// streams each `TraceEvent` through `on_event` instead of accumulating a `Vec`.
-/// This allows the caller to push to an `EventBus`, an `ExecutionLog`, a channel,
-/// or any combination without materialising a full intermediate vector.
+/// This allows the caller to push to an `ExecutionLog`, a channel, or any
+/// combination without materialising a full intermediate vector. (REC-C2.3
+/// retired `EventBus` as a chronos-produced sink; the callback model is
+/// generic.)
 ///
 /// The callback is called once per captured function entry (including flushed
 /// incomplete invocations on exit). It is _not_ called for stray SIGTRAPs,

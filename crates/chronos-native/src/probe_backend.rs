@@ -175,6 +175,12 @@ pub struct NativeProbeBackend {
     execution_log_dir: std::sync::Arc<std::sync::Mutex<Option<PathBuf>>>,
 }
 
+impl Default for NativeProbeBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NativeProbeBackend {
     /// Create a new native probe backend.
     ///
@@ -883,9 +889,7 @@ impl NativeProbeBackend {
                         // seam is the only producer. Acceptance itself is the
                         // signal.
                         if !accepted {
-                            debug!(
-                                "frame capture: rejected observation (no canonical sink)"
-                            );
+                            debug!("frame capture: rejected observation (no canonical sink)");
                         }
                         event_id += 1;
                     },
@@ -1267,10 +1271,7 @@ mod tests {
 
         let observations = seen.lock().unwrap().clone();
         assert_eq!(observations.len(), 1, "the observer ran exactly once");
-        assert_eq!(
-            observations[0], 0,
-            "the source seq is the durable record's"
-        );
+        assert_eq!(observations[0], 0, "the source seq is the durable record's");
 
         // A refused append must not notify at all.
         let seen_after = seen.clone();
@@ -1278,13 +1279,10 @@ mod tests {
             seen_after.lock().unwrap().push(seq.0);
         });
         log.seal().expect("seal");
-        assert!(NativeProbeBackend::accept_and_publish(
-            Some(&log),
-            &event,
-            124,
-            Some(&observer2)
-        )
-        .is_err());
+        assert!(
+            NativeProbeBackend::accept_and_publish(Some(&log), &event, 124, Some(&observer2))
+                .is_err()
+        );
         assert_eq!(
             seen.lock().unwrap().len(),
             1,

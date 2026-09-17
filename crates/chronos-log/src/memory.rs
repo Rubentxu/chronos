@@ -8,9 +8,9 @@
 //!   reads don't move the append path.
 //!
 //! The append path is not lock-free, but it is short (one Vec push
-//! plus one seq assignment under the same lock) and benchmarked to
-//! scale to the same throughput as the existing `EventBus`. m1-01
-//! scope is API plus invariants; lock-free redesign is m1-02.
+//! plus one seq assignment under the same lock). m1-01 scope is API
+//! plus invariants; lock-free redesign is m1-02. (REC-C2.3 retired the
+//! historical `EventBus` comparator; this backend now stands alone.)
 
 use crate::backend::{ExecutionLogBackend, NewExecutionRecord};
 use crate::cursor::{ConsumerCursor, LogConsumerId, LogPage, ReadResult};

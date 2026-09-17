@@ -147,8 +147,9 @@ pub struct ChronosServer {
     projection_meta: Arc<Mutex<HashMap<String, chronos_services::projection::ProjectionMeta>>>,
     /// Live probe sessions: session_id → LiveProbeSession.
     /// These are real-time probe sessions using `NativeProbeBackend` where events
-    /// stream to an `EventBus` ring buffer. Use `probe_drain` to read current events
-    /// and `probe_stop` to finalize.
+    /// stream into the session's durable `ExecutionLog` via the accepted-Raw
+    /// seam (REC-C2.3 retired the parallel in-memory bus). Use `probe_drain`
+    /// to read current events and `probe_stop` to finalize.
     live_probes: Arc<std::sync::Mutex<HashMap<String, LiveProbeSession>>>,
     /// Live browser probe sessions: session_id → BrowserProbeSession.
     /// These are real-time WASM debugging sessions via Chrome CDP.
