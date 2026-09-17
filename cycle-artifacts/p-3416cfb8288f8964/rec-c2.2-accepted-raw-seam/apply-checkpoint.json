@@ -5,7 +5,7 @@
   "verify_status": null,
   "release_status": null,
   "archive_status": null,
-  "head_sha": null,
+  "head_sha": "a111cb68",
   "base_sha": "e4fd938c",
   "main_sha": "e4fd938c",
   "tag": "rec-c2.2-accepted-raw-seam",
@@ -19,7 +19,10 @@
   "summary": "The accepted-Raw seam. chronos-native persists a Raw record and returns its authoritative EventSeq; services subscribes an observer that derives durable TripwireFired evidence; the live fan-out happens last. dual_push is renamed accept_and_publish (the old name described the dual-write REC-C2 retires) and both spawn and attach go through the same seam. Closes FIND-C2.1-03 with a productive UAT: a real probe produces a real firing that survives restart with the same firing_seq/source_seq.",
   "blockers": [],
   "findings_introduced": {
-    "no_action": [],
+    "no_action": [
+      "FIND-C2.2-02: FunctionName tripwire matching diverges between the raw matcher (TripwireCondition::matches(&TraceEvent), which requires TraceEvent.location.function) and the retired live semantic matcher (matching_semantic, which fell back to SemanticEvent.description). Surfaced by the C2.2.2 switchover: drain now reports the persisted firing count, so a FunctionName pattern can no longer match a ptrace syscall stream that carries no function location (m0_04 used to pass only because of the description fallback). This is a behaviour NARROWING, not a regression: tripwire_list's derived fire_count is durable too, so probe_drain and the tripwire view now agree instead of contradicting each other. m0_04 was rewritten to assert the canonical law (count == persisted evidence, invariant under a later subscription) and the narrowing is documented in the test. Whether FunctionName should also consider syscall names is a matcher-semantics decision that belongs to its own cycle, not to the drain switchover.",
+      "FIND-C2.2-03: 'partial' completeness status is now never produced by any reader (canonical_drain or events_read). Kept in the vocabulary deliberately for parity with C1; a future reader that can prove evidence loss inside the examined range is the intended owner."
+    ],
     "applied": [
       "FIND-C2.1-03"
     ]
@@ -32,21 +35,29 @@
     {
       "sha": "0d3c4049",
       "title": "feat(rec-c2.2): canonical drain reader + explicit ResolveContext (C2.2.2)"
+    },
+    {
+      "sha": "a111cb68",
+      "title": "feat(rec-c2.2): probe_drain reads the canonical log, fail-closed and C1-consistent"
     }
   ],
   "gates": {
     "T0_fmt": "PASS",
-    "T0_clippy": "PASS (cargo clippy --workspace --all-targets -- -D warnings)",
-    "T1_workspace_lib_plus_tests": "PASS (workspace --lib excluding sandbox/e2e/native)",
-    "T_chronos_native_serial": "PASS (106 passed; --test-threads=1)",
-    "T4_smoke_subset": "PASS (rec_c2_2_producer_derivation 1/1, rec_c2_1_restart_identity 1/1, e2e_connectivity 1/1)",
-    "legacy_evb_ratchet": "PASS (28 tracked, baseline 28, CANONICAL=6)",
-    "arch_gate_default": "PASS"
+    "T0_clippy": "PASS (cargo clippy --workspace --all-targets -- -D warnings, clean)",
+    "T2_services_lib": "PASS (366 passed; canonical_drain:: 7/7 incl. DRAIN-7)",
+    "T3_workspace": "PASS (workspace --lib --tests excluding sandbox/e2e/native, exit 0, 0 failed)",
+    "T3_native_serial": "PASS (chronos-native --lib -- --test-threads=1: 107 passed)",
+    "T4_smoke": "PASS (probe_drain_canonical 4/4, e2e_connectivity 1/1, m0_acceptance 6 passed/10 ignored, probe_lifecycle 5/5, session_persistence 4/4, rec_c2_2_producer_derivation 1/1)",
+    "ratchet": "PASS (27 production uses, baseline 28, CANONICAL=6; -1 by real removal of the read_since call site in ProbeService::drain)",
+    "arch_contracts": "PASS"
   },
   "smoke_subset": [
-    "rec_c2_2_producer_derivation",
-    "rec_c2_1_restart_identity",
-    "e2e_connectivity"
+    "probe_drain_canonical",
+    "e2e_connectivity",
+    "m0_acceptance",
+    "probe_lifecycle",
+    "session_persistence",
+    "rec_c2_2_producer_derivation"
   ],
   "verify_commands": [
     "cargo test -p chronos-native --lib probe_backend::tests::c2_2 -- --test-threads=1",
@@ -57,5 +68,6 @@
     "CC#39_pre_existing_intentional": "index Total cycles vs m9-only dir count; structural, pre-existing; gov-* owns it.",
     "CC#18_rec_c1_7_pre_existing": "rec-c1-7 missing verify-findings.json (C1.7 gap); gov-* owns it."
   },
-  "notes": "IN PROGRESS. C2.2.0/C2.2.1 landed. C2.2.2 landed its semantic projector (project_semantic, pure, no bus) and documented the remaining log-backed drain + wire/cursor change and its blast radius in tasks.md. C2.2.3-5 remain."
+  "notes": "IN PROGRESS. C2.2.0/C2.2.1 landed. C2.2.2 landed its semantic projector (project_semantic, pure, no bus) and documented the remaining log-backed drain + wire/cursor change and its blast radius in tasks.md. C2.2.3-5 remain.",
+  "invariant_after_this_commit": "probe_drain data = ExecutionLog; coordinates = EventSeq; semantic view = deterministic projection; firing count = persisted TripwireFired; completeness = examined-range evidence facts; EventBus = irrelevant to the canonical result."
 }
