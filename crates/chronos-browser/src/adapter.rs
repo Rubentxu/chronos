@@ -415,50 +415,6 @@ impl ProbeBackend for BrowserAdapter {
         "browser-wasm"
     }
 
-    /// Non-destructive read for the BrowserAdapter (m0-01-live-pagination).
-    ///
-    /// The browser event buffer is a `VecDeque`. It is NOT consumed here, so a
-    /// reader cannot truncate another reader's history (REC-C2.2.4).
-    fn read_since(
-        &self,
-        cursor: Option<chronos_domain::EventCursor>,
-    ) -> chronos_domain::ReadResult {
-        use chronos_domain::CursorStatus;
-        let s = self.state.lock().unwrap();
-        let total = s.event_buffer.len() as u64;
-        if cursor.is_some() {
-            return Err(chronos_domain::TraceError::CursorStale {
-                expected: 0,
-                current: total,
-            });
-        }
-        // No cursor: snapshot a clone. Nothing is consumed, so a later read by
-        // another consumer still sees these events.
-        let raw_events: Vec<TraceEvent> = s.event_buffer.iter().cloned().collect();
-        drop(s);
-        let ctx = ResolveContext {
-            pid: 0,
-            binary_path: None,
-        };
-        let semantic: Vec<SemanticEvent> = raw_events
-            .iter()
-            .filter_map(|e| self.resolver.resolve(e, &ctx))
-            .collect();
-        let status = if semantic.is_empty() {
-            CursorStatus::Empty
-        } else {
-            CursorStatus::Fresh
-        };
-        Ok((
-            semantic,
-            chronos_domain::EventCursor {
-                total_pushed: total,
-                snapshot_len: total,
-            },
-            status,
-        ))
-    }
-
     fn stop_probe(&self, _session: &CaptureSession) -> Result<(), TraceError> {
         let mut s = self.state.lock().unwrap();
 

@@ -1131,20 +1131,6 @@ impl ProbeBackend for NativeProbeBackend {
         "native-ptrace"
     }
 
-    /// Stub kept only so the trait still compiles; will be REMOVED from
-    /// `ProbeBackend` in C2.3.2 (the trait shrink). The bus is gone, so
-    /// this returns a `CursorStale` refusal — the canonical reader is the
-    /// session's `ExecutionLog` (`chronos-services::canonical_drain`).
-    fn read_since(
-        &self,
-        _cursor: Option<chronos_domain::EventCursor>,
-    ) -> chronos_domain::ReadResult {
-        Err(chronos_domain::TraceError::CursorStale {
-            expected: 0,
-            current: 0,
-        })
-    }
-
     fn stop_probe(&self, session: &CaptureSession) -> Result<(), TraceError> {
         self.stop_probe(session)
     }
