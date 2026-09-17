@@ -37,6 +37,7 @@ Append-only index of all completed cycles in this vault.
 | rec-c1 | rec-c1-5-closure | A-lite | rec-c1.5-closure | `5bbf774888c3bced7967e3e060859d9a78d7035a` | CLOSED |
 | rec-c1 | rec-c1-6-lifecycle-retention-wire | A-lite | rec-c1-6-lifecycle-retention-wire | `d1891ed3` | CLOSED |
 | rec-c1 | rec-c1-7-projection-authority-acceptance | A-lite | rec-c1-7-projection-authority-acceptance | `6190390d` | CLOSED |
+| rec-c1 | rec-c1-8-authoritative-evidence-handoff | A-lite | rec-c1-8-authoritative-evidence-handoff | — | ACTIVE |
 
 See `changes/archive/` for full archive manifests of closed cycles.
 
@@ -46,8 +47,8 @@ See `changes/archive/` for full archive manifests of closed cycles.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-17T11:39Z |
-| Total cycles | 101 |
+| Last updated | 2026-09-17T12:13Z |
+| Total cycles | 102 |
 | m10 cycles | 13 (rows above) |
-| rec-c1 cycles | 3 (rec-c1-5-closure, rec-c1-6-lifecycle-retention-wire, rec-c1-7-projection-authority-acceptance) |
+| rec-c1 cycles | 4 (rec-c1-5-closure, rec-c1-6-lifecycle-retention-wire, rec-c1-7-projection-authority-acceptance, rec-c1-8-authoritative-evidence-handoff) |
 | Last archive | rec-c1-7-projection-authority-acceptance (apply-checkpoint archive_status=ready; durable knowledge sync deferred to gov-* cycle per CC#39) |

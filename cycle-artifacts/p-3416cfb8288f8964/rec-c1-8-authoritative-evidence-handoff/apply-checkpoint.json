@@ -1,0 +1,53 @@
+{
+  "cycle_id": "rec-c1-8-authoritative-evidence-handoff",
+  "route": "A-lite",
+  "status": "in_progress",
+  "verify_status": null,
+  "release_status": null,
+  "archive_status": null,
+  "head_sha": null,
+  "base_sha": "20b222df",
+  "main_sha": "20b222df",
+  "tag": "rec-c1-8-authoritative-evidence-handoff",
+  "branch": "feat/rec-c1.8-authoritative-evidence-handoff",
+  "remote_tag": null,
+  "peel_match": null,
+  "tier_required": "T3+T4",
+  "created_at": "2026-09-17",
+  "closed_at": null,
+  "title": "rec-c1-8-authoritative-evidence-handoff",
+  "summary": "REC-C1.8 closes the three acceptance discrepancies left open after REC-C1.7: (a) documental truth drift (active_gate, control-plane tag peel reference 9ee74f09 -> 6190390d), (b) the three dual_truth RED tests still on main under a file-level allow, (c) UAT-REC-C1-01 (used 64 records + >=10 floor instead of literal 10k), UAT-REC-C1-03 (asserted the negative, not the forced-gap case), UAT-REC-C1-05 (no wall-clock dimension exists on ExecutionRecord). No new architecture, no legacy deletion; REC-C2 owns EventBus / drain_raw_events / fired_buffer / TripwireFired retirement.",
+  "blockers": [
+    "C1.8.2.a — confirm rebuild responsibility: wrapper (W, default) vs service (S). Default W keeps the C1.7 architecture and rewrites the dual_truth tests as black-box integration tests via the MCP wire. S moves rebuild responsibility into the services layer (architectural change; out of A-lite scope).",
+    "C1.8.5 option — confirm wall-clock dimension: A (add captured_at_unix_ns: Option<u64> to ExecutionRecord, 4-dim independence UAT, default) vs B (amend MILESTONE_ACCEPTANCE.md UAT-REC-C1-05 wording + ADR 0006, defer wall-clock to REC-C4/CONN-001)."
+  ],
+  "findings_introduced": {
+    "no_action": [],
+    "applied": []
+  },
+  "commits": [],
+  "gates": {
+    "T0_fmt": "PENDING",
+    "T0_clippy": "PENDING",
+    "T1_workspace_lib_plus_tests": "PENDING (chronos-services --lib MUST be 0 failed after C1.8.2)",
+    "T_chronos_native_serial": "PENDING (--test-threads=1 per AGENTS.md §6.5)",
+    "T4_smoke_subset": "PENDING (e2e_connectivity + rec_c1_8_dual_truth_closeout + rec_c1_8_uat_c1_01_exact + rec_c1_8_uat_c1_03_forced_gap + rec_c1_8_uat_c1_05_* = 5/5)"
+  },
+  "pre_existing_flakes_handled": [
+    "dual_truth_characterization tests RED on main at C1.7 closure — REMOVED in C1.8.2; replaced by 3 black-box integration tests",
+    "chronos-native lib tests require --test-threads=1 (ptrace collisions; documented in AGENTS.md §6.5)"
+  ],
+  "smoke_subset": [
+    "rec_c1_8_dual_truth_closeout",
+    "rec_c1_8_uat_c1_01_exact",
+    "rec_c1_8_uat_c1_03_forced_gap",
+    "rec_c1_8_uat_c1_05_four_dim",
+    "e2e_connectivity"
+  ],
+  "verify_commands": [],
+  "archive_convention": "rec-c1 stream uses archive_status=ready and DOES NOT create .sddk-knowledge/changes/archive/rec-c1-8-*/ (matching rec-c1-5, rec-c1-6, rec-c1-7).",
+  "cc_drift": {
+    "CC#39_pre_existing_intentional": "Grows from 2 to 3 with this cycle's index entry. Remains pre-existing. Belongs in a separate gov-* cycle per user instruction (do NOT silently mask)."
+  },
+  "notes": "Cycle opened at base 20b222df (REC-C1.7 CLOSED on tag rec-c1-7-projection-authority-acceptance; tag object 5f603bff peels to merge 6190390d). Awaiting two user decisions (C1.8.2.a W/S, C1.8.5 A/B) before C1.8.2 starts code work. C1.8.0 and C1.8.1 (doc-only) can land as soon as user signals go. All REC-C1 acceptance discrepancies are catalogued in proposal.md §Why."
+}
