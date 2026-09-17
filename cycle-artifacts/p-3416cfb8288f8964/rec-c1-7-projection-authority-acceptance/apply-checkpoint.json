@@ -1,0 +1,34 @@
+{
+  "cycle_id": "rec-c1-7-projection-authority-acceptance",
+  "route": "A-lite",
+  "status": "ACTIVE",
+  "verify_status": "pending",
+  "release_status": "pending",
+  "archive_status": "pending",
+  "head_sha": null,
+  "base_sha": "e4af63b6",
+  "main_sha": null,
+  "tag": "rec-c1-7-projection-authority-acceptance",
+  "branch": "feat/rec-c1.7-projection-authority-acceptance",
+  "remote_tag": null,
+  "peel_match": null,
+  "tier_required": "T3+T4",
+  "created_at": "2026-09-17",
+  "closed_at": null,
+  "title": "rec-c1-7-projection-authority-acceptance",
+  "summary": "REC-C1.7 makes QueryEngine a reconstructible projection of SessionExecutionLog — the only canonical builder is chronos_services::projection::build_engine, and execution_query / state_query / trace_slice refuse to answer when the projection is Truncated. Closes TRUTH-001 (partial → verified). Adds the public C1-01 (two consumers, real MCP wire) and C1-05 (uncorrelated seq/event_id/timestamp_ns) UATs, plus a restart-equivalence UAT that proves canonical queries survive an in-memory wipe. Does NOT remove EventBus / drain_raw_events / fired_buffer / TripwireFired — those are owned by REC-C2 after the C1.8 handoff.",
+  "findings_introduced": {
+    "no_action": [],
+    "applied": []
+  },
+  "commits": [],
+  "gates": {
+    "T0_fmt": "PENDING",
+    "T0_clippy": "PENDING",
+    "T1_workspace_lib_plus_tests": "PENDING",
+    "T_chronos_native_serial": "PENDING",
+    "T4_smoke_subset": "PENDING (projection_restart_equivalence, dual_truth_characterization, time_semantics_uncorrelated, e2e_connectivity)"
+  },
+  "pre_existing_flakes_handled": [],
+  "notes": "Cycle planning commit (C1.7.0) lands first. Sub-deliverables per tasks.md: C1.7.1 RED characterization (dual-truth divergence), C1.7.2 GREEN projection::build_engine + 5 unit tests, C1.7.3 wire projection into MCP + gate canonical operations, C1.7.4 restart-equivalence UAT, C1.7.5 public C1-01 UAT, C1.7.6 time-semantics UAT, C1.7.7 TRUTH-001 ratchet. CC#39 pre-existing drift grows from 1 to 2 (this cycle's index entry); remains pre-existing, intentionally surfaced. CC#11, CC#13 expected PASS at closure."
+}
