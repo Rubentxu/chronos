@@ -120,6 +120,32 @@ pub fn persist_events_to_execution_log(
     Ok(appended)
 }
 
+/// REC-C2.2.0 — notified **after** a `Raw` event is accepted as durable
+/// evidence, and **before** the live fan-out.
+///
+/// This is the accepted-Raw seam. Application policy (tripwire derivation,
+/// counters, anything that must not see unpersisted observations) subscribes
+/// here; `chronos-native` only captures and persists, it does not decide what
+/// a firing means.
+///
+/// `source_seq` is the authoritative identity of the accepted source. An
+/// observer is never called for an event whose append failed.
+pub type AcceptedRawObserver =
+    std::sync::Arc<dyn Fn(chronos_log::EventSeq, &TraceEvent) + Send + Sync>;
+
+/// The accepted-Raw seam: the durable log to write through, plus the
+/// application hook to notify once the record is durable.
+///
+/// Bundled so the probe loops take one parameter instead of two and the
+/// canonical path is threaded identically for spawn and attach.
+#[derive(Clone, Default)]
+pub struct AcceptanceSeam {
+    /// Durable log. `None` is the legacy COMPATIBILITY path (bus only).
+    pub log: Option<std::sync::Arc<SegmentedExecutionLog>>,
+    /// Application hook. `None` means "capture only".
+    pub observer: Option<AcceptedRawObserver>,
+}
+
 /// Native ptrace probe backend for real-time event bus feeding.
 pub struct NativeProbeBackend {
     /// Shared event bus handle.
@@ -137,6 +163,9 @@ pub struct NativeProbeBackend {
     /// Whether the current tracee is caller-owned through `attach_probe`.
     /// Such targets must be woken and detached, never terminated.
     attached_target: Arc<AtomicBool>,
+    /// REC-C2.2.0: application hook invoked at the accepted-Raw seam.
+    /// `None` for legacy callers (tracked as COMPATIBILITY until REC-C2.3).
+    accepted_raw_observer: Option<AcceptedRawObserver>,
     /// Optional `ExecutionLog` for the running session. Populated by
     /// `start_probe` so the ptrace thread can record events to a
     /// durable, segmented log alongside the legacy EventBus.
@@ -158,6 +187,7 @@ impl NativeProbeBackend {
             thread_handle: std::sync::Mutex::new(None),
             traced_pid: std::sync::Arc::new(std::sync::Mutex::new(None)),
             attached_target: Arc::new(AtomicBool::new(false)),
+            accepted_raw_observer: None,
             execution_log: std::sync::Arc::new(std::sync::Mutex::new(None)),
             execution_log_dir: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
@@ -166,6 +196,12 @@ impl NativeProbeBackend {
     /// Configure a directory where `ExecutionLog` segment files
     /// will be written for each new session. Pass `None` to disable
     /// the dual-write to the log.
+    /// REC-C2.2.0: install the accepted-Raw observer (canonical path).
+    pub fn with_accepted_raw_observer(mut self, observer: AcceptedRawObserver) -> Self {
+        self.accepted_raw_observer = Some(observer);
+        self
+    }
+
     pub fn with_execution_log_dir(self, dir: Option<PathBuf>) -> Self {
         if let Some(d) = dir {
             *self
@@ -278,7 +314,10 @@ impl NativeProbeBackend {
         read_log_with_stats(&log, since, limit)
     }
 
-    /// REC-C2.1 — **persist first, fan-out last**.
+    /// REC-C2.1/C2.2.0 — **persist first, observe, fan-out last**.
+    ///
+    /// Named for what it does; the old name (`dual_push`) described the
+    /// dual-write shape that REC-C2 is retiring.
     ///
     /// When an ExecutionLog is attached, the authoritative append happens
     /// FIRST and the EventBus is only a live mirror, published after the
@@ -296,37 +335,47 @@ impl NativeProbeBackend {
     ///
     /// The old shape published first and treated the append as best-effort
     /// (`debug!` and continue); REC-C2.0 measured that as CHAR-C2-01.
-    fn dual_push(
+    fn accept_and_publish(
         event_bus: &EventBusHandle,
         log: Option<&SegmentedExecutionLog>,
         trace_event: &TraceEvent,
         timestamp_ns: u64,
+        observer: Option<&AcceptedRawObserver>,
     ) -> Result<Option<chronos_log::EventSeq>, chronos_log::LogError> {
         match log {
             Some(log) => {
-                let rec =
-                    trace_event_to_log_record(log.session_id().as_str(), timestamp_ns, trace_event);
-                match log.append(rec) {
-                    Ok(seq) => {
-                        // Accepted as durable evidence: now it may be observed live.
-                        event_bus.push_raw(trace_event.clone());
-                        Ok(Some(seq))
-                    }
-                    Err(e) => {
-                        debug!(
-                            "REC-C2.1: ExecutionLog append refused; NOT publishing to the \
-                             EventBus (no observation without acceptance): {}",
-                            e
-                        );
-                        Err(e)
-                    }
+                let seq = Self::accept_raw(log, trace_event, timestamp_ns)?;
+                // Accepted as durable evidence. The application hook runs
+                // BEFORE the live fan-out, so no observer can act on an
+                // unpersisted observation, and no consumer sees the event
+                // before its consequences are durable.
+                if let Some(observer) = observer {
+                    observer(seq, trace_event);
                 }
+                event_bus.push_raw(trace_event.clone());
+                Ok(Some(seq))
             }
             None => {
+                // Legacy COMPATIBILITY: no log attached, the bus is the only
+                // sink. REC-C2.3 removes this path.
                 event_bus.push_raw(trace_event.clone());
                 Ok(None)
             }
         }
+    }
+
+    /// REC-C2.2.0 — persist a `Raw` record and return its authoritative seq.
+    ///
+    /// Persistence only. The live fan-out and the application hook are the
+    /// caller's business, which is what lets `services` interpose policy
+    /// between acceptance and observation.
+    fn accept_raw(
+        log: &SegmentedExecutionLog,
+        trace_event: &TraceEvent,
+        timestamp_ns: u64,
+    ) -> Result<chronos_log::EventSeq, chronos_log::LogError> {
+        let rec = trace_event_to_log_record(log.session_id().as_str(), timestamp_ns, trace_event);
+        log.append(rec)
     }
 
     /// Create a new native probe backend with a default event bus.
@@ -431,6 +480,7 @@ impl NativeProbeBackend {
 
         // Legacy m1-03 path: the backend opens its own log from a configured
         // directory. Kept for compatibility; not the canonical path.
+        let accepted_raw_observer_for_thread = self.accepted_raw_observer.clone();
         let legacy_log_id = format!("native-{}", session.session_id);
         let log_for_thread: Option<std::sync::Arc<SegmentedExecutionLog>> = match caller_owned_log {
             Some(arc) => {
@@ -501,7 +551,10 @@ impl NativeProbeBackend {
                     event_bus,
                     resolver_pipeline,
                     language,
-                    log_for_thread,
+                    AcceptanceSeam {
+                        log: log_for_thread,
+                        observer: accepted_raw_observer_for_thread,
+                    },
                     move |pid: i32| {
                         *traced_pid_thread.lock().unwrap_or_else(|e| e.into_inner()) = Some(pid);
                     },
@@ -542,6 +595,9 @@ impl NativeProbeBackend {
         let event_bus = self.event_bus.clone();
         let running = self.running.clone();
         let resolver_pipeline = self.resolver_pipeline.clone();
+        // REC-C2.2.1: attach accepts through the same seam as spawn.
+        let attach_log_for_thread = self.execution_log();
+        let attach_observer_for_thread = self.accepted_raw_observer.clone();
 
         let ptrace_config = PtraceConfig {
             trace_syscalls: config.capture_syscalls,
@@ -572,6 +628,10 @@ impl NativeProbeBackend {
                     event_bus,
                     resolver_pipeline,
                     language,
+                    AcceptanceSeam {
+                        log: attach_log_for_thread,
+                        observer: attach_observer_for_thread,
+                    },
                 );
             })
             .map_err(|e| {
@@ -671,7 +731,7 @@ impl NativeProbeBackend {
         event_bus: EventBusHandle,
         resolver_pipeline: ResolverPipeline,
         language: Language,
-        execution_log: Option<std::sync::Arc<SegmentedExecutionLog>>,
+        seam: AcceptanceSeam,
         on_pid_launched: impl FnOnce(i32),
     ) {
         Self::run_probe_loop(
@@ -683,7 +743,7 @@ impl NativeProbeBackend {
             event_bus,
             resolver_pipeline,
             language,
-            execution_log,
+            seam,
             on_pid_launched,
         );
     }
@@ -699,7 +759,7 @@ impl NativeProbeBackend {
         event_bus: EventBusHandle,
         resolver_pipeline: ResolverPipeline,
         _language: Language,
-        execution_log: Option<std::sync::Arc<SegmentedExecutionLog>>,
+        seam: AcceptanceSeam,
         on_pid_launched: impl FnOnce(i32),
     ) {
         let mut tracer = PtraceTracer::new(ptrace_config.clone());
@@ -774,11 +834,12 @@ impl NativeProbeBackend {
                     &stop_flag,
                     None,
                     |trace_event: TraceEvent| {
-                        let accepted = Self::dual_push(
+                        let accepted = Self::accept_and_publish(
                             &event_bus,
-                            execution_log.as_deref(),
+                            seam.log.as_deref(),
                             &trace_event,
                             timestamp_ns,
+                            seam.observer.as_ref(),
                         )
                         .is_ok();
                         let ctx = ResolveContext {
@@ -850,11 +911,12 @@ impl NativeProbeBackend {
                 // is no-op on the log side when no log is
                 // configured, so the EventBus path stays intact
                 // for callers that opt out.
-                let accepted = Self::dual_push(
+                let accepted = Self::accept_and_publish(
                     &event_bus,
-                    execution_log.as_deref(),
+                    seam.log.as_deref(),
                     &trace_event,
                     timestamp_ns,
+                    seam.observer.as_ref(),
                 )
                 .is_ok();
 
@@ -926,6 +988,7 @@ impl NativeProbeBackend {
         event_bus: EventBusHandle,
         resolver_pipeline: ResolverPipeline,
         _language: Language,
+        seam: AcceptanceSeam,
     ) {
         let mut tracer = PtraceTracer::new(ptrace_config.clone());
         let adapter = NativeAdapter::new();
@@ -967,8 +1030,20 @@ impl NativeProbeBackend {
             if let Some(trace_event) =
                 adapter.ptrace_event_to_trace_event(&ptrace_event, event_id, timestamp_ns)
             {
-                // Push raw event to raw buffer for QueryEngine
-                event_bus.push_raw(trace_event.clone());
+                // REC-C2.2.1: the attach loop uses the SAME accepted-Raw seam
+                // as the spawn loop. It previously published a raw observation
+                // with no ExecutionLog at all, which made it a second,
+                // EventBus-only producer with no durable evidence. A firing
+                // may only derive from an accepted source, so attach must
+                // accept first too.
+                let accepted = Self::accept_and_publish(
+                    &event_bus,
+                    seam.log.as_deref(),
+                    &trace_event,
+                    timestamp_ns,
+                    seam.observer.as_ref(),
+                )
+                .is_ok();
 
                 // Resolve to semantic event via the pipeline
                 let ctx = ResolveContext {
@@ -976,7 +1051,10 @@ impl NativeProbeBackend {
                     binary_path: None,
                 };
                 let semantic_event = resolver_pipeline.resolve(&trace_event, &ctx);
-                event_bus.push(semantic_event);
+                // Fan-out last: only an accepted observation goes live.
+                if accepted {
+                    event_bus.push(semantic_event);
+                }
 
                 event_id += 1;
             }
@@ -1104,17 +1182,85 @@ mod tests {
 
         // Accepted path: append succeeds, so the bus may observe it.
         let accepted =
-            NativeProbeBackend::dual_push(&bus, Some(&log), &event, 123).expect("accepted");
+            NativeProbeBackend::accept_and_publish(&bus, Some(&log), &event, 123, None).expect("accepted");
         assert!(accepted.is_some(), "the log assigned a seq");
         assert_eq!(bus.snapshot_raw().len(), 1, "accepted ⇒ published");
 
         // Refused path: seal the log and push again.
         log.seal().expect("seal");
-        let refused = NativeProbeBackend::dual_push(&bus, Some(&log), &event, 124);
+        let refused = NativeProbeBackend::accept_and_publish(&bus, Some(&log), &event, 124, None);
         assert!(refused.is_err(), "the append is refused");
         assert!(
             bus.snapshot_raw().is_empty(),
             "refused ⇒ NOT published (no observation without acceptance)"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// REC-C2.2.0 — the accepted-Raw seam.
+    ///
+    /// Ordering proven from inside the observer itself: by the time it runs,
+    /// the record is durable (its `source_seq` is real) and the event has NOT
+    /// yet been published live. And a refused append never notifies.
+    #[test]
+    fn c2_2_accepted_raw_seam_orders_persist_then_observe_then_fan_out() {
+        let dir = std::env::temp_dir().join(format!(
+            "chronos-c22-seam-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let session = chronos_log::SessionId::new("c22-seam");
+        let log = SegmentedExecutionLog::open(
+            session.clone(),
+            chronos_log::SegmentedConfig::with_dir(&dir),
+        )
+        .expect("open log");
+
+        let bus = chronos_domain::bus::EventBus::new_shared(64);
+        let event = TraceEvent::signal(1, 100, 1, 11, "SIGSEGV", 0);
+
+        // The observer records what it can see at notification time.
+        let seen: std::sync::Arc<std::sync::Mutex<Vec<(u64, usize)>>> = Default::default();
+        let seen_for_obs = seen.clone();
+        let bus_for_obs = bus.clone();
+        let observer: AcceptedRawObserver = std::sync::Arc::new(move |seq, _ev| {
+            seen_for_obs
+                .lock()
+                .unwrap()
+                .push((seq.0, bus_for_obs.snapshot_raw().len()));
+        });
+
+        NativeProbeBackend::accept_and_publish(&bus, Some(&log), &event, 123, Some(&observer))
+            .expect("accepted");
+
+        let observations = seen.lock().unwrap().clone();
+        assert_eq!(observations.len(), 1, "the observer ran exactly once");
+        let (source_seq, published_at_notification) = observations[0];
+        assert_eq!(source_seq, 0, "the source seq is the durable record's");
+        assert_eq!(
+            published_at_notification, 0,
+            "at notification time the event had NOT been fanned out yet"
+        );
+        assert_eq!(bus.snapshot_raw().len(), 1, "and afterwards it has been");
+
+        // A refused append must not notify at all.
+        let seen_after = seen.clone();
+        let observer2: AcceptedRawObserver = std::sync::Arc::new(move |seq, _ev| {
+            seen_after.lock().unwrap().push((seq.0, 0));
+        });
+        log.seal().expect("seal");
+        assert!(
+            NativeProbeBackend::accept_and_publish(&bus, Some(&log), &event, 124, Some(&observer2)).is_err()
+        );
+        assert_eq!(
+            seen.lock().unwrap().len(),
+            1,
+            "no notification for an observation that was never accepted"
         );
 
         let _ = std::fs::remove_dir_all(&dir);

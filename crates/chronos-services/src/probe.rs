@@ -266,6 +266,10 @@ impl ProbeService {
         )?;
         let backend = NativeProbeBackend::new(bus)
             .with_language(language)
+            .with_accepted_raw_observer(Self::accepted_raw_observer(
+                owned_log.clone(),
+                Arc::clone(ctx.tripwire_manager),
+            ))
             .attach_execution_log(owned_log.handle());
 
         // Start the probe (non-blocking — spawns background thread)
@@ -377,6 +381,10 @@ impl ProbeService {
         )?;
         let backend = NativeProbeBackend::new(bus)
             .with_language(language)
+            .with_accepted_raw_observer(Self::accepted_raw_observer(
+                owned_log.clone(),
+                Arc::clone(ctx.tripwire_manager),
+            ))
             .attach_execution_log(owned_log.handle());
         let session = backend.attach_probe(input.pid, config).map_err(|e| {
             ServiceError::AttachFailed(format!(
@@ -416,6 +424,40 @@ impl ProbeService {
     /// Returns the drained raw `TraceEvent`s and metadata so the server-side
     /// wrapper can call `build_and_store_engine` (which still lives on the
     /// server because it touches `engines` and `session_languages`).
+    /// REC-C2.2.0 — build the accepted-Raw observer for a session.
+    ///
+    /// This is where application policy meets the durable seam: `chronos-native`
+    /// persists the `Raw` record and hands over its `source_seq`; the
+    /// derivation into durable `TripwireFired` evidence happens here, in the
+    /// services layer. Matches `chronos-services` -> `chronos-native`, never
+    /// the reverse.
+    pub fn accepted_raw_observer(
+        log: crate::session_log::SessionExecutionLog,
+        manager: Arc<TripwireManager>,
+    ) -> chronos_native::probe_backend::AcceptedRawObserver {
+        Arc::new(
+            move |source_seq, event| match crate::tripwire_evidence::derive_firings_from_event(
+                &log, &manager, source_seq, event,
+            ) {
+                Ok(report) => {
+                    for failure in report.failures {
+                        tracing::warn!(
+                            "tripwire derivation failed for source seq {} (tripwire {}): {}",
+                            failure.source_seq.0,
+                            failure.tripwire_id,
+                            failure.reason
+                        );
+                    }
+                }
+                Err(e) => tracing::warn!(
+                    "tripwire derivation error at source seq {}: {}",
+                    source_seq.0,
+                    e
+                ),
+            },
+        )
+    }
+
     pub fn stop(ctx: &ProbeContext<'_>, session_id: &str) -> Result<ProbeStopResult, ServiceError> {
         let mut live_probes = ctx
             .live_probes
