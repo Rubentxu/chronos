@@ -1,20 +1,20 @@
 {
   "cycle_id": "rec-c2.2-accepted-raw-seam",
   "route": "A-lite",
-  "status": "in_progress",
-  "verify_status": "PASS",
-  "release_status": "pending",
-  "archive_status": "pending",
-  "head_sha": "1619fb25",
+  "status": "CLOSED",
+  "verify_status": "passed",
+  "release_status": "passed",
+  "archive_status": "ready",
+  "head_sha": "f02ab311",
   "base_sha": "e4fd938c",
-  "main_sha": "e4fd938c",
+  "main_sha": "f02ab311",
   "tag": "rec-c2.2-accepted-raw-seam",
   "branch": "feat/rec-c2.2-accepted-raw-seam",
-  "remote_tag": null,
-  "peel_match": null,
+  "remote_tag": "rec-c2.2-accepted-raw-seam",
+  "peel_match": true,
   "tier_required": "T3+T4-smoke",
   "created_at": "2026-09-17",
-  "closed_at": null,
+  "closed_at": "2026-09-17",
   "title": "rec-c2.2-accepted-raw-seam",
   "summary": "The accepted-Raw seam. chronos-native persists a Raw record and returns its authoritative EventSeq; services subscribes an observer that derives durable TripwireFired evidence; the live fan-out happens last. dual_push is renamed accept_and_publish (the old name described the dual-write REC-C2 retires) and both spawn and attach go through the same seam. Closes FIND-C2.1-03 with a productive UAT: a real probe produces a real firing that survives restart with the same firing_seq/source_seq.",
   "blockers": [],
@@ -70,6 +70,10 @@
     {
       "sha": "585dfc45",
       "title": "test(rec-c2.2): define and run UAT-C2-01/02/03; fix a false green (C2.2.5)"
+    },
+    {
+      "sha": "f02ab311",
+      "title": "merge rec-c2.2-accepted-raw-seam (fast-forward) + closure metadata"
     }
   ],
   "gates": {
@@ -128,5 +132,9 @@
       "Q1_sibling_readers": "Do NOT extract the scan loops. The two readers disagree on continuation model, termination, cluster handling, boundary validation, stall detection, page size and output type; a shared helper would need 4+ behavioural flags (shallow abstraction). Extract only the completeness construction and the decode idiom.",
       "Q2_drain_coupling": "ProbeService::drain's dependency set is proportionate (justified depth, not accidental complexity): five collaborators, one observable reason each, 69 lines, no layering."
     }
-  }
+  },
+  "peel_match_meaning": "remote annotated tag rec-c2.2-accepted-raw-seam^{} == head_sha f02ab311, verified with git ls-remote; tag object 4b14bb3e != peel, so it is annotated",
+  "tag_object": "4b14bb3e",
+  "merge_commit": "f02ab311",
+  "subject_sha_vs_release_sha": "verify/debt subject = 1619fb25; release/main = f02ab311. The delta is artifacts only and is checkable with: git diff --name-only 1619fb25 f02ab311 | grep -v '^cycle-artifacts/' (empty). The release gate was additionally re-run at f02ab311."
 }
