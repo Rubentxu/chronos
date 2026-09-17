@@ -3,11 +3,11 @@
   "route": "A-lite",
   "status": "CLOSED",
   "verify_status": "passed",
-  "release_status": "ready",
-  "archive_status": "pending",
-  "head_sha": "1a1ec68ad662aa0cb1bf74cdf3122aea4d11871e",
+  "release_status": "released",
+  "archive_status": "ready",
+  "head_sha": "a1a79c80122d3e8a859f44bb29f043f5422e1324",
   "base_sha": "17367f2d",
-  "main_sha": null,
+  "main_sha": "a1a79c80122d3e8a859f44bb29f043f5422e1324",
   "branch": "feat/rec-c1.5-closure",
   "tier_required": "T3",
   "created_at": "2026-09-17",
@@ -55,7 +55,7 @@
     "T4_smoke": "PASS (9 passed, 0 failed across restart_uat + e2e_connectivity + analytics_tools; --test-threads=1)",
     "smoke_subset_note": "Per AGENTS.md \u00a72 this cycle exclusively touches chronos-log, chronos-services, chronos-mcp, and chronos-sandbox (the executable boundary). restart_uat exercises the changed boundary; e2e_connectivity confirms server start with bootstrap; analytics_tools confirms read paths under the new bootstrap shape."
   },
-  "remote_tag": null,
-  "peel_match": null,
+  "remote_tag": "rec-c1.5-closure",
+  "peel_match": true,
   "note": "Cycle SHAs populated post-merge. The branch feat/rec-c1.5-closure is ready for sddk release + archive."
 }
