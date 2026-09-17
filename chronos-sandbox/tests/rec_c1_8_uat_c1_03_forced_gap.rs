@@ -6,16 +6,14 @@
 //! >  returns an explicit gap/incomplete state and MUST NOT report
 //! >  'complete'."
 //!
-//! STATUS (2026-09-17): **negative test (`complete` for clean session)
-//! passes**; **positive test (forced-gap `gap_detected`) is
-//! `#[ignore]`-marked** and is blocked on a known
-//! `chronos_log::segmented` bookkeeping bug. The bug: any path that
-//! inserts a `Gap` entry into a `SegmentedExecutionLog` (both the
-//! `record_gap` direct API and the memory-budget overflow path)
-//! produces a segment header that mis-counts ("segment declares N
-//! records but holds N-1" on reopen), so the wire assertion cannot
-//! complete until the `m1` fix lands. The fix is out of scope for
-//! C1.8 — it belongs in a separate `m1-*` follow-up cycle.
+//! STATUS (2026-09-17): both arms GREEN. Both the negative arm
+//! (`complete` for a clean session) and the positive arm (forced-gap
+//! `gap_detected`) run on the real MCP wire. The positive arm used to
+//! be `#[ignore]`-marked because a durable segment containing a `Gap`
+//! could not be reopened (FIND-C1.8-01). The `m1-gap-segment-accounting-repair`
+//! cycle fixed that: the header count is now unambiguously the
+//! persisted `SegmentEntry` count, shared by writer, header and replay.
+//! The fixture therefore uses the direct `record_gap` path again.
 //!
 //! Wire shape (verified empirically against `rec_c1_7_uat_c1_01_two_consumers.rs`
 //! and `EventsReadOutput::Query` at `crates/chronos-services/src/output.rs:1581`):
@@ -42,7 +40,8 @@ use std::path::PathBuf;
 
 use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
 use chronos_log::{
-    ExecutionPayload, NewExecutionRecord, SegmentedConfig, SegmentedExecutionLog, SessionId,
+    EventSeq, ExecutionPayload, Gap, GapReason, NewExecutionRecord, SegmentedConfig,
+    SegmentedExecutionLog, SessionId,
 };
 use chronos_sandbox::client::tools::McpTestClient;
 
@@ -87,18 +86,9 @@ fn trace_event_for(i: u64) -> TraceEvent {
     )
 }
 
-/// Seed records 0..RECORDS_BEFORE_GAP, then record an explicit gap at
-/// `[GAP_FROM, GAP_TO]`, then append `RECORDS_AFTER_GAP` records.
-///
-/// The recorded gap is the contract: the `events_log_read::completeness_for`
-/// semantics at `crates/chronos-services/src/events_log_read.rs:480` only
-/// report `gap_detected` when the examined range intersects a `Gap` entry.
-/// An absent range without a recorded gap is correctly reported as
-/// `complete` (no evidence was used to reach that verdict; see the
-/// "An empty examined range used no evidence" comment at line 494).
-/// Seed records 0..RECORDS_BEFORE_GAP, force a recorded gap via the
-/// memory-budget overflow path (m1-02 case 5), then append
-/// `RECORDS_AFTER_GAP` records after the gap.
+/// Seed records `0..RECORDS_BEFORE_GAP`, record an explicit gap at
+/// `[GAP_FROM, GAP_TO]`, then append `RECORDS_AFTER_GAP` records starting
+/// at `GAP_TO + 1`.
 ///
 /// The recorded gap is the contract: the `events_log_read::completeness_for`
 /// semantics at `crates/chronos-services/src/events_log_read.rs:480` only
@@ -107,24 +97,15 @@ fn trace_event_for(i: u64) -> TraceEvent {
 /// `complete` (no evidence was used to reach that verdict; see the
 /// "An empty examined range used no evidence" comment at line 494).
 ///
-/// Why overflow-path instead of `record_gap`: the segmented log's
-/// `record_gap` direct API currently mis-counts gap entries in the
-/// segment header ("segment declares N records but holds N-1" on
-/// reopen). The memory-budget overflow path is the canonical way to
-/// produce a recorded gap and survives reopen integrity checks.
-///
-/// We size the records so the gap falls at the seq we want. Each
-/// pre-gap record is 32 bytes (well under the budget); appending a
-/// 4 KiB record exceeds the budget and triggers a recorded gap;
-/// subsequent appends resume past the gap.
+/// `record_gap` consumes the whole `[GAP_FROM, GAP_TO]` seq range, so the
+/// first post-gap append lands at `GAP_TO + 1`.
 fn seed_log_with_gap(exec_log_root: &std::path::Path, session_id: &str) {
     let session_id_typed = SessionId::new(session_id);
     let session_dir = exec_log_root.join(session_id);
     let mut cfg = SegmentedConfig::with_dir(&session_dir);
-    // Tight memory budget so a single oversized record triggers the
-    // gap path. 128 bytes is below the size of the oversize record
-    // but big enough to hold at least one 32-byte pre-gap record.
-    cfg.memory_budget_bytes = Some(128);
+    // Keep the fixture in a single segment so reopen exercises one
+    // header; the accounting fix applies to any layout regardless.
+    cfg.flush_threshold = std::num::NonZeroUsize::new(4096).expect("non-zero");
     let log = SegmentedExecutionLog::open(session_id_typed.clone(), cfg).expect("open log");
 
     for i in 0..RECORDS_BEFORE_GAP {
@@ -139,28 +120,21 @@ fn seed_log_with_gap(exec_log_root: &std::path::Path, session_id: &str) {
         .expect("append");
     }
 
-    // Flush the pre-gap region before triggering the overflow so the
-    // gap entry is appended cleanly into a fresh segment.
-    log.flush().expect("flush before gap");
-
-    // Trigger a recorded gap by appending an oversized record. The
-    // memory-budget overflow path records a `Gap` automatically and
-    // bumps the seq past it.
-    let big_payload_bytes = vec![0u8; 4096];
-    log.append(NewExecutionRecord {
-        session_id: session_id_typed.clone(),
-        monotonic_ns: 10_000_500 + RECORDS_BEFORE_GAP * 1_000,
-        payload: ExecutionPayload::new(big_payload_bytes, "overflow"),
-        ..Default::default()
-    })
-    .expect("append overflow record");
+    log.record_gap(Gap::new(
+        EventSeq::new(GAP_FROM),
+        EventSeq::new(GAP_TO),
+        GapReason::AdapterBufferOverflow,
+        "rec-c1-8-uat03-fixture",
+    ))
+    .expect("record_gap");
 
     for i in 0..RECORDS_AFTER_GAP {
-        let ev = trace_event_for(RECORDS_BEFORE_GAP + 1 + i);
+        let seq = GAP_TO + 1 + i;
+        let ev = trace_event_for(seq);
         let bytes = serde_json::to_vec(&ev).expect("encode");
         log.append(NewExecutionRecord {
             session_id: session_id_typed.clone(),
-            monotonic_ns: 10_000_500 + (RECORDS_BEFORE_GAP + 1 + i) * 1_000,
+            monotonic_ns: 10_000_500 + seq * 1_000,
             payload: ExecutionPayload::new(bytes, "trace_event"),
             ..Default::default()
         })
@@ -205,18 +179,11 @@ async fn read_for_completeness(
 
 /// UAT-REC-C1-03 — exact.
 ///
-/// **STATUS (2026-09-17): `#[ignore]`-marked.** Active implementation
-/// is blocked on a known `chronos_log::segmented` bookkeeping bug
-/// (see file-level doc-comment). The bug means any path that
-/// inserts a `Gap` entry into the segmented log produces a segment
-/// header that miscounts (`"segment declares N records but holds
-/// N-1"` on reopen), so the wire assertion cannot complete until the
-/// `m1` fix lands. The negative test
-/// `uat_rec_c1_03_clean_session_reports_complete_negative` runs and
-/// proves the negative case (`complete` for clean session). The
-/// positive test (this one) is gated on the `m1` bookkeeping fix.
+/// GREEN since `m1-gap-segment-accounting-repair` (FIND-C1.8-01 fixed):
+/// a durable segment carrying a `Gap` reopens cleanly, so this fixture
+/// seeds the gap with the direct `record_gap` path and reads it back
+/// over the MCP wire.
 #[tokio::test]
-#[ignore = "blocked on chronos_log::segmented gap-entry segment-header bookkeeping bug; see file-level doc-comment"]
 async fn uat_rec_c1_03_forced_gap_reports_gap_detected() {
     let root = unique_root("uat03-gap");
     let _ = std::fs::remove_dir_all(&root);
