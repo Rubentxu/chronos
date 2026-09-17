@@ -1,0 +1,32 @@
+{
+  "cycle_id": "rec-c1-6-lifecycle-retention-wire",
+  "route": "A-lite",
+  "status": "open",
+  "verify_status": "pending",
+  "release_status": "pending",
+  "archive_status": "pending",
+  "head_sha": "0af8c3c9",
+  "base_sha": "5bbf7748",
+  "branch": "feat/rec-c1.6-lifecycle-retention-wire",
+  "tier_required": "T3+T4",
+  "created_at": "2026-09-17",
+  "title": "rec-c1-6-lifecycle-retention-wire",
+  "summary": "Close REC-C1.6: lifecycle-safe delete_session (typed SessionStillActive on a still-live probe — no silent probe_stop, no partial state) and retention/tail facts on the wire (retention.retained_from_seq + history_truncated, tail.state + tail.tail_seq) plus a structured CursorStale envelope. REC-C1.0 first commit reconciles the C1.5 closure drift in docs/ROADMAP.md, reconstruction-contracts.toml (active_gate REC-C0 -> REC-C1.6) and the cycles/index.md row coverage.",
+  "findings_introduced": {
+    "no_action": []
+  },
+  "commits": [
+    {"sha": "0af8c3c9", "step": "C1.6.0", "title": "docs(rec-c1.6): reconcile C1.5 closure + C1.6 active in roadmap"}
+  ],
+  "gates": {
+    "T0_fmt": "PENDING",
+    "T0_clippy": "PENDING",
+    "T1_workspace_lib_plus_tests": "PENDING",
+    "T_chronos_native_serial": "PENDING",
+    "T4_smoke": "PENDING (lifecycle_delete + wire_retention_facts + restart_uat + e2e_connectivity)",
+    "smoke_subset_note": "Per AGENTS.md \u00a72 the subset is selected from diff scope: this cycle touches chronos-services (Liveness port + RetentionFacts/TailFacts), chronos-mcp (delete_handler + events_read envelope + CursorStale json content), and chronos-sandbox (lifecycle_delete.rs + wire_retention_facts.rs). All three new suites plus restart_uat are mandatory in T4-smoke; e2e_connectivity is the regression baseline."
+  },
+  "remote_tag": null,
+  "peel_match": null,
+  "note": "Cycle start. C1.6.0 reconciliation commit 0af8c3c9 already merged-shaped into a docs only change that is independent of the Rust code shape; it carries the docs/contracts drift fix per the user-approved plan. Group A (lifecycle-safe delete) starts at 0af8c3c9 + 1; Group B (retention/tail on the wire) starts after Group A's port is in place (they can overlap but apply-phase ordering depends on whether the Liveness port needs EventsCursorV1-style opaque types). Update head_sha after each commit and refresh the SHA cascade via scripts/regen_manifest_index_shas.py at every commit affecting files listed under any archive-manifest.md."
+}
