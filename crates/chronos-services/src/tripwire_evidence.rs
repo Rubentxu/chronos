@@ -194,13 +194,18 @@ pub fn read_firings_page(
         exhausted: false,
     };
     let mut position = from;
-    let mut remaining_pages = 64u64;
 
-    while remaining_pages > 0 && page.examined < max_examined_records {
-        remaining_pages -= 1;
+    // The only bound is the caller's explicit budget. No hidden page cap: a
+    // silent secondary limit would contradict the parameter and truncate a
+    // result the caller believed was bounded only by `max_examined_records`.
+    loop {
+        if page.examined >= max_examined_records {
+            break;
+        }
+
         let read = log
             .handle()
-            .read_from_seq(position, 512)
+            .read_from_seq(position, READ_CHUNK)
             .map_err(|e| ServiceError::DrainFailed(format!("read firings: {e}")))?;
 
         for record in &read.records {
@@ -213,8 +218,8 @@ pub fn read_firings_page(
             if record.kind == ExecutionKind::TripwireFired {
                 if let Ok(Some(ev)) = TripwireFiredEvidence::from_payload(&record.payload) {
                     page.firings.push((record.seq, ev));
-                    page.position_after = position;
                     if page.firings.len() >= max_firings {
+                        page.position_after = position;
                         return Ok(page);
                     }
                 }
@@ -226,47 +231,143 @@ pub fn read_firings_page(
             page.exhausted = true;
             break;
         }
-        if read.position_after < position {
-            break;
+
+        // Progress or stall: an empty, non-exhausted page that does not move
+        // the position is a backend fault, not the end of the log.
+        let advanced = read.position_after > position;
+        if read.records.is_empty() && !advanced {
+            return Err(ServiceError::EvidenceReadStalled {
+                session_id: log.session_id().as_str().to_string(),
+                position: position.0,
+            });
         }
-        position = read.position_after;
+        if read.position_after < position {
+            return Err(ServiceError::EvidenceReadStalled {
+                session_id: log.session_id().as_str().to_string(),
+                position: position.0,
+            });
+        }
+        position = read.position_after.max(position);
         page.position_after = position;
     }
 
     Ok(page)
 }
 
-/// Count firings per subscription by scanning the log.
+/// How complete a firing count is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FiringCountStatus {
+    /// The scan reached the tail and nothing had been retired: the count is
+    /// the whole session.
+    Complete,
+    /// The scan reached the tail, but history below `retained_from` is gone:
+    /// the count covers the RETAINED region only.
+    Truncated,
+    /// The scan budget ran out before the tail: not even the retained region
+    /// has been counted yet.
+    Partial,
+}
+
+/// A firing count together with the facts needed to describe it honestly.
 ///
-/// `fire_count` is derived evidence, not a mutable counter (REC-C2.1.5): a
-/// counter that is never incremented reads 0 forever (CHAR-C2-04).
-pub fn firing_counts(
-    log: &SessionExecutionLog,
-) -> Result<std::collections::HashMap<chronos_domain::TripwireId, u64>, ServiceError> {
-    let mut counts: std::collections::HashMap<chronos_domain::TripwireId, u64> = Default::default();
-    let mut position = log.retained_from();
-    let mut remaining_pages = 64u64;
-    while remaining_pages > 0 {
-        remaining_pages -= 1;
-        let page = log
-            .handle()
-            .read_from_seq(position, 512)
-            .map_err(|e| ServiceError::DrainFailed(format!("count firings: {e}")))?;
-        for record in &page.records {
-            position = EventSeq::new(record.seq.0 + 1);
-            if record.kind == ExecutionKind::TripwireFired {
-                if let Ok(Some(ev)) = TripwireFiredEvidence::from_payload(&record.payload) {
-                    *counts.entry(ev.tripwire_id).or_insert(0) += 1;
-                }
-            }
+/// A bare `HashMap` would invite the Silent Lie "this tripwire fired 17 times
+/// in the session" when the truth is "17 firings in the retained evidence from
+/// seq 5000, and the budget ran out before the tail".
+#[derive(Debug, Clone)]
+pub struct FiringCountSnapshot {
+    pub counts: std::collections::HashMap<chronos_domain::TripwireId, u64>,
+    /// First seq examined (the retained boundary when the caller asked for
+    /// everything).
+    pub from_seq: EventSeq,
+    /// Position after the last record examined.
+    pub position_after: EventSeq,
+    /// True when the scan reached the end of what the log holds.
+    pub exhausted: bool,
+    /// True when history below `from_seq` had been retired.
+    pub history_truncated: bool,
+}
+
+impl FiringCountSnapshot {
+    pub fn status(&self) -> FiringCountStatus {
+        if !self.exhausted {
+            FiringCountStatus::Partial
+        } else if self.history_truncated {
+            FiringCountStatus::Truncated
+        } else {
+            FiringCountStatus::Complete
         }
-        if page.exhausted || page.position_after < position {
+    }
+
+    pub fn count_for(&self, id: chronos_domain::TripwireId) -> u64 {
+        self.counts.get(&id).copied().unwrap_or(0)
+    }
+}
+
+/// Count firings per subscription over a bounded, progress-aware scan.
+pub fn firing_count_snapshot(
+    log: &SessionExecutionLog,
+    max_examined_records: u64,
+) -> Result<FiringCountSnapshot, ServiceError> {
+    let from = log.retained_from();
+    let mut snapshot = FiringCountSnapshot {
+        counts: Default::default(),
+        from_seq: from,
+        position_after: from,
+        exhausted: false,
+        history_truncated: from > EventSeq::ZERO,
+    };
+    let mut position = from;
+    let mut examined = 0u64;
+
+    loop {
+        if examined >= max_examined_records {
             break;
         }
-        position = page.position_after;
+        let read = log
+            .handle()
+            .read_from_seq(position, READ_CHUNK)
+            .map_err(|e| ServiceError::DrainFailed(format!("count firings: {e}")))?;
+        for record in &read.records {
+            if examined >= max_examined_records {
+                snapshot.position_after = position;
+                return Ok(snapshot);
+            }
+            position = EventSeq::new(record.seq.0 + 1);
+            examined += 1;
+            if record.kind == ExecutionKind::TripwireFired {
+                if let Ok(Some(ev)) = TripwireFiredEvidence::from_payload(&record.payload) {
+                    *snapshot.counts.entry(ev.tripwire_id).or_insert(0) += 1;
+                }
+            }
+            snapshot.position_after = position;
+        }
+        if read.exhausted {
+            snapshot.exhausted = true;
+            break;
+        }
+        let advanced = read.position_after > position;
+        if read.records.is_empty() && !advanced {
+            return Err(ServiceError::EvidenceReadStalled {
+                session_id: log.session_id().as_str().to_string(),
+                position: position.0,
+            });
+        }
+        if read.position_after < position {
+            return Err(ServiceError::EvidenceReadStalled {
+                session_id: log.session_id().as_str().to_string(),
+                position: position.0,
+            });
+        }
+        position = read.position_after.max(position);
+        snapshot.position_after = position;
     }
-    Ok(counts)
+
+    Ok(snapshot)
 }
+
+/// Records requested per backend read. A transport detail, not a budget.
+const READ_CHUNK: usize = 512;
 
 #[cfg(test)]
 mod tests {
@@ -408,6 +509,69 @@ mod tests {
         assert_eq!(ev.source_seq, source_seq, "identity of the cause");
         assert_eq!(ev.source_event_id, Some(83));
         assert_eq!(ev.label, None);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Append a minimal `Raw` record (no derivation involved).
+    fn append_plain(log: &SessionExecutionLog, i: u64) {
+        log.handle()
+            .append(NewExecutionRecord {
+                session_id: log.session_id().clone(),
+                kind: ExecutionKind::Raw,
+                monotonic_ns: i,
+                payload: ExecutionPayload::new(Vec::new(), "plain"),
+                ..Default::default()
+            })
+            .expect("append");
+    }
+
+    /// REC-C2.1.5a: there is no hidden secondary page cap. One budgeted call
+    /// must examine more than the old fixed cap (64 pages x 512 = 32_768)
+    /// records when the caller's budget allows it.
+    #[test]
+    fn firing_page_has_no_hidden_page_cap() {
+        let dir = tempdir("nocap");
+        let session = "rec-c2-1-nocap";
+        let log = open_log(&dir, session);
+        const N: u64 = 33_000; // > 64 * 512
+        for i in 0..N {
+            append_plain(&log, i);
+        }
+        log.handle().flush().ok();
+
+        let page = read_firings_page(&log, EventSeq::ZERO, 10, 100_000).expect("page");
+        assert_eq!(
+            page.examined, N,
+            "the explicit budget is the only bound; the old 64-page cap would stop at 32_768"
+        );
+        assert!(page.exhausted, "the scan reached the tail");
+        assert!(page.firings.is_empty(), "none of these records is a firing");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Count completeness is explicit: a budget that runs out before the tail
+    /// is `Partial`, not a silent "this is the total".
+    #[test]
+    fn firing_count_status_is_explicit() {
+        let dir = tempdir("countstatus");
+        let session = "rec-c2-1-countstatus";
+        let log = open_log(&dir, session);
+        for i in 0..50u64 {
+            append_plain(&log, i);
+        }
+        log.handle().flush().ok();
+
+        let partial = firing_count_snapshot(&log, 10).expect("snapshot");
+        assert_eq!(partial.status(), FiringCountStatus::Partial);
+        assert!(!partial.exhausted);
+        assert_eq!(partial.from_seq, EventSeq::ZERO);
+
+        let complete = firing_count_snapshot(&log, 100_000).expect("snapshot");
+        assert_eq!(complete.status(), FiringCountStatus::Complete);
+        assert!(complete.exhausted);
+        assert!(!complete.history_truncated);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

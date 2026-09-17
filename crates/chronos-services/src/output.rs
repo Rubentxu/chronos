@@ -599,8 +599,32 @@ pub struct SubscriptionDto {
     pub label: Option<String>,
     /// Human-readable condition description.
     pub condition: String,
-    /// How many times this subscription has fired.
+    /// How many firings were counted for this subscription **in the scanned
+    /// evidence** (REC-C2.1.5).
+    ///
+    /// Derived from the `ExecutionLog`, never from the legacy mutable
+    /// `Tripwire.fire_count`. The scope is one session, and its completeness is
+    /// described by [`SubscriptionDto::fire_count_facts`].
     pub fire_count: u64,
+    /// The facts that qualify `fire_count`.
+    ///
+    /// Without these, `fire_count = 17` invites the Silent Lie "fired 17 times
+    /// in the session" when the truth may be "17 firings in the retained
+    /// evidence from seq 5000". `None` only when no session could be resolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fire_count_facts: Option<FireCountFacts>,
+}
+
+/// Where a `fire_count` came from and how complete it is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FireCountFacts {
+    /// First seq examined (the retained boundary when everything was scanned).
+    pub from_seq: u64,
+    /// Position after the last record examined.
+    pub through_seq_exclusive: u64,
+    /// `complete` (whole session), `truncated` (retained region only) or
+    /// `partial` (the scan budget ran out before the tail).
+    pub status: String,
 }
 
 /// Tagged output envelope returned by [`crate::observe::ChronosObserveService::observe`].

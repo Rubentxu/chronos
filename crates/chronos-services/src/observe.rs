@@ -53,11 +53,11 @@ use std::sync::Mutex as StdMutex;
 
 use crate::error::ServiceError;
 use crate::events_cursor::EventsCursorV1;
+use crate::output::FireCountFacts;
 use crate::output::{
     ObserveCondition, ObserveCreateResult, ObserveDeleteResult, ObserveListResult, ObserveOutput,
-    ObserveProvenance, ObserveRetention, ObserveRetention::Drained as RetDrained,
-    ObserveRetention::RetainedUntilSessionEnd as RetRetainedUntilSessionEnd, ObserveScope,
-    ObserveVerb, SubscriptionDto, TripwireFiredSummary,
+    ObserveProvenance, ObserveRetention, ObserveScope, ObserveVerb, SubscriptionDto,
+    TripwireFiredSummary,
 };
 use crate::probe::{ProbeContext, ProbeService};
 use crate::tripwires::TripwiresService;
@@ -74,6 +74,17 @@ pub use crate::output::ObserveInput;
 /// examined records, so a sparse firing cannot turn a small request into an
 /// unbounded scan.
 const MAX_FIRINGS_PER_PAGE: usize = 200;
+
+/// Wire string for a firing-count completeness state.
+fn firing_count_status_str(s: crate::tripwire_evidence::FiringCountStatus) -> String {
+    use crate::tripwire_evidence::FiringCountStatus as S;
+    match s {
+        S::Complete => "complete",
+        S::Truncated => "truncated",
+        S::Partial => "partial",
+    }
+    .to_string()
+}
 
 /// Borrowed handle to the live state the dispatcher needs.
 ///
@@ -146,7 +157,7 @@ impl ChronosObserveService {
             ObserveVerb::Create => Self::create(ctx, input),
             ObserveVerb::List => Self::list(ctx, input).await,
             ObserveVerb::Delete => Self::delete(ctx, input),
-            ObserveVerb::Query => Self::query(ctx),
+            ObserveVerb::Query => Self::query(ctx, input).await,
         }
     }
 
@@ -369,38 +380,49 @@ impl ChronosObserveService {
         )?;
 
         // Definitions come from the manager as a plain snapshot: no drain.
-        // `fire_count` stays the legacy counter until C2.1.5 derives it.
-        let tripwires = ctx.tripwire_manager.list();
-        let subscriptions = tripwires
+        // `fire_count` is derived from the log, never from the mutable
+        // `Tripwire.fire_count` (FIND-C2.0-02).
+        let counts = crate::tripwire_evidence::firing_count_snapshot(
+            &log,
+            crate::tripwire_evidence::DEFAULT_SCAN_BUDGET,
+        )?;
+        let facts = FireCountFacts {
+            from_seq: counts.from_seq.0,
+            through_seq_exclusive: counts.position_after.0,
+            status: firing_count_status_str(counts.status()),
+        };
+        let subscriptions = ctx
+            .tripwire_manager
+            .list()
             .into_iter()
             .map(|tw| SubscriptionDto {
                 kind: "tripwire".to_string(),
                 id: tw.id.to_string(),
                 label: tw.label,
                 condition: format!("{:?}", tw.condition),
-                fire_count: tw.fire_count,
+                fire_count: counts.count_for(tw.id),
+                fire_count_facts: Some(facts.clone()),
             })
             .collect();
         let total_active = ctx.tripwire_manager.active_count();
 
-        let fired_events: Vec<TripwireFiredSummary> = match retention {
-            RetDrained => page
-                .firings
-                .iter()
-                .map(|(_, ev)| TripwireFiredSummary {
-                    tripwire_id: ev.tripwire_id.to_string(),
-                    condition_description: format!("{:?}", ev.condition),
-                    event_id: ev.source_event_id.unwrap_or(0),
-                    timestamp_ns: ev.source_timestamp_ns,
-                    thread_id: ev.source_thread_id,
-                })
-                .collect(),
-            // Retention is evidence lifecycle, not delivery: the firings stay
-            // in the log either way. This branch does not hand them back yet.
-            RetRetainedUntilSessionEnd => Vec::new(),
-            ObserveRetention::Permanent => unreachable!("rejected above"),
-        };
+        // Retention never controls WHICH evidence comes back: the log is
+        // immutable and both policies return the same page. What differs is
+        // conceptual — `drained` means the consumer may advance its cursor;
+        // `retained_until_session_end` is an evidence-lifecycle guarantee.
+        let fired_events: Vec<TripwireFiredSummary> = page
+            .firings
+            .iter()
+            .map(|(_, ev)| TripwireFiredSummary {
+                tripwire_id: ev.tripwire_id.to_string(),
+                condition_description: format!("{:?}", ev.condition),
+                event_id: ev.source_event_id.unwrap_or(0),
+                timestamp_ns: ev.source_timestamp_ns,
+                thread_id: ev.source_thread_id,
+            })
+            .collect();
         let fired_count = fired_events.len();
+        let _ = retention;
 
         // Always a checkpoint, even at the tail: the log may gain a firing next
         // second and the client must keep a position. Filters/pagination never
@@ -431,37 +453,58 @@ impl ChronosObserveService {
 
     // -- query -----------------------------------------------------------------
 
-    fn query(ctx: &ObserveContext<'_>) -> Result<ObserveOutput, ServiceError> {
-        // `verb=query` mirrors v1 `tripwire_query` — non-destructive
-        // snapshot, fired_events is always [].
-        let tripwire_query = TripwiresService::query(ctx.tripwire_manager);
+    /// Non-destructive subscription snapshot with a derived `fire_count`.
+    ///
+    /// REC-C2.1.5: this is no longer a second `list` — it returns no
+    /// `fired_events` and does not page. It does need the canonical session,
+    /// because `fire_count` is a fact about ONE session's evidence:
+    ///
+    /// ```text
+    /// TripwireManager -> active definitions (runtime, global)
+    /// fire_count      -> firings recorded in one session's ExecutionLog
+    /// ```
+    async fn query(
+        ctx: &ObserveContext<'_>,
+        input: ObserveInput,
+    ) -> Result<ObserveOutput, ServiceError> {
+        let session_id = Self::resolve_session(ctx, input.scope.as_ref()).await?;
+        let log = ctx.probe.execution_logs.get(&session_id)?;
+        let counts = crate::tripwire_evidence::firing_count_snapshot(
+            &log,
+            crate::tripwire_evidence::DEFAULT_SCAN_BUDGET,
+        )?;
+        let facts = FireCountFacts {
+            from_seq: counts.from_seq.0,
+            through_seq_exclusive: counts.position_after.0,
+            status: firing_count_status_str(counts.status()),
+        };
 
-        let subscriptions = tripwire_query
-            .tripwires
+        let subscriptions = ctx
+            .tripwire_manager
+            .list()
             .into_iter()
             .map(|tw| SubscriptionDto {
                 kind: "tripwire".to_string(),
-                id: tw.id,
+                id: tw.id.to_string(),
                 label: tw.label,
-                condition: tw.condition,
-                fire_count: tw.fire_count,
+                condition: format!("{:?}", tw.condition),
+                fire_count: counts.count_for(tw.id),
+                fire_count_facts: Some(facts.clone()),
             })
             .collect();
 
         let provenance = ObserveProvenance {
             engine_version: "chronos-0.1.0".to_string(),
-            query_strategy: "IndexLookup".to_string(),
+            query_strategy: "ExecutionLogScan".to_string(),
             retention_in_effect: "Drained".to_string(),
         };
 
         Ok(ObserveOutput::Query(ObserveListResult {
             subscriptions,
             fired_events: Vec::new(),
-            total_active: tripwire_query.total_active,
+            total_active: ctx.tripwire_manager.active_count(),
             fired_count: 0,
-            // `query` is a non-destructive subscription snapshot; it does not
-            // resolve a session and does not page firings (that is `list`).
-            session_id: None,
+            session_id: Some(session_id),
             next_cursor: None,
             provenance,
         }))
@@ -807,7 +850,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_with_retained_returns_empty_fired_events() {
+    async fn list_with_retained_returns_the_same_page_as_drained() {
         let rig = TestRig::new();
         rig.open_session("observe-retained").await;
         let mut input = tripwire_input(ObserveVerb::List);
@@ -815,9 +858,12 @@ mod tests {
         let out = rig.observe(input).await.unwrap();
         match out {
             ObserveOutput::List(l) => {
-                assert!(l.fired_events.is_empty());
+                // REC-C2.1.5: retention no longer hides evidence. The log is
+                // immutable, so `retained` and `drained` return the same page.
+                assert!(l.fired_events.is_empty(), "no firings in this fixture");
                 assert_eq!(l.fired_count, 0);
                 assert_eq!(l.provenance.retention_in_effect, "RetainedUntilSessionEnd");
+                assert!(l.next_cursor.is_some(), "the checkpoint is still yielded");
             }
             other => panic!("expected List, got {:?}", other),
         }
@@ -1006,9 +1052,9 @@ mod tests {
         );
     }
 
-    /// A retained read no longer destroys: the evidence stays in the log, and a
-    /// later drained read from the same position still sees it (CHAR-C2-03 is
-    /// fixed by making firing evidence immutable).
+    /// A retained read neither destroys nor hides: it returns the same page,
+    /// and a later drained read still sees the evidence (CHAR-C2-03 and
+    /// FIND-C2.0-01 are fixed by making firing evidence immutable).
     #[tokio::test]
     async fn retained_read_no_longer_destroys_the_evidence() {
         let rig = armed_rig("observe-retained-keeps").await;
@@ -1021,8 +1067,8 @@ mod tests {
             panic!("expected List")
         };
         assert_eq!(
-            retained_out.fired_count, 0,
-            "retained does not hand them back"
+            retained_out.fired_count, 1,
+            "retention does not hide evidence: the same page is returned"
         );
 
         // The evidence is still there for a drained reader.
@@ -1037,6 +1083,75 @@ mod tests {
             drained_out.fired_count, 1,
             "the firing survived the retained read — nothing was drained"
         );
+    }
+
+    /// FIND-C2.0-02: the wire `fire_count` is derived from the log, so the
+    /// mutable `Tripwire.fire_count` (which is never incremented) is
+    /// irrelevant. Three firings in the log must report 3 even though the
+    /// manager's counter is still 0.
+    #[tokio::test]
+    async fn fire_count_is_derived_not_the_mutable_tripwire_counter() {
+        let rig = armed_rig("observe-derived-count").await;
+        for i in 0..3u64 {
+            rig.ingest(
+                "observe-derived-count",
+                &fn_event("main_work", i + 1, (i + 1) * 10),
+            );
+        }
+
+        // The manager's counter is still zero — nothing mutates it (CHAR-C2-04).
+        assert_eq!(
+            rig.manager.list()[0].fire_count,
+            0,
+            "the mutable counter is never incremented"
+        );
+
+        // Both verbs report the derived count.
+        let queried = rig
+            .observe(tripwire_input(ObserveVerb::Query))
+            .await
+            .unwrap();
+        let ObserveOutput::Query(q) = queried else {
+            panic!("expected Query")
+        };
+        assert_eq!(q.subscriptions.len(), 1);
+        assert_eq!(
+            q.subscriptions[0].fire_count, 3,
+            "fire_count must come from the ExecutionLog, not the mutable counter"
+        );
+        assert_eq!(q.session_id.as_deref(), Some("observe-derived-count"));
+
+        let listed = rig
+            .observe(tripwire_input(ObserveVerb::List))
+            .await
+            .unwrap();
+        let ObserveOutput::List(l) = listed else {
+            panic!("expected List")
+        };
+        assert_eq!(l.subscriptions[0].fire_count, 3);
+    }
+
+    /// `fire_count` carries the facts that qualify it.
+    #[tokio::test]
+    async fn fire_count_facts_are_reported() {
+        let rig = armed_rig("observe-count-facts").await;
+        rig.ingest("observe-count-facts", &fn_event("main_work", 1, 10));
+
+        let out = rig
+            .observe(tripwire_input(ObserveVerb::Query))
+            .await
+            .unwrap();
+        let ObserveOutput::Query(q) = out else {
+            panic!("expected Query")
+        };
+        let facts = q.subscriptions[0]
+            .fire_count_facts
+            .as_ref()
+            .expect("facts present");
+        // Fresh session, nothing retired, scan reached the tail.
+        assert_eq!(facts.from_seq, 0);
+        assert_eq!(facts.status, "complete");
+        assert!(facts.through_seq_exclusive >= 1);
     }
 
     /// A cursor from another session is a typed error, never a silent
@@ -1059,6 +1174,7 @@ mod tests {
     #[tokio::test]
     async fn query_with_no_subscriptions_returns_empty() {
         let rig = TestRig::new();
+        rig.open_session("observe-query-empty").await;
         let input = tripwire_input(ObserveVerb::Query);
         let out = rig.observe(input).await.unwrap();
         match out {
@@ -1074,6 +1190,7 @@ mod tests {
     #[tokio::test]
     async fn query_is_non_destructive_across_calls() {
         let rig = TestRig::new();
+        rig.open_session("observe-query-nondestructive").await;
 
         // Create.
         let mut create_input = tripwire_input(ObserveVerb::Create);
