@@ -32,6 +32,7 @@ use crate::debug_trace_specialized::DebugTraceSpecializedService;
 use crate::error::ServiceError;
 use crate::output::TraceSliceKind;
 use crate::output::TraceSliceOutput;
+use crate::projection::ProjectionMeta;
 
 /// Borrowed handle to the live engine map (shared with the MCP server).
 ///
@@ -39,8 +40,12 @@ use crate::output::TraceSliceOutput;
 /// `chronos_services::debug_trace`, `chronos_services::analysis` —
 /// the value type is `QueryEngine` (no inner `Arc`); `Arc`-wrapping
 /// happens at the call site.
+///
+/// REC-C1.7: `projection_meta` lets the operation refuse the call
+/// when the projection is `Truncated` (no fake engine).
 pub struct TraceSliceContext<'a> {
     pub engines: &'a TokioMutex<HashMap<String, QueryEngine>>,
+    pub projection_meta: &'a TokioMutex<HashMap<String, ProjectionMeta>>,
 }
 
 /// Input for [`ChronosTraceSliceService::slice`].
@@ -164,6 +169,10 @@ mod tests {
         Mutex::new(map)
     }
 
+    fn empty_meta() -> TokioMutex<HashMap<String, ProjectionMeta>> {
+        TokioMutex::new(HashMap::new())
+    }
+
     fn var_event(event_id: u64, ts: u64, tid: u64, name: &str, value: &str) -> TraceEvent {
         TraceEvent {
             event_id,
@@ -204,7 +213,10 @@ mod tests {
                 var_event(2, 200, 1, "x", "2"),
             ],
         );
-        let ctx = TraceSliceContext { engines: &engines };
+        let ctx = TraceSliceContext {
+            engines: &engines,
+            projection_meta: &empty_meta(),
+        };
         let r = ChronosTraceSliceService::slice(
             &ctx,
             TraceSliceInput {
@@ -229,7 +241,10 @@ mod tests {
     #[tokio::test]
     async fn slice_variable_origin_missing_name_returns_invalid_input() {
         let engines = engines_map("s1", vec![]);
-        let ctx = TraceSliceContext { engines: &engines };
+        let ctx = TraceSliceContext {
+            engines: &engines,
+            projection_meta: &empty_meta(),
+        };
         let r = ChronosTraceSliceService::slice(
             &ctx,
             TraceSliceInput {
@@ -247,7 +262,10 @@ mod tests {
     #[tokio::test]
     async fn slice_crash_ok() {
         let engines = engines_map("s1", vec![signal_event(1, 100, 1, 11, "SIGSEGV")]);
-        let ctx = TraceSliceContext { engines: &engines };
+        let ctx = TraceSliceContext {
+            engines: &engines,
+            projection_meta: &empty_meta(),
+        };
         let r = ChronosTraceSliceService::slice(
             &ctx,
             TraceSliceInput {
@@ -272,7 +290,10 @@ mod tests {
     #[tokio::test]
     async fn slice_causality_ok() {
         let engines = engines_map("s1", vec![]);
-        let ctx = TraceSliceContext { engines: &engines };
+        let ctx = TraceSliceContext {
+            engines: &engines,
+            projection_meta: &empty_meta(),
+        };
         let r = ChronosTraceSliceService::slice(
             &ctx,
             TraceSliceInput {
@@ -296,7 +317,10 @@ mod tests {
     #[tokio::test]
     async fn slice_causality_missing_address_returns_invalid_input() {
         let engines = engines_map("s1", vec![]);
-        let ctx = TraceSliceContext { engines: &engines };
+        let ctx = TraceSliceContext {
+            engines: &engines,
+            projection_meta: &empty_meta(),
+        };
         let r = ChronosTraceSliceService::slice(
             &ctx,
             TraceSliceInput {
@@ -314,7 +338,10 @@ mod tests {
     #[tokio::test]
     async fn slice_memory_audit_ok() {
         let engines = engines_map("s1", vec![]);
-        let ctx = TraceSliceContext { engines: &engines };
+        let ctx = TraceSliceContext {
+            engines: &engines,
+            projection_meta: &empty_meta(),
+        };
         let r = ChronosTraceSliceService::slice(
             &ctx,
             TraceSliceInput {
@@ -338,7 +365,10 @@ mod tests {
     #[tokio::test]
     async fn slice_memory_audit_missing_address_returns_invalid_input() {
         let engines = engines_map("s1", vec![]);
-        let ctx = TraceSliceContext { engines: &engines };
+        let ctx = TraceSliceContext {
+            engines: &engines,
+            projection_meta: &empty_meta(),
+        };
         let r = ChronosTraceSliceService::slice(
             &ctx,
             TraceSliceInput {
@@ -356,7 +386,10 @@ mod tests {
     #[tokio::test]
     async fn slice_session_not_found() {
         let engines = engines_map("s1", vec![]);
-        let ctx = TraceSliceContext { engines: &engines };
+        let ctx = TraceSliceContext {
+            engines: &engines,
+            projection_meta: &empty_meta(),
+        };
         let r = ChronosTraceSliceService::slice(
             &ctx,
             TraceSliceInput {

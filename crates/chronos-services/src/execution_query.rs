@@ -33,14 +33,21 @@ use crate::debug_trace::DebugTraceService;
 use crate::debug_trace_specialized::DebugTraceSpecializedService;
 use crate::error::ServiceError;
 use crate::output::{ExecutionQueryKind, ExecutionQueryOutput};
+use crate::projection::ProjectionMeta;
 
 /// Borrowed handle to the live engine map (shared with the MCP server).
 ///
 /// Matches the established pattern in `chronos_services::trace_slice`,
 /// `chronos_services::state_query`, etc. — the value type is `QueryEngine`
 /// (no inner `Arc`); `Arc`-wrapping happens at the call site.
+///
+/// REC-C1.7: the `projection_meta` map lets the operation refuse the
+/// call when the projection is `Truncated`. The two maps are kept
+/// side-by-side under one lock on the MCP server, so the index
+/// lookup is consistent.
 pub struct ExecutionQueryContext<'a> {
     pub engines: &'a TokioMutex<HashMap<String, QueryEngine>>,
+    pub projection_meta: &'a TokioMutex<HashMap<String, ProjectionMeta>>,
 }
 
 /// Input for [`ChronosExecutionQueryService::query`].
@@ -140,10 +147,17 @@ mod tests {
         Mutex::new(HashMap::new())
     }
 
+    fn empty_meta() -> TokioMutex<HashMap<String, ProjectionMeta>> {
+        TokioMutex::new(HashMap::new())
+    }
+
     #[tokio::test]
     async fn call_stack_missing_event_id_returns_invalid_input() {
         let engines = empty_engines();
-        let ctx = ExecutionQueryContext { engines: &engines };
+        let ctx = ExecutionQueryContext {
+            engines: &engines,
+            projection_meta: &empty_meta(),
+        };
         let r = ChronosExecutionQueryService::query(
             &ctx,
             ExecutionQueryInput {
@@ -163,7 +177,10 @@ mod tests {
     #[tokio::test]
     async fn execution_summary_with_no_target_succeeds_or_session_not_found() {
         let engines = empty_engines();
-        let ctx = ExecutionQueryContext { engines: &engines };
+        let ctx = ExecutionQueryContext {
+            engines: &engines,
+            projection_meta: &empty_meta(),
+        };
         // Empty engine map → SessionNotFound (not InvalidInput).
         let r = ChronosExecutionQueryService::query(
             &ctx,
@@ -184,7 +201,10 @@ mod tests {
     #[tokio::test]
     async fn call_graph_uses_default_max_depth_10() {
         let engines = empty_engines();
-        let ctx = ExecutionQueryContext { engines: &engines };
+        let ctx = ExecutionQueryContext {
+            engines: &engines,
+            projection_meta: &empty_meta(),
+        };
         let r = ChronosExecutionQueryService::query(
             &ctx,
             ExecutionQueryInput {
@@ -206,7 +226,10 @@ mod tests {
     #[tokio::test]
     async fn race_detect_uses_default_threshold_ns_100() {
         let engines = empty_engines();
-        let ctx = ExecutionQueryContext { engines: &engines };
+        let ctx = ExecutionQueryContext {
+            engines: &engines,
+            projection_meta: &empty_meta(),
+        };
         let r = ChronosExecutionQueryService::query(
             &ctx,
             ExecutionQueryInput {
@@ -226,7 +249,10 @@ mod tests {
     #[tokio::test]
     async fn hotspot_uses_default_top_n_10() {
         let engines = empty_engines();
-        let ctx = ExecutionQueryContext { engines: &engines };
+        let ctx = ExecutionQueryContext {
+            engines: &engines,
+            projection_meta: &empty_meta(),
+        };
         let r = ChronosExecutionQueryService::query(
             &ctx,
             ExecutionQueryInput {
@@ -246,7 +272,10 @@ mod tests {
     #[tokio::test]
     async fn saliency_uses_default_saliency_limit_20() {
         let engines = empty_engines();
-        let ctx = ExecutionQueryContext { engines: &engines };
+        let ctx = ExecutionQueryContext {
+            engines: &engines,
+            projection_meta: &empty_meta(),
+        };
         let r = ChronosExecutionQueryService::query(
             &ctx,
             ExecutionQueryInput {

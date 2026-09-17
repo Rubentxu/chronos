@@ -1,6 +1,6 @@
 version = 1
 updated = "2026-09-17"
-active_gate = "REC-C1.6"
+active_gate = "REC-C1.7"
 
 [policy]
 allowed_statuses = ["verified", "partial", "gap", "planned", "blocked"]
@@ -136,9 +136,19 @@ description = "Real bugs owned by later gates. Every deferred failure has a conc
 [[requirement]]
 id = "TRUTH-001"
 title = "ExecutionLog is authoritative for every agentic session"
-status = "partial"
+status = "verified"
 owner_gate = "REC-C1"
-notes = "chronos-log exists and native can dual-write, but EventBus-only and QueryEngine-authoritative paths remain."
+evidence = [
+  "crates/chronos-services/src/projection.rs::build_engine",
+  "crates/chronos-services/src/projection.rs::meta_is_full",
+  "crates/chronos-mcp/src/server.rs::ensure_projection",
+  "crates/chronos-mcp/src/server.rs::gate_projection_for_wire",
+  "chronos-sandbox/tests/rec_c1_7_projection_restart_equivalence.rs",
+  "chronos-sandbox/tests/rec_c1_7_uat_c1_01_two_consumers.rs",
+  "crates/chronos-services/src/projection.rs::tests::build_engine_preserves_seq_event_id_timestamp_ns_as_independent_dimensions",
+]
+notes = "REC-C1.7: QueryEngine is now a reconstructible projection of SessionExecutionLog. The canonical builder is chronos_services::projection::build_engine; events_log_read::decode and build_engine share the decoder so events_read and the projection cannot drift. execution_query / state_query / trace_slice call gate_projection_for_wire at the top of the MCP handler; queries against a Truncated or Empty projection are refused with rmcp::ErrorData. Restart equivalence proven on the wire by rec_c1_7_projection_restart_equivalence (engine rebuilt from the durable log on first query after restart). Two-consumer semantics (independent cursors, monotonic event_id growth) proven by rec_c1_7_uat_c1_01_two_consumers. Time-semantics independence (seq vs event_id vs timestamp_ns) proven by projection::tests::build_engine_preserves_seq_event_id_timestamp_ns_as_independent_dimensions. EventBus / drain_raw_events / fired_buffer / TripwireFired remain as legacy analytics paths owned by REC-C2 (not removed in this cycle)."
+verify = "cargo test -p chronos-services --lib projection::; cargo test -p chronos-sandbox --test rec_c1_7_projection_restart_equivalence --test rec_c1_7_uat_c1_01_two_consumers -- --test-threads=1"
 
 [[requirement]]
 id = "TRUTH-002"

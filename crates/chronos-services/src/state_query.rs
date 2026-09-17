@@ -32,14 +32,19 @@ use crate::debug_read::DebugReadService;
 use crate::debug_trace::DebugTraceService;
 use crate::error::ServiceError;
 use crate::output::{StateQueryKind, StateQueryOutput};
+use crate::projection::ProjectionMeta;
 
 /// Borrowed handle to the live engine map (shared with the MCP server).
 ///
 /// Matches the established pattern in `chronos_services::trace_slice`,
 /// `chronos_services::sessions`, etc. — the value type is `QueryEngine`
 /// (no inner `Arc`); `Arc`-wrapping happens at the call site.
+///
+/// REC-C1.7: `projection_meta` lets the operation refuse the call
+/// when the projection is `Truncated` (no fake engine).
 pub struct StateQueryContext<'a> {
     pub engines: &'a TokioMutex<HashMap<String, QueryEngine>>,
+    pub projection_meta: &'a TokioMutex<HashMap<String, ProjectionMeta>>,
 }
 
 /// Input for [`ChronosStateQueryService::query`].
@@ -178,10 +183,17 @@ mod tests {
         Mutex::new(HashMap::new())
     }
 
+    fn empty_meta() -> TokioMutex<HashMap<String, ProjectionMeta>> {
+        TokioMutex::new(HashMap::new())
+    }
+
     #[tokio::test]
     async fn register_diff_missing_timestamp_a_returns_invalid_input() {
         let engines = empty_engines();
-        let ctx = StateQueryContext { engines: &engines };
+        let ctx = StateQueryContext {
+            engines: &engines,
+            projection_meta: &empty_meta(),
+        };
         let r = ChronosStateQueryService::query(
             &ctx,
             StateQueryInput {
@@ -199,7 +211,10 @@ mod tests {
     #[tokio::test]
     async fn register_diff_missing_timestamp_b_returns_invalid_input() {
         let engines = empty_engines();
-        let ctx = StateQueryContext { engines: &engines };
+        let ctx = StateQueryContext {
+            engines: &engines,
+            projection_meta: &empty_meta(),
+        };
         let r = ChronosStateQueryService::query(
             &ctx,
             StateQueryInput {
@@ -217,7 +232,10 @@ mod tests {
     #[tokio::test]
     async fn memory_read_missing_address_returns_invalid_input() {
         let engines = empty_engines();
-        let ctx = StateQueryContext { engines: &engines };
+        let ctx = StateQueryContext {
+            engines: &engines,
+            projection_meta: &empty_meta(),
+        };
         let r = ChronosStateQueryService::query(
             &ctx,
             StateQueryInput {
@@ -235,7 +253,10 @@ mod tests {
     #[tokio::test]
     async fn register_snapshot_missing_event_id_returns_invalid_input() {
         let engines = empty_engines();
-        let ctx = StateQueryContext { engines: &engines };
+        let ctx = StateQueryContext {
+            engines: &engines,
+            projection_meta: &empty_meta(),
+        };
         let r = ChronosStateQueryService::query(
             &ctx,
             StateQueryInput {
@@ -252,7 +273,10 @@ mod tests {
     #[tokio::test]
     async fn memory_analysis_missing_fields_returns_invalid_input() {
         let engines = empty_engines();
-        let ctx = StateQueryContext { engines: &engines };
+        let ctx = StateQueryContext {
+            engines: &engines,
+            projection_meta: &empty_meta(),
+        };
         // Missing end_ts.
         let r = ChronosStateQueryService::query(
             &ctx,
@@ -273,7 +297,10 @@ mod tests {
     #[tokio::test]
     async fn expression_eval_missing_expression_returns_invalid_input() {
         let engines = empty_engines();
-        let ctx = StateQueryContext { engines: &engines };
+        let ctx = StateQueryContext {
+            engines: &engines,
+            projection_meta: &empty_meta(),
+        };
         let r = ChronosStateQueryService::query(
             &ctx,
             StateQueryInput {
@@ -291,7 +318,10 @@ mod tests {
     #[tokio::test]
     async fn session_not_found_propagates() {
         let engines = empty_engines();
-        let ctx = StateQueryContext { engines: &engines };
+        let ctx = StateQueryContext {
+            engines: &engines,
+            projection_meta: &empty_meta(),
+        };
         // MemoryRead with all fields valid but no session in engine map.
         let r = ChronosStateQueryService::query(
             &ctx,
