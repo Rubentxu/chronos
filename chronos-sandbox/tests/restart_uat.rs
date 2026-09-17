@@ -162,15 +162,9 @@ async fn r1_unclean_restart_reproduces_same_events_page() {
 
     // Capture page 1 (cursor=None) and page 2 (cursor=page1.next_cursor).
     // The test_add fixture produces few events, so a small limit suffices.
-    let (page1_ids, page1_next) =
-        read_events_page(&mut first, &started.session_id, None, 64).await;
-    let (page2_ids, _page2_next) = read_events_page(
-        &mut first,
-        &started.session_id,
-        page1_next.as_deref(),
-        64,
-    )
-    .await;
+    let (page1_ids, page1_next) = read_events_page(&mut first, &started.session_id, None, 64).await;
+    let (page2_ids, _page2_next) =
+        read_events_page(&mut first, &started.session_id, page1_next.as_deref(), 64).await;
 
     // Sanity: process A produced at least one event for both pages combined.
     let total_a = page1_ids.len() + page2_ids.len();
@@ -235,7 +229,10 @@ async fn r1_unclean_restart_reproduces_same_events_page() {
     if manifest_path.exists() {
         let bytes = std::fs::read(&manifest_path).unwrap();
         let manifest: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        let tail_state = manifest.get("tail_state").cloned().unwrap_or(serde_json::Value::Null);
+        let tail_state = manifest
+            .get("tail_state")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
         let state_name = tail_state
             .get("state")
             .and_then(serde_json::Value::as_str)
@@ -268,7 +265,7 @@ async fn r2_stale_cursor_is_identical_before_and_after_restart() {
     std::fs::create_dir_all(&root).unwrap();
     std::env::set_var("CHRONOS_EXECUTION_LOG_DIR", &root);
     let db = root.join("sessions.redb");
-    let fixture = McpSession::fixture_path("test_add").expect("fixture");
+    let _fixture = McpSession::fixture_path("test_add").expect("fixture");
 
     // Pre-create a session's ExecutionLog directory with a manifest whose
     // `retained_from` is already past 0. The bootstrap path (REC-C1.5.4) will
@@ -298,10 +295,7 @@ async fn r2_stale_cursor_is_identical_before_and_after_restart() {
 
     // Helper: send events_read with a stale cursor (seq#0 < retained_from=5)
     // and capture the CursorStale payload from the server's error text.
-    async fn read_stale(
-        client: &mut McpTestClient,
-        sid: &str,
-    ) -> CursorStaleNumbers {
+    async fn read_stale(client: &mut McpTestClient, sid: &str) -> CursorStaleNumbers {
         let cursor_encoded = format!("ecv1:1:{}:{}:0", sid.len(), sid);
         let result = client
             .call_tool(
@@ -380,11 +374,10 @@ fn parse_cursor_stale_text(text: &str) -> Option<CursorStaleNumbers> {
     let x: u64 = x_str.parse().ok()?;
     // Find the retained seq number, after either "earliest available position is " or "retention boundary ".
     let r_str = if let Some(after) = text.split("earliest available position is ").nth(1) {
-        after
-            .split(|c: char| !c.is_ascii_digit())
-            .next()?
+        after.split(|c: char| !c.is_ascii_digit()).next()?
     } else {
-        text.split("retention boundary ").nth(1)?
+        text.split("retention boundary ")
+            .nth(1)?
             .split(|c: char| !c.is_ascii_digit())
             .next()?
     };
@@ -400,4 +393,3 @@ struct CursorStaleNumbers {
     requested_next_seq: u64,
     retained_from_seq: u64,
 }
-

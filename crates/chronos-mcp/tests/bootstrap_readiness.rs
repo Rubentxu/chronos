@@ -94,8 +94,8 @@ fn new_immediately_populates_registry_from_disk() {
     // try_new is the entrypoint every production caller must use.
     // It MUST succeed (no panic, no error) AND must have populated the
     // registry as a side effect of the bootstrap call inside.
-    let server = ChronosServer::try_new()
-        .expect("try_new must succeed on a clean tempdir with seeded logs");
+    let server =
+        ChronosServer::try_new().expect("try_new must succeed on a clean tempdir with seeded logs");
 
     let registry = server.execution_log_registry();
     let registry_len = registry.len();
