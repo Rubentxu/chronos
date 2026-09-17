@@ -5,32 +5,43 @@
 
 ## Active milestone
 
-**REC-C0 — Restore the truth baseline — Status: in_progress**
+**REC-C1.6 — Lifecycle-safe delete + retention/tail facts on the wire — Status: ACTIVE**
 
-The 2026-09-15 source audit found that the reconstruction delivered real foundations but still contains material contract gaps and parallel legacy architecture. Official reconstruction M6 is therefore **blocked** until REC-C0..REC-C7 close.
+C1.5 (RESTART/RECOVERY) closed at `5bbf7748` on `main`. C1.6 closes
+the two gaps C1.5 explicitly deferred:
 
-Immediate work:
+1. `delete_session` must refuse to delete a still-live probe with a
+   typed error (no silent probe stop, no partial state tear-down).
+2. `events_read` must surface retention and tail facts on the success
+   path (`retained_from_seq`, `history_truncated`, `tail.state`,
+   `tail.tail_seq`), and `CursorStale` must carry structured
+   `requested_next_seq` + `retained_from_seq` instead of being parsed
+   out of error text.
 
-- restore default CI/coverage to green;
-- compile/test feature-only code explicitly;
-- make `/reconstruction-contracts.toml` the current requirement truth ledger;
-- enforce architecture dependency and legacy-use ratchets in CI;
-- reconcile README/API capability claims with verified behavior;
-- then cut agent-visible evidence over to the authoritative ExecutionLog.
+C1.6 does **not** start REC-C2 (legacy/event-path deletion); that
+remains blocked behind the REC-C1.8 handoff. C1.6 also does **not**
+invent a "retention policy" name on the wire — only facts already in
+the manifest become visible.
 
-Primary plan:
+C1.6.0 (first commit of the cycle) reconciles the documentary drift
+left by C1.5 close (`active_gate` in reconstruction-contracts.toml +
+the "Active milestone" line above). The first cycle commit may touch
+both the contracts file and the roadmap to put them on the same side.
 
-`docs/chronos-agentic-reconstruction/docs/reconstruction/CONVERGENCE_PLAN.md`
-
-Acceptance:
-
-`docs/chronos-agentic-reconstruction/docs/roadmap/MILESTONE_ACCEPTANCE.md`
+Primary plan: `cycle-artifacts/p-3416cfb8288f8964/rec-c1-6-lifecycle-retention-wire/proposal.md`
+Acceptance: REC-C1's remaining acceptance gates (C1-01 10k / two
+consumers / forced gap, C1-05 time semantics) exercised end-to-end
+against the production wire after C1.6 ships.
 
 ## Convergence sequence
 
-1. **REC-C0 — Restore the truth baseline** — ACTIVE
-2. **REC-C1 — ExecutionLog cutover and truthful reads**
-3. **REC-C2 — Legacy evidence/event-path deletion**
+1. **REC-C0 — Restore the truth baseline** — CLOSED (C0.5-D sentinel)
+2. **REC-C1 — ExecutionLog cutover and truthful reads** — IN PROGRESS
+    * REC-C1.0..C1.4 truth invariants, REC-C1.5 restart/recovery — CLOSED
+    * REC-C1.6 lifecycle-safe delete + retention on wire — **ACTIVE**
+    * REC-C1.7 (placeholder until C1.6 plans land)
+    * REC-C1.8 handoff (gate before C2)
+3. **REC-C2 — Legacy evidence/event-path deletion** — BLOCKED until REC-C1.8
 4. **REC-C3 — Hexagonal boundary closure**
 5. **REC-C4 — SOLID + connascence reduction**
 6. **REC-C5 — Canonical Agent API convergence**
@@ -55,6 +66,8 @@ The following cycle/milestone records remain historically closed. Their close st
   - repository governance/vault hygiene; distinct from official reconstruction M9.
 - **m10-vault-ms-cleanup** — closed 2026-09-15
   - repository governance namespace; distinct from official reconstruction M10 Execution Explorer.
+- **rec-c1-5-closure** — closed 2026-09-17 (merged --no-ff into `main` as `a1a79c80`; tag `rec-c1.5-closure`).
+  - canonical ExecutionLog root resolver, MCP startup bootstrap, durable delete, durable seal on clean stop. Four real-process sandbox UATs (R1..R4) plus the readiness invariant.
 
 ## Naming rule
 

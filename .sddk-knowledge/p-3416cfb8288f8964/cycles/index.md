@@ -34,6 +34,8 @@ Append-only index of all completed cycles in this vault.
 | rec-c0 | rec-c0-5-b-probe-inject-capability | A-min | — | `98f9dba4f35ee3e0edf61c2132bd9d84edd25fdb` | CLOSED |
 | rec-c0 | rec-c0-5-c-fixture-discovery | A-min | — | `02c2a5528687d8a6f8045665f61b9c8a03c499fa` | CLOSED |
 
+| rec-c1 | rec-c1-5-closure | A-lite | rec-c1.5-closure | `5bbf774888c3bced7967e3e060859d9a78d7035a` | CLOSED |
+
 See `changes/archive/` for full archive manifests of closed cycles.
 
 ## Metadata
@@ -42,7 +44,8 @@ See `changes/archive/` for full archive manifests of closed cycles.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-16T07:00Z |
-| Total cycles | 98 |
+| Last updated | 2026-09-17T07:00Z |
+| Total cycles | 99 |
 | m10 cycles | 13 (rows above) |
-| Last archive | rec-c0-5-c-fixture-discovery |
+| rec-c1 cycles | 1 (rec-c1-5-closure) |
+| Last archive | rec-c1-5-closure |
