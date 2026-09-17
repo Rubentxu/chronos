@@ -349,6 +349,65 @@ pub type TripwireManagerHandle = Arc<TripwireManager>;
 mod tests {
     use super::*;
 
+    // ------------------------------------------------------------------
+    // REC-C2.0 characterizations (measure reality; not aspirational).
+    // ------------------------------------------------------------------
+
+    /// CHAR-C2-04: `Tripwire::fire_count` is initialized to 0 and never
+    /// mutated. `TripwireManager::evaluate` builds `TripwireFired` values
+    /// from `&self` conditions and `record_fired` appends them to the
+    /// buffer; nothing writes back to `Tripwire.fire_count`. So every
+    /// `list()` reports `fire_count = 0` no matter how many times a
+    /// tripwire fired — a stale, parallel counter that must be replaced by
+    /// a count derived from persisted evidence (C2.1).
+    #[test]
+    fn char_c2_04_fire_count_is_always_zero() {
+        let mgr = TripwireManager::new();
+        mgr.register(TripwireCondition::Signal { numbers: vec![11] });
+
+        for i in 0..3 {
+            let fired = mgr.evaluate(&make_signal_event(i + 1, 11));
+            assert_eq!(fired.len(), 1, "the tripwire fired");
+        }
+
+        // Three firings happened...
+        assert_eq!(mgr.drain_fired().len(), 3, "three fired records exist");
+        // ...but the reported counter is still zero.
+        let listed = mgr.list();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(
+            listed[0].fire_count, 0,
+            "char: fire_count is never incremented by any firing path"
+        );
+    }
+
+    /// CHAR-C2-05 (mechanism): the fired buffer is a single global with no
+    /// consumer scoping. Evaluating the same event twice appends two
+    /// `TripwireFired` entries, and every later `drain_fired` empties it for
+    /// all consumers. `probe_drain` drives exactly this by calling
+    /// `evaluate_semantic` for every event it reads, so consumer A's read
+    /// mutates evidence that consumer B would observe.
+    #[test]
+    fn char_c2_05_fired_buffer_has_no_consumer_scoping() {
+        let mgr = TripwireManager::new();
+        mgr.register(TripwireCondition::Signal { numbers: vec![11] });
+
+        let ev = make_signal_event(1, 11);
+        // Two reads of the same event (two consumers, or one consumer
+        // re-reading) both land in the same buffer.
+        mgr.evaluate(&ev);
+        mgr.evaluate(&ev);
+
+        let all = mgr.drain_fired();
+        assert_eq!(
+            all.len(),
+            2,
+            "char: repeated evaluation duplicates evidence in the shared buffer"
+        );
+        // And the drain is global: B now sees nothing.
+        assert!(mgr.drain_fired().is_empty());
+    }
+
     fn make_signal_event(id: u64, signal: i32) -> TraceEvent {
         TraceEvent::signal(id, id * 1000, 1, signal, "SIGTEST", 0)
     }

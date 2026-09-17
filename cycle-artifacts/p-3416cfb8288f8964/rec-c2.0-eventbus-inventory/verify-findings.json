@@ -1,0 +1,87 @@
+{
+  "subject": {
+    "head_sha": "PENDING_MERGE_SHA",
+    "base_sha": "063cbdf8",
+    "cycle_id": "rec-c2.0-eventbus-inventory"
+  },
+  "cycle_id": "rec-c2.0-eventbus-inventory",
+  "verdict": "passed",
+  "all_passed": true,
+  "lens_summary": {
+    "drift": "REC-C2.0 turns the legacy EventBus surface into a measured, monotonically shrinking inventory (37 production occurrences) and arms a four-rule ratchet in the architecture gate. No runtime behavior changes. Six characterizations measure today's reality and surface two real defects (retained_until_session_end destroys evidence; fire_count never increments) that become REC-C2.1 DoD items. A pre-existing red architecture gate (TRUTH-001/002/003 missing the policy-required uat field) was repaired in-cycle.",
+    "findings_count": 3,
+    "tiers_run": ["T0", "T3", "T_chronos_native_serial", "arch-gate", "legacy-evb-ratchet"],
+    "source_schema": "rec-c2.0-eventbus-inventory"
+  },
+  "findings": [
+    {
+      "id": "FIND-C2.0-01",
+      "severity": "high",
+      "status": "open",
+      "title": "observe(retention=retained_until_session_end) destroys the evidence it claims to retain",
+      "evidence": [
+        "chronos-services/src/observe.rs:279 calls TripwiresService::list unconditionally, which calls manager.drain_fired() (chronos-services/src/tripwires.rs:58).",
+        "chronos-services/src/observe.rs:302 then returns ([], 0) for RetainedUntilSessionEnd.",
+        "Test: observe::tests::char_c2_03_retained_until_session_end_loses_the_evidence — the retained read returns 0 and the following drained read also returns 0.",
+        "Owner: REC-C2.1. Fix: retain for real (consumer cursor over immutable evidence) or reject as Unsupported."
+      ]
+    },
+    {
+      "id": "FIND-C2.0-02",
+      "severity": "medium",
+      "status": "open",
+      "title": "Tripwire.fire_count is a parallel counter that is never incremented",
+      "evidence": [
+        "chronos-domain/src/tripwire.rs:119 initializes fire_count: 0; Tripwire::fire/fire_semantic take &self and return TripwireFired without touching it.",
+        "TripwireManager::evaluate/evaluate_semantic call record_fired (buffer append) and never write back to the Tripwire.",
+        "Test: tripwire::tests::char_c2_04_fire_count_is_always_zero — 3 firings, list()[0].fire_count == 0.",
+        "Owner: REC-C2.1. Fix: derive the count from persisted TripwireFired evidence."
+      ]
+    },
+    {
+      "id": "FIND-C2.0-03",
+      "severity": "low",
+      "status": "closed",
+      "title": "Architecture gate was RED on main: TRUTH-001/002/003 verified without the required uat field",
+      "evidence": [
+        "Pre-existing on main@063cbdf8 (verified by stash + re-run): scripts/check_architecture_contracts.py reported 'verified contract missing uat' for TRUTH-001/002/003.",
+        "Policy: reconstruction-contracts.toml [policy] verified_requires = [evidence, uat, verify].",
+        "Repaired in-cycle (minimum patch, AGENTS.md §4 default): the uat arrays were added; the UATs already existed and were named in each contract's notes.",
+        "Gate now PASSES."
+      ]
+    }
+  ],
+  "pre_existing_flakes_observed": [
+    {
+      "suite": "chronos-native lib",
+      "test": "ptrace_tracer::tests::*",
+      "status": "PRE-EXISTING in parallel mode per AGENTS.md §6.5; PASS serial.",
+      "tracked": "AGENTS.md §6.5"
+    },
+    {
+      "suite": "vault drift CC#39",
+      "test": "cycles/index.md Total cycles vs m9-only dir count",
+      "status": "PRE-EXISTING structural delta; gov-* owns it.",
+      "tracked": "apply-checkpoint.json::cc_drift"
+    },
+    {
+      "suite": "vault drift CC#18",
+      "test": "rec-c1-7 missing verify-findings.json",
+      "status": "PRE-EXISTING C1.7 gap; gov-* owns the backfill.",
+      "tracked": "apply-checkpoint.json::cc_drift"
+    }
+  ],
+  "regression_battery": {
+    "T0_fmt": "PASS",
+    "T0_clippy": "PASS",
+    "legacy_evb_ratchet": "PASS (37 tracked, baseline 37)",
+    "arch_gate_default": "PASS",
+    "arch_gate_strict_legacy": "FAIL with exactly 7 CANONICAL destructive reads (intended: the gate REC-C2 must clear)",
+    "characterizations": "6/6 PASS (CHAR-C2-01..06)"
+  },
+  "out_of_scope_observed": [
+    "EventBus / dual_push / drain removal is REC-C2.2/C2.3; not attempted here.",
+    "TripwireFired persistence, source_seq identity, and the inverted dual_push are REC-C2.1.",
+    "CC#18 and CC#39 stay in gov-*; neither masked nor fixed here."
+  ]
+}

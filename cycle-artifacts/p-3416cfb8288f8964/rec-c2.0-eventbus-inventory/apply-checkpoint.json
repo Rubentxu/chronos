@@ -1,0 +1,62 @@
+{
+  "cycle_id": "rec-c2.0-eventbus-inventory",
+  "route": "A-min",
+  "status": "in_progress",
+  "verify_status": null,
+  "release_status": null,
+  "archive_status": null,
+  "head_sha": null,
+  "base_sha": "063cbdf8",
+  "main_sha": "063cbdf8",
+  "tag": "rec-c2.0-eventbus-inventory",
+  "branch": "feat/rec-c2.0-eventbus-inventory",
+  "remote_tag": null,
+  "peel_match": null,
+  "tier_required": "T3+gate",
+  "created_at": "2026-09-17",
+  "closed_at": null,
+  "title": "rec-c2.0-eventbus-inventory",
+  "summary": "Opens REC-C2. Machine-readable inventory of every production EventBus / legacy-queue coupling (37 occurrences: 26 COMPATIBILITY, 11 CANONICAL) plus a four-rule ratchet wired into the architecture gate. Six characterizations measure today's reality: dual_push publishes to the bus before a best-effort log append (CHAR-C2-01); observe(list) drains fired evidence globally (CHAR-C2-02); retained_until_session_end destroys rather than retains (CHAR-C2-03); fire_count is never incremented (CHAR-C2-04); the fired buffer has no consumer scoping (CHAR-C2-05); probe_stop/session_snapshot read the bus destructively (CHAR-C2-06). No runtime behavior change.",
+  "blockers": [],
+  "findings_introduced": {
+    "no_action": [],
+    "applied": [
+      "FIND-C2.0-01",
+      "FIND-C2.0-02",
+      "FIND-C2.0-03"
+    ]
+  },
+  "findings_detail": {
+    "FIND-C2.0-01": "retained_until_session_end is a lie: observe(list) drains fired_buffer before applying retention and then returns []. Measured by CHAR-C2-03. REC-C2.1 must make it truly retained (consumer cursor over immutable evidence) or reject it as Unsupported.",
+    "FIND-C2.0-02": "Tripwire.fire_count is never incremented by any firing path (evaluate builds TripwireFired from &self; nothing writes back). Measured by CHAR-C2-04. REC-C2.1 must derive the count from persisted evidence.",
+    "FIND-C2.0-03": "check_architecture_contracts.py was RED on main@063cbdf8 (pre-existing): TRUTH-001/002/003 are status=verified but lacked the policy-required uat field. Repaired in-cycle (minimum patch) by adding the uat arrays; the UATs already existed and were named in notes."
+  },
+  "commits": [],
+  "gates": {
+    "T0_fmt": "PENDING",
+    "T0_clippy": "PENDING",
+    "T1_workspace_lib_plus_tests": "PENDING",
+    "T_chronos_native_serial": "PENDING (--test-threads=1 per AGENTS.md §6.5)",
+    "arch_gate_default": "PENDING (python3 scripts/check_architecture_contracts.py)",
+    "arch_gate_strict_legacy": "PENDING (must FAIL with exactly the 7 CANONICAL destructive reads — that is the C2 gate)",
+    "legacy_evb_ratchet": "PENDING (python3 scripts/check_legacy_evb.py: 37 tracked, baseline 37)"
+  },
+  "pre_existing_flakes_handled": [
+    "chronos-native lib tests require --test-threads=1 (ptrace collisions; documented in AGENTS.md §6.5)",
+    "check_architecture_contracts.py was RED on main (TRUTH-001/002/003 missing uat) — repaired in-cycle, documented as FIND-C2.0-03"
+  ],
+  "smoke_subset": [],
+  "verify_commands": [
+    "python3 scripts/check_legacy_evb.py",
+    "python3 scripts/check_architecture_contracts.py",
+    "cargo test -p chronos-domain --lib tripwire::tests::char_c2",
+    "cargo test -p chronos-services --lib observe::tests::char_c2",
+    "cargo test -p chronos-native --lib probe_backend::tests::char_c2 -- --test-threads=1"
+  ],
+  "archive_convention": "rec/m1 stream uses archive_status=ready; no .sddk-knowledge/changes/archive/rec-c2.0-* directory.",
+  "cc_drift": {
+    "CC#39_pre_existing_intentional": "cycles/index.md Total cycles vs m9-only filesystem count; structural delta, pre-existing. gov-* owns it (do NOT silently mask).",
+    "CC#18_rec_c1_7_pre_existing": "rec-c1-7-projection-authority-acceptance missing verify-findings.json (C1.7 gap). gov-* owns the backfill."
+  },
+  "notes": "Opened at the user's direction immediately after M1 closure. C2.0 is inventory + measurement only: no EventBus removal, no behavior change. The ratchet makes the legacy surface monotonically shrinking and names the 7 CANONICAL destructive reads REC-C2 must clear (--strict-legacy). Two real defects surfaced (FIND-C2.0-01/02) and became REC-C2.1 DoD items; the pre-existing red architecture gate (FIND-C2.0-03) was repaired in-cycle per AGENTS.md §4. Next: REC-C2.1 (TripwireFired as ExecutionLog evidence; persist first, derive second, fan-out last)."
+}
