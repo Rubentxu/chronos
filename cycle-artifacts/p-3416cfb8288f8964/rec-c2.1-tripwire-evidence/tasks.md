@@ -14,7 +14,7 @@
 | C2.1.5a bounded/progress-aware scan + count completeness facts | **DONE** | hidden 64-page cap removed; typed stall; FiringCountSnapshot |
 | C2.1.5b async `query` + derived `fire_count` + honest retention | **DONE** | FIND-C2.0-01/02 closed |
 | C2.1.6 delete the legacy fired queue | **DONE** | fired_buffer/record_fired/drain_fired/evaluate/evaluate_semantic/TripwiresService::list/TripwireFired DTO deleted; ratchet 36→31, fired_buffer 4→0, drain_fired 1→0, CANONICAL 11→6 |
-| C2.1.7 real-process restart UAT + ratchet update | **PENDING** | depends on C2.1.4-6 |
+| C2.1.7 restart/replay identity UAT + wire identities | **DONE** | two-process UAT; firing_seq/source_seq on the wire; stale docs corrected |
 
 ## C2.1.4a note
 
@@ -107,3 +107,35 @@ fire_count           -> projection over ExecutionLog (+ completeness facts)
 consumer progress    -> EventsCursorV1
 legacy fired queue   -> gone
 ```
+
+## DoD status (C2.1.7)
+
+| # | Item | State |
+|---|---|---|
+| 1 | `TripwireFiredSummary` exposes `firing_seq` + `source_seq` | DONE |
+| 2 | Phase A creates Raw S1 and firing F1 | DONE (fixture writes the same bytes the derivation produces) |
+| 3 | Runtime A destroyed completely | DONE (client dropped) |
+| 4 | Phase B: empty manager, same durable root | DONE |
+| 5 | `observe(list)` returns exactly F1 -> S1 | DONE |
+| 6 | `tripwire_id` snapshot survives without the definition | DONE |
+| 7 | count reconstructed from the reopened log | DONE (`rec_c2_1_count_reopen.rs`) |
+| 8 | `observe(query)` does not invent the subscription | DONE (`subscriptions: []`) |
+| 9 | pre-restart cursor works post-restart | DONE (A's cursor used by C) |
+| 10 | wire docs stop describing a destructive buffer | DONE |
+| 11 | no `fired_buffer` / `drain_fired` / `record_fired` | DONE (comments only; ratchet 31) |
+| 12 | ratchet never rises | DONE (31, down from 36) |
+
+## FIND-C2.1-03 (open, scoped to REC-C2.2)
+
+The durable derivation (`derive_firings_from_record` /
+`derive_firings_from_event`) has **no production caller**: its only caller is
+the test helper. So in a live session nothing records a firing yet; the UAT
+fixture writes the bytes the derivation would.
+
+Wiring it correctly means deriving at the point where a `Raw` record is
+accepted into the log, which is the producer seam (`dual_push`) — and the
+native producer has no `TripwireManager`. Deriving inside `probe_drain`
+instead would violate the rule that a firing may only derive from a source
+already accepted by the ExecutionLog, because `probe_drain` still reads the
+legacy bus. That is REC-C2.2 work (canonical consumers off EventBus), which is
+why C2.1 closes without it.
