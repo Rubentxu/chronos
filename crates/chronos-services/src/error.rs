@@ -180,6 +180,22 @@ pub enum ServiceError {
         retained_from_seq: u64,
     },
 
+    /// A destructive operation (`delete_session`) was attempted while the
+    /// target session still has a live probe attached (REC-C1.6).
+    ///
+    /// The service MUST NOT auto-stop the probe (no silent lifecycle
+    /// transition); the caller must explicitly stop it. This error is
+    /// raised before any side effect, so the durable directory and the
+    /// store row are both intact when the caller sees it.
+    #[error(
+        "session '{session_id}' is still active ({hint}); \
+         stop the probe (session_stop) before deletion"
+    )]
+    SessionStillActive {
+        session_id: String,
+        hint: &'static str,
+    },
+
     /// A non-destructive drain encountered a backend error.
     #[error("drain failed: {0}")]
     DrainFailed(String),

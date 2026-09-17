@@ -2962,6 +2962,11 @@ impl ChronosServer {
                     "internal error: unexpected cursor stale",
                 )));
             }
+            Err(ServiceError::SessionStillActive { .. }) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected still-active session",
+                )));
+            }
             Err(ServiceError::DrainFailed(_)) => {
                 return Ok(CallToolResult::error(text_content(
                     "internal error: unexpected drain failure",
@@ -3643,6 +3648,14 @@ impl ChronosServer {
                     self.degraded,
                     output,
                 ))))
+            }
+            Err(e @ ServiceError::SessionStillActive { .. }) => {
+                // REC-C1.6: refuse to delete a still-live session. The service
+                // raised this BEFORE any side effect, so the durable dir and
+                // the store row are intact; we do not run cleanup_session_memory
+                // here because the session is still alive. The Display impl
+                // already names the recovery action (session_stop).
+                Ok(CallToolResult::error(text_content(e.to_string())))
             }
             Err(ServiceError::DeleteFailed(e)) => Ok(CallToolResult::error(text_content(format!(
                 "Failed to delete session '{}': {}",
@@ -4682,6 +4695,28 @@ impl ChronosServer {
 
         match ChronosSessionLifecycleService::start(&lifecycle_ctx, v2_input).await {
             Ok(out) => {
+                // REC-C1.6: mark the session as "live" ONLY when a probe is
+                // actually attached. Spawn/Attach attach a live probe; Load
+                // is a pure read of an already-stopped session and must not
+                // be refused on delete_session. `cleanup_session_memory`
+                // removes this marker on the delete path; `session_stop`
+                // also removes it so a stop-then-delete succeeds.
+                if let Ok(mut live) = self.connected_sessions.lock() {
+                    match out.action {
+                        chronos_services::output::SessionStartAction::Spawn
+                        | chronos_services::output::SessionStartAction::Attach => {
+                            live.insert(out.session_id.clone());
+                        }
+                        chronos_services::output::SessionStartAction::Load => {
+                            // Defensive: ensure no stale marker leaks across
+                            // a load. The marker should never be set for Load
+                            // (no probe), but a prior session_start{action=spawn}
+                            // for the same id would have set it before
+                            // session_stop cleared it.
+                            live.remove(&out.session_id);
+                        }
+                    }
+                }
                 let json = serde_json::to_value(&out).map_err(|e| {
                     rmcp::ErrorData::internal_error(format!("session_start serialize: {}", e), None)
                 })?;
@@ -4749,6 +4784,12 @@ impl ChronosServer {
         // replaces all of that with a single
         // `stop_with_persistence` call that returns the events for us
         // to persist + build_engine on exactly one probe-stop.
+        //
+        // REC-C1.6: the liveness marker is cleared INSIDE each match arm
+        // below (where the session_id is in scope). We do not remove the
+        // marker before the persistence dispatch because we cannot yet
+        // know the session_id in the AlreadyStopped branch shape; the
+        // persisted arm has it directly.
         let (drained_subscriptions, persistence) =
             match ChronosSessionLifecycleService::stop_with_persistence(&lifecycle_ctx, v2_input)
                 .await
@@ -4779,6 +4820,12 @@ impl ChronosServer {
                 ebpf_detached,
                 sealed_at,
             } => {
+                // REC-C1.6: probe is no longer live after a successful stop;
+                // clear the liveness marker so a subsequent delete_session
+                // for this id is allowed (not refused as SessionStillActive).
+                if let Ok(mut live) = self.connected_sessions.lock() {
+                    live.remove(&session_id);
+                }
                 // 1. Persist metadata + events to the redb store so
                 //    `session_start{action=load}` can find the session.
                 let meta = chronos_store::SessionMetadata {
@@ -4830,6 +4877,14 @@ impl ChronosServer {
             SessionStopPersistence::AlreadyStopped { session_id } => {
                 // Idempotent path: load_session and synthesise the
                 // output from the already-persisted metadata + events.
+                // REC-C1.6: the probe was already stopped (likely by a
+                // previous v1 probe_stop) so the liveness marker must
+                // not exist here; defensively clear it to keep the
+                // invariant that any session_id in `connected_sessions`
+                // has a live probe attached.
+                if let Ok(mut live) = self.connected_sessions.lock() {
+                    live.remove(&session_id);
+                }
                 let (meta, events) = match self.store.load_session(&session_id) {
                     Ok(pair) => pair,
                     Err(e) => {
@@ -5939,6 +5994,25 @@ impl ChronosServer {
                 Ok(CallToolResult::error(text_content(format!(
                     "ExecutionLog unavailable for session '{session_id}': {reason}"
                 ))))
+            }
+            Err(ServiceError::CursorStale {
+                requested_next_seq,
+                retained_from_seq,
+            }) => {
+                // REC-C1.6: structured envelope — keep the existing text content
+                // (chronos-sandbox restart_uat R2 already parses it) AND attach a
+                // second json content item carrying the two numbers. The agent can
+                // then re-anchor deliberately without having to scrape text.
+                let mut content = text_content(format!(
+                    "Cursor at seq {requested_next_seq} is stale; the earliest available position is \
+{retained_from_seq}. This is retention, not evidence loss: re-anchor deliberately."
+                ));
+                content.extend(json_content(&serde_json::json!({
+                    "error": "cursor_stale",
+                    "requested_next_seq": requested_next_seq,
+                    "retained_from_seq": retained_from_seq,
+                })));
+                Ok(CallToolResult::error(content))
             }
             Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }

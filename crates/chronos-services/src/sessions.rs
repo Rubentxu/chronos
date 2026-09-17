@@ -204,11 +204,33 @@ impl SessionsService {
     /// this returns `Ok`.
     ///
     /// # Errors
+    /// - `SessionStillActive` if the session is currently in
+    ///   `ctx.connected_sessions` (REC-C1.6). No side effect is taken
+    ///   in this case — the store row and the durable directory both
+    ///   stay intact, and no implicit probe stop is performed.
     /// - `DeleteFailed` if the store delete fails.
     pub async fn delete_session(
         session_id: &str,
         ctx: &SessionsContext<'_>,
     ) -> Result<DeleteResult, ServiceError> {
+        // REC-C1.6: refuse if the session still has a live probe attached.
+        // `connected_sessions` is the canonical "live" set, already used by
+        // save_session / list_sessions / cleanup_session_memory. We read it
+        // BEFORE any destructive operation so a refusal cannot leave
+        // partial state on disk.
+        {
+            let active = ctx
+                .connected_sessions
+                .lock()
+                .map_err(|_| ServiceError::LockPoisoned)?;
+            if active.contains(session_id) {
+                return Err(ServiceError::SessionStillActive {
+                    session_id: session_id.to_string(),
+                    hint: "stop the probe (session_stop) and try again",
+                });
+            }
+        }
+
         let store_ref = ctx.store;
         store_ref
             .delete_session(session_id)
@@ -554,6 +576,117 @@ mod tests {
             result,
             Err(ServiceError::DeleteFailed(ref e)) if e.contains("not found")
         ));
+    }
+
+    // -------------------------------------------------------------------------
+    // REC-C1.6: delete_session on a live session is refused
+    // -------------------------------------------------------------------------
+
+    /// DEL-LIVE-3 (unit form): when the target session is registered as
+    /// "connected" (a live probe is attached), `delete_session` MUST
+    /// refuse without performing any destructive side effect.
+    ///
+    /// This proves:
+    ///   1. The error variant is `ServiceError::SessionStillActive`
+    ///      (not a generic `DeleteFailed`).
+    ///   2. The error text carries the session id and the action hint.
+    ///   3. The store row is still present after the refusal — the
+    ///      refusal happened BEFORE the store.delete_session call.
+    #[tokio::test]
+    async fn delete_session_refuses_live_session_unit() {
+        let store = make_store();
+        let engines = make_engines("live-s1");
+        let languages = make_languages();
+        // Mark the session as live (probe writer attached).
+        let mut active = HashSet::new();
+        active.insert("live-s1".to_string());
+        let connected = std::sync::Mutex::new(active);
+        let ctx = make_context(&engines, &languages, &connected, &store);
+
+        // First save so the row exists; this simulates a "real" session
+        // that the user might want to delete later.
+        SessionsService::save_session("live-s1", Language::C, "main".to_string(), &ctx)
+            .await
+            .unwrap();
+
+        let result = SessionsService::delete_session("live-s1", &ctx).await;
+
+        match result {
+            Err(ServiceError::SessionStillActive { session_id, hint }) => {
+                assert_eq!(session_id, "live-s1");
+                assert!(
+                    hint.contains("session_stop"),
+                    "hint must name the recovery action; got {hint:?}"
+                );
+                assert!(
+                    hint.contains("probe"),
+                    "hint must mention the probe; got {hint:?}"
+                );
+            }
+            other => panic!(
+                "expected SessionStillActive refusal, got {other:?}\n\
+                 (live sessions must NEVER produce DeleteFailed nor Ok)"
+            ),
+        }
+
+        // The store row is still there — the refusal happened BEFORE
+        // any destructive call.
+        let still_there = store
+            .list_sessions()
+            .unwrap_or_default()
+            .iter()
+            .any(|s| s.session_id == "live-s1");
+        assert!(
+            still_there,
+            "store row for live-s1 must survive a refused delete"
+        );
+    }
+
+    /// Sanity: a session that was live and is then explicitly removed
+    /// from `connected_sessions` becomes deletable. This is what
+    /// `session_stop` would do; we are testing only the service-side
+    /// precondition, so the drop in `connected_sessions` is a manual
+    /// stand-in.
+    #[tokio::test]
+    async fn delete_session_after_unconnected_succeeds() {
+        let store = make_store();
+        let engines = make_engines("transitions-to-deletable");
+        let languages = make_languages();
+        let mut active = HashSet::new();
+        active.insert("transitions-to-deletable".to_string());
+        let connected = std::sync::Mutex::new(active);
+        let ctx = make_context(&engines, &languages, &connected, &store);
+
+        SessionsService::save_session(
+            "transitions-to-deletable",
+            Language::C,
+            "main".to_string(),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+        // First call: refused (live).
+        let refused = SessionsService::delete_session("transitions-to-deletable", &ctx).await;
+        assert!(matches!(
+            refused,
+            Err(ServiceError::SessionStillActive { .. })
+        ));
+
+        // Simulate session_stop (in production that would remove from
+        // connected_sessions AND seal the manifest). The service sees
+        // only the connected_sessions set.
+        {
+            let mut g = connected.lock().unwrap();
+            g.remove("transitions-to-deletable");
+        }
+
+        // Second call: succeeds.
+        let ok = SessionsService::delete_session("transitions-to-deletable", &ctx).await;
+        assert!(
+            ok.is_ok(),
+            "delete_session must succeed once the session is no longer live; got {ok:?}"
+        );
     }
 
     // -------------------------------------------------------------------------

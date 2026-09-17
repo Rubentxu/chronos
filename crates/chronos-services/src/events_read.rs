@@ -178,6 +178,8 @@ impl ChronosEventsReadService {
             } else {
                 Some(gap_summary)
             },
+            retention: page.retention,
+            tail: page.tail,
             provenance: EventsReadProvenance {
                 source: "execution_log".into(),
                 session_id: input.session_id,

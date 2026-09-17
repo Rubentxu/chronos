@@ -1599,6 +1599,13 @@ pub enum EventsReadOutput {
         completeness: crate::events_log_read::CompletenessReport,
         /// Always `None` in m7-01 (see honest disclosure above).
         gap_summary: Option<Vec<serde_json::Value>>,
+        /// REC-C1.6: facts about the durable retention boundary. Always
+        /// populated so the agent can reason about `retained_from_seq`
+        /// without a separate call. NOT a retention policy.
+        retention: crate::events_log_read::RetentionFacts,
+        /// REC-C1.6: facts about the tail. `state` is always populated;
+        /// `tail_seq` is `None` iff `state == Unknown` (no inference).
+        tail: crate::events_log_read::TailFacts,
         provenance: EventsReadProvenance,
     },
     #[serde(rename = "by_id")]
