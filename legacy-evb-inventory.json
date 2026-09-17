@@ -208,18 +208,6 @@
       "removal_gate": "REC-C2.3"
     },
     {
-      "key": "crates/chronos-native/src/probe_backend.rs::drain_events::snapshot#1",
-      "path": "crates/chronos-native/src/probe_backend.rs",
-      "symbol": "drain_events",
-      "token": "snapshot",
-      "kind": "destructive",
-      "line": 1107,
-      "class": "CANONICAL",
-      "owner": "REC-C2.2",
-      "replacement": "",
-      "removal_gate": "REC-C2.2"
-    },
-    {
       "key": "crates/chronos-native/src/probe_backend.rs::read_since::read_since#1",
       "path": "crates/chronos-native/src/probe_backend.rs",
       "symbol": "read_since",
@@ -227,42 +215,6 @@
       "kind": "read",
       "line": 1115,
       "class": "COMPATIBILITY",
-      "owner": "REC-C2.2",
-      "replacement": "",
-      "removal_gate": "REC-C2.2"
-    },
-    {
-      "key": "crates/chronos-native/src/probe_backend.rs::drain_raw_events::drain_raw_events#1",
-      "path": "crates/chronos-native/src/probe_backend.rs",
-      "symbol": "drain_raw_events",
-      "token": "drain_raw_events",
-      "kind": "destructive",
-      "line": 1123,
-      "class": "CANONICAL",
-      "owner": "REC-C2.2",
-      "replacement": "",
-      "removal_gate": "REC-C2.2"
-    },
-    {
-      "key": "crates/chronos-native/src/probe_backend.rs::drain_raw_events::snapshot_raw#1",
-      "path": "crates/chronos-native/src/probe_backend.rs",
-      "symbol": "drain_raw_events",
-      "token": "snapshot_raw",
-      "kind": "destructive",
-      "line": 1133,
-      "class": "CANONICAL",
-      "owner": "REC-C2.2",
-      "replacement": "",
-      "removal_gate": "REC-C2.2"
-    },
-    {
-      "key": "crates/chronos-services/src/browser_probe.rs::stop::drain_raw_events#1",
-      "path": "crates/chronos-services/src/browser_probe.rs",
-      "symbol": "stop",
-      "token": "drain_raw_events",
-      "kind": "destructive",
-      "line": 212,
-      "class": "CANONICAL",
       "owner": "REC-C2.2",
       "replacement": "",
       "removal_gate": "REC-C2.2"

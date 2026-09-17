@@ -3,7 +3,6 @@
 //! Any capture backend (ptrace/native, eBPF, mock) implements `TraceAdapter`
 //! to provide a uniform interface for the query engine and MCP server.
 
-use crate::semantic::SemanticEvent;
 use crate::{CaptureSession, EventCursor, ReadResult, TraceError, TraceEvent};
 
 // ============================================================================
@@ -29,16 +28,6 @@ pub trait ProbeBackend: Send {
     /// Human-readable name of this backend.
     fn name(&self) -> &str;
 
-    /// Drain all buffered semantic events that arrived since the last call.
-    ///
-    /// **DESTRUCTIVE**: this empties the underlying buffer. Reserved for
-    /// `session_snapshot` / `probe_stop`, where the intent is to consume
-    /// every buffered event. Live read paths MUST use `read_since` instead.
-    ///
-    /// Returns an empty vec if no events are ready (non-blocking).
-    /// Uses interior mutability (Arc<EventBus>), so `&self` is sufficient.
-    fn drain_events(&self) -> Result<Vec<SemanticEvent>, TraceError>;
-
     /// **Non-destructive**, cursor-based read of buffered semantic events.
     ///
     /// Reading the same cursor twice returns the same event set (provided
@@ -53,16 +42,16 @@ pub trait ProbeBackend: Send {
     ///
     /// This is **blocking**: it signals the probe thread to stop and waits
     /// (bounded by an implementation-defined timeout) for the capture thread
-    /// to exit before returning. This guarantees that a subsequent
-    /// [`ProbeBackend::drain_raw_events`] call observes every event the probe
-    /// emitted (no drain/stop race: MS-RACE-FIX, ADR-0005).
-    fn stop_probe(&self, session: &CaptureSession) -> Result<(), TraceError>;
-
-    /// Drain all raw trace events (for QueryEngine construction).
+    /// to exit before returning. This guarantees that a subsequent read of the
+    /// session's `ExecutionLog` observes every event the probe emitted (no
+    /// drain/stop race: MS-RACE-FIX, ADR-0005).
     ///
-    /// Unlike `drain_events()` which returns semantic events for LLM consumption,
-    /// this returns the underlying `TraceEvent` for index building.
-    fn drain_raw_events(&self) -> Vec<TraceEvent>;
+    /// REC-C2.2.4: `drain_events` and `drain_raw_events` were REMOVED from this
+    /// trait. Both were destructive reads of an adapter-owned buffer, so they
+    /// could never be the authoritative source: the first consumer to call them
+    /// emptied the buffer, and a bounded buffer silently capped the answer.
+    /// Consumers read the session's `ExecutionLog` instead.
+    fn stop_probe(&self, session: &CaptureSession) -> Result<(), TraceError>;
 }
 
 // ============================================================================

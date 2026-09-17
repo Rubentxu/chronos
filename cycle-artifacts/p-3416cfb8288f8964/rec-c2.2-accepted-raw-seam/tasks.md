@@ -6,10 +6,10 @@
 |---|---|
 | C2.2.0 accepted-Raw seam + FIND-C2.1-03 | DONE |
 | C2.2.1 spawn/attach producer convergence | DONE (attach now uses the same seam) |
-| C2.2.2 `probe_drain` not a destructive authority | IN PROGRESS | canonical reader + DRAIN-1..6 + explicit ResolveContext landed; the wire switchover remains |
-| C2.2.3 `probe_stop`/`session_snapshot` consumers off EventBus | PENDING |
-| C2.2.4 remaining CANONICAL destructive reads -> 0 | PENDING (6 left) |
-| C2.2.5 UAT-C2-01/02/03 characterization | PENDING |
+| C2.2.2 `probe_drain` not a destructive authority | DONE | canonical reader + DRAIN-1..7 + explicit ResolveContext + wire switchover on `ecv1`; completeness converged on the C1 model; decode is fail-closed |
+| C2.2.3 `probe_stop`/`session_snapshot` consumers off EventBus | DONE | both read `canonical_drain::read_all_raw_events`; STOP-1..4 + `rec_c2_2_canonical_consumers.rs` (tiny ring, repeatable snapshot) |
+| C2.2.4 remaining CANONICAL destructive reads -> 0 | DONE | `ProbeBackend::drain_events`/`drain_raw_events` REMOVED; ratchet CANONICAL=0 and `--strict` (REC-C2 close mode) PASSES |
+| C2.2.5 UAT-C2-01/02/03 characterization | IN PROGRESS |
 
 ## Evidence
 
@@ -90,3 +90,46 @@ Remaining (the wire switchover, deliberately its own commit):
 - `cursor_stale: bool` is replaced (on the canonical route) by the
   completeness vocabulary: Complete / GapDetected / Partial.
 - The MCP handler and every sandbox test touching `probe_drain` move with it.
+
+
+## C2.2.4 — the destructive read API is gone
+
+`ProbeBackend` no longer declares `drain_events` or `drain_raw_events`. Both
+were destructive reads of an adapter-owned buffer, so neither could ever be the
+authoritative source, and a shared backend handed one consumer the power to
+empty the buffer another consumer still needed.
+
+Removed from the trait and from `NativeProbeBackend`, `EbpfAdapter`,
+`MockEbpfAdapter` and `BrowserAdapter`. Where a browser-local consuming read is
+still genuinely wanted (`browser_probe_drain` is documented as consuming), it
+survives as an inherent, browser-local `take_semantic_events`, not as a method
+on the shared trait. `BrowserAdapter::raw_events()` is the non-destructive read
+the stop path now uses.
+
+Side effect worth recording: the ebpf mock's semantic read used to hardcode
+`source_event_id: 0`. Ids are now assigned over the whole snapshot, so a paged
+read keeps the same identity for the same event.
+
+### Ratchet
+
+CANONICAL 6 -> 0, tracked total 28 -> 21. Every step was a real disappearance:
+the ratchet reported each entry as a stale waiver before it was removed, and
+`--strict` (the REC-C2 close gate) now passes.
+
+### Characterization retired
+
+`CHAR-C2-06` asserted that `drain_raw_events()` consumed the bus across
+consumers. The behaviour it characterized no longer exists, so the test was
+rewritten to assert the invariant that outlives it: publishing twice must leave
+both observations readable, because a read path must not empty a shared
+transport. Recorded here rather than deleted silently.
+
+### FIND-C2.2-04 (new, no action in this cycle)
+
+Browser sessions have NO `ExecutionLog`. `chronos-browser` does not depend on
+`chronos-log`, and `BrowserProbeContext` carries no log registry, so browser
+evidence has no durable home: the adapter buffer is bounded and drops the oldest
+events at capacity. C2.2.4 removed the destructive read and stopped the stop
+path from destroying evidence, but "ExecutionLog owns occurrence" is still not
+true for browser captures. That needs the browser capture loop to append through
+an accepted-Raw seam, which is its own cycle.

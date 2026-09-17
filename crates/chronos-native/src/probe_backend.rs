@@ -18,7 +18,7 @@ use crate::native_adapter::NativeAdapter;
 use crate::ptrace_tracer::{PtraceConfig, PtraceTracer};
 use crate::symbol_resolver::SymbolResolver;
 use chronos_domain::bus::EventBusHandle;
-use chronos_domain::semantic::{ResolveContext, ResolverPipeline, SemanticEvent, SemanticResolver};
+use chronos_domain::semantic::{ResolveContext, ResolverPipeline, SemanticResolver};
 use chronos_domain::{
     CaptureConfig, CaptureSession, Language, ProbeBackend, SourceLocation, TraceError, TraceEvent,
 };
@@ -1145,11 +1145,6 @@ impl ProbeBackend for NativeProbeBackend {
         "native-ptrace"
     }
 
-    /// Drain all buffered semantic events from the event bus.
-    fn drain_events(&self) -> Result<Vec<SemanticEvent>, TraceError> {
-        Ok(self.event_bus.snapshot())
-    }
-
     /// Non-destructive read on the underlying EventBus (m0-01-live-pagination).
     fn read_since(
         &self,
@@ -1161,21 +1156,9 @@ impl ProbeBackend for NativeProbeBackend {
     fn stop_probe(&self, session: &CaptureSession) -> Result<(), TraceError> {
         self.stop_probe(session)
     }
-
-    fn drain_raw_events(&self) -> Vec<TraceEvent> {
-        self.drain_raw_events()
-    }
 }
 
 impl NativeProbeBackend {
-    /// Drain all buffered raw trace events from the event bus.
-    ///
-    /// Used by MCP tools (probe_stop, session_snapshot) to build QueryEngine
-    /// which requires the original TraceEvent data.
-    pub fn drain_raw_events(&self) -> Vec<TraceEvent> {
-        self.event_bus.snapshot_raw()
-    }
-
     /// Get the PID of the currently traced process.
     ///
     /// Returns `None` if the probe hasn't started yet or has already stopped.
@@ -1332,25 +1315,37 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// CHAR-C2-06: `drain_raw_events()` is a destructive `snapshot_raw()`.
-    /// Two consumers of the same session cannot both read it: the first
-    /// drains the ring and the second observes nothing. This is the path
-    /// `probe_stop` and `session_snapshot` use to build the QueryEngine.
+    /// CHAR-C2-06 was retired in REC-C2.2.4, together with the behaviour it
+    /// characterized. It asserted that `drain_raw_events()` consumed the
+    /// `EventBus` ring across consumers — which is precisely why it was not
+    /// allowed to remain a read path. There is no destructive raw drain left to
+    /// characterize: `ProbeBackend` no longer declares one, and the canonical
+    /// replacement is `chronos_services::canonical_drain::read_all_raw_events`,
+    /// whose non-destructiveness is asserted by `stop_1_reading_all_raw_is_repeatable`.
+    ///
+    /// The invariant below outlives the method: the bus is a transport, and a
+    /// read of it can never be the authoritative answer.
     #[test]
-    fn char_c2_06_drain_raw_events_is_destructive_across_consumers() {
-        let bus = chronos_domain::bus::EventBus::new_shared(64);
+    fn char_c2_06_destructive_raw_drain_is_gone_and_the_bus_is_not_authority() {
+        let bus = chronos_domain::bus::EventBus::new_shared(8);
         let backend = NativeProbeBackend::new(bus.clone());
-        bus.push_raw(TraceEvent::signal(1, 100, 1, 11, "SIGSEGV", 0));
-        bus.push_raw(TraceEvent::signal(2, 200, 1, 11, "SIGSEGV", 0));
 
-        let first = backend.drain_raw_events();
-        let second = backend.drain_raw_events();
+        // Whatever the bus holds, the backend exposes no consuming read.
+        // Publication is observable, and a second observer still sees it.
+        // `snapshot_raw` is itself a consuming read, so it is called exactly once
+        // at the end: two accepted observations must both still be there.
+        let first = TraceEvent::signal(1, 100, 1, 11, "SIGSEGV", 0);
+        NativeProbeBackend::accept_and_publish(&bus, None, &first, 1, None).expect("accepted");
+        let second = TraceEvent::signal(2, 200, 1, 12, "SIGSEGV", 0);
+        NativeProbeBackend::accept_and_publish(&bus, None, &second, 2, None).expect("accepted");
 
-        assert_eq!(first.len(), 2, "first consumer sees both events");
-        assert!(
-            second.is_empty(),
-            "char: the second consumer loses every event (destructive snapshot)"
+        assert_eq!(
+            bus.snapshot_raw().len(),
+            2,
+            "nothing consumed the bus between the two observations: a read path must not \
+             empty a shared transport"
         );
+        let _ = backend;
     }
 
     #[test]

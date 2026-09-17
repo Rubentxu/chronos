@@ -153,7 +153,7 @@ async fn test_e2e_browser_probe_wasm_detection() {
             tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
             // Drain events
-            let events: Result<Vec<_>, _> = adapter.drain_events();
+            let events: Result<Vec<_>, _> = adapter.take_semantic_events();
             let event_count = events.as_ref().map(|e| e.len()).unwrap_or(0);
             println!("Drained {} events", event_count);
 
@@ -205,7 +205,7 @@ async fn test_e2e_wasm_module_detection() {
             // Give time for WASM detection
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
-            let events: Result<Vec<_>, _> = adapter.drain_events();
+            let events: Result<Vec<_>, _> = adapter.take_semantic_events();
             let event_count = events.as_ref().map(|e| e.len()).unwrap_or(0);
             println!("Events captured: {}", event_count);
 

@@ -32,16 +32,16 @@ fn test_browser_adapter_name() {
 fn test_browser_adapter_drain_events_empty() {
     let adapter = BrowserAdapter::new();
     // Initially, drain should return empty since no events have been captured
-    let result = adapter.drain_events();
+    let result = adapter.take_semantic_events();
     assert!(result.is_ok());
     let events = result.unwrap();
     assert!(events.is_empty());
 }
 
 #[test]
-fn test_browser_adapter_drain_raw_events_empty() {
+fn test_browser_adapter_raw_events_empty() {
     let adapter = BrowserAdapter::new();
-    // Initially, drain_raw should return empty
-    let events = adapter.drain_raw_events();
+    // Initially, raw_events should return empty
+    let events = adapter.raw_events();
     assert!(events.is_empty());
 }

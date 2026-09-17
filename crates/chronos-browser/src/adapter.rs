@@ -143,7 +143,7 @@ impl BrowserAdapter {
 
         // Drain events (convert TraceError to BrowserError)
         let events = adapter
-            .drain_events()
+            .take_semantic_events()
             .map_err(|e| BrowserError::CdpConnectionFailed(e.to_string()))?;
 
         // Stop probe (cleanup Chrome)
@@ -356,16 +356,17 @@ impl Drop for BrowserAdapter {
     }
 }
 
-impl ProbeBackend for BrowserAdapter {
-    fn is_available(&self) -> bool {
-        Self::is_chrome_available()
-    }
-
-    fn name(&self) -> &str {
-        "browser-wasm"
-    }
-
-    fn drain_events(&self) -> Result<Vec<SemanticEvent>, TraceError> {
+impl BrowserAdapter {
+    /// Take every buffered semantic event, EVICTING the buffer.
+    ///
+    /// REC-C2.2.4: this was `ProbeBackend::drain_events`, a destructive read
+    /// that no longer belongs on the backend trait — a consumer of a shared
+    /// backend could empty the buffer out from under another, and the answer
+    /// described a bounded buffer rather than the capture. It survives as an
+    /// inherent, browser-local operation because `browser_probe_drain` is
+    /// documented as consuming, and because the browser has no ExecutionLog
+    /// yet (FIND-C2.2-04).
+    pub fn take_semantic_events(&self) -> Result<Vec<SemanticEvent>, TraceError> {
         let mut s = self.state.lock().unwrap();
         let raw_events: Vec<TraceEvent> = s.event_buffer.drain(..).collect();
 
@@ -392,12 +393,32 @@ impl ProbeBackend for BrowserAdapter {
         Ok(semantic_events)
     }
 
+    /// A non-destructive read of the buffered raw events.
+    ///
+    /// REC-C2.2.4: replaced the destructive `drain_raw_events()`. The browser
+    /// buffer is bounded and drops the oldest events at capacity (FIND-C2.2-04),
+    /// but at least a read no longer removes evidence another consumer still
+    /// needs, and the stop path no longer empties the buffer that
+    /// `browser_probe_drain` reads.
+    pub fn raw_events(&self) -> Vec<TraceEvent> {
+        let s = self.state.lock().unwrap();
+        s.event_buffer.iter().cloned().collect()
+    }
+}
+
+impl ProbeBackend for BrowserAdapter {
+    fn is_available(&self) -> bool {
+        Self::is_chrome_available()
+    }
+
+    fn name(&self) -> &str {
+        "browser-wasm"
+    }
+
     /// Non-destructive read for the BrowserAdapter (m0-01-live-pagination).
     ///
-    /// The browser event buffer is a `VecDeque` consumed by `drain_events` /
-    /// `drain_raw_events`. Until we wire a full non-destructive backend, this
-    /// returns `CursorStatus::Stale` whenever a cursor is provided so the
-    /// MCP layer falls back to the destructive read path.
+    /// The browser event buffer is a `VecDeque`. It is NOT consumed here, so a
+    /// reader cannot truncate another reader's history (REC-C2.2.4).
     fn read_since(
         &self,
         cursor: Option<chronos_domain::EventCursor>,
@@ -411,9 +432,8 @@ impl ProbeBackend for BrowserAdapter {
                 current: total,
             });
         }
-        // No cursor: snapshot a clone (still non-destructive because we don't
-        // consume from the buffer here). The destructive `drain_events` path
-        // remains available for callers that explicitly want eviction.
+        // No cursor: snapshot a clone. Nothing is consumed, so a later read by
+        // another consumer still sees these events.
         let raw_events: Vec<TraceEvent> = s.event_buffer.iter().cloned().collect();
         drop(s);
         let ctx = ResolveContext {
@@ -437,11 +457,6 @@ impl ProbeBackend for BrowserAdapter {
             },
             status,
         ))
-    }
-
-    fn drain_raw_events(&self) -> Vec<TraceEvent> {
-        let mut s = self.state.lock().unwrap();
-        s.event_buffer.drain(..).collect()
     }
 
     fn stop_probe(&self, _session: &CaptureSession) -> Result<(), TraceError> {
@@ -501,26 +516,45 @@ mod tests {
     }
 
     #[test]
-    fn test_drain_events_clears_buffer() {
-        // Verify drain_events clears the buffer after reading
+    fn test_take_semantic_events_clears_buffer() {
+        // The browser-local consuming take still evicts: `browser_probe_drain`
+        // is documented as consuming, and that contract is unchanged.
         let adapter = BrowserAdapter::new();
 
-        let first = adapter.drain_events().unwrap();
+        let first = adapter.take_semantic_events().unwrap();
         assert!(first.is_empty());
 
-        let second = adapter.drain_events().unwrap();
+        let second = adapter.take_semantic_events().unwrap();
         assert!(second.is_empty());
     }
 
+    /// REC-C2.2.4: `drain_raw_events` was destructive. `raw_events` reads
+    /// without evicting, so a second consumer still sees the events.
     #[test]
-    fn test_drain_raw_events_clears_buffer() {
+    fn test_raw_events_does_not_clear_buffer() {
         let adapter = BrowserAdapter::new();
 
-        let first = adapter.drain_raw_events();
+        let first = adapter.raw_events();
         assert!(first.is_empty());
 
-        let second = adapter.drain_raw_events();
+        let second = adapter.raw_events();
         assert!(second.is_empty());
+
+        // Push through the public capture seam and prove the buffer survives a read.
+        {
+            let mut s = adapter.state.lock().unwrap();
+            s.event_buffer.push_back(chronos_domain::TraceEvent::signal(
+                1, 100, 1, 11, "SIGSEGV", 0,
+            ));
+        }
+        let read = adapter.raw_events();
+        assert_eq!(read.len(), 1, "raw_events must see the buffered event");
+        let read_again = adapter.raw_events();
+        assert_eq!(
+            read_again.len(),
+            1,
+            "raw_events must not consume: the retired drain returned 0 here"
+        );
     }
 
     #[test]

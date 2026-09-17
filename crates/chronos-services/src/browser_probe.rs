@@ -209,7 +209,12 @@ impl BrowserProbeService {
             );
         }
 
-        let events: Vec<TraceEvent> = browser_probe.adapter.drain_raw_events();
+        // REC-C2.2.4: a non-destructive read. The retired `drain_raw_events()`
+        // emptied the adapter buffer, so the semantic events a later consumer
+        // asked for were already gone. The browser has no ExecutionLog yet
+        // (FIND-C2.2-04); this at least stops the stop path from destroying
+        // evidence another reader still needs.
+        let events: Vec<TraceEvent> = browser_probe.adapter.raw_events();
         let total_events = events.len();
         let language = Language::WebAssembly;
         let url = browser_probe.url.clone();
@@ -230,9 +235,11 @@ impl BrowserProbeService {
 
     /// Drain a snapshot of events from a running browser probe.
     ///
-    /// `drain_events` is destructive — it consumes the adapter's buffer — so
-    /// subsequent calls return fewer events. The legacy `browser_probe_drain`
-    /// tool was destructive; this matches that contract.
+    /// `take_semantic_events` is destructive — it consumes the adapter's
+    /// buffer — so subsequent calls return fewer events. The legacy
+    /// `browser_probe_drain` tool was destructive; this matches that contract.
+    /// It is browser-local and inherent, not part of `ProbeBackend`: a shared
+    /// backend must not expose a read that empties state for every consumer.
     pub async fn drain(
         ctx: &BrowserProbeContext<'_>,
         input: BrowserProbeDrainInput,
@@ -246,7 +253,7 @@ impl BrowserProbeService {
         };
 
         let events = adapter
-            .drain_events()
+            .take_semantic_events()
             .map_err(|e| ServiceError::BrowserProbeDrainFailed(e.to_string()))?;
 
         let total = events.len();

@@ -33,7 +33,7 @@ fn test_mock_adapter_as_trace_adapter_integration() {
     assert!(adapter.is_available());
     assert_eq!(adapter.name(), "ebpf-mock");
 
-    let drained = adapter.drain_events().expect("drain should succeed");
+    let (drained, _cursor, _status) = adapter.read_since(None).expect("read should succeed");
     assert_eq!(drained.len(), 4);
 
     assert!(
@@ -52,9 +52,15 @@ fn test_mock_adapter_as_trace_adapter_integration() {
         SemanticEventKind::FunctionReturned { .. }
     ));
 
-    // Second drain returns nothing
-    let empty = adapter.drain_events().expect("second drain ok");
-    assert!(empty.is_empty());
+    // REC-C2.2.4: the second read sees the SAME events. The retired
+    // destructive drain returned nothing here, which is how a consumer could
+    // silently observe a truncated history.
+    let (again, _c2, _s2) = adapter.read_since(None).expect("second read ok");
+    assert_eq!(
+        again.len(),
+        4,
+        "a read must not consume the events it returns"
+    );
 }
 
 /// Verify kernel version check works (doesn't panic, returns sensible result).
@@ -110,7 +116,7 @@ fn test_mock_adapter_event_id_sequencing() {
         .collect();
 
     let adapter = MockEbpfAdapter::new(events);
-    let drained = adapter.drain_events().unwrap();
+    let (drained, _cursor, _status) = adapter.read_since(None).unwrap();
 
     assert_eq!(drained.len(), 10);
     for (i, ev) in drained.iter().enumerate() {

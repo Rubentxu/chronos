@@ -208,51 +208,6 @@ impl ProbeBackend for EbpfAdapter {
         "ebpf"
     }
 
-    fn drain_events(&self) -> Result<Vec<SemanticEvent>, TraceError> {
-        #[cfg(feature = "ebpf")]
-        {
-            use chronos_domain::{EventData, EventType};
-            let inner = self
-                .inner
-                .lock()
-                .map_err(|e| TraceError::CaptureFailed(e.to_string()))?;
-            let raw_events = inner.drain_events();
-            Ok(raw_events
-                .into_iter()
-                .map(|e| {
-                    let fn_name = match &e.data {
-                        EventData::EbpfUprobeHit { symbol_name, .. } => symbol_name.clone(),
-                        _ => e.location.function.clone().unwrap_or_default(),
-                    };
-                    let kind = match e.event_type {
-                        EventType::FunctionEntry => SemanticEventKind::FunctionCalled {
-                            function: fn_name.clone(),
-                            module: None,
-                            arguments: vec![],
-                        },
-                        EventType::FunctionExit => SemanticEventKind::FunctionReturned {
-                            function: fn_name.clone(),
-                            return_value: None,
-                        },
-                        _ => SemanticEventKind::Unresolved,
-                    };
-                    SemanticEvent {
-                        source_event_id: e.event_id,
-                        timestamp_ns: e.timestamp_ns,
-                        thread_id: e.thread_id,
-                        language: Language::Ebpf,
-                        kind,
-                        description: format!("{:?} @ {}", e.event_type, fn_name),
-                    }
-                })
-                .collect())
-        }
-        #[cfg(not(feature = "ebpf"))]
-        {
-            Err(TraceError::capture_failed("eBPF support not compiled in"))
-        }
-    }
-
     fn read_since(&self, cursor: Option<EventCursor>) -> ReadResult {
         // The real BPF ring buffer does not support non-destructive peek.
         // We surface a `Stale` cursor whenever the caller provides one
@@ -338,24 +293,6 @@ impl ProbeBackend for EbpfAdapter {
         #[cfg(not(feature = "ebpf"))]
         {
             Err(TraceError::capture_failed("eBPF support not compiled in"))
-        }
-    }
-
-    fn drain_raw_events(&self) -> Vec<TraceEvent> {
-        #[cfg(feature = "ebpf")]
-        {
-            let inner = match self.inner.lock() {
-                Ok(i) => i,
-                Err(e) => {
-                    tracing::error!("failed to lock inner: {}", e);
-                    return Vec::new();
-                }
-            };
-            inner.drain_events()
-        }
-        #[cfg(not(feature = "ebpf"))]
-        {
-            Vec::new()
         }
     }
 }
@@ -499,47 +436,21 @@ impl ProbeBackend for MockEbpfAdapter {
         "ebpf-mock"
     }
 
-    fn drain_events(&self) -> Result<Vec<SemanticEvent>, TraceError> {
-        use chronos_domain::{EventData, EventType};
-        let raw_events = self.buffer.drain_all();
-        Ok(raw_events
-            .into_iter()
-            .map(|e| {
-                let fn_name = match &e.data {
-                    EventData::EbpfUprobeHit { symbol_name, .. } => symbol_name.clone(),
-                    _ => e.location.function.clone().unwrap_or_default(),
-                };
-                let kind = match e.event_type {
-                    EventType::FunctionEntry => SemanticEventKind::FunctionCalled {
-                        function: fn_name.clone(),
-                        module: None,
-                        arguments: vec![],
-                    },
-                    EventType::FunctionExit => SemanticEventKind::FunctionReturned {
-                        function: fn_name.clone(),
-                        return_value: None,
-                    },
-                    _ => SemanticEventKind::Unresolved,
-                };
-                SemanticEvent {
-                    source_event_id: e.event_id,
-                    timestamp_ns: e.timestamp_ns,
-                    thread_id: e.thread_id,
-                    language: Language::Ebpf,
-                    kind,
-                    description: format!("{:?} @ {}", e.event_type, fn_name),
-                }
-            })
-            .collect())
-    }
-
     fn read_since(&self, cursor: Option<EventCursor>) -> ReadResult {
         // Mock adapter backed by MockRingBuffer which supports non-destructive peek.
         let (snap, total_pushed) = self.buffer.peek_all();
         let snap_len = snap.len() as u64;
 
+        // Ids are assigned over the WHOLE snapshot so a paged read keeps the
+        // same identity for the same event.
+        let all: Vec<SemanticEvent> = snap
+            .into_iter()
+            .enumerate()
+            .map(|(i, e)| convert_ebpf_to_semantic(e, i as u64))
+            .collect();
+
         let semantic: Vec<SemanticEvent> = match cursor {
-            None => snap.into_iter().map(convert_ebpf_to_semantic).collect(),
+            None => all,
             Some(c) => {
                 if c.total_pushed != total_pushed {
                     return Err(TraceError::CursorStale {
@@ -553,10 +464,7 @@ impl ProbeBackend for MockEbpfAdapter {
                         current: snap_len,
                     });
                 }
-                snap.into_iter()
-                    .skip(c.snapshot_len as usize)
-                    .map(convert_ebpf_to_semantic)
-                    .collect()
+                all.into_iter().skip(c.snapshot_len as usize).collect()
             }
         };
 
@@ -576,14 +484,10 @@ impl ProbeBackend for MockEbpfAdapter {
         // Mock adapter: nothing to stop
         Ok(())
     }
-
-    fn drain_raw_events(&self) -> Vec<TraceEvent> {
-        self.buffer.drain_all()
-    }
 }
 
 /// Convert an eBPF kernel event into a `SemanticEvent` for live LLM consumption.
-fn convert_ebpf_to_semantic(e: EbpfEvent) -> SemanticEvent {
+fn convert_ebpf_to_semantic(e: EbpfEvent, source_event_id: u64) -> SemanticEvent {
     let fn_name = e.get_function_name().to_string();
     let kind = match e.kind {
         crate::types::EbpfEventKind::FunctionEntry => SemanticEventKind::FunctionCalled {
@@ -598,7 +502,11 @@ fn convert_ebpf_to_semantic(e: EbpfEvent) -> SemanticEvent {
         _ => SemanticEventKind::Unresolved,
     };
     SemanticEvent {
-        source_event_id: 0, // assigned later by the ring buffer's monotonic id counter
+        // The ring buffer's monotonic id, supplied by the caller. Identity
+        // comes from the record, so it must survive `skip()` across pages
+        // (REC-C2.2.4): the index is computed over the full snapshot, not over
+        // the page.
+        source_event_id: source_event_id,
         timestamp_ns: e.timestamp_ns,
         thread_id: e.thread_id,
         language: Language::Ebpf,
@@ -695,10 +603,15 @@ mod adapter_tests {
         assert!(adapter.is_available());
     }
 
+    // REC-C2.2.4: these tests used the destructive `drain_events()`. That
+    // method is gone from `ProbeBackend`, so they now exercise the surviving
+    // non-destructive `read_since`, which is the read path that had to replace
+    // it. The conversion under test (`convert_ebpf_to_semantic`) is the same.
+
     #[test]
-    fn test_mock_ebpf_adapter_drain_empty() {
+    fn test_mock_ebpf_adapter_read_since_empty() {
         let adapter = MockEbpfAdapter::empty();
-        let events = adapter.drain_events().unwrap();
+        let (events, _cursor, _status) = adapter.read_since(None).unwrap();
         assert!(events.is_empty());
     }
 
@@ -711,7 +624,7 @@ mod adapter_tests {
         ];
         let adapter = MockEbpfAdapter::new(raw_events);
 
-        let events = adapter.drain_events().unwrap();
+        let (events, _cursor, _status) = adapter.read_since(None).unwrap();
         assert_eq!(events.len(), 3);
         // Events are now properly mapped to semantic kinds
         assert!(
@@ -736,16 +649,23 @@ mod adapter_tests {
         assert!(events[2].description.contains("FunctionExit"));
     }
 
+    /// The inverted expectation. The retired `drain_events()` consumed its
+    /// buffer, so the second call returned nothing and every later consumer saw
+    /// a truncated history. A read must not consume.
     #[test]
-    fn test_mock_ebpf_adapter_drain_twice_returns_empty() {
+    fn test_mock_ebpf_adapter_read_is_non_destructive() {
         let raw_events = vec![EbpfEvent::function_entry(1, 1, 0x1, "f")];
         let adapter = MockEbpfAdapter::new(raw_events);
 
-        let first = adapter.drain_events().unwrap();
+        let (first, _c1, _s1) = adapter.read_since(None).unwrap();
         assert_eq!(first.len(), 1);
 
-        let second = adapter.drain_events().unwrap();
-        assert!(second.is_empty());
+        let (second, _c2, _s2) = adapter.read_since(None).unwrap();
+        assert_eq!(
+            second.len(),
+            1,
+            "a read must not consume: the retired destructive drain returned 0 here"
+        );
     }
 
     #[test]
