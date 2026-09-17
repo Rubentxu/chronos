@@ -22,13 +22,18 @@
     "no_action": [],
     "applied": []
   },
-  "commits": [],
+  "commits": [
+    {"sha": "0853fe2c", "title": "test(m1-gap-segment-accounting): characterize header/replay count divergence (RED)"},
+    {"sha": "79426b46", "title": "fix(m1-gap-segment-accounting): one unit for writer/header/replay (entry_count)"},
+    {"sha": "e0c0785d", "title": "test(m1-gap-segment-accounting): un-ignore the C1.8 forced-gap UAT (2/2 GREEN)"},
+    {"sha": "9f647740", "title": "chore(m1-gap-segment-accounting): FIND-C1.8-01 closed in the REC-C1.8 artifacts"}
+  ],
   "gates": {
-    "T0_fmt": "PENDING",
-    "T0_clippy": "PENDING",
-    "T1_workspace_lib_plus_tests": "PENDING",
-    "T_chronos_native_serial": "PENDING (--test-threads=1 per AGENTS.md §6.5)",
-    "T4_smoke_subset": "PENDING (rec_c1_8_uat_c1_03_forced_gap 2/2 + e2e_connectivity 1/1 + rec_c1_8_dual_truth_closeout 3/3 + rec_c1_8_uat_c1_01_exact 2/2 = 8/8)"
+    "T0_fmt": "PASS (cargo fmt --all -- --check)",
+    "T0_clippy": "PASS (cargo clippy --workspace --all-targets -- -D warnings)",
+    "T1_workspace_lib_plus_tests": "PASS (workspace --lib excluding sandbox/e2e/native: 16 groups 0 failed; chronos-log --lib+tests all groups green, incl. 76 lib)",
+    "T_chronos_native_serial": "PASS (103 passed; --test-threads=1 per AGENTS.md §6.5)",
+    "T4_smoke_subset": "PASS (rec_c1_8_uat_c1_03_forced_gap 2/2 0-ignored, e2e_connectivity 1/1, rec_c1_8_dual_truth_closeout 3/3, rec_c1_8_uat_c1_01_exact 2/2 = 8/8) + m1_gap_segment_accounting 7/7"
   },
   "pre_existing_flakes_handled": [
     "chronos-native lib tests require --test-threads=1 (ptrace collisions; documented in AGENTS.md §6.5)"
@@ -39,7 +44,10 @@
     "rec_c1_8_dual_truth_closeout",
     "rec_c1_8_uat_c1_01_exact"
   ],
-  "verify_commands": [],
+  "verify_commands": [
+    "cargo test -p chronos-log --test m1_gap_segment_accounting (7/7 PASS)",
+    "cargo test -p chronos-sandbox --test rec_c1_8_uat_c1_03_forced_gap (2/2 PASS, 0 ignored)"
+  ],
   "archive_convention": "rec-c1/m1 stream uses archive_status=ready; no .sddk-knowledge/changes/archive/m1-gap-* directory.",
   "cc_drift": {
     "CC#39_pre_existing_intentional": "cycles/index.md Total cycles vs filesystem. Pre-existing; belongs in a separate gov-* cycle (do NOT silently mask).",
