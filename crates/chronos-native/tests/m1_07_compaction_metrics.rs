@@ -42,8 +42,7 @@ fn tempdir(label: &str) -> PathBuf {
 /// attached afterwards).
 #[test]
 fn compaction_metrics_returns_none_when_no_log_attached() {
-    let bus = chronos_domain::bus::EventBus::new_shared(1024);
-    let backend = NativeProbeBackend::new(bus);
+    let backend = NativeProbeBackend::new();
     let m = backend.compaction_metrics().expect("call");
     assert!(m.is_none(), "no log attached ⇒ None");
 }
@@ -53,8 +52,7 @@ fn compaction_metrics_returns_none_when_no_log_attached() {
 #[test]
 fn compaction_metrics_returns_zeros_when_log_attached() {
     let dir = tempdir("zeros");
-    let bus = chronos_domain::bus::EventBus::new_shared(1024);
-    let backend = NativeProbeBackend::new(bus).with_execution_log_dir(Some(dir.clone()));
+    let backend = NativeProbeBackend::new().with_execution_log_dir(Some(dir.clone()));
 
     let log_session = "native-compaction-zeros";
     let log_dir = dir.join(log_session);
@@ -89,8 +87,7 @@ fn compaction_metrics_returns_zeros_when_log_attached() {
 #[test]
 fn compaction_metrics_reflects_real_compaction_runs() {
     let dir = tempdir("runs");
-    let bus = chronos_domain::bus::EventBus::new_shared(1024);
-    let backend = NativeProbeBackend::new(bus).with_execution_log_dir(Some(dir.clone()));
+    let backend = NativeProbeBackend::new().with_execution_log_dir(Some(dir.clone()));
 
     let log_session = "native-compaction-runs";
     let log_dir = dir.join(log_session);

@@ -38,8 +38,7 @@ fn tempdir() -> PathBuf {
 fn dual_write_records_to_eventbus_and_executionlog() {
     // Construct a backend with an ExecutionLog directory attached.
     let dir = tempdir();
-    let bus = chronos_domain::bus::EventBus::new_shared(1024);
-    let backend = NativeProbeBackend::new(bus).with_execution_log_dir(Some(dir.clone()));
+    let backend = NativeProbeBackend::new().with_execution_log_dir(Some(dir.clone()));
 
     // Open a log manually (mirroring what start_probe does) and
     // attach it to the backend so the dual-write path can find it.

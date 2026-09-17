@@ -842,7 +842,6 @@ pub struct ProbeStartOutput {
     pub status: String,
     pub target: String,
     pub language: String,
-    pub bus_capacity: usize,
     pub hint: String,
 }
 

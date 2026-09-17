@@ -1,23 +1,23 @@
-//! Native ptrace probe backend that feeds events to an EventBus in real-time.
+//! Native ptrace probe backend that persists events to a `SegmentedExecutionLog`
+//! via the accepted-Raw seam.
 //!
-//! This backend replaces the "record everything then analyze" model of `CaptureRunner`
-//! with a live event bus model. Events are pushed to an `EventBus` ring buffer
-//! as they occur, allowing real-time monitoring and querying.
+//! This backend no longer constructs an `EventBus` mirror. Every accepted
+//! observation is appended to the session's `ExecutionLog` first, and the
+//! `accepted_raw_observer` runs **before** anything is fanned out (see
+//! `accept_and_publish`). The probe loops take only the `AcceptanceSeam`
+//! (`{ log, observer }`) — there is no parallel sink left to keep in sync.
 //!
-//! ## m1-03: dual-write to `ExecutionLog`
+//! ## m1-03: durable write via the accepted-Raw seam
 //!
-//! When a segment-log directory is configured via
-//! [`NativeProbeBackend::with_execution_log_dir`], every `TraceEvent`
-//! is also pushed to a per-session `SegmentedExecutionLog`. The
-//! legacy EventBus path stays intact for callers that have not
-//! opted into the new persistence backend (m1-01 / m0-01 UATs
-//! continue to pass).
+//! Every `TraceEvent` is appended to the attached `SegmentedExecutionLog`
+//! through `accept_raw` before anything is observed or fanned out. REC-C2.3
+//! retired the parallel `EventBus` mirror: the canonical log is the only
+//! sink, and consumers read it directly.
 
 use crate::capture_runner::run_function_frame_capture_with_callback;
 use crate::native_adapter::NativeAdapter;
 use crate::ptrace_tracer::{PtraceConfig, PtraceTracer};
 use crate::symbol_resolver::SymbolResolver;
-use chronos_domain::bus::EventBusHandle;
 use chronos_domain::semantic::{ResolveContext, ResolverPipeline, SemanticResolver};
 use chronos_domain::{
     CaptureConfig, CaptureSession, Language, ProbeBackend, SourceLocation, TraceError, TraceEvent,
@@ -148,8 +148,6 @@ pub struct AcceptanceSeam {
 
 /// Native ptrace probe backend for real-time event bus feeding.
 pub struct NativeProbeBackend {
-    /// Shared event bus handle.
-    event_bus: EventBusHandle,
     /// Language being traced.
     language: Language,
     /// Semantic resolver pipeline.
@@ -164,23 +162,28 @@ pub struct NativeProbeBackend {
     /// Such targets must be woken and detached, never terminated.
     attached_target: Arc<AtomicBool>,
     /// REC-C2.2.0: application hook invoked at the accepted-Raw seam.
-    /// `None` for legacy callers (tracked as COMPATIBILITY until REC-C2.3).
     accepted_raw_observer: Option<AcceptedRawObserver>,
     /// Optional `ExecutionLog` for the running session. Populated by
     /// `start_probe` so the ptrace thread can record events to a
-    /// durable, segmented log alongside the legacy EventBus.
-    /// m1-03 migration: read path is dual — see `read_since`.
+    /// durable, segmented log.
+    /// REC-C2.3: read path is canonical (the session-owned log); there is
+    /// no EventBus fallback.
     execution_log: std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<SegmentedExecutionLog>>>>,
     /// Directory where segment files are written. `None` means the
-    /// `ExecutionLog` is disabled (only the legacy EventBus is used).
+    /// `ExecutionLog` is disabled (legacy callers; deprecated — REC-C2.3
+    /// makes the canonical seam mandatory).
     execution_log_dir: std::sync::Arc<std::sync::Mutex<Option<PathBuf>>>,
 }
 
 impl NativeProbeBackend {
-    /// Create a new native probe backend with the given event bus handle.
-    pub fn new(event_bus: EventBusHandle) -> Self {
+    /// Create a new native probe backend.
+    ///
+    /// REC-C2.3: no longer takes an `EventBusHandle` — the canonical sink is
+    /// the session-owned `ExecutionLog`, attached by the caller through
+    /// [`NativeProbeBackend::attach_execution_log`] or opened by `start_probe`
+    /// from `with_execution_log_dir`.
+    pub fn new() -> Self {
         Self {
-            event_bus,
             language: Language::C,
             resolver_pipeline: ResolverPipeline::new(),
             running: Arc::new(AtomicBool::new(false)),
@@ -199,11 +202,11 @@ impl NativeProbeBackend {
     /// REC-C2.2.2 — project a durable `TraceEvent` into its `SemanticEvent` view.
     ///
     /// A **pure projection**: it runs the resolver pipeline and never touches
-    /// the EventBus. `probe_drain` will build its wire events from
-    /// `ExecutionLog` `Raw` records through this, so semanticisation stops
-    /// being a second decision about what occurred and becomes a *view* of the
-    /// durable evidence. The EventBus may transport the same view live, but it
-    /// is not its backing store.
+    /// any state outside the inputs it received. `probe_drain` builds its wire
+    /// events from `ExecutionLog` `Raw` records through this, so
+    /// semanticisation stops being a second decision about what occurred and
+    /// becomes a *view* of the durable evidence.
+    ///
     /// The caller supplies the session's resolution context, so a replay of the
     /// same durable `Raw` produces the same projection the producer produced.
     /// Reconstructing `ResolveContext` from ambient state is exactly how a
@@ -227,7 +230,7 @@ impl NativeProbeBackend {
     /// The resolution context this backend captured with.
     ///
     /// A deterministic projection needs this context to be reconstructible
-    /// from session metadata, not from accidental EventBus state.
+    /// from session metadata.
     pub fn resolve_context(&self, binary_path: Option<String>) -> ResolveContext {
         let pid = u32::try_from(
             self.traced_pid
@@ -360,26 +363,20 @@ impl NativeProbeBackend {
     /// REC-C2.1/C2.2.0 — **persist first, observe, fan-out last**.
     ///
     /// Named for what it does; the old name (`dual_push`) described the
-    /// dual-write shape that REC-C2 is retiring.
+    /// dual-write shape that REC-C2 retired.
     ///
     /// When an ExecutionLog is attached, the authoritative append happens
-    /// FIRST and the EventBus is only a live mirror, published after the
-    /// event is accepted. If the append fails, the event is **not** published:
-    /// Chronos must not observe as having happened something it refused to
-    /// record.
+    /// FIRST and the application observer runs BEFORE anything is fanned out.
+    /// If the append fails, no observation happens: Chronos must not observe
+    /// as having happened something it refused to record.
     ///
-    /// When no log is attached (legacy callers, compatibility) the bus
-    /// remains the only sink; that path is tracked as COMPATIBILITY in
-    /// `legacy-evb-inventory.json` and disappears with REC-C2.3.
+    /// REC-C2.3 — no longer takes or pushes to an `EventBusHandle`. The
+    /// canonical log is the only sink, and there is no mirror to keep in sync.
     ///
     /// Returns the accepted `EventSeq` when the log took the record, or the
     /// append error. REC-C2.1's derivation step uses the returned seq as the
     /// `source_seq` of any firing this event causes.
-    ///
-    /// The old shape published first and treated the append as best-effort
-    /// (`debug!` and continue); REC-C2.0 measured that as CHAR-C2-01.
     fn accept_and_publish(
-        event_bus: &EventBusHandle,
         log: Option<&SegmentedExecutionLog>,
         trace_event: &TraceEvent,
         timestamp_ns: u64,
@@ -389,20 +386,24 @@ impl NativeProbeBackend {
             Some(log) => {
                 let seq = Self::accept_raw(log, trace_event, timestamp_ns)?;
                 // Accepted as durable evidence. The application hook runs
-                // BEFORE the live fan-out, so no observer can act on an
-                // unpersisted observation, and no consumer sees the event
-                // before its consequences are durable.
+                // BEFORE any fan-out, so no observer can act on an unpersisted
+                // observation.
                 if let Some(observer) = observer {
                     observer(seq, trace_event);
                 }
-                event_bus.push_raw(trace_event.clone());
                 Ok(Some(seq))
             }
             None => {
-                // Legacy COMPATIBILITY: no log attached, the bus is the only
-                // sink. REC-C2.3 removes this path.
-                event_bus.push_raw(trace_event.clone());
-                Ok(None)
+                // Legacy path: no log attached. Without a sink, the only
+                // honest answer is to refuse — there is no `EventBus` to
+                // absorb the observation. REC-C2.3 retired the bus, so this
+                // branch now errors instead of silently dropping the event.
+                Err(chronos_log::LogError::AppendFailed {
+                    session: "unknown".to_string(),
+                    reason: "REC-C2.3: no canonical sink attached; refusing to publish an \
+                             unpersisted observation"
+                        .to_string(),
+                })
             }
         }
     }
@@ -419,12 +420,6 @@ impl NativeProbeBackend {
     ) -> Result<chronos_log::EventSeq, chronos_log::LogError> {
         let rec = trace_event_to_log_record(log.session_id().as_str(), timestamp_ns, trace_event);
         log.append(rec)
-    }
-
-    /// Create a new native probe backend with a default event bus.
-    pub fn with_default_bus() -> Self {
-        let bus = chronos_domain::bus::EventBus::new_shared(10000); // 10k event capacity
-        Self::new(bus)
     }
 
     /// Set the language to trace.
@@ -478,7 +473,7 @@ impl NativeProbeBackend {
         let language = config
             .language
             .unwrap_or_else(|| Language::from_path(&config.target));
-        let event_bus = self.event_bus.clone();
+
         let running = self.running.clone();
         let resolver_pipeline = self.resolver_pipeline.clone();
 
@@ -559,7 +554,8 @@ impl NativeProbeBackend {
                         Err(e) => {
                             warn!(
                                 "m1-03: failed to open ExecutionLog at {:?}: {}. \
-                             Continuing with legacy EventBus only.",
+                             Continuing without a canonical sink; accept_and_publish \
+                             will refuse observations until one is attached.",
                                 log_dir, e
                             );
                             None
@@ -591,7 +587,6 @@ impl NativeProbeBackend {
                     &ptrace_config,
                     &running_clone,
                     symbol_resolver.as_ref(),
-                    event_bus,
                     resolver_pipeline,
                     language,
                     AcceptanceSeam {
@@ -635,7 +630,6 @@ impl NativeProbeBackend {
         self.attached_target.store(true, Ordering::SeqCst);
 
         let language = config.language.unwrap_or(Language::C);
-        let event_bus = self.event_bus.clone();
         let running = self.running.clone();
         let resolver_pipeline = self.resolver_pipeline.clone();
         // REC-C2.2.1: attach accepts through the same seam as spawn.
@@ -668,7 +662,6 @@ impl NativeProbeBackend {
                     pid,
                     &ptrace_config,
                     &running_clone,
-                    event_bus,
                     resolver_pipeline,
                     language,
                     AcceptanceSeam {
@@ -771,7 +764,6 @@ impl NativeProbeBackend {
         ptrace_config: &PtraceConfig,
         running: &Arc<AtomicBool>,
         symbol_resolver: Option<&SymbolResolver>,
-        event_bus: EventBusHandle,
         resolver_pipeline: ResolverPipeline,
         language: Language,
         seam: AcceptanceSeam,
@@ -783,7 +775,6 @@ impl NativeProbeBackend {
             ptrace_config,
             running,
             symbol_resolver,
-            event_bus,
             resolver_pipeline,
             language,
             seam,
@@ -799,7 +790,6 @@ impl NativeProbeBackend {
         ptrace_config: &PtraceConfig,
         running: &Arc<AtomicBool>,
         symbol_resolver: Option<&SymbolResolver>,
-        event_bus: EventBusHandle,
         resolver_pipeline: ResolverPipeline,
         _language: Language,
         seam: AcceptanceSeam,
@@ -878,7 +868,6 @@ impl NativeProbeBackend {
                     None,
                     |trace_event: TraceEvent| {
                         let accepted = Self::accept_and_publish(
-                            &event_bus,
                             seam.log.as_deref(),
                             &trace_event,
                             timestamp_ns,
@@ -889,10 +878,14 @@ impl NativeProbeBackend {
                             pid: pid as u32,
                             binary_path: Some(program_path.to_string()),
                         };
-                        let semantic_event = resolver_pipeline.resolve(&trace_event, &ctx);
-                        // Fan-out last: only an accepted observation goes live.
-                        if accepted {
-                            event_bus.push(semantic_event);
+                        let _semantic_event = resolver_pipeline.resolve(&trace_event, &ctx);
+                        // REC-C2.3: no live fan-out sink — the accepted-Raw
+                        // seam is the only producer. Acceptance itself is the
+                        // signal.
+                        if !accepted {
+                            debug!(
+                                "frame capture: rejected observation (no canonical sink)"
+                            );
                         }
                         event_id += 1;
                     },
@@ -949,13 +942,11 @@ impl NativeProbeBackend {
                     }
                 }
 
-                // Push raw event to raw buffer for QueryEngine AND to the
-                // m1-03 ExecutionLog if one was attached. dual_push
-                // is no-op on the log side when no log is
-                // configured, so the EventBus path stays intact
-                // for callers that opt out.
+                // REC-C2.3: the accepted-Raw seam is the only sink; no
+                // EventBus fallback. The log (if attached) takes the record
+                // and the application observer runs synchronously before the
+                // next event is processed.
                 let accepted = Self::accept_and_publish(
-                    &event_bus,
                     seam.log.as_deref(),
                     &trace_event,
                     timestamp_ns,
@@ -963,15 +954,17 @@ impl NativeProbeBackend {
                 )
                 .is_ok();
 
-                // Resolve to semantic event via the pipeline
+                // Resolve to semantic event via the pipeline. Kept for the
+                // pipeline's own accounting (and so future fan-out can
+                // attach without re-resolving); the canonical view is the
+                // session's ExecutionLog.
                 let ctx = ResolveContext {
                     pid: pid as u32,
                     binary_path: Some(program_path.to_string()),
                 };
-                let semantic_event = resolver_pipeline.resolve(&trace_event, &ctx);
-                // Fan-out last: only an accepted observation goes live.
-                if accepted {
-                    event_bus.push(semantic_event);
+                let _semantic_event = resolver_pipeline.resolve(&trace_event, &ctx);
+                if !accepted {
+                    debug!("probe loop: rejected observation (no canonical sink)");
                 }
 
                 event_id += 1;
@@ -1028,7 +1021,6 @@ impl NativeProbeBackend {
         pid: u32,
         ptrace_config: &PtraceConfig,
         running: &Arc<AtomicBool>,
-        event_bus: EventBusHandle,
         resolver_pipeline: ResolverPipeline,
         _language: Language,
         seam: AcceptanceSeam,
@@ -1073,14 +1065,10 @@ impl NativeProbeBackend {
             if let Some(trace_event) =
                 adapter.ptrace_event_to_trace_event(&ptrace_event, event_id, timestamp_ns)
             {
-                // REC-C2.2.1: the attach loop uses the SAME accepted-Raw seam
-                // as the spawn loop. It previously published a raw observation
-                // with no ExecutionLog at all, which made it a second,
-                // EventBus-only producer with no durable evidence. A firing
-                // may only derive from an accepted source, so attach must
-                // accept first too.
+                // REC-C2.3: the accepted-Raw seam is the only sink (the
+                // attach loop already shared this with spawn in C2.2.1; the
+                // EventBus fallback is retired here).
                 let accepted = Self::accept_and_publish(
-                    &event_bus,
                     seam.log.as_deref(),
                     &trace_event,
                     timestamp_ns,
@@ -1088,15 +1076,13 @@ impl NativeProbeBackend {
                 )
                 .is_ok();
 
-                // Resolve to semantic event via the pipeline
                 let ctx = ResolveContext {
                     pid,
                     binary_path: None,
                 };
-                let semantic_event = resolver_pipeline.resolve(&trace_event, &ctx);
-                // Fan-out last: only an accepted observation goes live.
-                if accepted {
-                    event_bus.push(semantic_event);
+                let _semantic_event = resolver_pipeline.resolve(&trace_event, &ctx);
+                if !accepted {
+                    debug!("attach loop: rejected observation (no canonical sink)");
                 }
 
                 event_id += 1;
@@ -1145,12 +1131,18 @@ impl ProbeBackend for NativeProbeBackend {
         "native-ptrace"
     }
 
-    /// Non-destructive read on the underlying EventBus (m0-01-live-pagination).
+    /// Stub kept only so the trait still compiles; will be REMOVED from
+    /// `ProbeBackend` in C2.3.2 (the trait shrink). The bus is gone, so
+    /// this returns a `CursorStale` refusal — the canonical reader is the
+    /// session's `ExecutionLog` (`chronos-services::canonical_drain`).
     fn read_since(
         &self,
-        cursor: Option<chronos_domain::EventCursor>,
+        _cursor: Option<chronos_domain::EventCursor>,
     ) -> chronos_domain::ReadResult {
-        self.event_bus.read_since(cursor)
+        Err(chronos_domain::TraceError::CursorStale {
+            expected: 0,
+            current: 0,
+        })
     }
 
     fn stop_probe(&self, session: &CaptureSession) -> Result<(), TraceError> {
@@ -1174,21 +1166,21 @@ mod tests {
     use super::*;
 
     // ------------------------------------------------------------------
-    // REC-C2.0 characterizations (measure reality; not aspirational).
+    // REC-C2.0 / REC-C2.1 / REC-C2.3 characterizations
+    // (measure reality; not aspirational).
     // ------------------------------------------------------------------
 
-    /// CHAR-C2-01 → REC-C2.1 invariant: **nothing is observed before it is
-    /// accepted**.
+    /// REC-C2.3 — the accepted-Raw seam is the only producer.
     ///
-    /// REC-C2.0 measured the old order (bus first, best-effort append).
-    /// REC-C2.1 inverted `dual_push`, so with an ExecutionLog attached the
-    /// event is published to the bus **only after** the authoritative append
-    /// succeeds. If the append is refused, the bus must stay empty: a
-    /// refused observation is not an observation.
+    /// Replaces the previous "the bus must be empty when append is refused"
+    /// characterization (which only made sense while a `EventBus` mirror was
+    /// still part of the canonical flow). The same invariant now reads as:
+    /// an accepted observation lands in the log, and a refused observation
+    /// does not.
     #[test]
-    fn c2_1_persist_first_no_bus_publish_when_append_is_refused() {
+    fn c2_3_persist_first_accepted_lands_in_log_refused_does_not() {
         let dir = std::env::temp_dir().join(format!(
-            "chronos-c21-persistfirst-{}-{}",
+            "chronos-c23-persistfirst-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -1196,61 +1188,72 @@ mod tests {
                 .unwrap_or(0)
         ));
         std::fs::create_dir_all(&dir).expect("mkdir");
-        let session = chronos_log::SessionId::new("c21-persist-first");
+        let session = chronos_log::SessionId::new("c23-persist-first");
         let log = SegmentedExecutionLog::open(
             session.clone(),
             chronos_log::SegmentedConfig::with_dir(&dir),
         )
         .expect("open log");
 
-        let bus = chronos_domain::bus::EventBus::new_shared(64);
         let event = TraceEvent::signal(1, 100, 1, 11, "SIGSEGV", 0);
 
-        // Accepted path: append succeeds, so the bus may observe it.
-        let accepted = NativeProbeBackend::accept_and_publish(&bus, Some(&log), &event, 123, None)
+        // Accepted: the log assigned a seq, and a read returns the event.
+        let accepted = NativeProbeBackend::accept_and_publish(Some(&log), &event, 123, None)
             .expect("accepted");
         assert!(accepted.is_some(), "the log assigned a seq");
-        assert_eq!(bus.snapshot_raw().len(), 1, "accepted ⇒ published");
+        let (events, _tail, _unparseable, _seen) =
+            read_log_with_stats(&log, None, 16).expect("read log");
+        assert_eq!(events.len(), 1, "accepted ⇒ one record in the log");
 
-        // Refused path: seal the log and push again.
+        // Refused: seal the log and push again. The append must fail, and a
+        // second read must NOT report a new record.
         log.seal().expect("seal");
-        let refused = NativeProbeBackend::accept_and_publish(&bus, Some(&log), &event, 124, None);
+        let refused = NativeProbeBackend::accept_and_publish(Some(&log), &event, 124, None);
         assert!(refused.is_err(), "the append is refused");
-        assert!(
-            bus.snapshot_raw().is_empty(),
-            "refused ⇒ NOT published (no observation without acceptance)"
+        let (events_after, _tail_after, _unparseable_after, _seen_after) =
+            read_log_with_stats(&log, None, 16).expect("read log after refusal");
+        assert_eq!(
+            events_after.len(),
+            1,
+            "refused ⇒ no record appended (no observation without acceptance)"
         );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// REC-C2.2.2 — semanticisation is a projection of durable evidence, not
-    /// a second decision about occurrence: projecting a `TraceEvent` never
-    /// consults the EventBus, and the bus staying empty changes nothing.
+    /// REC-C2.2.2 / REC-C2.3 — semanticisation is a projection of durable
+    /// evidence, not a second decision about occurrence.
+    ///
+    /// The previous form consulted an `EventBus` mirror and asserted the bus
+    /// stayed empty. With the bus gone (REC-C2.3) the property collapses to
+    /// "the projection is a pure function of its inputs and the resolver
+    /// pipeline" — which is what this test now asserts.
     #[test]
-    fn c2_2_projecting_semantics_reads_no_bus() {
-        let bus = chronos_domain::bus::EventBus::new_shared(16);
-        let backend = NativeProbeBackend::new(bus.clone());
+    fn c2_3_projecting_semantics_is_a_pure_function_of_inputs() {
+        let backend = NativeProbeBackend::new();
         let event = TraceEvent::signal(1, 100, 1, 11, "SIGSEGV", 0);
 
-        let semantic = backend.project_semantic(&event, &backend.resolve_context(None));
-        assert_eq!(semantic.source_event_id, event.event_id);
-        assert_eq!(semantic.thread_id, event.thread_id);
-        assert!(
-            bus.snapshot().is_empty(),
-            "projection must not depend on, or populate, the bus"
-        );
+        let ctx = backend.resolve_context(None);
+        let a = backend.project_semantic(&event, &ctx);
+        let b = backend.project_semantic(&event, &ctx);
+        // Same inputs ⇒ same outputs.
+        assert_eq!(a.source_event_id, b.source_event_id);
+        assert_eq!(a.timestamp_ns, b.timestamp_ns);
+        assert_eq!(a.thread_id, b.thread_id);
+        assert_eq!(a.description, b.description);
     }
 
-    /// REC-C2.2.0 — the accepted-Raw seam.
+    /// REC-C2.3 — the accepted-Raw seam: persist, then observe, then refuse
+    /// on no-sink.
     ///
-    /// Ordering proven from inside the observer itself: by the time it runs,
-    /// the record is durable (its `source_seq` is real) and the event has NOT
-    /// yet been published live. And a refused append never notifies.
+    /// The observer runs exactly once for an accepted observation, and the
+    /// `source_seq` it sees is the record's. A refused append (sealed log)
+    /// never notifies. With the bus retired, the only signal is "the observer
+    /// was called" and "the seq is the record's".
     #[test]
-    fn c2_2_accepted_raw_seam_orders_persist_then_observe_then_fan_out() {
+    fn c2_3_accepted_raw_seam_observer_runs_after_persist_and_refused_does_not_notify() {
         let dir = std::env::temp_dir().join(format!(
-            "chronos-c22-seam-{}-{}",
+            "chronos-c23-seam-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -1258,48 +1261,38 @@ mod tests {
                 .unwrap_or(0)
         ));
         std::fs::create_dir_all(&dir).expect("mkdir");
-        let session = chronos_log::SessionId::new("c22-seam");
+        let session = chronos_log::SessionId::new("c23-seam");
         let log = SegmentedExecutionLog::open(
             session.clone(),
             chronos_log::SegmentedConfig::with_dir(&dir),
         )
         .expect("open log");
 
-        let bus = chronos_domain::bus::EventBus::new_shared(64);
         let event = TraceEvent::signal(1, 100, 1, 11, "SIGSEGV", 0);
 
-        // The observer records what it can see at notification time.
-        let seen: std::sync::Arc<std::sync::Mutex<Vec<(u64, usize)>>> = Default::default();
+        let seen: std::sync::Arc<std::sync::Mutex<Vec<u64>>> = Default::default();
         let seen_for_obs = seen.clone();
-        let bus_for_obs = bus.clone();
         let observer: AcceptedRawObserver = std::sync::Arc::new(move |seq, _ev| {
-            seen_for_obs
-                .lock()
-                .unwrap()
-                .push((seq.0, bus_for_obs.snapshot_raw().len()));
+            seen_for_obs.lock().unwrap().push(seq.0);
         });
 
-        NativeProbeBackend::accept_and_publish(&bus, Some(&log), &event, 123, Some(&observer))
+        NativeProbeBackend::accept_and_publish(Some(&log), &event, 123, Some(&observer))
             .expect("accepted");
 
         let observations = seen.lock().unwrap().clone();
         assert_eq!(observations.len(), 1, "the observer ran exactly once");
-        let (source_seq, published_at_notification) = observations[0];
-        assert_eq!(source_seq, 0, "the source seq is the durable record's");
         assert_eq!(
-            published_at_notification, 0,
-            "at notification time the event had NOT been fanned out yet"
+            observations[0], 0,
+            "the source seq is the durable record's"
         );
-        assert_eq!(bus.snapshot_raw().len(), 1, "and afterwards it has been");
 
         // A refused append must not notify at all.
         let seen_after = seen.clone();
         let observer2: AcceptedRawObserver = std::sync::Arc::new(move |seq, _ev| {
-            seen_after.lock().unwrap().push((seq.0, 0));
+            seen_after.lock().unwrap().push(seq.0);
         });
         log.seal().expect("seal");
         assert!(NativeProbeBackend::accept_and_publish(
-            &bus,
             Some(&log),
             &event,
             124,
@@ -1312,53 +1305,43 @@ mod tests {
             "no notification for an observation that was never accepted"
         );
 
+        // The no-sink branch must also refuse (REC-C2.3 — no bus fallback).
+        assert!(matches!(
+            NativeProbeBackend::accept_and_publish(None, &event, 125, None),
+            Err(chronos_log::LogError::AppendFailed { .. })
+        ));
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// CHAR-C2-06 was retired in REC-C2.2.4, together with the behaviour it
-    /// characterized. It asserted that `drain_raw_events()` consumed the
-    /// `EventBus` ring across consumers — which is precisely why it was not
-    /// allowed to remain a read path. There is no destructive raw drain left to
-    /// characterize: `ProbeBackend` no longer declares one, and the canonical
-    /// replacement is `chronos_services::canonical_drain::read_all_raw_events`,
-    /// whose non-destructiveness is asserted by `stop_1_reading_all_raw_is_repeatable`.
+    /// REC-C2.3 — there is no `EventBus`, so no `EventBus::read_since` to
+    /// characterize. The characterization retires with the type.
     ///
-    /// The invariant below outlives the method: the bus is a transport, and a
-    /// read of it can never be the authoritative answer.
+    /// The invariant that outlives CHAR-C2-06 is now: an observation the
+    /// log accepted is observable through the canonical reader, and the
+    /// reader is non-destructive. This is asserted by
+    /// `c2_3_persist_first_accepted_lands_in_log_refused_does_not` (above)
+    /// and by the canonical drain tests in `chronos-services`. The test is
+    /// kept here as a stub that documents the retirement.
     #[test]
-    fn char_c2_06_destructive_raw_drain_is_gone_and_the_bus_is_not_authority() {
-        let bus = chronos_domain::bus::EventBus::new_shared(8);
-        let backend = NativeProbeBackend::new(bus.clone());
-
-        // Whatever the bus holds, the backend exposes no consuming read.
-        // Publication is observable, and a second observer still sees it.
-        // `snapshot_raw` is itself a consuming read, so it is called exactly once
-        // at the end: two accepted observations must both still be there.
-        let first = TraceEvent::signal(1, 100, 1, 11, "SIGSEGV", 0);
-        NativeProbeBackend::accept_and_publish(&bus, None, &first, 1, None).expect("accepted");
-        let second = TraceEvent::signal(2, 200, 1, 12, "SIGSEGV", 0);
-        NativeProbeBackend::accept_and_publish(&bus, None, &second, 2, None).expect("accepted");
-
-        assert_eq!(
-            bus.snapshot_raw().len(),
-            2,
-            "nothing consumed the bus between the two observations: a read path must not \
-             empty a shared transport"
-        );
-        let _ = backend;
+    fn char_c2_06_retired_with_eventbus() {
+        // The bus is gone; the test exists to mark the retirement.
+        // The behaviour CHAR-C2-06 used to characterize — that a read of the
+        // ring could empty it for other consumers — was the live-mirror's
+        // defining failure mode. Without a live mirror there is no ring to
+        // empty, and the canonical reader (chronos-services::canonical_drain)
+        // is asserted non-destructive in its own suite.
     }
 
     #[test]
     fn test_native_probe_backend_creation() {
-        let bus = chronos_domain::bus::EventBus::new_shared(100);
-        let backend = NativeProbeBackend::new(bus);
+        let backend = NativeProbeBackend::new();
         assert_eq!(backend.name(), "native-ptrace");
     }
 
     #[test]
     fn test_native_probe_backend_is_available() {
-        let bus = chronos_domain::bus::EventBus::new_shared(100);
-        let backend = NativeProbeBackend::new(bus);
+        let backend = NativeProbeBackend::new();
         // Should be true on Linux
         #[cfg(target_os = "linux")]
         assert!(backend.is_available());
@@ -1366,8 +1349,7 @@ mod tests {
 
     #[test]
     fn test_native_probe_backend_with_language() {
-        let bus = chronos_domain::bus::EventBus::new_shared(100);
-        let backend = NativeProbeBackend::new(bus).with_language(Language::Rust);
+        let backend = NativeProbeBackend::new().with_language(Language::Rust);
         assert!(backend.is_available());
     }
 
@@ -1475,8 +1457,7 @@ mod tests {
     fn attach_probe_to_self_sets_running_and_traced_pid() {
         use chronos_domain::CaptureConfig;
 
-        let bus = chronos_domain::bus::EventBus::new_shared(100);
-        let backend = NativeProbeBackend::new(bus);
+        let backend = NativeProbeBackend::new();
         let pid = std::process::id();
         let config = CaptureConfig::new("/usr/bin/true");
         let session = backend.attach_probe(pid, config).expect("attach self");
@@ -1535,8 +1516,7 @@ mod tests {
     fn attach_probe_to_unknown_pid_clears_running_after_ptrace_failure() {
         use chronos_domain::CaptureConfig;
 
-        let bus = chronos_domain::bus::EventBus::new_shared(100);
-        let backend = NativeProbeBackend::new(bus);
+        let backend = NativeProbeBackend::new();
         // 0xfffffffe is a deliberately non-existent pid (it sits in the
         // unmapped range; ESRCH on Linux). The attach thread's ptrace call
         // fails and `run_probe_loop_attach` must clear `running` to release

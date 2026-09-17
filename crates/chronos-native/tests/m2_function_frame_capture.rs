@@ -314,8 +314,7 @@ fn live_probe_emits_real_function_entries_to_execution_log() {
     let exe = exe.to_str().unwrap().to_string();
 
     let execution_log_dir = scratch_dir("live-ff");
-    let bus = chronos_domain::bus::EventBus::new_shared(50000);
-    let backend = NativeProbeBackend::new(bus)
+    let backend = NativeProbeBackend::new()
         .with_language(chronos_domain::Language::C)
         .with_execution_log_dir(Some(execution_log_dir.clone()));
 

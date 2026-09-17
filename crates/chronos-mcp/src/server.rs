@@ -8932,8 +8932,7 @@ mod tests {
         let server = Arc::new(ChronosServer::new());
 
         // Register a backend with NO execution log attached.
-        let bus = chronos_domain::bus::EventBus::new_shared(1024);
-        let backend_no_log = NativeProbeBackend::new(bus);
+        let backend_no_log = NativeProbeBackend::new();
         // Build the minimum LiveProbeSession: the daemon only
         // reads `backend`, so we stub the other fields with
         // dummies that compile.
@@ -9028,8 +9027,7 @@ mod tests {
         );
 
         // Open a log, attach it to the backend slot, and append the record.
-        let bus = chronos_domain::bus::EventBus::new_shared(1024);
-        let backend = NativeProbeBackend::new(bus);
+        let backend = NativeProbeBackend::new();
         let log = Arc::new(
             SegmentedExecutionLog::open(
                 LogSessionId::new(&log_session_id),
