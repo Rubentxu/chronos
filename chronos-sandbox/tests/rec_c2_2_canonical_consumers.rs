@@ -16,8 +16,8 @@ use chronos_sandbox::client::tools::McpTestClient;
 use chronos_sandbox::McpSession;
 use std::time::Duration;
 
-/// A ring far too small to hold this capture. `probe_stop` must still report
-/// the real total, because the total is a fact about the log.
+/// `probe_stop` must still report the real total, because the total is a
+/// fact about the log (REC-C2.3: with no live ring, "ring capacity" is gone).
 #[tokio::test]
 async fn probe_stop_total_is_the_log_not_the_ring() {
     const RING_CAPACITY: usize = 4;
@@ -31,7 +31,7 @@ async fn probe_stop_total_is_the_log_not_the_ring() {
         .expect("Failed to start MCP server");
 
     let session_id = client
-        .probe_start_with_params(fixture.to_str().unwrap(), true, RING_CAPACITY)
+        .probe_start_with_params(fixture.to_str().unwrap(), true)
         .await
         .expect("probe_start failed");
 
@@ -52,8 +52,8 @@ async fn probe_stop_total_is_the_log_not_the_ring() {
         .expect("probe_stop must report total_events");
     assert!(
         total > RING_CAPACITY as u64,
-        "probe_stop reported {total} events with a ring capacity of {RING_CAPACITY}: the ring \
-         is still being used as the source of truth (raw: {stopped})"
+        "probe_stop reported {total} events; expected the log-backed total to be larger than {RING_CAPACITY} \
+         (REC-C2.3: with no live ring there is no smaller authority the total could collapse to). Raw: {stopped}"
     );
 
     // A gap-bearing capture must not be presented as a clean total.

@@ -1330,23 +1330,16 @@ pub struct ProbeStartParams {
     pub trace_syscalls: bool,
     /// Working directory for the target.
     pub cwd: Option<String>,
-    /// EventBus ring buffer capacity (default: 50000).
-    #[serde(default = "default_bus_capacity")]
-    pub bus_capacity: usize,
     /// Whether to capture real function frames (default: false).
     ///
     /// When `true`, `NativeProbeBackend` plants INT3 at the relocated
     /// function-entry addresses of the spawned binary and emits
     /// `FunctionEntry` events (with `invocation_id`,
-    /// `parent_invocation_id`, `symbol_id`) to both `EventBus` and
+    /// `parent_invocation_id`, `symbol_id`) onto the session-owned
     /// `SegmentedExecutionLog` v2 through the same producer seam as
     /// syscall/registers events. Requires symbols in the binary.
     #[serde(default)]
     pub track_function_frames: Option<bool>,
-}
-
-fn default_bus_capacity() -> usize {
-    50000
 }
 
 /// Map a language string (from JSON) to a `Language` enum variant.
@@ -1379,9 +1372,6 @@ pub struct ProbeStartAttachParams {
     /// Whether to trace syscalls (default: true).
     #[serde(default = "default_true")]
     pub trace_syscalls: bool,
-    /// EventBus ring buffer capacity (default: 50000).
-    #[serde(default = "default_bus_capacity")]
-    pub bus_capacity: usize,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1428,8 +1418,6 @@ pub struct SessionStartSpawnParamsDto {
     pub trace_syscalls: bool,
     #[serde(default)]
     pub cwd: Option<String>,
-    #[serde(default = "default_bus_capacity")]
-    pub bus_capacity: usize,
     #[serde(default)]
     pub track_function_frames: Option<bool>,
 }
@@ -1514,26 +1502,6 @@ fn default_log_limit() -> usize {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ProbeCompactionMetricsParams {
     pub session_id: String,
-}
-
-/// Wire format for [`chronos_domain::EventCursor`] in MCP JSON payloads.
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
-pub struct CursorDto {
-    #[serde(default)]
-    pub total_pushed: Option<u64>,
-    #[serde(default)]
-    pub snapshot_len: Option<u64>,
-}
-
-impl CursorDto {
-    /// Convert to the domain cursor, returning `None` if the payload is
-    /// malformed (e.g., negative fields or missing required values).
-    pub fn to_domain(&self) -> Option<chronos_domain::EventCursor> {
-        Some(chronos_domain::EventCursor {
-            total_pushed: self.total_pushed?,
-            snapshot_len: self.snapshot_len?,
-        })
-    }
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -4641,9 +4609,9 @@ impl ChronosServer {
 
         // v1 shim: route through `session_start{action=spawn}` (m7-05).
         // The v2 dispatcher returns `SessionStartOutput` which carries
-        // the v1-compatible fields (`session_id`, `language`,
-        // `bus_capacity`) in `capability_snapshot`. We preserve the
-        // original v1 JSON shape 1:1 for backward compatibility.
+        // the v1-compatible fields (`session_id`, `language`) and a
+        // `capability_snapshot`. We preserve the original v1 JSON shape
+        // 1:1 minus `bus_capacity` (REC-C2.3: the bus is gone).
         let v2_input = chronos_services::output::SessionStartInput {
             action: chronos_services::output::SessionStartAction::Spawn,
             spawn_fields: Some(chronos_services::output::SessionStartSpawnFields {
@@ -4651,7 +4619,6 @@ impl ChronosServer {
                 args: params.args,
                 trace_syscalls: params.trace_syscalls,
                 cwd: params.cwd,
-                bus_capacity: Some(params.bus_capacity),
                 track_function_frames: params.track_function_frames.unwrap_or(false),
             }),
             session_id: None,
@@ -4684,7 +4651,6 @@ impl ChronosServer {
                     "status": "started",
                     "target": out.target,
                     "language": out.capability_snapshot.language,
-                    "bus_capacity": out.capability_snapshot.bus_capacity,
                     "hint": "Session is live. Use probe_drain to read events, session_stop / probe_stop to finalise."
                 });
                 Ok(CallToolResult::success(json_content(&output)))
@@ -4814,7 +4780,6 @@ impl ChronosServer {
                     args: sf.args.clone(),
                     trace_syscalls: sf.trace_syscalls,
                     cwd: sf.cwd.clone(),
-                    bus_capacity: Some(sf.bus_capacity),
                     track_function_frames: sf.track_function_frames.unwrap_or(false),
                 }
             }),
@@ -4994,8 +4959,6 @@ impl ChronosServer {
                 let snapshot = CapabilitySnapshot {
                     probe_type: Some("ebpf_user".to_string()),
                     language: Some(language.to_string()),
-                    bus_capacity: None,
-                    bus_fill: None,
                     query_engine_ready: true,
                     active_subscriptions: vec![],
                     tail_sealed: sealed_at.is_some(),
@@ -5045,8 +5008,6 @@ impl ChronosServer {
                 let snapshot = CapabilitySnapshot {
                     probe_type: Some("ebpf_user".to_string()),
                     language: Some(meta.language.clone()),
-                    bus_capacity: None,
-                    bus_fill: None,
                     query_engine_ready: true,
                     active_subscriptions: vec![],
                     tail_sealed: meta.tail_sealed,
@@ -8932,8 +8893,7 @@ mod tests {
         let server = Arc::new(ChronosServer::new());
 
         // Register a backend with NO execution log attached.
-        let bus = chronos_domain::bus::EventBus::new_shared(1024);
-        let backend_no_log = NativeProbeBackend::new(bus);
+        let backend_no_log = NativeProbeBackend::new();
         // Build the minimum LiveProbeSession: the daemon only
         // reads `backend`, so we stub the other fields with
         // dummies that compile.
@@ -9028,8 +8988,7 @@ mod tests {
         );
 
         // Open a log, attach it to the backend slot, and append the record.
-        let bus = chronos_domain::bus::EventBus::new_shared(1024);
-        let backend = NativeProbeBackend::new(bus);
+        let backend = NativeProbeBackend::new();
         let log = Arc::new(
             SegmentedExecutionLog::open(
                 LogSessionId::new(&log_session_id),

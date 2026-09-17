@@ -80,22 +80,22 @@ impl McpSession {
     ///
     /// Sends `{"method": "probe_start", "params": {...}}` and returns the session_id.
     pub async fn probe_start(&mut self, target: &str) -> Result<String, McpSandboxError> {
-        self.probe_start_with_params(target, true, 50000).await
+        self.probe_start_with_params(target, true).await
     }
 
-    /// Probe start with custom parameters — begins capturing execution of a target program.
+    /// Probe start with a custom `trace_syscalls` override — begins capturing
+    /// execution of a target program.
     ///
-    /// This variant allows overriding trace_syscalls and bus_capacity for testing edge cases.
+    /// REC-C2.3: `bus_capacity` is gone from the wire (no live ring), so the
+    /// only knob to override here is `trace_syscalls`.
     pub async fn probe_start_with_params(
         &mut self,
         program: &str,
         trace_syscalls: bool,
-        bus_capacity: usize,
     ) -> Result<String, McpSandboxError> {
         let params = serde_json::json!({
             "program": program,
             "trace_syscalls": trace_syscalls,
-            "bus_capacity": bus_capacity
         });
 
         let response = self.rpc_client.call_tool("probe_start", params).await?;
@@ -108,7 +108,7 @@ impl McpSession {
 
     /// Probe start with `track_function_frames=true` — exercises the live
     /// MCP path that drives the INT3 frame-capture pipeline and streams
-    /// `FunctionEntry` events to both `EventBus` and the attached
+    /// `FunctionEntry` events onto the session-owned
     /// `SegmentedExecutionLog` v2. MCP-side default is `false`; this
     /// helper sets it explicitly so the UAT can assert the new behaviour.
     pub async fn probe_start_with_track_function_frames(
@@ -136,7 +136,6 @@ impl McpSession {
         let params = serde_json::json!({
             "program": program,
             "trace_syscalls": true,
-            "bus_capacity": 50000
         });
 
         self.rpc_client.call_tool("probe_start", params).await
@@ -174,7 +173,6 @@ impl McpSession {
                 args,
                 trace_syscalls: true,
                 cwd: None,
-                bus_capacity: 50000,
                 track_function_frames: None,
             }),
             session_id: None,

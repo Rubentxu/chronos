@@ -19,13 +19,14 @@ pub mod types;
 pub mod uprobe;
 
 use crate::ring_buffer::MockRingBuffer;
+#[cfg(test)]
 use crate::types::EbpfEvent;
 use chronos_capture::TraceAdapter as CaptureTraceAdapter;
+#[cfg(test)]
 use chronos_domain::semantic::{SemanticEvent, SemanticEventKind};
 #[allow(unused_imports)]
 use chronos_domain::{
-    CaptureConfig, CaptureSession, CursorStatus, EventCursor, Language, ProbeBackend, ReadResult,
-    TraceError, TraceEvent,
+    CaptureConfig, CaptureSession, Language, ProbeBackend, TraceError, TraceEvent,
 };
 #[cfg(feature = "ebpf")]
 use std::sync::Mutex;
@@ -208,36 +209,6 @@ impl ProbeBackend for EbpfAdapter {
         "ebpf"
     }
 
-    fn read_since(&self, _cursor: Option<EventCursor>) -> ReadResult {
-        // REC-C2.2.4 hardening (raised by the verify gate): this used to fall
-        // back to `inner.drain_events()` when no cursor was supplied, i.e. it
-        // EVICTED the BPF ring from inside a method the trait documents as
-        // "**Non-destructive**, cursor-based read". A read that consumes is a
-        // Silent Lie about what it did, and a second consumer would see
-        // nothing.
-        //
-        // The BPF ring buffer genuinely cannot be peeked, so the honest answer
-        // is a refusal, not a destructive fallback. Nothing should be lost by
-        // refusing: the canonical drain path no longer calls `read_since`
-        // (it reads the session's `ExecutionLog`), and this method has no
-        // production caller left.
-        //
-        // Re-anchoring is the caller's decision, so the refusal is typed and
-        // carries the numbers it knows.
-        //
-        // NOT covered by a runtime test: constructing a real `EbpfAdapter`
-        // needs BPF privileges and kernel support, so a test here either
-        // requires `--features ebpf` plus root (and then bails out, which is
-        // the vacuous-test pattern this cycle just removed) or it cannot run at
-        // all. The property is enforced by construction instead: the
-        // destructive fallback is gone from the source, so there is nothing
-        // left to evict. Verifying it at runtime needs a BPF-capable host.
-        Err(TraceError::CursorStale {
-            expected: 0,
-            current: 0,
-        })
-    }
-
     fn stop_probe(&self, _session: &CaptureSession) -> Result<(), TraceError> {
         #[cfg(feature = "ebpf")]
         {
@@ -368,6 +339,7 @@ impl CaptureTraceAdapter for EbpfAdapter {
 /// Always available (no `ebpf` feature required). Useful for tests and
 /// environments where eBPF is not available.
 pub struct MockEbpfAdapter {
+    #[cfg_attr(not(test), allow(dead_code))]
     buffer: MockRingBuffer,
 }
 
@@ -383,6 +355,13 @@ impl MockEbpfAdapter {
     pub fn empty() -> Self {
         Self::new(vec![])
     }
+
+    /// Test-only peek of the underlying ring buffer (no consumer of the
+    /// `ProbeBackend` trait can call `read_since` anymore).
+    #[cfg(test)]
+    pub(crate) fn ring_buffer(&self) -> &MockRingBuffer {
+        &self.buffer
+    }
 }
 
 impl ProbeBackend for MockEbpfAdapter {
@@ -394,50 +373,6 @@ impl ProbeBackend for MockEbpfAdapter {
         "ebpf-mock"
     }
 
-    fn read_since(&self, cursor: Option<EventCursor>) -> ReadResult {
-        // Mock adapter backed by MockRingBuffer which supports non-destructive peek.
-        let (snap, total_pushed) = self.buffer.peek_all();
-        let snap_len = snap.len() as u64;
-
-        // Ids are assigned over the WHOLE snapshot so a paged read keeps the
-        // same identity for the same event.
-        let all: Vec<SemanticEvent> = snap
-            .into_iter()
-            .enumerate()
-            .map(|(i, e)| convert_ebpf_to_semantic(e, i as u64))
-            .collect();
-
-        let semantic: Vec<SemanticEvent> = match cursor {
-            None => all,
-            Some(c) => {
-                if c.total_pushed != total_pushed {
-                    return Err(TraceError::CursorStale {
-                        expected: c.total_pushed,
-                        current: total_pushed,
-                    });
-                }
-                if c.snapshot_len > snap_len {
-                    return Err(TraceError::CursorStale {
-                        expected: c.snapshot_len,
-                        current: snap_len,
-                    });
-                }
-                all.into_iter().skip(c.snapshot_len as usize).collect()
-            }
-        };
-
-        let new_cursor = EventCursor {
-            total_pushed,
-            snapshot_len: snap_len,
-        };
-        let status = if semantic.is_empty() {
-            CursorStatus::Empty
-        } else {
-            CursorStatus::Fresh
-        };
-        Ok((semantic, new_cursor, status))
-    }
-
     fn stop_probe(&self, _session: &CaptureSession) -> Result<(), TraceError> {
         // Mock adapter: nothing to stop
         Ok(())
@@ -445,6 +380,7 @@ impl ProbeBackend for MockEbpfAdapter {
 }
 
 /// Convert an eBPF kernel event into a `SemanticEvent` for live LLM consumption.
+#[cfg(test)]
 fn convert_ebpf_to_semantic(e: EbpfEvent, source_event_id: u64) -> SemanticEvent {
     let fn_name = e.get_function_name().to_string();
     let kind = match e.kind {
@@ -561,68 +497,78 @@ mod adapter_tests {
         assert!(adapter.is_available());
     }
 
-    // REC-C2.2.4: these tests used the destructive `drain_events()`. That
-    // method is gone from `ProbeBackend`, so they now exercise the surviving
-    // non-destructive `read_since`, which is the read path that had to replace
-    // it. The conversion under test (`convert_ebpf_to_semantic`) is the same.
+    // REC-C2.3.1: tests for the retired `read_since` method. The trait method is
+    // gone. Behavior under test now lives on the underlying `MockRingBuffer`
+    // (non-destructive `peek_all` is already covered there) and on the pure
+    // `convert_ebpf_to_semantic` mapping under test.
 
     #[test]
-    fn test_mock_ebpf_adapter_read_since_empty() {
+    fn test_mock_ring_buffer_peek_is_empty_when_no_events() {
+        // Replaces `test_mock_ebpf_adapter_read_since_empty`: an empty
+        // MockRingBuffer stays empty across `peek_all`, no events are
+        // manufactured by the read.
         let adapter = MockEbpfAdapter::empty();
-        let (events, _cursor, _status) = adapter.read_since(None).unwrap();
-        assert!(events.is_empty());
+        let (snap, total) = adapter.ring_buffer().peek_all();
+        assert!(snap.is_empty());
+        assert_eq!(total, 0);
     }
 
     #[test]
-    fn test_mock_ebpf_adapter_drain_events() {
+    fn test_convert_ebpf_to_semantic_maps_function_entry_and_exit() {
+        // Replaces `test_mock_ebpf_adapter_drain_events`: checks that the
+        // mapping the retired `read_since` impl applied (per event, with
+        // indices over the whole snapshot) is preserved.
         let raw_events = vec![
             EbpfEvent::function_entry(100, 1, 0x1000, "alpha"),
             EbpfEvent::function_entry(200, 2, 0x2000, "beta"),
             EbpfEvent::function_exit(300, 1, 0x1000),
         ];
-        let adapter = MockEbpfAdapter::new(raw_events);
 
-        let (events, _cursor, _status) = adapter.read_since(None).unwrap();
-        assert_eq!(events.len(), 3);
-        // Events are now properly mapped to semantic kinds
+        let semantic: Vec<SemanticEvent> = raw_events
+            .into_iter()
+            .enumerate()
+            .map(|(i, e)| convert_ebpf_to_semantic(e, i as u64))
+            .collect();
+
+        assert_eq!(semantic.len(), 3);
         assert!(
-            matches!(&events[0].kind, SemanticEventKind::FunctionCalled { function, .. } if function == "alpha")
+            matches!(&semantic[0].kind, SemanticEventKind::FunctionCalled { function, .. } if function == "alpha")
         );
         assert!(
-            matches!(&events[1].kind, SemanticEventKind::FunctionCalled { function, .. } if function == "beta")
+            matches!(&semantic[1].kind, SemanticEventKind::FunctionCalled { function, .. } if function == "beta")
         );
         assert!(matches!(
-            &events[2].kind,
+            &semantic[2].kind,
             SemanticEventKind::FunctionReturned { .. }
         ));
-        // Check metadata via source_event_id and timestamp_ns
-        assert_eq!(events[0].source_event_id, 0);
-        assert_eq!(events[1].source_event_id, 1);
-        assert_eq!(events[2].source_event_id, 2);
-        assert_eq!(events[0].timestamp_ns, 100);
-        assert_eq!(events[1].timestamp_ns, 200);
-        assert_eq!(events[2].timestamp_ns, 300);
-        // Check description contains event type info
-        assert!(events[0].description.contains("FunctionEntry"));
-        assert!(events[2].description.contains("FunctionExit"));
+        // Identity assigned over the full snapshot, not the page.
+        assert_eq!(semantic[0].source_event_id, 0);
+        assert_eq!(semantic[1].source_event_id, 1);
+        assert_eq!(semantic[2].source_event_id, 2);
+        assert_eq!(semantic[0].timestamp_ns, 100);
+        assert_eq!(semantic[1].timestamp_ns, 200);
+        assert_eq!(semantic[2].timestamp_ns, 300);
+        assert!(semantic[0].description.contains("FunctionEntry"));
+        assert!(semantic[2].description.contains("FunctionExit"));
     }
 
     /// The inverted expectation. The retired `drain_events()` consumed its
     /// buffer, so the second call returned nothing and every later consumer saw
-    /// a truncated history. A read must not consume.
+    /// a truncated history. The MockRingBuffer's `peek_all` must not consume:
+    /// a second peek sees the same events (REC-C2.2.4 contract).
     #[test]
-    fn test_mock_ebpf_adapter_read_is_non_destructive() {
+    fn test_mock_ring_buffer_peek_is_non_destructive() {
         let raw_events = vec![EbpfEvent::function_entry(1, 1, 0x1, "f")];
         let adapter = MockEbpfAdapter::new(raw_events);
 
-        let (first, _c1, _s1) = adapter.read_since(None).unwrap();
+        let (first, _t1) = adapter.ring_buffer().peek_all();
         assert_eq!(first.len(), 1);
 
-        let (second, _c2, _s2) = adapter.read_since(None).unwrap();
+        let (second, _t2) = adapter.ring_buffer().peek_all();
         assert_eq!(
             second.len(),
             1,
-            "a read must not consume: the retired destructive drain returned 0 here"
+            "a peek must not consume: a destructive read returned 0 here"
         );
     }
 

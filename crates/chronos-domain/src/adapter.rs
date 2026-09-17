@@ -3,7 +3,7 @@
 //! Any capture backend (ptrace/native, eBPF, mock) implements `TraceAdapter`
 //! to provide a uniform interface for the query engine and MCP server.
 
-use crate::{CaptureSession, EventCursor, ReadResult, TraceError, TraceEvent};
+use crate::{CaptureSession, TraceError, TraceEvent};
 
 // ============================================================================
 // ProbeBackend — query-side trait (pull, non-blocking drain)
@@ -27,16 +27,6 @@ pub trait ProbeBackend: Send {
 
     /// Human-readable name of this backend.
     fn name(&self) -> &str;
-
-    /// **Non-destructive**, cursor-based read of buffered semantic events.
-    ///
-    /// Reading the same cursor twice returns the same event set (provided
-    /// the bus has not evicted the referenced events). The bus contents
-    /// are NOT modified by this call.
-    ///
-    /// Implementations should delegate to `EventBus::read_since` when backed
-    /// by one, or to a backend-native snapshot when not.
-    fn read_since(&self, cursor: Option<EventCursor>) -> ReadResult;
 
     /// Stop the probe and release all resources.
     ///

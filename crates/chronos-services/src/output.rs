@@ -808,20 +808,6 @@ pub struct SaliencyScoreResult {
 // Probe service output types
 // ---------------------------------------------------------------------------
 
-/// A cursor for non-destructive probe drainage (output side).
-///
-/// Mirrors the JSON shape produced by `probe_drain`'s existing `serde_json::json!({...})`
-/// output (`cursor.total_pushed`, `cursor.snapshot_len`, `cursor.cursor_stale`).
-///
-/// Named `ProbeCursorDto` to avoid collision with the input-side `CursorDto` in
-/// `chronos-mcp::server` (which carries `Option<u64>` fields for parsing
-/// malformed payloads).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ProbeCursorDto {
-    pub total_pushed: u64,
-    pub snapshot_len: usize,
-}
-
 /// A single event as returned by `probe_drain` (the JSON-shape consumed by
 /// the LLM-facing probe tools).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -842,7 +828,6 @@ pub struct ProbeStartOutput {
     pub status: String,
     pub target: String,
     pub language: String,
-    pub bus_capacity: usize,
     pub hint: String,
 }
 
@@ -881,23 +866,6 @@ pub struct ProbeStopResult {
     pub completeness: crate::events_log_read::CompletenessReport,
     /// ExecutionRecords examined while reading the evidence.
     pub examined_records: u64,
-}
-
-/// Output of `probe_drain`. JSON shape matches the existing literal in
-/// `chronos-mcp/src/server.rs::probe_drain`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ProbeDrainOutput {
-    pub session_id: String,
-    pub status: String,
-    pub total_buffered: usize,
-    pub returned: usize,
-    pub offset: usize,
-    pub limit: usize,
-    pub cursor: ProbeCursorDto,
-    pub cursor_stale: bool,
-    pub tripwires_fired: usize,
-    pub events: Vec<DrainedEventDto>,
-    pub hint: String,
 }
 
 /// Result of `ProbeService::session_snapshot`.
@@ -1686,40 +1654,6 @@ pub enum EventsReadOutput {
     },
 }
 
-/// Wire format for [`chronos_domain::EventCursor`] in MCP JSON payloads.
-///
-/// Mirrors the existing `CursorDto` at the MCP boundary (see
-/// `crates/chronos-mcp/src/server.rs:795`). We declare it here too so
-/// the v2 DTO surface does not depend on the MCP boundary module's
-/// internal types — the dispatcher accepts this DTO and converts to
-/// `chronos_domain::EventCursor` internally.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct CursorDto {
-    #[serde(default)]
-    pub total_pushed: Option<u64>,
-    #[serde(default)]
-    pub snapshot_len: Option<u64>,
-}
-
-impl CursorDto {
-    /// Convert to the domain cursor, returning `None` if the payload is
-    /// malformed (e.g., missing required values).
-    pub fn to_domain(&self) -> Option<chronos_domain::EventCursor> {
-        Some(chronos_domain::EventCursor {
-            total_pushed: self.total_pushed?,
-            snapshot_len: self.snapshot_len?,
-        })
-    }
-
-    /// Convert from a domain cursor.
-    pub fn from_domain(c: &chronos_domain::EventCursor) -> Self {
-        Self {
-            total_pushed: Some(c.total_pushed),
-            snapshot_len: Some(c.snapshot_len),
-        }
-    }
-}
-
 // ============================================================================
 // M7 — Session Compare + Session Explain outputs (m7-03)
 // ----------------------------------------------------------------------------
@@ -2080,8 +2014,6 @@ pub struct SessionStartSpawnFields {
     #[serde(default)]
     pub trace_syscalls: bool,
     #[serde(default)]
-    pub bus_capacity: Option<usize>,
-    #[serde(default)]
     pub track_function_frames: bool,
 }
 
@@ -2098,8 +2030,6 @@ pub struct SessionStartOutput {
     pub event_count: Option<usize>,
     #[serde(default)]
     pub duration_ms: Option<u64>,
-    #[serde(default)]
-    pub bus_capacity: Option<usize>,
     pub capability_snapshot: CapabilitySnapshot,
     pub provenance: SessionLifecycleProvenance,
 }
@@ -2215,10 +2145,6 @@ pub struct CapabilitySnapshot {
     #[serde(default)]
     pub language: Option<String>,
     #[serde(default)]
-    pub bus_capacity: Option<usize>,
-    #[serde(default)]
-    pub bus_fill: Option<usize>,
-    #[serde(default)]
     pub query_engine_ready: bool,
     #[serde(default)]
     pub active_subscriptions: Vec<String>,
@@ -2270,8 +2196,6 @@ pub enum ProjectionKind {
 /// Dynamic capability surface (per-session, live).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DynamicCapabilities {
-    pub bus_capacity: usize,
-    pub bus_fill: usize,
     pub event_types_emitted: Vec<EventType>,
     pub event_type_counts: HashMap<EventType, u64>,
     pub query_engine_ready: bool,

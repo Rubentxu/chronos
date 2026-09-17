@@ -18,16 +18,10 @@ pub struct ProbeStartParams {
     #[serde(default = "default_true")]
     pub trace_syscalls: bool,
     pub cwd: Option<String>,
-    #[serde(default = "default_bus_capacity")]
-    pub bus_capacity: usize,
 }
 
 fn default_true() -> bool {
     true
-}
-
-fn default_bus_capacity() -> usize {
-    50000
 }
 
 /// Response from probe_start.
@@ -37,7 +31,6 @@ pub struct ProbeStartResponse {
     pub status: String,
     pub target: String,
     pub language: String,
-    pub bus_capacity: usize,
     pub hint: Option<String>,
 }
 
@@ -89,8 +82,6 @@ pub struct SessionStartResponse {
     pub event_count: Option<usize>,
     #[serde(default)]
     pub duration_ms: Option<u64>,
-    #[serde(default)]
-    pub bus_capacity: Option<usize>,
     /// Capability snapshot — see `CapabilitySnapshot` in
     /// `chronos-services::output` for the full shape.
     #[serde(default)]
@@ -145,8 +136,6 @@ pub struct SessionStartSpawnParams {
     pub trace_syscalls: bool,
     #[serde(default)]
     pub cwd: Option<String>,
-    #[serde(default = "default_bus_capacity")]
-    pub bus_capacity: usize,
     #[serde(default)]
     pub track_function_frames: Option<bool>,
 }

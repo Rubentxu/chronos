@@ -6,12 +6,16 @@
 //! functions in `chronos-mcp` are thin wrappers that delegate here.
 //!
 //! Browser-probe sessions live in a sibling service (deferred to m5-06b).
+//!
+//! REC-C2.3 — the canonical author no longer constructs an `EventBus`: the
+//! accepted-Raw seam (`accept_raw`) is the only producer, and consumers read
+//! the session's `ExecutionLog`. There is no mirror and no parallel source of
+//! truth left to keep in sync.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use chronos_domain::bus::EventBus;
 use chronos_domain::{CaptureConfig, CaptureSession, Language};
 use chronos_native::probe_backend::NativeProbeBackend;
 use tokio::sync::Mutex as TokioMutex;
@@ -27,9 +31,9 @@ use chronos_domain::TraceEvent;
 
 /// A live native probe session.
 ///
-/// Unlike `debug_run` which blocks until the program exits, a live probe streams
-/// events to an `EventBus` ring buffer in real-time. Events can be drained at any
-/// time via `probe_drain`, and the probe is stopped via `probe_stop`.
+/// Unlike `debug_run` which blocks until the program exits, a live probe persists
+/// each `TraceEvent` through the accepted-Raw seam (`accept_raw`) and consumers
+/// read the session's `ExecutionLog` via `probe_drain` and `probe_stop`.
 pub struct LiveProbeSession {
     /// The native probe backend driving the ptrace loop.
     pub backend: NativeProbeBackend,
@@ -109,11 +113,10 @@ pub struct ProbeStartInput {
     pub args: Vec<String>,
     pub trace_syscalls: bool,
     pub cwd: Option<String>,
-    pub bus_capacity: usize,
     pub track_function_frames: Option<bool>,
     /// Root directory for this session's ExecutionLog (REC-C1.2a). The log is
     /// mandatory: when this is `None` a default root is used, and if the log
-    /// cannot be opened the start fails rather than degrading to EventBus-only.
+    /// cannot be opened the start fails.
     pub execution_log_dir: Option<PathBuf>,
 }
 
@@ -121,13 +124,11 @@ pub struct ProbeStartInput {
 ///
 /// `pid` is the running process to attach to. The dispatcher resolves the
 /// binary path from `/proc/<pid>/exe`, so the caller does not supply a
-/// program name. `trace_syscalls` and `bus_capacity` mirror the spawn
-/// defaults.
+/// program name. `trace_syscalls` mirrors the spawn defaults.
 #[derive(Debug, Clone)]
 pub struct ProbeAttachInput {
     pub pid: u32,
     pub trace_syscalls: bool,
-    pub bus_capacity: usize,
     /// See [`ProbeStartInput::execution_log_dir`].
     pub execution_log_dir: Option<PathBuf>,
 }
@@ -142,7 +143,6 @@ pub struct ProbeAttachOutput {
     pub pid: u32,
     pub target: String,
     pub language: String,
-    pub bus_capacity: usize,
 }
 
 /// Input for `ProbeService::drain`.
@@ -254,21 +254,20 @@ impl ProbeService {
             config.cwd = Some(PathBuf::from(cwd));
         }
 
-        // Create a fresh EventBus for this session
-        let bus = EventBus::new_shared(input.bus_capacity);
         let language = ctx_infer_language(&input.program);
 
         // REC-C1.2a: canonical ownership order.
         //   1. mint the canonical SessionId,
         //   2. open the ExecutionLog the session will own,
         //   3. hand the backend only a clone for writing.
-        // If (2) fails, session_start fails: no EventBus-only silent session.
+        // REC-C2.3: there is no longer a parallel `EventBus` to construct; the
+        // accepted-Raw seam is the only producer.
         let session_id = uuid::Uuid::new_v4().to_string();
         let owned_log = crate::session_log::SessionExecutionLog::create(
             execution_log_dir(input.execution_log_dir.as_deref(), &session_id),
             chronos_log::SessionId::new(session_id.clone()),
         )?;
-        let backend = NativeProbeBackend::new(bus)
+        let backend = NativeProbeBackend::new()
             .with_language(language)
             .with_accepted_raw_observer(Self::accepted_raw_observer(
                 owned_log.clone(),
@@ -283,8 +282,8 @@ impl ProbeService {
             .map_err(|e| ServiceError::ProbeStartFailed(e.to_string()))?;
 
         info!(
-            "Live probe started for '{}' (session: {}, bus capacity: {})",
-            input.program, session_id, input.bus_capacity
+            "Live probe started for '{}' (session: {})",
+            input.program, session_id,
         );
 
         // Store the live probe session. The log is mandatory and session-owned.
@@ -319,7 +318,6 @@ impl ProbeService {
             status: "running".to_string(),
             target: input.program,
             language: format!("{:?}", language),
-            bus_capacity: input.bus_capacity,
             hint: "Use probe_drain to read events in real-time, probe_stop to finalize."
                 .to_string(),
         })
@@ -375,15 +373,15 @@ impl ProbeService {
             function_filter: None,
             max_duration_ms: None,
         };
-        let bus = EventBus::new_shared(input.bus_capacity);
         // REC-C1.2a: same canonical order as `start` — mint id, own the log,
         // then let the backend write through a clone.
+        // REC-C2.3: no EventBus to construct.
         let session_id = uuid::Uuid::new_v4().to_string();
         let owned_log = crate::session_log::SessionExecutionLog::create(
             execution_log_dir(input.execution_log_dir.as_deref(), &session_id),
             chronos_log::SessionId::new(session_id.clone()),
         )?;
-        let backend = NativeProbeBackend::new(bus)
+        let backend = NativeProbeBackend::new()
             .with_language(language)
             .with_accepted_raw_observer(Self::accepted_raw_observer(
                 owned_log.clone(),
@@ -411,15 +409,14 @@ impl ProbeService {
             .map_err(|_| ServiceError::LockPoisoned)?
             .insert(session_id.clone(), live);
         info!(
-            "Live probe attached to pid {} ('{}', session: {}, bus capacity: {})",
-            input.pid, target, session_id, input.bus_capacity
+            "Live probe attached to pid {} ('{}', session: {})",
+            input.pid, target, session_id,
         );
         Ok(ProbeAttachOutput {
             session_id,
             pid: input.pid,
             target,
             language: format!("{:?}", language),
-            bus_capacity: input.bus_capacity,
         })
     }
 
@@ -897,7 +894,6 @@ mod rec_c1_2_tests {
     //! log carries one identity, and there is no backend read fallback.
 
     use super::*;
-    use chronos_domain::bus::EventBus;
     use chronos_domain::{CaptureConfig, CaptureSession};
     use chronos_log::{SegmentedConfig, SegmentedExecutionLog};
 
@@ -915,8 +911,9 @@ mod rec_c1_2_tests {
     }
 
     fn stub_session(execution_log: crate::session_log::SessionExecutionLog) -> LiveProbeSession {
-        let bus = EventBus::new_shared(64);
-        let backend = NativeProbeBackend::new(bus).attach_execution_log(execution_log.handle());
+        // REC-C2.3: no EventBus — the backend's only sink is the
+        // caller-attached ExecutionLog.
+        let backend = NativeProbeBackend::new().attach_execution_log(execution_log.handle());
         let session = CaptureSession::new(0, Language::Rust, CaptureConfig::new("noop"));
         LiveProbeSession {
             backend,
@@ -994,7 +991,7 @@ mod rec_c1_2_tests {
     #[test]
     fn session_creation_with_an_unopenable_log_root_fails_loudly() {
         // A directory that cannot be created must fail session creation, not
-        // silently fall back to an EventBus-only session.
+        // silently fall back to a sink-less session.
         let bad_root = "/proc/definitely-not-creatable/chronos";
         let err = crate::session_log::SessionExecutionLog::create(
             std::path::Path::new(bad_root),

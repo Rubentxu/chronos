@@ -108,13 +108,11 @@ impl ChronosSessionLifecycleService {
                 "session_start{action=spawn} requires `spawn_fields`".to_string(),
             )
         })?;
-        let bus_capacity = spawn_fields.bus_capacity.unwrap_or(4096);
         let probe_input = crate::probe::ProbeStartInput {
             program: spawn_fields.program.clone(),
             args: spawn_fields.args,
             trace_syscalls: spawn_fields.trace_syscalls,
             cwd: spawn_fields.cwd,
-            bus_capacity,
             track_function_frames: Some(spawn_fields.track_function_frames),
             // REC-C1.2a: session_start may point the session's ExecutionLog at a
             // specific root; otherwise the default root applies.
@@ -125,8 +123,6 @@ impl ChronosSessionLifecycleService {
         let snapshot = CapabilitySnapshot {
             probe_type: Some("ebpf_user".to_string()),
             language: Some(lang.clone()),
-            bus_capacity: Some(out.bus_capacity),
-            bus_fill: Some(0),
             query_engine_ready: false,
             active_subscriptions: vec![],
             tail_sealed: false,
@@ -140,7 +136,6 @@ impl ChronosSessionLifecycleService {
             language: Some(lang),
             event_count: None,
             duration_ms: None,
-            bus_capacity: Some(out.bus_capacity),
             capability_snapshot: snapshot,
             provenance: lifecycle_provenance("session_start:spawn"),
         })
@@ -161,8 +156,6 @@ impl ChronosSessionLifecycleService {
         let snapshot = CapabilitySnapshot {
             probe_type: Some("loaded".to_string()),
             language: Some(meta.language.clone()),
-            bus_capacity: None,
-            bus_fill: None,
             query_engine_ready: true,
             active_subscriptions: vec![],
             tail_sealed: meta.tail_sealed,
@@ -176,7 +169,6 @@ impl ChronosSessionLifecycleService {
             language: Some(meta.language),
             event_count: Some(meta.event_count),
             duration_ms: Some(meta.duration_ms),
-            bus_capacity: None,
             capability_snapshot: snapshot,
             provenance: lifecycle_provenance("session_start:load"),
         })
@@ -199,15 +191,12 @@ impl ChronosSessionLifecycleService {
             crate::probe::ProbeAttachInput {
                 pid,
                 trace_syscalls: false, // default; matches m7-04 spawn default
-                bus_capacity: 4096,
                 execution_log_dir: None,
             },
         )?;
         let snapshot = CapabilitySnapshot {
             probe_type: Some("ptrace_attach".to_string()),
             language: Some(out.language.clone()),
-            bus_capacity: Some(out.bus_capacity),
-            bus_fill: Some(0),
             query_engine_ready: false,
             active_subscriptions: vec![],
             tail_sealed: false,
@@ -221,7 +210,6 @@ impl ChronosSessionLifecycleService {
             language: Some(out.language),
             event_count: None,
             duration_ms: None,
-            bus_capacity: Some(out.bus_capacity),
             capability_snapshot: snapshot,
             provenance: lifecycle_provenance("session_start:attach"),
         })
@@ -338,8 +326,6 @@ impl ChronosSessionLifecycleService {
                 let snapshot = CapabilitySnapshot {
                     probe_type: Some("ebpf_user".to_string()),
                     language: Some(language.to_string()),
-                    bus_capacity: None,
-                    bus_fill: None,
                     query_engine_ready: true,
                     active_subscriptions: vec![],
                     tail_sealed: sealed_at.is_some(),
@@ -366,8 +352,6 @@ impl ChronosSessionLifecycleService {
                 let snapshot = CapabilitySnapshot {
                     probe_type: Some("ebpf_user".to_string()),
                     language: Some(meta.language.clone()),
-                    bus_capacity: None,
-                    bus_fill: None,
                     query_engine_ready: true,
                     active_subscriptions: vec![],
                     tail_sealed: meta.tail_sealed,
@@ -590,8 +574,6 @@ impl ChronosSessionLifecycleService {
             event_type_counts.insert(EventType::FunctionEntry, total);
         }
         DynamicCapabilities {
-            bus_capacity: 0,
-            bus_fill: 0,
             event_types_emitted: event_type_counts.keys().copied().collect(),
             event_type_counts,
             query_engine_ready: true,

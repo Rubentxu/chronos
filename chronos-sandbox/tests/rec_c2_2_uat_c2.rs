@@ -29,10 +29,10 @@ use std::time::Duration;
 /// cannot be confused for one another.
 const TINY_RING: usize = 4;
 
-async fn start_probe_with_ring(client: &mut McpTestClient, ring: usize) -> Option<String> {
+async fn start_probe_with_ring(client: &mut McpTestClient, _ring: usize) -> Option<String> {
     let path = McpSession::fixture_path("test_busyloop")?;
     let session = client
-        .probe_start_with_params(path.to_str()?, true, ring)
+        .probe_start_with_params(path.to_str()?, true)
         .await
         .ok()?;
     tokio::time::sleep(Duration::from_secs(2)).await;
@@ -255,6 +255,8 @@ async fn uat_c2_02_consumers_report_the_log_and_its_completeness() {
 /// This is the premise the whole cycle rests on: if the ring held everything,
 /// reading the log would just be a different spelling of the same thing. With
 /// `bus_capacity = 4` and a real capture, the log must hold vastly more.
+    /// REC-C2.3: `bus_capacity` is gone from the wire, so the test now means
+    /// "durable evidence is more than the retired ring's tiny headcount".
 #[tokio::test]
 async fn uat_c2_03_durable_evidence_exceeds_the_ring() {
     let mut client = McpTestClient::start()

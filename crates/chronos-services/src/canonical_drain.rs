@@ -723,11 +723,9 @@ mod tests {
         log.handle().flush().ok();
 
         let a = drain(&log, None, 10).expect("page");
-        // Perturb a bus (it is not consulted) and there is no manager argument
-        // to perturb at all.
-        let bus = chronos_domain::bus::EventBus::new_shared(8);
-        bus.push_raw(trace_event(999));
-        let _ = bus.snapshot_raw();
+        // Perturb nothing: there is no bus to consult, no manager to perturb.
+        // The drain MUST give the same answer regardless of unrelated state
+        // mutations.
         let b = drain(&log, None, 10).expect("page");
 
         assert_eq!(a.raw_events, b.raw_events);

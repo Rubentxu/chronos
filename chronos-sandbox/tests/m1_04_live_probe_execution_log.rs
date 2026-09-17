@@ -95,8 +95,7 @@ fn live_ptrace_events_flow_into_execution_log() {
     // ptrace loop in `run_probe_loop` opens the log itself; here
     // we drive the events manually via the producer helper so we
     // don't need root (we just need fork + ptrace execve stop).
-    let bus = chronos_domain::bus::EventBus::new_shared(1024);
-    let backend = NativeProbeBackend::new(bus).with_execution_log_dir(Some(dir.clone()));
+    let backend = NativeProbeBackend::new().with_execution_log_dir(Some(dir.clone()));
 
     let log_dir = dir.join(format!("native-{}", session_id));
     let log = Arc::new(
@@ -196,8 +195,7 @@ fn decoder_counters_surface_unparseable_payloads() {
     // an unparseable payload. The counters must distinguish them.
     let dir = tempdir("counters");
     let session_id = "m1-04-counters";
-    let bus = chronos_domain::bus::EventBus::new_shared(64);
-    let backend = NativeProbeBackend::new(bus).with_execution_log_dir(Some(dir.clone()));
+    let backend = NativeProbeBackend::new().with_execution_log_dir(Some(dir.clone()));
 
     let log_dir = dir.join(format!("native-{}", session_id));
     let log = Arc::new(

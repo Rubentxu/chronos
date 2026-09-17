@@ -553,7 +553,7 @@ async fn test_probe_start_with_trace_syscalls_true_captures_more() {
 
     // ============ Session without syscall tracing ============
     let session_id_no_syscalls = client
-        .probe_start_with_params(fixture_add.to_str().unwrap(), false, 50000)
+        .probe_start_with_params(fixture_add.to_str().unwrap(), false)
         .await
         .expect("probe_start (no syscalls) failed");
 
@@ -581,7 +581,7 @@ async fn test_probe_start_with_trace_syscalls_true_captures_more() {
 
     // ============ Session with syscall tracing ============
     let session_id_with_syscalls = client
-        .probe_start_with_params(fixture_add.to_str().unwrap(), true, 50000)
+        .probe_start_with_params(fixture_add.to_str().unwrap(), true)
         .await
         .expect("probe_start (with syscalls) failed");
 

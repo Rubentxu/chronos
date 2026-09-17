@@ -1376,8 +1376,7 @@ mod tests {
     /// surfaces as `ServiceError::EbpfUnsupported(reason)`. That is the
     /// path exercised by these unit tests.
     fn register_fake_probe_session(rig: &TestRig, session_id: &str, pid: u32) {
-        let bus = chronos_domain::bus::EventBus::new_shared(16);
-        let backend = chronos_native::probe_backend::NativeProbeBackend::new(bus);
+        let backend = chronos_native::probe_backend::NativeProbeBackend::new();
         let capture_session = chronos_domain::CaptureSession {
             session_id: session_id.to_string(),
             pid,
