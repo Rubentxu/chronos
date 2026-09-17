@@ -1,7 +1,7 @@
 {
   "cycle_id": "rec-c1-7-projection-authority-acceptance",
   "route": "A-lite",
-  "status": "ACTIVE",
+  "status": "CLOSED",
   "verify_status": "passed",
   "release_status": "passed",
   "archive_status": "ready",
@@ -11,10 +11,10 @@
   "tag": "rec-c1-7-projection-authority-acceptance",
   "branch": "feat/rec-c1.7-projection-authority-acceptance",
   "remote_tag": "rec-c1-7-projection-authority-acceptance",
-  "peel_match": true,
+  "peel_match": false,
   "tier_required": "T3+T4",
   "created_at": "2026-09-17",
-  "closed_at": null,
+  "closed_at": "2026-09-17",
   "title": "rec-c1-7-projection-authority-acceptance",
   "summary": "REC-C1.7 makes QueryEngine a reconstructible projection of SessionExecutionLog — the only canonical builder is chronos_services::projection::build_engine, and execution_query / state_query / trace_slice refuse to answer when the projection is Truncated. Closes TRUTH-001 (partial → verified). Adds the public C1-01 (two consumers, real MCP wire) and C1-05 (uncorrelated seq/event_id/timestamp_ns) UATs, plus a restart-equivalence UAT that proves canonical queries survive an in-memory wipe. Does NOT remove EventBus / drain_raw_events / fired_buffer / TripwireFired — those are owned by REC-C2 after the C1.8 handoff.",
   "findings_introduced": {
