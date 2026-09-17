@@ -17,9 +17,7 @@
   "closed_at": null,
   "title": "rec-c2.1-tripwire-evidence",
   "summary": "Tripwire firings become durable ExecutionLog evidence. C2.1.1 adds ExecutionKind::TripwireFired (appended last; Raw=0/GapMarker=1 pinned) and TripwireFiredEvidence { tripwire_id, source_seq: EventSeq, source_event_id, condition, label, source_timestamp_ns, source_thread_id }, plus the NewExecutionRecord.kind field the backends previously hardcoded to Raw. C2.1.2 inverts dual_push: append first, publish only on success (no observation without acceptance). C2.1.3 derives firings from an accepted Raw record with the recursion barrier enforced by ExecutionKind. C2.1.4-7 (observe-from-log with an independent consumer cursor, derived fire_count, honest retained_until_session_end, fired_buffer removal, restart UAT) are NOT done: observe is synchronous and cannot reach the active session id behind a tokio Mutex; see tasks.md.",
-  "blockers": [
-    "C2.1.4 \u2014 observe is a sync fn and needs the active session id, which lives behind ProbeContext::active_session (tokio::sync::Mutex). Either make observe async (MCP handler + ~40 tests ripple) or add a second sync source of the active session id (duplicated identity, rejected by C1.2a precedent). Prefers the async conversion; needs its own commit and full test pass."
-  ],
+  "blockers": [],
   "findings_introduced": {
     "no_action": [],
     "applied": [
@@ -39,6 +37,10 @@
     {
       "sha": "1e210b73",
       "title": "feat(rec-c2.1): persist-first dual_push + scanner/discriminant hardening (C2.1.2)"
+    },
+    {
+      "sha": "ce13cb4e",
+      "title": "feat(rec-c2.1): async observe boundary + canonical session resolution (C2.1.4a)"
     }
   ],
   "gates": {
@@ -46,7 +48,7 @@
     "T0_clippy": "PASS (cargo clippy --workspace --all-targets -- -D warnings)",
     "T1_workspace_lib_plus_tests": "PASS (workspace --lib excluding sandbox/e2e/native all green; chronos-services 353)",
     "T_chronos_native_serial": "PASS (105 passed; --test-threads=1)",
-    "T4_smoke_subset": "PASS (e2e_connectivity 1/1, program_scenarios 11/11 \u2014 live capture unaffected by the persist-first inversion)",
+    "T4_smoke_subset": "PASS (probe_inject 1/1, e2e_connectivity 4/4, rec_c1_8_uat_c1_01_exact 2/2)",
     "legacy_evb_ratchet": "PASS (36 tracked, baseline 36, CANONICAL=11)",
     "arch_gate_default": "PASS"
   },
