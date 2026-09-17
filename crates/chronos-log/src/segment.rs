@@ -11,7 +11,8 @@
 //! | reserved (u32)    |
 //! | start_seq (u64)   |   first EventSeq in the segment (inclusive)
 //! | end_seq   (u64)   |   last EventSeq in the segment (inclusive)
-//! | record_count (u64)|
+//! | entry_count (u64) |   number of persisted `SegmentEntry` items
+//! |                   |   (ExecutionRecords **and** Gaps)
 //! | schema_version (u32)
 //! | reserved (u32)    |
 //! | reserved (u32)    |
@@ -23,9 +24,11 @@
 //! +-------------------+
 //! ```
 //!
-//! Records inside the payload are encoded with bincode (length-prefixed
+//! Entries inside the payload are encoded with bincode (length-prefixed
 //! records: `[u32 len][bytes]` for each `ExecutionRecord` or `[u32
-//! len][bytes]` for each `Gap`). Records appear in append order. Since
+//! len][bytes]` for each `Gap`). Entries appear in append order. The
+//! header count is of *entries*, one unit for both kinds: a `Gap` is a
+//! single entry even though it spans a whole seq range. Since
 //! segment version 2, each `ExecutionRecord` body also carries the v2
 //! identity fields (`invocation_id`, `parent_invocation_id`,
 //! `symbol_id`) as `presence(u8) + serde_json` so projections survive
@@ -56,7 +59,13 @@ const CHECKSUM_SIZE: usize = 32;
 pub struct SegmentMetadata {
     pub start_seq: EventSeq,
     pub end_seq: EventSeq,
-    pub record_count: u64,
+    /// Number of persisted `SegmentEntry` items in this segment. This is
+    /// one unit for both kinds: an `ExecutionRecord` counts 1 and a `Gap`
+    /// counts 1 (even though a `Gap` spans a range of `EventSeq`s). It is
+    /// deliberately *not* the record-only count — the header must describe
+    /// the payload it vouches for, and replay validates it against
+    /// `decoded.entries.len()`.
+    pub entry_count: u64,
     pub schema_version: u32,
 }
 
@@ -176,7 +185,7 @@ pub fn write_segment(
     session_id: &SessionId,
     start_seq: EventSeq,
     end_seq: EventSeq,
-    record_count: u64,
+    entry_count: u64,
     entries: &[SegmentEntry],
 ) -> Result<PathBuf, LogError> {
     fs::create_dir_all(dir).map_err(|e| LogError::Backend(format!("mkdir {:?}: {}", dir, e)))?;
@@ -200,7 +209,7 @@ pub fn write_segment(
     header[12..16].copy_from_slice(&0u32.to_le_bytes()); // reserved
     header[16..24].copy_from_slice(&start_seq.0.to_le_bytes());
     header[24..32].copy_from_slice(&end_seq.0.to_le_bytes());
-    header[32..40].copy_from_slice(&record_count.to_le_bytes());
+    header[32..40].copy_from_slice(&entry_count.to_le_bytes());
     let schema_version: u32 = 2;
     header[40..44].copy_from_slice(&schema_version.to_le_bytes());
     // header[44..64] reserved (already zero — 20 bytes)
@@ -273,7 +282,7 @@ pub fn read_segment(path: &Path) -> Result<DecodedSegment, LogError> {
         header[24], header[25], header[26], header[27], header[28], header[29], header[30],
         header[31],
     ]));
-    let record_count = u64::from_le_bytes([
+    let entry_count = u64::from_le_bytes([
         header[32], header[33], header[34], header[35], header[36], header[37], header[38],
         header[39],
     ]);
@@ -297,7 +306,7 @@ pub fn read_segment(path: &Path) -> Result<DecodedSegment, LogError> {
         metadata: SegmentMetadata {
             start_seq,
             end_seq,
-            record_count,
+            entry_count,
             schema_version,
         },
         entries,
@@ -344,7 +353,7 @@ pub fn read_header(path: &Path) -> Result<SegmentMetadata, LogError> {
         header[24], header[25], header[26], header[27], header[28], header[29], header[30],
         header[31],
     ]));
-    let record_count = u64::from_le_bytes([
+    let entry_count = u64::from_le_bytes([
         header[32], header[33], header[34], header[35], header[36], header[37], header[38],
         header[39],
     ]);
@@ -352,7 +361,7 @@ pub fn read_header(path: &Path) -> Result<SegmentMetadata, LogError> {
     Ok(SegmentMetadata {
         start_seq,
         end_seq,
-        record_count,
+        entry_count,
         schema_version,
     })
 }
@@ -689,7 +698,7 @@ mod tests {
         let decoded = read_segment(&path).unwrap();
         assert_eq!(decoded.metadata.start_seq, EventSeq::new(0));
         assert_eq!(decoded.metadata.end_seq, EventSeq::new(2));
-        assert_eq!(decoded.metadata.record_count, 3);
+        assert_eq!(decoded.metadata.entry_count, 3);
         assert_eq!(decoded.entries, entries);
         fs::remove_dir_all(dir).ok();
     }

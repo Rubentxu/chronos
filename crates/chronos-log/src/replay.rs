@@ -34,7 +34,7 @@
 //! first entry starts exactly at header.start_seq
 //! each entry starts at previous_end + 1   (a Gap occupies its real range)
 //! last entry ends exactly at header.end_seq
-//! record_count matches the records present
+//! entry_count matches the persisted entries (records + Gaps)
 //! every record.session_id == session_id
 //! ```
 //!
@@ -98,8 +98,8 @@ pub enum ReplayIntegrityError {
         found: String,
     },
 
-    #[error("segment {path:?} declares {declared} records but holds {actual}")]
-    RecordCountMismatch {
+    #[error("segment {path:?} declares {declared} entries but holds {actual}")]
+    EntryCountMismatch {
         path: PathBuf,
         declared: u64,
         actual: u64,
@@ -229,11 +229,14 @@ pub fn build_replay_plan(
 
         // Seq-space semantics inside the segment.
         let mut cursor = header.start_seq;
-        let mut records = 0u64;
+        // The header count is in *entries*: one unit for both an
+        // `ExecutionRecord` and a `Gap`. Counting only records here is what
+        // produced FIND-C1.8-01 (a gap-bearing segment could not reopen).
+        let mut entry_total = 0u64;
         for entry in &decoded.entries {
+            entry_total += 1;
             let (entry_start, entry_end) = match entry {
                 SegmentEntry::Record(r) => {
-                    records += 1;
                     if r.session_id != *session_id {
                         return Err(ReplayIntegrityError::RecordSessionMismatch {
                             path: path.clone(),
@@ -265,11 +268,11 @@ pub fn build_replay_plan(
                 header_end: header.end_seq.0,
             });
         }
-        if records != header.record_count {
-            return Err(ReplayIntegrityError::RecordCountMismatch {
+        if entry_total != header.entry_count {
+            return Err(ReplayIntegrityError::EntryCountMismatch {
                 path,
-                declared: header.record_count,
-                actual: records,
+                declared: header.entry_count,
+                actual: entry_total,
             });
         }
 
@@ -429,7 +432,11 @@ mod rep_tests {
             &session,
             EventSeq::ZERO,
             EventSeq::new(2),
-            2,
+            // Entry count, not record count: the payload is
+            // [Record(0), Gap(1..=1), Record(2)] = 3 entries. (This test
+            // used to pass the record-only count, mirroring the validator's
+            // old unit — see FIND-C1.8-01.)
+            3,
             &entries,
         )
         .expect("write");
@@ -552,7 +559,9 @@ mod rep_tests {
             &session,
             EventSeq::new(2),
             EventSeq::new(4),
-            1,
+            // Entry count: [Gap(2..=3), Record(4)] = 2 entries
+            // (was 1 under the old record-only unit; see FIND-C1.8-01).
+            2,
             &[
                 SegmentEntry::Gap(Gap::new(
                     EventSeq::new(2),

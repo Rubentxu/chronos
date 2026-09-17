@@ -1403,14 +1403,17 @@ fn flush_inner(
         SegmentEntry::Record(r) => r.seq,
         SegmentEntry::Gap(g) => g.last_missing,
     };
-    let record_count = inner.buffer.len() as u64;
+    // The header count is in *entries*: every persisted `SegmentEntry`
+    // (records and Gaps) counts 1. Replay validates against this same unit,
+    // so a gap-bearing segment reopens cleanly (FIND-C1.8-01).
+    let entry_count = inner.buffer.len() as u64;
     let entries = std::mem::take(&mut inner.buffer);
     let path = write_segment(
         &config.segment_dir,
         session,
         first_seq,
         last_seq,
-        record_count,
+        entry_count,
         &entries,
     )?;
     inner.last_flushed_tail = Some(last_seq);
