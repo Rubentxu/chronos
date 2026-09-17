@@ -134,7 +134,7 @@ One commit:
 | Kind | Path | SHA-256 |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-75-fail-closed-store-open/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
-| source (mcp server) | `crates/chronos-mcp/src/server.rs` | `f31f9dbdb729134d80c97c2a0f8328c9124747894319b8a82537aa6833c9a3b0` |
+| source (mcp server) | `crates/chronos-mcp/src/server.rs` | `a0e33a9f68610475091e1091173b2316bc69df0164fc7c8da44b8c0993bb07f5` |
 | source (mcp binary) | `crates/chronos-mcp/src/bin/chronos-mcp.rs` | `3797defa83c8218db6610047fece4b6ed67aa9b183e5c1f5193f2f10eeda1492` |
 | source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `1f2ddbfc95a0eb9fd668b345454b6ad0af314cd39ede34eb30b98eecd58f9bdb` |
 | test (store open failure) | `chronos-sandbox/tests/store_open_failure.rs` | `5f0461f8db78b9de6d27d9ba92c3c06e0ebbe3cf62eb990e69f7c9e1e4c7bec9` |
@@ -148,5 +148,5 @@ One commit:
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/release-receipt.md` | `21c61bc7dc435b9e6eb1af55955851f2964d82610e8d735baa5efc1dbb00d871` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/merge-receipt.md` | `5c502c1c4dc0cb496aab2b079043526db35f714a042161472c8c3856144b2072` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-75-fail-closed-store-open/change-entry.md` | `a2816905b483ce610548937181eade69e6cfd72a49dd872c415fc1aa06012e76` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `dbaad93a9c7de67dfa0030ab0400ca9c61fc3ed6bb86100444f5d13f47a07aeb` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `74f776acb54b209f112244306ce1b683f6a0f7681e9f29cd3cae818f93655d46` |
 | vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `03221130e4cfca65f7b145f2907767c3c01a4e27a966af20dfec38249774de8d` |

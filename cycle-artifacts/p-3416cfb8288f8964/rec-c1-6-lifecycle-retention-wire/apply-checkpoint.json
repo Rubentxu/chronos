@@ -1,32 +1,53 @@
 {
   "cycle_id": "rec-c1-6-lifecycle-retention-wire",
   "route": "A-lite",
-  "status": "open",
-  "verify_status": "pending",
+  "status": "CLOSED",
+  "verify_status": "passed",
   "release_status": "pending",
   "archive_status": "pending",
-  "head_sha": "0af8c3c9",
+  "head_sha": "d1891ed3",
   "base_sha": "5bbf7748",
   "branch": "feat/rec-c1.6-lifecycle-retention-wire",
   "tier_required": "T3+T4",
   "created_at": "2026-09-17",
+  "closed_at": "2026-09-17",
   "title": "rec-c1-6-lifecycle-retention-wire",
-  "summary": "Close REC-C1.6: lifecycle-safe delete_session (typed SessionStillActive on a still-live probe — no silent probe_stop, no partial state) and retention/tail facts on the wire (retention.retained_from_seq + history_truncated, tail.state + tail.tail_seq) plus a structured CursorStale envelope. REC-C1.0 first commit reconciles the C1.5 closure drift in docs/ROADMAP.md, reconstruction-contracts.toml (active_gate REC-C0 -> REC-C1.6) and the cycles/index.md row coverage.",
+  "summary": "REC-C1.6 closes two gaps left at REC-C1.5 closure: (1) lifecycle-safe delete_session — typed ServiceError::SessionStillActive refuses destructive windows on a still-live probe WITHOUT auto-stopping it; (2) retention/tail facts on the events_read wire — RetentionFacts {retained_from_seq, history_truncated} and TailFacts {state, tail_seq} now appear on every page, and the CursorStale envelope carries a structured json content item alongside the existing text.",
   "findings_introduced": {
-    "no_action": []
+    "no_action": [],
+    "applied": [
+      {
+        "id": "FIND-REC-C1.6-LIVENESS-MARKER-LATENT",
+        "title": "SessionsContext::connected_sessions was never populated",
+        "resolution": "Fixed in cycle (commit 7afb47ad): wired live marker at session_start{action=spawn|attach} Ok arm and cleared at session_stop (both Stopped and AlreadyStopped arms). Load action is defensive-removed. Precondition in SessionsService::delete_session now reads a populated set."
+      }
+    ]
   },
   "commits": [
-    {"sha": "0af8c3c9", "step": "C1.6.0", "title": "docs(rec-c1.6): reconcile C1.5 closure + C1.6 active in roadmap"}
+    {"sha": "0af8c3c9", "step": "C1.6.0", "title": "docs(rec-c1.6): reconcile C1.5 closure + C1.6 active in roadmap"},
+    {"sha": "75492dd6", "step": "design-refine", "title": "docs(rec-c1.6): refine design — connected_sessions is the liveness source"},
+    {"sha": "dccabee5", "step": "planning", "title": "chore(rec-c1.6): proposal + design + tasks + apply-checkpoint"},
+    {"sha": "7197c40e", "step": "A1+A2+A3", "title": "feat(rec-c1.6): refuse delete_session on a live session (typed error + 2 unit tests + MCP handler arm)"},
+    {"sha": "7afb47ad", "step": "A4+A5", "title": "feat(rec-c1.6): wire liveness marker for typed delete_session refusal"},
+    {"sha": "1da26f5c", "step": "B1+B2+B3", "title": "feat(rec-c1.6): RetentionFacts + TailFacts on LogReadPage (types + read_page population + unit tests)"},
+    {"sha": "580a8f45", "step": "B4+B5+B6", "title": "feat(rec-c1.6): wire retention/tail into events_read success + CursorStale (events_read output struct + MCP envelope + sandbox UATs)"},
+    {"sha": "d1891ed3", "step": "C1", "title": "style(rec-c1.6): fmt + clippy -D warnings clean"}
   ],
   "gates": {
-    "T0_fmt": "PENDING",
-    "T0_clippy": "PENDING",
-    "T1_workspace_lib_plus_tests": "PENDING",
-    "T_chronos_native_serial": "PENDING",
-    "T4_smoke": "PENDING (lifecycle_delete + wire_retention_facts + restart_uat + e2e_connectivity)",
-    "smoke_subset_note": "Per AGENTS.md \u00a72 the subset is selected from diff scope: this cycle touches chronos-services (Liveness port + RetentionFacts/TailFacts), chronos-mcp (delete_handler + events_read envelope + CursorStale json content), and chronos-sandbox (lifecycle_delete.rs + wire_retention_facts.rs). All three new suites plus restart_uat are mandatory in T4-smoke; e2e_connectivity is the regression baseline."
+    "T0_fmt": "PASS (cargo fmt --all -- --check)",
+    "T0_clippy": "PASS (cargo clippy --workspace --all-targets -- -D warnings; one new lint (too_many_arguments on read_page_with) allow-ed at the function level — pub(crate) test contract, no struct refactor for two added args)",
+    "T1_workspace_lib_plus_tests": "PASS (cargo test --workspace --lib --tests --exclude chronos-sandbox --exclude chronos-e2e --exclude chronos-native --no-fail-fast: 0 failures across all crates)",
+    "T_chronos_native_serial": "PASS (cargo test -p chronos-native --lib -- --test-threads=1: 103/103 PASS including the ptrace suite that hangs in parallel)",
+    "T4_smoke": "PASS (lifecycle_delete 3/3, wire_retention_facts 3/3, restart_uat 4/4, e2e_connectivity 1/1 — 11/11 in 90s)",
+    "smoke_subset_note": "Per AGENTS.md §2 the subset is selected from diff scope: this cycle touches chronos-services (SessionStillActive error + Liveness via connected_sessions + RetentionFacts/TailFacts types), chronos-mcp (delete_session handler + session_start/stop liveness wiring + events_read CursorStale envelope), and chronos-sandbox (lifecycle_delete.rs + wire_retention_facts.rs). All three new suites plus restart_uat (C1.5 closure invariants) are mandatory in T4-smoke; e2e_connectivity is the regression baseline.",
+    "vault_drift_CC#11": "PASS (status=CLOSED uppercase; findings_introduced.no_action present; archived_at not required because no archive-manifest.md under .sddk-knowledge/changes/archive/rec-c1-6-* — the cycle's archive phase runs after this checkpoint).",
+    "vault_drift_CC#39": "KNOWN PRE-EXISTING DRIFT — NOT INTRODUCED BY THIS CYCLE. CC#39 counts filesystem cycle dirs as m9-* only; cycles/index.md Total cycles has been bumped for the rec-c1 stream (C1.5 closure at 0af8c3c9 went 98->99 without an m9 dir; this cycle went 99->100). The drift is exactly 1 (C1.5 + this cycle). Fixing CC#39's counting logic to include rec-c1-* dirs is an M1+ follow-up; we deliberately do NOT mask the drift here because it would hide the inconsistency from future runs."
   },
+  "pre_existing_flakes_handled": [
+    {"suite": "session_lifecycle", "test": "test_session_start_attach_to_running_self", "status": "PRE-EXISTING on main 5bbf7748 (verified by checking out bare main and re-running; fails with 'ExecutionLog unavailable' after attach — same error before and after C1.6 changes). Filtered with --skip in T3.", "tracked": "AGENTS.md §6.5"},
+    {"suite": "chronos-native lib", "test": "ptrace_tracer::tests::*", "status": "PRE-EXISTING flake in parallel mode per AGENTS.md §6.5. Run serial in T_chronos_native_serial — 103/103 PASS including the ptrace suite.", "tracked": "AGENTS.md §6.5"}
+  ],
   "remote_tag": null,
   "peel_match": null,
-  "note": "Cycle start. C1.6.0 reconciliation commit 0af8c3c9 already merged-shaped into a docs only change that is independent of the Rust code shape; it carries the docs/contracts drift fix per the user-approved plan. Group A (lifecycle-safe delete) starts at 0af8c3c9 + 1; Group B (retention/tail on the wire) starts after Group A's port is in place (they can overlap but apply-phase ordering depends on whether the Liveness port needs EventsCursorV1-style opaque types). Update head_sha after each commit and refresh the SHA cascade via scripts/regen_manifest_index_shas.py at every commit affecting files listed under any archive-manifest.md."
+  "notes": "Closure in cycle. Group A done in two commits (7197c40e carries the typed refusal + unit tests + MCP arm; 7afb47ad wires the liveness marker that the precondition reads from). Group B done in two commits (1da26f5c pins the types and unit tests; 580a8f45 threads them through events_read and surfaces a structured CursorStale). C1 (fmt + clippy) landed in d1891ed3. C2 (T0/T3/T4-smoke) is documented in the gates block above. C3 (this file), C4 (merge + tag), C5 (vault drift) follow."
 }

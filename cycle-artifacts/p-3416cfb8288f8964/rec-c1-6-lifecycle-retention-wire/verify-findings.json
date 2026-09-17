@@ -1,0 +1,118 @@
+{
+  "subject": {
+    "head_sha": "d1891ed3",
+    "base_sha": "5bbf7748",
+    "cycle_id": "rec-c1-6-lifecycle-retention-wire"
+  },
+  "cycle_id": "rec-c1-6-lifecycle-retention-wire",
+  "verdict": "passed",
+  "all_passed": true,
+  "lens_summary": {
+    "drift": "REC-C1.6 closure: every step in the user-approved plan lands with green evidence. The latent liveness-marker bug (connected_sessions never populated) was discovered and fixed in-cycle (commit 7afb47ad) — the precondition added in 7197c40e would have been inert without it, as regression-verified by del_live_1 (would have hit SessionNotFound instead of SessionStillActive).",
+    "findings_count": 5,
+    "tiers_run": [
+      "T0",
+      "T1",
+      "T3",
+      "T_chronos_native_serial",
+      "T4-smoke"
+    ],
+    "source_schema": "rec-c1-6-lifecycle-retention-wire"
+  },
+  "findings": [
+    {
+      "id": "FIND-REC-C1.6-SESSION-STILL-ACTIVE-TYPED",
+      "severity": "high",
+      "status": "closed",
+      "title": "delete_session must refuse a still-live probe with a typed error, not silently probe_stop",
+      "evidence": [
+        "crates/chronos-services/src/error.rs::SessionStillActive { session_id, hint }",
+        "crates/chronos-services/src/sessions.rs::delete_session precondition checked BEFORE store.delete_session and delete_durable_execution_log",
+        "Two unit tests in sessions::tests: delete_session_refuses_live_session_unit (DEL-LIVE-3 form — typed error, store row survives, hint names session_stop) and delete_session_after_unconnected_succeeds (sanity)",
+        "Regression-verified: commenting out the precondition makes delete_session_refuses_live_session_unit fail with 'expected SessionStillActive refusal, got Ok(DeleteResult{..})'"
+      ]
+    },
+    {
+      "id": "FIND-REC-C1.6-LIVENESS-MARKER-LATENT",
+      "severity": "high",
+      "status": "closed",
+      "title": "SessionsContext::connected_sessions was never populated (latent bug surfaced by the precondition)",
+      "evidence": [
+        "Pre-cycle: grep -nE 'connected_sessions\\.insert' crates/chronos-mcp/src/server.rs returned zero hits; the field existed but no code inserted",
+        "Fix in commit 7afb47ad: connected_sessions.insert at session_start{action=spawn|attach} Ok arm; connected_sessions.remove at session_stop (both Stopped and AlreadyStopped arms)",
+        "Load action is defensive-removed (no probe is attached; we must not refuse on delete)",
+        "lifecycle_delete::del_live_1 regression-verified: the same test would have hit SessionNotFound on the pre-fix code path"
+      ]
+    },
+    {
+      "id": "FIND-REC-C1.6-MCP-DELETE-HANDLER-ARMS",
+      "severity": "high",
+      "status": "closed",
+      "title": "MCP delete_session handler must map ServiceError::SessionStillActive to a text error that names the recovery action",
+      "evidence": [
+        "crates/chronos-mcp/src/server.rs::delete_session match arm: Err(e @ SessionStillActive {..}) => text_content(e.to_string()) (Display impl names session_stop as recovery)",
+        "Same variant added to the giant exhaustive match in list_threads for compile exhaustiveness"
+      ]
+    },
+    {
+      "id": "FIND-REC-C1.6-RETENTION-TAIL-WIRE-FACTS",
+      "severity": "high",
+      "status": "closed",
+      "title": "events_read page must carry retention.retained_from_seq and tail.state on every read",
+      "evidence": [
+        "crates/chronos-services/src/events_log_read.rs: RetentionFacts + TailFacts types with serde derives (snake_case TailStateWire: open/sealed/unclean/unknown)",
+        "tail_seq is None iff state == Unknown (no inference, no fabrication)",
+        "7 unit tests in rec_c1_6_wire_facts_tests: WIRE-RET-1/2 + WIRE-TAIL-1/2/3 + serde shape",
+        "EventsReadOutput::Query gains retention + tail fields (chronos-services/src/output.rs); events_read::query passes page.retention and page.tail through (chronos-services/src/events_read.rs)"
+      ]
+    },
+    {
+      "id": "FIND-REC-C1.6-CURSOR-STALE-STRUCTURED-ENVELOPE",
+      "severity": "medium",
+      "status": "closed",
+      "title": "events_read CursorStale must carry a structured json content item alongside the existing text",
+      "evidence": [
+        "crates/chronos-mcp/src/server.rs::events_read CursorStale arm: text_content + json_content({error: 'cursor_stale', requested_next_seq, retained_from_seq})",
+        "chronos-sandbox/tests/wire_retention_facts.rs::wire_cursor_1_stale_envelope_carries_structured_numbers: assert content.len()==2 with the EXACT numbers the agent supplied; isError=true preserved",
+        "chronos-sandbox restart_uat R2 still parses the text (back-compat) — 4/4 PASS"
+      ]
+    }
+  ],
+  "pre_existing_flakes_observed": [
+    {
+      "suite": "session_lifecycle",
+      "test": "test_session_start_attach_to_running_self",
+      "status": "PRE-EXISTING on main 5bbf7748 (verified by checkout + re-run).",
+      "tracked": "AGENTS.md §6.5"
+    },
+    {
+      "suite": "chronos-native lib",
+      "test": "ptrace_tracer::tests::*",
+      "status": "PRE-EXISTING in parallel mode per AGENTS.md §6.5; PASS serial in T_chronos_native_serial.",
+      "tracked": "AGENTS.md §6.5"
+    }
+  ],
+  "regression_battery": {
+    "T0_fmt": "PASS",
+    "T0_clippy": "PASS",
+    "T1_workspace_lib_plus_tests": "PASS (chronos-native excluded for parallel ptrace flake; run separately serial)",
+    "T_chronos_native_serial": "103/103 PASS",
+    "T4_smoke": {
+      "lifecycle_delete": "3/3 PASS (del_live_1/2/4)",
+      "wire_retention_facts": "3/3 PASS (wire_1/2 + wire_cursor_1)",
+      "restart_uat": "4/4 PASS (R1/R2/R3/R4 — R2 parses text + checks structured json)",
+      "e2e_connectivity": "1/1 PASS",
+      "program_scenarios": "11/11 PASS",
+      "probe_lifecycle": "5/5 PASS",
+      "session_edge_cases": "6/6 PASS",
+      "session_lifecycle_skip_attach_flake": "7/7 PASS",
+      "total": "42/42 in T4-smoke + targeted regression"
+    }
+  },
+  "out_of_scope_observed": [
+    "Auto-stop on delete: still forbidden per the user's design constraint; delete_session refuses with SessionStillActive and the user must call session_stop.",
+    "Retention policy wire field: not invented. RetentionFacts is the BOUNDARY the agent sees, not a policy.",
+    "REC-C2 legacy/event-path deletion: BLOCKED until REC-C1.8 handoff per proposal.md.",
+    "Background sessions in the liveness check: kept narrow to live_probes (now correctly populated)."
+  ]
+}

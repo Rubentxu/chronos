@@ -186,7 +186,7 @@ No formal spec.md existed for this change; the scoping doc
 | design doc | `docs/milestones/m9-02-events-side-table-design.md` | `6c13ff80e0d130463df66071653ae0dfd7ab9d302a36b7a2d35394b52aeb57c9` |
 | apply-checkpoint | `apply-checkpoint.json` | `7c282bef5be6edb8053bd5a64409ae32f6358622120bdfc415a78952b82f570b` |
 | terms index | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `03221130e4cfca65f7b145f2907767c3c01a4e27a966af20dfec38249774de8d` |
-| cycles index | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `dbaad93a9c7de67dfa0030ab0400ca9c61fc3ed6bb86100444f5d13f47a07aeb` |
+| cycles index | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `74f776acb54b209f112244306ce1b683f6a0f7681e9f29cd3cae818f93655d46` |
 
 ## Runtime status
 
