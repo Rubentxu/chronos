@@ -22,14 +22,14 @@
     {
       "id": "FIND-C1.8-01",
       "severity": "high",
-      "status": "open_deferred",
+      "status": "closed",
       "title": "chronos_log::segmented segment header mis-counts gap entries, rejecting the segment on reopen",
       "evidence": [
         "Any path that inserts a Gap into a SegmentedExecutionLog produces a segment header that declares N records but the on-disk file holds N-1. Both the record_gap direct API and the memory-budget overflow path reproduce it.",
         "Observed error on reopen: 'replay integrity failure for session \"rec-c1-8-uat03-gap\": segment \"...-100.seg\" declares 101 records but holds 100' (record_gap path, flush_threshold=4096) and 'segment \"...-0.seg\" declares 1 records but holds 0' (memory_budget_bytes=128 overflow path).",
         "Reproducer: chronos-sandbox/tests/rec_c1_8_uat_c1_03_forced_gap.rs::uat_rec_c1_03_forced_gap_reports_gap_detected (currently #[ignore]-marked with a pointer to this finding).",
         "Impact on REC-C1: blocks the positive arm of UAT-REC-C1-03 only. The negative arm (clean session -> complete) passes, and no other REC-C1 UAT depends on a recorded gap surviving a reopen.",
-        "Disposition: out of scope for REC-C1; belongs in a separate m1-* follow-up cycle that fixes segmented.rs segment-header bookkeeping for gap entries."
+        "Disposition: FIXED in cycle m1-gap-segment-accounting-repair (main after REC-C1.8). The header count is now the persisted SegmentEntry count, shared by writer/header/replay; a gap-bearing segment reopens cleanly and the C1.8 forced-gap UAT is GREEN (2/2, 0 ignored). See cycle-artifacts/p-3416cfb8288f8964/m1-gap-segment-accounting-repair/."
       ]
     }
   ],
@@ -56,14 +56,14 @@
       "e2e_connectivity": "1/1 PASS",
       "rec_c1_8_dual_truth_closeout": "3/3 PASS",
       "rec_c1_8_uat_c1_01_exact": "2/2 PASS",
-      "rec_c1_8_uat_c1_03_forced_gap": "1/1 PASS + 1 ignored (FIND-C1.8-01)",
+      "rec_c1_8_uat_c1_03_forced_gap": "2/2 PASS, 0 ignored (FIND-C1.8-01 fixed by m1-gap-segment-accounting-repair)",
       "rec_c1_8_uat_c1_05_four_dim": "4/4 PASS (chronos-log)",
       "total": "11/11 PASS + 1 documented ignore"
     }
   },
   "out_of_scope_observed": [
     "REC-C2 legacy deletion: EventBus / drain_raw_events / fired_buffer / TripwireFired retirement is C2-owned; C1.8 only ratifies LEGACY-001/002 as C2-owned (notes added) and does not delete anything.",
-    "FIND-C1.8-01 fix (chronos_log::segmented gap-entry bookkeeping): m1-* follow-up; REC-C1 closes without it.",
+    "FIND-C1.8-01 fix (chronos_log::segmented gap-entry bookkeeping): DONE in m1-gap-segment-accounting-repair (entry_count = persisted SegmentEntry count; writer/header/replay agree; C1.8 forced-gap UAT un-ignored and GREEN).",
     "rec-c1-7-projection-authority-acceptance is missing verify-findings.json (pre-existing gap from C1.7; CC#18 flags it). C1.8 adds its own verify-findings.json but does not retroactively author C1.7's.",
     "CC#39 (cycles/index.md Total cycles vs filesystem) remains pre-existing; gov-* owns the reconciliation."
   ]
