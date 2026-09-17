@@ -113,11 +113,12 @@ impl ExecutionRecord {
 /// from the spec (with `SymbolId`, `InvocationId`, etc.) lands
 /// across m1-01..m1-03; m1-01 ships only the two variants needed
 /// for the four required tests.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum ExecutionKind {
     /// Raw trace event (FunctionEntry, VariableWrite, etc.). The full
     /// enum lives in `chronos-domain::EventType`; we re-export the
     /// variants we need for m1-01 tests.
+    #[default]
     Raw,
     /// Producer-reported gap marker (the producer created a Gap
     /// record so consumers see the discontinuity).
@@ -137,11 +138,6 @@ pub enum ExecutionKind {
     TripwireFired,
 }
 
-impl Default for ExecutionKind {
-    fn default() -> Self {
-        Self::Raw
-    }
-}
 
 /// Opaque record payload for m1-01. The full payload shape grows
 /// across m1-01..m1-03 as more producers are migrated; for now we

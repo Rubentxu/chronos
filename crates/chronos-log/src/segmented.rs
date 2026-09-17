@@ -50,7 +50,7 @@ use crate::cursor::{ConsumerCursor, LogConsumerId, ReadResult};
 use crate::error::LogError;
 use crate::gap::{Gap, GapReason};
 use crate::memory::InMemoryExecutionLog;
-use crate::record::{ExecutionKind, ExecutionPayload, ExecutionRecord, SessionId};
+use crate::record::{ExecutionPayload, ExecutionRecord, SessionId};
 use crate::segment::{read_header, sanitize_session, write_segment, SegmentEntry};
 use crate::seq::EventSeq;
 use std::collections::BTreeMap;
@@ -1463,6 +1463,7 @@ impl From<&ExecutionRecord> for NewExecutionRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::record::ExecutionKind;
     use crate::checkpoint::{checkpoint_path, write_call_graph_checkpoint};
     use crate::record::ExecutionPayload;
     use chronos_domain::{InvocationId, Language, SymbolId};

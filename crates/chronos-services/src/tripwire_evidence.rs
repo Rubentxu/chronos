@@ -187,7 +187,9 @@ mod tests {
     use chronos_domain::{
         EventData, EventType, SourceLocation, TraceEvent, TripwireCondition, TripwireManager,
     };
-    use chronos_log::{ExecutionPayload, NewExecutionRecord, SegmentedConfig, SegmentedExecutionLog};
+    use chronos_log::{
+        ExecutionPayload, NewExecutionRecord, SegmentedConfig, SegmentedExecutionLog,
+    };
 
     fn tempdir(tag: &str) -> std::path::PathBuf {
         let p = std::env::temp_dir().join(format!(
@@ -233,11 +235,9 @@ mod tests {
     }
 
     fn open_log(dir: &std::path::Path, session: &str) -> SessionExecutionLog {
-        let log = SegmentedExecutionLog::open(
-            SessionId::new(session),
-            SegmentedConfig::with_dir(dir),
-        )
-        .expect("open");
+        let log =
+            SegmentedExecutionLog::open(SessionId::new(session), SegmentedConfig::with_dir(dir))
+                .expect("open");
         SessionExecutionLog::try_adopt(
             Some(dir.to_path_buf()),
             SessionId::new(session),

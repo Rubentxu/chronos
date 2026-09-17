@@ -91,13 +91,19 @@ def strip_noise(text: str) -> list[str | None]:
 
     A line fully consumed by a comment or literal becomes `None` (skipped);
     otherwise the code portion is returned with `//` remainders removed.
+
     Handles `///`, `//!`, nested `/* */`, plain strings, raw strings
-    (`r"..."`, `r#"..."#`, `br##"..."##`), byte strings, and char
-    literals (including escapes) — so `{`/`}` inside any literal never
-    perturbs brace matching.
+    (`r"..."`, `r#"..."#`, `br##"..."##`), byte strings, char literals, and
+    **line-continued strings** (a quoted string continued with a trailing
+    backslash and the next line) — a string left open at end of line stays
+    open on the next line. Without that, a token that appears inside a
+    multi-line string would be counted as a real use.
     """
     out: list[str | None] = []
     in_block_comment = 0
+    in_string = False  # inside a normal/byte string, carried across lines
+    in_raw: int | None = None  # open raw string: number of `#` in its delimiter
+
     for raw in text.splitlines():
         line = raw
         buf: list[str] = []
@@ -114,35 +120,67 @@ def strip_noise(text: str) -> list[str | None]:
                 else:
                     i += 1
                 continue
+
+            if in_raw is not None:
+                closer = '"' + "#" * in_raw
+                j = line.find(closer, i)
+                if j == -1:
+                    i = n
+                else:
+                    i = j + len(closer)
+                    in_raw = None
+                continue
+
+            if in_string:
+                closed = False
+                while i < n:
+                    if line[i] == "\\":
+                        i += 2
+                        continue
+                    if line[i] == '"':
+                        i += 1
+                        closed = True
+                        break
+                    i += 1
+                if closed:
+                    in_string = False
+                buf.append(" ")
+                continue
+
             if line.startswith("//", i):
                 break
             if line.startswith("/*", i):
                 in_block_comment += 1
                 i += 2
                 continue
-            # raw string: optional b prefix, r, N hashes, then a quote
             m = re.match(r'(?:b)?r(#*)"', line[i:])
             if m:
                 hashes = m.group(1)
                 closer = '"' + hashes
                 j = line.find(closer, i + m.end())
-                i = n if j == -1 else j + len(closer)
+                if j == -1:
+                    in_raw = len(hashes)
+                    i = n
+                else:
+                    i = j + len(closer)
                 buf.append(" ")
                 continue
             if line.startswith('b"', i) or line[i] == '"':
-                j = i + (2 if line.startswith('b"', i) else 1)
-                while j < n:
-                    if line[j] == "\\":
-                        j += 2
+                i += 2 if line.startswith('b"', i) else 1
+                closed = False
+                while i < n:
+                    if line[i] == "\\":
+                        i += 2
                         continue
-                    if line[j] == '"':
-                        j += 1
+                    if line[i] == '"':
+                        i += 1
+                        closed = True
                         break
-                    j += 1
-                i = j
+                    i += 1
+                if not closed:
+                    in_string = True
                 buf.append(" ")
                 continue
-            # char literal (not a lifetime): 'x' or '\n' or '\''
             if line[i] == "'" and i + 1 < n:
                 k = i + 1
                 if line[k] == "\\":

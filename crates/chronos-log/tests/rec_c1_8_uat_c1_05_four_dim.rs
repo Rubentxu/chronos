@@ -34,7 +34,7 @@
 //!   (wall clock; producer-driven, optional)
 
 use chronos_log::{
-    ExecutionKind, ExecutionPayload, ExecutionRecord, NewExecutionRecord, SessionId,
+    ExecutionPayload, ExecutionRecord, NewExecutionRecord, SessionId,
 };
 
 const FIXTURE_LEN: usize = 5;
