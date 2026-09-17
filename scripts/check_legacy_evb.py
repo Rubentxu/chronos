@@ -347,6 +347,14 @@ def write_inventory() -> int:
 
 def check(strict: bool) -> int:
     inv = load_inventory()
+    if INVENTORY.exists() and not inv.get("entries"):
+        # REC-C2.3: empty inventory is the goal state ("ratchet reached 0"),
+        # distinct from a missing inventory file (which still requires --write).
+        print(
+            f"legacy-evb ratchet PASSED (ratchet reached 0: 0 production uses tracked, "
+            f"baseline {inv.get('baseline_total', 0)})."
+        )
+        return 0
     if not inv.get("entries"):
         print("ERROR: missing or empty legacy-evb-inventory.json (run --write)")
         return 1
