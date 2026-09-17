@@ -148,8 +148,12 @@ New sandbox test file `chronos-sandbox/tests/rec_c1_8_uat_c1_03_forced_gap.rs`:
   (no records) at `seq 100..199`, then records at `seq 200..299`.
 - Spawn MCP, call `events_read` with a range that spans the gap.
 - Assert: response carries `completeness.status == "gap_detected"` and an
-  exact gap range (`gap_summary.range == [100, 200)` or whatever the wire
-  shape is — verified against the existing `CompletenessReport`).
+  exact gap range — verified against the actual `CompletenessReport`
+  shape at `crates/chronos-services/src/events_log_read.rs:106`:
+  `completeness.status == "gap_detected"` with `from_seq` /
+  `to_seq_exclusive` describing the examined range. There is **no**
+  `gap_summary` field on the wire today; the gap range is the report's
+  `from_seq`/`to_seq_exclusive` itself.
 - Assert: `completeness.status` is **never** `"complete"` for any read
   that crosses the gap.
 
@@ -279,11 +283,13 @@ T4-smoke subset:
   live. If MCP holds an open log handle that doesn't observe late appends,
   the test fails and we have to either restart the read after a tail poll
   or add a notification hook. Investigated during C1.8.3 implementation.
-- **C1.8.4 wire shape.** `CompletenessReport` already exists per
-  `reconstruction-contracts.toml` TRUTH-003 evidence. The exact JSON shape
-  of `gap_summary` is read from `crates/chronos-services/src/events_log_read.rs`
-  during C1.8.4 implementation. If the shape has changed since C1.7, the
-  test adapts; no contract change.
+- **C1.8.4 wire shape.** `CompletenessReport` exists at
+  `crates/chronos-services/src/events_log_read.rs:106`. Verified during
+  reconnaissance (2026-09-17): the wire carries
+  `{status, scope, from_seq, to_seq_exclusive}`. There is **no**
+  `gap_summary` field; the gap range is encoded as
+  `from_seq`/`to_seq_exclusive`. The C1.8.4 test reads `status` and
+  `from_seq`/`to_seq_exclusive` directly. No contract change required.
 - **C1.8.5 Option A schema migration.** Adding
   `captured_at_unix_ns: Option<u64>` is a v2 record variant. v1 records
   continue to deserialize (serde default). New writes that omit the field

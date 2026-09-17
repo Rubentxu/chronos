@@ -141,9 +141,11 @@ New file `chronos-sandbox/tests/rec_c1_8_uat_c1_03_forced_gap.rs`:
 2. Spawn MCP.
 3. Call `events_read` with a range spanning the gap (e.g. from seq 50
    with limit 200).
-4. Assert: `completeness.status == "gap_detected"` and `gap_summary`
-   carries the exact gap range (whatever the wire shape is, captured
-   from `events_log_read::completeness_for`).
+4. Assert: `completeness.status == "gap_detected"` and the gap range is
+   reported via `completeness.from_seq` / `completeness.to_seq_exclusive`
+   (the actual `CompletenessReport` wire shape at
+   `crates/chronos-services/src/events_log_read.rs:106` — there is **no**
+   `gap_summary` field).
 5. Assert: `completeness.status` is **never** `"complete"` in this
    response, and is not `"unknown"` either (gap is provable from
    evidence per TRUTH-003).
