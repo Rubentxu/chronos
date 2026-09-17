@@ -55,30 +55,41 @@ SessionStillActive {
 },
 ```
 
+The MCP-side source of truth is `ChronosServer::connected_sessions:
+Arc<Mutex<HashSet<String>>>` (the existing in-memory "live" set
+already used by `cleanup_session_memory`). We plumb a thin port
+through `SessionsContext` rather than the raw map, so the service
+stays free of MCP concepts and tests can construct a static
+`StaticLiveness` without spawning a server.
+
 In `SessionsService::delete_session` the precondition flows through
 `SessionsContext`. Two clean designs:
 
 - **Option A** (preferred): add `liveness: SessionLiveness` to
-  `SessionsContext`. The MCP-side caller fills it from
-  `ChronosServer::live_probes` (the actual map). Tests fill it
-  manually. The service runs `if liveness.is_active(target) { return
-  Err(SessionStillActive{..}) }` BEFORE either `store.delete_session`
-  or `delete_durable_execution_log`. Symmetry: the liveness check
-  owns the precondition; the service owns the side effects.
+  `SessionsContext`. The MCP-side caller fills it from the
+  `connected_sessions` set. Tests fill it manually. The service runs
+  `if liveness.is_active(target) { return Err(SessionStillActive{..}) }`
+  BEFORE either `store.delete_session` or
+  `delete_durable_execution_log`. Symmetry: the liveness check owns
+  the precondition; the service owns the side effects.
 
-- **Option B**: inject `live_probes` directly into `SessionsContext`.
-  Rejected because it pulls an MCP-only concept into services; tests
-  would have to construct a fake `live_probes` map.
+- **Option B**: inject `&Arc<Mutex<HashSet<String>>>` directly.
+  Rejected because it pulls an MCP-only concept into services;
+  tests would have to construct a fake liveness set.
 
-**Decision: Option A.** A new trait `SessionLiveness { fn
-is_active(&self, id: &str) -> bool; }` with two impls:
+**Decision: Option A.** A small `SessionLiveness` port (closure
+returning `bool`) with two impls:
 
-- `McpLiveProbes::new(live_probes: &Arc<Mutex<HashMap<…>>>)` — used
-  by the MCP tool handler.
-- `StaticLiveness::new(HashSet<String>)` — used by tests.
+- `ConnectedSessionsLiveness { connected: &Mutex<HashSet<String>> }` —
+  used by the MCP tool handler.
+- `StaticLiveness { active: HashSet<String> }` — used by tests.
 
 This keeps `chronos-services` free of MCP types; the liveness check
-is a port.
+is a port. Note: `live_probes` is NOT the source of truth — it's
+the probe-state machine itself; the higher-level "is this session
+connected" semantics live in `connected_sessions` (already used by
+`save_session`, `list_sessions`, etc., which today may insert/remove
+through the same set).
 
 ### 2. `delete_session` tool envelope
 

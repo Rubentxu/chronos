@@ -22,13 +22,20 @@
 - [ ] A1 `feat(rec-c1.6): SessionStillActive error variant + SessionLiveness port`
       - Add `ServiceError::SessionStillActive { session_id, hint }` to
         `crates/chronos-services/src/error.rs`.
-      - Add `pub trait SessionLiveness { fn is_active(&self, &str) -> bool; }`
-        to `chronos-services/src/sessions.rs` (or a new
+      - Add a small `SessionLiveness` port (a 1-method trait or
+        closure) to `chronos-services/src/sessions.rs` (or a new
         `liveness.rs`).
-      - Add two impls: `McpLiveProbes` (chrono-mcp wires it) and
-        `StaticLiveness` (tests).
-      - Plumb `&dyn SessionLiveness` through `SessionsContext` (new
+      - Add two impls: `ConnectedSessionsLiveness { connected:
+        &Mutex<HashSet<String>> }` (chrono-mcp wires it from
+        `ChronosServer::connected_sessions`) and
+        `StaticLiveness { active: HashSet<String> }` (tests).
+      - Plumb `SessionLiveness` through `SessionsContext` (new
         field) so the delete path can call it.
+
+NOTE: `live_probes` is the probe-state machine, NOT the source of
+truth for "is this session connected?" — `connected_sessions` is.
+This matches what `save_session`, `list_sessions`, `delete_session`,
+and `cleanup_session_memory` already use today.
 - [ ] A2 `feat(rec-c1.6): delete_session precondition refuses live probe`
       - In `SessionsService::delete_session`, BEFORE
         `store.delete_session`, check `liveness.is_active(target)`;
