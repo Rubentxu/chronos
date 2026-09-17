@@ -5995,6 +5995,25 @@ impl ChronosServer {
                     "ExecutionLog unavailable for session '{session_id}': {reason}"
                 ))))
             }
+            Err(ServiceError::CursorStale {
+                requested_next_seq,
+                retained_from_seq,
+            }) => {
+                // REC-C1.6: structured envelope — keep the existing text content
+                // (chronos-sandbox restart_uat R2 already parses it) AND attach a
+                // second json content item carrying the two numbers. The agent can
+                // then re-anchor deliberately without having to scrape text.
+                let mut content = text_content(format!(
+                    "Cursor at seq {requested_next_seq} is stale; the earliest available position is \
+{retained_from_seq}. This is retention, not evidence loss: re-anchor deliberately."
+                ));
+                content.extend(json_content(&serde_json::json!({
+                    "error": "cursor_stale",
+                    "requested_next_seq": requested_next_seq,
+                    "retained_from_seq": retained_from_seq,
+                })));
+                Ok(CallToolResult::error(content))
+            }
             Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
         }
     }
