@@ -491,6 +491,7 @@ fn bincode_decode_record(mut body: &[u8]) -> Result<ExecutionRecord, LogError> {
     let kind = match kind_tag_buf[0] {
         0 => ExecutionKind::Raw,
         1 => ExecutionKind::GapMarker,
+        2 => ExecutionKind::TripwireFired,
         other => {
             return Err(LogError::Backend(format!(
                 "unknown ExecutionKind tag {}",
@@ -570,6 +571,9 @@ fn kind_tag(k: &ExecutionKind) -> u8 {
     match k {
         ExecutionKind::Raw => 0,
         ExecutionKind::GapMarker => 1,
+        // REC-C2.1: appended last so Raw=0 / GapMarker=1 keep their
+        // historical on-disk discriminants for segments written before C2.
+        ExecutionKind::TripwireFired => 2,
     }
 }
 
@@ -701,6 +705,32 @@ mod tests {
         assert_eq!(decoded.metadata.entry_count, 3);
         assert_eq!(decoded.entries, entries);
         fs::remove_dir_all(dir).ok();
+    }
+
+    /// REC-C2.1: the on-disk kind discriminants of the pre-existing variants
+    /// must not move when `TripwireFired` is appended to the enum. Historical
+    /// segments (and any external tooling) depend on `Raw = 0`,
+    /// `GapMarker = 1`.
+    #[test]
+    fn record_kind_discriminants_are_stable() {
+        assert_eq!(kind_tag(&ExecutionKind::Raw), 0);
+        assert_eq!(kind_tag(&ExecutionKind::GapMarker), 1);
+        assert_eq!(kind_tag(&ExecutionKind::TripwireFired), 2);
+        // And the decode side agrees with every tag `kind_tag` can produce.
+        for k in [
+            ExecutionKind::Raw,
+            ExecutionKind::GapMarker,
+            ExecutionKind::TripwireFired,
+        ] {
+            let tag = kind_tag(&k);
+            let decoded = match tag {
+                0 => ExecutionKind::Raw,
+                1 => ExecutionKind::GapMarker,
+                2 => ExecutionKind::TripwireFired,
+                other => panic!("unhandled kind tag {other}"),
+            };
+            assert_eq!(decoded, k, "tag {tag} must round-trip");
+        }
     }
 
     #[test]

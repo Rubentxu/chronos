@@ -111,6 +111,8 @@ fn m2_01_v2_records_round_trip_through_log() {
 
     let session = SessionId::new("m2-01-recursive");
     let record = NewExecutionRecord {
+        kind: chronos_log::ExecutionKind::Raw,
+
         session_id: session.clone(),
         monotonic_ns: 1_000_000,
         payload: ExecutionPayload::new(vec![1, 2, 3], "raw"),
@@ -188,6 +190,8 @@ fn m2_02_identity_reads_via_segmented_log_impl() {
     let sym_b = SymbolId::new("b", None, Language::C);
 
     let mk = |monotonic_ns: u64, inv, parent, sym| NewExecutionRecord {
+        kind: chronos_log::ExecutionKind::Raw,
+
         session_id: session.clone(),
         monotonic_ns,
         payload: ExecutionPayload::new(Vec::new(), "ev"),
@@ -249,6 +253,8 @@ fn m2_03_analytics_via_segmented_log_impl() {
     let sym_b = SymbolId::new("b", None, Language::C);
 
     let mk = |monotonic_ns: u64, inv, parent, sym| NewExecutionRecord {
+        kind: chronos_log::ExecutionKind::Raw,
+
         session_id: session.clone(),
         monotonic_ns,
         payload: ExecutionPayload::new(Vec::new(), "ev"),
@@ -315,6 +321,8 @@ fn m2_04_call_graph_via_segmented_log_impl() {
     let sym_g = SymbolId::new("g", None, Language::C);
 
     let mk = |monotonic_ns: u64, inv, parent, sym| NewExecutionRecord {
+        kind: chronos_log::ExecutionKind::Raw,
+
         session_id: session.clone(),
         monotonic_ns,
         payload: ExecutionPayload::new(Vec::new(), "ev"),
@@ -373,6 +381,8 @@ fn m2_05_checkpoint_replay_equivalence_via_segmented_log() {
     let sym_b = SymbolId::new("b", None, Language::C);
 
     let mk = |monotonic_ns: u64, inv, parent, sym| NewExecutionRecord {
+        kind: chronos_log::ExecutionKind::Raw,
+
         session_id: session.clone(),
         monotonic_ns,
         payload: ExecutionPayload::new(Vec::new(), "ev"),

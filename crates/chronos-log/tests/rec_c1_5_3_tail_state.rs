@@ -32,6 +32,8 @@ fn config(dir: &std::path::Path, flush_every: usize) -> SegmentedConfig {
 fn append_n(log: &SegmentedExecutionLog, session: &SessionId, n: u64) {
     for i in 0..n {
         log.append(NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session.clone(),
             monotonic_ns: i,
             payload: chronos_log::ExecutionPayload::new(format!("r{i}").into_bytes(), "t"),
@@ -297,6 +299,8 @@ fn tail_10_writes_after_seal_are_refused() {
 
     let append_err = log
         .append(NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session.clone(),
             monotonic_ns: 99,
             payload: chronos_log::ExecutionPayload::new(b"late".to_vec(), "t"),

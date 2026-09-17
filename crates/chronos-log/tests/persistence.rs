@@ -45,6 +45,8 @@ fn spec_case_05_overflow_records_gap_not_record() {
     // First, a small record that fits.
     let _ = log
         .append(chronos_log::NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session.clone(),
             monotonic_ns: 0,
             payload: chronos_log::ExecutionPayload::new(vec![1, 2, 3], "small"),
@@ -57,6 +59,8 @@ fn spec_case_05_overflow_records_gap_not_record() {
     for i in 1..=4 {
         let seq = log
             .append(chronos_log::NewExecutionRecord {
+                kind: chronos_log::ExecutionKind::Raw,
+
                 session_id: session.clone(),
                 monotonic_ns: i * 10,
                 payload: chronos_log::ExecutionPayload::new(vec![0u8; 256], "big"),
@@ -99,6 +103,8 @@ fn spec_case_06_crash_safe_segments() {
     let log = make_log(&dir, &session, 2);
 
     log.append(chronos_log::NewExecutionRecord {
+        kind: chronos_log::ExecutionKind::Raw,
+
         session_id: session.clone(),
         monotonic_ns: 0,
         payload: chronos_log::ExecutionPayload::new(vec![1], "a"),
@@ -106,6 +112,8 @@ fn spec_case_06_crash_safe_segments() {
     })
     .unwrap();
     log.append(chronos_log::NewExecutionRecord {
+        kind: chronos_log::ExecutionKind::Raw,
+
         session_id: session.clone(),
         monotonic_ns: 10,
         payload: chronos_log::ExecutionPayload::new(vec![2], "b"),
@@ -115,6 +123,8 @@ fn spec_case_06_crash_safe_segments() {
     log.flush().unwrap();
 
     log.append(chronos_log::NewExecutionRecord {
+        kind: chronos_log::ExecutionKind::Raw,
+
         session_id: session.clone(),
         monotonic_ns: 20,
         payload: chronos_log::ExecutionPayload::new(vec![3], "c"),
@@ -176,6 +186,8 @@ fn spec_case_07_checkpoint_plus_delta_equals_full_replay() {
     let expected_tail = {
         for i in 0..7 {
             log.append(chronos_log::NewExecutionRecord {
+                kind: chronos_log::ExecutionKind::Raw,
+
                 session_id: session.clone(),
                 monotonic_ns: i * 10,
                 payload: chronos_log::ExecutionPayload::new(vec![i as u8], "r"),
@@ -225,6 +237,8 @@ fn spec_case_08_deterministic_replay() {
     let h1 = std::thread::spawn(move || {
         for i in 0..16u64 {
             l1.append(chronos_log::NewExecutionRecord {
+                kind: chronos_log::ExecutionKind::Raw,
+
                 session_id: s1.clone(),
                 monotonic_ns: i * 7,
                 payload: chronos_log::ExecutionPayload::new(vec![(i & 0xFF) as u8], "t"),
@@ -239,6 +253,8 @@ fn spec_case_08_deterministic_replay() {
     let h2 = std::thread::spawn(move || {
         for i in 0..16u64 {
             l2.append(chronos_log::NewExecutionRecord {
+                kind: chronos_log::ExecutionKind::Raw,
+
                 session_id: s2.clone(),
                 monotonic_ns: i * 7,
                 payload: chronos_log::ExecutionPayload::new(vec![(i & 0xFF) as u8], "t"),
@@ -271,6 +287,8 @@ fn checkpoint_method_flushes_even_when_buffer_is_partial() {
 
     for i in 0..3 {
         log.append(chronos_log::NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(vec![1], "z"),
@@ -300,6 +318,8 @@ fn gap_replaying_preserves_consumer_cursor_view() {
     let log = SegmentedExecutionLog::open(session.clone(), cfg).unwrap();
 
     log.append(chronos_log::NewExecutionRecord {
+        kind: chronos_log::ExecutionKind::Raw,
+
         session_id: session.clone(),
         monotonic_ns: 0,
         payload: chronos_log::ExecutionPayload::new(vec![1], "a"),
@@ -308,6 +328,8 @@ fn gap_replaying_preserves_consumer_cursor_view() {
     .unwrap();
     let seq = log
         .append(chronos_log::NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session.clone(),
             monotonic_ns: 10,
             payload: chronos_log::ExecutionPayload::new(vec![2], "b"),

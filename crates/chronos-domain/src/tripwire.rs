@@ -12,11 +12,22 @@ use crate::{EventData, EventType, TraceEvent};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct TripwireId(pub u64);
-
 impl std::fmt::Display for TripwireId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "tripwire-{}", self.0)
     }
+}
+
+/// REC-C2.1: a matched subscription, snapshotted for durable evidence.
+///
+/// Carries what is needed to persist a self-describing firing (identity of
+/// the subscription that fired plus the condition and label in force at that
+/// moment) without touching the legacy fired buffer.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TripwireMatch {
+    pub id: TripwireId,
+    pub condition: TripwireCondition,
+    pub label: Option<String>,
 }
 
 static NEXT_TRIPWIRE_ID: AtomicU64 = AtomicU64::new(1);
@@ -36,7 +47,7 @@ pub fn reset_tripwire_ids_for_testing() {
     NEXT_TRIPWIRE_ID.store(1, Ordering::Relaxed);
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TripwireCondition {
     EventType(Vec<EventType>),
     FunctionName { pattern: String },
@@ -103,15 +114,6 @@ fn glob_inner(p: &[char], t: &[char], pi: usize, ti: usize) -> bool {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct TripwireFired {
-    pub tripwire_id: TripwireId,
-    pub condition_description: String,
-    pub event_id: u64,
-    pub timestamp_ns: u64,
-    pub thread_id: u64,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Tripwire {
     pub id: TripwireId,
     pub condition: TripwireCondition,
@@ -152,30 +154,6 @@ impl Tripwire {
     pub fn matches(&self, event: &TraceEvent) -> bool {
         self.condition.matches(event)
     }
-
-    pub fn fire(&self, event: &TraceEvent) -> TripwireFired {
-        TripwireFired {
-            tripwire_id: self.id,
-            condition_description: format!("{:?}", self.condition),
-            event_id: event.event_id,
-            timestamp_ns: event.timestamp_ns,
-            thread_id: event.thread_id,
-        }
-    }
-
-    /// Fire this tripwire against a semantic event. The tripwire id,
-    /// condition description, timestamp, and thread_id are populated;
-    /// `event_id` is `0` because [`SemanticEvent`](crate::SemanticEvent)
-    /// does not carry the source event id.
-    pub fn fire_semantic(&self, event: &crate::SemanticEvent) -> TripwireFired {
-        TripwireFired {
-            tripwire_id: self.id,
-            condition_description: format!("{:?}", self.condition),
-            event_id: 0,
-            timestamp_ns: event.timestamp_ns,
-            thread_id: event.thread_id,
-        }
-    }
 }
 
 /// Extract a function-name candidate from a [`SemanticEvent`](crate::SemanticEvent).
@@ -195,7 +173,6 @@ fn function_from_semantic(event: &crate::SemanticEvent) -> Option<String> {
 #[derive(Debug)]
 pub struct TripwireManager {
     tripwires: std::sync::RwLock<Vec<Tripwire>>,
-    fired_buffer: std::sync::RwLock<Vec<TripwireFired>>,
     /// Per-instance monotonic counter for tripwire IDs. Using a per-instance
     /// counter (rather than the process-global `NEXT_TRIPWIRE_ID`) avoids
     /// collisions when multiple test cases call `reset_tripwire_ids_for_testing()`
@@ -232,7 +209,6 @@ impl TripwireManager {
         let base = NEXT_TRIPWIRE_ID.fetch_add(1, Ordering::Relaxed);
         Self {
             tripwires: std::sync::RwLock::new(Vec::new()),
-            fired_buffer: std::sync::RwLock::new(Vec::new()),
             // First issued id is `base` (the id we just consumed). After
             // `reset_tripwire_ids_for_testing()`, `base` will be 1 — matching
             // the convention used by legacy tests that assert on
@@ -275,67 +251,54 @@ impl TripwireManager {
         self.tripwires.read().unwrap().clone()
     }
 
-    pub fn evaluate(&self, event: &TraceEvent) -> Vec<TripwireFired> {
-        let tws = self.tripwires.read().unwrap();
-        let fired: Vec<_> = tws
+    /// REC-C2.1: the tripwires that match `event`, as a **pure** query (no
+    /// buffer side effect).
+    ///
+    /// Derivation of durable `TripwireFired` evidence uses this rather than
+    /// [`evaluate`](Self::evaluate), so that producing evidence does not
+    /// simultaneously mutate the legacy in-memory fired buffer. Returns a
+    /// snapshot of the subscription (id, condition, label) so the caller can
+    /// persist a self-describing firing.
+    pub fn matching(&self, event: &TraceEvent) -> Vec<TripwireMatch> {
+        self.tripwires
+            .read()
+            .unwrap()
             .iter()
             .filter(|tw| tw.matches(event))
-            .map(|tw| tw.fire(event))
-            .collect();
-        drop(tws);
-        self.record_fired(&fired);
-        fired
+            .map(|tw| TripwireMatch {
+                id: tw.id,
+                condition: tw.condition.clone(),
+                label: tw.label.clone(),
+            })
+            .collect()
     }
 
-    /// Evaluate all tripwires against a semantic event.
+    /// REC-C2.1.6: the pure semantic matcher.
     ///
-    /// This is a subset of [`evaluate`](Self::evaluate): only conditions
-    /// that can be matched purely from a [`SemanticEvent`](crate::SemanticEvent)
-    /// (currently `FunctionName`, via the `description` and the function
-    /// field of [`SemanticEventKind`](crate::SemanticEventKind)) are honoured.
-    /// Other conditions silently do not match — semantic events do not
-    /// carry the address/type fields those need.
-    pub fn evaluate_semantic(&self, event: &crate::SemanticEvent) -> Vec<TripwireFired> {
-        let tws = self.tripwires.read().unwrap();
-        let fired: Vec<_> = tws
+    /// Same matching rules as the retired `evaluate_semantic`, with **no**
+    /// buffer side effect. `probe_drain` uses this to count live matches for
+    /// its `tripwires_fired` signal; durable firing evidence is derived
+    /// separately from the `ExecutionLog`.
+    pub fn matching_semantic(&self, event: &crate::SemanticEvent) -> Vec<TripwireMatch> {
+        self.tripwires
+            .read()
+            .unwrap()
             .iter()
             .filter_map(|tw| {
                 if let TripwireCondition::FunctionName { pattern } = &tw.condition {
-                    // Try the canonical function-name field first; fall back
-                    // to the description so wire-level events (where kind
-                    // is `Unresolved` and the function name is encoded in
-                    // the description, e.g. "SyscallEnter"/"FunctionCalled")
-                    // still match.
                     let candidate =
                         function_from_semantic(event).unwrap_or_else(|| event.description.clone());
                     if glob_match(pattern, &candidate) {
-                        return Some(tw.fire_semantic(event));
+                        return Some(TripwireMatch {
+                            id: tw.id,
+                            condition: tw.condition.clone(),
+                            label: tw.label.clone(),
+                        });
                     }
                 }
                 None
             })
-            .collect();
-        drop(tws);
-        self.record_fired(&fired);
-        fired
-    }
-
-    fn record_fired(&self, fired: &[TripwireFired]) {
-        if fired.is_empty() {
-            return;
-        }
-        let mut buf = self.fired_buffer.write().unwrap();
-        let new_count = fired.len();
-        let buf_len = buf.len();
-        if buf_len + new_count > 1000 {
-            let drain_count = buf_len + new_count - 1000;
-            buf.drain(..drain_count);
-        }
-        buf.extend(fired.iter().cloned());
-    }
-
-    pub fn drain_fired(&self) -> Vec<TripwireFired> {
-        std::mem::take(&mut *self.fired_buffer.write().unwrap())
+            .collect()
     }
 
     pub fn active_count(&self) -> usize {
@@ -349,63 +312,30 @@ pub type TripwireManagerHandle = Arc<TripwireManager>;
 mod tests {
     use super::*;
 
-    // ------------------------------------------------------------------
-    // REC-C2.0 characterizations (measure reality; not aspirational).
-    // ------------------------------------------------------------------
-
-    /// CHAR-C2-04: `Tripwire::fire_count` is initialized to 0 and never
-    /// mutated. `TripwireManager::evaluate` builds `TripwireFired` values
-    /// from `&self` conditions and `record_fired` appends them to the
-    /// buffer; nothing writes back to `Tripwire.fire_count`. So every
-    /// `list()` reports `fire_count = 0` no matter how many times a
-    /// tripwire fired — a stale, parallel counter that must be replaced by
-    /// a count derived from persisted evidence (C2.1).
+    /// CHAR-C2-04 (kept, re-expressed): `Tripwire.fire_count` is initialized to
+    /// 0 and never mutated by any matching path. It is still present for
+    /// compatibility but is not authoritative anywhere: the wire `fire_count`
+    /// is derived from the ExecutionLog (REC-C2.1.5, FIND-C2.0-02).
+    ///
+    /// The old fired-buffer characterization (CHAR-C2-05) is gone with the
+    /// buffer; its replacement lives where the semantics now do, in
+    /// `chronos-services` FIRING-PAGE-2 (two consumers, one firing, no theft).
     #[test]
     fn char_c2_04_fire_count_is_always_zero() {
         let mgr = TripwireManager::new();
         mgr.register(TripwireCondition::Signal { numbers: vec![11] });
 
         for i in 0..3 {
-            let fired = mgr.evaluate(&make_signal_event(i + 1, 11));
-            assert_eq!(fired.len(), 1, "the tripwire fired");
+            let matched = mgr.matching(&make_signal_event(i + 1, 11));
+            assert_eq!(matched.len(), 1, "the tripwire matched");
         }
 
-        // Three firings happened...
-        assert_eq!(mgr.drain_fired().len(), 3, "three fired records exist");
-        // ...but the reported counter is still zero.
         let listed = mgr.list();
         assert_eq!(listed.len(), 1);
         assert_eq!(
             listed[0].fire_count, 0,
-            "char: fire_count is never incremented by any firing path"
+            "char: the mutable counter is never incremented by any path"
         );
-    }
-
-    /// CHAR-C2-05 (mechanism): the fired buffer is a single global with no
-    /// consumer scoping. Evaluating the same event twice appends two
-    /// `TripwireFired` entries, and every later `drain_fired` empties it for
-    /// all consumers. `probe_drain` drives exactly this by calling
-    /// `evaluate_semantic` for every event it reads, so consumer A's read
-    /// mutates evidence that consumer B would observe.
-    #[test]
-    fn char_c2_05_fired_buffer_has_no_consumer_scoping() {
-        let mgr = TripwireManager::new();
-        mgr.register(TripwireCondition::Signal { numbers: vec![11] });
-
-        let ev = make_signal_event(1, 11);
-        // Two reads of the same event (two consumers, or one consumer
-        // re-reading) both land in the same buffer.
-        mgr.evaluate(&ev);
-        mgr.evaluate(&ev);
-
-        let all = mgr.drain_fired();
-        assert_eq!(
-            all.len(),
-            2,
-            "char: repeated evaluation duplicates evidence in the shared buffer"
-        );
-        // And the drain is global: B now sees nothing.
-        assert!(mgr.drain_fired().is_empty());
     }
 
     fn make_signal_event(id: u64, signal: i32) -> TraceEvent {
@@ -427,29 +357,19 @@ mod tests {
     }
 
     #[test]
-    fn test_manager_register_and_fire() {
+    fn test_manager_register_and_match() {
         let mgr = TripwireManager::new();
         mgr.register(TripwireCondition::Signal { numbers: vec![11] });
-        assert_eq!(mgr.evaluate(&make_signal_event(1, 11)).len(), 1);
-        assert!(mgr.evaluate(&make_signal_event(2, 9)).is_empty());
+        assert_eq!(mgr.matching(&make_signal_event(1, 11)).len(), 1);
+        assert!(mgr.matching(&make_signal_event(2, 9)).is_empty());
     }
 
     #[test]
-    fn test_manager_drain_fired() {
-        let mgr = TripwireManager::new();
-        mgr.register(TripwireCondition::Signal { numbers: vec![11] });
-        mgr.evaluate(&make_signal_event(1, 11));
-        mgr.evaluate(&make_signal_event(2, 11));
-        assert_eq!(mgr.drain_fired().len(), 2);
-        assert!(mgr.drain_fired().is_empty());
-    }
-
-    #[test]
-    fn test_evaluate_semantic_matches_description_fallback() {
+    fn test_matching_semantic_matches_description_fallback() {
         // Live probes emit wire-level SemanticEvents where the kind is
         // `Unresolved` and the function/syscall name lives in `description`.
-        // evaluate_semantic must match against that fallback path so live
-        // evidence flows into the tripwire subsystem.
+        // matching_semantic must match against that fallback path so the live
+        // `tripwires_fired` signal is accurate.
         let mgr = TripwireManager::new();
         let registered_id = mgr.register(TripwireCondition::FunctionName {
             pattern: "SyscallEnter".to_string(),
@@ -462,20 +382,20 @@ mod tests {
             kind: crate::SemanticEventKind::Unresolved,
             description: "SyscallEnter".to_string(),
         };
-        let fired = mgr.evaluate_semantic(&event);
-        assert_eq!(fired.len(), 1, "SyscallEnter tripwire must fire");
+        let matched = mgr.matching_semantic(&event);
+        assert_eq!(matched.len(), 1, "SyscallEnter tripwire must match");
         // Assert the registered tripwire fired, not that its id equals 1.
         // NEXT_TRIPWIRE_ID is a process-global atomic (tripwire.rs:24), so
         // id values depend on test scheduling — the only stable invariant is
         // "the tripwire we registered is the one that fired".
         assert_eq!(
-            fired[0].tripwire_id, registered_id,
-            "fired tripwire must be the one we just registered"
+            matched[0].id, registered_id,
+            "the matched tripwire must be the one we just registered"
         );
     }
 
     #[test]
-    fn test_evaluate_semantic_uses_function_field_when_present() {
+    fn test_matching_semantic_uses_function_field_when_present() {
         // When the SemanticEvent already has a function field (typed
         // FunctionCalled), the tripwire must match against it directly.
         let mgr = TripwireManager::new();
@@ -494,7 +414,7 @@ mod tests {
             },
             description: "ignored".to_string(),
         };
-        let fired = mgr.evaluate_semantic(&event);
-        assert_eq!(fired.len(), 1);
+        let matched = mgr.matching_semantic(&event);
+        assert_eq!(matched.len(), 1);
     }
 }

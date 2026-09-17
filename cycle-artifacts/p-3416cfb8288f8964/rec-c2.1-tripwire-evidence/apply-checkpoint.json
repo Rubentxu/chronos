@@ -1,0 +1,91 @@
+{
+  "cycle_id": "rec-c2.1-tripwire-evidence",
+  "route": "A-lite",
+  "status": "in_progress",
+  "verify_status": null,
+  "release_status": null,
+  "archive_status": null,
+  "head_sha": null,
+  "base_sha": "09ef1c63",
+  "main_sha": "09ef1c63",
+  "tag": "rec-c2.1-tripwire-evidence",
+  "branch": "feat/rec-c2.1-tripwire-evidence",
+  "remote_tag": null,
+  "peel_match": null,
+  "tier_required": "T3+T4-smoke",
+  "created_at": "2026-09-17",
+  "closed_at": null,
+  "title": "rec-c2.1-tripwire-evidence",
+  "summary": "Tripwire firings become durable ExecutionLog evidence. C2.1.1 adds ExecutionKind::TripwireFired (appended last; Raw=0/GapMarker=1 pinned) and TripwireFiredEvidence { tripwire_id, source_seq: EventSeq, source_event_id, condition, label, source_timestamp_ns, source_thread_id }, plus the NewExecutionRecord.kind field the backends previously hardcoded to Raw. C2.1.2 inverts dual_push: append first, publish only on success (no observation without acceptance). C2.1.3 derives firings from an accepted Raw record with the recursion barrier enforced by ExecutionKind. C2.1.4-7 (observe-from-log with an independent consumer cursor, derived fire_count, honest retained_until_session_end, fired_buffer removal, restart UAT) are NOT done: observe is synchronous and cannot reach the active session id behind a tokio Mutex; see tasks.md.",
+  "blockers": [],
+  "findings_introduced": {
+    "no_action": [
+      "FIND-C2.1-03 (derivation has no production caller; scoped to REC-C2.2)"
+    ],
+    "applied": [
+      "FIND-C2.1-01",
+      "FIND-C2.1-02",
+      "FIND-C2.0-01",
+      "FIND-C2.0-02"
+    ]
+  },
+  "findings_detail": {
+    "FIND-C2.1-01": "NewExecutionRecord had no `kind` field: both backends hardcoded `kind: ExecutionKind::Raw`, so any non-raw record was silently stored as Raw. Found while making the derivation tests pass; fixed by adding the field and honouring it in the in-memory and segmented backends.",
+    "FIND-C2.1-02": "scripts/check_legacy_evb.py miscounted a token inside a `\"...\\`-continued string as production code (it appeared in a message literal). The ratchet flagged it as a new use; strip_noise now carries string state across lines, and the inventory legitimately shrank 37 -> 36."
+  },
+  "commits": [
+    {
+      "sha": "d304bec2",
+      "title": "feat(rec-c2.1): TripwireFired evidence kind + persist-first derivation (C2.1.1-C2.1.3)"
+    },
+    {
+      "sha": "1e210b73",
+      "title": "feat(rec-c2.1): persist-first dual_push + scanner/discriminant hardening (C2.1.2)"
+    },
+    {
+      "sha": "ce13cb4e",
+      "title": "feat(rec-c2.1): async observe boundary + canonical session resolution (C2.1.4a)"
+    },
+    {
+      "sha": "50fd47fa",
+      "title": "feat(rec-c2.1): firing reads from the ExecutionLog + EventsCursorV1 (C2.1.4b)"
+    },
+    {
+      "sha": "d2fce95d",
+      "title": "feat(rec-c2.1): derived fire_count + explicit count completeness (C2.1.5)"
+    },
+    {
+      "sha": "2b57b0ad",
+      "title": "refactor(rec-c2.1): delete the legacy fired queue (C2.1.6)"
+    },
+    {
+      "sha": "89c24aab",
+      "title": "test(rec-c2.1): restart/replay identity UAT + firing identities on the wire (C2.1.7)"
+    }
+  ],
+  "gates": {
+    "T0_fmt": "PASS",
+    "T0_clippy": "PASS (cargo clippy --workspace --all-targets -- -D warnings)",
+    "T1_workspace_lib_plus_tests": "PASS (workspace --lib excluding sandbox/e2e/native all green; chronos-services 353)",
+    "T_chronos_native_serial": "PASS (105 passed; --test-threads=1)",
+    "T4_smoke_subset": "PASS (probe_inject 1/1, e2e_connectivity 4/4)",
+    "legacy_evb_ratchet": "PASS (36 tracked, baseline 36, CANONICAL=11)",
+    "arch_gate_default": "PASS"
+  },
+  "smoke_subset": [
+    "e2e_connectivity",
+    "program_scenarios"
+  ],
+  "verify_commands": [
+    "cargo test -p chronos-log --test rec_c2_1_tripwire_evidence",
+    "cargo test -p chronos-services --lib tripwire_evidence::",
+    "cargo test -p chronos-native --lib probe_backend::tests::c2_1 -- --test-threads=1",
+    "python3 scripts/check_legacy_evb.py"
+  ],
+  "archive_convention": "rec/m1 stream uses archive_status=ready; no .sddk-knowledge/changes/archive/rec-c2.1-* directory.",
+  "cc_drift": {
+    "CC#39_pre_existing_intentional": "cycles/index.md Total cycles vs m9-only filesystem count; structural delta, pre-existing; gov-* owns it.",
+    "CC#18_rec_c1_7_pre_existing": "rec-c1-7 missing verify-findings.json (C1.7 gap); gov-* owns the backfill."
+  },
+  "notes": "IN PROGRESS. C2.1.0-3 are done, committed and verified. C2.1.4-7 are not: observe is synchronous and cannot resolve the active session's ExecutionLog without either an async conversion or a duplicated active-session source. The proposal and this checkpoint record the choice to make observe async, which is a standalone commit. No merge or tag until C2.1.4-7 land."
+}

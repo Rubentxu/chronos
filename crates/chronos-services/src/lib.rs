@@ -106,4 +106,5 @@ pub mod session_log;
 pub mod sessions;
 pub mod state_query;
 pub mod trace_slice;
+pub mod tripwire_evidence;
 pub mod tripwires;

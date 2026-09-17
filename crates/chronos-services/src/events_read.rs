@@ -271,6 +271,8 @@ mod tests {
                 );
                 handle
                     .append(NewExecutionRecord {
+                        kind: chronos_log::ExecutionKind::Raw,
+
                         session_id: handle.session_id().clone(),
                         monotonic_ns: i as u64 * 10,
                         payload: ExecutionPayload::new(

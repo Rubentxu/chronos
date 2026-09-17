@@ -58,6 +58,7 @@ fn trace_event_to_log_record(
         _ => (None, None, None),
     };
     NewExecutionRecord {
+        kind: chronos_log::ExecutionKind::Raw,
         session_id: chronos_log::SessionId::new(session_id),
         monotonic_ns,
         payload: ExecutionPayload::new(payload_bytes, format!("{:?}", event.event_type)),
@@ -277,26 +278,53 @@ impl NativeProbeBackend {
         read_log_with_stats(&log, since, limit)
     }
 
-    /// Push a `TraceEvent` to the legacy EventBus and, if an
-    /// ExecutionLog is attached, also to it. Errors from the log
-    /// path are logged but never abort the probe loop.
-    /// REC-C1.2a: the log record's `session_id` is taken from the log itself.
+    /// REC-C2.1 — **persist first, fan-out last**.
     ///
-    /// The old signature took a separate `session_log_id` string, which allowed
-    /// the record identity to drift from the identity of the log it was written
-    /// to (duplicated identity, exactly the connascence C1.2a removes).
+    /// When an ExecutionLog is attached, the authoritative append happens
+    /// FIRST and the EventBus is only a live mirror, published after the
+    /// event is accepted. If the append fails, the event is **not** published:
+    /// Chronos must not observe as having happened something it refused to
+    /// record.
+    ///
+    /// When no log is attached (legacy callers, compatibility) the bus
+    /// remains the only sink; that path is tracked as COMPATIBILITY in
+    /// `legacy-evb-inventory.json` and disappears with REC-C2.3.
+    ///
+    /// Returns the accepted `EventSeq` when the log took the record, or the
+    /// append error. REC-C2.1's derivation step uses the returned seq as the
+    /// `source_seq` of any firing this event causes.
+    ///
+    /// The old shape published first and treated the append as best-effort
+    /// (`debug!` and continue); REC-C2.0 measured that as CHAR-C2-01.
     fn dual_push(
         event_bus: &EventBusHandle,
         log: Option<&SegmentedExecutionLog>,
         trace_event: &TraceEvent,
         timestamp_ns: u64,
-    ) {
-        event_bus.push_raw(trace_event.clone());
-        if let Some(log) = log {
-            let rec =
-                trace_event_to_log_record(log.session_id().as_str(), timestamp_ns, trace_event);
-            if let Err(e) = log.append(rec) {
-                debug!("m1-03: ExecutionLog append failed (continuing): {}", e);
+    ) -> Result<Option<chronos_log::EventSeq>, chronos_log::LogError> {
+        match log {
+            Some(log) => {
+                let rec =
+                    trace_event_to_log_record(log.session_id().as_str(), timestamp_ns, trace_event);
+                match log.append(rec) {
+                    Ok(seq) => {
+                        // Accepted as durable evidence: now it may be observed live.
+                        event_bus.push_raw(trace_event.clone());
+                        Ok(Some(seq))
+                    }
+                    Err(e) => {
+                        debug!(
+                            "REC-C2.1: ExecutionLog append refused; NOT publishing to the \
+                             EventBus (no observation without acceptance): {}",
+                            e
+                        );
+                        Err(e)
+                    }
+                }
+            }
+            None => {
+                event_bus.push_raw(trace_event.clone());
+                Ok(None)
             }
         }
     }
@@ -746,18 +774,22 @@ impl NativeProbeBackend {
                     &stop_flag,
                     None,
                     |trace_event: TraceEvent| {
-                        Self::dual_push(
+                        let accepted = Self::dual_push(
                             &event_bus,
                             execution_log.as_deref(),
                             &trace_event,
                             timestamp_ns,
-                        );
+                        )
+                        .is_ok();
                         let ctx = ResolveContext {
                             pid: pid as u32,
                             binary_path: Some(program_path.to_string()),
                         };
                         let semantic_event = resolver_pipeline.resolve(&trace_event, &ctx);
-                        event_bus.push(semantic_event);
+                        // Fan-out last: only an accepted observation goes live.
+                        if accepted {
+                            event_bus.push(semantic_event);
+                        }
                         event_id += 1;
                     },
                 );
@@ -818,12 +850,13 @@ impl NativeProbeBackend {
                 // is no-op on the log side when no log is
                 // configured, so the EventBus path stays intact
                 // for callers that opt out.
-                Self::dual_push(
+                let accepted = Self::dual_push(
                     &event_bus,
                     execution_log.as_deref(),
                     &trace_event,
                     timestamp_ns,
-                );
+                )
+                .is_ok();
 
                 // Resolve to semantic event via the pipeline
                 let ctx = ResolveContext {
@@ -831,7 +864,10 @@ impl NativeProbeBackend {
                     binary_path: Some(program_path.to_string()),
                 };
                 let semantic_event = resolver_pipeline.resolve(&trace_event, &ctx);
-                event_bus.push(semantic_event);
+                // Fan-out last: only an accepted observation goes live.
+                if accepted {
+                    event_bus.push(semantic_event);
+                }
 
                 event_id += 1;
             }
@@ -1037,18 +1073,18 @@ mod tests {
     // REC-C2.0 characterizations (measure reality; not aspirational).
     // ------------------------------------------------------------------
 
-    /// CHAR-C2-01: `dual_push` publishes to the EventBus FIRST and the
-    /// ExecutionLog append is best-effort. If the append fails, the bus
-    /// still carries the event — Chronos acts on an observation that was
-    /// never accepted as durable evidence.
+    /// CHAR-C2-01 → REC-C2.1 invariant: **nothing is observed before it is
+    /// accepted**.
     ///
-    /// Forcing the failure: seal the log, so `append` refuses. This is the
-    /// measured ordering the REC-C2 migration must invert
-    /// ("persist first, derive second, fan-out last").
+    /// REC-C2.0 measured the old order (bus first, best-effort append).
+    /// REC-C2.1 inverted `dual_push`, so with an ExecutionLog attached the
+    /// event is published to the bus **only after** the authoritative append
+    /// succeeds. If the append is refused, the bus must stay empty: a
+    /// refused observation is not an observation.
     #[test]
-    fn char_c2_01_bus_is_published_even_when_log_append_fails() {
+    fn c2_1_persist_first_no_bus_publish_when_append_is_refused() {
         let dir = std::env::temp_dir().join(format!(
-            "chronos-c2-char01-{}-{}",
+            "chronos-c21-persistfirst-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -1056,29 +1092,30 @@ mod tests {
                 .unwrap_or(0)
         ));
         std::fs::create_dir_all(&dir).expect("mkdir");
-        let session = chronos_log::SessionId::new("char-c2-01");
+        let session = chronos_log::SessionId::new("c21-persist-first");
         let log = SegmentedExecutionLog::open(
             session.clone(),
             chronos_log::SegmentedConfig::with_dir(&dir),
         )
         .expect("open log");
-        // Seal so every subsequent append is refused.
-        log.seal().expect("seal");
-        assert!(log.append(new_record_for(&session, 0)).is_err());
 
         let bus = chronos_domain::bus::EventBus::new_shared(64);
         let event = TraceEvent::signal(1, 100, 1, 11, "SIGSEGV", 0);
-        NativeProbeBackend::dual_push(&bus, Some(&log), &event, 123);
 
-        // MEASURED: the bus observed the event even though the durable
-        // append failed.
-        let published = bus.snapshot_raw();
-        assert_eq!(
-            published.len(),
-            1,
-            "char: the bus published the event regardless of the log append failure"
+        // Accepted path: append succeeds, so the bus may observe it.
+        let accepted =
+            NativeProbeBackend::dual_push(&bus, Some(&log), &event, 123).expect("accepted");
+        assert!(accepted.is_some(), "the log assigned a seq");
+        assert_eq!(bus.snapshot_raw().len(), 1, "accepted ⇒ published");
+
+        // Refused path: seal the log and push again.
+        log.seal().expect("seal");
+        let refused = NativeProbeBackend::dual_push(&bus, Some(&log), &event, 124);
+        assert!(refused.is_err(), "the append is refused");
+        assert!(
+            bus.snapshot_raw().is_empty(),
+            "refused ⇒ NOT published (no observation without acceptance)"
         );
-        assert_eq!(published[0].event_id, 1);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1102,18 +1139,6 @@ mod tests {
             second.is_empty(),
             "char: the second consumer loses every event (destructive snapshot)"
         );
-    }
-
-    fn new_record_for(
-        session: &chronos_log::SessionId,
-        seq: u64,
-    ) -> chronos_log::NewExecutionRecord {
-        chronos_log::NewExecutionRecord {
-            session_id: session.clone(),
-            monotonic_ns: seq,
-            payload: chronos_log::ExecutionPayload::new(vec![], "char"),
-            ..Default::default()
-        }
     }
 
     #[test]

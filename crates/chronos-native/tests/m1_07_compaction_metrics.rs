@@ -128,6 +128,8 @@ fn compaction_metrics_reflects_real_compaction_runs() {
         };
         let bytes = serde_json::to_vec(&ev).expect("encode");
         log.append(NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: SessionId::new(log_session),
             monotonic_ns: i * 10,
             payload: ExecutionPayload::new(bytes, "FunctionEntry"),

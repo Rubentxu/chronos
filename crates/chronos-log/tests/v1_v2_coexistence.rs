@@ -42,6 +42,8 @@ fn v2_records_round_trip_with_populated_fields() {
 
     let session = SessionId::new("s-v2");
     let record = NewExecutionRecord {
+        kind: chronos_log::ExecutionKind::Raw,
+
         session_id: session.clone(),
         monotonic_ns: 200,
         payload: ExecutionPayload::new(vec![4, 5, 6], "raw"),

@@ -159,6 +159,8 @@ fn m1_02_execution_log_persistence_impl() {
         let log = SegmentedExecutionLog::open(session.clone(), cfg).expect("open");
         // Small record first (under budget).
         log.append(chronos_log::NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session.clone(),
             monotonic_ns: 0,
             payload: chronos_log::ExecutionPayload::new(vec![1u8], "small"),
@@ -168,6 +170,8 @@ fn m1_02_execution_log_persistence_impl() {
         // Big record pushes the in-memory estimate over the 64
         // byte budget, forcing the gap path.
         log.append(chronos_log::NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session.clone(),
             monotonic_ns: 10,
             payload: chronos_log::ExecutionPayload::new(vec![0u8; 256], "big"),
@@ -200,6 +204,8 @@ fn m1_02_execution_log_persistence_impl() {
         let log = SegmentedExecutionLog::open(session.clone(), cfg.clone()).expect("open");
         for i in 0..3u64 {
             log.append(chronos_log::NewExecutionRecord {
+                kind: chronos_log::ExecutionKind::Raw,
+
                 session_id: session.clone(),
                 monotonic_ns: i * 10,
                 payload: chronos_log::ExecutionPayload::new(vec![i as u8], "rec"),
@@ -237,6 +243,8 @@ fn m1_02_execution_log_persistence_impl() {
         let log = SegmentedExecutionLog::open(session.clone(), cfg.clone()).expect("open");
         for i in 0..6u64 {
             log.append(chronos_log::NewExecutionRecord {
+                kind: chronos_log::ExecutionKind::Raw,
+
                 session_id: session.clone(),
                 monotonic_ns: i,
                 payload: chronos_log::ExecutionPayload::new(vec![i as u8], "d"),
@@ -266,6 +274,8 @@ fn m1_02_execution_log_persistence_impl() {
             .expect("open b");
         for i in 0..16u64 {
             l1.append(chronos_log::NewExecutionRecord {
+                kind: chronos_log::ExecutionKind::Raw,
+
                 session_id: session.clone(),
                 monotonic_ns: i,
                 payload: chronos_log::ExecutionPayload::new(vec![(i & 0xFF) as u8], "d"),
@@ -273,6 +283,8 @@ fn m1_02_execution_log_persistence_impl() {
             })
             .unwrap();
             l2.append(chronos_log::NewExecutionRecord {
+                kind: chronos_log::ExecutionKind::Raw,
+
                 session_id: session.clone(),
                 monotonic_ns: i,
                 payload: chronos_log::ExecutionPayload::new(vec![(i & 0xFF) as u8], "d"),
@@ -296,6 +308,8 @@ fn m1_02_execution_log_persistence_impl() {
         cfg.flush_threshold = NonZeroUsize::new(1).unwrap();
         let log = SegmentedExecutionLog::open(session.clone(), cfg).expect("open");
         log.append(chronos_log::NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session.clone(),
             monotonic_ns: 0,
             payload: chronos_log::ExecutionPayload::new(vec![1], "a"),
@@ -498,6 +512,8 @@ fn m1_04_execution_log_durable_cursors_and_decoders_impl() {
     );
     for i in 0..5u64 {
         log.append(chronos_log::NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session.clone(),
             monotonic_ns: i * 100,
             payload: chronos_log::ExecutionPayload::new(
@@ -571,6 +587,8 @@ fn m1_04_execution_log_durable_cursors_and_decoders_impl() {
     ))
     .expect("append good");
     log.append(chronos_log::NewExecutionRecord {
+        kind: chronos_log::ExecutionKind::Raw,
+
         session_id: chronos_log::SessionId::new("native-m1-04-uat-counters"),
         monotonic_ns: 100,
         payload: chronos_log::ExecutionPayload::new(b"\xff\xfe\xfd not-json".to_vec(), "noise"),
@@ -613,6 +631,8 @@ fn m1_05_execution_log_segment_compaction_impl() {
     // Eight records → four segments on disk.
     for i in 0..8u64 {
         log.append(chronos_log::NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(

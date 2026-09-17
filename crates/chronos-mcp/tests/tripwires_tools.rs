@@ -147,47 +147,6 @@ fn tripwire_create_invalid_event_type() {
 
 // ---------------------------------------------------------------------------
 // tripwire_list
-// ---------------------------------------------------------------------------
-
-#[test]
-fn tripwire_list_empty() {
-    reset();
-    let manager = fresh_manager();
-    let result = TripwiresService::list(&manager);
-
-    assert!(result.tripwires.is_empty());
-    assert!(result.fired_events.is_empty());
-    assert_eq!(result.total_active, 0);
-    assert_eq!(result.fired_count, 0);
-}
-
-#[test]
-fn tripwire_list_two() {
-    reset();
-    let manager = fresh_manager();
-
-    let c1 = TripwireConditionType::EventType {
-        event_types: vec!["function_entry".into()],
-    }
-    .into_condition()
-    .unwrap();
-    TripwiresService::create(c1, Some("entry".into()), &manager).unwrap();
-
-    let c2 = TripwireConditionType::Signal { numbers: vec![11] }
-        .into_condition()
-        .unwrap();
-    TripwiresService::create(c2, None, &manager).unwrap();
-
-    let result = TripwiresService::list(&manager);
-
-    assert_eq!(result.total_active, 2);
-    assert_eq!(result.fired_count, 0);
-    assert_eq!(result.tripwires.len(), 2);
-
-    let ids: Vec<_> = result.tripwires.iter().map(|tw| tw.id.clone()).collect();
-    assert!(ids.contains(&"tripwire-1".into()));
-    assert!(ids.contains(&"tripwire-2".into()));
-}
 
 // ---------------------------------------------------------------------------
 // tripwire_query
@@ -296,11 +255,8 @@ fn full_tripwire_lifecycle() {
     .unwrap();
     TripwiresService::create(c3, Some("main-watch".into()), &manager).unwrap();
 
-    // list shows 3
-    let list = TripwiresService::list(&manager);
-    assert_eq!(list.total_active, 3);
-
-    // query confirms 3
+    // 3 active
+    assert_eq!(manager.active_count(), 3);
     let query = TripwiresService::query(&manager);
     assert_eq!(query.total_active, 3);
 
@@ -311,7 +267,6 @@ fn full_tripwire_lifecycle() {
     let query = TripwiresService::query(&manager);
     assert_eq!(query.total_active, 2);
 
-    // list also shows 2
-    let list = TripwiresService::list(&manager);
-    assert_eq!(list.total_active, 2);
+    // 2 remain
+    assert_eq!(manager.active_count(), 2);
 }

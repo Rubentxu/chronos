@@ -660,6 +660,8 @@ mod rec_c1_3_tests {
             );
             handle
                 .append(NewExecutionRecord {
+                    kind: chronos_log::ExecutionKind::Raw,
+
                     session_id: handle.session_id().clone(),
                     monotonic_ns: *ts,
                     payload: ExecutionPayload::new(
@@ -699,6 +701,8 @@ mod rec_c1_3_tests {
         );
         handle
             .append(NewExecutionRecord {
+                kind: chronos_log::ExecutionKind::Raw,
+
                 session_id: handle.session_id().clone(),
                 monotonic_ns: i * 10,
                 payload: ExecutionPayload::new(serde_json::to_vec(&event).unwrap(), "trace_event"),
@@ -964,6 +968,8 @@ mod rec_c1_3_tests {
         // Poison one record's payload.
         handle
             .append(NewExecutionRecord {
+                kind: chronos_log::ExecutionKind::Raw,
+
                 session_id: handle.session_id().clone(),
                 monotonic_ns: 999,
                 payload: ExecutionPayload::new(b"not-json-at-all".to_vec(), "unknown_producer"),

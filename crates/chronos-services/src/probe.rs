@@ -521,19 +521,18 @@ impl ProbeService {
 
         let total_buffered = events.len();
 
-        // Evaluate tripwires against every drained semantic event so live
-        // evidence reaches the tripwire subsystem without waiting for stop.
-        let mut fired: Vec<chronos_domain::TripwireFired> = Vec::new();
+        // REC-C2.1.6: count live tripwire matches for the `tripwires_fired`
+        // signal using the PURE matcher. This is a live statistic, not
+        // evidence: durable firing evidence is derived into the ExecutionLog
+        // (see `tripwire_evidence::derive_firings_*`). Previously this wrote
+        // into the legacy `fired_buffer`, which nothing read any more.
+        let mut tripwires_fired = 0usize;
         if !events.is_empty() {
             let mgr = Arc::clone(ctx.tripwire_manager);
             for ev in &events {
-                let local = mgr.evaluate_semantic(ev);
-                if !local.is_empty() {
-                    fired.extend(local);
-                }
+                tripwires_fired += mgr.matching_semantic(ev).len();
             }
         }
-        let tripwires_fired = fired.len();
 
         Ok(ProbeDrainResult {
             events,

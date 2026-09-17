@@ -47,5 +47,5 @@ pub use trace::{
     JsEventKind, Language, PythonEventKind, RegisterState, RuntimeInfo, SessionState,
     SourceLocation, StackFrame, SymbolId, ThreadInfo, ThreadState, TraceEvent,
 };
-pub use tripwire::{Tripwire, TripwireCondition, TripwireFired, TripwireId, TripwireManager};
+pub use tripwire::{Tripwire, TripwireCondition, TripwireId, TripwireManager, TripwireMatch};
 pub use value::{DwarfValue, RegisterSnapshot, TypedValue, VariableInfo, VariableScope};

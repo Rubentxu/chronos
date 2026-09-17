@@ -134,6 +134,15 @@ pub enum ServiceError {
     #[error("ExecutionLog unavailable for session {session_id}: {reason}")]
     ExecutionLogUnavailable { session_id: String, reason: String },
 
+    /// No session could be resolved for an operation that requires one.
+    ///
+    /// Raised when neither an explicit `scope = session{session_id}` was
+    /// supplied nor an `active_session` is set. There is deliberately no
+    /// second, synchronous source of the active session: this error (and the
+    /// absence of such a field) is the guard against duplicated identity.
+    #[error("no active session: supply scope=session{{session_id}} or start a session")]
+    NoActiveSession,
+
     /// A by-id lookup found nothing in the RETAINED region while history has
     /// been retired (REC-C1.5).
     ///

@@ -671,9 +671,13 @@ pub struct ObserveParams {
     /// Required for `verb=create` + `condition.kind=uprobe`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<ObserveScopeWire>,
-    /// Optional cursor for `verb=list` (matches m7-01 events_read cursor).
+    /// Optional opaque cursor for `verb=list` (`ecv1:<schema>:<len>:<session>:<seq>`).
+    ///
+    /// REC-C2.1.4b: firings are paged out of the ExecutionLog, so the cursor is
+    /// an `EventsCursorV1` token (session + next EventSeq), not the legacy bus
+    /// cursor.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cursor: Option<chronos_services::output::CursorDto>,
+    pub cursor: Option<String>,
     /// Optional human-readable label (alternative to `condition.label`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
@@ -2953,6 +2957,13 @@ impl ChronosServer {
             Err(ServiceError::LockPoisoned) => {
                 return Ok(CallToolResult::error(text_content("lock poisoned")));
             }
+            // REC-C2.1.4a: cannot occur from list_threads, but the enum gained
+            // a variant and the match is exhaustive.
+            Err(ServiceError::NoActiveSession) => {
+                return Ok(CallToolResult::error(text_content(
+                    "no active session: supply scope=session{session_id} or start a session",
+                )));
+            }
             // The new ServiceError variants cannot occur from list_threads,
             // but must be listed for exhaustiveness.
             Err(ServiceError::MemoryNotFound { .. }) => {
@@ -4347,7 +4358,7 @@ impl ChronosServer {
             cursor: None,
             label: label_for_v2,
         };
-        match ChronosObserveService::observe(&ctx, input) {
+        match ChronosObserveService::observe(&ctx, input).await {
             Ok(chronos_services::output::ObserveOutput::Create(c)) => {
                 let output = serde_json::json!({
                     "tripwire_id": c.subscription_id,
@@ -4407,7 +4418,7 @@ impl ChronosServer {
             cursor: None,
             label: None,
         };
-        match ChronosObserveService::observe(&ctx, input) {
+        match ChronosObserveService::observe(&ctx, input).await {
             Ok(chronos_services::output::ObserveOutput::List(l)) => {
                 let tripwire_summaries: Vec<_> = l
                     .subscriptions
@@ -4500,7 +4511,7 @@ impl ChronosServer {
             cursor: None,
             label: None,
         };
-        match ChronosObserveService::observe(&ctx, input) {
+        match ChronosObserveService::observe(&ctx, input).await {
             Ok(chronos_services::output::ObserveOutput::Delete(d)) => {
                 let output = serde_json::json!({
                     "tripwire_id": d.subscription_id,
@@ -4565,7 +4576,7 @@ impl ChronosServer {
             cursor: None,
             label: None,
         };
-        match ChronosObserveService::observe(&ctx, input) {
+        match ChronosObserveService::observe(&ctx, input).await {
             Ok(chronos_services::output::ObserveOutput::Query(q)) => {
                 let tripwire_summaries: Vec<_> = q
                     .subscriptions
@@ -5464,7 +5475,7 @@ impl ChronosServer {
             cursor: None,
             label: None,
         };
-        match ChronosObserveService::observe(&ctx, input) {
+        match ChronosObserveService::observe(&ctx, input).await {
             Ok(chronos_services::output::ObserveOutput::Create(c)) => {
                 // Mirror v1 shape: pull fields back from the v2 result.
                 let output = serde_json::json!({
@@ -6247,7 +6258,7 @@ impl ChronosServer {
             label: params.label,
         };
 
-        match ChronosObserveService::observe(&ctx, input) {
+        match ChronosObserveService::observe(&ctx, input).await {
             Ok(out) => Ok(CallToolResult::success(json_content(
                 &serde_json::to_value(&out)
                     .map_err(|e| rmcp::ErrorData::internal_error(e.to_string(), None))?,
@@ -9010,6 +9021,8 @@ mod tests {
             .unwrap(),
         );
         log.append(NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: LogSessionId::new(&log_session_id),
             monotonic_ns: 700,
             payload: ExecutionPayload::new(serde_json::to_vec(&ev).unwrap(), "trace_event"),

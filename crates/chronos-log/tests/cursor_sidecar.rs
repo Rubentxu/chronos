@@ -151,6 +151,8 @@ fn read_after_commit_cursor_skips_processed_records() {
     // Append 6 records so the log crosses two flushes.
     for i in 0..6u64 {
         log.append(chronos_log::NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(vec![i as u8], "x"),
@@ -210,6 +212,8 @@ fn fresh_consumer_after_commit_still_returns_everything() {
         .expect("open");
     for i in 0..3u64 {
         log.append(chronos_log::NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(vec![i as u8], "y"),
