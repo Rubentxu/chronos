@@ -3,7 +3,7 @@
   "cycle_id": "rec-c2.2-accepted-raw-seam",
   "subject": {
     "base": "e4fd938c",
-    "head": "585dfc45",
+    "head": "1619fb25",
     "dirty": false
   },
   "mandatory_gates": {
@@ -23,7 +23,7 @@
     {
       "finding_id": "f_rec_c2_2_canon_evidence_drain",
       "rule_id": "canonical-drain-no-eventbus",
-      "subject": {"base": "e4fd938c", "head": "585dfc45"},
+      "subject": {"base": "e4fd938c", "head": "1619fb25"},
       "location": {"path": "crates/chronos-services/src/probe.rs", "start_line": 543, "end_line": 611, "symbol": "ProbeService::drain"},
       "classification": "suggestion",
       "severity": "low",
@@ -37,7 +37,7 @@
     {
       "finding_id": "f_rec_c2_2_canon_decode_failclosed",
       "rule_id": "raw-decode-fail-closed",
-      "subject": {"base": "e4fd938c", "head": "585dfc45"},
+      "subject": {"base": "e4fd938c", "head": "1619fb25"},
       "location": {"path": "crates/chronos-services/src/canonical_drain.rs", "start_line": 91, "end_line": 96, "symbol": "read_all_raw_events"},
       "classification": "false_positive",
       "severity": "low",
@@ -51,7 +51,7 @@
     {
       "finding_id": "f_rec_c2_2_canon_completeness_scope",
       "rule_id": "completeness-scoped-examined-range",
-      "subject": {"base": "e4fd938c", "head": "585dfc45"},
+      "subject": {"base": "e4fd938c", "head": "1619fb25"},
       "location": {"path": "crates/chronos-services/src/canonical_drain.rs", "start_line": 286, "end_line": 296, "symbol": "read_canonical_drain_page"},
       "classification": "false_positive",
       "severity": "low",
@@ -65,7 +65,7 @@
     {
       "finding_id": "f_rec_c2_2_consumers_read_log",
       "rule_id": "probe-stop-and-snapshot-read-log",
-      "subject": {"base": "e4fd938c", "head": "585dfc45"},
+      "subject": {"base": "e4fd938c", "head": "1619fb25"},
       "location": {"path": "crates/chronos-services/src/probe.rs", "start_line": 465, "end_line": 687, "symbol": "ProbeService::stop, ProbeService::session_snapshot"},
       "classification": "false_positive",
       "severity": "low",
@@ -79,7 +79,7 @@
     {
       "finding_id": "f_rec_c2_2_trait_destructive_reads_gone",
       "rule_id": "probe-backend-no-destructive-reads",
-      "subject": {"base": "e4fd938c", "head": "585dfc45"},
+      "subject": {"base": "e4fd938c", "head": "1619fb25"},
       "location": {"path": "crates/chronos-domain/src/adapter.rs", "start_line": 49, "end_line": 53, "symbol": "ProbeBackend trait"},
       "classification": "false_positive",
       "severity": "low",
@@ -91,9 +91,23 @@
       "owner_phase": "verify"
     },
     {
+      "finding_id": "f_rec_c2_2_ebpf_read_since_refuses_under_all_features",
+      "rule_id": "probe-backend-read-since-no-drain",
+      "subject": {"base": "e4fd938c", "head": "1619fb25"},
+      "location": {"path": "crates/chronos-ebpf/src/lib.rs", "start_line": 211, "end_line": 239, "symbol": "EbpfAdapter::read_since"},
+      "classification": "false_positive",
+      "severity": "low",
+      "confidence": "high",
+      "production_reachable": "yes",
+      "evidence": [
+        {"kind": "source", "observation": "After 1619fb25 (FIND-C2.2-06): EbpfAdapter::read_since is a SINGLE uniform body with NO #[cfg(feature=\"ebpf\")] gating; always returns Err(TraceError::CursorStale { expected: 0, current: 0 }). inner.drain_events() is no longer reachable from this method under any feature configuration. Verified by `cargo check -p chronos-ebpf --features ebpf --all-targets` (exit 0). The earlier latent-but-feature-dependent destructiveness flagged at 585dfc45 is now closed by construction, not just default-feature.", "command": "sed -n '211,239p' crates/chronos-ebpf/src/lib.rs", "exit_code": 0, "output_digest": null}
+      ],
+      "owner_phase": "verify"
+    },
+    {
       "finding_id": "f_rec_c2_2_browser_take_semantic_still_destructive",
       "rule_id": "browser-local-destructive-read",
-      "subject": {"base": "e4fd938c", "head": "585dfc45"},
+      "subject": {"base": "e4fd938c", "head": "1619fb25"},
       "location": {"path": "crates/chronos-browser/src/adapter.rs", "start_line": 369, "end_line": 394, "symbol": "BrowserAdapter::take_semantic_events"},
       "classification": "suggestion",
       "severity": "medium",
@@ -112,7 +126,7 @@
     {
       "finding_id": "f_rec_c2_2_m0_4_no_longer_vacuous",
       "rule_id": "test-vacuity-closed",
-      "subject": {"base": "e4fd938c", "head": "585dfc45"},
+      "subject": {"base": "e4fd938c", "head": "1619fb25"},
       "location": {"path": "chronos-sandbox/tests/m0_acceptance.rs", "start_line": 792, "end_line": 905, "symbol": "m0_04_tripwires_evaluated_on_canonical_flow_impl"},
       "classification": "false_positive",
       "severity": "low",
@@ -126,7 +140,7 @@
     {
       "finding_id": "f_rec_c2_2_uat_falsifiable",
       "rule_id": "uat-c2-01-02-03-falsifiable",
-      "subject": {"base": "e4fd938c", "head": "585dfc45"},
+      "subject": {"base": "e4fd938c", "head": "1619fb25"},
       "location": {"path": "chronos-sandbox/tests/rec_c2_2_uat_c2.rs", "start_line": 1, "end_line": 297, "symbol": "uat_c2_01/02/03"},
       "classification": "false_positive",
       "severity": "low",
@@ -136,21 +150,12 @@
         {"kind": "command", "observation": "3/3 PASS in T4-smoke sandbox run; assertions include cursor non-advance check, completeness.scope == 'examined_range', total > TINY_RING, durable > TINY_RING, and bounded-growth check after second subscription.", "command": "cargo test -p chronos-sandbox --test rec_c2_2_uat_c2 --no-fail-fast -- --test-threads=1", "exit_code": 0, "output_digest": null}
       ],
       "owner_phase": "verify"
-    },
-    {
-      "finding_id": "f_rec_c2_2_latent_ebpf_read_since_destructive",
-      "rule_id": "probe-backend-read-since-no-drain",
-      "subject": {"base": "e4fd938c", "head": "585dfc45"},
-      "location": {"path": "crates/chronos-ebpf/src/lib.rs", "start_line": 211, "end_line": 218, "symbol": "EbpfAdapter::read_since"},
-      "classification": "suggestion",
-      "severity": "low",
-      "confidence": "high",
-      "production_reachable": "no",
-      "evidence": [
-        {"kind": "source", "observation": "EbpfAdapter::read_since (#[cfg(feature=\"ebpf\")]) falls back to inner.drain_events() (line 231) when cursor is None. No production caller invokes this path today (canonical probe_drain goes through ExecutionLog). Latent risk: a future caller that uses ProbeBackend dynamically would regress.", "command": "sed -n '210,240p' crates/chronos-ebpf/src/lib.rs", "exit_code": 0, "output_digest": null}
-      ],
-      "owner_phase": "debt-verify"
     }
   ],
-  "evidence_gaps": []
+  "evidence_gaps": [
+    {
+      "gap": "EbpfAdapter::read_since is enforced by construction, not runtime-verified.",
+      "rationale": "Constructing a real EbpfAdapter requires BPF privileges and kernel support; a test that bails when construction fails is the vacuous-test pattern this cycle just removed. No runtime test added; the property holds because the destructive fallback is gone from the source. Verified by `cargo check -p chronos-ebpf --features ebpf --all-targets` (exit 0) under the feature flag and by source inspection."
+    }
+  ]
 }

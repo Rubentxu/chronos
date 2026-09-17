@@ -2,10 +2,10 @@
   "cycle_id": "rec-c2.2-accepted-raw-seam",
   "route": "A-lite",
   "status": "in_progress",
-  "verify_status": null,
-  "release_status": null,
-  "archive_status": null,
-  "head_sha": "585dfc45",
+  "verify_status": "PASS",
+  "release_status": "pending",
+  "archive_status": "pending",
+  "head_sha": "1619fb25",
   "base_sha": "e4fd938c",
   "main_sha": "e4fd938c",
   "tag": "rec-c2.2-accepted-raw-seam",
@@ -101,5 +101,27 @@
     "CC#18_rec_c1_7_pre_existing": "rec-c1-7 missing verify-findings.json (C1.7 gap); gov-* owns it."
   },
   "notes": "IN PROGRESS. C2.2.0/C2.2.1 landed. C2.2.2 landed its semantic projector (project_semantic, pure, no bus) and documented the remaining log-backed drain + wire/cursor change and its blast radius in tasks.md. C2.2.3-5 remain.",
-  "invariant_after_this_commit": "probe_drain data = ExecutionLog; coordinates = EventSeq; semantic view = deterministic projection; firing count = persisted TripwireFired; completeness = examined-range evidence facts; EventBus = irrelevant to the canonical result."
+  "invariant_after_this_commit": "probe_drain data = ExecutionLog; coordinates = EventSeq; semantic view = deterministic projection; firing count = persisted TripwireFired; completeness = examined-range evidence facts; EventBus = irrelevant to the canonical result.",
+  "verify": {
+    "verdict": "PASS",
+    "subject_sha": "1619fb25",
+    "report": "cycle-artifacts/.../verify-report.md",
+    "report_sha256": "69f4567cf6d21b45a2029de4e003f6a7f5d4e03e8205886cb77a3a1bbe623317",
+    "findings_sha256": "d232f5991ea1c80b6e412517d071c107e9b519ee89ced21342be5e21f2ae5dad",
+    "ran": "9 deterministic commands on HEAD 1619fb25 (build, fmt, clippy, T3 workspace, T3 native serial, T4-smoke sandbox 3 suites, ratchet, ratchet --strict)",
+    "answers": {
+      "production_eventbus_evidence_after_C2_2_4": "NO (zero production call sites; trait impls exist but the canonical path does not invoke them)",
+      "browser_destructive_read": "RECLASSIFICATION WITH MITIGATION (trait methods genuinely deleted; BrowserProbeService::stop now non-destructive; take_semantic_events still evicts, browser-local, FIND-C2.2-04)"
+    }
+  },
+  "debt": {
+    "verdict": "PASS_WITH_WARNINGS",
+    "subject_sha": "1619fb25",
+    "json_sha256": "b9c3bd0a565d1fcf538b69029a582f25540ca9615648989d6d93df182b174840",
+    "markdown_sha256": "ee2391898a42838ae91c9e9b9a11f3a10a36a315f374cf12045cbe22c2f5f7db",
+    "coverage": "all 4 required A-lite clusters completed (coupling, overeng, smells, duplication); failed_clusters empty; fail_closed true",
+    "summary": "8 findings: 0 critical, 0 high, 1 medium, 7 low",
+    "orchestrator_dissent": "The gate attributes the medium finding (BrowserAdapter::take_semantic_events is still a destructive read) as pre_existing, because a destructive browser-local read existed before this cycle. I do not fully agree and record why: the SUBSTANCE pre-exists, but the RELOCATION is introduced here. Before C2.2.4 that destructive read was reachable through the shared ProbeBackend trait; now it is an inherent, browser-local method. The relocation is a real improvement (it is what makes the ratchet's CANONICAL=0 honest rather than cosmetic) and it is also a real change to the public surface of chronos-browser. Recording the disagreement rather than silently adopting the gate's classification.",
+    "missing_projection_note": "The gate declared a Markdown projection at debt-report.md but did not write it. The JSON is the authoritative artifact, so the projection was generated from the persisted JSON by the orchestrator and its hash recorded here. No gate decision was altered."
+  }
 }

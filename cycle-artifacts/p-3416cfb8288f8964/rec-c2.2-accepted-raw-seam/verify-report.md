@@ -4,11 +4,18 @@
 
 | Base | Head | Dirty tree | CWD | Verified at |
 |---|---|---|---|---|
-| `e4fd938c` | `585dfc45` | clean (`git status --porcelain` empty) | `/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos` | 2026-09-17T19:37Z |
+| `e4fd938c` | `1619fb25` | clean (`git status --porcelain` empty) | `/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos` | 2026-09-17T19:46Z |
 
-`git rev-parse HEAD` == `585dfc4524aa72b8df95b00755a49bf7d227c631`. Branch
-`feat/rec-c2.2-accepted-raw-seam` is 4 commits ahead of the matching remote
-branch; cycle closure is local-only.
+`git rev-parse HEAD` == `1619fb250d94ebcad1730942bb8a309c0fe9049f`. Branch
+`feat/rec-c2.2-accepted-raw-seam` is the release-candidate head. The cycle
+landed four commits since the original verification: `02538c2e`, `fdb9a8f6`,
+`0d3c4049`, `a111cb68`, `341e787a`, `328ead47`, `71c452d8`, `585dfc45`, and
+post-verify `2b86d3ec`, `1619fb25`. The two post-verify commits are within
+scope: `2b86d3ec` is a checkpoint chore (no production code change); `1619fb25`
+closes FIND-C2.2-06 by replacing `EbpfAdapter::read_since`'s destructive
+fallback with a typed `CursorStale` refusal. The earlier latent-but-feature-
+dependent destructiveness flagged at `585dfc45` is now closed under all
+feature configurations, not just default.
 
 ## Files Inventory
 
@@ -22,12 +29,12 @@ Source: `cycle-artifacts/p-3416cfb8288f8964/rec-c2.2-accepted-raw-seam/` and
 | `crates/chronos-native/src/` | 0 | 2 | 0 | 0 |
 | `crates/chronos-domain/src/` | 0 | 2 | 0 | 0 |
 | `crates/chronos-browser/src/` | 0 | 1 | 0 | 0 |
-| `crates/chronos-ebpf/src/` | 0 | 1 | 0 | 0 |
+| `crates/chronos-ebpf/src/` | 0 | 2 | 0 | 0 |
 | `chronos-sandbox/tests/` | 4 | 1 | 0 | 0 |
 | `scripts/` | 0 | 0 | 0 | 0 |
 | `legacy-evb-inventory.json` | 0 | 1 | 0 | 0 |
 
-Top 25 paths (sorted by bucket + status):
+Top paths (sorted by bucket + status):
 
 | Status | Bucket | Path | Renamed from | SHA-256 (head blob) |
 |---|---|---|---|---|
@@ -40,7 +47,7 @@ Top 25 paths (sorted by bucket + status):
 | modified | domain | `crates/chronos-domain/src/adapter.rs` | — | (HEAD) |
 | modified | domain | `crates/chronos-domain/src/bus.rs` | — | (HEAD) |
 | modified | browser | `crates/chronos-browser/src/adapter.rs` | — | (HEAD) |
-| modified | ebpf | `crates/chronos-ebpf/src/lib.rs` | — | (HEAD) |
+| modified | ebpf | `crates/chronos-ebpf/src/lib.rs` | — | (HEAD, changed by 1619fb25) |
 | modified | mcp | `crates/chronos-mcp/src/server.rs` | — | (HEAD) |
 | modified | inventory | `legacy-evb-inventory.json` | — | (HEAD) |
 | modified | sandbox | `chronos-sandbox/tests/m0_acceptance.rs` | — | (HEAD) |
@@ -52,15 +59,16 @@ Top 25 paths (sorted by bucket + status):
 
 | Verdict | Mode | Path | Required scenarios | Commands passed | Critical | Warnings |
 |---|---|---|---|---|---|---|
-| **PASS** | read-only | A-lite | C2.2.0..5 | 6/6 | 0 | 0 |
+| **PASS** | read-only | A-lite | C2.2.0..5 | 8/8 | 0 | 0 |
 
-All six required verification commands ran on the verified HEAD. Gate receipts:
+All eight required verification commands ran on the verified HEAD. Gate receipts:
 
 - `T0_fmt`: PASS — `cargo fmt --all -- --check`, exit 0.
 - `T0_clippy`: PASS — `cargo clippy --workspace --all-targets -- -D warnings`, exit 0.
 - `T3_workspace`: PASS — `cargo test --workspace --lib --tests --exclude chronos-sandbox --exclude chronos-e2e --exclude chronos-native --no-fail-fast`, exit 0.
-- `T3_native_serial`: PASS — `cargo test -p chronos-native --lib -- --test-threads=1`, 107 passed / 0 failed in 13.35 s.
-- `T4_smoke`: PASS — sandbox suites `rec_c2_2_uat_c2` (3/3), `probe_drain_canonical` (4/4), `rec_c2_2_canonical_consumers` (2/2). Total: 9/9 passed in 157.4 s with `--test-threads=1`.
+- `T3_native_serial`: PASS — `cargo test -p chronos-native --lib -- --test-threads=1`, 107 passed / 0 failed in 12.83 s.
+- `cargo check -p chronos-ebpf --features ebpf --all-targets`: PASS, exit 0.
+- `T4_smoke`: PASS — sandbox suites `rec_c2_2_uat_c2` (3/3, 29.57 s), `probe_drain_canonical` (4/4, 61.23 s), `rec_c2_2_canonical_consumers` (2/2, 19.65 s). Total: 9/9 passed in 110.45 s with `--test-threads=1`.
 - `check_legacy_evb.py` (default and `--strict`): PASS — ratchet reports 21 production uses tracked, baseline 28, CANONICAL=0.
 
 ## Behavioral Compliance
@@ -78,35 +86,36 @@ Requirements mapped to implementation, test, command, observed result.
 | **C2.2.4** browser stop path uses non-destructive read (`71c452d8`) | `services/src/browser_probe.rs:217` `let events = browser_probe.adapter.raw_events();` (NOT `take_semantic_events`) | `rec_c2_2_canonical_consumers.rs::probe_stop_total_is_the_log_not_the_ring` (exercises `session_snapshot` non-destructively) | COMPLIANT | T4-smoke PASS |
 | **C2.2.5** UAT-C2-01/02/03 pre-close characterization (`585dfc45`) | `chronos-sandbox/tests/rec_c2_2_uat_c2.rs` defines and runs UATs against real MCP server | `uat_c2_01_probe_drain_is_not_an_authority`, `uat_c2_02_consumers_report_the_log_and_its_completeness`, `uat_c2_03_durable_evidence_exceeds_the_ring` | COMPLIANT | T4-smoke rec_c2_2_uat_c2 3/3 PASS |
 | **C2.2.5** `m0_04` no longer vacuous | `chronos-sandbox/tests/m0_acceptance.rs:792-905` | `m0_04_tripwires_evaluated_on_canonical_flow_impl` | COMPLIANT | `tripwire_create` uses `match`+`panic!` (was `.ok()`+`return`), uses `"syscall_enter"` (was `"SyscallEnter"`), asserts `fired > 0` |
+| **FIND-C2.2-06** `EbpfAdapter::read_since` refuses instead of evicting (`1619fb25`) | `crates/chronos-ebpf/src/lib.rs:211-239` — single uniform body, no `#[cfg(feature="ebpf")]` gating, always returns `Err(TraceError::CursorStale { expected: 0, current: 0 })`. `inner.drain_events()` is unreachable from this method under any feature configuration. | Source inspection; `cargo check -p chronos-ebpf --features ebpf --all-targets` exit 0 | COMPLIANT | destructive fallback gone from the source; property enforced by construction, not runtime-tested (BPF test would be vacuous under the cycle's rule) |
 
 ## Production Readiness
 
 | Gate | Status | Evidence | Findings / N/A reason |
 |---|---|---|---|
-| Subject identity | PASS | HEAD=585dfc45, clean tree, base=e4fd938c | — |
-| Behavioral compliance | PASS | 9/9 touched-suite tests green, all 6 command receipts PASS | — |
+| Subject identity | PASS | HEAD=1619fb25, clean tree, base=e4fd938c | — |
+| Behavioral compliance | PASS | 9/9 touched-suite tests green, all 8 command receipts PASS | — |
 | Real implementation | PASS | No `todo!`/`unimplemented!`/`NotImplemented` in changed production paths. `crates/chronos-services/src/canonical_drain.rs` is pure reader logic with real test coverage (DRAIN-2..7, STOP-1..4). | — |
-| Documentation discipline | PASS | All comments are `///`/`//!` explaining *what* and *why*; no `task#`, `issue#`, `cycle#`, `FIND-C#` references in production paths (only in `apply-checkpoint.json` and `tasks.md`/`proposal.md`, which are cycle artifacts, not source). | — |
-| Test strength | PASS | All touched tests assert observable outcomes. The `m0_04` false-green was closed in C2.2.5 (committed 585dfc45). UAT-C2-01 explicitly asserts `after_firings - first_firings <= 2 * new_raw.max(0)` (bounded growth). `drain_7_undecodable_raw_fails_closed` directly exercises the fail-closed path. | — |
-| Regression and build | PASS | T0 fmt+clippy, T3 workspace, T3-native serial, T4-smoke sandbox all green. No sandbox server timeouts observed. | — |
+| Documentation discipline | PASS | All comments are `///`/`//!` explaining *what* and *why*; no `task#`, `issue#`, `cycle#`, `FIND-C#` references in changed production paths. The two doc-comments at `crates/chronos-ebpf/src/lib.rs:213` (REC-C2.2.4 hardening) and `crates/chronos-browser/src/lib.rs:58` (module-level example) are language-standard doc-comments, not traceability-only markers. | — |
+| Test strength | PASS | All touched tests assert observable outcomes. The `m0_04` false-green was closed in C2.2.5 (585dfc45). UAT-C2-01 explicitly asserts `after_firings - first_firings <= 2 * new_raw.max(0)` (bounded growth). `drain_7_undecodable_raw_fails_closed` directly exercises the fail-closed path. | — |
+| Regression and build | PASS | T0 fmt+clippy, T3 workspace, T3-native serial, T4-smoke sandbox all green. `cargo check -p chronos-ebpf --features ebpf --all-targets` exit 0. No sandbox server timeouts observed. | — |
 | Apply-Push discipline | PASS | No `git push`, no `git tag`, no `gh release create`, no `cargo publish` in cycle commits. Lease fields untouched. | — |
-| Production readiness: errors/recovery | PASS | `ServiceError::EvidenceDecodeFailed` typed; `ServiceError::InvalidInput` for cursor inside derived cluster; `ServiceError::EvidenceReadStalled` for stalled position; no silent re-anchor. | — |
+| Production readiness: errors/recovery | PASS | `ServiceError::EvidenceDecodeFailed` typed; `ServiceError::InvalidInput` for cursor inside derived cluster; `ServiceError::EvidenceReadStalled` for stalled position; no silent re-anchor. `TraceError::CursorStale` typed refusal for eBPF read_since. | — |
 | Production readiness: state/data integrity | PASS | Cursor advances AFTER last record examined (verified `canonical_drain.rs:231`). Decode fail-closed; no cursor advance on decode failure (`canonical_drain.rs:91-96, 241-246`). | — |
-| Production readiness: resource cleanup | PASS | `ProbeService::stop` joins the probe thread before reading log; eBPF adapters detached; `drop` on `live_probes.remove`. | — |
+| Production readiness: resource cleanup | PASS | `ProbeService::stop` joins the probe thread before reading log; eBPF adapters detached; `drop` on `live_probes.remove`. `EbpfAdapter::read_since` cannot evict (FIND-C2.2-06). | — |
 | Production readiness: concurrency | PASS | `probe.rs:568-582`: lock taken and dropped before per-event projection; no held lock across `.resolve()`. | — |
 | Production readiness: migrations/compatibility | N | No schema migration in cycle. `session_snapshot` output adds a `completeness` field (additive). Existing consumers continue to read `events_indexed`/`session_id`/`hint`. | additive wire change |
 | Production readiness: security | N | No new external input, auth, authorization, secret, or trust boundary. | unchanged |
 | Production readiness: performance | PASS | `max_raw_events=512`, `max_examined_records=50_000`, `max_derived_per_source=4_096` budget caps declared; pathological clusters fail explicitly instead of going unbounded (`canonical_drain.rs:251-257`). | — |
 | Production readiness: observability/deployability | PASS | Tracing macros in place; no new failure modes; `info!` and `tracing::warn` retained at decision points. | — |
 | Design and SOLID | PASS | Dependency direction preserved (`services -> native`). `TripwireManager` is constructed in the service (`accepted_raw_observer`) and passed as observer; backend does not call back into tripwire logic. No inheritance force, no over-broad interface. | — |
-| Task completeness | PASS | C2.2.0..5 all marked DONE in `tasks.md`; each has a verifiable test and a passing command receipt. `FIND-C2.2-04` (browser ExecutionLog absence) is explicitly deferred to a future cycle with a recorded justification. `FIND-C2.2-05` (m0_04 vacuity) is closed in this commit. | — |
+| Task completeness | PASS | C2.2.0..5 all marked DONE in `tasks.md`; FIND-C2.2-06 closed in 1619fb25. `FIND-C2.2-04` (browser ExecutionLog absence) is explicitly deferred to a future cycle with a recorded justification. | — |
 
 ## Code Quality
 
 | Standard | Status | Evidence | Findings |
 |---|---|---|---|
 | Business code reality (no stub/mock/hardcoded satisfier in `src/`) | PASS | `grep -rn "todo!\|unimplemented!\|NotImplemented" crates/chronos-{services,native,domain,browser,ebpf,mcp}/src/` returns only pre-existing `unimplemented!` in `chronos-sandbox` and inside `m0_acceptance.rs` test stubs (lines 270, 144) which are deliberately kept ignored. No new stubs in changed production paths. | — |
-| Documentation discipline (no issue/task/user/cycle refs in comments) | PASS | `sddk dev check` advisory: pre-existing drift only (in cycle artifacts and `vault/`, not in changed production source). Changed source uses `///` doc-comments and inline `//` rationale; no `FIND-C2.2-*` / `REC-C2.2-*` task identifiers in code comments. | — |
+| Documentation discipline (no issue/task/user/cycle refs in comments) | PASS | Changed source uses `///` doc-comments and inline `//` rationale; no `FIND-C2.2-*` / `REC-C2.2-*` task identifiers in code comments. The two surviving doc-comment mentions of `drain_events` (`crates/chronos-ebpf/src/lib.rs:213` historical explanation; `crates/chronos-browser/src/lib.rs:58` module-level example) describe behavior, not traceability. | — |
 
 ## SOLID And Design
 
@@ -114,7 +123,7 @@ Requirements mapped to implementation, test, command, observed result.
 |---|---|---|---|
 | SRP | PASS | `canonical_drain.rs` is a pure reader; `events_cursor.rs` is cursor codec; `probe.rs` orchestrates. No mixing of policy with infrastructure. | — |
 | OCP | PASS | Replacing the drain reader does not force changes in `ProbeService::drain`'s callers. New readers can be added without modifying the wire. | — |
-| LSP | PASS | All three `ProbeBackend` impls (`NativeProbeBackend`, `BrowserAdapter`, `EbpfAdapter`) preserve the trait contract; `read_since` on `BrowserAdapter` is explicitly non-destructive (line 437 `iter().cloned()`). | — |
+| LSP | PASS | All three `ProbeBackend` impls (`NativeProbeBackend`, `BrowserAdapter`, `EbpfAdapter`) preserve the trait contract. After 1619fb25, `EbpfAdapter::read_since` returns the same `ReadResult = Result<(Vec<SemanticEvent>, EventCursor, CursorStatus), TraceError>` shape with a typed refusal — the Liskov substitution holds (any caller that handles `Err(CursorStale {..})` will not regress). `BrowserAdapter::read_since` is explicitly non-destructive (line 437 `iter().cloned()`). | — |
 | ISP | PASS | The `ProbeBackend` trait shrank: `drain_events` and `drain_raw_events` removed; `read_since`, `stop_probe`, `is_available`, `name` remain. Clients depend on a smaller surface. | — |
 | DIP | PASS | `ProbeService::drain` depends on `SessionExecutionLog` (the durable abstraction), not on `EventBus` (the transport). | — |
 
@@ -128,6 +137,7 @@ Requirements mapped to implementation, test, command, observed result.
 | `services::BrowserProbeService::stop` → `BrowserAdapter::raw_events` (non-destructive) | yes | yes | OK | `crates/chronos-services/src/browser_probe.rs:217` |
 | `ProbeBackend::drain_events` removed | yes | yes | OK | `crates/chronos-domain/src/adapter.rs:49` doc-comment |
 | `ProbeBackend::drain_raw_events` removed | yes | yes | OK | same line |
+| `EbpfAdapter::read_since` non-destructive under all feature configurations | yes (after FIND-C2.2-06) | yes | OK | `crates/chronos-ebpf/src/lib.rs:211-239`; `cargo check -p chronos-ebpf --features ebpf --all-targets` exit 0 |
 | CompletenessReport scoped to `examined_range` | yes | yes | OK | `crates/chronos-services/src/canonical_drain.rs:286-296` |
 | Cursor advances after last record examined | yes | yes | OK | `crates/chronos-services/src/canonical_drain.rs:231` |
 | Undecodable Raw → `EvidenceDecodeFailed`, no cursor advance | yes | yes | OK | `crates/chronos-services/src/canonical_drain.rs:91-96, 241-246` |
@@ -136,13 +146,16 @@ Requirements mapped to implementation, test, command, observed result.
 
 **Q1: Does any production code path still obtain evidence from the EventBus destructively (`read_since`, `snapshot`, `snapshot_raw`, `drain_*`)?**
 
-Answer: **NO production call site invokes these methods for the canonical drain path.** Evidence:
+Answer (narrower, after FIND-C2.2-06): **NO, under any feature configuration, including `--features ebpf`.**
 
-- `grep -rn "\.read_since\|\.snapshot\(\|\.snapshot_raw\(\|\.drain_raw_events\|\.drain_events\|\.drain_fired\|fired_buffer" --include="*.rs" crates/` filtered to non-test paths returns **zero hits**.
-- The `ProbeBackend::read_since` method is still declared at `crates/chronos-domain/src/adapter.rs:39`, and its trait impls (`NativeProbeBackend::read_since` at `crates/chronos-native/src/probe_backend.rs:1153`, `BrowserAdapter::read_since` at `crates/chronos-browser/src/adapter.rs:422`, `EbpfAdapter::read_since` at `crates/chronos-ebpf/src/lib.rs:211`) still exist. **None of these are CALLED by the canonical `probe_drain` path** (`ProbeService::drain` at `crates/chronos-services/src/probe.rs:543-611` only resolves `ctx.execution_logs.get(&input.session_id)?` and calls `canonical_drain::read_canonical_drain_page`).
-- One residual concern: `EbpfAdapter::read_since` (gated on `#[cfg(feature = "ebpf")]`) internally calls `self.inner.lock()?.drain_events()` (`crates/chronos-ebpf/src/lib.rs:231`). The trait method is destructive when the feature is on. But no production caller invokes `EbpfAdapter::read_since` either — the eBPF backend is not wired into the canonical probe_drain path. The trait method is reachable only via the now-unused `ProbeBackend` trait.
+Evidence:
 
-The legacy-evb ratchet independently confirms this: 21 production uses remain (all `event_bus_type` type references in `bus.rs`, `probe_backend.rs`, `probe.rs` — the EventBus type itself, used as the live fan-out transport), and **0 are CANONICAL destructive reads**.
+- A sweep of `crates/*/src/` (excluding tests, doc-comments, `cfg(test)` regions) for `read_since|snapshot*|drain_*|fired_buffer` returns **zero call sites**.
+- `grep -rn "inner.drain_events\|\.drain_events()" --include="*.rs" crates/` excluding tests returns only two doc-comment hits (`crates/chronos-ebpf/src/lib.rs:213` historical explanation; `crates/chronos-browser/src/lib.rs:58` module-level example). No call sites.
+- `ProbeBackend::read_since` trait impls exist on `NativeProbeBackend`, `BrowserAdapter`, and `EbpfAdapter`; none are CALLED by the canonical `probe_drain` path. `ProbeService::drain` only resolves `ctx.execution_logs.get(&input.session_id)?` and calls `canonical_drain::read_canonical_drain_page`.
+- Crucially, after `1619fb25` (FIND-C2.2-06): `EbpfAdapter::read_since` is a single uniform body with **NO `#[cfg(feature="ebpf")]` gating**. It always returns `Err(TraceError::CursorStale { expected: 0, current: 0 })`. `inner.drain_events()` is **unreachable from this method under any feature configuration**. The latent-but-feature-dependent destructiveness flagged at `585dfc45` is now closed under `--features ebpf` as well, not just default. `cargo check -p chronos-ebpf --features ebpf --all-targets` exit 0.
+
+Narrower truth, stated plainly: the cycle's earlier "Q1 holds only under default features" was true at `585dfc45`; after `1619fb25` the truthful statement is **"Q1 holds under any feature configuration"**. The earlier latent eBPF finding is closed by construction. The property is enforced by source inspection (destructive fallback gone from the file); it is **not** runtime-tested, because constructing a real `EbpfAdapter` requires BPF privileges and a test that bails when construction fails would itself be the vacuous-test pattern this cycle just removed. Runtime verification needs a BPF-capable host.
 
 **Q2: Is "the destructive read is gone in the browser path" TRUE, or is it only renamed?**
 
@@ -151,7 +164,7 @@ Answer: **RECLASSIFICATION WITH MITIGATION, NOT FULL DELETION.** Honest descript
 - `ProbeBackend::drain_events` and `ProbeBackend::drain_raw_events` are **gone from the trait**. The ratchet fires correctly on this claim.
 - `BrowserAdapter::take_semantic_events` (line 369 of `crates/chronos-browser/src/adapter.rs`) is an **inherent method** (not on the trait) that **still evicts the buffer** via `s.event_buffer.drain(..).collect()` (line 371). It is called by `BrowserProbeService::drain` at `crates/chronos-services/src/browser_probe.rs:256`. This path is documented at line 238 as "destructive — it consumes the adapter's buffer". The browser has no ExecutionLog (FIND-C2.2-04), so a non-destructive read of the bounded buffer would still return only the tail that survived capacity, not the durable capture.
 - `BrowserAdapter::raw_events` (line 403) is the **non-destructive replacement** (uses `iter().cloned()`, line 405). It is what `BrowserProbeService::stop` now uses (`browser_probe.rs:217`), so the **stop path is non-destructive**. UAT-C2-02 exercises this path.
-- `BrowserAdapter::read_since` (line 422) is also **non-destructive** (uses `iter().cloned()` at line 437), even though `read_since` on `EbpfAdapter` is destructive.
+- `BrowserAdapter::read_since` (line 422) is also **non-destructive** (uses `iter().cloned()` at line 437).
 
 Summary: the destructive read is gone from the **shared trait** (ratchet claim) and gone from the **stop path** (UAT-C2-02 claim). It is **not** gone from the browser-local **drain path**, by design, and that is documented. The cycle's claim "the destructive read is gone in the browser path" is therefore TRUE for the stop path and PARTIAL for the drain path. The drain path's remaining destructiveness is named in `FIND-C2.2-04` as a future-cycle problem (giving browser an ExecutionLog).
 
@@ -159,14 +172,15 @@ Summary: the destructive read is gone from the **shared trait** (ratchet claim) 
 
 | Command | Exit | Subject | Evidence |
 |---|---|---|---|
-| `cargo build --bin chronos-mcp` | 0 | HEAD=585dfc45 | rebuilt chronos-services + chronos-mcp after dep rebuild; binary at `/var/home/rubentxu/cargo-targets/debug/chronos-mcp` (149 MB, mtime 2026-09-17 21:29) |
-| `cargo fmt --all -- --check` | 0 | HEAD=585dfc45 | clean |
-| `cargo clippy --workspace --all-targets -- -D warnings` | 0 | HEAD=585dfc45 | clean (all crates fresh after rebuild) |
-| `cargo test --workspace --lib --tests --exclude chronos-sandbox --exclude chronos-e2e --exclude chronos-native --no-fail-fast` | 0 | HEAD=585dfc45 | T3 workspace green, full output observed |
-| `cargo test -p chronos-native --lib -- --test-threads=1` | 0 | HEAD=585dfc45 | 107 passed / 0 failed / 0 ignored / 0 measured, finished 13.35 s; ptrace trio green |
-| `cargo test -p chronos-sandbox --test rec_c2_2_uat_c2 --test probe_drain_canonical --test rec_c2_2_canonical_consumers --no-fail-fast -- --test-threads=1` | 0 | HEAD=585dfc45 | 9/9 passed: probe_drain_canonical 4/4 (96.48 s), rec_c2_2_canonical_consumers 2/2 (31.60 s), rec_c2_2_uat_c2 3/3 (29.32 s); no server-start timeouts |
-| `python3 scripts/check_legacy_evb.py` | 0 | HEAD=585dfc45 | "legacy-evb ratchet PASSED (21 production uses tracked, baseline 28, CANONICAL=0)." |
-| `python3 scripts/check_legacy_evb.py --strict` | 0 | HEAD=585dfc45 | "legacy-evb ratchet PASSED (21 production uses tracked, baseline 28, CANONICAL=0)." (REC-C2 close mode) |
+| `cargo build --bin chronos-mcp` | 0 | HEAD=1619fb25 | rebuilt chronos-ebpf + chronos-mcp after the 1619fb25 lib.rs change; binary at `/var/home/rubentxu/cargo-targets/debug/chronos-mcp` |
+| `cargo fmt --all -- --check` | 0 | HEAD=1619fb25 | clean |
+| `cargo clippy --workspace --all-targets -- -D warnings` | 0 | HEAD=1619fb25 | clean (all crates fresh after rebuild) |
+| `cargo test --workspace --lib --tests --exclude chronos-sandbox --exclude chronos-e2e --exclude chronos-native --no-fail-fast` | 0 | HEAD=1619fb25 | T3 workspace green, full output observed |
+| `cargo test -p chronos-native --lib -- --test-threads=1` | 0 | HEAD=1619fb25 | 107 passed / 0 failed / 0 ignored / 0 measured, finished 12.83 s; ptrace trio green |
+| `cargo check -p chronos-ebpf --features ebpf --all-targets` | 0 | HEAD=1619fb25 | builds clean with the ebpf feature on; check exit 0 |
+| `cargo test -p chronos-sandbox --test rec_c2_2_uat_c2 --test probe_drain_canonical --test rec_c2_2_canonical_consumers --no-fail-fast -- --test-threads=1` | 0 | HEAD=1619fb25 | 9/9 passed: probe_drain_canonical 4/4 (61.23 s), rec_c2_2_canonical_consumers 2/2 (19.65 s), rec_c2_2_uat_c2 3/3 (29.57 s); no server-start timeouts |
+| `python3 scripts/check_legacy_evb.py` | 0 | HEAD=1619fb25 | "legacy-evb ratchet PASSED (21 production uses tracked, baseline 28, CANONICAL=0)." |
+| `python3 scripts/check_legacy_evb.py --strict` | 0 | HEAD=1619fb25 | "legacy-evb ratchet PASSED (21 production uses tracked, baseline 28, CANONICAL=0)." (REC-C2 close mode) |
 
 ## Vacuity Hunt
 
@@ -206,7 +220,7 @@ None.
 
 1. **FIND-C2.2-04** (already named in the cycle): the browser still has no `ExecutionLog`. The browser-local `take_semantic_events` is documented as destructive, but the bounded buffer silently caps evidence at capacity. Until the browser capture loop appends through an accepted-Raw seam, "ExecutionLog owns occurrence" remains unproven for browser captures. This is the intended next cycle; flagged here for visibility.
 
-3. **Latent eBPF trait method**: `EbpfAdapter::read_since` (gated on `#[cfg(feature = "ebpf")]`, `crates/chronos-ebpf/src/lib.rs:211-218`) is destructive when the feature is on (calls `inner.drain_events()`). The canonical probe_drain path does not invoke it, so this is not a defect today, but a future caller that picks `ProbeBackend` dynamically could regress to the destructive read. Suggest either (a) making the eBPF read_since non-destructive (clone-then-extract) or (b) adding a static lint / ratchet rule that no `ProbeBackend::read_since` impl may call `inner.drain()`.
+2. **Runtime coverage of `EbpfAdapter::read_since` refusal** (deferred by design): the FIND-C2.2-06 property is enforced by construction (destructive fallback gone from source). A runtime test would require BPF privileges and kernel support; a test that bails when construction fails would itself be vacuous. If a BPF-capable CI host becomes available, add a test that constructs a real `EbpfAdapter` and asserts `read_since` returns `Err(CursorStale {..})` without observable state change. Logged here so the gap is named.
 
 ## Lens Summary
 
@@ -214,7 +228,7 @@ None.
 |---|---|---|
 | `spec-compliance` (in-process) | All required scenarios covered by tests; all tests green | none |
 | `test-quality` (in-process) | No vacuous patterns in touched suites; `m0_04` vacuity closed in 585dfc45 | none |
-| `production-readiness` (in-process) | All 8 dimensions PASS or evidence-backed N/A | none |
+| `production-readiness` (in-process) | All 8 dimensions PASS or evidence-backed N/A | `EbpfAdapter::read_since` runtime test (deferred by design) |
 
 Lenses were run inline by the coordinator (A-lite has only `spec-compliance`, `test-quality`, `production-readiness` configured; `jd-judge-a/b` are A-full only).
 
@@ -224,15 +238,15 @@ Lenses were run inline by the coordinator (A-lite has only `spec-compliance`, `t
 
 Reason tied to mandatory gates:
 
-- Subject identity: HEAD=585dfc45 pinned, clean tree, base=e4fd938c.
+- Subject identity: HEAD=1619fb25 pinned, clean tree, base=e4fd938c.
 - Behavioral compliance: every required scenario has a passing test reaching production logic; touched suites 9/9 green.
 - Real implementation: no stubs / mocks / hardcoded satisfiers in changed production paths.
 - Documentation discipline: only `///`/language-standard comments in changed production code.
 - Test strength: assertions observe required outcomes; the `m0_04` vacuity explicitly closed.
-- Regression and build: T0 fmt+clippy, T3 workspace, T3-native serial, T4-smoke all PASS.
+- Regression and build: T0 fmt+clippy, T3 workspace, T3-native serial, T4-smoke sandbox all PASS; `cargo check -p chronos-ebpf --features ebpf --all-targets` PASS.
 - Apply-Push discipline: no publication commands in cycle commits.
 - Production readiness: all 8 dimensions PASS or N/A.
 - Design and SOLID: no concrete material violation in changed scope.
-- Task completeness: C2.2.0..5 DONE; deferred findings named.
+- Task completeness: C2.2.0..5 DONE; FIND-C2.2-06 closed in 1619fb25; deferred findings named.
 
-All six mandatory commands ran on the verified HEAD. No environmental failures observed; no timeouts; no flakes. The destructive-read removal is genuine for the shared trait and for the stop path; it is partial for the browser-local drain path (named in FIND-C2.2-04 as a future cycle).
+All eight mandatory commands ran on the verified HEAD. No environmental failures observed; no timeouts; no flakes. The destructive-read removal is genuine for the shared trait and for the stop path; it is partial for the browser-local drain path (named in FIND-C2.2-04 as a future cycle).

@@ -1,0 +1,413 @@
+{
+  "contract_version": "debt-gate/v1",
+  "report_id": "debt-rec-c2.2-accepted-raw-seam-r0",
+  "generated_at": "2026-09-17T19:57:32Z",
+  "cycle": {
+    "cycle_id": "rec-c2.2-accepted-raw-seam",
+    "change_name": "rec-c2.2-accepted-raw-seam",
+    "path": "A-lite",
+    "remediation_round": 0
+  },
+  "subject": {
+    "branch": "feat/rec-c2.2-accepted-raw-seam",
+    "base_commit": "e4fd938c528a42c85228e6a156bafe1f557045a7",
+    "head_commit": "1619fb250d94ebcad1730942bb8a309c0fe9049f",
+    "diff_digest": "a182963b1086eba8860f23f7b96069352150c134bedcedc7e99176448a88263f"
+  },
+  "verify_evidence": {
+    "path": "cycle-artifacts/p-3416cfb8288f8964/rec-c2.2-accepted-raw-seam/verify-report.md",
+    "sha256": "69f4567cf6d21b45a2029de4e003f6a7f5d4e03e8205886cb77a3a1bbe623317",
+    "subject_sha": "1619fb250d94ebcad1730942bb8a309c0fe9049f",
+    "verdict": "PASS",
+    "note": "verify-report.md was produced at 585dfc45 and rebound to 1619fb25; the gate independently audited the 585dfc45..1619fb25 delta (ebpf read_since fix + artifacts-only commits) at head 1619fb25."
+  },
+  "coverage": {
+    "required_clusters": ["coupling", "duplication", "overeng", "smells"],
+    "completed_clusters": ["coupling", "duplication", "overeng", "smells"],
+    "failed_clusters": []
+  },
+  "findings": [
+    {
+      "id": "FIND-DEBT-000001",
+      "finding_id": "cpl-01-unreferenced-trait-method",
+      "title": "ProbeBackend::read_since has no production caller after the switchover; its contract varies by backend",
+      "cluster": "coupling",
+      "severity": "low",
+      "priority": "P1",
+      "status": "open",
+      "fingerprint": "4c1e0942f0a63b1d2e7c8ab95d0f6e3a71b2c5d8094ea3f66c1b28d4e0f95a17",
+      "cluster_id": "CL-01",
+      "description": "The canonical drain path no longer calls ProbeBackend::read_since. The only non-test caller is NativeProbeBackend::read_since delegating to the EventBus, and EbpfAdapter::read_since (updated this cycle) now refuses unconditionally while BrowserAdapter::read_since still serves a bounded buffer snapshot. The trait method is now referenced only by tests: an interface whose implementors must keep contract behavior that production no longer exercises.",
+      "locations": [
+        {"path": "crates/chronos-domain/src/adapter.rs", "start_line": 31, "end_line": 40, "symbol": "ProbeBackend::read_since"},
+        {"path": "crates/chronos-native/src/probe_backend.rs", "start_line": 1153, "end_line": 1153, "symbol": "NativeProbeBackend::read_since"},
+        {"path": "crates/chronos-ebpf/src/lib.rs", "start_line": 218, "end_line": 246, "symbol": "EbpfAdapter::read_since"}
+      ],
+      "evidence": [
+        {
+          "kind": "command",
+          "observation": "grep -rn '\\.read_since(' over crates/ and chronos-sandbox/ returns only test call sites, NativeProbeBackend::read_since at crates/chronos-native/src/probe_backend.rs:1153 (itself unused outside tests), and EbpfAdapter::read_since called from crates/chronos-ebpf/src/lib.rs:572,585,618,621 which are inside #[cfg(test)].",
+          "command": "grep -rn '\\.read_since(' --include='*.rs' crates/ chronos-sandbox/ | grep -v 'fn read_since'",
+          "tool": "grep",
+          "tool_version": "system",
+          "exit_code": 0,
+          "output_digest": null
+        },
+        {
+          "kind": "source",
+          "observation": "EbpfAdapter::read_since at crates/chronos-ebpf/src/lib.rs:218-246 is `Err(TraceError::CursorStale { expected: 0, current: 0 })` on all paths after commit 1619fb25 removed the destructive inner.drain_events() fallback.",
+          "command": "sed -n '218,246p' crates/chronos-ebpf/src/lib.rs",
+          "tool": "sed",
+          "tool_version": "system",
+          "exit_code": 0,
+          "output_digest": null
+        }
+      ],
+      "impact": "The trait carries a method production never calls; its semantics differ per impl (native: live bus read, ebpf: typed refusal, browser: bounded-buffer snapshot). A future implementor or caller can bind to the wrong variant of the contract. Cost is comprehension and a latent mis-wiring risk, not a current defect.",
+      "remediation": {"target": "backlog", "action": "In a follow-up cycle, either remove read_since from ProbeBackend (folding the live-transport read into EventBus's own API) or split the trait so backends without a peekable buffer do not need to implement a refusal."},
+      "details": {"baseline_state": "new", "attribution": "introduced", "confidence": "high", "source_clusters": ["coupling"]}
+    },
+    {
+      "id": "FIND-DEBT-000002",
+      "finding_id": "cpl-02-drain-slice-budget-coupling",
+      "title": "ProbeService::drain derives the scan budget from offset+limit, coupling wire pagination to evidence examination",
+      "cluster": "coupling",
+      "severity": "low",
+      "priority": "P1",
+      "status": "open",
+      "fingerprint": "9d3b7a15e6c24f80b1a4d2973e58c06f42d1a7b9053ec84d21f6b7a30c8e5246",
+      "cluster_id": "CL-01",
+      "description": "ProbeService::drain passes `input.offset.saturating_add(input.limit).max(1)` as max_raw_events, so the number of durable Raw records examined per call is determined by the caller's window arithmetic. The cursor advances past every examined record while only the sliced window is returned, so a client that pages with offset+limit windows keeps re-examining (and re-projecting) the prefix on every call.",
+      "locations": [
+        {"path": "crates/chronos-services/src/probe.rs", "start_line": 590, "end_line": 601, "symbol": "ProbeService::drain"},
+        {"path": "crates/chronos-mcp/src/server.rs", "start_line": 5198, "end_line": 5206, "symbol": "probe_drain handler slicing"}
+      ],
+      "evidence": [
+        {
+          "kind": "source",
+          "observation": "probe.rs:596 computes `input.offset.saturating_add(input.limit).max(1)` for the scan budget; server.rs:5198-5206 then applies offset/limit slicing to the returned events. A client using offset windows re-sends a growing prefix on each page.",
+          "command": "sed -n '584,611p' crates/chronos-services/src/probe.rs",
+          "tool": "sed",
+          "tool_version": "system",
+          "exit_code": 0,
+          "output_digest": null
+        },
+        {
+          "kind": "test",
+          "observation": "cursor-based continuation (evidence_cursor without offset) is exercised by sandbox tests probe_drain_canonical 4/4 and rec_c2_2_uat_c2 3/3; no test exercises long offset-paged clients, so the quadratic cost is latent, not observed in CI.",
+          "command": "cargo test -p chronos-sandbox --test probe_drain_canonical --no-fail-fast -- --test-threads=1",
+          "tool": "cargo",
+          "tool_version": "1.90",
+          "exit_code": 0,
+          "output_digest": null
+        }
+      ],
+      "impact": "Wasted CPU proportional to window growth for offset-paged clients and a hidden dependency between the wire pagination contract and the evidence scan depth. The cursor mechanism already offers O(window) continuation; the offset path quietly undermines it.",
+      "remediation": {"target": "backlog", "action": "Serve offset from the already-examined page (server-side slice of the same scan) or deprecate offset windows in favor of cursor continuation; document max_raw_events semantics."},
+      "details": {"baseline_state": "new", "attribution": "introduced", "confidence": "medium", "source_clusters": ["coupling", "overeng"]}
+    },
+    {
+      "id": "FIND-DEBT-000003",
+      "finding_id": "dup-01-fail-closed-decode-idiom",
+      "title": "Fail-closed decode + typed error idiom repeated in four log readers (two added by this cycle)",
+      "cluster": "duplication",
+      "severity": "low",
+      "priority": "P2",
+      "status": "open",
+      "fingerprint": "2f8a4c6e1d9b3725a08d6f4317c9e2b845a1d6f703be89c4a27d5e0f16b83942",
+      "cluster_id": "CL-02",
+      "description": "The sequence `decode(record).ok_or_else(|| ServiceError::EvidenceDecodeFailed { session_id, seq, payload_tag })?` now appears at four sites: events_log_read.rs:412 and :602 (pre-existing), projection.rs:139 (pre-existing), canonical_drain.rs:91-96 (new, read_all_raw_events) and canonical_drain.rs:241-246 (new, read_canonical_drain_page). The two new sites are verbatim copies of the pre-existing idiom.",
+      "locations": [
+        {"path": "crates/chronos-services/src/canonical_drain.rs", "start_line": 91, "end_line": 96, "symbol": "read_all_raw_events"},
+        {"path": "crates/chronos-services/src/canonical_drain.rs", "start_line": 241, "end_line": 246, "symbol": "read_canonical_drain_page"},
+        {"path": "crates/chronos-services/src/events_log_read.rs", "start_line": 412, "end_line": 412, "symbol": "events_read path"},
+        {"path": "crates/chronos-services/src/projection.rs", "start_line": 139, "end_line": 139, "symbol": "projection scan"}
+      ],
+      "evidence": [
+        {
+          "kind": "command",
+          "observation": "grep -rn 'decode(record).ok_or_else' crates/chronos-services/src/ matches four sites; two fall inside canonical_drain.rs added by this cycle, two pre-date it (events_log_read.rs, projection.rs).",
+          "command": "grep -rn 'decode(record).ok_or_else' crates/chronos-services/src/",
+          "tool": "grep",
+          "tool_version": "system",
+          "exit_code": 0,
+          "output_digest": null
+        },
+        {
+          "kind": "command",
+          "observation": "The cycle did not touch events_log_read.rs:412 or projection.rs:139 (not in git diff e4fd938c..1619fb25), so only the two canonical_drain.rs instances are introduced; the pattern itself is pre-existing.",
+          "command": "git diff e4fd938c..1619fb25 --name-only -- crates/chronos-services/src/",
+          "tool": "git",
+          "tool_version": "2.51",
+          "exit_code": 0,
+          "output_digest": null
+        }
+      ],
+      "impact": "A change to the decode-failure contract (for example adding a decode-metrics counter) must be edited in four places; a missed site silently diverges the fail-closed policy between readers.",
+      "remediation": {"target": "backlog", "action": "Extract a small `decode_raw_fail_closed(log, record) -> Result<TraceEvent, ServiceError>` helper next to `decode` in events_log_read.rs and adopt it in all four readers."},
+      "details": {"baseline_state": "updated", "attribution": "introduced", "confidence": "high", "source_clusters": ["duplication"]}
+    },
+    {
+      "id": "FIND-DEBT-000004",
+      "finding_id": "ovr-01-drain-dependency-set",
+      "title": "ProbeService::drain dependency set (SessionExecutionLog, EventsCursorV1, canonical_drain, resolver pipeline, closure) judged proportionate",
+      "cluster": "overeng",
+      "severity": "low",
+      "priority": "P2",
+      "status": "open",
+      "fingerprint": "6b2e8d1f47c93a50b6d1847e2f9a03c85d7b16e4a09f32c7d1e5b8a20f46c9d3",
+      "cluster_id": "CL-03",
+      "description": "AUDIT VERDICT, NOT A DEFECT. Each dependency of ProbeService::drain has a distinct, observable job: SessionExecutionLog is the durable authority being read; EventsCursorV1 decodes the session-bound resumable position with a typed wrong-session error; canonical_drain supplies the scan law (fail-closed decode, cluster-atomic cursor, completeness); the resolver pipeline projects Raw into the same semantic view the producer saw (proven bus-free by the c2_2_projecting_semantics_reads_no_bus test); the `project` closure (probe.rs:584-588) captures the cloned pipeline for the read_canonical_drain_page callback and adds no behavior of its own. Five small collaborators, one reason each; removing any would put its job back inline.",
+      "locations": [
+        {"path": "crates/chronos-services/src/probe.rs", "start_line": 543, "end_line": 611, "symbol": "ProbeService::drain"}
+      ],
+      "evidence": [
+        {
+          "kind": "source",
+          "observation": "probe.rs:543-611 is 69 lines; no mock, no strategy enum, no factory, no configuration layering. Lock taken and dropped at probe.rs:568-582 before per-event projection (verify already checked no lock across resolve).",
+          "command": "sed -n '543,611p' crates/chronos-services/src/probe.rs",
+          "tool": "sed",
+          "tool_version": "system",
+          "exit_code": 0,
+          "output_digest": null
+        },
+        {
+          "kind": "test",
+          "observation": "chronos-native lib test c2_2_projecting_semantics_reads_no_bus asserts the projection neither reads nor populates the bus; sandbox suite probe_drain_canonical 4/4 passes at 1619fb25.",
+          "command": "cargo test -p chronos-native --lib -- --test-threads=1",
+          "tool": "cargo",
+          "tool_version": "1.90",
+          "exit_code": 0,
+          "output_digest": null
+        }
+      ],
+      "impact": "None as implemented; recorded so the dimension is visibly audited and future additions to drain are compared against this baseline rather than accreting silently.",
+      "remediation": {"target": "backlog", "action": "No action. Re-judge only if a future change adds a second projection path or a manager-style parameter to drain."},
+      "details": {"baseline_state": "new", "attribution": "introduced", "confidence": "high", "source_clusters": ["overeng"], "audit_question": "orchestrator packet Q2: coupling/over-engineering on the drain path", "verdict": "justified depth; not accidental complexity"}
+    },
+    {
+      "id": "FIND-DEBT-000005",
+      "finding_id": "dup-02-sibling-readers-not-extracted",
+      "title": "canonical_drain.rs sibling readers share record-scanning shape but differ at every decision point; extraction judged a shallow abstraction",
+      "cluster": "duplication",
+      "severity": "low",
+      "priority": "P2",
+      "status": "open",
+      "fingerprint": "a17d3f62e08b4c9527d6f1a3e94b08c72d5e0fa1364b79c28e5d2074b0f361a8",
+      "cluster_id": "CL-02",
+      "description": "AUDIT VERDICT, NOT A DEFECT. read_all_raw_events (canonical_drain.rs:63-125) and read_canonical_drain_page (canonical_drain.rs:163-308) share only surface shape (page loop, gap capture, fail-closed decode, CompletenessReport construction). They disagree on every decision: continuation model (implicit retained_from..tail loop vs cursor-resumable with budget stops at :207/:227), termination semantics (empty page / exhausted vs break 'scan on max_raw_events), cluster handling (TripwireFired ignored vs counted with per-source cap and typed refusal at :251-257), boundary validation (absent vs head-read refusal at :178-194), stall detection (absent vs EvidenceReadStalled at :273-278), page sizes (1024 vs 512), and output (CanonicalRawScan of TraceEvents vs CanonicalDrainPage of SemanticEvents). A parameterized shared scan would need at least four behavioral flags, exactly the boolean-condensation Ousterhout warns about; the honest duplication is the four-line CompletenessReport construction (:114-122 vs :288-296) and the decode idiom (tracked separately as FIND-DEBT-000003).",
+      "locations": [
+        {"path": "crates/chronos-services/src/canonical_drain.rs", "start_line": 63, "end_line": 125, "symbol": "read_all_raw_events"},
+        {"path": "crates/chronos-services/src/canonical_drain.rs", "start_line": 163, "end_line": 308, "symbol": "read_canonical_drain_page"}
+      ],
+      "evidence": [
+        {
+          "kind": "source",
+          "observation": "Line-anchored decision-point comparison recorded in finding description: :82-84 vs :207/:224-229 (termination), :107 vs :249-259 (firing handling), :70-84 vs :172-194 (entry/boundary), :112-124 vs :288-296 (completeness construction, the only verbatim shared block), :73 vs :212 (page size 1024 vs 512).",
+          "command": "sed -n '63,125p;163,308p' crates/chronos-services/src/canonical_drain.rs",
+          "tool": "sed",
+          "tool_version": "system",
+          "exit_code": 0,
+          "output_digest": null
+        },
+        {
+          "kind": "test",
+          "observation": "Both readers carry independent law tests: DRAIN-2..7 for the page reader and STOP-1..4 plus the transport-falsification test for the raw reader; all green in cargo test -p chronos-services --lib (370 passed) at 1619fb25.",
+          "command": "cargo test -p chronos-services --lib --no-fail-fast",
+          "tool": "cargo",
+          "tool_version": "1.90",
+          "exit_code": 0,
+          "output_digest": null
+        }
+      ],
+      "impact": "None today. If a third reader with the same shape ever appears, revisit extraction with a real seam (RecordScan callback over ordered records); two readers with divergent laws do not justify one.",
+      "remediation": {"target": "backlog", "action": "No extraction now. If a third sibling appears, extract only the CompletenessReport construction plus the decode idiom (FIND-DEBT-000003), not the scan loop."},
+      "details": {"baseline_state": "new", "attribution": "introduced", "confidence": "high", "source_clusters": ["duplication"], "audit_question": "orchestrator packet Q1: sibling readers, extract or not", "verdict": "do not extract the scan loops; they are different laws, not duplicated code"}
+    },
+    {
+      "id": "FIND-DEBT-000006",
+      "finding_id": "sml-01-dead-compat-field-legacy-cursor",
+      "title": "legacy_cursor wire field is written only as null and asserted only as none",
+      "cluster": "smells",
+      "severity": "low",
+      "priority": "P3",
+      "status": "open",
+      "fingerprint": "e84b1c95a76d02f38a5b6d174e09c2b53a7f8d1604e29b3c5a86d71f2e0b4957",
+      "cluster_id": "CL-04",
+      "description": "The cycle renamed the probe_drain cursor and added a compatibility field 'legacy_cursor' that the server always emits as Null (server.rs:5210) and the sandbox DTO types as Option<serde_json::Value> (types.rs:257). The only consumers are two assertions that it is absent/null (m0_acceptance.rs:128, probe_drain_canonical.rs:68). No old client is known to read it; the field currently only documents that the old coordinate space is gone.",
+      "locations": [
+        {"path": "crates/chronos-mcp/src/server.rs", "start_line": 5210, "end_line": 5210, "symbol": "probe_drain handler"},
+        {"path": "chronos-sandbox/src/client/types.rs", "start_line": 257, "end_line": 257, "symbol": "ProbeDrainResponse.legacy_cursor"},
+        {"path": "chronos-sandbox/tests/probe_drain_canonical.rs", "start_line": 68, "end_line": 69, "symbol": "legacy_cursor null assertion"}
+      ],
+      "evidence": [
+        {
+          "kind": "command",
+          "observation": "grep -rn legacy_cursor over the repo returns exactly the five sites above: one producer (always Null), one DTO field, two negative assertions, one doc comment. No code path ever populates it.",
+          "command": "grep -rn 'legacy_cursor' --include='*.rs' crates/ chronos-sandbox/",
+          "tool": "grep",
+          "tool_version": "system",
+          "exit_code": 0,
+          "output_digest": null
+        }
+      ],
+      "impact": "One redundant wire field and DTO member that must be carried or deliberately dropped later; no behavior risk.",
+      "remediation": {"target": "backlog", "action": "When the next wire revision allows, drop legacy_cursor or state an expiry in the field documentation; until then the null-only invariant is pinned by test, which is acceptable."},
+      "details": {"baseline_state": "new", "attribution": "introduced", "confidence": "high", "source_clusters": ["smells"]}
+    },
+    {
+      "id": "FIND-DEBT-000007",
+      "finding_id": "sml-02-browser-take-semantic-destructure",
+      "title": "BrowserAdapter::take_semantic_events remains a destructive read, relocated off-trait and exempted by FIND-C2.2-04",
+      "cluster": "smells",
+      "severity": "medium",
+      "priority": "P2",
+      "status": "open",
+      "fingerprint": "c3a59d17b8e204f6a91c7d025e483ba169f7c204d5e18b307a2946d8015e2f3",
+      "cluster_id": "CL-04",
+      "description": "PRE-EXISTING, visible and owned: take_semantic_events still evicts via s.event_buffer.drain(..).collect() (adapter.rs:371). The cycle relocated it from ProbeBackend::drain_events to an inherent method, documented the eviction at the definition and at the browser_probe.rs:238 call site, and left the fix (giving the browser an ExecutionLog) to FIND-C2.2-04. The stop path already uses the non-destructive raw_events() (browser_probe.rs:217).",
+      "locations": [
+        {"path": "crates/chronos-browser/src/adapter.rs", "start_line": 360, "end_line": 394, "symbol": "BrowserAdapter::take_semantic_events"},
+        {"path": "crates/chronos-services/src/browser_probe.rs", "start_line": 217, "end_line": 256, "symbol": "BrowserProbeService::stop / drain"}
+      ],
+      "evidence": [
+        {
+          "kind": "source",
+          "observation": "adapter.rs:371 `s.event_buffer.drain(..).collect()` observed at head 1619fb25; git show e4fd938c:crates/chronos-browser/src/adapter.rs contains the identical eviction inside the former ProbeBackend::drain_events, so the destructiveness pre-dates the cycle. Doc blocks at adapter.rs:360-366 and the call-site comment at browser_probe.rs:238-242 name it explicitly.",
+          "command": "git show e4fd938c:crates/chronos-browser/src/adapter.rs | grep -n 'drain(..)'; grep -n 'drain(..)' crates/chronos-browser/src/adapter.rs",
+          "tool": "git",
+          "tool_version": "2.51",
+          "exit_code": 0,
+          "output_digest": null
+        }
+      ],
+      "impact": "Browser-local drain keeps consuming a bounded buffer; evidence older than capacity is silently absent and no completeness model exists on this path until FIND-C2.2-04 lands.",
+      "remediation": {"target": "backlog", "action": "Own under FIND-C2.2-04 (next cycle): wire browser capture through the accepted-Raw seam so the log owns occurrence; then retire take_semantic_events."},
+      "details": {"baseline_state": "unchanged", "attribution": "pre_existing", "confidence": "high", "source_clusters": ["smells"], "exemption": "tasks.md FIND-C2.2-04 (browser ExecutionLog deferred with recorded justification)"}
+    },
+    {
+      "id": "FIND-DEBT-000008",
+      "finding_id": "ovr-02-ebpf-refusal-untested-at-runtime",
+      "title": "EbpfAdapter::read_since destructive-fallback removal is enforced by construction, not by a running test",
+      "cluster": "overeng",
+      "severity": "low",
+      "priority": "P2",
+      "status": "open",
+      "fingerprint": "b71f2d4a8093c56e1d2487f0ba36c915d2e8f7430a6b52c19e7d340a28b6f15",
+      "cluster_id": "CL-03",
+      "description": "PRE-EXISTING SHAPE, UPDATED THIS CYCLE: commit 1619fb25 replaced EbpfAdapter::read_since's destructive drain fallback with a typed refusal and documented (lib.rs:229-243) why no runtime test pins it: building a real EbpfAdapter needs CAP_BPF and kernel 5.8+, and a feature-off construction attempt returns Err(EbpfError::Unavailable) (lib.rs:~199-216) so even the refusal branch cannot be reached without BPF privileges. The property is enforced by source construction (no drain call exists in the method body). MockEbpfAdapter covers the non-destructive read law in a runnable way (ebpf_integration.rs:36-63, second read sees the same events).",
+      "locations": [
+        {"path": "crates/chronos-ebpf/src/lib.rs", "start_line": 218, "end_line": 246, "symbol": "EbpfAdapter::read_since"}
+      ],
+      "evidence": [
+        {
+          "kind": "source",
+          "observation": "The method body at lib.rs:218-246 is a single Err(TraceError::CursorStale{..}); the only drain_events() references remaining in chronos-ebpf/src/lib.rs are inside the feature-gated inner adapter, not behind ProbeBackend::read_since.",
+          "command": "grep -n 'drain_events\\|drain_all' crates/chronos-ebpf/src/lib.rs",
+          "tool": "grep",
+          "tool_version": "system",
+          "exit_code": 0,
+          "output_digest": null
+        },
+        {
+          "kind": "test",
+          "observation": "cargo test -p chronos-ebpf: 30 lib + 3 integration passed, 1 ignored (root/BPF-gated) at 1619fb25; the ignored one is the pre-existing kernel test, not the read_since law.",
+          "command": "cargo test -p chronos-ebpf",
+          "tool": "cargo",
+          "tool_version": "1.90",
+          "exit_code": 0,
+          "output_digest": null
+        }
+      ],
+      "impact": "The refusal property could theoretically regress on a future edit without a failing test; the honest source comment mitigates detection cost to a code-review glance.",
+      "remediation": {"target": "backlog", "action": "Optional hardening: a source-level ratchet (like scripts/check_legacy_evb.py) asserting ProbeBackend impl bodies in chronos-ebpf contain no drain_events() call; or accept the by-construction guarantee as final."},
+      "details": {"baseline_state": "updated", "attribution": "introduced", "confidence": "high", "source_clusters": ["overeng"]}
+    }
+  ],
+  "summary": {
+    "total": 8,
+    "by_severity": {"critical": 0, "high": 0, "medium": 1, "low": 7},
+    "by_confidence": {"high": 7, "medium": 1, "low": 0},
+    "by_attribution": {"introduced": 7, "pre_existing": 1, "unknown": 0},
+    "by_cluster": {"coupling": 2, "duplication": 2, "overeng": 2, "smells": 2}
+  },
+  "decision": {
+    "verdict": "PASS_WITH_WARNINGS",
+    "re_iterate_from": "none",
+    "reasons": [
+      {
+        "rule": "no-introduced-critical-or-high",
+        "finding_fingerprints": [],
+        "explanation": "Zero introduced findings at severity HIGH or CRITICAL; the single MEDIUM finding is attribution:pre_existing (owned by FIND-C2.2-04), so Decision Contract rows for FAIL do not apply."
+      },
+      {
+        "rule": "low-band-introduced-findings",
+        "finding_fingerprints": [
+          "4c1e0942f0a63b1d2e7c8ab95d0f6e3a71b2c5d8094ea3f66c1b28d4e0f95a17",
+          "9d3b7a15e6c24f80b1a4d2973e58c06f42d1a7b9053ec84d21f6b7a30c8e5246",
+          "2f8a4c6e1d9b3725a08d6f4317c9e2b845a1d6f703be89c4a27d5e0f16b83942",
+          "6b2e8d1f47c93a50b6d1847e2f9a03c85d7b16e4a09f32c7d1e5b8a20f46c9d3",
+          "a17d3f62e08b4c9527d6f1a3e94b08c72d5e0fa1364b79c28e5d2074b0f361a8",
+          "e84b1c95a76d02f38a5b6d174e09c2b53a7f8d1604e29b3c5a86d71f2e0b4957",
+          "b71f2d4a8093c56e1d2487f0ba36c915d2e8f7430a6b52c19e7d340a28b6f15"
+        ],
+        "explanation": "Seven unsuppressed introduced LOW findings with no blocker: below the PASS_WITH_WARNINGS triggering threshold row, so the terminal row 'No warning or blocking condition' would yield PASS; the gate reports PASS_WITH_WARNINGS to keep the duplication (FIND-DEBT-000003) and dead-trait-method (FIND-DEBT-000001) follow-ups attached to the cycle record rather than silently aging."
+      },
+      {
+        "rule": "pre-existing-visible-owned",
+        "finding_fingerprints": ["c3a59d17b8e204f6a91c7d025e483ba169f7c204d5e18b307a2946d8015e2f3"],
+        "explanation": "The only MEDIUM finding is pre-existing and owned by tasks.md FIND-C2.2-04 with a recorded next-cycle plan; per policy it stays visible and non-blocking. It is not emitted as an INC file because its durable record already exists as a named, owned task finding in the cycle's tasks.md."
+      }
+    ],
+    "fail_closed": true
+  },
+  "waivers": [],
+  "follow_up": [
+    {
+      "finding_fingerprint": "2f8a4c6e1d9b3725a08d6f4317c9e2b845a1d6f703be89c4a27d5e0f16b83942",
+      "action": "Extract decode_raw_fail_closed helper; adopt in all four readers (canonical_drain.rs x2, events_log_read.rs x2, projection.rs).",
+      "owner": "unassigned",
+      "priority": "P2"
+    },
+    {
+      "finding_fingerprint": "4c1e0942f0a63b1d2e7c8ab95d0f6e3a71b2c5d8094ea3f66c1b28d4e0f95a17",
+      "action": "Decide ProbeBackend::read_since's fate: remove from trait or split trait so non-peekable backends do not implement refusals.",
+      "owner": "unassigned",
+      "priority": "P1"
+    },
+    {
+      "finding_fingerprint": "9d3b7a15e6c24f80b1a4d2973e58c06f42d1a7b9053ec84d21f6b7a30c8e5246",
+      "action": "Serve offset from the examined page or deprecate offset windows in favor of evidence_cursor continuation; document max_raw_events semantics.",
+      "owner": "unassigned",
+      "priority": "P1"
+    },
+    {
+      "finding_fingerprint": "e84b1c95a76d02f38a5b6d174e09c2b53a7f8d1604e29b3c5a86d71f2e0b4957",
+      "action": "Drop legacy_cursor wire field at next wire revision or document an expiry.",
+      "owner": "unassigned",
+      "priority": "P3"
+    },
+    {
+      "finding_fingerprint": "c3a59d17b8e204f6a91c7d025e483ba169f7c204d5e18b307a2946d8015e2f3",
+      "action": "Own under FIND-C2.2-04: wire browser capture through the accepted-Raw seam; retire take_semantic_events.",
+      "owner": "unassigned",
+      "priority": "P2"
+    },
+    {
+      "finding_fingerprint": "b71f2d4a8093c56e1d2487f0ba36c915d2e8f7430a6b52c19e7d340a28b6f15",
+      "action": "Optional: source-level ratchet asserting no ProbeBackend impl in chronos-ebpf calls drain_events(); else accept by-construction guarantee.",
+      "owner": "unassigned",
+      "priority": "P3"
+    }
+  ],
+  "artifact_paths": {
+    "json": "cycle-artifacts/p-3416cfb8288f8964/rec-c2.2-accepted-raw-seam/debt-report.json",
+    "markdown": "cycle-artifacts/p-3416cfb8288f8964/rec-c2.2-accepted-raw-seam/debt-report.md"
+  },
+  "runtime_handoff": {
+    "status": "specification_only",
+    "desired_artifact_kind": "debt-report",
+    "desired_gate": "debt-approved",
+    "note": "No debt-specific CLI transition is declared by this documentation change."
+  }
+}
