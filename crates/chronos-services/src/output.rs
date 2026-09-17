@@ -877,6 +877,10 @@ pub struct ProbeStopResult {
     pub duration_ms: u64,
     /// Whether the session had an eBPF attachment that was detached.
     pub ebpf_detached: bool,
+    /// Completeness of the evidence this stop read (REC-C2.2.3).
+    pub completeness: crate::events_log_read::CompletenessReport,
+    /// ExecutionRecords examined while reading the evidence.
+    pub examined_records: u64,
 }
 
 /// Output of `probe_drain`. JSON shape matches the existing literal in
@@ -894,6 +898,23 @@ pub struct ProbeDrainOutput {
     pub tripwires_fired: usize,
     pub events: Vec<DrainedEventDto>,
     pub hint: String,
+}
+
+/// Result of `ProbeService::session_snapshot`.
+///
+/// REC-C2.2.3: a snapshot is a read of durable evidence, so it is
+/// non-destructive and repeatable. The retired path drained the `EventBus`
+/// ring, where a second snapshot saw nothing and a large capture saw only the
+/// tail.
+#[derive(Debug)]
+pub struct ProbeSnapshotResult {
+    /// Every durable `Raw` event of the session, decoded, in log order.
+    pub events: Vec<chronos_domain::TraceEvent>,
+    pub language: chronos_domain::Language,
+    /// Completeness of the read range — the same model `events_read` uses.
+    /// A snapshot that silently omitted a gap-bearing range would be a lie
+    /// about the capture, so the fact travels with the data.
+    pub completeness: crate::events_log_read::CompletenessReport,
 }
 
 /// Result of `ProbeService::drain` — semantic events + cursor metadata so the

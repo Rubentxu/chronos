@@ -302,30 +302,6 @@
       "owner": "REC-C2.3",
       "replacement": "",
       "removal_gate": "REC-C2.3"
-    },
-    {
-      "key": "crates/chronos-services/src/probe.rs::stop::drain_raw_events#1",
-      "path": "crates/chronos-services/src/probe.rs",
-      "symbol": "stop",
-      "token": "drain_raw_events",
-      "kind": "destructive",
-      "line": 494,
-      "class": "CANONICAL",
-      "owner": "REC-C2.2",
-      "replacement": "",
-      "removal_gate": "REC-C2.2"
-    },
-    {
-      "key": "crates/chronos-services/src/probe.rs::session_snapshot::drain_raw_events#1",
-      "path": "crates/chronos-services/src/probe.rs",
-      "symbol": "session_snapshot",
-      "token": "drain_raw_events",
-      "kind": "destructive",
-      "line": 649,
-      "class": "CANONICAL",
-      "owner": "REC-C2.2",
-      "replacement": "",
-      "removal_gate": "REC-C2.2"
     }
   ]
 }

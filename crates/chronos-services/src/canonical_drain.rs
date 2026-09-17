@@ -35,6 +35,95 @@ pub const DEFAULT_MAX_EXAMINED_RECORDS: u64 = 50_000;
 /// derived records" unit unbounded.
 pub const DEFAULT_MAX_DERIVED_PER_SOURCE: usize = 4_096;
 
+/// Every durable `Raw` record of a session, decoded, in log order.
+///
+/// REC-C2.2.3: the canonical replacement for the destructive
+/// `ProbeBackend::drain_raw_events()` (an `EventBus` ring snapshot). Three
+/// differences matter, and all three are the point:
+///
+/// * **non-destructive** — the ring consumed what it returned, so a second
+///   consumer saw nothing; the log is read, not drained.
+/// * **complete within the retained range** — the ring silently dropped the
+///   oldest events once at capacity, so `probe_stop`'s `total_events` was a
+///   statement about a bounded buffer, not about the capture.
+/// * **fail-closed** — an undecodable record is a hard error, never a silent
+///   skip (same policy as `events_read` and `read_canonical_drain_page`).
+#[derive(Debug)]
+pub struct CanonicalRawScan {
+    pub events: Vec<TraceEvent>,
+    /// Completeness of the range that was read, in the shared C1 vocabulary.
+    pub completeness: CompletenessReport,
+    /// ExecutionRecords examined, including derived and marker records.
+    pub examined_records: u64,
+}
+
+/// Read every durable `Raw` record of `log`, decoded, in order.
+///
+/// No `EventBus`, no `TripwireManager`: the log is the only input.
+pub fn read_all_raw_events(log: &SessionExecutionLog) -> Result<CanonicalRawScan, ServiceError> {
+    let from = log.retained_from();
+    let mut events = Vec::new();
+    let mut position = from;
+    let mut examined: u64 = 0;
+    let mut gap_seen: Option<(EventSeq, EventSeq)> = None;
+
+    loop {
+        let page = log
+            .handle()
+            .read_from_seq(position, 1024)
+            .map_err(|e| ServiceError::DrainFailed(format!("canonical raw scan: {e}")))?;
+
+        if gap_seen.is_none() {
+            if let Some(first) = page.gaps.first() {
+                gap_seen = Some((first.first_missing, EventSeq::new(first.last_missing.0 + 1)));
+            }
+        }
+
+        if page.records.is_empty() {
+            break;
+        }
+
+        for record in &page.records {
+            position = EventSeq::new(record.seq.0 + 1);
+            examined += 1;
+            match record.kind {
+                ExecutionKind::Raw => {
+                    let event =
+                        decode(record).ok_or_else(|| ServiceError::EvidenceDecodeFailed {
+                            session_id: log.session_id().as_str().to_string(),
+                            seq: record.seq.0,
+                            payload_tag: payload_tag(record),
+                        })?;
+                    events.push(event);
+                }
+                ExecutionKind::GapMarker => {
+                    if gap_seen.is_none() {
+                        gap_seen = Some((record.seq, EventSeq::new(record.seq.0 + 1)));
+                    }
+                }
+                // Derived firings are evidence about a Raw, not a Raw. The
+                // caller asked for events; they are counted by the drain
+                // reader, not returned as if they were occurrences.
+                ExecutionKind::TripwireFired => {}
+            }
+        }
+    }
+
+    Ok(CanonicalRawScan {
+        events,
+        completeness: CompletenessReport {
+            status: match gap_seen {
+                Some(_) => Completeness::GapDetected,
+                None => Completeness::Complete,
+            },
+            scope: CompletenessReport::SCOPE_EXAMINED_RANGE,
+            from_seq: from.0,
+            to_seq_exclusive: position.0,
+        },
+        examined_records: examined,
+    })
+}
+
 /// One canonical probe-drain page.
 #[derive(Debug, Clone)]
 pub struct CanonicalDrainPage {
@@ -511,6 +600,112 @@ mod tests {
             }
             other => panic!("expected EvidenceDecodeFailed, got {other:?}"),
         }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---- REC-C2.2.3: the canonical raw reader ---------------------------
+
+    /// STOP-1: reading every durable Raw is a READ, not a drain. The retired
+    /// `drain_raw_events()` consumed the EventBus ring, so a second consumer
+    /// saw nothing.
+    #[test]
+    fn stop_1_reading_all_raw_is_repeatable() {
+        let dir = tempdir("stop1");
+        let log = open_log(&dir, "stop1");
+        for i in 0..5 {
+            append_raw(&log, i);
+        }
+        log.handle().flush().ok();
+
+        let first = read_all_raw_events(&log).expect("first read");
+        let second = read_all_raw_events(&log).expect("second read");
+
+        assert_eq!(first.events.len(), 5);
+        assert_eq!(
+            second.events.len(),
+            5,
+            "a read must not consume: the retired ring drain saw 0 on the second call"
+        );
+        assert_eq!(
+            first.events.iter().map(|e| e.event_id).collect::<Vec<_>>(),
+            second.events.iter().map(|e| e.event_id).collect::<Vec<_>>()
+        );
+        assert_eq!(first.completeness.status, Completeness::Complete);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// STOP-2: derived firings are not occurrences. A `TripwireFired` record is
+    /// evidence ABOUT a Raw and must never be returned as if the program had
+    /// emitted it.
+    #[test]
+    fn stop_2_derived_firings_are_not_returned_as_events() {
+        let dir = tempdir("stop2");
+        let log = open_log(&dir, "stop2");
+        let raw = append_raw(&log, 0);
+        append_firing(&log, raw);
+        log.handle().flush().ok();
+
+        let scan = read_all_raw_events(&log).expect("scan");
+        assert_eq!(scan.events.len(), 1, "one Raw, one event");
+        assert_eq!(scan.events[0].event_id, 0);
+        assert!(
+            scan.examined_records >= 2,
+            "the firing was still examined: {}",
+            scan.examined_records
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// STOP-3: a gap makes the shortfall explicit instead of silently
+    /// shortening the snapshot.
+    #[test]
+    fn stop_3_gap_makes_completeness_explicit() {
+        let dir = tempdir("stop3");
+        let log = open_log(&dir, "stop3");
+        append_raw(&log, 0);
+        log.handle()
+            .record_gap(Gap::new(
+                EventSeq::new(1),
+                EventSeq::new(3),
+                GapReason::AdapterBufferOverflow,
+                "stop3",
+            ))
+            .expect("gap");
+        append_raw(&log, 4);
+        log.handle().flush().ok();
+
+        let scan = read_all_raw_events(&log).expect("scan");
+        assert_eq!(scan.events.len(), 2);
+        assert_eq!(scan.completeness.status, Completeness::GapDetected);
+        assert_eq!(scan.completeness.scope, "examined_range");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// STOP-4: the same fail-closed policy as the page reader. Skipping an
+    /// unreadable record would make `total_events` a smaller-than-truth number
+    /// presented as a fact.
+    #[test]
+    fn stop_4_undecodable_raw_fails_closed() {
+        let dir = tempdir("stop4");
+        let log = open_log(&dir, "stop4");
+        append_raw(&log, 0);
+        log.handle()
+            .append(NewExecutionRecord {
+                session_id: log.session_id().clone(),
+                kind: ExecutionKind::Raw,
+                monotonic_ns: 1,
+                payload: ExecutionPayload::new(b"not-json".to_vec(), "broken"),
+                ..Default::default()
+            })
+            .expect("append broken");
+        log.handle().flush().ok();
+
+        let err = read_all_raw_events(&log).expect_err("must fail closed");
+        assert!(matches!(err, ServiceError::EvidenceDecodeFailed { .. }));
 
         let _ = std::fs::remove_dir_all(&dir);
     }

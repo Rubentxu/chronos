@@ -4731,6 +4731,7 @@ impl ChronosServer {
 
         match chronos_services::probe::ProbeService::stop(&ctx, &params.session_id) {
             Ok(result) => {
+                let stop_completeness = result.completeness;
                 self.build_and_store_engine(&params.session_id, result.events, result.language)
                     .await;
 
@@ -4741,6 +4742,13 @@ impl ChronosServer {
                     "total_events": result.total_events,
                     "duration_ms": result.duration_ms,
                     "ebpf_detached": result.ebpf_detached,
+                    // REC-C2.2.3: `total_events` is now a statement about the
+                    // session's durable execution log, not about how much of a
+                    // bounded EventBus ring survived. Completeness travels with
+                    // it so a gap-bearing capture is never presented as a clean
+                    // total.
+                    "completeness": stop_completeness,
+                    "examined_records": result.examined_records,
                     "hint": "Session is now queryable. Use query_events, get_call_stack, etc. Prefer session_stop for the v2 contract (adds seal_tail + drain_subscriptions)."
                 });
                 Ok(CallToolResult::success(json_content(&output)))
@@ -5404,11 +5412,12 @@ further would be a Silent Lie."
         };
 
         match chronos_services::probe::ProbeService::session_snapshot(&ctx, &params.session_id) {
-            Ok((events, language)) => {
-                let total_events = events.len();
+            Ok(snapshot) => {
+                let total_events = snapshot.events.len();
+                let completeness = snapshot.completeness;
 
                 // Build and store the query engine with proper noise filtering.
-                self.build_and_store_engine(&params.session_id, events, language)
+                self.build_and_store_engine(&params.session_id, snapshot.events, snapshot.language)
                     .await;
 
                 // Set as active session
@@ -5421,6 +5430,10 @@ further would be a Silent Lie."
                     "session_id": params.session_id,
                     "status": "running",
                     "events_indexed": total_events,
+                    // REC-C2.2.3: completeness of the evidence this snapshot
+                    // read. A snapshot is a read, not a drain, so re-running it
+                    // sees the same evidence plus anything newer.
+                    "completeness": completeness,
                     "hint": "Session is now queryable. Probe is still running. Call session_snapshot again to refresh indices with newer events."
                 });
                 Ok(CallToolResult::success(json_content(&output)))

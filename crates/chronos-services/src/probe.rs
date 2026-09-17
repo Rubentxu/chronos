@@ -20,7 +20,7 @@ use tracing::info;
 use chronos_query::QueryEngine;
 
 use crate::error::ServiceError;
-use crate::output::{ProbeDrainResult, ProbeStartOutput, ProbeStopResult};
+use crate::output::{ProbeDrainResult, ProbeSnapshotResult, ProbeStartOutput, ProbeStopResult};
 use chronos_domain::semantic::{ResolveContext, SemanticEvent};
 use chronos_domain::tripwire::TripwireManager;
 use chronos_domain::TraceEvent;
@@ -463,6 +463,11 @@ impl ProbeService {
     }
 
     pub fn stop(ctx: &ProbeContext<'_>, session_id: &str) -> Result<ProbeStopResult, ServiceError> {
+        // REC-C2.2.3: the session's ExecutionLog is the authority for "what was
+        // captured". Resolve it BEFORE taking the live-probe lock so a missing
+        // log is reported as such rather than as a missing probe.
+        let log = ctx.execution_logs.get(session_id)?;
+
         let mut live_probes = ctx
             .live_probes
             .lock()
@@ -491,11 +496,14 @@ impl ProbeService {
             }
         }
 
-        // Drain final raw events from the bus (for QueryEngine). No concurrent
-        // producer remains at this point.
-        // drain_raw_events() returns TraceEvent directly, which is what
-        // build_and_store_engine needs.
-        let events: Vec<TraceEvent> = live_probe.backend.drain_raw_events();
+        // Read the session's durable evidence. The probe thread has been joined
+        // by `stop_probe`, and every accepted observation was appended BEFORE
+        // it was fanned out, so the log now holds everything the capture will
+        // ever hold. This is a read, not a drain: nothing is consumed, and the
+        // result no longer depends on how much the EventBus ring happened to
+        // still be holding.
+        let scan = crate::canonical_drain::read_all_raw_events(&log)?;
+        let events: Vec<TraceEvent> = scan.events;
 
         let total_events = events.len();
         let language = live_probe.language;
@@ -521,6 +529,8 @@ impl ProbeService {
             total_events,
             duration_ms,
             ebpf_detached: ebpf_was_attached,
+            completeness: scan.completeness,
+            examined_records: scan.examined_records,
         })
     }
 
@@ -651,19 +661,29 @@ impl ProbeService {
     pub fn session_snapshot(
         ctx: &ProbeContext<'_>,
         session_id: &str,
-    ) -> Result<(Vec<TraceEvent>, chronos_domain::Language), ServiceError> {
-        let probes = ctx
-            .live_probes
-            .lock()
-            .map_err(|_| ServiceError::LockPoisoned)?;
-        let live_probe = probes
-            .get(session_id)
-            .ok_or_else(|| ServiceError::ProbeNotFound(session_id.to_string()))?;
+    ) -> Result<ProbeSnapshotResult, ServiceError> {
+        let log = ctx.execution_logs.get(session_id)?;
+        let language = {
+            let probes = ctx
+                .live_probes
+                .lock()
+                .map_err(|_| ServiceError::LockPoisoned)?;
+            probes
+                .get(session_id)
+                .ok_or_else(|| ServiceError::ProbeNotFound(session_id.to_string()))?
+                .language
+        };
 
-        // drain_raw_events() returns TraceEvent (QueryEngine's expected type).
-        let events = live_probe.backend.drain_raw_events();
-        let language = live_probe.language;
-        Ok((events, language))
+        // REC-C2.2.3: the snapshot is a READ of durable evidence, so it is
+        // non-destructive and repeatable. The old path called
+        // `drain_raw_events()` against the EventBus ring, which meant a second
+        // snapshot saw nothing and a large capture saw only the tail.
+        let scan = crate::canonical_drain::read_all_raw_events(&log)?;
+        Ok(ProbeSnapshotResult {
+            events: scan.events,
+            language,
+            completeness: scan.completeness,
+        })
     }
 
     /// Attach an eBPF uprobe to a running probe process.
