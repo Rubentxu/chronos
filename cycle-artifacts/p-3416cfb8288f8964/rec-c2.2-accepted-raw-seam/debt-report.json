@@ -109,24 +109,25 @@
     {
       "id": "FIND-DEBT-000003",
       "finding_id": "dup-01-fail-closed-decode-idiom",
-      "title": "Fail-closed decode + typed error idiom repeated in four log readers (two added by this cycle)",
+      "title": "Fail-closed decode + typed error idiom repeated at five call sites across three readers (two sites added by this cycle)",
       "cluster": "duplication",
       "severity": "low",
       "priority": "P2",
       "status": "open",
       "fingerprint": "2f8a4c6e1d9b3725a08d6f4317c9e2b845a1d6f703be89c4a27d5e0f16b83942",
       "cluster_id": "CL-02",
-      "description": "The sequence `decode(record).ok_or_else(|| ServiceError::EvidenceDecodeFailed { session_id, seq, payload_tag })?` now appears at four sites: events_log_read.rs:412 and :602 (pre-existing), projection.rs:139 (pre-existing), canonical_drain.rs:91-96 (new, read_all_raw_events) and canonical_drain.rs:241-246 (new, read_canonical_drain_page). The two new sites are verbatim copies of the pre-existing idiom.",
+      "description": "The sequence `decode(record).ok_or_else(|| ServiceError::EvidenceDecodeFailed { session_id, seq, payload_tag })?` now appears at five sites: events_log_read.rs:412 and :602 plus projection.rs:139 (pre-existing), and canonical_drain.rs:92 and :242 (new, in read_all_raw_events and read_canonical_drain_page). The two new sites are verbatim copies of the pre-existing idiom.",
       "locations": [
         {"path": "crates/chronos-services/src/canonical_drain.rs", "start_line": 91, "end_line": 96, "symbol": "read_all_raw_events"},
         {"path": "crates/chronos-services/src/canonical_drain.rs", "start_line": 241, "end_line": 246, "symbol": "read_canonical_drain_page"},
-        {"path": "crates/chronos-services/src/events_log_read.rs", "start_line": 412, "end_line": 412, "symbol": "events_read path"},
-        {"path": "crates/chronos-services/src/projection.rs", "start_line": 139, "end_line": 139, "symbol": "projection scan"}
+        {"path": "crates/chronos-services/src/events_log_read.rs", "start_line": 412, "end_line": 416, "symbol": "events_read path"},
+        {"path": "crates/chronos-services/src/events_log_read.rs", "start_line": 602, "end_line": 606, "symbol": "events replay path"},
+        {"path": "crates/chronos-services/src/projection.rs", "start_line": 139, "end_line": 143, "symbol": "projection scan"}
       ],
       "evidence": [
         {
           "kind": "command",
-          "observation": "grep -rn 'decode(record).ok_or_else' crates/chronos-services/src/ matches four sites; two fall inside canonical_drain.rs added by this cycle, two pre-date it (events_log_read.rs, projection.rs).",
+          "observation": "grep -rn 'decode(record).ok_or_else' crates/chronos-services/src/ matches five sites: events_log_read.rs:412 and :602, projection.rs:139, canonical_drain.rs:92 and :242.",
           "command": "grep -rn 'decode(record).ok_or_else' crates/chronos-services/src/",
           "tool": "grep",
           "tool_version": "system",
@@ -143,8 +144,8 @@
           "output_digest": null
         }
       ],
-      "impact": "A change to the decode-failure contract (for example adding a decode-metrics counter) must be edited in four places; a missed site silently diverges the fail-closed policy between readers.",
-      "remediation": {"target": "backlog", "action": "Extract a small `decode_raw_fail_closed(log, record) -> Result<TraceEvent, ServiceError>` helper next to `decode` in events_log_read.rs and adopt it in all four readers."},
+      "impact": "A change to the decode-failure contract (for example adding a decode-metrics counter) must be edited in five places; a missed site silently diverges the fail-closed policy between readers.",
+      "remediation": {"target": "backlog", "action": "Extract a small `decode_raw_fail_closed(log, record) -> Result<TraceEvent, ServiceError>` helper next to `decode` in events_log_read.rs and adopt it at all five sites."},
       "details": {"baseline_state": "updated", "attribution": "introduced", "confidence": "high", "source_clusters": ["duplication"]}
     },
     {
@@ -365,7 +366,7 @@
   "follow_up": [
     {
       "finding_fingerprint": "2f8a4c6e1d9b3725a08d6f4317c9e2b845a1d6f703be89c4a27d5e0f16b83942",
-      "action": "Extract decode_raw_fail_closed helper; adopt in all four readers (canonical_drain.rs x2, events_log_read.rs x2, projection.rs).",
+      "action": "Extract decode_raw_fail_closed helper; adopt at all five sites (canonical_drain.rs:92, canonical_drain.rs:242, events_log_read.rs:412, events_log_read.rs:602, projection.rs:139).",
       "owner": "unassigned",
       "priority": "P2"
     },

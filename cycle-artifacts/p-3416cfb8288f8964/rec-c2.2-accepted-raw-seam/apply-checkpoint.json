@@ -117,11 +117,16 @@
   "debt": {
     "verdict": "PASS_WITH_WARNINGS",
     "subject_sha": "1619fb25",
-    "json_sha256": "b9c3bd0a565d1fcf538b69029a582f25540ca9615648989d6d93df182b174840",
-    "markdown_sha256": "ee2391898a42838ae91c9e9b9a11f3a10a36a315f374cf12045cbe22c2f5f7db",
+    "json_sha256": "93c616aa81ee52d501af11cca95c898be566c00a1c3152acf59030282805c649",
+    "markdown_sha256": "2009cb2e5adced27e21163eb62779a060914304508173f46a405dd7c83118cf5",
     "coverage": "all 4 required A-lite clusters completed (coupling, overeng, smells, duplication); failed_clusters empty; fail_closed true",
     "summary": "8 findings: 0 critical, 0 high, 1 medium, 7 low",
     "orchestrator_dissent": "The gate attributes the medium finding (BrowserAdapter::take_semantic_events is still a destructive read) as pre_existing, because a destructive browser-local read existed before this cycle. I do not fully agree and record why: the SUBSTANCE pre-exists, but the RELOCATION is introduced here. Before C2.2.4 that destructive read was reachable through the shared ProbeBackend trait; now it is an inherent, browser-local method. The relocation is a real improvement (it is what makes the ratchet's CANONICAL=0 honest rather than cosmetic) and it is also a real change to the public surface of chronos-browser. Recording the disagreement rather than silently adopting the gate's classification.",
-    "missing_projection_note": "The gate declared a Markdown projection at debt-report.md but did not write it. The JSON is the authoritative artifact, so the projection was generated from the persisted JSON by the orchestrator and its hash recorded here. No gate decision was altered."
+    "missing_projection_note": "Superseded. When the orchestrator first read the artifacts, debt-report.json existed but the declared debt-report.md projection did not, so a projection was generated from the JSON and its hash recorded. The phase then made a final write that produced its OWN projection, replacing the orchestrator's; both hashes above are from that final write. The JSON remains the authority and no gate decision was altered at any point. Recorded because 'the report I hashed' and 'the report on disk' were briefly different files, and that is worth stating rather than papering over.",
+    "hashes_recomputed_by_orchestrator": "yes \u2014 sha256sum run on the final artifact bytes, matching the phase's claimed values. The phase's own signatures were not taken on trust.",
+    "phase_answers": {
+      "Q1_sibling_readers": "Do NOT extract the scan loops. The two readers disagree on continuation model, termination, cluster handling, boundary validation, stall detection, page size and output type; a shared helper would need 4+ behavioural flags (shallow abstraction). Extract only the completeness construction and the decode idiom.",
+      "Q2_drain_coupling": "ProbeService::drain's dependency set is proportionate (justified depth, not accidental complexity): five collaborators, one observable reason each, 69 lines, no layering."
+    }
   }
 }
