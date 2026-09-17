@@ -218,7 +218,10 @@ async fn uat_rec_c1_01_two_consumers_exact_10k() {
     // restart-equivalence test pattern (shutdown + restart with same
     // db/exec_log_root) is the canonical way to assert post-advance
     // reads. We follow that pattern here.
-    client.shutdown().await.expect("first shutdown must succeed");
+    client
+        .shutdown()
+        .await
+        .expect("first shutdown must succeed");
     let mut client = McpTestClient::start_with_db_and_exec_log_root(db.clone(), root.clone())
         .await
         .expect("MCP server must restart over the advanced log");
@@ -230,8 +233,7 @@ async fn uat_rec_c1_01_two_consumers_exact_10k() {
         "A's resume page must contain 100 records; got {}",
         a_second.len()
     );
-    let (b_second, _) =
-        read_page(&mut client, session_id, b_cursor.as_deref(), PAGE_SIZE).await;
+    let (b_second, _) = read_page(&mut client, session_id, b_cursor.as_deref(), PAGE_SIZE).await;
     assert_eq!(
         b_second.len(),
         PAGE_SIZE,
@@ -331,7 +333,10 @@ async fn uat_rec_c1_01_total_count_after_producer_advance_is_11k() {
 
     // Restart MCP so it rebuilds the projection from the advanced log.
     // (See Phase 5 of the two-consumers test for the rationale.)
-    client.shutdown().await.expect("first shutdown must succeed");
+    client
+        .shutdown()
+        .await
+        .expect("first shutdown must succeed");
     let mut client = McpTestClient::start_with_db_and_exec_log_root(db.clone(), root.clone())
         .await
         .expect("MCP server must restart over the advanced log");

@@ -669,6 +669,7 @@ mod rec_c1_3_tests {
                     invocation_id: None,
                     parent_invocation_id: None,
                     symbol_id: None,
+                    captured_at_unix_ns: None,
                 })
                 .expect("append");
         }
@@ -704,6 +705,7 @@ mod rec_c1_3_tests {
                 invocation_id: None,
                 parent_invocation_id: None,
                 symbol_id: None,
+                captured_at_unix_ns: None,
             })
             .expect("append");
     }
@@ -968,6 +970,7 @@ mod rec_c1_3_tests {
                 invocation_id: None,
                 parent_invocation_id: None,
                 symbol_id: None,
+                captured_at_unix_ns: None,
             })
             .expect("append");
         handle.flush().ok();

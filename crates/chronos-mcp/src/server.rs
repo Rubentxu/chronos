@@ -9016,6 +9016,7 @@ mod tests {
             invocation_id: Some(inv),
             parent_invocation_id: Some(parent),
             symbol_id: Some(sym),
+            captured_at_unix_ns: None,
         })
         .unwrap();
         log.flush().ok();

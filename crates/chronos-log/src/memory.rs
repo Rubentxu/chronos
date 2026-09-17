@@ -85,6 +85,7 @@ impl InMemoryExecutionLog {
             invocation_id: None,
             parent_invocation_id: None,
             symbol_id: None,
+            captured_at_unix_ns: None,
         })
     }
 
@@ -361,6 +362,7 @@ impl ExecutionLogBackend for InMemoryExecutionLog {
             invocation_id: record.invocation_id,
             parent_invocation_id: record.parent_invocation_id,
             symbol_id: record.symbol_id,
+            captured_at_unix_ns: record.captured_at_unix_ns,
         };
         records
             .entry(session_id.clone())
@@ -720,6 +722,7 @@ mod tests {
             invocation_id: invocation,
             parent_invocation_id: parent,
             symbol_id: symbol,
+            captured_at_unix_ns: None,
         }
     }
 
@@ -738,6 +741,7 @@ mod tests {
             invocation_id: Some(inv),
             parent_invocation_id: None,
             symbol_id: Some(sym),
+            captured_at_unix_ns: None,
         })
         .unwrap();
         log.append(NewExecutionRecord {
@@ -747,6 +751,7 @@ mod tests {
             invocation_id: Some(other),
             parent_invocation_id: Some(inv),
             symbol_id: Some(sym),
+            captured_at_unix_ns: None,
         })
         .unwrap();
         // v1 record — must be invisible to the identity index.
@@ -784,6 +789,7 @@ mod tests {
             invocation_id: Some(root),
             parent_invocation_id: None,
             symbol_id: Some(sym),
+            captured_at_unix_ns: None,
         })
         .unwrap();
         log.append(NewExecutionRecord {
@@ -793,6 +799,7 @@ mod tests {
             invocation_id: Some(child1),
             parent_invocation_id: Some(root),
             symbol_id: Some(sym),
+            captured_at_unix_ns: None,
         })
         .unwrap();
         log.append(NewExecutionRecord {
@@ -802,6 +809,7 @@ mod tests {
             invocation_id: Some(child2),
             parent_invocation_id: Some(root),
             symbol_id: Some(sym),
+            captured_at_unix_ns: None,
         })
         .unwrap();
         log.append(NewExecutionRecord {
@@ -811,6 +819,7 @@ mod tests {
             invocation_id: Some(unrelated),
             parent_invocation_id: None,
             symbol_id: Some(sym),
+            captured_at_unix_ns: None,
         })
         .unwrap();
 
@@ -838,6 +847,7 @@ mod tests {
                 invocation_id: Some(inv),
                 parent_invocation_id: None,
                 symbol_id: if ns == 30 { Some(other) } else { Some(sym) },
+                captured_at_unix_ns: None,
             })
             .unwrap();
         }
@@ -901,6 +911,7 @@ mod tests {
                 invocation_id: Some(inv),
                 parent_invocation_id: None,
                 symbol_id: Some(sym),
+                captured_at_unix_ns: None,
             })
             .unwrap();
         }

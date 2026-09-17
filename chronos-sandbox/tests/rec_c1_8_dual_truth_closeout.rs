@@ -66,9 +66,9 @@ fn unique_root(tag: &str) -> PathBuf {
 /// uncorrelated `event_id`, `timestamp_ns`, and `seq` (i).
 fn trace_event_for(i: u64) -> TraceEvent {
     TraceEvent::new(
-        40 + i,                  // event_id
-        10_000_500 + i * 1_000,  // timestamp_ns
-        1,                       // thread_id
+        40 + i,                 // event_id
+        10_000_500 + i * 1_000, // timestamp_ns
+        1,                      // thread_id
         EventType::FunctionEntry,
         SourceLocation::from_address(0),
         EventData::Empty,
@@ -170,10 +170,9 @@ async fn wrapper_rebuilds_engine_from_log_when_map_is_empty() {
     let db_path = exec_log_root.join("sessions.redb");
     let session_id = seed_session(&exec_log_root, "rec-c1-8-c182-rebuild", FIXTURE_RECORDS);
 
-    let mut client =
-        McpTestClient::start_with_db_and_exec_log_root(db_path, exec_log_root.clone())
-            .await
-            .expect("start MCP");
+    let mut client = McpTestClient::start_with_db_and_exec_log_root(db_path, exec_log_root.clone())
+        .await
+        .expect("start MCP");
 
     let response = client
         .call_tool(
@@ -258,10 +257,9 @@ async fn wrapper_rebuilds_engine_after_late_append_via_fresh_process() {
 
     // Process 2: fresh server, same root, must see all 15 records
     // (rebuilt from log on first query).
-    let mut client =
-        McpTestClient::start_with_db_and_exec_log_root(db_path, exec_log_root.clone())
-            .await
-            .expect("start MCP #2");
+    let mut client = McpTestClient::start_with_db_and_exec_log_root(db_path, exec_log_root.clone())
+        .await
+        .expect("start MCP #2");
     let response = client
         .call_tool(
             "execution_query",
@@ -303,10 +301,9 @@ async fn wrapper_rebuilds_for_state_query_against_log_only() {
     let db_path = exec_log_root.join("sessions.redb");
     let session_id = seed_session(&exec_log_root, "rec-c1-8-c182-state", 5);
 
-    let mut client =
-        McpTestClient::start_with_db_and_exec_log_root(db_path, exec_log_root.clone())
-            .await
-            .expect("start MCP");
+    let mut client = McpTestClient::start_with_db_and_exec_log_root(db_path, exec_log_root.clone())
+        .await
+        .expect("start MCP");
 
     // state_query{kind=RegisterSnapshot} requires an `event_id`. We
     // use event_id=40 (the fixture's first record, since `trace_event_for`

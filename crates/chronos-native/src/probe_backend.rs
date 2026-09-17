@@ -64,6 +64,7 @@ fn trace_event_to_log_record(
         invocation_id,
         parent_invocation_id,
         symbol_id,
+        captured_at_unix_ns: None,
     }
 }
 

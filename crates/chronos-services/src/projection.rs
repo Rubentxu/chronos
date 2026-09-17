@@ -301,6 +301,7 @@ mod tests {
                 invocation_id: None,
                 parent_invocation_id: None,
                 symbol_id: None,
+                captured_at_unix_ns: None,
             })
             .expect("append")
     }
@@ -432,6 +433,7 @@ mod tests {
                 invocation_id: None,
                 parent_invocation_id: None,
                 symbol_id: None,
+                captured_at_unix_ns: None,
             })
             .expect("append noisy");
 
@@ -532,6 +534,7 @@ mod tests {
                         invocation_id: None,
                         parent_invocation_id: None,
                         symbol_id: None,
+                        captured_at_unix_ns: None,
                     })
                     .expect("append filler");
                 let _ = seq_target; // silence unused warning when no fillers
@@ -555,6 +558,7 @@ mod tests {
                     invocation_id: None,
                     parent_invocation_id: None,
                     symbol_id: None,
+                    captured_at_unix_ns: None,
                 })
                 .expect("append canonical");
         }

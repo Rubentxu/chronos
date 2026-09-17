@@ -193,6 +193,7 @@ mod tests {
             invocation_id: inv,
             parent_invocation_id: parent,
             symbol_id: sym,
+            captured_at_unix_ns: None,
         }
     }
 

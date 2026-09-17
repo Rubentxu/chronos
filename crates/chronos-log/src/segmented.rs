@@ -856,6 +856,7 @@ impl SegmentedExecutionLog {
             invocation_id: record.invocation_id,
             parent_invocation_id: record.parent_invocation_id,
             symbol_id: record.symbol_id,
+            captured_at_unix_ns: record.captured_at_unix_ns,
         };
         inner.buffer.push(SegmentEntry::Record(full));
         inner.pending += 1;
@@ -1438,6 +1439,7 @@ impl NewExecutionRecord {
             invocation_id: r.invocation_id,
             parent_invocation_id: r.parent_invocation_id,
             symbol_id: r.symbol_id,
+            captured_at_unix_ns: r.captured_at_unix_ns,
         }
     }
 }
@@ -1488,6 +1490,7 @@ mod tests {
             invocation_id: None,
             parent_invocation_id: None,
             symbol_id: None,
+            captured_at_unix_ns: None,
         }
     }
 
@@ -1504,6 +1507,7 @@ mod tests {
             invocation_id: Some(invocation),
             parent_invocation_id: parent,
             symbol_id: Some(symbol),
+            captured_at_unix_ns: None,
         }
     }
 
@@ -1552,6 +1556,7 @@ mod tests {
                 invocation_id: None,
                 parent_invocation_id: None,
                 symbol_id: None,
+                captured_at_unix_ns: None,
             })
             .unwrap();
         }

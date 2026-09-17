@@ -23,6 +23,13 @@ pub struct NewExecutionRecord {
     pub parent_invocation_id: Option<chronos_domain::InvocationId>,
     /// Stable symbol identity for the function the event pertains to.
     pub symbol_id: Option<chronos_domain::SymbolId>,
+    /// REC-C1.8: optional wall-clock capture timestamp in nanoseconds
+    /// since the Unix epoch. Producers MAY fill this when they have
+    /// access to a wall clock; producers without one (sandboxed,
+    /// offline, post-processed replays) MUST leave it `None`. Mirrors
+    /// `ExecutionRecord::captured_at_unix_ns`. Defaults to `None`
+    /// (the `Default` derive populates `Option<u64>` with `None`).
+    pub captured_at_unix_ns: Option<u64>,
 }
 
 /// Backend trait for the append-only execution log.
@@ -141,6 +148,7 @@ impl<B: ExecutionLogBackend + ?Sized> ExecutionLog<B> {
             invocation_id: None,
             parent_invocation_id: None,
             symbol_id: None,
+            captured_at_unix_ns: None,
         })
     }
 

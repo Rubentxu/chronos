@@ -117,6 +117,7 @@ fn m2_01_v2_records_round_trip_through_log() {
         invocation_id: Some(inv_id),
         parent_invocation_id: Some(parent_id),
         symbol_id: Some(sym_id),
+        captured_at_unix_ns: None,
     };
 
     let dir = std::env::temp_dir().join(format!("chronos-m2-01-{}", std::process::id()));
@@ -193,6 +194,7 @@ fn m2_02_identity_reads_via_segmented_log_impl() {
         invocation_id: Some(inv),
         parent_invocation_id: parent,
         symbol_id: Some(sym),
+        captured_at_unix_ns: None,
     };
     log.append(mk(10, root, None, sym_root)).unwrap();
     log.append(mk(20, child_a, Some(root), sym_a)).unwrap();
@@ -253,6 +255,7 @@ fn m2_03_analytics_via_segmented_log_impl() {
         invocation_id: Some(inv),
         parent_invocation_id: parent,
         symbol_id: Some(sym),
+        captured_at_unix_ns: None,
     };
     log.append(mk(10, root, None, sym_root)).unwrap();
     log.append(mk(20, a, Some(root), sym_a)).unwrap();
@@ -318,6 +321,7 @@ fn m2_04_call_graph_via_segmented_log_impl() {
         invocation_id: Some(inv),
         parent_invocation_id: parent,
         symbol_id: Some(sym),
+        captured_at_unix_ns: None,
     };
     // a(root) -> b, a(root) -> c, g(root) -> g(self, recursion).
     log.append(mk(10, a, None, sym_a)).unwrap();
@@ -375,6 +379,7 @@ fn m2_05_checkpoint_replay_equivalence_via_segmented_log() {
         invocation_id: Some(inv),
         parent_invocation_id: parent,
         symbol_id: Some(sym),
+        captured_at_unix_ns: None,
     };
     log.append(mk(10, a, None, sym_a)).unwrap();
     log.append(mk(20, b, Some(a), sym_b)).unwrap();
