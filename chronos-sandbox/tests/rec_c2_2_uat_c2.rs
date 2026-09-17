@@ -255,8 +255,8 @@ async fn uat_c2_02_consumers_report_the_log_and_its_completeness() {
 /// This is the premise the whole cycle rests on: if the ring held everything,
 /// reading the log would just be a different spelling of the same thing. With
 /// `bus_capacity = 4` and a real capture, the log must hold vastly more.
-    /// REC-C2.3: `bus_capacity` is gone from the wire, so the test now means
-    /// "durable evidence is more than the retired ring's tiny headcount".
+/// REC-C2.3: `bus_capacity` is gone from the wire, so the test now means
+/// "durable evidence is more than the retired ring's tiny headcount".
 #[tokio::test]
 async fn uat_c2_03_durable_evidence_exceeds_the_ring() {
     let mut client = McpTestClient::start()
