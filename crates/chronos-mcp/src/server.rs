@@ -54,6 +54,7 @@ use chronos_services::output::{EventsReadKind, EventsReadOutput};
 use chronos_services::output::{ExecutionQueryKind, ExecutionQueryOutput};
 use chronos_services::output::{StateQueryKind, StateQueryOutput};
 use chronos_services::probe::LiveProbeSession;
+use chronos_services::projection::{self, ProjectionMeta};
 use chronos_services::query_service::QueryService;
 use chronos_services::session_lifecycle::{
     ChronosSessionLifecycleService, SessionLifecycleContext, SessionStopPersistence,
@@ -136,6 +137,14 @@ pub struct ChronosServer {
     /// so a stopped session's log stays readable without a second source.
     execution_logs: Arc<chronos_services::session_log::SessionExecutionLogRegistry>,
     execution_log_root: std::path::PathBuf,
+    /// REC-C1.7: projection metadata for the canonical MCP operations.
+    /// A session is in this map iff a projection has been built from its
+    /// SessionExecutionLog via `chronos_services::projection::build_engine`.
+    /// Used by the MCP-wrapper gate (`meta_is_full`) on execution_query,
+    /// state_query, trace_slice to reject queries whose projection is
+    /// Truncated or Empty. Mirrored 1:1 with `engines`: every entry here
+    /// has a corresponding entry in `engines`.
+    projection_meta: Arc<Mutex<HashMap<String, chronos_services::projection::ProjectionMeta>>>,
     /// Live probe sessions: session_id → LiveProbeSession.
     /// These are real-time probe sessions using `NativeProbeBackend` where events
     /// stream to an `EventBus` ring buffer. Use `probe_drain` to read current events
@@ -1866,6 +1875,7 @@ impl ChronosServer {
                 chronos_services::session_log::SessionExecutionLogRegistry::new(),
             ),
             execution_log_root: chronos_log::resolve_execution_log_root(),
+            projection_meta: Arc::new(Mutex::new(HashMap::new())),
             live_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
             live_browser_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
             degraded,
@@ -1893,6 +1903,7 @@ impl ChronosServer {
                     chronos_services::session_log::SessionExecutionLogRegistry::new(),
                 ),
                 execution_log_root: chronos_log::resolve_execution_log_root(),
+                projection_meta: Arc::new(Mutex::new(HashMap::new())),
                 live_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
                 live_browser_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
                 degraded: false,
@@ -2134,6 +2145,95 @@ impl ChronosServer {
         self.session_languages.lock().await.remove(session_id);
         if let Ok(mut sessions) = self.connected_sessions.lock() {
             sessions.remove(session_id);
+        }
+    }
+
+    /// REC-C1.7: ensure a QueryEngine projection exists for the session,
+    /// built from the canonical SessionExecutionLog.
+    ///
+    /// This is the **only** code path that may insert into `engines` or
+    /// `projection_meta` for a session that was opened via `load_session`,
+    /// `list_sessions` bootstrap, or any other stored-session recovery.
+    /// Live capture paths (`probe_stop`, `session_snapshot`) still drain
+    /// via `build_and_store_engine` because they receive events from the
+    /// ring buffer rather than from a SessionExecutionLog; they emit a
+    /// projection at the end of the drain so subsequent queries hit the
+    /// gate. REC-C1.7 closes TRUTH-001 by making QueryEngine a
+    /// reconstructible projection of the log, not a second authority.
+    ///
+    /// Returns the projection meta. If the session has a registered
+    /// SessionExecutionLog, builds from it. If the session is already
+    /// projected, returns the cached meta. If the session has neither,
+    /// returns `SessionNotFound` (callers should treat this the same as
+    /// a missing session).
+    async fn ensure_projection(&self, session_id: &str) -> Result<ProjectionMeta, ServiceError> {
+        // Fast path: already projected.
+        if let Some(meta) = self.projection_meta.lock().await.get(session_id).cloned() {
+            return Ok(meta);
+        }
+
+        // Look up the canonical log.
+        let log = self.execution_logs.get(session_id)?;
+
+        // Build the projection (filters registers/unknowns, decodes via
+        // shared helper, walks segments via events_log_read::decode).
+        let result = projection::build_engine(&log)?;
+        let engine = result.engine;
+        let meta = result.meta;
+
+        // Insert atomically. Both maps are tokio mutexes; holding both
+        // locks together is safe because no other code path reads one
+        // without the other (gate + service both look up projection_meta
+        // first, then engines).
+        let mut engines = self.engines.lock().await;
+        let mut metas = self.projection_meta.lock().await;
+        // Double-check after acquiring the locks: another caller may have
+        // raced and built the projection in the meantime.
+        if let Some(existing) = metas.get(session_id).cloned() {
+            return Ok(existing);
+        }
+        engines.insert(session_id.to_string(), engine);
+        metas.insert(session_id.to_string(), meta.clone());
+
+        info!(
+            "Built projection for session {} (completeness: {:?})",
+            session_id, meta.completeness
+        );
+
+        Ok(meta)
+    }
+
+    /// REC-C1.7: gate a query by projection meta. Returns the meta iff
+    /// the projection is Full; otherwise returns the appropriate error.
+    /// This is the wrapper-side gate that keeps the dual-truth divergence
+    /// closed. The services themselves do not gate — they accept any
+    /// session_id so existing tests can call them directly. Only the MCP
+    /// wire enforces the projection invariant.
+    async fn gate_projection(&self, session_id: &str) -> Result<ProjectionMeta, ServiceError> {
+        // If the session is not in projection_meta yet, run the
+        // projection build (covers load_session and bootstrap). If the
+        // session has no log, return SessionNotFound so the wire
+        // surfaces isError:true with the standard error envelope.
+        let meta = self.ensure_projection(session_id).await?;
+        projection::meta_is_full(&meta).map(|()| meta)
+    }
+
+    /// REC-C1.7: gate a query by projection meta, returning an
+    /// `ErrorData` (the rmcp wire error type) on failure so callers can
+    /// use `?` directly. Three canonical operations (execution_query,
+    /// state_query, trace_slice) call this at the very top of the
+    /// handler so the wire never sees a query dispatched against an
+    /// unprojected or truncated session.
+    async fn gate_projection_for_wire(
+        &self,
+        session_id: &str,
+    ) -> Result<ProjectionMeta, rmcp::ErrorData> {
+        match self.gate_projection(session_id).await {
+            Ok(meta) => Ok(meta),
+            Err(e) => Err(rmcp::ErrorData::internal_error(
+                format!("projection gate failed: {}", e),
+                None,
+            )),
         }
     }
 
@@ -2614,6 +2714,7 @@ impl ChronosServer {
 
         let ctx = ExecutionQueryContext {
             engines: &self.engines,
+            projection_meta: &self.projection_meta,
         };
         let input = ExecutionQueryInput {
             session_id: params.session_id.clone(),
@@ -2664,6 +2765,7 @@ impl ChronosServer {
 
         let ctx = ExecutionQueryContext {
             engines: &self.engines,
+            projection_meta: &self.projection_meta,
         };
         let input = ExecutionQueryInput {
             session_id: params.session_id,
@@ -2701,8 +2803,15 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
+        // REC-C1.7: gate by projection meta before constructing the
+        // service context. This closes TRUTH-001: the QueryEngine
+        // serving this query is a reconstructible projection of the
+        // SessionExecutionLog, not a second authority.
+        let _meta = self.gate_projection_for_wire(&params.session_id).await?;
+
         let ctx = ExecutionQueryContext {
             engines: &self.engines,
+            projection_meta: &self.projection_meta,
         };
         let input = ExecutionQueryInput {
             session_id: params.session_id,
@@ -2742,6 +2851,7 @@ impl ChronosServer {
 
         let ctx = StateQueryContext {
             engines: &self.engines,
+            projection_meta: &self.projection_meta,
         };
         let input = StateQueryInput {
             session_id: params.session_id,
@@ -2784,8 +2894,12 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
+        // REC-C1.7: gate by projection meta (see execution_query above).
+        let _meta = self.gate_projection_for_wire(&params.session_id).await?;
+
         let ctx = StateQueryContext {
             engines: &self.engines,
+            projection_meta: &self.projection_meta,
         };
         let input = StateQueryInput {
             session_id: params.session_id,
@@ -3063,6 +3177,7 @@ impl ChronosServer {
 
         let ctx = ExecutionQueryContext {
             engines: &self.engines,
+            projection_meta: &self.projection_meta,
         };
         let input = ExecutionQueryInput {
             session_id: params.session_id.clone(),
@@ -3119,6 +3234,7 @@ impl ChronosServer {
 
         let ctx = TraceSliceContext {
             engines: &self.engines,
+            projection_meta: &self.projection_meta,
         };
         let input = TraceSliceInput {
             session_id: params.session_id,
@@ -3174,6 +3290,7 @@ impl ChronosServer {
 
         let ctx = TraceSliceContext {
             engines: &self.engines,
+            projection_meta: &self.projection_meta,
         };
         let input = TraceSliceInput {
             session_id: params.session_id,
@@ -3237,6 +3354,7 @@ impl ChronosServer {
 
         let ctx = ExecutionQueryContext {
             engines: &self.engines,
+            projection_meta: &self.projection_meta,
         };
         let input = ExecutionQueryInput {
             session_id: params.session_id,
@@ -3300,6 +3418,7 @@ impl ChronosServer {
 
         let ctx = TraceSliceContext {
             engines: &self.engines,
+            projection_meta: &self.projection_meta,
         };
         let input = TraceSliceInput {
             session_id: params.session_id,
@@ -3353,6 +3472,7 @@ impl ChronosServer {
 
         let ctx = ExecutionQueryContext {
             engines: &self.engines,
+            projection_meta: &self.projection_meta,
         };
         let input = ExecutionQueryInput {
             session_id: params.session_id,
@@ -3404,6 +3524,7 @@ impl ChronosServer {
 
         let ctx = ExecutionQueryContext {
             engines: &self.engines,
+            projection_meta: &self.projection_meta,
         };
         let input = ExecutionQueryInput {
             session_id: params.session_id,
@@ -3739,6 +3860,7 @@ impl ChronosServer {
 
         let ctx = StateQueryContext {
             engines: &self.engines,
+            projection_meta: &self.projection_meta,
         };
         let input = StateQueryInput {
             session_id: params.session_id,
@@ -3858,6 +3980,7 @@ impl ChronosServer {
 
         let ctx = StateQueryContext {
             engines: &self.engines,
+            projection_meta: &self.projection_meta,
         };
         let input = StateQueryInput {
             session_id: params.session_id,
@@ -3923,6 +4046,7 @@ impl ChronosServer {
 
         let ctx = StateQueryContext {
             engines: &self.engines,
+            projection_meta: &self.projection_meta,
         };
         let input = StateQueryInput {
             session_id: params.session_id,
@@ -4061,6 +4185,7 @@ impl ChronosServer {
 
         let ctx = StateQueryContext {
             engines: &self.engines,
+            projection_meta: &self.projection_meta,
         };
         let input = StateQueryInput {
             session_id: params.session_id,
@@ -4123,6 +4248,7 @@ impl ChronosServer {
 
         let ctx = TraceSliceContext {
             engines: &self.engines,
+            projection_meta: &self.projection_meta,
         };
         let input = TraceSliceInput {
             session_id: params.session_id,
@@ -5899,8 +6025,12 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
+        // REC-C1.7: gate by projection meta (see execution_query above).
+        let _meta = self.gate_projection_for_wire(&params.session_id).await?;
+
         let ctx = TraceSliceContext {
             engines: &self.engines,
+            projection_meta: &self.projection_meta,
         };
         let input = TraceSliceInput {
             session_id: params.session_id,
