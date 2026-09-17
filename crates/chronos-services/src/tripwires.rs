@@ -13,9 +13,7 @@ use std::sync::Arc;
 use chronos_domain::tripwire::{TripwireCondition, TripwireId, TripwireManager};
 
 use crate::error::ServiceError;
-use crate::output::{
-    CreateResult, QueryResult, TripwireDeleteResult, TripwireSummary,
-};
+use crate::output::{CreateResult, QueryResult, TripwireDeleteResult, TripwireSummary};
 
 /// A zero-sized service struct. All state is accessed via the `manager` reference.
 #[derive(Debug, Default)]

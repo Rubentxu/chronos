@@ -304,7 +304,14 @@ pub struct TripwireSummary {
 /// A single tripwire-fire notification.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TripwireFiredSummary {
-    /// ID of the tripwire that fired.
+    /// `ExecutionRecord.seq` of the durable firing — the identity of the
+    /// firing as a fact (REC-C2.1).
+    pub firing_seq: u64,
+    /// `TripwireFiredEvidence.source_seq` — the identity of the accepted
+    /// source evidence that caused it (REC-C2.1).
+    pub source_seq: u64,
+    /// ID of the tripwire that fired (a snapshot of the subscription, not an
+    /// identity of the firing).
     pub tripwire_id: String,
     /// Human-readable condition description at time of firing.
     pub condition_description: String,
@@ -353,13 +360,18 @@ pub struct TripwireDeleteResult {
 pub enum ObserveVerb {
     /// Register a new subscription (tripwire condition or uprobe-injecting tripwire).
     Create,
-    /// Enumerate subscriptions + drain fired events (destructive).
+    /// Page durable firing evidence using a caller-owned `EventSeq` cursor.
+    ///
+    /// REC-C2.1: firings are read from the session's `ExecutionLog`; nothing
+    /// is drained or deleted. `retention` describes lifecycle, not delivery.
     List,
     /// Reserved; rejected with `Unsupported` in m7-02.
     Update,
     /// Unregister a subscription.
     Delete,
-    /// Non-destructive snapshot of subscription state.
+    /// Snapshot of subscription state + `fire_count` derived from the log.
+    ///
+    /// Non-destructive; `fire_count` is a projection over `ExecutionLog`.
     Query,
 }
 
@@ -398,7 +410,7 @@ pub enum ObserveCondition {
 /// What to do when a subscription fires.
 ///
 /// `Record` captures the firing event in the tripwire manager's
-/// internal buffer (the v1 default). `Notify` is identical to `Record`
+/// the ExecutionLog (the v1 default). `Notify` is identical to `Record`
 /// today — the distinction exists so the v2 surface can grow streaming
 /// notifications without an API break in m7+. `InjectUprobe` is the
 /// only action that has *no* v1 equivalent semantics today (it is a
@@ -408,7 +420,8 @@ pub enum ObserveCondition {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ObserveAction {
-    /// Capture the firing event into the tripwire buffer.
+    /// Persist the firing as durable evidence in the `ExecutionLog`
+    /// (`ExecutionKind::TripwireFired`).
     Record,
     /// Same as `Record` today; reserved for streaming notifications in m7+.
     Notify,
@@ -421,8 +434,8 @@ pub enum ObserveAction {
 
 /// Retention policy for fired events.
 ///
-/// `Drained` matches v1 `tripwire_list` behaviour (destructive read).
-/// `RetainedUntilSessionEnd` keeps fired events in the buffer until
+/// `Drained` means the consumer may advance its delivery cursor; evidence is
+/// never deleted (REC-C2.1). `RetainedUntilSessionEnd` keeps fired events until
 /// the session terminates. `Permanent` is reserved (rejected with
 /// `Unsupported` in m7-02) — the tripwire manager does not currently
 /// distinguish permanent retention.
@@ -432,7 +445,8 @@ pub enum ObserveRetention {
     /// Drain fired events on the next `verb=list` (default, matches v1).
     #[default]
     Drained,
-    /// Keep fired events in the buffer until the session ends.
+    /// Lifecycle policy: evidence is retained for the session's lifetime.
+    /// It does not change page contents and never deletes evidence.
     RetainedUntilSessionEnd,
     /// Reserved; rejected with `Unsupported` in m7-02.
     Permanent,
@@ -523,14 +537,16 @@ pub struct ObserveCreateResult {
     pub attached_pid: Option<u32>,
 }
 
-/// Payload returned by `verb=list` (destructive) and `verb=query`
-/// (non-destructive). When `verb=list`, `fired_events` is drained.
-/// When `verb=query`, `fired_events` is `[]` (the buffer is intact).
+/// Payload returned by `verb=list` and `verb=query`.
+///
+/// `verb=list` pages durable firing evidence from the `ExecutionLog` with a
+/// caller-owned cursor; `verb=query` stays a subscription snapshot, so its
+/// `fired_events` is `[]`. Neither deletes evidence (REC-C2.1).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ObserveListResult {
     /// All currently registered subscriptions.
     pub subscriptions: Vec<SubscriptionDto>,
-    /// Fired events (drained on `verb=list`, empty on `verb=query`).
+    /// Firing evidence page (`verb=list`); always empty on `verb=query`.
     pub fired_events: Vec<TripwireFiredSummary>,
     /// Total number of active subscriptions.
     pub total_active: usize,
@@ -623,11 +639,11 @@ pub struct FireCountFacts {
 pub enum ObserveOutput {
     /// `verb=create` response.
     Create(ObserveCreateResult),
-    /// `verb=list` response (destructive).
+    /// `verb=list` response (pages durable firing evidence).
     List(ObserveListResult),
     /// `verb=delete` response.
     Delete(ObserveDeleteResult),
-    /// `verb=query` response (non-destructive; `fired_events` is `[]`).
+    /// `verb=query` response (subscription snapshot; `fired_events` is `[]`).
     Query(ObserveListResult),
 }
 
@@ -2469,6 +2485,8 @@ mod tests {
     #[test]
     fn tripwire_fired_summary_roundtrips() {
         let tf = TripwireFiredSummary {
+            firing_seq: 3,
+            source_seq: 2,
             tripwire_id: "tripwire-2".into(),
             condition_description: "FunctionName { pattern: \"main\" }".into(),
             event_id: 99,

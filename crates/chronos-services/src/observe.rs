@@ -413,7 +413,9 @@ impl ChronosObserveService {
         let fired_events: Vec<TripwireFiredSummary> = page
             .firings
             .iter()
-            .map(|(_, ev)| TripwireFiredSummary {
+            .map(|(firing_seq, ev)| TripwireFiredSummary {
+                firing_seq: firing_seq.0,
+                source_seq: ev.source_seq.0,
                 tripwire_id: ev.tripwire_id.to_string(),
                 condition_description: format!("{:?}", ev.condition),
                 event_id: ev.source_event_id.unwrap_or(0),
@@ -953,6 +955,9 @@ mod tests {
             panic!("expected List")
         };
         assert_eq!(l.fired_count, 1, "exactly one firing exists");
+        // Both identities are exposed, not discarded (REC-C2.1.7).
+        assert_eq!(l.fired_events[0].firing_seq, 3, "identity of the firing");
+        assert_eq!(l.fired_events[0].source_seq, 2, "identity of the cause");
         // Records: 0 Raw, 1 Raw, 2 Raw, 3 Firing, 4 Raw, 5 Raw -> examined 6.
         let after = cursor_seq(l.next_cursor.as_deref().expect("checkpoint"));
         assert_eq!(
