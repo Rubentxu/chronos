@@ -1902,6 +1902,20 @@ impl ChronosServer {
         }
     }
 
+    /// Handle to the session-scoped `ExecutionLog` registry built during
+    /// `try_new` (`bootstrap_execution_logs`).
+    ///
+    /// Used by tooling that needs to confirm the registry is populated
+    /// (RECs C1.5.5 — readiness invariant tests). This is the same data
+    /// `events_read` consults at read time; making it readable to test
+    /// helpers does not expose anything `events_read` does not already
+    /// surface to MCP callers.
+    pub fn execution_log_registry(
+        &self,
+    ) -> &std::sync::Arc<chronos_services::session_log::SessionExecutionLogRegistry> {
+        &self.execution_logs
+    }
+
     /// Whether the server is operating in degraded (in-memory, ephemeral)
     /// mode because the on-disk store could not be opened and the
     /// `CHRONOS_ALLOW_IN_MEMORY_FALLBACK` opt-in fired.
