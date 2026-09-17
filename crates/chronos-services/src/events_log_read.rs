@@ -510,7 +510,7 @@ pub(crate) fn completeness_for(
 }
 
 /// The producer-declared payload tag, for diagnostics on decode failure.
-fn payload_tag(record: &ExecutionRecord) -> String {
+pub(crate) fn payload_tag(record: &ExecutionRecord) -> String {
     record.payload.tag.clone()
 }
 
@@ -537,7 +537,10 @@ fn map_log_error(e: chronos_log::LogError) -> ServiceError {
 /// The ExecutionLog payload is JSON-encoded `TraceEvent` (the m1-03 producer
 /// contract); a record that does not decode is counted separately rather than
 /// silently dropped, so the bytes stay durable and the anomaly is visible.
-fn decode(record: &ExecutionRecord) -> Option<TraceEvent> {
+///
+/// `pub(crate)` so the projection builder (`crate::projection::build_engine`)
+/// shares the same decoder and any drift between the two paths is impossible.
+pub(crate) fn decode(record: &ExecutionRecord) -> Option<TraceEvent> {
     serde_json::from_slice::<TraceEvent>(&record.payload.bytes).ok()
 }
 

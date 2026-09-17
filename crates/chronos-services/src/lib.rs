@@ -97,6 +97,7 @@ pub mod hypothesis_test;
 pub mod observe;
 pub mod output;
 pub mod probe;
+pub mod projection;
 pub mod query_service;
 pub mod session_compare;
 pub mod session_explain;
