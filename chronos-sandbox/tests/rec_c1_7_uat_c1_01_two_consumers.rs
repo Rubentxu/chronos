@@ -119,8 +119,7 @@ async fn uat_rec_c1_01_two_consumers_real_wire() {
     // ---- Phase 1: independent cursors, two consumers. ----
     // Consumer A pages with limit=50. Consumer B starts with limit=200.
     // They never share cursors.
-    let (a_first, a_cursor, a_incomplete) =
-        read_page(&mut client, &session_id, None, 50).await;
+    let (a_first, a_cursor, a_incomplete) = read_page(&mut client, &session_id, None, 50).await;
     assert!(
         a_first.len() <= 50,
         "page must respect limit; got {} ids",
@@ -128,8 +127,7 @@ async fn uat_rec_c1_01_two_consumers_real_wire() {
     );
     assert!(!a_incomplete, "first page must report complete=true");
 
-    let (b_first, b_cursor, b_incomplete) =
-        read_page(&mut client, &session_id, None, 200).await;
+    let (b_first, b_cursor, b_incomplete) = read_page(&mut client, &session_id, None, 200).await;
     assert!(
         b_first.len() <= 200,
         "page must respect limit; got {} ids",
@@ -232,7 +230,8 @@ async fn uat_rec_c1_01_producer_advance_visible_to_consumer() {
     assert!(
         final_max_id >= early_max_id,
         "post-stop max event_id must be >= early max event_id: early={}, final={}",
-        early_max_id, final_max_id
+        early_max_id,
+        final_max_id
     );
     assert!(!final_incomplete, "clean session must report complete");
 
@@ -288,7 +287,10 @@ async fn uat_rec_c1_01_clean_session_reports_complete_not_gap() {
         top_status
     );
     assert!(
-        response.get("gap_summary").map(|v| v.is_null()).unwrap_or(true),
+        response
+            .get("gap_summary")
+            .map(|v| v.is_null())
+            .unwrap_or(true),
         "clean session must have gap_summary=null"
     );
 

@@ -27,6 +27,18 @@
 //! Until the engine is rebuilt from the log, the two trees disagree on
 //! at least three operations.
 
+// These tests are intentionally RED on `main` by construction. They
+// panic before reaching the lines that consume several of the imports
+// above. Clippy therefore flags the imports as unused, but they ARE
+// required for the GREEN path that the test would take once the
+// divergence is closed by the wrapper-side gate. The `#[allow]` keeps
+// `-D warnings` clean without papering over the test design.
+//
+// Applied file-wide because the items below are referenced from tests
+// that abort before reaching the use sites; this is a documented
+// divergence characterization, not dead code.
+#![allow(unused_imports, dead_code)]
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -70,7 +82,7 @@ fn session_log_with(n: u64, dir: &std::path::Path) -> (SessionExecutionLog, Sess
 
     for i in 0..n {
         let ev = TraceEvent::new(
-            (40 + i) as u64,        // event_id (deliberately ≠ seq)
+            40 + i,                  // event_id (deliberately ≠ seq)
             10_000_500 + i * 1_000, // timestamp_ns
             1,                      // thread_id
             chronos_domain::EventType::FunctionEntry,
@@ -209,7 +221,7 @@ async fn dual_truth_engine_built_before_late_append_misses_late_records() {
     let first_snapshot: Vec<TraceEvent> = (0..3)
         .map(|i| {
             TraceEvent::new(
-                (40 + i) as u64,
+                40 + i,
                 10_000_500 + i * 1_000,
                 1,
                 chronos_domain::EventType::FunctionEntry,
@@ -229,7 +241,7 @@ async fn dual_truth_engine_built_before_late_append_misses_late_records() {
     // engine snapshot was taken.
     for i in 3..6 {
         let ev = TraceEvent::new(
-            (40 + i) as u64,
+            40 + i,
             10_000_500 + i * 1_000,
             1,
             chronos_domain::EventType::FunctionEntry,

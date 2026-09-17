@@ -33,7 +33,7 @@ use crate::debug_trace::DebugTraceService;
 use crate::debug_trace_specialized::DebugTraceSpecializedService;
 use crate::error::ServiceError;
 use crate::output::{ExecutionQueryKind, ExecutionQueryOutput};
-use crate::projection::{ProjectionMeta, ProjectionResult};
+use crate::projection::ProjectionMeta;
 
 /// Borrowed handle to the live engine map (shared with the MCP server).
 ///

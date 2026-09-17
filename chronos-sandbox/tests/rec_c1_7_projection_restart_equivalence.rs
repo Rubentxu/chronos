@@ -56,10 +56,7 @@ fn unique_root(label: &str) -> PathBuf {
 /// canonical sub-envelope makes the comparison robust to wrapper-
 /// level fields that may legitimately vary (timing, counts embedded
 /// in tool output if the dispatcher adds any).
-async fn run_execution_summary(
-    client: &mut McpTestClient,
-    session_id: &str,
-) -> Value {
+async fn run_execution_summary(client: &mut McpTestClient, session_id: &str) -> Value {
     let response = client
         .call_tool(
             "execution_query",
@@ -117,7 +114,10 @@ async fn rec_c1_7_projection_restart_equivalence() {
     // service runs against the freshly-projected engine.
     let response_after = run_execution_summary(&mut second, &started.session_id).await;
 
-    second.shutdown().await.expect("second shutdown must succeed");
+    second
+        .shutdown()
+        .await
+        .expect("second shutdown must succeed");
     let _ = std::fs::remove_dir_all(&root);
 
     // ---- Phase 3: semantic equality. ----

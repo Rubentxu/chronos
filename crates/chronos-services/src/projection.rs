@@ -280,15 +280,14 @@ mod tests {
     }
 
     fn make_event(seq: u64) -> TraceEvent {
-        let ev = TraceEvent::new(
+        TraceEvent::new(
             seq + 40,                 // event_id ≠ seq
             10_000_500 + seq * 1_000, // session-relative ns
             1,
             EventType::FunctionEntry,
             SourceLocation::default(),
             EventData::Empty,
-        );
-        ev
+        )
     }
 
     fn append_event(log: &SessionExecutionLog, session_id: &SessionId, seq: u64) -> EventSeq {
@@ -507,7 +506,7 @@ mod tests {
         let triples: &[(u64, u64, u64, u64)] = &[
             // (seq_target, event_id, timestamp_ns, padding_count_before)
             (40, 10_000_500, 25_999_001, 40),
-            (90, 25_320_700, 10_000_500, 49), // 90 - 40 - 1 fillers
+            (90, 25_320_700, 10_000_500, 49),  // 90 - 40 - 1 fillers
             (130, 25_999_001, 25_320_700, 39), // 130 - 90 - 1 fillers
         ];
 
@@ -517,7 +516,7 @@ mod tests {
             for filler_i in 0..fillers {
                 let ev = TraceEvent::new(
                     u64::MAX - filler_i, // distinct event_id from the test records
-                    0,                  // timestamp_ns that won't match
+                    0,                   // timestamp_ns that won't match
                     1,
                     EventType::FunctionEntry,
                     SourceLocation::default(),
@@ -547,8 +546,7 @@ mod tests {
                 SourceLocation::default(),
                 EventData::Empty,
             );
-            let payload =
-                ExecutionPayload::new(serde_json::to_vec(&ev).unwrap(), "trace_event");
+            let payload = ExecutionPayload::new(serde_json::to_vec(&ev).unwrap(), "trace_event");
             log.handle()
                 .append(NewExecutionRecord {
                     session_id: session_id.clone(),
@@ -586,10 +584,7 @@ mod tests {
             let decoded = decode(record).expect("decode trace_event");
             // Keep only the three canonical records (filter by
             // event_id in our test set).
-            if matches!(
-                decoded.event_id,
-                10_000_500 | 25_320_700 | 25_999_001
-            ) {
+            if matches!(decoded.event_id, 10_000_500 | 25_320_700 | 25_999_001) {
                 canonicals.push((decoded.event_id, decoded.timestamp_ns, record.seq.0));
             }
         }
@@ -630,16 +625,16 @@ mod tests {
         // Independence assertion: ordering by one dimension does NOT
         // agree with ordering by any other.
         let mut by_seq: Vec<(u64, u64, u64)> = canonicals.clone();
-        by_seq.sort_by_key(|(eid, ts, seq)| *seq);
-        let seq_order: Vec<u64> = by_seq.iter().map(|(eid, ts, seq)| *eid).collect();
+        by_seq.sort_by_key(|(_, _, seq)| *seq);
+        let seq_order: Vec<u64> = by_seq.iter().map(|(eid, _, _)| *eid).collect();
         let _by_event_id_ordered: Vec<u64> = {
             let mut v = canonicals.clone();
-            v.sort_by_key(|(eid, ts, seq)| *eid);
-            v.iter().map(|(eid, ts, seq)| *eid).collect()
+            v.sort_by_key(|(eid, _, _)| *eid);
+            v.iter().map(|(eid, _, _)| *eid).collect()
         };
         let mut by_timestamp: Vec<(u64, u64, u64)> = canonicals;
-        by_timestamp.sort_by_key(|(eid, ts, seq)| *ts);
-        let ts_order: Vec<u64> = by_timestamp.iter().map(|(eid, ts, seq)| *eid).collect();
+        by_timestamp.sort_by_key(|(_, ts, _)| *ts);
+        let ts_order: Vec<u64> = by_timestamp.iter().map(|(eid, _, _)| *eid).collect();
 
         // seq order: 10_000_500, 25_320_700, 25_999_001 (matches event_id ascending here)
         // event_id order: same as above (they happen to align)
