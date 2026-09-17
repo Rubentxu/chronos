@@ -1516,26 +1516,6 @@ pub struct ProbeCompactionMetricsParams {
     pub session_id: String,
 }
 
-/// Wire format for [`chronos_domain::EventCursor`] in MCP JSON payloads.
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
-pub struct CursorDto {
-    #[serde(default)]
-    pub total_pushed: Option<u64>,
-    #[serde(default)]
-    pub snapshot_len: Option<u64>,
-}
-
-impl CursorDto {
-    /// Convert to the domain cursor, returning `None` if the payload is
-    /// malformed (e.g., negative fields or missing required values).
-    pub fn to_domain(&self) -> Option<chronos_domain::EventCursor> {
-        Some(chronos_domain::EventCursor {
-            total_pushed: self.total_pushed?,
-            snapshot_len: self.snapshot_len?,
-        })
-    }
-}
-
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SessionSnapshotParams {
     /// Session ID of a live probe (returned by probe_start).

@@ -26,8 +26,7 @@ use chronos_capture::TraceAdapter as CaptureTraceAdapter;
 use chronos_domain::semantic::{SemanticEvent, SemanticEventKind};
 #[allow(unused_imports)]
 use chronos_domain::{
-    CaptureConfig, CaptureSession, CursorStatus, EventCursor, Language, ProbeBackend, ReadResult,
-    TraceError, TraceEvent,
+    CaptureConfig, CaptureSession, Language, ProbeBackend, TraceError, TraceEvent,
 };
 #[cfg(feature = "ebpf")]
 use std::sync::Mutex;
