@@ -33,9 +33,7 @@
 //! - `captured_at_unix_ns` : 1_700_000_000_000_000_000 + i * 10^9
 //!   (wall clock; producer-driven, optional)
 
-use chronos_log::{
-    ExecutionPayload, ExecutionRecord, NewExecutionRecord, SessionId,
-};
+use chronos_log::{ExecutionPayload, ExecutionRecord, NewExecutionRecord, SessionId};
 
 const FIXTURE_LEN: usize = 5;
 

@@ -116,7 +116,18 @@ impl ChronosObserveService {
     ///   `AttachFailed` semantics in the `ObserveCreateResult.attached_pid`
     ///   field — the dispatcher preserves the v1 `probe_inject` failure
     ///   contract).
-    pub fn observe(
+    ///
+    /// REC-C2.1.4a: this is the async boundary.
+    ///
+    /// `list` needs the canonical session to read firings from its
+    /// `ExecutionLog`, and the active session id lives behind an async
+    /// mutex. Making the boundary await was preferred over adding a second,
+    /// synchronous source of the active session (duplicated identity, the
+    /// exact thing REC-C1.2a removed).
+    ///
+    /// `create` / `delete` / `query` stay synchronous helpers: they do not
+    /// need to resolve a session.
+    pub async fn observe(
         ctx: &ObserveContext<'_>,
         input: ObserveInput,
     ) -> Result<ObserveOutput, ServiceError> {
@@ -125,10 +136,35 @@ impl ChronosObserveService {
                 "verb=update deferred to m7+".to_string(),
             )),
             ObserveVerb::Create => Self::create(ctx, input),
-            ObserveVerb::List => Self::list(ctx, input),
+            ObserveVerb::List => Self::list(ctx, input).await,
             ObserveVerb::Delete => Self::delete(ctx, input),
             ObserveVerb::Query => Self::query(ctx),
         }
+    }
+
+    /// Resolve the canonical session for an observe operation.
+    ///
+    /// Precedence is deliberate and not interchangeable:
+    ///
+    /// ```text
+    /// scope = session{ id }  -> id          (explicit identity always wins)
+    /// scope absent / global  -> active_session  (convenience fallback)
+    /// otherwise              -> NoActiveSession (typed absence)
+    /// ```
+    ///
+    /// The id is cloned and the mutex guard is dropped **before** returning,
+    /// so no caller can hold the lock across I/O, a log scan, a replay or
+    /// serialization.
+    pub async fn resolve_session(
+        ctx: &ObserveContext<'_>,
+        scope: Option<&ObserveScope>,
+    ) -> Result<String, ServiceError> {
+        if let Some(ObserveScope::Session { session_id }) = scope {
+            return Ok(session_id.clone());
+        }
+        // Guard scope ends at this block: nothing below holds the lock.
+        let active = { ctx.probe.active_session.lock().await.clone() };
+        active.ok_or(ServiceError::NoActiveSession)
     }
 
     // -- create ----------------------------------------------------------------
@@ -262,7 +298,18 @@ impl ChronosObserveService {
 
     // -- list ------------------------------------------------------------------
 
-    fn list(ctx: &ObserveContext<'_>, input: ObserveInput) -> Result<ObserveOutput, ServiceError> {
+    async fn list(
+        ctx: &ObserveContext<'_>,
+        input: ObserveInput,
+    ) -> Result<ObserveOutput, ServiceError> {
+        // REC-C2.1.4a: resolve the canonical session at the async boundary.
+        // Explicit `scope` wins; `active_session` is only a fallback. Today the
+        // value is resolved and discarded (behavior is unchanged); C2.1.4b
+        // reads firings from this session's ExecutionLog via
+        // `read_firings_page`. `Err` is tolerated for now so `list` keeps
+        // working without a session during the transition.
+        let _resolved_session = Self::resolve_session(ctx, input.scope.as_ref()).await;
+
         // Validate retention up front. v2 supports `drained` (default) and
         // `retained_until_session_end`; `permanent` is rejected.
         let retention = input.retention.unwrap_or_default();
@@ -461,25 +508,24 @@ mod tests {
             }
         }
 
-        /// Run a closure with an `ObserveContext` borrowing both the rig
-        /// and a fresh `ProbeContext`. The closure's stack frame keeps
-        /// both borrows alive for the duration of `f`. This is the same
-        /// pattern used by `sessions::SessionsContext` integration tests.
-        fn with_ctx<F, R>(&self, f: F) -> R
-        where
-            for<'a> F: FnOnce(ObserveContext<'a>) -> R,
-        {
+        /// REC-C2.1.4a: drive the service through its real async boundary.
+        ///
+        /// `observe` is `async` now (it must await the canonical session), so
+        /// the closure form cannot work: an `FnOnce -> R` closure cannot
+        /// contain `.await`. Building the context inside this async fn keeps
+        /// both borrows alive across the await without any HRTB gymnastics.
+        async fn observe(&self, input: ObserveInput) -> Result<ObserveOutput, ServiceError> {
             let probe = self.probe_ctx();
             let ctx = ObserveContext {
                 tripwire_manager: &self.manager,
                 probe: &probe,
                 uprobe_counter: &self.uprobe_counter,
             };
-            f(ctx)
+            ChronosObserveService::observe(&ctx, input).await
         }
     }
 
-    /// Convenience: each test uses `rig.with_ctx(|ctx| { ... })`
+    /// Convenience: each test uses ` ... `
     /// to build the dispatcher context. The closure's stack frame keeps
     /// both the rig and the temporary `ProbeContext` borrows alive for
     /// the duration of the call.
@@ -505,35 +551,35 @@ mod tests {
 
     // ----- precondition: create requires condition ---------------------------
 
-    #[test]
-    fn create_request_missing_condition_returns_unsupported() {
+    #[tokio::test]
+    async fn create_request_missing_condition_returns_unsupported() {
         let rig = TestRig::new();
         let input = tripwire_input(ObserveVerb::Create);
-        let err = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap_err());
+        let err = rig.observe(input).await.unwrap_err();
         assert!(matches!(err, ServiceError::Unsupported(_)), "got {:?}", err);
     }
 
     // ----- verb=update rejection ---------------------------------------------
 
-    #[test]
-    fn verb_update_returns_unsupported() {
+    #[tokio::test]
+    async fn verb_update_returns_unsupported() {
         let rig = TestRig::new();
         let input = tripwire_input(ObserveVerb::Update);
-        let err = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap_err());
+        let err = rig.observe(input).await.unwrap_err();
         assert!(matches!(err, ServiceError::Unsupported(_)), "got {:?}", err);
     }
 
     // ----- verb=create (tripwire) --------------------------------------------
 
-    #[test]
-    fn create_tripwire_returns_create_result() {
+    #[tokio::test]
+    async fn create_tripwire_returns_create_result() {
         let rig = TestRig::new();
         let mut input = tripwire_input(ObserveVerb::Create);
         input.condition = Some(ObserveCondition::Tripwire {
             condition: tripwire_condition(),
             label: Some("main-watch".to_string()),
         });
-        let out = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap());
+        let out = rig.observe(input).await.unwrap();
         match out {
             ObserveOutput::Create(c) => {
                 assert!(c.subscription_id.starts_with("tripwire-"));
@@ -547,15 +593,15 @@ mod tests {
         }
     }
 
-    #[test]
-    fn create_tripwire_without_label() {
+    #[tokio::test]
+    async fn create_tripwire_without_label() {
         let rig = TestRig::new();
         let mut input = tripwire_input(ObserveVerb::Create);
         input.condition = Some(ObserveCondition::Tripwire {
             condition: tripwire_condition(),
             label: None,
         });
-        let out = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap());
+        let out = rig.observe(input).await.unwrap();
         match out {
             ObserveOutput::Create(c) => {
                 assert!(c.label.is_none());
@@ -564,33 +610,33 @@ mod tests {
         }
     }
 
-    #[test]
-    fn create_tripwire_increments_active_count() {
+    #[tokio::test]
+    async fn create_tripwire_increments_active_count() {
         let rig = TestRig::new();
-        rig.with_ctx(|ctx| {
-            for _ in 0..3 {
-                let mut input = tripwire_input(ObserveVerb::Create);
-                input.condition = Some(ObserveCondition::Tripwire {
-                    condition: tripwire_condition(),
-                    label: None,
-                });
-                let out = ChronosObserveService::observe(&ctx, input).unwrap();
-                match out {
-                    ObserveOutput::Create(c) => assert!(c.active_count >= 1),
-                    _ => panic!("expected Create"),
-                }
+
+        for _ in 0..3 {
+            let mut input = tripwire_input(ObserveVerb::Create);
+            input.condition = Some(ObserveCondition::Tripwire {
+                condition: tripwire_condition(),
+                label: None,
+            });
+            let out = rig.observe(input).await.unwrap();
+            match out {
+                ObserveOutput::Create(c) => assert!(c.active_count >= 1),
+                _ => panic!("expected Create"),
             }
-        });
+        }
+
         assert!(rig.manager.active_count() >= 3);
     }
 
     // ----- verb=list ----------------------------------------------------------
 
-    #[test]
-    fn list_with_no_subscriptions_returns_empty() {
+    #[tokio::test]
+    async fn list_with_no_subscriptions_returns_empty() {
         let rig = TestRig::new();
         let input = tripwire_input(ObserveVerb::List);
-        let out = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap());
+        let out = rig.observe(input).await.unwrap();
         match out {
             ObserveOutput::List(l) => {
                 assert!(l.subscriptions.is_empty());
@@ -603,38 +649,37 @@ mod tests {
         }
     }
 
-    #[test]
-    fn list_after_create_includes_subscription() {
+    #[tokio::test]
+    async fn list_after_create_includes_subscription() {
         let rig = TestRig::new();
-        rig.with_ctx(|ctx| {
-            // Create one.
-            let mut create_input = tripwire_input(ObserveVerb::Create);
-            create_input.condition = Some(ObserveCondition::Tripwire {
-                condition: tripwire_condition(),
-                label: None,
-            });
-            let _ = ChronosObserveService::observe(&ctx, create_input).unwrap();
 
-            // List it.
-            let list_input = tripwire_input(ObserveVerb::List);
-            let out = ChronosObserveService::observe(&ctx, list_input).unwrap();
-            match out {
-                ObserveOutput::List(l) => {
-                    assert_eq!(l.subscriptions.len(), 1);
-                    assert_eq!(l.subscriptions[0].kind, "tripwire");
-                    assert_eq!(l.total_active, 1);
-                }
-                other => panic!("expected List, got {:?}", other),
-            }
+        // Create one.
+        let mut create_input = tripwire_input(ObserveVerb::Create);
+        create_input.condition = Some(ObserveCondition::Tripwire {
+            condition: tripwire_condition(),
+            label: None,
         });
+        let _ = rig.observe(create_input).await.unwrap();
+
+        // List it.
+        let list_input = tripwire_input(ObserveVerb::List);
+        let out = rig.observe(list_input).await.unwrap();
+        match out {
+            ObserveOutput::List(l) => {
+                assert_eq!(l.subscriptions.len(), 1);
+                assert_eq!(l.subscriptions[0].kind, "tripwire");
+                assert_eq!(l.total_active, 1);
+            }
+            other => panic!("expected List, got {:?}", other),
+        }
     }
 
-    #[test]
-    fn list_with_retained_returns_empty_fired_events() {
+    #[tokio::test]
+    async fn list_with_retained_returns_empty_fired_events() {
         let rig = TestRig::new();
         let mut input = tripwire_input(ObserveVerb::List);
         input.retention = Some(ObserveRetention::RetainedUntilSessionEnd);
-        let out = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap());
+        let out = rig.observe(input).await.unwrap();
         match out {
             ObserveOutput::List(l) => {
                 assert!(l.fired_events.is_empty());
@@ -645,12 +690,12 @@ mod tests {
         }
     }
 
-    #[test]
-    fn list_with_permanent_retention_returns_unsupported() {
+    #[tokio::test]
+    async fn list_with_permanent_retention_returns_unsupported() {
         let rig = TestRig::new();
         let mut input = tripwire_input(ObserveVerb::List);
         input.retention = Some(ObserveRetention::Permanent);
-        let err = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap_err());
+        let err = rig.observe(input).await.unwrap_err();
         assert!(matches!(err, ServiceError::Unsupported(_)), "got {:?}", err);
     }
 
@@ -687,36 +732,116 @@ mod tests {
         assert_eq!(fired.len(), 1, "fixture must fire exactly one tripwire");
     }
 
+    // ------------------------------------------------------------------
+    // REC-C2.1.4a: session resolution.
+    // ------------------------------------------------------------------
+
+    impl TestRig {
+        async fn set_active_session(&self, id: Option<&str>) {
+            *self.active_session.lock().await = id.map(|s| s.to_string());
+        }
+
+        async fn resolve(&self, scope: Option<ObserveScope>) -> Result<String, ServiceError> {
+            let probe = self.probe_ctx();
+            let ctx = ObserveContext {
+                tripwire_manager: &self.manager,
+                probe: &probe,
+                uprobe_counter: &self.uprobe_counter,
+            };
+            ChronosObserveService::resolve_session(&ctx, scope.as_ref()).await
+        }
+    }
+
+    /// Explicit `scope=session{..}` wins, even when a *different* session is
+    /// active. `active_session` is a fallback, never an override.
+    #[tokio::test]
+    async fn resolve_session_explicit_scope_wins_over_active_session() {
+        let rig = TestRig::new();
+        rig.set_active_session(Some("active-one")).await;
+        let resolved = rig
+            .resolve(Some(ObserveScope::Session {
+                session_id: "explicit-two".to_string(),
+            }))
+            .await
+            .expect("explicit scope resolves");
+        assert_eq!(resolved, "explicit-two");
+    }
+
+    /// With no scope, the active session is the fallback.
+    #[tokio::test]
+    async fn resolve_session_falls_back_to_active_session() {
+        let rig = TestRig::new();
+        rig.set_active_session(Some("active-one")).await;
+        assert_eq!(rig.resolve(None).await.expect("fallback"), "active-one");
+        // `scope=global` also falls through to the active session.
+        assert_eq!(
+            rig.resolve(Some(ObserveScope::Global))
+                .await
+                .expect("global falls back"),
+            "active-one"
+        );
+    }
+
+    /// With neither an explicit scope nor an active session, absence is typed.
+    #[tokio::test]
+    async fn resolve_session_without_any_source_is_typed_absence() {
+        let rig = TestRig::new();
+        rig.set_active_session(None).await;
+        let err = rig.resolve(None).await.expect_err("must refuse");
+        assert!(
+            matches!(err, ServiceError::NoActiveSession),
+            "expected NoActiveSession, got {err:?}"
+        );
+    }
+
+    /// The resolved id must not be produced while the lock is held: after
+    /// resolution the guard is gone, so an unrelated lock acquisition
+    /// succeeds immediately instead of deadlocking.
+    #[tokio::test]
+    async fn resolve_session_releases_the_active_session_lock() {
+        let rig = TestRig::new();
+        rig.set_active_session(Some("active-one")).await;
+        let _ = rig.resolve(None).await.expect("resolves");
+        // If the guard were still held, this would block forever. Bound it so
+        // a regression fails fast instead of hanging the suite.
+        let acquired =
+            tokio::time::timeout(std::time::Duration::from_secs(2), rig.active_session.lock())
+                .await;
+        assert!(
+            acquired.is_ok(),
+            "the active_session lock was still held after resolve_session returned"
+        );
+    }
+
     /// Register the rig's single `main*` tripwire through the public verb.
-    fn create_one_tripwire(rig: &TestRig) {
+    async fn create_one_tripwire(rig: &TestRig) {
         let mut input = tripwire_input(ObserveVerb::Create);
         input.condition = Some(ObserveCondition::Tripwire {
             condition: tripwire_condition(),
             label: None,
         });
-        rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap());
+        rig.observe(input).await.unwrap();
     }
 
     /// CHAR-C2-02: `observe(verb=list)` consumes fired evidence globally.
     /// The first `list` returns the firing and empties the shared buffer;
     /// a second `list` — which a *different* consumer would issue — sees
     /// nothing. There is no per-consumer cursor.
-    #[test]
-    fn char_c2_02_observe_list_drains_fired_evidence_globally() {
+    #[tokio::test]
+    async fn char_c2_02_observe_list_drains_fired_evidence_globally() {
         let rig = TestRig::new();
-        create_one_tripwire(&rig);
+        create_one_tripwire(&rig).await;
         fire_once(&rig);
 
         let mut first_input = tripwire_input(ObserveVerb::List);
         first_input.retention = Some(ObserveRetention::Drained);
-        let first = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, first_input).unwrap());
+        let first = rig.observe(first_input).await.unwrap();
         let second_input = {
             let mut i = tripwire_input(ObserveVerb::List);
             i.retention = Some(ObserveRetention::Drained);
             i
         };
-        let second =
-            rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, second_input).unwrap());
+        let second = rig.observe(second_input).await.unwrap();
 
         match (first, second) {
             (ObserveOutput::List(a), ObserveOutput::List(b)) => {
@@ -734,23 +859,21 @@ mod tests {
     /// evidence, but `list` drains `fired_buffer` *before* applying the
     /// retention setting and then returns `[]`. The measured result: the
     /// "retained" read loses the evidence for everyone, including itself.
-    #[test]
-    fn char_c2_03_retained_until_session_end_loses_the_evidence() {
+    #[tokio::test]
+    async fn char_c2_03_retained_until_session_end_loses_the_evidence() {
         let rig = TestRig::new();
-        create_one_tripwire(&rig);
+        create_one_tripwire(&rig).await;
         fire_once(&rig);
 
         // First read asks for retention.
         let mut retained_input = tripwire_input(ObserveVerb::List);
         retained_input.retention = Some(ObserveRetention::RetainedUntilSessionEnd);
-        let retained =
-            rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, retained_input).unwrap());
+        let retained = rig.observe(retained_input).await.unwrap();
 
         // A later drained read should still see the retained evidence.
         let mut drained_input = tripwire_input(ObserveVerb::List);
         drained_input.retention = Some(ObserveRetention::Drained);
-        let after =
-            rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, drained_input).unwrap());
+        let after = rig.observe(drained_input).await.unwrap();
 
         match (retained, after) {
             (ObserveOutput::List(r), ObserveOutput::List(a)) => {
@@ -766,11 +889,11 @@ mod tests {
 
     // ----- verb=query ---------------------------------------------------------
 
-    #[test]
-    fn query_with_no_subscriptions_returns_empty() {
+    #[tokio::test]
+    async fn query_with_no_subscriptions_returns_empty() {
         let rig = TestRig::new();
         let input = tripwire_input(ObserveVerb::Query);
-        let out = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap());
+        let out = rig.observe(input).await.unwrap();
         match out {
             ObserveOutput::Query(q) => {
                 assert!(q.subscriptions.is_empty());
@@ -781,94 +904,96 @@ mod tests {
         }
     }
 
-    #[test]
-    fn query_is_non_destructive_across_calls() {
+    #[tokio::test]
+    async fn query_is_non_destructive_across_calls() {
         let rig = TestRig::new();
-        rig.with_ctx(|ctx| {
-            // Create.
-            let mut create_input = tripwire_input(ObserveVerb::Create);
-            create_input.condition = Some(ObserveCondition::Tripwire {
-                condition: tripwire_condition(),
-                label: None,
-            });
-            let _ = ChronosObserveService::observe(&ctx, create_input).unwrap();
 
-            // Query twice — both calls must see the same subscription.
-            let q1 = match ChronosObserveService::observe(&ctx, tripwire_input(ObserveVerb::Query))
-                .unwrap()
-            {
-                ObserveOutput::Query(q) => q,
-                _ => panic!("expected Query"),
-            };
-            let q2 = match ChronosObserveService::observe(&ctx, tripwire_input(ObserveVerb::Query))
-                .unwrap()
-            {
-                ObserveOutput::Query(q) => q,
-                _ => panic!("expected Query"),
-            };
-            assert_eq!(q1.total_active, 1);
-            assert_eq!(q2.total_active, 1);
-            assert_eq!(q1.subscriptions.len(), 1);
-            assert_eq!(q2.subscriptions.len(), 1);
-            assert_eq!(q1.subscriptions[0].id, q2.subscriptions[0].id);
+        // Create.
+        let mut create_input = tripwire_input(ObserveVerb::Create);
+        create_input.condition = Some(ObserveCondition::Tripwire {
+            condition: tripwire_condition(),
+            label: None,
         });
+        let _ = rig.observe(create_input).await.unwrap();
+
+        // Query twice — both calls must see the same subscription.
+        let q1 = match rig
+            .observe(tripwire_input(ObserveVerb::Query))
+            .await
+            .unwrap()
+        {
+            ObserveOutput::Query(q) => q,
+            _ => panic!("expected Query"),
+        };
+        let q2 = match rig
+            .observe(tripwire_input(ObserveVerb::Query))
+            .await
+            .unwrap()
+        {
+            ObserveOutput::Query(q) => q,
+            _ => panic!("expected Query"),
+        };
+        assert_eq!(q1.total_active, 1);
+        assert_eq!(q2.total_active, 1);
+        assert_eq!(q1.subscriptions.len(), 1);
+        assert_eq!(q2.subscriptions.len(), 1);
+        assert_eq!(q1.subscriptions[0].id, q2.subscriptions[0].id);
     }
 
     // ----- verb=delete -------------------------------------------------------
 
-    #[test]
-    fn delete_with_valid_id_removes_subscription() {
+    #[tokio::test]
+    async fn delete_with_valid_id_removes_subscription() {
         let rig = TestRig::new();
         let mut del_input = tripwire_input(ObserveVerb::Delete);
-        rig.with_ctx(|ctx| {
-            // Create.
-            let mut create_input = tripwire_input(ObserveVerb::Create);
-            create_input.condition = Some(ObserveCondition::Tripwire {
-                condition: tripwire_condition(),
-                label: None,
-            });
-            let create_out = ChronosObserveService::observe(&ctx, create_input).unwrap();
-            let sub_id = match create_out {
-                ObserveOutput::Create(c) => c.subscription_id,
-                _ => panic!("expected Create"),
-            };
 
-            // Delete it.
-            del_input.subscription_id = Some(sub_id.clone());
-            let del_out = ChronosObserveService::observe(&ctx, del_input).unwrap();
-            match del_out {
-                ObserveOutput::Delete(d) => {
-                    assert_eq!(d.subscription_id, sub_id);
-                    assert_eq!(d.remaining_active, 0);
-                }
-                other => panic!("expected Delete, got {:?}", other),
-            }
+        // Create.
+        let mut create_input = tripwire_input(ObserveVerb::Create);
+        create_input.condition = Some(ObserveCondition::Tripwire {
+            condition: tripwire_condition(),
+            label: None,
         });
+        let create_out = rig.observe(create_input).await.unwrap();
+        let sub_id = match create_out {
+            ObserveOutput::Create(c) => c.subscription_id,
+            _ => panic!("expected Create"),
+        };
+
+        // Delete it.
+        del_input.subscription_id = Some(sub_id.clone());
+        let del_out = rig.observe(del_input).await.unwrap();
+        match del_out {
+            ObserveOutput::Delete(d) => {
+                assert_eq!(d.subscription_id, sub_id);
+                assert_eq!(d.remaining_active, 0);
+            }
+            other => panic!("expected Delete, got {:?}", other),
+        }
     }
 
-    #[test]
-    fn delete_without_id_returns_unsupported() {
+    #[tokio::test]
+    async fn delete_without_id_returns_unsupported() {
         let rig = TestRig::new();
         let input = tripwire_input(ObserveVerb::Delete);
-        let err = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap_err());
+        let err = rig.observe(input).await.unwrap_err();
         assert!(matches!(err, ServiceError::Unsupported(_)), "got {:?}", err);
     }
 
-    #[test]
-    fn delete_with_non_tripwire_id_returns_unsupported() {
+    #[tokio::test]
+    async fn delete_with_non_tripwire_id_returns_unsupported() {
         let rig = TestRig::new();
         let mut input = tripwire_input(ObserveVerb::Delete);
         input.subscription_id = Some("not-a-tripwire-id".to_string());
-        let err = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap_err());
+        let err = rig.observe(input).await.unwrap_err();
         assert!(matches!(err, ServiceError::Unsupported(_)), "got {:?}", err);
     }
 
-    #[test]
-    fn delete_with_unknown_id_returns_not_found() {
+    #[tokio::test]
+    async fn delete_with_unknown_id_returns_not_found() {
         let rig = TestRig::new();
         let mut input = tripwire_input(ObserveVerb::Delete);
         input.subscription_id = Some("tripwire-99999".to_string());
-        let err = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap_err());
+        let err = rig.observe(input).await.unwrap_err();
         assert!(
             matches!(err, ServiceError::TripwireNotFound(_)),
             "got {:?}",
@@ -954,13 +1079,13 @@ mod tests {
     /// as `ServiceError::EbpfUnsupported(reason)` — the typed eBPF
     /// capability error. The MCP wrapper prefixes this with the kebab
     /// slot `ebpf-uprobe`, derived from the typed variant.
-    #[test]
-    fn create_uprobe_without_ebpf_returns_ebpf_unsupported() {
+    #[tokio::test]
+    async fn create_uprobe_without_ebpf_returns_ebpf_unsupported() {
         let rig = TestRig::new();
         register_fake_probe_session(&rig, "test-session", 0xCAFE);
         let input = uprobe_input("test-session", "/fake/binary", "main");
 
-        let err = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap_err());
+        let err = rig.observe(input).await.unwrap_err();
         match err {
             ServiceError::EbpfUnsupported(reason) => {
                 assert!(
@@ -977,13 +1102,13 @@ mod tests {
     /// capability error. The variant is only reachable on an
     /// `ebpf`-feature build (otherwise `EbpfUnavailable` short-circuits
     /// first); on the default build we accept either typed variant.
-    #[test]
-    fn create_uprobe_with_no_pid_returns_probe_starting_or_ebpf_unavailable() {
+    #[tokio::test]
+    async fn create_uprobe_with_no_pid_returns_probe_starting_or_ebpf_unavailable() {
         let rig = TestRig::new();
         register_fake_probe_session(&rig, "test-session", 0); // pid=0 → ProbeStarting on ebpf builds
         let input = uprobe_input("test-session", "/fake/binary", "main");
 
-        let err = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap_err());
+        let err = rig.observe(input).await.unwrap_err();
         assert!(
             matches!(
                 err,
@@ -999,13 +1124,13 @@ mod tests {
     /// short-circuits to `EbpfUnsupported` first; we accept either typed
     /// variant since both share the `ebpf-uprobe` capability slot in the
     /// MCP wrapper.
-    #[test]
-    fn create_uprobe_attach_failure_surfaces_typed_injection_failed_or_ebpf_unavailable() {
+    #[tokio::test]
+    async fn create_uprobe_attach_failure_surfaces_typed_injection_failed_or_ebpf_unavailable() {
         let rig = TestRig::new();
         register_fake_probe_session(&rig, "test-session", 0xCAFE);
         let input = uprobe_input("test-session", "/fake/binary", "main");
 
-        let err = rig.with_ctx(|ctx| ChronosObserveService::observe(&ctx, input).unwrap_err());
+        let err = rig.observe(input).await.unwrap_err();
         assert!(
             matches!(
                 err,

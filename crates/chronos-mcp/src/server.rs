@@ -2953,6 +2953,13 @@ impl ChronosServer {
             Err(ServiceError::LockPoisoned) => {
                 return Ok(CallToolResult::error(text_content("lock poisoned")));
             }
+            // REC-C2.1.4a: cannot occur from list_threads, but the enum gained
+            // a variant and the match is exhaustive.
+            Err(ServiceError::NoActiveSession) => {
+                return Ok(CallToolResult::error(text_content(
+                    "no active session: supply scope=session{session_id} or start a session",
+                )));
+            }
             // The new ServiceError variants cannot occur from list_threads,
             // but must be listed for exhaustiveness.
             Err(ServiceError::MemoryNotFound { .. }) => {
@@ -4347,7 +4354,7 @@ impl ChronosServer {
             cursor: None,
             label: label_for_v2,
         };
-        match ChronosObserveService::observe(&ctx, input) {
+        match ChronosObserveService::observe(&ctx, input).await {
             Ok(chronos_services::output::ObserveOutput::Create(c)) => {
                 let output = serde_json::json!({
                     "tripwire_id": c.subscription_id,
@@ -4407,7 +4414,7 @@ impl ChronosServer {
             cursor: None,
             label: None,
         };
-        match ChronosObserveService::observe(&ctx, input) {
+        match ChronosObserveService::observe(&ctx, input).await {
             Ok(chronos_services::output::ObserveOutput::List(l)) => {
                 let tripwire_summaries: Vec<_> = l
                     .subscriptions
@@ -4500,7 +4507,7 @@ impl ChronosServer {
             cursor: None,
             label: None,
         };
-        match ChronosObserveService::observe(&ctx, input) {
+        match ChronosObserveService::observe(&ctx, input).await {
             Ok(chronos_services::output::ObserveOutput::Delete(d)) => {
                 let output = serde_json::json!({
                     "tripwire_id": d.subscription_id,
@@ -4565,7 +4572,7 @@ impl ChronosServer {
             cursor: None,
             label: None,
         };
-        match ChronosObserveService::observe(&ctx, input) {
+        match ChronosObserveService::observe(&ctx, input).await {
             Ok(chronos_services::output::ObserveOutput::Query(q)) => {
                 let tripwire_summaries: Vec<_> = q
                     .subscriptions
@@ -5464,7 +5471,7 @@ impl ChronosServer {
             cursor: None,
             label: None,
         };
-        match ChronosObserveService::observe(&ctx, input) {
+        match ChronosObserveService::observe(&ctx, input).await {
             Ok(chronos_services::output::ObserveOutput::Create(c)) => {
                 // Mirror v1 shape: pull fields back from the v2 result.
                 let output = serde_json::json!({
@@ -6247,7 +6254,7 @@ impl ChronosServer {
             label: params.label,
         };
 
-        match ChronosObserveService::observe(&ctx, input) {
+        match ChronosObserveService::observe(&ctx, input).await {
             Ok(out) => Ok(CallToolResult::success(json_content(
                 &serde_json::to_value(&out)
                     .map_err(|e| rmcp::ErrorData::internal_error(e.to_string(), None))?,

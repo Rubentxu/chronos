@@ -138,7 +138,6 @@ pub enum ExecutionKind {
     TripwireFired,
 }
 
-
 /// Opaque record payload for m1-01. The full payload shape grows
 /// across m1-01..m1-03 as more producers are migrated; for now we
 /// just carry bytes plus a string tag for diagnostics.

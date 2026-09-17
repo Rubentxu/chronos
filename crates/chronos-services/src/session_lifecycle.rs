@@ -265,7 +265,8 @@ impl ChronosSessionLifecycleService {
                     cursor: None,
                     label: None,
                 },
-            );
+            )
+            .await;
             true
         } else {
             false

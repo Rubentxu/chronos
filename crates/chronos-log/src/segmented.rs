@@ -1463,8 +1463,8 @@ impl From<&ExecutionRecord> for NewExecutionRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::record::ExecutionKind;
     use crate::checkpoint::{checkpoint_path, write_call_graph_checkpoint};
+    use crate::record::ExecutionKind;
     use crate::record::ExecutionPayload;
     use chronos_domain::{InvocationId, Language, SymbolId};
 
