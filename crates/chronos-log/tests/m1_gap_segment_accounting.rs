@@ -202,8 +202,8 @@ fn gap_persist_3_overflow_gap_reopens_valid() {
         log.flush().expect("flush");
     }
 
-    let log =
-        SegmentedExecutionLog::open(session.clone(), cfg.clone()).expect("reopen after overflow gap");
+    let log = SegmentedExecutionLog::open(session.clone(), cfg.clone())
+        .expect("reopen after overflow gap");
     let page = log.read_from_seq(EventSeq::ZERO, 100).expect("read");
     assert!(
         !page.gaps.is_empty(),
