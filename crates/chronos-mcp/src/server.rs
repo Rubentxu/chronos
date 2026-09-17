@@ -1482,11 +1482,14 @@ pub struct ProbeDrainParams {
     /// Offset to skip events (default: 0).
     #[serde(default)]
     pub offset: usize,
-    /// Optional cursor returned by a previous `probe_drain` call. When set,
-    /// the server anchors the read to the cursor's position so it can return
-    /// the events that arrived since the cursor was issued.
+    /// Canonical `ecv1:...` cursor returned by a previous `probe_drain` call.
+    /// When set, the read resumes after the last record that call EXAMINED.
+    ///
+    /// The legacy ring cursor (`total_pushed`/`snapshot_len`) is not accepted:
+    /// it lives in a different coordinate space and is never converted into an
+    /// EventSeq.
     #[serde(default)]
-    pub cursor: Option<CursorDto>,
+    pub evidence_cursor: Option<String>,
 }
 
 /// m1-03: parameters for `probe_drain_log`. Cursor is a seq number
@@ -5135,7 +5138,7 @@ impl ChronosServer {
 
     #[tool(
         name = "probe_drain",
-        description = "Drain current events from a live probe session without stopping it. Returns a snapshot of events currently in the ring buffer. The probe continues running. Use probe_stop to finalize."
+        description = "Drain canonical evidence from a live probe session without stopping it. Events are projected from the session's durable ExecutionLog. Pass the 'evidence_cursor' (ecv1:...) returned by a previous call to continue. The probe keeps running; use probe_stop to finalize."
     )]
     async fn probe_drain(
         &self,
@@ -5143,22 +5146,9 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        // Parse incoming cursor (if any) before locking — cheap and fail-fast.
-        let cursor = match params.cursor.as_ref() {
-            None => None,
-            Some(dto) => match dto.to_domain() {
-                Some(c) => Some(c),
-                None => {
-                    return Ok(CallToolResult::error(text_content(
-                        "Invalid cursor payload: 'total_pushed' and 'snapshot_len' are required when 'cursor' is provided.".to_string(),
-                    )))
-                }
-            },
-        };
-
         let input = chronos_services::probe::ProbeDrainInput {
             session_id: params.session_id.clone(),
-            cursor,
+            evidence_cursor: params.evidence_cursor.clone(),
             offset: params.offset,
             limit: params.limit,
         };
@@ -5200,14 +5190,19 @@ impl ChronosServer {
                     "returned": sliced.len(),
                     "offset": params.offset,
                     "limit": params.limit,
-                    "cursor": {
-                        "total_pushed": result.new_cursor.total_pushed,
-                        "snapshot_len": result.new_cursor.snapshot_len,
-                    },
-                    "cursor_stale": result.cursor_stale,
+                    // Canonical coordinate: reuse it verbatim to continue.
+                    "evidence_cursor": result.evidence_cursor,
+                    // Evidence facts about the EXAMINED range, same model as
+                    // probe_events. Pagination is reported by `exhausted`.
+                    "completeness": result.completeness,
+                    "exhausted": result.exhausted,
+                    // COMPATIBILITY ONLY, carries no evidence: the legacy ring
+                    // cursor is a different coordinate space and is never
+                    // converted into an EventSeq.
+                    "legacy_cursor": serde_json::Value::Null,
                     "tripwires_fired": result.tripwires_fired,
                     "events": sliced,
-                    "hint": "Probe is still running. Call probe_drain again for more events, or probe_stop to finalize."
+                    "hint": "Probe is still running. Call probe_drain again with 'evidence_cursor' for more events, or probe_stop to finalize."
                 });
                 Ok(CallToolResult::success(json_content(&output)))
             }
@@ -5220,6 +5215,15 @@ impl ChronosServer {
             }) => Ok(CallToolResult::error(text_content(format!(
                 "Cursor at seq {requested_next_seq} is stale; the earliest available position is \
 {retained_from_seq}. This is retention, not evidence loss: re-anchor deliberately."
+            )))),
+            Err(ServiceError::EvidenceDecodeFailed {
+                session_id,
+                seq,
+                payload_tag,
+            }) => Ok(CallToolResult::error(text_content(format!(
+                "Undecodable evidence at seq {seq} (payload tag '{payload_tag}') in session \
+'{session_id}'. No cursor was advanced over it and no derived facts were reported: reading \
+further would be a Silent Lie."
             )))),
             Err(ServiceError::DrainFailed(msg)) => Ok(CallToolResult::error(text_content(
                 format!("Failed to drain events: {}", msg),

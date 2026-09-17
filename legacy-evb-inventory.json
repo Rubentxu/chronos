@@ -316,18 +316,6 @@
       "removal_gate": "REC-C2.2"
     },
     {
-      "key": "crates/chronos-services/src/probe.rs::drain::read_since#1",
-      "path": "crates/chronos-services/src/probe.rs",
-      "symbol": "drain",
-      "token": "read_since",
-      "kind": "read",
-      "line": 542,
-      "class": "COMPATIBILITY",
-      "owner": "REC-C2.2",
-      "replacement": "",
-      "removal_gate": "REC-C2.2"
-    },
-    {
       "key": "crates/chronos-services/src/probe.rs::session_snapshot::drain_raw_events#1",
       "path": "crates/chronos-services/src/probe.rs",
       "symbol": "session_snapshot",

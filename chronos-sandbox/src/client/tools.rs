@@ -333,21 +333,21 @@ impl McpSession {
     }
 
     /// Probe drain with an optional cursor (m0-01-live-pagination).
-    pub async fn probe_drain_with_cursor(
+    pub async fn probe_drain_with_evidence_cursor(
         &mut self,
         session_id: &str,
-        cursor: Option<CursorDto>,
+        evidence_cursor: Option<&str>,
     ) -> Result<ProbeDrainResponse, McpSandboxError> {
         let mut params = serde_json::json!({
             "session_id": session_id,
             "limit": 1000,
             "offset": 0
         });
-        if let Some(c) = cursor {
-            params.as_object_mut().unwrap().insert(
-                "cursor".to_string(),
-                serde_json::to_value(c).map_err(|e| McpSandboxError::RpcError(e.to_string()))?,
-            );
+        if let Some(token) = evidence_cursor {
+            params
+                .as_object_mut()
+                .unwrap()
+                .insert("evidence_cursor".to_string(), serde_json::json!(token));
         }
 
         let response = self.rpc_client.call_tool("probe_drain", params).await?;
@@ -356,6 +356,28 @@ impl McpSession {
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
 
         Ok(result)
+    }
+
+    /// Same as [`Self::probe_drain_with_evidence_cursor`] but returns the raw
+    /// JSON so a test can assert on wire shape (and on the absence of removed
+    /// fields).
+    pub async fn probe_drain_wire(
+        &mut self,
+        session_id: &str,
+        evidence_cursor: Option<&str>,
+    ) -> Result<serde_json::Value, McpSandboxError> {
+        let mut params = serde_json::json!({
+            "session_id": session_id,
+            "limit": 1000,
+            "offset": 0
+        });
+        if let Some(token) = evidence_cursor {
+            params
+                .as_object_mut()
+                .unwrap()
+                .insert("evidence_cursor".to_string(), serde_json::json!(token));
+        }
+        self.rpc_client.call_tool("probe_drain", params).await
     }
 
     /// Probe inject — inject a uprobe into a running process.

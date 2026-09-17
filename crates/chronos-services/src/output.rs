@@ -900,15 +900,19 @@ pub struct ProbeDrainOutput {
 /// server wrapper can serialize them into the byte-identical JSON shape.
 #[derive(Debug)]
 pub struct ProbeDrainResult {
-    /// Semantic events returned by the backend's `read_since`.
+    /// Semantic events projected from the session's durable ExecutionLog.
     pub events: Vec<chronos_domain::SemanticEvent>,
-    /// New cursor after this drain call.
-    pub new_cursor: chronos_domain::EventCursor,
-    /// Whether the cursor is stale (caller should re-anchor).
-    pub cursor_stale: bool,
-    /// Total events in the buffer (before offset/limit).
+    /// Canonical `EventsCursorV1` token (`ecv1:...`) positioned after the last
+    /// record EXAMINED. `None` only when no page was produced.
+    pub evidence_cursor: Option<String>,
+    /// Completeness of the examined range — the same model `events_read` uses.
+    /// Pagination is reported separately via `exhausted`.
+    pub completeness: crate::events_log_read::CompletenessReport,
+    /// True when the scan reached the end of what the log currently holds.
+    pub exhausted: bool,
+    /// Raw events in this page (before offset/limit slicing).
     pub total_buffered: usize,
-    /// Number of tripwires fired during this drain.
+    /// Persisted `TripwireFired` records in this page's examined range.
     pub tripwires_fired: usize,
 }
 

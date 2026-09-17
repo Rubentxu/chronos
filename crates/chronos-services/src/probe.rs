@@ -11,7 +11,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use chronos_domain::adapter::ProbeBackend;
 use chronos_domain::bus::EventBus;
 use chronos_domain::{CaptureConfig, CaptureSession, Language};
 use chronos_native::probe_backend::NativeProbeBackend;
@@ -22,6 +21,7 @@ use chronos_query::QueryEngine;
 
 use crate::error::ServiceError;
 use crate::output::{ProbeDrainResult, ProbeStartOutput, ProbeStopResult};
+use chronos_domain::semantic::{ResolveContext, SemanticEvent};
 use chronos_domain::tripwire::TripwireManager;
 use chronos_domain::TraceEvent;
 
@@ -149,8 +149,12 @@ pub struct ProbeAttachOutput {
 #[derive(Debug, Clone)]
 pub struct ProbeDrainInput {
     pub session_id: String,
-    /// Pre-parsed cursor (already converted from `CursorDto`).
-    pub cursor: Option<chronos_domain::EventCursor>,
+    /// Canonical `EventsCursorV1` token (`ecv1:...`).
+    ///
+    /// REC-C2.2.2: the legacy ring cursor (`total_pushed`/`snapshot_len`) is a
+    /// different coordinate space and is NEVER converted into an EventSeq.
+    /// `None` starts at the log's retained boundary.
+    pub evidence_cursor: Option<String>,
     pub offset: usize,
     pub limit: usize,
 }
@@ -530,8 +534,28 @@ impl ProbeService {
         ctx: &ProbeContext<'_>,
         input: ProbeDrainInput,
     ) -> Result<ProbeDrainResult, ServiceError> {
-        // Narrow lock scope: read events inside scoped block, then drop lock.
-        let (events, new_cursor, cursor_stale) = {
+        // REC-C2.2.2: the canonical route reads the session's ExecutionLog.
+        // The EventBus is not consulted and `TripwireManager` is not a
+        // parameter, so neither transport nor runtime subscription state can
+        // change what a page reports.
+        let log = ctx.execution_logs.get(&input.session_id)?;
+
+        // Decode the canonical cursor with the session expectation: a
+        // malformed token or one minted for another session is a typed error,
+        // never a silent re-anchor.
+        let cursor = match input.evidence_cursor.as_deref() {
+            Some(token) => Some(
+                crate::events_cursor::EventsCursorV1::decode_for_session(token, log.session_id())
+                    .map_err(|e| ServiceError::InvalidInput(format!("probe_drain cursor: {e}")))?,
+            ),
+            None => None,
+        };
+
+        // The projection context AND the pipeline come from the session, so
+        // replaying the same durable Raw produces the same semantic view the
+        // producer saw. Both are taken under a short lock and then the lock is
+        // dropped: projection runs per event and must not hold it.
+        let (ctx_obj, pipeline) = {
             let probes = ctx
                 .live_probes
                 .lock()
@@ -539,49 +563,40 @@ impl ProbeService {
             let live_probe = probes
                 .get(&input.session_id)
                 .ok_or_else(|| ServiceError::ProbeNotFound(input.session_id.clone()))?;
-            match live_probe.backend.read_since(input.cursor) {
-                Ok((events, new_cursor, status)) => {
-                    let stale = matches!(status, chronos_domain::CursorStatus::Stale);
-                    (events, new_cursor, stale)
-                }
-                Err(chronos_domain::TraceError::CursorStale { expected, current }) => {
-                    // Legacy EventBus drain staleness is a DIFFERENT thing from
-                    // retention: the in-memory buffer moved past the cursor. It
-                    // is reported with its own numbers rather than being dressed
-                    // up as a retention boundary, which would be a Silent Lie
-                    // about why the read failed.
-                    return Err(ServiceError::InvalidInput(format!(
-                        "cursor is stale for the legacy drain path: expected total_pushed={expected}, \
-                         current={current}; re-anchor with a fresh probe_drain"
-                    )));
-                }
-                Err(e) => {
-                    return Err(ServiceError::DrainFailed(e.to_string()));
-                }
-            }
-        }; // lock dropped here
+            (
+                live_probe
+                    .backend
+                    .resolve_context(Some(live_probe.target.clone())),
+                live_probe.backend.clone_resolver_pipeline(),
+            )
+        };
 
-        let total_buffered = events.len();
+        let project = |event: &chronos_domain::TraceEvent, rc: &ResolveContext| -> SemanticEvent {
+            // Pure projection through the same resolver pipeline the producer
+            // used; no EventBus access.
+            pipeline.resolve(event, rc)
+        };
 
-        // REC-C2.1.6: count live tripwire matches for the `tripwires_fired`
-        // signal using the PURE matcher. This is a live statistic, not
-        // evidence: durable firing evidence is derived into the ExecutionLog
-        // (see `tripwire_evidence::derive_firings_*`). Previously this wrote
-        // into the legacy `fired_buffer`, which nothing read any more.
-        let mut tripwires_fired = 0usize;
-        if !events.is_empty() {
-            let mgr = Arc::clone(ctx.tripwire_manager);
-            for ev in &events {
-                tripwires_fired += mgr.matching_semantic(ev).len();
-            }
-        }
+        let page = crate::canonical_drain::read_canonical_drain_page(
+            &log,
+            cursor.as_ref(),
+            // Scan enough raw events that `offset`/`limit` slicing still has the
+            // window it was asked for. The cursor is derived from what was
+            // EXAMINED, not from the slice that is returned.
+            input.offset.saturating_add(input.limit).max(1),
+            crate::canonical_drain::DEFAULT_MAX_EXAMINED_RECORDS,
+            crate::canonical_drain::DEFAULT_MAX_DERIVED_PER_SOURCE,
+            &ctx_obj,
+            &project,
+        )?;
 
         Ok(ProbeDrainResult {
-            events,
-            new_cursor,
-            cursor_stale,
-            total_buffered,
-            tripwires_fired,
+            events: page.events,
+            evidence_cursor: Some(page.next_cursor.encode()),
+            completeness: page.completeness,
+            exhausted: page.exhausted,
+            total_buffered: page.raw_events,
+            tripwires_fired: page.tripwires_fired,
         })
     }
 

@@ -22,7 +22,7 @@ use chronos_log::{EventSeq, ExecutionKind, TripwireFiredEvidence};
 
 use crate::error::ServiceError;
 use crate::events_cursor::EventsCursorV1;
-use crate::events_log_read::decode;
+use crate::events_log_read::{decode, payload_tag, Completeness, CompletenessReport};
 use crate::session_log::SessionExecutionLog;
 
 /// Default number of `Raw` events a canonical drain page returns.
@@ -34,21 +34,6 @@ pub const DEFAULT_MAX_EXAMINED_RECORDS: u64 = 50_000;
 /// A pathological cluster fails explicitly instead of making the "Raw plus its
 /// derived records" unit unbounded.
 pub const DEFAULT_MAX_DERIVED_PER_SOURCE: usize = 4_096;
-
-/// What the page can prove about the region it examined.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PageCompleteness {
-    /// Reached the tail with no gap in the examined region.
-    Complete,
-    /// A gap intersects the examined region: the page cannot claim continuity
-    /// even if every requested `Raw` decoded.
-    GapDetected {
-        from: EventSeq,
-        to_exclusive: EventSeq,
-    },
-    /// The scan budget ran out before the tail.
-    Partial,
-}
 
 /// One canonical probe-drain page.
 #[derive(Debug, Clone)]
@@ -66,7 +51,11 @@ pub struct CanonicalDrainPage {
     pub examined_records: u64,
     /// `Raw` events returned.
     pub raw_events: usize,
-    pub completeness: PageCompleteness,
+    /// Completeness of the **examined range**, using the same vocabulary as
+    /// `events_read` (REC-C1.3/C1.4). This is evidence truth, not pagination:
+    /// a page that stopped at `max_raw_events` can still be `Complete` for the
+    /// range it examined. `exhausted` is the pagination/tail fact.
+    pub completeness: CompletenessReport,
     /// True when the scan reached the end of what the log currently holds.
     pub exhausted: bool,
 }
@@ -120,15 +109,13 @@ pub fn read_canonical_drain_page(
     let mut examined: u64 = 0;
     let mut position = from;
     let mut derived_since_raw = 0usize;
-    let mut completeness = PageCompleteness::Complete;
+    let mut gap_seen: Option<(EventSeq, EventSeq)> = None;
     let mut exhausted = false;
 
     'scan: loop {
+        // Budget exhaustion stops the page; it says nothing about the
+        // completeness of the range already examined.
         if examined >= max_examined_records {
-            completeness = match completeness {
-                PageCompleteness::Complete => PageCompleteness::Partial,
-                other => other,
-            };
             break;
         }
         let page = log
@@ -136,12 +123,10 @@ pub fn read_canonical_drain_page(
             .read_from_seq(position, 512)
             .map_err(|e| ServiceError::DrainFailed(format!("probe_drain read: {e}")))?;
 
-        if !page.gaps.is_empty() {
-            let first = &page.gaps[0];
-            completeness = PageCompleteness::GapDetected {
-                from: first.first_missing,
-                to_exclusive: EventSeq::new(first.last_missing.0 + 1),
-            };
+        if gap_seen.is_none() {
+            if let Some(first) = page.gaps.first() {
+                gap_seen = Some((first.first_missing, EventSeq::new(first.last_missing.0 + 1)));
+            }
         }
 
         for record in &page.records {
@@ -151,10 +136,6 @@ pub fn read_canonical_drain_page(
                 break 'scan;
             }
             if examined >= max_examined_records {
-                completeness = match completeness {
-                    PageCompleteness::Complete => PageCompleteness::Partial,
-                    other => other,
-                };
                 break 'scan;
             }
 
@@ -164,9 +145,17 @@ pub fn read_canonical_drain_page(
             match record.kind {
                 ExecutionKind::Raw => {
                     derived_since_raw = 0;
-                    if let Some(event) = decode(record) {
-                        events.push(project(&event, ctx));
-                    }
+                    // Fail closed: an undecodable Raw must not be skipped while
+                    // its derived firings are still counted, and no cursor may
+                    // advance over evidence we could not read. Same policy as
+                    // `events_read`.
+                    let event =
+                        decode(record).ok_or_else(|| ServiceError::EvidenceDecodeFailed {
+                            session_id: log.session_id().as_str().to_string(),
+                            seq: record.seq.0,
+                            payload_tag: payload_tag(record),
+                        })?;
+                    events.push(project(&event, ctx));
                 }
                 ExecutionKind::TripwireFired => {
                     derived_since_raw += 1;
@@ -181,11 +170,8 @@ pub fn read_canonical_drain_page(
                 }
                 // A producer-recorded gap marker is gap evidence too.
                 ExecutionKind::GapMarker => {
-                    if matches!(completeness, PageCompleteness::Complete) {
-                        completeness = PageCompleteness::GapDetected {
-                            from: record.seq,
-                            to_exclusive: EventSeq::new(record.seq.0 + 1),
-                        };
+                    if gap_seen.is_none() {
+                        gap_seen = Some((record.seq, EventSeq::new(record.seq.0 + 1)));
                     }
                 }
             }
@@ -207,6 +193,18 @@ pub fn read_canonical_drain_page(
     let next_cursor = EventsCursorV1::start(log.session_id().clone())
         .advanced_to(position)
         .map_err(|e| ServiceError::InvalidInput(format!("probe_drain cursor advance: {e}")))?;
+
+    // Completeness describes the EXAMINED range, exactly like events_read.
+    // Stopping at a budget is pagination, not evidence loss.
+    let completeness = CompletenessReport {
+        status: match gap_seen {
+            Some(_) => Completeness::GapDetected,
+            None => Completeness::Complete,
+        },
+        scope: CompletenessReport::SCOPE_EXAMINED_RANGE,
+        from_seq: from.0,
+        to_seq_exclusive: position.0,
+    };
 
     Ok(CanonicalDrainPage {
         raw_events: events.len(),
@@ -365,7 +363,7 @@ mod tests {
             page.tripwires_fired, 1,
             "counted from TripwireFired evidence"
         );
-        assert_eq!(page.completeness, PageCompleteness::Complete);
+        assert_eq!(page.completeness.status, Completeness::Complete);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -436,7 +434,15 @@ mod tests {
 
         let first = drain(&log, None, 3).expect("page");
         assert_eq!(first.raw_events, 3);
-        assert!(!first.exhausted);
+        assert!(
+            !first.exhausted,
+            "there is more, so the scan did not reach the tail"
+        );
+        assert_eq!(
+            first.completeness.status,
+            Completeness::Complete,
+            "stopping at a budget is pagination, not evidence loss: the EXAMINED range is complete"
+        );
         assert_eq!(first.next_cursor.next_seq(), EventSeq::new(3));
 
         let second = drain(&log, Some(&first.next_cursor), 100).expect("page");
@@ -465,12 +471,46 @@ mod tests {
         log.handle().flush().ok();
 
         let page = drain(&log, None, 100).expect("page");
-        assert!(
-            matches!(page.completeness, PageCompleteness::GapDetected { .. }),
+        assert_eq!(
+            page.completeness.status,
+            Completeness::GapDetected,
             "a traversed gap must contaminate the page, got {:?}",
             page.completeness
         );
+        assert_eq!(page.completeness.scope, "examined_range");
         assert_eq!(page.raw_events, 2, "both Raw records are still returned");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// DRAIN-7: an undecodable `Raw` fails closed. It must not be skipped
+    /// while its derived firings are still counted, and no cursor may advance
+    /// over evidence we could not read.
+    #[test]
+    fn drain_7_undecodable_raw_fails_closed() {
+        let dir = tempdir("drain7");
+        let log = open_log(&dir, "drain7");
+        // A Raw whose payload is not a TraceEvent.
+        let bad = log
+            .handle()
+            .append(NewExecutionRecord {
+                session_id: log.session_id().clone(),
+                kind: ExecutionKind::Raw,
+                monotonic_ns: 1,
+                payload: ExecutionPayload::new(b"not-json".to_vec(), "broken"),
+                ..Default::default()
+            })
+            .expect("append undecodable raw");
+        append_firing(&log, bad);
+        log.handle().flush().ok();
+
+        let err = drain(&log, None, 10).expect_err("must fail closed");
+        match err {
+            ServiceError::EvidenceDecodeFailed { seq, .. } => {
+                assert_eq!(seq, bad.0, "the error names the undecodable record");
+            }
+            other => panic!("expected EvidenceDecodeFailed, got {other:?}"),
+        }
 
         let _ = std::fs::remove_dir_all(&dir);
     }

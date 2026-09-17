@@ -216,6 +216,14 @@ impl NativeProbeBackend {
         self.resolver_pipeline.resolve(event, ctx)
     }
 
+    /// A clone of the resolver pipeline.
+    ///
+    /// Lets a consumer project durable `Raw` records without holding a lock on
+    /// the live-probe registry per event. The pipeline is stateless per call.
+    pub fn clone_resolver_pipeline(&self) -> ResolverPipeline {
+        self.resolver_pipeline.clone()
+    }
+
     /// The resolution context this backend captured with.
     ///
     /// A deterministic projection needs this context to be reconstructible

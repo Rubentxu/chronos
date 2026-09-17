@@ -50,8 +50,11 @@ async fn m0_01_live_pagination_is_non_destructive() {
 
     tokio::time::sleep(Duration::from_secs(2)).await;
 
-    // First drain — capture cursor and event set.
-    let first = match client.probe_drain_with_cursor(&session_id, None).await {
+    // First drain — no cursor, so the read starts at the retained boundary.
+    let first = match client
+        .probe_drain_with_evidence_cursor(&session_id, None)
+        .await
+    {
         Ok(r) => r,
         Err(e) => {
             eprintln!("m0_01: first probe_drain failed: {}", e);
@@ -60,18 +63,21 @@ async fn m0_01_live_pagination_is_non_destructive() {
         }
     };
 
-    let _cursor = first
-        .cursor
+    let first_cursor = first
+        .evidence_cursor
         .clone()
-        .expect("probe_drain must return a cursor when non-destructive read is implemented");
+        .expect("probe_drain must return a canonical evidence_cursor");
+    assert!(
+        first_cursor.starts_with("ecv1:"),
+        "m0_01: evidence_cursor must be an EventsCursorV1 token, got {first_cursor:?}"
+    );
 
-    // Replay: re-issue a fresh read (no cursor). The implementation is
-    // non-destructive (does not consume the ring buffer), so the replay
-    // MUST observe at least the events that `first` saw (it can see more
-    // if new events arrived in between). Under a destructive drain,
-    // replay would observe 0 or far fewer events — that is the bug this
-    // cycle fixes.
-    let replay = match client.probe_drain_with_cursor(&session_id, None).await {
+    // Replay: a fresh read (no cursor). The read is non-destructive over the
+    // durable log, so the replay MUST observe at least the events `first` saw.
+    let replay = match client
+        .probe_drain_with_evidence_cursor(&session_id, None)
+        .await
+    {
         Ok(r) => r,
         Err(e) => {
             eprintln!("m0_01: replay probe_drain failed: {}", e);
@@ -87,34 +93,42 @@ async fn m0_01_live_pagination_is_non_destructive() {
         replay.events.len()
     );
 
-    // Cursor staleness flag must be false on a fresh ring (no eviction expected here).
-    let cursor_stale = replay.cursor_stale.unwrap_or(false);
-    assert!(
-        !cursor_stale,
-        "m0_01: cursor_stale should be false for fresh ring"
-    );
-
-    // Re-issuing with the same cursor that was just returned must not
-    // error (cursor is fresh and matches the live ring). The number of
-    // events returned may be 0 (if no new arrivals) or >0 (if the probe
-    // emitted more events between the two reads); both are valid for
-    // the non-destructive contract.
-    let replay_cursor = replay.cursor.clone().expect("replay must include cursor");
-    let re_replay = client
-        .probe_drain_with_cursor(&session_id, Some(replay_cursor))
+    // REC-C2.2.2: continuing from a cursor must NOT re-deliver what that page
+    // examined. This replaces the old ring-buffer `cursor_stale` assertion.
+    let continued = client
+        .probe_drain_with_evidence_cursor(&session_id, Some(first_cursor.as_str()))
         .await
-        .expect("m0_01: re-replay with same cursor must not error");
-    assert!(
-        !re_replay.cursor_stale.unwrap_or(false),
-        "m0_01: re-replay cursor_stale should be false"
+        .expect("m0_01: continuing from a returned cursor must not error");
+
+    let seen: std::collections::HashSet<u64> = first.events.iter().map(|e| e.event_id).collect();
+    for ev in &continued.events {
+        assert!(
+            !seen.contains(&ev.event_id),
+            "m0_01: cursor reuse re-read event {} — a cursor must advance past everything examined",
+            ev.event_id
+        );
+    }
+
+    // The completeness model is the events_read one, scoped to the examined range.
+    let completeness = continued
+        .completeness
+        .as_ref()
+        .expect("m0_01: probe_drain must report completeness");
+    assert_eq!(
+        completeness.scope, "examined_range",
+        "m0_01: completeness must describe the examined range, not pagination"
     );
 
-    // Spot-check that the response now exposes the new cursor + total_buffered
-    // fields required by REQ-CursorInProbeDrainResponse.
+    // The response exposes the canonical cursor plus the compatibility field.
     assert!(
-        replay.cursor.is_some(),
-        "m0_01: response must include cursor field"
+        replay.evidence_cursor.is_some(),
+        "m0_01: response must include evidence_cursor"
     );
+    assert!(
+        replay.legacy_cursor.is_none(),
+        "m0_01: legacy_cursor must be null — it carries no evidence"
+    );
+
     assert!(
         replay.total_buffered >= replay.events.len(),
         "m0_01: total_buffered must be >= events.len()"
@@ -799,8 +813,14 @@ async fn m0_04_tripwires_evaluated_on_canonical_flow_impl() {
     // iff the tripwire was registered successfully.
     let tw_id = match client
         .tripwire_create(chronos_sandbox::client::types::TripwireCreateParams {
-            condition: chronos_sandbox::client::types::TripwireConditionType::FunctionName {
-                pattern: "SyscallEnter".to_string(),
+            // REC-C2.2.2: a `FunctionName` condition matches a *function
+            // location* (`TraceEvent.location.function`). The ptrace syscall
+            // stream `test_busyloop` produces carries no function location, so
+            // that condition cannot fire here. Use the condition that matches
+            // the stream under test; the narrowing is asserted explicitly
+            // below rather than left implicit.
+            condition: chronos_sandbox::client::types::TripwireConditionType::EventType {
+                event_types: vec!["SyscallEnter".to_string()],
             },
             label: Some("m0_04-syscall-enter".to_string()),
         })
@@ -849,8 +869,49 @@ async fn m0_04_tripwires_evaluated_on_canonical_flow_impl() {
         .unwrap_or(0);
     assert!(
         fired > 0,
-        "m0_04: tripwires_fired must be > 0 because do_work fires the tripwire on every FunctionCalled (raw response: {})",
+        "m0_04: tripwires_fired must be > 0: the EventType(SyscallEnter) tripwire \
+matches the ptrace stream, and proof of firing is persisted at the accepted-Raw \
+seam (raw response: {})",
         raw
+    );
+
+    // The count is EVIDENCE, not live state: re-reading the same durable range
+    // from the start must report the same number, even after a new subscription
+    // is created in between. If this moves, `probe_drain` is still consulting a
+    // live matcher as authority.
+    let late = client
+        .tripwire_create(chronos_sandbox::client::types::TripwireCreateParams {
+            condition: chronos_sandbox::client::types::TripwireConditionType::FunctionName {
+                pattern: "Syscall*".to_string(),
+            },
+            label: Some("m0_04-late-function-name".to_string()),
+        })
+        .await;
+    let _ = late; // the subscription exists now; that is the whole point.
+
+    let reread = match client
+        .call_tool(
+            "probe_drain",
+            serde_json::json!({ "session_id": session_id, "limit": 200 }),
+        )
+        .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("m0_04: re-read probe_drain failed: {}", e);
+            let _ = client.shutdown().await;
+            return;
+        }
+    };
+    let reread_fired = reread
+        .get("tripwires_fired")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    assert_eq!(
+        reread_fired, fired,
+        "m0_04: creating a subscription after the fact changed the firing count for the \
+         same durable range ({fired} -> {reread_fired}); the count must be persisted evidence, \
+         never live matcher state"
     );
 
     let _ = client.probe_stop(&session_id).await;

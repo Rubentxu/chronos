@@ -241,12 +241,41 @@ pub struct ProbeDrainResponse {
     pub limit: usize,
     pub events: Vec<SemanticEvent>,
     pub hint: Option<String>,
-    /// Optional non-destructive read cursor (m0-01-live-pagination).
+    /// Canonical `ecv1:...` cursor positioned after the last record EXAMINED.
+    /// Reuse it verbatim to continue without re-reading.
     #[serde(default)]
-    pub cursor: Option<CursorDto>,
-    /// True when the server rejected the supplied cursor as stale.
+    pub evidence_cursor: Option<String>,
+    /// Completeness of the examined range — same model as `events_read`.
     #[serde(default)]
-    pub cursor_stale: Option<bool>,
+    pub completeness: Option<CompletenessReportDto>,
+    /// True when the scan reached the end of what the log currently holds.
+    #[serde(default)]
+    pub exhausted: Option<bool>,
+    /// COMPATIBILITY ONLY: carries no evidence. The legacy ring cursor is a
+    /// different coordinate space and is never converted into an EventSeq.
+    #[serde(default)]
+    pub legacy_cursor: Option<serde_json::Value>,
+    /// Persisted `TripwireFired` records in this page's examined range.
+    #[serde(default)]
+    pub tripwires_fired: Option<usize>,
+}
+
+/// Evidence completeness for the examined range (REC-C1.3/C1.4 vocabulary).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CompletenessReportDto {
+    /// `complete` | `gap_detected` | `partial` | `unknown` | `unsupported`.
+    pub status: String,
+    /// Always `examined_range` today.
+    pub scope: String,
+    pub from_seq: u64,
+    /// Exclusive upper bound of the examined range.
+    pub to_seq_exclusive: u64,
+}
+
+impl CompletenessReportDto {
+    pub fn is_complete(&self) -> bool {
+        self.status == "complete"
+    }
 }
 
 /// Parameters for probe_inject.
