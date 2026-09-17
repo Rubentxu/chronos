@@ -249,3 +249,155 @@ async fn r1_unclean_restart_reproduces_same_events_page() {
     second.shutdown().await.unwrap();
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// REC-C1.5 UAT-R2 — identical stale before/after restart.
+///
+/// Invariant: when a cursor's `next_seq` falls below the durable retention
+/// watermark, `events_read` returns a typed `CursorStale` carrying both
+/// numbers. Across a process restart, the SAME cursor must produce a
+/// `CursorStale` with EXACTLY the same `requested_next_seq` and
+/// `retained_from_seq` — no drift, no inference.
+///
+/// This proves restart cannot silently mutate the retention boundary.
+#[tokio::test]
+async fn r2_stale_cursor_is_identical_before_and_after_restart() {
+    use chronos_sandbox::client::error::McpSandboxError;
+
+    let root = unique_root().join("r2");
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    std::env::set_var("CHRONOS_EXECUTION_LOG_DIR", &root);
+    let db = root.join("sessions.redb");
+    let fixture = McpSession::fixture_path("test_add").expect("fixture");
+
+    // Pre-create a session's ExecutionLog directory with a manifest whose
+    // `retained_from` is already past 0. The bootstrap path (REC-C1.5.4) will
+    // discover this directory, reopen it, and publish it into the registry.
+    //
+    // We craft a fixed UUID so the test is reproducible across runs.
+    let session_id = "11111111-2222-3333-4444-555555555555".to_string();
+    let session_log_dir = root.join(&session_id);
+    std::fs::create_dir_all(&session_log_dir).unwrap();
+    const RETAINED_FROM: u64 = 5;
+    let manifest = serde_json::json!({
+        "schema_version": 2,
+        "session_id": session_id,
+        "retained_from": RETAINED_FROM,
+        "created_at_unix_ms": 0u64,
+        "tail_state": {
+            "state": "unknown",
+            "reason": "synthetic fixture for UAT-R2"
+        }
+    });
+    let manifest_path = session_log_dir.join("execution-log.manifest.json");
+    std::fs::write(
+        &manifest_path,
+        serde_json::to_vec_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
+
+    // Helper: send events_read with a stale cursor (seq#0 < retained_from=5)
+    // and capture the CursorStale payload from the server's error text.
+    async fn read_stale(
+        client: &mut McpTestClient,
+        sid: &str,
+    ) -> CursorStaleNumbers {
+        let cursor_encoded = format!("ecv1:1:{}:{}:0", sid.len(), sid);
+        let result = client
+            .call_tool(
+                "events_read",
+                serde_json::json!({
+                    "mode": "Query",
+                    "session_id": sid,
+                    "cursor": cursor_encoded,
+                    "limit": 16,
+                }),
+            )
+            .await;
+        let text = match result {
+            Ok(value) => serde_json::to_string(&value).unwrap_or_default(),
+            Err(McpSandboxError::RpcError(msg)) => msg,
+            Err(other) => panic!("unexpected MCP error: {other}"),
+        };
+        parse_cursor_stale_text(&text)
+            .unwrap_or_else(|| panic!("server response did not contain CursorStale: {text:?}"))
+    }
+
+    // Process A: bootstrap republishes the pre-seeded ExecutionLog directory
+    // into the registry with the watermark already advanced to 5.
+    let mut first = McpTestClient::start_with_db_path(db.clone()).await.unwrap();
+    let stale_a = read_stale(&mut first, &session_id).await;
+    assert_eq!(
+        stale_a.requested_next_seq, 0,
+        "process A: requested_next_seq must equal the supplied cursor"
+    );
+    assert_eq!(
+        stale_a.retained_from_seq, RETAINED_FROM,
+        "process A: retained_from_seq must equal the manifest's watermark"
+    );
+
+    // SIGKILL the MCP server mid-session (no clean shutdown, no seal).
+    first.force_kill().await.unwrap();
+    drop(first);
+
+    // Process B: fresh MCP server against the same root and DB. The manifest
+    // is read back as-is by bootstrap (no inference), so the watermark and
+    // the cursor stale mapping are byte-for-byte the same.
+    let mut second = McpTestClient::start_with_db_path(db).await.unwrap();
+    let stale_b = read_stale(&mut second, &session_id).await;
+
+    assert_eq!(
+        stale_b.requested_next_seq, stale_a.requested_next_seq,
+        "requested_next_seq must survive restart"
+    );
+    assert_eq!(
+        stale_b.retained_from_seq, stale_a.retained_from_seq,
+        "retained_from_seq must survive restart"
+    );
+    // Full struct equality: not just the two fields, but the whole payload.
+    assert_eq!(
+        stale_b, stale_a,
+        "the CursorStale payload must be byte-identical across restart"
+    );
+
+    second.shutdown().await.unwrap();
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// Parse the `CursorStale { requested_next_seq, retained_from_seq }` payload
+/// out of an MCP error text. The server formats it as either:
+///   `"Cursor at seq {X} is stale; the earliest available position is {R}. ..."` (callable surface)
+/// or
+///   `"cursor at seq {X} is before the retention boundary {R}"` (typed error path)
+/// Both forms carry the same two numbers; we accept either.
+fn parse_cursor_stale_text(text: &str) -> Option<CursorStaleNumbers> {
+    // Find the requested seq number, after either "Cursor at seq " or "cursor at seq ".
+    let x_str = text
+        .split("ursor at seq ")
+        .nth(1)?
+        .split(|c: char| !c.is_ascii_digit())
+        .next()?;
+    let x: u64 = x_str.parse().ok()?;
+    // Find the retained seq number, after either "earliest available position is " or "retention boundary ".
+    let r_str = if let Some(after) = text.split("earliest available position is ").nth(1) {
+        after
+            .split(|c: char| !c.is_ascii_digit())
+            .next()?
+    } else {
+        text.split("retention boundary ").nth(1)?
+            .split(|c: char| !c.is_ascii_digit())
+            .next()?
+    };
+    let r: u64 = r_str.parse().ok()?;
+    Some(CursorStaleNumbers {
+        requested_next_seq: x,
+        retained_from_seq: r,
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CursorStaleNumbers {
+    requested_next_seq: u64,
+    retained_from_seq: u64,
+}
+
