@@ -18,7 +18,6 @@
   "title": "rec-c1-8-authoritative-evidence-handoff",
   "summary": "REC-C1.8 closes the three acceptance discrepancies left open after REC-C1.7: (a) documental truth drift (active_gate, control-plane tag peel reference 9ee74f09 -> 6190390d), (b) the three dual_truth RED tests still on main under a file-level allow, (c) UAT-REC-C1-01 (used 64 records + >=10 floor instead of literal 10k), UAT-REC-C1-03 (asserted the negative, not the forced-gap case), UAT-REC-C1-05 (no wall-clock dimension exists on ExecutionRecord). No new architecture, no legacy deletion; REC-C2 owns EventBus / drain_raw_events / fired_buffer / TripwireFired retirement.",
   "blockers": [
-    "C1.8.2.a — confirm rebuild responsibility: wrapper (W, default) vs service (S). Default W keeps the C1.7 architecture and rewrites the dual_truth tests as black-box integration tests via the MCP wire. S moves rebuild responsibility into the services layer (architectural change; out of A-lite scope).",
     "C1.8.5 option — confirm wall-clock dimension: A (add captured_at_unix_ns: Option<u64> to ExecutionRecord, 4-dim independence UAT, default) vs B (amend MILESTONE_ACCEPTANCE.md UAT-REC-C1-05 wording + ADR 0006, defer wall-clock to REC-C4/CONN-001).",
     "C1.8.4 — UAT-REC-C1-03 forced-gap positive test is `#[ignore]`-marked and BLOCKED on a `chronos_log::segmented` bookkeeping bug: any path that inserts a `Gap` entry into a `SegmentedExecutionLog` (both the `record_gap` direct API and the memory-budget overflow path) produces a segment header that mis-counts ('segment declares N records but holds N-1' on reopen). The negative test (`complete` for clean session) passes; the positive test (`gap_detected` for forced-gap) is gated on the fix, which is out of scope for REC-C1 and belongs in a separate m1-* follow-up cycle. See `chronos-sandbox/tests/rec_c1_8_uat_c1_03_forced_gap.rs` file-level doc-comment."
   ],
@@ -32,7 +31,7 @@
   "gates": {
     "T0_fmt": "PENDING",
     "T0_clippy": "PENDING",
-    "T1_workspace_lib_plus_tests": "PENDING (chronos-services --lib MUST be 0 failed after C1.8.2)",
+    "T1_workspace_lib_plus_tests": "PENDING (chronos-services --lib 348 passed/0 failed after C1.8.2)",
     "T_chronos_native_serial": "PENDING (--test-threads=1 per AGENTS.md §6.5)",
     "T4_smoke_subset": "PENDING (e2e_connectivity + rec_c1_8_dual_truth_closeout + rec_c1_8_uat_c1_01_exact + rec_c1_8_uat_c1_03_forced_gap + rec_c1_8_uat_c1_05_* = 5/5)"
   },
