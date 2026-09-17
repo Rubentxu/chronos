@@ -343,7 +343,6 @@ async fn test_trace_syscalls_false_still_captures_events() {
         .probe_start_with_params(
             fixture.to_str().unwrap(),
             false, // trace_syscalls = false
-            50000,
         )
         .await
         .expect("probe_start failed");

@@ -108,9 +108,6 @@ impl ChronosSessionLifecycleService {
                 "session_start{action=spawn} requires `spawn_fields`".to_string(),
             )
         })?;
-        // REC-C2.3: `bus_capacity` no longer wires to anything — the canonical
-        // sink is the session-owned ExecutionLog. The wire field is preserved
-        // for backward compatibility (see C2.3.4) but is not consumed here.
         let probe_input = crate::probe::ProbeStartInput {
             program: spawn_fields.program.clone(),
             args: spawn_fields.args,
@@ -123,14 +120,9 @@ impl ChronosSessionLifecycleService {
         };
         let out = ProbeService::start(ctx.probe, probe_input).await?;
         let lang = out.language.clone();
-        // REC-C2.3: no live bus to fill, so `bus_fill` is always 0. The wire
-        // shape is preserved for backward compat; `bus_capacity` is left None
-        // because nothing allocates one.
         let snapshot = CapabilitySnapshot {
             probe_type: Some("ebpf_user".to_string()),
             language: Some(lang.clone()),
-            bus_capacity: None,
-            bus_fill: Some(0),
             query_engine_ready: false,
             active_subscriptions: vec![],
             tail_sealed: false,
@@ -144,7 +136,6 @@ impl ChronosSessionLifecycleService {
             language: Some(lang),
             event_count: None,
             duration_ms: None,
-            bus_capacity: None,
             capability_snapshot: snapshot,
             provenance: lifecycle_provenance("session_start:spawn"),
         })
@@ -165,8 +156,6 @@ impl ChronosSessionLifecycleService {
         let snapshot = CapabilitySnapshot {
             probe_type: Some("loaded".to_string()),
             language: Some(meta.language.clone()),
-            bus_capacity: None,
-            bus_fill: None,
             query_engine_ready: true,
             active_subscriptions: vec![],
             tail_sealed: meta.tail_sealed,
@@ -180,7 +169,6 @@ impl ChronosSessionLifecycleService {
             language: Some(meta.language),
             event_count: Some(meta.event_count),
             duration_ms: Some(meta.duration_ms),
-            bus_capacity: None,
             capability_snapshot: snapshot,
             provenance: lifecycle_provenance("session_start:load"),
         })
@@ -206,14 +194,9 @@ impl ChronosSessionLifecycleService {
                 execution_log_dir: None,
             },
         )?;
-        // REC-C2.3: see note in `spawn()` — `bus_capacity` is preserved on the
-        // wire but is no longer meaningful, since the canonical sink is the
-        // session-owned ExecutionLog.
         let snapshot = CapabilitySnapshot {
             probe_type: Some("ptrace_attach".to_string()),
             language: Some(out.language.clone()),
-            bus_capacity: None,
-            bus_fill: Some(0),
             query_engine_ready: false,
             active_subscriptions: vec![],
             tail_sealed: false,
@@ -227,7 +210,6 @@ impl ChronosSessionLifecycleService {
             language: Some(out.language),
             event_count: None,
             duration_ms: None,
-            bus_capacity: None,
             capability_snapshot: snapshot,
             provenance: lifecycle_provenance("session_start:attach"),
         })
@@ -344,8 +326,6 @@ impl ChronosSessionLifecycleService {
                 let snapshot = CapabilitySnapshot {
                     probe_type: Some("ebpf_user".to_string()),
                     language: Some(language.to_string()),
-                    bus_capacity: None,
-                    bus_fill: None,
                     query_engine_ready: true,
                     active_subscriptions: vec![],
                     tail_sealed: sealed_at.is_some(),
@@ -372,8 +352,6 @@ impl ChronosSessionLifecycleService {
                 let snapshot = CapabilitySnapshot {
                     probe_type: Some("ebpf_user".to_string()),
                     language: Some(meta.language.clone()),
-                    bus_capacity: None,
-                    bus_fill: None,
                     query_engine_ready: true,
                     active_subscriptions: vec![],
                     tail_sealed: meta.tail_sealed,
@@ -596,11 +574,6 @@ impl ChronosSessionLifecycleService {
             event_type_counts.insert(EventType::FunctionEntry, total);
         }
         DynamicCapabilities {
-            // REC-C2.3: there is no live bus; the canonical sink is the
-            // session's ExecutionLog. These counters are kept on the wire
-            // shape for backward compat but always report 0 (no live ring).
-            bus_capacity: 0,
-            bus_fill: 0,
             event_types_emitted: event_type_counts.keys().copied().collect(),
             event_type_counts,
             query_engine_ready: true,

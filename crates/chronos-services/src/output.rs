@@ -2014,8 +2014,6 @@ pub struct SessionStartSpawnFields {
     #[serde(default)]
     pub trace_syscalls: bool,
     #[serde(default)]
-    pub bus_capacity: Option<usize>,
-    #[serde(default)]
     pub track_function_frames: bool,
 }
 
@@ -2032,8 +2030,6 @@ pub struct SessionStartOutput {
     pub event_count: Option<usize>,
     #[serde(default)]
     pub duration_ms: Option<u64>,
-    #[serde(default)]
-    pub bus_capacity: Option<usize>,
     pub capability_snapshot: CapabilitySnapshot,
     pub provenance: SessionLifecycleProvenance,
 }
@@ -2149,10 +2145,6 @@ pub struct CapabilitySnapshot {
     #[serde(default)]
     pub language: Option<String>,
     #[serde(default)]
-    pub bus_capacity: Option<usize>,
-    #[serde(default)]
-    pub bus_fill: Option<usize>,
-    #[serde(default)]
     pub query_engine_ready: bool,
     #[serde(default)]
     pub active_subscriptions: Vec<String>,
@@ -2204,8 +2196,6 @@ pub enum ProjectionKind {
 /// Dynamic capability surface (per-session, live).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DynamicCapabilities {
-    pub bus_capacity: usize,
-    pub bus_fill: usize,
     pub event_types_emitted: Vec<EventType>,
     pub event_type_counts: HashMap<EventType, u64>,
     pub query_engine_ready: bool,
