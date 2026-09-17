@@ -1,0 +1,49 @@
+{
+  "cycle_id": "m1-gap-segment-accounting-repair",
+  "route": "A-min",
+  "status": "in_progress",
+  "verify_status": null,
+  "release_status": null,
+  "archive_status": null,
+  "head_sha": null,
+  "base_sha": "4e0a1344",
+  "main_sha": "4e0a1344",
+  "tag": "m1-gap-segment-accounting-repair",
+  "branch": "feat/m1-gap-segment-accounting-repair",
+  "remote_tag": null,
+  "peel_match": null,
+  "tier_required": "T3+T4-smoke",
+  "created_at": "2026-09-17",
+  "closed_at": null,
+  "title": "m1-gap-segment-accounting-repair",
+  "summary": "Pre-REC-C2 confidence repair. FIND-C1.8-01: a durable segment containing a Gap cannot be reopened because the header count (every persisted SegmentEntry = records + gaps, from buffer.len()) disagrees with the replay validator (ExecutionRecord entries only). Characterization measured 4 declared vs 3 actual. Fix: one unit for writer/header/replay, header field renamed record_count -> entry_count (byte layout unchanged, no data migration). Makes the #[ignore]-marked C1.8 UAT uat_rec_c1_03_forced_gap_reports_gap_detected GREEN and adds GAP-PERSIST-1..6.",
+  "blockers": [],
+  "findings_introduced": {
+    "no_action": [],
+    "applied": []
+  },
+  "commits": [],
+  "gates": {
+    "T0_fmt": "PENDING",
+    "T0_clippy": "PENDING",
+    "T1_workspace_lib_plus_tests": "PENDING",
+    "T_chronos_native_serial": "PENDING (--test-threads=1 per AGENTS.md §6.5)",
+    "T4_smoke_subset": "PENDING (rec_c1_8_uat_c1_03_forced_gap 2/2 + e2e_connectivity 1/1 + rec_c1_8_dual_truth_closeout 3/3 + rec_c1_8_uat_c1_01_exact 2/2 = 8/8)"
+  },
+  "pre_existing_flakes_handled": [
+    "chronos-native lib tests require --test-threads=1 (ptrace collisions; documented in AGENTS.md §6.5)"
+  ],
+  "smoke_subset": [
+    "rec_c1_8_uat_c1_03_forced_gap",
+    "e2e_connectivity",
+    "rec_c1_8_dual_truth_closeout",
+    "rec_c1_8_uat_c1_01_exact"
+  ],
+  "verify_commands": [],
+  "archive_convention": "rec-c1/m1 stream uses archive_status=ready; no .sddk-knowledge/changes/archive/m1-gap-* directory.",
+  "cc_drift": {
+    "CC#39_pre_existing_intentional": "cycles/index.md Total cycles vs filesystem. Pre-existing; belongs in a separate gov-* cycle (do NOT silently mask).",
+    "CC#18_rec_c1_7_pre_existing": "rec-c1-7-projection-authority-acceptance missing verify-findings.json (C1.7 gap). gov-* owns the backfill."
+  },
+  "notes": "Cycle opened off main@4e0a1344 immediately after REC-C1.8 closure, at the user's direction, before starting REC-C2. Root cause is fully characterized before any fix is written: writer counts entries, replay counts records. This cycle closes FIND-C1.8-01 and un-ignores the C1.8 forced-gap UAT. Closure also flips FIND-C1.8-01 in the REC-C1.8 verify-findings from open_deferred to closed."
+}
