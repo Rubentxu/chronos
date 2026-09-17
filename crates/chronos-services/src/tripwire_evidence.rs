@@ -149,27 +149,46 @@ pub fn read_firings(
     from: EventSeq,
     limit: usize,
 ) -> Result<Vec<(EventSeq, TripwireFiredEvidence)>, ServiceError> {
-    let mut out = Vec::new();
+    Ok(read_firings_page(log, from, limit)?.0)
+}
+
+/// Paged firing read with the C1 cursor semantics.
+///
+/// Returns the firings found and the position to use as the next cursor.
+///
+/// **The returned position is after the last record _examined_, not after the
+/// last firing _found_.** Filters change what you get back; they never change
+/// what the position means (REC-C1.3). Advancing to the last firing's seq would
+/// make a page that ends on a non-firing record either re-scan or skip.
+pub fn read_firings_page(
+    log: &SessionExecutionLog,
+    from: EventSeq,
+    max_firings: usize,
+) -> Result<(Vec<(EventSeq, TripwireFiredEvidence)>, EventSeq), ServiceError> {
+    let mut firings: Vec<(EventSeq, TripwireFiredEvidence)> = Vec::new();
     let mut position = from;
-    // Bound the scan the same way the projection does.
-    let mut remaining = 64u64;
-    while remaining > 0 {
-        remaining -= 1;
+    let mut remaining_pages = 64u64;
+
+    while remaining_pages > 0 {
+        remaining_pages -= 1;
         let page = log
             .handle()
             .read_from_seq(position, 512)
             .map_err(|e| ServiceError::DrainFailed(format!("read firings: {e}")))?;
+
         for record in &page.records {
+            // Advance past every record we examine, firing or not.
+            position = EventSeq::new(record.seq.0 + 1);
             if record.kind == ExecutionKind::TripwireFired {
                 if let Ok(Some(ev)) = TripwireFiredEvidence::from_payload(&record.payload) {
-                    out.push((record.seq, ev));
-                    if out.len() >= limit {
-                        return Ok(out);
+                    firings.push((record.seq, ev));
+                    if firings.len() >= max_firings {
+                        return Ok((firings, position));
                     }
                 }
             }
-            position = EventSeq::new(record.seq.0 + 1);
         }
+
         if page.exhausted {
             break;
         }
@@ -178,7 +197,40 @@ pub fn read_firings(
         }
         position = page.position_after;
     }
-    Ok(out)
+
+    Ok((firings, position))
+}
+
+/// Count firings per subscription by scanning the log.
+///
+/// `fire_count` is derived evidence, not a mutable counter (REC-C2.1.5): a
+/// counter that is never incremented reads 0 forever (CHAR-C2-04).
+pub fn firing_counts(
+    log: &SessionExecutionLog,
+) -> Result<std::collections::HashMap<chronos_domain::TripwireId, u64>, ServiceError> {
+    let mut counts: std::collections::HashMap<chronos_domain::TripwireId, u64> = Default::default();
+    let mut position = log.retained_from();
+    let mut remaining_pages = 64u64;
+    while remaining_pages > 0 {
+        remaining_pages -= 1;
+        let page = log
+            .handle()
+            .read_from_seq(position, 512)
+            .map_err(|e| ServiceError::DrainFailed(format!("count firings: {e}")))?;
+        for record in &page.records {
+            position = EventSeq::new(record.seq.0 + 1);
+            if record.kind == ExecutionKind::TripwireFired {
+                if let Ok(Some(ev)) = TripwireFiredEvidence::from_payload(&record.payload) {
+                    *counts.entry(ev.tripwire_id).or_insert(0) += 1;
+                }
+            }
+        }
+        if page.exhausted || page.position_after < position {
+            break;
+        }
+        position = page.position_after;
+    }
+    Ok(counts)
 }
 
 #[cfg(test)]
