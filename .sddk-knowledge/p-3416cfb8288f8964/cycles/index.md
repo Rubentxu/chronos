@@ -41,6 +41,7 @@ Append-only index of all completed cycles in this vault.
 | rec-c1 | rec-c1-8-authoritative-evidence-handoff | A-lite | rec-c1-8-authoritative-evidence-handoff | `451a29b6` | CLOSED |
 
 | rec-c2 | rec-c2.0-eventbus-inventory | A-min | rec-c2.0-eventbus-inventory | `4c7df70e` | CLOSED |
+| rec-c2 | rec-c2.1-tripwire-evidence | A-lite | rec-c2.1-tripwire-evidence | `686a364c` | CLOSED |
 
 See `changes/archive/` for full archive manifests of closed cycles.
 
@@ -50,9 +51,9 @@ See `changes/archive/` for full archive manifests of closed cycles.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-17T14:18Z |
-| Total cycles | 104 |
+| Last updated | 2026-09-17T16:41Z |
+| Total cycles | 105 |
 | m10 cycles | 13 (rows above) |
 | m1 cycles | 2 (m1-execution-log-vertical-slice, m1-gap-segment-accounting-repair) |
 | rec-c1 cycles | 4 (rec-c1-5-closure, rec-c1-6-lifecycle-retention-wire, rec-c1-7-projection-authority-acceptance, rec-c1-8-authoritative-evidence-handoff) |
-| Last archive | rec-c2.0-eventbus-inventory (apply-checkpoint archive_status=ready; durable knowledge sync deferred to gov-* cycle per CC#39) |
+| Last archive | rec-c2.1-tripwire-evidence (apply-checkpoint archive_status=ready; durable knowledge sync deferred to gov-* cycle per CC#39) |
