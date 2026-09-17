@@ -179,3 +179,58 @@ formulation, so it now lives in UAT-C2-01 (bounded growth) and
 `probe_drain_canonical` (no inflation of a persisted range), and `m0_04` keeps
 its own subject: a subscription that predates the capture fires on the canonical
 flow and is visible through `probe_drain`.
+
+
+## Verify gate result (sddk-verify, PASS)
+
+Verdict **PASS**. Subject HEAD `585dfc45`, base `e4fd938c`, clean tree. Nine
+deterministic commands ran on the verified HEAD, no caching and no flakes:
+
+```text
+cargo build --bin chronos-mcp                     exit 0
+cargo fmt --all -- --check                        exit 0
+cargo clippy --workspace --all-targets -D warnings exit 0
+cargo test --workspace (excl sandbox/e2e/native)   exit 0
+cargo test -p chronos-native --lib --test-threads=1 107 passed / 0 failed
+cargo test -p chronos-sandbox (3 suites, serial)  9/9 passed, no server timeouts
+check_legacy_evb.py                               PASS, 21 tracked, CANONICAL=0
+check_legacy_evb.py --strict                      PASS
+```
+
+Vacuity hunt: no vacuous patterns in the four touched sandbox suites; the
+`m0_04` false green is confirmed closed. `m0_acceptance.rs:318`'s `.ok()` is
+anti-vacuous (the surrounding assertion REQUIRES the call to fail).
+
+Explicit answers to the two questions put to it:
+
+- **Does any production path still obtain evidence from the EventBus
+  destructively? NO.** Zero production call sites for
+  `read_since|snapshot*|drain_*`. Trait impls still exist but the canonical path
+  does not invoke them.
+- **Is "the destructive read is gone in the browser path" true or a rename?
+  RECLASSIFICATION WITH MITIGATION.** `ProbeBackend::{drain_events,
+  drain_raw_events}` are genuinely gone from the trait, and
+  `BrowserProbeService::stop` now uses the non-destructive
+  `BrowserAdapter::raw_events`. But `BrowserAdapter::take_semantic_events` still
+  evicts `event_buffer`; it is an inherent browser-local method, documented as
+  destructive, used only by `browser_probe_drain`. Honest because the browser
+  still has no `ExecutionLog` (FIND-C2.2-04, named and deferred). The ratchet's
+  CANONICAL=0 is not achieved by that reclassification: the tracked tokens
+  (`drain_raw_events`, `snapshot_raw`, `snapshot`) genuinely disappeared.
+
+### FIND-C2.2-06 — a destructive read inside a read path (fixed)
+
+Raised by verify. `EbpfAdapter::read_since` fell back to
+`inner.drain_events()` when no cursor was supplied, i.e. it EVICTED the BPF
+ring from inside a method the trait documents as "Non-destructive". Same class
+as everything this cycle removes, and it was latent only because the `ebpf`
+feature is off in the default build (verified: the feature does build here).
+
+Fixed: it now returns a typed `CursorStale` refusal instead of consuming.
+Nothing is lost, because `read_since` has no production caller left after
+C2.2.2. Honest evidence level: the property is enforced by construction and
+both feature configurations build and pass (default 30/30, `--features ebpf`
+34/34), but a runtime assertion for it is impossible on this host — a real
+`EbpfAdapter` needs BPF privileges, and a test that bails out when it cannot
+construct one is exactly the vacuous pattern this cycle removed. Recorded as
+runtime-unverified rather than dressed up.

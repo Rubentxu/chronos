@@ -208,76 +208,34 @@ impl ProbeBackend for EbpfAdapter {
         "ebpf"
     }
 
-    fn read_since(&self, cursor: Option<EventCursor>) -> ReadResult {
-        // The real BPF ring buffer does not support non-destructive peek.
-        // We surface a `Stale` cursor whenever the caller provides one
-        // (signaling "re-anchor from scratch"). With cursor=None we
-        // fall back to the destructive drain — acceptable because the
-        // MCP layer only invokes read_since on live probe state and
-        // currently relies on drain semantics for the eBPF backend.
-        #[cfg(feature = "ebpf")]
-        {
-            use chronos_domain::{EventData, EventType};
-            if cursor.is_some() {
-                return Err(TraceError::CursorStale {
-                    expected: 0,
-                    current: 0,
-                });
-            }
-            let inner = self
-                .inner
-                .lock()
-                .map_err(|e| TraceError::CaptureFailed(e.to_string()))?;
-            let raw_events = inner.drain_events();
-            let total_pushed = raw_events.len() as u64;
-            let semantic: Vec<SemanticEvent> = raw_events
-                .into_iter()
-                .map(|e| {
-                    let fn_name = match &e.data {
-                        EventData::EbpfUprobeHit { symbol_name, .. } => symbol_name.clone(),
-                        _ => e.location.function.clone().unwrap_or_default(),
-                    };
-                    let kind = match e.event_type {
-                        EventType::FunctionEntry => SemanticEventKind::FunctionCalled {
-                            function: fn_name.clone(),
-                            module: None,
-                            arguments: vec![],
-                        },
-                        EventType::FunctionExit => SemanticEventKind::FunctionReturned {
-                            function: fn_name.clone(),
-                            return_value: None,
-                        },
-                        _ => SemanticEventKind::Unresolved,
-                    };
-                    SemanticEvent {
-                        source_event_id: e.event_id,
-                        timestamp_ns: e.timestamp_ns,
-                        thread_id: e.thread_id,
-                        language: Language::Ebpf,
-                        kind,
-                        description: format!("{:?} @ {}", e.event_type, fn_name),
-                    }
-                })
-                .collect();
-            let status = if semantic.is_empty() {
-                CursorStatus::Empty
-            } else {
-                CursorStatus::Fresh
-            };
-            Ok((
-                semantic,
-                EventCursor {
-                    total_pushed,
-                    snapshot_len: 0,
-                },
-                status,
-            ))
-        }
-        #[cfg(not(feature = "ebpf"))]
-        {
-            let _ = cursor;
-            Err(TraceError::capture_failed("eBPF support not compiled in"))
-        }
+    fn read_since(&self, _cursor: Option<EventCursor>) -> ReadResult {
+        // REC-C2.2.4 hardening (raised by the verify gate): this used to fall
+        // back to `inner.drain_events()` when no cursor was supplied, i.e. it
+        // EVICTED the BPF ring from inside a method the trait documents as
+        // "**Non-destructive**, cursor-based read". A read that consumes is a
+        // Silent Lie about what it did, and a second consumer would see
+        // nothing.
+        //
+        // The BPF ring buffer genuinely cannot be peeked, so the honest answer
+        // is a refusal, not a destructive fallback. Nothing should be lost by
+        // refusing: the canonical drain path no longer calls `read_since`
+        // (it reads the session's `ExecutionLog`), and this method has no
+        // production caller left.
+        //
+        // Re-anchoring is the caller's decision, so the refusal is typed and
+        // carries the numbers it knows.
+        //
+        // NOT covered by a runtime test: constructing a real `EbpfAdapter`
+        // needs BPF privileges and kernel support, so a test here either
+        // requires `--features ebpf` plus root (and then bails out, which is
+        // the vacuous-test pattern this cycle just removed) or it cannot run at
+        // all. The property is enforced by construction instead: the
+        // destructive fallback is gone from the source, so there is nothing
+        // left to evict. Verifying it at runtime needs a BPF-capable host.
+        Err(TraceError::CursorStale {
+            expected: 0,
+            current: 0,
+        })
     }
 
     fn stop_probe(&self, _session: &CaptureSession) -> Result<(), TraceError> {

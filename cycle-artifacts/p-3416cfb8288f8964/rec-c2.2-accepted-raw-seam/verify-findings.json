@@ -1,0 +1,156 @@
+{
+  "schema": "sddk.verify-findings.v1",
+  "cycle_id": "rec-c2.2-accepted-raw-seam",
+  "subject": {
+    "base": "e4fd938c",
+    "head": "585dfc45",
+    "dirty": false
+  },
+  "mandatory_gates": {
+    "subject_identity": "PASS",
+    "behavioral_compliance": "PASS",
+    "real_implementation": "PASS",
+    "documentation_discipline": "PASS",
+    "test_strength": "PASS",
+    "regression_and_build": "PASS",
+    "apply_push_discipline": "PASS",
+    "production_readiness": "PASS",
+    "design_and_solid": "PASS",
+    "task_completeness": "PASS"
+  },
+  "verdict": "PASS",
+  "findings": [
+    {
+      "finding_id": "f_rec_c2_2_canon_evidence_drain",
+      "rule_id": "canonical-drain-no-eventbus",
+      "subject": {"base": "e4fd938c", "head": "585dfc45"},
+      "location": {"path": "crates/chronos-services/src/probe.rs", "start_line": 543, "end_line": 611, "symbol": "ProbeService::drain"},
+      "classification": "suggestion",
+      "severity": "low",
+      "confidence": "high",
+      "production_reachable": "yes",
+      "evidence": [
+        {"kind": "source", "observation": "ProbeService::drain reads ctx.execution_logs.get(&input.session_id)? then calls canonical_drain::read_canonical_drain_page. No EventBus::read_since, no matching_semantic, no TripwireManager parameter.", "command": "grep -n 'EventBus::read_since\\|matching_semantic\\|TripwireManager' crates/chronos-services/src/probe.rs", "exit_code": 0, "output_digest": null}
+      ],
+      "owner_phase": "verify"
+    },
+    {
+      "finding_id": "f_rec_c2_2_canon_decode_failclosed",
+      "rule_id": "raw-decode-fail-closed",
+      "subject": {"base": "e4fd938c", "head": "585dfc45"},
+      "location": {"path": "crates/chronos-services/src/canonical_drain.rs", "start_line": 91, "end_line": 96, "symbol": "read_all_raw_events"},
+      "classification": "false_positive",
+      "severity": "low",
+      "confidence": "high",
+      "production_reachable": "yes",
+      "evidence": [
+        {"kind": "source", "observation": "decode(record).ok_or_else(|| ServiceError::EvidenceDecodeFailed { ... })? returns BEFORE position is updated. Same pattern at line 241-246 in read_canonical_drain_page. Verified by drain_7_undecodable_raw_fails_closed test (line 575-605).", "command": "sed -n '85,110p' crates/chronos-services/src/canonical_drain.rs", "exit_code": 0, "output_digest": null}
+      ],
+      "owner_phase": "verify"
+    },
+    {
+      "finding_id": "f_rec_c2_2_canon_completeness_scope",
+      "rule_id": "completeness-scoped-examined-range",
+      "subject": {"base": "e4fd938c", "head": "585dfc45"},
+      "location": {"path": "crates/chronos-services/src/canonical_drain.rs", "start_line": 286, "end_line": 296, "symbol": "read_canonical_drain_page"},
+      "classification": "false_positive",
+      "severity": "low",
+      "confidence": "high",
+      "production_reachable": "yes",
+      "evidence": [
+        {"kind": "source", "observation": "CompletenessReport.scope == SCOPE_EXAMINED_RANGE; status only Complete or GapDetected (no Partial fabrication). Pagination is exhausted: bool. Verified by drain_5/drain_6/drain_3 tests.", "command": "sed -n '286,310p' crates/chronos-services/src/canonical_drain.rs", "exit_code": 0, "output_digest": null}
+      ],
+      "owner_phase": "verify"
+    },
+    {
+      "finding_id": "f_rec_c2_2_consumers_read_log",
+      "rule_id": "probe-stop-and-snapshot-read-log",
+      "subject": {"base": "e4fd938c", "head": "585dfc45"},
+      "location": {"path": "crates/chronos-services/src/probe.rs", "start_line": 465, "end_line": 687, "symbol": "ProbeService::stop, ProbeService::session_snapshot"},
+      "classification": "false_positive",
+      "severity": "low",
+      "confidence": "high",
+      "production_reachable": "yes",
+      "evidence": [
+        {"kind": "source", "observation": "ProbeService::stop (line 505) and ProbeService::session_snapshot (line 681) call canonical_drain::read_all_raw_events(&log)?, not drain_raw_events. BrowserProbeService::stop (browser_probe.rs:217) uses raw_events() (non-destructive).", "command": "sed -n '500,540p;660,690p' crates/chronos-services/src/probe.rs", "exit_code": 0, "output_digest": null}
+      ],
+      "owner_phase": "verify"
+    },
+    {
+      "finding_id": "f_rec_c2_2_trait_destructive_reads_gone",
+      "rule_id": "probe-backend-no-destructive-reads",
+      "subject": {"base": "e4fd938c", "head": "585dfc45"},
+      "location": {"path": "crates/chronos-domain/src/adapter.rs", "start_line": 49, "end_line": 53, "symbol": "ProbeBackend trait"},
+      "classification": "false_positive",
+      "severity": "low",
+      "confidence": "high",
+      "production_reachable": "yes",
+      "evidence": [
+        {"kind": "command", "observation": "Trait methods retained: is_available, name, read_since, stop_probe. drain_events/drain_raw_events removed. ratchet CANONICAL=0, --strict PASS.", "command": "python3 scripts/check_legacy_evb.py --strict", "exit_code": 0, "output_digest": null}
+      ],
+      "owner_phase": "verify"
+    },
+    {
+      "finding_id": "f_rec_c2_2_browser_take_semantic_still_destructive",
+      "rule_id": "browser-local-destructive-read",
+      "subject": {"base": "e4fd938c", "head": "585dfc45"},
+      "location": {"path": "crates/chronos-browser/src/adapter.rs", "start_line": 369, "end_line": 394, "symbol": "BrowserAdapter::take_semantic_events"},
+      "classification": "suggestion",
+      "severity": "medium",
+      "confidence": "high",
+      "production_reachable": "yes",
+      "evidence": [
+        {"kind": "source", "observation": "take_semantic_events still calls s.event_buffer.drain(..).collect() (line 371). It is an INHERENT method, not on the shared ProbeBackend trait, and is documented as destructive (browser_probe.rs:238-242). The browser has no ExecutionLog (FIND-C2.2-04); this is a named, deferred finding.", "command": "sed -n '360,395p' crates/chronos-browser/src/adapter.rs", "exit_code": 0, "output_digest": null}
+      ],
+      "owner_phase": "debt-verify",
+      "exemption": {
+        "authority": "tasks.md FIND-C2.2-04",
+        "reason": "Browser has no ExecutionLog; inherent destructive read confined to documented consumer (browser_probe_drain). Listed as a future cycle's problem.",
+        "expires_at": null
+      }
+    },
+    {
+      "finding_id": "f_rec_c2_2_m0_4_no_longer_vacuous",
+      "rule_id": "test-vacuity-closed",
+      "subject": {"base": "e4fd938c", "head": "585dfc45"},
+      "location": {"path": "chronos-sandbox/tests/m0_acceptance.rs", "start_line": 792, "end_line": 905, "symbol": "m0_04_tripwires_evaluated_on_canonical_flow_impl"},
+      "classification": "false_positive",
+      "severity": "low",
+      "confidence": "high",
+      "production_reachable": "yes",
+      "evidence": [
+        {"kind": "source", "observation": "tripwire_create uses match+panic! on Err (lines 814-839) instead of .ok()+return. Event type is 'syscall_enter' (was 'SyscallEnter'). Asserts fired > 0 (lines 874-880). Documents why post-hoc-subscription race was moved to UAT-C2-01 (lines 882-901).", "command": "sed -n '790,905p' chronos-sandbox/tests/m0_acceptance.rs", "exit_code": 0, "output_digest": null}
+      ],
+      "owner_phase": "verify"
+    },
+    {
+      "finding_id": "f_rec_c2_2_uat_falsifiable",
+      "rule_id": "uat-c2-01-02-03-falsifiable",
+      "subject": {"base": "e4fd938c", "head": "585dfc45"},
+      "location": {"path": "chronos-sandbox/tests/rec_c2_2_uat_c2.rs", "start_line": 1, "end_line": 297, "symbol": "uat_c2_01/02/03"},
+      "classification": "false_positive",
+      "severity": "low",
+      "confidence": "high",
+      "production_reachable": "yes",
+      "evidence": [
+        {"kind": "command", "observation": "3/3 PASS in T4-smoke sandbox run; assertions include cursor non-advance check, completeness.scope == 'examined_range', total > TINY_RING, durable > TINY_RING, and bounded-growth check after second subscription.", "command": "cargo test -p chronos-sandbox --test rec_c2_2_uat_c2 --no-fail-fast -- --test-threads=1", "exit_code": 0, "output_digest": null}
+      ],
+      "owner_phase": "verify"
+    },
+    {
+      "finding_id": "f_rec_c2_2_latent_ebpf_read_since_destructive",
+      "rule_id": "probe-backend-read-since-no-drain",
+      "subject": {"base": "e4fd938c", "head": "585dfc45"},
+      "location": {"path": "crates/chronos-ebpf/src/lib.rs", "start_line": 211, "end_line": 218, "symbol": "EbpfAdapter::read_since"},
+      "classification": "suggestion",
+      "severity": "low",
+      "confidence": "high",
+      "production_reachable": "no",
+      "evidence": [
+        {"kind": "source", "observation": "EbpfAdapter::read_since (#[cfg(feature=\"ebpf\")]) falls back to inner.drain_events() (line 231) when cursor is None. No production caller invokes this path today (canonical probe_drain goes through ExecutionLog). Latent risk: a future caller that uses ProbeBackend dynamically would regress.", "command": "sed -n '210,240p' crates/chronos-ebpf/src/lib.rs", "exit_code": 0, "output_digest": null}
+      ],
+      "owner_phase": "debt-verify"
+    }
+  ],
+  "evidence_gaps": []
+}
