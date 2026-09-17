@@ -58,6 +58,7 @@ fn trace_event_to_log_record(
         _ => (None, None, None),
     };
     NewExecutionRecord {
+        kind: chronos_log::ExecutionKind::Raw,
         session_id: chronos_log::SessionId::new(session_id),
         monotonic_ns,
         payload: ExecutionPayload::new(payload_bytes, format!("{:?}", event.event_type)),
@@ -1109,6 +1110,7 @@ mod tests {
         seq: u64,
     ) -> chronos_log::NewExecutionRecord {
         chronos_log::NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
             session_id: session.clone(),
             monotonic_ns: seq,
             payload: chronos_log::ExecutionPayload::new(vec![], "char"),

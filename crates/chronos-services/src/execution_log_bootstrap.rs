@@ -230,6 +230,8 @@ mod boot_tests {
         let log = SegmentedExecutionLog::open(LogSessionId::new(session), cfg).expect("open");
         for i in 0..n {
             log.append(NewExecutionRecord {
+                kind: chronos_log::ExecutionKind::Raw,
+
                 session_id: LogSessionId::new(session),
                 monotonic_ns: i,
                 payload: chronos_log::ExecutionPayload::new(format!("r{i}").into_bytes(), "t"),

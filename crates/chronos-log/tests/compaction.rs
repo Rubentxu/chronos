@@ -47,6 +47,8 @@ fn compactable_lists_segments_below_cutoff() {
     // Three flushes → three segments [0..1], [2..3], [4..5].
     for i in 0..6u64 {
         log.append(chronos_log::NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(vec![i as u8], "x"),
@@ -78,6 +80,8 @@ fn compact_removes_segments_below_cutoff_and_updates_bookkeeping() {
 
     for i in 0..6u64 {
         log.append(chronos_log::NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(vec![i as u8], "x"),
@@ -124,6 +128,8 @@ fn compact_is_idempotent() {
 
     for i in 0..4u64 {
         log.append(chronos_log::NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(vec![i as u8], "x"),
@@ -157,6 +163,8 @@ fn compact_keeps_in_memory_records_readable() {
 
     for i in 0..6u64 {
         log.append(chronos_log::NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(vec![i as u8], "x"),
@@ -215,6 +223,8 @@ fn compact_concurrent_delete_does_not_error() {
 
     for i in 0..4u64 {
         log.append(chronos_log::NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(vec![i as u8], "x"),
@@ -250,6 +260,8 @@ fn compact_after_compact_keeps_survivors_intact() {
 
     for i in 0..8u64 {
         log.append(chronos_log::NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(vec![i as u8], "x"),
@@ -311,6 +323,8 @@ fn compaction_metrics_track_runs_segments_and_bytes() {
     // Three flushes ⇒ three segments [0..1], [2..3], [4..5].
     for i in 0..6u64 {
         log.append(chronos_log::NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(vec![i as u8], "x"),
@@ -367,6 +381,8 @@ fn maybe_compact_uses_min_consumer_cursor() {
 
     for i in 0..6u64 {
         log.append(chronos_log::NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(vec![i as u8], "x"),
@@ -420,6 +436,8 @@ fn maybe_compact_returns_empty_when_no_cursors() {
 
     for i in 0..4u64 {
         log.append(chronos_log::NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session.clone(),
             monotonic_ns: i * 10,
             payload: chronos_log::ExecutionPayload::new(vec![i as u8], "x"),

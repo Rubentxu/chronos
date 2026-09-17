@@ -12,11 +12,22 @@ use crate::{EventData, EventType, TraceEvent};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct TripwireId(pub u64);
-
 impl std::fmt::Display for TripwireId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "tripwire-{}", self.0)
     }
+}
+
+/// REC-C2.1: a matched subscription, snapshotted for durable evidence.
+///
+/// Carries what is needed to persist a self-describing firing (identity of
+/// the subscription that fired plus the condition and label in force at that
+/// moment) without touching the legacy fired buffer.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TripwireMatch {
+    pub id: TripwireId,
+    pub condition: TripwireCondition,
+    pub label: Option<String>,
 }
 
 static NEXT_TRIPWIRE_ID: AtomicU64 = AtomicU64::new(1);
@@ -36,7 +47,7 @@ pub fn reset_tripwire_ids_for_testing() {
     NEXT_TRIPWIRE_ID.store(1, Ordering::Relaxed);
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TripwireCondition {
     EventType(Vec<EventType>),
     FunctionName { pattern: String },
@@ -273,6 +284,28 @@ impl TripwireManager {
 
     pub fn list(&self) -> Vec<Tripwire> {
         self.tripwires.read().unwrap().clone()
+    }
+
+    /// REC-C2.1: the tripwires that match `event`, as a **pure** query (no
+    /// buffer side effect).
+    ///
+    /// Derivation of durable `TripwireFired` evidence uses this rather than
+    /// [`evaluate`](Self::evaluate), so that producing evidence does not
+    /// simultaneously mutate the legacy in-memory fired buffer. Returns a
+    /// snapshot of the subscription (id, condition, label) so the caller can
+    /// persist a self-describing firing.
+    pub fn matching(&self, event: &TraceEvent) -> Vec<TripwireMatch> {
+        self.tripwires
+            .read()
+            .unwrap()
+            .iter()
+            .filter(|tw| tw.matches(event))
+            .map(|tw| TripwireMatch {
+                id: tw.id,
+                condition: tw.condition.clone(),
+                label: tw.label.clone(),
+            })
+            .collect()
     }
 
     pub fn evaluate(&self, event: &TraceEvent) -> Vec<TripwireFired> {

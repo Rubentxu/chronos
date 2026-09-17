@@ -295,6 +295,8 @@ mod tests {
         let payload = ExecutionPayload::new(serde_json::to_vec(&ev).unwrap(), "trace_event");
         log.handle()
             .append(NewExecutionRecord {
+                kind: chronos_log::ExecutionKind::Raw,
+
                 session_id: session_id.clone(),
                 monotonic_ns: 10_000_500 + seq * 1_000,
                 payload,
@@ -427,6 +429,8 @@ mod tests {
         );
         log.handle()
             .append(NewExecutionRecord {
+                kind: chronos_log::ExecutionKind::Raw,
+
                 session_id: session_id.clone(),
                 monotonic_ns: 10_000_000,
                 payload: ExecutionPayload::new(serde_json::to_vec(&noisy).unwrap(), "trace_event"),
@@ -528,6 +532,8 @@ mod tests {
                     ExecutionPayload::new(serde_json::to_vec(&ev).unwrap(), "trace_event");
                 log.handle()
                     .append(NewExecutionRecord {
+                        kind: chronos_log::ExecutionKind::Raw,
+
                         session_id: session_id.clone(),
                         monotonic_ns: 0,
                         payload,
@@ -552,6 +558,8 @@ mod tests {
             let payload = ExecutionPayload::new(serde_json::to_vec(&ev).unwrap(), "trace_event");
             log.handle()
                 .append(NewExecutionRecord {
+                    kind: chronos_log::ExecutionKind::Raw,
+
                     session_id: session_id.clone(),
                     monotonic_ns: timestamp_ns, // also propagate to monotonic_ns
                     payload,

@@ -80,6 +80,7 @@ impl InMemoryExecutionLog {
         let payload = ExecutionPayload::new(Vec::<u8>::new(), tag);
         self.append(NewExecutionRecord {
             session_id,
+            kind: ExecutionKind::Raw,
             monotonic_ns,
             payload,
             invocation_id: None,
@@ -357,7 +358,7 @@ impl ExecutionLogBackend for InMemoryExecutionLog {
             session_id: session_id.clone(),
             seq: *seq,
             monotonic_ns: record.monotonic_ns,
-            kind: ExecutionKind::Raw,
+            kind: record.kind,
             payload: record.payload,
             invocation_id: record.invocation_id,
             parent_invocation_id: record.parent_invocation_id,
@@ -735,6 +736,8 @@ mod tests {
         let sym = chronos_domain::SymbolId::new("foo", None, chronos_domain::Language::Rust);
 
         log.append(NewExecutionRecord {
+            kind: ExecutionKind::Raw,
+
             session_id: s.clone(),
             monotonic_ns: 10,
             payload: ExecutionPayload::new(Vec::new(), "a"),
@@ -745,6 +748,8 @@ mod tests {
         })
         .unwrap();
         log.append(NewExecutionRecord {
+            kind: ExecutionKind::Raw,
+
             session_id: s.clone(),
             monotonic_ns: 20,
             payload: ExecutionPayload::new(Vec::new(), "b"),
@@ -783,6 +788,8 @@ mod tests {
         let sym = chronos_domain::SymbolId::new("f", None, chronos_domain::Language::Rust);
 
         log.append(NewExecutionRecord {
+            kind: ExecutionKind::Raw,
+
             session_id: s.clone(),
             monotonic_ns: 1,
             payload: ExecutionPayload::new(Vec::new(), "root"),
@@ -793,6 +800,8 @@ mod tests {
         })
         .unwrap();
         log.append(NewExecutionRecord {
+            kind: ExecutionKind::Raw,
+
             session_id: s.clone(),
             monotonic_ns: 2,
             payload: ExecutionPayload::new(Vec::new(), "c1"),
@@ -803,6 +812,8 @@ mod tests {
         })
         .unwrap();
         log.append(NewExecutionRecord {
+            kind: ExecutionKind::Raw,
+
             session_id: s.clone(),
             monotonic_ns: 3,
             payload: ExecutionPayload::new(Vec::new(), "c2"),
@@ -813,6 +824,8 @@ mod tests {
         })
         .unwrap();
         log.append(NewExecutionRecord {
+            kind: ExecutionKind::Raw,
+
             session_id: s.clone(),
             monotonic_ns: 4,
             payload: ExecutionPayload::new(Vec::new(), "unrelated"),
@@ -841,6 +854,8 @@ mod tests {
         let inv = chronos_domain::InvocationId::now();
         for ns in [10u64, 20, 30, 40, 50] {
             log.append(NewExecutionRecord {
+                kind: ExecutionKind::Raw,
+
                 session_id: s.clone(),
                 monotonic_ns: ns,
                 payload: ExecutionPayload::new(Vec::new(), "f"),
@@ -905,6 +920,8 @@ mod tests {
         let sym = chronos_domain::SymbolId::new("f", None, chronos_domain::Language::Rust);
         for ns in 0..5u64 {
             log.append(NewExecutionRecord {
+                kind: ExecutionKind::Raw,
+
                 session_id: s.clone(),
                 monotonic_ns: ns,
                 payload: ExecutionPayload::new(Vec::new(), "x"),

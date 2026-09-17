@@ -82,6 +82,8 @@ fn seed_log(exec_log_root: &std::path::Path, session_id: &str, n: u64) {
         let ev = trace_event_for(i);
         let bytes = serde_json::to_vec(&ev).expect("encode");
         log.append(NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session_id_typed.clone(),
             monotonic_ns: 10_000_500 + i * 1_000,
             payload: ExecutionPayload::new(bytes, "trace_event"),
@@ -200,6 +202,8 @@ async fn uat_rec_c1_01_two_consumers_exact_10k() {
         let ev = trace_event_for(TOTAL_SEEDED + i);
         let bytes = serde_json::to_vec(&ev).expect("encode");
         log.append(NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session_id_typed.clone(),
             monotonic_ns: 10_000_500 + (TOTAL_SEEDED + i) * 1_000,
             payload: ExecutionPayload::new(bytes, "trace_event"),
@@ -322,6 +326,8 @@ async fn uat_rec_c1_01_total_count_after_producer_advance_is_11k() {
         let ev = trace_event_for(TOTAL_SEEDED + i);
         let bytes = serde_json::to_vec(&ev).expect("encode");
         log.append(NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session_id_typed.clone(),
             monotonic_ns: 10_000_500 + (TOTAL_SEEDED + i) * 1_000,
             payload: ExecutionPayload::new(bytes, "trace_event"),

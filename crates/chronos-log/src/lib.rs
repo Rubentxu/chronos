@@ -39,7 +39,10 @@ pub use error::LogError;
 pub use gap::{Gap, GapReason};
 pub use location::{execution_log_dir, execution_log_dir_for_session, resolve_execution_log_root};
 pub use memory::InMemoryExecutionLog;
-pub use record::{ExecutionKind, ExecutionPayload, ExecutionRecord, SessionId};
+pub use record::{
+    ExecutionKind, ExecutionPayload, ExecutionRecord, SessionId, TripwireFiredEvidence,
+    TRIPWIRE_FIRED_EVIDENCE_TAG,
+};
 pub use replay::{
     apply_replay_plan, build_replay_plan, plan_gaps, ReplayIntegrityError, ReplayPlan,
 };

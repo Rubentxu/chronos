@@ -84,6 +84,8 @@ fn dual_write_records_to_eventbus_and_executionlog() {
         };
         let bytes = serde_json::to_vec(&ev).expect("encode");
         log.append(NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: chronos_log::SessionId::new(&log_session_id),
             monotonic_ns: i * 100,
             payload: chronos_log::ExecutionPayload::new(bytes, "FunctionEntry"),
@@ -135,6 +137,8 @@ fn read_execution_log_records_returns_seq_bounded_slice() {
     .expect("open");
     for i in 0..8u64 {
         log.append(NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: chronos_log::SessionId::new(session_id),
             monotonic_ns: i,
             payload: chronos_log::ExecutionPayload::new(

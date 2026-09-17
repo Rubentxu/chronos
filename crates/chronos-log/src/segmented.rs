@@ -851,7 +851,7 @@ impl SegmentedExecutionLog {
             session_id: record.session_id,
             seq,
             monotonic_ns: record.monotonic_ns,
-            kind: ExecutionKind::Raw,
+            kind: record.kind,
             payload: record.payload,
             invocation_id: record.invocation_id,
             parent_invocation_id: record.parent_invocation_id,
@@ -1437,6 +1437,7 @@ impl NewExecutionRecord {
     pub fn from_record(r: &ExecutionRecord) -> Self {
         Self {
             session_id: r.session_id.clone(),
+            kind: r.kind,
             monotonic_ns: r.monotonic_ns,
             payload: ExecutionPayload::new(r.payload.bytes.clone(), r.payload.tag.clone()),
             invocation_id: r.invocation_id,
@@ -1487,6 +1488,7 @@ mod tests {
 
     fn new_record(s: &SessionId, ns: u64, tag: &str) -> NewExecutionRecord {
         NewExecutionRecord {
+            kind: ExecutionKind::Raw,
             session_id: s.clone(),
             monotonic_ns: ns,
             payload: ExecutionPayload::new(vec![1, 2, 3], tag),
@@ -1504,6 +1506,7 @@ mod tests {
         symbol: SymbolId,
     ) -> NewExecutionRecord {
         NewExecutionRecord {
+            kind: ExecutionKind::Raw,
             session_id: s.clone(),
             monotonic_ns: 0,
             payload: ExecutionPayload::new(Vec::new(), "v2"),
@@ -1553,6 +1556,8 @@ mod tests {
         log.append(new_record(&session, 0, "a")).unwrap();
         for i in 1..=4 {
             log.append(NewExecutionRecord {
+                kind: ExecutionKind::Raw,
+
                 session_id: session.clone(),
                 monotonic_ns: i * 10,
                 payload: ExecutionPayload::new(vec![0u8; 128], "big"),

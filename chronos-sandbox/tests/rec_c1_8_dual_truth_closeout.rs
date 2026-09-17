@@ -108,6 +108,8 @@ fn append_records(log: &SegmentedExecutionLog, session_id: &SessionId, n: u64) {
         let ev = trace_event_for(i);
         let bytes = serde_json::to_vec(&ev).expect("encode");
         log.append(NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session_id.clone(),
             monotonic_ns: 10_000_500 + i * 1_000,
             payload: ExecutionPayload::new(bytes, "trace_event"),

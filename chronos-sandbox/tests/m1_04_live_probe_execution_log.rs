@@ -233,6 +233,8 @@ fn decoder_counters_surface_unparseable_payloads() {
     for i in 1..=2u64 {
         let bytes = format!("not-json-{}-{{{{", i).into_bytes();
         log.append(chronos_log::NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: SessionId::new(session_id),
             monotonic_ns: i * 100,
             payload: chronos_log::ExecutionPayload::new(bytes, "noise"),

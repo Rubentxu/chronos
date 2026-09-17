@@ -44,6 +44,7 @@ fn tempdir(tag: &str) -> PathBuf {
 
 fn rec(session: &SessionId, ns: u64, tag: &str) -> NewExecutionRecord {
     NewExecutionRecord {
+        kind: chronos_log::ExecutionKind::Raw,
         session_id: session.clone(),
         monotonic_ns: ns,
         payload: ExecutionPayload::new(format!("payload-{tag}").into_bytes(), "m1_gap"),
@@ -193,6 +194,8 @@ fn gap_persist_3_overflow_gap_reopens_valid() {
         let log = SegmentedExecutionLog::open(session.clone(), cfg.clone()).expect("open");
         log.append(rec(&session, 0, "small")).expect("append small");
         log.append(NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session.clone(),
             monotonic_ns: 10,
             payload: ExecutionPayload::new(vec![0u8; 4096], "oversize"),

@@ -3,7 +3,7 @@
 use crate::cursor::{ConsumerCursor, LogConsumerId, LogPage, ReadResult};
 use crate::error::LogError;
 use crate::gap::Gap;
-use crate::record::{ExecutionRecord, SessionId};
+use crate::record::{ExecutionKind, ExecutionRecord, SessionId};
 use crate::seq::EventSeq;
 
 /// An `ExecutionRecord` minus the backend-assigned `seq`.
@@ -13,6 +13,10 @@ use crate::seq::EventSeq;
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NewExecutionRecord {
     pub session_id: SessionId,
+    /// REC-C2.1: the record's kind. Defaults to `Raw` (historical
+    /// producers only ever wrote raw events); a tripwire derivation sets
+    /// `TripwireFired`.
+    pub kind: ExecutionKind,
     pub monotonic_ns: u64,
     pub payload: crate::record::ExecutionPayload,
     /// Invocation-level identity for M2+ producers running with
@@ -143,6 +147,7 @@ impl<B: ExecutionLogBackend + ?Sized> ExecutionLog<B> {
     ) -> Result<EventSeq, LogError> {
         self.backend.append(NewExecutionRecord {
             session_id,
+            kind: ExecutionKind::Raw,
             monotonic_ns,
             payload,
             invocation_id: None,

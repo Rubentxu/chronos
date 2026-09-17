@@ -9010,6 +9010,8 @@ mod tests {
             .unwrap(),
         );
         log.append(NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: LogSessionId::new(&log_session_id),
             monotonic_ns: 700,
             payload: ExecutionPayload::new(serde_json::to_vec(&ev).unwrap(), "trace_event"),

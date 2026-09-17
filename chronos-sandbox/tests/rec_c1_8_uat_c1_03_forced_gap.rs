@@ -112,6 +112,8 @@ fn seed_log_with_gap(exec_log_root: &std::path::Path, session_id: &str) {
         let ev = trace_event_for(i);
         let bytes = serde_json::to_vec(&ev).expect("encode");
         log.append(NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session_id_typed.clone(),
             monotonic_ns: 10_000_500 + i * 1_000,
             payload: ExecutionPayload::new(bytes, "trace_event"),
@@ -133,6 +135,8 @@ fn seed_log_with_gap(exec_log_root: &std::path::Path, session_id: &str) {
         let ev = trace_event_for(seq);
         let bytes = serde_json::to_vec(&ev).expect("encode");
         log.append(NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session_id_typed.clone(),
             monotonic_ns: 10_000_500 + seq * 1_000,
             payload: ExecutionPayload::new(bytes, "trace_event"),
@@ -352,6 +356,8 @@ async fn uat_rec_c1_03_clean_session_reports_complete_negative() {
         let ev = trace_event_for(i);
         let bytes = serde_json::to_vec(&ev).expect("encode");
         log.append(NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session_id_typed.clone(),
             monotonic_ns: 10_000_500 + i * 1_000,
             payload: ExecutionPayload::new(bytes, "trace_event"),

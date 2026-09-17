@@ -55,6 +55,8 @@ fn fixture_records() -> Vec<NewExecutionRecord> {
     let session_id = SessionId::new("rec-c1-8-uat-c1-05");
     (0..FIXTURE_LEN)
         .map(|i| NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+
             session_id: session_id.clone(),
             monotonic_ns: 5_000 * i as u64,
             payload: ExecutionPayload::new(
@@ -131,7 +133,7 @@ fn four_dimensions_round_trip_independently() {
             session_id: r.session_id,
             seq: chronos_log::EventSeq::new(i as u64),
             monotonic_ns: r.monotonic_ns,
-            kind: ExecutionKind::Raw,
+            kind: chronos_log::ExecutionKind::Raw,
             payload: r.payload,
             invocation_id: r.invocation_id,
             parent_invocation_id: r.parent_invocation_id,
@@ -198,7 +200,7 @@ fn unchanged_default_skips_field_in_wire_json() {
         session_id,
         seq: chronos_log::EventSeq::new(0),
         monotonic_ns: 0,
-        kind: ExecutionKind::Raw,
+        kind: chronos_log::ExecutionKind::Raw,
         payload: ExecutionPayload::default(),
         invocation_id: None,
         parent_invocation_id: None,
