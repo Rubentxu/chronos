@@ -156,7 +156,12 @@ async fn wire_2_success_envelope_reports_advanced_retained_from() {
     let cursor_encoded = format!("ecv1:1:{}:{}:0", session_id.len(), session_id);
     // A fresh cursor at seq#0 would be CursorStale; advance it past the
     // boundary so the success path runs.
-    let advanced = format!("ecv1:1:{}:{}:{}", session_id.len(), session_id, RETAINED_FROM);
+    let advanced = format!(
+        "ecv1:1:{}:{}:{}",
+        session_id.len(),
+        session_id,
+        RETAINED_FROM
+    );
     let result = raw_tools_call(
         &mut client,
         "events_read",

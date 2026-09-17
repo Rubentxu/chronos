@@ -77,10 +77,9 @@ async fn del_live_1_live_probe_delete_is_refused() {
     let db = root.join("sessions.redb");
     let fixture = McpSession::fixture_path("test_add").expect("fixture");
 
-    let mut client =
-        McpTestClient::start_with_db_and_exec_log_root(db.clone(), root.clone())
-            .await
-            .expect("start MCP server");
+    let mut client = McpTestClient::start_with_db_and_exec_log_root(db.clone(), root.clone())
+        .await
+        .expect("start MCP server");
 
     let session_id = client
         .session_start_spawn(fixture.to_str().unwrap(), vec![])
@@ -160,10 +159,9 @@ async fn del_live_2_refused_then_stop_then_delete_then_restart_absent() {
     let fixture = McpSession::fixture_path("test_add").expect("fixture");
 
     // Process A.
-    let mut first =
-        McpTestClient::start_with_db_and_exec_log_root(db.clone(), root.clone())
-            .await
-            .expect("start MCP server A");
+    let mut first = McpTestClient::start_with_db_and_exec_log_root(db.clone(), root.clone())
+        .await
+        .expect("start MCP server A");
 
     let started_a = first
         .session_start_spawn(fixture.to_str().unwrap(), vec![])
@@ -186,10 +184,9 @@ async fn del_live_2_refused_then_stop_then_delete_then_restart_absent() {
 
     // Process B (fresh). Bootstrap republishes the durable log. Now A is
     // sealed, no live writer → delete must succeed.
-    let mut second =
-        McpTestClient::start_with_db_and_exec_log_root(db.clone(), root.clone())
-            .await
-            .expect("start MCP server B");
+    let mut second = McpTestClient::start_with_db_and_exec_log_root(db.clone(), root.clone())
+        .await
+        .expect("start MCP server B");
     let outcome = raw_delete_result(&mut second, &started_a.session_id).await;
     assert!(
         matches!(outcome, Ok(None)),
@@ -199,10 +196,9 @@ async fn del_live_2_refused_then_stop_then_delete_then_restart_absent() {
 
     // Process C (fresh). The session must NOT be rediscoverable — durable
     // delete from B must have removed the directory on disk.
-    let mut third =
-        McpTestClient::start_with_db_and_exec_log_root(db, root.clone())
-            .await
-            .expect("start MCP server C");
+    let mut third = McpTestClient::start_with_db_and_exec_log_root(db, root.clone())
+        .await
+        .expect("start MCP server C");
     let recovered = third.session_start_load(&started_a.session_id).await;
     assert!(
         recovered.is_err(),
@@ -224,10 +220,9 @@ async fn del_live_4_sibling_delete_does_not_perturb_live_a() {
     let db = root.join("sessions.redb");
     let fixture = McpSession::fixture_path("test_add").expect("fixture");
 
-    let mut client =
-        McpTestClient::start_with_db_and_exec_log_root(db.clone(), root.clone())
-            .await
-            .expect("start MCP server");
+    let mut client = McpTestClient::start_with_db_and_exec_log_root(db.clone(), root.clone())
+        .await
+        .expect("start MCP server");
 
     // Start A (will remain live for the whole test).
     let started_a = client

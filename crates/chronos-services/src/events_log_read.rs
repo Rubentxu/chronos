@@ -377,6 +377,7 @@ pub fn read_page(
 /// page.exhausted == false && position_after > start       -> continue
 /// page.exhausted == false && position_after <= start      -> EvidenceReadStalled
 /// ```
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn read_page_with<F>(
     session_id: &str,
     cursor: &EventsCursorV1,
@@ -1332,8 +1333,8 @@ mod rec_c1_6_wire_facts_tests {
     /// A reader that always returns the same empty exhausted page. Sufficient
     /// to exercise the retention/tail fact construction in `read_page_with`
     /// without depending on a real ExecutionLog.
-    fn empty_exhausted_reader() -> impl FnMut(EventSeq, usize) -> Result<LogPage, ServiceError> + Copy
-    {
+    fn empty_exhausted_reader(
+    ) -> impl FnMut(EventSeq, usize) -> Result<LogPage, ServiceError> + Copy {
         |position, _| Ok(LogPage::empty_at(position))
     }
 
