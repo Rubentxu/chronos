@@ -13,7 +13,7 @@
 | C2.1.4b log-backed firing reads + `EventsCursorV1` | **DONE** | list reads the log; strict cursor errors; scan budget; `session_id` + checkpoint cursor on the wire; FIRING-PAGE-1..4; fixtures migrated off `fired_buffer` |
 | C2.1.5a bounded/progress-aware scan + count completeness facts | **DONE** | hidden 64-page cap removed; typed stall; FiringCountSnapshot |
 | C2.1.5b async `query` + derived `fire_count` + honest retention | **DONE** | FIND-C2.0-01/02 closed |
-| C2.1.6 remove `fired_buffer` | **PENDING** | depends on C2.1.5 |
+| C2.1.6 delete the legacy fired queue | **DONE** | fired_buffer/record_fired/drain_fired/evaluate/evaluate_semantic/TripwiresService::list/TripwireFired DTO deleted; ratchet 36→31, fired_buffer 4→0, drain_fired 1→0, CANONICAL 11→6 |
 | C2.1.7 real-process restart UAT + ratchet update | **PENDING** | depends on C2.1.4-6 |
 
 ## C2.1.4a note
@@ -95,3 +95,15 @@ Tripwire.fire_count -> present but not authoritative anywhere
 `fired_buffer` is still written by `TripwireManager::evaluate`/`evaluate_semantic`
 (probe_drain calls the latter) and is read only by `TripwiresService::list`,
 which is now referenced only from its own tests. C2.1.6 is the deletion.
+
+## Architecture after C2.1.6
+
+```text
+Tripwire definition  -> TripwireManager
+matching             -> pure (matching / matching_semantic)
+source occurrence    -> ExecutionLog::Raw
+firing occurrence    -> ExecutionLog::TripwireFired
+fire_count           -> projection over ExecutionLog (+ completeness facts)
+consumer progress    -> EventsCursorV1
+legacy fired queue   -> gone
+```

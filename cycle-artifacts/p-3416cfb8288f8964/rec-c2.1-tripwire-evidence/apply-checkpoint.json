@@ -51,6 +51,10 @@
     {
       "sha": "d2fce95d",
       "title": "feat(rec-c2.1): derived fire_count + explicit count completeness (C2.1.5)"
+    },
+    {
+      "sha": "2b57b0ad",
+      "title": "refactor(rec-c2.1): delete the legacy fired queue (C2.1.6)"
     }
   ],
   "gates": {
