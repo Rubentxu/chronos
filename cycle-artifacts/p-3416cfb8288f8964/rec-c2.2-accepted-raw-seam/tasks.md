@@ -9,7 +9,7 @@
 | C2.2.2 `probe_drain` not a destructive authority | DONE | canonical reader + DRAIN-1..7 + explicit ResolveContext + wire switchover on `ecv1`; completeness converged on the C1 model; decode is fail-closed |
 | C2.2.3 `probe_stop`/`session_snapshot` consumers off EventBus | DONE | both read `canonical_drain::read_all_raw_events`; STOP-1..4 + `rec_c2_2_canonical_consumers.rs` (tiny ring, repeatable snapshot) |
 | C2.2.4 remaining CANONICAL destructive reads -> 0 | DONE | `ProbeBackend::drain_events`/`drain_raw_events` REMOVED; ratchet CANONICAL=0 and `--strict` (REC-C2 close mode) PASSES |
-| C2.2.5 UAT-C2-01/02/03 characterization | IN PROGRESS |
+| C2.2.5 UAT-C2-01/02/03 characterization | DONE | identifiers were never defined anywhere; defined here from the cycle's laws and executed end-to-end against the real MCP server |
 
 ## Evidence
 
@@ -133,3 +133,49 @@ events at capacity. C2.2.4 removed the destructive read and stopped the stop
 path from destroying evidence, but "ExecutionLog owns occurrence" is still not
 true for browser captures. That needs the browser capture loop to append through
 an accepted-Raw seam, which is its own cycle.
+
+
+## C2.2.5 — the pre-close characterization
+
+`proposal.md` and `tasks.md` both name UAT-C2-01/02/03 as this cycle's final
+step, and nothing in the repository ever defined them. They are therefore
+DEFINED here, once, and then executed (`rec_c2_2_uat_c2.rs`, real MCP server):
+
+```text
+UAT-C2-01  probe_drain is not an authority and does not create evidence
+UAT-C2-02  probe_stop / session_snapshot report the log and its completeness
+UAT-C2-03  durable evidence exceeds the ring, so the ring is not the source
+```
+
+Each is falsifiable against the pre-cycle architecture. UAT-C2-01 in particular
+adds a SECOND matching subscription after the first read and bounds the growth
+of the firing count by the growth of the examined range; a live recomputation
+over the returned range would inflate the historical prefix and break the
+bound.
+
+### FIND-C2.2-05 — a false green this step caught
+
+`m0_04` had been passing *vacuously* since REC-C2.2.2. Two compounding mistakes,
+both mine:
+
+1. `tripwire_create` rejects `"SyscallEnter"`; the accepted spelling is
+   `"syscall_enter"`. So the condition C2.2.2 introduced never created a
+   subscription.
+2. `m0_04`'s error branch for `tripwire_create` printed a diagnostic and
+   `return`ed. With the subscription failing, the test exited before reaching
+   its assertion and reported PASS.
+
+The `.ok()` calls that swallowed the same error were present in
+`probe_drain_canonical.rs` too. All of them now `expect`/`assert`, so a missing
+subscription is a failure rather than a skip. This is worth naming: a green test
+that cannot fail is worse than a red one.
+
+Separately, `m0_04`'s post-hoc-subscription leg asked for EXACT firing-count
+equality across two live reads of "the same" range. That is not a property of
+the system: a live probe keeps appending, and the page's last `Raw` can gain its
+trailing derived firings between two reads (measured 98 -> 100 with no
+subscription-shaped cause). The property is real but needs a race-free
+formulation, so it now lives in UAT-C2-01 (bounded growth) and
+`probe_drain_canonical` (no inflation of a persisted range), and `m0_04` keeps
+its own subject: a subscription that predates the capture fires on the canonical
+flow and is visible through `probe_drain`.

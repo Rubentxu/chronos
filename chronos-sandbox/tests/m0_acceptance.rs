@@ -819,8 +819,12 @@ async fn m0_04_tripwires_evaluated_on_canonical_flow_impl() {
             // that condition cannot fire here. Use the condition that matches
             // the stream under test; the narrowing is asserted explicitly
             // below rather than left implicit.
+            // REC-C2.2.5: the event type must be one `tripwire_create`
+            // accepts. `"SyscallEnter"` is the *semantic* spelling and is
+            // rejected, which previously made this test bail out silently and
+            // pass without asserting anything.
             condition: chronos_sandbox::client::types::TripwireConditionType::EventType {
-                event_types: vec!["SyscallEnter".to_string()],
+                event_types: vec!["syscall_enter".to_string()],
             },
             label: Some("m0_04-syscall-enter".to_string()),
         })
@@ -828,9 +832,9 @@ async fn m0_04_tripwires_evaluated_on_canonical_flow_impl() {
     {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("m0_04: tripwire_create failed: {}", e);
-            let _ = client.shutdown().await;
-            return;
+            // A missing subscription is a FAILURE here, not missing infra:
+            // bailing out would make the assertions below unreachable.
+            panic!("m0_04: tripwire_create must succeed, got: {e}");
         }
     };
     assert!(!tw_id.is_empty(), "m0_04: tripwire id must be non-empty");
@@ -875,44 +879,26 @@ seam (raw response: {})",
         raw
     );
 
-    // The count is EVIDENCE, not live state: re-reading the same durable range
-    // from the start must report the same number, even after a new subscription
-    // is created in between. If this moves, `probe_drain` is still consulting a
-    // live matcher as authority.
-    let late = client
-        .tripwire_create(chronos_sandbox::client::types::TripwireCreateParams {
-            condition: chronos_sandbox::client::types::TripwireConditionType::FunctionName {
-                pattern: "Syscall*".to_string(),
-            },
-            label: Some("m0_04-late-function-name".to_string()),
-        })
-        .await;
-    let _ = late; // the subscription exists now; that is the whole point.
-
-    let reread = match client
-        .call_tool(
-            "probe_drain",
-            serde_json::json!({ "session_id": session_id, "limit": 200 }),
-        )
-        .await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("m0_04: re-read probe_drain failed: {}", e);
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
-    let reread_fired = reread
-        .get("tripwires_fired")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
-    assert_eq!(
-        reread_fired, fired,
-        "m0_04: creating a subscription after the fact changed the firing count for the \
-         same durable range ({fired} -> {reread_fired}); the count must be persisted evidence, \
-         never live matcher state"
-    );
+    // REC-C2.2.5: the post-hoc-subscription falsification that used to live
+    // here asked for EXACT equality of the firing count across two live reads
+    // of "the same" range. That is not a property of the system: a live probe
+    // keeps appending, and the page's last Raw can gain its trailing derived
+    // firings between two reads, so exact equality is racy even when the count
+    // is correctly durable (measured: 98 -> 100 with no subscription-shaped
+    // cause).
+    //
+    // The property is real, it just needs a race-free formulation, and it now
+    // lives where it can be stated properly:
+    //
+    //   * `rec_c2_2_uat_c2.rs::uat_c2_01_...` — bounds the growth of the
+    //     firing count against the growth of the examined range after adding a
+    //     second matching subscription, which a live recomputation violates.
+    //   * `probe_drain_canonical.rs::probe_drain_firing_count_is_evidence_...`
+    //     — asserts the count for an already-persisted range is not inflated.
+    //
+    // What stays here is this test's own subject: a subscription that existed
+    // before the capture fires on the canonical flow, and the count is visible
+    // through `probe_drain`.
 
     let _ = client.probe_stop(&session_id).await;
     let _ = client.shutdown().await;

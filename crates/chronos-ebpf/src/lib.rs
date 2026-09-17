@@ -506,7 +506,7 @@ fn convert_ebpf_to_semantic(e: EbpfEvent, source_event_id: u64) -> SemanticEvent
         // comes from the record, so it must survive `skip()` across pages
         // (REC-C2.2.4): the index is computed over the full snapshot, not over
         // the page.
-        source_event_id: source_event_id,
+        source_event_id,
         timestamp_ns: e.timestamp_ns,
         thread_id: e.thread_id,
         language: Language::Ebpf,

@@ -222,7 +222,10 @@ async fn probe_drain_firing_count_is_evidence_not_subscription_state() {
             }),
         )
         .await;
-    let _ = created; // create-or-conflict is fine; the point is the subscription exists now.
+    assert!(
+        created.is_ok(),
+        "the post-hoc subscription must exist, otherwise this falsification is vacuous: {created:?}"
+    );
 
     let after = client
         .probe_drain_with_evidence_cursor(&session_id, None)
