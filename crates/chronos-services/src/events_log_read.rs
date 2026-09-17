@@ -40,7 +40,9 @@
 
 use chronos_domain::EventType;
 use chronos_domain::TraceEvent;
-use chronos_log::{EventSeq, ExecutionRecord, Gap, LogPage};
+use chronos_log::{EventSeq, ExecutionRecord, Gap, LogPage, TailState};
+
+use serde::{Deserialize, Serialize};
 
 use crate::error::ServiceError;
 use crate::events_cursor::EventsCursorV1;
@@ -230,6 +232,102 @@ pub struct LogReadPage {
     pub gaps: Vec<Gap>,
     /// Verdict for the range this read examined, with its scope.
     pub completeness: CompletenessReport,
+    /// REC-C1.6: retention facts for this log. Always populated so the agent
+    /// can reason about `retained_from_seq` without a separate call.
+    pub retention: RetentionFacts,
+    /// REC-C1.6: tail facts for this log. `state` is always populated; `tail_seq`
+    /// is `None` iff `state == Unknown` (no inference, no fabrication).
+    pub tail: TailFacts,
+}
+
+/// REC-C1.6: retention facts for a log, surfaced on every `events_read` page.
+///
+/// These are FACTS about the current durable boundary — not a retention policy.
+/// Policy decisions (when to retire, what to retire) live outside the read
+/// path; this struct tells the agent exactly what survives today.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RetentionFacts {
+    /// The earliest seq the log can serve. A cursor before this is `CursorStale`,
+    /// not evidence loss.
+    pub retained_from_seq: u64,
+    /// True iff `retained_from_seq > 0`, i.e. some history was already retired.
+    /// The agent can use this without subtracting from a zero baseline.
+    pub history_truncated: bool,
+}
+
+impl RetentionFacts {
+    /// Build from the log's authoritative retention boundary.
+    pub fn from_retained_from(retained_from: EventSeq) -> Self {
+        RetentionFacts {
+            retained_from_seq: retained_from.0,
+            history_truncated: retained_from.0 > 0,
+        }
+    }
+}
+
+/// REC-C1.6: tail facts for a log, surfaced on every `events_read` page.
+///
+/// Distinct from [`chronos_log::TailState`]: that enum carries lifecycle
+/// provenance (sealed-at timestamps, unclean reasons). The wire form is
+/// intentionally flat — agent reasoning needs the state NAME plus the tail
+/// position; deeper provenance is recovered via the lifecycle APIs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TailStateWire {
+    /// The run is still in progress in this process.
+    Open,
+    /// The run ended through an explicit, durable seal.
+    Sealed,
+    /// Positive evidence that the previous run did not end cleanly.
+    Unclean,
+    /// No proof either way (legacy metadata, incomplete external metadata).
+    Unknown,
+}
+
+impl TailStateWire {
+    /// Flatten the underlying state name into the wire enum. State-specific
+    /// fields (sealed-at, unclean reasons) are NOT carried here — they live in
+    /// the lifecycle/provenance surface, not on every read page.
+    pub fn from_log_state(state: &TailState) -> Self {
+        match state {
+            TailState::Open => TailStateWire::Open,
+            TailState::Sealed { .. } => TailStateWire::Sealed,
+            TailState::Unclean { .. } => TailStateWire::Unclean,
+            TailState::Unknown { .. } => TailStateWire::Unknown,
+        }
+    }
+}
+
+/// REC-C1.6: tail facts for a log, surfaced on every `events_read` page.
+///
+/// `tail_seq` is `None` iff `state == Unknown`. We do not infer a seq we
+/// cannot prove — that would invent a false tail.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TailFacts {
+    pub state: TailStateWire,
+    pub tail_seq: Option<u64>,
+}
+
+impl TailFacts {
+    /// Build from the log's authoritative tail state and tail seq.
+    ///
+    /// `tail_seq` is dropped to `None` when `state == Unknown`. The log may
+    /// still report a tail seq for unknown-state runs (legacy metadata), but
+    /// the wire form refuses to present an unproven tail as if it were proven.
+    pub fn from_log_tail(state: &TailState, tail_seq: Option<EventSeq>) -> Self {
+        let wire = TailStateWire::from_log_state(state);
+        let tail_seq = match (wire, tail_seq) {
+            // Honest `Unknown` → no tail_seq. Even if the log happens to know
+            // a number for a legacy run, the wire form refuses to present it
+            // as "the tail".
+            (TailStateWire::Unknown, _) => None,
+            (_, seq) => seq.map(|s| s.0),
+        };
+        TailFacts {
+            state: wire,
+            tail_seq,
+        }
+    }
 }
 
 /// Scan chunk size. Bounds the work per inner page without changing semantics:
@@ -262,7 +360,9 @@ pub fn read_page(
         cursor,
         limit,
         filters,
+        handle.retained_from(),
         handle.tail_seq(),
+        &handle.tail_state(),
         |position, chunk| handle.read_from_seq(position, chunk).map_err(map_log_error),
     )
 }
@@ -282,7 +382,9 @@ pub(crate) fn read_page_with<F>(
     cursor: &EventsCursorV1,
     limit: usize,
     filters: &LogReadFilters,
+    retained_from: EventSeq,
     tail_seq: Option<EventSeq>,
+    tail_state: &TailState,
     mut read: F,
 ) -> Result<LogReadPage, ServiceError>
 where
@@ -354,12 +456,18 @@ where
     let from_seq = cursor.next_seq();
     let completeness = completeness_for(session_id, from_seq, position, &gaps, tail_seq);
 
+    // REC-C1.6: retention/tail facts surfaced on every page.
+    let retention = RetentionFacts::from_retained_from(retained_from);
+    let tail = TailFacts::from_log_tail(tail_state, tail_seq);
+
     Ok(LogReadPage {
         records: matched,
         next,
         position_after: position,
         gaps,
         completeness,
+        retention,
+        tail,
     })
 }
 
@@ -1159,7 +1267,9 @@ mod rec_c1_3_stall_tests {
             &cursor,
             10,
             &LogReadFilters::default(),
+            EventSeq::ZERO,
             Some(EventSeq::new(0)),
+            &TailState::Open,
             faulty_reader(),
         )
         .unwrap_err();
@@ -1194,11 +1304,178 @@ mod rec_c1_3_stall_tests {
             &cursor,
             10,
             &LogReadFilters::default(),
+            EventSeq::ZERO,
             Some(EventSeq::new(0)),
+            &TailState::Open,
             |position, _| Ok(LogPage::empty_at(position)),
         )
         .unwrap();
         assert!(page.records.is_empty());
         assert_eq!(page.next.next_seq(), EventSeq::ZERO);
+    }
+}
+
+/// REC-C1.6 — `RetentionFacts` and `TailFacts` show up on every page.
+///
+/// These tests pin the wire invariants the agent relies on:
+/// - `retained_from_seq` is the authoritative boundary, NOT a policy.
+/// - `history_truncated == true` iff some seqs were already retired.
+/// - `tail.state` is always populated.
+/// - `tail.tail_seq` is `None` iff `state == Unknown` (no inference).
+/// - `TailStateWire` serializes as snake_case strings: open / sealed /
+///   unclean / unknown.
+#[cfg(test)]
+mod rec_c1_6_wire_facts_tests {
+    use super::*;
+    use chronos_log::{LogPage, SessionId};
+
+    /// A reader that always returns the same empty exhausted page. Sufficient
+    /// to exercise the retention/tail fact construction in `read_page_with`
+    /// without depending on a real ExecutionLog.
+    fn empty_exhausted_reader() -> impl FnMut(EventSeq, usize) -> Result<LogPage, ServiceError> + Copy
+    {
+        |position, _| Ok(LogPage::empty_at(position))
+    }
+
+    fn cursor_start() -> EventsCursorV1 {
+        EventsCursorV1::start(SessionId::new("wire-facts"))
+    }
+
+    // ---- WIRE-RET-1 / 2: retention facts -------------------------------
+
+    #[test]
+    fn wire_ret_1_zero_retained_from_is_not_truncated() {
+        let page = read_page_with(
+            "wire-facts",
+            &cursor_start(),
+            10,
+            &LogReadFilters::default(),
+            EventSeq::ZERO,
+            Some(EventSeq::new(0)),
+            &TailState::Open,
+            empty_exhausted_reader(),
+        )
+        .unwrap();
+        assert_eq!(page.retention.retained_from_seq, 0);
+        assert!(!page.retention.history_truncated);
+    }
+
+    #[test]
+    fn wire_ret_2_nonzero_retained_from_marks_truncated() {
+        // A log whose first 5 seqs were retired. The cursor points past the
+        // boundary; the read returns no records, but the wire form MUST show
+        // that the boundary is non-zero, so the agent can tell why a fresh
+        // read from seq#0 would be refused with CursorStale.
+        let page = read_page_with(
+            "wire-facts",
+            &cursor_start(),
+            10,
+            &LogReadFilters::default(),
+            EventSeq::new(5),
+            Some(EventSeq::new(5)),
+            &TailState::Open,
+            empty_exhausted_reader(),
+        )
+        .unwrap();
+        assert_eq!(page.retention.retained_from_seq, 5);
+        assert!(page.retention.history_truncated);
+    }
+
+    // ---- WIRE-TAIL-1 / 2 / 3: tail facts -------------------------------
+
+    #[test]
+    fn wire_tail_1_open_state_carries_tail_seq() {
+        let page = read_page_with(
+            "wire-facts",
+            &cursor_start(),
+            10,
+            &LogReadFilters::default(),
+            EventSeq::ZERO,
+            Some(EventSeq::new(42)),
+            &TailState::Open,
+            empty_exhausted_reader(),
+        )
+        .unwrap();
+        assert_eq!(page.tail.state, TailStateWire::Open);
+        assert_eq!(page.tail.tail_seq, Some(42));
+    }
+
+    #[test]
+    fn wire_tail_2_sealed_state_carries_tail_seq() {
+        let page = read_page_with(
+            "wire-facts",
+            &cursor_start(),
+            10,
+            &LogReadFilters::default(),
+            EventSeq::ZERO,
+            Some(EventSeq::new(99)),
+            &TailState::Sealed {
+                tail_seq: Some(99),
+                sealed_at_unix_ms: 1_700_000_000_000,
+            },
+            empty_exhausted_reader(),
+        )
+        .unwrap();
+        assert_eq!(page.tail.state, TailStateWire::Sealed);
+        assert_eq!(page.tail.tail_seq, Some(99));
+    }
+
+    #[test]
+    fn wire_tail_3_unknown_state_drops_tail_seq_even_if_log_has_one() {
+        // The honest answer: Unknown → tail_seq is None. We do NOT present an
+        // unproven number as if it were a fact about the tail, even when the
+        // log (for legacy metadata reasons) could report one.
+        let page = read_page_with(
+            "wire-facts",
+            &cursor_start(),
+            10,
+            &LogReadFilters::default(),
+            EventSeq::ZERO,
+            Some(EventSeq::new(123)),
+            &TailState::Unknown {
+                reason: "legacy".to_string(),
+            },
+            empty_exhausted_reader(),
+        )
+        .unwrap();
+        assert_eq!(page.tail.state, TailStateWire::Unknown);
+        assert_eq!(
+            page.tail.tail_seq, None,
+            "Unknown state refuses to present an unproven tail"
+        );
+    }
+
+    // ---- SERDE shape: snake_case enum and additive fields --------------
+
+    #[test]
+    fn wire_tail_state_serializes_as_snake_case() {
+        // The wire form is intentionally flat: state as a snake_case string,
+        // tail_seq as a number-or-null. No "kind"/"version" envelope.
+        let json = serde_json::to_value(TailFacts {
+            state: TailStateWire::Sealed,
+            tail_seq: Some(42),
+        })
+        .unwrap();
+        assert_eq!(json["state"], "sealed");
+        assert_eq!(json["tail_seq"], 42);
+
+        let json = serde_json::to_value(TailFacts {
+            state: TailStateWire::Unclean,
+            tail_seq: None,
+        })
+        .unwrap();
+        assert_eq!(json["state"], "unclean");
+        assert_eq!(json["tail_seq"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn wire_retention_serializes_with_two_flat_fields() {
+        let json = serde_json::to_value(RetentionFacts {
+            retained_from_seq: 5,
+            history_truncated: true,
+        })
+        .unwrap();
+        assert_eq!(json["retained_from_seq"], 5);
+        assert_eq!(json["history_truncated"], true);
     }
 }
