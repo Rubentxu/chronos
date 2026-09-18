@@ -22,6 +22,7 @@ use chronos_domain::semantic::{ResolveContext, ResolverPipeline, SemanticResolve
 use chronos_domain::{
     CaptureConfig, CaptureSession, Language, ProbeBackend, SourceLocation, TraceError, TraceEvent,
 };
+use chronos_domain::ports::execution_log::ExecutionLogProvider;
 use chronos_log::{ExecutionPayload, NewExecutionRecord, SegmentedConfig, SegmentedExecutionLog};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -30,8 +31,13 @@ use std::thread;
 use tracing::{debug, error, info, warn};
 
 /// Serialize a `TraceEvent` into a `NewExecutionRecord` suitable for
-/// `SegmentedExecutionLog::append`. The `tag` is set to
+/// `ExecutionLogProvider::append`. The `tag` is set to
 /// `trace_event.category` so consumers can filter by trace type.
+///
+/// The `session_id` argument is supplied by the caller (the live
+/// accepted-Raw path uses the provider's own session identity; the
+/// `persist_events_to_execution_log` batch helper passes the session
+/// id from its own arguments).
 ///
 /// When the event carries function identity — its `data` is
 /// `EventData::Function` with `symbol_id` / `invocation_id` /
@@ -67,6 +73,20 @@ fn trace_event_to_log_record(
         symbol_id,
         captured_at_unix_ns: None,
     }
+}
+
+/// REC-C3.3.2 — build a `NewExecutionRecord` whose `session_id`
+/// comes from the provider. The live accepted-Raw path uses this so
+/// the record's identity matches the provider's identity by
+/// construction (no second string of session id is transported).
+fn trace_event_to_log_record_for_provider(
+    log: &dyn ExecutionLogProvider,
+    monotonic_ns: u64,
+    event: &TraceEvent,
+) -> NewExecutionRecord {
+    let mut rec = trace_event_to_log_record(log.session_id().as_str(), monotonic_ns, event);
+    rec.session_id = log.session_id().clone();
+    rec
 }
 
 /// Public re-export so integration tests can exercise the
@@ -138,15 +158,28 @@ pub type AcceptedRawObserver =
 ///
 /// Bundled so the probe loops take one parameter instead of two and the
 /// canonical path is threaded identically for spawn and attach.
+///
+/// REC-C3.3.2: `log` is an opaque `Arc<dyn ExecutionLogProvider>`; the
+/// native backend no longer names `SegmentedExecutionLog` on the live
+/// path. The canonical seam is the provider port, not a concrete
+/// adapter.
 #[derive(Clone, Default)]
 pub struct AcceptanceSeam {
-    /// Durable log. `None` is the legacy COMPATIBILITY path (bus only).
-    pub log: Option<std::sync::Arc<SegmentedExecutionLog>>,
+    /// Durable log. `None` means "no canonical sink attached".
+    pub log: Option<Arc<dyn ExecutionLogProvider>>,
     /// Application hook. `None` means "capture only".
     pub observer: Option<AcceptedRawObserver>,
 }
 
 /// Native ptrace probe backend for real-time event bus feeding.
+///
+/// REC-C3.3.2: `execution_log` and `AcceptanceSeam.log` carry
+/// `Arc<dyn ExecutionLogProvider>`. The native backend no longer
+/// names `SegmentedExecutionLog` on the live path. Maintenance
+/// (`flush`, `compaction_metrics`, `compact_up_to`, `retain_up_to`)
+/// is the responsibility of the canonical
+/// `chronos_services::session_log::SessionExecutionLog` wrapper that
+/// owns the provider; this backend only writes through it.
 pub struct NativeProbeBackend {
     /// Language being traced.
     language: Language,
@@ -163,16 +196,13 @@ pub struct NativeProbeBackend {
     attached_target: Arc<AtomicBool>,
     /// REC-C2.2.0: application hook invoked at the accepted-Raw seam.
     accepted_raw_observer: Option<AcceptedRawObserver>,
-    /// Optional `ExecutionLog` for the running session. Populated by
-    /// `start_probe` so the ptrace thread can record events to a
-    /// durable, segmented log.
-    /// REC-C2.3: read path is canonical (the session-owned log); there is
-    /// no EventBus fallback.
-    execution_log: std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<SegmentedExecutionLog>>>>,
-    /// Directory where segment files are written. `None` means the
-    /// `ExecutionLog` is disabled (legacy callers; deprecated — REC-C2.3
-    /// makes the canonical seam mandatory).
-    execution_log_dir: std::sync::Arc<std::sync::Mutex<Option<PathBuf>>>,
+    /// REC-C3.3.2 — the canonical `ExecutionLogProvider` for the
+    /// running session, attached by the caller through
+    /// [`NativeProbeBackend::attach_execution_log`]. The backend
+    /// only writes through it; it never opens or constructs a
+    /// concrete adapter on its own (REC-C1.2a: the session owns
+    /// the log, the backend holds a writer clone).
+    execution_log: std::sync::Arc<std::sync::Mutex<Option<Arc<dyn ExecutionLogProvider>>>>,
 }
 
 impl Default for NativeProbeBackend {
@@ -186,8 +216,11 @@ impl NativeProbeBackend {
     ///
     /// REC-C2.3: no longer takes an `EventBusHandle` — the canonical sink is
     /// the session-owned `ExecutionLog`, attached by the caller through
-    /// [`NativeProbeBackend::attach_execution_log`] or opened by `start_probe`
-    /// from `with_execution_log_dir`.
+    /// [`NativeProbeBackend::attach_execution_log`].
+    ///
+    /// REC-C3.3.2: there is no `with_execution_log_dir` path. The
+    /// backend never opens or constructs a concrete adapter on its
+    /// own; if no provider was attached, `start_probe` fails closed.
     pub fn new() -> Self {
         Self {
             language: Language::C,
@@ -198,7 +231,6 @@ impl NativeProbeBackend {
             attached_target: Arc::new(AtomicBool::new(false)),
             accepted_raw_observer: None,
             execution_log: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            execution_log_dir: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -254,116 +286,50 @@ impl NativeProbeBackend {
         self
     }
 
-    pub fn with_execution_log_dir(self, dir: Option<PathBuf>) -> Self {
-        if let Some(d) = dir {
-            *self
-                .execution_log_dir
-                .lock()
-                .unwrap_or_else(|e| e.into_inner()) = Some(d);
-        } else {
-            *self
-                .execution_log_dir
-                .lock()
-                .unwrap_or_else(|e| e.into_inner()) = None;
-        }
-        self
+    /// Attach an `ExecutionLogProvider` that the CALLER owns
+    /// (REC-C1.2a + REC-C3.3.2).
+    ///
+    /// This is the canonical path: the composition root creates the
+    /// provider, the session owns the wrapper, and the backend holds
+    /// a clone of the writer. The backend never names the concrete
+    /// adapter and never opens one on its own. `start_probe` fails
+    /// closed if this was never called.
+    ///
+    /// `Arc<dyn ExecutionLogProvider>` (not `&dyn`) because the
+    /// backend keeps the writer for the entire probe lifetime; the
+    /// capture thread needs the object to outlive the constructor
+    /// call.
+    pub fn attach_execution_log(
+        &self,
+        log: Arc<dyn ExecutionLogProvider>,
+    ) {
+        *self.execution_log.lock().unwrap_or_else(|e| e.into_inner()) = Some(log);
     }
 
-    /// Currently-attached `ExecutionLog`, if any.
-    pub fn execution_log(&self) -> Option<std::sync::Arc<SegmentedExecutionLog>> {
+    /// Currently-attached `ExecutionLogProvider`, if any.
+    ///
+    /// Returns a clone of the `Arc<dyn ExecutionLogProvider>` so the
+    /// caller owns a strong reference. Used by the canonical probe
+    /// loop (`AcceptanceSeam::log`) and by `stop_probe` to surface
+    /// the final `tail_seq` to the service layer.
+    pub fn execution_log(&self) -> Option<Arc<dyn ExecutionLogProvider>> {
         self.execution_log
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone()
     }
 
-    /// Snapshot of the attached `ExecutionLog`'s compaction counters
-    /// (m1-07). Returns `Ok(None)` if no log is attached; `Ok(Some(zeros))`
-    /// if a log is attached but no compaction runs have happened yet.
-    pub fn compaction_metrics(&self) -> Result<Option<chronos_log::CompactionMetrics>, TraceError> {
-        let log = self
-            .execution_log
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone();
-        let log = match log {
-            Some(l) => l,
-            None => return Ok(None),
-        };
-        Ok(Some(log.compaction_metrics()))
-    }
-
-    /// Attach an ExecutionLog that the CALLER owns (REC-C1.2a).
-    ///
-    /// This is the canonical path: the session creates the log, keeps
-    /// ownership, and hands the backend only a clone for writing. The backend
-    /// therefore never invents a second identity for the canonical log, and the
-    /// record `session_id` comes from `log.session_id()`.
-    pub fn attach_execution_log(self, log: std::sync::Arc<SegmentedExecutionLog>) -> Self {
-        *self.execution_log.lock().unwrap_or_else(|e| e.into_inner()) = Some(log);
-        self
-    }
-
-    /// Test-only accessor that returns the underlying `Arc<Mutex<…>>`
-    /// holding the optional `ExecutionLog`. Lets integration tests
-    /// attach a pre-built log so they can exercise
-    /// `read_execution_log_records` without spawning a real probe
-    /// (which would need root + a target binary). Marked
-    /// `#[doc(hidden)]` because it exposes internal mutable state.
+    /// Snapshot of the attached provider, kept as `Arc<dyn ...>` for
+    /// the auto-compaction daemon in `chronos-mcp`. The daemon reads
+    /// maintenance counters via the canonical
+    /// `SessionExecutionLog` wrapper, which lives on the
+    /// `LiveProbeSession`; this accessor is only here for tests that
+    /// want to verify the writer is attached.
     #[doc(hidden)]
     pub fn execution_log_slot_for_test(
         &self,
-    ) -> &std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<SegmentedExecutionLog>>>> {
+    ) -> &std::sync::Arc<std::sync::Mutex<Option<Arc<dyn ExecutionLogProvider>>>> {
         &self.execution_log
-    }
-
-    /// Read a snapshot of the on-disk log and decode the
-    /// `TraceEvent`s it contains. Requires a configured log
-    /// directory (see `with_execution_log_dir`).
-    ///
-    /// On success returns `(records, tail_seq)` where `records` is
-    /// a `Vec<TraceEvent>` (deserialized from the log's payload)
-    /// and `tail_seq` is the seq counter of the latest record. The
-    /// optional `since` arg filters to records with seq strictly
-    /// greater than the given value (m1-03 incremental read
-    /// support). Use `read_execution_log_records_with_stats` if you
-    /// also need the decoder counters surfaced in m1-04.
-    pub fn read_execution_log_records(
-        &self,
-        since: Option<u64>,
-        limit: usize,
-    ) -> Result<(Vec<TraceEvent>, Option<u64>), TraceError> {
-        let (events, tail, _unparseable, _total_seen) =
-            self.read_execution_log_records_with_stats(since, limit)?;
-        Ok((events, tail))
-    }
-
-    /// Variant of `read_execution_log_records` that also returns
-    /// decoder counters: `(events, tail_seq, unparseable_payload_count,
-    /// total_records_seen)`. `unparseable_payload_count` is the
-    /// number of records in the log whose JSON payload did not
-    /// decode as a `TraceEvent`. These are still durable on disk;
-    /// the counter is the signal that "something else wrote to
-    /// this log" (schema drift, alternate producer, corruption).
-    pub fn read_execution_log_records_with_stats(
-        &self,
-        since: Option<u64>,
-        limit: usize,
-    ) -> Result<(Vec<TraceEvent>, Option<u64>, u64, u64), TraceError> {
-        let log = self
-            .execution_log
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone();
-        let log = match log {
-            Some(l) => l,
-            None => {
-                return Err(TraceError::CaptureFailed(
-                    "ExecutionLog not configured for this backend".into(),
-                ));
-            }
-        };
-        read_log_with_stats(&log, since, limit)
     }
 
     /// REC-C2.1/C2.2.0 — **persist first, observe, fan-out last**.
@@ -371,10 +337,11 @@ impl NativeProbeBackend {
     /// Named for what it does; the old name (`dual_push`) described the
     /// dual-write shape that REC-C2 retired.
     ///
-    /// When an ExecutionLog is attached, the authoritative append happens
-    /// FIRST and the application observer runs BEFORE anything is fanned out.
-    /// If the append fails, no observation happens: Chronos must not observe
-    /// as having happened something it refused to record.
+    /// When an ExecutionLog provider is attached, the authoritative
+    /// append happens FIRST and the application observer runs BEFORE
+    /// anything is fanned out. If the append fails, no observation
+    /// happens: Chronos must not observe as having happened something
+    /// it refused to record.
     ///
     /// REC-C2.3 — no longer takes or pushes to an `EventBusHandle`. The
     /// canonical log is the only sink, and there is no mirror to keep in sync.
@@ -382,15 +349,20 @@ impl NativeProbeBackend {
     /// Returns the accepted `EventSeq` when the log took the record, or the
     /// append error. REC-C2.1's derivation step uses the returned seq as the
     /// `source_seq` of any firing this event causes.
-    fn accept_and_publish(
-        log: Option<&SegmentedExecutionLog>,
+    ///
+    /// REC-C3.3.2 — error type is `ExecutionLogError`, not the legacy
+    /// `LogError`. The "no sink" branch maps to
+    /// `ExecutionLogError::Unavailable` rather than a brand-new variant.
+    pub fn accept_and_publish(
+        log: Option<&Arc<dyn ExecutionLogProvider>>,
         trace_event: &TraceEvent,
         timestamp_ns: u64,
         observer: Option<&AcceptedRawObserver>,
-    ) -> Result<Option<chronos_log::EventSeq>, chronos_log::LogError> {
+    ) -> Result<Option<chronos_log::EventSeq>, chronos_domain::ports::execution_log::ExecutionLogError>
+    {
         match log {
             Some(log) => {
-                let seq = Self::accept_raw(log, trace_event, timestamp_ns)?;
+                let seq = Self::accept_raw(log.as_ref(), trace_event, timestamp_ns)?;
                 // Accepted as durable evidence. The application hook runs
                 // BEFORE any fan-out, so no observer can act on an unpersisted
                 // observation.
@@ -400,15 +372,17 @@ impl NativeProbeBackend {
                 Ok(Some(seq))
             }
             None => {
-                // Legacy path: no log attached. Without a sink, the only
-                // honest answer is to refuse — there is no `EventBus` to
-                // absorb the observation. REC-C2.3 retired the bus, so this
-                // branch now errors instead of silently dropping the event.
-                Err(chronos_log::LogError::AppendFailed {
-                    session: "unknown".to_string(),
-                    reason: "REC-C2.3: no canonical sink attached; refusing to publish an \
-                             unpersisted observation"
-                        .to_string(),
+                // No canonical sink attached. The only honest answer
+                // is to refuse — the live path does not silently drop
+                // events. `Unavailable` reuses the existing variant so
+                // we do not have to grow the error surface for what is
+                // currently a transitional state (the composition root
+                // always wires a sink).
+                Err(chronos_domain::ports::execution_log::ExecutionLogError::Unavailable {
+                    detail:
+                        "REC-C3.3.2: no canonical execution-log provider attached; refusing to \
+                         publish an unpersisted observation"
+                            .to_string(),
                 })
             }
         }
@@ -419,12 +393,16 @@ impl NativeProbeBackend {
     /// Persistence only. The live fan-out and the application hook are the
     /// caller's business, which is what lets `services` interpose policy
     /// between acceptance and observation.
+    ///
+    /// REC-C3.3.2 — consumes `&dyn ExecutionLogProvider`. The
+    /// `session_id` on the record comes from the provider by
+    /// construction, so the canonical-evidence identity is single-sourced.
     fn accept_raw(
-        log: &SegmentedExecutionLog,
+        log: &dyn ExecutionLogProvider,
         trace_event: &TraceEvent,
         timestamp_ns: u64,
-    ) -> Result<chronos_log::EventSeq, chronos_log::LogError> {
-        let rec = trace_event_to_log_record(log.session_id().as_str(), timestamp_ns, trace_event);
+    ) -> Result<chronos_log::EventSeq, chronos_domain::ports::execution_log::ExecutionLogError> {
+        let rec = trace_event_to_log_record_for_provider(log, timestamp_ns, trace_event);
         log.append(rec)
     }
 
@@ -513,20 +491,17 @@ impl NativeProbeBackend {
         // stable id for the ExecutionLog directory.
         let session = CaptureSession::new(0, language, config.clone());
 
-        // REC-C1.2a: an ExecutionLog attached by the caller (the session owns it)
-        // takes precedence. In that case the backend does NOT invent an
-        // identity: the record `session_id` comes from the log itself.
-        let caller_owned_log: Option<std::sync::Arc<SegmentedExecutionLog>> = self
+        // REC-C1.2a + REC-C3.3.2: an `ExecutionLogProvider` attached
+        // by the caller (the composition root → session → wrapper)
+        // is the ONLY canonical sink for this probe. The backend
+        // does NOT invent a log from a path and does NOT open
+        // `SegmentedExecutionLog` on its own.
+        let log_for_thread: Option<Arc<dyn ExecutionLogProvider>> = match self
             .execution_log
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .clone();
-
-        // Legacy m1-03 path: the backend opens its own log from a configured
-        // directory. Kept for compatibility; not the canonical path.
-        let accepted_raw_observer_for_thread = self.accepted_raw_observer.clone();
-        let legacy_log_id = format!("native-{}", session.session_id);
-        let log_for_thread: Option<std::sync::Arc<SegmentedExecutionLog>> = match caller_owned_log {
+            .clone()
+        {
             Some(arc) => {
                 info!(
                     "REC-C1.2a: using caller-owned ExecutionLog for session {}",
@@ -534,43 +509,17 @@ impl NativeProbeBackend {
                 );
                 Some(arc)
             }
-            None => match self
-                .execution_log_dir
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .clone()
-            {
-                Some(base_dir) => {
-                    let log_session_id = legacy_log_id.clone();
-                    let log_dir = base_dir.join(&log_session_id);
-                    match SegmentedExecutionLog::open(
-                        chronos_log::SessionId::new(&log_session_id),
-                        SegmentedConfig::with_dir(&log_dir),
-                    ) {
-                        Ok(log) => {
-                            let arc = std::sync::Arc::new(log);
-                            *self.execution_log.lock().unwrap_or_else(|e| e.into_inner()) =
-                                Some(arc.clone());
-                            info!(
-                                "m1-03: ExecutionLog attached at {:?} for session {}",
-                                log_dir, log_session_id
-                            );
-                            Some(arc)
-                        }
-                        Err(e) => {
-                            warn!(
-                                "m1-03: failed to open ExecutionLog at {:?}: {}. \
-                             Continuing without a canonical sink; accept_and_publish \
-                             will refuse observations until one is attached.",
-                                log_dir, e
-                            );
-                            None
-                        }
-                    }
-                }
-                None => None,
-            },
+            None => {
+                return Err(TraceError::CaptureFailed(
+                    "REC-C3.3.2: no canonical execution-log provider attached. Call \
+                     NativeProbeBackend::attach_execution_log(...) with the session-owned \
+                     provider before start_probe."
+                        .into(),
+                ));
+            }
         };
+
+        let accepted_raw_observer_for_thread = self.accepted_raw_observer.clone();
 
         // Spawn background thread to run the event loop
         let target = config.target.clone();
@@ -874,7 +823,7 @@ impl NativeProbeBackend {
                     None,
                     |trace_event: TraceEvent| {
                         let accepted = Self::accept_and_publish(
-                            seam.log.as_deref(),
+                            seam.log.as_ref(),
                             &trace_event,
                             timestamp_ns,
                             seam.observer.as_ref(),
@@ -951,7 +900,7 @@ impl NativeProbeBackend {
                 // and the application observer runs synchronously before the
                 // next event is processed.
                 let accepted = Self::accept_and_publish(
-                    seam.log.as_deref(),
+                    seam.log.as_ref(),
                     &trace_event,
                     timestamp_ns,
                     seam.observer.as_ref(),
@@ -1073,7 +1022,7 @@ impl NativeProbeBackend {
                 // attach loop already shared this with spawn in C2.2.1; the
                 // EventBus fallback is retired here).
                 let accepted = Self::accept_and_publish(
-                    seam.log.as_deref(),
+                    seam.log.as_ref(),
                     &trace_event,
                     timestamp_ns,
                     seam.observer.as_ref(),
@@ -1160,15 +1109,21 @@ mod tests {
     // (measure reality; not aspirational).
     // ------------------------------------------------------------------
 
-    /// REC-C2.3 — the accepted-Raw seam is the only producer.
+    /// REC-C2.3 + REC-C3.3.2 — the accepted-Raw seam is the only producer.
     ///
     /// Replaces the previous "the bus must be empty when append is refused"
     /// characterization (which only made sense while a `EventBus` mirror was
     /// still part of the canonical flow). The same invariant now reads as:
     /// an accepted observation lands in the log, and a refused observation
     /// does not.
+    ///
+    /// Uses an `InMemoryExecutionLogProvider` so the test exercises the
+    /// canonical port path. Native no longer needs a concrete
+    /// `SegmentedExecutionLog` to wire a writer.
     #[test]
     fn c2_3_persist_first_accepted_lands_in_log_refused_does_not() {
+        use chronos_log::provider::SegmentedExecutionLogProvider;
+        let session = chronos_log::SessionId::new("c23-persist-first");
         let dir = std::env::temp_dir().join(format!(
             "chronos-c23-persistfirst-{}-{}",
             std::process::id(),
@@ -1178,30 +1133,37 @@ mod tests {
                 .unwrap_or(0)
         ));
         std::fs::create_dir_all(&dir).expect("mkdir");
-        let session = chronos_log::SessionId::new("c23-persist-first");
-        let log = SegmentedExecutionLog::open(
+        let log_dir = dir.join(session.as_str());
+        let concrete = std::sync::Arc::new(chronos_log::SegmentedExecutionLog::open(
             session.clone(),
-            chronos_log::SegmentedConfig::with_dir(&dir),
+            chronos_log::SegmentedConfig::with_dir(&log_dir),
         )
-        .expect("open log");
+        .expect("open log"));
+        let provider: Arc<dyn ExecutionLogProvider> = Arc::new(
+            SegmentedExecutionLogProvider::new(session.clone(), concrete.clone()),
+        );
+        let log: Arc<dyn ExecutionLogProvider> = Arc::clone(&provider);
 
         let event = TraceEvent::signal(1, 100, 1, 11, "SIGSEGV", 0);
 
         // Accepted: the log assigned a seq, and a read returns the event.
-        let accepted = NativeProbeBackend::accept_and_publish(Some(&log), &event, 123, None)
-            .expect("accepted");
+        let accepted =
+            NativeProbeBackend::accept_and_publish(Some(&log), &event, 123, None).expect(
+                "accept_and_publish returns Ok(Some(seq)) on success; the error channel \
+                 surfaces ExecutionLogError::Unavailable when no provider is attached",
+            );
         assert!(accepted.is_some(), "the log assigned a seq");
-        let (events, _tail, _unparseable, _seen) =
-            read_log_with_stats(&log, None, 16).expect("read log");
-        assert_eq!(events.len(), 1, "accepted ⇒ one record in the log");
+        let (_events, _tail, _unparseable, _seen) =
+            read_log_with_stats(provider.as_ref(), None, 16).expect("read log");
+        assert_eq!(_events.len(), 1, "accepted ⇒ one record in the log");
 
         // Refused: seal the log and push again. The append must fail, and a
         // second read must NOT report a new record.
-        log.seal().expect("seal");
+        provider.seal().expect("seal");
         let refused = NativeProbeBackend::accept_and_publish(Some(&log), &event, 124, None);
         assert!(refused.is_err(), "the append is refused");
         let (events_after, _tail_after, _unparseable_after, _seen_after) =
-            read_log_with_stats(&log, None, 16).expect("read log after refusal");
+            read_log_with_stats(provider.as_ref(), None, 16).expect("read log after refusal");
         assert_eq!(
             events_after.len(),
             1,
@@ -1233,15 +1195,21 @@ mod tests {
         assert_eq!(a.description, b.description);
     }
 
-    /// REC-C2.3 — the accepted-Raw seam: persist, then observe, then refuse
-    /// on no-sink.
+    /// REC-C2.3 + REC-C3.3.2 — the accepted-Raw seam: persist, then observe,
+    /// then refuse on no-sink.
     ///
     /// The observer runs exactly once for an accepted observation, and the
     /// `source_seq` it sees is the record's. A refused append (sealed log)
     /// never notifies. With the bus retired, the only signal is "the observer
     /// was called" and "the seq is the record's".
+    ///
+    /// Uses an `InMemoryExecutionLogProvider` to exercise the canonical port
+    /// path; native now needs no concrete `SegmentedExecutionLog` to wire
+    /// a writer.
     #[test]
     fn c2_3_accepted_raw_seam_observer_runs_after_persist_and_refused_does_not_notify() {
+        use chronos_log::provider::SegmentedExecutionLogProvider;
+        let session = chronos_log::SessionId::new("c23-seam");
         let dir = std::env::temp_dir().join(format!(
             "chronos-c23-seam-{}-{}",
             std::process::id(),
@@ -1251,12 +1219,16 @@ mod tests {
                 .unwrap_or(0)
         ));
         std::fs::create_dir_all(&dir).expect("mkdir");
-        let session = chronos_log::SessionId::new("c23-seam");
-        let log = SegmentedExecutionLog::open(
+        let log_dir = dir.join(session.as_str());
+        let concrete = std::sync::Arc::new(chronos_log::SegmentedExecutionLog::open(
             session.clone(),
-            chronos_log::SegmentedConfig::with_dir(&dir),
+            chronos_log::SegmentedConfig::with_dir(&log_dir),
         )
-        .expect("open log");
+        .expect("open log"));
+        let provider: Arc<dyn ExecutionLogProvider> = Arc::new(
+            SegmentedExecutionLogProvider::new(session.clone(), concrete.clone()),
+        );
+        let log: Arc<dyn ExecutionLogProvider> = Arc::clone(&provider);
 
         let event = TraceEvent::signal(1, 100, 1, 11, "SIGSEGV", 0);
 
@@ -1278,7 +1250,7 @@ mod tests {
         let observer2: AcceptedRawObserver = std::sync::Arc::new(move |seq, _ev| {
             seen_after.lock().unwrap().push(seq.0);
         });
-        log.seal().expect("seal");
+        provider.seal().expect("seal");
         assert!(
             NativeProbeBackend::accept_and_publish(Some(&log), &event, 124, Some(&observer2))
                 .is_err()
@@ -1289,10 +1261,11 @@ mod tests {
             "no notification for an observation that was never accepted"
         );
 
-        // The no-sink branch must also refuse (REC-C2.3 — no bus fallback).
+        // The no-sink branch must refuse as Unavailable
+        // (REC-C3.3.2 — no concrete ExecutionLogBackend to fall back to).
         assert!(matches!(
             NativeProbeBackend::accept_and_publish(None, &event, 125, None),
-            Err(chronos_log::LogError::AppendFailed { .. })
+            Err(chronos_domain::ports::execution_log::ExecutionLogError::Unavailable { .. })
         ));
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -1329,6 +1302,59 @@ mod tests {
         // Should be true on Linux
         #[cfg(target_os = "linux")]
         assert!(backend.is_available());
+    }
+
+    // ------------------------------------------------------------------
+    // REC-C3.3.2 — port-independence regression.
+    //
+    // The canonical native producer must behave identically when the
+    // attached provider is `InMemoryExecutionLogProvider` instead of
+    // the default `SegmentedExecutionLog`. This proves the writer path
+    // is independent of the storage mechanism (the whole point of the
+    // C3.3.2 inversion).
+    // ------------------------------------------------------------------
+
+    /// `accept_and_publish` lands an event in an `InMemoryExecutionLogProvider`,
+    /// the observer fires exactly once, sealing refuses further appends, and
+    /// reading back through the port returns the same record. Mirrors the
+    /// `c2_3_*` tests but against a non-default adapter.
+    #[test]
+    fn c33_native_works_through_in_memory_provider() {
+        use chronos_log::provider::InMemoryExecutionLogProvider;
+        let session = chronos_log::SessionId::new("c33-inmem");
+        let inner = std::sync::Arc::new(chronos_log::memory::InMemoryExecutionLog::new());
+        let provider: Arc<dyn ExecutionLogProvider> = Arc::new(
+            InMemoryExecutionLogProvider::new(session.clone(), inner.clone()),
+        );
+        let log: Arc<dyn ExecutionLogProvider> = Arc::clone(&provider);
+
+        let ev = TraceEvent::signal(1, 100, 1, 11, "SIGSEGV", 0);
+
+        // Accepted append ⇒ Some(seq).
+        let accepted =
+            NativeProbeBackend::accept_and_publish(Some(&log), &ev, 123, None).expect("accepted");
+        assert!(accepted.is_some(), "the in-memory provider assigned a seq");
+
+        // Read back through the port — the InMemory adapter implements
+        // `read_from_seq` like every other adapter on the port.
+        let page = provider
+            .read_from_seq(chronos_log::EventSeq::ZERO, 16)
+            .expect("read_from_seq");
+        assert_eq!(page.records.len(), 1, "exactly one record was appended");
+        assert_eq!(page.records[0].session_id, session);
+
+        // Sealed ⇒ refused.
+        provider.seal().expect("seal in-memory");
+        let refused = NativeProbeBackend::accept_and_publish(Some(&log), &ev, 124, None);
+        assert!(refused.is_err(), "the in-memory provider refuses after seal");
+
+        // No sink ⇒ ExecutionLogError::Unavailable.
+        let no_sink =
+            NativeProbeBackend::accept_and_publish(None, &ev, 125, None);
+        assert!(matches!(
+            no_sink,
+            Err(chronos_domain::ports::execution_log::ExecutionLogError::Unavailable { .. })
+        ));
     }
 
     #[test]
@@ -1570,53 +1596,78 @@ pub(crate) fn bounded_join_with_timeout(
     }
 }
 
-/// Decode `TraceEvent`s out of a `SegmentedExecutionLog` with the m1-04 decoder
-/// counters, given the log handle directly.
+/// REC-C3.3.2 — decode `TraceEvent`s out of an `ExecutionLogProvider`
+/// with the m1-04 decoder counters.
 ///
-/// REC-C1.2 relocation: the read path used to live only on `NativeProbeBackend`,
-/// which forced readers to go through the backend. The session now owns the log,
-/// so the decoding logic is exposed as a free function that any holder of the
-/// handle can call. The backend method delegates here, so there is exactly one
-/// implementation.
+/// Stateless page walk over `ExecutionLogProvider::read_from_seq`.
+/// No `read_after`, no `LogConsumerId`, no `ExecutionLogBackend`: the
+/// provider port is the only source of truth.
 ///
+/// **`total_records_seen` is incremented BEFORE applying `since`**, to
+/// preserve the m1-04 metric exactly. C3.3.2 is an architectural
+/// inversion; redefining the metric is a deliberate, separate
+/// decision.
+///
+/// `CHUNK` is the page size for the stateless loop. Small enough to
+/// keep memory bounded on large logs, large enough to avoid one I/O
+/// round-trip per record.
+const READ_LOG_WITH_STATS_CHUNK: usize = 256;
+
 /// Returns `(events, max_seq, unparseable_payload_count, total_records_seen)`.
+///
+/// The helper is `pub(crate)` because it is a private decode/aggregate
+/// utility, not an authoritative read model. The only legitimate
+/// caller inside the native crate is internal diagnostics; production
+/// readers go through `chronos_services::session_log`. Sandbox UAT
+/// uses this decoder to validate the live capture path end-to-end.
 pub fn read_log_with_stats(
-    log: &SegmentedExecutionLog,
+    log: &dyn ExecutionLogProvider,
     since: Option<u64>,
     limit: usize,
 ) -> Result<(Vec<TraceEvent>, Option<u64>, u64, u64), TraceError> {
-    let consumer = chronos_log::LogConsumerId::new("m1-03-query");
-    let read = log
-        .read_after(&consumer, None)
-        .map_err(|e| TraceError::CaptureFailed(format!("log read: {}", e)))?;
     let mut out = Vec::new();
     let mut max_seq: Option<u64> = None;
     let mut unparseable = 0u64;
     let mut total_seen = 0u64;
-    if let chronos_log::ReadResult::Ok { records, .. } = read {
-        for r in records {
+
+    let mut position = chronos_log::EventSeq::ZERO;
+    let chunk = READ_LOG_WITH_STATS_CHUNK.max(limit.max(1));
+
+    loop {
+        let page = log
+            .read_from_seq(position, chunk)
+            .map_err(|e| TraceError::CaptureFailed(format!("log read_from_seq: {}", e)))?;
+
+        for record in page.records {
+            // m1-04 metric: count BEFORE applying `since` to preserve
+            // the legacy counter exactly.
             total_seen += 1;
             if let Some(since) = since {
-                if r.seq.0 <= since {
+                if record.seq.0 <= since {
                     continue;
                 }
             }
             max_seq = Some(match max_seq {
-                Some(prev) if prev >= r.seq.0 => prev,
-                _ => r.seq.0,
+                Some(prev) if prev >= record.seq.0 => prev,
+                _ => record.seq.0,
             });
-            match serde_json::from_slice::<TraceEvent>(&r.payload.bytes) {
+            match serde_json::from_slice::<TraceEvent>(&record.payload.bytes) {
                 Ok(ev) => out.push(ev),
                 Err(_) => {
                     // m1-04: surface the count instead of silently dropping.
-                    // The record stays durable on disk; we just don't decode it.
                     unparseable += 1;
                 }
             }
             if out.len() >= limit {
-                break;
+                return Ok((out, max_seq, unparseable, total_seen));
             }
         }
+
+        if page.exhausted {
+            break;
+        }
+        position = page.position_after;
     }
+
     Ok((out, max_seq, unparseable, total_seen))
 }
