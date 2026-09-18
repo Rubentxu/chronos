@@ -33,7 +33,7 @@ use chronos_query::QueryEngine;
 
 use crate::error::ServiceError;
 use crate::events_log_read::{decode, payload_tag};
-use crate::session_log::SessionExecutionLog;
+use crate::session_log::{map_execution_log_error, SessionExecutionLog};
 
 /// What the projection knows about itself — written into every
 /// `ProjectionResult` so canonical operations can answer honestly
@@ -134,7 +134,7 @@ pub fn build_engine(log: &SessionExecutionLog) -> Result<ProjectionResult, Servi
         iterations_remaining -= 1;
         let page = handle
             .read_from_seq(position, SCAN_CHUNK)
-            .map_err(map_log_error)?;
+            .map_err(map_execution_log_error)?;
         for record in &page.records {
             let event = decode(record).ok_or_else(|| ServiceError::EvidenceDecodeFailed {
                 session_id: session_id.as_str().to_string(),
@@ -234,20 +234,6 @@ fn is_noisy(e: &TraceEvent) -> bool {
     )
 }
 
-/// Map a log error onto the service surface (matches `events_log_read`).
-fn map_log_error(e: chronos_log::LogError) -> ServiceError {
-    match e {
-        chronos_log::LogError::PositionBeforeRetention {
-            requested_next_seq,
-            retained_from,
-        } => ServiceError::CursorStale {
-            requested_next_seq: requested_next_seq.0,
-            retained_from_seq: retained_from.0,
-        },
-        other => ServiceError::DrainFailed(format!("{other:?}")),
-    }
-}
-
 /// Small convenience: build + push in one expression so callers
 /// don't have to split the two-line pattern across their codebase.
 trait PushAllThenFinalize {
@@ -330,7 +316,7 @@ mod tests {
         for seq in 0..5u64 {
             append_event(&log, &session_id, seq);
         }
-        log.handle().flush().ok();
+        log.flush().ok();
 
         let result = build_engine(&log).expect("build_engine ok");
         assert_eq!(result.meta.completeness, ProjectionCompleteness::Full);
@@ -357,16 +343,14 @@ mod tests {
         for seq in 0..5u64 {
             append_event(&log, &session_id, seq);
         }
-        log.handle().flush().ok(); // segment 0..=4
+        log.flush().ok(); // segment 0..=4
         for seq in 5..10u64 {
             append_event(&log, &session_id, seq);
         }
-        log.handle().flush().ok(); // segment 5..=9
+        log.flush().ok(); // segment 5..=9
 
         // Retire the first segment only — retained_from advances to 5.
-        log.handle()
-            .compact_up_to(EventSeq::new(4))
-            .expect("compact");
+        log.compact_up_to(EventSeq::new(4)).expect("compact");
 
         let result = build_engine(&log).expect("build_engine ok");
         match result.meta.completeness {
@@ -401,7 +385,7 @@ mod tests {
         let session_id = SessionId::new("decode-session");
         let log = SessionExecutionLog::create(&dir, session_id.clone()).unwrap();
         append_event(&log, &session_id, 0);
-        log.handle().flush().ok();
+        log.flush().ok();
 
         let handle = log.handle();
         let page = handle.read_from_seq(EventSeq::new(0), 1).expect("page");
@@ -443,7 +427,7 @@ mod tests {
 
         // 1 clean event.
         append_event(&log, &session_id, 0);
-        log.handle().flush().ok();
+        log.flush().ok();
 
         let result = build_engine(&log).expect("build_engine ok");
         // 1 noisy filtered, 1 clean indexed.
@@ -570,7 +554,7 @@ mod tests {
                 })
                 .expect("append canonical");
         }
-        log.handle().flush().ok();
+        log.flush().ok();
 
         // Build the projection.
         let result = build_engine(&log).expect("build_engine ok");

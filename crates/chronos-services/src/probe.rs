@@ -273,7 +273,11 @@ impl ProbeService {
                 owned_log.clone(),
                 Arc::clone(ctx.tripwire_manager),
             ))
-            .attach_execution_log(owned_log.handle());
+            .attach_execution_log(
+                owned_log
+                    .legacy_segmented_backend_for_native_bridge()
+                    .expect("native probe backend requires a segmented adapter (C33-DEBT-NATIVE-LOG-BRIDGE-01)"),
+            );
 
         // Start the probe (non-blocking — spawns background thread)
         let track_function_frames = input.track_function_frames.unwrap_or(false);
@@ -387,7 +391,11 @@ impl ProbeService {
                 owned_log.clone(),
                 Arc::clone(ctx.tripwire_manager),
             ))
-            .attach_execution_log(owned_log.handle());
+            .attach_execution_log(
+                owned_log
+                    .legacy_segmented_backend_for_native_bridge()
+                    .expect("native probe backend requires a segmented adapter (C33-DEBT-NATIVE-LOG-BRIDGE-01)"),
+            );
         let session = backend.attach_probe(input.pid, config).map_err(|e| {
             ServiceError::AttachFailed(format!(
                 "NativeProbeBackend::attach_probe({}) failed: {}",
@@ -629,8 +637,14 @@ impl ProbeService {
         // filters `since` by hand. It does NOT implement EventsCursorV1 and must
         // not become the canonical cursor reader.
         let owned = &live_probe.execution_log;
-        chronos_native::read_log_with_stats(&owned.handle(), since, limit)
-            .map_err(|e| ServiceError::DrainFailed(e.to_string()))
+        chronos_native::read_log_with_stats(
+            &owned.legacy_segmented_backend_for_native_bridge().expect(
+                "read_log_with_stats requires a segmented adapter (C33-DEBT-NATIVE-LOG-BRIDGE-01)",
+            ),
+            since,
+            limit,
+        )
+        .map_err(|e| ServiceError::DrainFailed(e.to_string()))
     }
 
     /// Snapshot the live probe session's `ExecutionLog` compaction counters.
@@ -649,7 +663,10 @@ impl ProbeService {
             .get(session_id)
             .ok_or_else(|| ServiceError::ProbeNotFound(session_id.to_string()))?;
         // REC-C1.2a: counters come from the session-owned log, not the backend.
-        Ok(Some(live_probe.execution_log.compaction_metrics()))
+        // REC-C3.3.1: compaction_metrics is a maintenance capability — the
+        // SessionExecutionLog already gates it on segmented providers and
+        // returns ServiceError on mismatch.
+        Ok(Some(live_probe.execution_log.compaction_metrics()?))
     }
 
     /// Drain raw events from a live probe session and return them + the
@@ -913,7 +930,11 @@ mod rec_c1_2_tests {
     fn stub_session(execution_log: crate::session_log::SessionExecutionLog) -> LiveProbeSession {
         // REC-C2.3: no EventBus — the backend's only sink is the
         // caller-attached ExecutionLog.
-        let backend = NativeProbeBackend::new().attach_execution_log(execution_log.handle());
+        let backend = NativeProbeBackend::new().attach_execution_log(
+            execution_log
+                .legacy_segmented_backend_for_native_bridge()
+                .expect("stub session uses a segmented adapter"),
+        );
         let session = CaptureSession::new(0, Language::Rust, CaptureConfig::new("noop"));
         LiveProbeSession {
             backend,
@@ -944,8 +965,16 @@ mod rec_c1_2_tests {
     fn backend_and_session_share_one_log_identity() {
         let live = stub_session(test_log("shared"));
         let backend_log = live.backend.execution_log().expect("backend holds a clone");
+        // The backend holds the SAME `Arc<SegmentedExecutionLog>` the session
+        // adopted through `legacy_segmented_backend_for_native_bridge`. That
+        // bridge is the only place where the concrete backend reaches into
+        // services for now (C33-DEBT-NATIVE-LOG-BRIDGE-01).
+        let session_segmented = live
+            .execution_log
+            .legacy_segmented_backend_for_native_bridge()
+            .expect("session log is segmented");
         assert!(
-            std::sync::Arc::ptr_eq(&backend_log, &live.execution_log.handle()),
+            std::sync::Arc::ptr_eq(&backend_log, &session_segmented),
             "backend must write to the very log the session owns"
         );
         assert_eq!(
@@ -961,8 +990,8 @@ mod rec_c1_2_tests {
         // the record identity is `log.session_id()`. This asserts the property
         // that mattered: the log's own identity is authoritative.
         let live = stub_session(test_log("identity"));
-        let log = live.execution_log.handle();
-        assert_eq!(log.session_id().as_str(), "identity");
+        // Read identity through the port, not through the concrete bridge.
+        assert_eq!(live.execution_log.session_id().as_str(), "identity");
     }
 
     #[test]

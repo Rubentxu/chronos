@@ -444,7 +444,7 @@ mod tests {
         let log = open_log(&dir, "drain2");
         let s = append_raw(&log, 1);
         append_firing(&log, s);
-        log.handle().flush().ok();
+        log.flush().ok();
 
         let page = drain(&log, None, 10).expect("page");
         assert_eq!(page.raw_events, 1, "the Raw source is visible");
@@ -470,7 +470,7 @@ mod tests {
         append_firing(&log, first_raw);
         append_firing(&log, first_raw);
         let next_raw = append_raw(&log, 103);
-        log.handle().flush().ok();
+        log.flush().ok();
         assert_eq!(first_raw, EventSeq::new(0), "seqs are log-assigned");
         assert_eq!(next_raw, EventSeq::new(3));
 
@@ -494,7 +494,7 @@ mod tests {
         let log = open_log(&dir, "drain4");
         let source = append_raw(&log, 100);
         let firing = append_firing(&log, source);
-        log.handle().flush().ok();
+        log.flush().ok();
         assert_eq!(source, EventSeq::new(0));
         assert_eq!(firing, EventSeq::new(1), "the derived firing's own seq");
 
@@ -519,7 +519,7 @@ mod tests {
         for i in 0..10u64 {
             append_raw(&log, i);
         }
-        log.handle().flush().ok();
+        log.flush().ok();
 
         let first = drain(&log, None, 3).expect("page");
         assert_eq!(first.raw_events, 3);
@@ -557,7 +557,7 @@ mod tests {
             ))
             .expect("gap");
         append_raw(&log, 6);
-        log.handle().flush().ok();
+        log.flush().ok();
 
         let page = drain(&log, None, 100).expect("page");
         assert_eq!(
@@ -591,7 +591,7 @@ mod tests {
             })
             .expect("append undecodable raw");
         append_firing(&log, bad);
-        log.handle().flush().ok();
+        log.flush().ok();
 
         let err = drain(&log, None, 10).expect_err("must fail closed");
         match err {
@@ -616,7 +616,7 @@ mod tests {
         for i in 0..5 {
             append_raw(&log, i);
         }
-        log.handle().flush().ok();
+        log.flush().ok();
 
         let first = read_all_raw_events(&log).expect("first read");
         let second = read_all_raw_events(&log).expect("second read");
@@ -645,7 +645,7 @@ mod tests {
         let log = open_log(&dir, "stop2");
         let raw = append_raw(&log, 0);
         append_firing(&log, raw);
-        log.handle().flush().ok();
+        log.flush().ok();
 
         let scan = read_all_raw_events(&log).expect("scan");
         assert_eq!(scan.events.len(), 1, "one Raw, one event");
@@ -675,7 +675,7 @@ mod tests {
             ))
             .expect("gap");
         append_raw(&log, 4);
-        log.handle().flush().ok();
+        log.flush().ok();
 
         let scan = read_all_raw_events(&log).expect("scan");
         assert_eq!(scan.events.len(), 2);
@@ -702,7 +702,7 @@ mod tests {
                 ..Default::default()
             })
             .expect("append broken");
-        log.handle().flush().ok();
+        log.flush().ok();
 
         let err = read_all_raw_events(&log).expect_err("must fail closed");
         assert!(matches!(err, ServiceError::EvidenceDecodeFailed { .. }));
@@ -720,7 +720,7 @@ mod tests {
         let log = open_log(&dir, "drainfalsify");
         let s = append_raw(&log, 1);
         append_firing(&log, s);
-        log.handle().flush().ok();
+        log.flush().ok();
 
         let a = drain(&log, None, 10).expect("page");
         // Perturb nothing: there is no bus to consult, no manager to perturb.

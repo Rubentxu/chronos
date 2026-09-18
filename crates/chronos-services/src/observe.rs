@@ -669,7 +669,7 @@ mod tests {
                     ..Default::default()
                 })
                 .expect("append raw");
-            log.handle().flush().ok();
+            log.flush().ok();
             crate::tripwire_evidence::derive_firings_from_event(&log, &self.manager, seq, event)
                 .expect("derive");
         }

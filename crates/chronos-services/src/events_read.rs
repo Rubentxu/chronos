@@ -286,7 +286,7 @@ mod tests {
                     })
                     .expect("append");
             }
-            handle.flush().ok();
+            owned.flush().ok();
 
             let registry = SessionExecutionLogRegistry::new();
             registry.register(owned.clone()).expect("register");

@@ -38,9 +38,10 @@
 //! [`Completeness::Unknown`]. The page carries the gaps it saw so C1.4 can
 //! interpret them, but this module does not claim completeness.
 
+use chronos_domain::ports::execution_log::ExecutionLogPage;
 use chronos_domain::EventType;
 use chronos_domain::TraceEvent;
-use chronos_log::{EventSeq, ExecutionRecord, Gap, LogPage, TailState};
+use chronos_log::{EventSeq, ExecutionRecord, Gap, TailState};
 
 use serde::{Deserialize, Serialize};
 
@@ -363,7 +364,11 @@ pub fn read_page(
         handle.retained_from(),
         handle.tail_seq(),
         &handle.tail_state(),
-        |position, chunk| handle.read_from_seq(position, chunk).map_err(map_log_error),
+        |position, chunk| {
+            handle
+                .read_from_seq(position, chunk)
+                .map_err(crate::session_log::map_execution_log_error)
+        },
     )
 }
 
@@ -389,7 +394,7 @@ pub(crate) fn read_page_with<F>(
     mut read: F,
 ) -> Result<LogReadPage, ServiceError>
 where
-    F: FnMut(EventSeq, usize) -> Result<LogPage, ServiceError>,
+    F: FnMut(EventSeq, usize) -> Result<ExecutionLogPage, ServiceError>,
 {
     let mut position = cursor.next_seq();
     let mut matched: Vec<TraceEvent> = Vec::new();
@@ -514,24 +519,6 @@ pub(crate) fn payload_tag(record: &ExecutionRecord) -> String {
     record.payload.tag.clone()
 }
 
-/// Map a log error onto the service surface.
-///
-/// Retention is NOT evidence loss: a cursor before the boundary becomes a typed
-/// `CursorStale` carrying both numbers, so the caller can re-anchor deliberately
-/// instead of being silently moved.
-fn map_log_error(e: chronos_log::LogError) -> ServiceError {
-    match e {
-        chronos_log::LogError::PositionBeforeRetention {
-            requested_next_seq,
-            retained_from,
-        } => ServiceError::CursorStale {
-            requested_next_seq: requested_next_seq.0,
-            retained_from_seq: retained_from.0,
-        },
-        other => ServiceError::DrainFailed(format!("{other:?}")),
-    }
-}
-
 /// Decode a log record's payload into a `TraceEvent`.
 ///
 /// The ExecutionLog payload is JSON-encoded `TraceEvent` (the m1-03 producer
@@ -560,7 +547,11 @@ pub fn find_by_id(
         &session_id,
         event_id,
         log.retained_from(),
-        |position, chunk| handle.read_from_seq(position, chunk).map_err(map_log_error),
+        |position, chunk| {
+            handle
+                .read_from_seq(position, chunk)
+                .map_err(crate::session_log::map_execution_log_error)
+        },
     )?;
     if result.is_some() {
         return Ok(result);
@@ -587,7 +578,7 @@ pub(crate) fn find_by_id_with<F>(
     mut read: F,
 ) -> Result<Option<TraceEvent>, ServiceError>
 where
-    F: FnMut(EventSeq, usize) -> Result<LogPage, ServiceError>,
+    F: FnMut(EventSeq, usize) -> Result<ExecutionLogPage, ServiceError>,
 {
     let mut position = from_seq;
     loop {
@@ -675,13 +666,13 @@ mod rec_c1_3_tests {
                 })
                 .expect("append");
         }
-        handle.flush().ok();
+        owned.flush().ok();
         owned
     }
 
     /// Append one decodable event at an explicit id/seq position.
     pub(super) fn push(
-        handle: &std::sync::Arc<chronos_log::SegmentedExecutionLog>,
+        handle: &std::sync::Arc<dyn chronos_domain::ports::execution_log::ExecutionLogProvider>,
         i: u64,
         event_type: EventType,
     ) {
@@ -741,7 +732,7 @@ mod rec_c1_3_tests {
             ))
             .expect("gap");
         push(&handle, 4, EventType::FunctionEntry);
-        handle.flush().ok();
+        owned.flush().ok();
         (owned, dir)
     }
 
@@ -934,7 +925,7 @@ mod rec_c1_3_tests {
         for i in 701..1400u64 {
             push(&handle, i, EventType::FunctionEntry);
         }
-        handle.flush().ok();
+        owned.flush().ok();
 
         // Chunk 1 ends at 511, so both the gap and everything after it live in
         // later chunks: the scan must keep going.
@@ -979,7 +970,7 @@ mod rec_c1_3_tests {
                 captured_at_unix_ns: None,
             })
             .expect("append");
-        handle.flush().ok();
+        owned.flush().ok();
 
         let err = read_page(
             &owned,
@@ -1022,12 +1013,12 @@ mod rec_c1_3_tests {
         for i in 0..10u64 {
             push(&handle, i, EventType::FunctionEntry);
         }
-        handle.flush().ok();
+        owned.flush().ok();
         for i in 10..20u64 {
             push(&handle, i, EventType::FunctionEntry);
         }
-        handle.flush().ok();
-        let retired = handle
+        owned.flush().ok();
+        let retired = owned
             .retain_up_to(EventSeq::new(9))
             .expect("retire the first ten seqs");
         assert!(retired.retained_from > EventSeq::ZERO, "retention happened");
@@ -1065,12 +1056,14 @@ mod rec_c1_3_tests {
 mod rec_c1_3_stall_tests {
     use super::rec_c1_3_tests::{entries, gappy_owned, log, push, tmpdir};
     use super::*;
-    use chronos_log::{LogPage, SessionId};
+    use chronos_domain::ports::execution_log::ExecutionLogPage;
+    use chronos_log::SessionId;
 
-    fn faulty_reader() -> impl FnMut(EventSeq, usize) -> Result<LogPage, ServiceError> + Copy {
+    fn faulty_reader(
+    ) -> impl FnMut(EventSeq, usize) -> Result<ExecutionLogPage, ServiceError> + Copy {
         |position, _chunk| {
             // Claims "more data" while never advancing the position.
-            Ok(LogPage {
+            Ok(ExecutionLogPage {
                 records: Vec::new(),
                 gaps: Vec::new(),
                 position_after: position,
@@ -1188,7 +1181,7 @@ mod rec_c1_3_stall_tests {
         for i in 15..20u64 {
             push(&handle, i, EventType::FunctionEntry);
         }
-        handle.flush().ok();
+        owned.flush().ok();
 
         let page = read_page(
             &owned,
@@ -1320,7 +1313,14 @@ mod rec_c1_3_stall_tests {
             EventSeq::ZERO,
             Some(EventSeq::new(0)),
             &TailState::Open,
-            |position, _| Ok(LogPage::empty_at(position)),
+            |position, _| {
+                Ok(ExecutionLogPage {
+                    records: Vec::new(),
+                    gaps: Vec::new(),
+                    position_after: position,
+                    exhausted: true,
+                })
+            },
         )
         .unwrap();
         assert!(page.records.is_empty());
@@ -1340,14 +1340,22 @@ mod rec_c1_3_stall_tests {
 #[cfg(test)]
 mod rec_c1_6_wire_facts_tests {
     use super::*;
-    use chronos_log::{LogPage, SessionId};
+    use chronos_domain::ports::execution_log::ExecutionLogPage;
+    use chronos_log::SessionId;
 
     /// A reader that always returns the same empty exhausted page. Sufficient
     /// to exercise the retention/tail fact construction in `read_page_with`
     /// without depending on a real ExecutionLog.
     fn empty_exhausted_reader(
-    ) -> impl FnMut(EventSeq, usize) -> Result<LogPage, ServiceError> + Copy {
-        |position, _| Ok(LogPage::empty_at(position))
+    ) -> impl FnMut(EventSeq, usize) -> Result<ExecutionLogPage, ServiceError> + Copy {
+        |position, _| {
+            Ok(ExecutionLogPage {
+                records: Vec::new(),
+                gaps: Vec::new(),
+                position_after: position,
+                exhausted: true,
+            })
+        }
     }
 
     fn cursor_start() -> EventsCursorV1 {

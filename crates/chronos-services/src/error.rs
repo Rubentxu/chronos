@@ -169,6 +169,14 @@ pub enum ServiceError {
     #[error("ExecutionLog identity mismatch: session {expected} but log holds {actual}")]
     ExecutionLogIdentityMismatch { expected: String, actual: String },
 
+    /// Storage-mechanism capability called on a non-segmented
+    /// adapter (REC-C3.3.1). Surfaces typed "not supported" instead
+    /// of silently no-oping.
+    #[error(
+        "ExecutionLog maintenance capability '{capability}' is not supported by this provider"
+    )]
+    ExecutionLogMaintenanceUnsupported { capability: String },
+
     /// A `probe_stop` call failed to drain / detach.
     #[error("probe stop error: {0}")]
     ProbeStopError(String),

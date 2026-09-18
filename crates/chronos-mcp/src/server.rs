@@ -3017,6 +3017,7 @@ impl ChronosServer {
             | Err(ServiceError::EvidenceDecodeFailed { .. })
             | Err(ServiceError::EvidenceReadStalled { .. })
             | Err(ServiceError::ExecutionLogUnavailable { .. })
+            | Err(ServiceError::ExecutionLogMaintenanceUnsupported { .. })
             | Err(ServiceError::EvidenceUnavailableDueToRetention { .. }) => {
                 return Ok(CallToolResult::error(text_content(
                     "internal error: unexpected ExecutionLog error",

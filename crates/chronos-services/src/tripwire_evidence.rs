@@ -20,8 +20,8 @@ use std::sync::Arc;
 use chronos_domain::tripwire::TripwireManager;
 use chronos_domain::TraceEvent;
 use chronos_log::{
-    tripwire_evidence_codec as codec, EventSeq, ExecutionKind, ExecutionRecord,
-    NewExecutionRecord, SessionId, TripwireFiredEvidence,
+    tripwire_evidence_codec as codec, EventSeq, ExecutionKind, ExecutionRecord, NewExecutionRecord,
+    SessionId, TripwireFiredEvidence,
 };
 
 use crate::error::ServiceError;
@@ -136,7 +136,7 @@ pub fn derive_firings_from_event(
     }
 
     if !report.appended.is_empty() {
-        let _ = log.handle().flush();
+        let _ = log.flush();
     }
     Ok(report)
 }
@@ -469,7 +469,7 @@ mod tests {
                 ..Default::default()
             })
             .expect("append raw");
-        log.handle().flush().ok();
+        log.flush().ok();
         seq
     }
 
@@ -539,7 +539,7 @@ mod tests {
         for i in 0..N {
             append_plain(&log, i);
         }
-        log.handle().flush().ok();
+        log.flush().ok();
 
         let page = read_firings_page(&log, EventSeq::ZERO, 10, 100_000).expect("page");
         assert_eq!(
@@ -562,7 +562,7 @@ mod tests {
         for i in 0..50u64 {
             append_plain(&log, i);
         }
-        log.handle().flush().ok();
+        log.flush().ok();
 
         let partial = firing_count_snapshot(&log, 10).expect("snapshot");
         assert_eq!(partial.status(), FiringCountStatus::Partial);
