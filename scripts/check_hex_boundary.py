@@ -142,12 +142,33 @@ WEBHOOK_FORBIDDEN_CROSS_CRATES = {
     "chronos_cli",
 }
 
-# Surface shape from REC-C3.1, frozen for REC-C3.2 (and tightened
-# in REC-C3.3 when the surface grows with stored events).
+# Surface shape from REC-C3.1, frozen for REC-C3.2 and broadened in
+# REC-C3.3 (capability-bundle split: ExecutionLogProvider + retention +
+# maintenance ports). Stale placeholders from the pre-C3.3 sketch
+# (ExecutionLogProviderShape, NoopExecutionLogProvider) were removed;
+# the surface must contain the *real* ports and the capability helpers.
 EXPECTED_PUBLIC_SYMBOLS = {
-    # execution_log (placeholder, deferred to REC-C3.3)
-    "ExecutionLogProviderShape",
-    "NoopExecutionLogProvider",
+    # execution_log (REC-C3.3 capability-bundle split)
+    "ExecutionLogProvider",
+    "ExecutionLogKind",
+    "ExecutionLogPage",
+    "ExecutionLogError",
+    "ExecutionLogFactory",
+    "ExecutionLogRetention",
+    "RetentionError",
+    "RetentionOutcome",
+    "ExecutionLogMaintenance",
+    "ExecutionLogMaintenanceError",
+    "CompactionReport",
+    "CompactionMetrics",
+    # browser probe (REC-C3.2 V5)
+    "BrowserProbeFactory",
+    "BrowserProbeBackend",
+    "BrowserError",
+    # uprobe (REC-C3.2)
+    "UprobeInjector",
+    "UprobeAttachError",
+    "UprobeHandle",
     # notification
     "NotificationRequest",
     "NotificationTarget",
