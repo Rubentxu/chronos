@@ -187,7 +187,7 @@ pub struct ExecutionLogManifest {
     /// `None` only in a v1 manifest; a reopen turns that into
     /// `TailState::Unknown` rather than guessing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tail_state: Option<crate::tail::TailState>,
+    pub tail_state: Option<chronos_domain::TailState>,
 }
 
 impl ExecutionLogManifest {
@@ -204,7 +204,7 @@ impl ExecutionLogManifest {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0),
-            tail_state: Some(crate::tail::TailState::Open),
+            tail_state: Some(chronos_domain::TailState::Open),
         }
     }
 }
@@ -329,7 +329,7 @@ pub struct SegmentedExecutionLog {
     /// nothing has been retired.
     retained_from: Arc<Mutex<EventSeq>>,
     /// What we know about the end of the execution (REC-C1.5.3).
-    tail_state: Arc<Mutex<crate::tail::TailState>>,
+    tail_state: Arc<Mutex<chronos_domain::TailState>>,
 }
 
 impl SegmentedExecutionLog {
@@ -384,7 +384,7 @@ impl SegmentedExecutionLog {
             loaded_projection: None,
         };
         // Assigned exactly once on every path that returns a boundary.
-        let persisted_tail: Option<crate::tail::TailState>;
+        let persisted_tail: Option<chronos_domain::TailState>;
         // Did THIS open create the manifest? A brand-new log is `Open` because
         // this run is open, not because a previous run failed to seal.
         let mut created_now = false;
@@ -409,7 +409,7 @@ impl SegmentedExecutionLog {
                 persisted_tail = if m.schema_version == ExecutionLogManifest::LEGACY_SCHEMA_VERSION
                 {
                     // Legacy metadata: no proof either way. Never guessed.
-                    Some(crate::tail::TailState::Unknown {
+                    Some(chronos_domain::TailState::Unknown {
                         reason: "legacy-v1: manifest carried no tail state".to_string(),
                     })
                 } else {
@@ -443,7 +443,7 @@ impl SegmentedExecutionLog {
                                 .duration_since(std::time::UNIX_EPOCH)
                                 .map(|d| d.as_millis() as u64)
                                 .unwrap_or(0),
-                            tail_state: Some(crate::tail::TailState::unknown(
+                            tail_state: Some(chronos_domain::TailState::unknown(
                                 "legacy-v1: manifest carried no tail state",
                             )),
                         };
@@ -469,7 +469,7 @@ impl SegmentedExecutionLog {
             session_id,
             config,
             retained_from: Arc::new(Mutex::new(retained_from)),
-            tail_state: Arc::new(Mutex::new(crate::tail::TailState::Open)),
+            tail_state: Arc::new(Mutex::new(chronos_domain::TailState::Open)),
         };
         this.assert_layout_matches_retention()?;
         if this.config.replay_on_open {
@@ -487,14 +487,14 @@ impl SegmentedExecutionLog {
             // another process touching this session) can still say otherwise.
             let state = persisted_tail
                 .clone()
-                .unwrap_or(crate::tail::TailState::Open);
+                .unwrap_or(chronos_domain::TailState::Open);
             crate::tail::recover_tail_state(Some(&state), live_temp, reconstructed_tail)
                 .without_previous_run_blame()
         } else {
             crate::tail::recover_tail_state(persisted_tail.as_ref(), live_temp, reconstructed_tail)
         };
-        if let crate::tail::TailState::Sealed { tail_seq, .. } = &recovery.state {
-            let expected = tail_seq.map(EventSeq::new);
+        if let chronos_domain::TailState::Sealed { tail_seq, .. } = &recovery.state {
+            let expected = *tail_seq;
             // A sealed tail is the only witness of a missing LAST segment:
             // nothing follows it to reveal the hole.
             if expected != reconstructed_tail {
@@ -517,7 +517,7 @@ impl SegmentedExecutionLog {
     }
 
     /// Tail state as concluded at open time (REC-C1.5.3).
-    pub fn tail_state(&self) -> crate::tail::TailState {
+    pub fn tail_state(&self) -> chronos_domain::TailState {
         self.tail_state
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -584,7 +584,7 @@ impl SegmentedExecutionLog {
     ///
     /// After this, `append`/`record_gap` are refused: a seal that still accepts
     /// writes guarantees nothing.
-    pub fn seal(&self) -> Result<crate::tail::SealedTail, LogError> {
+    pub fn seal(&self) -> Result<chronos_domain::SealedTail, LogError> {
         // 1. Flush everything.
         self.flush()?;
         // 2. No live temp may remain: the flush must be complete.
@@ -603,10 +603,10 @@ impl SegmentedExecutionLog {
         // 4. Capture the durable tail.
         let tail = self.tail_seq();
         // 5. Persist the seal, preserving everything else in the manifest.
-        let sealed = crate::tail::TailState::sealed(tail);
+        let sealed = crate::tail::sealed_now(tail);
         self.update_manifest(|m| m.tail_state = Some(sealed.clone()))?;
         *self.tail_state.lock().unwrap_or_else(|e| e.into_inner()) = sealed;
-        Ok(crate::tail::SealedTail { tail_seq: tail })
+        Ok(chronos_domain::SealedTail { tail_seq: tail })
     }
 
     /// The authoritative logical retention boundary (earliest queryable seq).
@@ -1430,34 +1430,15 @@ fn flush_inner(
 // ---------------------------------------------------------------------------
 // Convenience conversions so callers don't have to spell out
 // `ExecutionRecord` shapes at every replay site.
+//
+// REC-C3.3.1: `from_record` / `From<&ExecutionRecord>` /
+// `record_to_new` live on `chronos_domain::evidence` because
+// `NewExecutionRecord` belongs to the domain crate. This module
+// just re-uses them.
 // ---------------------------------------------------------------------------
 
-/// Build a `NewExecutionRecord` from a stored `ExecutionRecord`.
-impl NewExecutionRecord {
-    pub fn from_record(r: &ExecutionRecord) -> Self {
-        Self {
-            session_id: r.session_id.clone(),
-            kind: r.kind,
-            monotonic_ns: r.monotonic_ns,
-            payload: ExecutionPayload::new(r.payload.bytes.clone(), r.payload.tag.clone()),
-            invocation_id: r.invocation_id,
-            parent_invocation_id: r.parent_invocation_id,
-            symbol_id: r.symbol_id,
-            captured_at_unix_ns: r.captured_at_unix_ns,
-        }
-    }
-}
-
-/// Same as `from_record`, exposed via a trait-like helper. Lives
-/// here to avoid pulling `impl From` into the public API.
 pub fn record_to_new(r: &ExecutionRecord) -> NewExecutionRecord {
-    NewExecutionRecord::from_record(r)
-}
-
-impl From<&ExecutionRecord> for NewExecutionRecord {
-    fn from(r: &ExecutionRecord) -> Self {
-        NewExecutionRecord::from_record(r)
-    }
+    chronos_domain::evidence::record_to_new(r)
 }
 
 #[cfg(test)]

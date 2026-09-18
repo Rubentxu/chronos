@@ -1423,7 +1423,7 @@ mod rec_c1_6_wire_facts_tests {
             EventSeq::ZERO,
             Some(EventSeq::new(99)),
             &TailState::Sealed {
-                tail_seq: Some(99),
+                tail_seq: Some(EventSeq::new(99)),
                 sealed_at_unix_ms: 1_700_000_000_000,
             },
             empty_exhausted_reader(),

@@ -1,40 +1,16 @@
 //! `ExecutionLogBackend` trait + high-level `ExecutionLog<B>` wrapper.
+//!
+//! REC-C3.3.1: `NewExecutionRecord`/`Gap`/`GapReason`/`ExecutionPayload`
+//! now live in `chronos_domain::evidence` (the port owns them).
+//! `NewExecutionRecord` here is a re-export so legacy signatures keep
+//! resolving; new code should depend on `chronos_domain` directly.
 
 use crate::cursor::{ConsumerCursor, LogConsumerId, LogPage, ReadResult};
 use crate::error::LogError;
-use crate::gap::Gap;
 use crate::record::{ExecutionKind, ExecutionRecord, SessionId};
 use crate::seq::EventSeq;
 
-/// An `ExecutionRecord` minus the backend-assigned `seq`.
-///
-/// The backend assigns the seq on `append` so the invariant
-/// "strictly monotonic within one session" is enforced centrally.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct NewExecutionRecord {
-    pub session_id: SessionId,
-    /// REC-C2.1: the record's kind. Defaults to `Raw` (historical
-    /// producers only ever wrote raw events); a tripwire derivation sets
-    /// `TripwireFired`.
-    pub kind: ExecutionKind,
-    pub monotonic_ns: u64,
-    pub payload: crate::record::ExecutionPayload,
-    /// Invocation-level identity for M2+ producers running with
-    /// `track_function_frames=true`. Defaults to `None` for v1
-    /// producers.
-    pub invocation_id: Option<chronos_domain::InvocationId>,
-    /// Identity of the calling frame on the same thread.
-    pub parent_invocation_id: Option<chronos_domain::InvocationId>,
-    /// Stable symbol identity for the function the event pertains to.
-    pub symbol_id: Option<chronos_domain::SymbolId>,
-    /// REC-C1.8: optional wall-clock capture timestamp in nanoseconds
-    /// since the Unix epoch. Producers MAY fill this when they have
-    /// access to a wall clock; producers without one (sandboxed,
-    /// offline, post-processed replays) MUST leave it `None`. Mirrors
-    /// `ExecutionRecord::captured_at_unix_ns`. Defaults to `None`
-    /// (the `Default` derive populates `Option<u64>` with `None`).
-    pub captured_at_unix_ns: Option<u64>,
-}
+pub use chronos_domain::{Gap, GapReason, NewExecutionRecord};
 
 /// Backend trait for the append-only execution log.
 ///
@@ -143,7 +119,7 @@ impl<B: ExecutionLogBackend + ?Sized> ExecutionLog<B> {
         &self,
         session_id: SessionId,
         monotonic_ns: u64,
-        payload: crate::record::ExecutionPayload,
+        payload: chronos_domain::ExecutionPayload,
     ) -> Result<EventSeq, LogError> {
         self.backend.append(NewExecutionRecord {
             session_id,
@@ -175,9 +151,6 @@ impl<B: ExecutionLogBackend + ?Sized> ExecutionLog<B> {
     }
 }
 
-// `ExecutionRecord` is re-exported at the crate root, but we want
-// `ExecutionLogBackend::append` to accept a `NewExecutionRecord`
-// (sans seq). The `ExecutionRecord` type itself is constructed
-// internally by the backend.
 #[allow(dead_code)]
 fn _execution_record_marker(_r: ExecutionRecord) {}
+

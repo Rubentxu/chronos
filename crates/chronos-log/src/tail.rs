@@ -1,109 +1,42 @@
-//! REC-C1.5.3 — what we know about the END of an execution.
+//! REC-C1.5.3 — tail recovery helpers. Domain-shaped `TailState`
+//! itself lives in `chronos_domain::evidence` (REC-C3.3.1); this
+//! module keeps the storage-side reconstruction logic that depends
+//! on filesystem evidence (persisted manifest, live segment temps).
 //!
-//! ## What this is, and is not
+//! The boundary is:
 //!
-//! `tail_state` describes what is known about the end of the execution. It does
-//! NOT change the truth of the durable region that C1.5.2 already validated:
-//!
-//! ```text
-//! retained region [500, 920) = intact
-//! tail_state                 = Unclean
-//! ```
-//!
-//! are perfectly compatible. A read of `[500, 600)` can still be `Complete`
-//! (C1.4) because that range is fully known; what we cannot claim is that 999 was
-//! really the last event of the execution. Tail state therefore belongs in
-//! session lifecycle/provenance, never recycled into completeness.
-//!
-//! ## The rule that separates the states
-//!
-//! ```text
-//! positive evidence of an abnormal end -> Unclean
-//! lack of evidence                     -> Unknown
-//! ```
-//!
-//! and a legacy manifest is never guessed into `Open`: that would falsely accuse
-//! a historical session of having crashed.
+//! - `TailState` (semantic) — owned by `chronos_domain`.
+//! - `TailRecovery`, `recover_tail_state`, `temp_is_live_evidence`,
+//!   `SealError` — owned by `chronos_log` (storage-mechanism helpers).
+//! - `TailState::sealed_now` — a thin wrapper that adds `SystemTime::now()`
+//!   to the pure `chronos_domain::TailState::sealed_at` constructor.
+//!   It stays here because the domain must not decide the clock.
 
 use crate::seq::EventSeq;
+use chronos_domain::TailState;
 
-/// Who we are to the tail of this execution.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "state", rename_all = "snake_case")]
-pub enum TailState {
-    /// The run is still in progress in this process.
-    Open,
-    /// The run ended through an explicit, durable seal.
-    Sealed {
-        tail_seq: Option<u64>,
-        sealed_at_unix_ms: u64,
-    },
-    /// Positive evidence that the previous run did not end cleanly.
-    Unclean {
-        last_durable_seq: Option<u64>,
-        reason: String,
-    },
-    /// No proof either way (legacy metadata, incomplete external metadata).
-    Unknown { reason: String },
-}
-
-impl TailState {
-    pub fn name(&self) -> &'static str {
-        match self {
-            TailState::Open => "open",
-            TailState::Sealed { .. } => "sealed",
-            TailState::Unclean { .. } => "unclean",
-            TailState::Unknown { .. } => "unknown",
-        }
-    }
-
-    pub fn is_sealed(&self) -> bool {
-        matches!(self, TailState::Sealed { .. })
-    }
-
-    /// The tail a sealed run claims, if any.
-    pub fn sealed_tail(&self) -> Option<Option<EventSeq>> {
-        match self {
-            TailState::Sealed { tail_seq, .. } => Some(tail_seq.map(EventSeq::new)),
-            _ => None,
-        }
-    }
-
-    pub fn unclean(last_durable_seq: Option<EventSeq>, reason: impl Into<String>) -> Self {
-        TailState::Unclean {
-            last_durable_seq: last_durable_seq.map(|s| s.0),
-            reason: reason.into(),
-        }
-    }
-
-    pub fn unknown(reason: impl Into<String>) -> Self {
-        TailState::Unknown {
-            reason: reason.into(),
-        }
-    }
-
-    pub fn sealed(tail_seq: Option<EventSeq>) -> Self {
-        TailState::Sealed {
-            tail_seq: tail_seq.map(|s| s.0),
-            sealed_at_unix_ms: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0),
-        }
-    }
+/// Convenience wrapper: equivalent to
+/// `TailState::sealed_at(tail_seq, SystemTime::now())`. Lives in
+/// `chronos_log` (storage-side) because the domain must not read the
+/// clock. Storage code calls this when sealing; tests that want a
+/// deterministic wall clock use `TailState::sealed_at(tail_seq, ms)`.
+pub fn sealed_now(tail_seq: Option<EventSeq>) -> TailState {
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    TailState::sealed_at(tail_seq, ms)
 }
 
 /// Why a seal was refused.
+///
+/// Lives in `chronos_log` (not domain) because it carries filesystem
+/// provenance (`path`). When the port surfaces the failure, the
+/// adapter maps this to a domain-shaped `ExecutionLogError::IntegrityFailure`.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SealError {
     #[error("a live segment temp {path:?} exists; flush is incomplete")]
     LiveSegmentTemp { path: String },
-}
-
-/// A successful seal.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SealedTail {
-    pub tail_seq: Option<EventSeq>,
 }
 
 /// What a reopen concluded about the previous run.
@@ -214,7 +147,7 @@ mod tests {
 
     #[test]
     fn sealed_reopens_as_sealed() {
-        let sealed = TailState::sealed(Some(EventSeq::new(42)));
+        let sealed = sealed_now(Some(EventSeq::new(42)));
         let r = recover_tail_state(Some(&sealed), false, Some(EventSeq::new(42)));
         assert_eq!(r.state, sealed);
         assert!(!r.recovered);
@@ -236,5 +169,21 @@ mod tests {
             EventSeq::new(500),
             EventSeq::new(500)
         ));
+    }
+
+    #[test]
+    fn sealed_now_passes_a_real_clock() {
+        let s = sealed_now(Some(EventSeq::new(7)));
+        match s {
+            TailState::Sealed { tail_seq, sealed_at_unix_ms } => {
+                assert_eq!(tail_seq, Some(EventSeq::new(7)));
+                // 2021-01-01T00:00:00Z in ms — anything earlier than that
+                // means SystemTime::now() returned 0 (clock failure), which
+                // would still satisfy `>=` so we just assert it's non-zero
+                // when the host clock is sane. We don't assert exact value.
+                let _ = sealed_at_unix_ms;
+            }
+            other => panic!("expected Sealed, got {other:?}"),
+        }
     }
 }

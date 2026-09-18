@@ -6,11 +6,11 @@
 //! Gaps are explicit (`Gap` + `GapReason`) instead of silent loss.
 //!
 //! The crate ships:
-//! - The public types (`EventSeq`, `ExecutionRecord`, `Gap`,
-//!   `LogConsumerId`, `ConsumerCursor`, `ReadResult`).
-//! - The `ExecutionLogBackend` trait.
-//! - The `InMemoryExecutionLog` backend (the only backend in m1-01;
-//!   file-backed segments arrive in m1-02).
+//! - The legacy `ExecutionLogBackend` trait (kept for the segmented
+//!   adapter to implement until REC-C3.3.1 wires the new
+//!   `chronos_domain::ports::execution_log::ExecutionLogProvider`).
+//! - The `InMemoryExecutionLog` backend (m1-01; file-backed segments
+//!   arrive in m1-02).
 //!
 //! See `docs/chronos-agentic-reconstruction/docs/specs/EXECUTION_LOG.md`
 //! for the canonical behavior contract.
@@ -33,11 +33,13 @@ pub mod seq;
 pub mod tail;
 pub mod tripwire_evidence_codec;
 
-pub use backend::{ExecutionLog, ExecutionLogBackend, NewExecutionRecord};
+pub use backend::{ExecutionLog, ExecutionLogBackend};
 pub use cursor::{ConsumerCursor, LogConsumerId, LogPage, ReadResult};
 pub use discovery::{discover_execution_logs, DiscoveredLog, DiscoveryReport, UnmanagedLegacyLog};
 pub use error::LogError;
-pub use gap::{Gap, GapReason};
+// REC-C3.3.1: Gap/GapReason/NewExecutionRecord live in chronos_domain::evidence.
+// Re-export them here so existing `use chronos_log::Gap` paths keep resolving.
+pub use chronos_domain::{Gap, GapReason, NewExecutionRecord};
 pub use location::{execution_log_dir, execution_log_dir_for_session, resolve_execution_log_root};
 pub use memory::InMemoryExecutionLog;
 pub use record::{
@@ -56,4 +58,9 @@ pub use replay::{
 pub use segment::{segment_path, write_segment, DecodedSegment, SegmentEntry, SegmentMetadata};
 pub use segmented::{CompactionMetrics, SegmentedConfig, SegmentedExecutionLog};
 pub use seq::EventSeq;
-pub use tail::{recover_tail_state, SealError, SealedTail, TailState};
+// REC-C3.3.1: TailState/SealedTail live in chronos_domain::evidence.
+// The clock-aware wrapper `sealed_now` plus `recover_tail_state`,
+// `TailRecovery`, and `SealError` stay in `chronos_log::tail` because
+// they read filesystem state.
+pub use chronos_domain::{SealedTail, TailState};
+pub use tail::{recover_tail_state, sealed_now, SealError, TailRecovery};

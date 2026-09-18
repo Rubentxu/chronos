@@ -9,7 +9,7 @@
 use std::num::NonZeroUsize;
 
 use chronos_log::{
-    NewExecutionRecord, SegmentedConfig, SegmentedExecutionLog, SessionId, TailState,
+    EventSeq, NewExecutionRecord, SegmentedConfig, SegmentedExecutionLog, SessionId, TailState,
 };
 
 fn tmpdir(tag: &str) -> std::path::PathBuf {
@@ -84,7 +84,7 @@ fn tail_2_13_clean_seal_records_the_exact_tail() {
     let sealed = log.seal().expect("seal");
     assert_eq!(sealed.tail_seq, Some(chronos_log::EventSeq::new(9)));
     match log.tail_state() {
-        TailState::Sealed { tail_seq, .. } => assert_eq!(tail_seq, Some(9)),
+        TailState::Sealed { tail_seq, .. } => assert_eq!(tail_seq, Some(EventSeq::new(9))),
         other => panic!("expected Sealed, got {other:?}"),
     }
     let _ = std::fs::remove_dir_all(&dir);
@@ -103,7 +103,7 @@ fn tail_3_sealed_reopen_preserves_the_seal() {
 
     let reopened = SegmentedExecutionLog::open(session.clone(), config(&dir, 1)).expect("reopen");
     match reopened.tail_state() {
-        TailState::Sealed { tail_seq, .. } => assert_eq!(tail_seq, Some(5)),
+        TailState::Sealed { tail_seq, .. } => assert_eq!(tail_seq, Some(EventSeq::new(5))),
         other => panic!("expected Sealed, got {other:?}"),
     }
     let _ = std::fs::remove_dir_all(&dir);
@@ -160,7 +160,7 @@ fn tail_5_14_persisted_open_becomes_unclean_with_readable_prefix() {
             last_durable_seq,
             reason,
         } => {
-            assert_eq!(last_durable_seq, Some(3));
+            assert_eq!(last_durable_seq, Some(EventSeq::new(3)));
             assert!(reason.contains("not sealed"), "{reason}");
         }
         other => panic!("expected Unclean, got {other:?}"),
