@@ -1,21 +1,36 @@
-//! REC-C3.3.2 — factory port for `ExecutionLogProvider`.
+//! REC-C3.3.2.5 — factory port for the `ExecutionLog` capability bundle.
 //!
-//! This port separates **how an `ExecutionLogProvider` is constructed**
-//! (segmented on disk, in-memory, mock) from **how it is consumed**
-//! (`Arc<dyn ExecutionLogProvider>` via the canonical-evidence port).
+//! ## Why a capability bundle, not a single provider
 //!
-//! Before C3.3.2, `chronos_services::session_log::SessionExecutionLog`
-//! called `SegmentedExecutionLog::open` / `open_existing` and wrapped
-//! the concrete `SegmentedExecutionLog` with `SegmentedExecutionLogProvider`.
-//! That broke the hexagon: services owned the construction of a
-//! concrete adapter, so the composition root had no seam to swap it
-//! (tests, alternate backends, future ones).
+//! Before C3.3.2.5 the factory returned `Arc<dyn ExecutionLogProvider>`
+//! and `SessionExecutionLog` carried a `ProviderKind` enum tag. Every
+//! maintenance call (`flush`, `compaction_metrics`, `compact_up_to`,
+//! `retain_up_to`, `maybe_compact`, `record_gap_on_segmented`) hit a
+//! `_ => Err(ExecutionLogMaintenanceUnsupported { ... })` arm because
+//! the maintenance capabilities were never on the port. The port
+//! only carried canonical-evidence operations.
 //!
-//! With this port the composition root constructs and wires the
-//! factory; services call `factory.create(...)` and get back
-//! `Arc<dyn ExecutionLogProvider>`. The factory itself lives in
-//! `chronos-log` (segmented + in-memory) or in a test crate (mocks);
-//! services consume the trait, not the concrete.
+//! C3.3.2.5 lifts the maintenance and retention capabilities into
+//! first-class ports. The factory now returns three `Arc<dyn ...>`
+//! that share the same concrete instance underneath:
+//!
+//! ```text
+//! ExecutionLogCapabilities {
+//!     evidence:     Arc<dyn ExecutionLogProvider>
+//!     retention:    Arc<dyn ExecutionLogRetention>
+//!     maintenance:  Arc<dyn ExecutionLogMaintenance>
+//! }
+//! ```
+//!
+//! The application layer receives the bundle and uses each port
+//! independently; the downcast on `ProviderKind` is gone.
+//!
+//! ## Object safety
+//!
+//! Each port is object-safe (it has only `&self` methods returning
+//! owned types). The factory port composes them behind an owned
+//! struct so consumers still hold three trait objects, never a
+//! concrete.
 //!
 //! ## Two operations, deliberately split
 //!
@@ -27,29 +42,45 @@
 //! - `reopen_existing` opens a previously-written log. It MUST NOT
 //!   create. It MUST fail if the dir is empty or holds a different
 //!   session. Bootstrap (C1.5.4) uses this exclusively.
-//!
-//! `try_adopt` is a third seam — used when an external component
-//! (the native probe backend in C3.3.1) opened the concrete log and
-//! hands ownership to services. C3.3.2 keeps the trait small; the
-//! `adopt` path is handled by the factory's implementation when
-//! needed (today the segmented factory exposes it because the
-//! `chronos_native` backend already constructs the concrete; after
-//! C3.3.2 the backend consumes the port instead and `adopt` may be
-//! removed in a later cycle).
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::ports::execution_log::{ExecutionLogError, ExecutionLogProvider};
+use crate::ports::execution_log_maintenance::ExecutionLogMaintenance;
+use crate::ports::execution_log_retention::ExecutionLogRetention;
 use crate::session_id::SessionId;
 
-/// Factory for `Arc<dyn ExecutionLogProvider>` instances.
+/// The capability bundle returned by every `ExecutionLogFactory`
+/// operation.
 ///
-/// Implementations live in infrastructure crates and are wired at the
-/// composition root (`chronos-mcp::composition`). `chronos_services`
-/// holds an `Arc<dyn ExecutionLogFactory>` injected at construction
-/// time and calls these methods; it never names the concrete factory
-/// type.
+/// All three trait objects are backed by the SAME concrete instance.
+/// That single-instance guarantee is what makes "move retention
+/// frontier X, then ask maintenance to reclaim" semantically correct:
+/// the retention port and the maintenance port see the same in-memory
+/// state. The factory contract is "the three `Arc`s are views onto one
+/// instance", not "we built three of them and they happen to agree".
+#[derive(Clone)]
+pub struct ExecutionLogCapabilities {
+    pub evidence: Arc<dyn ExecutionLogProvider>,
+    pub retention: Arc<dyn ExecutionLogRetention>,
+    pub maintenance: Arc<dyn ExecutionLogMaintenance>,
+}
+
+impl std::fmt::Debug for ExecutionLogCapabilities {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExecutionLogCapabilities")
+            .field("session", &self.evidence.session_id())
+            .field("kind", &self.evidence.kind())
+            .finish()
+    }
+}
+
+/// Factory for `ExecutionLogCapabilities` bundles.
+///
+/// Implementations live in infrastructure crates (`chronos-log` for
+/// the canonical segmented + in-memory factories; test crates for
+/// mocks). Services consume this trait, never the concrete factory.
 pub trait ExecutionLogFactory: Send + Sync {
     /// Create (or open) the log for a NEW session under `dir`.
     ///
@@ -58,7 +89,7 @@ pub trait ExecutionLogFactory: Send + Sync {
         &self,
         dir: PathBuf,
         session_id: SessionId,
-    ) -> Result<Arc<dyn ExecutionLogProvider>, ExecutionLogError>;
+    ) -> Result<ExecutionLogCapabilities, ExecutionLogError>;
 
     /// Reopen an EXISTING durable log at `dir`. Bootstrap uses this
     /// exclusively; it MUST NOT create.
@@ -66,5 +97,5 @@ pub trait ExecutionLogFactory: Send + Sync {
         &self,
         dir: PathBuf,
         session_id: SessionId,
-    ) -> Result<Arc<dyn ExecutionLogProvider>, ExecutionLogError>;
+    ) -> Result<ExecutionLogCapabilities, ExecutionLogError>;
 }

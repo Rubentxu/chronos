@@ -64,7 +64,10 @@ pub use segmented::{CompactionMetrics, CompactionOutcome, SegmentedConfig, Segme
 // implement it (segmented file-backed, in-memory) live here and are
 // re-exported so callers write `use chronos_log::SegmentedExecutionLogProvider`
 // without reaching into the `provider` module directly.
-pub use provider::{InMemoryExecutionLogProvider, SegmentedExecutionLogProvider};
+pub use provider::{
+    InMemoryExecutionLogProvider, InMemoryMaintenance, InMemoryRetention,
+    SegmentedExecutionLogProvider, SegmentedMaintenance, SegmentedRetention,
+};
 pub use seq::EventSeq;
 // REC-C3.3.1: TailState/SealedTail live in chronos_domain::evidence.
 // The clock-aware wrapper `sealed_now` plus `recover_tail_state`,

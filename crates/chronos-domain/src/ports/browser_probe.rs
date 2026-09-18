@@ -44,9 +44,7 @@ pub trait BrowserProbeFactory: Send + Sync {
     /// Returns `BrowserCapabilityUnavailable` (already converted to the
     /// broader `CapabilityUnavailable::browser_probe` variant) when the
     /// host lacks the capability — typically when Chrome is not on PATH.
-    fn create(
-        &self,
-    ) -> Result<Arc<dyn BrowserProbeBackend>, CapabilityUnavailable>;
+    fn create(&self) -> Result<Arc<dyn BrowserProbeBackend>, CapabilityUnavailable>;
 }
 
 /// The four-method surface a browser probe session consumes.
