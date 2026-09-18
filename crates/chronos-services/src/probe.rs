@@ -17,6 +17,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use chronos_domain::ports::execution_log::ExecutionLogProvider;
+use chronos_domain::ports::uprobe::{UprobeAttachError, UprobeHandle, UprobeInjector};
 use chronos_domain::{CaptureConfig, CaptureSession, Language};
 use chronos_native::probe_backend::NativeProbeBackend;
 use tokio::sync::Mutex as TokioMutex;
@@ -48,10 +49,19 @@ pub struct LiveProbeSession {
     /// The legacy stop backend terminates its tracee, which is appropriate for
     /// spawned probes but must not be applied to an attached process.
     pub attached: bool,
-    /// eBPF adapter owned by this session, if any uprobes have been injected.
-    /// Stored here so the lifecycle is observable: subsequent `probe_inject`
-    /// calls reuse the same adapter, and `probe_stop` detaches cleanly.
-    pub ebpf_adapter: Option<Arc<chronos_ebpf::EbpfAdapter>>,
+    /// REC-C3.3.2.3: the uprobe handle owned by this session, when present.
+    ///
+    /// The handle is the result of `UprobeInjector::acquire` and is kept
+    /// alive across `attach` failure states so that
+    /// - `probe_status` can report whether an adapter is owned,
+    /// - subsequent `probe_inject` calls can `detach` the previous
+    ///   attachment before replacing it, and
+    /// - `probe_stop` always has a target to call `detach` on.
+    ///
+    /// Type is `Arc<dyn UprobeHandle>` (not `Arc<EbpfAdapter>`) so this
+    /// module does not import `chronos_ebpf`. The composition root
+    /// supplies the concrete adapter wrapped behind the port.
+    pub uprobe_handle: Option<Arc<dyn UprobeHandle>>,
     /// Most recent eBPF attachment metadata (binary_path, symbol_name, pid).
     pub ebpf_attachment: Option<EbpfAttachmentInfo>,
     /// REC-C1.2a: the session OWNS its ExecutionLog, mandatorily.
@@ -95,6 +105,16 @@ pub struct ProbeContext<'a> {
     pub tripwire_manager: &'a Arc<TripwireManager>,
     /// Currently active session id (for `probe_start` to mark the new session).
     pub active_session: &'a TokioMutex<Option<String>>,
+    /// REC-C3.3.2.3 — uprobe capability injector.
+    ///
+    /// Composition-root supplied (`chronos_mcp::composition::default_uprobe_injector`).
+    /// Each `probe_inject` call invokes `acquire` on this injector and then
+    /// `attach` on the resulting handle, preserving the three historical
+    /// states (`EbpfUnavailable`, `AttachFailed`, `Attached`) — see
+    /// `ProbeService::inject`. The injector must outlive every probe session
+    /// the server creates, which is guaranteed because `ChronosServer` owns
+    /// it as a field.
+    pub uprobe_injector: &'a Arc<dyn UprobeInjector>,
 }
 
 /// Type alias matching `ProbeContext<'a>` — used in tests and follow-up
@@ -298,7 +318,7 @@ impl ProbeService {
             language,
             target: input.program.clone(),
             attached: false,
-            ebpf_adapter: None,
+            uprobe_handle: None,
             ebpf_attachment: None,
             execution_log: owned_log,
         };
@@ -409,7 +429,7 @@ impl ProbeService {
             language,
             target: target.clone(),
             attached: true,
-            ebpf_adapter: None,
+            uprobe_handle: None,
             ebpf_attachment: None,
             execution_log: owned_log,
         };
@@ -494,11 +514,12 @@ impl ProbeService {
             tracing::warn!("Probe stop error for session {}: {}", session_id, e);
         }
 
-        // Detach any eBPF uprobes this session owned after the probe thread
-        // has exited. Best-effort.
-        if let Some(adapter) = &live_probe.ebpf_adapter {
-            if let Err(e) = adapter.detach_all() {
-                tracing::warn!("eBPF detach error for session {}: {}", session_id, e);
+        // Detach any uprobe this session owned after the probe thread
+        // has exited. Best-effort. Goes through the port so this module
+        // never names the concrete adapter.
+        if let Some(handle) = &live_probe.uprobe_handle {
+            if let Err(e) = handle.detach() {
+                tracing::warn!("uprobe detach error for session {}: {}", session_id, e);
             }
         }
 
@@ -766,78 +787,49 @@ impl ProbeService {
             return Ok(ProbeInjectResult::ProbeStarting);
         }
 
-        // If the session already has an eBPF adapter, detach the previous
+        // If the session already owns an uprobe handle, detach the previous
         // attachment first so the new injection is the single source of truth.
-        {
+        // The handle itself is reused on subsequent successful `acquire`
+        // calls (when the previous one is None) — failing `acquire` falls
+        // back to a fresh one. We never leave a half-attached state.
+        let previous_handle: Option<Arc<dyn UprobeHandle>> = {
             let mut probes = ctx
                 .live_probes
                 .lock()
                 .map_err(|_| ServiceError::LockPoisoned)?;
             if let Some(lp) = probes.get_mut(&input.session_id) {
-                if lp.ebpf_adapter.is_some() {
+                if lp.uprobe_handle.is_some() {
                     lp.ebpf_attachment = None;
                 }
+                lp.uprobe_handle.take()
+            } else {
+                None
+            }
+        };
+        // Best-effort detach of any previous attachment. Failure is logged
+        // but does not block the new injection: the kernel will free the
+        // uprobe when the adapter is dropped, and `probe_stop` detaches the
+        // active handle explicitly.
+        if let Some(prev) = previous_handle {
+            if let Err(e) = prev.detach() {
+                tracing::warn!(
+                    "prior uprobe detach failed for session {}: {}",
+                    input.session_id,
+                    e
+                );
             }
         }
 
-        // Attempt eBPF uprobe injection. The adapter is owned by the session
-        // so the lifecycle is observable via probe_status and probe_stop can
-        // detach on shutdown.
-        match chronos_ebpf::EbpfAdapter::new() {
-            Ok(adapter) => {
-                let adapter = Arc::new(adapter);
-                match adapter.attach_uprobe(pid, &input.binary_path, &input.symbol_name) {
-                    Ok(()) => {
-                        {
-                            let mut probes = ctx
-                                .live_probes
-                                .lock()
-                                .map_err(|_| ServiceError::LockPoisoned)?;
-                            if let Some(lp) = probes.get_mut(&input.session_id) {
-                                lp.ebpf_adapter = Some(adapter.clone());
-                                lp.ebpf_attachment = Some(EbpfAttachmentInfo {
-                                    binary_path: input.binary_path.clone(),
-                                    symbol_name: input.symbol_name.clone(),
-                                    pid,
-                                });
-                            }
-                        }
-                        Ok(ProbeInjectResult::Attached {
-                            session_id: input.session_id,
-                            binary_path: input.binary_path,
-                            symbol_name: input.symbol_name,
-                            pid,
-                        })
-                    }
-                    Err(e) => {
-                        // Persist adapter even on attach failure so the session
-                        // has a stable record and probe_status reflects availability.
-                        let mut probes = ctx
-                            .live_probes
-                            .lock()
-                            .map_err(|_| ServiceError::LockPoisoned)?;
-                        if let Some(lp) = probes.get_mut(&input.session_id) {
-                            lp.ebpf_adapter = Some(adapter.clone());
-                            lp.ebpf_attachment = Some(EbpfAttachmentInfo {
-                                binary_path: input.binary_path.clone(),
-                                symbol_name: input.symbol_name.clone(),
-                                pid,
-                            });
-                        }
-                        Ok(ProbeInjectResult::AttachFailed {
-                            session_id: input.session_id,
-                            binary_path: input.binary_path,
-                            symbol_name: input.symbol_name,
-                            pid,
-                            error: e.to_string(),
-                        })
-                    }
-                }
-            }
-            Err(e) => {
-                // Record the attempted attachment even when the kernel feature
-                // is unavailable, so the session record reflects that the user
-                // requested a probe and we cannot honour it.
+        // REC-C3.3.2.3: capability detection now goes through the port.
+        // `acquire` returns either an owned `Arc<dyn UprobeHandle>` or a
+        // `CapabilityUnavailable::ebpf_uprobe` that we surface verbatim as
+        // `EbpfUnavailable`. The session never names the concrete adapter.
+        let handle = match ctx.uprobe_injector.acquire() {
+            Ok(h) => h,
+            Err(capability_unavailable) => {
+                // Record the attempted attachment even when the kernel
+                // feature is unavailable, so the session record reflects
+                // that the user requested a probe and we cannot honour it.
                 let mut probes = ctx
                     .live_probes
                     .lock()
@@ -849,7 +841,61 @@ impl ProbeService {
                         pid,
                     });
                 }
-                Ok(ProbeInjectResult::EbpfUnavailable(e.to_string()))
+                let detail = capability_unavailable.reason.clone();
+                return Ok(ProbeInjectResult::EbpfUnavailable(detail));
+            }
+        };
+
+        // REC-C3.3.2.3: kernel uprobe materialization is the second step.
+        // The handle is retained on success AND on attach failure — only
+        // `EbpfUnavailable` (no handle) leaves the session in a state where
+        // `uprobe_handle` is None.
+        match handle.attach(pid, &input.binary_path, &input.symbol_name) {
+            Ok(()) => {
+                {
+                    let mut probes = ctx
+                        .live_probes
+                        .lock()
+                        .map_err(|_| ServiceError::LockPoisoned)?;
+                    if let Some(lp) = probes.get_mut(&input.session_id) {
+                        lp.uprobe_handle = Some(handle.clone());
+                        lp.ebpf_attachment = Some(EbpfAttachmentInfo {
+                            binary_path: input.binary_path.clone(),
+                            symbol_name: input.symbol_name.clone(),
+                            pid,
+                        });
+                    }
+                }
+                Ok(ProbeInjectResult::Attached {
+                    session_id: input.session_id,
+                    binary_path: input.binary_path,
+                    symbol_name: input.symbol_name,
+                    pid,
+                })
+            }
+            Err(UprobeAttachError { detail }) => {
+                // Persist the handle even on attach failure so the session
+                // has a stable record, probe_status reflects availability,
+                // and `probe_stop` has something to detach.
+                let mut probes = ctx
+                    .live_probes
+                    .lock()
+                    .map_err(|_| ServiceError::LockPoisoned)?;
+                if let Some(lp) = probes.get_mut(&input.session_id) {
+                    lp.uprobe_handle = Some(handle.clone());
+                    lp.ebpf_attachment = Some(EbpfAttachmentInfo {
+                        binary_path: input.binary_path.clone(),
+                        symbol_name: input.symbol_name.clone(),
+                        pid,
+                    });
+                }
+                Ok(ProbeInjectResult::AttachFailed {
+                    session_id: input.session_id,
+                    binary_path: input.binary_path,
+                    symbol_name: input.symbol_name,
+                    pid,
+                    error: detail,
+                })
             }
         }
     }
@@ -873,7 +919,7 @@ impl ProbeService {
                 "binary_path": a.binary_path,
                 "symbol_name": a.symbol_name,
                 "pid": a.pid,
-                "adapter_owned": live_probe.ebpf_adapter.is_some(),
+                "adapter_owned": live_probe.uprobe_handle.is_some(),
             })
         });
         let traced_pid = live_probe
@@ -981,7 +1027,7 @@ mod rec_c1_2_tests {
             language: Language::Rust,
             target: "noop".to_string(),
             attached: false,
-            ebpf_adapter: None,
+            uprobe_handle: None,
             ebpf_attachment: None,
             execution_log,
         }

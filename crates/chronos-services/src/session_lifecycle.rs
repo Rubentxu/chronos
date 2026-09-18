@@ -624,7 +624,28 @@ fn lifecycle_provenance(source: &str) -> SessionLifecycleProvenance {
 mod tests {
     use super::*;
     use crate::output::{CapabilitiesInput, SessionStartAction, SessionStartInput, TargetSpec};
+    use chronos_domain::capability::CapabilityUnavailable;
+    use chronos_domain::ports::uprobe::UprobeInjector;
     use chronos_store::{SessionMetadata, SessionStore};
+
+    /// Always-unavailable uprobe injector used by the session-lifecycle
+    /// test rig. Mirrors the behavior of the legacy code on a default
+    /// (no `ebpf` feature) build, without requiring `chronos-ebpf`.
+    #[derive(Debug, Default, Clone, Copy)]
+    struct SessionLifecycleTestInjector;
+
+    impl UprobeInjector for SessionLifecycleTestInjector {
+        fn acquire(
+            &self,
+        ) -> Result<
+            std::sync::Arc<dyn chronos_domain::ports::uprobe::UprobeHandle>,
+            CapabilityUnavailable,
+        > {
+            Err(CapabilityUnavailable::ebpf_uprobe(
+                "session_lifecycle tests: eBPF not exercised",
+            ))
+        }
+    }
 
     fn empty_store() -> SessionStore {
         SessionStore::in_memory().unwrap()
@@ -934,6 +955,13 @@ mod tests {
         let execution_logs: &'static crate::session_log::SessionExecutionLogRegistry = Box::leak(
             Box::new(crate::session_log::SessionExecutionLogRegistry::new()),
         );
+        // The session_lifecycle tests do not exercise the uprobe
+        // capability; an always-unavailable injector keeps the
+        // architecture law (no `chronos_ebpf` import in services) while
+        // making the test rig fail-closed exactly like the legacy code
+        // did on a default build.
+        let injector: Arc<dyn chronos_domain::ports::uprobe::UprobeInjector> =
+            Arc::new(SessionLifecycleTestInjector);
         let probe: &'static ProbeContext<'static> = Box::leak(Box::new(ProbeContext {
             live_probes,
             execution_logs,
@@ -941,6 +969,7 @@ mod tests {
             session_languages: langs,
             tripwire_manager: tripwire,
             active_session,
+            uprobe_injector: Box::leak(Box::new(injector)),
         }));
         let observe: &'static ObserveContext<'static> = Box::leak(Box::new(ObserveContext {
             tripwire_manager: tripwire,

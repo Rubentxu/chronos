@@ -562,7 +562,85 @@ impl ChronosObserveService {
 mod tests {
     use super::*;
     use crate::output::ObserveInput;
+    use chronos_domain::capability::CapabilityUnavailable;
+    use chronos_domain::ports::uprobe::{UprobeAttachError, UprobeHandle, UprobeInjector};
     use chronos_domain::tripwire::{reset_tripwire_ids_for_testing, TripwireCondition};
+
+    /// Deterministic test double for `UprobeInjector` used by the
+    /// `TestRig`. Always returns `CapabilityUnavailable::ebpf_uprobe`
+    /// because the rig's live probes never exercise the kernel probe
+    /// path; tests that need attach-failure or attach-success use a
+    /// bespoke fake instead.
+    #[derive(Debug, Default, Clone, Copy)]
+    struct UnavailableUprobeInjector;
+
+    impl UprobeInjector for UnavailableUprobeInjector {
+        fn acquire(&self) -> Result<std::sync::Arc<dyn UprobeHandle>, CapabilityUnavailable> {
+            Err(CapabilityUnavailable::ebpf_uprobe(
+                "test rig: eBPF not exercised",
+            ))
+        }
+    }
+
+    /// Test double that succeeds at attach and counts invocations so
+    /// tests can assert `stop → detach` was invoked. Counters are
+    /// shared via `Arc` between the injector (which owns them) and the
+    /// handles it hands out (which bump them on every attach/detach).
+    /// This is the shape `chronos-ebpf::EbpfUprobeInjector` will satisfy
+    /// in production: one kernel adapter, many handles.
+    #[derive(Debug, Clone)]
+    struct RecordingUprobeInjector {
+        attached: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        detached: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl RecordingUprobeInjector {
+        fn new() -> Self {
+            Self {
+                attached: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                detached: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            }
+        }
+    }
+
+    impl UprobeInjector for RecordingUprobeInjector {
+        fn acquire(&self) -> Result<std::sync::Arc<dyn UprobeHandle>, CapabilityUnavailable> {
+            // The handle clones the same `Arc` to the counters the
+            // injector holds, so every attach/detach call updates the
+            // shared counters.
+            Ok(std::sync::Arc::new(RecordingUprobeHandle {
+                attached: self.attached.clone(),
+                detached: self.detached.clone(),
+            }))
+        }
+    }
+
+    /// Counter pair shared with the injector. Mirrors
+    /// `EbpfUprobeHandle`'s shape: the handle just forwards to the
+    /// backend (here, the recording injector's counters).
+    struct RecordingUprobeHandle {
+        attached: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        detached: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl UprobeHandle for RecordingUprobeHandle {
+        fn attach(
+            &self,
+            _pid: u32,
+            _binary_path: &str,
+            _symbol_name: &str,
+        ) -> Result<(), UprobeAttachError> {
+            self.attached
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+
+        fn detach(&self) -> Result<(), UprobeAttachError> {
+            self.detached
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+    }
 
     // Helper to build a minimal ObserveContext backed by a fresh TripwireManager.
     // The probe context (ProbeContext) requires tokio Mutexes + a live HashMap,
@@ -589,6 +667,11 @@ mod tests {
         session_languages: Arc<tokio::sync::Mutex<HashMap<String, chronos_domain::Language>>>,
         active_session: tokio::sync::Mutex<Option<String>>,
         execution_logs: crate::session_log::SessionExecutionLogRegistry,
+        /// REC-C3.3.2.3 — composition-root injectable uprobe capability.
+        /// The rig carries a unit `UnavailableUprobeInjector` by default;
+        /// tests that need attach/detach semantics swap it for a
+        /// `RecordingUprobeInjector` via `with_injector`.
+        uprobe_injector: Arc<dyn UprobeInjector>,
     }
 
     impl TestRig {
@@ -602,7 +685,18 @@ mod tests {
                 session_languages: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
                 active_session: tokio::sync::Mutex::new(None),
                 execution_logs: crate::session_log::SessionExecutionLogRegistry::new(),
+                uprobe_injector: Arc::new(UnavailableUprobeInjector),
             }
+        }
+
+        /// REC-C3.3.2.3 — swap the rig's injector for a fake that
+        /// records attach/detach invocations. Returns the `Arc` so the
+        /// caller can inspect counters after `inject` / `stop`.
+        #[allow(dead_code)]
+        fn with_recording_injector(&mut self) -> Arc<RecordingUprobeInjector> {
+            let recorder = Arc::new(RecordingUprobeInjector::new());
+            self.uprobe_injector = recorder.clone();
+            recorder
         }
 
         /// Construct a fresh `ProbeContext` borrowing from this rig.
@@ -614,6 +708,7 @@ mod tests {
                 session_languages: &self.session_languages,
                 tripwire_manager: &self.manager,
                 active_session: &self.active_session,
+                uprobe_injector: &self.uprobe_injector,
             }
         }
 
@@ -1371,8 +1466,8 @@ mod tests {
     /// Register a fake live-probe session in the rig's `live_probes` map.
     ///
     /// On a default `chronos-mcp` build (no `ebpf` feature),
-    /// `ProbeService::inject` will attempt `EbpfAdapter::new()` and
-    /// immediately get `EbpfError::Unavailable`, which the dispatcher
+    /// `ProbeService::inject` will ask the uprobe injector to `acquire`
+    /// and the kernel probe fails immediately, which the dispatcher
     /// surfaces as `ServiceError::EbpfUnsupported(reason)`. That is the
     /// path exercised by these unit tests.
     fn register_fake_probe_session(rig: &TestRig, session_id: &str, pid: u32) {
@@ -1392,7 +1487,7 @@ mod tests {
             language: chronos_domain::Language::Native,
             target: "/fake/binary".to_string(),
             attached: false,
-            ebpf_adapter: None,
+            uprobe_handle: None,
             ebpf_attachment: None,
             execution_log: crate::session_log::SessionExecutionLog::create_for_tests(
                 // Unique per test: a shared path races with the C1.5.1 manifest
@@ -1479,5 +1574,106 @@ mod tests {
             "expected typed InjectionFailed OR EbpfUnavailable, got {:?}",
             err
         );
+    }
+
+    /// REC-C3.3.2.3 — regression test for the uprobe capability port.
+    ///
+    /// Asserts that with a recording injector:
+    /// - `inject` succeeds and the handle is retained in the session
+    ///   (`uprobe_handle.is_some()` is `true`).
+    /// - A second `inject` reuses the same recording handle: both
+    ///   attach calls reach the injector and the prior handle is
+    ///   detached before the new one is attached.
+    #[tokio::test]
+    async fn c33_uprobe_injector_port_walks_three_states() {
+        use crate::probe::{ProbeInjectInput, ProbeService};
+        use std::sync::atomic::Ordering;
+
+        let mut rig = TestRig::new();
+        let recorder = rig.with_recording_injector();
+
+        // Register a fake live-probe session whose traced PID is set so
+        // `inject` does not return `ProbeStarting`.
+        register_fake_probe_session(&rig, "c33-session", 4242);
+
+        let ctx = rig.probe_ctx();
+
+        // First injection: succeeds with the recording handle.
+        let first = ProbeService::inject(
+            &ctx,
+            ProbeInjectInput {
+                session_id: "c33-session".to_string(),
+                binary_path: "/bin/true".to_string(),
+                symbol_name: "main".to_string(),
+                pid: Some(4242),
+            },
+        )
+        .expect("inject succeeds");
+        assert!(matches!(
+            first,
+            crate::probe::ProbeInjectResult::Attached { pid: 4242, .. }
+        ));
+        assert_eq!(recorder.attached.load(Ordering::SeqCst), 1);
+
+        // Second injection: also Attached; the prior handle is detached
+        // before the second attach. The shared counters see both
+        // attach calls and at least one detach (the prior handle).
+        let second = ProbeService::inject(
+            &ctx,
+            ProbeInjectInput {
+                session_id: "c33-session".to_string(),
+                binary_path: "/bin/true".to_string(),
+                symbol_name: "main".to_string(),
+                pid: Some(4242),
+            },
+        )
+        .expect("inject succeeds");
+        assert!(matches!(
+            second,
+            crate::probe::ProbeInjectResult::Attached { .. }
+        ));
+        assert_eq!(recorder.attached.load(Ordering::SeqCst), 2);
+        assert_eq!(recorder.detached.load(Ordering::SeqCst), 1);
+
+        // The session retains the active handle after both injections.
+        let probes = ctx.live_probes.lock().unwrap();
+        let lp = probes.get("c33-session").expect("session present");
+        assert!(lp.uprobe_handle.is_some());
+    }
+
+    /// REC-C3.3.2.3 — second regression test: with the always-unavailable
+    /// injector, `inject` surfaces the typed `EbpfUnavailable` result
+    /// without retaining any handle in the session.
+    #[tokio::test]
+    async fn c33_uprobe_unavailable_injector_returns_typed_result() {
+        use crate::probe::{ProbeInjectInput, ProbeService};
+
+        let rig = TestRig::new(); // default injector is UnavailableUprobeInjector
+        register_fake_probe_session(&rig, "c33-no-ebpf", 7);
+
+        let ctx = rig.probe_ctx();
+
+        let result = ProbeService::inject(
+            &ctx,
+            ProbeInjectInput {
+                session_id: "c33-no-ebpf".to_string(),
+                binary_path: "/bin/true".to_string(),
+                symbol_name: "main".to_string(),
+                pid: Some(7),
+            },
+        )
+        .expect("inject returns Ok with typed variant");
+
+        match result {
+            crate::probe::ProbeInjectResult::EbpfUnavailable(reason) => {
+                assert!(reason.contains("eBPF"));
+            }
+            other => panic!("expected EbpfUnavailable, got {:?}", other),
+        }
+
+        // The session must NOT retain a handle when acquisition failed.
+        let probes = ctx.live_probes.lock().unwrap();
+        let lp = probes.get("c33-no-ebpf").expect("session present");
+        assert!(lp.uprobe_handle.is_none());
     }
 }

@@ -30,6 +30,7 @@
 // though the imports are real (just only used in tests). Allow explicitly.
 #[allow(unused_imports)]
 use chronos_browser::BrowserAdapter;
+use chronos_domain::ports::uprobe::UprobeInjector;
 use chronos_domain::tripwire::{TripwireCondition, TripwireManager};
 #[allow(unused_imports)]
 use chronos_domain::{
@@ -167,6 +168,14 @@ pub struct ChronosServer {
     /// env var at construction. Valid values: `auto`, `native`, `ebpf`,
     /// `python`, `java`, `go`, `js`, `minimal`. Unknown values default to `auto`.
     active_toolset: String,
+    /// REC-C3.3.2.3 — composition-root uprobe capability injector.
+    ///
+    /// `chronos_services` cannot name the concrete `EbpfAdapter`; it
+    /// receives the capability through this `Arc<dyn UprobeInjector>`
+    /// and threads it into every `ProbeContext`. The injector must
+    /// outlive every probe session, which is guaranteed because the
+    /// server holds it as an `Arc` for its entire lifetime.
+    uprobe_injector: Arc<dyn UprobeInjector>,
 }
 
 // ============================================================================
@@ -1749,6 +1758,10 @@ impl ChronosServer {
         // so every session-scoped log construction goes through the
         // composition root.
         let execution_log_factory = crate::composition::default_execution_log_factory();
+        // REC-C3.3.2.3 — uprobe capability injector is built once and
+        // threaded into every probe call. `chronos_services` only sees
+        // the trait object.
+        let uprobe_injector = crate::composition::default_uprobe_injector();
         Self {
             engines: Arc::new(Mutex::new(HashMap::new())),
             session_languages: Arc::new(Mutex::new(HashMap::new())),
@@ -1769,6 +1782,7 @@ impl ChronosServer {
             live_browser_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
             degraded,
             active_toolset,
+            uprobe_injector,
         }
     }
 
@@ -1797,6 +1811,7 @@ impl ChronosServer {
                 live_browser_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
                 degraded: false,
                 active_toolset: toolset.to_string(),
+                uprobe_injector: crate::composition::default_uprobe_injector(),
             },
             Err(e) => panic!("{e}"),
         }
@@ -4223,6 +4238,7 @@ impl ChronosServer {
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
+            uprobe_injector: &self.uprobe_injector,
         };
         let ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -4286,6 +4302,7 @@ impl ChronosServer {
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
+            uprobe_injector: &self.uprobe_injector,
         };
         let ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -4379,6 +4396,7 @@ impl ChronosServer {
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
+            uprobe_injector: &self.uprobe_injector,
         };
         let ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -4444,6 +4462,7 @@ impl ChronosServer {
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
+            uprobe_injector: &self.uprobe_injector,
         };
         let ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -4546,6 +4565,7 @@ impl ChronosServer {
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
+            uprobe_injector: &self.uprobe_injector,
         };
         let observe_ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -4607,6 +4627,7 @@ impl ChronosServer {
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
+            uprobe_injector: &self.uprobe_injector,
         };
 
         match chronos_services::probe::ProbeService::stop(&ctx, &params.session_id) {
@@ -4708,6 +4729,7 @@ impl ChronosServer {
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
+            uprobe_injector: &self.uprobe_injector,
         };
         let observe_ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -4791,6 +4813,7 @@ impl ChronosServer {
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
+            uprobe_injector: &self.uprobe_injector,
         };
         let observe_ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -4986,6 +5009,7 @@ impl ChronosServer {
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
+            uprobe_injector: &self.uprobe_injector,
         };
         let observe_ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -5043,6 +5067,7 @@ impl ChronosServer {
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
+            uprobe_injector: &self.uprobe_injector,
         };
 
         match chronos_services::probe::ProbeService::drain(&ctx, input) {
@@ -5147,6 +5172,7 @@ further would be a Silent Lie."
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
+            uprobe_injector: &self.uprobe_injector,
         };
 
         match chronos_services::probe::ProbeService::drain_log(
@@ -5228,6 +5254,7 @@ further would be a Silent Lie."
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
+            uprobe_injector: &self.uprobe_injector,
         };
 
         match chronos_services::probe::ProbeService::compaction_metrics(&ctx, &params.session_id) {
@@ -5284,6 +5311,7 @@ further would be a Silent Lie."
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
+            uprobe_injector: &self.uprobe_injector,
         };
 
         match chronos_services::probe::ProbeService::session_snapshot(&ctx, &params.session_id) {
@@ -5343,6 +5371,7 @@ further would be a Silent Lie."
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
+            uprobe_injector: &self.uprobe_injector,
         };
         let ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -5449,6 +5478,7 @@ further would be a Silent Lie."
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
+            uprobe_injector: &self.uprobe_injector,
         };
 
         match chronos_services::probe::ProbeService::status(&ctx, &session_id) {
@@ -6130,6 +6160,7 @@ further would be a Silent Lie."
             session_languages: &self.session_languages,
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
+            uprobe_injector: &self.uprobe_injector,
         };
 
         let ctx = ObserveContext {
@@ -8841,7 +8872,7 @@ mod tests {
             language: Language::Rust,
             target: "noop".to_string(),
             attached: false,
-            ebpf_adapter: None,
+            uprobe_handle: None,
             ebpf_attachment: None,
             execution_log: owned_for_round,
         };
@@ -8935,12 +8966,10 @@ mod tests {
         // with an `Arc<dyn ExecutionLogProvider>`. The legacy test
         // slot is gone.
         let provider: Arc<dyn chronos_domain::ports::execution_log::ExecutionLogProvider> =
-            Arc::new(
-                chronos_log::provider::SegmentedExecutionLogProvider::new(
-                    LogSessionId::new(&log_session_id),
-                    concrete.clone(),
-                ),
-            );
+            Arc::new(chronos_log::provider::SegmentedExecutionLogProvider::new(
+                LogSessionId::new(&log_session_id),
+                concrete.clone(),
+            ));
         backend.attach_execution_log(provider);
 
         // Register the backend as a live probe session.
@@ -8964,7 +8993,7 @@ mod tests {
             language: chronos_domain::Language::C,
             target: "noop".to_string(),
             attached: false,
-            ebpf_adapter: None,
+            uprobe_handle: None,
             ebpf_attachment: None,
             execution_log: owned_log,
         };
