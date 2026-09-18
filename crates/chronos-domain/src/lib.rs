@@ -12,6 +12,7 @@ pub mod ports;
 pub mod property;
 pub mod query;
 pub mod semantic;
+pub mod session_id;
 pub mod trace;
 pub mod tripwire;
 pub mod value;
