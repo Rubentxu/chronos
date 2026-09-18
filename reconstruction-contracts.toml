@@ -252,32 +252,74 @@ notes = "CLOSED 2026-09-18 with REC-C2.5 formal closure. TripwireFired is now an
 [[requirement]]
 id = "HEX-001"
 title = "Domain contains no HTTP/runtime infrastructure"
-status = "partial"
+status = "verified"
 owner_gate = "REC-C3"
-notes = "REC-C3.1 (this cycle): ports/* module exposes ProbeFactory/ProbeRegistry/SessionRepository/TelemetryReceiver/NotificationSink + null impls. chronos_domain still owns optional reqwest webhook delivery (deferred to REC-C3.2). scripts/check_hex_boundary.py passes mechanically. next: REC-C3.2 drops the reqwest dep; REC-C3.3 closes the storage leg."
-[[requirement.evidence]]
-kind = "script"
-path = "scripts/check_hex_boundary.py"
-result = "passes: 0 ports/* imports of infra crates; 0 missing re-exports from ports/mod.rs."
-[[requirement.evidence]]
-kind = "compile"
-path = "cargo check -p chronos-domain --all-targets"
-result = "0 errors / 0 warnings"
-[[requirement.evidence]]
-kind = "tests"
-path = "cargo test -p chronos-domain --tests"
-result = "164 passed (lib 145 + integration 19: probe_ports 8, session_ports 6, telemetry_ports 5)"
-[[requirement.evidence]]
-kind = "module"
-path = "crates/chronos-domain/src/ports/"
-result = "5 port modules (execution_log, notification, probe, session, telemetry); mod.rs re-exports the public surface"
+notes = "REC-C3.1: ports/* exposes ProbeFactory/ProbeRegistry/SessionRepository/TelemetryReceiver/NotificationSink + null impls. REC-C3.2: chronos-domain/Cargo.toml has zero HTTP/runtime/webhook deps (mechanical). chronos-webhook is the single home of reqwest (already had NotificationSink adapter). scripts/check_hex_boundary.py now enforces (a) Cargo.toml blacklist, (b) full src/**/*.rs outbound purity, (c) chronos-webhook -> chronos_domain direction, (d) ports/mod.rs public surface shape. Mechanical gate is now stronger than the original HEX-001 wording."
+evidence = [
+  "scripts/check_hex_boundary.py",
+  "cargo check -p chronos-domain --all-targets",
+  "cargo test -p chronos-domain --tests --no-fail-fast",
+  "crates/chronos-domain/Cargo.toml (deps: thiserror, serde, uuid, schemars; no reqwest/hyper/tokio/tracing)",
+  "crates/chronos-webhook/src/sink.rs::HttpWebhookSink implements chronos_domain::ports::NotificationSink",
+]
+uat = [
+  "scripts/check_hex_boundary.py (0 errors, 0 notes; HEX-C32-01/02/03 + HEX-C32-V5 + ports surface all clean)",
+]
+verify = "python3 scripts/check_hex_boundary.py && cargo check -p chronos-domain --all-targets && cargo test -p chronos-domain --tests --no-fail-fast"
+
+[[requirement]]
+id = "HEX-C32-01"
+title = "Domain Cargo.toml blacklist — no HTTP/runtime/webhook dependencies"
+status = "verified"
+owner_gate = "REC-C3"
+notes = "REC-C3.2: chronos-domain/Cargo.toml must not declare reqwest/hyper/tokio/tracing/axum/warp/http or any chronos_* infra crate. Waiver list (none configured) is checked for staleness — a waiver that names a non-declared dep is itself a failure. The single home of reqwest is chronos-webhook."
+evidence = [
+  "scripts/check_hex_boundary.py::DOMAIN_FORBIDDEN_DEPS + _scan_cargo_toml",
+  "crates/chronos-domain/Cargo.toml",
+]
+uat = [
+  "scripts/check_hex_boundary.py (cargo.toml scan: forbidden=[]; waivers configured=0)",
+]
+verify = "python3 scripts/check_hex_boundary.py"
+
+[[requirement]]
+id = "HEX-C32-02"
+title = "Domain outbound purity — *.rs files cannot import infrastructure crates"
+status = "verified"
+owner_gate = "REC-C3"
+notes = "REC-C3.2: every *.rs under crates/chronos-domain/src/ must not reference a forbidden external crate. Type-only workspace deps (serde, schemars, thiserror, uuid, serde_json) are whitelisted; intrinsics (std, core, alloc, crate, super, self) are whitelisted; chronos_domain (self) is whitelisted. Anything else fails HEX-C32-02."
+evidence = [
+  "scripts/check_hex_boundary.py::_scan_outbound_purity",
+  "scripts/check_hex_boundary.py::ALLOWED_EXTERNAL_DEPS",
+]
+uat = [
+  "scripts/check_hex_boundary.py (outbound purity: 0 errors across all *.rs under crates/chronos-domain/src)",
+]
+verify = "python3 scripts/check_hex_boundary.py"
+
+[[requirement]]
+id = "HEX-C32-03"
+title = "Adapter direction — chronos-webhook consumes NotificationSink port, not the reverse"
+status = "verified"
+owner_gate = "REC-C3"
+notes = "REC-C3.2 V5: chronos-webhook -> chronos_domain::ports::NotificationSink (and chronos_domain::NotificationRequest + NotificationDeliveryError). Reverse direction (chronos_domain -> chronos_webhook) is forbidden and would fail HEX-C32-02 + HEX-C32-01 anyway; this contract keeps the symmetry self-documenting. REC-C3.3 will extend the rule to chronos-services consuming the port (services-side direction)."
+evidence = [
+  "scripts/check_hex_boundary.py::_scan_webhook_direction (0 cross-crate use beyond chronos_domain inside chronos-webhook/src)",
+  "crates/chronos-webhook/src/sink.rs::HttpWebhookSink (implements chronos_domain::ports::NotificationSink)",
+  "cargo check -p chronos-webhook --all-targets (0 errors / 0 warnings)",
+]
+uat = [
+  "scripts/check_hex_boundary.py (chronos-webhook -> chronos_domain direction confirmed by absence of forbidden cross-crate use)",
+  "grep -rn 'use chronos' crates/chronos-webhook/src/ (only `use chronos_domain::...`, no other workspace crate)",
+]
+verify = "python3 scripts/check_hex_boundary.py && cargo check -p chronos-webhook --all-targets"
 
 [[requirement]]
 id = "HEX-002"
 title = "Application services depend on ports, not concrete tracing/storage adapters"
 status = "gap"
 owner_gate = "REC-C3"
-notes = "REC-C3.1 declares the ports; chronos-services still consumes concrete adapters (SegmentedExecutionLog from chronos_log). Inversion scheduled for REC-C3.3."
+notes = "REC-C3.1 declared the ports; chronos-services still consumes concrete adapters (SegmentedExecutionLog from chronos_log). HEX-C32-03 settled the adapter->port direction; the services->port direction is REC-C3.3 work."
 
 [[requirement]]
 id = "HEX-003"

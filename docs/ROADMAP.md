@@ -27,7 +27,9 @@ application ports, extract webhook infrastructure, invert
 services -> concrete adapter dependencies, remove store -> native,
 dependency graph gate to zero.
 
-**REC-C3.1 (in-progress cycle):** `crates/chronos-domain/src/ports/{execution_log,notification,probe,session,telemetry}.rs` declared; `chronos_domain::session_id::SessionId` introduced to break the cyclc dep with `chronos_log`. `scripts/check_hex_boundary.py` enforces ports/* outbound purity + surface shape (PASSES). HEX-001 moved `gap -> partial`. HEX-002 stays `gap` (services inversion is C3.3). `ExecutionLogProvider` is a documented placeholder for C3.3.
+**REC-C3.1 (closed 2026-09-18, tag `v0.1.1`):** `crates/chronos-domain/src/ports/{execution_log,notification,probe,session,telemetry}.rs` declared; `chronos_domain::session_id::SessionId` introduced to break the cyclic dep with `chronos_log`. `scripts/check_hex_boundary.py` enforces ports/* outbound purity + surface shape. HEX-001 moved `gap -> partial`. `ExecutionLogProvider` is a documented placeholder for C3.3.
+
+**REC-C3.2 (active cycle — reconcile-only):** `scripts/check_hex_boundary.py` hardened. The gate now enforces (a) chronos-domain `Cargo.toml` blacklist (no reqwest/hyper/tokio/tracing/axum/warp/http and no other workspace `chronos_*` infra crate), (b) full `crates/chronos-domain/src/**/*.rs` outbound purity (no forbidden external crates — type-only deps and intrinsics are whitelisted), (c) chronos-webhook adapter direction (`chronos-webhook -> chronos_domain` only — services-side is C3.3), and (d) `ports/mod.rs` public surface shape with stale-waiver detection. No waiver list is configured (zero waivers is the target; REC-C3.5 will keep that property). HEX-001 promotes `partial -> verified`; HEX-C32-01/02/03 are added as `verified` (V5 direction settled). chronos-webhook remains the single home of reqwest — that is unchanged by this cycle; C3.2 reconciles the contract/gate because the code was already in position from C3.1. HEX-002 stays `gap`; the services-side inversion is C3.3.
 
 The `## Convergence sequence` table below reflects this state.
 
@@ -67,6 +69,7 @@ The following cycle/milestone records remain historically closed. Their close st
 - **rec-c1-8-authoritative-evidence-handoff** — closed (tag at `451a29b6`). Three acceptance discrepancies from C1.7 closed; `chronos_log::segmented` bookkeeping bug surfaced as `FIND-C1.8-01` (deferred). REC-C1 fully closed.
 - **rec-c2-eventbus-removal** (C2.0..C2.3) — closed (C2.3 tag `rec-c2.3-eventbus-removal` at `d435557e`). `chronos-domain::bus` deleted; `ProbeBackend::read_since` removed; `bus_capacity`/`bus_fill` removed from wire; ratchet at baseline 0.
 - **rec-c2-5-formal-closure** — closed (tag `rec-c2-5-formal-closure`, see `cycle-artifacts/p-3416cfb8288f8964/rec-c2-5-formal-closure/`). LEGACY-001/002 contracts flipped to `verified`; `reconstruction-contracts.toml` `active_gate` flipped from `REC-C2` to `REC-C3`. REC-C2 fully closed.
+- **rec-c3-1-application-ports** — closed 2026-09-18 (tag `v0.1.1` at `33b4f790`). HEX-001 promoted `gap -> partial`; `ExecutionLogProvider` is a documented placeholder; `session_id::SessionId` introduced to break the cyclic dep with `chronos_log`. REC-C3.1 is the foundation; REC-C3.2 reconciles the gate.
 
 ## Naming rule
 

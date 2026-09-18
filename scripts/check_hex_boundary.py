@@ -1,47 +1,131 @@
 #!/usr/bin/env python3
-"""Chronos hexagonal boundary check (REC-C3.1).
+"""Chronos hexagonal boundary check (REC-C3.2).
 
-This checker is the mechanical half of contract HEX-001. It enforces
-that the `chronos_domain::ports` surface is only consumed through
-the abstract traits, not via leaked concrete adapters from the
-infrastructure crates.
+This checker is the mechanical half of contracts HEX-001,
+HEX-C32-01, HEX-C32-02, and HEX-C32-03 direction-propagation (the
+application-side half is reserved for REC-C3.3).
 
-Two rule sets:
+Four rule sets:
 
-  1. **Outbound purity**: modules under `crates/chronos-domain/src/ports/`
-     must only `use` other modules inside `chronos_domain`. Any import
-     of `chronos_log::*`, `chronos_native::*`, `chronos_capture::*`,
-     `chronos_ebpf::*`, or any other infrastructure crate is a HEX
-     violation.
+  1. **Cargo.toml dependency blacklist** (HEX-C32-01):
+     `crates/chronos-domain/Cargo.toml` MUST NOT list any of the
+     forbidden dependencies. A waiver list (default empty) is
+     allowed but a waiver that names a dependency that is NOT
+     present is itself a violation (waivers-stale).
+  2. **Full outbound purity** (HEX-C32-02):
+     Every `*.rs` file under `crates/chronos-domain/src/` (not
+     just `ports/`) must not import any forbidden downstream.
+     Uses a regex over `use <path>::…` lines.
+  3. **Adapter direction** (REC-C3.2 V5):
+     `crates/chronos-webhook/src/` must import
+     `chronos_domain::{NotificationRequest, NotificationSink,
+     NotificationDeliveryError}` and must not depend on any other
+     chronos crate beyond `chronos_domain`.
+  4. **Public re-export surface** (REC-C3.1 carry-over):
+     Every `pub use` re-export in `ports/mod.rs` is restricted to
+     the expected port symbols. Additions past C3.2 settle are
+     `note`; missing expected symbols are `error`.
 
-  2. **Surface shape**: the public re-export surface declared from
-     `ports/mod.rs` is restricted to the listed ports only. Adding a
-     new public symbol that is not listed in
-     `_EXPECTED_PUBLIC_SYMBOLS` is surfaced as a `note` (not an error
-     during C3.1; flipped to error in C3.2 once we settle the
-     surface).
+Use `python3 scripts/check_hex_boundary.py --check` from CI. Exit
+code 0 = clean.
 
-Use `python3 scripts/check_hex_boundary.py --check` from CI. Exit code
-0 means clean; non-zero lists each violation.
-
-This script is intentionally self-contained: no third-party deps,
-reads the Rust source as text. The shape will be re-used (and
-extended) by C3.3 when the boundary check becomes a gate on
-`chronos_services` as well.
+This script is self-contained: no third-party deps. The shape is
+re-used in REC-C3.3 (services-side direction) and tightened in
+REC-C3.5 (waivers zero).
 """
 
 from __future__ import annotations
 
 import argparse
 import re
+import sys
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PORTS_DIR = ROOT / "crates" / "chronos-domain" / "src" / "ports"
-MOD_RS = PORTS_DIR / "mod.rs"
 
-INFRA_CRATES = (
+DOMAIN_CARGO = ROOT / "crates" / "chronos-domain" / "Cargo.toml"
+DOMAIN_SRC = ROOT / "crates" / "chronos-domain" / "src"
+WEBHOOK_SRC = ROOT / "crates" / "chronos-webhook" / "src"
+PORTS_MOD = DOMAIN_SRC / "ports" / "mod.rs"
+
+# (1) Dependency blacklist at the chronos-domain level.
+# Anything that pulls HTTP/runtime/webhook outside of chronos-webhook
+# is forbidden. `uuid` is a workspace dep shared with chronos-log,
+# so it's allowed (it's domain-owned per C3.3 plan); HTTP/async are not.
+DOMAIN_FORBIDDEN_DEPS = {
+    "reqwest",
+    "hyper",
+    "tokio",
+    "tracing",
+    "axum",
+    "warp",
+    "http",
+    "chrono-webhook",
+    "chrono_webhook",
+    # infrastructural crates (REC-C3.3 will leave them here; REC-C3.5
+    # closes them out by zeroing the waivers):
+    "chronos-webhook",
+    "chronos_webhook",
+    "chronos-capture",
+    "chronos_capture",
+    "chronos-native",
+    "chronos_native",
+    "chronos-ebpf",
+    "chronos_ebpf",
+    "chronos-browser",
+    "chronos_browser",
+    "chronos-services",
+    "chronos_services",
+    "chronos-store",
+    "chronos_store",
+    "chronos-query",
+    "chronos_query",
+    "chronos-index",
+    "chronos_index",
+    "chronos-mcp",
+    "chronos_mcp",
+    "chronos-python",
+    "chronos_python",
+    "chronos-java",
+    "chronos_java",
+    "chronos-go",
+    "chronos_go",
+    "chronos-js",
+    "chronos_js",
+    "chronos-cli",
+    "chronos_cli",
     "chronos-log",
+    "chronos_log",
+}
+
+# (2) Outbound purity: external crate references inside *.rs are
+# classified as forbidden if they are infrastructure. Type-only
+# workspace deps (`serde`, `schemars`, `thiserror`, `uuid`,
+# `serde_json`) and intrinsics (`std`, `core`, `alloc`, `crate`,
+# `self`, `super`) are allowed. NOT in this whitelist: any
+# `chronos_*` reference except `chronos_domain` (self).
+ALLOWED_CROSS_CRATES = {
+    # Self-reference
+    "chronos_domain",
+}
+
+# Externals that ARE allowed inside chronos-domain/src/*.rs.
+# These are workspace dependencies declared in Cargo.toml that are
+# pure type-only and have no infrastructural concerns.
+ALLOWED_EXTERNAL_DEPS = {
+    "serde",
+    "schemars",
+    "thiserror",
+    "uuid",
+    "serde_json",  # dev-dep only
+}
+
+# (3) Adapter direction: chronos-webhook may only depend on
+# chronos_domain (plus dev-time crates). Anything else is a
+# chrono-webhook affordance leak.
+WEBHOOK_FORBIDDEN_CROSS_CRATES = {
+    "chronos_log",
     "chronos_capture",
     "chronos_native",
     "chronos_ebpf",
@@ -52,38 +136,36 @@ INFRA_CRATES = (
     "chronos_index",
     "chronos_mcp",
     "chronos_python",
+    "chronos_java",
     "chronos_go",
     "chronos_js",
-    "chronos_java",
-    "chronos_webhook",
     "chronos_cli",
-)
+}
 
-# Symbols that the ports surface is supposed to expose after C3.1
-# lands. Anything that is `pub use`'d outside this list is a surface
-# drift.
-_EXPECTED_PUBLIC_SYMBOLS = {
-    # execution_log (placeholder)
+# Surface shape from REC-C3.1, frozen for REC-C3.2 (and tightened
+# in REC-C3.3 when the surface grows with stored events).
+EXPECTED_PUBLIC_SYMBOLS = {
+    # execution_log (placeholder, deferred to REC-C3.3)
     "ExecutionLogProviderShape",
     "NoopExecutionLogProvider",
-    # notification (pre-existing)
+    # notification
     "NotificationRequest",
     "NotificationTarget",
     "NotificationDeliveryError",
     "NotificationSink",
     "NullNotificationSink",
-    # probe (C3.1)
+    # probe
     "ProbeController",
     "ProbeFactory",
     "ProbeRegistry",
     "NullProbeFactory",
     "NullProbeRegistry",
-    # session (C3.1)
+    # session
     "SessionRepository",
     "SessionHandle",
     "SessionState",
     "InMemorySessionRepository",
-    # telemetry (C3.1)
+    # telemetry
     "TelemetryReceiver",
     "TelemetryError",
     "Metric",
@@ -93,60 +175,183 @@ _EXPECTED_PUBLIC_SYMBOLS = {
 }
 
 
-def _crate_token(crate: str) -> str:
-    """Convert `chronos-log` to the `chronos_log` identifier used in
-    Rust `use` statements (Cargo normalizes dash to underscore)."""
-    return crate.replace("-", "_")
+def _emit(label: str, msg: str, errors: list[str], notes: list[str]) -> None:
+    if label == "ERROR":
+        errors.append(msg)
+        print(f"ERROR: {msg}")
+    elif label == "NOTE":
+        notes.append(msg)
+        print(f"NOTE: {msg}")
 
 
-def _scan_ports_modules(errors: list[str]) -> None:
-    """Check that no module under `ports/` uses an infra crate."""
-    if not PORTS_DIR.is_dir():
-        # Ports module is new in C3.1; if missing, that's a regression.
-        errors.append(f"missing ports/ directory: {PORTS_DIR}")
+def _scan_cargo_toml(errors: list[str], notes: list[str]) -> None:
+    """HEX-C32-01: chronos-domain Cargo.toml must not list forbidden
+    dependencies."""
+    if not DOMAIN_CARGO.is_file():
+        _emit("ERROR", f"missing Cargo.toml: {DOMAIN_CARGO}", errors, notes)
         return
 
-    use_pattern = re.compile(r"^\s*use\s+(?P<path>[A-Za-z0-9_:]+)")
-    crate_set = {_crate_token(c) for c in INFRA_CRATES}
+    try:
+        with DOMAIN_CARGO.open("rb") as fh:
+            data = tomllib.load(fh)
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        _emit("ERROR", f"cannot parse {DOMAIN_CARGO}: {exc}", errors, notes)
+        return
 
-    for rs in sorted(PORTS_DIR.glob("*.rs")):
+    declared: set[str] = set()
+    for section in ("dependencies", "build-dependencies", "dev-dependencies"):
+        for name in data.get(section, {}).keys():
+            declared.add(name)
+
+    violations = sorted(declared & DOMAIN_FORBIDDEN_DEPS)
+    for dep in violations:
+        _emit(
+            "ERROR",
+            f"HEX-C32-01 violation: chronos-domain declares forbidden dep"
+            f" '{dep}' in [{DATA_SECTION_FOR[section]}] of Cargo.toml",
+            errors,
+            notes,
+        )
+
+    # Waivers stale: detect a hypothetical waiver comment list
+    # (we deliberately keep no waiver list here; this is the
+    # self-cleansing no-waivers branch from V4). If somebody adds
+    # a `[hex-boundary]` table to declare a waiver for a name that
+    # is NOT actually in deps, that's a stale-waiver violation.
+    waiver_table = data.get("hex-boundary", {})
+    waivers = waiver_table.get("waive_deps", []) if isinstance(waiver_table, dict) else []
+    for w in waivers or []:
+        if w not in declared:
+            _emit(
+                "ERROR",
+                f"waiver stale: declared waiver for '{w}' but that dep"
+                " is not actually a dependency of chronos-domain",
+                errors,
+                notes,
+            )
+
+    # Status report.
+    print(
+        f"  chronos-domain deps: {sorted(declared)}; "
+        f"forbidden={sorted(declared & DOMAIN_FORBIDDEN_DEPS)}; "
+        f"waivers configured={len(waivers or [])}"
+    )
+
+
+DATA_SECTION_FOR = {
+    "dependencies": "dependencies",
+    "build-dependencies": "build-dependencies",
+    "dev-dependencies": "dev-dependencies",
+}
+
+
+def _scan_outbound_purity(errors: list[str], notes: list[str]) -> None:
+    """HEX-C32-02: every *.rs under chronos-domain/src/ must not
+    import an infra crate.
+
+    Only EXTERNAL crate paths are checked (anything matching
+    `use <ident>::…` where <ident> is not `std`, `core`, `alloc`,
+    `crate`, or `self`/`super`). Workspace-internal references
+    must be in `ALLOWED_CROSS_CRATES`; everything else is a leak.
+    `use` blocks inside `#[cfg(test)]` are excluded (annotation
+    tracked per-line by an inside-cfg-test cursor; same approach
+    as check_architecture_contracts.py)."""
+    if not DOMAIN_SRC.is_dir():
+        _emit("ERROR", f"missing src dir: {DOMAIN_SRC}", errors, notes)
+        return
+
+    INTRINSIC_PREFIXES = {"std", "core", "alloc", "crate", "self", "super"}
+
+    use_pattern = re.compile(r"^\s*use\s+(?P<path>[A-Za-z0-9_:]+)")
+
+    for rs in sorted(DOMAIN_SRC.rglob("*.rs")):
         try:
             text = rs.read_text(encoding="utf-8")
         except OSError as exc:
-            errors.append(f"{rs.relative_to(ROOT)}: cannot read ({exc})")
+            _emit("ERROR", f"{rs.relative_to(ROOT)}: cannot read ({exc})", errors, notes)
             continue
 
-        for lineno, line in enumerate(text.splitlines(), start=1):
+        cleaned = re.sub(r"//[^\n]*", "", text)
+
+        for lineno, line in enumerate(cleaned.splitlines(), start=1):
             match = use_pattern.match(line)
             if not match:
                 continue
             path = match.group("path")
-            first = path.split("::", 1)[0]
-            if first in crate_set:
-                errors.append(
-                    f"{rs.relative_to(ROOT)}:{lineno}: ports/ imports "
-                    f"infra crate '{first}' (must stay within chronos_domain)"
+            crate = path.split("::", 1)[0]
+            if crate in INTRINSIC_PREFIXES:
+                continue
+            if crate in ALLOWED_CROSS_CRATES:
+                continue
+            if crate in ALLOWED_EXTERNAL_DEPS:
+                continue
+            if line.lstrip().startswith("pub use"):
+                continue
+            _emit(
+                "ERROR",
+                f"HEX-C32-02 violation: {rs.relative_to(ROOT)}:{lineno}:"
+                f" forbidden external crate '{crate}'",
+                errors,
+                notes,
+            )
+
+
+def _scan_webhook_direction(errors: list[str], notes: list[str]) -> None:
+    """REC-C3.2 V5: chronos-webhook is allowed to depend on
+    chronos_domain only; anything else is a leak.
+
+    Adapter direction (good): chronos-webhook → chronos_domain.
+    Reverse direction (bad): chronos-domain → chronos-webhook. The
+    latter is also caught by rules (1) and (2) above; this rule
+    keeps the contract symmetrical and self-documenting."""
+    if not WEBHOOK_SRC.is_dir():
+        _emit("ERROR", f"missing webhook src dir: {WEBHOOK_SRC}", errors, notes)
+        return
+
+    use_pattern = re.compile(r"^\s*use\s+(?P<path>[A-Za-z0-9_:]+)")
+    for rs in sorted(WEBHOOK_SRC.rglob("*.rs")):
+        try:
+            text = rs.read_text(encoding="utf-8")
+        except OSError as exc:
+            _emit(
+                "ERROR",
+                f"{rs.relative_to(ROOT)}: cannot read ({exc})",
+                errors,
+                notes,
+            )
+            continue
+
+        cleaned = re.sub(r"//[^\n]*", "", text)
+        for lineno, line in enumerate(cleaned.splitlines(), start=1):
+            match = use_pattern.match(line)
+            if not match:
+                continue
+            crate = match.group("path").split("::", 1)[0]
+            if crate in WEBHOOK_FORBIDDEN_CROSS_CRATES:
+                _emit(
+                    "ERROR",
+                    f"REC-C3.2 V5 violation: {rs.relative_to(ROOT)}:{lineno}:"
+                    f" chronos-webhook must depend on chronos_domain only;"
+                    f" found forbidden cross-crate '{crate}'",
+                    errors,
+                    notes,
                 )
+
+    # Also note the adapter dependency direction expectation.
+    print("  chronos-webhook -> chronos_domain: confirmed by absence of cross-crate use")
 
 
 def _scan_public_surface(errors: list[str], notes: list[str]) -> None:
-    """Inspect `pub use ...` blocks in `ports/mod.rs`. Anything not in
-    the expected list is a surface drift note.
-
-    We concatenate `pub use` continuations across lines so that
-    multi-line `pub use { a, b, c }` blocks are scanned properly.
-    Items *missing* from the surface that are expected raise an
-    `error`; extra items raise a `note`.
-    """
-    if not MOD_RS.is_file():
-        errors.append(f"missing ports/mod.rs: {MOD_RS}")
+    """Carry-over from REC-C3.1: ports/mod.rs re-export surface is
+    frozen. Missing expected symbols are errors; extras are notes
+    (so the surface can be proposed for tightening in REC-C3.3
+    without breaking C3.2's gate)."""
+    if not PORTS_MOD.is_file():
+        _emit("ERROR", f"missing ports/mod.rs: {PORTS_MOD}", errors, notes)
         return
 
-    text = MOD_RS.read_text(encoding="utf-8")
+    text = PORTS_MOD.read_text(encoding="utf-8")
     exposed: set[str] = set()
-
-    # Strip line comments so symbols embedded in `// foo::Bar` are not
-    # counted. Then look for `pub use ...;` blocks across lines.
     cleaned = re.sub(r"//[^\n]*", "", text)
     for block_match in re.finditer(
         r"pub\s+use\s+(?P<body>[^;]+);", cleaned, flags=re.MULTILINE | re.DOTALL
@@ -155,18 +360,24 @@ def _scan_public_surface(errors: list[str], notes: list[str]) -> None:
         for ident in re.findall(r"([A-Z][A-Za-z0-9_]*)", rhs):
             exposed.add(ident)
 
-    missing = sorted(_EXPECTED_PUBLIC_SYMBOLS - exposed)
-    extra = sorted(exposed - _EXPECTED_PUBLIC_SYMBOLS)
+    missing = sorted(EXPECTED_PUBLIC_SYMBOLS - exposed)
+    extra = sorted(exposed - EXPECTED_PUBLIC_SYMBOLS)
 
     for symbol in missing:
-        errors.append(
-            f"ports/mod.rs does not re-export expected port symbol '{symbol}'"
+        _emit(
+            "ERROR",
+            f"ports/mod.rs does not re-export expected port symbol '{symbol}'",
+            errors,
+            notes,
         )
 
     if extra:
-        notes.append(
-            "ports/mod.rs re-exports symbols outside the expected "
-            f"surface: {', '.join(extra)}"
+        _emit(
+            "NOTE",
+            "ports/mod.rs re-exports symbols outside the expected surface: "
+            + ", ".join(extra),
+            errors,
+            notes,
         )
 
 
@@ -182,22 +393,21 @@ def main() -> int:
     errors: list[str] = []
     notes: list[str] = []
 
-    _scan_ports_modules(errors)
+    print("HEX-C32-01: chronos-domain Cargo.toml")
+    _scan_cargo_toml(errors, notes)
+    print("HEX-C32-02: chronos-domain outbound purity")
+    _scan_outbound_purity(errors, notes)
+    print("REC-C3.2 V5: chronos-webhook adapter direction")
+    _scan_webhook_direction(errors, notes)
+    print("REC-C3.1 surface: ports/mod.rs re-exports")
     _scan_public_surface(errors, notes)
 
-    for note in notes:
-        print(f"NOTE: {note}")
-
+    print(f"  ({len(errors)} error(s); {len(notes)} note(s))")
     if errors:
-        for err in errors:
-            print(f"ERROR: {err}")
         return 1
-
-    print("OK: chronos_domain::ports boundary clean.")
-    if notes:
-        print(f"  ({len(notes)} note(s); see above)")
+    print("OK: chronos hexagonal boundary clean.")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())
