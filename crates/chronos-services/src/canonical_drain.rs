@@ -18,9 +18,7 @@
 
 use chronos_domain::semantic::{ResolveContext, SemanticEvent};
 use chronos_domain::TraceEvent;
-use chronos_log::{
-    tripwire_evidence_codec as codec, EventSeq, ExecutionKind, TripwireFiredEvidence,
-};
+use chronos_log::{tripwire_evidence_codec as codec, EventSeq, ExecutionKind};
 
 use crate::error::ServiceError;
 use crate::events_cursor::EventsCursorV1;
@@ -316,7 +314,7 @@ mod tests {
     use chronos_domain::{EventData, EventType, Language, SourceLocation, TraceEvent};
     use chronos_log::{
         ExecutionPayload, Gap, GapReason, NewExecutionRecord, SegmentedConfig,
-        SegmentedExecutionLog, SessionId,
+        SegmentedExecutionLog, SessionId, TripwireFiredEvidence,
     };
     use std::sync::Arc;
 

@@ -50,7 +50,7 @@ use crate::cursor::{ConsumerCursor, LogConsumerId, ReadResult};
 use crate::error::LogError;
 use crate::gap::{Gap, GapReason};
 use crate::memory::InMemoryExecutionLog;
-use crate::record::{ExecutionPayload, ExecutionRecord, SessionId};
+use crate::record::{ExecutionRecord, SessionId};
 use crate::segment::{read_header, sanitize_session, write_segment, SegmentEntry};
 use crate::seq::EventSeq;
 use std::collections::BTreeMap;

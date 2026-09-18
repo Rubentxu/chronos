@@ -24,11 +24,10 @@
 
 use std::sync::Arc;
 
-use chronos_domain::evidence::{
-    ExecutionKind, ExecutionPayload, ExecutionRecord, Gap, NewExecutionRecord, SealedTail,
-    TailState,
+use chronos_domain::evidence::{Gap, NewExecutionRecord, SealedTail, TailState};
+use chronos_domain::ports::execution_log::{
+    ExecutionLogError, ExecutionLogKind, ExecutionLogPage, ExecutionLogProvider,
 };
-use chronos_domain::ports::execution_log::{ExecutionLogError, ExecutionLogPage, ExecutionLogProvider};
 use chronos_domain::seq::EventSeq;
 use chronos_domain::session_id::SessionId;
 use std::sync::Mutex;
@@ -80,11 +79,17 @@ pub(crate) fn map_log_error(err: LogError) -> ExecutionLogError {
         // Storage integrity.
         LogError::TailIntegrityMismatch { .. }
         | LogError::ReplayIntegrity { .. }
-        | LogError::InvalidGap { .. }
         | LogError::SegmentCrossesRetention { .. }
         | LogError::RetentionMetadataMissing { .. } => ExecutionLogError::IntegrityFailure {
             detail: format!("execution log integrity failure: {err}"),
         },
+
+        // Caller-supplied gap was malformed for this session:
+        // negative span, span that re-uses already-allocated seqs,
+        // span that does not fit the next free seq, ... This is NOT
+        // integrity of stored evidence — it is a request validation
+        // failure at the write boundary.
+        LogError::InvalidGap { reason } => ExecutionLogError::InvalidGap { detail: reason },
 
         // Transient / unavailable.
         LogError::AppendFailed { .. } | LogError::Backend(_) => ExecutionLogError::Unavailable {
@@ -95,11 +100,13 @@ pub(crate) fn map_log_error(err: LogError) -> ExecutionLogError {
         // supposed to produce these. If it does, that is an adapter
         // regression we want to catch — but not by crashing the
         // process.
-        LogError::CursorStale { .. } | LogError::SessionNotFound => ExecutionLogError::Unavailable {
-            detail: format!(
-                "execution log unavailable: legacy backend invariant violated: {err}"
-            ),
-        },
+        LogError::CursorStale { .. } | LogError::SessionNotFound => {
+            ExecutionLogError::Unavailable {
+                detail: format!(
+                    "execution log unavailable: legacy backend invariant violated: {err}"
+                ),
+            }
+        }
     }
 }
 
@@ -148,25 +155,62 @@ impl SegmentedExecutionLogProvider {
     pub fn inner(&self) -> &SegmentedExecutionLog {
         &self.inner
     }
+
+    /// Clone the inner `Arc<SegmentedExecutionLog>`.
+    ///
+    /// **Transitional seam** (REC-C3.3.1): the `NativeProbeBackend`
+    /// and `read_log_with_stats` still take the concrete backend.
+    /// Once they migrate to the port this goes away.
+    pub fn inner_arc(&self) -> &Arc<SegmentedExecutionLog> {
+        &self.inner
+    }
+
+    /// Discriminator for the closed `ProviderKind` enum used by the
+    /// services-side wrapper to route maintenance capabilities.
+    /// Off the port by design: maintenance is not part of the
+    /// application-shape contract.
+    pub fn provider_kind_marker(&self) -> ProviderKindMarker {
+        ProviderKindMarker::Segmented
+    }
 }
 
+/// Local tag the services-side `ProviderKind` enum matches on.
+/// Adding a new adapter means adding a new variant here AND in
+/// the wrapper enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderKindMarker {
+    Segmented,
+    InMemory,
+}
+
+// `SegmentedExecutionLogProvider` automatically implements `Any`
+// because it is a local `'static` struct. The wrapper reaches it
+// through an enum tag instead of `Arc::downcast` because the trait
+// port is deliberately kept free of `Any`.
+
 impl ExecutionLogProvider for SegmentedExecutionLogProvider {
+    fn kind(&self) -> ExecutionLogKind {
+        ExecutionLogKind::Segmented
+    }
+
     fn session_id(&self) -> &SessionId {
         &self.session_id
     }
 
-    fn append(
-        &self,
-        record: NewExecutionRecord,
-    ) -> Result<EventSeq, ExecutionLogError> {
+    fn append(&self, record: NewExecutionRecord) -> Result<EventSeq, ExecutionLogError> {
         if record.session_id != self.session_id {
             return Err(ExecutionLogError::IdentityMismatch {
                 expected: self.session_id.clone(),
                 actual: record.session_id,
             });
         }
+        self.inner.append(record).map_err(map_log_error)
+    }
+
+    fn record_gap(&self, gap: Gap) -> Result<EventSeq, ExecutionLogError> {
         self.inner
-            .append(record)
+            .record_gap(gap.clone())
+            .map(|()| gap.last_missing)
             .map_err(map_log_error)
     }
 
@@ -239,17 +283,23 @@ impl InMemoryExecutionLogProvider {
     pub fn inner(&self) -> &InMemoryExecutionLog {
         &self.inner
     }
+
+    /// See [`SegmentedExecutionLogProvider::provider_kind_marker`].
+    pub fn provider_kind_marker(&self) -> ProviderKindMarker {
+        ProviderKindMarker::InMemory
+    }
 }
 
 impl ExecutionLogProvider for InMemoryExecutionLogProvider {
+    fn kind(&self) -> ExecutionLogKind {
+        ExecutionLogKind::InMemory
+    }
+
     fn session_id(&self) -> &SessionId {
         &self.session_id
     }
 
-    fn append(
-        &self,
-        record: NewExecutionRecord,
-    ) -> Result<EventSeq, ExecutionLogError> {
+    fn append(&self, record: NewExecutionRecord) -> Result<EventSeq, ExecutionLogError> {
         if record.session_id != self.session_id {
             return Err(ExecutionLogError::IdentityMismatch {
                 expected: self.session_id.clone(),
@@ -267,8 +317,24 @@ impl ExecutionLogProvider for InMemoryExecutionLogProvider {
                 });
             }
         }
+        self.inner.append(record).map_err(map_log_error)
+    }
+
+    fn record_gap(&self, gap: Gap) -> Result<EventSeq, ExecutionLogError> {
+        // Lifecycle gate: refuse gap writes after a successful seal.
+        // A sealed session is a complete truth; nothing can be added
+        // to it, including a retroactive loss record.
+        {
+            let state = self.tail_state.lock().expect("tail_state poisoned");
+            if state.is_sealed() {
+                return Err(ExecutionLogError::Sealed {
+                    session_id: self.session_id.clone(),
+                });
+            }
+        }
         self.inner
-            .append(record)
+            .record_gap(self.session_id.clone(), gap.clone())
+            .map(|()| gap.last_missing)
             .map_err(map_log_error)
     }
 
@@ -292,10 +358,7 @@ impl ExecutionLogProvider for InMemoryExecutionLogProvider {
     }
 
     fn tail_state(&self) -> TailState {
-        self.tail_state
-            .lock()
-            .expect("tail_state poisoned")
-            .clone()
+        self.tail_state.lock().expect("tail_state poisoned").clone()
     }
 
     fn seal(&self) -> Result<SealedTail, ExecutionLogError> {
@@ -322,6 +385,7 @@ mod tests {
     use super::*;
     use crate::gap::GapReason;
     use crate::segmented::{CompactionMetrics, SegmentedConfig};
+    use chronos_domain::evidence::{ExecutionKind, ExecutionPayload};
     use std::path::PathBuf;
     use std::sync::Arc;
 
@@ -339,7 +403,7 @@ mod tests {
         p
     }
 
-    fn raw_record(session: &SessionId, seq: u64, monotonic_ns: u64) -> NewExecutionRecord {
+    fn raw_record(session: &SessionId, monotonic_ns: u64) -> NewExecutionRecord {
         NewExecutionRecord {
             session_id: session.clone(),
             kind: ExecutionKind::Raw,
@@ -372,29 +436,44 @@ mod tests {
     fn exercise(provider: Arc<dyn ExecutionLogProvider>) {
         let session = provider.session_id().clone();
         // append three records.
-        let s0 = provider
-            .append(raw_record(&session, 0, 0))
-            .expect("append 0");
-        let s1 = provider
-            .append(raw_record(&session, 1, 1))
-            .expect("append 1");
-        let s2 = provider
-            .append(raw_record(&session, 2, 2))
-            .expect("append 2");
-        assert_eq!((s0, s1, s2), (EventSeq::new(0), EventSeq::new(1), EventSeq::new(2)));
+        let s0 = provider.append(raw_record(&session, 0)).expect("append 0");
+        let s1 = provider.append(raw_record(&session, 1)).expect("append 1");
+        let s2 = provider.append(raw_record(&session, 2)).expect("append 2");
+        assert_eq!(
+            (s0, s1, s2),
+            (EventSeq::new(0), EventSeq::new(1), EventSeq::new(2))
+        );
 
-        // read 0 with limit 10 → 3 records, position_after = 3, NOT
-        // exhausted (we just consumed everything that exists; the
-        // semantic of `exhausted` is "nothing at or after the input
-        // position" — for `from=0` with records present, we DID
-        // examine something, so exhausted is false even though the
-        // session is otherwise caught-up).
+        // Record an explicit gap covering seqs 3..=5. After this
+        // write, the next append must return EventSeq::new(6) — the
+        // gap reserved three slots. The read sees [record, record,
+        // record, gap(3..5)] before any further append.
+        let gap_end = provider
+            .record_gap(Gap::new(
+                EventSeq::new(3),
+                EventSeq::new(5),
+                GapReason::KernelRingOverflow,
+                "test",
+            ))
+            .expect("record_gap");
+        assert_eq!(gap_end, EventSeq::new(5));
+
+        let s3 = provider
+            .append(raw_record(&session, 3))
+            .expect("append after gap");
+        assert_eq!(s3, EventSeq::new(6), "gap must reserve its span");
+
+        // read 0 with limit 10 → 4 records + 1 gap, position_after
+        // jumps past the gap.
         let page = provider
             .read_from_seq(EventSeq::ZERO, 10)
             .expect("read 0..");
-        assert_eq!(page.records.len(), 3);
-        assert_eq!(page.position_after, EventSeq::new(3));
-        assert!(!page.exhausted, "examined records -> not exhausted");
+        assert_eq!(page.records.len(), 4);
+        assert_eq!(page.gaps.len(), 1);
+        assert_eq!(page.gaps[0].first_missing, EventSeq::new(3));
+        assert_eq!(page.gaps[0].last_missing, EventSeq::new(5));
+        assert_eq!(page.position_after, EventSeq::new(7));
+        assert!(!page.exhausted, "examined records + gap -> not exhausted");
 
         // read from position_after → empty, exhausted = true,
         // position_after does not move.
@@ -408,17 +487,17 @@ mod tests {
 
         // seal → state becomes Sealed.
         let sealed = provider.seal().expect("seal");
-        assert_eq!(sealed.tail_seq, Some(EventSeq::new(2)));
+        assert_eq!(sealed.tail_seq, Some(EventSeq::new(6)));
         match provider.tail_state() {
             TailState::Sealed { tail_seq, .. } => {
-                assert_eq!(tail_seq, Some(EventSeq::new(2)));
+                assert_eq!(tail_seq, Some(EventSeq::new(6)));
             }
             other => panic!("expected Sealed, got {other:?}"),
         }
 
         // append after seal → Sealed.
         let err = provider
-            .append(raw_record(&session, 3, 3))
+            .append(raw_record(&session, 3))
             .expect_err("append after seal must fail");
         assert!(
             matches!(err, ExecutionLogError::Sealed { .. }),
@@ -433,7 +512,7 @@ mod tests {
         let session = SessionId::new("rec-c33-seg-idem");
         let (provider, _dir) = segmented_provider(&session);
         let err = provider
-            .append(raw_record(&SessionId::new("rec-c33-other"), 0, 0))
+            .append(raw_record(&SessionId::new("rec-c33-other"), 0))
             .expect_err("append must reject cross-session record");
         assert!(
             matches!(err, ExecutionLogError::IdentityMismatch { .. }),
@@ -446,7 +525,7 @@ mod tests {
         let session = SessionId::new("rec-c33-mem-idem");
         let provider = in_memory_provider(&session);
         let err = provider
-            .append(raw_record(&SessionId::new("rec-c33-other"), 0, 0))
+            .append(raw_record(&SessionId::new("rec-c33-other"), 0))
             .expect_err("append must reject cross-session record");
         assert!(
             matches!(err, ExecutionLogError::IdentityMismatch { .. }),
@@ -477,11 +556,9 @@ mod tests {
         let session = SessionId::new("rec-c33-page-false");
         let provider = in_memory_provider(&session);
         for ns in [10u64, 20, 30] {
-            provider.append(raw_record(&session, ns, ns)).expect("append");
+            provider.append(raw_record(&session, ns)).expect("append");
         }
-        let page = provider
-            .read_from_seq(EventSeq::ZERO, 10)
-            .expect("read");
+        let page = provider.read_from_seq(EventSeq::ZERO, 10).expect("read");
         assert_eq!(page.records.len(), 3);
         assert!(!page.exhausted);
         assert_eq!(page.position_after, EventSeq::new(3));
@@ -491,12 +568,10 @@ mod tests {
     fn page_exhausted_true_when_reader_is_caught_up() {
         let session = SessionId::new("rec-c33-page-true");
         let provider = in_memory_provider(&session);
-        provider.append(raw_record(&session, 0, 0)).expect("append");
-        provider.append(raw_record(&session, 1, 1)).expect("append");
+        provider.append(raw_record(&session, 0)).expect("append");
+        provider.append(raw_record(&session, 1)).expect("append");
         // Read from a position past the tail.
-        let page = provider
-            .read_from_seq(EventSeq::new(9), 10)
-            .expect("read");
+        let page = provider.read_from_seq(EventSeq::new(9), 10).expect("read");
         assert!(page.records.is_empty());
         assert!(page.exhausted);
         // No phantom progress: position_after stays put.
@@ -575,6 +650,115 @@ mod tests {
             }
             other => panic!("expected Sealed, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn log_error_invalid_gap_maps_to_invalid_gap_not_integrity() {
+        // The operator explicitly forbids folding caller-supplied
+        // invalid-gap requests into IntegrityFailure — that would
+        // conflate "caller asked for an impossible write" with
+        // "stored evidence is corrupt".
+        let e = super::map_log_error(LogError::InvalidGap {
+            reason: "first > last".to_string(),
+        });
+        match e {
+            ExecutionLogError::InvalidGap { detail } => {
+                assert_eq!(detail, "first > last");
+            }
+            other => panic!("expected InvalidGap, got {other:?}"),
+        }
+    }
+
+    // -- ADAPTER-7: `record_gap` is a canonical evidence write.
+
+    #[test]
+    fn segmented_provider_record_gap_reserves_span() {
+        let session = SessionId::new("rec-c33-seg-gap");
+        let (provider, _dir) = segmented_provider(&session);
+        let end = provider
+            .record_gap(Gap::new(
+                EventSeq::new(0),
+                EventSeq::new(2),
+                GapReason::KernelRingOverflow,
+                "test",
+            ))
+            .expect("record_gap");
+        assert_eq!(end, EventSeq::new(2));
+        let s = provider
+            .append(raw_record(&session, 0))
+            .expect("append after gap");
+        assert_eq!(s, EventSeq::new(3), "next append jumps past the gap");
+        let page = provider.read_from_seq(EventSeq::ZERO, 10).expect("read");
+        assert_eq!(page.gaps.len(), 1);
+        assert_eq!(page.records.len(), 1);
+        assert_eq!(page.records[0].seq, EventSeq::new(3));
+    }
+
+    #[test]
+    fn in_memory_provider_record_gap_reserves_span() {
+        let session = SessionId::new("rec-c33-mem-gap");
+        let provider = in_memory_provider(&session);
+        let end = provider
+            .record_gap(Gap::new(
+                EventSeq::new(0),
+                EventSeq::new(2),
+                GapReason::KernelRingOverflow,
+                "test",
+            ))
+            .expect("record_gap");
+        assert_eq!(end, EventSeq::new(2));
+        let s = provider
+            .append(raw_record(&session, 0))
+            .expect("append after gap");
+        assert_eq!(s, EventSeq::new(3), "next append jumps past the gap");
+        let page = provider.read_from_seq(EventSeq::ZERO, 10).expect("read");
+        assert_eq!(page.gaps.len(), 1);
+        assert_eq!(page.records.len(), 1);
+    }
+
+    #[test]
+    fn record_gap_with_negative_span_is_invalid() {
+        // The legacy backend refuses a gap whose first > last BEFORE
+        // it touches the allocator. The port must surface that as
+        // `InvalidGap`, not as `IntegrityFailure`.
+        let session = SessionId::new("rec-c33-neg-gap");
+        let provider = in_memory_provider(&session);
+        let err = provider
+            .record_gap(Gap::new(
+                EventSeq::new(5),
+                EventSeq::new(2),
+                GapReason::KernelRingOverflow,
+                "test",
+            ))
+            .expect_err("negative span must be rejected");
+        assert!(
+            matches!(err, ExecutionLogError::InvalidGap { .. }),
+            "expected InvalidGap, got {err:?}"
+        );
+        // No evidence was written.
+        assert_eq!(provider.tail_seq(), None);
+    }
+
+    #[test]
+    fn record_gap_after_seal_is_refused() {
+        // A sealed session is a complete truth. Gap writes that
+        // would mutate it are refused just like appends.
+        let session = SessionId::new("rec-c33-seal-gap");
+        let provider = in_memory_provider(&session);
+        provider.append(raw_record(&session, 0)).expect("append");
+        provider.seal().expect("seal");
+        let err = provider
+            .record_gap(Gap::new(
+                EventSeq::new(1),
+                EventSeq::new(3),
+                GapReason::KernelRingOverflow,
+                "test",
+            ))
+            .expect_err("record_gap after seal must fail");
+        assert!(
+            matches!(err, ExecutionLogError::Sealed { .. }),
+            "expected Sealed, got {err:?}"
+        );
     }
 
     // -- Sanity: gaps survive the page mapping.

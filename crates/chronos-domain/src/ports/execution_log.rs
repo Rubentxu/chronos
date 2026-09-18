@@ -40,11 +40,27 @@
 //! completeness guarantees, the lifecycle state for "is this
 //! trustworthy enough to read".
 
-use crate::evidence::{
-    ExecutionRecord, Gap, NewExecutionRecord, SealedTail, TailState,
-};
+use crate::evidence::{ExecutionRecord, Gap, NewExecutionRecord, SealedTail, TailState};
 use crate::seq::EventSeq;
 use crate::session_id::SessionId;
+
+/// Closed discriminator for which concrete adapter implements
+/// this provider (REC-C3.3.1).
+///
+/// The port surfaces only this closed enum — NOT a generic
+/// `Any`/`downcast` — so callers can route storage-maintenance
+/// capabilities without leaking `Any` into the domain contract.
+///
+/// Adding a new adapter means adding a variant here AND extending
+/// the services-side `ProviderKind`. That load-bearing closure is
+/// the whole point of using an enum instead of a runtime cast.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionLogKind {
+    /// File-backed segment store (`SegmentedExecutionLog`).
+    Segmented,
+    /// In-memory store (`InMemoryExecutionLog`).
+    InMemory,
+}
 
 /// Application-shape error for the execution log port.
 ///
@@ -99,6 +115,14 @@ pub enum ExecutionLogError {
     /// fine; the request could not be answered.
     #[error("execution log unavailable: {detail}")]
     Unavailable { detail: String },
+
+    /// The supplied `Gap` is malformed for this session (negative
+    /// span, span that re-uses already-allocated seqs, span that
+    /// does not fit the next free seq, …). NOT an integrity failure
+    /// of stored evidence — the caller asked for an invalid write,
+    /// the provider refused, no gap was recorded.
+    #[error("invalid gap for execution log: {detail}")]
+    InvalidGap { detail: String },
 }
 
 /// Domain-shaped read result. Lives here (not in `chronos_log`) so
@@ -133,6 +157,11 @@ pub struct ExecutionLogPage {
 ///
 /// Object-safe: see module docs.
 pub trait ExecutionLogProvider: Send + Sync {
+    /// Which concrete adapter implements this provider. Closed enum,
+    /// used by callers to route storage-maintenance capabilities to
+    /// the right backend (REC-C3.3.1). NOT `Any`.
+    fn kind(&self) -> ExecutionLogKind;
+
     /// The session this provider is bound to.
     fn session_id(&self) -> &SessionId;
 
@@ -144,10 +173,40 @@ pub trait ExecutionLogProvider: Send + Sync {
     ///
     /// On `IdentityMismatch` no evidence is written. The provider
     /// MUST NOT silently overwrite `record.session_id`.
-    fn append(
-        &self,
-        record: NewExecutionRecord,
-    ) -> Result<EventSeq, ExecutionLogError>;
+    fn append(&self, record: NewExecutionRecord) -> Result<EventSeq, ExecutionLogError>;
+
+    /// Record an explicit gap in this session's evidence.
+    ///
+    /// `record_gap` is **a write of canonical evidence**, not storage
+    /// maintenance. The truth:
+    ///
+    /// ```text
+    /// append(record)   = we know this evidence EXISTS
+    /// record_gap(gap)  = we know this evidence WAS LOST
+    /// ```
+    ///
+    /// Both mutate the authoritative truth of the `ExecutionLog`.
+    /// Routing `record_gap` through a maintenance escape hatch would
+    /// split evidence writes across two paths — that is the boundary
+    /// the operator explicitly forbids.
+    ///
+    /// The provider is session-scoped, so the gap does NOT carry a
+    /// `session_id`: the provider's own session is the only one to
+    /// which the gap can belong. This eliminates a connascence the
+    /// legacy backend had (`record_gap(session_id, gap)`).
+    ///
+    /// The provider assigns the gap's end seq and returns it. On
+    /// success the returned seq is strictly greater than the last
+    /// successful seq (record OR gap) on this session.
+    ///
+    /// On `InvalidGap` NO evidence is written — the caller asked for
+    /// an impossible gap (negative span, span that re-uses allocated
+    /// seqs, span that does not fit the next free seq, …).
+    ///
+    /// On `IdentityMismatch` (gap with a `session_id` field that
+    /// differs — future-proofing for `Gap` carrying identity) no
+    /// evidence is written.
+    fn record_gap(&self, gap: Gap) -> Result<EventSeq, ExecutionLogError>;
 
     /// Read records and gaps from `from` (inclusive), up to `limit`
     /// records.
@@ -219,14 +278,15 @@ mod tests {
     }
 
     impl ExecutionLogProvider for FakeProvider {
+        fn kind(&self) -> ExecutionLogKind {
+            ExecutionLogKind::InMemory
+        }
+
         fn session_id(&self) -> &SessionId {
             &self.session
         }
 
-        fn append(
-            &self,
-            record: NewExecutionRecord,
-        ) -> Result<EventSeq, ExecutionLogError> {
+        fn append(&self, record: NewExecutionRecord) -> Result<EventSeq, ExecutionLogError> {
             if record.session_id != self.session {
                 return Err(ExecutionLogError::IdentityMismatch {
                     expected: self.session.clone(),
@@ -236,6 +296,15 @@ mod tests {
             let seq = EventSeq::new(self.appended.lock().unwrap().len() as u64);
             self.appended.lock().unwrap().push(record);
             Ok(seq)
+        }
+
+        fn record_gap(&self, _gap: Gap) -> Result<EventSeq, ExecutionLogError> {
+            // The fake does not enforce span shape — that contract
+            // is per-adapter and tested there. The fake just needs to
+            // exist so the trait stays implementable end-to-end.
+            Err(ExecutionLogError::Unavailable {
+                detail: "FakeProvider does not implement record_gap".to_string(),
+            })
         }
 
         fn read_from_seq(
@@ -293,8 +362,10 @@ mod tests {
             }
             other => panic!("expected IdentityMismatch, got {other:?}"),
         }
-        assert!(provider.appended.lock().unwrap().is_empty(),
-            "a rejected record must not be appended");
+        assert!(
+            provider.appended.lock().unwrap().is_empty(),
+            "a rejected record must not be appended"
+        );
     }
 
     #[test]
