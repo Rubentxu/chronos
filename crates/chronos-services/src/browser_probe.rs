@@ -2,7 +2,7 @@
 //! (`browser_probe_*` tool family).
 //!
 //! This module owns the long-lived state associated with a live browser
-//! probe: [`BrowserProbeSession`] (carrying the [`BrowserAdapter`], the
+//! probe: [`BrowserProbeSession`] (carrying the concrete browser backend, the
 //! underlying [`CaptureSession`], and the target URL). The MCP-server tool
 //! functions in `chronos-mcp` are thin wrappers that delegate here.
 //!
