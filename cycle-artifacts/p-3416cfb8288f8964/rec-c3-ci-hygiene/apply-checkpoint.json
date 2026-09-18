@@ -1,0 +1,63 @@
+{
+  "cycle_id": "rec-c3-ci-hygiene",
+  "project_id": "p-3416cfb8288f8964",
+  "milestone": "REC-C3 — Hexagonal boundary closure",
+  "sub_cycle": "rec-c3-ci-hygiene — baseline CI / Coverage / Vault drift reconciliation",
+  "head_sha": null,
+  "merge_sha": null,
+  "base_sha": "5b7b7de17fe0a80c83e25d9c07c24c179bfc6097",
+  "branch": "rec-c3-ci-hygiene",
+  "path": "A-min",
+  "route": "A-min",
+  "completed_at": null,
+  "archived_at": null,
+  "created_at": "2026-09-18T22:30:00Z",
+  "title": "rec-c3-ci-hygiene — baseline CI / Coverage / Vault drift reconciliation",
+  "summary": "Pre-existing baseline failures on origin/main (5b7b7de1) block Tren B (REC-C3.3.3) start. Three slices: (A) m1_02 reconciliation with REC-C1.5.2 strict replay — corrupt segment => typed ReplayIntegrity::CorruptSegment, no partial handle, no invented Gap, no production semantic change; (B) tripwire_depth Coverage harness fix — instrument McpTestClient::start() with executable path + child exit status + stderr, fix the harness / coverage integration (not the six tests individually), NO #[ignore] and NO --skip; (C) Vault drift reconciliation CC#18/19/39 — no occlusion of drift, all findings get concrete owners. Acceptance: CI / Coverage / Vault Drift / Architecture / Debt Sentinel all GREEN. Open AFTER Tren A merge, BEFORE Tren B start.",
+  "status": "OPEN",
+  "verify_status": "pending",
+  "release_status": "pending",
+  "archive_status": "pending",
+  "tier_results": {},
+  "scope_decisions": [
+    "Open as a separate cycle, not as a follow-up commit on rec-c3.3-train-a. The pre-existing failures belong to the baseline, not to Tren A.",
+    "Slice A: REC-C1.5.2 (commit 3cc511ef) deliberately established strict / fail-closed replay semantics — corruption => ReplayIntegrity, no implicit salvage, no invented Gap. The stale test comment 'First segment is skipped; second segment still recovers' is the symptom; the fix is to reconcile the test (and any docstring) with the strict semantics, NOT to revert REC-C1.5.2.",
+    "Slice A scope explicitly excludes changing the production replay semantics. If, during reconciliation, evidence appears that contradicts REC-C1.5.2 (e.g. an authoritative source documents lenient replay as the correct semantics for this case), the cycle must STOP and report back; the change becomes REC-C1.5.3 scope.",
+    "Slice B: the harness / coverage integration is broken; the six tests themselves are not. Fix the harness. NO #[ignore]. NO --skip. NO exclusion patterns added to reconstruction-contracts.toml.",
+    "Slice C: each pre-existing drift finding gets a concrete owner (cycle + slice). The Vault Drift Sweep must reach exit 0 by reconciliation, not by hiding drift.",
+    "No code change in chronos-native, chronos-log, chronos-services, chronos-store, chronos-mcp that touches REC-C3 hexagonal seam, capability-bundle ports, or REC-C1.5.2 replay semantics. This cycle is pure hygiene.",
+    "No tag. This is a hygiene cycle, not a behavior-bumping cycle."
+  ],
+  "carry_forward_debt": {
+    "FIND-Tren-A-01": "OPEN — slice C (Vault drift CC#18/19/39 reconciliation).",
+    "FIND-CI-PRE-EXISTING-TEST-FAILURES": "OPEN — slice A (m1_02) + slice B (tripwire_depth)."
+  },
+  "findings_introduced": {},
+  "findings_closed": [],
+  "commits_since_base": [],
+  "tren_a_real_commits": [],
+  "layer_completion": {
+    "m0_layer_complete": true,
+    "m1_layer_complete": true,
+    "hexagonal_seam_created": true,
+    "hexagonal_inversion_partial": true,
+    "hexagonal_inversion_complete": false
+  },
+  "ledger_progression": {
+    "origin_main_pre_hygiene": 3,
+    "head_post_hygiene": 3,
+    "post_tren_b_rec_c3_3_3": 1,
+    "post_rec_c3_4": 0
+  },
+  "ratchet_state": {
+    "c33_25_capability_bundle_ratchet": "unchanged by this cycle — Tren A already GREEN; hygiene must not break it"
+  },
+  "smoke_subset": "TBD during cycle execution; this is a hygiene cycle, so the smoke subset will be the three failing jobs themselves (CI, Coverage, Vault Drift).",
+  "notes": [
+    "Origin/head: this cycle branches off origin/main = 5b7b7de1 (which includes Tren A merge + close-receipt).",
+    "Tren B (REC-C3.3.3) MUST NOT start until this cycle closes with all five gates GREEN: CI / Coverage / Vault Drift / Architecture / Debt Sentinel.",
+    "Pre-flight before starting: git fetch origin && git checkout main && git pull --ff-only origin main (head expected: 5b7b7de1).",
+    "Tren A close receipt: cycle-artifacts/p-3416cfb8288f8964/rec-c3-3-2-composition-integration-inversion/close-receipt.md.",
+    "Tren A apply-checkpoint (already merged): cycle-artifacts/p-3416cfb8288f8964/rec-c3-3-2-composition-integration-inversion/apply-checkpoint.json."
+  ]
+}
