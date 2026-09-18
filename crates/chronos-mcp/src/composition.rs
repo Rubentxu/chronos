@@ -32,6 +32,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use chronos_domain::ports::execution_log_factory::ExecutionLogFactory;
+use chronos_domain::ports::uprobe::UprobeInjector;
 use chronos_log::factory::SegmentedExecutionLogFactory;
 use chronos_store::{SessionStore, StoreError};
 
@@ -48,6 +49,26 @@ use chronos_store::{SessionStore, StoreError};
 /// both consume it.
 pub fn default_execution_log_factory() -> Arc<dyn ExecutionLogFactory> {
     Arc::new(SegmentedExecutionLogFactory::new())
+}
+
+/// REC-C3.3.2.3 — build the production `UprobeInjector`.
+///
+/// Returns an `Arc<dyn UprobeInjector>` that resolves to a real
+/// `EbpfAdapter` on systems where eBPF uprobes are available, and to a
+/// `CapabilityUnavailable::ebpf_uprobe` error otherwise. This is the
+/// **only** function in the workspace that constructs the injector;
+/// `server.rs` consumes the value and hands it to `chronos-services`
+/// through `ProbeContext::uprobe_injector`.
+///
+/// Why a separate factory: `UprobeInjector::acquire` performs kernel
+/// detection, which is bootstrap-time work that must NOT live in
+/// `chronos_services` (the architectural law that excludes
+/// `chronos-ebpf` from that crate). The injector is a `Copy` unit
+/// struct (`EbpfUprobeInjector`); the heavy lifting happens inside
+/// `acquire`, on the calling thread, with the resulting handle shared
+/// with the live session via `Arc<dyn UprobeHandle>`.
+pub fn default_uprobe_injector() -> Arc<dyn UprobeInjector> {
+    Arc::new(chronos_ebpf::EbpfUprobeInjector::new())
 }
 
 /// Default path for the session store, mirrored from `server.rs` so the
