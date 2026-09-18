@@ -63,7 +63,7 @@ fn seed_execution_log(root: &std::path::Path, session_id: &str) -> SessionExecut
     let session = SessionId::new(session_id.to_string());
     let dir = root.join(session_id);
     std::fs::create_dir_all(&dir).expect("create session dir");
-    SessionExecutionLog::create(&dir, session).expect("create SessionExecutionLog")
+    SessionExecutionLog::create_for_tests(&dir, session).expect("create SessionExecutionLog")
 }
 
 #[test]

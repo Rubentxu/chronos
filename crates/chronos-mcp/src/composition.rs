@@ -29,8 +29,26 @@
 //! arrives, the wiring is extracted then.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
+use chronos_domain::ports::execution_log_factory::ExecutionLogFactory;
+use chronos_log::factory::SegmentedExecutionLogFactory;
 use chronos_store::{SessionStore, StoreError};
+
+/// REC-C3.3.2 — build the production `ExecutionLogFactory`.
+///
+/// Today only the segmented backend exists; tomorrow this is where a
+/// second backend (in-memory mock for an embedder, a remote store,
+/// etc.) is selected based on configuration. The factory is the
+/// single seam; services never name the concrete type.
+///
+/// Returned `Arc<dyn ExecutionLogFactory>` is what gets injected into
+/// `SessionExecutionLogRegistry::with_factory` and into the bootstrap
+/// path. `bootstrap_execution_logs` and `SessionExecutionLog::create`
+/// both consume it.
+pub fn default_execution_log_factory() -> Arc<dyn ExecutionLogFactory> {
+    Arc::new(SegmentedExecutionLogFactory::new())
+}
 
 /// Default path for the session store, mirrored from `server.rs` so the
 /// resolution stays testable without mutating the process environment.

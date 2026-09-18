@@ -1710,9 +1710,15 @@ impl ChronosServer {
         let store = Self::try_open_default_store()?;
         let server = Self::from_store(store);
         let root = chronos_log::resolve_execution_log_root();
+        // C3.3.2 — composition root builds the factory once and wires
+        // it into both the registry (already done in `from_store`)
+        // and the bootstrap call. Services never name the concrete
+        // factory type.
+        let factory = crate::composition::default_execution_log_factory();
         chronos_services::execution_log_bootstrap::bootstrap_execution_logs(
             &root,
             &server.execution_logs,
+            &factory,
         )
         .map_err(|cause| {
             crate::init_error::ChronosServerInitError::ExecutionLogBootstrap { root, cause }
@@ -1739,6 +1745,10 @@ impl ChronosServer {
         let degraded = !store.is_persistent();
         let active_toolset =
             std::env::var("CHRONOS_ACTIVE_TOOLSET").unwrap_or_else(|_| "auto".to_string());
+        // C3.3.2 — wire the same factory the bootstrap call uses,
+        // so every session-scoped log construction goes through the
+        // composition root.
+        let execution_log_factory = crate::composition::default_execution_log_factory();
         Self {
             engines: Arc::new(Mutex::new(HashMap::new())),
             session_languages: Arc::new(Mutex::new(HashMap::new())),
@@ -1749,7 +1759,9 @@ impl ChronosServer {
             tripwire_manager: Arc::new(TripwireManager::new()),
             uprobe_counter: Arc::new(std::sync::Mutex::new(HashMap::new())),
             execution_logs: Arc::new(
-                chronos_services::session_log::SessionExecutionLogRegistry::new(),
+                chronos_services::session_log::SessionExecutionLogRegistry::with_factory(
+                    execution_log_factory,
+                ),
             ),
             execution_log_root: chronos_log::resolve_execution_log_root(),
             projection_meta: Arc::new(Mutex::new(HashMap::new())),
@@ -7307,7 +7319,10 @@ mod tests {
     #[test]
     fn test_allow_in_memory_fallback_is_strict() {
         for yes in ["1", "true", "TRUE", " yes ", "Yes"] {
-            assert!(crate::composition::allow_in_memory_fallback(Some(yes)), "{yes:?} must opt in");
+            assert!(
+                crate::composition::allow_in_memory_fallback(Some(yes)),
+                "{yes:?} must opt in"
+            );
         }
         for no in ["", "0", "false", "no", "maybe", "2", "on"] {
             assert!(
@@ -7323,7 +7338,8 @@ mod tests {
     fn test_open_store_at_creates_missing_parent_directories() {
         let dir = unique_test_dir("m9-75-missing-parent");
         let path = dir.join("nested").join("deeper").join("sessions.redb");
-        let store = crate::composition::open_session_store_at(&path, false).expect("a fresh path must be created");
+        let store = crate::composition::open_session_store_at(&path, false)
+            .expect("a fresh path must be created");
         store
             .save_session(
                 test_session_metadata("fresh"),
@@ -7349,7 +7365,8 @@ mod tests {
         let path = dir.join("sessions.redb");
 
         // Positive control: the file store works and persists.
-        let live = crate::composition::open_session_store_at(&path, false).expect("first open must succeed");
+        let live = crate::composition::open_session_store_at(&path, false)
+            .expect("first open must succeed");
         live.save_session(
             test_session_metadata("persisted"),
             &[make_fn_event(0, 100, 1, "main")],
@@ -7373,7 +7390,8 @@ mod tests {
 
         // (2) The documented opt-in still degrades, loudly: the store is
         // genuinely in-memory, so what it accepts is never persisted.
-        let degraded = crate::composition::open_session_store_at(&path, true).expect("the explicit opt-in must still start");
+        let degraded = crate::composition::open_session_store_at(&path, true)
+            .expect("the explicit opt-in must still start");
         degraded
             .save_session(
                 test_session_metadata("ephemeral"),
@@ -7390,7 +7408,8 @@ mod tests {
         // session written to it and none of the degraded one's.
         drop(degraded);
         drop(live);
-        let reopened = crate::composition::open_session_store_at(&path, false).expect("the store must be openable again");
+        let reopened = crate::composition::open_session_store_at(&path, false)
+            .expect("the store must be openable again");
         let sessions: Vec<String> = reopened
             .list_sessions()
             .expect("list_sessions")
@@ -8812,7 +8831,7 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        let owned_for_round = chronos_services::session_log::SessionExecutionLog::create(
+        let owned_for_round = chronos_services::session_log::SessionExecutionLog::create_for_tests(
             &log_dir,
             chronos_log::SessionId::new("rec-c1-2a-compaction"),
         )
