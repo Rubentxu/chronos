@@ -99,8 +99,10 @@ pub fn segment_path(dir: &Path, session_id: &SessionId, start_seq: EventSeq) -> 
 /// the file path is safe. Sessions whose id contains only
 /// `[A-Za-z0-9._-]` are passed through unchanged.
 pub fn sanitize_session(session_id: &SessionId) -> String {
+    // REC-C3.3.1: read the inner string through `SessionId::as_str()`
+    // now that the canonical domain type owns the field privately.
     session_id
-        .0
+        .as_str()
         .chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' {
@@ -394,8 +396,11 @@ pub fn skip_header<R: Read + Seek>(mut r: R) -> Result<u64, LogError> {
 fn bincode_encode_record(r: &ExecutionRecord) -> Result<Vec<u8>, LogError> {
     let mut out = Vec::with_capacity(64);
     out.push(0); // tag = Record
-    out.extend_from_slice(&r.session_id.0.len().to_le_bytes());
-    out.extend_from_slice(r.session_id.0.as_bytes());
+    // REC-C3.3.1: read the inner session id through the canonical
+    // `SessionId::as_str()` accessor now that `chronos_log::SessionId`
+    // is a re-export of the domain type (private field).
+    out.extend_from_slice(&r.session_id.as_str().len().to_le_bytes());
+    out.extend_from_slice(r.session_id.as_str().as_bytes());
     out.extend_from_slice(&r.seq.0.to_le_bytes());
     out.extend_from_slice(&r.monotonic_ns.to_le_bytes());
     out.push(kind_tag(&r.kind));
@@ -475,7 +480,7 @@ fn bincode_decode_record(mut body: &[u8]) -> Result<ExecutionRecord, LogError> {
     let mut sid_bytes = vec![0u8; sid_len];
     body.read_exact(&mut sid_bytes)
         .map_err(|e| LogError::Backend(format!("record session_id body: {}", e)))?;
-    let session_id = SessionId(
+    let session_id = SessionId::new(
         String::from_utf8(sid_bytes)
             .map_err(|e| LogError::Backend(format!("record session_id utf8: {}", e)))?,
     );

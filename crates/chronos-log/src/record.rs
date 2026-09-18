@@ -1,4 +1,4 @@
-//! `ExecutionRecord`, `ExecutionKind`, `ExecutionPayload`, `SessionId`.
+//! `ExecutionRecord`, `ExecutionKind`, `ExecutionPayload`.
 //!
 //! `ExecutionRecord` carries the producer-reported `invocation_id`,
 //! `parent_invocation_id`, and `symbol_id` identity fields (v2) plus the
@@ -6,43 +6,25 @@
 //! leave the identity fields `None`; readers tolerate both shapes via
 //! serde defaults. (m2-09 corrected the module docs to describe the
 //! shipped v2 shape rather than the original m1-01 subset.)
+//!
+//! `SessionId` used to live here as a duplicate of
+//! `chronos_domain::session_id::SessionId`. REC-C3.3.1 deletes the
+//! duplicate and re-exports the canonical type from
+//! `crates/chronos-log/src/lib.rs`. All call sites that used
+//! `chronos_log::record::SessionId` now resolve to the same type via
+//! `pub use chronos_domain::session_id::SessionId`.
 
 use crate::seq::EventSeq;
 use serde::{Deserialize, Serialize};
 
-/// Identifier of a capture session. Distinct from the in-memory
-/// `McpSessionId` used in `chronos-mcp`; one Chronos session may
-/// produce multiple `SessionId`s if it covers multiple targets,
-/// and one capture may span multiple processes.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
-pub struct SessionId(pub String);
-
-impl SessionId {
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
-    }
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl std::fmt::Display for SessionId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl From<&str> for SessionId {
-    fn from(s: &str) -> Self {
-        SessionId(s.to_string())
-    }
-}
-
-impl From<String> for SessionId {
-    fn from(s: String) -> Self {
-        SessionId(s)
-    }
-}
+// REC-C3.3.1: `SessionId` lives in `chronos_domain::session_id`; the
+// duplicate definition in this module was deleted. The field
+// `pub session_id: SessionId` (used by `ExecutionRecord`) refers to
+// the canonical domain type. Re-exporting through `crate::SessionId`
+// is a public-API move; the *internal* path uses the canonical one
+// so the lib compiles without depending on `crate::lib`'s re-export
+// resolution order.
+pub use chronos_domain::session_id::SessionId;
 
 /// The actual record appended to the log.
 ///

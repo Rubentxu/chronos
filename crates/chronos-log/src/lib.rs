@@ -40,9 +40,15 @@ pub use gap::{Gap, GapReason};
 pub use location::{execution_log_dir, execution_log_dir_for_session, resolve_execution_log_root};
 pub use memory::InMemoryExecutionLog;
 pub use record::{
-    ExecutionKind, ExecutionPayload, ExecutionRecord, SessionId, TripwireFiredEvidence,
+    ExecutionKind, ExecutionPayload, ExecutionRecord, TripwireFiredEvidence,
     TRIPWIRE_FIRED_EVIDENCE_TAG,
 };
+// REC-C3.3.1: `SessionId` is the single canonical identity newtype
+// owned by `chronos_domain`. The duplicate definition that used to
+// live in `chronos_log::record` is deleted; this re-export keeps
+// `use chronos_log::SessionId` resolving to the same type as
+// `use chronos_domain::session_id::SessionId`.
+pub use chronos_domain::session_id::SessionId;
 pub use replay::{
     apply_replay_plan, build_replay_plan, plan_gaps, ReplayIntegrityError, ReplayPlan,
 };
