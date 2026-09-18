@@ -3,8 +3,8 @@
   "project_id": "p-3416cfb8288f8964",
   "milestone": "REC-C3 — Hexagonal boundary closure",
   "sub_cycle": "C3.3.2 — composition / integration inversion (Tren A)",
-  "head_sha": "de8a68127d70b008398827e0240f56e4f1d05dc4",
-  "merge_sha": "de8a68127d70b008398827e0240f56e4f1d05dc4",
+  "head_sha": "25420e5dab54a02e46da20ecc0bacf050d2ac741",
+  "merge_sha": "25420e5dab54a02e46da20ecc0bacf050d2ac741",
   "base_sha": "147c10195f2da43b20b99b6d2d77f1c17c124242",
   "branch": "rec-c3.3-train-a",
   "path": "A-min",
@@ -14,7 +14,7 @@
   "created_at": "2026-09-18T20:07:00Z",
   "title": "REC-C3.3.2 — composition / integration inversion (Tren A)",
   "summary": "Tren A closes the capability-bundle split for chronos_domain::ports::execution_log and the consumer migration in chronos-services. ExecutionLogProvider (canonical evidence) becomes a bundle of three independent ports: ExecutionLogProvider (evidence), ExecutionLogRetention (advance_retained_from), and ExecutionLogMaintenance (flush / compact_retired / metrics). SegmentedRetention + SegmentedMaintenance + InMemoryRetention + InMemoryMaintenance live in chronos-log. SessionExecutionLog in chronos-services holds three Arc<dyn ...> ports + provenance dir. ProviderKind enum + try_adopt constructor + take_over_segmented test bypass + ExecutionLogMaintenanceUnsupported ServiceError are all deleted. The closure eliminates the only narrow maintenance escape hatch left from C3.3.1. Plus the anti-stale-waiver ratchet at crates/chronos-services/tests/c33_25_capability_bundle_ratchet.rs (7 tests, validated by RED->GREEN injection on projection.rs) and a checker hygiene commit removing the stale ExecutionLogProviderShape/NoopExecutionLogProvider placeholders from the REC-C3.3 surface assertion. Tren A is local-only at HEAD (35 commits ahead of origin/main) until PR #31 is merged; remote seal happens at merge time. No tag in this cycle (structural inversion; next cycle earns the tag).",
-  "status": "CLOSED",
+  "status": "RELEASED",
   "verify_status": "passed",
   "release_status": "released",
   "archive_status": "pending",
@@ -45,10 +45,10 @@
     "FIND-INFRA-DERIVE-SKIP-ARGS-EMPTY": "CLOSED — pre-existing bug in scripts/derive_test_buckets.py: empty deferred ledger wrote newline-terminated empty file; awk produced dangling `--skip ` flag, breaking CI with `error: Argument to option 'skip' missing`. Fixed in commit 5d3c9302 (zero-byte skip file when patterns is empty); ratchet test added at scripts/tests/test_derive_test_buckets.py (3 tests, zero deps). Out of strict Tren A scope; included because the CI gate is blocking and the fix is the minimum patch."
   },
   "findings_introduced": {
-    "no_action": ["FIND-Tren-A-01", "FIND-CI-PRE-EXISTING-TEST-FAILURES"],
+    "no_action_in_current_cycle": ["FIND-Tren-A-01", "FIND-CI-PRE-EXISTING-TEST-FAILURES"],
     "no_action_notes": {
-      "FIND-Tren-A-01": "Pre-existing vault drift on origin/main (CC#18/19/39) is out of scope for Tren A. The fix is a vault hygiene cycle (m9-style), not a Tren A scope decision.",
-      "FIND-CI-PRE-EXISTING-TEST-FAILURES": "Confirmed via `git checkout 147c10195 + cargo test`: m1_02_execution_log_persistence_impl (chronos-sandbox/tests/m1_acceptance.rs:231) and 6 tripwire_depth tests fail identically on origin/main HEAD. m1_02 expects lenient replay (skip corrupt segment, recover remaining); current code in crates/chronos-log/src/segmented.rs apply_plan is atomic/fail-closed (REC-C1.5.2 deliberate design). tripwire_depth tests need McpTestClient::start() which requires a working MCP subprocess (cache-only environment works, sandbox may not). None of these failures were introduced by the 38 commits in PR #31 — Tren A is structurally clean. Two pre-existing cycles are needed: (1) m1-02 follow-up to either change replay semantics to lenient (architectural change, REC-C1.5.3 candidate) or update the test to expect ReplayIntegrity error; (2) tripwire_depth sandbox bring-up (chronos-sandbox fixtures, separate scope)."
+      "FIND-Tren-A-01": "Pre-existing vault drift on origin/main (CC#18/19/39) is out of scope for Tren A. The fix is a vault hygiene cycle (m9-style), not a Tren A scope decision. Tracked separately under rec-c3-ci-hygiene slice C.",
+      "FIND-CI-PRE-EXISTING-TEST-FAILURES": "Confirmed via `git checkout 147c10195 + cargo test`: m1_02_execution_log_persistence_impl (chronos-sandbox/tests/m1_acceptance.rs:231) and 6 tripwire_depth tests fail identically on origin/main HEAD. m1_02 expects lenient replay (skip corrupt segment, recover remaining); current code in crates/chronos-log/src/segmented.rs apply_plan is atomic/fail-closed (REC-C1.5.2 commit 3cc511ef deliberate design — corruption => ReplayIntegrity, no implicit salvage, no invented Gap). tripwire_depth tests need McpTestClient::start() which requires a working MCP subprocess (tarpaulin coverage harness collides with subprocess startup). None of these failures were introduced by the 46 commits in PR #31 — Tren A is structurally clean. Tagged no_action_in_current_cycle (NOT permanent waiver): both slices A (m1_02 reconciliation) and B (tripwire_depth harness) are owned by rec-c3-ci-hygiene, which runs BEFORE Tren B starts. REC-C1.5.2 semantics stay untouched in this cycle."
     }
   },
   "findings_closed": ["C33-DEBT-RETENTION-01", "C33-DEBT-NATIVE-LOG-BRIDGE-01", "FIND-INFRA-DERIVE-SKIP-ARGS-EMPTY"],
@@ -118,8 +118,9 @@
   "notes": [
     "No tag for Tren A. Tren A is a structural inversion (port split + capability-bundle wiring). The first behavior-bumping version after C3.3.3 + C3.4 closes earns the next tag.",
     "Workspace version 0.1.1 preserved at this commit.",
-    "PR #31 (https://github.com/Rubentxu/chronos/pull/31) carries 38 commits from 147c10195..HEAD. CI Test (integration, mandatory surface) was failing with `error: Argument to option 'skip' missing` because scripts/derive_test_buckets.py wrote a newline-terminated empty cargo-skip.txt when the ledger has no deferred failures, and the awk pipeline produced a dangling `--skip ` flag. Commit 5d3c9302 fixes the script (zero-byte file when patterns is empty) and adds a ratchet test at scripts/tests/test_derive_test_buckets.py. This is FIND-INFRA-DERIVE-SKIP-ARGS-EMPTY, a pre-existing infrastructure bug on origin/main, out of strict Tren A scope but included because the CI gate is blocking and the fix is the minimum patch. The exhausted-assertion fix in b30ab074 is still valid; both fixes are independent. Vault drift sweep still fails on 16 lines of pre-existing drift on origin/main (out of scope for Tren A). Tren B is NOT started until PR #31 is merged and CI is green.",
-    "Tren B is NOT started until PR #31 is merged and CI is green. After merge, the head_sha field will be updated to the fast-forward SHA.",
-    "Composition root stays in chronos-mcp::composition. Bootstrap-scoped vs session-scoped factory distinction is mandatory for C3.3.3."
+    "PR #31 (https://github.com/Rubentxu/chronos/pull/31) carries 46 commits from 147c10195..25420e5d (head). Final state at 25420e5d: Architecture Contracts GREEN, Sandbox Debt Sentinel GREEN, CI / Coverage / Vault Drift Sweep RED exclusively by baseline pre-existing failures already reproduced on 147c10195. Pre-existing failures NOT introduced by Tren A and NOT touched by this cycle: (a) chronos-sandbox/tests/m1_acceptance.rs::m1_02_execution_log_persistence_impl expects lenient replay; current code is REC-C1.5.2 strict / fail-closed (commit 3cc511ef deliberate design); (b) chronos-sandbox/tests/tripwire_depth.rs (6 tests) fail because McpTestClient::start() subprocess collides with tarpaulin coverage harness; (c) scripts/check_vault_drift.sh fails on 16 lines of pre-existing drift on origin/main (CC#18: 9, CC#19: 6, CC#39: 1).",
+    "Operator decision 2026-09-18: option 1 — integrate Tren A via fast-forward merge to main, with documented bypass of the three pre-existing RED jobs. No squash, no rebase, no merge commit. All 46 SHAs preserved on origin/main. Tren B (C3.3.3) is NOT started until the rec-c3-ci-hygiene cycle closes (CI / Coverage / Vault Drift Sweep all GREEN). Tren B scope unchanged: B1 services->native + B2 services->store; store->native remains explicit C3.4 scope.",
+    "Closure sequence: (1) push updated apply-checkpoint with no_action_in_current_cycle for FIND-Tren-A-01 and FIND-CI-PRE-EXISTING-TEST-FAILURES; (2) gh pr edit to reflect real state (base 147c10195, head 25420e5d, 46 commits, gates GREEN/RED); (3) git fetch + checkout main + pull --ff-only + merge --ff-only origin/rec-c3.3-train-a + push origin main; (4) verify origin/main == 25420e5d and ledger/architecture/legacy/capability gates all match the post-merge invariants; (5) emit cycle close receipt (released_baseline=147c10195, head=25420e5d, gates, next=rec-c3-ci-hygiene).",
+    "Composition root stays in chronos-mcp::composition. Bootstrap-scoped vs session-scoped factory distinction is mandatory for C3.3.3 (post-hygiene)."
   ]
 }
