@@ -514,24 +514,6 @@ impl SessionExecutionLog {
         }
     }
 
-    /// Borrow the underlying `SegmentedExecutionLog` when the
-    /// provider is the segmented adapter — **narrow native-bridge
-    /// escape hatch (C33-DEBT-NATIVE-LOG-BRIDGE-01)**.
-    ///
-    /// Allowed call sites (and ONLY these):
-    /// - `NativeProbeBackend::attach_execution_log`
-    /// - `chronos_native::read_log_with_stats`
-    ///
-    /// Every other caller MUST go through the canonical-evidence
-    /// path. The next cycle (C3.3.2/C3.3.3) moves these native
-    /// callers to the port and deletes this bridge.
-    pub fn legacy_segmented_backend_for_native_bridge(&self) -> Option<Arc<SegmentedExecutionLog>> {
-        match &self.kind {
-            ProviderKind::Segmented(s) => Some(Arc::clone(s)),
-            _ => None,
-        }
-    }
-
     /// Storage-mechanism helper: a `record_gap` invocation already
     /// reserves the span; this is the bridge between the port's
     /// canonical-evidence path and the legacy `record_gap(session_id,
@@ -1008,13 +990,6 @@ mod tests {
             err,
             ServiceError::ExecutionLogMaintenanceUnsupported { .. }
         ));
-    }
-
-    #[test]
-    fn legacy_segmented_backend_for_native_bridge_returns_none_for_non_segmented() {
-        let session = SessionId::new("mem-seg-bridge");
-        let log = in_memory_log(&session);
-        assert!(log.legacy_segmented_backend_for_native_bridge().is_none());
     }
 
     // -----------------------------------------------------------------

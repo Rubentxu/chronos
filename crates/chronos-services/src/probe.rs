@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use chronos_domain::ports::execution_log::ExecutionLogProvider;
 use chronos_domain::{CaptureConfig, CaptureSession, Language};
 use chronos_native::probe_backend::NativeProbeBackend;
 use tokio::sync::Mutex as TokioMutex;
@@ -268,17 +269,16 @@ impl ProbeService {
             execution_log_dir(input.execution_log_dir.as_deref(), &session_id),
             chronos_log::SessionId::new(session_id.clone()),
         )?;
-        let backend = NativeProbeBackend::new()
-            .with_language(language)
-            .with_accepted_raw_observer(Self::accepted_raw_observer(
-                owned_log.clone(),
-                Arc::clone(ctx.tripwire_manager),
-            ))
-            .attach_execution_log(
-                owned_log
-                    .legacy_segmented_backend_for_native_bridge()
-                    .expect("native probe backend requires a segmented adapter (C33-DEBT-NATIVE-LOG-BRIDGE-01)"),
-            );
+        let backend = {
+            let b = NativeProbeBackend::new()
+                .with_language(language)
+                .with_accepted_raw_observer(Self::accepted_raw_observer(
+                    owned_log.clone(),
+                    Arc::clone(ctx.tripwire_manager),
+                ));
+            b.attach_execution_log(owned_log.provider());
+            b
+        };
 
         // Start the probe (non-blocking — spawns background thread)
         let track_function_frames = input.track_function_frames.unwrap_or(false);
@@ -387,17 +387,16 @@ impl ProbeService {
             execution_log_dir(input.execution_log_dir.as_deref(), &session_id),
             chronos_log::SessionId::new(session_id.clone()),
         )?;
-        let backend = NativeProbeBackend::new()
-            .with_language(language)
-            .with_accepted_raw_observer(Self::accepted_raw_observer(
-                owned_log.clone(),
-                Arc::clone(ctx.tripwire_manager),
-            ))
-            .attach_execution_log(
-                owned_log
-                    .legacy_segmented_backend_for_native_bridge()
-                    .expect("native probe backend requires a segmented adapter (C33-DEBT-NATIVE-LOG-BRIDGE-01)"),
-            );
+        let backend = {
+            let b = NativeProbeBackend::new()
+                .with_language(language)
+                .with_accepted_raw_observer(Self::accepted_raw_observer(
+                    owned_log.clone(),
+                    Arc::clone(ctx.tripwire_manager),
+                ));
+            b.attach_execution_log(owned_log.provider());
+            b
+        };
         let session = backend.attach_probe(input.pid, config).map_err(|e| {
             ServiceError::AttachFailed(format!(
                 "NativeProbeBackend::attach_probe({}) failed: {}",
@@ -621,12 +620,19 @@ impl ProbeService {
     ///
     /// Returns raw `TraceEvent`s plus decoder counters so the server wrapper
     /// can serialize them into the existing JSON shape.
+    ///
+    /// REC-C3.3.2 — the read walks the canonical `ExecutionLogProvider`
+    /// port with a stateless `read_from_seq` loop. `total_records_seen`
+    /// increments BEFORE the `since` filter, preserving the m1-04
+    /// metric exactly. Services no longer takes a dependency on
+    /// `chronos_native::read_log_with_stats`.
     pub fn drain_log(
         ctx: &ProbeContext<'_>,
         session_id: &str,
         since: Option<u64>,
         limit: usize,
     ) -> Result<(Vec<TraceEvent>, Option<u64>, u64, u64), ServiceError> {
+        const CHUNK: usize = 256;
         let probes = ctx
             .live_probes
             .lock()
@@ -634,19 +640,47 @@ impl ProbeService {
         let live_probe = probes
             .get(session_id)
             .ok_or_else(|| ServiceError::ProbeNotFound(session_id.to_string()))?;
-        // REC-C1.2/C1.2a: read through the session-owned log, not the backend.
-        // NOTE (C1.3 trap): this helper reads fresh with a fixed consumer and
-        // filters `since` by hand. It does NOT implement EventsCursorV1 and must
-        // not become the canonical cursor reader.
-        let owned = &live_probe.execution_log;
-        chronos_native::read_log_with_stats(
-            &owned.legacy_segmented_backend_for_native_bridge().expect(
-                "read_log_with_stats requires a segmented adapter (C33-DEBT-NATIVE-LOG-BRIDGE-01)",
-            ),
-            since,
-            limit,
-        )
-        .map_err(|e| ServiceError::DrainFailed(e.to_string()))
+
+        let provider: Arc<dyn ExecutionLogProvider> = live_probe.execution_log.provider();
+        let mut out = Vec::new();
+        let mut max_seq: Option<u64> = None;
+        let mut unparseable = 0u64;
+        let mut total_seen = 0u64;
+
+        let mut position = chronos_log::EventSeq::ZERO;
+        let chunk = CHUNK.max(limit.max(1));
+        loop {
+            let page = provider
+                .read_from_seq(position, chunk)
+                .map_err(|e| ServiceError::DrainFailed(format!("provider read_from_seq: {e}")))?;
+            for record in page.records {
+                // m1-04 metric: count BEFORE applying `since` to preserve
+                // the legacy counter exactly.
+                total_seen += 1;
+                if let Some(since) = since {
+                    if record.seq.0 <= since {
+                        continue;
+                    }
+                }
+                max_seq = Some(match max_seq {
+                    Some(prev) if prev >= record.seq.0 => prev,
+                    _ => record.seq.0,
+                });
+                match serde_json::from_slice::<TraceEvent>(&record.payload.bytes) {
+                    Ok(ev) => out.push(ev),
+                    Err(_) => unparseable += 1,
+                }
+                if out.len() >= limit {
+                    return Ok((out, max_seq, unparseable, total_seen));
+                }
+            }
+            if page.exhausted {
+                break;
+            }
+            position = page.position_after;
+        }
+
+        Ok((out, max_seq, unparseable, total_seen))
     }
 
     /// Snapshot the live probe session's `ExecutionLog` compaction counters.
@@ -935,11 +969,11 @@ mod rec_c1_2_tests {
     fn stub_session(execution_log: crate::session_log::SessionExecutionLog) -> LiveProbeSession {
         // REC-C2.3: no EventBus — the backend's only sink is the
         // caller-attached ExecutionLog.
-        let backend = NativeProbeBackend::new().attach_execution_log(
-            execution_log
-                .legacy_segmented_backend_for_native_bridge()
-                .expect("stub session uses a segmented adapter"),
-        );
+        let backend = {
+            let b = NativeProbeBackend::new();
+            b.attach_execution_log(execution_log.provider());
+            b
+        };
         let session = CaptureSession::new(0, Language::Rust, CaptureConfig::new("noop"));
         LiveProbeSession {
             backend,
@@ -970,16 +1004,14 @@ mod rec_c1_2_tests {
     fn backend_and_session_share_one_log_identity() {
         let live = stub_session(test_log("shared"));
         let backend_log = live.backend.execution_log().expect("backend holds a clone");
-        // The backend holds the SAME `Arc<SegmentedExecutionLog>` the session
-        // adopted through `legacy_segmented_backend_for_native_bridge`. That
-        // bridge is the only place where the concrete backend reaches into
-        // services for now (C33-DEBT-NATIVE-LOG-BRIDGE-01).
-        let session_segmented = live
-            .execution_log
-            .legacy_segmented_backend_for_native_bridge()
-            .expect("session log is segmented");
+        // REC-C3.3.2 — the canonical writer holds an
+        // `Arc<dyn ExecutionLogProvider>` and the canonical owner holds the
+        // matching Arc. The bridge to a concrete `SegmentedExecutionLog`
+        // is gone; the test now asserts Arc pointer equality on the
+        // port objects.
+        let session_provider = live.execution_log.provider();
         assert!(
-            std::sync::Arc::ptr_eq(&backend_log, &session_segmented),
+            std::sync::Arc::ptr_eq(&backend_log, &session_provider),
             "backend must write to the very log the session owns"
         );
         assert_eq!(
