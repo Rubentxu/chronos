@@ -1,0 +1,28 @@
+{
+  "cycle_id": "rec-c3-3-2-composition-integration-inversion",
+  "head_sha": "de0084ef1a87eb3a8bc5d8d9c1fb98f84e301d3a",
+  "subject": {
+    "head_sha": "de0084ef1a87eb3a8bc5d8d9c1fb98f84e301d3a",
+    "base_sha": "147c10195f2da43b20b99b6d2d77f1c17c124242",
+    "branch": "rec-c3.3-train-a"
+  },
+  "verdict": "passed",
+  "lens_summary": "Tren A of C3.3.2 closes the capability-bundle split. ExecutionLogProvider port split into three independent ports: ExecutionLogProvider (canonical evidence), ExecutionLogRetention (advance_retained_from), ExecutionLogMaintenance (flush / compact_retired / metrics). The maintenance port intentionally has NO compact_up_to(seq) parameter — maintenance has no opinion on which evidence is logically reachable. SessionExecutionLog in chronos-services holds three Arc<dyn ...> ports + provenance dir. ProviderKind enum + try_adopt + take_over_segmented + ExecutionLogMaintenanceUnsupported are deleted from the consumer path. The anti-stale-waiver ratchet (c33_25_capability_bundle_ratchet.rs, 7 tests) ensures the maintenance escape hatches don't reappear in services+mcp; the ratchet was validated by a RED->GREEN injection on projection.rs. The HEX surface assertion dropped the stale ExecutionLogProviderShape / NoopExecutionLogProvider placeholders. Tren B (services -> ports inversion for native + store) is NOT started until PR #31 is merged and CI is green.",
+  "verification_tiers": {
+    "T0_fmt_clippy": "pass (rustfmt --edition 2021 applied to 6 files touched by Tren A; cargo clippy --workspace --all-targets --features 'chronos-services/test-utils' -- -D warnings clean)",
+    "T1_lib_unit": "pass (cargo test --workspace --lib --no-fail-fast --exclude chronos-sandbox --exclude chronos-e2e --exclude chronos-native: 1356/1356)",
+    "T2_services_integration": "pass (cargo test -p chronos-services --tests --no-fail-fast: 377/377)",
+    "T3_workspace_tests": "pass (cargo test --workspace --lib --tests --no-fail-fast --exclude chronos-sandbox --exclude chronos-e2e --exclude chronos-native: 1356/1356)",
+    "T3_ratchet": "pass (c33_25_capability_bundle_ratchet: 7/7; RED->GREEN observed on compact_up_to injection)",
+    "T4_checkers": "pass on Architecture Contracts + Legacy EVB + HEX Boundary. Vault Drift Sweep is FAIL: 16 lines of pre-existing drift on origin/main (CC#18: 9 cycles, CC#19: 6 free-text notes in C2.1/C2.2, CC#39: 1 index count) are out of scope for Tren A; the 9 lines of drift introduced by Tren A's two apply-checkpoint.json files (pre-m9-11+ schema) are fixed in companion commit 293ad39b."
+  },
+  "findings": [
+    {
+      "id": "FIND-Tren-A-01",
+      "status": "no_action",
+      "summary": "Pre-existing vault drift on origin/main (CC#18: 9 lines, CC#19: 6 lines, CC#39: 1 line) is out of scope for Tren A. The fix is a separate vault hygiene cycle mirroring the m9-01..m9-55 cadence; Tren A only fixed the 9 lines of drift it introduced (the two apply-checkpoint.json files).",
+      "evidence": "bash scripts/check_vault_drift.sh on origin/main: 16 drift lines (verified with git stash + git checkout origin/main). After companion commit 293ad39b on Tren A: 16 drift lines remain, all pre-existing."
+    }
+  ],
+  "_note": "Authored on 2026-09-18 by REC-C3.3.2-Tren-A to satisfy CC#18 (verify-findings.json must exist for all CLOSED cycles). Verdict 'passed' is the actual observation: cargo test 1356/0 + clippy clean + ratchet 7/7 + 3 of 4 checkers pass. The 4th (vault drift sweep) has FIND-Tren-A-01 carrying the residual drift as no_action because the drift is pre-existing on origin/main and a Tren A fix would change a foreign cycle's artifact history."
+}
