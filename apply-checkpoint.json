@@ -1,69 +1,66 @@
 {
-  "cycle_id": "rec-c1-5-closure",
-  "cycle_record": "p-3416cfb8288f8964/rec-c1-5-closure",
-  "path": "a-lite",
-  "status": "in_progress",
-  "head_sha": "e2cd57a5",
-  "base_sha": "17367f2d",
+  "cycle_id": "retire-stale-bus-doc-mentions",
+  "cycle_record": "p-3416cfb8288f8964/retire-stale-bus-doc-mentions",
+  "path": "a-min",
+  "status": "closed",
+  "head_sha": "473ae666",
+  "base_sha": "d435557e",
   "notes": [
-    "Cycle opened via sddk CLI; path A-lite; phase transitions recorded in the ledger up to phase.design.complete.a-lite.",
-    "Exploration re-anchored: discovered that efb44989 (main) carries only the roadmap doc, while the C1.5.4 code lives on design/rec-c1-truth-cutover (HEAD 17367f2d). Working branch feat/rec-c1.5-closure branched from 17367f2d so the actual code is present.",
-    "User-supplied 11-step plan reviewed; steps 1 (BootstrapPlan carries validated handles) and 2 (delete uses pure discovery) are already implemented in 17367f2d (C1.5.4-fix). Cycle delivers steps 3..11.",
-    "Artefacts written under cycle-artifacts/p-3416cfb8288f8964/rec-c1-5-closure/: exploration-report.md, specification.md, design.md, tasks.md. All three (exploration, spec, design) registered in the artifact store; tasks.md kept on disk only (A-lite does not require a plan transition).",
-    "Step 3 (canonical ExecutionLog root resolver) APPLIED in commit 2c4da9ba on feat/rec-c1.5-closure. cargo check + cargo clippy -D warnings clean; cargo test -p chronos-log --lib location 2/2 green; cargo fmt --check clean. probe::execution_log_dir migrated to the resolver; tests seam under cfg(test).",
-    "Step 3 EDGE CASES added in commit ee376e10: 6/6 unit tests green for the resolver (idempotency, default fallback marker + absolute path, session_id punctuation, deterministic per-id, for_session subdir-of-root). Removed a self-panic test that would have poisoned the suite via the OnceLock; the panic contract is enforced by OnceLock::set semantics and verified by code review.",
-    "Step 4 MCP startup wiring APPLIED: added ChronosServerInitError with typed StoreOpen and ExecutionLogBootstrap variants; ChronosServer::try_new now bootstraps the canonical ExecutionLog root before returning; new() preserves panic wrapper; with_toolset remains test-only and does not bootstrap. cargo fmt/check and cargo check -p chronos-mcp pass; MCP lib tests 99/99 pass.",
-    "Step 5 durable delete wiring APPLIED in commit 6644bdbb: SessionsContext carries registry/root, delete_session performs store delete followed by pure durable log deletion, DeleteResult reports paths_removed, and all services/MCP integration test targets compile with --no-run.",
-    "Stash cleared (10333 files of .cargo-target/ build artifacts + 3 pre-existing m9-70/74/75 archive-manifest drift; all noise; main was clean).",
-    "No user response received after commit 2c4da9ba; session paused at the apply phase boundary to allow review of step 3 before committing to the larger step-4..11 work.",
-    "Remaining for cycle closure: steps 4..11 (startup wiring + delete_session durable + 3 real-process UAT + readiness invariant test + full regression + ledger closure). Estimated 6-8 hours of in-line work; recommended to resume in a fresh session after reviewing 2c4da9ba."
+    "Closed 2026-09-18 via retroactive ledger sync. The chore was merged to main on 2026-09-17 via commit ab863cf1 (tag retire-stale-bus-doc-mentions) without an SDDK cycle.start call; today the orchestrator opened the cycle in the ledger and drove it through the full explore -> specify -> build -> verify -> release -> archive path.",
+    "Proactive proposal.md declared B-direct (no public API, no wire change); the ledger forced A-min because the A-min path is the only one whose transitions are wired in this framework version.",
+    "Evidence gathered during the sync: T0 fmt+clippy clean; 653/653 lib tests across chronos-log (77), chronos-native (107), chronos-services (370), chronos-mcp (99); ratchet check_legacy_evb.py baseline 0; working tree clean.",
+    "Gates passed (10 total): exploration-sufficient, requirements-testable, implementation-complete, tests-pass, policy-compliant, debt-severity-assigned, debt-priority-assigned, no-pending-effects, ledger-valid, vault-index-current. release-uat-approved waived (B-direct chore, no UAT applicable).",
+    "Artifacts created under cycle-artifacts/p-3416cfb8288f8964/retire-stale-bus-doc-mentions/: exploration-report.md, specification.md, implementation-receipt.md, verification-report.md, merge-receipt.md, release-receipt.md. proposal.md and tasks.md already existed from the original merge.",
+    "Archive manifest at ~/.sddk-knowledge/p-3416cfb8288f8964/changes/archive/retire-stale-bus-doc-mentions/archive-manifest.md. cycles/index.md row added.",
+    "Ledger: 302 events, chain valid. Cycle sequence at closure: 17.",
+    "Retroactive ledger-sync commit 473ae666 added the 4 missing report files to git so the cycle is reproducible from the repo alone."
   ],
-  "prior_cycle_record": "rec-c0-convergence-truth-gate",
-  "main_sha": "efb44989",
-  "remote_tag": null,
-  "remote_tag_peel": null,
+  "prior_cycle_record": "rec-c2.3-eventbus-removal",
+  "main_sha": "473ae666",
+  "remote_tag": "retire-stale-bus-doc-mentions",
+  "remote_tag_peel": "ab863cf14814bda9746975dcb31954daa2dafd8d",
   "peel_match": false,
-  "scope_doc_sha": "efb44989",
+  "scope_doc_sha": "473ae666",
   "phases": {
     "explore": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c1-5-closure/exploration-report.md",
-      "summary": "Re-anchored to 17367f2d; confirmed C1.5.0..C1.5.4 + C1.5.4-fix landed; remaining 9 steps identified."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/retire-stale-bus-doc-mentions/exploration-report.md",
+      "summary": "Retroactive ledger sync; no new exploration needed. Cycle already shipped at ab863cf1."
     },
     "specify": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c1-5-closure/specification.md",
-      "summary": "REQ-1..8 covering canonical root resolver, MCP startup wiring, delete_session durable, readiness invariant, three real-process UAT (resume, identical stale, sealed), and ById-retention acceptance."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/retire-stale-bus-doc-mentions/specification.md",
+      "summary": "Promotion of the original proposal.md; 5 doc-only sites + 2 dead-code test stubs in 4 production files."
     },
     "design": {
-      "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c1-5-closure/design.md",
-      "summary": "4 architecture decisions: location module in chronos_log, OnceLock-based test seam, ChronosServerInitError type, store-delete -> durable-delete -> memory cleanup order."
+      "status": "skipped",
+      "artifact_path": null,
+      "summary": "A-min path skips the design phase for B-direct-eligible cycles."
     },
     "plan": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c1-5-closure/tasks.md",
-      "summary": "9 numbered steps (3..11) with sub-tasks; reviewable-work-unit commits; ADR candidates none."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/retire-stale-bus-doc-mentions/tasks.md",
+      "summary": "D1..D5 doc edits + V1..V3 verification gates; all already executed."
     },
-    "apply": {
-      "status": "in_progress",
-      "artifact_path": null,
-      "summary": "Step 3 (root resolver) committed in 2c4da9ba + edge-case tests in ee376e10. 6/6 resolver tests + 133/133 chronos-log + 333/333 chronos-services all green. Steps 4..11 pending."
+    "build": {
+      "status": "complete",
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/retire-stale-bus-doc-mentions/implementation-receipt.md",
+      "summary": "Implementation landed in commits 23757379 and 99c0dcee; ledger-sync reports added in 473ae666."
     },
     "verify": {
-      "status": "pending",
-      "artifact_path": null,
-      "summary": "T0 fmt+clippy pending final apply; T1 lib unit; T2 per-crate; T4-smoke with restart_uat once written."
+      "status": "complete",
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/retire-stale-bus-doc-mentions/verification-report.md",
+      "summary": "T0 clean; 653/653 lib tests; ratchet baseline 0."
     },
     "release": {
-      "status": "pending",
-      "artifact_path": null,
-      "summary": "Merge --no-ff feat/rec-c1.5-closure into main after design/rec-c1-truth-cutover is propagated; tag; archive."
+      "status": "complete",
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/retire-stale-bus-doc-mentions/release-receipt.md",
+      "summary": "Tag retire-stale-bus-doc-mentions at ab863cf1; merge-receipt references ab863cf1 -> b9461a3f -> 473ae666."
     },
     "archive": {
-      "status": "pending",
-      "artifact_path": null,
-      "summary": "After release success."
+      "status": "complete",
+      "artifact_path": "/home/rubentxu/.sddk-knowledge/p-3416cfb8288f8964/changes/archive/retire-stale-bus-doc-mentions/archive-manifest.md",
+      "summary": "Vault archive-manifest + cycles/index.md updated; ledger at 302 events, chain valid."
     }
   },
   "vault_drift_baseline": {
@@ -71,8 +68,14 @@
     "drift_lines_post": 0,
     "ccs_fixed": [],
     "ccs_broken": [],
-    "note": "Vault untouched in this session; only Rust code in crates/chronos-log and crates/chronos-services was modified."
+    "note": "Vault was untouched before the sync; only the cycles/index.md row and changes/archive/retire-stale-bus-doc-mentions/ directory were added."
   },
-  "carry_forward_findings": [],
-  "next_cycle_recommendation": "Resume rec-c1-5-closure on the same branch feat/rec-c1.5-closure (HEAD 2c4da9ba) with steps 4..11. Do not start a new cycle."
+  "carry_forward_findings": [
+    {
+      "id": "FIND-C2.3-LEDGER-SYNC-RETROACTIVE",
+      "summary": "REC-C2.3 (architectural, 5 commits, 4 sub-cycles) was also merged to main on 2026-09-17 without an SDDK cycle.start call. The ledger has no record. Same retroactive sync pattern would close it if desired.",
+      "source": "This session's discovery while syncing retire-stale-bus-doc-mentions"
+    }
+  ],
+  "next_cycle_recommendation": "Pick from the 2026-09-17 handoff: (B) doc-comment audit round 2 over the kept-as-is EventBus mentions; (C) REC-C3 EventBus-adjacent fan-out audit. Optionally retroactively sync rec-c2.3-eventbus-removal in the same ledger sync shape."
 }
