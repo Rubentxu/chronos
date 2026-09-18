@@ -42,6 +42,11 @@ pub enum Capability {
     /// ptrace attach. Requires `CAP_SYS_PTRACE` (or root) and same-uid
     /// access to the target process. Used by `session_start{action=attach}`.
     PtraceAttach,
+
+    /// REC-C3.3.2.4: browser/CDP probe. Requires Chrome (or Chromium) on
+    /// the host PATH, or an explicit `chrome_path` override. Used by
+    /// `browser_probe_start`.
+    BrowserProbe,
 }
 
 impl Capability {
@@ -50,6 +55,7 @@ impl Capability {
         match self {
             Capability::EbpfUprobe => "ebpf-uprobe",
             Capability::PtraceAttach => "ptrace-attach",
+            Capability::BrowserProbe => "browser-probe",
         }
     }
 
@@ -61,6 +67,9 @@ impl Capability {
             }
             Capability::PtraceAttach => {
                 "ptrace attach (requires root or CAP_SYS_PTRACE, same-uid target)"
+            }
+            Capability::BrowserProbe => {
+                "browser/CDP probe (requires Chrome or Chromium on host PATH)"
             }
         }
     }
@@ -104,6 +113,15 @@ impl CapabilityUnavailable {
     pub fn ptrace_attach(reason: impl Into<String>) -> Self {
         Self {
             capability: Capability::PtraceAttach,
+            reason: reason.into(),
+        }
+    }
+
+    /// REC-C3.3.2.4 — build a `CapabilityUnavailable` for the
+    /// browser/CDP probe slot (Chrome on host PATH).
+    pub fn browser_probe(reason: impl Into<String>) -> Self {
+        Self {
+            capability: Capability::BrowserProbe,
             reason: reason.into(),
         }
     }

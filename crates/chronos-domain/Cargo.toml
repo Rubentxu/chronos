@@ -10,6 +10,7 @@ thiserror = { workspace = true }
 serde = { workspace = true }
 uuid = { workspace = true }
 schemars = { workspace = true }
+async-trait = "0.1"
 
 [dev-dependencies]
 serde_json = { workspace = true }

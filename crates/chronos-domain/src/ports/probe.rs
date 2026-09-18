@@ -113,6 +113,9 @@ impl ProbeFactory for NullProbeFactory {
             Some(Capability::PtraceAttach) => CapabilityUnavailable::ptrace_attach(
                 "NullProbeFactory: no backend wired for capability",
             ),
+            Some(Capability::BrowserProbe) => CapabilityUnavailable::browser_probe(
+                "NullProbeFactory: no backend wired for capability",
+            ),
         };
         Err(err)
     }

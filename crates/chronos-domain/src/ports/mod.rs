@@ -19,10 +19,12 @@ pub mod notification;
 mod probe;
 mod session;
 mod telemetry;
+pub mod browser_probe;
 pub mod uprobe;
 
 pub use execution_log::{ExecutionLogError, ExecutionLogPage, ExecutionLogProvider};
 pub use execution_log_factory::ExecutionLogFactory;
+pub use browser_probe::{BrowserError, BrowserProbeBackend, BrowserProbeFactory};
 pub use notification::{
     NotificationDeliveryError, NotificationRequest, NotificationSink, NotificationTarget,
     NullNotificationSink,
