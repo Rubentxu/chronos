@@ -34,8 +34,8 @@ use std::path::{Path, PathBuf};
 use chronos_domain::tripwire::{TripwireCondition, TripwireId};
 use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
 use chronos_log::{
-    ExecutionKind, ExecutionPayload, NewExecutionRecord, SegmentedConfig, SegmentedExecutionLog,
-    SessionId, TripwireFiredEvidence,
+    tripwire_evidence_codec as codec, ExecutionKind, ExecutionPayload, NewExecutionRecord,
+    SegmentedConfig, SegmentedExecutionLog, SessionId, TripwireFiredEvidence,
 };
 use chronos_sandbox::client::tools::McpTestClient;
 
@@ -122,7 +122,7 @@ fn append_source_and_firing(
             session_id: session.clone(),
             kind: ExecutionKind::TripwireFired,
             monotonic_ns: ts,
-            payload: evidence.to_payload().expect("encode evidence"),
+            payload: codec::encode(&evidence).expect("encode evidence"),
             ..Default::default()
         })
         .expect("append firing");

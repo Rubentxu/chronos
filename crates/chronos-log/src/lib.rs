@@ -31,6 +31,7 @@ pub mod segment;
 pub mod segmented;
 pub mod seq;
 pub mod tail;
+pub mod tripwire_evidence_codec;
 
 pub use backend::{ExecutionLog, ExecutionLogBackend, NewExecutionRecord};
 pub use cursor::{ConsumerCursor, LogConsumerId, LogPage, ReadResult};

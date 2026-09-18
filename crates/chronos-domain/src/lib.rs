@@ -7,6 +7,7 @@ pub mod adapter;
 pub mod capability;
 pub mod causal_slice;
 pub mod error;
+pub mod evidence;
 pub mod index;
 pub mod ports;
 pub mod property;
@@ -23,6 +24,7 @@ pub use adapter::ProbeBackend;
 pub use capability::{Capability, CapabilityUnavailable};
 pub use causal_slice::{slice_from, CausalEdge, CausalSlice, EvidenceNode, EvidenceNodeId};
 pub use error::TraceError;
+pub use evidence::{ExecutionKind, ExecutionPayload, TripwireFiredEvidence, TRIPWIRE_FIRED_EVIDENCE_TAG};
 pub use index::{
     CausalityEntry, CausalityIndex, CompressedTrace, CompressionLevel, DetailData,
     ExecutiveSummary, FunctionDetail, FunctionPerf, HotspotData, HotspotEntry, MicroscopyData,

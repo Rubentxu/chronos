@@ -17,8 +17,8 @@ use std::path::PathBuf;
 use chronos_domain::{TripwireCondition, TripwireId};
 use chronos_log::segment::{read_segment, write_segment, SegmentEntry};
 use chronos_log::{
-    EventSeq, ExecutionKind, ExecutionPayload, ExecutionRecord, SessionId, TripwireFiredEvidence,
-    TRIPWIRE_FIRED_EVIDENCE_TAG,
+    tripwire_evidence_codec as codec, EventSeq, ExecutionKind, ExecutionPayload, ExecutionRecord,
+    SessionId, TripwireFiredEvidence, TRIPWIRE_FIRED_EVIDENCE_TAG,
 };
 
 fn tempdir(tag: &str) -> PathBuf {
@@ -69,7 +69,7 @@ fn fired_record(session: &SessionId, seq: u64, source_seq: u64) -> ExecutionReco
         seq: EventSeq::new(seq),
         monotonic_ns: seq * 1000,
         kind: ExecutionKind::TripwireFired,
-        payload: evidence(source_seq).to_payload().expect("encode evidence"),
+        payload: codec::encode(&evidence(source_seq)).expect("encode evidence"),
         invocation_id: None,
         parent_invocation_id: None,
         symbol_id: None,
@@ -82,16 +82,16 @@ fn fired_record(session: &SessionId, seq: u64, source_seq: u64) -> ExecutionReco
 #[test]
 fn evidence_round_trips_through_payload() {
     let ev = evidence(419);
-    let payload = ev.to_payload().expect("encode");
+    let payload = codec::encode(&ev).expect("encode");
     assert_eq!(payload.tag, TRIPWIRE_FIRED_EVIDENCE_TAG);
-    let back = TripwireFiredEvidence::from_payload(&payload)
+    let back = codec::decode(&payload)
         .expect("decode")
         .expect("some");
     assert_eq!(back, ev);
 
     // A source event payload is not a firing payload.
     let other = ExecutionPayload::new(b"{}".to_vec(), "trace_event");
-    assert!(TripwireFiredEvidence::from_payload(&other)
+    assert!(codec::decode(&other)
         .expect("decode")
         .is_none());
 }
@@ -126,7 +126,7 @@ fn fired_evidence_survives_a_segment_round_trip_with_both_identities() {
     };
     assert_eq!(fired.kind, ExecutionKind::TripwireFired);
     assert_eq!(fired.seq, EventSeq::new(421), "firing identity");
-    let ev = TripwireFiredEvidence::from_payload(&fired.payload)
+    let ev = codec::decode(&fired.payload)
         .expect("decode")
         .expect("firing payload");
     assert_eq!(

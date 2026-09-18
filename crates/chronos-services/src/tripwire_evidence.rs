@@ -20,7 +20,8 @@ use std::sync::Arc;
 use chronos_domain::tripwire::TripwireManager;
 use chronos_domain::TraceEvent;
 use chronos_log::{
-    EventSeq, ExecutionKind, ExecutionRecord, NewExecutionRecord, SessionId, TripwireFiredEvidence,
+    tripwire_evidence_codec as codec, EventSeq, ExecutionKind, ExecutionRecord,
+    NewExecutionRecord, SessionId, TripwireFiredEvidence,
 };
 
 use crate::error::ServiceError;
@@ -104,7 +105,7 @@ pub fn derive_firings_from_event(
             source_timestamp_ns: event.timestamp_ns,
             source_thread_id: event.thread_id,
         };
-        let payload = match evidence.to_payload() {
+        let payload = match codec::encode(&evidence) {
             Ok(p) => p,
             Err(e) => {
                 report.failures.push(TripwirePersistenceFailure {
@@ -216,7 +217,7 @@ pub fn read_firings_page(
             position = EventSeq::new(record.seq.0 + 1);
             page.examined += 1;
             if record.kind == ExecutionKind::TripwireFired {
-                if let Ok(Some(ev)) = TripwireFiredEvidence::from_payload(&record.payload) {
+                if let Ok(Some(ev)) = codec::decode(&record.payload) {
                     page.firings.push((record.seq, ev));
                     if page.firings.len() >= max_firings {
                         page.position_after = position;
@@ -336,7 +337,7 @@ pub fn firing_count_snapshot(
             position = EventSeq::new(record.seq.0 + 1);
             examined += 1;
             if record.kind == ExecutionKind::TripwireFired {
-                if let Ok(Some(ev)) = TripwireFiredEvidence::from_payload(&record.payload) {
+                if let Ok(Some(ev)) = codec::decode(&record.payload) {
                     *snapshot.counts.entry(ev.tripwire_id).or_insert(0) += 1;
                 }
             }

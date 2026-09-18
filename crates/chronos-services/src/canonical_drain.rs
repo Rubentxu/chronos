@@ -18,7 +18,9 @@
 
 use chronos_domain::semantic::{ResolveContext, SemanticEvent};
 use chronos_domain::TraceEvent;
-use chronos_log::{EventSeq, ExecutionKind, TripwireFiredEvidence};
+use chronos_log::{
+    tripwire_evidence_codec as codec, EventSeq, ExecutionKind, TripwireFiredEvidence,
+};
 
 use crate::error::ServiceError;
 use crate::events_cursor::EventsCursorV1;
@@ -181,7 +183,7 @@ pub fn read_canonical_drain_page(
         .map_err(|e| ServiceError::DrainFailed(format!("probe_drain head read: {e}")))?;
     if let Some(first) = head.records.first() {
         if first.kind == ExecutionKind::TripwireFired {
-            if let Ok(Some(ev)) = TripwireFiredEvidence::from_payload(&first.payload) {
+            if let Ok(Some(ev)) = codec::decode(&first.payload) {
                 if ev.source_seq < from {
                     return Err(ServiceError::InvalidInput(format!(
                         "probe_drain cursor is not at a logical Raw boundary: seq {} is a \
@@ -396,7 +398,7 @@ mod tests {
                 session_id: log.session_id().clone(),
                 kind: ExecutionKind::TripwireFired,
                 monotonic_ns: source.0 * 1000,
-                payload: evidence.to_payload().expect("encode"),
+                payload: codec::encode(&evidence).expect("encode"),
                 ..Default::default()
             })
             .expect("append firing")

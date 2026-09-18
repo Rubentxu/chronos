@@ -8,8 +8,8 @@ use chronos_domain::trace::TraceEvent;
 use chronos_domain::{EventData, EventType, SourceLocation};
 use chronos_domain::{TripwireCondition, TripwireId};
 use chronos_log::{
-    ExecutionKind, ExecutionPayload, NewExecutionRecord, SegmentedConfig, SegmentedExecutionLog,
-    SessionId, TripwireFiredEvidence,
+    tripwire_evidence_codec as codec, ExecutionKind, ExecutionPayload, NewExecutionRecord,
+    SegmentedConfig, SegmentedExecutionLog, SessionId, TripwireFiredEvidence,
 };
 use chronos_services::session_log::SessionExecutionLog;
 use chronos_services::tripwire_evidence::{firing_count_snapshot, FiringCountStatus};
@@ -85,7 +85,7 @@ fn firing_count_is_reconstructed_from_reopened_evidence() {
                 session_id: session.clone(),
                 kind: ExecutionKind::TripwireFired,
                 monotonic_ns: i * 1000,
-                payload: evidence.to_payload().expect("encode evidence"),
+                payload: codec::encode(&evidence).expect("encode evidence"),
                 ..Default::default()
             })
             .expect("append firing");
