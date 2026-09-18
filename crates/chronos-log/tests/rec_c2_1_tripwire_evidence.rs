@@ -84,16 +84,12 @@ fn evidence_round_trips_through_payload() {
     let ev = evidence(419);
     let payload = codec::encode(&ev).expect("encode");
     assert_eq!(payload.tag, TRIPWIRE_FIRED_EVIDENCE_TAG);
-    let back = codec::decode(&payload)
-        .expect("decode")
-        .expect("some");
+    let back = codec::decode(&payload).expect("decode").expect("some");
     assert_eq!(back, ev);
 
     // A source event payload is not a firing payload.
     let other = ExecutionPayload::new(b"{}".to_vec(), "trace_event");
-    assert!(codec::decode(&other)
-        .expect("decode")
-        .is_none());
+    assert!(codec::decode(&other).expect("decode").is_none());
 }
 
 /// Fired evidence survives a real segment write/reopen with **both**

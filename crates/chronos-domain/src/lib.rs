@@ -11,9 +11,9 @@ pub mod evidence;
 pub mod index;
 pub mod ports;
 pub mod property;
-pub mod seq;
 pub mod query;
 pub mod semantic;
+pub mod seq;
 pub mod session_id;
 pub mod trace;
 pub mod tripwire;
@@ -43,11 +43,11 @@ pub use property::{
     PropertyHypothesisVerdict, PropertyId, PropertyObservationSource, PropertyOutcome,
     PropertySequenceOutcome, PropertyValue, PropertyViolation, StateTransition,
 };
-pub use seq::EventSeq;
 pub use query::{
     EventFilter, PerfEntry, PerfQuery, PerfResult, PerfSortBy, QueryResult, TraceQuery,
 };
 pub use semantic::{SemanticEvent, SemanticEventKind};
+pub use seq::EventSeq;
 pub use trace::{
     CaptureConfig, CaptureSession, EventData, EventType, GoEventKind, InvocationId, JavaEventKind,
     JsEventKind, Language, PythonEventKind, RegisterState, RuntimeInfo, SessionState,

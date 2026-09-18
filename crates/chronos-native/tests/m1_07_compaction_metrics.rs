@@ -76,9 +76,8 @@ fn compaction_metrics_reflects_real_compaction_runs() {
     // Force tight flush threshold so 4 records ⇒ 2 segments.
     let mut cfg = SegmentedConfig::with_dir(&log_dir);
     cfg.flush_threshold = NonZeroUsize::new(2).unwrap();
-    let log = Arc::new(
-        SegmentedExecutionLog::open(SessionId::new(log_session), cfg).expect("open"),
-    );
+    let log =
+        Arc::new(SegmentedExecutionLog::open(SessionId::new(log_session), cfg).expect("open"));
 
     // 4 records → 2 segments. Encode one TraceEvent so the JSON
     // payload is realistic; payload bytes do not need to round-trip

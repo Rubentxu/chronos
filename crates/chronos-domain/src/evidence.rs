@@ -438,7 +438,10 @@ mod tests {
     fn tail_state_sealed_at_is_clock_pure() {
         let s = TailState::sealed_at(Some(EventSeq::new(99)), 1_700_000_000_000);
         match s {
-            TailState::Sealed { tail_seq, sealed_at_unix_ms } => {
+            TailState::Sealed {
+                tail_seq,
+                sealed_at_unix_ms,
+            } => {
                 assert_eq!(tail_seq, Some(EventSeq::new(99)));
                 assert_eq!(sealed_at_unix_ms, 1_700_000_000_000);
             }

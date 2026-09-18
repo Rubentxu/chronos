@@ -18,11 +18,11 @@ use crate::capture_runner::run_function_frame_capture_with_callback;
 use crate::native_adapter::NativeAdapter;
 use crate::ptrace_tracer::{PtraceConfig, PtraceTracer};
 use crate::symbol_resolver::SymbolResolver;
+use chronos_domain::ports::execution_log::ExecutionLogProvider;
 use chronos_domain::semantic::{ResolveContext, ResolverPipeline, SemanticResolver};
 use chronos_domain::{
     CaptureConfig, CaptureSession, Language, ProbeBackend, SourceLocation, TraceError, TraceEvent,
 };
-use chronos_domain::ports::execution_log::ExecutionLogProvider;
 use chronos_log::{ExecutionPayload, NewExecutionRecord, SegmentedConfig, SegmentedExecutionLog};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -299,10 +299,7 @@ impl NativeProbeBackend {
     /// backend keeps the writer for the entire probe lifetime; the
     /// capture thread needs the object to outlive the constructor
     /// call.
-    pub fn attach_execution_log(
-        &self,
-        log: Arc<dyn ExecutionLogProvider>,
-    ) {
+    pub fn attach_execution_log(&self, log: Arc<dyn ExecutionLogProvider>) {
         *self.execution_log.lock().unwrap_or_else(|e| e.into_inner()) = Some(log);
     }
 
@@ -358,8 +355,10 @@ impl NativeProbeBackend {
         trace_event: &TraceEvent,
         timestamp_ns: u64,
         observer: Option<&AcceptedRawObserver>,
-    ) -> Result<Option<chronos_log::EventSeq>, chronos_domain::ports::execution_log::ExecutionLogError>
-    {
+    ) -> Result<
+        Option<chronos_log::EventSeq>,
+        chronos_domain::ports::execution_log::ExecutionLogError,
+    > {
         match log {
             Some(log) => {
                 let seq = Self::accept_raw(log.as_ref(), trace_event, timestamp_ns)?;
@@ -378,12 +377,14 @@ impl NativeProbeBackend {
                 // we do not have to grow the error surface for what is
                 // currently a transitional state (the composition root
                 // always wires a sink).
-                Err(chronos_domain::ports::execution_log::ExecutionLogError::Unavailable {
-                    detail:
-                        "REC-C3.3.2: no canonical execution-log provider attached; refusing to \
+                Err(
+                    chronos_domain::ports::execution_log::ExecutionLogError::Unavailable {
+                        detail:
+                            "REC-C3.3.2: no canonical execution-log provider attached; refusing to \
                          publish an unpersisted observation"
-                            .to_string(),
-                })
+                                .to_string(),
+                    },
+                )
             }
         }
     }
@@ -401,7 +402,8 @@ impl NativeProbeBackend {
         log: &dyn ExecutionLogProvider,
         trace_event: &TraceEvent,
         timestamp_ns: u64,
-    ) -> Result<chronos_log::EventSeq, chronos_domain::ports::execution_log::ExecutionLogError> {
+    ) -> Result<chronos_log::EventSeq, chronos_domain::ports::execution_log::ExecutionLogError>
+    {
         let rec = trace_event_to_log_record_for_provider(log, timestamp_ns, trace_event);
         log.append(rec)
     }
@@ -422,13 +424,14 @@ impl NativeProbeBackend {
     ///
     /// Spawns the target binary via `PtraceTracer::launch()` and starts a background
     /// thread that runs the ptrace event loop. Each ptrace event is converted to a
-    /// `TraceEvent` and pushed to the `EventBus` in real-time.
+    /// `TraceEvent` and appended to the session's `ExecutionLog` via the
+    /// accepted-Raw seam (REC-C2.3 retired the parallel `EventBus` mirror).
     ///
     /// When `track_function_frames=true` (and a [`SymbolResolver`] was loaded from
     /// the spawned binary), the live thread drives the function-capture branch
     /// (`run_function_frame_capture_with_callback`) so that real `FunctionEntry`
-    /// events reach both `EventBus` and the attached `SegmentedExecutionLog` v2
-    /// through the same `dual_push` seam as syscall/registers events. See
+    /// events reach the attached `SegmentedExecutionLog` v2 through the same
+    /// accepted-Raw seam as syscall/registers events. See
     /// `m2-native-live-probe-frame-capture` design for the contract.
     ///
     /// Returns a `CaptureSession` immediately (non-blocking).
@@ -786,10 +789,11 @@ impl NativeProbeBackend {
         // with track_function_frames=true AND we resolved symbols for the
         // spawned binary, drive the function-capture branch in place. The
         // helper streams each TraceEvent (FunctionEntry or InvocationIncomplete)
-        // through `on_event`, which we pipe through the same `dual_push` seam
-        // the flat loop uses so frames reach both EventBus and the attached
-        // SegmentedExecutionLog v2. On any helper error we kill the tracee,
-        // fall through to cleanup, and let the thread exit normally.
+        // through `on_event`, which we pipe through the same accepted-Raw
+        // seam the flat loop uses so frames reach the attached
+        // SegmentedExecutionLog v2 (REC-C2.3 retired the EventBus half). On
+        // any helper error we kill the tracee, fall through to cleanup, and
+        // let the thread exit normally.
         if ptrace_config.track_function_frames {
             if let Some(resolver) = symbol_resolver {
                 let timestamp_ns = std::time::SystemTime::now()
@@ -1134,21 +1138,24 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).expect("mkdir");
         let log_dir = dir.join(session.as_str());
-        let concrete = std::sync::Arc::new(chronos_log::SegmentedExecutionLog::open(
-            session.clone(),
-            chronos_log::SegmentedConfig::with_dir(&log_dir),
-        )
-        .expect("open log"));
-        let provider: Arc<dyn ExecutionLogProvider> = Arc::new(
-            SegmentedExecutionLogProvider::new(session.clone(), concrete.clone()),
+        let concrete = std::sync::Arc::new(
+            chronos_log::SegmentedExecutionLog::open(
+                session.clone(),
+                chronos_log::SegmentedConfig::with_dir(&log_dir),
+            )
+            .expect("open log"),
         );
+        let provider: Arc<dyn ExecutionLogProvider> = Arc::new(SegmentedExecutionLogProvider::new(
+            session.clone(),
+            concrete.clone(),
+        ));
         let log: Arc<dyn ExecutionLogProvider> = Arc::clone(&provider);
 
         let event = TraceEvent::signal(1, 100, 1, 11, "SIGSEGV", 0);
 
         // Accepted: the log assigned a seq, and a read returns the event.
-        let accepted =
-            NativeProbeBackend::accept_and_publish(Some(&log), &event, 123, None).expect(
+        let accepted = NativeProbeBackend::accept_and_publish(Some(&log), &event, 123, None)
+            .expect(
                 "accept_and_publish returns Ok(Some(seq)) on success; the error channel \
                  surfaces ExecutionLogError::Unavailable when no provider is attached",
             );
@@ -1220,14 +1227,17 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).expect("mkdir");
         let log_dir = dir.join(session.as_str());
-        let concrete = std::sync::Arc::new(chronos_log::SegmentedExecutionLog::open(
-            session.clone(),
-            chronos_log::SegmentedConfig::with_dir(&log_dir),
-        )
-        .expect("open log"));
-        let provider: Arc<dyn ExecutionLogProvider> = Arc::new(
-            SegmentedExecutionLogProvider::new(session.clone(), concrete.clone()),
+        let concrete = std::sync::Arc::new(
+            chronos_log::SegmentedExecutionLog::open(
+                session.clone(),
+                chronos_log::SegmentedConfig::with_dir(&log_dir),
+            )
+            .expect("open log"),
         );
+        let provider: Arc<dyn ExecutionLogProvider> = Arc::new(SegmentedExecutionLogProvider::new(
+            session.clone(),
+            concrete.clone(),
+        ));
         let log: Arc<dyn ExecutionLogProvider> = Arc::clone(&provider);
 
         let event = TraceEvent::signal(1, 100, 1, 11, "SIGSEGV", 0);
@@ -1323,9 +1333,10 @@ mod tests {
         use chronos_log::provider::InMemoryExecutionLogProvider;
         let session = chronos_log::SessionId::new("c33-inmem");
         let inner = std::sync::Arc::new(chronos_log::memory::InMemoryExecutionLog::new());
-        let provider: Arc<dyn ExecutionLogProvider> = Arc::new(
-            InMemoryExecutionLogProvider::new(session.clone(), inner.clone()),
-        );
+        let provider: Arc<dyn ExecutionLogProvider> = Arc::new(InMemoryExecutionLogProvider::new(
+            session.clone(),
+            inner.clone(),
+        ));
         let log: Arc<dyn ExecutionLogProvider> = Arc::clone(&provider);
 
         let ev = TraceEvent::signal(1, 100, 1, 11, "SIGSEGV", 0);
@@ -1346,11 +1357,13 @@ mod tests {
         // Sealed ⇒ refused.
         provider.seal().expect("seal in-memory");
         let refused = NativeProbeBackend::accept_and_publish(Some(&log), &ev, 124, None);
-        assert!(refused.is_err(), "the in-memory provider refuses after seal");
+        assert!(
+            refused.is_err(),
+            "the in-memory provider refuses after seal"
+        );
 
         // No sink ⇒ ExecutionLogError::Unavailable.
-        let no_sink =
-            NativeProbeBackend::accept_and_publish(None, &ev, 125, None);
+        let no_sink = NativeProbeBackend::accept_and_publish(None, &ev, 125, None);
         assert!(matches!(
             no_sink,
             Err(chronos_domain::ports::execution_log::ExecutionLogError::Unavailable { .. })

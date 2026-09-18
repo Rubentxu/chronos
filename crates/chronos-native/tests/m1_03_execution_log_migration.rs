@@ -79,11 +79,8 @@ fn push_event(log: &SegmentedExecutionLog, session: &str, i: u64, kind: EventTyp
 fn wire_provider(session: &str, dir: &std::path::Path) -> Arc<dyn ExecutionLogProvider> {
     let log_dir = dir.join(session);
     let concrete = Arc::new(
-        SegmentedExecutionLog::open(
-            SessionId::new(session),
-            SegmentedConfig::with_dir(&log_dir),
-        )
-        .expect("open segmented log"),
+        SegmentedExecutionLog::open(SessionId::new(session), SegmentedConfig::with_dir(&log_dir))
+            .expect("open segmented log"),
     );
     let wrapper = SegmentedExecutionLogProvider::new(SessionId::new(session), concrete);
     Arc::new(wrapper)
@@ -120,13 +117,8 @@ fn accept_and_publish_lands_in_attached_provider() {
 
     // Drive the canonical writer path directly.
     let provider_for_call = provider.clone();
-    NativeProbeBackend::accept_and_publish(
-        Some(&provider_for_call),
-        &ev,
-        100,
-        None,
-    )
-    .expect("accepted append lands a seq");
+    NativeProbeBackend::accept_and_publish(Some(&provider_for_call), &ev, 100, None)
+        .expect("accepted append lands a seq");
 
     // Read back through the port.
     let page = provider
@@ -149,9 +141,8 @@ fn read_from_seq_yields_bounded_slice_from_port() {
     let log_dir = dir.join(session);
     let mut cfg = SegmentedConfig::with_dir(&log_dir);
     cfg.flush_threshold = NonZeroUsize::new(2).unwrap();
-    let concrete = Arc::new(
-        SegmentedExecutionLog::open(SessionId::new(session), cfg).expect("open"),
-    );
+    let concrete =
+        Arc::new(SegmentedExecutionLog::open(SessionId::new(session), cfg).expect("open"));
 
     for i in 0..8u64 {
         push_event(&concrete, session, i, EventType::FunctionEntry);
