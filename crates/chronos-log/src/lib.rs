@@ -25,6 +25,7 @@ pub mod error;
 pub mod gap;
 pub mod location;
 pub mod memory;
+pub mod provider;
 pub mod record;
 pub mod replay;
 pub mod segment;

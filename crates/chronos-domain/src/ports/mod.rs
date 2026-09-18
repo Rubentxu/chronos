@@ -13,8 +13,8 @@
 //! See `REC-C3.1` (exploration/spec/design/tasks) for the port list
 //! and the rationale behind each one.
 
-mod execution_log;
-mod notification;
+pub mod execution_log;
+pub mod notification;
 mod probe;
 mod session;
 mod telemetry;
