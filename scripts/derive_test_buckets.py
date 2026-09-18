@@ -71,7 +71,15 @@ def derive(root: Path, out: Path, check_inventory: bool) -> int:
     patterns=sorted({leaf(t) for e in concrete for t in e['tests']})
     manifest={'version':2,'generated_from':'reconstruction-contracts.toml','deferred':concrete,'runs':run_plan,'skip_patterns':patterns}
     out.mkdir(parents=True,exist_ok=True)
-    (out/'cargo-skip.txt').write_text('\n'.join(patterns)+'\n')
+    # When there are no deferred test filters, write a sentinel-free file
+    # so the CI awk pipeline (`SKIP_ARGS=$(awk '{printf " --skip %s", $1}' ...)`)
+    # produces an empty string instead of a dangling `--skip ` flag with a
+    # missing argument (`error: Argument to option 'skip' missing`).
+    skip_path = out/'cargo-skip.txt'
+    if patterns:
+        skip_path.write_text('\n'.join(patterns)+'\n')
+    else:
+        skip_path.write_text('')
     (out/'sentinel-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     print(f"derived {len(patterns)} exact deferred test filters and {len(run_plan)} ledger run targets")
     return 0
