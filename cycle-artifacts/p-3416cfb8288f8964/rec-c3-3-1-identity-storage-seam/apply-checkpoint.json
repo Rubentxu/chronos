@@ -3,13 +3,21 @@
   "project_id": "p-3416cfb8288f8964",
   "milestone": "REC-C3 — Hexagonal boundary closure",
   "sub_cycle": "C3.3.1 — identity + storage seam",
-  "head_sha": "794732fa",
-  "merge_sha": "794732fa",
+  "head_sha": "794732fadaba66bc168f3b50d76f1bf54f7fb564",
+  "merge_sha": "794732fadaba66bc168f3b50d76f1bf54f7fb564",
   "base_sha": "147c10195f2da43b20b99b6d2d77f1c17c124242",
   "branch": "main",
   "path": "A-min",
+  "route": "A-min",
   "completed_at": "2026-09-18",
+  "archived_at": "2026-09-18T18:06:31Z",
+  "created_at": "2026-09-18T18:06:31Z",
+  "title": "REC-C3.3.1 — identity + storage seam (ExecutionLogProvider port lifted)",
+  "summary": "SessionExecutionLog consumes Arc<dyn ExecutionLogProvider>. New port ExecutionLogProvider (object-safe, session-scoped) with seven methods (session_id, append, record_gap, read_from_seq, retained_from, tail_seq, tail_state, seal). Two adapters in chronos-log (Segmented + InMemory). Domain lifts ExecutionKind/ExecutionPayload/TripwireFiredEvidence + NewExecutionRecord/Gap/GapReason/TailState/SealedTail/ExecutionRecord + EventSeq + SessionId to single-owner. ProviderKind enum gates maintenance capabilities (flush, compaction_metrics, maybe_compact, compact_up_to, retain_up_to) on the wrapper, not on the port. legacy_segmented_backend_for_native_bridge is the only narrow concrete escape (C33-DEBT-NATIVE-LOG-BRIDGE-01), allowed in session_log.rs and probe.rs only. record_gap is canonical-evidence, port-lifted. map_log_error removed from events_log_read and projection (ratchet advance). Composition root placement: chronos-mcp::composition.",
   "status": "CLOSED",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived",
   "tier_results": {
     "T0_fmt_clippy": "pass (rustfmt --check on cycle files clean + cargo clippy --workspace --all-targets -- -D warnings exit 0; preexisting drift in chronos-log/{backend,segment,tail}.rs is OUTSIDE the cycle diff)",
     "T1_lib_unit": "pass (cargo test --workspace --lib --no-fail-fast --exclude chronos-sandbox --exclude chronos-e2e --exclude chronos-native: 1112/1112)",
@@ -35,6 +43,11 @@
     "C33-DEBT-NATIVE-LOG-BRIDGE-01": "OPEN — native probe integration reachable only through legacy_segmented_backend_for_native_bridge",
     "HEX-002": "GAP — closes only after C3.3.3 finishes services → ports inversion. C3.3.1 created the seam, did not finish the inversion. NOT promoted to partial/verified."
   },
+  "findings_introduced": {
+    "no_action": [],
+    "no_action_notes": {}
+  },
+  "findings_closed": [],
   "commits_since_base": [
     "794732fa feat(c3.3.1): SessionExecutionLog consumes Arc<dyn ExecutionLogProvider>",
     "5ca9aeb6 feat(c3.3.1): record_gap is canonical-evidence, port lifted",
@@ -42,7 +55,7 @@
     "3bd71bdf feat(domain): define ExecutionLogProvider port (object-safe, session-scoped)",
     "4d165a93 refactor(domain,log): lift NewExecutionRecord/Gap/GapReason/TailState/SealedTail/ExecutionRecord to domain (single owner)",
     "0e9aa473 refactor(domain,log,services): lift ExecutionKind/ExecutionPayload/TripwireFiredEvidence to domain (single owner)",
-    "9d751759 refactor(domain,log): lift EventSeq to domain (single owner)",
+    "9d751759 refactor(domain,log): lift EventSeq to domain (domain owns identity)",
     "7a6062b0 refactor(domain,log): single SessionId owner; domain owns identity"
   ],
   "layer_completion": {
@@ -54,6 +67,7 @@
   "notes": [
     "No public API change outside chronos-domain::ports::execution_log (intentional — that IS the port).",
     "chronos-log re-export of CompactionOutcome (commit 794732fa) was necessary to expose the return type of retain_up_to on the wrapper; not a port surface change.",
-    "Workspace version 0.1.1 preserved. No tag in this cycle (the seam is structural; the next cycle produces the first truly inverted version worth a tag)."
+    "Workspace version 0.1.1 preserved. No tag in this cycle (the seam is structural; the next cycle produces the first truly inverted version worth a tag).",
+    "Schema normalized to m9-22+ on 2026-09-18 by REC-C3.3.2-Tren-A: added created_at, title, summary, route, verify_status, release_status, archive_status, archived_at, findings_introduced (m9-11+ convention)."
   ]
 }

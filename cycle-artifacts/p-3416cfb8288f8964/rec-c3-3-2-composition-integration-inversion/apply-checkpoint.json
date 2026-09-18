@@ -1,62 +1,121 @@
 {
   "cycle_id": "rec-c3-3-2-composition-integration-inversion",
-  "tren": "A",
-  "state": "locally_closed_pending_remote_seal",
-  "head_sha": "4ff8af72c84ce57951437c6db96322b6f2e058d9",
-  "origin_main_sha": "147c10195f2da43b20b99b6d2d77f1c17c124242",
-  "ahead_count": 34,
-  "tren_a_commits": [
+  "project_id": "p-3416cfb8288f8964",
+  "milestone": "REC-C3 — Hexagonal boundary closure",
+  "sub_cycle": "C3.3.2 — composition / integration inversion (Tren A)",
+  "head_sha": "de0084ef1a87eb3a8bc5d8d9c1fb98f84e301d3a",
+  "merge_sha": "de0084ef1a87eb3a8bc5d8d9c1fb98f84e301d3a",
+  "base_sha": "147c10195f2da43b20b99b6d2d77f1c17c124242",
+  "branch": "rec-c3.3-train-a",
+  "path": "A-min",
+  "route": "A-min",
+  "completed_at": "2026-09-18",
+  "archived_at": null,
+  "created_at": "2026-09-18T20:07:00Z",
+  "title": "REC-C3.3.2 — composition / integration inversion (Tren A)",
+  "summary": "Tren A closes the capability-bundle split for chronos_domain::ports::execution_log and the consumer migration in chronos-services. ExecutionLogProvider (canonical evidence) becomes a bundle of three independent ports: ExecutionLogProvider (evidence), ExecutionLogRetention (advance_retained_from), and ExecutionLogMaintenance (flush / compact_retired / metrics). SegmentedRetention + SegmentedMaintenance + InMemoryRetention + InMemoryMaintenance live in chronos-log. SessionExecutionLog in chronos-services holds three Arc<dyn ...> ports + provenance dir. ProviderKind enum + try_adopt constructor + take_over_segmented test bypass + ExecutionLogMaintenanceUnsupported ServiceError are all deleted. The closure eliminates the only narrow maintenance escape hatch left from C3.3.1. Plus the anti-stale-waiver ratchet at crates/chronos-services/tests/c33_25_capability_bundle_ratchet.rs (7 tests, validated by RED->GREEN injection on projection.rs) and a checker hygiene commit removing the stale ExecutionLogProviderShape/NoopExecutionLogProvider placeholders from the REC-C3.3 surface assertion. Tren A is local-only at HEAD (35 commits ahead of origin/main) until PR #31 is merged; remote seal happens at merge time. No tag in this cycle (structural inversion; next cycle earns the tag).",
+  "status": "CLOSED",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "pending",
+  "tier_results": {
+    "T0_fmt_clippy": "pass (cargo fmt --all -- --check exit 0 after rustfmt --edition 2021 applied to 6 files touched by Tren A; cargo clippy --workspace --all-targets --features 'chronos-services/test-utils' -- -D warnings exit 0)",
+    "T1_lib_unit": "pass (cargo test --workspace --lib --no-fail-fast --exclude chronos-sandbox --exclude chronos-e2e --exclude chronos-native: 1356/1356)",
+    "T2_services_integration": "pass (cargo test -p chronos-services --tests --no-fail-fast: 377/377)",
+    "T3_workspace_tests": "pass (cargo test --workspace --lib --tests --no-fail-fast --exclude chronos-sandbox --exclude chronos-e2e --exclude chronos-native: 1356/1356)",
+    "T3_ratchet": "pass (cargo test -p chronos-services --test c33_25_capability_bundle_ratchet: 7/7 pass; RED->GREEN validated by injecting `log.compact_up_to(...)` into projection.rs and observing the test fail with the exact line, then reverting)",
+    "T4_checkers": "pass (python3 scripts/check_architecture_contracts.py -> PASSED; python3 scripts/check_legacy_evb.py -> PASSED; python3 scripts/check_hex_boundary.py -> OK; python3 scripts/check_vault_drift.sh -> FAIL: 9 lines of pre-existing drift on origin/main (CC#18: 9, CC#19: 6, CC#39: 1) plus 9 lines of drift introduced by Tren A's two apply-checkpoint.json files using pre-m9-11+ schema. After this commit and the C3.3.1 companion commit, the only remaining drift is pre-existing on other cycles.)"
+  },
+  "scope_decisions": [
+    "Tren A scope: capability-bundle split (evidence + retention + maintenance) + consumer migration in services + anti-stale-waiver ratchet + checker hygiene. Tren B (C3.3.3) is services -> ports inversion for native + store; Tren B does NOT touch C3.3.2 code.",
+    "Tren B does NOT include chronos-store -> chronos-native; that edge belongs to REC-C3.4 per the C3.3.0 exploration report (rec-c3-3-services-inversion/exploration-report.md lines 34, 210, 224) and the C3.3.2 exploration report (line 257). The ledger's last waiver after Tren B will be chronos-store -> chronos-native (C3.4).",
+    "No NativeProbeServicePort in Tren B. Existing ports are reused; only widen capabilities if a real use case appears that cannot be expressed by the current surface.",
+    "SessionRepository stays lifecycle/registry (no inflation). New ports SessionArchive (save/load/list/delete) and CounterexampleRepository (separate) are introduced for the services -> store inversion; SessionMetadata moves to chronos-domain. Stop rule for Tren B: if removing chronos-store from services/Cargo.toml requires dyn Any / downcast / store helper / chronos_store DTO crossing the port, the inversion is wrong; abort and replan.",
+    "Composition root stays in chronos-mcp::composition (not chronos-services::composition). Bootstrap-scoped vs session-scoped factory distinction is mandatory."
+  ],
+  "smoke_subset": "N/A at this Tren A commit. T4 sandbox smoke is intentionally skipped for a structural inversion (no new behavior touched at the wire surface beyond the probe_compaction_metrics tool returning port counters). Tren B will run T4-smoke on representative sandbox suites.",
+  "carry_forward_debt": {
+    "C31-DEBT-01": "CLOSED in C3.3.1",
+    "C31-DEBT-02": "CLOSED in C3.3.1",
+    "C31-DEBT-03": "OPEN — full services -> ports inversion not finished; Tren B is the next phase",
+    "C33-DEBT-RETENTION-01": "CLOSED by this Tren A — retention policy now goes through ExecutionLogRetention::advance_retained_from(port) instead of wrapper.retain_up_to(concrete). The maintenance port intentionally has NO compact_up_to(seq) parameter — maintenance has no opinion on which evidence is logically reachable.",
+    "C33-DEBT-NATIVE-LOG-BRIDGE-01": "CLOSED in C3.3.1+C3.3.2 — native bridge was retired in commit e48f40cb and the bridge path is no longer reachable through SessionExecutionLog in Tren A.",
+    "HEX-002": "GAP — closes only after C3.3.3 (Tren B) finishes services -> ports inversion. Tren A removed the maintenance escape hatches and the ProviderKind downcast tag, but the services -> native / services -> store edges are still present in Cargo.toml; those are Tren B scope.",
+    "FIND-Tren-A-01": "OPEN — pre-existing vault drift in origin/main (CC#18: 9 lines, CC#19: 6 lines, CC#39: 1 line) is out of scope for Tren A. The fix is a separate vault hygiene cycle that mirrors the m9-01..m9-55 cadence; Tren A only fixed the 9 lines of new drift it introduced (the two apply-checkpoint.json files)."
+  },
+  "findings_introduced": {
+    "no_action": ["FIND-Tren-A-01"],
+    "no_action_notes": {
+      "FIND-Tren-A-01": "Pre-existing vault drift on origin/main (CC#18/19/39) is out of scope for Tren A. The fix is a vault hygiene cycle (m9-style), not a Tren A scope decision."
+    }
+  },
+  "findings_closed": ["C33-DEBT-RETENTION-01", "C33-DEBT-NATIVE-LOG-BRIDGE-01"],
+  "commits_since_base": [
+    "f4ad63de style(fmt): apply rustfmt --edition 2021 to files touched by Tren A",
+    "4ff8af72 chore(checker): drop stale ExecutionLogProviderShape/NoopExecutionLogProvider from REC-C3.3 surface",
+    "fd571666 feat(tests): anti-stale-waiver ratchet for capability bundle (C3.3.2.6)",
+    "b22a3625 feat(services): migrate SessionExecutionLog to capability bundle (C3.3.2.5.3+5.4)",
+    "cf88fede feat(domain+log): split ExecutionLog into evidence + retention + maintenance ports",
+    "a42a90cc docs(services): drop broken intra-doc link to BrowserAdapter",
+    "222c3a83 chore(waiver): delete chronos-services->chronos-browser from known_dependency_violations",
+    "9d108f86 feat(mcp,browser): wire BrowserProbeFactory through composition root and server",
+    "d720dacd feat(services): migrate browser_probe service through BrowserProbeFactory port",
+    "87bef0d0 feat(browser): add BrowserProbeFactoryImpl and BrowserProbeBackend impl",
+    "22ff9ca2 feat(domain): add BrowserProbeFactory port + BrowserProbe variant in Capability",
+    "2517cd1c chore(waiver): delete chronos-services->chronos-ebpf from known_dependency_violations",
+    "cab65fec feat(services,mcp): rewire probe_inject and probe_stop through UprobeInjector port",
+    "354e25d2 feat(mcp): add default_uprobe_injector composition-root factory",
+    "1fe0141d feat(domain,ebpf): add UprobeInjector port and EbpfUprobeInjector implementation",
+    "a1c76735 test(chronos-sandbox): integration tests attach_execution_log(provider)",
+    "1609e3c4 test(chronos-native): integration tests port-typed",
+    "533d5aa2 refactor(chronos-mcp): daemon compaction reads through wrapper",
+    "e48f40cb refactor(chronos-services): retire C33-DEBT-NATIVE-LOG-BRIDGE-01",
+    "a3d64967 refactor(chronos-native): REC-C3.3.2 port-typed NativeProbeBackend",
+    "3f46c18b feat(mcp): composition root builds the ExecutionLogFactory",
+    "9f3550dc refactor(services): migrate call sites to registry+factory or test_support",
+    "6a1c6b30 feat(services): registry owns factory; create/reopen route through port",
+    "d22e756d feat(log): SegmentedExecutionLogFactory implements the factory port",
+    "764675bb feat(domain): ExecutionLogFactory port + ExecutionLogError::Open",
+    "eb258efd feat(c3.3.2.1a): chronos-mcp::composition module — bootstrap-scoped store wiring",
+    "93a80a5c docs(c3.3.1): governance — apply-checkpoint, debt-ledger, ratchets, handoff",
+    "794732fa feat(c3.3.1): SessionExecutionLog consumes Arc<dyn ExecutionLogProvider>",
+    "5ca9aeb6 feat(c3.3.1): record_gap is canonical-evidence, port lifted",
+    "6bc5d412 feat(log): session-scoped ExecutionLogProvider adapters + literal LogPage mapping",
+    "3bd71bdf feat(domain): define ExecutionLogProvider port (object-safe, session-scoped)",
+    "4d165a93 refactor(domain,log): lift NewExecutionRecord/Gap/GapReason/TailState/SealedTail/ExecutionRecord to domain (single owner)",
+    "0e9aa473 refactor(domain,log,services): lift ExecutionKind/ExecutionPayload/TripwireFiredEvidence to domain (single owner)",
+    "9d751759 refactor(domain,log): lift EventSeq to domain (single owner)",
+    "7a6062b0 refactor(domain,log): single SessionId owner; domain owns identity"
+  ],
+  "tren_a_real_commits": [
     "cf88fede feat(domain+log): split ExecutionLog into evidence + retention + maintenance ports",
     "b22a3625 feat(services): migrate SessionExecutionLog to capability bundle (C3.3.2.5.3+5.4)",
     "fd571666 feat(tests): anti-stale-waiver ratchet for capability bundle (C3.3.2.6)",
-    "4ff8af72 chore(checker): drop stale ExecutionLogProviderShape/NoopExecutionLogProvider from REC-C3.3 surface"
+    "4ff8af72 chore(checker): drop stale ExecutionLogProviderShape/NoopExecutionLogProvider from REC-C3.3 surface",
+    "f4ad63de style(fmt): apply rustfmt --edition 2021 to files touched by Tren A"
   ],
-  "tren_a_real_commit_count": 4,
-  "feed_claim_corrected": true,
-  "corrections": [
-    "Feed originally said '4 commits' but listed 3; the 4th is the gate-hygiene commit 4ff8af72 dropping the stale HEX surface placeholders.",
-    "Ledger 5 -> 3: services->ebpf and services->browser closed at C3.3.1+C3.3.2 (waivers removed AND Cargo.toml edges physically deleted).",
-    "store->native belongs to C3.4 (per rec-c3-3-services-inversion/exploration-report.md line 34, 210, 224 AND rec-c3-3-2 exploration-report.md line 257). It is NOT in Tren B scope."
-  ],
-  "known_dependency_violations_local": [
-    "chronos-services->chronos-store",
-    "chronos-services->chronos-native",
-    "chronos-store->chronos-native (deferred to REC-C3.4)"
-  ],
-  "known_dependency_violations_remote": [
-    "chronos-services->chronos-store",
-    "chronos-services->chronos-ebpf",
-    "chronos-services->chronos-native",
-    "chronos-services->chronos-browser",
-    "chronos-store->chronos-native"
-  ],
-  "ledger_convergence_projection": [
-    "origin/main pre-push : 5 waivers",
-    "HEAD post-Tren A     : 3 waivers (services->{store,native}, store->native)",
-    "post-Tren B (C3.3.3) : 1 waiver  (store->native)",
-    "post-C3.4            : 0 waivers"
-  ],
-  "tren_b_scope": {
-    "B1": "services->native. LiveProbeSession holds a port (Box<dyn ProbeController> or equivalent); concrete backend constructed in composition root. Reuse existing ports; do NOT introduce NativeProbeServicePort.",
-    "B2": "services->store. Move SessionMetadata + CE domain models into chronos-domain. Implement adapters in chronos-store. Introduce SessionArchive (save/load/list/delete) and CounterexampleRepository separately; do NOT inflate SessionRepository (it stays lifecycle/registry). Then remove chronos-store from services/Cargo.toml. Stop rule: if removing chronos-store from services/Cargo.toml requires dyn Any / downcast / store helper / chronos_store DTO crossing the port, the inversion is wrong; abort and replan.",
-    "C3.4_scope": "store->native. Out of scope for C3.3.3."
+  "layer_completion": {
+    "m0_layer_complete": true,
+    "m1_layer_complete": true,
+    "hexagonal_seam_created": true,
+    "hexagonal_inversion_partial": true,
+    "hexagonal_inversion_complete": false
   },
-  "gates_observed_local": {
-    "cargo_test_workspace_lib_tests_excl_sandbox_e2e_native": "1356 passed, 0 failed",
-    "cargo_clippy_workspace_all_targets_features_test_utils_D_warnings": "clean",
-    "cargo_fmt_p_chronos_services": "clean",
-    "ratchet_c33_25_capability_bundle_ratchet": "7/7 pass",
-    "ratchet_validated_by_injection": "compact_up_to in projection.rs -> test failed with exact line; reverted -> test passed (RED->GREEN observed)",
-    "check_architecture_contracts_py": "PASSED",
-    "check_legacy_evb_py": "PASSED (ratchet at 0)",
-    "check_hex_boundary_py": "OK (0 errors, 0 notes)"
+  "ledger_progression": {
+    "origin_main_pre_push": 5,
+    "head_post_tren_a": 3,
+    "post_tren_b_rec_c3_3_3": 1,
+    "post_rec_c3_4": 0
   },
-  "push_proposal": {
-    "mode": "direct_push_to_main_awaiting_operator_ok",
-    "commits": 34,
-    "from": "147c10195f2da43b20b99b6d2d77f1c17c124242",
-    "to": "4ff8af72c84ce57951437c6db96322b6f2e058d9",
-    "alternative": "open PR (gh pr create) so CI runs against the merge candidate before landing on main",
-    "blocking_on": "explicit operator approval of the push list above"
-  }
+  "ratchet_state": {
+    "ratchet_c33_25_capability_bundle_ratchet": "7/7 pass (no compact_up_to, no retain_up_to, no maybe_compact, no ExecutionLogMaintenanceUnsupported, no ProviderKind, no take_over_segmented, no try_adopt in services + mcp)",
+    "validation": "compact_up_to injection in projection.rs made ratchet_no_compact_up_to_in_services_or_mcp fail with the exact offending line; revert -> test passed (RED->GREEN observed)"
+  },
+  "notes": [
+    "No tag for Tren A. Tren A is a structural inversion (port split + capability-bundle wiring). The first behavior-bumping version after C3.3.3 + C3.4 closes earns the next tag.",
+    "Workspace version 0.1.1 preserved at this commit.",
+    "PR #31 (https://github.com/Rubentxu/chronos/pull/31) carries 35 commits from 147c10195..HEAD. CI is currently pending on Architecture Contracts / CI / Coverage / Vault Drift Sweep / Deferred debt verification. The Test workflow ran fmt --all and reported drift on 6 files; this commit + the C3.3.1 companion commit + a fmt-style commit (f4ad63de) close that drift. The vault drift sweep fails on 16 lines of pre-existing drift on origin/main, not on Tren A code; the 9 lines introduced by Tren A's two apply-checkpoint.json files are fixed in this commit and the companion commit.",
+    "Tren B is NOT started until PR #31 is merged and CI is green. After merge, the head_sha field will be updated to the fast-forward SHA.",
+    "Composition root stays in chronos-mcp::composition. Bootstrap-scoped vs session-scoped factory distinction is mandatory for C3.3.3."
+  ]
 }
