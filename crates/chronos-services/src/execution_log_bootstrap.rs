@@ -31,7 +31,9 @@
 //! without anything external changing.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
+use chronos_domain::ports::execution_log_factory::ExecutionLogFactory;
 use chronos_log::SessionId;
 use chronos_log::{discover_execution_logs, UnmanagedLegacyLog};
 
@@ -86,7 +88,15 @@ impl BootstrapPlan {
 }
 
 /// Phase 1: discover and validate every candidate. Nothing is published.
-pub fn build_bootstrap_plan(root: &Path) -> Result<BootstrapPlan, ServiceError> {
+///
+/// **C3.3.2 composition inversion:** the factory is injected so
+/// `reopen_existing` does not name `SegmentedExecutionLog` directly.
+/// The composition root passes the same factory it gave to the
+/// registry; tests can pass a deterministic in-memory variant.
+pub fn build_bootstrap_plan(
+    root: &Path,
+    factory: &Arc<dyn ExecutionLogFactory>,
+) -> Result<BootstrapPlan, ServiceError> {
     let discovery = discover_execution_logs(root)
         .map_err(|e| ServiceError::DrainFailed(format!("discovery of {root:?}: {e}")))?;
 
@@ -99,8 +109,11 @@ pub fn build_bootstrap_plan(root: &Path) -> Result<BootstrapPlan, ServiceError> 
 
     for found in discovery.logs {
         let session_id = found.session_id.clone();
-        match SessionExecutionLog::reopen_existing(&found.dir, SessionId::new(session_id.as_str()))
-        {
+        match SessionExecutionLog::reopen_existing(
+            &found.dir,
+            SessionId::new(session_id.as_str()),
+            factory,
+        ) {
             Ok(log) => plan.entries.push(BootstrapEntry::Available {
                 session_id: session_id.as_str().to_string(),
                 dir: found.dir,
@@ -141,8 +154,9 @@ pub fn apply_bootstrap_plan(
 pub fn bootstrap_execution_logs(
     root: &Path,
     registry: &SessionExecutionLogRegistry,
+    factory: &Arc<dyn ExecutionLogFactory>,
 ) -> Result<BootstrapPlan, ServiceError> {
-    let plan = build_bootstrap_plan(root)?;
+    let plan = build_bootstrap_plan(root, factory)?;
     apply_bootstrap_plan(registry, &plan)?;
     Ok(plan)
 }
@@ -246,13 +260,21 @@ mod boot_tests {
         dir
     }
 
+    /// C3.3.2 — tests that did not migrate to composition-root wiring
+    /// still need a factory. The composition root will inject the real
+    /// one; here we use the segmented factory directly because the
+    /// discovery path opens on-disk logs.
+    fn test_factory() -> Arc<dyn ExecutionLogFactory> {
+        Arc::new(chronos_log::factory::SegmentedExecutionLogFactory::new())
+    }
+
     #[test]
     fn boot_1_two_valid_logs_bootstrap_exactly_two() {
         let root = tmpdir("b1");
         make_log(&root, "a", "s-a", 3);
         make_log(&root, "b", "s-b", 5);
         let registry = SessionExecutionLogRegistry::new();
-        let plan = bootstrap_execution_logs(&root, &registry).expect("bootstrap");
+        let plan = bootstrap_execution_logs(&root, &registry, &test_factory()).expect("bootstrap");
         assert_eq!(plan.available().count(), 2);
         assert_eq!(registry.len(), 2);
         assert!(registry.get("s-a").is_ok());
@@ -266,12 +288,12 @@ mod boot_tests {
         make_log(&root, "a", "s-a", 4);
 
         let r1 = SessionExecutionLogRegistry::new();
-        bootstrap_execution_logs(&root, &r1).expect("first bootstrap");
+        bootstrap_execution_logs(&root, &r1, &test_factory()).expect("first bootstrap");
         let before = r1.get("s-a").expect("available");
 
         // Simulate a restart: a brand-new registry bootstrapped from disk.
         let r2 = SessionExecutionLogRegistry::new();
-        bootstrap_execution_logs(&root, &r2).expect("second bootstrap");
+        bootstrap_execution_logs(&root, &r2, &test_factory()).expect("second bootstrap");
         let after = r2.get("s-a").expect("available after restart");
 
         assert_eq!(after.session_id(), before.session_id());
@@ -301,7 +323,7 @@ mod boot_tests {
         std::fs::write(&seg, &bytes).unwrap();
 
         let registry = SessionExecutionLogRegistry::new();
-        let plan = bootstrap_execution_logs(&root, &registry).expect("bootstrap");
+        let plan = bootstrap_execution_logs(&root, &registry, &test_factory()).expect("bootstrap");
         assert_eq!(plan.unavailable().count(), 1);
         let err = registry.get("s-bad").expect_err("unavailable");
         match err {
@@ -334,7 +356,7 @@ mod boot_tests {
         std::fs::write(&seg, &bytes).unwrap();
 
         let registry = SessionExecutionLogRegistry::new();
-        let plan = bootstrap_execution_logs(&root, &registry).expect("bootstrap");
+        let plan = bootstrap_execution_logs(&root, &registry, &test_factory()).expect("bootstrap");
         // Deterministic: A and C available, B unavailable, regardless of order.
         assert_eq!(plan.available().count(), 2);
         assert_eq!(plan.unavailable().count(), 1);
@@ -348,7 +370,7 @@ mod boot_tests {
     fn boot_9_disappearing_directory_is_not_recreated_as_an_empty_log() {
         let root = tmpdir("b9");
         make_log(&root, "a", "s-a", 3);
-        let plan = build_bootstrap_plan(&root).expect("plan");
+        let plan = build_bootstrap_plan(&root, &test_factory()).expect("plan");
         assert_eq!(plan.available().count(), 1);
 
         // The directory vanishes between discovery and publish.
@@ -383,7 +405,7 @@ mod boot_tests {
         let root = tmpdir("b11");
         make_log(&root, "a", "s-a", 2);
         let registry = SessionExecutionLogRegistry::new();
-        bootstrap_execution_logs(&root, &registry).expect("bootstrap");
+        bootstrap_execution_logs(&root, &registry, &test_factory()).expect("bootstrap");
 
         // drop_session: in-memory only.
         registry.remove("s-a");
@@ -391,7 +413,7 @@ mod boot_tests {
 
         // A restart rediscovers it, because the durable log was never deleted.
         let after_restart = SessionExecutionLogRegistry::new();
-        bootstrap_execution_logs(&root, &after_restart).expect("rebootstrap");
+        bootstrap_execution_logs(&root, &after_restart, &test_factory()).expect("rebootstrap");
         assert!(after_restart.get("s-a").is_ok());
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -401,7 +423,7 @@ mod boot_tests {
         let root = tmpdir("toctou");
         make_log(&root, "a", "s-a", 2);
         make_log(&root, "b", "s-b", 2);
-        let plan = build_bootstrap_plan(&root).expect("plan");
+        let plan = build_bootstrap_plan(&root, &test_factory()).expect("plan");
         assert_eq!(plan.available().count(), 2);
 
         // Mutate the filesystem between plan and apply: the plan must still win,
@@ -433,7 +455,7 @@ mod boot_tests {
         // that never sealed). The property under test is that the DELETE does not
         // touch B, so the baseline is taken after bootstrap.
         let registry = SessionExecutionLogRegistry::new();
-        bootstrap_execution_logs(&root, &registry).expect("bootstrap");
+        bootstrap_execution_logs(&root, &registry, &test_factory()).expect("bootstrap");
         let before = chronos_log::segmented::read_manifest(&root.join("b"))
             .unwrap()
             .expect("manifest");
@@ -478,7 +500,7 @@ mod boot_tests {
         make_log(&root, "a", "s-a", 2);
         make_log(&root, "b", "s-b", 2);
         let registry = SessionExecutionLogRegistry::new();
-        bootstrap_execution_logs(&root, &registry).expect("bootstrap");
+        bootstrap_execution_logs(&root, &registry, &test_factory()).expect("bootstrap");
         assert!(registry.get("s-a").is_ok());
 
         let removed = delete_durable_execution_log(&registry, &root, "s-a").expect("delete");
@@ -487,7 +509,7 @@ mod boot_tests {
 
         // A restart must NOT resurrect it.
         let after_restart = SessionExecutionLogRegistry::new();
-        bootstrap_execution_logs(&root, &after_restart).expect("rebootstrap");
+        bootstrap_execution_logs(&root, &after_restart, &test_factory()).expect("rebootstrap");
         assert!(
             after_restart.get("s-a").is_err(),
             "delete_session must be durable"

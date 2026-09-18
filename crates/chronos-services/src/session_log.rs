@@ -67,9 +67,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use chronos_domain::ports::execution_log::ExecutionLogProvider;
-use chronos_log::{
-    SegmentedConfig, SegmentedExecutionLog, SegmentedExecutionLogProvider, SessionId,
-};
+use chronos_domain::ports::execution_log_factory::ExecutionLogFactory;
+use chronos_log::{SegmentedExecutionLog, SegmentedExecutionLogProvider, SessionId};
 
 use crate::error::ServiceError;
 use crate::events_cursor::EventsCursorV1;
@@ -225,58 +224,91 @@ impl SessionExecutionLog {
     /// Reopen an EXISTING durable log (REC-C1.5.4).
     ///
     /// Never creates, never infers. Bootstrap uses this exclusively.
+    ///
+    /// **C3.3.2 composition inversion:** construction is delegated
+    /// to the injected `Arc<dyn ExecutionLogFactory>`. The factory
+    /// is not stored on the struct — bootstrap supplies it for the
+    /// call and may build the same factory at the composition root.
+    ///
+    /// Maintenance capabilities (`flush`, `compaction_metrics`,
+    /// `compact_up_to`) return `ExecutionLogMaintenanceUnsupported`
+    /// because the composition root owns the concrete adapter now.
+    /// C3.3.2.2 closes this gap when the native probe bridge retires.
     pub fn reopen_existing(
         dir: impl AsRef<Path>,
         session_id: SessionId,
+        factory: &Arc<dyn ExecutionLogFactory>,
     ) -> Result<Self, ServiceError> {
         let dir = dir.as_ref().to_path_buf();
-        let log = SegmentedExecutionLog::open_existing(
-            session_id.clone(),
-            SegmentedConfig::with_dir(dir.clone()),
-        )
-        .map_err(|e| ServiceError::ProbeStartFailed(format!("reopen {}: {e}", dir.display())))?;
-        let inner = Arc::new(log);
-        let provider: Arc<dyn ExecutionLogProvider> = Arc::new(SegmentedExecutionLogProvider::new(
-            session_id,
-            Arc::clone(&inner),
-        ));
-        Ok(Self::from_provider_with_concrete(
-            provider,
-            Some(dir),
-            tag_segmented(inner),
-        ))
+        let provider = factory
+            .reopen_existing(dir.clone(), session_id)
+            .map_err(|e| {
+                ServiceError::ProbeStartFailed(format!("reopen {}: {e}", dir.display()))
+            })?;
+        Ok(Self::from_provider(provider, Some(dir)))
     }
 
     /// Create (or open) the log for a NEW session under `dir`.
-    pub fn create(dir: impl AsRef<Path>, session_id: SessionId) -> Result<Self, ServiceError> {
+    ///
+    /// **C3.3.2 composition inversion:** construction is delegated to
+    /// the injected `Arc<dyn ExecutionLogFactory>`. Maintenance
+    /// capabilities return `ExecutionLogMaintenanceUnsupported` until
+    /// C3.3.2.2 retires the native-log bridge (see `reopen_existing`
+    /// for the long-form note).
+    pub fn create(
+        dir: impl AsRef<Path>,
+        session_id: SessionId,
+        factory: &Arc<dyn ExecutionLogFactory>,
+    ) -> Result<Self, ServiceError> {
         let dir = dir.as_ref().to_path_buf();
-        std::fs::create_dir_all(&dir).map_err(|e| {
-            ServiceError::ProbeStartFailed(format!(
-                "create ExecutionLog dir {}: {e}",
-                dir.display()
-            ))
+        let provider = factory.create(dir.clone(), session_id).map_err(|e| {
+            ServiceError::ProbeStartFailed(format!("create ExecutionLog at {}: {e}", dir.display()))
         })?;
-        let log =
-            SegmentedExecutionLog::open(session_id.clone(), SegmentedConfig::with_dir(dir.clone()))
-                .map_err(|e| {
-                    ServiceError::ProbeStartFailed(format!(
-                        "open ExecutionLog for {}: {e:?}",
-                        session_id.as_str()
-                    ))
-                })?;
-        let inner = Arc::new(log);
-        let provider: Arc<dyn ExecutionLogProvider> = Arc::new(SegmentedExecutionLogProvider::new(
-            session_id,
-            Arc::clone(&inner),
-        ));
-        Ok(Self::from_provider_with_concrete(
-            provider,
-            Some(dir),
-            tag_segmented(inner),
-        ))
+        Ok(Self::from_provider(provider, Some(dir)))
+    }
+
+    /// Test-only convenience: create with the segmented backend
+    /// directly so maintenance capabilities (`flush`, `compact_up_to`,
+    /// `retain_up_to`) keep working until the native-log bridge
+    /// retires in C3.3.2.2.
+    ///
+    /// Production code MUST use `create(..., factory)` or
+    /// `SessionExecutionLogRegistry::register_create`; this helper
+    /// exists so unit tests in this crate do not need a factory
+    /// argument for every fixture.
+    ///
+    /// R6 (no concrete adapter construction in production services)
+    /// is upheld: this helper is gated to non-production builds.
+    /// Production binaries cannot call it because the symbol only
+    /// exists when `cfg(test)` or `feature = "test-utils"` is set.
+    #[cfg(any(test, feature = "test-utils"))]
+    #[doc(hidden)]
+    pub fn create_for_tests(
+        dir: impl AsRef<Path>,
+        session_id: SessionId,
+    ) -> Result<Self, ServiceError> {
+        crate::test_support::create_with_segmented_backend(dir, session_id)
+    }
+
+    /// Test-only convenience: reopen with the segmented backend
+    /// directly. Same contract as `create_for_tests`.
+    #[cfg(any(test, feature = "test-utils"))]
+    #[doc(hidden)]
+    pub fn reopen_existing_for_tests(
+        dir: impl AsRef<Path>,
+        session_id: SessionId,
+    ) -> Result<Self, ServiceError> {
+        crate::test_support::reopen_existing_with_segmented_backend(dir, session_id)
     }
 
     /// Take ownership of a `SegmentedExecutionLog` opened elsewhere.
+    ///
+    /// **C3.3.2 transition:** this is the LAST site in `chronos_services`
+    /// that names the concrete `SegmentedExecutionLog`. It exists only
+    /// because the native probe backend (`chronos_native`) opens the
+    /// concrete during the C3.3.1 bridge. C3.3.2.2 retires the bridge;
+    /// after that the backend consumes the `ExecutionLogFactory` port
+    /// directly and this method loses its sole remaining call site.
     pub fn try_adopt(
         dir: Option<PathBuf>,
         session_id: SessionId,
@@ -536,12 +568,15 @@ pub(crate) fn map_execution_log_error(
         }
         // All other variants currently map to a plain drain failure
         // at the services boundary; finer-grained translation is a
-        // follow-up.
+        // follow-up. `Open` (C3.3.2) is a factory-level failure and
+        // is routed to the same catch-all; composition-root callers
+        // catch it at the boot boundary, not here.
         ExecutionLogError::Sealed { .. }
         | ExecutionLogError::PositionBeforeRetention { .. }
         | ExecutionLogError::IntegrityFailure { .. }
         | ExecutionLogError::InvalidGap { .. }
-        | ExecutionLogError::Unavailable { .. } => ServiceError::DrainFailed(format!("{err}")),
+        | ExecutionLogError::Unavailable { .. }
+        | ExecutionLogError::Open { .. } => ServiceError::DrainFailed(format!("{err}")),
     }
 }
 
@@ -590,9 +625,27 @@ impl std::fmt::Debug for ExecutionLogRegistration {
     }
 }
 
-#[derive(Default)]
+/// In-process registry of `SessionExecutionLog` instances keyed by
+/// `session_id`.
+///
+/// **C3.3.2 composition inversion:** the registry owns the
+/// `Arc<dyn ExecutionLogFactory>` so every `register_*` call that
+/// builds a log (create / reopen) goes through the injected factory.
+/// The composition root (`chronos_mcp::composition`) builds the
+/// factory once and hands it to the registry at boot.
+///
+/// `register_pre_adopted` is the **last bridge call site** that names
+/// `SegmentedExecutionLog` concretely; C3.3.2.2 retires it when
+/// `chronos_native` consumes the port directly.
 pub struct SessionExecutionLogRegistry {
+    factory: Arc<dyn ExecutionLogFactory>,
     logs: std::sync::Mutex<std::collections::HashMap<String, ExecutionLogRegistration>>,
+}
+
+impl Default for SessionExecutionLogRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl std::fmt::Debug for SessionExecutionLogRegistry {
@@ -609,8 +662,62 @@ impl std::fmt::Debug for SessionExecutionLogRegistry {
 }
 
 impl SessionExecutionLogRegistry {
+    /// Build a registry backed by the given factory. This is the
+    /// composition-root injection point: services do not name the
+    /// concrete factory type.
+    pub fn with_factory(factory: Arc<dyn ExecutionLogFactory>) -> Self {
+        Self {
+            factory,
+            logs: std::sync::Mutex::new(std::collections::HashMap::new()),
+        }
+    }
+
+    /// Backwards-compatible constructor used by tests and by sites
+    /// that have not yet been migrated to composition-root wiring.
+    /// Wires a `SegmentedExecutionLogFactory` so call sites keep
+    /// compiling during the C3.3.2 migration.
     pub fn new() -> Self {
-        Self::default()
+        Self::with_factory(std::sync::Arc::new(
+            chronos_log::factory::SegmentedExecutionLogFactory::new(),
+        ))
+    }
+
+    /// Open (or create) the log for `session_id` under `dir` via the
+    /// injected factory, register it, and return a handle.
+    pub fn register_create(
+        &self,
+        dir: impl AsRef<Path>,
+        session_id: SessionId,
+    ) -> Result<SessionExecutionLog, ServiceError> {
+        let log = SessionExecutionLog::create(dir, session_id, &self.factory)?;
+        self.register(log.clone())?;
+        Ok(log)
+    }
+
+    /// Reopen an existing durable log under `dir` via the injected
+    /// factory, register it, and return a handle.
+    pub fn register_reopen(
+        &self,
+        dir: impl AsRef<Path>,
+        session_id: SessionId,
+    ) -> Result<SessionExecutionLog, ServiceError> {
+        let log = SessionExecutionLog::reopen_existing(dir, session_id, &self.factory)?;
+        self.register(log.clone())?;
+        Ok(log)
+    }
+
+    /// Adopt a concrete `SegmentedExecutionLog` opened elsewhere and
+    /// register it. **Bridge-only** — C3.3.2.2 retires the native
+    /// bridge and this method loses its sole remaining caller.
+    pub fn register_pre_adopted(
+        &self,
+        dir: Option<PathBuf>,
+        session_id: SessionId,
+        handle: Arc<SegmentedExecutionLog>,
+    ) -> Result<SessionExecutionLog, ServiceError> {
+        let log = SessionExecutionLog::try_adopt(dir, session_id, handle)?;
+        self.register(log.clone())?;
+        Ok(log)
     }
 
     pub fn register(&self, log: SessionExecutionLog) -> Result<(), ServiceError> {
@@ -733,9 +840,11 @@ mod tests {
 
     fn segmented_log(session: &SessionId) -> SessionExecutionLog {
         let dir = tmpdir("swap-seg");
-        let log =
-            SegmentedExecutionLog::open(session.clone(), SegmentedConfig::with_dir(dir.clone()))
-                .expect("open segmented");
+        let log = SegmentedExecutionLog::open(
+            session.clone(),
+            chronos_log::SegmentedConfig::with_dir(dir.clone()),
+        )
+        .expect("open segmented");
         let provider: Arc<dyn ExecutionLogProvider> = Arc::new(SegmentedExecutionLogProvider::new(
             session.clone(),
             Arc::new(log.clone()),

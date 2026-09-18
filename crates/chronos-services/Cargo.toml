@@ -5,6 +5,13 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[features]
+# Exposes test-only constructors on `SessionExecutionLog` so that
+# integration tests in downstream crates (`chronos-mcp/tests/*`,
+# `chronos-sandbox/tests/*`) can build a fixture without going
+# through the composition root. NEVER enable in production.
+test-utils = []
+
 [dependencies]
 thiserror = { workspace = true }
 serde = { workspace = true }
