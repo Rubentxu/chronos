@@ -11,8 +11,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use chronos_browser::BrowserAdapter;
-use chronos_domain::adapter::ProbeBackend;
+use chronos_domain::ports::browser_probe::BrowserProbeFactory;
 use chronos_domain::{CaptureConfig, CaptureSession, Language, TraceEvent};
 use tokio::sync::Mutex as TokioMutex;
 use tracing::info;
@@ -23,14 +22,18 @@ use crate::output::DrainedBrowserEventDto;
 
 /// A live browser probe session.
 ///
-/// Owns the [`BrowserAdapter`] driving the CDP session, the underlying
-/// [`CaptureSession`] returned by `start_probe_async`, and the target URL.
-/// Stored in the `Server`'s `live_browser_probes` HashMap keyed by
-/// `session_id`.
+/// Owns the concrete [`chronos_domain::ports::BrowserProbeBackend`]
+/// driving the CDP session, the underlying [`CaptureSession`] returned
+/// by `start_probe_async`, and the target URL. Stored in the
+/// `Server`'s `live_browser_probes` HashMap keyed by `session_id`.
+///
+/// REC-C3.3.2.4 — the backend is the port trait, not the concrete
+/// `BrowserAdapter`. `chronos_services` does not import
+/// `chronos_browser`.
 pub struct BrowserProbeSession {
-    /// The browser adapter driving the CDP session.
-    pub adapter: Arc<BrowserAdapter>,
-    /// The capture session returned by `start_capture`.
+    /// The browser backend driving the CDP session.
+    pub backend: Arc<dyn chronos_domain::ports::browser_probe::BrowserProbeBackend>,
+    /// The capture session returned by `start_probe_async`.
     pub session: CaptureSession,
     /// Session ID for this browser probe.
     pub session_id: String,
@@ -54,6 +57,12 @@ pub struct BrowserProbeContext<'a> {
     pub live_browser_probes: &'a Arc<Mutex<HashMap<String, BrowserProbeSession>>>,
     /// session_id of the currently active probe; set on `start`.
     pub active_session: &'a TokioMutex<Option<String>>,
+    /// REC-C3.3.2.4 — composition-root-supplied factory.
+    ///
+    /// `BrowserProbeService::start` calls `factory.create()` to obtain a
+    /// fresh backend. The factory performs the `is_chrome_available`
+    /// check so the service does not name the concrete adapter.
+    pub factory: &'a Arc<dyn BrowserProbeFactory>,
 }
 
 // ============================================================================
@@ -130,27 +139,33 @@ pub struct BrowserProbeService;
 impl BrowserProbeService {
     /// Start a new browser probe session.
     ///
-    /// 1. Checks that Chrome (or Chromium) is available on the host.
-    /// 2. Creates a fresh [`BrowserAdapter`].
-    /// 3. Calls `start_probe_async` to attach to CDP.
-    /// 4. Stores the resulting [`BrowserProbeSession`] in `live_browser_probes`.
-    /// 5. Sets `active_session` to the new session id.
+    /// 1. Calls `factory.create()` to obtain a fresh backend (Chrome
+    ///    availability is checked inside the factory).
+    /// 2. Calls `start_probe_async` on the backend.
+    /// 3. Stores the resulting [`BrowserProbeSession`] in `live_browser_probes`.
+    /// 4. Sets `active_session` to the new session id.
     pub async fn start(
         ctx: &BrowserProbeContext<'_>,
         input: BrowserProbeStartInput,
     ) -> Result<BrowserProbeStartResult, ServiceError> {
-        if !BrowserAdapter::is_chrome_available() {
-            return Err(ServiceError::ChromeUnavailable);
-        }
-
         let session_id = Uuid::new_v4().to_string();
-        let adapter = Arc::new(BrowserAdapter::new());
+
+        // REC-C3.3.2.4: capability detection now goes through the port.
+        // `factory.create()` returns either an owned
+        // `Arc<dyn BrowserProbeBackend>` or a typed
+        // `CapabilityUnavailable::browser_probe` that we surface as
+        // `ServiceError::ChromeUnavailable` (matches the existing
+        // tool contract). The service never names `BrowserAdapter`.
+        let backend = ctx
+            .factory
+            .create()
+            .map_err(|_| ServiceError::ChromeUnavailable)?;
 
         let config = CaptureConfig::new(&input.url);
-        let session = adapter
+        let session = backend
             .start_probe_async(config, input.headless, input.chrome_path.as_deref())
             .await
-            .map_err(|e| ServiceError::BrowserProbeStartFailed(e.to_string()))?;
+            .map_err(|e| ServiceError::BrowserProbeStartFailed(e.detail))?;
 
         info!(
             "Browser probe started for '{}' (session: {})",
@@ -158,7 +173,7 @@ impl BrowserProbeService {
         );
 
         let browser_probe = BrowserProbeSession {
-            adapter: adapter.clone(),
+            backend: backend.clone(),
             session,
             session_id: session_id.clone(),
             url: input.url.clone(),
@@ -198,14 +213,15 @@ impl BrowserProbeService {
         let browser_probe = browser_probe
             .ok_or_else(|| ServiceError::BrowserProbeNotFound(input.session_id.clone()))?;
 
-        // MS-RACE-FIX (ADR-0005): stop FIRST, then drain. BrowserAdapter::stop_probe
-        // blocks until the WASM task has finished, so draining afterwards observes
-        // every event (no concurrent producer).
-        if let Err(e) = browser_probe.adapter.stop_probe(&browser_probe.session) {
+        // MS-RACE-FIX (ADR-0005): stop FIRST, then drain. The backend's
+        // `stop_probe` blocks until the WASM task has finished, so
+        // draining afterwards observes every event (no concurrent
+        // producer).
+        if let Err(e) = browser_probe.backend.stop_probe(&browser_probe.session) {
             tracing::warn!(
                 "Browser probe stop error for session {}: {}",
                 input.session_id,
-                e
+                e.detail
             );
         }
 
@@ -214,7 +230,7 @@ impl BrowserProbeService {
         // asked for were already gone. The browser has no ExecutionLog yet
         // (FIND-C2.2-04); this at least stops the stop path from destroying
         // evidence another reader still needs.
-        let events: Vec<TraceEvent> = browser_probe.adapter.raw_events();
+        let events: Vec<TraceEvent> = browser_probe.backend.raw_events();
         let total_events = events.len();
         let language = Language::WebAssembly;
         let url = browser_probe.url.clone();
@@ -244,17 +260,17 @@ impl BrowserProbeService {
         ctx: &BrowserProbeContext<'_>,
         input: BrowserProbeDrainInput,
     ) -> Result<BrowserProbeDrainResult, ServiceError> {
-        let adapter = {
+        let backend = {
             let probes = ctx.live_browser_probes.lock().unwrap();
             match probes.get(&input.session_id) {
-                Some(bp) => bp.adapter.clone(),
+                Some(bp) => bp.backend.clone(),
                 None => return Err(ServiceError::BrowserProbeNotFound(input.session_id.clone())),
             }
         };
 
-        let events = adapter
+        let events = backend
             .take_semantic_events()
-            .map_err(|e| ServiceError::BrowserProbeDrainFailed(e.to_string()))?;
+            .map_err(|e| ServiceError::BrowserProbeDrainFailed(e.detail))?;
 
         let total = events.len();
         let sliced: Vec<DrainedBrowserEventDto> = events
