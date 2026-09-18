@@ -1,10 +1,18 @@
 # Release receipt — rec-c3-3-1-identity-storage-seam (C3.3.1)
 
+| Cycle | rec-c3-3-1-identity-storage-seam |
+| --- | --- |
+| Head SHA | `794732fadaba66bc168f3b50d76f1bf54f7fb564` |
+| Remote tag | `v0.1.1` (preserved; not modified — no behavior-bumping change worth a tag) |
+| Remote tag_peel | `33b4f79004b7634a9e88b7919f8b42e854c420e8` |
+| Peel match | true |
+| Date | 2026-09-18 |
+
 ## Released artifacts
 
 - Branch: `main`
 - Cycle merge base: `147c10195f2da43b20b99b6d2d77f1c17c124242` (REC-C3.3.0 close, already on origin/main)
-- Cycle merge head: `794732fa` (cycle end head)
+- Cycle merge head: `794732fadaba66bc168f3b50d76f1bf54f7fb564` (cycle end head)
 - Tag: **none** — structural seam, not a behavior-bumping change worth a tag. The next cycle (C3.3.2) will produce the first truly inverted version and earn the tag.
 - Project: `p-3416cfb8288f8964`
 - Cycle: `p-3416cfb8288f8964/rec-c3-3-1-identity-storage-seam`

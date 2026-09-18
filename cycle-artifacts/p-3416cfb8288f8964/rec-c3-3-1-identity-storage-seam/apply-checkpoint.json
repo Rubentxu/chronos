@@ -5,6 +5,8 @@
   "sub_cycle": "C3.3.1 — identity + storage seam",
   "head_sha": "794732fadaba66bc168f3b50d76f1bf54f7fb564",
   "merge_sha": "794732fadaba66bc168f3b50d76f1bf54f7fb564",
+  "remote_tag": "v0.1.1",
+  "remote_tag_peel": "33b4f79004b7634a9e88b7919f8b42e854c420e8",
   "base_sha": "147c10195f2da43b20b99b6d2d77f1c17c124242",
   "branch": "main",
   "path": "A-min",
