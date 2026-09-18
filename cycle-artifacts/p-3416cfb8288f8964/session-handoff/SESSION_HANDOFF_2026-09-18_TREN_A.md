@@ -6,15 +6,67 @@
 > Both files survive `git pull`; the session-scoped copy lives at
 > `~/.jcode/scratch/handoff-2026-09-18-tren-a.md` for tomorrow's boot.
 
-## Where we ended
+## Final remote state after publishing this handoff
+
+```
+HEAD                  = c11de1fa7aa715ef80e47a5dac23abea516c2f04
+origin/main           = c11de1fa7aa715ef80e47a5dac23abea516c2f04
+origin/rec-c3-ci-hygiene = c11de1fa7aa715ef80e47a5dac23abea516c2f04
+                      │
+                      └── all three converge at c11de1fa
+```
+
+| Field                | Value |
+|----------------------|-------|
+| `rec-c3-ci-hygiene` cycle status | OPEN |
+| Tren B (REC-C3.3.3)  | **BLOCKED** until hygiene reaches all five gates GREEN |
+| Next slice           | **CIH-A — m1_02 reconciliation with REC-C1.5.2 strict replay** |
+| Working tree         | clean (only `?? .sddk-state/` session-local untracked) |
+
+> **Note:** the "Where we ended" section below reflects the instant
+> *before* this handoff commit. The "Final remote state" table above is
+> authoritative for tomorrow's boot.
+
+## Where we ended (pre-handoff state, for context)
 
 - `origin/main == 16bed4d8` (after vault housekeeping commits)
 - `head_sha` documented in Tren A vault: `25420e5dab54a02e46da20ecc0bacf050d2ac741`
 - `merge_sha` of Tren A: `d30d025071d9f464a6ba9ff6cc50d68ce300f167`
 - `released_baseline`: `147c10195f2da43b20b99b6d2d77f1c17c124242` (origin/main pre-Tren-A)
 - Branch open: `rec-c3-ci-hygiene` (clean, base = `16bed4d8`, no commits yet)
-- Working tree: clean
 - Session ID: `session_mushroom_1789711983740_fbb346f57a937d7d`
+
+## Tomorrow's pre-flight (corrected)
+
+```bash
+git fetch origin
+git checkout main
+git pull --ff-only origin main                 # expect c11de1fa (NOT 16bed4d8)
+git checkout rec-c3-ci-hygiene                 # clean, no new commits yet
+# inspect cycle-artifacts/p-3416cfb8288f8964/rec-c3-ci-hygiene/apply-checkpoint.json
+# inspect cycle-artifacts/p-3416cfb8288f8964/rec-c3-3-2-composition-integration-inversion/close-receipt.md
+```
+
+Then drive **Slice A (m1_02 reconciliation) directly** — no broad explore.
+Evidence is already gathered: REC-C1.5.2 (commit `3cc511ef`) is the
+authority; the test + comments are stale relative to that design.
+Acceptance for Slice A:
+
+```
+corrupted retained segment
+        ↓
+open/replay
+        ↓
+ReplayIntegrity::CorruptSegment
+        ↓
+NO partially published log
+NO invented Gap
+NO silent salvage
+```
+
+Slice A scope is small. Slice B (Coverage / `McpTestClient::start()` under
+tarpaulin) is the interesting diagnostic one; only start it after A
+closes.
 
 ## Headline result
 
@@ -34,7 +86,13 @@ for `m1_02` + `tripwire_depth`) were tagged `no_action_in_current_cycle`
 **`rec-c3-ci-hygiene` is the next cycle.** Tren B (REC-C3.3.3) is
 **explicitly blocked** until hygiene closes with all five gates GREEN.
 
-## Post-merge invariants (verified on `origin/main == 16bed4d8`)
+## Post-merge invariants (verified on `origin/main == 16bed4d8` before handoff commit)
+
+> These invariants were verified at `16bed4d8`. After publishing this
+> handoff, `origin/main` advanced to `c11de1fa`, but the invariants
+> themselves are stable (vault-only commit, no production code touched).
+> Re-verifying at `c11de1fa` should yield identical results; the table
+> is authoritative.
 
 | Invariant | Status |
 |---|---|
@@ -173,7 +231,7 @@ The tests are not broken; the harness integration is.
 
 `scripts/check_vault_drift.sh` exits non-zero on these.
 
-## How Tren A was integrated
+## How Tren A was integrated (pre-handoff transcript)
 
 ```bash
 git fetch origin
@@ -187,6 +245,8 @@ git commit -am "chore(vault): open rec-c3-ci-hygiene cycle ..."
 git push origin main                            # origin/main @ 16bed4d8
 git checkout -b rec-c3-ci-hygiene
 git push -u origin rec-c3-ci-hygiene            # branch open, no commits
+# Then this handoff commit was authored on rec-c3-ci-hygiene, fast-forwarded
+# back into main, and pushed. Final remote state: c11de1fa on both branches.
 ```
 
 `gh pr edit 31` updated the PR description with real state before merge:
@@ -208,14 +268,9 @@ hygiene + infra fix)", body with base/head/46-commits/gate status.
 
 ## Tomorrow's pre-flight
 
-```bash
-git fetch origin
-git checkout main
-git pull --ff-only origin main                 # expect 16bed4d8
-git checkout rec-c3-ci-hygiene                 # clean, no commits
-# inspect cycle-artifacts/p-3416cfb8288f8964/rec-c3-ci-hygiene/apply-checkpoint.json
-# inspect cycle-artifacts/p-3416cfb8288f8964/rec-c3-3-2-composition-integration-inversion/close-receipt.md
-```
+> The bash commands live in the **"Tomorrow's pre-flight (corrected)"**
+> section near the top of this document. After running them, continue
+> with the slice plan below.
 
 Then:
 
@@ -267,7 +322,7 @@ cycle-artifacts/p-3416cfb8288f8964/session-handoff/               ← directory
 ## Quick links
 
 - PR #31: https://github.com/Rubentxu/chronos/pull/31 (MERGED 2026-09-18T22:29:15Z)
-- PR #31 last commit: `d30d0250`
-- `origin/main` @ end of session: `16bed4d8`
-- `rec-c3-ci-hygiene` branch: clean, base `16bed4d8`, no commits
+- PR #31 last commit: `d30d0250` (Tren A code merge)
+- `origin/main` @ end of session: **`c11de1fa`** (= handoff commit)
+- `rec-c3-ci-hygiene` branch: clean, base **`c11de1fa`**, no new commits yet
 - Session scratch handoff: `~/.jcode/scratch/handoff-2026-09-18-tren-a.md`
