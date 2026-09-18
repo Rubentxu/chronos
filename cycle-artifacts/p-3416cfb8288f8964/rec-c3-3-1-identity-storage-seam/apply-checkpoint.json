@@ -1,0 +1,59 @@
+{
+  "cycle_id": "rec-c3-3-1-identity-storage-seam",
+  "project_id": "p-3416cfb8288f8964",
+  "milestone": "REC-C3 — Hexagonal boundary closure",
+  "sub_cycle": "C3.3.1 — identity + storage seam",
+  "head_sha": "794732fa",
+  "merge_sha": "794732fa",
+  "base_sha": "147c10195f2da43b20b99b6d2d77f1c17c124242",
+  "branch": "main",
+  "path": "A-min",
+  "completed_at": "2026-09-18",
+  "status": "CLOSED",
+  "tier_results": {
+    "T0_fmt_clippy": "pass (rustfmt --check on cycle files clean + cargo clippy --workspace --all-targets -- -D warnings exit 0; preexisting drift in chronos-log/{backend,segment,tail}.rs is OUTSIDE the cycle diff)",
+    "T1_lib_unit": "pass (cargo test --workspace --lib --no-fail-fast --exclude chronos-sandbox --exclude chronos-e2e --exclude chronos-native: 1112/1112)",
+    "T2_services_integration": "pass (cargo test -p chronos-services --tests --no-fail-fast: 378/378)",
+    "T3_workspace_tests": "pass (cargo test --workspace --tests --no-fail-fast --exclude chronos-sandbox --exclude chronos-e2e --exclude chronos-native: all green)",
+    "T3_chronos_native_serial": "pass (cargo test -p chronos-native --lib -- --test-threads=1: 107/107 in 12.86s — ptrace flake AGENTS.md §6.5 satisfied)",
+    "T4_smoke": "pass (e2e_connectivity 1/1, analytics_tools 4/4, program_scenarios 11/11)"
+  },
+  "scope_decisions": [
+    "Field inversion first, construction inversion later. C3.3.1 closes the seam (SessionExecutionLog holds Arc<dyn ExecutionLogProvider>); the composition-root inversion is C3.3.2, NOT C3.3.1.",
+    "Maintenance capabilities (flush, compaction_metrics, maybe_compact, compact_up_to, retain_up_to) stay on the wrapper, gated by ProviderKind. They are NOT on the port; the port stays minimal and object-safe.",
+    "record_gap is canonical-evidence, lives on the port (commit 5ca9aeb6). No legacy gap path on the port.",
+    "legacy_segmented_backend_for_native_bridge is the only narrow concrete-backend escape hatch (C33-DEBT-NATIVE-LOG-BRIDGE-01), allowed in session_log.rs and probe.rs only.",
+    "map_log_error removed from events_log_read.rs and projection.rs (ratchet advance). map_execution_log_error is the canonical-evidence path.",
+    "Composition root placement: chronos-mcp::composition, NOT chronos_services::composition (per operator and ADR-0015 D4)."
+  ],
+  "smoke_subset": "e2e_connectivity + analytics_tools + program_scenarios. Rationale: this cycle adds/modifies the storage port, the SessionExecutionLog field, and the gap record path; analytics_tools exercises record_gap + read_from_seq end-to-end through the MCP server, program_scenarios exercises probe lifecycle which is the only consumer of legacy_segmented_backend_for_native_bridge, and e2e_connectivity confirms the server starts at all.",
+  "carry_forward_debt": {
+    "C31-DEBT-01": "CLOSED — ExecutionLogProvider real, 2 adapters, productive SessionExecutionLog consumer",
+    "C31-DEBT-02": "CLOSED — SessionId single owner in chronos-domain; chronos_log::SessionId is a re-export",
+    "C31-DEBT-03": "OPEN — full services → ports inversion not finished",
+    "C33-DEBT-RETENTION-01": "OPEN — retain_up_to remains on legacy/concrete path; semantic, not mere maintenance",
+    "C33-DEBT-NATIVE-LOG-BRIDGE-01": "OPEN — native probe integration reachable only through legacy_segmented_backend_for_native_bridge",
+    "HEX-002": "GAP — closes only after C3.3.3 finishes services → ports inversion. C3.3.1 created the seam, did not finish the inversion. NOT promoted to partial/verified."
+  },
+  "commits_since_base": [
+    "794732fa feat(c3.3.1): SessionExecutionLog consumes Arc<dyn ExecutionLogProvider>",
+    "5ca9aeb6 feat(c3.3.1): record_gap is canonical-evidence, port lifted",
+    "6bc5d412 feat(log): session-scoped ExecutionLogProvider adapters + literal LogPage mapping",
+    "3bd71bdf feat(domain): define ExecutionLogProvider port (object-safe, session-scoped)",
+    "4d165a93 refactor(domain,log): lift NewExecutionRecord/Gap/GapReason/TailState/SealedTail/ExecutionRecord to domain (single owner)",
+    "0e9aa473 refactor(domain,log,services): lift ExecutionKind/ExecutionPayload/TripwireFiredEvidence to domain (single owner)",
+    "9d751759 refactor(domain,log): lift EventSeq to domain (single owner)",
+    "7a6062b0 refactor(domain,log): single SessionId owner; domain owns identity"
+  ],
+  "layer_completion": {
+    "m0_layer_complete": true,
+    "m1_layer_complete": true,
+    "hexagonal_seam_created": true,
+    "hexagonal_inversion_complete": false
+  },
+  "notes": [
+    "No public API change outside chronos-domain::ports::execution_log (intentional — that IS the port).",
+    "chronos-log re-export of CompactionOutcome (commit 794732fa) was necessary to expose the return type of retain_up_to on the wrapper; not a port surface change.",
+    "Workspace version 0.1.1 preserved. No tag in this cycle (the seam is structural; the next cycle produces the first truly inverted version worth a tag)."
+  ]
+}
