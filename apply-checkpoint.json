@@ -1,65 +1,65 @@
 {
-  "cycle_id": "rec-c2-5-formal-closure",
-  "cycle_record": "p-3416cfb8288f8964/rec-c2-5-formal-closure",
-  "path": "a-min",
-  "status": "closed",
-  "head_sha": "21ab4f24",
-  "base_sha": "228b476f",
+  "cycle_id": "rec-c3-1-application-ports",
+  "cycle_record": "p-3416cfb8288f8964/rec-c3-1-application-ports",
+  "path": "a-full",
+  "status": "in_progress",
+  "head_sha": "8b5dcebe",
+  "base_sha": "8b5dcebe",
   "notes": [
-    "Closed 2026-09-18. REC-C2 (Legacy evidence/event-path deletion) gate formally closed via governance-only commit 21ab4f24 (docs/ROADMAP.md + reconstruction-contracts.toml). Tag rec-c2-5-formal-closure points at 21ab4f24.",
-    "REC-C2 has been substantively closed since REC-C2.3 (commit d435557e, tag rec-c2.3-eventbus-removal). chronos-domain::bus deleted (af41d8c2); ProbeBackend::read_since removed from trait (a99b3a35); bus_capacity/bus_fill removed from MCP wire (fb170dcc); legacy-evb-inventory.json baseline_total = 0.",
-    "reconstruction-contracts.toml: active_gate REC-C2 -> REC-C3. LEGACY-001 and LEGACY-002 contracts flipped from 'gap' to 'verified' with explicit uat and verify commands. check_architecture_contracts.py --strict-legacy PASSED.",
-    "Branch cleanup: 5 local branches deleted (chore/rec-c2.3-retire-stale-bus-doc, feat/rec-c1.5-closure, feat/rec-c1.6-lifecycle-retention-wire, feat/rec-c2.2-accepted-raw-seam, feat/rec-c2.3-eventbus-removal); 3 remote branches deleted (origin/feat/rec-c1.6-*, origin/feat/rec-c2.1-*, origin/feat/rec-c2.2-*).",
-    "Tier B-direct (governance, no Rust code change). Ledger: 308 events, chain valid after archive transition. Sequence at closure: 13.",
-    "Gates passed (11 total): exploration-sufficient, requirements-testable, implementation-complete, tests-pass, policy-compliant, debt-severity-assigned, debt-priority-assigned, no-pending-effects, ledger-valid, vault-index-current. release-uat-approved waived (B-direct governance, no UAT applicable).",
-    "Next: REC-C3 Hexagonal boundary closure is the active_gate. Per the convergence sequence, REC-C3 is multi-cycle (C3.1..C3.5: application ports, extract webhook infra, invert services->native, remove store->native, dependency graph gate to zero). Not opened in this session."
+    "REC-C3.1 cycle opened 2026-09-18. Phases explore -> specify -> design -> plan all completed today (2026-09-18). Build phase NOT started — paused for fresh session.",
+    "Pre-cycle research summary: chronos-domain/src/ports/ already hosts NotificationSink (177 lines). chronos-log/src/backend.rs declares ExecutionLogBackend trait + ExecutionLog<B: ?Sized> wrapper. chronos-services has 6 files depending on concrete SegmentedExecutionLog (HEX-002 territory, C3.3 not C3.1). 4 ports missing: ProbeFactory, ProbeRegistry, SessionRepository, TelemetryReceiver. ArtifactStore deferred to C3.4.",
+    "Spec: 10 REQs (REQ-1..REQ-10) covering ProbeFactory+ProbeRegistry, ExecutionLogProvider re-export, SessionRepository, TelemetryReceiver, NotificationSink verification, ArtifactStore deferral, ports/mod.rs wiring, compile tests, HEX-001 contract flip, ROADMAP update.",
+    "Design: 8 ADs (AD-1..AD-8). Key decisions: ports live in chronos-domain/src/ports/, ProbeController is new lifetime-focused trait distinct from ProbeBackend (capability-focused), ExecutionLogProvider is a re-export (not a new trait), SessionHandle references ports at every field, NullProbeFactory/Registry and InMemorySessionRepository/NoopTelemetry ship in same commit, ProbeController::detach consumes Box<Self>, cargo tree -p chronos-domain --depth 1 is the boundary check, HEX-001 flips to verified with mechanical evidence.",
+    "Plan: 10 tasks B1..B10 + 6 verification gates + 8-commit sub-cycle plan C1..C8.",
+    "Gates passed today (4): exploration-sufficient, requirements-testable, architecture-consistent (design-coherent wasn't registered, used architecture-consistent instead), plan-executable.",
+    "Cycle paused at phase: build with lease active. Resume tomorrow with: sddk cycle resume --cycle p-3416cfb8288f8964/rec-c3-1-application-ports --root /var/mnt/DiscoChino2-fast/Proyectos/rust/chronos --scope ."
   ],
-  "prior_cycle_record": "retire-stale-bus-doc-mentions",
-  "main_sha": "21ab4f24",
-  "remote_tag": "rec-c2-5-formal-closure",
-  "remote_tag_peel": "21ab4f24888a78e71c7bf124c6f9497608288a7c",
-  "peel_match": true,
-  "scope_doc_sha": "21ab4f24",
+  "prior_cycle_record": "rec-c2-5-formal-closure",
+  "main_sha": "8b5dcebe",
+  "remote_tag": null,
+  "remote_tag_peel": null,
+  "peel_match": false,
+  "scope_doc_sha": "8b5dcebe",
   "phases": {
     "explore": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c2-5-formal-closure/exploration-report.md",
-      "summary": "REC-C2 was substantively closed since C2.3; this cycle only closes the governance gap. C2.4 characterization-only confirmed."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-1-application-ports/exploration-report.md",
+      "summary": "Research summary: existing ports (NotificationSink, ExecutionLogBackend, ProbeBackend, Capability); concrete dep violations in 6 services files; 4 ports missing; ArtifactStore deferred; C3.1..C3.5 coupling analysis."
     },
     "specify": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c2-5-formal-closure/specification.md",
-      "summary": "Six testable requirements REQ-1..REQ-6 covering ROADMAP, contracts, tag, ledger cycle, apply-checkpoint, vault index."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-1-application-ports/specification.md",
+      "summary": "Ten testable REQs. Non-goals: no inversion (C3.3), no webhook extraction (C3.2), no symbolization (C3.4)."
     },
     "design": {
-      "status": "skipped",
-      "artifact_path": null,
-      "summary": "A-min path skips design for B-direct-eligible cycles."
+      "status": "complete",
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-1-application-ports/design.md",
+      "summary": "Eight ADs with rationale + rejected alternatives. Module map + risk table finalized."
     },
     "plan": {
       "status": "complete",
-      "artifact_path": null,
-      "summary": "Inline plan: branch cleanup, then docs/contracts commit, then ledger cycle drive."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-1-application-ports/tasks.md",
+      "summary": "Ten tasks B1..B10 in dependency order. Six verification gates. Eight-commit sub-cycle plan C1..C8."
     },
     "build": {
-      "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c2-5-formal-closure/implementation-receipt.md",
-      "summary": "Governance commit 21ab4f24 + tag rec-c2-5-formal-closure. Branch cleanup performed before commits."
+      "status": "pending",
+      "artifact_path": null,
+      "summary": "Paused at the build phase boundary. Tasks B1..B10 not yet executed. Implementation deferred to fresh session."
     },
     "verify": {
-      "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c2-5-formal-closure/verification-report.md",
-      "summary": "T0 fmt+clippy clean; check_legacy_evb.py PASS; check_architecture_contracts.py --strict-legacy PASS."
+      "status": "pending",
+      "artifact_path": null,
+      "summary": "T0 + T1+T2 + hex boundary check + architecture contract gate pending after build."
     },
     "release": {
-      "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c2-5-formal-closure/release-receipt.md",
-      "summary": "Tag rec-c2-5-formal-closure at 21ab4f24; merge-receipt references 228b476f -> 21ab4f24 -> 9968ef4e."
+      "status": "pending",
+      "artifact_path": null,
+      "summary": "Tag + push pending after verify."
     },
     "archive": {
-      "status": "complete",
-      "artifact_path": "/home/rubentxu/.sddk-knowledge/p-3416cfb8288f8964/changes/archive/rec-c2-5-formal-closure/archive-manifest.md",
-      "summary": "Vault archive-manifest + cycles/index.md updated; ledger chain valid at closure (308 events)."
+      "status": "pending",
+      "artifact_path": null,
+      "summary": "Vault archive-manifest + cycles/index.md row pending after release."
     }
   },
   "vault_drift_baseline": {
@@ -67,14 +67,14 @@
     "drift_lines_post": 0,
     "ccs_fixed": [],
     "ccs_broken": [],
-    "note": "Vault was updated by this cycle: archive-manifest added under changes/archive/rec-c2-5-formal-closure/; cycles/index.md row added."
+    "note": "No vault changes today. Only Rust/cycle-artifacts under cycle-artifacts/p-3416cfb8288f8964/rec-c3-1-application-ports/ were touched."
   },
   "carry_forward_findings": [
     {
-      "id": "FIND-C3-OPEN-NEEDED",
-      "summary": "REC-C3 (Hexagonal boundary closure) is the active_gate but no REC-C3.* cycle has been opened yet. The HEX-* and CONN-* contracts in reconstruction-contracts.toml remain 'gap'. REC-C3 is multi-cycle (C3.1..C3.5 per CONVERGENCE_BACKLOG.md).",
-      "source": "Derived from this cycle's active_gate flip in reconstruction-contracts.toml"
+      "id": "FIND-C3.1-RESUME",
+      "summary": "REC-C3.1 cycle paused at phase: build. Tasks B1..B10 documented in tasks.md. The 4 new port files (execution_log.rs, probe.rs, session.rs, telemetry.rs) plus ports/mod.rs wiring, lib.rs re-export, 5 test files, scripts/check_hex_boundary.py, contracts update, and docs/ROADMAP.md note all pending. Resume command: sddk cycle resume --cycle p-3416cfb8288f8964/rec-c3-1-application-ports --root /var/mnt/DiscoChino2-fast/Proyectos/rust/chronos --scope .",
+      "source": "Today's session close"
     }
   ],
-  "next_cycle_recommendation": "Open the first REC-C3 sub-cycle (C3.1 Define application ports per CONVERGENCE_BACKLOG.md) as an A-lite cycle when ready. Or pick a smaller governance/cleanup item if a smaller cycle is preferred before the A-full C3 work begins."
+  "next_cycle_recommendation": "Resume rec-c3-1-application-ports from phase: build. Tasks B1..B10 already documented in tasks.md. Sub-cycle commit plan C1..C8 recommended for reviewable units."
 }
