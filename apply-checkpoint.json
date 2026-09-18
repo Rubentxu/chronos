@@ -1,47 +1,58 @@
 {
-  "cycle_id": "rec-c3-2-webhook-reconciliation",
-  "cycle_record": "p-3416cfb8288f8964/rec-c3-2-webhook-reconciliation",
-  "path": "b-direct",
+  "cycle_id": "rec-c3-3-services-inversion",
+  "cycle_record": "p-3416cfb8288f8964/rec-c3-3-services-inversion",
+  "path": "a-min",
+  "sub_cycle": "C3.3.0 (recon + dependency map only)",
   "status": "closed",
-  "head_sha": "06581a67469d0293b616a0f752a82d2f76d3ec05",
-  "base_sha": "f24a15e84962a2e4fafcd719927341f71e2e2166",
+  "head_sha": "2f5e06f93ed6233c998c54d850cc7b06df856725",
+  "base_sha": "188f2e182df180f9f947ccb1f6ad87ca028216e6",
   "notes": [
-    "REC-C3.2 — Webhook hexagonal reconciliation. Second sub-cycle of REC-C3 (Hexagonal boundary closure). CLOSED 2026-09-18; reconcile-only (no behavior change).",
-    "Phases build -> verify -> release -> archive all complete (B-direct path; no explore/specify/design because the code was already in position from REC-C3.1).",
-    "Build deliverable: scripts/check_hex_boundary.py hardened (a) Cargo.toml blacklist + (b) full src/**/*.rs outbound purity + (c) chronos-webhook adapter direction + (d) ports/mod.rs surface shape with stale-waiver detection; reconstruction-contracts.toml: HEX-001 partial->verified, HEX-C32-01/02/03 added verified; docs/ROADMAP.md: C3.1 moved to closed, C3.2 narrative added; ADR-0014 minimal rationale.",
-    "Verify V1..V5: scripts/check_hex_boundary.py OK (0 errors / 0 notes); cargo check -p chronos-domain -p chronos-webhook --all-targets OK (0/0); cargo test -p chronos-domain -p chronos-webhook --tests OK (168 passed; 0 failed); check_architecture_contracts.py --strict-legacy PASSED; direction check confirms chronos-webhook -> chronos_domain only and chronos_domain has no use of webhook.",
-    "Release: workspace version preserved (0.1.1 -> 0.1.1); tag v0.1.1 unchanged (still peels to 33b4f790); merge-receipt and release-receipt written under cycle-artifacts/. release-uat-approved gate waived (no MCP wire change).",
-    "Archive: ledger-valid (chain integrity preserved through 5 transitions), vault-index-current (cycles/index.md row added for rec-c3.2-webhook-reconciliation), archive-manifest.md written. Cycle CLOSED at sequence 5.",
-    "Carry-forward findings unchanged from REC-C3.1 close: C31-DEBT-01/02/03 still owned by REC-C3.3. SDDK-GOV-RELEASE-APPLY-PERMISSIONS still owned by framework. REC-C3.2 is reconcile-only and adds no new findings.",
-    "Same single-branch discipline as previous rec-* cycles: 2 commits + 1 receipts commit on main, no chained PRs, no feat/* branches, no version bump (reconcile-only)."
+    "REC-C3.3 — Services-side port inversion. CLOSED 2026-09-18 with sub-cycle C3.3.0 only (recon + dependency map).",
+    "Phases explore -> specify -> build -> verify -> release -> archive all complete (7 events in ledger).",
+    "Deliverable: exploration-report.md (4 edges inventory: services->store, services->native, services->ebpf, services->browser; use case map; composition root placement candidates; C3.3.x roadmap; carry-forward findings re-observed); specification.md (recon scope, 0 new reqs, 4 acceptance criteria all met); verification-report.md (V1..V4).",
+    "No production Rust code changed. No Cargo.toml changed. No source file outside cycle-artifacts/ touched. Tag v0.1.1 unchanged (peels to 33b4f790, C3.1 head); workspace version preserved 0.1.1 -> 0.1.1.",
+    "Architecture baseline unchanged: 5 transitional edges in known_dependency_violations. C31-DEBT-01/02/03 still gap (re-observed, not closed).",
+    "Same single-branch discipline as previous rec-* cycles: 2 commits on main, no chained PRs, no feat/* branches, no version bump (recon-only).",
+    "Carry-forward findings unchanged from REC-C3.1/REC-C3.2 close: C31-DEBT-01/02/03 still owned by REC-C3.3 (sub-cycles 3.3.1 and 3.3.3 respectively). SDDK-GOV-RELEASE-APPLY-PERMISSIONS still owned by framework.",
+    "Same workaround as C3.1/C3.2 used for release (direct receipts + transition --gate-receipt) since permissions.yaml is absent."
   ],
-  "prior_cycle_record": "rec-c3-1-application-ports",
-  "main_sha": "06581a67469d0293b616a0f752a82d2f76d3ec05",
+  "prior_cycle_record": "rec-c3-2-webhook-reconciliation",
+  "main_sha": "2f5e06f93ed6233c998c54d850cc7b06df856725",
   "remote_tag": "v0.1.1",
   "remote_tag_peel": "33b4f79004b7634a9e88b7919f8b42e854c420e8",
   "peel_match": false,
-  "peel_match_note": "Tag v0.1.1 peels to 33b4f790 (REC-C3.1 head); REC-C3.2 head is 06581a67. peel_match=false because REC-C3.2 did not create a new tag (reconcile-only, no behavior change). This is the expected outcome; the tag invariant is preserved across the cycle (no tag mutation).",
-  "scope_doc_sha": "0ff87c73",
+  "peel_match_note": "Tag v0.1.1 peels to 33b4f790 (REC-C3.1 head); REC-C3.3 head is 2f5e06f9. peel_match=false because REC-C3.3 did not create a new tag (recon-only, no behavior change). Tag invariant preserved (no tag mutation).",
+  "scope_doc_sha": "8cd653fb",
   "phases": {
+    "explore": {
+      "status": "complete",
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-3-services-inversion/exploration-report.md",
+      "summary": "Inventoried 4 edges: services->{store,native,ebpf,browser}; 9 production files + 1 test file in services import store symbols; chronos-mcp/src/server.rs is the composition root for all 4 adapters. C31-DEBT-01/02/03 re-observed. Composition-root options: option 3 (chronos-services::composition) recommended provisional, ADR lands in C3.3.1."
+    },
+    "specify": {
+      "status": "complete",
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-3-services-inversion/specification.md",
+      "summary": "Recon-only spec. 0 new requirements. 4 acceptance criteria (report exists; enumerates edges/files/symbols/use cases/comp-root/roadmap/carry-forward; no files outside artifacts touched; cargo check still green). C3.3.1..5 listed as separate cycles."
+    },
     "build": {
       "status": "complete",
-      "artifact_path": "scripts/check_hex_boundary.py",
-      "summary": "Hardened gate. (a) chronos-domain Cargo.toml blacklist (no HTTP/runtime/webhook and no workspace chronos_* infra deps); (b) full crates/chronos-domain/src/**/*.rs outbound purity (type-only deps + intrinsics whitelisted); (c) chronos-webhook -> chronos_domain direction (reverse forbidden); (d) ports/mod.rs public surface shape with stale-waiver detection. No waivers configured."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-3-services-inversion/exploration-report.md",
+      "summary": "Build = recon artifacts only. No code changes. 2 files added to cycle-artifacts/. check_hex_boundary.py OK (0/0); check_architecture_contracts.py --strict-legacy PASSED; cargo check -p chronos-services --all-targets OK (0/0); cargo fmt --all -- --check OK."
     },
     "verify": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-2-webhook-reconciliation/verification-report.md",
-      "summary": "V1 check_hex_boundary.py: 0 errors, 0 notes. V2 cargo check -p chronos-domain -p chronos-webhook --all-targets: 0 errors / 0 warnings. V3 cargo test -p chronos-domain -p chronos-webhook --tests --no-fail-fast: 168 passed (carried over from C3.1; no test files touched). V4 check_architecture_contracts.py --strict-legacy: PASSED. V5 direction: chronos-webhook -> chronos_domain confirmed; chronos-domain has no use of webhook."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-3-services-inversion/verification-report.md",
+      "summary": "V1..V4. All 4 acceptance criteria met. carry-forward findings re-observed (not closed). 4 verify gates passed (tests-pass, policy-compliant, debt-severity-assigned, debt-priority-assigned)."
     },
     "release": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-2-webhook-reconciliation/release-receipt.md",
-      "summary": "Workspace version preserved 0.1.1 -> 0.1.1; tag v0.1.1 preserved (still peels to 33b4f790). Merge-receipt written under cycle-artifacts/. release-uat-approved waived (reconcile-only, no behavior change, no MCP surface change)."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-3-services-inversion/release-receipt.md",
+      "summary": "Workspace version preserved 0.1.1 -> 0.1.1; tag v0.1.1 preserved (still peels to 33b4f790). Merge-receipt + release-receipt written under cycle-artifacts/. release-uat-approved waived (recon-only)."
     },
     "archive": {
       "status": "complete",
-      "artifact_path": "~/.sddk-knowledge/p-3416cfb8288f8964/changes/archive/rec-c3-2-webhook-reconciliation/archive-manifest.md",
-      "summary": "ledger-valid (chain integrity preserved through 5 transitions). vault-index-current (cycles/index.md row added for rec-c3-2-webhook-reconciliation). archive-manifest.md emitted. Cycle CLOSED at sequence 5."
+      "artifact_path": "~/.sddk-knowledge/p-3416cfb8288f8964/changes/archive/rec-c3-3-services-inversion/archive-manifest.md",
+      "summary": "ledger-valid (chain integrity preserved through 7 transitions). vault-index-current (cycles/index.md row added for rec-c3-3-services-inversion). archive-manifest.md emitted. Cycle CLOSED at sequence 7."
     }
   },
   "vault_drift_baseline": {
@@ -49,33 +60,33 @@
     "drift_lines_post": 0,
     "ccs_fixed": [],
     "ccs_broken": [],
-    "note": "No vault drift today. cycles/index.md gained one row. archive-manifest.md added under changes/archive/rec-c3-2-webhook-reconciliation/. adrs/0014-reconcile-only-hex-gate.md added as a new vault ADR."
+    "note": "No vault drift today. cycles/index.md gained one row. archive-manifest.md added under changes/archive/rec-c3-3-services-inversion/."
   },
   "carry_forward_findings": [
     {
       "id": "C31-DEBT-01",
-      "summary": "ExecutionLogProvider is a placeholder. The real re-export ships in REC-C3.3 once the cyclic dep with chronos_log is resolved (split NewExecutionRecord into domain or move ExecutionLogBackend wholesale).",
-      "owner_gate": "REC-C3.3",
+      "summary": "ExecutionLogProvider is a placeholder. Closes when C3.3.1 lands the real Arc<dyn ExecutionLogProvider> consumer in services.",
+      "owner_gate": "REC-C3.3.1",
       "severity": "low",
       "priority": "P3"
     },
     {
       "id": "C31-DEBT-02",
-      "summary": "chronos_domain::session_id::SessionId is structurally identical to chronos_log::SessionId but they are NOT type-equivalent. REC-C3.3 services-inversion introduces a domain-side alias to chronos_log::SessionId.",
-      "owner_gate": "REC-C3.3",
+      "summary": "chronos_domain::session_id::SessionId vs chronos_log::SessionId type divergence. Closes when C3.3.1 decides ownership by ADR.",
+      "owner_gate": "REC-C3.3.1",
       "severity": "low",
       "priority": "P3"
     },
     {
       "id": "C31-DEBT-03",
-      "summary": "ports/* are abstract targets only. chronos-services still consumes concrete adapters (SegmentedExecutionLog). REC-C3.3 inverts services -> ports; today HEX-002 is gap (its closure criterion).",
-      "owner_gate": "REC-C3.3",
+      "summary": "ports/* not consumed by chronos-services. The 4 edges (services->{store,native,ebpf,browser}) are documented in the C3.3.0 recon; inversion lands in C3.3.3.",
+      "owner_gate": "REC-C3.3.3",
       "severity": "low",
       "priority": "P2"
     },
     {
       "id": "SDDK-GOV-RELEASE-APPLY-PERMISSIONS",
-      "summary": "Framework finding: sddk release apply --route local requires permissions.yaml at the repo root, but manually orchestrated repos can legitimately lack one. REC-C3.2 repeated the workaround used in REC-C3.1 (direct git tag + receipts + transition --gate-receipt). Tracked outside the product.",
+      "summary": "Framework finding: sddk release apply --route local requires permissions.yaml at the repo root, but manually-orchestrated repos can legitimately lack one. REC-C3.3 used the same workaround as REC-C3.1 and REC-C3.2 (direct receipts + transition --gate-receipt). Tracked outside the product.",
       "owner_gate": "framework",
       "severity": "low",
       "priority": "P3",
@@ -85,5 +96,5 @@
       "rationale": "Repro is deterministic. Resolution should land as a simplify-and-realign step in any cycle that touches crates/sddk-cli/src/release.rs, NOT inside chronos product cycles. Carries forward into framework backlog until release-apply either (a) treats permissions.yaml as optional for --route local or (b) exposes --permit-unscoped-release."
     }
   ],
-  "next_cycle_recommendation": "Open REC-C3.3 (services-side port inversion: chronos-services consumes the ports, not the concrete adapters; ExecutionLogProvider placeholder is finalized). HEX-002 is the closure criterion for C3.3 (gap -> verified). HEX-C32-03 services-side direction is the mechanical rule for that work. Do NOT bundle C31-DEBT-01/02/03 with feature work; the inversion is the goal of C3.3 and the debt items dissolve when the port is consumed. Do NOT start REC-C3.3 unless explicitly greenlit by the operator; today is a checkpoint, not a cycle."
+  "next_cycle_recommendation": "REC-C3.3.1 — identity/storage seam (ADR + moves). Closes C31-DEBT-01 (ExecutionLogProvider real consumer) and C31-DEBT-02 (SessionId single owner). ADR lands before any type moves. Do NOT start REC-C3.3.1 unless explicitly greenlit by the operator; today is a checkpoint, not a cycle."
 }
