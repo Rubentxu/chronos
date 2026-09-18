@@ -6,15 +6,26 @@
 > Both files survive `git pull`; the session-scoped copy lives at
 > `~/.jcode/scratch/handoff-2026-09-18-tren-a.md` for tomorrow's boot.
 
-## Final remote state after publishing this handoff
+## Final remote state (authoritative — verify on every boot)
 
+```bash
+git fetch origin
+echo "HEAD                    = $(git rev-parse HEAD)"
+echo "origin/main             = $(git rev-parse origin/main)"
+echo "origin/rec-c3-ci-hygiene = $(git rev-parse origin/rec-c3-ci-hygiene)"
 ```
-HEAD                  = c11de1fa7aa715ef80e47a5dac23abea516c2f04
-origin/main           = c11de1fa7aa715ef80e47a5dac23abea516c2f04
-origin/rec-c3-ci-hygiene = c11de1fa7aa715ef80e47a5dac23abea516c2f04
-                      │
-                      └── all three converge at c11de1fa
-```
+
+> All three refs **must converge** at session boot. If they do not,
+> the previous session left the repo in an inconsistent state — STOP
+> and reconcile before driving Slice A. Most common cause: a handoff
+> commit was authored on one branch and not fast-forwarded into main
+> before session close (this exact pattern bit us earlier today).
+
+At the time this handoff commit was authored, the three refs converged
+at `c11de1fa`. A subsequent handoff-correction commit advanced them to
+`5b221c98`. The **invariant** ("all three refs equal") matters; the
+specific SHA does not — re-run the command above to learn the current
+value.
 
 | Field                | Value |
 |----------------------|-------|
@@ -22,10 +33,6 @@ origin/rec-c3-ci-hygiene = c11de1fa7aa715ef80e47a5dac23abea516c2f04
 | Tren B (REC-C3.3.3)  | **BLOCKED** until hygiene reaches all five gates GREEN |
 | Next slice           | **CIH-A — m1_02 reconciliation with REC-C1.5.2 strict replay** |
 | Working tree         | clean (only `?? .sddk-state/` session-local untracked) |
-
-> **Note:** the "Where we ended" section below reflects the instant
-> *before* this handoff commit. The "Final remote state" table above is
-> authoritative for tomorrow's boot.
 
 ## Where we ended (pre-handoff state, for context)
 
@@ -39,9 +46,11 @@ origin/rec-c3-ci-hygiene = c11de1fa7aa715ef80e47a5dac23abea516c2f04
 ## Tomorrow's pre-flight (corrected)
 
 ```bash
+# Run the verification command from "Final remote state" first.
+# Confirm all three refs converge before continuing.
 git fetch origin
 git checkout main
-git pull --ff-only origin main                 # expect c11de1fa (NOT 16bed4d8)
+git pull --ff-only origin main                 # expect same SHA as origin/rec-c3-ci-hygiene
 git checkout rec-c3-ci-hygiene                 # clean, no new commits yet
 # inspect cycle-artifacts/p-3416cfb8288f8964/rec-c3-ci-hygiene/apply-checkpoint.json
 # inspect cycle-artifacts/p-3416cfb8288f8964/rec-c3-3-2-composition-integration-inversion/close-receipt.md
@@ -322,7 +331,8 @@ cycle-artifacts/p-3416cfb8288f8964/session-handoff/               ← directory
 ## Quick links
 
 - PR #31: https://github.com/Rubentxu/chronos/pull/31 (MERGED 2026-09-18T22:29:15Z)
-- PR #31 last commit: `d30d0250` (Tren A code merge)
-- `origin/main` @ end of session: **`c11de1fa`** (= handoff commit)
-- `rec-c3-ci-hygiene` branch: clean, base **`c11de1fa`**, no new commits yet
+- PR #31 last commit (Tren A code merge): `d30d0250`
+- `origin/main` and `rec-c3-ci-hygiene`: run the verification command in
+  the "Final remote state" section above to learn the current SHA. They
+  must be equal.
 - Session scratch handoff: `~/.jcode/scratch/handoff-2026-09-18-tren-a.md`
