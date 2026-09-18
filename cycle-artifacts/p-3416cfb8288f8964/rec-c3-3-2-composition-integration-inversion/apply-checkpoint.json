@@ -1,0 +1,62 @@
+{
+  "cycle_id": "rec-c3-3-2-composition-integration-inversion",
+  "tren": "A",
+  "state": "locally_closed_pending_remote_seal",
+  "head_sha": "4ff8af72c84ce57951437c6db96322b6f2e058d9",
+  "origin_main_sha": "147c10195f2da43b20b99b6d2d77f1c17c124242",
+  "ahead_count": 34,
+  "tren_a_commits": [
+    "cf88fede feat(domain+log): split ExecutionLog into evidence + retention + maintenance ports",
+    "b22a3625 feat(services): migrate SessionExecutionLog to capability bundle (C3.3.2.5.3+5.4)",
+    "fd571666 feat(tests): anti-stale-waiver ratchet for capability bundle (C3.3.2.6)",
+    "4ff8af72 chore(checker): drop stale ExecutionLogProviderShape/NoopExecutionLogProvider from REC-C3.3 surface"
+  ],
+  "tren_a_real_commit_count": 4,
+  "feed_claim_corrected": true,
+  "corrections": [
+    "Feed originally said '4 commits' but listed 3; the 4th is the gate-hygiene commit 4ff8af72 dropping the stale HEX surface placeholders.",
+    "Ledger 5 -> 3: services->ebpf and services->browser closed at C3.3.1+C3.3.2 (waivers removed AND Cargo.toml edges physically deleted).",
+    "store->native belongs to C3.4 (per rec-c3-3-services-inversion/exploration-report.md line 34, 210, 224 AND rec-c3-3-2 exploration-report.md line 257). It is NOT in Tren B scope."
+  ],
+  "known_dependency_violations_local": [
+    "chronos-services->chronos-store",
+    "chronos-services->chronos-native",
+    "chronos-store->chronos-native (deferred to REC-C3.4)"
+  ],
+  "known_dependency_violations_remote": [
+    "chronos-services->chronos-store",
+    "chronos-services->chronos-ebpf",
+    "chronos-services->chronos-native",
+    "chronos-services->chronos-browser",
+    "chronos-store->chronos-native"
+  ],
+  "ledger_convergence_projection": [
+    "origin/main pre-push : 5 waivers",
+    "HEAD post-Tren A     : 3 waivers (services->{store,native}, store->native)",
+    "post-Tren B (C3.3.3) : 1 waiver  (store->native)",
+    "post-C3.4            : 0 waivers"
+  ],
+  "tren_b_scope": {
+    "B1": "services->native. LiveProbeSession holds a port (Box<dyn ProbeController> or equivalent); concrete backend constructed in composition root. Reuse existing ports; do NOT introduce NativeProbeServicePort.",
+    "B2": "services->store. Move SessionMetadata + CE domain models into chronos-domain. Implement adapters in chronos-store. Introduce SessionArchive (save/load/list/delete) and CounterexampleRepository separately; do NOT inflate SessionRepository (it stays lifecycle/registry). Then remove chronos-store from services/Cargo.toml. Stop rule: if removing chronos-store from services/Cargo.toml requires dyn Any / downcast / store helper / chronos_store DTO crossing the port, the inversion is wrong; abort and replan.",
+    "C3.4_scope": "store->native. Out of scope for C3.3.3."
+  },
+  "gates_observed_local": {
+    "cargo_test_workspace_lib_tests_excl_sandbox_e2e_native": "1356 passed, 0 failed",
+    "cargo_clippy_workspace_all_targets_features_test_utils_D_warnings": "clean",
+    "cargo_fmt_p_chronos_services": "clean",
+    "ratchet_c33_25_capability_bundle_ratchet": "7/7 pass",
+    "ratchet_validated_by_injection": "compact_up_to in projection.rs -> test failed with exact line; reverted -> test passed (RED->GREEN observed)",
+    "check_architecture_contracts_py": "PASSED",
+    "check_legacy_evb_py": "PASSED (ratchet at 0)",
+    "check_hex_boundary_py": "OK (0 errors, 0 notes)"
+  },
+  "push_proposal": {
+    "mode": "direct_push_to_main_awaiting_operator_ok",
+    "commits": 34,
+    "from": "147c10195f2da43b20b99b6d2d77f1c17c124242",
+    "to": "4ff8af72c84ce57951437c6db96322b6f2e058d9",
+    "alternative": "open PR (gh pr create) so CI runs against the merge candidate before landing on main",
+    "blocking_on": "explicit operator approval of the push list above"
+  }
+}
