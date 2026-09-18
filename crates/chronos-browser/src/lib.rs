@@ -76,6 +76,7 @@ pub mod wasm_probes;
 pub mod wasm_resolver;
 
 pub use adapter::BrowserAdapter;
+pub use adapter::BrowserProbeFactoryImpl;
 pub use browser::ChromeProcess;
 pub use cdp_client::BrowserCdpClient;
 pub use error::BrowserError;

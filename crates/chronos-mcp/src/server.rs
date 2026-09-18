@@ -30,6 +30,7 @@
 // though the imports are real (just only used in tests). Allow explicitly.
 #[allow(unused_imports)]
 use chronos_browser::BrowserAdapter;
+use chronos_domain::ports::browser_probe::BrowserProbeFactory;
 use chronos_domain::ports::uprobe::UprobeInjector;
 use chronos_domain::tripwire::{TripwireCondition, TripwireManager};
 #[allow(unused_imports)]
@@ -176,6 +177,14 @@ pub struct ChronosServer {
     /// outlive every probe session, which is guaranteed because the
     /// server holds it as an `Arc` for its entire lifetime.
     uprobe_injector: Arc<dyn UprobeInjector>,
+    /// REC-C3.3.2.4 — composition-root browser probe factory.
+    ///
+    /// `chronos_services::browser_probe` cannot name the concrete
+    /// `BrowserAdapter`; it receives the capability through this
+    /// `Arc<dyn BrowserProbeFactory>` and threads it into every
+    /// `BrowserProbeContext`. The factory is stateless and cheap to
+    /// share — every `create` call spawns a fresh backend.
+    browser_probe_factory: Arc<dyn BrowserProbeFactory>,
 }
 
 // ============================================================================
@@ -1762,6 +1771,10 @@ impl ChronosServer {
         // threaded into every probe call. `chronos_services` only sees
         // the trait object.
         let uprobe_injector = crate::composition::default_uprobe_injector();
+        // REC-C3.3.2.4 — browser probe factory. Stateless and shared
+        // across all probe sessions; each `create` produces a fresh
+        // backend.
+        let browser_probe_factory = crate::composition::default_browser_probe_factory();
         Self {
             engines: Arc::new(Mutex::new(HashMap::new())),
             session_languages: Arc::new(Mutex::new(HashMap::new())),
@@ -1783,6 +1796,7 @@ impl ChronosServer {
             degraded,
             active_toolset,
             uprobe_injector,
+            browser_probe_factory,
         }
     }
 
@@ -1812,6 +1826,7 @@ impl ChronosServer {
                 degraded: false,
                 active_toolset: toolset.to_string(),
                 uprobe_injector: crate::composition::default_uprobe_injector(),
+                browser_probe_factory: crate::composition::default_browser_probe_factory(),
             },
             Err(e) => panic!("{e}"),
         }
@@ -5526,6 +5541,7 @@ further would be a Silent Lie."
         let ctx = BrowserProbeContext {
             live_browser_probes: &self.live_browser_probes,
             active_session: &self.active_session,
+            factory: &self.browser_probe_factory,
         };
 
         match BrowserProbeService::start(
@@ -5567,6 +5583,7 @@ further would be a Silent Lie."
         let ctx = BrowserProbeContext {
             live_browser_probes: &self.live_browser_probes,
             active_session: &self.active_session,
+            factory: &self.browser_probe_factory,
         };
 
         match BrowserProbeService::stop(
@@ -5616,6 +5633,7 @@ further would be a Silent Lie."
         let ctx = BrowserProbeContext {
             live_browser_probes: &self.live_browser_probes,
             active_session: &self.active_session,
+            factory: &self.browser_probe_factory,
         };
 
         match BrowserProbeService::drain(
@@ -8575,7 +8593,7 @@ mod tests {
                 CaptureConfig::new("http://test.local"),
             );
             let probe = BrowserProbeSession {
-                adapter: adapter.clone(),
+                backend: adapter.clone(),
                 session: capture_session,
                 session_id: session_id.clone(),
                 url: "http://test.local".to_string(),
@@ -8649,7 +8667,7 @@ mod tests {
                 CaptureConfig::new("http://test.local"),
             );
             let probe = BrowserProbeSession {
-                adapter,
+                backend: adapter,
                 session: capture_session,
                 session_id: session_id.clone(),
                 url: "http://test.local".to_string(),
@@ -8695,7 +8713,7 @@ mod tests {
                 CaptureConfig::new("http://test.local"),
             );
             let probe = BrowserProbeSession {
-                adapter,
+                backend: adapter,
                 session: capture_session,
                 session_id: session_id.clone(),
                 url: "http://test.local".to_string(),
@@ -8747,7 +8765,7 @@ mod tests {
                 CaptureConfig::new("http://test.local"),
             );
             let probe = BrowserProbeSession {
-                adapter,
+                backend: adapter,
                 session: capture_session,
                 session_id: session_id.clone(),
                 url: "http://test.local".to_string(),
@@ -8798,7 +8816,7 @@ mod tests {
                 CaptureConfig::new("http://test.local"),
             );
             let probe = BrowserProbeSession {
-                adapter,
+                backend: adapter,
                 session: capture_session,
                 session_id: session_id.clone(),
                 url: "http://test.local".to_string(),

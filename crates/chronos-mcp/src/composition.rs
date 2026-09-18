@@ -31,6 +31,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use chronos_domain::ports::browser_probe::BrowserProbeFactory;
 use chronos_domain::ports::execution_log_factory::ExecutionLogFactory;
 use chronos_domain::ports::uprobe::UprobeInjector;
 use chronos_log::factory::SegmentedExecutionLogFactory;
@@ -69,6 +70,24 @@ pub fn default_execution_log_factory() -> Arc<dyn ExecutionLogFactory> {
 /// with the live session via `Arc<dyn UprobeHandle>`.
 pub fn default_uprobe_injector() -> Arc<dyn UprobeInjector> {
     Arc::new(chronos_ebpf::EbpfUprobeInjector::new())
+}
+
+/// REC-C3.3.2.4 — build the production `BrowserProbeFactory`.
+///
+/// Returns an `Arc<dyn BrowserProbeFactory>` that resolves to a fresh
+/// `BrowserAdapter` (gated on Chrome availability) on every `create`
+/// call. This is the **only** function in the workspace that
+/// constructs the factory; `server.rs` consumes the value and hands it
+/// to `chronos-services` through `BrowserProbeContext::factory`.
+///
+/// Why a factory instead of a singleton: browser probes are
+/// session-scoped (every start spawns a fresh Chrome process and
+/// obtains a dedicated backend). A shared singleton does not fit the
+/// lifecycle; the factory pattern mirrors `UprobeInjector::acquire`
+/// (per-session handle) but is async-friendly because the backend
+/// creation has no async work — capability detection is sync.
+pub fn default_browser_probe_factory() -> Arc<dyn BrowserProbeFactory> {
+    Arc::new(chronos_browser::BrowserProbeFactoryImpl::new())
 }
 
 /// Default path for the session store, mirrored from `server.rs` so the
