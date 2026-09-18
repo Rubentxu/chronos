@@ -4,8 +4,8 @@
 
 - Branch: `main`
 - Cycle merge base: `8b5dcebe` (rec-c2.5 handoff doc base)
-- Cycle merge head: `871cddf5` (last cycle commit carrying artifact reports)
-- Tag: `v0.1.1` (annotated) → `871cddf5^{commit}`
+- Cycle merge head: `33b4f790` (final cycle commit; carries merge-receipt + release-receipt + tag re-peel)
+- Tag: `v0.1.1` (annotated) → `33b4f790^{commit}`
 - Project: `p-3416cfb8288f8964`
 - Cycle: `p-3416cfb8288f8964/rec-c3-1-application-ports`
 - Release type: `patch`
@@ -16,14 +16,14 @@
 
 | Tag | Peeled SHA | Annotated | Notes |
 |---|---|---|---|
-| `v0.1.1` | `871cddf50b118b9f33ac7e8a3cc6c98dfb30c67d` (short `871cddf5`) | yes | created by this cycle's release step |
+| `v0.1.1` | `33b4f79004b7634a9e88b7919f8b42e854c420e8` (short `33b4f790`) | yes | created by this cycle's release step |
 | `v0.1.0` | workspace=0.1.0 SHA at the time of bump | yes | inherited; not modified |
 
 Remote verification:
 
 ```
 $ git ls-remote origin v0.1.1
-03b44185f344b237c40c69cd803297d82d8811aa    refs/tags/v0.1.1
+960e5d56f1f4553f6746947b4e1f118d5517f3fc    refs/tags/v0.1.1
 ```
 
 Local tag verify:

@@ -3,9 +3,9 @@
 ## Git state at release
 
 - Branch: `main`
-- Head (cycle end): `871cddf5` (verification + reports)
+- Head (cycle end): `33b4f790` (final receipts commit)
 - Pre-cycle base: `8b5dcebe` (REC-C2.5 close-out handoff commit)
-- Tag: `v0.1.1` → `871cddf5^{commit}`
+- Tag: `v0.1.1` → `33b4f790^{commit}`
 - Predecessor tag: `v0.1.0` (REC-C2.5-era workspace version)
 
 ## Commits in this cycle
