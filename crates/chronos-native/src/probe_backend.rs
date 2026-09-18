@@ -425,7 +425,7 @@ impl NativeProbeBackend {
     /// Spawns the target binary via `PtraceTracer::launch()` and starts a background
     /// thread that runs the ptrace event loop. Each ptrace event is converted to a
     /// `TraceEvent` and appended to the session's `ExecutionLog` via the
-    /// accepted-Raw seam (REC-C2.3 retired the parallel `EventBus` mirror).
+    /// accepted-Raw seam (REC-C2.3 retired the parallel legacy mirror).
     ///
     /// When `track_function_frames=true` (and a [`SymbolResolver`] was loaded from
     /// the spawned binary), the live thread drives the function-capture branch
@@ -791,7 +791,7 @@ impl NativeProbeBackend {
         // helper streams each TraceEvent (FunctionEntry or InvocationIncomplete)
         // through `on_event`, which we pipe through the same accepted-Raw
         // seam the flat loop uses so frames reach the attached
-        // SegmentedExecutionLog v2 (REC-C2.3 retired the EventBus half). On
+        // SegmentedExecutionLog v2 (REC-C2.3 retired the legacy half). On
         // any helper error we kill the tracee, fall through to cleanup, and
         // let the thread exit normally.
         if ptrace_config.track_function_frames {
