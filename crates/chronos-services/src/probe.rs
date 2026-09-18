@@ -711,7 +711,10 @@ impl ProbeService {
     pub fn compaction_metrics(
         ctx: &ProbeContext<'_>,
         session_id: &str,
-    ) -> Result<Option<chronos_log::CompactionMetrics>, ServiceError> {
+    ) -> Result<
+        Option<chronos_domain::ports::execution_log_maintenance::CompactionMetrics>,
+        ServiceError,
+    > {
         let probes = ctx
             .live_probes
             .lock()
@@ -1087,10 +1090,14 @@ mod rec_c1_2_tests {
             )
             .unwrap(),
         );
-        let err = crate::session_log::SessionExecutionLog::try_adopt(
-            None,
-            chronos_log::SessionId::new("service-uuid"),
+        let bundle = crate::test_support::capabilities_for_segmented(
+            chronos_log::SessionId::new("native-9999"),
             handle,
+        );
+        let err = crate::session_log::SessionExecutionLog::adopt_capabilities(
+            &chronos_log::SessionId::new("service-uuid"),
+            bundle,
+            None,
         )
         .unwrap_err();
         assert!(matches!(

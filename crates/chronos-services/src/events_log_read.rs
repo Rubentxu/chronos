@@ -1020,10 +1020,11 @@ mod rec_c1_3_tests {
             push(&handle, i, EventType::FunctionEntry);
         }
         owned.flush().ok();
-        let retired = owned
-            .retain_up_to(EventSeq::new(9))
-            .expect("retire the first ten seqs");
-        assert!(retired.retained_from > EventSeq::ZERO, "retention happened");
+        let outcome = owned
+            .advance_retained_from(EventSeq::new(10))
+            .expect("advance retention past the first ten seqs");
+        assert!(outcome.boundary_moved, "retention happened");
+        assert!(outcome.new_retained_from > EventSeq::ZERO);
 
         // An id inside the retained range is found normally.
         assert!(find_by_id(&owned, 15).unwrap().is_some());

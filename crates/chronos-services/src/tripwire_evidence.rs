@@ -448,12 +448,11 @@ mod tests {
         let log =
             SegmentedExecutionLog::open(SessionId::new(session), SegmentedConfig::with_dir(dir))
                 .expect("open");
-        SessionExecutionLog::try_adopt(
-            Some(dir.to_path_buf()),
+        SessionExecutionLog::from_segmented_log(
             SessionId::new(session),
             Arc::new(log),
+            Some(dir.to_path_buf()),
         )
-        .expect("adopt")
     }
 
     fn append_raw(log: &SessionExecutionLog, event: &TraceEvent) -> EventSeq {

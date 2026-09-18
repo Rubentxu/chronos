@@ -23,9 +23,7 @@ use chronos_domain::ports::execution_log_maintenance::ExecutionLogMaintenance;
 use chronos_domain::ports::execution_log_retention::ExecutionLogRetention;
 use chronos_domain::session_id::SessionId;
 
-use crate::provider::{
-    SegmentedExecutionLogProvider, SegmentedMaintenance, SegmentedRetention,
-};
+use crate::provider::{SegmentedExecutionLogProvider, SegmentedMaintenance, SegmentedRetention};
 use crate::segmented::{SegmentedConfig, SegmentedExecutionLog};
 
 /// Factory that produces `SegmentedExecutionLogProvider` instances.
@@ -62,8 +60,10 @@ impl ExecutionLogFactory for SegmentedExecutionLogFactory {
                 session_id.clone(),
                 inner_arc.clone(),
             ));
-        let retention: Arc<dyn ExecutionLogRetention> =
-            Arc::new(SegmentedRetention::new(session_id.clone(), inner_arc.clone()));
+        let retention: Arc<dyn ExecutionLogRetention> = Arc::new(SegmentedRetention::new(
+            session_id.clone(),
+            inner_arc.clone(),
+        ));
         let maintenance: Arc<dyn ExecutionLogMaintenance> =
             Arc::new(SegmentedMaintenance::new(inner_arc));
         Ok(ExecutionLogCapabilities {
@@ -92,8 +92,10 @@ impl ExecutionLogFactory for SegmentedExecutionLogFactory {
                 session_id.clone(),
                 inner_arc.clone(),
             ));
-        let retention: Arc<dyn ExecutionLogRetention> =
-            Arc::new(SegmentedRetention::new(session_id.clone(), inner_arc.clone()));
+        let retention: Arc<dyn ExecutionLogRetention> = Arc::new(SegmentedRetention::new(
+            session_id.clone(),
+            inner_arc.clone(),
+        ));
         let maintenance: Arc<dyn ExecutionLogMaintenance> =
             Arc::new(SegmentedMaintenance::new(inner_arc));
         Ok(ExecutionLogCapabilities {
@@ -107,7 +109,6 @@ impl ExecutionLogFactory for SegmentedExecutionLogFactory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::segmented::SegmentedConfig;
     use chronos_domain::ports::execution_log::ExecutionLogKind;
 
     #[test]

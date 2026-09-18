@@ -74,9 +74,7 @@ impl fmt::Display for RetentionOutcome {
 pub enum RetentionError {
     /// The requested `new_retained_from` is at or behind the current
     /// boundary. Retention only moves forward.
-    #[error(
-        "retention boundary cannot move backwards: requested {requested}, current {current}"
-    )]
+    #[error("retention boundary cannot move backwards: requested {requested}, current {current}")]
     BackwardsMove {
         requested: EventSeq,
         current: EventSeq,

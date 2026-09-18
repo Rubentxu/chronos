@@ -96,9 +96,11 @@ fn firing_count_is_reconstructed_from_reopened_evidence() {
     // --- Reopen: no manager, no runtime state, only the durable log. ---
     let reopened = SegmentedExecutionLog::open(session.clone(), SegmentedConfig::with_dir(&dir))
         .expect("reopen");
-    let adopted =
-        SessionExecutionLog::try_adopt(Some(dir.clone()), session.clone(), Arc::new(reopened))
-            .expect("adopt");
+    let adopted = SessionExecutionLog::from_segmented_log(
+        session.clone(),
+        Arc::new(reopened),
+        Some(dir.clone()),
+    );
 
     let snapshot = firing_count_snapshot(&adopted, 100_000).expect("snapshot");
     assert_eq!(

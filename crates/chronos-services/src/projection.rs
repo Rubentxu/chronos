@@ -350,7 +350,9 @@ mod tests {
         log.flush().ok(); // segment 5..=9
 
         // Retire the first segment only — retained_from advances to 5.
-        log.compact_up_to(EventSeq::new(4)).expect("compact");
+        log.advance_retained_from(EventSeq::new(5))
+            .expect("advance retention past the first segment");
+        log.compact_retired().expect("compact retired segments");
 
         let result = build_engine(&log).expect("build_engine ok");
         match result.meta.completeness {

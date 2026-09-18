@@ -175,7 +175,10 @@ mod tests {
     fn sealed_now_passes_a_real_clock() {
         let s = sealed_now(Some(EventSeq::new(7)));
         match s {
-            TailState::Sealed { tail_seq, sealed_at_unix_ms } => {
+            TailState::Sealed {
+                tail_seq,
+                sealed_at_unix_ms,
+            } => {
                 assert_eq!(tail_seq, Some(EventSeq::new(7)));
                 // 2021-01-01T00:00:00Z in ms — anything earlier than that
                 // means SystemTime::now() returned 0 (clock failure), which

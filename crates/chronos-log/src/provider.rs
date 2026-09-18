@@ -392,26 +392,26 @@ impl ExecutionLogProvider for InMemoryExecutionLogProvider {
 
 /// Retention wrapper for `SegmentedExecutionLog`.
 ///
-/// Mirrors the segmented backend's own `retained_from` so the port
-/// never drifts from the evidence port. `advance_retained_from(seq)`
-/// delegates to the backend's `retain_up_to(seq - 1)` because the
-/// maintenance port's `compact_retired()` is the one that reclaims
-/// segments whose start >= retained_from — moving the boundary and
-/// reclaiming segments are two separate operations even on the
-/// segmented backend.
+/// The wrapper owns its own `Mutex<EventSeq>` frontier so the port
+/// contract is satisfied regardless of how many segments have been
+/// flushed to disk yet. `advance_retained_from(seq)` delegates to the
+/// backend's `retain_up_to(seq - 1)` for the physical segment-reclaim
+/// work but the logical boundary lives here.
 pub struct SegmentedRetention {
     inner: Arc<SegmentedExecutionLog>,
-    // Kept for the lifetime of the wrapper even though the
-    // retention port delegates to `self.inner.retained_from()`.
-    // The id appears in error payloads when retain_up_to surfaces
-    // a failure under the future sealed-path check.
     #[allow(dead_code)]
     session_id: SessionId,
+    frontier: Mutex<EventSeq>,
 }
 
 impl SegmentedRetention {
     pub fn new(session_id: SessionId, inner: Arc<SegmentedExecutionLog>) -> Self {
-        Self { inner, session_id }
+        let frontier = inner.retained_from();
+        Self {
+            inner,
+            session_id,
+            frontier: Mutex::new(frontier),
+        }
     }
 }
 
@@ -420,7 +420,7 @@ impl ExecutionLogRetention for SegmentedRetention {
         &self,
         new_retained_from: EventSeq,
     ) -> Result<RetentionOutcome, RetentionError> {
-        let current = self.inner.retained_from();
+        let current = self.retained_from();
         if new_retained_from < current {
             return Err(RetentionError::BackwardsMove {
                 requested: new_retained_from,
@@ -435,11 +435,11 @@ impl ExecutionLogRetention for SegmentedRetention {
                 });
             }
         }
-        let previous = current;
-        let outcome = if new_retained_from > current {
+        let mut frontier = self.frontier.lock().expect("frontier poisoned");
+        if new_retained_from > *frontier {
             // Translate "retain from X" into the segmented backend's
             // "retain_up_to(X - 1)" — its semantic is "everything <=
-            // cutoff can go". The `+1` is correct only when X > ZERO;
+            // cutoff can go". The `- 1` is correct only when X > ZERO;
             // the surrounding `>` check guarantees that.
             let cutoff = EventSeq::new(new_retained_from.get() - 1);
             self.inner
@@ -447,22 +447,22 @@ impl ExecutionLogRetention for SegmentedRetention {
                 .map_err(|e| RetentionError::Unavailable {
                     detail: format!("segmented retain_up_to: {e}"),
                 })?;
-            RetentionOutcome {
+            *frontier = new_retained_from;
+            Ok(RetentionOutcome {
                 new_retained_from,
-                boundary_moved: new_retained_from != previous,
-            }
+                boundary_moved: true,
+            })
         } else {
             // No-op: requested boundary is at the current frontier.
-            RetentionOutcome {
-                new_retained_from: current,
+            Ok(RetentionOutcome {
+                new_retained_from: *frontier,
                 boundary_moved: false,
-            }
-        };
-        Ok(outcome)
+            })
+        }
     }
 
     fn retained_from(&self) -> EventSeq {
-        self.inner.retained_from()
+        *self.frontier.lock().expect("frontier poisoned")
     }
 
     fn highest_allocated(&self) -> Option<EventSeq> {
@@ -498,11 +498,12 @@ impl ExecutionLogMaintenance for SegmentedMaintenance {
     }
 
     fn compact_retired(&self) -> Result<CompactionReport, ExecutionLogMaintenanceError> {
-        let reclaimed = self.inner.maybe_compact().map_err(|e| {
-            ExecutionLogMaintenanceError::Unavailable {
-                detail: format!("segmented maybe_compact: {e}"),
-            }
-        })?;
+        let reclaimed =
+            self.inner
+                .maybe_compact()
+                .map_err(|e| ExecutionLogMaintenanceError::Unavailable {
+                    detail: format!("segmented maybe_compact: {e}"),
+                })?;
         let segments_reclaimed = reclaimed.len() as u64;
         let metrics = self.inner.compaction_metrics();
         let mut mapped = CompactionMetrics {

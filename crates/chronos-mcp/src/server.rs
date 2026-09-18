@@ -2308,34 +2308,41 @@ impl ChronosServer {
     async fn run_one_compaction_round(server: &Arc<Self>) {
         let probes = server.live_probes.lock().unwrap();
         for (session_id, live_probe) in probes.iter() {
-            // REC-C3.3.2 — compaction goes through the canonical
-            // `SessionExecutionLog` wrapper, not the backend's stripped
-            // `Arc<dyn ExecutionLogProvider>` view. The port does NOT
-            // expose `compaction_metrics` / `maybe_compact`; those
-            // maintenance capabilities belong to the session wrapper.
+            // REC-C3.3.2.5 — compaction runs through the maintenance
+            // port's `compact_retired`. Counter snapshots come from
+            // the same port. The port only exposes the conservative
+            // counter subset (segments_reclaimed, compaction_passes,
+            // no_op_passes, highest_seq_observed), so the per-run
+            // delta math drops bytes_reclaimed (the underlying
+            // segmented backend's filesystem metric is not part of
+            // the application-shape contract).
             let before = match live_probe.execution_log.compaction_metrics() {
                 Ok(m) => m,
                 Err(_) => continue,
             };
-            let removed = match live_probe.execution_log.maybe_compact() {
-                Ok(paths) => paths,
+            let report = match live_probe.execution_log.compact_retired() {
+                Ok(r) => r,
                 Err(_) => continue,
             };
+            let removed: Vec<std::path::PathBuf> = report
+                .reclaimed_paths
+                .into_iter()
+                .map(std::path::PathBuf::from)
+                .collect();
             if !removed.is_empty() {
-                if let Ok(after) = live_probe.execution_log.compaction_metrics() {
-                    let reclaimed_bytes =
-                        after.bytes_reclaimed_total - before.bytes_reclaimed_total;
-                    info!(
-                        "auto-compact: session={} removed {} segment(s) ({} bytes reclaimed); \
-                         cumulative runs={}, bytes_reclaimed={}, segments_removed={}",
-                        session_id,
-                        removed.len(),
-                        reclaimed_bytes,
-                        after.compaction_runs_total,
-                        after.bytes_reclaimed_total,
-                        after.segments_removed_total,
-                    );
-                }
+                let after = report.metrics;
+                info!(
+                    "auto-compact: session={} removed {} segment(s); \
+                     cumulative segments_reclaimed={} compaction_passes={} \
+                     no_op_passes={} highest_seq={:?}",
+                    session_id,
+                    removed.len(),
+                    after.segments_reclaimed,
+                    after.compaction_passes,
+                    after.no_op_passes,
+                    after.highest_seq_observed,
+                );
+                let _ = before;
             }
         }
     }
@@ -2885,6 +2892,15 @@ impl ChronosServer {
                     "internal error: unexpected memory error",
                 )));
             }
+            // REC-C3.3.2.5: retention errors cannot occur from
+            // list_threads either; listed for exhaustiveness.
+            Err(ServiceError::RetentionBackwardsMove { .. })
+            | Err(ServiceError::RetentionPastAllocated { .. })
+            | Err(ServiceError::RetentionSealed { .. }) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected retention error",
+                )));
+            }
             Err(ServiceError::EventNotFound { .. }) => {
                 return Ok(CallToolResult::error(text_content(
                     "internal error: unexpected event error",
@@ -2959,7 +2975,6 @@ impl ChronosServer {
             | Err(ServiceError::EvidenceDecodeFailed { .. })
             | Err(ServiceError::EvidenceReadStalled { .. })
             | Err(ServiceError::ExecutionLogUnavailable { .. })
-            | Err(ServiceError::ExecutionLogMaintenanceUnsupported { .. })
             | Err(ServiceError::EvidenceUnavailableDueToRetention { .. }) => {
                 return Ok(CallToolResult::error(text_content(
                     "internal error: unexpected ExecutionLog error",
@@ -5247,14 +5262,15 @@ further would be a Silent Lie."
         }
     }
 
-    /// m1-07: snapshot the compaction counters of the live probe
-    /// session's `ExecutionLog`. Returns `{segments_removed_total,
-    /// bytes_reclaimed_total, compaction_runs_total}` plus a
-    /// `log_attached: bool` flag (false when the probe was not
-    /// configured with an ExecutionLog directory).
+    /// m1-07: snapshot the maintenance port's counter surface of the
+    /// live probe session's `ExecutionLog`. Returns the conservative
+    /// counter subset (segments_reclaimed, compaction_passes,
+    /// no_op_passes, highest_seq_observed) plus a `log_attached: bool`
+    /// flag (false when the probe was not configured with an
+    /// ExecutionLog directory).
     #[tool(
         name = "probe_compaction_metrics",
-        description = "m1-07 ExecutionLog compaction metrics. Returns a snapshot of the live probe's segmented ExecutionLog compaction counters (segments_removed_total, bytes_reclaimed_total, compaction_runs_total) plus a log_attached flag. Counter values are zero until at least one compaction run has occurred. Available only when the native backend was configured with with_execution_log_dir."
+        description = "m1-07 ExecutionLog compaction metrics. Returns a snapshot of the live probe's execution-log maintenance counters (segments_reclaimed, compaction_passes, no_op_passes, highest_seq_observed) plus a log_attached flag. Counter values are zero until at least one compaction pass has occurred. Available only when the native backend was configured with with_execution_log_dir."
     )]
     async fn probe_compaction_metrics(
         &self,
@@ -5285,10 +5301,11 @@ further would be a Silent Lie."
                     Some(m) => serde_json::json!({
                         "session_id": params.session_id,
                         "log_attached": true,
-                        "source": "chronos-log::SegmentedExecutionLog",
-                        "segments_removed_total": m.segments_removed_total,
-                        "bytes_reclaimed_total": m.bytes_reclaimed_total,
-                        "compaction_runs_total": m.compaction_runs_total,
+                        "source": "chronos_domain::ports::ExecutionLogMaintenance",
+                        "segments_reclaimed": m.segments_reclaimed,
+                        "compaction_passes": m.compaction_passes,
+                        "no_op_passes": m.no_op_passes,
+                        "highest_seq_observed": m.highest_seq_observed.map(|s| s.get()),
                     }),
                 };
                 Ok(CallToolResult::success(json_content(&output)))
@@ -8999,12 +9016,11 @@ mod tests {
         let server = Arc::new(ChronosServer::new());
         let dummy_session =
             CaptureSession::new(0, chronos_domain::Language::C, CaptureConfig::new("noop"));
-        let owned_log = chronos_services::session_log::SessionExecutionLog::try_adopt(
-            Some(dir.clone()),
+        let owned_log = chronos_services::session_log::SessionExecutionLog::from_segmented_log(
             LogSessionId::new(&log_session_id),
             concrete.clone(),
-        )
-        .expect("caller identity must match the log's identity");
+            Some(dir.clone()),
+        );
         let live = LiveProbeSession {
             backend,
             session: dummy_session,

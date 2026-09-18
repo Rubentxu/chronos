@@ -153,4 +153,3 @@ impl<B: ExecutionLogBackend + ?Sized> ExecutionLog<B> {
 
 #[allow(dead_code)]
 fn _execution_record_marker(_r: ExecutionRecord) {}
-

@@ -562,6 +562,7 @@ impl ChronosObserveService {
 mod tests {
     use super::*;
     use crate::output::ObserveInput;
+    use crate::session_log::SessionExecutionLog;
     use chronos_domain::capability::CapabilityUnavailable;
     use chronos_domain::ports::uprobe::{UprobeAttachError, UprobeHandle, UprobeInjector};
     use chronos_domain::tripwire::{reset_tripwire_ids_for_testing, TripwireCondition};
@@ -733,13 +734,13 @@ mod tests {
                 chronos_log::SegmentedConfig::with_dir(&dir),
             )
             .expect("open log");
-            let adopted = crate::session_log::SessionExecutionLog::try_adopt(
-                Some(dir),
-                chronos_log::SessionId::new(session_id),
+            let session = chronos_log::SessionId::new(session_id);
+            let log = SessionExecutionLog::from_segmented_log(
+                session,
                 std::sync::Arc::new(raw),
-            )
-            .expect("adopt");
-            self.execution_logs.register(adopted).expect("register");
+                Some(dir),
+            );
+            self.execution_logs.register(log).expect("register");
             *self.active_session.lock().await = Some(session_id.to_string());
         }
 

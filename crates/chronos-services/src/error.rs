@@ -169,13 +169,23 @@ pub enum ServiceError {
     #[error("ExecutionLog identity mismatch: session {expected} but log holds {actual}")]
     ExecutionLogIdentityMismatch { expected: String, actual: String },
 
-    /// Storage-mechanism capability called on a non-segmented
-    /// adapter (REC-C3.3.1). Surfaces typed "not supported" instead
-    /// of silently no-oping.
-    #[error(
-        "ExecutionLog maintenance capability '{capability}' is not supported by this provider"
-    )]
-    ExecutionLogMaintenanceUnsupported { capability: String },
+    /// REC-C3.3.2.5 — the retention boundary cannot move backwards.
+    /// Carries both numbers so callers can react deliberately.
+    #[error("retention boundary cannot move backwards: requested {requested}, current {current}")]
+    RetentionBackwardsMove { requested: u64, current: u64 },
+
+    /// REC-C3.3.2.5 — the requested retention boundary is past the
+    /// highest allocated seq.
+    #[error("retention boundary {requested} is past highest allocated seq {highest_allocated}")]
+    RetentionPastAllocated {
+        requested: u64,
+        highest_allocated: u64,
+    },
+
+    /// REC-C3.3.2.5 — the retention frontier for this session is
+    /// sealed; further moves are refused.
+    #[error("retention frontier for session {session_id} is sealed")]
+    RetentionSealed { session_id: String },
 
     /// A `probe_stop` call failed to drain / detach.
     #[error("probe stop error: {0}")]

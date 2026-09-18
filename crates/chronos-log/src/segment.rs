@@ -396,9 +396,9 @@ pub fn skip_header<R: Read + Seek>(mut r: R) -> Result<u64, LogError> {
 fn bincode_encode_record(r: &ExecutionRecord) -> Result<Vec<u8>, LogError> {
     let mut out = Vec::with_capacity(64);
     out.push(0); // tag = Record
-    // REC-C3.3.1: read the inner session id through the canonical
-    // `SessionId::as_str()` accessor now that `chronos_log::SessionId`
-    // is a re-export of the domain type (private field).
+                 // REC-C3.3.1: read the inner session id through the canonical
+                 // `SessionId::as_str()` accessor now that `chronos_log::SessionId`
+                 // is a re-export of the domain type (private field).
     out.extend_from_slice(&r.session_id.as_str().len().to_le_bytes());
     out.extend_from_slice(r.session_id.as_str().as_bytes());
     out.extend_from_slice(&r.seq.0.to_le_bytes());

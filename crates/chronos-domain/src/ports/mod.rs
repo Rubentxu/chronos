@@ -25,14 +25,14 @@ mod telemetry;
 pub mod uprobe;
 
 pub use browser_probe::{BrowserError, BrowserProbeBackend, BrowserProbeFactory};
-pub use execution_log::{ExecutionLogError, ExecutionLogKind, ExecutionLogPage, ExecutionLogProvider};
+pub use execution_log::{
+    ExecutionLogError, ExecutionLogKind, ExecutionLogPage, ExecutionLogProvider,
+};
 pub use execution_log_factory::ExecutionLogFactory;
 pub use execution_log_maintenance::{
     CompactionMetrics, CompactionReport, ExecutionLogMaintenance, ExecutionLogMaintenanceError,
 };
-pub use execution_log_retention::{
-    ExecutionLogRetention, RetentionError, RetentionOutcome,
-};
+pub use execution_log_retention::{ExecutionLogRetention, RetentionError, RetentionOutcome};
 pub use notification::{
     NotificationDeliveryError, NotificationRequest, NotificationSink, NotificationTarget,
     NullNotificationSink,
