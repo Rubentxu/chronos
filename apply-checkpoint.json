@@ -1,66 +1,47 @@
 {
-  "cycle_id": "rec-c3-1-application-ports",
-  "cycle_record": "p-3416cfb8288f8964/rec-c3-1-application-ports",
-  "path": "a-full",
+  "cycle_id": "rec-c3-2-webhook-reconciliation",
+  "cycle_record": "p-3416cfb8288f8964/rec-c3-2-webhook-reconciliation",
+  "path": "b-direct",
   "status": "closed",
-  "head_sha": "33b4f79004b7634a9e88b7919f8b42e854c420e8",
-  "base_sha": "8b5dcebe2c94db1910d1ccce36467afcffe29b77",
+  "head_sha": "06581a67469d0293b616a0f752a82d2f76d3ec05",
+  "base_sha": "f24a15e84962a2e4fafcd719927341f71e2e2166",
   "notes": [
-    "REC-C3.1 — Application ports. First sub-cycle of REC-C3 (Hexagonal boundary closure). CLOSED 2026-09-18 with v0.1.1.",
-    "Phases explore -> specify -> design -> plan -> build -> verify -> release -> archive all complete (18 events in ledger).",
-    "Build deliverable: crates/chronos-domain/src/{session_id, ports/{execution_log,notification,probe,session,telemetry}.rs}, lib.rs re-export, tests/{common/mod,probe_ports,session_ports,telemetry_ports}.rs, scripts/check_hex_boundary.py, reconstruction-contracts.toml flip on HEX-001 (gap -> partial), docs/ROADMAP.md note.",
-    "Verify V1..V6: T0 lint PASSED; 164 domain tests passed; 614 caller tests (domain + services + mcp) passed; scripts/check_hex_boundary.py OK; check_architecture_contracts.py --strict-legacy PASSED; cargo tree shows no HTTP/async.",
-    "Release: workspace version 0.1.0 -> 0.1.1; tag v0.1.1 (annotated) at cycle HEAD, remote-verified. Merge-receipt and release-receipt written under cycle-artifacts/. release-uat-approved gate waived (no MCP wire change in this cycle; UAT deferred to REC-C3.3).",
-    "Archive: ledger-valid (event_count=342, chain valid), vault-index-current (cycles/index.md row added), archive-manifest.md written. Cycle CLOSED.",
-    "Carry-forward findings (debt-report.json, schema_version 1.1.0): C31-DEBT-01 ExecutionLogProvider placeholder; C31-DEBT-02 SessionId type divergence; C31-DEBT-03 ports not consumed by services. All severity=low, priorities P3 / P3 / P2. Owner gate: REC-C3.3.",
-    "Same single-branch discipline as previous rec-* cycles: 9 commits + 1 housekeeping receipt-update commit on main, no chained PRs, no feat/* branches."
+    "REC-C3.2 — Webhook hexagonal reconciliation. Second sub-cycle of REC-C3 (Hexagonal boundary closure). CLOSED 2026-09-18; reconcile-only (no behavior change).",
+    "Phases build -> verify -> release -> archive all complete (B-direct path; no explore/specify/design because the code was already in position from REC-C3.1).",
+    "Build deliverable: scripts/check_hex_boundary.py hardened (a) Cargo.toml blacklist + (b) full src/**/*.rs outbound purity + (c) chronos-webhook adapter direction + (d) ports/mod.rs surface shape with stale-waiver detection; reconstruction-contracts.toml: HEX-001 partial->verified, HEX-C32-01/02/03 added verified; docs/ROADMAP.md: C3.1 moved to closed, C3.2 narrative added; ADR-0014 minimal rationale.",
+    "Verify V1..V5: scripts/check_hex_boundary.py OK (0 errors / 0 notes); cargo check -p chronos-domain -p chronos-webhook --all-targets OK (0/0); cargo test -p chronos-domain -p chronos-webhook --tests OK (168 passed; 0 failed); check_architecture_contracts.py --strict-legacy PASSED; direction check confirms chronos-webhook -> chronos_domain only and chronos_domain has no use of webhook.",
+    "Release: workspace version preserved (0.1.1 -> 0.1.1); tag v0.1.1 unchanged (still peels to 33b4f790); merge-receipt and release-receipt written under cycle-artifacts/. release-uat-approved gate waived (no MCP wire change).",
+    "Archive: ledger-valid (chain integrity preserved through 5 transitions), vault-index-current (cycles/index.md row added for rec-c3.2-webhook-reconciliation), archive-manifest.md written. Cycle CLOSED at sequence 5.",
+    "Carry-forward findings unchanged from REC-C3.1 close: C31-DEBT-01/02/03 still owned by REC-C3.3. SDDK-GOV-RELEASE-APPLY-PERMISSIONS still owned by framework. REC-C3.2 is reconcile-only and adds no new findings.",
+    "Same single-branch discipline as previous rec-* cycles: 2 commits + 1 receipts commit on main, no chained PRs, no feat/* branches, no version bump (reconcile-only)."
   ],
-  "prior_cycle_record": "rec-c2-5-formal-closure",
-  "main_sha": "33b4f79004b7634a9e88b7919f8b42e854c420e8",
+  "prior_cycle_record": "rec-c3-1-application-ports",
+  "main_sha": "06581a67469d0293b616a0f752a82d2f76d3ec05",
   "remote_tag": "v0.1.1",
   "remote_tag_peel": "33b4f79004b7634a9e88b7919f8b42e854c420e8",
-  "peel_match": true,
-  "scope_doc_sha": "cb30db39",
+  "peel_match": false,
+  "peel_match_note": "Tag v0.1.1 peels to 33b4f790 (REC-C3.1 head); REC-C3.2 head is 06581a67. peel_match=false because REC-C3.2 did not create a new tag (reconcile-only, no behavior change). This is the expected outcome; the tag invariant is preserved across the cycle (no tag mutation).",
+  "scope_doc_sha": "0ff87c73",
   "phases": {
-    "explore": {
-      "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-1-application-ports/exploration-report.md",
-      "summary": "Existing ports analyzed: NotificationSink + chronos_log ExecutionLogBackend + ProbeBackend; 6 services files depend on concrete SegmentedExecutionLog; 4 ports missing for C3.1 (ProbeFactory, ProbeRegistry, SessionRepository, TelemetryReceiver)."
-    },
-    "specify": {
-      "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-1-application-ports/specification.md",
-      "summary": "10 REQs + 8 ADs. Three deliberate departures from the original spec: (a) ExecutionLogProvider is a placeholder, not a re-export, due to Cargo cyclic dep with chronos_log; (b) chronos_domain::session_id::SessionId introduced to break that cycle; (c) chronos_log::SessionId alias becomes C3.3 work."
-    },
-    "design": {
-      "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-1-application-ports/design.md",
-      "summary": "8 ADs finalized. Module map and risk table stable. Port trait boundaries explicitly separated: capability (ProbeBackend) vs lifetime (ProbeController) vs factory (ProbeFactory) vs registry (ProbeRegistry). NotificationSink left untouched (already shipped)."
-    },
-    "plan": {
-      "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-1-application-ports/tasks.md",
-      "summary": "10 build tasks B1..B10 + 6 verification tasks V1..V6 + 8-commit sub-cycle plan C1..C8. Out-of-scope: T3, T4-smoke, T5 (no MCP wire change)."
-    },
     "build": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-1-application-ports/apply-progress.md",
-      "summary": "8 commits landed: session_id + execution_log placeholder (C1), probe (C2), session (C3), telemetry (C4), wiring + lib.rs (C5), tests (C6), hex boundary script + HEX-001 flip + roadmap note (C7), workspace version bump (C8 receiving tag)."
+      "artifact_path": "scripts/check_hex_boundary.py",
+      "summary": "Hardened gate. (a) chronos-domain Cargo.toml blacklist (no HTTP/runtime/webhook and no workspace chronos_* infra deps); (b) full crates/chronos-domain/src/**/*.rs outbound purity (type-only deps + intrinsics whitelisted); (c) chronos-webhook -> chronos_domain direction (reverse forbidden); (d) ports/mod.rs public surface shape with stale-waiver detection. No waivers configured."
     },
     "verify": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-1-application-ports/verification-report.md",
-      "summary": "V1 lint 0 warnings. V2 164 domain. V3 614 callers. V4 hex boundary OK. V5 architecture --strict-legacy PASSED. V6 cargo tree shows 4 deps (no HTTP/async)."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-2-webhook-reconciliation/verification-report.md",
+      "summary": "V1 check_hex_boundary.py: 0 errors, 0 notes. V2 cargo check -p chronos-domain -p chronos-webhook --all-targets: 0 errors / 0 warnings. V3 cargo test -p chronos-domain -p chronos-webhook --tests --no-fail-fast: 168 passed (carried over from C3.1; no test files touched). V4 check_architecture_contracts.py --strict-legacy: PASSED. V5 direction: chronos-webhook -> chronos_domain confirmed; chronos-domain has no use of webhook."
     },
     "release": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-1-application-ports/release-receipt.md",
-      "summary": "Tagged v0.1.1 (annotated) at 33b4f790; remote-verified via git ls-remote (tag hash 960e5d56). merge-receipt + release-receipt written. release-uat-approved waived (non-MCP inner-layer scope)."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-2-webhook-reconciliation/release-receipt.md",
+      "summary": "Workspace version preserved 0.1.1 -> 0.1.1; tag v0.1.1 preserved (still peels to 33b4f790). Merge-receipt written under cycle-artifacts/. release-uat-approved waived (reconcile-only, no behavior change, no MCP surface change)."
     },
     "archive": {
       "status": "complete",
-      "artifact_path": "~/.sddk-knowledge/p-3416cfb8288f8964/changes/archive/rec-c3-1-application-ports/archive-manifest.md",
-      "summary": "ledger-valid (chain integrity preserved). vault-index-current (cycles/index.md row added). archive-manifest.md emitted. Cycle CLOSED at sequence 18."
+      "artifact_path": "~/.sddk-knowledge/p-3416cfb8288f8964/changes/archive/rec-c3-2-webhook-reconciliation/archive-manifest.md",
+      "summary": "ledger-valid (chain integrity preserved through 5 transitions). vault-index-current (cycles/index.md row added for rec-c3-2-webhook-reconciliation). archive-manifest.md emitted. Cycle CLOSED at sequence 5."
     }
   },
   "vault_drift_baseline": {
@@ -68,7 +49,7 @@
     "drift_lines_post": 0,
     "ccs_fixed": [],
     "ccs_broken": [],
-    "note": "No vault drift today. cycles/index.md gained one row. archive-manifest.md added under changes/archive/rec-c3-1-application-ports/."
+    "note": "No vault drift today. cycles/index.md gained one row. archive-manifest.md added under changes/archive/rec-c3-2-webhook-reconciliation/. adrs/0014-reconcile-only-hex-gate.md added as a new vault ADR."
   },
   "carry_forward_findings": [
     {
@@ -94,7 +75,7 @@
     },
     {
       "id": "SDDK-GOV-RELEASE-APPLY-PERMISSIONS",
-      "summary": "Framework finding: sddk release apply --route local requires permissions.yaml at the repo root, but manually orchestrated repos can legitimately lack one. Today rec-c3-1 used a workaround (direct git tag + receipts + transition --gate-receipt). Tracked outside the product.",
+      "summary": "Framework finding: sddk release apply --route local requires permissions.yaml at the repo root, but manually orchestrated repos can legitimately lack one. REC-C3.2 repeated the workaround used in REC-C3.1 (direct git tag + receipts + transition --gate-receipt). Tracked outside the product.",
       "owner_gate": "framework",
       "severity": "low",
       "priority": "P3",
@@ -104,5 +85,5 @@
       "rationale": "Repro is deterministic. Resolution should land as a simplify-and-realign step in any cycle that touches crates/sddk-cli/src/release.rs, NOT inside chronos product cycles. Carries forward into framework backlog until release-apply either (a) treats permissions.yaml as optional for --route local or (b) exposes --permit-unscoped-release."
     }
   ],
-  "next_cycle_recommendation": "Open REC-C3.2 (hexagonal boundary: extract webhook infrastructure out of chronos_domain). Three mechanical invariants should anchor the cycle from the first commit: HEX-C32-01 chronos_domain MUST NOT depend on HTTP/webhook adapter crates; HEX-C32-02 domain source MUST NOT import HTTP client/URL/retry infrastructure; HEX-C32-03 services/application may depend on NotificationSink, not on a concrete webhook implementation. UAT for substitutability: same use case through InMemoryNotificationSink AND WebhookNotificationSink, both pass. Do not roll C31-DEBT-01..03 into C3.2 — those belong to REC-C3.3 (services-inversion). Do not start REC-C3.2 unless explicitly greenlit by the operator; today is a checkpoint, not a cycle."
+  "next_cycle_recommendation": "Open REC-C3.3 (services-side port inversion: chronos-services consumes the ports, not the concrete adapters; ExecutionLogProvider placeholder is finalized). HEX-002 is the closure criterion for C3.3 (gap -> verified). HEX-C32-03 services-side direction is the mechanical rule for that work. Do NOT bundle C31-DEBT-01/02/03 with feature work; the inversion is the goal of C3.3 and the debt items dissolve when the port is consumed. Do NOT start REC-C3.3 unless explicitly greenlit by the operator; today is a checkpoint, not a cycle."
 }
