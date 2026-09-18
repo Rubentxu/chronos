@@ -1,18 +1,26 @@
 //! Integration tests for the m1-03 migration of one producer
 //! (`chronos_native::probe_backend::NativeProbeBackend`) and one
-//! query path (the new `probe_drain_log` MCP tool).
+//! query path.
+//!
+//! REC-C3.3.2: `read_execution_log_records` and
+//! `with_execution_log_dir` were retired from `NativeProbeBackend`.
+//! Tests now wire the writer through `attach_execution_log(provider)`
+//! and read from the port directly with `read_from_seq` (the same
+//! shape `chronos-services::session_log` uses).
 //!
 //! These tests do NOT run a live ptrace session — that requires
-//! root and a real target binary. Instead they exercise the
-//! producer's `dual_push` helper and the consumer's
-//! `read_execution_log_records` path directly through public APIs.
+//! root and a real target binary. They exercise the producer's
+//! `accept_and_publish` helper and a port-based read from the
+//! provider.
 //!
 //! The full UAT through MCP runs in `chronos-sandbox/tests/m1_acceptance.rs`
 //! (`m1_03_execution_log_migrates_one_producer_and_query_path`).
 
+use chronos_domain::ports::execution_log::ExecutionLogProvider;
 use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
 use chronos_log::{
-    EventSeq, LogConsumerId, NewExecutionRecord, ReadResult, SegmentedConfig, SegmentedExecutionLog,
+    provider::SegmentedExecutionLogProvider, EventSeq, NewExecutionRecord, SegmentedConfig,
+    SegmentedExecutionLog, SessionId,
 };
 use chronos_native::probe_backend::NativeProbeBackend;
 use std::num::NonZeroUsize;
@@ -34,149 +42,136 @@ fn tempdir() -> PathBuf {
     p
 }
 
-#[test]
-fn dual_write_records_to_eventbus_and_executionlog() {
-    // Construct a backend with an ExecutionLog directory attached.
-    let dir = tempdir();
-    let backend = NativeProbeBackend::new().with_execution_log_dir(Some(dir.clone()));
+/// Decode a JSON `TraceEvent` from a record payload.
+fn decode_trace_event(bytes: &[u8]) -> TraceEvent {
+    serde_json::from_slice(bytes).expect("decode TraceEvent")
+}
 
-    // Open a log manually (mirroring what start_probe does) and
-    // attach it to the backend so the dual-write path can find it.
-    let session_id = "test-session-1";
-    let log_session_id = format!("native-{}", session_id);
-    let log_dir = dir.join(&log_session_id);
-    let log = Arc::new(
+/// Build a `TraceEvent` payload and stick it in the log.
+fn push_event(log: &SegmentedExecutionLog, session: &str, i: u64, kind: EventType) {
+    let ev = TraceEvent {
+        event_id: i,
+        timestamp_ns: i * 100,
+        thread_id: 1,
+        event_type: kind,
+        location: SourceLocation::default(),
+        data: EventData::Function {
+            name: format!("fn-{}", i),
+            signature: None,
+            symbol_id: None,
+            invocation_id: None,
+            parent_invocation_id: None,
+        },
+    };
+    let bytes = serde_json::to_vec(&ev).expect("encode");
+    log.append(NewExecutionRecord {
+        kind: chronos_log::ExecutionKind::Raw,
+
+        session_id: SessionId::new(session),
+        monotonic_ns: i * 100,
+        payload: chronos_log::ExecutionPayload::new(bytes, "FunctionEntry"),
+        ..Default::default()
+    })
+    .expect("append log");
+}
+
+/// Build a provider attached to a fresh on-disk segmented backend.
+fn wire_provider(session: &str, dir: &std::path::Path) -> Arc<dyn ExecutionLogProvider> {
+    let log_dir = dir.join(session);
+    let concrete = Arc::new(
         SegmentedExecutionLog::open(
-            chronos_log::SessionId::new(&log_session_id),
+            SessionId::new(session),
             SegmentedConfig::with_dir(&log_dir),
         )
-        .expect("open log"),
+        .expect("open segmented log"),
     );
-    {
-        let mut slot = backend
-            .execution_log_slot_for_test()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        *slot = Some(log.clone());
-    }
+    let wrapper = SegmentedExecutionLogProvider::new(SessionId::new(session), concrete);
+    Arc::new(wrapper)
+}
 
-    // Manually push three records through the log (since the
-    // ptrace loop is hard to drive from a unit test, we feed
-    // through NewExecutionRecord directly via the same shape
-    // the loop would use). We serialize a real TraceEvent so
-    // the consumer's `serde_json::from_slice::<TraceEvent>`
-    // decoding works end-to-end.
-    for i in 0..3u64 {
-        let ev = TraceEvent {
-            event_id: i,
-            timestamp_ns: i * 100,
-            thread_id: 1,
-            event_type: EventType::FunctionEntry,
-            location: SourceLocation::default(),
-            data: EventData::Function {
-                name: format!("fn-{}", i),
-                signature: None,
-                symbol_id: None,
-                invocation_id: None,
-                parent_invocation_id: None,
-            },
-        };
-        let bytes = serde_json::to_vec(&ev).expect("encode");
-        log.append(NewExecutionRecord {
-            kind: chronos_log::ExecutionKind::Raw,
+/// Drives the writer through `accept_and_publish` (the canonical
+/// port call) and reads back via the port. Proves the
+/// `NativeProbeBackend` -> `Arc<dyn ExecutionLogProvider>` wiring
+/// works end-to-end in this crate.
+#[test]
+fn accept_and_publish_lands_in_attached_provider() {
+    let dir = tempdir();
+    let backend = NativeProbeBackend::new();
 
-            session_id: chronos_log::SessionId::new(&log_session_id),
-            monotonic_ns: i * 100,
-            payload: chronos_log::ExecutionPayload::new(bytes, "FunctionEntry"),
-            ..Default::default()
-        })
-        .expect("append log");
-    }
-    log.flush().expect("flush log");
+    let session = "native-test-session-1";
+    let provider: Arc<dyn ExecutionLogProvider> = wire_provider(session, &dir);
+    backend.attach_execution_log(Arc::clone(&provider));
 
-    // Read via the consumer path the MCP tool uses
-    // (`read_execution_log_records` calls `log.read_after`).
-    let consumer = LogConsumerId::new("test-consumer");
-    let read = log.read_after(&consumer, None).expect("read_after");
-    match read {
-        ReadResult::Ok { records, .. } => {
-            assert_eq!(records.len(), 3);
-        }
-        other => panic!("expected Ok, got {:?}", other),
-    }
+    // Build a minimal TraceEvent.
+    let ev = TraceEvent {
+        event_id: 0,
+        timestamp_ns: 0,
+        thread_id: 1,
+        event_type: EventType::FunctionEntry,
+        location: SourceLocation::default(),
+        data: EventData::Function {
+            name: "fn-0".to_string(),
+            signature: None,
+            symbol_id: None,
+            invocation_id: None,
+            parent_invocation_id: None,
+        },
+    };
 
-    // Also verify the backend's own consumer path returns the
-    // same records.
-    let (records, tail) = backend
-        .read_execution_log_records(None, 100)
-        .expect("read_execution_log_records");
-    assert_eq!(records.len(), 3);
-    assert_eq!(tail, Some(2));
+    // Drive the canonical writer path directly.
+    let provider_for_call = provider.clone();
+    NativeProbeBackend::accept_and_publish(
+        Some(&provider_for_call),
+        &ev,
+        100,
+        None,
+    )
+    .expect("accepted append lands a seq");
+
+    // Read back through the port.
+    let page = provider
+        .read_from_seq(EventSeq::ZERO, 16)
+        .expect("read_from_seq");
+    assert_eq!(page.records.len(), 1);
+    let observed = decode_trace_event(&page.records[0].payload.bytes);
+    assert_eq!(observed.event_id, 0);
+    assert_eq!(observed.timestamp_ns, 0);
+    assert!(page.exhausted);
 
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Reads a bounded slice via the port's `read_from_seq`.
 #[test]
-fn read_execution_log_records_returns_seq_bounded_slice() {
+fn read_from_seq_yields_bounded_slice_from_port() {
     let dir = tempdir();
-    // Build a log with 8 records by hand.
-    let session_id = "test-read";
-    let log_session_id = format!("native-{}", session_id);
-    let log_dir = dir.join(&log_session_id);
-    let log = SegmentedExecutionLog::open(
-        chronos_log::SessionId::new(session_id),
-        SegmentedConfig {
-            segment_dir: log_dir.clone(),
-            flush_threshold: NonZeroUsize::new(2).unwrap(),
-            replay_on_open: true,
-            memory_budget_bytes: None,
-            auto_load_call_graph_checkpoint: false,
-        },
-    )
-    .expect("open");
-    for i in 0..8u64 {
-        log.append(NewExecutionRecord {
-            kind: chronos_log::ExecutionKind::Raw,
-
-            session_id: chronos_log::SessionId::new(session_id),
-            monotonic_ns: i,
-            payload: chronos_log::ExecutionPayload::new(
-                serde_json::json!({"i": i}).to_string().into_bytes(),
-                "step",
-            ),
-            ..Default::default()
-        })
-        .expect("append");
-    }
-    log.flush().expect("flush");
-
-    // Read via the in-memory backend (same code path as
-    // read_execution_log_records from the backend).
-    let consumer = LogConsumerId::new("m1-03-query");
-    let all = log.read_after(&consumer, None).expect("read all");
-    let total = match all {
-        ReadResult::Ok { records, .. } => records.len(),
-        _ => panic!("expected Ok"),
-    };
-    assert_eq!(total, 8, "all 8 records should be readable");
-
-    // Read with seq-strict cursor via in-memory backend directly.
-    use chronos_log::ConsumerCursor;
-    let cursored = log
-        .read_after(
-            &consumer,
-            Some(ConsumerCursor::at(consumer.clone(), EventSeq::new(4))),
-        )
-        .expect("read after");
-    let tail = match cursored {
-        ReadResult::Ok { records, .. } => records.iter().map(|r| r.seq.0).max(),
-        _ => None,
-    };
-    // `last_seq = 4` means "give me records with seq > 4".
-    assert!(
-        tail.unwrap_or(0) >= 5,
-        "expected reads past cursor 4 to surface record seq > 4"
+    let session = "native-test-read";
+    let log_dir = dir.join(session);
+    let mut cfg = SegmentedConfig::with_dir(&log_dir);
+    cfg.flush_threshold = NonZeroUsize::new(2).unwrap();
+    let concrete = Arc::new(
+        SegmentedExecutionLog::open(SessionId::new(session), cfg).expect("open"),
     );
+
+    for i in 0..8u64 {
+        push_event(&concrete, session, i, EventType::FunctionEntry);
+    }
+    concrete.flush().expect("flush");
+
+    let wrapper = SegmentedExecutionLogProvider::new(SessionId::new(session), concrete);
+    let provider: Arc<dyn ExecutionLogProvider> = Arc::new(wrapper);
+
+    let page = provider
+        .read_from_seq(EventSeq::ZERO, 16)
+        .expect("read_from_seq");
+    assert_eq!(page.records.len(), 8);
+    let max_seq = page
+        .records
+        .iter()
+        .map(|r| r.seq.0)
+        .max()
+        .expect("at least one record");
+    assert_eq!(max_seq, 7, "8 records with seq 0..=7");
 
     let _ = std::fs::remove_dir_all(&dir);
 }

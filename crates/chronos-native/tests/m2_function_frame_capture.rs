@@ -12,9 +12,11 @@
 //! `PTRACE_TRACEME` on a child we spawn). If no compiler is found the tests
 //! skip with a note rather than failing CI without one.
 
+use chronos_domain::ports::execution_log::ExecutionLogProvider;
 use chronos_domain::{CaptureConfig, EventData, EventType, InvocationId, TraceEvent};
 use chronos_log::{
-    LogConsumerId, NewExecutionRecord, ReadResult, SegmentedConfig, SegmentedExecutionLog,
+    provider::SegmentedExecutionLogProvider, LogConsumerId, NewExecutionRecord, ReadResult,
+    SegmentedConfig, SegmentedExecutionLog, SessionId,
 };
 use chronos_native::capture_runner::{CaptureEndReason, CaptureResult, CaptureRunner};
 use chronos_native::probe_backend::trace_event_to_log_record_for_test;
@@ -314,9 +316,24 @@ fn live_probe_emits_real_function_entries_to_execution_log() {
     let exe = exe.to_str().unwrap().to_string();
 
     let execution_log_dir = scratch_dir("live-ff");
-    let backend = NativeProbeBackend::new()
-        .with_language(chronos_domain::Language::C)
-        .with_execution_log_dir(Some(execution_log_dir.clone()));
+    let backend = NativeProbeBackend::new().with_language(chronos_domain::Language::C);
+
+    // REC-C3.3.2 — wire a concrete provider, attach it, and let
+    // `start_probe` consume the canonical port instead of inventing
+    // a `SegmentedExecutionLog` on the fly.
+    let provider_session = "live-ff-frame-capture";
+    let provider_dir = execution_log_dir.join(provider_session);
+    let concrete = std::sync::Arc::new(
+        SegmentedExecutionLog::open(
+            SessionId::new(provider_session),
+            SegmentedConfig::with_dir(&provider_dir),
+        )
+        .expect("open execution log"),
+    );
+    let provider: std::sync::Arc<dyn ExecutionLogProvider> = std::sync::Arc::new(
+        SegmentedExecutionLogProvider::new(SessionId::new(provider_session), concrete.clone()),
+    );
+    backend.attach_execution_log(provider.clone());
 
     let config = CaptureConfig::new(exe.clone());
 
@@ -333,11 +350,30 @@ fn live_probe_emits_real_function_entries_to_execution_log() {
     backend.stop_probe(&session).expect("stop_probe failed");
 
     // Read everything back from the ExecutionLog and filter for
-    // identity-bearing rows (proxy: any record whose payload decodes
-    // as a Function TraceEvent with non-None identity fields).
-    let (events, _tail, _unparseable, total) = backend
-        .read_execution_log_records_with_stats(None, 10_000)
-        .expect("read_execution_log_records_with_stats failed");
+    // identity-bearing rows. REC-C3.3.2 — direct port read (no
+    // `read_execution_log_records_with_stats` on the backend).
+    // `provider` was bound to `Arc<dyn ExecutionLogProvider>` above.
+    let mut events: Vec<TraceEvent> = Vec::new();
+    let mut total = 0u64;
+    let mut unparseable = 0u64;
+    let mut position = chronos_log::EventSeq::ZERO;
+    loop {
+        let page = provider
+            .read_from_seq(position, 256)
+            .expect("read_from_seq");
+        total += page.records.len() as u64;
+        for record in page.records {
+            match serde_json::from_slice::<TraceEvent>(&record.payload.bytes) {
+                Ok(ev) => events.push(ev),
+                Err(_) => unparseable += 1,
+            }
+        }
+        if page.exhausted {
+            break;
+        }
+        position = page.position_after;
+    }
+    let _ = (total, unparseable);
 
     assert!(
         total >= 1,

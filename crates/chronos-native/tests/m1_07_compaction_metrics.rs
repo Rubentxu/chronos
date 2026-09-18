@@ -1,22 +1,28 @@
-//! Integration tests for m1-07 — exposing `chronos-log`'s
-//! `CompactionMetrics` through `NativeProbeBackend::compaction_metrics()`
-//! so the new MCP tool `probe_compaction_metrics` can read them.
+//! Integration tests for m1-07 — verifying that
+//! `SegmentedExecutionLog::compaction_metrics()` exposes the truth of
+//! `chronos-log`'s compaction run, so the new MCP tool
+//! `probe_compaction_metrics` can read it.
 //!
-//! These tests do NOT spawn a live probe. They construct a
-//! `NativeProbeBackend`, attach a pre-built `SegmentedExecutionLog`
-//! via the `#[doc(hidden)]` test slot (mirroring what the M1
-//! integration test files do), drive a few records + a
-//! `compact_up_to`, and assert the metrics surface is accurate.
+//! REC-C3.3.2: `compaction_metrics()` is no longer a method on
+//! `NativeProbeBackend` — the canonical owner of that capability is
+//! the `ExecutionLogProvider`. Because the port intentionally
+//! excludes storage-maintenance surface area
+//! (`ExecutionLogProvider` does NOT expose `compaction_metrics`,
+//! `flush`, or `compact_up_to`), production readers go through the
+//! `SessionExecutionLog` wrapper in `chronos-services`, and the
+//! concrete accessor that exposes the snapshot directly is
+//! `SegmentedExecutionLog::compaction_metrics()`.
 //!
-//! The sandbox UAT for the actual MCP tool lives in
-//! `chronos-sandbox/tests/m1_07_compaction_metrics.rs` (T4 smoke).
+//! This file exercises that concrete accessor in the way the
+//! production wrapper does. Sandbox UAT for the MCP tool itself
+//! lives in `chronos-sandbox/tests/m1_07_compaction_metrics.rs`
+//! (T4 smoke).
 
 use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
 use chronos_log::{
     EventSeq, ExecutionPayload, LogConsumerId, NewExecutionRecord, SegmentedConfig,
     SegmentedExecutionLog, SessionId,
 };
-use chronos_native::probe_backend::NativeProbeBackend;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -37,44 +43,22 @@ fn tempdir(label: &str) -> PathBuf {
     p
 }
 
-/// `compaction_metrics()` returns `Ok(None)` when the backend was
-/// not configured with `with_execution_log_dir` (and no log was
-/// attached afterwards).
+/// A freshly-opened `SegmentedExecutionLog` exposes the all-zero
+/// `compaction_metrics` snapshot — there have been no runs.
 #[test]
-fn compaction_metrics_returns_none_when_no_log_attached() {
-    let backend = NativeProbeBackend::new();
-    let m = backend.compaction_metrics().expect("call");
-    assert!(m.is_none(), "no log attached ⇒ None");
-}
-
-/// `compaction_metrics()` returns `Ok(Some(zeros))` when a log is
-/// attached but no compaction runs have happened yet.
-#[test]
-fn compaction_metrics_returns_zeros_when_log_attached() {
+fn compaction_metrics_returns_zeros_when_log_freshly_opened() {
     let dir = tempdir("zeros");
-    let backend = NativeProbeBackend::new().with_execution_log_dir(Some(dir.clone()));
-
     let log_session = "native-compaction-zeros";
     let log_dir = dir.join(log_session);
-    let log = Arc::new(
+    let log: Arc<SegmentedExecutionLog> = Arc::new(
         SegmentedExecutionLog::open(
             SessionId::new(log_session),
             SegmentedConfig::with_dir(&log_dir),
         )
         .expect("open log"),
     );
-    {
-        let mut slot = backend
-            .execution_log_slot_for_test()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        *slot = Some(log.clone());
-    }
 
-    let m = backend
-        .compaction_metrics()
-        .expect("call")
-        .expect("attached");
+    let m = log.compaction_metrics();
     assert_eq!(m.segments_removed_total, 0);
     assert_eq!(m.bytes_reclaimed_total, 0);
     assert_eq!(m.compaction_runs_total, 0);
@@ -87,27 +71,18 @@ fn compaction_metrics_returns_zeros_when_log_attached() {
 #[test]
 fn compaction_metrics_reflects_real_compaction_runs() {
     let dir = tempdir("runs");
-    let backend = NativeProbeBackend::new().with_execution_log_dir(Some(dir.clone()));
-
     let log_session = "native-compaction-runs";
     let log_dir = dir.join(log_session);
     // Force tight flush threshold so 4 records ⇒ 2 segments.
     let mut cfg = SegmentedConfig::with_dir(&log_dir);
     cfg.flush_threshold = NonZeroUsize::new(2).unwrap();
-    let log =
-        Arc::new(SegmentedExecutionLog::open(SessionId::new(log_session), cfg).expect("open"));
-
-    {
-        let mut slot = backend
-            .execution_log_slot_for_test()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        *slot = Some(log.clone());
-    }
+    let log = Arc::new(
+        SegmentedExecutionLog::open(SessionId::new(log_session), cfg).expect("open"),
+    );
 
     // 4 records → 2 segments. Encode one TraceEvent so the JSON
-    // payload is realistic; payload bytes do not need to round-
-    // trip because the consumer here is just the snapshot accessor.
+    // payload is realistic; payload bytes do not need to round-trip
+    // because the consumer here is just the snapshot accessor.
     for i in 0..4u64 {
         let ev = TraceEvent {
             event_id: i,
@@ -144,10 +119,7 @@ fn compaction_metrics_reflects_real_compaction_runs() {
     let removed = log.compact_up_to(EventSeq::new(1)).unwrap();
     assert_eq!(removed.len(), 1, "one segment should be removed");
 
-    let m = backend
-        .compaction_metrics()
-        .expect("call")
-        .expect("attached");
+    let m = log.compaction_metrics();
     assert_eq!(m.segments_removed_total, 1, "1 segment removed");
     assert_eq!(m.compaction_runs_total, 1, "1 run");
     assert!(
@@ -159,10 +131,7 @@ fn compaction_metrics_reflects_real_compaction_runs() {
     // Idempotent re-call: still the same numbers.
     let removed_again = log.compact_up_to(EventSeq::new(1)).unwrap();
     assert!(removed_again.is_empty());
-    let m2 = backend
-        .compaction_metrics()
-        .expect("call")
-        .expect("attached");
+    let m2 = log.compaction_metrics();
     assert_eq!(m2.segments_removed_total, 1);
     assert_eq!(m2.compaction_runs_total, 1);
 
