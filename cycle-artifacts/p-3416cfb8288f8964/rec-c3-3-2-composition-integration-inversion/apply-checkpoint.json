@@ -41,7 +41,8 @@
     "C33-DEBT-RETENTION-01": "CLOSED by this Tren A — retention policy now goes through ExecutionLogRetention::advance_retained_from(port) instead of wrapper.retain_up_to(concrete). The maintenance port intentionally has NO compact_up_to(seq) parameter — maintenance has no opinion on which evidence is logically reachable.",
     "C33-DEBT-NATIVE-LOG-BRIDGE-01": "CLOSED in C3.3.1+C3.3.2 — native bridge was retired in commit e48f40cb and the bridge path is no longer reachable through SessionExecutionLog in Tren A.",
     "HEX-002": "GAP — closes only after C3.3.3 (Tren B) finishes services -> ports inversion. Tren A removed the maintenance escape hatches and the ProviderKind downcast tag, but the services -> native / services -> store edges are still present in Cargo.toml; those are Tren B scope.",
-    "FIND-Tren-A-01": "OPEN — pre-existing vault drift in origin/main (CC#18: 9 lines, CC#19: 6 lines, CC#39: 1 line) is out of scope for Tren A. The fix is a separate vault hygiene cycle that mirrors the m9-01..m9-55 cadence; Tren A only fixed the 9 lines of new drift it introduced (the two apply-checkpoint.json files)."
+    "FIND-Tren-A-01": "OPEN — pre-existing vault drift in origin/main (CC#18: 9 lines, CC#19: 6 lines, CC#39: 1 line) is out of scope for Tren A. The fix is a separate vault hygiene cycle that mirrors the m9-01..m9-55 cadence; Tren A only fixed the 9 lines of new drift it introduced (the two apply-checkpoint.json files).",
+    "FIND-INFRA-DERIVE-SKIP-ARGS-EMPTY": "CLOSED — pre-existing bug in scripts/derive_test_buckets.py: empty deferred ledger wrote newline-terminated empty file; awk produced dangling `--skip ` flag, breaking CI with `error: Argument to option 'skip' missing`. Fixed in commit 5d3c9302 (zero-byte skip file when patterns is empty); ratchet test added at scripts/tests/test_derive_test_buckets.py (3 tests, zero deps). Out of strict Tren A scope; included because the CI gate is blocking and the fix is the minimum patch."
   },
   "findings_introduced": {
     "no_action": ["FIND-Tren-A-01"],
@@ -49,7 +50,7 @@
       "FIND-Tren-A-01": "Pre-existing vault drift on origin/main (CC#18/19/39) is out of scope for Tren A. The fix is a vault hygiene cycle (m9-style), not a Tren A scope decision."
     }
   },
-  "findings_closed": ["C33-DEBT-RETENTION-01", "C33-DEBT-NATIVE-LOG-BRIDGE-01"],
+  "findings_closed": ["C33-DEBT-RETENTION-01", "C33-DEBT-NATIVE-LOG-BRIDGE-01", "FIND-INFRA-DERIVE-SKIP-ARGS-EMPTY"],
   "commits_since_base": [
     "f4ad63de style(fmt): apply rustfmt --edition 2021 to files touched by Tren A",
     "4ff8af72 chore(checker): drop stale ExecutionLogProviderShape/NoopExecutionLogProvider from REC-C3.3 surface",
@@ -93,7 +94,8 @@
     "fd571666 feat(tests): anti-stale-waiver ratchet for capability bundle (C3.3.2.6)",
     "4ff8af72 chore(checker): drop stale ExecutionLogProviderShape/NoopExecutionLogProvider from REC-C3.3 surface",
     "f4ad63de style(fmt): apply rustfmt --edition 2021 to files touched by Tren A",
-    "b30ab074 test(native): align exhausted assertion with stateless page semantics"
+    "b30ab074 test(native): align exhausted assertion with stateless page semantics",
+    "5d3c9302 fix(ci): derive_test_buckets writes zero-byte skip file when empty"
   ],
   "layer_completion": {
     "m0_layer_complete": true,
@@ -115,7 +117,7 @@
   "notes": [
     "No tag for Tren A. Tren A is a structural inversion (port split + capability-bundle wiring). The first behavior-bumping version after C3.3.3 + C3.4 closes earns the next tag.",
     "Workspace version 0.1.1 preserved at this commit.",
-    "PR #31 (https://github.com/Rubentxu/chronos/pull/31) carries 36 commits from 147c10195..HEAD. The Test workflow was failing on accept_and_publish_lands_in_attached_provider because the test asserted the wrong semantics for LogPage::exhausted (it checks 'nothing at or after the input position', not 'tail reached after this page'); commit b30ab074 fixes the assertion to use position_after + a second read, the canonical 'caught up' signal for an append-only log. Vault drift sweep still fails on 16 lines of pre-existing drift on origin/main (out of scope for Tren A). Tren B is NOT started until PR #31 is merged and CI is green.",
+    "PR #31 (https://github.com/Rubentxu/chronos/pull/31) carries 38 commits from 147c10195..HEAD. CI Test (integration, mandatory surface) was failing with `error: Argument to option 'skip' missing` because scripts/derive_test_buckets.py wrote a newline-terminated empty cargo-skip.txt when the ledger has no deferred failures, and the awk pipeline produced a dangling `--skip ` flag. Commit 5d3c9302 fixes the script (zero-byte file when patterns is empty) and adds a ratchet test at scripts/tests/test_derive_test_buckets.py. This is FIND-INFRA-DERIVE-SKIP-ARGS-EMPTY, a pre-existing infrastructure bug on origin/main, out of strict Tren A scope but included because the CI gate is blocking and the fix is the minimum patch. The exhausted-assertion fix in b30ab074 is still valid; both fixes are independent. Vault drift sweep still fails on 16 lines of pre-existing drift on origin/main (out of scope for Tren A). Tren B is NOT started until PR #31 is merged and CI is green.",
     "Tren B is NOT started until PR #31 is merged and CI is green. After merge, the head_sha field will be updated to the fast-forward SHA.",
     "Composition root stays in chronos-mcp::composition. Bootstrap-scoped vs session-scoped factory distinction is mandatory for C3.3.3."
   ]
