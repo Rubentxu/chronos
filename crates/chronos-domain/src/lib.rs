@@ -10,6 +10,7 @@ pub mod error;
 pub mod index;
 pub mod ports;
 pub mod property;
+pub mod seq;
 pub mod query;
 pub mod semantic;
 pub mod session_id;
@@ -37,6 +38,7 @@ pub use property::{
     PropertyHypothesisVerdict, PropertyId, PropertyObservationSource, PropertyOutcome,
     PropertySequenceOutcome, PropertyValue, PropertyViolation, StateTransition,
 };
+pub use seq::EventSeq;
 pub use query::{
     EventFilter, PerfEntry, PerfQuery, PerfResult, PerfSortBy, QueryResult, TraceQuery,
 };

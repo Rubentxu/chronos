@@ -1,40 +1,16 @@
-//! `EventSeq` — strictly monotonic sequence number within one session.
+//! `EventSeq` (stub) — the canonical definition lives in
+//! `chronos_domain::seq::EventSeq` as of REC-C3.3.1.
 //!
-//! Strict monotonicity is a *backend* invariant; the newtype itself is
-//! `Ord` so the backend can use it directly.
+//! This module kept a duplicate definition historically so that
+//! `chronos_log` could compile without depending on `chronos_domain`'s
+//! seq module. ADR-0015 D3 lifts the type to domain; the duplicate
+//! is deleted. The `pub mod seq` declaration is kept only because
+//! some internal code in `chronos_log` imports via `crate::seq::…` —
+//! those paths now go through `crate::EventSeq` (the re-export from
+//! `lib.rs`) or `crate::seq::EventSeq` resolves to the domain type
+//! via this module's re-export.
+//!
+//! This file is intentionally minimal: it exists so the module path
+//! remains valid; the actual type lives in the domain crate.
 
-use serde::{Deserialize, Serialize};
-
-/// A sequence number assigned to each record by the backend on
-/// `append`. Strictly monotonic within one session: two successful
-/// `append` calls on the same session receive seqs `n` and `n + 1`
-/// (or higher if a gap was recorded in between).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct EventSeq(pub u64);
-
-impl EventSeq {
-    pub const ZERO: EventSeq = EventSeq(0);
-
-    #[inline]
-    pub const fn new(value: u64) -> Self {
-        EventSeq(value)
-    }
-
-    #[inline]
-    pub const fn get(self) -> u64 {
-        self.0
-    }
-
-    /// Returns the next sequence number. Pure arithmetic — does NOT
-    /// imply the next seq is unallocated.
-    #[inline]
-    pub const fn next(self) -> Self {
-        EventSeq(self.0 + 1)
-    }
-}
-
-impl std::fmt::Display for EventSeq {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "seq#{}", self.0)
-    }
-}
+pub use chronos_domain::seq::EventSeq;
