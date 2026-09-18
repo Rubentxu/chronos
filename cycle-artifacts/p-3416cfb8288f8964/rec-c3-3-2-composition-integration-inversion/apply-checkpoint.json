@@ -45,9 +45,10 @@
     "FIND-INFRA-DERIVE-SKIP-ARGS-EMPTY": "CLOSED — pre-existing bug in scripts/derive_test_buckets.py: empty deferred ledger wrote newline-terminated empty file; awk produced dangling `--skip ` flag, breaking CI with `error: Argument to option 'skip' missing`. Fixed in commit 5d3c9302 (zero-byte skip file when patterns is empty); ratchet test added at scripts/tests/test_derive_test_buckets.py (3 tests, zero deps). Out of strict Tren A scope; included because the CI gate is blocking and the fix is the minimum patch."
   },
   "findings_introduced": {
-    "no_action": ["FIND-Tren-A-01"],
+    "no_action": ["FIND-Tren-A-01", "FIND-CI-PRE-EXISTING-TEST-FAILURES"],
     "no_action_notes": {
-      "FIND-Tren-A-01": "Pre-existing vault drift on origin/main (CC#18/19/39) is out of scope for Tren A. The fix is a vault hygiene cycle (m9-style), not a Tren A scope decision."
+      "FIND-Tren-A-01": "Pre-existing vault drift on origin/main (CC#18/19/39) is out of scope for Tren A. The fix is a vault hygiene cycle (m9-style), not a Tren A scope decision.",
+      "FIND-CI-PRE-EXISTING-TEST-FAILURES": "Confirmed via `git checkout 147c10195 + cargo test`: m1_02_execution_log_persistence_impl (chronos-sandbox/tests/m1_acceptance.rs:231) and 6 tripwire_depth tests fail identically on origin/main HEAD. m1_02 expects lenient replay (skip corrupt segment, recover remaining); current code in crates/chronos-log/src/segmented.rs apply_plan is atomic/fail-closed (REC-C1.5.2 deliberate design). tripwire_depth tests need McpTestClient::start() which requires a working MCP subprocess (cache-only environment works, sandbox may not). None of these failures were introduced by the 38 commits in PR #31 — Tren A is structurally clean. Two pre-existing cycles are needed: (1) m1-02 follow-up to either change replay semantics to lenient (architectural change, REC-C1.5.3 candidate) or update the test to expect ReplayIntegrity error; (2) tripwire_depth sandbox bring-up (chronos-sandbox fixtures, separate scope)."
     }
   },
   "findings_closed": ["C33-DEBT-RETENTION-01", "C33-DEBT-NATIVE-LOG-BRIDGE-01", "FIND-INFRA-DERIVE-SKIP-ARGS-EMPTY"],
