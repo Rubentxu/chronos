@@ -128,7 +128,17 @@ fn accept_and_publish_lands_in_attached_provider() {
     let observed = decode_trace_event(&page.records[0].payload.bytes);
     assert_eq!(observed.event_id, 0);
     assert_eq!(observed.timestamp_ns, 0);
-    assert!(page.exhausted);
+    // `exhausted` means "nothing at or after the input position" (see
+    // chronos_log::cursor::LogPage). After 1 record the read saw something,
+    // so the *first* page is not exhausted. The follow-up read from
+    // `position_after` returns empty with exhausted=true; that is the
+    // canonical "caught up" signal for a stateless, append-only log.
+    assert!(!page.exhausted);
+    let again = provider
+        .read_from_seq(page.position_after, 16)
+        .expect("read_from_seq past tail");
+    assert!(again.records.is_empty());
+    assert!(again.exhausted);
 
     let _ = std::fs::remove_dir_all(&dir);
 }
