@@ -13,6 +13,24 @@
 //!
 //! Without the feature flag, all types are present but [`EbpfAdapter::is_available`]
 //! returns `false` and all operations return [`EbpfError::Unavailable`].
+//!
+//! ## REC-C3.3.2.3 — composition seam
+//!
+//! This crate is the **only** place in `chronos` that calls
+//! `EbpfAdapter::new()` for production use. The capability is exposed
+//! to the rest of the workspace through the
+//! [`UprobeInjector`](chronos_domain::ports::UprobeInjector) port:
+//!
+//! - [`EbpfUprobeInjector::acquire`] builds the adapter and wraps it in
+//!   a [`EbpfUprobeHandle`] that implements
+//!   [`UprobeHandle`](chronos_domain::ports::UprobeHandle).
+//! - [`EbpfUprobeInjector::new`] is the canonical constructor from a
+//!   composition root (`chronos_mcp::composition::default_uprobe_injector`);
+//!   no other crate is allowed to name `EbpfUprobeInjector` directly.
+//!
+//! See `docs/.../rec-c3-3-2-3-uprobe-capability.md` (when committed)
+//! for the architectural law: `chronos_services` MUST NOT import
+//! `chronos_ebpf`.
 
 pub mod ring_buffer;
 pub mod types;
@@ -331,6 +349,102 @@ impl CaptureTraceAdapter for EbpfAdapter {
     /// Get a human-readable name for this adapter.
     fn name(&self) -> &str {
         "ebpf"
+    }
+}
+
+// =====================================================================
+// REC-C3.3.2.3 — composition seam for the uprobe capability.
+//
+// `EbpfUprobeInjector` is the **only** constructor of `EbpfUprobeHandle`
+// in the workspace. It is exposed to the rest of `chronos` through
+// `chronos_domain::ports::UprobeInjector`. `chronos_mcp::composition`
+// owns the canonical `Arc<dyn UprobeInjector>` production value via
+// `default_uprobe_injector()`; no other crate is allowed to construct
+// an `EbpfAdapter` directly for production use.
+// =====================================================================
+
+/// Composition-root constructor for the eBPF uprobe capability.
+///
+/// Concrete struct on purpose: it carries no state, and the
+/// `UprobeInjector` trait's `&self` signature lets a single instance
+/// serve every concurrent `acquire` call. The struct is public so
+/// `chronos-mcp::composition::default_uprobe_injector` is the sole
+/// production caller, but
+/// `chronos_domain::ports::UprobeInjector::dyn`-shaped usage is the
+/// only one services is allowed to do.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct EbpfUprobeInjector;
+
+impl EbpfUprobeInjector {
+    /// Canonical constructor (composition root only).
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl chronos_domain::ports::UprobeInjector for EbpfUprobeInjector {
+    fn acquire(
+        &self,
+    ) -> Result<
+        std::sync::Arc<dyn chronos_domain::ports::UprobeHandle>,
+        chronos_domain::capability::CapabilityUnavailable,
+    > {
+        match EbpfAdapter::new() {
+            Ok(adapter) => Ok(std::sync::Arc::new(EbpfUprobeHandle {
+                inner: std::sync::Arc::new(adapter),
+            })),
+            Err(e) => {
+                Err(chronos_domain::capability::CapabilityUnavailable::ebpf_uprobe(e.to_string()))
+            }
+        }
+    }
+}
+
+/// Wrapper that implements `UprobeHandle` on top of the concrete
+/// `EbpfAdapter`. Holds the adapter behind `Arc` so it can be shared
+/// with the `LiveProbeSession` without binding the session to the
+/// concrete type.
+///
+/// ### Why a wrapper
+///
+/// `EbpfAdapter` implements a richer surface than the port exposes
+/// (`start_capture`, `attach_to_process`, `stop_capture`, …); the
+/// wrapper pins the session-visible surface to the three port methods
+/// the cycle requires (`attach`, `detach`) and to no others. Future
+/// backends (a non-eBPF uprobe provider) only have to implement the
+/// same three methods.
+#[derive(Debug)]
+pub struct EbpfUprobeHandle {
+    inner: std::sync::Arc<EbpfAdapter>,
+}
+
+impl EbpfUprobeHandle {
+    /// Borrow the wrapped `Arc<EbpfAdapter>` for diagnostic-only
+    /// callers (tests, observers). Production code must not reach into
+    /// the inner adapter — it is intended to disappear from the
+    /// production vocabulary in C3.3.2.4+.
+    #[allow(dead_code)]
+    pub(crate) fn inner(&self) -> &std::sync::Arc<EbpfAdapter> {
+        &self.inner
+    }
+}
+
+impl chronos_domain::ports::UprobeHandle for EbpfUprobeHandle {
+    fn attach(
+        &self,
+        pid: u32,
+        binary_path: &str,
+        symbol_name: &str,
+    ) -> Result<(), chronos_domain::ports::UprobeAttachError> {
+        self.inner
+            .attach_uprobe(pid, binary_path, symbol_name)
+            .map_err(|e| chronos_domain::ports::UprobeAttachError::new(e.to_string()))
+    }
+
+    fn detach(&self) -> Result<(), chronos_domain::ports::UprobeAttachError> {
+        self.inner
+            .detach_all()
+            .map_err(|e| chronos_domain::ports::UprobeAttachError::new(e.to_string()))
     }
 }
 

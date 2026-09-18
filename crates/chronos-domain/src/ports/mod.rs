@@ -19,6 +19,7 @@ pub mod notification;
 mod probe;
 mod session;
 mod telemetry;
+pub mod uprobe;
 
 pub use execution_log::{ExecutionLogError, ExecutionLogPage, ExecutionLogProvider};
 pub use execution_log_factory::ExecutionLogFactory;
@@ -33,3 +34,4 @@ pub use session::{InMemorySessionRepository, SessionHandle, SessionRepository, S
 pub use telemetry::{
     Counters, InMemoryTelemetry, Metric, NoopTelemetry, TelemetryError, TelemetryReceiver,
 };
+pub use uprobe::{UprobeAttachError, UprobeHandle, UprobeInjector};
