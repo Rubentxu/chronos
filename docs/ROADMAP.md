@@ -5,44 +5,36 @@
 
 ## Active milestone
 
-**REC-C1.6 — Lifecycle-safe delete + retention/tail facts on the wire — Status: ACTIVE**
+**REC-C3 — Hexagonal boundary closure — Status: NEXT (not yet opened)**
 
-C1.5 (RESTART/RECOVERY) closed at `5bbf7748` on `main`. C1.6 closes
-the two gaps C1.5 explicitly deferred:
+REC-C1 and REC-C2 are both CLOSED on `main`:
 
-1. `delete_session` must refuse to delete a still-live probe with a
-   typed error (no silent probe stop, no partial state tear-down).
-2. `events_read` must surface retention and tail facts on the success
-   path (`retained_from_seq`, `history_truncated`, `tail.state`,
-   `tail.tail_seq`), and `CursorStale` must carry structured
-   `requested_next_seq` + `retained_from_seq` instead of being parsed
-   out of error text.
+- REC-C1.5 closure at `a1a79c80` (tag `rec-c1.5-closure`)
+- REC-C1.6 lifecycle-safe delete + retention/tail on wire at `83ee38e2` (tag `rec-c1-6-lifecycle-retention-wire`)
+- REC-C1.7 projection authority acceptance at `6190390d` (tag `rec-c1-7-projection-authority-acceptance`)
+- REC-C1.8 authoritative evidence handoff at `451a29b6` (tag `rec-c1-8-authoritative-evidence-handoff`) — REC-C1 fully closed
+- REC-C2.0 eventbus legacy inventory + ratchet at `4c7df70e`
+- REC-C2.1 TripwireFired as ExecutionLog evidence at `686a364c`
+- REC-C2.2 accepted-Raw seam + producer convergence at `f02ab311` (tag `rec-c2.2-accepted-raw-seam`)
+- REC-C2.3 EventBus removal at `d435557e` (tag `rec-c2.3-eventbus-removal`)
+- REC-C2.5 formal closure at `<pending merge>` (tag `rec-c2-5-formal-closure`) — REC-C2 fully closed
 
-C1.6 does **not** start REC-C2 (legacy/event-path deletion); that
-remains blocked behind the REC-C1.8 handoff. C1.6 also does **not**
-invent a "retention policy" name on the wire — only facts already in
-the manifest become visible.
+Next gate is **REC-C3 — Hexagonal boundary closure**, owned by the
+`HEX-*` and `CONN-*` contracts in `reconstruction-contracts.toml`.
+REC-C3 is multi-cycle (C3.1..C3.5 per
+`docs/chronos-agentic-reconstruction/docs/roadmap/CONVERGENCE_BACKLOG.md`):
+application ports, extract webhook infrastructure, invert
+services -> concrete adapter dependencies, remove store -> native,
+dependency graph gate to zero.
 
-C1.6.0 (first commit of the cycle) reconciles the documentary drift
-left by C1.5 close (`active_gate` in reconstruction-contracts.toml +
-the "Active milestone" line above). The first cycle commit may touch
-both the contracts file and the roadmap to put them on the same side.
-
-Primary plan: `cycle-artifacts/p-3416cfb8288f8964/rec-c1-6-lifecycle-retention-wire/proposal.md`
-Acceptance: REC-C1's remaining acceptance gates (C1-01 10k / two
-consumers / forced gap, C1-05 time semantics) exercised end-to-end
-against the production wire after C1.6 ships.
+The `## Convergence sequence` table below reflects this state.
 
 ## Convergence sequence
 
 1. **REC-C0 — Restore the truth baseline** — CLOSED (C0.5-D sentinel)
-2. **REC-C1 — ExecutionLog cutover and truthful reads** — IN PROGRESS
-    * REC-C1.0..C1.4 truth invariants, REC-C1.5 restart/recovery — CLOSED
-    * REC-C1.6 lifecycle-safe delete + retention on wire — **ACTIVE**
-    * REC-C1.7 (placeholder until C1.6 plans land)
-    * REC-C1.8 handoff (gate before C2)
-3. **REC-C2 — Legacy evidence/event-path deletion** — BLOCKED until REC-C1.8
-4. **REC-C3 — Hexagonal boundary closure**
+2. **REC-C1 — ExecutionLog cutover and truthful reads** — CLOSED
+3. **REC-C2 — Legacy evidence/event-path deletion** — CLOSED
+4. **REC-C3 — Hexagonal boundary closure** — NEXT (active_gate)
 5. **REC-C4 — SOLID + connascence reduction**
 6. **REC-C5 — Canonical Agent API convergence**
 7. **REC-C6 — Close unfinished M1–M4 reconstruction contracts**
@@ -68,6 +60,11 @@ The following cycle/milestone records remain historically closed. Their close st
   - repository governance namespace; distinct from official reconstruction M10 Execution Explorer.
 - **rec-c1-5-closure** — closed 2026-09-17 (merged --no-ff into `main` as `a1a79c80`; tag `rec-c1.5-closure`).
   - canonical ExecutionLog root resolver, MCP startup bootstrap, durable delete, durable seal on clean stop. Four real-process sandbox UATs (R1..R4) plus the readiness invariant.
+- **rec-c1-6-lifecycle-retention-wire** — closed (tag `rec-c1-6-lifecycle-retention-wire` at `83ee38e2`). Lifecycle-safe `delete_session` + `RetentionFacts`/`TailFacts` on `events_read` wire + `CursorStale` envelope with structured `requested_next_seq`/`retained_from_seq`.
+- **rec-c1-7-projection-authority-acceptance** — closed (tag at `6190390d`). `chronos_services::projection::build_engine` + projection gate in MCP handlers. UAT-REC-C1-01 (two consumers), UAT-REC-C1-05 (time semantics), restart-equivalence on the wire.
+- **rec-c1-8-authoritative-evidence-handoff** — closed (tag at `451a29b6`). Three acceptance discrepancies from C1.7 closed; `chronos_log::segmented` bookkeeping bug surfaced as `FIND-C1.8-01` (deferred). REC-C1 fully closed.
+- **rec-c2-eventbus-removal** (C2.0..C2.3) — closed (C2.3 tag `rec-c2.3-eventbus-removal` at `d435557e`). `chronos-domain::bus` deleted; `ProbeBackend::read_since` removed; `bus_capacity`/`bus_fill` removed from wire; ratchet at baseline 0.
+- **rec-c2-5-formal-closure** — closed (tag `rec-c2-5-formal-closure`, see `cycle-artifacts/p-3416cfb8288f8964/rec-c2-5-formal-closure/`). LEGACY-001/002 contracts flipped to `verified`; `reconstruction-contracts.toml` `active_gate` flipped from `REC-C2` to `REC-C3`. REC-C2 fully closed.
 
 ## Naming rule
 

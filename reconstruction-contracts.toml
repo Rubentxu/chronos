@@ -1,16 +1,19 @@
 version = 1
-updated = "2026-09-17"
-active_gate = "REC-C2"
+updated = "2026-09-18"
+active_gate = "REC-C3"
 
-# Gate history (rec-c1 stream closure):
+# Gate history (rec-c1 + rec-c2 stream closures):
 #   REC-C1.7 = closed on tag rec-c1-7-projection-authority-acceptance
 #              (tag object 5f603bff, merge 6190390d)
 #   REC-C1.8 = closed on tag rec-c1-8-authoritative-evidence-handoff
 #              (closes the three acceptance discrepancies left by C1.7;
 #               see cycles/index.md and cycle-artifacts/p-3416cfb8288f8964/rec-c1-8-authoritative-evidence-handoff/)
-#   REC-C2   = active (legacy deletion; owns EventBus / drain_raw_events /
-#              fired_buffer / TripwireFired retirement; LEGACY-001/002 stay `gap`
-#              until C2 closes)
+#   REC-C2   = closed on tag rec-c2-5-formal-closure
+#              (C2.0..C2.3 already merged; C2.4 characterization-only;
+#               C2.5 formally retired the EventBus + drain_raw_events +
+#               fired_buffer + TripwireFired legacy analytics paths.
+#               Ratchet scripts/check_legacy_evb.py at baseline 0.
+#               Architecture/spec fitness gate PASSED under --strict-legacy.)
 
 [policy]
 allowed_statuses = ["verified", "partial", "gap", "planned", "blocked"]
@@ -229,18 +232,22 @@ verify = "cargo test -p chronos-log --tests -- --test-threads=1"
 [[requirement]]
 id = "LEGACY-001"
 title = "No agent/query dependency on EventBus destructive reads"
-status = "gap"
+status = "verified"
 owner_gate = "REC-C2"
-evidence = ["legacy-evb-inventory.json", "scripts/check_legacy_evb.py"]
-notes = "REC-C1.8 ratifies this as C2-owned. REC-C1.7 kept EventBus / drain_raw_events / fired_buffer as legacy analytics paths; no agent-visible query depends on them after the C1.7 projection gate (execution_query / state_query / trace_slice all read the canonical SessionExecutionLog projection). The gap stays open until REC-C2 deletes the destructive-read surface; C1.8 closes the handoff without requiring this contract to be filled."
+evidence = ["legacy-evb-inventory.json", "scripts/check_legacy_evb.py", "scripts/check_architecture_contracts.py --strict-legacy"]
+uat = ["production wire no longer references bus_capacity / bus_fill / ProbeBackend::read_since; MCP tools execute_query/state_query/trace_slice read canonical SessionExecutionLog projection"]
+verify = "python3 scripts/check_legacy_evb.py && python3 scripts/check_architecture_contracts.py --strict-legacy"
+notes = "CLOSED 2026-09-18 with REC-C2.5 formal closure. chronos-domain::bus deleted (af41d8c2); ProbeBackend::read_since removed from trait (a99b3a35); bus_capacity/bus_fill deleted from wire (fb170dcc). legacy-evb-inventory.json baseline_total = 0. check_legacy_evb.py ratchet PASSED. check_architecture_contracts.py --strict-legacy PASSED. No agent-visible query depends on EventBus destructive reads after REC-C1.7 projection gate + REC-C2.3 architectural removal."
 
 [[requirement]]
 id = "LEGACY-002"
 title = "TripwireFired is ExecutionLog evidence and no independent fired queue remains"
-status = "gap"
+status = "verified"
 owner_gate = "REC-C2"
-evidence = ["legacy-evb-inventory.json", "scripts/check_legacy_evb.py"]
-notes = "REC-C1.8 ratifies this as C2-owned. TripwireFired still flows through the legacy fired_buffer; it is not yet projected as ExecutionLog evidence. The gap stays open until REC-C2 retires the independent fired queue and re-sources TripwireFired from the durable log. C1.8 closes the handoff without requiring this contract to be filled."
+evidence = ["legacy-evb-inventory.json", "scripts/check_legacy_evb.py", "scripts/check_architecture_contracts.py --strict-legacy", "crates/chronos-log/tests/rec_c2_1_tripwire_evidence.rs"]
+uat = ["rec_c2_1_tripwire_evidence covers segment round-trip with both consumer-rebuild and crashed-producer-rebuild paths"]
+verify = "python3 scripts/check_legacy_evb.py && python3 scripts/check_architecture_contracts.py --strict-legacy && cargo test -p chronos-log --test rec_c2_1_tripwire_evidence -- --test-threads=1"
+notes = "CLOSED 2026-09-18 with REC-C2.5 formal closure. TripwireFired is now an ExecutionKind::TripwireFired ExecutionRecord (see rec_c2_1_tripwire_evidence), derived from the canonical log. fired_buffer removed via REC-C2.1 + REC-C2.3. No independent fired queue exists in the code or wire. ratchet at baseline 0; --strict-legacy mode PASSED."
 
 [[requirement]]
 id = "HEX-001"
