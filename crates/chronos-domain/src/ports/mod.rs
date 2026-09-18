@@ -19,7 +19,7 @@ mod probe;
 mod session;
 mod telemetry;
 
-pub use execution_log::{ExecutionLogProviderShape, NoopExecutionLogProvider};
+pub use execution_log::{ExecutionLogError, ExecutionLogPage, ExecutionLogProvider};
 pub use notification::{
     NotificationDeliveryError, NotificationRequest, NotificationSink, NotificationTarget,
     NullNotificationSink,
