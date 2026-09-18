@@ -21,11 +21,11 @@ echo "origin/rec-c3-ci-hygiene = $(git rev-parse origin/rec-c3-ci-hygiene)"
 > commit was authored on one branch and not fast-forwarded into main
 > before session close (this exact pattern bit us earlier today).
 
-At the time this handoff commit was authored, the three refs converged
-at `c11de1fa`. A subsequent handoff-correction commit advanced them to
-`5b221c98`. The **invariant** ("all three refs equal") matters; the
-specific SHA does not — re-run the command above to learn the current
-value.
+Earlier commits in this handoff's lineage referenced concrete SHAs
+(`c11de1fa`, `5b221c98`, etc.) at authoring time, but the next session
+must not trust those literals — the **invariant** ("all three refs
+equal") matters; the specific SHA does not. Re-run the command above
+to learn the current value.
 
 | Field                | Value |
 |----------------------|-------|
