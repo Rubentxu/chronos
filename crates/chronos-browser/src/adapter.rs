@@ -147,8 +147,7 @@ impl BrowserAdapter {
             .map_err(|e| BrowserError::CdpConnectionFailed(e.to_string()))?;
 
         // Stop probe (cleanup Chrome)
-        adapter
-            .stop_probe(&session)
+        ProbeBackend::stop_probe(&adapter, &session)
             .map_err(|e| BrowserError::CdpConnectionFailed(e.to_string()))?;
 
         Ok(events)
@@ -464,7 +463,7 @@ mod tests {
         let adapter = BrowserAdapter::new();
         let session =
             CaptureSession::new(0, Language::WebAssembly, CaptureConfig::new("about:blank"));
-        let result = adapter.stop_probe(&session);
+        let result = chronos_domain::ProbeBackend::stop_probe(&adapter, &session);
         assert!(
             result.is_ok(),
             "stop_probe should succeed even without Chrome"
@@ -477,10 +476,10 @@ mod tests {
         // is documented as consuming, and that contract is unchanged.
         let adapter = BrowserAdapter::new();
 
-        let first = adapter.take_semantic_events().unwrap();
+        let first = BrowserAdapter::take_semantic_events(&adapter).unwrap();
         assert!(first.is_empty());
 
-        let second = adapter.take_semantic_events().unwrap();
+        let second = BrowserAdapter::take_semantic_events(&adapter).unwrap();
         assert!(second.is_empty());
     }
 
@@ -490,10 +489,10 @@ mod tests {
     fn test_raw_events_does_not_clear_buffer() {
         let adapter = BrowserAdapter::new();
 
-        let first = adapter.raw_events();
+        let first = BrowserAdapter::raw_events(&adapter);
         assert!(first.is_empty());
 
-        let second = adapter.raw_events();
+        let second = BrowserAdapter::raw_events(&adapter);
         assert!(second.is_empty());
 
         // Push through the public capture seam and prove the buffer survives a read.
@@ -503,9 +502,9 @@ mod tests {
                 1, 100, 1, 11, "SIGSEGV", 0,
             ));
         }
-        let read = adapter.raw_events();
+        let read = BrowserAdapter::raw_events(&adapter);
         assert_eq!(read.len(), 1, "raw_events must see the buffered event");
-        let read_again = adapter.raw_events();
+        let read_again = BrowserAdapter::raw_events(&adapter);
         assert_eq!(
             read_again.len(),
             1,
@@ -533,12 +532,80 @@ mod tests {
         let session =
             CaptureSession::new(0, Language::WebAssembly, CaptureConfig::new("about:blank"));
 
-        let r1 = adapter.stop_probe(&session);
-        let r2 = adapter.stop_probe(&session);
-        let r3 = adapter.stop_probe(&session);
+        let r1 = chronos_domain::ProbeBackend::stop_probe(&adapter, &session);
+        let r2 = chronos_domain::ProbeBackend::stop_probe(&adapter, &session);
+        let r3 = chronos_domain::ProbeBackend::stop_probe(&adapter, &session);
 
         assert!(r1.is_ok());
         assert!(r2.is_ok());
         assert!(r3.is_ok());
+    }
+}
+
+// =====================================================================
+// REC-C3.3.2.4 — composition seam for the browser probe capability.
+//
+// `BrowserProbeFactoryImpl` is the **only** constructor of a
+// `BrowserProbeBackend` in the workspace. It is exposed to the rest
+// of `chronos` through `chronos_domain::ports::BrowserProbeFactory`.
+// `chronos_mcp::composition` owns the canonical
+// `Arc<dyn BrowserProbeFactory>` production value via
+// `default_browser_probe_factory()`; no other crate is allowed to
+// construct a `BrowserAdapter` directly for production use.
+// =====================================================================
+
+use async_trait::async_trait;
+use chronos_domain::capability::CapabilityUnavailable;
+use chronos_domain::ports::browser_probe::{
+    BrowserError as PortBrowserError, BrowserProbeBackend, BrowserProbeFactory,
+};
+
+/// Concrete factory: every `create` call performs the `is_chrome_available`
+/// check and, when green, hands out a fresh `BrowserAdapter` wrapped
+/// behind the port trait.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct BrowserProbeFactoryImpl;
+
+impl BrowserProbeFactoryImpl {
+    /// Canonical constructor (composition root only).
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl BrowserProbeFactory for BrowserProbeFactoryImpl {
+    fn create(&self) -> Result<std::sync::Arc<dyn BrowserProbeBackend>, CapabilityUnavailable> {
+        if !BrowserAdapter::is_chrome_available() {
+            return Err(CapabilityUnavailable::browser_probe(
+                "chrome/chromium not available on host",
+            ));
+        }
+        Ok(std::sync::Arc::new(BrowserAdapter::new()))
+    }
+}
+
+#[async_trait]
+impl BrowserProbeBackend for BrowserAdapter {
+    async fn start_probe_async(
+        &self,
+        config: CaptureConfig,
+        headless: bool,
+        chrome_path: Option<&str>,
+    ) -> Result<CaptureSession, PortBrowserError> {
+        BrowserAdapter::start_probe_async(self, config, headless, chrome_path)
+            .await
+            .map_err(|e| PortBrowserError::new(e.to_string()))
+    }
+
+    fn stop_probe(&self, session: &CaptureSession) -> Result<(), PortBrowserError> {
+        ProbeBackend::stop_probe(self, session).map_err(|e| PortBrowserError::new(e.to_string()))
+    }
+
+    fn take_semantic_events(&self) -> Result<Vec<SemanticEvent>, PortBrowserError> {
+        BrowserAdapter::take_semantic_events(self).map_err(|e| PortBrowserError::new(e.to_string()))
+    }
+
+    fn raw_events(&self) -> Vec<TraceEvent> {
+        BrowserAdapter::raw_events(self)
     }
 }
