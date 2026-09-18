@@ -377,35 +377,33 @@ fn tempdir(label: &str) -> std::path::PathBuf {
 /// cycle).
 #[test]
 fn m1_03_execution_log_migration_impl() {
-    use chronos_log::{SegmentedConfig, SegmentedExecutionLog};
+    use chronos_domain::ports::execution_log::ExecutionLogProvider;
+    use chronos_log::{
+        provider::SegmentedExecutionLogProvider, SegmentedConfig, SegmentedExecutionLog,
+    };
     use chronos_native::probe_backend::{trace_event_to_log_record_for_test, NativeProbeBackend};
     use std::sync::Arc;
 
     let dir = tempdir("m1-03");
-    let backend = NativeProbeBackend::new().with_execution_log_dir(Some(dir.clone()));
+    let backend = NativeProbeBackend::new();
 
     // -- 1. Producer path: simulate what `dual_push` writes. ------
     // Build a SegmentedExecutionLog the same way `start_probe` would.
     let session_log_id = "native-uat-session".to_string();
     let log_dir = dir.join(&session_log_id);
-    let log = Arc::new(
+    let concrete = Arc::new(
         SegmentedExecutionLog::open(
             chronos_log::SessionId::new(&session_log_id),
             SegmentedConfig::with_dir(&log_dir),
         )
         .expect("open log"),
     );
-    // Attach it to the backend so `read_execution_log_records` can
-    // see the same records. We do this by going through the same
-    // method `start_probe` uses internally: store the Arc on the
-    // backend, then the query path picks it up.
-    {
-        let mut slot = backend
-            .execution_log_slot_for_test()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        *slot = Some(log.clone());
-    }
+    // REC-C3.3.2 — wire the writer through the canonical port.
+    let provider: Arc<dyn ExecutionLogProvider> = Arc::new(SegmentedExecutionLogProvider::new(
+        chronos_log::SessionId::new(&session_log_id),
+        concrete.clone(),
+    ));
+    backend.attach_execution_log(provider.clone());
 
     // Build 5 synthetic TraceEvents and push them via the producer's
     // record-shape (the same shape `dual_push` produces).
@@ -433,14 +431,18 @@ fn m1_03_execution_log_migration_impl() {
         .collect();
     for (i, ev) in synth_events.iter().enumerate() {
         let rec = trace_event_to_log_record_for_test(&session_log_id, i as u64 * 1000, ev);
-        log.append(rec).expect("append");
+        concrete.append(rec).expect("append");
     }
-    log.flush().expect("flush");
+    concrete.flush().expect("flush");
 
-    // -- 2. Consumer path: query via `read_execution_log_records`. -
-    let (decoded, tail_seq) = backend
-        .read_execution_log_records(None, 100)
-        .expect("query");
+    // -- 2. Consumer path: query via the canonical port. ----
+    // REC-C3.3.2 — `read_execution_log_records` is gone. Read from
+    // the same provider through `read_log_with_stats`, which preserves
+    // the m1-04 metric exactly (counter increments BEFORE `since`).
+    let (decoded, tail_seq, _unparseable, total_seen) =
+        chronos_native::probe_backend::read_log_with_stats(provider.as_ref(), None, 100)
+            .expect("query");
+    assert_eq!(total_seen, 5, "every record was visible at read time");
     assert_eq!(
         decoded.len(),
         5,
@@ -461,9 +463,9 @@ fn m1_03_execution_log_migration_impl() {
     }
 
     // -- 3. Incremental read (`since` cursor). --------------------
-    let (decoded2, _) = backend
-        .read_execution_log_records(Some(2), 100)
-        .expect("query since=2");
+    let (decoded2, _, _, _) =
+        chronos_native::probe_backend::read_log_with_stats(provider.as_ref(), Some(2), 100)
+            .expect("query since=2");
     assert_eq!(
         decoded2.len(),
         2,
@@ -553,23 +555,23 @@ fn m1_04_execution_log_durable_cursors_and_decoders_impl() {
 
     // -- 2. Decoder counters on the consumer path --------------
     let dir2 = tempdir("m1-04-counters");
-    let backend = NativeProbeBackend::new().with_execution_log_dir(Some(dir2.clone()));
+    let backend = NativeProbeBackend::new();
     let log_dir = dir2.join("native-m1-04-uat-counters");
-    let log = Arc::new(
+    let concrete = Arc::new(
         SegmentedExecutionLog::open(
             chronos_log::SessionId::new("native-m1-04-uat-counters"),
             SegmentedConfig::with_dir(&log_dir),
         )
         .expect("open"),
     );
-    {
-        let mut slot = backend
-            .execution_log_slot_for_test()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        *slot = Some(log.clone());
-    }
+    let provider2: Arc<dyn ExecutionLogProvider> = Arc::new(SegmentedExecutionLogProvider::new(
+        chronos_log::SessionId::new("native-m1-04-uat-counters"),
+        concrete.clone(),
+    ));
+    backend.attach_execution_log(provider2.clone());
     // One valid TraceEvent + one unparseable payload.
+    use chronos_domain::ports::execution_log::ExecutionLogProvider;
+    use chronos_log::provider::SegmentedExecutionLogProvider;
     let good = chronos_domain::TraceEvent {
         event_id: 7,
         timestamp_ns: 7000,
@@ -578,26 +580,28 @@ fn m1_04_execution_log_durable_cursors_and_decoders_impl() {
         location: chronos_domain::SourceLocation::default(),
         data: chronos_domain::EventData::Empty,
     };
-    log.append(trace_event_to_log_record_for_test(
-        "native-m1-04-uat-counters",
-        0,
-        &good,
-    ))
-    .expect("append good");
-    log.append(chronos_log::NewExecutionRecord {
-        kind: chronos_log::ExecutionKind::Raw,
+    concrete
+        .append(trace_event_to_log_record_for_test(
+            "native-m1-04-uat-counters",
+            0,
+            &good,
+        ))
+        .expect("append good");
+    concrete
+        .append(chronos_log::NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
 
-        session_id: chronos_log::SessionId::new("native-m1-04-uat-counters"),
-        monotonic_ns: 100,
-        payload: chronos_log::ExecutionPayload::new(b"\xff\xfe\xfd not-json".to_vec(), "noise"),
-        ..Default::default()
-    })
-    .expect("append noise");
-    log.flush().expect("flush");
+            session_id: chronos_log::SessionId::new("native-m1-04-uat-counters"),
+            monotonic_ns: 100,
+            payload: chronos_log::ExecutionPayload::new(b"\xff\xfe\xfd not-json".to_vec(), "noise"),
+            ..Default::default()
+        })
+        .expect("append noise");
+    concrete.flush().expect("flush");
 
-    let (events, tail, unparseable, total) = backend
-        .read_execution_log_records_with_stats(None, 100)
-        .expect("read_with_stats");
+    let (events, tail, unparseable, total) =
+        chronos_native::probe_backend::read_log_with_stats(provider2.as_ref(), None, 100)
+            .expect("read_with_stats");
     assert_eq!(total, 2, "two records total");
     assert_eq!(unparseable, 1, "exactly one record fails to decode");
     assert_eq!(events.len(), 1, "only the valid one comes back");

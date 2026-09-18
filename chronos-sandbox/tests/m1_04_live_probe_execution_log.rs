@@ -17,7 +17,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use chronos_log::{SegmentedConfig, SegmentedExecutionLog, SessionId};
+use chronos_domain::ports::execution_log::ExecutionLogProvider;
+use chronos_log::{
+    provider::SegmentedExecutionLogProvider, SegmentedConfig, SegmentedExecutionLog, SessionId,
+};
 use chronos_native::probe_backend::{trace_event_to_log_record_for_test, NativeProbeBackend};
 use chronos_native::ptrace_tracer::{PtraceConfig, PtraceEvent, PtraceTracer};
 
@@ -91,27 +94,24 @@ fn live_ptrace_events_flow_into_execution_log() {
     let dir = tempdir("live");
     let session_id = "m1-04-live-uat";
 
-    // Build the backend with the ExecutionLog dir attached. The
-    // ptrace loop in `run_probe_loop` opens the log itself; here
-    // we drive the events manually via the producer helper so we
-    // don't need root (we just need fork + ptrace execve stop).
-    let backend = NativeProbeBackend::new().with_execution_log_dir(Some(dir.clone()));
+    // Build the backend with the ExecutionLog provider attached. The
+    // canonical path is `attach_execution_log(provider)`; the legacy
+    // `with_execution_log_dir` is gone under REC-C3.3.2.
+    let backend = NativeProbeBackend::new();
 
     let log_dir = dir.join(format!("native-{}", session_id));
-    let log = Arc::new(
+    let concrete = Arc::new(
         SegmentedExecutionLog::open(
             SessionId::new(session_id),
             SegmentedConfig::with_dir(&log_dir),
         )
         .expect("open log"),
     );
-    {
-        let mut slot = backend
-            .execution_log_slot_for_test()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        *slot = Some(log.clone());
-    }
+    let provider: Arc<dyn ExecutionLogProvider> = Arc::new(SegmentedExecutionLogProvider::new(
+        SessionId::new(session_id),
+        concrete.clone(),
+    ));
+    backend.attach_execution_log(provider.clone());
 
     // Launch `/bin/true` under ptrace. `trace_syscalls: false` and
     // `follow_children: false` are the same config the unit tests
@@ -137,7 +137,7 @@ fn live_ptrace_events_flow_into_execution_log() {
                 let ev =
                     ptracenonevent_to_trace_event(&PtraceEvent::Exited { pid, exit_code }, seq);
                 let rec = trace_event_to_log_record_for_test(session_id, seq * 1000, &ev);
-                log.append(rec).expect("append Exited");
+                concrete.append(rec).expect("append Exited");
                 seq += 1;
                 saw_exit = true;
                 break;
@@ -145,7 +145,7 @@ fn live_ptrace_events_flow_into_execution_log() {
             Ok(Some(ev)) => {
                 let trace_ev = ptracenonevent_to_trace_event(&ev, seq);
                 let rec = trace_event_to_log_record_for_test(session_id, seq * 1000, &trace_ev);
-                log.append(rec).expect("append");
+                concrete.append(rec).expect("append");
                 seq += 1;
                 tracer.continue_execution(pid).expect("cont");
             }
@@ -154,14 +154,13 @@ fn live_ptrace_events_flow_into_execution_log() {
         }
     }
     assert!(saw_exit, "tracee must exit within 1000 events");
-    log.flush().expect("flush log");
+    concrete.flush().expect("flush log");
 
-    // Query through the backend's read path. The decode path
-    // must succeed for every record and the unparseable counter
-    // must be zero.
-    let (events, tail_seq, unparseable, total_seen) = backend
-        .read_execution_log_records_with_stats(None, 1000)
-        .expect("read_execution_log_records_with_stats");
+    // Query through the canonical port. The decode path must succeed
+    // for every record and the unparseable counter must be zero.
+    let (events, tail_seq, unparseable, total_seen) =
+        chronos_native::probe_backend::read_log_with_stats(provider.as_ref(), None, 1000)
+            .expect("read_log_with_stats");
     assert_eq!(total_seen, seq, "every event should be visible");
     assert_eq!(
         unparseable, 0,
@@ -195,23 +194,21 @@ fn decoder_counters_surface_unparseable_payloads() {
     // an unparseable payload. The counters must distinguish them.
     let dir = tempdir("counters");
     let session_id = "m1-04-counters";
-    let backend = NativeProbeBackend::new().with_execution_log_dir(Some(dir.clone()));
+    let backend = NativeProbeBackend::new();
 
     let log_dir = dir.join(format!("native-{}", session_id));
-    let log = Arc::new(
+    let concrete = Arc::new(
         SegmentedExecutionLog::open(
             SessionId::new(session_id),
             SegmentedConfig::with_dir(&log_dir),
         )
         .expect("open log"),
     );
-    {
-        let mut slot = backend
-            .execution_log_slot_for_test()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        *slot = Some(log.clone());
-    }
+    let provider: Arc<dyn ExecutionLogProvider> = Arc::new(SegmentedExecutionLogProvider::new(
+        SessionId::new(session_id),
+        concrete.clone(),
+    ));
+    backend.attach_execution_log(provider.clone());
 
     // One valid TraceEvent.
     use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
@@ -223,28 +220,30 @@ fn decoder_counters_surface_unparseable_payloads() {
         location: SourceLocation::default(),
         data: EventData::Empty,
     };
-    log.append(trace_event_to_log_record_for_test(session_id, 0, &good_ev))
+    concrete
+        .append(trace_event_to_log_record_for_test(session_id, 0, &good_ev))
         .expect("append good");
 
     // Two unparseable payloads (raw bytes that are not valid
     // TraceEvent JSON).
     for i in 1..=2u64 {
         let bytes = format!("not-json-{}-{{{{", i).into_bytes();
-        log.append(chronos_log::NewExecutionRecord {
-            kind: chronos_log::ExecutionKind::Raw,
+        concrete
+            .append(chronos_log::NewExecutionRecord {
+                kind: chronos_log::ExecutionKind::Raw,
 
-            session_id: SessionId::new(session_id),
-            monotonic_ns: i * 100,
-            payload: chronos_log::ExecutionPayload::new(bytes, "noise"),
-            ..Default::default()
-        })
-        .expect("append noise");
+                session_id: SessionId::new(session_id),
+                monotonic_ns: i * 100,
+                payload: chronos_log::ExecutionPayload::new(bytes, "noise"),
+                ..Default::default()
+            })
+            .expect("append noise");
     }
-    log.flush().expect("flush");
+    concrete.flush().expect("flush");
 
-    let (events, _, unparseable, total) = backend
-        .read_execution_log_records_with_stats(None, 100)
-        .expect("read");
+    let (events, _, unparseable, total) =
+        chronos_native::probe_backend::read_log_with_stats(provider.as_ref(), None, 100)
+            .expect("read");
     assert_eq!(total, 3, "three records total");
     assert_eq!(unparseable, 2, "two records fail to decode");
     assert_eq!(events.len(), 1, "one valid event decoded");
