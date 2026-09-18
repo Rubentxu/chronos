@@ -72,7 +72,7 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{info, warn};
+use tracing::info;
 
 /// Resource limits for capture operations.
 ///
@@ -2278,33 +2278,32 @@ impl ChronosServer {
     async fn run_one_compaction_round(server: &Arc<Self>) {
         let probes = server.live_probes.lock().unwrap();
         for (session_id, live_probe) in probes.iter() {
-            let log = match live_probe.backend.execution_log() {
-                Some(l) => l,
-                None => continue,
+            // REC-C3.3.2 — compaction goes through the canonical
+            // `SessionExecutionLog` wrapper, not the backend's stripped
+            // `Arc<dyn ExecutionLogProvider>` view. The port does NOT
+            // expose `compaction_metrics` / `maybe_compact`; those
+            // maintenance capabilities belong to the session wrapper.
+            let before = match live_probe.execution_log.compaction_metrics() {
+                Ok(m) => m,
+                Err(_) => continue,
             };
-            let before = log.compaction_metrics();
-            let removed = log.maybe_compact();
-            match removed {
-                Ok(paths) if !paths.is_empty() => {
-                    let after = log.compaction_metrics();
+            let removed = match live_probe.execution_log.maybe_compact() {
+                Ok(paths) => paths,
+                Err(_) => continue,
+            };
+            if !removed.is_empty() {
+                if let Ok(after) = live_probe.execution_log.compaction_metrics() {
                     let reclaimed_bytes =
                         after.bytes_reclaimed_total - before.bytes_reclaimed_total;
                     info!(
                         "auto-compact: session={} removed {} segment(s) ({} bytes reclaimed); \
                          cumulative runs={}, bytes_reclaimed={}, segments_removed={}",
                         session_id,
-                        paths.len(),
+                        removed.len(),
                         reclaimed_bytes,
                         after.compaction_runs_total,
                         after.bytes_reclaimed_total,
                         after.segments_removed_total,
-                    );
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    warn!(
-                        "auto-compact: session={} failed: {} (will retry on next tick)",
-                        session_id, e
                     );
                 }
             }
@@ -8909,35 +8908,40 @@ mod tests {
             },
         );
 
-        // Open a log, attach it to the backend slot, and append the record.
+        // Open a log, attach it to the backend, and append the record.
         let backend = NativeProbeBackend::new();
-        let log = Arc::new(
+        let concrete = Arc::new(
             SegmentedExecutionLog::open(
                 LogSessionId::new(&log_session_id),
                 SegmentedConfig::with_dir(&dir),
             )
             .unwrap(),
         );
-        log.append(NewExecutionRecord {
-            kind: chronos_log::ExecutionKind::Raw,
+        concrete
+            .append(NewExecutionRecord {
+                kind: chronos_log::ExecutionKind::Raw,
 
-            session_id: LogSessionId::new(&log_session_id),
-            monotonic_ns: 700,
-            payload: ExecutionPayload::new(serde_json::to_vec(&ev).unwrap(), "trace_event"),
-            invocation_id: Some(inv),
-            parent_invocation_id: Some(parent),
-            symbol_id: Some(sym),
-            captured_at_unix_ns: None,
-        })
-        .unwrap();
-        log.flush().ok();
-        {
-            let mut slot = backend
-                .execution_log_slot_for_test()
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
-            *slot = Some(log.clone());
-        }
+                session_id: LogSessionId::new(&log_session_id),
+                monotonic_ns: 700,
+                payload: ExecutionPayload::new(serde_json::to_vec(&ev).unwrap(), "trace_event"),
+                invocation_id: Some(inv),
+                parent_invocation_id: Some(parent),
+                symbol_id: Some(sym),
+                captured_at_unix_ns: None,
+            })
+            .unwrap();
+        concrete.flush().ok();
+        // REC-C3.3.2 — wire the writer through `attach_execution_log`
+        // with an `Arc<dyn ExecutionLogProvider>`. The legacy test
+        // slot is gone.
+        let provider: Arc<dyn chronos_domain::ports::execution_log::ExecutionLogProvider> =
+            Arc::new(
+                chronos_log::provider::SegmentedExecutionLogProvider::new(
+                    LogSessionId::new(&log_session_id),
+                    concrete.clone(),
+                ),
+            );
+        backend.attach_execution_log(provider);
 
         // Register the backend as a live probe session.
         //
@@ -8951,7 +8955,7 @@ mod tests {
         let owned_log = chronos_services::session_log::SessionExecutionLog::try_adopt(
             Some(dir.clone()),
             LogSessionId::new(&log_session_id),
-            log.clone(),
+            concrete.clone(),
         )
         .expect("caller identity must match the log's identity");
         let live = LiveProbeSession {
