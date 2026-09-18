@@ -91,7 +91,18 @@
       "owner_gate": "REC-C3.3",
       "severity": "low",
       "priority": "P2"
+    },
+    {
+      "id": "SDDK-GOV-RELEASE-APPLY-PERMISSIONS",
+      "summary": "Framework finding: sddk release apply --route local requires permissions.yaml at the repo root, but manually orchestrated repos can legitimately lack one. Today rec-c3-1 used a workaround (direct git tag + receipts + transition --gate-receipt). Tracked outside the product.",
+      "owner_gate": "framework",
+      "severity": "low",
+      "priority": "P3",
+      "filed_at": "2026-09-18",
+      "backlog_item": "bl-bl-01M2SYSH2G000385KXH3SREAR0",
+      "inc": "~/.sddk-knowledge/sddk-framework/incs/INC-RELEASE-APPLY-PERMISSIONS.md",
+      "rationale": "Repro is deterministic. Resolution should land as a simplify-and-realign step in any cycle that touches crates/sddk-cli/src/release.rs, NOT inside chronos product cycles. Carries forward into framework backlog until release-apply either (a) treats permissions.yaml as optional for --route local or (b) exposes --permit-unscoped-release."
     }
   ],
-  "next_cycle_recommendation": "Open REC-C3.2 (hexagonal boundary: extract webhook infrastructure). Carries the placeholder for HEX-001 with it. Next active milestone: pending; the active_gate in reconstruction-contracts.toml remains REC-C3 (sub-cycle C3.2)."
+  "next_cycle_recommendation": "Open REC-C3.2 (hexagonal boundary: extract webhook infrastructure out of chronos_domain). Three mechanical invariants should anchor the cycle from the first commit: HEX-C32-01 chronos_domain MUST NOT depend on HTTP/webhook adapter crates; HEX-C32-02 domain source MUST NOT import HTTP client/URL/retry infrastructure; HEX-C32-03 services/application may depend on NotificationSink, not on a concrete webhook implementation. UAT for substitutability: same use case through InMemoryNotificationSink AND WebhookNotificationSink, both pass. Do not roll C31-DEBT-01..03 into C3.2 — those belong to REC-C3.3 (services-inversion). Do not start REC-C3.2 unless explicitly greenlit by the operator; today is a checkpoint, not a cycle."
 }
