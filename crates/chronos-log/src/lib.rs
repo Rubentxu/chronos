@@ -22,6 +22,7 @@ pub mod checkpoint;
 pub mod cursor;
 pub mod discovery;
 pub mod error;
+pub mod factory;
 pub mod gap;
 pub mod location;
 pub mod memory;
