@@ -1,66 +1,65 @@
 {
-  "cycle_id": "retire-stale-bus-doc-mentions",
-  "cycle_record": "p-3416cfb8288f8964/retire-stale-bus-doc-mentions",
+  "cycle_id": "rec-c2-5-formal-closure",
+  "cycle_record": "p-3416cfb8288f8964/rec-c2-5-formal-closure",
   "path": "a-min",
   "status": "closed",
-  "head_sha": "473ae666",
-  "base_sha": "d435557e",
+  "head_sha": "21ab4f24",
+  "base_sha": "228b476f",
   "notes": [
-    "Closed 2026-09-18 via retroactive ledger sync. The chore was merged to main on 2026-09-17 via commit ab863cf1 (tag retire-stale-bus-doc-mentions) without an SDDK cycle.start call; today the orchestrator opened the cycle in the ledger and drove it through the full explore -> specify -> build -> verify -> release -> archive path.",
-    "Proactive proposal.md declared B-direct (no public API, no wire change); the ledger forced A-min because the A-min path is the only one whose transitions are wired in this framework version.",
-    "Evidence gathered during the sync: T0 fmt+clippy clean; 653/653 lib tests across chronos-log (77), chronos-native (107), chronos-services (370), chronos-mcp (99); ratchet check_legacy_evb.py baseline 0; working tree clean.",
-    "Gates passed (10 total): exploration-sufficient, requirements-testable, implementation-complete, tests-pass, policy-compliant, debt-severity-assigned, debt-priority-assigned, no-pending-effects, ledger-valid, vault-index-current. release-uat-approved waived (B-direct chore, no UAT applicable).",
-    "Artifacts created under cycle-artifacts/p-3416cfb8288f8964/retire-stale-bus-doc-mentions/: exploration-report.md, specification.md, implementation-receipt.md, verification-report.md, merge-receipt.md, release-receipt.md. proposal.md and tasks.md already existed from the original merge.",
-    "Archive manifest at ~/.sddk-knowledge/p-3416cfb8288f8964/changes/archive/retire-stale-bus-doc-mentions/archive-manifest.md. cycles/index.md row added.",
-    "Ledger: 302 events, chain valid. Cycle sequence at closure: 17.",
-    "Retroactive ledger-sync commit 473ae666 added the 4 missing report files to git so the cycle is reproducible from the repo alone."
+    "Closed 2026-09-18. REC-C2 (Legacy evidence/event-path deletion) gate formally closed via governance-only commit 21ab4f24 (docs/ROADMAP.md + reconstruction-contracts.toml). Tag rec-c2-5-formal-closure points at 21ab4f24.",
+    "REC-C2 has been substantively closed since REC-C2.3 (commit d435557e, tag rec-c2.3-eventbus-removal). chronos-domain::bus deleted (af41d8c2); ProbeBackend::read_since removed from trait (a99b3a35); bus_capacity/bus_fill removed from MCP wire (fb170dcc); legacy-evb-inventory.json baseline_total = 0.",
+    "reconstruction-contracts.toml: active_gate REC-C2 -> REC-C3. LEGACY-001 and LEGACY-002 contracts flipped from 'gap' to 'verified' with explicit uat and verify commands. check_architecture_contracts.py --strict-legacy PASSED.",
+    "Branch cleanup: 5 local branches deleted (chore/rec-c2.3-retire-stale-bus-doc, feat/rec-c1.5-closure, feat/rec-c1.6-lifecycle-retention-wire, feat/rec-c2.2-accepted-raw-seam, feat/rec-c2.3-eventbus-removal); 3 remote branches deleted (origin/feat/rec-c1.6-*, origin/feat/rec-c2.1-*, origin/feat/rec-c2.2-*).",
+    "Tier B-direct (governance, no Rust code change). Ledger: 308 events, chain valid after archive transition. Sequence at closure: 13.",
+    "Gates passed (11 total): exploration-sufficient, requirements-testable, implementation-complete, tests-pass, policy-compliant, debt-severity-assigned, debt-priority-assigned, no-pending-effects, ledger-valid, vault-index-current. release-uat-approved waived (B-direct governance, no UAT applicable).",
+    "Next: REC-C3 Hexagonal boundary closure is the active_gate. Per the convergence sequence, REC-C3 is multi-cycle (C3.1..C3.5: application ports, extract webhook infra, invert services->native, remove store->native, dependency graph gate to zero). Not opened in this session."
   ],
-  "prior_cycle_record": "rec-c2.3-eventbus-removal",
-  "main_sha": "473ae666",
-  "remote_tag": "retire-stale-bus-doc-mentions",
-  "remote_tag_peel": "ab863cf14814bda9746975dcb31954daa2dafd8d",
-  "peel_match": false,
-  "scope_doc_sha": "473ae666",
+  "prior_cycle_record": "retire-stale-bus-doc-mentions",
+  "main_sha": "21ab4f24",
+  "remote_tag": "rec-c2-5-formal-closure",
+  "remote_tag_peel": "21ab4f24888a78e71c7bf124c6f9497608288a7c",
+  "peel_match": true,
+  "scope_doc_sha": "21ab4f24",
   "phases": {
     "explore": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/retire-stale-bus-doc-mentions/exploration-report.md",
-      "summary": "Retroactive ledger sync; no new exploration needed. Cycle already shipped at ab863cf1."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c2-5-formal-closure/exploration-report.md",
+      "summary": "REC-C2 was substantively closed since C2.3; this cycle only closes the governance gap. C2.4 characterization-only confirmed."
     },
     "specify": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/retire-stale-bus-doc-mentions/specification.md",
-      "summary": "Promotion of the original proposal.md; 5 doc-only sites + 2 dead-code test stubs in 4 production files."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c2-5-formal-closure/specification.md",
+      "summary": "Six testable requirements REQ-1..REQ-6 covering ROADMAP, contracts, tag, ledger cycle, apply-checkpoint, vault index."
     },
     "design": {
       "status": "skipped",
       "artifact_path": null,
-      "summary": "A-min path skips the design phase for B-direct-eligible cycles."
+      "summary": "A-min path skips design for B-direct-eligible cycles."
     },
     "plan": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/retire-stale-bus-doc-mentions/tasks.md",
-      "summary": "D1..D5 doc edits + V1..V3 verification gates; all already executed."
+      "artifact_path": null,
+      "summary": "Inline plan: branch cleanup, then docs/contracts commit, then ledger cycle drive."
     },
     "build": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/retire-stale-bus-doc-mentions/implementation-receipt.md",
-      "summary": "Implementation landed in commits 23757379 and 99c0dcee; ledger-sync reports added in 473ae666."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c2-5-formal-closure/implementation-receipt.md",
+      "summary": "Governance commit 21ab4f24 + tag rec-c2-5-formal-closure. Branch cleanup performed before commits."
     },
     "verify": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/retire-stale-bus-doc-mentions/verification-report.md",
-      "summary": "T0 clean; 653/653 lib tests; ratchet baseline 0."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c2-5-formal-closure/verification-report.md",
+      "summary": "T0 fmt+clippy clean; check_legacy_evb.py PASS; check_architecture_contracts.py --strict-legacy PASS."
     },
     "release": {
       "status": "complete",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/retire-stale-bus-doc-mentions/release-receipt.md",
-      "summary": "Tag retire-stale-bus-doc-mentions at ab863cf1; merge-receipt references ab863cf1 -> b9461a3f -> 473ae666."
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c2-5-formal-closure/release-receipt.md",
+      "summary": "Tag rec-c2-5-formal-closure at 21ab4f24; merge-receipt references 228b476f -> 21ab4f24 -> 9968ef4e."
     },
     "archive": {
       "status": "complete",
-      "artifact_path": "/home/rubentxu/.sddk-knowledge/p-3416cfb8288f8964/changes/archive/retire-stale-bus-doc-mentions/archive-manifest.md",
-      "summary": "Vault archive-manifest + cycles/index.md updated; ledger at 302 events, chain valid."
+      "artifact_path": "/home/rubentxu/.sddk-knowledge/p-3416cfb8288f8964/changes/archive/rec-c2-5-formal-closure/archive-manifest.md",
+      "summary": "Vault archive-manifest + cycles/index.md updated; ledger chain valid at closure (308 events)."
     }
   },
   "vault_drift_baseline": {
@@ -68,14 +67,14 @@
     "drift_lines_post": 0,
     "ccs_fixed": [],
     "ccs_broken": [],
-    "note": "Vault was untouched before the sync; only the cycles/index.md row and changes/archive/retire-stale-bus-doc-mentions/ directory were added."
+    "note": "Vault was updated by this cycle: archive-manifest added under changes/archive/rec-c2-5-formal-closure/; cycles/index.md row added."
   },
   "carry_forward_findings": [
     {
-      "id": "FIND-C2.3-LEDGER-SYNC-RETROACTIVE",
-      "summary": "REC-C2.3 (architectural, 5 commits, 4 sub-cycles) was also merged to main on 2026-09-17 without an SDDK cycle.start call. The ledger has no record. Same retroactive sync pattern would close it if desired.",
-      "source": "This session's discovery while syncing retire-stale-bus-doc-mentions"
+      "id": "FIND-C3-OPEN-NEEDED",
+      "summary": "REC-C3 (Hexagonal boundary closure) is the active_gate but no REC-C3.* cycle has been opened yet. The HEX-* and CONN-* contracts in reconstruction-contracts.toml remain 'gap'. REC-C3 is multi-cycle (C3.1..C3.5 per CONVERGENCE_BACKLOG.md).",
+      "source": "Derived from this cycle's active_gate flip in reconstruction-contracts.toml"
     }
   ],
-  "next_cycle_recommendation": "Pick from the 2026-09-17 handoff: (B) doc-comment audit round 2 over the kept-as-is EventBus mentions; (C) REC-C3 EventBus-adjacent fan-out audit. Optionally retroactively sync rec-c2.3-eventbus-removal in the same ledger sync shape."
+  "next_cycle_recommendation": "Open the first REC-C3 sub-cycle (C3.1 Define application ports per CONVERGENCE_BACKLOG.md) as an A-lite cycle when ready. Or pick a smaller governance/cleanup item if a smaller cycle is preferred before the A-full C3 work begins."
 }
