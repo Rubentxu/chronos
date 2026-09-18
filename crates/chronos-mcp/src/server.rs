@@ -1695,108 +1695,9 @@ pub struct DebugGetMemoryParams {
 
 /// The session store this process was configured to open could not be opened.
 ///
-/// m9-75 (closes `FIND-M9-73-SILENT-IN-MEMORY-FALLBACK-MASKS-STORE-OPEN-FAILURE`):
-/// a store that exists but cannot be opened (locked by another process, corrupt,
-/// permission denied) must not be silently replaced by an empty in-memory store.
-#[derive(Debug)]
-pub struct StoreOpenError {
-    path: std::path::PathBuf,
-    /// Boxed so the `Err` variant stays small (`clippy::result_large_err`).
-    cause: Box<chronos_store::StoreError>,
-}
-
-impl StoreOpenError {
-    /// The path that could not be opened.
-    pub fn path(&self) -> &std::path::Path {
-        &self.path
-    }
-
-    /// The underlying store failure.
-    pub fn cause(&self) -> &chronos_store::StoreError {
-        &self.cause
-    }
-}
-
-impl std::fmt::Display for StoreOpenError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "cannot open the session store at {}: {}; refusing to start with an empty \
-             in-memory store (set CHRONOS_ALLOW_IN_MEMORY_FALLBACK=1 to opt in to that \
-             degraded mode explicitly)",
-            self.path.display(),
-            self.cause
-        )
-    }
-}
-
-impl std::error::Error for StoreOpenError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(self.cause.as_ref())
-    }
-}
-
-/// Resolve the session-store path from the two environment values that select it.
-///
-/// `$CHRONOS_DB_PATH` wins; otherwise `$HOME/.local/share/chronos/sessions.redb`.
-/// Split out from the environment reads so the resolution is testable without
-/// mutating the process environment.
-fn default_store_path(db_path: Option<&str>, home: Option<&str>) -> std::path::PathBuf {
-    if let Some(explicit) = db_path.filter(|p| !p.is_empty()) {
-        return std::path::PathBuf::from(explicit);
-    }
-    let mut path = std::path::PathBuf::from(home.filter(|h| !h.is_empty()).unwrap_or("."));
-    path.push(".local");
-    path.push("share");
-    path.push("chronos");
-    path.push("sessions.redb");
-    path
-}
-
-/// Whether the caller explicitly opted into the in-memory fallback.
-///
-/// Strict on purpose: only `1`, `true` or `yes` (case-insensitive, trimmed)
-/// enable it, because any looser rule reintroduces the silent degradation this
-/// policy exists to prevent.
-fn allow_in_memory_fallback(raw: Option<&str>) -> bool {
-    matches!(
-        raw.map(|v| v.trim().to_ascii_lowercase()).as_deref(),
-        Some("1") | Some("true") | Some("yes")
-    )
-}
-
-/// Open the store at `path`, or fail.
-///
-/// With `allow_in_memory_fallback` the pre-m9-75 behaviour is preserved, but
-/// explicitly and loudly: the failure is logged at error level and a throwaway
-/// in-memory store is used, so nothing is persisted.
-fn open_store_at(
-    path: &std::path::Path,
-    allow_in_memory_fallback: bool,
-) -> Result<SessionStore, StoreOpenError> {
-    match SessionStore::try_open(path) {
-        Ok(store) => {
-            tracing::info!("Opened session store at {}", path.display());
-            Ok(store)
-        }
-        Err(cause) if allow_in_memory_fallback => {
-            tracing::error!(
-                "Could not open session store at {}: {}. Starting with an in-memory store \
-                 (degraded: nothing will be persisted).",
-                path.display(),
-                cause
-            );
-            SessionStore::in_memory().map_err(|e| StoreOpenError {
-                path: path.to_path_buf(),
-                cause: Box::new(e),
-            })
-        }
-        Err(cause) => Err(StoreOpenError {
-            path: path.to_path_buf(),
-            cause: Box::new(cause),
-        }),
-    }
-}
+/// REC-C3.3.2: re-exported from `crate::composition::StoreOpenError` so
+/// callers that imported `crate::server::StoreOpenError` keep working.
+pub use crate::composition::StoreOpenError;
 
 impl ChronosServer {
     /// Build a server around the configured store, opening it first.
@@ -2055,16 +1956,16 @@ impl ChronosServer {
     /// in-memory store; see [`StoreOpenError`].
     #[cfg(not(test))]
     fn try_open_default_store() -> Result<SessionStore, StoreOpenError> {
-        let path = default_store_path(
+        let path = crate::composition::default_store_path(
             std::env::var("CHRONOS_DB_PATH").ok().as_deref(),
             std::env::var("HOME").ok().as_deref(),
         );
-        let allow_fallback = allow_in_memory_fallback(
+        let allow_fallback = crate::composition::allow_in_memory_fallback(
             std::env::var("CHRONOS_ALLOW_IN_MEMORY_FALLBACK")
                 .ok()
                 .as_deref(),
         );
-        open_store_at(&path, allow_fallback)
+        crate::composition::open_session_store_at(&path, allow_fallback)
     }
 
     /// Open the session store for unit tests.
@@ -2081,12 +1982,12 @@ impl ChronosServer {
     fn try_open_default_store() -> Result<SessionStore, StoreOpenError> {
         match std::env::var("CHRONOS_DB_PATH") {
             Ok(p) => {
-                let allow_fallback = allow_in_memory_fallback(
+                let allow_fallback = crate::composition::allow_in_memory_fallback(
                     std::env::var("CHRONOS_ALLOW_IN_MEMORY_FALLBACK")
                         .ok()
                         .as_deref(),
                 );
-                open_store_at(std::path::Path::new(&p), allow_fallback)
+                crate::composition::open_session_store_at(std::path::Path::new(&p), allow_fallback)
             }
             Err(_) => SessionStore::in_memory().map_err(|e| StoreOpenError {
                 path: std::path::PathBuf::from(":memory:"),
@@ -7384,20 +7285,20 @@ mod tests {
     #[test]
     fn test_default_store_path_prefers_db_path_and_falls_back_to_home() {
         assert_eq!(
-            default_store_path(Some("/tmp/explicit.redb"), Some("/home/dev")),
+            crate::composition::default_store_path(Some("/tmp/explicit.redb"), Some("/home/dev")),
             std::path::PathBuf::from("/tmp/explicit.redb")
         );
         assert_eq!(
-            default_store_path(None, Some("/home/dev")),
+            crate::composition::default_store_path(None, Some("/home/dev")),
             std::path::PathBuf::from("/home/dev/.local/share/chronos/sessions.redb")
         );
         assert_eq!(
-            default_store_path(Some(""), Some("/home/dev")),
+            crate::composition::default_store_path(Some(""), Some("/home/dev")),
             std::path::PathBuf::from("/home/dev/.local/share/chronos/sessions.redb"),
             "an empty CHRONOS_DB_PATH must not become a relative store path"
         );
         assert_eq!(
-            default_store_path(None, None),
+            crate::composition::default_store_path(None, None),
             std::path::PathBuf::from("./.local/share/chronos/sessions.redb")
         );
     }
@@ -7406,15 +7307,15 @@ mod tests {
     #[test]
     fn test_allow_in_memory_fallback_is_strict() {
         for yes in ["1", "true", "TRUE", " yes ", "Yes"] {
-            assert!(allow_in_memory_fallback(Some(yes)), "{yes:?} must opt in");
+            assert!(crate::composition::allow_in_memory_fallback(Some(yes)), "{yes:?} must opt in");
         }
         for no in ["", "0", "false", "no", "maybe", "2", "on"] {
             assert!(
-                !allow_in_memory_fallback(Some(no)),
+                !crate::composition::allow_in_memory_fallback(Some(no)),
                 "{no:?} must not opt in"
             );
         }
-        assert!(!allow_in_memory_fallback(None));
+        assert!(!crate::composition::allow_in_memory_fallback(None));
     }
 
     /// m9-75: a path whose parent does not exist yet is created, not rejected.
@@ -7422,7 +7323,7 @@ mod tests {
     fn test_open_store_at_creates_missing_parent_directories() {
         let dir = unique_test_dir("m9-75-missing-parent");
         let path = dir.join("nested").join("deeper").join("sessions.redb");
-        let store = open_store_at(&path, false).expect("a fresh path must be created");
+        let store = crate::composition::open_session_store_at(&path, false).expect("a fresh path must be created");
         store
             .save_session(
                 test_session_metadata("fresh"),
@@ -7448,7 +7349,7 @@ mod tests {
         let path = dir.join("sessions.redb");
 
         // Positive control: the file store works and persists.
-        let live = open_store_at(&path, false).expect("first open must succeed");
+        let live = crate::composition::open_session_store_at(&path, false).expect("first open must succeed");
         live.save_session(
             test_session_metadata("persisted"),
             &[make_fn_event(0, 100, 1, "main")],
@@ -7456,7 +7357,7 @@ mod tests {
         .expect("file-backed save must succeed");
 
         // (1) Fail closed: the locked store must be reported, not replaced.
-        let err = match open_store_at(&path, false) {
+        let err = match crate::composition::open_session_store_at(&path, false) {
             Ok(_) => panic!("a store that cannot be opened must not be silently replaced"),
             Err(e) => e,
         };
@@ -7472,7 +7373,7 @@ mod tests {
 
         // (2) The documented opt-in still degrades, loudly: the store is
         // genuinely in-memory, so what it accepts is never persisted.
-        let degraded = open_store_at(&path, true).expect("the explicit opt-in must still start");
+        let degraded = crate::composition::open_session_store_at(&path, true).expect("the explicit opt-in must still start");
         degraded
             .save_session(
                 test_session_metadata("ephemeral"),
@@ -7489,7 +7390,7 @@ mod tests {
         // session written to it and none of the degraded one's.
         drop(degraded);
         drop(live);
-        let reopened = open_store_at(&path, false).expect("the store must be openable again");
+        let reopened = crate::composition::open_session_store_at(&path, false).expect("the store must be openable again");
         let sessions: Vec<String> = reopened
             .list_sessions()
             .expect("list_sessions")

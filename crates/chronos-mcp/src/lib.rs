@@ -3,6 +3,7 @@
 //! Implements the Model Context Protocol server that exposes Chronos
 //! debugging tools to AI assistants.
 
+pub mod composition;
 pub mod init_error;
 pub mod security;
 pub mod server;
