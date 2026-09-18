@@ -255,7 +255,9 @@ git push origin main                            # origin/main @ 16bed4d8
 git checkout -b rec-c3-ci-hygiene
 git push -u origin rec-c3-ci-hygiene            # branch open, no commits
 # Then this handoff commit was authored on rec-c3-ci-hygiene, fast-forwarded
-# back into main, and pushed. Final remote state: c11de1fa on both branches.
+# back into main, and pushed. Subsequent corrections to this file
+# (made across the same day) do not change the convergence invariant
+# described in "Final remote state" above.
 ```
 
 `gh pr edit 31` updated the PR description with real state before merge:
