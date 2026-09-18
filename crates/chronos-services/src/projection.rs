@@ -298,7 +298,7 @@ mod tests {
     fn build_engine_empty_session_returns_empty_completeness() {
         let dir = tempdir("empty");
         let session_id = SessionId::new("empty-session");
-        let log = SessionExecutionLog::create(&dir, session_id.clone()).unwrap();
+        let log = SessionExecutionLog::create_for_tests(&dir, session_id.clone()).unwrap();
 
         let result = build_engine(&log).expect("build_engine ok");
         assert_eq!(result.meta.completeness, ProjectionCompleteness::Empty);
@@ -312,7 +312,7 @@ mod tests {
     fn build_engine_full_history_returns_full_completeness() {
         let dir = tempdir("full");
         let session_id = SessionId::new("full-session");
-        let log = SessionExecutionLog::create(&dir, session_id.clone()).unwrap();
+        let log = SessionExecutionLog::create_for_tests(&dir, session_id.clone()).unwrap();
         for seq in 0..5u64 {
             append_event(&log, &session_id, seq);
         }
@@ -336,7 +336,7 @@ mod tests {
     ) {
         let dir = tempdir("truncated");
         let session_id = SessionId::new("truncated-session");
-        let log = SessionExecutionLog::create(&dir, session_id.clone()).unwrap();
+        let log = SessionExecutionLog::create_for_tests(&dir, session_id.clone()).unwrap();
 
         // Build two segments (0..=4 and 5..=9) so a partial compaction
         // can retire just the first one.
@@ -383,7 +383,7 @@ mod tests {
         // and asking both sides to decode it.
         let dir = tempdir("decode");
         let session_id = SessionId::new("decode-session");
-        let log = SessionExecutionLog::create(&dir, session_id.clone()).unwrap();
+        let log = SessionExecutionLog::create_for_tests(&dir, session_id.clone()).unwrap();
         append_event(&log, &session_id, 0);
         log.flush().ok();
 
@@ -400,7 +400,7 @@ mod tests {
     fn build_engine_filters_registers_and_unknown() {
         let dir = tempdir("filter");
         let session_id = SessionId::new("filter-session");
-        let log = SessionExecutionLog::create(&dir, session_id.clone()).unwrap();
+        let log = SessionExecutionLog::create_for_tests(&dir, session_id.clone()).unwrap();
 
         // 1 noisy event: Custom+Registers (registers snapshot).
         let noisy = TraceEvent::new(
@@ -471,7 +471,7 @@ mod tests {
     fn build_engine_preserves_seq_event_id_timestamp_ns_as_independent_dimensions() {
         let dir = tempdir("time-semantics");
         let session_id = SessionId::new("time-semantics-session");
-        let log = SessionExecutionLog::create(&dir, session_id.clone()).unwrap();
+        let log = SessionExecutionLog::create_for_tests(&dir, session_id.clone()).unwrap();
 
         // Three records at deliberately uncorrelated (seq, event_id,
         // timestamp_ns) triples.

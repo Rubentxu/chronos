@@ -258,12 +258,13 @@ impl ProbeService {
 
         // REC-C1.2a: canonical ownership order.
         //   1. mint the canonical SessionId,
-        //   2. open the ExecutionLog the session will own,
+        //   2. open the ExecutionLog the session will own (via the
+        //      injected factory in the registry — C3.3.2),
         //   3. hand the backend only a clone for writing.
         // REC-C2.3: there is no longer a parallel `EventBus` to construct; the
         // accepted-Raw seam is the only producer.
         let session_id = uuid::Uuid::new_v4().to_string();
-        let owned_log = crate::session_log::SessionExecutionLog::create(
+        let owned_log = ctx.execution_logs.register_create(
             execution_log_dir(input.execution_log_dir.as_deref(), &session_id),
             chronos_log::SessionId::new(session_id.clone()),
         )?;
@@ -377,11 +378,12 @@ impl ProbeService {
             function_filter: None,
             max_duration_ms: None,
         };
-        // REC-C1.2a: same canonical order as `start` — mint id, own the log,
-        // then let the backend write through a clone.
+        // REC-C1.2a: same canonical order as `start` — mint id, own the log
+        // via the registry's factory (C3.3.2), then let the backend write
+        // through a clone.
         // REC-C2.3: no EventBus to construct.
         let session_id = uuid::Uuid::new_v4().to_string();
-        let owned_log = crate::session_log::SessionExecutionLog::create(
+        let owned_log = ctx.execution_logs.register_create(
             execution_log_dir(input.execution_log_dir.as_deref(), &session_id),
             chronos_log::SessionId::new(session_id.clone()),
         )?;
@@ -923,8 +925,11 @@ mod rec_c1_2_tests {
                 .unwrap()
                 .as_nanos()
         ));
-        crate::session_log::SessionExecutionLog::create(&dir, chronos_log::SessionId::new(tag))
-            .expect("test log")
+        crate::session_log::SessionExecutionLog::create_for_tests(
+            &dir,
+            chronos_log::SessionId::new(tag),
+        )
+        .expect("test log")
     }
 
     fn stub_session(execution_log: crate::session_log::SessionExecutionLog) -> LiveProbeSession {
@@ -1022,7 +1027,7 @@ mod rec_c1_2_tests {
         // A directory that cannot be created must fail session creation, not
         // silently fall back to a sink-less session.
         let bad_root = "/proc/definitely-not-creatable/chronos";
-        let err = crate::session_log::SessionExecutionLog::create(
+        let err = crate::session_log::SessionExecutionLog::create_for_tests(
             std::path::Path::new(bad_root),
             chronos_log::SessionId::new("sess-fail"),
         )

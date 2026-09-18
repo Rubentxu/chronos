@@ -632,7 +632,7 @@ mod rec_c1_3_tests {
                 .unwrap()
                 .as_nanos()
         ));
-        let owned = SessionExecutionLog::create(&dir, SessionId::new(tag)).expect("log");
+        let owned = SessionExecutionLog::create_for_tests(&dir, SessionId::new(tag)).expect("log");
         let handle = owned.handle();
         for (i, (event_type, ts, thread)) in events.iter().enumerate() {
             let event = TraceEvent::new(
@@ -720,7 +720,8 @@ mod rec_c1_3_tests {
     pub(super) fn gappy_owned() -> (SessionExecutionLog, std::path::PathBuf) {
         use chronos_log::{Gap, GapReason};
         let dir = tmpdir("gappy");
-        let owned = SessionExecutionLog::create(&dir, SessionId::new("gappy")).expect("log");
+        let owned =
+            SessionExecutionLog::create_for_tests(&dir, SessionId::new("gappy")).expect("log");
         let handle = owned.handle();
         push(&handle, 0, EventType::FunctionEntry);
         handle
@@ -909,7 +910,7 @@ mod rec_c1_3_tests {
                 .unwrap()
                 .as_nanos()
         ));
-        let owned = SessionExecutionLog::create(&dir, SessionId::new("t3")).expect("log");
+        let owned = SessionExecutionLog::create_for_tests(&dir, SessionId::new("t3")).expect("log");
         let handle = owned.handle();
         for i in 0..600u64 {
             push(&handle, i, EventType::FunctionEntry);
@@ -1007,7 +1008,8 @@ mod rec_c1_3_tests {
     fn c15_by_id_under_retention_never_claims_not_found() {
         use chronos_log::SessionId as LogSessionId;
         let dir = tmpdir("byid-retention");
-        let owned = SessionExecutionLog::create(&dir, LogSessionId::new("byid-ret")).expect("log");
+        let owned = SessionExecutionLog::create_for_tests(&dir, LogSessionId::new("byid-ret"))
+            .expect("log");
         let handle = owned.handle();
         // Two segments, so the first ten seqs can be retired as a whole unit.
         for i in 0..10u64 {
@@ -1154,7 +1156,8 @@ mod rec_c1_3_stall_tests {
     fn c14_two_gaps_are_reported_ordered_and_not_collapsed() {
         use chronos_log::{Gap, GapReason};
         let dir = tmpdir("c14-two-gaps");
-        let owned = SessionExecutionLog::create(&dir, SessionId::new("two-gaps")).expect("log");
+        let owned =
+            SessionExecutionLog::create_for_tests(&dir, SessionId::new("two-gaps")).expect("log");
         let handle = owned.handle();
         for i in 0..6u64 {
             push(&handle, i, EventType::FunctionEntry);
