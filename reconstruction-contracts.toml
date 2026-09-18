@@ -252,15 +252,32 @@ notes = "CLOSED 2026-09-18 with REC-C2.5 formal closure. TripwireFired is now an
 [[requirement]]
 id = "HEX-001"
 title = "Domain contains no HTTP/runtime infrastructure"
-status = "gap"
+status = "partial"
 owner_gate = "REC-C3"
-notes = "chronos-domain still owns optional reqwest webhook delivery."
+notes = "REC-C3.1 (this cycle): ports/* module exposes ProbeFactory/ProbeRegistry/SessionRepository/TelemetryReceiver/NotificationSink + null impls. chronos_domain still owns optional reqwest webhook delivery (deferred to REC-C3.2). scripts/check_hex_boundary.py passes mechanically. next: REC-C3.2 drops the reqwest dep; REC-C3.3 closes the storage leg."
+[[requirement.evidence]]
+kind = "script"
+path = "scripts/check_hex_boundary.py"
+result = "passes: 0 ports/* imports of infra crates; 0 missing re-exports from ports/mod.rs."
+[[requirement.evidence]]
+kind = "compile"
+path = "cargo check -p chronos-domain --all-targets"
+result = "0 errors / 0 warnings"
+[[requirement.evidence]]
+kind = "tests"
+path = "cargo test -p chronos-domain --tests"
+result = "164 passed (lib 145 + integration 19: probe_ports 8, session_ports 6, telemetry_ports 5)"
+[[requirement.evidence]]
+kind = "module"
+path = "crates/chronos-domain/src/ports/"
+result = "5 port modules (execution_log, notification, probe, session, telemetry); mod.rs re-exports the public surface"
 
 [[requirement]]
 id = "HEX-002"
 title = "Application services depend on ports, not concrete tracing/storage adapters"
 status = "gap"
 owner_gate = "REC-C3"
+notes = "REC-C3.1 declares the ports; chronos-services still consumes concrete adapters (SegmentedExecutionLog from chronos_log). Inversion scheduled for REC-C3.3."
 
 [[requirement]]
 id = "HEX-003"

@@ -27,6 +27,8 @@ application ports, extract webhook infrastructure, invert
 services -> concrete adapter dependencies, remove store -> native,
 dependency graph gate to zero.
 
+**REC-C3.1 (in-progress cycle):** `crates/chronos-domain/src/ports/{execution_log,notification,probe,session,telemetry}.rs` declared; `chronos_domain::session_id::SessionId` introduced to break the cyclc dep with `chronos_log`. `scripts/check_hex_boundary.py` enforces ports/* outbound purity + surface shape (PASSES). HEX-001 moved `gap -> partial`. HEX-002 stays `gap` (services inversion is C3.3). `ExecutionLogProvider` is a documented placeholder for C3.3.
+
 The `## Convergence sequence` table below reflects this state.
 
 ## Convergence sequence
