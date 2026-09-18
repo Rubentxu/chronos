@@ -3,8 +3,8 @@
   "project_id": "p-3416cfb8288f8964",
   "milestone": "REC-C3 — Hexagonal boundary closure",
   "sub_cycle": "C3.3.2 — composition / integration inversion (Tren A)",
-  "head_sha": "de0084ef1a87eb3a8bc5d8d9c1fb98f84e301d3a",
-  "merge_sha": "de0084ef1a87eb3a8bc5d8d9c1fb98f84e301d3a",
+  "head_sha": "b30ab0747118e36482d3153e94803ed34c17f842",
+  "merge_sha": "b30ab0747118e36482d3153e94803ed34c17f842",
   "base_sha": "147c10195f2da43b20b99b6d2d77f1c17c124242",
   "branch": "rec-c3.3-train-a",
   "path": "A-min",
@@ -92,7 +92,8 @@
     "b22a3625 feat(services): migrate SessionExecutionLog to capability bundle (C3.3.2.5.3+5.4)",
     "fd571666 feat(tests): anti-stale-waiver ratchet for capability bundle (C3.3.2.6)",
     "4ff8af72 chore(checker): drop stale ExecutionLogProviderShape/NoopExecutionLogProvider from REC-C3.3 surface",
-    "f4ad63de style(fmt): apply rustfmt --edition 2021 to files touched by Tren A"
+    "f4ad63de style(fmt): apply rustfmt --edition 2021 to files touched by Tren A",
+    "b30ab074 test(native): align exhausted assertion with stateless page semantics"
   ],
   "layer_completion": {
     "m0_layer_complete": true,
@@ -114,7 +115,7 @@
   "notes": [
     "No tag for Tren A. Tren A is a structural inversion (port split + capability-bundle wiring). The first behavior-bumping version after C3.3.3 + C3.4 closes earns the next tag.",
     "Workspace version 0.1.1 preserved at this commit.",
-    "PR #31 (https://github.com/Rubentxu/chronos/pull/31) carries 35 commits from 147c10195..HEAD. CI is currently pending on Architecture Contracts / CI / Coverage / Vault Drift Sweep / Deferred debt verification. The Test workflow ran fmt --all and reported drift on 6 files; this commit + the C3.3.1 companion commit + a fmt-style commit (f4ad63de) close that drift. The vault drift sweep fails on 16 lines of pre-existing drift on origin/main, not on Tren A code; the 9 lines introduced by Tren A's two apply-checkpoint.json files are fixed in this commit and the companion commit.",
+    "PR #31 (https://github.com/Rubentxu/chronos/pull/31) carries 36 commits from 147c10195..HEAD. The Test workflow was failing on accept_and_publish_lands_in_attached_provider because the test asserted the wrong semantics for LogPage::exhausted (it checks 'nothing at or after the input position', not 'tail reached after this page'); commit b30ab074 fixes the assertion to use position_after + a second read, the canonical 'caught up' signal for an append-only log. Vault drift sweep still fails on 16 lines of pre-existing drift on origin/main (out of scope for Tren A). Tren B is NOT started until PR #31 is merged and CI is green.",
     "Tren B is NOT started until PR #31 is merged and CI is green. After merge, the head_sha field will be updated to the fast-forward SHA.",
     "Composition root stays in chronos-mcp::composition. Bootstrap-scoped vs session-scoped factory distinction is mandatory for C3.3.3."
   ]
