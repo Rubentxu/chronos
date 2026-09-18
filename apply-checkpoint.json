@@ -2,64 +2,65 @@
   "cycle_id": "rec-c3-1-application-ports",
   "cycle_record": "p-3416cfb8288f8964/rec-c3-1-application-ports",
   "path": "a-full",
-  "status": "in_progress",
-  "head_sha": "8b5dcebe",
-  "base_sha": "8b5dcebe",
+  "status": "closed",
+  "head_sha": "33b4f79004b7634a9e88b7919f8b42e854c420e8",
+  "base_sha": "8b5dcebe2c94db1910d1ccce36467afcffe29b77",
   "notes": [
-    "REC-C3.1 cycle opened 2026-09-18. Phases explore -> specify -> design -> plan all completed today (2026-09-18). Build phase NOT started — paused for fresh session.",
-    "Pre-cycle research summary: chronos-domain/src/ports/ already hosts NotificationSink (177 lines). chronos-log/src/backend.rs declares ExecutionLogBackend trait + ExecutionLog<B: ?Sized> wrapper. chronos-services has 6 files depending on concrete SegmentedExecutionLog (HEX-002 territory, C3.3 not C3.1). 4 ports missing: ProbeFactory, ProbeRegistry, SessionRepository, TelemetryReceiver. ArtifactStore deferred to C3.4.",
-    "Spec: 10 REQs (REQ-1..REQ-10) covering ProbeFactory+ProbeRegistry, ExecutionLogProvider re-export, SessionRepository, TelemetryReceiver, NotificationSink verification, ArtifactStore deferral, ports/mod.rs wiring, compile tests, HEX-001 contract flip, ROADMAP update.",
-    "Design: 8 ADs (AD-1..AD-8). Key decisions: ports live in chronos-domain/src/ports/, ProbeController is new lifetime-focused trait distinct from ProbeBackend (capability-focused), ExecutionLogProvider is a re-export (not a new trait), SessionHandle references ports at every field, NullProbeFactory/Registry and InMemorySessionRepository/NoopTelemetry ship in same commit, ProbeController::detach consumes Box<Self>, cargo tree -p chronos-domain --depth 1 is the boundary check, HEX-001 flips to verified with mechanical evidence.",
-    "Plan: 10 tasks B1..B10 + 6 verification gates + 8-commit sub-cycle plan C1..C8.",
-    "Gates passed today (4): exploration-sufficient, requirements-testable, architecture-consistent (design-coherent wasn't registered, used architecture-consistent instead), plan-executable.",
-    "Cycle paused at phase: build with lease active. Resume tomorrow with: sddk cycle resume --cycle p-3416cfb8288f8964/rec-c3-1-application-ports --root /var/mnt/DiscoChino2-fast/Proyectos/rust/chronos --scope ."
+    "REC-C3.1 — Application ports. First sub-cycle of REC-C3 (Hexagonal boundary closure). CLOSED 2026-09-18 with v0.1.1.",
+    "Phases explore -> specify -> design -> plan -> build -> verify -> release -> archive all complete (18 events in ledger).",
+    "Build deliverable: crates/chronos-domain/src/{session_id, ports/{execution_log,notification,probe,session,telemetry}.rs}, lib.rs re-export, tests/{common/mod,probe_ports,session_ports,telemetry_ports}.rs, scripts/check_hex_boundary.py, reconstruction-contracts.toml flip on HEX-001 (gap -> partial), docs/ROADMAP.md note.",
+    "Verify V1..V6: T0 lint PASSED; 164 domain tests passed; 614 caller tests (domain + services + mcp) passed; scripts/check_hex_boundary.py OK; check_architecture_contracts.py --strict-legacy PASSED; cargo tree shows no HTTP/async.",
+    "Release: workspace version 0.1.0 -> 0.1.1; tag v0.1.1 (annotated) at cycle HEAD, remote-verified. Merge-receipt and release-receipt written under cycle-artifacts/. release-uat-approved gate waived (no MCP wire change in this cycle; UAT deferred to REC-C3.3).",
+    "Archive: ledger-valid (event_count=342, chain valid), vault-index-current (cycles/index.md row added), archive-manifest.md written. Cycle CLOSED.",
+    "Carry-forward findings (debt-report.json, schema_version 1.1.0): C31-DEBT-01 ExecutionLogProvider placeholder; C31-DEBT-02 SessionId type divergence; C31-DEBT-03 ports not consumed by services. All severity=low, priorities P3 / P3 / P2. Owner gate: REC-C3.3.",
+    "Same single-branch discipline as previous rec-* cycles: 9 commits + 1 housekeeping receipt-update commit on main, no chained PRs, no feat/* branches."
   ],
   "prior_cycle_record": "rec-c2-5-formal-closure",
-  "main_sha": "8b5dcebe",
-  "remote_tag": null,
-  "remote_tag_peel": null,
-  "peel_match": false,
-  "scope_doc_sha": "8b5dcebe",
+  "main_sha": "33b4f79004b7634a9e88b7919f8b42e854c420e8",
+  "remote_tag": "v0.1.1",
+  "remote_tag_peel": "33b4f79004b7634a9e88b7919f8b42e854c420e8",
+  "peel_match": true,
+  "scope_doc_sha": "cb30db39",
   "phases": {
     "explore": {
       "status": "complete",
       "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-1-application-ports/exploration-report.md",
-      "summary": "Research summary: existing ports (NotificationSink, ExecutionLogBackend, ProbeBackend, Capability); concrete dep violations in 6 services files; 4 ports missing; ArtifactStore deferred; C3.1..C3.5 coupling analysis."
+      "summary": "Existing ports analyzed: NotificationSink + chronos_log ExecutionLogBackend + ProbeBackend; 6 services files depend on concrete SegmentedExecutionLog; 4 ports missing for C3.1 (ProbeFactory, ProbeRegistry, SessionRepository, TelemetryReceiver)."
     },
     "specify": {
       "status": "complete",
       "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-1-application-ports/specification.md",
-      "summary": "Ten testable REQs. Non-goals: no inversion (C3.3), no webhook extraction (C3.2), no symbolization (C3.4)."
+      "summary": "10 REQs + 8 ADs. Three deliberate departures from the original spec: (a) ExecutionLogProvider is a placeholder, not a re-export, due to Cargo cyclic dep with chronos_log; (b) chronos_domain::session_id::SessionId introduced to break that cycle; (c) chronos_log::SessionId alias becomes C3.3 work."
     },
     "design": {
       "status": "complete",
       "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-1-application-ports/design.md",
-      "summary": "Eight ADs with rationale + rejected alternatives. Module map + risk table finalized."
+      "summary": "8 ADs finalized. Module map and risk table stable. Port trait boundaries explicitly separated: capability (ProbeBackend) vs lifetime (ProbeController) vs factory (ProbeFactory) vs registry (ProbeRegistry). NotificationSink left untouched (already shipped)."
     },
     "plan": {
       "status": "complete",
       "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-1-application-ports/tasks.md",
-      "summary": "Ten tasks B1..B10 in dependency order. Six verification gates. Eight-commit sub-cycle plan C1..C8."
+      "summary": "10 build tasks B1..B10 + 6 verification tasks V1..V6 + 8-commit sub-cycle plan C1..C8. Out-of-scope: T3, T4-smoke, T5 (no MCP wire change)."
     },
     "build": {
-      "status": "pending",
-      "artifact_path": null,
-      "summary": "Paused at the build phase boundary. Tasks B1..B10 not yet executed. Implementation deferred to fresh session."
+      "status": "complete",
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-1-application-ports/apply-progress.md",
+      "summary": "8 commits landed: session_id + execution_log placeholder (C1), probe (C2), session (C3), telemetry (C4), wiring + lib.rs (C5), tests (C6), hex boundary script + HEX-001 flip + roadmap note (C7), workspace version bump (C8 receiving tag)."
     },
     "verify": {
-      "status": "pending",
-      "artifact_path": null,
-      "summary": "T0 + T1+T2 + hex boundary check + architecture contract gate pending after build."
+      "status": "complete",
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-1-application-ports/verification-report.md",
+      "summary": "V1 lint 0 warnings. V2 164 domain. V3 614 callers. V4 hex boundary OK. V5 architecture --strict-legacy PASSED. V6 cargo tree shows 4 deps (no HTTP/async)."
     },
     "release": {
-      "status": "pending",
-      "artifact_path": null,
-      "summary": "Tag + push pending after verify."
+      "status": "complete",
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c3-1-application-ports/release-receipt.md",
+      "summary": "Tagged v0.1.1 (annotated) at 33b4f790; remote-verified via git ls-remote (tag hash 960e5d56). merge-receipt + release-receipt written. release-uat-approved waived (non-MCP inner-layer scope)."
     },
     "archive": {
-      "status": "pending",
-      "artifact_path": null,
-      "summary": "Vault archive-manifest + cycles/index.md row pending after release."
+      "status": "complete",
+      "artifact_path": "~/.sddk-knowledge/p-3416cfb8288f8964/changes/archive/rec-c3-1-application-ports/archive-manifest.md",
+      "summary": "ledger-valid (chain integrity preserved). vault-index-current (cycles/index.md row added). archive-manifest.md emitted. Cycle CLOSED at sequence 18."
     }
   },
   "vault_drift_baseline": {
@@ -67,14 +68,30 @@
     "drift_lines_post": 0,
     "ccs_fixed": [],
     "ccs_broken": [],
-    "note": "No vault changes today. Only Rust/cycle-artifacts under cycle-artifacts/p-3416cfb8288f8964/rec-c3-1-application-ports/ were touched."
+    "note": "No vault drift today. cycles/index.md gained one row. archive-manifest.md added under changes/archive/rec-c3-1-application-ports/."
   },
   "carry_forward_findings": [
     {
-      "id": "FIND-C3.1-RESUME",
-      "summary": "REC-C3.1 cycle paused at phase: build. Tasks B1..B10 documented in tasks.md. The 4 new port files (execution_log.rs, probe.rs, session.rs, telemetry.rs) plus ports/mod.rs wiring, lib.rs re-export, 5 test files, scripts/check_hex_boundary.py, contracts update, and docs/ROADMAP.md note all pending. Resume command: sddk cycle resume --cycle p-3416cfb8288f8964/rec-c3-1-application-ports --root /var/mnt/DiscoChino2-fast/Proyectos/rust/chronos --scope .",
-      "source": "Today's session close"
+      "id": "C31-DEBT-01",
+      "summary": "ExecutionLogProvider is a placeholder. The real re-export ships in REC-C3.3 once the cyclic dep with chronos_log is resolved (split NewExecutionRecord into domain or move ExecutionLogBackend wholesale).",
+      "owner_gate": "REC-C3.3",
+      "severity": "low",
+      "priority": "P3"
+    },
+    {
+      "id": "C31-DEBT-02",
+      "summary": "chronos_domain::session_id::SessionId is structurally identical to chronos_log::SessionId but they are NOT type-equivalent. REC-C3.3 services-inversion introduces a domain-side alias to chronos_log::SessionId.",
+      "owner_gate": "REC-C3.3",
+      "severity": "low",
+      "priority": "P3"
+    },
+    {
+      "id": "C31-DEBT-03",
+      "summary": "ports/* are abstract targets only. chronos-services still consumes concrete adapters (SegmentedExecutionLog). REC-C3.3 inverts services -> ports; today HEX-002 is gap (its closure criterion).",
+      "owner_gate": "REC-C3.3",
+      "severity": "low",
+      "priority": "P2"
     }
   ],
-  "next_cycle_recommendation": "Resume rec-c3-1-application-ports from phase: build. Tasks B1..B10 already documented in tasks.md. Sub-cycle commit plan C1..C8 recommended for reviewable units."
+  "next_cycle_recommendation": "Open REC-C3.2 (hexagonal boundary: extract webhook infrastructure). Carries the placeholder for HEX-001 with it. Next active milestone: pending; the active_gate in reconstruction-contracts.toml remains REC-C3 (sub-cycle C3.2)."
 }
