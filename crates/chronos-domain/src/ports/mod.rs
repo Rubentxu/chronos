@@ -14,12 +14,14 @@
 //! and the rationale behind each one.
 
 pub mod execution_log;
+pub mod execution_log_factory;
 pub mod notification;
 mod probe;
 mod session;
 mod telemetry;
 
 pub use execution_log::{ExecutionLogError, ExecutionLogPage, ExecutionLogProvider};
+pub use execution_log_factory::ExecutionLogFactory;
 pub use notification::{
     NotificationDeliveryError, NotificationRequest, NotificationSink, NotificationTarget,
     NullNotificationSink,

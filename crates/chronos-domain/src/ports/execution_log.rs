@@ -123,6 +123,18 @@ pub enum ExecutionLogError {
     /// the provider refused, no gap was recorded.
     #[error("invalid gap for execution log: {detail}")]
     InvalidGap { detail: String },
+
+    /// REC-C3.3.2 — the factory could not open or create the
+    /// underlying storage at `path`. Distinct from `Unavailable`
+    /// because the storage is not reachable at all (filesystem
+    /// permission, missing parent dir, locked by another process).
+    /// The factory signals this so the composition root can decide
+    /// whether to fall back, surface a typed error, or fail closed.
+    #[error("execution log open failed at {}: {}", path.display(), kind)]
+    Open {
+        path: std::path::PathBuf,
+        kind: String,
+    },
 }
 
 /// Domain-shaped read result. Lives here (not in `chronos_log`) so
