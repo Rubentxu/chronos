@@ -1,0 +1,40 @@
+{
+  "schema_version": "1.1.0",
+  "cycle_id": "p-3416cfb8288f8964/rec-c3-1-application-ports",
+  "generated_at": "2026-09-18T09:37:36.000000000Z",
+  "findings": [
+    {
+      "id": "C31-DEBT-01",
+      "title": "ExecutionLogProvider port is a placeholder (storage leg deferred)",
+      "description": "crates/chronos-domain/src/ports/execution_log.rs is a documented placeholder. The real re-export is blocked by a cyclic dep with chronos_log. REC-C3.3 removes the cycle by either splitting NewExecutionRecord into domain or moving ExecutionLogBackend wholesale. The placeholder exposes only NoopExecutionLogProvider + a Capability alias; the rest of the ports suite today uses Null/Loop/Concrete adapters as available elsewhere.",
+      "severity": "low",
+      "owner_gate": "REC-C3.3",
+      "evidence": [
+        "crates/chronos-domain/src/ports/execution_log.rs (full module docs)",
+        "reconstruction-contracts.toml HEX-001 notes"
+      ]
+    },
+    {
+      "id": "C31-DEBT-02",
+      "title": "chronos-domain/session_id vs chronos_log/SessionId divergence",
+      "description": "REC-C3.1 introduces chronos_domain::session_id::SessionId (newtype over String) because chronos_log::SessionId would create a cyclic Cargo dependency. The two types are currently identical in shape (stringly-typed) but are NOT type-equivalent. REC-C3.3 services-inversion introduces a domain-side alias to chronos_log::SessionId so a From conversion keeps callers simple.",
+      "severity": "low",
+      "owner_gate": "REC-C3.3",
+      "evidence": [
+        "crates/chronos-domain/src/session_id.rs",
+        "reconstruction-contracts.toml HEX-001 notes"
+      ]
+    },
+    {
+      "id": "C31-DEBT-03",
+      "title": "ports/* not yet consumed by chronos_services",
+      "description": "The ports declared this cycle are abstract targets. Services (chronos-services) and the wire (chronos-mcp) still consume concrete adapters (SegmentedExecutionLog, native probe types, etc.). REC-C3.3 inverts services -> ports; today the ports exist but are not the binding.",
+      "severity": "low",
+      "owner_gate": "REC-C3.3",
+      "evidence": [
+        "crates/chronos-services (no imports of chronos_domain::ports in the current diff)",
+        "reconstruction-contracts.toml HEX-002 status='gap'"
+      ]
+    }
+  ]
+}
