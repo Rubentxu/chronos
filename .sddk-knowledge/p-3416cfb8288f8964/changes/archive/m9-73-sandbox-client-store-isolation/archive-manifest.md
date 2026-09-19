@@ -91,7 +91,7 @@ Two commits:
 | Kind | Path | SHA-256 |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-73-sandbox-client-store-isolation/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
-| source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `5954a88b32b90065c98a20709a448d66f1cd792033b050a3aa0568f6ba373b6c` |
+| source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `947989c744c1beb95427395441a373596d0e22321decf981c3744b14ff873dc2` |
 | source (sandbox process spawn) | `chronos-sandbox/src/client/process.rs` | `1040f4ae8cea744fe273518b60af586b553d117f0c7b23d24eef24e73d8d3959` |
 | test (store isolation) | `chronos-sandbox/tests/client_store_isolation.rs` | `a48c78a31a5a1517418e560a2982b2ec39ea435f78b627cda79d38133ce56495` |
 | test (session edge cases) | `chronos-sandbox/tests/session_edge_cases.rs` | `9e7fe072358918c156502cc8093e9164aff59b1eeb17e460a475db10ee2d82b3` |
