@@ -19,21 +19,42 @@
   "verify_status": "verified_at_anchor_then_remote_gate_pending",
   "release_status": "released_in_branch",
   "archive_status": "archived_in_branch",
-  "operational_status_explanation": "status='CLOSED' is preserved because CC#11 (vault drift) requires it. The actual operational state is OPEN with REMOTE_GATE_PENDING — 3/5 GH Actions workflows GREEN (Vault Drift, Architecture, Debt Sentinel) and 2/5 with PRE-EXISTING failures that this cycle does NOT own. The cycle is reopened via the reopen_after_cih_d block (CIH-D evidence) and via the operational_status='OPEN_REMOTE_GATE_PENDING' field (CIH-E/CIH-F ownership for the two pre-existing failures). Re-closure is conditional on (a) CIH-E closes tripwire_tools, (b) CIH-F closes multi_session::test_drop_session_not_in_load_list, (c) all 5 GH Actions GREEN on the integrated main HEAD after ff-merge.",
+  "operational_status_explanation": "status='CLOSED' is preserved because CC#11 (vault drift) requires it. The actual operational state is OPEN with REMOTE_GATE_PENDING — at HEAD fffff332 (post-CIH-E + fmt fix + CC#4 SHA regen): 3/5 GH Actions workflows GREEN (Vault Drift, Architecture, Debt Sentinel) and 2/5 with PRE-EXISTING failures (Test: multi_session::test_drop_session_not_in_load_list — REC-C1.5 owner; Coverage: rec_c2_2_uat_c2::uat_c2_01 — REC-C3.x owner, NEW finding exposed by tarpaulin reordering post-CIH-E). The cycle is reopened via the reopen_after_cih_d block (CIH-D evidence) and via the operational_status='OPEN_REMOTE_GATE_PENDING' field. Re-closure is conditional on (a) CIH-F closes multi_session, (b) REC-C3.x (or operator-authorized CIH-E.1) closes uat_c2_01 timing, (c) all 5 GH Actions GREEN on the integrated main HEAD after ff-merge.",
   "reopen_after_cih_d": {
     "is_open": true,
     "reopen_at": "2026-09-19T16:14:00Z",
     "open_slices_in_flight": [
-      {"slice_id": "CIH-E", "owner": "cih-e/tripwire_tools scope awareness", "expected_at": "post-CIH-E commit", "delivered_at": "2026-09-19T17:29:00Z", "delivered_commit_sha": "379ba34d", "delivered_head_sha": "379ba34d"},
-      {"slice_id": "CIH-F", "owner": "cih-f/multi_session registry reopen (REC-C1.5 milestone owns)", "expected_at": "post-CIH-F commit (if no architectural redesign needed)"}
+      {
+        "slice_id": "CIH-E",
+        "owner": "cih-e/tripwire_tools scope awareness",
+        "expected_at": "post-CIH-E commit",
+        "delivered_at": "2026-09-19T17:29:00Z",
+        "delivered_commit_sha": "379ba34d",
+        "delivered_head_sha": "379ba34d"
+      },
+      {
+        "slice_id": "CIH-F",
+        "owner": "cih-f/multi_session registry reopen (REC-C1.5 milestone owns)",
+        "expected_at": "post-CIH-F commit (if no architectural redesign needed)"
+      }
     ],
     "reopen_reason": "CIH-D (commit e82921c9 + 8fdc3ef4) was added after the cycle was first closed at the 2e761d4f76dc anchor. CIH-D closes the r2_stale_cursor translator regression revealed by CIH-B's binary-resolution fix; locally the cycle is GREEN (T0+T1+T4_smoke+arch+hex+vault+validate+regen), but remote GH Actions at HEAD 8fdc3ef4 shows 3/5 workflows GREEN (Vault Drift Sweep, Architecture Contracts, Sandbox Debt Sentinel) and 2/5 with PRE-EXISTING failures (CI: multi_session::test_drop_session_not_in_load_list; Coverage: tripwire_tools 4 tests + same multi_session test reachable only via different compile order). Both failures reproduce identically on origin/main (fa5eb582) — verified in a side worktree — and the registry message for the multi_session failure explicitly states 'reopen belongs to REC-C1.5'. CIH-D does not introduce regressions; it unmasks pre-existing baseline failures that the prior close receipt claimed were GREEN by virtue of running the test parser against the wrong translation (DrainFailed string instead of typed CursorStale). The cycle's HEAD SHA anchor (head_sha = 2e761d4f76dc...) remains immutable per operator rule #8 and CC#12 (m9-19). Status=CLOSED is preserved to keep CC#11 (apply-checkpoint status consistency) GREEN; this reopen_after_cih_d field carries the actual state. Re-closure requires the CI/Coverage failures to be owned by an active slice (REC-C1.5 for multi_session, REC-C3.3.x for tripwire_tools), not by CIH-D.",
     "remote_verification_at_8fdc3ef4": {
       "head_sha": "8fdc3ef40dc307d861e16e9bdf2e178431dacddc",
       "verified_at": "2026-09-19T16:14:00Z",
-      "vault_drift_sweep": {"conclusion": "success", "run_id": 35453324991, "duration_seconds": 13},
-      "sandbox_debt_sentinel": {"conclusion": "success", "run_id": 35453324927},
-      "architecture_contracts": {"conclusion": "success", "run_id": 35453324922},
+      "vault_drift_sweep": {
+        "conclusion": "success",
+        "run_id": 35453324991,
+        "duration_seconds": 13
+      },
+      "sandbox_debt_sentinel": {
+        "conclusion": "success",
+        "run_id": 35453324927
+      },
+      "architecture_contracts": {
+        "conclusion": "success",
+        "run_id": 35453324922
+      },
       "ci": {
         "conclusion": "failure",
         "run_id": 35453324929,
@@ -58,6 +79,40 @@
         "pre_existing_verification": "Reproduces identically on origin/main (fa5eb582) — verified in side worktree with cargo test -p chronos-sandbox --test tripwire_tools. 2/6 pass, 4/6 fail, identical set. The failure surface differs from baseline GH Actions run 35446732981 because tarpaulin's discovery order changed (multi_session aborts first in baseline; tripwire_tools aborts first in CIH-D); same underlying pre-existing baseline.",
         "owner": "REC-C3.3.x (tripwire_tools tests need to set session scope before calling tripwire_list / tripwire_query)"
       }
+    },
+    "remote_verification_at_fffff332": {
+      "head_sha": "fffff332d1ff12b79f467bb56369d84ee0daeffc",
+      "verified_at": "2026-09-19T18:25:00Z",
+      "vault_drift_sweep": {
+        "conclusion": "success"
+      },
+      "reconstruction_contracts": {
+        "conclusion": "success"
+      },
+      "deferred_debt_verification": {
+        "conclusion": "success"
+      },
+      "test": {
+        "conclusion": "failure",
+        "failing_test": "chronos-sandbox::multi_session::test_drop_session_not_in_load_list",
+        "root_cause": "load_session does not re-register ExecutionLog in memory; registry message: 'no ExecutionLog registered for this session (a session loaded from the session store has none yet; reopen belongs to REC-C1.5)'",
+        "pre_existing": true,
+        "owner": "REC-C1.5 (CIH-F)"
+      },
+      "coverage": {
+        "conclusion": "failure",
+        "failing_test": "chronos-sandbox::rec_c2_2_uat_c2::uat_c2_01_probe_drain_is_not_an_authority",
+        "root_cause": "fixture produces no events in 2s window when tarpaulin-instrumented busyloop runs on a stressed CI runner; panic at chronos-sandbox/tests/rec_c2_2_uat_c2.rs:110:5 ('UAT-C2-01: the fixture must produce events or this UAT proves nothing')",
+        "pre_existing": true,
+        "pre_existing_verification": "Reproduces identically on origin/main (fa5eb582) under identical tarpaulin coverage instrumentation, but only when tarpaulin's per-binary test schedule reaches rec_c2_2_uat_c2 BEFORE multi_session. Pre-CIH-E, multi_session::test_drop_session_not_in_load_list panicked first and tarpaulin stopped, so this test never ran. Post-CIH-E, tripwire_tools 4 tests pass (Coverage root cause removed), so tarpaulin reaches rec_c2_2_uat_c2 first and exposes the timing-sensitive assertion.",
+        "owner": "REC-C3.x (test hardening: bounded retry/poll for first drain non-empty, or longer post-probe sleep under coverage)"
+      },
+      "expected_remote_at_fffff332": "3/5 GREEN (Vault drift sweep, Reconstruction contracts, Deferred debt verification) + 1/5 RED pre-existing (Test: multi_session, REC-C1.5 owner) + 1/5 RED pre-existing re-surfaced (Coverage: uat_c2_01, REC-C3.x owner).",
+      "improvement_over_pre_cih_e_run_8fdc3ef4": [
+        "Vault drift sweep: success (was success at 8fdc3ef4 too, but pre-CIH-E the rustfmt gate inside the Test workflow failed BEFORE tarpaulin could run, so Coverage was inconclusive; post-CIH-E Test and Coverage both run)",
+        "Coverage: tripwire_tools 4 tests PASS (was FAIL at 8fdc3ef4 pre-CIH-E root cause removed)",
+        "Coverage: rec_c2_2_uat_c2::uat_c2_01 now surfaces as a failure (was hidden at 8fdc3ef4 because multi_session panicked first and tarpaulin stopped)"
+      ]
     }
   },
   "tier_results": {
@@ -118,7 +173,8 @@
     "notes": [
       "CIH-C reconciled Vault Drift CC#11/CC#18/CC#19/CC#39 to exit 0: CC#11 no_action subfield added where missing; CC#18 verify-findings.json synthesized for cycles where it was lost; CC#19 free-text notes moved from no_action to notes; CC#39 cycles/index.md Total cycles aligned to actual folder count (98). Pre-existing failure m1_02 was owned by CIH-A; pre-existing harness breakage was owned by CIH-B. No waivers, no occlusion.",
       "CIH-D (commit e82921c9): production translator fix that splits ExecutionLogError::PositionBeforeRetention out of the DrainFailed wildcard arm into its own match arm constructing the typed ServiceError::CursorStale { requested_next_seq: u64, retained_from_seq: u64 }. Slice is required for the Coverage workflow to go GREEN (restart_uat::r2_stale_cursor parses the typed CursorStale Display format). Five new unit tests pin the contract: one positive (PositionBeforeRetention -> CursorStale with both fields), one Display-format check (matches restart_uat parser tokens), three negative (Unavailable/IntegrityFailure/Sealed must NOT collapse into CursorStale). T0 fmt+clippy clean. chronos-services lib 382/382 pass. chronos-sandbox restart_uat 4/4 pass (r1, r2, r3, r4). All five gates remain GREEN locally. NOTE: this slice DOES change production runtime behavior for the canonical-evidence cursor path — it is a follow-up to CIH-C, NOT a no-op reconciliation.",
-      "CIH-E (commit 379ba34d, head_before=ecc2d69f): tripwire tools now require an explicit session_id scope at every handler entry — server.rs tripwire_create / list / query / delete accept params.session_id, map it to ObserveScope::Session{session_id}, and thread it as ObserveInput.scope; the canonical-evidence observe pipeline resolves the canonical session from that scope (precedence: scope=session{id} wins; active_session is fallback). Client types and tools gained the session_id: Option<&str> argument on every tripwire function and forward it inside the wire params. Sandbox tests (tripwire_tools, tripwire_depth, rec_c2_2_uat_c2, probe_drain_canonical, m0_acceptance) own a real probe session before calling any tripwire tool; m0_04 starts the probe before the tripwire so the scope is available at create time. test_tripwire_scope_awareness_at_mcp_boundary verifies the explicit-scope contract end-to-end at the MCP boundary. T0 fmt+clippy 0/0. T1 lib 1233/1233 pass (chronos-native serialized: 108/108). T4 smoke: tripwire_tools 7/7, tripwire_depth 6/6, probe_drain_canonical 4/4, rec_c2_2_uat_c2 3/3. Trips per-call fire_count is correctly scoped (ExecutionLog keyed by session_id), but TripwireManager still keys by TripwireId — cross-session DEFINITION isolation is documented as REC-C3.x follow-up (carried as FIND-CIH-E-follow-up-TripwireManager-per-session-keying). The Coverage workflow that was failing on tripwire_tools 4 tests pre-CIH-E is expected to go GREEN on the integrated main HEAD after ff-merge once CIH-E lands."
+      "CIH-E (commit 379ba34d, head_before=ecc2d69f): tripwire tools now require an explicit session_id scope at every handler entry — server.rs tripwire_create / list / query / delete accept params.session_id, map it to ObserveScope::Session{session_id}, and thread it as ObserveInput.scope; the canonical-evidence observe pipeline resolves the canonical session from that scope (precedence: scope=session{id} wins; active_session is fallback). Client types and tools gained the session_id: Option<&str> argument on every tripwire function and forward it inside the wire params. Sandbox tests (tripwire_tools, tripwire_depth, rec_c2_2_uat_c2, probe_drain_canonical, m0_acceptance) own a real probe session before calling any tripwire tool; m0_04 starts the probe before the tripwire so the scope is available at create time. test_tripwire_scope_awareness_at_mcp_boundary verifies the explicit-scope contract end-to-end at the MCP boundary. T0 fmt+clippy 0/0. T1 lib 1233/1233 pass (chronos-native serialized: 108/108). T4 smoke: tripwire_tools 7/7, tripwire_depth 6/6, probe_drain_canonical 4/4, rec_c2_2_uat_c2 3/3. Trips per-call fire_count is correctly scoped (ExecutionLog keyed by session_id), but TripwireManager still keys by TripwireId — cross-session DEFINITION isolation is documented as REC-C3.x follow-up (carried as FIND-CIH-E-follow-up-TripwireManager-per-session-keying). The Coverage workflow that was failing on tripwire_tools 4 tests pre-CIH-E is expected to go GREEN on the integrated main HEAD after ff-merge once CIH-E lands.",
+      "CIH-E-gate-verification (commits f7c98018 + fffff332): post-CIH-E remote gate check at HEAD fffff332 shows 3/5 GREEN. Test fails on multi_session::test_drop_session_not_in_load_list (REC-C1.5 owner, unchanged from prior runs); Coverage fails on rec_c2_2_uat_c2::uat_c2_01_probe_drain_is_not_an_authority — a NEW finding exposed by tarpaulin reordering, NOT a regression. uat_c2_01 was hidden pre-CIH-E because multi_session panicked first; post-CIH-E the tripwire_tools tests pass, so tarpaulin reaches rec_c2_2_uat_c2 and the 2s sleep window fails under instrument-coverage. No semantic change to the test; this is a pre-existing timing fragility. Filed FIND-CIH-E-gate-uat-c2-01-timing under REC-C3.x future slice. Operator decision required before advancing to CIH-F or extending CIH-E with timing hardening."
     ]
   },
   "findings_closed": [],
@@ -140,7 +196,9 @@
     "a3467f00",
     "79593799",
     "ecc2d69f",
-    "379ba34d"
+    "379ba34d",
+    "f7c98018",
+    "fffff332"
   ],
   "tren_a_real_commits": [],
   "layer_completion": {
@@ -376,6 +434,62 @@
         "FIND-CIH-E-coverage-tripwire-tools-NoActiveSession"
       ],
       "next_slice": "CIH-F (multi_session::test_drop_session_not_in_load_list — REC-C1.5 milestone owns; CIH-F rules per operator: don't widen SessionRepository, don't import concrete adapters from services, don't modify REC-C1.5.2 strict replay; if redesign needed, stop and present architectural conflict)"
+    },
+    {
+      "id": "CIH-E-gate-verification",
+      "title": "post-CIH-E remote gate verification (5/5 GH Actions checks)",
+      "executed_at": "2026-09-19T18:25:00Z",
+      "head_sha_before": "379ba34d5eef76d2510ca2d7f0b7c2d7d3b1df2b",
+      "head_sha_after": "fffff332d1ff12b79f467bb56369d84ee0daeffc",
+      "files_changed": [
+        "chronos-sandbox/tests/tripwire_tools.rs",
+        "crates/chronos-mcp/src/server.rs",
+        ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-70-mcp-store-isolation/archive-manifest.md",
+        ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-74-cas-put-many-batching/archive-manifest.md",
+        ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-75-fail-closed-store-open/archive-manifest.md"
+      ],
+      "production_changed": false,
+      "rationale": "CI Test gate on 95464314 failed on rustfmt. Ran cargo fmt --all, committed as f7c98018 (no semantic change, only reformat of nested match expressions and McpSession chains in server.rs and tripwire_tools.rs). Vault drift sweep (CC#48 meta-check) on 5d2d69a6 (PR-32 merge commit) then failed on CC#4: 3 archive manifests (m9-70 / m9-74 / m9-75) listed the pre-fmt SHA for crates/chronos-mcp/src/server.rs. Root cause: SHA rows are derived from file content, so any formatting change forces a SHA rewrite. Re-ran scripts/regen_manifest_index_shas.py: 3 rows rewritten to fixpoint. --check clean (102 manifests). check_vault_drift.sh: PASS.",
+      "evidence": {
+        "tier_T0_fmt_exit": 0,
+        "tier_T0_clippy_exit": 0,
+        "fmt_commit_sha": "f7c98018dd9455bedb2e8b7c1241a7c9c8aaeb2b",
+        "vault_drift_regen_commit_sha": "fffff332d1ff12b79f467bb56369d84ee0daeffc",
+        "remote_gate_results_at_fffff332": {
+          "head_sha": "fffff332d1ff12b79f467bb56369d84ee0daeffc",
+          "vault_drift_sweep": {
+            "conclusion": "success"
+          },
+          "architecture_contracts": {
+            "conclusion": "success"
+          },
+          "sandbox_debt_sentinel": {
+            "conclusion": "success"
+          },
+          "test": {
+            "conclusion": "failure",
+            "failing_test": "chronos-sandbox::multi_session::test_drop_session_not_in_load_list",
+            "owner": "REC-C1.5 (CIH-F)"
+          },
+          "coverage": {
+            "conclusion": "failure",
+            "failing_test": "chronos-sandbox::rec_c2_2_uat_c2::uat_c2_01_probe_drain_is_not_an_authority",
+            "root_cause": "fixture produces no events in 2s window when tarpaulin-instrumented busyloop runs on a stressed CI runner; panic message 'UAT-C2-01: the fixture must produce events or this UAT proves nothing' at chronos-sandbox/tests/rec_c2_2_uat_c2.rs:110:5"
+          }
+        }
+      },
+      "behavior_change": "none (formatting-only + vault artifact SHA regen).",
+      "pre_existing_failures_unchanged": [
+        "chronos-sandbox::multi_session::test_drop_session_not_in_load_list — unchanged from prior runs. Owner REC-C1.5 (CIH-F)."
+      ],
+      "pre_existing_failures_NEW_exposed_by_reordering": [
+        "chronos-sandbox::rec_c2_2_uat_c2::uat_c2_01_probe_drain_is_not_an_authority — new in this verification run. Pre-CIH-E Coverage aborted before reaching this test (multi_session failure stopped tarpaulin first); post-CIH-E Coverage reaches this test because tripwire_tools now passes, and the 2-second post-probe-start sleep is too short under tarpaulin's instrument-coverage busyloop on CI runners. No semantic change to the test itself."
+      ],
+      "findings_introduced": [
+        "FIND-CIH-E-gate-uat-c2-01-timing — REC-C3.x future slice (test hardening: replace fixed sleep with bounded retry/poll for first drain non-empty, or extend post-probe sleep to match tarpaulin-instrumented busyloop wall-clock). No waiver, no skip, no #[ignore]. Owner: REC-C3.x."
+      ],
+      "findings_closed": [],
+      "next_slice": "Block on operator decision: either (A) authorize CIH-E.1 timing-hardening for uat_c2_01 (touch test only, no production change, no waiver/skip), or (B) advance to CIH-F (REC-C1.5 owner) for multi_session::test_drop_session_not_in_load_list and accept that Coverage remains red on the integrated main HEAD until REC-C3.x ships the timing fix."
     }
   ],
   "remote_tag": null,
