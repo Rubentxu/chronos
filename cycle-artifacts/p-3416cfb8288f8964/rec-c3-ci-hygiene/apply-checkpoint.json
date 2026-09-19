@@ -15,9 +15,9 @@
   "title": "rec-c3-ci-hygiene — baseline CI / Coverage / Vault drift reconciliation",
   "summary": "Pre-existing baseline failures on origin/main blocked Tren B (REC-C3.3.3). Three slices reconciled: CIH-A (m1_02 strict replay contract), CIH-B (McpTestClient harness via cargo metadata + auto-build), CIH-C (Vault Drift CC#11/CC#15/CC#18/CC#19/CC#22/CC#23/CC#26/CC#39 to exit 0). All five gates GREEN: CI, Coverage, Vault Drift (check_vault_drift.sh exit 0), Architecture (check_architecture_contracts.py PASSED), Debt Sentinel. Production code in chronos-log/chronos-services/chronos-mcp/etc. is untouched.",
   "status": "CLOSED",
-  "verify_status": "pending",
-  "release_status": "pending",
-  "archive_status": "pending",
+  "verify_status": "verified",
+  "release_status": "released_in_branch",
+  "archive_status": "archived_in_branch",
   "tier_results": {
     "T0": {
       "fmt_exit": 0,
@@ -79,8 +79,7 @@
     "7447ea56",
     "b71c1adc",
     "10138acc",
-    "5bcb2b63",
-    "2e761d4f"
+    "5bcb2b63"
   ],
   "tren_a_real_commits": [],
   "layer_completion": {

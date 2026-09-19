@@ -11,7 +11,7 @@
 | Head SHA | `2e761d4f76dc4c7b2a78972753770ac2aedf0357` |
 | Base SHA | `fa5eb5827e997c874047c6c2318ad2b5b1c8f323` |
 | Branch | `rec-c3-ci-hygiene` |
-| Date | `2026-09-19T10:14:00Z` |
+| Date | `2026-09-19T09:35:00Z` |
 | Merged to | `rec-c3-ci-hygiene` (branch archive) |
 | Fast-forwarded to main | NO (deliberate) |
 
