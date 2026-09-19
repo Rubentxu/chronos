@@ -20,7 +20,9 @@
 //! of green tests.
 
 use chronos_sandbox::client::tools::McpTestClient;
-use chronos_sandbox::client::types::{TripwireConditionType, TripwireCreateParams};
+use chronos_sandbox::client::types::{
+    ProbeDrainResponse, TripwireConditionType, TripwireCreateParams,
+};
 use chronos_sandbox::McpSession;
 use std::collections::HashSet;
 use std::time::Duration;
@@ -102,14 +104,37 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
         UAT_C2_01_FIRST_EVENT_DEADLINE.as_millis()
     );
 
+    // CIH-G-fix-2: do the first drain with a SMALL limit (1) so it cannot
+    // consume the entire busyloop output in one pass. The contract under
+    // test ("an examined page must advance the cursor") needs the log to
+    // have new records between the two drains; with limit=1000 the first
+    // drain takes everything the fixture has produced (or is producing
+    // at syscall rate under tarpaulin on a stressed CI runner), and the
+    // second drain finds nothing. limit=1 + cursor checkpoint guarantees
+    // a follow-on page reads strictly forward from where the first stopped.
+    //
+    // NOTE: the drain logic pairs each requested Raw with its derived
+    // TripwireFired records (the logical-boundary check), so even a
+    // limit=1 request returns the Raw plus its firing records. The
+    // cursor's encoded seq advances past both.
     let first = client
-        .probe_drain_with_evidence_cursor(&session, None)
+        .call_tool(
+            "probe_drain",
+            serde_json::json!({
+                "session_id": &session,
+                "limit": 1,
+                "offset": 0,
+            }),
+        )
         .await
         .expect("first drain");
+    let first: ProbeDrainResponse =
+        serde_json::from_value(first).expect("first drain response shape");
     let cursor = first.evidence_cursor.clone().expect("cursor");
     let first_ids: HashSet<u64> = first.events.iter().map(|e| e.event_id).collect();
     let first_firings = first.tripwires_fired.unwrap_or(0);
     let first_total = first.total_buffered;
+    let first_cursor = cursor.clone();
     eprintln!(
         "CIH-G uat_c2_01 first_drain events={} total_buffered={} cursor={}",
         first.events.len(),
@@ -125,18 +150,22 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
     // the two drains. The fixture's `test_busyloop` runs for ~3s but
     // generates events at the syscall rate; the first drain can consume
     // everything if it lands mid-run. Wait — bounded, with an observable
-    // exit criterion (`total_buffered` strictly greater than after the first
-    // drain) — until the log has at least one new record, or 5s deadline.
+    // exit criterion: the cursor's encoded seq must change between polls.
+    // We compare cursor STRINGS because the canonical ECV1 token includes
+    // the seq in its last segment, and `total_buffered` is only the count
+    // of raw events in this page (not a log total), so it does not grow
+    // monotonically across same-size pages. 5s deadline matches the
+    // busyloop's claimed runtime x 2.
     let advance = wait_for_log_advance(
         &mut client,
         &session,
-        first_total,
+        first_cursor.as_str(),
         UAT_C2_01_LOG_ADVANCE_DEADLINE,
     )
     .await;
     if advance.is_none() {
         // Diagnostics: re-read probe_drain_wire to expose the raw shape, and
-        // log total_buffered again so the failure message is actionable.
+        // log first_total / first_cursor so the failure message is actionable.
         let wire = client
             .probe_drain_wire(&session, None)
             .await
@@ -150,16 +179,16 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
             UAT_C2_01_LOG_ADVANCE_DEADLINE.as_millis(),
             first_total,
             first.events.len(),
-            cursor,
+            first_cursor,
             wire
         );
     }
-    let (advance_ms, advanced_total) = advance.unwrap();
+    let (advance_ms, _advanced_cursor) = advance.unwrap();
     eprintln!(
-        "CIH-G uat_c2_01 log_advance_ms={} first_total={} advanced_total={}",
+        "CIH-G uat_c2_01 log_advance_ms={} first_total={} first_cursor={}",
         advance_ms.as_millis(),
         first_total,
-        advanced_total
+        first_cursor
     );
 
     // Continue from the cursor: strictly forward, never a re-read.
@@ -420,29 +449,49 @@ async fn wait_for_first_event(
 /// elapses. Returns the elapsed duration and the new `total_buffered` on
 /// success, `None` on timeout.
 ///
-/// Exit criterion is OBSERVABLE: `total_buffered` strictly greater than
-/// the baseline reported by the previous drain. This is not a blind sleep
-/// — the helper keeps polling the canonical authority (the same
-/// `probe_drain` tool the test exercises) and returns as soon as the log
-/// has new evidence.
+/// Exit criterion is OBSERVABLE: the cursor-encoded seq from the page must
+/// be strictly greater than the baseline cursor's seq. We compare the
+/// encoded cursor strings directly — the canonical ECV1 token includes the
+/// seq in the last segment, so a different token means new records were
+/// examined. This is not a blind sleep — the helper keeps polling the
+/// canonical authority (the same `probe_drain` tool the test then replays
+/// for the assertion) and returns as soon as the log has new evidence.
+///
+/// Note: `total_buffered` on `ProbeDrainResponse` is the count of raw
+/// events in THIS page (not the total in the log), so it does not grow
+/// monotonically across same-size pages. The cursor's encoded seq is the
+/// monotonic signal.
 async fn wait_for_log_advance(
     client: &mut McpTestClient,
     session: &str,
-    baseline_total: usize,
+    baseline_cursor: &str,
     deadline: Duration,
-) -> Option<(Duration, usize)> {
+) -> Option<(Duration, String)> {
     let start = std::time::Instant::now();
     loop {
         // Probe `probe_drain` (NOT `probe_drain_log`): we want the same wire
-        // payload the test then replays for the assertion, and we want
-        // `total_buffered` which is the only signal that says "the log has
-        // produced new records" without consuming them.
+        // payload the test then replays for the assertion. Use limit=1000
+        // (max) so a single poll reads everything the log currently holds,
+        // so the cursor's seq is the absolute last-examined seq.
         let page = client
-            .probe_drain_with_evidence_cursor(session, None)
+            .call_tool(
+                "probe_drain",
+                serde_json::json!({
+                    "session_id": session,
+                    "limit": 1000,
+                    "offset": 0,
+                }),
+            )
             .await
             .expect("probe_drain during wait_for_log_advance");
-        if page.total_buffered > baseline_total {
-            return Some((start.elapsed(), page.total_buffered));
+        let page: ProbeDrainResponse =
+            serde_json::from_value(page).expect("probe_drain response shape");
+        let cursor = page
+            .evidence_cursor
+            .clone()
+            .expect("cursor from wait probe_drain");
+        if cursor.as_str() != baseline_cursor {
+            return Some((start.elapsed(), cursor));
         }
         if start.elapsed() >= deadline {
             return None;
