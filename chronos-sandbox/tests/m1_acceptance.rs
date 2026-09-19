@@ -267,9 +267,12 @@ fn m1_02_execution_log_persistence_impl() {
             }
         }
 
-        // Atomicity: a rejected open leaves no usable handle behind. A second
-        // open with the SAME dir + cfg must still be refused — there is no
-        // "salvageable tail" to discover.
+        // Reproducibility: a second reopen with the SAME dir + cfg is still
+        // refused. Strict replay does not salvage a corrupted retained region,
+        // and the refusal is not order-dependent. (Atomicity of the publish
+        // step itself — "no partial backend ever observable" — is owned by
+        // apply_plan() and the REC-C1.5.2 unit tests; this case only proves
+        // the contract surfaces on every reopen.)
         let second = SegmentedExecutionLog::open(session.clone(), cfg);
         assert!(
             matches!(second, Err(chronos_log::LogError::ReplayIntegrity { .. })),
