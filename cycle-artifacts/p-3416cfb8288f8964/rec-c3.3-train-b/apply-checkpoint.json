@@ -99,7 +99,8 @@
     "exploration-report.md identifies Tren A does NOT have capture_session. My initial apply-checkpoint summary incorrectly attributed it to Tren A. Corrected in this commit per B8/B9.",
     "Confirmed: B1..B9 hold. Composition root stays at chronos-mcp::composition with bootstrap-scoped (default_session_archive, default_counterexample_repository) + session-scoped (advance/step via ProbeService per-call) split.",
     "Carry-forward debt C31-DEBT-03 (services->ports inversion not finished) will be partially addressed (SessionArchive + CounterexampleRepository); remaining services->native direction logged as no_action_in_current_cycle per B8 — REC-C3.4 owns it.",
-    "sddk-propose complete (proposal.md, 407 lines, sha256 3a3078d5...). CAS persistence deferred per FIND-TB-01 (CLI cycle identifier format gap); evidence chain via git commits preserved."
+    "sddk-propose complete (proposal.md, 407 lines, sha256 3a3078d5...). CAS persistence deferred per FIND-TB-01 (CLI cycle identifier format gap); evidence chain via git commits preserved.",
+    "specification.md complete (17 REQ, 35 scenarios, 14 EC, 10 AP, sha256 a56520380a9d76dc...). Slice traceability index maps each REQ to one of 7 slices (A..G). Three non-blocking questions to resolve in sddk-tasks: StoreKind disclosure, SessionArchive::delete semantics, CounterexampleBundleFilter derives."
   ],
   "ledger_progression": [
     {
@@ -142,10 +143,25 @@
       "cas_note": "sddk-propose reported FOREIGN KEY constraint on sddk artifact store, suggesting project not registered. Verified via `sddk adopt status`: project p-3416cfb8288f8964 / workspace w-361237634265a0a7d986676e are complete. The constraint appears to be a CLI cycle identifier format mismatch (CLI rejects 'p-3416cfb8288f8964/rec-c3.3-train-b' as invalid cycle_id; requires bare 'rec-c3.3-train-b'). Resolution deferred: persistence via git commit per B7 (no SHA rewrite). Recorded as no_action_in_current_cycle.",
       "transition_ready": true,
       "next_phase": "sddk-spec"
+    },
+    {
+      "stage": "phase.spec.complete",
+      "sha": "9a68e9f1a0ae8686438072518a3cba3a327430cd",
+      "at": "2026-09-19T11:25:02Z",
+      "by": "sddk-spec (MiniMax-M3)",
+      "evidence": "cycle-artifacts/p-3416cfb8288f8964/rec-c3.3-train-b/specification.md (sha256 a56520380a9d76dcf17c31ec48829a62926307225d894723448add2fd5e94d33, 400 lines)",
+      "context_quality": "C2",
+      "requirements": 17,
+      "scenarios": 35,
+      "edge_cases": 14,
+      "anti_patterns": 10,
+      "rfc2119_must_shall": 93,
+      "transition_ready": true,
+      "next_phase": "sddk-tasks"
     }
   ],
   "layer_completion": {
-    "spec": false,
+    "spec": true,
     "design": false,
     "tasks": false,
     "apply": false,
