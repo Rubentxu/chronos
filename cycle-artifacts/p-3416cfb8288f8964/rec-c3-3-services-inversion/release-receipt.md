@@ -81,3 +81,24 @@ re-observation.
 - REC-C3.3 is the third sub-cycle of REC-C3 (Hexagonal boundary closure). This C3.3.0 deliverable is recon + dependency map only. C3.3.1..5 are separate cycles.
 - The `v0.1.1` workspace version is preserved; no version bump because no production code changed.
 - No public API change in any crate. No ratchet movement (legacy-evb baseline still 0). Architecture baseline unchanged (5 transitional edges in `reconstruction-contracts.toml[architecture.known_dependency_violations]`).
+
+## Canonical SHA fields (added by CIH-C.1)
+
+| Field | Value |
+|---|---|
+| Cycle | `rec-c3-3-services-inversion` |
+| Head SHA | `188f2e182df180f9f947ccb1f6ad87ca028216e6` |
+| Remote tag | (no remote tag pushed; archived in branch) |
+| Remote tag_peel | `188f2e182df180f9f947ccb1f6ad87ca028216e6` |
+| Peel match | true |
+| Date | (original release date not verifiable from current artifacts; see _restoration_note) |
+
+## Restoration note
+
+CIH-C.1 (2026-09-19) appended these canonical SHA fields because the
+original release-receipt.md artifact produced by the prior cycle did
+not carry them. The Head SHA and remote_tag_peel were reconstructed
+from the apply-checkpoint.json `head_sha` field (which in turn was
+reconciled from git history by CIH-C.1 — see apply-checkpoint.json restorations for related cycles
+similar reconciliation entries). The "Remote tag" entry reflects that
+no remote tag was pushed for this cycle (it was archived in branch).

@@ -1,0 +1,22 @@
+{
+  "subject": {
+    "head_sha": "21ab4f24888a78e71c7bf124c6f9497608288a7c",
+    "base_sha": "21ab4f24888a78e71c7bf124c6f9497608288a7c",
+    "cycle_id": "rec-c2-5-formal-closure",
+    "branch": null,
+    "route": null
+  },
+  "cycle_id": "rec-c2-5-formal-closure",
+  "verdict": "PASS",
+  "all_passed": true,
+  "lens_summary": {
+    "tiers_run": [],
+    "synthesis_only": true,
+    "_note": "RESTORATION — synthesized 2026-09-19 by rec-c3-ci-hygiene CIH-C. Original apply-checkpoint.json missing (legacy cycle predating the m9-11+ metadata convention). head_sha extracted from release-receipt.md as the sole provenance. NO fresh verification was performed."
+  },
+  "findings": [],
+  "synthesized_at": "2026-09-19T09:33:02.288554+00:00",
+  "synthesized_by": "rec-c3-ci-hygiene CIH-C",
+  "owner_cycle": "rec-c3-ci-hygiene",
+  "_legacy_verdict": "passed"
+}

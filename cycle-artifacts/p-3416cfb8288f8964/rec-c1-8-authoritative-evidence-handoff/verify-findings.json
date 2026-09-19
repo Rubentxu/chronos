@@ -1,11 +1,11 @@
 {
   "subject": {
     "head_sha": "451a29b68d8cabe2915d120609a83c0e052180fa",
-    "base_sha": "20b222df",
+    "base_sha": "20b222dfbd297ff4f2807668252f5b1198d54f28",
     "cycle_id": "rec-c1-8-authoritative-evidence-handoff"
   },
   "cycle_id": "rec-c1-8-authoritative-evidence-handoff",
-  "verdict": "passed",
+  "verdict": "PASS",
   "all_passed": true,
   "lens_summary": {
     "drift": "REC-C1.8 closure: the three acceptance discrepancies left open by REC-C1.7 are closed with green wire evidence, except UAT-REC-C1-03's positive forced-gap arm, which is #[ignore]-blocked on a real chronos_log::segmented bookkeeping bug surfaced as FIND-C1.8-01 (deferred to m1-*, out of scope for REC-C1). The dual_truth RED tests are gone from main; three black-box wire tests replace them. UAT-REC-C1-01 is now literal (10k durable records, two consumers, producer advance, A resumes). UAT-REC-C1-05 has a real carrier for the wall-clock dimension (captured_at_unix_ns added to ExecutionRecord + NewExecutionRecord).",
@@ -66,5 +66,6 @@
     "FIND-C1.8-01 fix (chronos_log::segmented gap-entry bookkeeping): DONE in m1-gap-segment-accounting-repair (entry_count = persisted SegmentEntry count; writer/header/replay agree; C1.8 forced-gap UAT un-ignored and GREEN).",
     "rec-c1-7-projection-authority-acceptance is missing verify-findings.json (pre-existing gap from C1.7; CC#18 flags it). C1.8 adds its own verify-findings.json but does not retroactively author C1.7's.",
     "CC#39 (cycles/index.md Total cycles vs filesystem) remains pre-existing; gov-* owns the reconciliation."
-  ]
+  ],
+  "_legacy_verdict": "passed"
 }

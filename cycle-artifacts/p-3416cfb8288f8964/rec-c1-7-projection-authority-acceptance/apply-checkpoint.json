@@ -6,7 +6,7 @@
   "release_status": "passed",
   "archive_status": "ready",
   "head_sha": "6190390d399a3978cbbf7ee7cda77ab4e10019e3",
-  "base_sha": "e4af63b6",
+  "base_sha": "e4af63b62ca980d46eb9ed0238cb3f44c854a33c",
   "main_sha": "6190390d399a3978cbbf7ee7cda77ab4e10019e3",
   "tag": "rec-c1-7-projection-authority-acceptance",
   "branch": "feat/rec-c1.7-projection-authority-acceptance",
@@ -22,16 +22,46 @@
     "applied": []
   },
   "commits": [
-    {"sha": "136fac4c", "title": "chore(rec-c1.7): planning artifacts (C1.7.0)"},
-    {"sha": "a7b3c9e7", "title": "test(rec-c1.7): characterize dual-truth divergence (RED, flips GREEN in C1.7.2)"},
-    {"sha": "589eaa08", "title": "feat(rec-c1.7): chronos_services::projection::build_engine + 5 unit tests"},
-    {"sha": "35a1ef9d", "title": "feat(rec-c1.7): prepare services for projection_meta gate (services-side only)"},
-    {"sha": "54d03705", "title": "feat(rec-c1.7): wire projection gate into MCP handlers (execution_query, state_query, trace_slice)"},
-    {"sha": "b689a094", "title": "feat(rec-c1.7): C1.7.4 restart-equivalence UAT on the real MCP wire"},
-    {"sha": "85698356", "title": "feat(rec-c1.7): C1.7.5 UAT-REC-C1-01 (two consumers) on the real MCP wire"},
-    {"sha": "a66d916a", "title": "feat(rec-c1.7): C1.7.6 UAT-REC-C1-05 (time semantics) at the projection layer"},
-    {"sha": "4633afdc", "title": "chore(rec-c1.7): TRUTH-001 partial → verified (projection authority)"},
-    {"sha": "9ee74f09", "title": "chore(rec-c1.7): clippy -D warnings cleanup across the cycle's touch surface"}
+    {
+      "sha": "136fac4c",
+      "title": "chore(rec-c1.7): planning artifacts (C1.7.0)"
+    },
+    {
+      "sha": "a7b3c9e7",
+      "title": "test(rec-c1.7): characterize dual-truth divergence (RED, flips GREEN in C1.7.2)"
+    },
+    {
+      "sha": "589eaa08",
+      "title": "feat(rec-c1.7): chronos_services::projection::build_engine + 5 unit tests"
+    },
+    {
+      "sha": "35a1ef9d",
+      "title": "feat(rec-c1.7): prepare services for projection_meta gate (services-side only)"
+    },
+    {
+      "sha": "54d03705",
+      "title": "feat(rec-c1.7): wire projection gate into MCP handlers (execution_query, state_query, trace_slice)"
+    },
+    {
+      "sha": "b689a094",
+      "title": "feat(rec-c1.7): C1.7.4 restart-equivalence UAT on the real MCP wire"
+    },
+    {
+      "sha": "85698356",
+      "title": "feat(rec-c1.7): C1.7.5 UAT-REC-C1-01 (two consumers) on the real MCP wire"
+    },
+    {
+      "sha": "a66d916a",
+      "title": "feat(rec-c1.7): C1.7.6 UAT-REC-C1-05 (time semantics) at the projection layer"
+    },
+    {
+      "sha": "4633afdc",
+      "title": "chore(rec-c1.7): TRUTH-001 partial → verified (projection authority)"
+    },
+    {
+      "sha": "9ee74f09",
+      "title": "chore(rec-c1.7): clippy -D warnings cleanup across the cycle's touch surface"
+    }
   ],
   "gates": {
     "T0_fmt": "PASS",
@@ -44,7 +74,11 @@
     "dual_truth_characterization tests (RED by design — services test the divergence; wrapper-side gate closes it in production)",
     "chronos-native lib tests require --test-threads=1 (ptrace collisions; documented in AGENTS.md §6.5)"
   ],
-  "smoke_subset": ["rec_c1_7_projection_restart_equivalence", "rec_c1_7_uat_c1_01_two_consumers", "e2e_connectivity"],
+  "smoke_subset": [
+    "rec_c1_7_projection_restart_equivalence",
+    "rec_c1_7_uat_c1_01_two_consumers",
+    "e2e_connectivity"
+  ],
   "verify_commands": [
     "cargo test -p chronos-services --lib projection:: (6/6 PASS)",
     "cargo test -p chronos-sandbox --test rec_c1_7_projection_restart_equivalence (1/1 PASS)",
@@ -54,5 +88,6 @@
   "cc_drift": {
     "CC#39_pre_existing_intentional": "Grows from 1 to 2 with this cycle's index entry. Remains pre-existing. Belongs in a separate gov-* cycle per user instruction (do NOT silently mask)."
   },
-  "notes": "Cycle closed on 8 sub-deliverables (C1.7.0 through C1.7.7). All 5 cycles-of-sub-deliverables GREEN on the wire (1 projection_restart_equivalence + 3 two_consumers + 1 e2e_connectivity smoke + 6 lib projection tests + 348 services lib tests). 3 dual_truth tests remain RED by design — they document the architectural split where the gate lives in the MCP wrapper, not in the service entries. CC#11 (cycle index entry) and CC#13 (cycles page lifecycle) expected PASS at closure. CC#39 grows by 1 (pre-existing), NOT masked per user instruction."
+  "notes": "Cycle closed on 8 sub-deliverables (C1.7.0 through C1.7.7). All 5 cycles-of-sub-deliverables GREEN on the wire (1 projection_restart_equivalence + 3 two_consumers + 1 e2e_connectivity smoke + 6 lib projection tests + 348 services lib tests). 3 dual_truth tests remain RED by design — they document the architectural split where the gate lives in the MCP wrapper, not in the service entries. CC#11 (cycle index entry) and CC#13 (cycles page lifecycle) expected PASS at closure. CC#39 grows by 1 (pre-existing), NOT masked per user instruction.",
+  "remote_tag_peel": "6190390d399a3978cbbf7ee7cda77ab4e10019e3"
 }

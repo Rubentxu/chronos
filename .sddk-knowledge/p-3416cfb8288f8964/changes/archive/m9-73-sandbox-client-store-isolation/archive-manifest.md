@@ -91,10 +91,10 @@ Two commits:
 | Kind | Path | SHA-256 |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-73-sandbox-client-store-isolation/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
-| source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `e67aa0c879dde45780392565cc2a05dab46e65fef5845742a44353fb2925b04a` |
-| source (sandbox process spawn) | `chronos-sandbox/src/client/process.rs` | `8306aa18d6b688e30c7531c3ee00365e936191a0e20df9ba2c0317b4975f236c` |
+| source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `5954a88b32b90065c98a20709a448d66f1cd792033b050a3aa0568f6ba373b6c` |
+| source (sandbox process spawn) | `chronos-sandbox/src/client/process.rs` | `1040f4ae8cea744fe273518b60af586b553d117f0c7b23d24eef24e73d8d3959` |
 | test (store isolation) | `chronos-sandbox/tests/client_store_isolation.rs` | `a48c78a31a5a1517418e560a2982b2ec39ea435f78b627cda79d38133ce56495` |
-| test (session edge cases) | `chronos-sandbox/tests/session_edge_cases.rs` | `79d913f406259d2ffaa2c2537aab2a9c0c8a4e7c90628e7c737b0043e374bae0` |
+| test (session edge cases) | `chronos-sandbox/tests/session_edge_cases.rs` | `9e7fe072358918c156502cc8093e9164aff59b1eeb17e460a475db10ee2d82b3` |
 | test (counterexample tools) | `chronos-sandbox/tests/counterexample_tools.rs` | `e47fbc3890e4ca8cc2361669c295b3018eff15802a8bd4df56f2e882923ca98d` |
 | docs (agents manual) | `AGENTS.md` | `83d09aa421c0c0c06a8dc28d4a5ba27dbb66772f7a1310103f3c133969fe8924` |
 | script (cc smoke test) | `scripts/smoke_test_ccs.sh` | `86def49d7e23b4e521687ddcb53a384aac18ec3f91f0e2845396f90d7ac3e7d3` |
@@ -106,5 +106,5 @@ Two commits:
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/release-receipt.md` | `5872b2538d4b743dfa1c3b5c20894c340172d274b8a30fb657b463c5e311e3a1` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/merge-receipt.md` | `9f2ee96b248a5800c1cb96ed16a13dc2e44908d26d2dcf83b07c07644f382647` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-73-sandbox-client-store-isolation/change-entry.md` | `0669b9d2740f447337a475e8cfd9c16bb041ad608ffc732c0e9a53e99fa2e31e` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `aab51cb24734a7e41b354a097ad0ce8ed0a332a708f4d2cd40474f175ac8d991` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `03221130e4cfca65f7b145f2907767c3c01a4e27a966af20dfec38249774de8d` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `b32588ee70600b9af3583750f308b59009ebeb7d6a79cf7cd79f3a76cd139e1a` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `8d262955b5079b561d8c5097dc14c48284031aeb746a152ad12575287967ac2c` |

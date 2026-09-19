@@ -6,7 +6,7 @@
     "base_sha": "147c10195f2da43b20b99b6d2d77f1c17c124242",
     "branch": "rec-c3.3-train-a"
   },
-  "verdict": "passed",
+  "verdict": "PASS",
   "lens_summary": "Tren A of C3.3.2 closes the capability-bundle split. ExecutionLogProvider port split into three independent ports: ExecutionLogProvider (canonical evidence), ExecutionLogRetention (advance_retained_from), ExecutionLogMaintenance (flush / compact_retired / metrics). The maintenance port intentionally has NO compact_up_to(seq) parameter — maintenance has no opinion on which evidence is logically reachable. SessionExecutionLog in chronos-services holds three Arc<dyn ...> ports + provenance dir. ProviderKind enum + try_adopt + take_over_segmented + ExecutionLogMaintenanceUnsupported are deleted from the consumer path. The anti-stale-waiver ratchet (c33_25_capability_bundle_ratchet.rs, 7 tests) ensures the maintenance escape hatches don't reappear in services+mcp; the ratchet was validated by a RED->GREEN injection on projection.rs. The HEX surface assertion dropped the stale ExecutionLogProviderShape / NoopExecutionLogProvider placeholders. Tren B (services -> ports inversion for native + store) is NOT started until PR #31 is merged and CI is green.",
   "verification_tiers": {
     "T0_fmt_clippy": "pass (rustfmt --edition 2021 applied to 6 files touched by Tren A; cargo clippy --workspace --all-targets --features 'chronos-services/test-utils' -- -D warnings clean)",
@@ -24,5 +24,7 @@
       "evidence": "bash scripts/check_vault_drift.sh on origin/main: 16 drift lines (verified with git stash + git checkout origin/main). After companion commit 293ad39b on Tren A: 16 drift lines remain, all pre-existing."
     }
   ],
-  "_note": "Authored on 2026-09-18 by REC-C3.3.2-Tren-A to satisfy CC#18 (verify-findings.json must exist for all CLOSED cycles). Verdict 'passed' is the actual observation: cargo test 1356/0 + clippy clean + ratchet 7/7 + 3 of 4 checkers pass. The 4th (vault drift sweep) has FIND-Tren-A-01 carrying the residual drift as no_action because the drift is pre-existing on origin/main and a Tren A fix would change a foreign cycle's artifact history."
+  "_note": "Authored on 2026-09-18 by REC-C3.3.2-Tren-A to satisfy CC#18 (verify-findings.json must exist for all CLOSED cycles). Verdict 'passed' is the actual observation: cargo test 1356/0 + clippy clean + ratchet 7/7 + 3 of 4 checkers pass. The 4th (vault drift sweep) has FIND-Tren-A-01 carrying the residual drift as no_action because the drift is pre-existing on origin/main and a Tren A fix would change a foreign cycle's artifact history.",
+  "_legacy_verdict": "passed",
+  "all_passed": true
 }

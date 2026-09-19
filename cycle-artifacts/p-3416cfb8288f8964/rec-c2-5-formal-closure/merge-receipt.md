@@ -43,3 +43,23 @@ git push origin --delete feat/rec-c2.2-accepted-raw-seam
 - `cargo clippy --workspace --all-targets -- -D warnings`: PASS (clean)
 - Working tree: clean
 - Tag `rec-c2-5-formal-closure` created and pointed at `21ab4f24`
+## Canonical SHA fields (added by CIH-C.1)
+
+| Field | Value |
+|---|---|
+| Head SHA | `21ab4f24888a78e71c7bf124c6f9497608288a7c` |
+| Base SHA | `21ab4f24888a78e71c7bf124c6f9497608288a7c` |
+| Branch | `rec-c2-5-formal-closure` |
+| Date | (original merge date not verifiable from current artifacts; see _restoration_note) |
+
+## Restoration note
+
+CIH-C.1 (2026-09-19) appended these canonical SHA fields because the
+original merge-receipt.md artifact produced by the prior cycle did
+not carry them. The Head SHA and Base SHA were reconstructed from
+the apply-checkpoint.json `head_sha` and `base_sha` fields (which in
+turn were reconciled from git history by CIH-C.1 — see
+apply-checkpoint.json restorations for related cycles). The Branch
+field reflects the cycle's branch (from apply-checkpoint.json `branch` field).
+The Date field is left as a restoration placeholder because the
+original receipt did not record a verifiable merge timestamp.

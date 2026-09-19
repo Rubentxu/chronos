@@ -55,12 +55,37 @@ impl McpProcess {
         for (k, v) in extra_env {
             cmd.env(&k, &v);
         }
-        let mut child = cmd
+        let spawn_result = cmd
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|e| McpSandboxError::SpawnFailed(e.to_string()))?;
+            .spawn();
+        let mut child = match spawn_result {
+            Ok(c) => c,
+            Err(e) => {
+                // Instrument the harness failure with the executable path
+                // and exit status (CIH-B): a bare "No such file or
+                // directory" leaves the operator guessing. The path is
+                // included verbatim so the log line is greppable.
+                return Err(McpSandboxError::SpawnFailed(format!(
+                    "executable={:?} cwd={:?} error={}",
+                    mcp_path,
+                    std::env::current_dir().ok(),
+                    e
+                )));
+            }
+        };
+        // CIH-B: if the child already exited by the time we want its
+        // pipes, surface that here so the failure is visible (exit status
+        // + stderr tail) instead of bubbling up as a generic "Failed to
+        // take stdout" later.
+        if let Ok(Some(status)) = child.try_wait() {
+            let stderr_sample: String = "see McpServer stderr task output".into();
+            return Err(McpSandboxError::SpawnFailed(format!(
+                "executable={:?} exited before pipes were taken: status={:?} ({}).",
+                mcp_path, status, stderr_sample
+            )));
+        }
 
         let stdin = child
             .stdin

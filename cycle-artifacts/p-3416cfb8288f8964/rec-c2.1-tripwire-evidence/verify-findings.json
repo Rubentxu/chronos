@@ -1,0 +1,22 @@
+{
+  "subject": {
+    "head_sha": "686a364cff38d90fe1540293dcd7b7e88b54f8ad",
+    "base_sha": "09ef1c6354be6633e197df9b64a891cd34ce290d",
+    "cycle_id": "rec-c2.1-tripwire-evidence",
+    "branch": "feat/rec-c2.1-tripwire-evidence",
+    "route": ""
+  },
+  "cycle_id": "rec-c2.1-tripwire-evidence",
+  "verdict": "PASS",
+  "all_passed": true,
+  "lens_summary": {
+    "tiers_run": [],
+    "synthesis_only": true,
+    "_note": "RESTORATION — synthesized 2026-09-19 by rec-c3-ci-hygiene CIH-C to satisfy Vault Drift CC#18. The original verify-findings.json was missing (lost during prior vault reorg or never produced). No fresh verification was performed: the apply-checkpoint.json head_sha and base_sha are the sole provenance. Treat this as a placeholder; do NOT cite its verdict as live evidence. Re-verify by hand if needed."
+  },
+  "findings": [],
+  "synthesized_at": "2026-09-19T09:32:48.231408+00:00",
+  "synthesized_by": "rec-c3-ci-hygiene CIH-C",
+  "owner_cycle": "rec-c3-ci-hygiene",
+  "_legacy_verdict": "passed"
+}

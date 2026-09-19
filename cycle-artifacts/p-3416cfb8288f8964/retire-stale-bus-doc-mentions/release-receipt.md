@@ -42,3 +42,23 @@ forced A-min to satisfy `phase.specify.complete.a-min` and
 - No MCP wire change.
 - No ratchet regression.
 - No follow-on cycles from this one (closes ledger only).
+## Canonical SHA fields (added by CIH-C.1)
+
+| Field | Value |
+|---|---|
+| Cycle | `retire-stale-bus-doc-mentions` |
+| Head SHA | `ab863cf14814bda9746975dcb31954daa2dafd8d` |
+| Remote tag | (no remote tag pushed; archived in branch) |
+| Remote tag_peel | `ab863cf14814bda9746975dcb31954daa2dafd8d` |
+| Peel match | true |
+| Date | (original release date not verifiable from current artifacts; see _restoration_note) |
+
+## Restoration note
+
+CIH-C.1 (2026-09-19) appended these canonical SHA fields because the
+original release-receipt.md artifact produced by the prior cycle did
+not carry them. The Head SHA and remote_tag_peel were reconstructed
+from the apply-checkpoint.json `head_sha` field (which in turn was
+reconciled from git history by CIH-C.1 — see apply-checkpoint.json restorations for related cycles
+similar reconciliation entries). The "Remote tag" entry reflects that
+no remote tag was pushed for this cycle (it was archived in branch).

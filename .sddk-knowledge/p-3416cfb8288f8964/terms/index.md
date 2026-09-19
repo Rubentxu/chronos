@@ -28,8 +28,8 @@ See `changes/archive/` for closed cycle manifests.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-15T14:30Z |
-| Last archive | m10-vault-index-reconcile |
+| Last updated | 2026-09-19T12:30:00Z |
+| Last archive | m9-98-m902r4-ledger-closure |
 | Active findings | 0 |
 | Backlog findings | 0 |
 | Terminated findings | 2 |

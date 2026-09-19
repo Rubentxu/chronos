@@ -1,11 +1,11 @@
 {
   "subject": {
-    "head_sha": "d1891ed3",
-    "base_sha": "5bbf7748",
+    "head_sha": "d1891ed37f45e249ab44a864d0f8e56b402d1d75",
+    "base_sha": "5bbf774888c3bced7967e3e060859d9a78d7035a",
     "cycle_id": "rec-c1-6-lifecycle-retention-wire"
   },
   "cycle_id": "rec-c1-6-lifecycle-retention-wire",
-  "verdict": "passed",
+  "verdict": "PASS",
   "all_passed": true,
   "lens_summary": {
     "drift": "REC-C1.6 closure: every step in the user-approved plan lands with green evidence. The latent liveness-marker bug (connected_sessions never populated) was discovered and fixed in-cycle (commit 7afb47ad) — the precondition added in 7197c40e would have been inert without it, as regression-verified by del_live_1 (would have hit SessionNotFound instead of SessionStillActive).",
@@ -114,5 +114,6 @@
     "Retention policy wire field: not invented. RetentionFacts is the BOUNDARY the agent sees, not a policy.",
     "REC-C2 legacy/event-path deletion: BLOCKED until REC-C1.8 handoff per proposal.md.",
     "Background sessions in the liveness check: kept narrow to live_probes (now correctly populated)."
-  ]
+  ],
+  "_legacy_verdict": "passed"
 }

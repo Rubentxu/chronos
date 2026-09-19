@@ -1,11 +1,11 @@
 {
   "subject": {
     "head_sha": "1a1ec68ad662aa0cb1bf74cdf3122aea4d11871e",
-    "base_sha": "17367f2d",
+    "base_sha": "17367f2d5ebcd4510de43ba2eef6c8b61cedd6de",
     "cycle_id": "rec-c1-5-closure"
   },
   "cycle_id": "rec-c1-5-closure",
-  "verdict": "passed",
+  "verdict": "PASS",
   "all_passed": true,
   "lens_summary": {
     "drift": "REC-C1.5 closure: every step in the user-approved plan lands with green evidence. Bootstrap invariant R5 regression-verified by commenting out bootstrap_execution_logs (test reports registry_len=0 vs expected 2).",
@@ -71,5 +71,6 @@
         "bootstrap_readiness::new_immediately_populates_registry_from_disk assertion fails (registry_len=0) when bootstrap_execution_logs is commented out"
       ]
     }
-  ]
+  ],
+  "_legacy_verdict": "passed"
 }

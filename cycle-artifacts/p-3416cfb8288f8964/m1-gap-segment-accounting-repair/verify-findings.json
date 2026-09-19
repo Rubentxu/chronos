@@ -1,11 +1,11 @@
 {
   "subject": {
     "head_sha": "5bd67b79a2cc7784261577ff2043bc50fa9ff472",
-    "base_sha": "4e0a1344",
+    "base_sha": "4e0a1344ee2cfa5508deb9865dd3b9b7cbb289bf",
     "cycle_id": "m1-gap-segment-accounting-repair"
   },
   "cycle_id": "m1-gap-segment-accounting-repair",
-  "verdict": "passed",
+  "verdict": "PASS",
   "all_passed": true,
   "lens_summary": {
     "drift": "Single root cause, fully characterized before the fix. The segment header count was written as the number of persisted SegmentEntry items (records + gaps, from buffer.len()) while the replay validator counted ExecutionRecord entries only, so any gap-bearing segment failed reopen with RecordCountMismatch. Measured: declared 4, actual 3. Fixed by making the unit explicit and shared: header field renamed record_count -> entry_count, writer emits buffer.len(), replay counts every entry. No data migration (the writer always emitted the entry count). The C1.8 forced-gap UAT is un-ignored and GREEN.",
@@ -58,5 +58,6 @@
     "REC-C2 (legacy deletion) remains queued behind this repair; not started here.",
     "CC#18 (rec-c1-7 backfill) and CC#39 (index total vs m9 dirs) stay in gov-*; neither surfaced nor masked here.",
     "Two pre-existing replay tests (rep_6, rep_7) encoded the old records-only unit for gap-bearing segments; corrected in-cycle to entry counts. They passed before only because they hand-built segments against the validator instead of the real writer."
-  ]
+  ],
+  "_legacy_verdict": "passed"
 }

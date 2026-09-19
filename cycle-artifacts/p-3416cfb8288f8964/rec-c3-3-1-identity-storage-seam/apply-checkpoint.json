@@ -71,5 +71,8 @@
     "chronos-log re-export of CompactionOutcome (commit 794732fa) was necessary to expose the return type of retain_up_to on the wrapper; not a port surface change.",
     "Workspace version 0.1.1 preserved. No tag in this cycle (the seam is structural; the next cycle produces the first truly inverted version worth a tag).",
     "Schema normalized to m9-22+ on 2026-09-18 by REC-C3.3.2-Tren-A: added created_at, title, summary, route, verify_status, release_status, archive_status, archived_at, findings_introduced (m9-11+ convention)."
-  ]
+  ],
+  "main_sha": "794732fadaba66bc168f3b50d76f1bf54f7fb564",
+  "peel_match": true,
+  "_main_sha_provenance": "Per CC#12 (m9-19) convention, post-cycle main HEAD equals head_sha. Original main_sha was missing/inconsistent; set to head_sha=794732fadaba. True main value at the time of cycle merge is not recoverable from this repo's current state for cycles that pre-date a synchronized fetch; absence is documented, not fabricated."
 }

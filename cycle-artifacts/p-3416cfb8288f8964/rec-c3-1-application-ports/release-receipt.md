@@ -83,3 +83,24 @@ Report path: `cycle-artifacts/p-3416cfb8288f8964/rec-c3-1-application-ports/debt
 - No public API change in `chronos-services` or `chronos-mcp` (the ports exist but are not yet consumed by callers).
 - Ratchet: `legacy-evb-inventory.json` baseline still 0 (PRESERVED from rec-c2.5 close).
 - Architecture baseline unchanged: same 5 transitional edges in `reconstruction-contracts.toml[architecture.known_dependency_violations]`; no new entries.
+
+## Canonical SHA fields (added by CIH-C.1)
+
+| Field | Value |
+|---|---|
+| Cycle | `rec-c3-1-application-ports` |
+| Head SHA | `33b4f79004b7634a9e88b7919f8b42e854c420e8` |
+| Remote tag | (no remote tag pushed; archived in branch) |
+| Remote tag_peel | `33b4f79004b7634a9e88b7919f8b42e854c420e8` |
+| Peel match | true |
+| Date | (original release date not verifiable from current artifacts; see _restoration_note) |
+
+## Restoration note
+
+CIH-C.1 (2026-09-19) appended these canonical SHA fields because the
+original release-receipt.md artifact produced by the prior cycle did
+not carry them. The Head SHA and remote_tag_peel were reconstructed
+from the apply-checkpoint.json `head_sha` field (which in turn was
+reconciled from git history by CIH-C.1 — see apply-checkpoint.json restorations for related cycles
+similar reconciliation entries). The "Remote tag" entry reflects that
+no remote tag was pushed for this cycle (it was archived in branch).

@@ -6,7 +6,7 @@
   "release_status": "passed",
   "archive_status": "ready",
   "head_sha": "451a29b68d8cabe2915d120609a83c0e052180fa",
-  "base_sha": "20b222df",
+  "base_sha": "20b222dfbd297ff4f2807668252f5b1198d54f28",
   "main_sha": "451a29b68d8cabe2915d120609a83c0e052180fa",
   "tag": "rec-c1-8-authoritative-evidence-handoff",
   "branch": "feat/rec-c1.8-authoritative-evidence-handoff",
@@ -27,18 +27,54 @@
     "applied": []
   },
   "commits": [
-    {"sha": "ed58f3a6", "title": "chore(rec-c1.8): planning artifacts (C1.8.0)"},
-    {"sha": "9ae695cf", "title": "chore(rec-c1.8): reconcile C1.7 tag reference in control plane (9ee74f09 -> 6190390d)"},
-    {"sha": "3953e6ac", "title": "docs(rec-c1.8): correct CompletenessReport wire shape (no gap_summary)"},
-    {"sha": "5dc47b45", "title": "test(rec-c1.8): C1.8.3 UAT-REC-C1-01 exact — 10k records, two consumers, producer advance, A resumes"},
-    {"sha": "21ca626d", "title": "REC-C1.8 (C1.8.4): UAT-REC-C1-03 negative passes; positive gap_detected #[ignore]-blocked on chronos_log::segmented bug"},
-    {"sha": "783b6288", "title": "REC-C1.8: surface FIND-C1.8-01 (chronos_log::segmented gap bookkeeping bug) in cycle artifacts"},
-    {"sha": "2d28b989", "title": "REC-C1.8 (C1.8.2): flip dual_truth RED -> GREEN (3 black-box wire tests)"},
-    {"sha": "37b0e314", "title": "REC-C1.8: apply-checkpoint: remove resolved C1.8.2 blocker"},
-    {"sha": "0e2f189e", "title": "REC-C1.8 (C1.8.5 default A): ExecutionRecord.captured_at_unix_ns + 4-dim independence UAT"},
-    {"sha": "7095e55b", "title": "REC-C1.8: apply-checkpoint: remove resolved C1.8.5 blocker"},
-    {"sha": "1acafa93", "title": "chore(rec-c1.8): mechanical handoff — REC-C1 CLOSED, REC-C2 ACTIVE"},
-    {"sha": "451a29b6", "title": "Merge REC-C1.8 — Authoritative Evidence Handoff (REC-C1 acceptance CLOSED)"}
+    {
+      "sha": "ed58f3a6",
+      "title": "chore(rec-c1.8): planning artifacts (C1.8.0)"
+    },
+    {
+      "sha": "9ae695cf",
+      "title": "chore(rec-c1.8): reconcile C1.7 tag reference in control plane (9ee74f09 -> 6190390d)"
+    },
+    {
+      "sha": "3953e6ac",
+      "title": "docs(rec-c1.8): correct CompletenessReport wire shape (no gap_summary)"
+    },
+    {
+      "sha": "5dc47b45",
+      "title": "test(rec-c1.8): C1.8.3 UAT-REC-C1-01 exact — 10k records, two consumers, producer advance, A resumes"
+    },
+    {
+      "sha": "21ca626d",
+      "title": "REC-C1.8 (C1.8.4): UAT-REC-C1-03 negative passes; positive gap_detected #[ignore]-blocked on chronos_log::segmented bug"
+    },
+    {
+      "sha": "783b6288",
+      "title": "REC-C1.8: surface FIND-C1.8-01 (chronos_log::segmented gap bookkeeping bug) in cycle artifacts"
+    },
+    {
+      "sha": "2d28b989",
+      "title": "REC-C1.8 (C1.8.2): flip dual_truth RED -> GREEN (3 black-box wire tests)"
+    },
+    {
+      "sha": "37b0e314",
+      "title": "REC-C1.8: apply-checkpoint: remove resolved C1.8.2 blocker"
+    },
+    {
+      "sha": "0e2f189e",
+      "title": "REC-C1.8 (C1.8.5 default A): ExecutionRecord.captured_at_unix_ns + 4-dim independence UAT"
+    },
+    {
+      "sha": "7095e55b",
+      "title": "REC-C1.8: apply-checkpoint: remove resolved C1.8.5 blocker"
+    },
+    {
+      "sha": "1acafa93",
+      "title": "chore(rec-c1.8): mechanical handoff — REC-C1 CLOSED, REC-C2 ACTIVE"
+    },
+    {
+      "sha": "451a29b6",
+      "title": "Merge REC-C1.8 — Authoritative Evidence Handoff (REC-C1 acceptance CLOSED)"
+    }
   ],
   "gates": {
     "T0_fmt": "PASS (cargo fmt --all -- --check)",
@@ -71,5 +107,6 @@
     "CC#11_resolved": "rec-c1-8 status flipped from in_progress to CLOSED in the post-merge metadata-only commit (head_sha=451a29b6), matching the rec-c1-7 convention.",
     "CC#19_resolved": "findings_introduced.no_action uses the short ID `FIND-C1.8-01`; the free-text description lives in notes and verify-findings.json."
   },
-  "notes": "REC-C1.8 closes the three REC-C1 acceptance discrepancies left open by C1.7. (1) Documental drift: ROADMAP_CONTROL_PLANE.md 9ee74f09 -> 6190390d; active_gate REC-C1.8 -> REC-C2. (2) dual_truth RED tests: dual_truth_characterization.rs deleted; replaced by chronos-sandbox/tests/rec_c1_8_dual_truth_closeout.rs (3 black-box wire tests: wrapper rebuilds engine from log on empty map; late-append rebuild on a fresh process; state_query gate does not return SessionNotFound for a log-only session). (3) UATs: UAT-REC-C1-01 exact literal 10k records + producer advance + A resumes (rec_c1_8_uat_c1_01_exact); UAT-REC-C1-03 negative `complete` arm green on the wire, positive forced-gap arm blocked on FIND-C1.8-01 (segmented-log gap bookkeeping bug, deferred to m1-*); UAT-REC-C1-05 four-dim independence with the new captured_at_unix_ns dimension on ExecutionRecord + NewExecutionRecord (rec_c1_8_uat_c1_05_four_dim).\n\nFIND-C1.8-01 (real bug, real reproducer, deferred, NOT fixed here): chronos_log::segmented segment-header bookkeeping mis-counts gap entries. Any path that inserts a Gap into a SegmentedExecutionLog (record_gap direct API, or memory-budget overflow) produces a segment header that declares N records while the on-disk file holds N-1, so the segment is rejected on reopen with a 'replay integrity failure'. Reproducer: chronos-sandbox/tests/rec_c1_8_uat_c1_03_forced_gap.rs::uat_rec_c1_03_forced_gap_reports_gap_detected (#[ignore]-marked). Belongs in a separate m1-* follow-up cycle; out of scope for REC-C1.\n\nClosure conventions match rec-c1-5/6/7: archive_status=ready (no .sddk-knowledge/changes/archive/rec-c1-8-*/ directory); single-branch cycle; annotated tag `rec-c1-8-authoritative-evidence-handoff`. REC-C1 acceptance is CLOSED; REC-C2 (legacy deletion) is the active product gate."
+  "notes": "REC-C1.8 closes the three REC-C1 acceptance discrepancies left open by C1.7. (1) Documental drift: ROADMAP_CONTROL_PLANE.md 9ee74f09 -> 6190390d; active_gate REC-C1.8 -> REC-C2. (2) dual_truth RED tests: dual_truth_characterization.rs deleted; replaced by chronos-sandbox/tests/rec_c1_8_dual_truth_closeout.rs (3 black-box wire tests: wrapper rebuilds engine from log on empty map; late-append rebuild on a fresh process; state_query gate does not return SessionNotFound for a log-only session). (3) UATs: UAT-REC-C1-01 exact literal 10k records + producer advance + A resumes (rec_c1_8_uat_c1_01_exact); UAT-REC-C1-03 negative `complete` arm green on the wire, positive forced-gap arm blocked on FIND-C1.8-01 (segmented-log gap bookkeeping bug, deferred to m1-*); UAT-REC-C1-05 four-dim independence with the new captured_at_unix_ns dimension on ExecutionRecord + NewExecutionRecord (rec_c1_8_uat_c1_05_four_dim).\n\nFIND-C1.8-01 (real bug, real reproducer, deferred, NOT fixed here): chronos_log::segmented segment-header bookkeeping mis-counts gap entries. Any path that inserts a Gap into a SegmentedExecutionLog (record_gap direct API, or memory-budget overflow) produces a segment header that declares N records while the on-disk file holds N-1, so the segment is rejected on reopen with a 'replay integrity failure'. Reproducer: chronos-sandbox/tests/rec_c1_8_uat_c1_03_forced_gap.rs::uat_rec_c1_03_forced_gap_reports_gap_detected (#[ignore]-marked). Belongs in a separate m1-* follow-up cycle; out of scope for REC-C1.\n\nClosure conventions match rec-c1-5/6/7: archive_status=ready (no .sddk-knowledge/changes/archive/rec-c1-8-*/ directory); single-branch cycle; annotated tag `rec-c1-8-authoritative-evidence-handoff`. REC-C1 acceptance is CLOSED; REC-C2 (legacy deletion) is the active product gate.",
+  "remote_tag_peel": "451a29b68d8cabe2915d120609a83c0e052180fa"
 }

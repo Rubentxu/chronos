@@ -1,0 +1,39 @@
+{
+  "cycle_id": "session-handoff",
+  "project_id": "p-3416cfb8288f8964",
+  "head_sha": "c11de1fa7aa715ef80e47a5dac23abea516c2f04",
+  "merge_sha": null,
+  "base_sha": "c11de1fa7aa715ef80e47a5dac23abea516c2f04",
+  "branch": null,
+  "path": null,
+  "route": null,
+  "completed_at": null,
+  "archived_at": null,
+  "created_at": "2026-09-19T00:00:00Z",
+  "title": "session-handoff",
+  "summary": "Legacy cycle / handoff restored by CIH-C; head_sha from Tren A merge -> rec-c3-ci-hygiene handoff commit.",
+  "status": "CLOSED",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived",
+  "tier_results": {},
+  "scope_decisions": [
+    "Restoration only: provenance from documented closing commit."
+  ],
+  "carry_forward_debt": {},
+  "findings_introduced": {
+    "no_action": [],
+    "notes": [
+      "verify-findings.json synthesized as RESTORATION in CIH-C; do not cite its verdict as live evidence."
+    ]
+  },
+  "findings_closed": [],
+  "commits_since_base": [],
+  "_restoration_note": "RESTORATION — synthesized 2026-09-19 by rec-c3-ci-hygiene CIH-C. Original apply-checkpoint.json missing (legacy cycle / handoff-only directory). head_sha extracted from the documented closing commit. NO fresh verification was performed.",
+  "restored_at": "2026-09-19T09:33:11.058249+00:00",
+  "restored_by": "rec-c3-ci-hygiene CIH-C",
+  "main_sha": "c11de1fa7aa715ef80e47a5dac23abea516c2f04",
+  "peel_match": true,
+  "remote_tag_peel": "c11de1fa7aa715ef80e47a5dac23abea516c2f04",
+  "_main_sha_provenance": "Per CC#12 (m9-19) convention, post-cycle main HEAD equals head_sha. Original main_sha was missing/inconsistent; set to head_sha=c11de1fa7aa7. True main value at the time of cycle merge is not recoverable from this repo's current state for cycles that pre-date a synchronized fetch; absence is documented, not fabricated."
+}

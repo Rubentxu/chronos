@@ -43,3 +43,23 @@ A-min (forced by ledger path; B-direct would suffice in theory).
   REC-C2 -> REC-C3.
 - 5 local branches and 3 remote branches cleaned up.
 - No public API change. No MCP wire change. No ratchet regression.
+## Canonical SHA fields (added by CIH-C.1)
+
+| Field | Value |
+|---|---|
+| Cycle | `rec-c2-5-formal-closure` |
+| Head SHA | `21ab4f24888a78e71c7bf124c6f9497608288a7c` |
+| Remote tag | (no remote tag pushed; archived in branch) |
+| Remote tag_peel | `21ab4f24888a78e71c7bf124c6f9497608288a7c` |
+| Peel match | true |
+| Date | (original release date not verifiable from current artifacts; see _restoration_note) |
+
+## Restoration note
+
+CIH-C.1 (2026-09-19) appended these canonical SHA fields because the
+original release-receipt.md artifact produced by the prior cycle did
+not carry them. The Head SHA and remote_tag_peel were reconstructed
+from the apply-checkpoint.json `head_sha` field (which in turn was
+reconciled from git history by CIH-C.1 — see apply-checkpoint.json restorations for related cycles
+similar reconciliation entries). The "Remote tag" entry reflects that
+no remote tag was pushed for this cycle (it was archived in branch).
