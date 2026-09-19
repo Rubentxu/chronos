@@ -485,6 +485,48 @@
       "next_slice": "CIH-F (multi_session::test_drop_session_not_in_load_list — REC-C1.5 milestone owns; CIH-F rules per operator: don't widen SessionRepository, don't import concrete adapters from services, don't modify REC-C1.5.2 strict replay; if redesign needed, stop and present architectural conflict)"
     },
     {
+      "id": "CIH-F",
+      "title": "fix(services): peek-before-write ExecutionLog reopen on load_session",
+      "executed_at": "2026-09-19T19:33:00Z",
+      "head_sha_before": "2e2c7c1d",
+      "head_sha_after": "7ee267d9",
+      "files_changed": [
+        "crates/chronos-services/src/session_log.rs",
+        "crates/chronos-services/src/sessions.rs",
+        "chronos-sandbox/tests/multi_session.rs"
+      ],
+      "production_changed": true,
+      "rationale": "SessionsService::load_session rebuilt QueryEngine from the session store but never reopened the durable ExecutionLog. The registry message at session_log.rs already named reopen as belonging to REC-C1.5; CIH-F delivers the minimal in-process reopen primitive that load_session needs WITHOUT breaking REC-C1.5.2 strict replay, WITHOUT widening SessionRepository, WITHOUT importing concrete adapters from services, WITHOUT introducing a second authoritative registry, and WITHOUT #[ignore]/--skip/waiver on the failing test. Two new primitives on SessionExecutionLogRegistry (peek_registration: Available/Unavailable/Absent projection; try_reopen_existing: thin wrapper around factory.reopen that returns the typed reason on refusal and does NOT register on its own). load_session now invokes rehydrate_execution_log BEFORE publishing the rebuilt engine: Available -> no-op (existing Arc reused, no IdentityMismatch on repeat loads); Unavailable -> no-op (prior reason preserved per §3.3); Absent -> try_reopen_existing; on Ok register the log, on Err register_unavailable with the factory's typed rejection (no empty log fabrication, no Gap inserted).",
+      "evidence": {
+        "tier_T0_fmt_exit": 0,
+        "tier_T0_clippy_exit": "0 errors, 0 warnings (cargo clippy --workspace --all-targets -- -D warnings)",
+        "tier_T1_lib_chronos_services_cih_f": "6 passed; 0 failed; 0 ignored (cih_f_single_session_save_drop_load_query, cih_f_multi_session_load_one_does_not_disturb_another, cih_f_real_restart_bootstrap_equivalent_to_load_session, cih_f_repeated_load_does_not_overwrite_existing_handle, cih_f_missing_durable_log_records_unavailable_keeps_metadata, cih_f_corrupt_durable_log_records_unavailable_keeps_metadata)",
+        "tier_T1_lib_chronos_services_total": "388 passed; 0 failed (382 existing + 6 new CIH-F unit tests)",
+        "tier_T4_smoke_multi_session": "7/7 (test_two_concurrent_probes_isolation, test_save_session_a_load_while_session_b_runs, test_compare_sessions_similar_programs, test_performance_regression_audit, test_list_sessions_reflects_saves_and_deletes, test_drop_session_not_in_load_list, test_cih_f_drop_load_one_session_does_not_disturb_other)",
+        "tier_arch_hex_boundary": "OK: chronos hexagonal boundary clean",
+        "tier_arch_contracts": "PASSED",
+        "binary_built_on_demand": "/var/home/rubentxu/cargo-targets/debug/chronos-mcp rebuilt after sessions.rs touched; CHRONOS_MCP_PATH exported for sandbox spawn lookup"
+      },
+      "behavior_change": "SessionsService::load_session now rehydrates the ExecutionLog in the registry before publishing the rebuilt QueryEngine. Three observable changes: (a) drop+load+query of a session returns its events (gate-failing test now passes); (b) load_session on a session whose durable log is missing or corrupt records Unavailable with the factory's typed reason — metadata stays queryable, no empty log is fabricated, no Gap is inserted; (c) repeated load_session on the same session reuses the existing Arc (no ExecutionLogIdentityMismatch).",
+      "constraints_respected_per_operator": [
+        "No dyn Any, no downcasts in services (peek is a copyable enum projection, not a downcast)",
+        "No concrete adapter imports in services (peek + try_reopen_existing use the injected factory via the registry)",
+        "No second authoritative registry (peek just projects the existing registry state)",
+        "No bootstrap semantic change (reopen is opt-in via try_reopen_existing, bootstrap_execution_logs untouched)",
+        "REC-C1.5.2 strict replay intact (try_reopen_existing is a thin wrapper that surfaces the typed refusal verbatim; assert in cih_f_corrupt_durable_log test that load_session does NOT rewrite the durable segment bytes)",
+        "SessionRepository contract unchanged",
+        "No #[ignore], no --skip, no waiver; the failing test runs and passes"
+      ],
+      "pre_existing_failures_unchanged": [
+        "chronos-sandbox::rec_c2_2_uat_c2::uat_c2_01_probe_drain_is_not_an_authority — unchanged. Owner REC-C3.x (CIH-E-gate-uat-c2-01-timing). Not a CIH-F blocker."
+      ],
+      "findings_introduced": [],
+      "findings_closed": [
+        "FIND-CIH-D-coverage-multi-session-test-drop-session-not-in-load-list (was pre-existing baseline; CIH-F closes it on the CI Test gate)"
+      ],
+      "next_slice": "Push 7ee267d9 to origin/rec-c3-ci-hygiene and re-check the 5 GH Actions gates on the integrated main HEAD. uat_c2_01 timing finding remains a latent risk under REC-C3.x; not addressed by CIH-F. Tren B (REC-C3.3.3) remains blocked until 5/5 GREEN."
+    },
+    {
       "id": "CIH-E-gate-verification",
       "title": "post-CIH-E remote gate verification (5/5 GH Actions checks)",
       "executed_at": "2026-09-19T18:25:00Z",
