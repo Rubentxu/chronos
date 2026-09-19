@@ -54,6 +54,12 @@
         "decided_at": "2026-09-19T11:21:42Z",
         "decided_by": "operator (auto-run)"
       }
+    },
+    "task_graph_decisions": {
+      "q1_is_persistent": "Add is_persistent(&self) -> bool to SessionArchive port; no separate DegradedStoreDisclosure port.",
+      "q2_delete_refusal": "Refusal of live-session delete lives at service layer; SessionArchive::delete takes no Force flag.",
+      "q3_counterexample_filter": "Move CounterexampleBundleFilter to chronos_domain::ports::counterexample with owned typed fields (drop 'a borrow).",
+      "delivery_strategy": "single-PR feat/rec-c3.3-train-b with 7 per-slice atomic commits (A,B,C,D,E,F,G); reviewers see bounded diffs per slice per ADR-0070 + B7."
     }
   },
   "smoke_subset": [
@@ -100,7 +106,8 @@
     "Confirmed: B1..B9 hold. Composition root stays at chronos-mcp::composition with bootstrap-scoped (default_session_archive, default_counterexample_repository) + session-scoped (advance/step via ProbeService per-call) split.",
     "Carry-forward debt C31-DEBT-03 (services->ports inversion not finished) will be partially addressed (SessionArchive + CounterexampleRepository); remaining services->native direction logged as no_action_in_current_cycle per B8 — REC-C3.4 owns it.",
     "sddk-propose complete (proposal.md, 407 lines, sha256 3a3078d5...). CAS persistence deferred per FIND-TB-01 (CLI cycle identifier format gap); evidence chain via git commits preserved.",
-    "specification.md complete (17 REQ, 35 scenarios, 14 EC, 10 AP, sha256 a56520380a9d76dc...). Slice traceability index maps each REQ to one of 7 slices (A..G). Three non-blocking questions to resolve in sddk-tasks: StoreKind disclosure, SessionArchive::delete semantics, CounterexampleBundleFilter derives."
+    "specification.md complete (17 REQ, 35 scenarios, 14 EC, 10 AP, sha256 a56520380a9d76dc...). Slice traceability index maps each REQ to one of 7 slices (A..G). Three non-blocking questions to resolve in sddk-tasks: StoreKind disclosure, SessionArchive::delete semantics, CounterexampleBundleFilter derives.",
+    "task-graph.json complete (7 tasks, sha256 a4a8753a3c9cd44a...). Forecast 1450 LOC vs 400 budget = High risk; per ADR-0070 the single-PR strategy with per-slice atomic commits satisfies the size-exception reviewer-bounded-diffs contract. Three Qs resolved: is_persistent on SessionArchive port, refusal of live delete at service layer, CounterexampleBundleFilter move to domain with owned fields."
   ],
   "ledger_progression": [
     {
@@ -158,12 +165,29 @@
       "rfc2119_must_shall": 93,
       "transition_ready": true,
       "next_phase": "sddk-tasks"
+    },
+    {
+      "stage": "phase.tasks.complete",
+      "sha": "9a68e9f1a0ae8686438072518a3cba3a327430cd",
+      "at": "2026-09-19T11:27:46Z",
+      "by": "sddk-tasks (MiniMax-M3)",
+      "evidence": "cycle-artifacts/p-3416cfb8288f8964/rec-c3.3-train-b/task-graph.json (sha256 a4a8753a3c9cd44a7c67c93570df923755ff7ddbd6ccf56c8738d4ba37f2eeac, 489 lines)",
+      "context_quality": "C2",
+      "tasks": 7,
+      "dag_summary": "A||B at start; A->C,D; C,D->E; E->F,G; F requires C additionally",
+      "forecast_loc": 1450,
+      "forecast_budget": 400,
+      "risk_class": "High (size-exception)",
+      "delivery_strategy": "single-pr with per-slice atomic commits (ADR-0070)",
+      "decisions_resolved": 3,
+      "transition_ready": true,
+      "next_phase": "sddk-apply"
     }
   ],
   "layer_completion": {
     "spec": true,
     "design": false,
-    "tasks": false,
+    "tasks": true,
     "apply": false,
     "verify": false,
     "debt_verify": false,

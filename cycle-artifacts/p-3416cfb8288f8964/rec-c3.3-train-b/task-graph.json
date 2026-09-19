@@ -1,0 +1,490 @@
+{
+  "cycle_id": "rec-c3.3-train-b",
+  "project_id": "p-3416cfb8288f8964",
+  "phase": "tasks",
+  "phase_author": "sddk-tasks (MiniMax-M3)",
+  "issued_at": "2026-09-19T11:26:00Z",
+  "spec_sha256": "a56520380a9d76dcf17c31ec48829a62926307225d894723448add2fd5e94d33",
+  "proposal_sha256": "3a3078d569ec2e5eb5bc3e392ce2c24f33158b392e74be385e8482b4b5b9167d",
+  "head_sha_at_phase_start": "f578c0e6",
+
+  "review_workload_forecast": {
+    "estimated_changed_lines": 1450,
+    "estimated_changed_lines_range": "1100..1700",
+    "budget": 400,
+    "budget_risk": "High",
+    "chained_prs_recommended": "Yes",
+    "chain_strategy": "feature-branch-chain",
+    "delivery_strategy": "single-pr",
+    "decision_needed_before_apply": "No"
+  },
+
+  "advisory_projection": {
+    "metric": "lines_changed",
+    "forecast": 1450,
+    "budget": 400,
+    "recommendation": "consider splitting if LOC > 400",
+    "rationale": "advisory; not blocking per ADR-0070. The 7-slice decomposition already commits to atomic commits per slice on the cycle branch; the size-exception path is satisfied by landing the slice commits one at a time so reviewers see bounded diffs."
+  },
+
+  "decisions": {
+    "q1_store_kind_disclosure": {
+      "question": "After the SessionMetadata move, does the SessionArchive port need an is_persistent() method, or is it a separate DegradedStoreDisclosure capability port?",
+      "decision": "Add `is_persistent(&self) -> bool` to the `SessionArchive` port trait (no separate capability port).",
+      "rationale": "Mirrors the existing `SessionStore::is_persistent` method already on the concrete impl. The capability is a single-bool query, so a new port would be over-engineering (B9 honesty: co-locating keeps the trait surface narrow and the contract obvious). The default factory wires `Arc<SessionStore>` whose `kind` already distinguishes persistent vs in-memory (storage.rs:67).",
+      "owner_cycle": "rec-c3.3-train-b"
+    },
+    "q2_session_archive_delete_semantics": {
+      "question": "Today SessionsService::delete_session refuses to delete a live session. Does the port take a Force flag, or does the refusal live at the service layer?",
+      "decision": "Refusal lives at the service layer. The `SessionArchive::delete(session_id)` port signature carries NO `Force` flag.",
+      "rationale": "The refusal is a LIFECYCLE invariant (a session with a live probe must not be deleted from the archive), not a persistence concern. The existing `SessionsService::delete_session` (sessions.rs:212) already enforces this rule before reaching the store. Putting the rule on the port would leak lifecycle semantics into the persistence contract. B2 stays satisfied: the port only takes `&SessionId`/domain types.",
+      "owner_cycle": "rec-c3.3-train-b"
+    },
+    "q3_counterexample_bundle_filter_derives": {
+      "question": "counterexample_storage::CounterexampleBundleFilter is currently a chronos_store type. Does it move to chronos_domain::ports::counterexample as part of the port, or does the port accept a HashMap<String, Value>-like filter?",
+      "decision": "Move `CounterexampleBundleFilter` to `chronos_domain::ports::counterexample` with its current TYPED field shape (workspace_id, property_kind, since_ms, until_ms, limit, cursor). Drop the `<'a>` borrow: switch fields to owned `Option<String>` / `Option<u64>` / `u32` to remove the lifetime once the type lives outside chronos-store.",
+      "rationale": "HashMap<String, Value> loses compile-time field checking (B9 honesty regression). Typed fields preserve the call-site shape (chronos-services/src/counterexample.rs:479 already builds the filter structurally). The lift is mechanical: same 6 fields, different owner crate, lifetime removed. chronos-store's impl forwards to its existing 6-field tuple-shaped list query (ce_read.rs:205) so call-sites stay aligned.",
+      "owner_cycle": "rec-c3.3-train-b"
+    }
+  },
+
+  "tasks": [
+    {
+      "task_id": "TASK-TB-A",
+      "title": "Lift SessionMetadata from chronos-store to chronos-domain",
+      "slice": "A",
+      "scope": {
+        "add": [
+          "crates/chronos-domain/src/session.rs (new file: lifted SessionMetadata struct with byte-for-byte identical field order, derives, and serde annotations)"
+        ],
+        "modify": [
+          "crates/chronos-domain/src/lib.rs (re-export SessionMetadata from crate root)",
+          "crates/chronos-domain/src/ports/mod.rs (no change required; SessionMetadata lives in domain::session, not in ports)",
+          "crates/chronos-store/src/storage.rs (delete the local SessionMetadata struct at line 22; replace with `pub use chronos_domain::SessionMetadata;`)",
+          "crates/chronos-store/src/lib.rs (the existing `pub use storage::{SessionMetadata, SessionStore};` continues to resolve because storage.rs re-exports from chronos_domain)",
+          "crates/chronos-services/src/diff.rs (swap `use chronos_store::SessionMetadata;` to `use chronos_domain::SessionMetadata;` at line 247; replace the inline `use chronos_store::SessionMetadata;` at line 118 inside session_explain — wait, that's session_explain; see below)",
+          "crates/chronos-services/src/session_explain.rs (swap `chronos_store::SessionMetadata` at lines 118 and 134 to `chronos_domain::SessionMetadata`)",
+          "crates/chronos-services/src/session_export.rs (swap `use chronos_store::SessionMetadata;` at line 46 and the inline use at line 307 to `chronos_domain::SessionMetadata`)",
+          "crates/chronos-services/src/session_lifecycle.rs (swap inline `chronos_store::SessionMetadata` at lines 467 and 566 to `chronos_domain::SessionMetadata`)",
+          "crates/chronos-services/src/output.rs (swap `use chronos_store::SessionMetadata;` at line 13 to `use chronos_domain::SessionMetadata;`)",
+          "crates/chronos-services/src/sessions.rs (swap any inline `chronos_store::SessionMetadata` parameter types; grep confirms the bulk are in diff/output/session_explain/session_export/session_lifecycle per the agent-grep result showing 8 confirmed import sites in 5 files)",
+          "crates/chronos-store/benches/cas_bench.rs (swap `use chronos_store::{SessionMetadata, SessionStore, TraceDiff};` to `use chronos_store::{SessionStore, TraceDiff}; use chronos_domain::SessionMetadata;`)"
+        ]
+      },
+      "req_ids": ["REQ-TB-14", "REQ-TB-15"],
+      "preconditions": [],
+      "locked_rules_acknowledged": ["B1", "B2", "B3", "B5", "B6", "B7", "B9"],
+      "verification": {
+        "T0": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings",
+        "T1": "cargo test --workspace --lib --no-fail-fast (634 existing + new bincode/JSON identity tests)",
+        "T2": "cargo test -p chronos-store --lib --no-fail-fast && cargo test -p chronos-services --lib --no-fail-fast",
+        "T3": "cargo test --workspace --lib --tests --exclude chronos-sandbox --exclude chronos-e2e --no-fail-fast",
+        "ratchet": [
+          "grep -rn \"chronos_store::SessionMetadata\" crates/chronos-services returns zero hits",
+          "grep -rn \"chronos_store::SessionMetadata\" crates/chronos-store returns zero hits (only the re-export in storage.rs/lib.rs remains, and that re-exports from chronos_domain)",
+          "cargo build -p chronos-services succeeds",
+          "Pre-existing `session_persistence_extended.rs::save_load_roundtrip` still passes (m7-04 `tail_sealed` / `sealed_at` field identity checks)"
+        ]
+      },
+      "test_expectations": {
+        "existing_must_pass": [
+          "crates/chronos-store/src/storage.rs::test_session_store_list_sessions",
+          "crates/chronos-store/src/storage.rs::test_session_store_list_sessions_skips_unreadable_record",
+          "crates/chronos-services/src/sessions.rs::save_session_ok / load_session_ok / list_sessions_one / delete_session_ok",
+          "chronos-sandbox/tests/session_persistence_extended.rs::save_load_roundtrip"
+        ],
+        "new_tests": [
+          "crates/chronos-domain/tests/session_metadata_lift.rs (or extend crates/chronos-domain/tests/session_ports.rs) — bincode round-trip identity vs pre-lift byte length, JSON shape snapshot equality, all 8 fields present after lift (session_id, created_at, language, target, event_count, duration_ms, tail_sealed, sealed_at)"
+        ]
+      },
+      "rollback": "git revert <TASK-TB-A commit SHA>; the lift is mechanical — the storage.rs delete is paired with the re-export, and the 8 import sites revert to chronos_store::SessionMetadata. No wire-format drift because the field shape, derives, and serde annotations are byte-for-byte identical.",
+      "estimate": "small",
+      "risk_class": "low",
+      "expected_artifacts": [
+        "crates/chronos-domain/src/session.rs (new file, ~30 lines: SessionMetadata struct + re-exports)",
+        "crates/chronos-store/src/storage.rs (modified: SessionMetadata struct removed; +1 line `pub use chronos_domain::SessionMetadata;`)",
+        "8 import sites swapped in crates/chronos-services/{diff,output,session_explain,session_export,session_lifecycle,sessions}.rs"
+      ]
+    },
+
+    {
+      "task_id": "TASK-TB-B",
+      "title": "Sandbox harness first slice: native_probe_tools.rs + in-memory composition-root test variants",
+      "slice": "B",
+      "preconditions": [],
+      "parallel_with": "TASK-TB-A",
+      "scope": {
+        "add": [
+          "chronos-sandbox/tests/native_probe_tools.rs (new file; uses McpTestClient::start harness from chronos-sandbox/src/client/tools.rs; asserts the harness can connect even though capture_session / probe_advance / probe_step are not yet wired — RED tests that fail until E/F/G land)"
+        ],
+        "modify": [
+          "crates/chronos-mcp/src/composition.rs (add placeholder in_memory_session_archive() and in_memory_counterexample_repository() returning dummy Arc<dyn ...> = std::sync::Arc::new(InMemorySessionArchive::new()) etc. so the test harness can link; concrete impls ship in TASK-TB-C/D)",
+          "cycle-artifacts/p-3416cfb8288f8964/rec-c3.3-train-b/apply-checkpoint.json (notes[].smoke_subset remains honest: native_probe_tools.rs now exists)"
+        ]
+      },
+      "req_ids": ["REQ-TB-16", "REQ-TB-17"],
+      "locked_rules_acknowledged": ["B1", "B2", "B3", "B5", "B6", "B7", "B9"],
+      "verification": {
+        "T0": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings",
+        "T1": "cargo test --workspace --lib --no-fail-fast (the new sandbox file does NOT run in T1 — it lives in chronos-sandbox/tests)",
+        "T4_smoke_required_before_merge": true,
+        "T4_smoke_subset": [
+          "e2e_connectivity",
+          "analytics_tools",
+          "program_scenarios",
+          "native_probe_tools"
+        ],
+        "sandbox_build_only": "cargo test --test native_probe_tools --no-run (compiles the new test file even before tools land — proves the harness integrates with the build)"
+      },
+      "test_expectations": {
+        "existing_must_pass": [
+          "McpTestClient::start continues to resolve the chronos-mcp binary per the CIH-B harness fix"
+        ],
+        "new_tests": [
+          "chronos-sandbox/tests/native_probe_tools.rs — initially RED: harness boots the binary, asserts (a) the new tool names are NOT yet present (proves the file is honest about the current state), (b) the existing probe_* tools still respond. Once TASK-TB-E/F/G land, the suite grows assertions for capture_session / probe_advance / probe_step success and 2-3 error paths each."
+        ]
+      },
+      "rollback": "git revert <TASK-TB-B commit SHA>; the sandbox file is additive (no behavior change in production code); revert removes the file. The placeholder in_memory_* factories in composition.rs revert to absent — they were unused outside this slice.",
+      "estimate": "medium",
+      "risk_class": "low",
+      "expected_artifacts": [
+        "chronos-sandbox/tests/native_probe_tools.rs (new file, ~80 lines initial scaffold + McpTestClient::start integration)"
+      ]
+    },
+
+    {
+      "task_id": "TASK-TB-C",
+      "title": "SessionArchive port + composition-root factory + in-memory variant",
+      "slice": "C",
+      "preconditions": ["TASK-TB-A"],
+      "scope": {
+        "add": [
+          "In `crates/chronos-domain/src/ports/session.rs`: pub trait SessionArchive (sync, Send+Sync, object-safe), InMemorySessionArchive (RwLock<HashMap<SessionId, (SessionMetadata, Vec<TraceEvent>)>>), SessionArchiveError enum (SessionNotFound, Store(StoreError)). Methods: save(metadata, events) -> Result<Vec<String>, SessionArchiveError> (returns CAS hashes to mirror SessionStore::save_session); load(session_id) -> Result<(SessionMetadata, Vec<TraceEvent>), SessionArchiveError>; list() -> Vec<SessionMetadata>; delete(session_id) -> Result<(), SessionArchiveError>; count_events(session_id) -> Result<usize, SessionArchiveError>; is_persistent(&self) -> bool (per Q1 decision).",
+          "SessionStoreBackedSessionArchive adapter in `crates/chronos-store/src/session_archive.rs` (new file): thin wrapper around `Arc<SessionStore>` that forwards save / load / list / delete / count_events / is_persistent to existing SessionStore methods (storage.rs:211, :260, :328, delete_session, etc.). `is_persistent()` forwards to `SessionStore::is_persistent()` (storage.rs:79).",
+          "`default_session_archive(store: Arc<SessionStore>) -> Arc<dyn SessionArchive>` in composition.rs.",
+          "`in_memory_session_archive() -> Arc<dyn SessionArchive>` in composition.rs (parallel to InMemorySessionRepository pattern in ports/session.rs:84).",
+          "4 new composition_tests in `composition_tests` module: test_default_session_archive_roundtrips_via_real_store, test_in_memory_session_archive_is_fake, test_session_archive_is_persistent_true_for_persistent_store, test_session_archive_is_persistent_false_for_in_memory_store."
+        ],
+        "modify": [
+          "crates/chronos-domain/src/ports/mod.rs: add `pub use session::{InMemorySessionArchive, SessionArchive, SessionArchiveError};`",
+          "crates/chronos-domain/src/lib.rs: optional re-export (keep imports flat per existing pattern at line 36-39).",
+          "crates/chronos-mcp/src/composition.rs: 2 new factory functions + module-level comment updated to enumerate bootstrap-scoped factories (mirrors the existing pattern at line 1-10)."
+        ]
+      },
+      "req_ids": ["REQ-TB-08", "REQ-TB-09", "REQ-TB-10", "REQ-TB-16", "REQ-TB-17"],
+      "locked_rules_acknowledged": ["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B9"],
+      "verification": {
+        "T0": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings",
+        "T1": "cargo test --workspace --lib --no-fail-fast",
+        "T2": "cargo test -p chronos-domain --lib --no-fail-fast && cargo test -p chronos-store --lib --no-fail-fast && cargo test -p chronos-mcp --lib --no-fail-fast",
+        "ratchet": [
+          "grep -rn \"as_any\\|downcast_ref\\|: Box<dyn Any>\\|: dyn Any\" crates/chronos-domain/src/ports/session.rs returns zero hits (AP-B2a)",
+          "grep -rn \"SessionRepository\" crates/chronos-domain/src/ports/session.rs shows no new method save/load/list_sessions/delete_session (AP-B2b)",
+          "git diff main..HEAD -- crates/chronos-store/src produces no `use chronos_native::` lines (AP-B3)",
+          "git diff main..HEAD -- crates/chronos-mcp/src/composition.rs keeps the bootstrap-only invariant comment accurate; no new Default::default() calls on SessionStore outside composition.rs (AP-B4)"
+        ]
+      },
+      "test_expectations": {
+        "existing_must_pass": [
+          "All 634 lib unit tests in crates/* stay green (no behavior change in SessionStore itself)",
+          "crates/chronos-services/src/sessions.rs::save_session_ok / load_session_ok / list_sessions_one / delete_session_ok (the service layer is NOT rewired until TASK-TB-F/G; the port is additive here)"
+        ],
+        "new_tests": [
+          "crates/chronos-domain/tests/ports/session.rs: SessionArchive trait unit tests — InMemorySessionArchive::save_then_load_roundtrip / list_returns_insertion_order / delete_removes_entry / load_missing_returns_SessionNotFound / is_persistent_default_false / count_events_agrees_with_events_len",
+          "crates/chronos-mcp::composition_tests: 4 new cases per the scope above"
+        ]
+      },
+      "rollback": "git revert <TASK-TB-C commit SHA>; the SessionArchive port + InMemory fake + composition factories become unused but compile-clean (self-contained new modules). No call-site in chronos-services has been rewired yet (that happens in TASK-TB-F), so there is nothing to re-point.",
+      "estimate": "medium",
+      "risk_class": "low",
+      "expected_artifacts": [
+        "crates/chronos-domain/src/ports/session.rs: +SessionArchive trait (~30 lines) + InMemorySessionArchive (~60 lines) + SessionArchiveError (~10 lines)",
+        "crates/chronos-store/src/session_archive.rs (new file, ~40 lines: SessionStoreBackedSessionArchive adapter)",
+        "crates/chronos-mcp/src/composition.rs: +default_session_archive() (~10 lines) + in_memory_session_archive() (~5 lines) + 4 composition_tests (~80 lines)"
+      ]
+    },
+
+    {
+      "task_id": "TASK-TB-D",
+      "title": "CounterexampleRepository port + composition-root factory + in-memory variant + CounterexampleBundleFilter lift",
+      "slice": "D",
+      "preconditions": ["TASK-TB-A"],
+      "scope": {
+        "add": [
+          "`crates/chronos-domain/src/ports/counterexample.rs` (new file): pub trait CounterexampleRepository (sync, Send+Sync, object-safe), InMemoryCounterexampleRepository (RwLock<HashMap<String, (CounterexampleBundleRecord, Vec<TraceEvent>)>>), CounterexampleRepositoryError enum (BundleNotFound, Store(StoreError)), CounterexampleBundleSummary (mirror of chronos_store::CounterexampleBundleSummary fields per ce_types.rs:118), CounterexampleBundleFilter (TYPED owned fields per Q3 decision — `workspace_id: Option<String>`, `property_kind: Option<String>`, `since_ms: Option<u64>`, `until_ms: Option<u64>`, `limit: u32`, `cursor: Option<String>`). Methods: save_bundle(bundle_id, events) -> Result<(), CounterexampleRepositoryError>; load_bundle(bundle_id) -> Result<Vec<TraceEvent>, CounterexampleRepositoryError>; list_bundles(filter: &CounterexampleBundleFilter) -> Vec<CounterexampleBundleSummary>; count_bundle_events(bundle_id) -> Result<usize, CounterexampleRepositoryError>.",
+          "`crates/chronos-store/src/counterexample_repository.rs` (new file): SessionStoreBackedCounterexampleRepository adapter that wraps `Arc<SessionStore>` and forwards save_bundle / load_bundle / list_bundles / count_bundle_events to the existing SessionStore methods (ce_write.rs:34, ce_read.rs:127, ce_read.rs:205, ce_read.rs:100). Adapter adapts the owned-domain CounterexampleBundleFilter to the borrowed chronos_store::CounterexampleBundleFilter<'a> by re-borrowing string slices; both share the same 6 fields so the mapping is mechanical.",
+          "`default_counterexample_repository(store: Arc<SessionStore>) -> Arc<dyn CounterexampleRepository>` in composition.rs.",
+          "`in_memory_counterexample_repository() -> Arc<dyn CounterexampleRepository>` in composition.rs.",
+          "2 new composition_tests: test_default_counterexample_repository_roundtrips_bundle, test_in_memory_counterexample_repository_filters_by_kind."
+        ],
+        "modify": [
+          "crates/chronos-domain/src/ports/mod.rs: add `pub mod counterexample;` (parallel to `pub mod browser_probe;` etc.); add `pub use counterexample::{CounterexampleRepository, CounterexampleRepositoryError, InMemoryCounterexampleRepository, CounterexampleBundleFilter, CounterexampleBundleSummary};`",
+          "crates/chronos-domain/src/lib.rs: optional re-export (keep imports flat per existing pattern at line 36-39).",
+          "crates/chronos-store/src/counterexample_storage.rs: drop the `CounterexampleBundleFilter` type from ce_types.rs once it is owned by chronos-domain. The internal chronos-store types retain re-exports so the adapter in counterexample_repository.rs compiles; call-sites inside chronos-store continue to use the chronos_store variant (no public API break).",
+          "crates/chronos-mcp/src/composition.rs: 2 new factory functions + module-level comment updated."
+        ]
+      },
+      "req_ids": ["REQ-TB-11", "REQ-TB-12", "REQ-TB-13", "REQ-TB-16", "REQ-TB-17"],
+      "locked_rules_acknowledged": ["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B9"],
+      "verification": {
+        "T0": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings",
+        "T1": "cargo test --workspace --lib --no-fail-fast",
+        "T2": "cargo test -p chronos-domain --lib --no-fail-fast && cargo test -p chronos-store --lib --no-fail-fast && cargo test -p chronos-mcp --lib --no-fail-fast",
+        "T3": "cargo test --workspace --lib --tests --exclude chronos-sandbox --exclude chronos-e2e --no-fail-fast",
+        "ratchet": [
+          "All 5 existing counterexample MCP tools still respond (counterexample_shrink, counterexample_get, counterexample_list, counterexample_events_count, counterexample_bundle_events) — verified by grep returning 5 tool names and the existing ce_storage_tests.rs::list_filters_by_property_kind still passing (REB-TB-13 filter compatibility)",
+          "grep -rn \"as_any\\|downcast_ref\\|: Box<dyn Any>\\|: dyn Any\" crates/chronos-domain/src/ports/counterexample.rs returns zero hits (AP-B2a)",
+          "git diff main..HEAD -- crates/chronos-store/src produces no `use chronos_native::` lines (AP-B3)"
+        ]
+      },
+      "test_expectations": {
+        "existing_must_pass": [
+          "crates/chronos-store/src/ce_storage_tests.rs::list_filters_by_property_kind / list_with_limit_truncates / list_cursor_paginates_forward / list_cursor_unknown_id_returns_all / m9_02_list_includes_future_versioned_row_best_effort (the chronos_store::CounterexampleBundleFilter is still constructible internally so the adapter's filter-mapping compiles and runs)",
+          "All 5 chronos-mcp counterexample tools continue to respond via the unwired service path (the port is additive here; the service rewire happens in TASK-TB-F)"
+        ],
+        "new_tests": [
+          "crates/chronos-domain/tests/ports/counterexample.rs: CounterexampleRepository trait unit tests — InMemoryCounterexampleRepository::save_then_load_roundtrip / load_missing_returns_BundleNotFound / list_with_empty_filter_returns_all / list_with_kind_filter_returns_matching / count_bundle_events_matches_load_length",
+          "crates/chronos-mcp::composition_tests: 2 new cases per the scope above"
+        ]
+      },
+      "rollback": "git revert <TASK-TB-D commit SHA>; the CounterexampleRepository port + InMemory fake + composition factories become unused but compile-clean (self-contained new modules + adapter). The chronos-store internal `CounterexampleBundleFilter<'a>` is restored on `pub use` so chronos-store internal tests keep passing.",
+      "estimate": "medium",
+      "risk_class": "medium",
+      "expected_artifacts": [
+        "crates/chronos-domain/src/ports/counterexample.rs (new file, ~150 lines: trait + InMemory fake + CounterexampleBundleFilter + CounterexampleBundleSummary + CounterexampleRepositoryError)",
+        "crates/chronos-store/src/counterexample_repository.rs (new file, ~50 lines: SessionStoreBackedCounterexampleRepository adapter)",
+        "crates/chronos-mcp/src/composition.rs: +default_counterexample_repository() (~10 lines) + in_memory_counterexample_repository() (~5 lines) + 2 composition_tests (~50 lines)",
+        "crates/chronos-domain/src/ports/mod.rs: +1 `pub mod counterexample;` line + +1 `pub use` line"
+      ]
+    },
+
+    {
+      "task_id": "TASK-TB-E",
+      "title": "Native ABI advance/step + ProbeService::advance/step + service-layer rewire to new ports",
+      "slice": "E",
+      "preconditions": ["TASK-TB-C", "TASK-TB-D"],
+      "scope": {
+        "modify": [
+          "crates/chronos-native/src/probe_backend.rs: add 2 methods to NativeProbeBackend:\n  - `pub fn advance(&self, session: &CaptureSession) -> Result<(), TraceError>` — resolves `pid` via `self.get_traced_pid()` (probe_backend.rs:1102), calls `PtraceTracer::continue_execution(pid)` (ptrace_tracer.rs:607). Mirrors `stop_probe`'s PID resolution pattern.\n  - `pub fn step(&self, session: &CaptureSession) -> Result<(), TraceError>` — same PID resolution, calls `PtraceTracer::step(pid)` (ptrace_tracer.rs:619).\n  Both methods are sync (block briefly until ptrace returns) and return `TraceError` on failure. No new port — reuse `NativeProbeBackend` directly via the existing `services → native` edge (B1 preserved).",
+          "crates/chronos-services/src/probe.rs: add 2 methods to ProbeService (struct at probe.rs:256):\n  - `pub fn advance(ctx: &ProbeContext<'_>, session_id: &str) -> Result<AdvanceOutput, ServiceError>` — looks up the live probe in `ctx.live_probes` (probe.rs:92), reads `backend.attached_target` (probe_backend.rs:196) to classify running vs paused vs stopped, calls `NativeProbeBackend::advance`. AdvanceOutput carries `{ advanced: bool, paused_reason: Option<String>, running: bool }`.\n  - `pub fn step(ctx: &ProbeContext<'_>, session_id: &str) -> Result<StepOutput, ServiceError>` — same lookup; rejects running probes with `ServiceError::SessionRunning(session_id)`. Calls `NativeProbeBackend::step`. StepOutput carries `{ stepped: bool }`.\n  No new port; the methods consume `&ProbeContext<'_>` per call (B4 — no new session-scoped factory).",
+          "crates/chronos-services/src/output.rs: add `AdvanceOutput` and `StepOutput` structs (parallel to `ProbeStartOutput`, `ProbeStopResult` at probe.rs:341, :552).",
+          "crates/chronos-services/src/sessions.rs: rewire `SessionsService::save_session` (sessions.rs:65), `load_session` (sessions.rs:132), `list_sessions` (sessions.rs:178), `delete_session` (sessions.rs:212) to take `&'a SessionsContext<'_>` where the context gains a new field `archive: &'a Arc<dyn SessionArchive>`. The four methods replace `ctx.store.save_session(...)` with `ctx.archive.save(...)` etc. Per Q2 decision, `delete` carries NO Force flag; the live-session refusal remains in `SessionsService::delete_session` before the port call.",
+          "crates/chronos-services/src/counterexample.rs: rewire `ChronosCounterexampleService` to take `&'a CounterexampleContext<'_>` where the context gains `repository: &'a Arc<dyn CounterexampleRepository>`. Replace the 5 internal calls (`save_counterexample_bundle`, `load_counterexample_bundle`, `list_counterexample_bundles`, `count_counterexample_bundle_events`, `load_counterexample_bundle_events`) with port calls. Convert the existing `chronos_store::CounterexampleBundleFilter<'a>` (ce_types.rs:101) at counterexample.rs:479 into the new domain-owned `CounterexampleBundleFilter` (Q3 typed owned fields); the adapter does the slice borrow at the storage boundary.",
+          "crates/chronos-services/src/probe.rs: NO rewire to SessionArchive (capture_session lives in TASK-TB-F)."
+        ]
+      },
+      "req_ids": ["REQ-TB-04", "REQ-TB-05", "REQ-TB-06", "REQ-TB-07", "REQ-TB-16", "REQ-TB-17"],
+      "locked_rules_acknowledged": ["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B9"],
+      "verification": {
+        "T0": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings",
+        "T1": "cargo test --workspace --lib --no-fail-fast",
+        "T2": "cargo test -p chronos-services --lib --no-fail-fast && cargo test -p chronos-native --lib --no-fail-fast",
+        "T3": "cargo test --workspace --lib --tests --exclude chronos-sandbox --exclude chronos-e2e --no-fail-fast",
+        "ratchet": [
+          "grep -rn \"NativeProbeServicePort\\|dyn ProbeService\" crates/chronos-{domain,services,mcp} returns no hits in the diff (AP-B1)",
+          "grep -rn \"as_any\\|downcast_ref\\|: Box<dyn Any>\\|: dyn Any\" crates/chronos-{services,native,mcp}/src returns no hits in the diff (AP-B2a)",
+          "git diff main..HEAD -- crates/chronos-store/src produces no `use chronos_native::` lines (AP-B3 — store→native is REC-C3.4)",
+          "git diff main..HEAD -- crates/chronos-log/src is empty (AP-B6 — REC-C1.5.2 surfaces untouched)"
+        ]
+      },
+      "test_expectations": {
+        "existing_must_pass": [
+          "All 7 existing probe MCP tools (probe_start, probe_stop, probe_drain, probe_drain_log, probe_compaction_metrics, probe_inject, probe_status) continue to respond with the same wire shape — verified by `crates/chronos-services/src/probe.rs::rec_c1_2_tests::session_log_is_mandatory_and_owned_by_construction` and the chronos-native probe_backend tests (`test_native_probe_backend_creation`, `test_native_probe_backend_is_available`, `attach_probe_to_self_sets_running_and_traced_pid`, `attach_probe_to_unknown_pid_clears_running_after_ptrace_failure`, `bounded_join_returns_joined_when_thread_exits_quickly`, `bounded_join_returns_timeout_when_thread_overruns`).",
+          "All 4 chronos-services session tests (save_session_ok, load_session_ok, list_sessions_one, delete_session_ok) still pass — the rewire is byte-equivalent except it goes through the port.",
+          "All 5 chronos-mcp counterexample tools continue to respond (counterexample_shrink, counterexample_get, counterexample_list, counterexample_events_count, counterexample_bundle_events) — verified by `ce_storage_tests.rs::list_filters_by_property_kind`.",
+          "HIGH-4 invariant preserved: `c33_native_works_through_in_memory_provider`, `c2_3_persist_first_accepted_lands_in_log_refused_does_not`, `c2_3_accepted_raw_seam_observer_runs_after_persist_and_refused_does_not_notify`."
+        ],
+        "new_tests": [
+          "crates/chronos-native/src/probe_backend.rs::advance_continues_traced_pid_via_continue_execution (gated on linux + ptrace); step_advances_pc_by_one_instruction (gated on linux + ptrace)",
+          "crates/chronos-services/src/probe.rs::advance_against_paused_target_succeeds / advance_against_running_target_is_idempotent / advance_against_missing_returns_ProbeNotFound / advance_against_stopped_returns_SessionStopped / step_against_paused_advances_pc / step_against_running_returns_SessionRunning / step_against_missing_returns_ProbeNotFound / step_repeated_calls_advance_pc (the latter is the REQ-TB-06 '5 sequential calls' scenario).",
+          "crates/chronos-services/src/sessions.rs::sessions_service_save_uses_archive_port_not_store (regression: assert ctx.archive.save was called exactly once, ctx.store.save_session NOT called).",
+          "crates/chronos-services/src/counterexample.rs::counterexample_service_save_bundle_uses_repository_port (regression: assert ctx.repository.save_bundle called)."
+        ]
+      },
+      "rollback": "git revert <TASK-TB-E commit SHA>; the new advance/step methods on NativeProbeBackend and ProbeService become unused but compile-clean. The session/counterexample rewire rolls back: `SessionsContext::archive` field is removed; `CounterexampleContext::repository` field is removed; the 4 session methods re-call `ctx.store.save_session(...)` etc.",
+      "estimate": "medium",
+      "risk_class": "medium",
+      "expected_artifacts": [
+        "crates/chronos-native/src/probe_backend.rs: +advance(~20 lines) + step(~20 lines) + 2 #[cfg(test)] tests (~40 lines)",
+        "crates/chronos-services/src/probe.rs: +advance(~40 lines) + step(~40 lines) + 8 #[cfg(test)] tests (~120 lines)",
+        "crates/chronos-services/src/output.rs: +AdvanceOutput(~5 lines) + StepOutput(~3 lines)",
+        "crates/chronos-services/src/sessions.rs: SessionsContext gains archive field; 4 methods rewire (~+20/-20 lines net)",
+        "crates/chronos-services/src/counterexample.rs: CounterexampleContext gains repository field; ~6 call-sites rewire (~+30/-30 lines net)"
+      ]
+    },
+
+    {
+      "task_id": "TASK-TB-F",
+      "title": "capture_session MCP tool: single-shot probe compose via Arc<dyn SessionArchive>",
+      "slice": "F",
+      "preconditions": ["TASK-TB-C", "TASK-TB-E"],
+      "scope": {
+        "modify": [
+          "crates/chronos-mcp/src/server.rs: add the new MCP tool. Three structural pieces:\n  1. New `#[derive(JsonSchema, Deserialize)] CaptureSessionParams` struct — fields: `program: String`, `args: Vec<String>`, `trace_syscalls: Option<bool>`, `execution_log_dir: Option<String>`, `reopen_session_id: Option<String>` (per REQ-TB-03).\n  2. New service-level helper `CaptureSessionService::capture_once(ctx, params) -> Result<CaptureSessionOutput, ServiceError>` in a new `crates/chronos-services/src/capture_session.rs` — composes `ProbeService::start` → poll until `attached_target == false && running == false` OR timeout → `ProbeService::stop` → `Arc<dyn SessionArchive>::save(metadata, events)`. Returns the new `SessionId`.\n  3. New `#[tool(name = \"capture_session\", ...)] async fn capture_session(...) -> Result<CallToolResult, McpError>` handler in server.rs at ~line 3500 area (next to save_session at :3527). Wires `CaptureSessionService::capture_once` into the existing tool-dispatch pattern.\n  4. Reopen path (REQ-TB-03): if `reopen_session_id` is supplied, the tool skips start/stop and goes directly through `Arc<dyn SessionArchive>::load`, then surfaces the integrity error if any (REQ-TB-02). Reuses the existing `SegmentedExecutionLog::register_takeover` path that REC-C1.5.2 production code uses (B6 — no change to ReplayPlan validation).",
+          "crates/chronos-mcp/src/composition.rs: `ChronosServer` gains `archive: Arc<dyn SessionArchive>` and `counterexample_repository: Arc<dyn CounterexampleRepository>` fields; the existing `try_new` wires them via `default_session_archive(&self.store)` and `default_counterexample_repository(&self.store)`.\n  If the existing `ChronosServer::try_new` constructor signature is not extendable without breaking callers, add a sibling `try_new_with_archives(archive, counterexample_repository)` builder and keep `try_new` delegating to it via the default factories — no caller-side change."
+        ]
+      },
+      "req_ids": ["REQ-TB-01", "REQ-TB-02", "REQ-TB-03"],
+      "locked_rules_acknowledged": ["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9"],
+      "verification": {
+        "T0": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings",
+        "T1": "cargo test --workspace --lib --no-fail-fast",
+        "T2": "cargo test -p chronos-mcp --lib --no-fail-fast && cargo test -p chronos-services --lib --no-fail-fast",
+        "T4_smoke_required_before_merge": true,
+        "T4_smoke_subset": [
+          "e2e_connectivity",
+          "analytics_tools",
+          "program_scenarios",
+          "native_probe_tools"
+        ],
+        "ratchet": [
+          "grep -n \"name = \\\"capture_session\\\"\" crates/chronos-mcp/src/server.rs returns exactly one match (success criterion from proposal.md §Success Criteria)",
+          "git diff main..HEAD -- crates/chronos-log/src is empty (B6 — REC-C1.5.2 untouched)",
+          "git diff main..HEAD -- crates/chronos-log/src/replay.rs is empty",
+          "ReplayIntegrityError still has 9 variants (CorruptSegment, HeaderRangeMismatch, FilenameHeaderMismatch, PayloadRangeMismatch, RecordSessionMismatch, EntryCountMismatch, MissingRange, OverlappingSegments, EmptySegment)"
+        ]
+      },
+      "test_expectations": {
+        "existing_must_pass": [
+          "All existing MCP tools continue to respond (save_session, load_session, list_sessions, delete_session, all 5 counterexample_*, all 7 probe_*); verified by `crates/chronos-services/src/sessions.rs::save_session_ok` / `load_session_ok` and `ce_storage_tests.rs::list_filters_by_property_kind`.",
+          "REC-C1.5.2 replay integrity surfaces unchanged: `chronos-log::ReplayIntegrityError` retains all 9 variants — verified by `cargo test -p chronos-log --lib` (which has the replay integrity test suite)."
+        ],
+        "new_tests": [
+          "crates/chronos-services/src/capture_session.rs: capture_once_persists_via_archive (success path: stub target emits 3 events; assert Arc::strong_count(&archive) >= 1 + archive was called save() exactly once + returned SessionId matches load_session().session_id).",
+          "capture_once_with_nonzero_exit_records_Exited7 (REQ-TB-01 scenario: stub target exits 7; assert metadata.end_reason == Exited(7) AND save was called).",
+          "capture_reopen_routes_through_takeover_path (REQ-TB-03: stub a sealed session on disk; call capture_session with reopen_session_id; assert ReplayPlan::build_replay_plan was invoked; this test reuses the existing RecCorruptSegmentFixture pattern from session_persistence_extended.rs).",
+          "capture_session_replay_integrity_failure_surfaces_variant (REQ-TB-02: tamper the segmented log header; assert tool returns error.code = \"replay_integrity_error\" AND payload names the specific variant AND the underlying log file is unchanged on disk).",
+          "chronos-sandbox/tests/native_probe_tools.rs::capture_session_against_controlled_target (T4-smoke: spawn the live binary; run a deterministic target; assert session_id is returned; subsequent load_session returns matching metadata fields and event count).",
+          "chronos-sandbox/tests/native_probe_tools.rs::capture_session_with_nonzero_exit_records_exit_code (T4-smoke).",
+          "chronos-sandbox/tests/native_probe_tools.rs::capture_session_replay_integrity_failure_surfaces_error_code (T4-smoke; reuses RecCorruptSegmentFixture).",
+          "chronos-sandbox/tests/native_probe_tools.rs::capture_session_empty_events_persists_zero_count (EC-TB-01).",
+          "chronos-sandbox/tests/native_probe_tools.rs::capture_session_concurrent_invocations_isolate (EC-TB-12; uses tokio::spawn to fire 3 capture_session in parallel against the same composition root)."
+        ]
+      },
+      "rollback": "git revert <TASK-TB-F commit SHA>; the `capture_session` MCP tool handler is removed from server.rs. The supporting `CaptureSessionService::capture_once` becomes unused. The `Arc<dyn SessionArchive>` injection in ChronosServer stays (TASK-TB-E added it; the field survives), so the field is unused but compile-clean — task-graph captures this as a known deviation that TASK-TB-G also consumes.",
+      "estimate": "medium",
+      "risk_class": "medium",
+      "expected_artifacts": [
+        "crates/chronos-mcp/src/server.rs: +CaptureSessionParams (~10 lines) + #[tool(name = \"capture_session\")] handler (~80 lines)",
+        "crates/chronos-services/src/capture_session.rs (new file, ~120 lines: CaptureSessionService::capture_once + 4 #[cfg(test)] cases)",
+        "crates/chronos-mcp/src/composition.rs: ChronosServer gains 2 Arc<dyn ...> fields; try_new wires the default factories (~+15 lines)",
+        "chronos-sandbox/tests/native_probe_tools.rs grows by ~120 lines (5 new test functions)"
+      ]
+    },
+
+    {
+      "task_id": "TASK-TB-G",
+      "title": "probe_advance + probe_step MCP tools",
+      "slice": "G",
+      "preconditions": ["TASK-TB-E"],
+      "scope": {
+        "modify": [
+          "crates/chronos-mcp/src/server.rs: add 2 new MCP tool handlers.\n  1. `ProbeAdvanceParams { session_id: String }`. New `#[tool(name = \"probe_advance\", ...)] async fn probe_advance(...)` at ~line 4556 next to probe_start. Calls `ProbeService::advance(ctx, &params.session_id)`; maps `AdvanceOutput` to JSON `{ advanced: bool, paused_reason: Option<String>, running: bool }`. Maps `ServiceError::ProbeNotFound` → `error.code = \"session_not_found\"`; maps a new `ServiceError::SessionStopped(session_id)` variant → `error.code = \"session_stopped\"`.\n  2. `ProbeStepParams { session_id: String }`. New `#[tool(name = \"probe_step\", ...)] async fn probe_step(...)`. Calls `ProbeService::step(ctx, &params.session_id)`; maps `StepOutput` to JSON `{ stepped: true }`. Maps `ServiceError::ProbeNotFound` → `error.code = \"session_not_found\"`; maps `ServiceError::SessionRunning(session_id)` → `error.code = \"session_running\"`.\n  Both tools reuse the existing `ProbeContext<'_>` from the existing dispatch (B4 — no new session-scoped factory).",
+          "crates/chronos-services/src/error.rs (or wherever ServiceError lives): add 2 new variants: `SessionRunning(String)` and `SessionStopped(String)`. Each derives from an existing `ProbeNotFound`-style error message; the MCP server maps them to the wire codes above.",
+          "cycle-artifacts/p-3416cfb8288f8964/rec-c3.3-train-b/apply-checkpoint.json: smoke_subset is unchanged (`native_probe_tools` already in scope)."
+        ]
+      },
+      "req_ids": ["REQ-TB-04", "REQ-TB-05", "REQ-TB-06", "REQ-TB-07"],
+      "locked_rules_acknowledged": ["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B9"],
+      "verification": {
+        "T0": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings",
+        "T1": "cargo test --workspace --lib --no-fail-fast",
+        "T2": "cargo test -p chronos-mcp --lib --no-fail-fast && cargo test -p chronos-services --lib --no-fail-fast",
+        "T4_smoke_required_before_merge": true,
+        "T4_smoke_subset": [
+          "e2e_connectivity",
+          "analytics_tools",
+          "program_scenarios",
+          "native_probe_tools"
+        ],
+        "ratchet": [
+          "grep -n \"name = \\\"probe_advance\\\"\\|name = \\\"probe_step\\\"\" crates/chronos-mcp/src/server.rs returns exactly 2 matches (success criterion from proposal.md §Success Criteria)",
+          "git diff main..HEAD -- crates/chronos-native/src/ptrace_tracer.rs is empty (B6-adjacent: the new NativeProbeBackend::advance/step delegates to existing PtraceTracer methods; no change to the ptrace machinery).",
+          "HIGH-4 invariant preserved: `running.load(SeqCst)` double-start guard pattern is replicated in ProbeService::advance/step — verified by the rec_c1_2_tests still passing."
+        ]
+      },
+      "test_expectations": {
+        "existing_must_pass": [
+          "All 7 existing probe_* tools (probe_start, probe_stop, probe_drain, probe_drain_log, probe_compaction_metrics, probe_inject, probe_status) continue to respond with identical wire shapes — verified by `crates/chronos-services/src/probe.rs::rec_c1_2_tests` and the chronos-native bounded_join + attach_probe tests.",
+          "HIGH-4 attach tests: `attach_probe_to_self_sets_running_and_traced_pid`, `attach_probe_to_unknown_pid_clears_running_after_ptrace_failure`."
+        ],
+        "new_tests": [
+          "crates/chronos-mcp/src/server.rs unit tests (if present in the file) OR new `crates/chronos-mcp/tests/probe_advance_step.rs` integration test: probe_advance_against_paused_returns_advanced_true (REQ-TB-04), probe_advance_against_running_is_idempotent (REQ-TB-04 idempotency), probe_advance_against_missing_session_returns_session_not_found (REQ-TB-05), probe_advance_against_stopped_returns_session_stopped (REQ-TB-05), probe_step_against_paused_advances_pc (REQ-TB-06 — sandbox verifies pc against a fixture binary), probe_step_repeated_calls_advance_pc_5_times (REQ-TB-06 scenario), probe_step_against_running_returns_session_running (REQ-TB-07), probe_step_against_missing_returns_session_not_found (REQ-TB-07).",
+          "chronos-sandbox/tests/native_probe_tools.rs::probe_advance_against_paused_succeeds (T4-smoke), probe_advance_against_stopped_returns_session_stopped, probe_step_against_paused_advances_pc (T4-smoke sandbox verifies pc), probe_step_against_running_returns_session_running, probe_advance_idempotent_against_running (EC-TB-13).",
+          "EC-TB-04: probe_advance_after_concurrent_probe_stop_returns_session_stopped (race scenario).",
+          "EC-TB-05: probe_step_target_reaped_between_lookup_and_step_returns_session_not_found.",
+          "EC-TB-14: probe_step_invoked_against_target_hitting_breakpoint_remains_paused (sandbox scenario; pc advances by 1 but no further execution)."
+        ]
+      },
+      "rollback": "git revert <TASK-TB-G commit SHA>; the probe_advance + probe_step MCP tool handlers are removed from server.rs. The underlying `NativeProbeBackend::advance/step` and `ProbeService::advance/step` survive (TASK-TB-E added them; they remain available for future use) — no caller-side change.",
+      "estimate": "small",
+      "risk_class": "medium",
+      "expected_artifacts": [
+        "crates/chronos-mcp/src/server.rs: +ProbeAdvanceParams (~3 lines) + ProbeStepParams (~3 lines) + #[tool] handler (~30 lines each, ~60 total) + error-mapping table updates (~5 lines)",
+        "crates/chronos-services/src/error.rs: +2 variants SessionRunning(String) + SessionStopped(String) (~4 lines)",
+        "chronos-sandbox/tests/native_probe_tools.rs grows by ~150 lines (8 new test functions)"
+      ]
+    }
+  ],
+
+  "dependency_graph": {
+    "A": [],
+    "B": [],
+    "C": ["A"],
+    "D": ["A"],
+    "E": ["C", "D"],
+    "F": ["E", "C"],
+    "G": ["E"]
+  },
+
+  "risk_distribution": {
+    "low": ["A", "B", "C"],
+    "medium": ["D", "E", "F", "G"],
+    "high": []
+  },
+
+  "confidence": {
+    "tasks_complete": "high",
+    "decisions_explicit": "high",
+    "verification_evidence_paths": "verified",
+    "honest_about_uncertainty": [
+      "The proposal claims 17 chronos-services call-sites for SessionMetadata; the verified grep finds 8 import occurrences in 5 files. The lift covers all 8 confirmed sites; any nested type usages (e.g., parameter types like `&SessionMetadata` rather than `use ...::SessionMetadata`) are caught by the same grep — the agent-grep result at file scope captured both `use` statements and qualified type references.",
+      "SessionMetadata JSON shape stability across the lift is asserted by REQ-TB-14's 'byte-for-byte identical' check; the test is added in TASK-TB-A's new bincode/JSON identity test. Until that test runs, the byte-equality claim is asserted by reading the proposal's def line verbatim — the lift is mechanical copy-paste.",
+      "The 5 counterexample call-site rewires in TASK-TB-E (save_bundle / load_bundle / list_bundles / count_bundle_events / load_bundle_events) are counted from the existing ce_storage_tests.rs which exercises them; one counterexample.rs call-site at line 479 uses `cs::CounterexampleBundleFilter` and is rewritten to use the domain type — that rewire is the only one that touches the filter type."
+    ]
+  },
+
+  "envelope": {
+    "status": "success",
+    "executive_summary": "Decomposed REC-C3.3.3 (Tren B) into 7 reviewable work units (A..G) with explicit DAG, verification gates (T0/T1/T2/T3/T4-smoke), rollback paths, and three explicit decisions (StoreKind via is_persistent on the port; SessionArchive::delete refuses live sessions at the service layer; CounterexampleBundleFilter moves to chronos_domain with owned typed fields). Forecast = 1450 LOC, High budget risk; chained feature-branch-chain strategy recommended with per-slice commits on the cycle branch.",
+    "artifacts": [
+      "cycle-artifacts/p-3416cfb8288f8964/rec-c3.3-train-b/task-graph.json"
+    ],
+    "breakdown": {
+      "total": 7,
+      "by_phase": {
+        "phase_1_foundation": 3,
+        "phase_2_core_implementation": 2,
+        "phase_3_integration_wiring": 2,
+        "phase_4_testing": 0,
+        "phase_5_cleanup": 0
+      },
+      "phase_1_foundation_tasks": ["TASK-TB-A", "TASK-TB-B", "TASK-TB-C", "TASK-TB-D"],
+      "phase_2_core_implementation_tasks": ["TASK-TB-E"],
+      "phase_3_integration_wiring_tasks": ["TASK-TB-F", "TASK-TB-G"]
+    },
+    "dag_summary": "A → C, D; (A || B) at the start; C, D → E → F, G. F requires E AND C (capture_session reuses Arc<dyn SessionArchive>); G requires only E.",
+    "forecast": {
+      "estimated_lines": "1100..1700",
+      "budget_risk": "High",
+      "chained_prs": "Yes",
+      "delivery_strategy": "single-pr",
+      "decision_needed": "No",
+      "chain_strategy": "feature-branch-chain"
+    },
+    "decisions_count": 3,
+    "decisions_summary": "Q1 is_persistent on the port (yes); Q2 ServiceError::SessionRunning/Stopped at service layer (no Force flag on port); Q3 CounterexampleBundleFilter moves to chronos_domain (typed owned fields, drop borrow).",
+    "next_recommended": "sddk-apply (the orchestrator should now run sddk-apply on TASK-TB-A first, then TASK-TB-B (parallel), then TASK-TB-C and TASK-TB-D in parallel, then TASK-TB-E, then TASK-TB-F and TASK-TB-G in parallel)",
+    "risks": "Forecast exceeds 400-line budget; mitigated by per-slice atomic commits on the cycle branch (B7 no squash). The biggest blast radius is TASK-TB-E (rewires 8 chronos-services files to the new ports); if any rewire breaks the existing 4 session tests or 5 counterexample tests, the slice fails T2 and is replanned before T3. TASK-TB-F's replay integrity surface (B6) is gated on a sandbox assertion that reuses RecCorruptSegmentFixture; if the segmented log header tamper changes shape between cycles, the test adapts via the existing fixture pattern."
+  }
+}
