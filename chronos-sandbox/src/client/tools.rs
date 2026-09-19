@@ -5,6 +5,7 @@
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::time::sleep;
 
@@ -1591,29 +1592,178 @@ impl McpTestClient {
     /// (rather than through a client that needs a live server) must resolve the
     /// same path.
     pub fn resolve_mcp_path() -> PathBuf {
-        std::env::var("CHRONOS_MCP_PATH")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| {
-                if let Ok(cargo_bin) = std::env::var("CARGO_BIN_EXE_chronos-mcp") {
-                    let path = PathBuf::from(cargo_bin);
-                    if path.exists() {
-                        return path;
+        // Cached slow-path: if none of the env-var / dev-dep / target-dir /
+        // PATH lookups find a binary, ask cargo to build it once and remember
+        // the result for subsequent McpTestClient::start calls.
+        static CACHE: OnceLock<Option<PathBuf>> = OnceLock::new();
+
+        if let Ok(p) = std::env::var("CHRONOS_MCP_PATH") {
+            let path = PathBuf::from(p);
+            if path.exists() {
+                return path;
+            }
+        }
+
+        if let Ok(cargo_bin) = std::env::var("CARGO_BIN_EXE_chronos-mcp") {
+            let path = PathBuf::from(cargo_bin);
+            if path.exists() {
+                return path;
+            }
+        }
+
+        // Workspace-aware target dir. The previous implementation walked
+        // `current_exe().parent().parent()`, which only works when
+        // CARGO_TARGET_DIR == "target". When the developer redirects the
+        // target dir (CI matrix builds, custom out-of-tree builds), the
+        // relative walk lands in the wrong place and the harness silently
+        // falls back to PATH — which is how `m1_07`/`m1_08` reported
+        // "No such file or directory" under tarpaulin (CIH-B).
+        if let Some(target_dir) = Self::resolve_target_dir() {
+            let candidate = target_dir.join("debug").join("chronos-mcp");
+            if candidate.exists() {
+                return candidate;
+            }
+            let release_candidate = target_dir.join("release").join("chronos-mcp");
+            if release_candidate.exists() {
+                return release_candidate;
+            }
+        }
+
+        if let Ok(found) = Self::which_in_path("chronos-mcp") {
+            return found;
+        }
+
+        if let Some(built) = CACHE.get_or_init(Self::build_chronos_mcp_via_cargo).clone() {
+            return built;
+        }
+
+        // Last resort: bare name, which spawn() will resolve against PATH.
+        PathBuf::from("chronos-mcp")
+    }
+
+    /// Resolve the workspace's target directory, preferring the explicit
+    /// `CARGO_TARGET_DIR` env var and falling back to `cargo metadata`.
+    fn resolve_target_dir() -> Option<PathBuf> {
+        if let Ok(dir) = std::env::var("CARGO_TARGET_DIR") {
+            let p = PathBuf::from(dir);
+            if p.is_absolute() {
+                return Some(p);
+            }
+            if let Ok(cwd) = std::env::current_dir() {
+                return Some(cwd.join(p));
+            }
+        }
+        Self::cargo_metadata_target_dir().ok()
+    }
+
+    fn cargo_metadata_target_dir() -> Result<PathBuf, String> {
+        let output = std::process::Command::new("cargo")
+            .args(["metadata", "--no-deps", "--format-version=1"])
+            .output()
+            .map_err(|e| format!("cargo metadata failed to spawn: {e}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "cargo metadata exited with {}",
+                output.status.code().unwrap_or(-1)
+            ));
+        }
+        let value: serde_json::Value = serde_json::from_slice(&output.stdout)
+            .map_err(|e| format!("cargo metadata stdout is not JSON: {e}"))?;
+        let target_dir = value
+            .get("target_directory")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "cargo metadata: missing target_directory".to_string())?;
+        Ok(PathBuf::from(target_dir))
+    }
+
+    /// Walk PATH looking for `name`. Avoids adding a `which` dep.
+    fn which_in_path(name: &str) -> Result<PathBuf, ()> {
+        let path_var = std::env::var_os("PATH").ok_or(())?;
+        for entry in std::env::split_paths(&path_var) {
+            let p = entry.join(name);
+            if p.is_file() {
+                return Ok(p);
+            }
+            #[cfg(windows)]
+            {
+                let p_exe = entry.join(format!("{name}.exe"));
+                if p_exe.is_file() {
+                    return Ok(p_exe);
+                }
+            }
+        }
+        Err(())
+    }
+
+    /// Last-resort: ask cargo to build the binary and capture the executable
+    /// path from its JSON message stream.
+    fn build_chronos_mcp_via_cargo() -> Option<PathBuf> {
+        let workspace_root = Self::workspace_root().ok()?;
+        eprintln!(
+            "McpTestClient: chronos-mcp binary not found on disk; building via \
+         `cargo build --bin chronos-mcp` at {}",
+            workspace_root.display()
+        );
+        let output = std::process::Command::new("cargo")
+            .args([
+                "build",
+                "--bin",
+                "chronos-mcp",
+                "--message-format=json-render-diagnostics",
+            ])
+            .current_dir(&workspace_root)
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            let stderr_tail: String = String::from_utf8_lossy(&output.stderr)
+                .chars()
+                .rev()
+                .take(512)
+                .collect::<String>()
+                .chars()
+                .rev()
+                .collect();
+            eprintln!(
+                "McpTestClient: cargo build failed: exit={:?} stderr-tail={}",
+                output.status.code(),
+                stderr_tail
+            );
+            return None;
+        }
+        for line in output.stdout.split(|b| *b == b'\n') {
+            if line.is_empty() {
+                continue;
+            }
+            let Ok(value) = serde_json::from_slice::<serde_json::Value>(line) else {
+                continue;
+            };
+            if value.get("reason").and_then(|r| r.as_str()) == Some("compiler-artifact") {
+                if let Some(exe) = value
+                    .get("executable")
+                    .and_then(|e| e.as_str())
+                    .map(PathBuf::from)
+                {
+                    if exe.exists() {
+                        eprintln!("McpTestClient: cargo build produced {}", exe.display());
+                        return Some(exe);
                     }
                 }
-                // Test binaries live in target/debug/deps/, so go up two levels.
-                let relative = std::env::current_exe()
-                    .ok()
-                    .as_ref()
-                    .and_then(|p| p.parent())
-                    .and_then(|p| p.parent())
-                    .map(|p| p.join("chronos-mcp"));
-                if let Some(ref path) = relative {
-                    if path.exists() {
-                        return path.clone();
-                    }
-                }
-                PathBuf::from("chronos-mcp")
-            })
+            }
+        }
+        None
+    }
+
+    fn workspace_root() -> Result<PathBuf, String> {
+        let mut dir = std::env::current_dir().map_err(|e| e.to_string())?;
+        loop {
+            if dir.join("Cargo.toml").is_file() && dir.join("Cargo.lock").is_file() {
+                return Ok(dir);
+            }
+            match dir.parent() {
+                Some(p) => dir = p.to_path_buf(),
+                None => return Err("workspace root not found".into()),
+            }
+        }
     }
 
     /// Start a new MCP test session by spawning the server at the given path.
