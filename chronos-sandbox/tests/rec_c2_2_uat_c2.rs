@@ -87,6 +87,21 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
         return;
     };
 
+    // CIH-G: replace the blind `sleep(2s)` with a bounded poll against
+    // the durable ExecutionLog. The invariant under test (ExecutionLog
+    // is the authority; probe_drain is not) does not depend on wall
+    // clock — it depends on the log having records to examine. Under
+    // tarpaulin instrumentation on CI runners the 2s sleep is not
+    // always enough, so we wait until the log has at least one event
+    // (5s hard deadline = 2x the busyloop fixture's claimed runtime).
+    let (first_event_after_ms, _) =
+        wait_for_first_event(&mut client, &session, UAT_C2_01_FIRST_EVENT_DEADLINE).await;
+    eprintln!(
+        "CIH-G uat_c2_01 first_event_after_ms={} deadline_ms={}",
+        first_event_after_ms.as_millis(),
+        UAT_C2_01_FIRST_EVENT_DEADLINE.as_millis()
+    );
+
     let first = client
         .probe_drain_with_evidence_cursor(&session, None)
         .await
@@ -94,6 +109,58 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
     let cursor = first.evidence_cursor.clone().expect("cursor");
     let first_ids: HashSet<u64> = first.events.iter().map(|e| e.event_id).collect();
     let first_firings = first.tripwires_fired.unwrap_or(0);
+    let first_total = first.total_buffered;
+    eprintln!(
+        "CIH-G uat_c2_01 first_drain events={} total_buffered={} cursor={}",
+        first.events.len(),
+        first_total,
+        cursor
+    );
+
+    // CIH-G root cause (signature 2): `cursor remains identical` happens when
+    // the second drain reads against a log that has not produced any new
+    // records since the first drain — the cursor correctly stays at the
+    // last examined seq. To exercise the contract under test ("an examined
+    // page must advance the cursor"), the log MUST have new records between
+    // the two drains. The fixture's `test_busyloop` runs for ~3s but
+    // generates events at the syscall rate; the first drain can consume
+    // everything if it lands mid-run. Wait — bounded, with an observable
+    // exit criterion (`total_buffered` strictly greater than after the first
+    // drain) — until the log has at least one new record, or 5s deadline.
+    let advance = wait_for_log_advance(
+        &mut client,
+        &session,
+        first_total,
+        UAT_C2_01_LOG_ADVANCE_DEADLINE,
+    )
+    .await;
+    if advance.is_none() {
+        // Diagnostics: re-read probe_drain_wire to expose the raw shape, and
+        // log total_buffered again so the failure message is actionable.
+        let wire = client
+            .probe_drain_wire(&session, None)
+            .await
+            .expect("diagnostic re-read");
+        panic!(
+            "UAT-C2-01: the fixture's ExecutionLog did not produce any new records within \
+             {}ms after the first drain (first_total={}, events_in_first_drain={}, \
+             first_cursor={}). Either the probe stopped, the syscall rate is too low, or \
+             the busyloop duration is shorter than the wall time between drain invocations. \
+             wire={:?}",
+            UAT_C2_01_LOG_ADVANCE_DEADLINE.as_millis(),
+            first_total,
+            first.events.len(),
+            cursor,
+            wire
+        );
+    }
+    let (advance_ms, advanced_total) = advance.unwrap();
+    eprintln!(
+        "CIH-G uat_c2_01 log_advance_ms={} first_total={} advanced_total={}",
+        advance_ms.as_millis(),
+        first_total,
+        advanced_total
+    );
 
     // Continue from the cursor: strictly forward, never a re-read.
     let second = client
@@ -306,6 +373,104 @@ async fn uat_c2_03_durable_evidence_exceeds_the_ring() {
             .unwrap_or(0),
         0,
         "UAT-C2-03: an undecodable record means another producer or schema drift wrote this log"
+    );
+
+    let _ = client.probe_stop(&session).await;
+    let _ = client.shutdown().await;
+}
+
+// =====================================================================
+// CIH-G — discriminant + bounded-poll wait for `uat_c2_01`.
+// =====================================================================
+
+const UAT_C2_01_FIRST_EVENT_DEADLINE: Duration = Duration::from_secs(5);
+const UAT_C2_01_LOG_ADVANCE_DEADLINE: Duration = Duration::from_secs(5);
+
+async fn wait_for_first_event(
+    client: &mut McpTestClient,
+    session: &str,
+    deadline: Duration,
+) -> (Duration, u64) {
+    let start = std::time::Instant::now();
+    loop {
+        let page = client
+            .call_tool(
+                "probe_drain_log",
+                serde_json::json!({ "session_id": session, "limit": 1 }),
+            )
+            .await
+            .expect("probe_drain_log during wait");
+        let count = page
+            .get("events")
+            .and_then(|v| v.as_array())
+            .map(|a| a.len() as u64)
+            .unwrap_or(0);
+        if count > 0 {
+            return (start.elapsed(), count);
+        }
+        if start.elapsed() >= deadline {
+            return (start.elapsed(), 0);
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+/// CIH-G bounded poll: wait until the session's ExecutionLog has produced
+/// at least one record strictly beyond `baseline_total`, or the deadline
+/// elapses. Returns the elapsed duration and the new `total_buffered` on
+/// success, `None` on timeout.
+///
+/// Exit criterion is OBSERVABLE: `total_buffered` strictly greater than
+/// the baseline reported by the previous drain. This is not a blind sleep
+/// — the helper keeps polling the canonical authority (the same
+/// `probe_drain` tool the test exercises) and returns as soon as the log
+/// has new evidence.
+async fn wait_for_log_advance(
+    client: &mut McpTestClient,
+    session: &str,
+    baseline_total: usize,
+    deadline: Duration,
+) -> Option<(Duration, usize)> {
+    let start = std::time::Instant::now();
+    loop {
+        // Probe `probe_drain` (NOT `probe_drain_log`): we want the same wire
+        // payload the test then replays for the assertion, and we want
+        // `total_buffered` which is the only signal that says "the log has
+        // produced new records" without consuming them.
+        let page = client
+            .probe_drain_with_evidence_cursor(session, None)
+            .await
+            .expect("probe_drain during wait_for_log_advance");
+        if page.total_buffered > baseline_total {
+            return Some((start.elapsed(), page.total_buffered));
+        }
+        if start.elapsed() >= deadline {
+            return None;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+#[tokio::test]
+async fn cih_g_uat_c2_01_diagnostic_first_event_timing() {
+    let mut client = McpTestClient::start()
+        .await
+        .expect("Failed to start MCP server");
+    let Some(session) = start_probe_with_ring(&mut client, 50_000).await else {
+        eprintln!("CIH-G diagnostic: fixture unavailable, skipping");
+        let _ = client.shutdown().await;
+        return;
+    };
+
+    let (elapsed, count) =
+        wait_for_first_event(&mut client, &session, UAT_C2_01_FIRST_EVENT_DEADLINE).await;
+
+    println!(
+        "CIH-G diagnostic session={} first_event_after_ms={} count={} deadline_ms={}",
+        session,
+        elapsed.as_millis(),
+        count,
+        UAT_C2_01_FIRST_EVENT_DEADLINE.as_millis(),
     );
 
     let _ = client.probe_stop(&session).await;
