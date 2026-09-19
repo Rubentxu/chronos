@@ -418,6 +418,17 @@ fn map_maintenance_error(err: ExecutionLogMaintenanceError) -> ServiceError {
 /// (services). The canonical-evidence ratchet: as the codebase moves
 /// off legacy `LogError`, the count of `map_log_error` callers in
 /// the canonical-evidence path must only decrease.
+///
+/// Note (CIH-D, REC-C3-ci-hygiene): `PositionBeforeRetention` is split out
+/// to construct the typed `ServiceError::CursorStale { requested_next_seq,
+/// retained_from_seq }` instead of being collapsed into the opaque
+/// `DrainFailed` string. The previous bulk mapping was a regression
+/// introduced during the REC-C1.2 -> C3.3.1 -> C3.3.2 migration chain; the
+/// typed variant is what `ServiceError::CursorStale` was defined for and
+/// what `restart_uat::r2_stale_cursor` expects (parser splits on
+/// "ursor at seq " and "retention boundary "). Revealed by CIH-B fixing
+/// the `McpTestClient::start` binary resolution that previously masked the
+/// test as `SpawnFailed`.
 pub(crate) fn map_execution_log_error(
     err: chronos_domain::ports::execution_log::ExecutionLogError,
 ) -> ServiceError {
@@ -429,8 +440,14 @@ pub(crate) fn map_execution_log_error(
                 actual: actual.as_str().to_string(),
             }
         }
+        ExecutionLogError::PositionBeforeRetention {
+            requested_next_seq,
+            retained_from,
+        } => ServiceError::CursorStale {
+            requested_next_seq: requested_next_seq.get(),
+            retained_from_seq: retained_from.get(),
+        },
         ExecutionLogError::Sealed { .. }
-        | ExecutionLogError::PositionBeforeRetention { .. }
         | ExecutionLogError::IntegrityFailure { .. }
         | ExecutionLogError::InvalidGap { .. }
         | ExecutionLogError::Unavailable { .. }
@@ -1006,5 +1023,110 @@ mod tests {
         let s = format!("{log:?}");
         assert!(s.contains("sess-d"));
         assert!(s.contains("SessionExecutionLog"));
+    }
+
+    // ----- CIH-D: translator tests for map_execution_log_error ---------
+    //
+    // These tests pin the contract that the canonical-evidence path uses
+    // ServiceError::CursorStale (not the opaque DrainFailed) when the port
+    // returns ExecutionLogError::PositionBeforeRetention. The negative test
+    // guards against accidental future drift that would collapse other
+    // port errors into CursorStale.
+
+    use chronos_domain::ports::execution_log::ExecutionLogError;
+
+    #[test]
+    fn map_position_before_retention_yields_cursor_stale_with_values() {
+        let err = ExecutionLogError::PositionBeforeRetention {
+            requested_next_seq: EventSeq::new(0),
+            retained_from: EventSeq::new(5),
+        };
+        let mapped = map_execution_log_error(err);
+        match mapped {
+            ServiceError::CursorStale {
+                requested_next_seq,
+                retained_from_seq,
+            } => {
+                assert_eq!(requested_next_seq, 0);
+                assert_eq!(retained_from_seq, 5);
+            }
+            other => panic!("expected ServiceError::CursorStale, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn map_cursor_stale_message_format_matches_test_parser() {
+        // restart_uat::r2_stale_cursor parses "ursor at seq X" and
+        // "retention boundary Y" from the Display output. Verify the
+        // typed CursorStale variant's Display produces both substrings
+        // with the right numbers in the right order.
+        let err = ServiceError::CursorStale {
+            requested_next_seq: 0,
+            retained_from_seq: 5,
+        };
+        let text = format!("{err}");
+        assert!(
+            text.contains("ursor at seq 0"),
+            "missing 'ursor at seq 0' in {text:?}"
+        );
+        assert!(
+            text.contains("retention boundary 5"),
+            "missing 'retention boundary 5' in {text:?}"
+        );
+    }
+
+    #[test]
+    fn map_unavailable_does_not_become_cursor_stale() {
+        // Negative test: only PositionBeforeRetention maps to CursorStale.
+        // Unavailable / IntegrityFailure / Open must NOT collapse into
+        // CursorStale — that would hide real failures behind a benign
+        // surface.
+        let err = ExecutionLogError::Unavailable {
+            detail: "test".to_string(),
+        };
+        let mapped = map_execution_log_error(err);
+        match mapped {
+            ServiceError::DrainFailed(msg) => {
+                assert!(msg.contains("test"), "{msg}");
+            }
+            ServiceError::CursorStale { .. } => {
+                panic!("Unavailability must NOT be promoted to CursorStale")
+            }
+            other => panic!("expected ServiceError::DrainFailed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn map_integrity_failure_does_not_become_cursor_stale() {
+        let err = ExecutionLogError::IntegrityFailure {
+            detail: "checksum mismatch".to_string(),
+        };
+        let mapped = map_execution_log_error(err);
+        match mapped {
+            ServiceError::DrainFailed(msg) => {
+                assert!(msg.contains("checksum mismatch"), "{msg}");
+            }
+            ServiceError::CursorStale { .. } => {
+                panic!("IntegrityFailure must NOT be promoted to CursorStale")
+            }
+            other => panic!("expected ServiceError::DrainFailed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn map_sealed_does_not_become_cursor_stale() {
+        let err = ExecutionLogError::Sealed {
+            session_id: SessionId::new("sealed-sess"),
+        };
+        let mapped = map_execution_log_error(err);
+        match mapped {
+            ServiceError::DrainFailed(msg) => {
+                assert!(msg.contains("sealed"), "{msg}");
+            }
+            ServiceError::CursorStale { .. } => {
+                panic!("Sealed must NOT be promoted to CursorStale")
+            }
+            other => panic!("expected ServiceError::DrainFailed, got {other:?}"),
+        }
     }
 }
