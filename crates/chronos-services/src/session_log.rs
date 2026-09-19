@@ -488,6 +488,26 @@ impl std::fmt::Debug for ExecutionLogRegistration {
     }
 }
 
+/// CIH-F — read-only projection of `ExecutionLogRegistration` for callers
+/// that need to decide between reuse, refresh, and skip without taking a
+/// reference into the registry's lock.
+///
+/// `Available` mirrors `ExecutionLogRegistration::Available(_)`: the
+/// registry already holds a valid handle; do not overwrite it.
+///
+/// `Unavailable` mirrors `ExecutionLogRegistration::Unavailable { .. }`:
+/// a previous attempt surfaced an explicit reason; do NOT auto-refresh,
+/// that would mask the recorded failure (operator rule §3.3).
+///
+/// `Absent` mirrors the absence of any entry: callers may attempt to
+/// reopen the durable log under `execution_log_root.join(session_id)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegistrationState {
+    Available,
+    Unavailable,
+    Absent,
+}
+
 /// In-process registry of `SessionExecutionLog` instances keyed by
 /// `session_id`.
 ///
@@ -630,6 +650,63 @@ impl SessionExecutionLogRegistry {
             },
         );
         Ok(())
+    }
+
+    /// CIH-F — peek the current registration state for `session_id` without
+    /// mutating anything.
+    ///
+    /// Returns a copyable enum so the caller can decide which path to take
+    /// (reuse, refresh, or skip) without racing against other registrations.
+    /// The state observed here is the same one `register` / `register_reopen`
+    /// would see on a subsequent call.
+    ///
+    /// ## What this is for
+    ///
+    /// `load_session` needs to reopen a durable ExecutionLog for a session that
+    /// the registry might already know about (e.g. a previous load that did
+    /// not go through `drop_session`). Calling `register_reopen` blindly would
+    /// fail with `ExecutionLogIdentityMismatch` whenever the factory produces a
+    /// fresh `Arc` for the reopened handle, even though the on-disk state is
+    /// the same. `peek_registration` lets `load_session` choose: reuse the
+    /// existing handle if present, otherwise reopen from disk.
+    ///
+    /// ## What this is NOT
+    ///
+    /// It does NOT mutate the registry. It does NOT call the factory. It does
+    /// NOT return the handle (call `get` for that). It is a read-only peek
+    /// scoped to a single key, so the lock is held for the duration of the
+    /// HashMap lookup only.
+    pub fn peek_registration(&self, session_id: &str) -> RegistrationState {
+        let map = match self.logs.lock() {
+            Ok(m) => m,
+            Err(_) => return RegistrationState::Absent,
+        };
+        match map.get(session_id) {
+            Some(ExecutionLogRegistration::Available(_)) => RegistrationState::Available,
+            Some(ExecutionLogRegistration::Unavailable { .. }) => RegistrationState::Unavailable,
+            None => RegistrationState::Absent,
+        }
+    }
+
+    /// CIH-F — validate an existing durable ExecutionLog under `dir` via the
+    /// injected factory and return a handle, WITHOUT registering it.
+    ///
+    /// This is the read-side companion to `register_reopen`: it lets the
+    /// caller inspect the result before deciding whether to publish (via
+    /// `register`) or surface the failure (via `register_unavailable`). The
+    /// factory still owns strict-replay validation (REC-C1.5.2), so a corrupt
+    /// or absent directory surfaces here as an `Err(reason)` with the same
+    /// text the bootstrap path would have used — there is no Silent Lie
+    /// branch (no empty log fabricated, no `Gap` invented).
+    pub fn try_reopen_existing(
+        &self,
+        dir: impl AsRef<Path>,
+        session_id: SessionId,
+    ) -> Result<SessionExecutionLog, String> {
+        match SessionExecutionLog::reopen_existing(dir, session_id, &self.factory) {
+            Ok(log) => Ok(log),
+            Err(e) => Err(e.to_string()),
+        }
     }
 
     pub fn remove(&self, session_id: &str) -> Option<ExecutionLogRegistration> {

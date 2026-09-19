@@ -13,13 +13,14 @@ use std::path::Path;
 
 use chronos_domain::Language;
 use chronos_index::builder::IndexBuilder;
+use chronos_log::SessionId;
 use chronos_query::QueryEngine;
 use tokio::sync::Mutex;
 
 use crate::error::ServiceError;
 use crate::execution_log_bootstrap::delete_durable_execution_log;
 use crate::output::{DeleteResult, DropResult, ListResult, LoadResult, SaveResult, SessionSummary};
-use crate::session_log::SessionExecutionLogRegistry;
+use crate::session_log::{RegistrationState, SessionExecutionLogRegistry};
 use chronos_store::{SessionMetadata, SessionStore};
 
 /// Borrow struct holding all state needed by `SessionsService` methods.
@@ -127,6 +128,27 @@ impl SessionsService {
     /// from the loaded events, then inserts the engine into the engines map.
     /// Does NOT update `session_languages` or `connected_sessions`.
     ///
+    /// CIH-F: the durable `ExecutionLog` is reopened and registered before the
+    /// engine is published, so a subsequent canonical reader (e.g.
+    /// `query_events`) finds the session in the registry. The registry's own
+    /// rules decide what happens for each prior state:
+    ///
+    /// - `Available` — the existing handle is reused; no overwrite, so two
+    ///   loads of the same session cannot produce an `ExecutionLogIdentityMismatch`.
+    /// - `Unavailable { reason }` — the previously-recorded reason is preserved
+    ///   verbatim. There is no implicit refresh; corruption or absence stays
+    ///   explicit so `query_events` keeps reporting the typed unavailability.
+    /// - `Absent` — the durable log under `execution_log_root.join(session_id)`
+    ///   is validated via the injected factory (REC-C1.5.2 strict replay) and
+    ///   registered. If the factory refuses (corruption, missing manifest,
+    ///   unreadable), the reason is recorded as `Unavailable` instead of a
+    ///   panic; no empty log is fabricated and no `Gap` is invented.
+    ///
+    /// The engine is published AFTER the registry decision, so the observable
+    /// state is consistent: a session is either fully queryable (engine +
+    /// ExecutionLog), or its engine is published with the registry explicitly
+    /// carrying the unavailability reason.
+    ///
     /// # Errors
     /// - `LoadFailed` if the store read fails.
     pub async fn load_session(
@@ -137,6 +159,11 @@ impl SessionsService {
         let (metadata, events) = store_ref
             .load_session(session_id)
             .map_err(|e| ServiceError::LoadFailed(e.to_string()))?;
+
+        // CIH-F: resolve the ExecutionLog entry FIRST, before publishing the
+        // engine, so the registry state is consistent with what `query_events`
+        // will see on its next read.
+        Self::rehydrate_execution_log(session_id, ctx)?;
 
         // Build engine from loaded events with all 4 indices
         let mut builder = IndexBuilder::new();
@@ -158,6 +185,54 @@ impl SessionsService {
             duration_ms: metadata.duration_ms,
             created_at: metadata.created_at,
         })
+    }
+
+    /// CIH-F helper — bring the registry for `session_id` to a consistent
+    /// state relative to the durable evidence on disk, without mutating any
+    /// other session.
+    ///
+    /// The four registry states and their treatment:
+    ///
+    /// 1. `Available`  -> do nothing. The handle is the canonical in-memory
+    ///    view; overwriting it with a freshly-reopened one would either be a
+    ///    no-op (same Arc, ptr_eq) or an `ExecutionLogIdentityMismatch` (new
+    ///    Arc from the factory), neither of which is what `load_session` wants.
+    ///
+    /// 2. `Unavailable` -> do nothing. The previously-recorded reason stays;
+    ///    `query_events` will keep returning `ExecutionLogUnavailable { reason }`.
+    ///    Auto-refreshing would mask corruption and contradict operator rule §3.3.
+    ///
+    /// 3. `Absent` + durable log present  -> reopen via the injected factory
+    ///    (REC-C1.5.2 strict replay) and register the validated handle. The
+    ///    factory's own validation owns the corruption case; on success the
+    ///    handle is published, on failure the typed reason is published as
+    ///    `Unavailable` so the next read reports it explicitly.
+    ///
+    /// 4. `Absent` + durable log absent   -> register `Unavailable` with the
+    ///    factory's reason text. There is no Silent Lie path: an empty log
+    ///    is never created, and no `Gap` is invented. Session metadata
+    ///    remains queryable through the engine map; only the canonical
+    ///    ExecutionLog reads surface the typed unavailability.
+    fn rehydrate_execution_log(
+        session_id: &str,
+        ctx: &SessionsContext<'_>,
+    ) -> Result<(), ServiceError> {
+        match ctx.execution_log_registry.peek_registration(session_id) {
+            RegistrationState::Available => Ok(()),
+            RegistrationState::Unavailable => Ok(()),
+            RegistrationState::Absent => {
+                let log_dir = ctx.execution_log_root.join(session_id);
+                match ctx
+                    .execution_log_registry
+                    .try_reopen_existing(&log_dir, SessionId::new(session_id))
+                {
+                    Ok(log) => ctx.execution_log_registry.register(log),
+                    Err(reason) => ctx
+                        .execution_log_registry
+                        .register_unavailable(session_id, reason),
+                }
+            }
+        }
     }
 
     /// List all saved sessions from persistent storage.
@@ -277,6 +352,7 @@ impl SessionsService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session_log::RegistrationState;
     use chronos_domain::{SourceLocation, TraceEvent};
     use std::collections::HashSet;
 
@@ -824,5 +900,436 @@ mod tests {
         let result = SessionsService::list_sessions(&ctx).await.unwrap();
 
         assert_eq!(result.sessions.len(), 2);
+    }
+
+    // =====================================================================
+    // CIH-F — load_session reopen tests
+    //
+    // The five mandatory acceptance cases (operator §3):
+    //   1. Single-session: save -> drop -> load -> query the canonical log.
+    //   2. Multi-session:  load one session must not modify another's
+    //                      availability or events.
+    //   3. Real restart:   a fresh registry bootstrapped from disk must
+    //                      produce the same observable state as the
+    //                      load_session path.
+    //   4. Repeated load:  calling load_session twice on the same session
+    //                      must NOT produce an ExecutionLogIdentityMismatch.
+    //   5. Missing / corrupt durable log: session metadata stays in the
+    //      engine map and the registry carries an explicit Unavailable
+    //      reason. No empty log is fabricated.
+    //
+    // These tests live in the service crate because they exercise the
+    // SessionsService::load_session contract directly. The end-to-end
+    // behaviour over the real MCP wire is covered by the sandbox test
+    // `multi_session::test_drop_session_not_in_load_list`, which is the
+    // exact failure the operator authorised CIH-F to close.
+    // =====================================================================
+
+    /// Build a per-test ExecutionLog root (tempdir) and a registry wired
+    /// to a segmented factory. Both are leaked so the returned context
+    /// carries references with `'static` lifetime, matching the existing
+    /// test convention (`make_context` above).
+    fn make_context_with_log_root<'a>(
+        engines: &'a Mutex<HashMap<String, QueryEngine>>,
+        languages: &'a Mutex<HashMap<String, Language>>,
+        connected: &'a std::sync::Mutex<HashSet<String>>,
+        store: &'a SessionStore,
+    ) -> (SessionsContext<'a>, &'a Path) {
+        let tmp = std::env::temp_dir().join(format!(
+            "cih-f-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).expect("tempdir");
+        let registry = Box::leak(Box::new(SessionExecutionLogRegistry::with_factory(
+            std::sync::Arc::new(chronos_log::factory::SegmentedExecutionLogFactory::new()),
+        )));
+        let root = Box::leak(Box::new(tmp));
+        let ctx = SessionsContext {
+            engines,
+            session_languages: languages,
+            connected_sessions: connected,
+            store,
+            execution_log_registry: registry,
+            execution_log_root: root,
+        };
+        (ctx, root)
+    }
+
+    /// Helper: create a durable ExecutionLog on disk for `session_id` and
+    /// register it in the supplied registry. Mirrors what `probe_start`
+    /// does on the production path (minus the live probe).
+    fn make_durable_log(
+        registry: &SessionExecutionLogRegistry,
+        root: &Path,
+        session_id: &str,
+        n: u64,
+    ) {
+        let dir = root.join(session_id);
+        registry
+            .register_create(&dir, chronos_log::SessionId::new(session_id))
+            .expect("register_create");
+        // Append n records directly through the handle so the on-disk log
+        // has the same shape as a real capture.
+        let handle = registry.get(session_id).expect("just-registered handle");
+        for i in 0..n {
+            handle
+                .append(chronos_log::NewExecutionRecord {
+                    kind: chronos_log::ExecutionKind::Raw,
+                    session_id: chronos_log::SessionId::new(session_id),
+                    monotonic_ns: i,
+                    payload: chronos_log::ExecutionPayload::new(format!("r{i}").into_bytes(), "t"),
+                    invocation_id: None,
+                    parent_invocation_id: None,
+                    symbol_id: None,
+                    captured_at_unix_ns: None,
+                })
+                .expect("append");
+        }
+        handle.flush().expect("flush");
+    }
+
+    // -----------------------------------------------------------------
+    // 1. Single-session: save -> drop -> load -> canonical read works.
+    // -----------------------------------------------------------------
+    #[tokio::test]
+    async fn cih_f_single_session_save_drop_load_query() {
+        let store = make_store();
+        let engines = make_engines("s1");
+        let languages = make_languages();
+        let connected = make_connected();
+        let (ctx, root) = make_context_with_log_root(&engines, &languages, &connected, &store);
+
+        // Probe + capture analogue: durable log on disk + registry handle.
+        make_durable_log(ctx.execution_log_registry, root, "s1", 3);
+
+        // Persist session metadata.
+        SessionsService::save_session("s1", Language::Go, "./server".to_string(), &ctx)
+            .await
+            .unwrap();
+
+        // drop_session analogue: forget the engine from memory and the
+        // ExecutionLog from the registry, but keep the on-disk evidence.
+        engines.lock().await.remove("s1");
+        ctx.execution_log_registry.remove("s1");
+        assert!(matches!(
+            ctx.execution_log_registry.peek_registration("s1"),
+            RegistrationState::Absent
+        ));
+
+        // load_session must (a) succeed with metadata, (b) repopulate the
+        // engine, and (c) leave the registry with an Available entry so a
+        // canonical read can find the evidence.
+        let result = SessionsService::load_session("s1", &ctx).await.unwrap();
+        assert_eq!(result.event_count, 2);
+        assert!(engines.lock().await.contains_key("s1"));
+        assert!(matches!(
+            ctx.execution_log_registry.peek_registration("s1"),
+            RegistrationState::Available
+        ));
+
+        let handle = ctx
+            .execution_log_registry
+            .get("s1")
+            .expect("Available after load_session");
+        let page = handle
+            .handle()
+            .read_from_seq(chronos_log::EventSeq::ZERO, 100)
+            .expect("read");
+        assert_eq!(
+            page.records.len(),
+            3,
+            "all three raw records must survive reopen via load_session"
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // 2. Multi-session: loading one session does not touch another.
+    // -----------------------------------------------------------------
+    #[tokio::test]
+    async fn cih_f_multi_session_load_one_does_not_disturb_another() {
+        let store = make_store();
+        let engines = make_engines("sA");
+        let languages = make_languages();
+        let connected = make_connected();
+        let (ctx, root) = make_context_with_log_root(&engines, &languages, &connected, &store);
+
+        // Build sA in-memory (engines map) and on-disk (registry + log).
+        make_durable_log(ctx.execution_log_registry, root, "sA", 2);
+        // Build sB ONLY on-disk (no engine map, no store entry yet).
+        make_durable_log(ctx.execution_log_registry, root, "sB", 4);
+
+        // Persist sA.
+        SessionsService::save_session("sA", Language::Rust, "a.rs".to_string(), &ctx)
+            .await
+            .unwrap();
+
+        // Snapshot the sB registry entry: must be untouched across load_session("sA").
+        let s_b_provider_before = match ctx.execution_log_registry.peek_registration("sB") {
+            RegistrationState::Available => Some(
+                ctx.execution_log_registry
+                    .get("sB")
+                    .expect("sB Available")
+                    .provider(),
+            ),
+            _ => None,
+        };
+
+        // Drop sA (engine + registry), then load_session("sA").
+        engines.lock().await.remove("sA");
+        ctx.execution_log_registry.remove("sA");
+        SessionsService::load_session("sA", &ctx).await.unwrap();
+
+        // sA is back in the registry.
+        assert!(matches!(
+            ctx.execution_log_registry.peek_registration("sA"),
+            RegistrationState::Available
+        ));
+
+        // sB's identity (Arc pointer) is unchanged: load_session("sA") did
+        // not register, remove, or refresh sB.
+        let s_b_provider_after = match ctx.execution_log_registry.peek_registration("sB") {
+            RegistrationState::Available => Some(
+                ctx.execution_log_registry
+                    .get("sB")
+                    .expect("sB Available")
+                    .provider(),
+            ),
+            _ => None,
+        };
+        assert_eq!(
+            s_b_provider_before.as_ref().map(std::sync::Arc::as_ptr),
+            s_b_provider_after.as_ref().map(std::sync::Arc::as_ptr),
+            "sB's ExecutionLog provider Arc must not move across load_session('sA')"
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // 3. Real restart: fresh registry, bootstrap from disk. The observable
+    //    state must match what load_session produces for the same session.
+    // -----------------------------------------------------------------
+    #[tokio::test]
+    async fn cih_f_real_restart_bootstrap_equivalent_to_load_session() {
+        let store = make_store();
+        let engines = make_engines("sR");
+        let languages = make_languages();
+        let connected = make_connected();
+        let (ctx, root) = make_context_with_log_root(&engines, &languages, &connected, &store);
+
+        make_durable_log(ctx.execution_log_registry, root, "sR", 5);
+        SessionsService::save_session("sR", Language::Cpp, "main.cpp".to_string(), &ctx)
+            .await
+            .unwrap();
+
+        // Path A: load_session from a drop-equivalent state.
+        engines.lock().await.remove("sR");
+        ctx.execution_log_registry.remove("sR");
+        SessionsService::load_session("sR", &ctx).await.unwrap();
+        let page_load = ctx
+            .execution_log_registry
+            .get("sR")
+            .expect("after load_session")
+            .handle()
+            .read_from_seq(chronos_log::EventSeq::ZERO, 100)
+            .expect("read");
+        assert_eq!(page_load.records.len(), 5);
+
+        // Path B: fresh registry + bootstrap from the same on-disk root.
+        let fresh_registry = SessionExecutionLogRegistry::with_factory(std::sync::Arc::new(
+            chronos_log::factory::SegmentedExecutionLogFactory::new(),
+        ));
+        let plan = crate::execution_log_bootstrap::bootstrap_execution_logs(
+            root,
+            &fresh_registry,
+            &(std::sync::Arc::new(chronos_log::factory::SegmentedExecutionLogFactory::new())
+                as std::sync::Arc<dyn chronos_domain::ports::ExecutionLogFactory>),
+        )
+        .expect("bootstrap");
+        assert_eq!(plan.available().count(), 1, "exactly one log on disk");
+        let page_boot = fresh_registry
+            .get("sR")
+            .expect("after bootstrap")
+            .handle()
+            .read_from_seq(chronos_log::EventSeq::ZERO, 100)
+            .expect("read");
+        assert_eq!(
+            page_boot.records.len(),
+            page_load.records.len(),
+            "bootstrap and load_session must surface the same number of records"
+        );
+        assert_eq!(
+            page_boot.records.first().map(|r| r.monotonic_ns),
+            page_load.records.first().map(|r| r.monotonic_ns),
+            "first record's monotonic_ns must match"
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // 4. Repeated load: a second load_session must NOT raise
+    //    ExecutionLogIdentityMismatch; the existing handle is reused.
+    // -----------------------------------------------------------------
+    #[tokio::test]
+    async fn cih_f_repeated_load_does_not_overwrite_existing_handle() {
+        let store = make_store();
+        let engines = make_engines("s2");
+        let languages = make_languages();
+        let connected = make_connected();
+        let (ctx, root) = make_context_with_log_root(&engines, &languages, &connected, &store);
+
+        make_durable_log(ctx.execution_log_registry, root, "s2", 2);
+        SessionsService::save_session("s2", Language::Go, "main.go".to_string(), &ctx)
+            .await
+            .unwrap();
+
+        // First load: drops and reloads; the registry goes Absent -> Available.
+        engines.lock().await.remove("s2");
+        ctx.execution_log_registry.remove("s2");
+        SessionsService::load_session("s2", &ctx).await.unwrap();
+        let provider_first = ctx
+            .execution_log_registry
+            .get("s2")
+            .expect("after first load")
+            .provider();
+
+        // Second load WITHOUT removing from the registry: the engine is
+        // rebuilt from the store, but the registry state stays Available
+        // and the original Arc is preserved.
+        SessionsService::load_session("s2", &ctx).await.unwrap();
+        let provider_second = ctx
+            .execution_log_registry
+            .get("s2")
+            .expect("after second load")
+            .provider();
+        assert!(
+            std::sync::Arc::ptr_eq(&provider_first, &provider_second),
+            "second load_session must reuse the same Arc (no IdentityMismatch)"
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // 5. Missing durable log: session metadata persists, registry
+    //    carries an explicit Unavailable reason, no empty log fabricated.
+    // -----------------------------------------------------------------
+    #[tokio::test]
+    async fn cih_f_missing_durable_log_records_unavailable_keeps_metadata() {
+        let store = make_store();
+        let engines = make_engines("sM");
+        let languages = make_languages();
+        let connected = make_connected();
+        let (ctx, root) = make_context_with_log_root(&engines, &languages, &connected, &store);
+
+        // sM exists only in the engine map; NO ExecutionLog on disk.
+        SessionsService::save_session("sM", Language::Python, "a.py".to_string(), &ctx)
+            .await
+            .unwrap();
+        engines.lock().await.remove("sM");
+        ctx.execution_log_registry.remove("sM");
+
+        // Pre-condition: no directory on disk for sM.
+        assert!(!root.join("sM").exists(), "fixture must be missing on disk");
+
+        // load_session succeeds (metadata + engine are queryable), and
+        // the registry carries an explicit Unavailable reason.
+        let result = SessionsService::load_session("sM", &ctx).await.unwrap();
+        assert_eq!(result.event_count, 2);
+
+        match ctx.execution_log_registry.peek_registration("sM") {
+            RegistrationState::Unavailable => {}
+            other => panic!("expected Unavailable after missing-dir reopen, got {other:?}"),
+        }
+        let err = ctx
+            .execution_log_registry
+            .get("sM")
+            .expect_err("Unavailable get");
+        match err {
+            ServiceError::ExecutionLogUnavailable { reason, .. } => {
+                assert!(
+                    !reason.is_empty(),
+                    "Unavailable reason must carry the factory's typed error"
+                );
+            }
+            other => panic!("expected ExecutionLogUnavailable, got {other:?}"),
+        }
+
+        // The on-disk directory must still NOT exist: no Silent Lie, no
+        // empty-log fabrication, no Gap inserted.
+        assert!(
+            !root.join("sM").exists(),
+            "load_session must not create an empty log dir for a missing session"
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // 5b. Corrupt durable log: metadata persists, registry carries an
+    //     Unavailable reason that mentions the strict-replay refusal.
+    // -----------------------------------------------------------------
+    #[tokio::test]
+    async fn cih_f_corrupt_durable_log_records_unavailable_keeps_metadata() {
+        let store = make_store();
+        let engines = make_engines("sC");
+        let languages = make_languages();
+        let connected = make_connected();
+        let (ctx, root) = make_context_with_log_root(&engines, &languages, &connected, &store);
+
+        make_durable_log(ctx.execution_log_registry, root, "sC", 3);
+        SessionsService::save_session("sC", Language::C, "main.c".to_string(), &ctx)
+            .await
+            .unwrap();
+
+        // Corrupt the only segment body so REC-C1.5.2 strict replay
+        // refuses on reopen.
+        let dir = root.join("sC");
+        let seg_path = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.path())
+            .find(|p| p.extension().map(|e| e == "seg").unwrap_or(false))
+            .expect("a segment file");
+        let mut bytes = std::fs::read(&seg_path).unwrap();
+        let n = bytes.len() * 3 / 4;
+        bytes[n] ^= 0xFF;
+        std::fs::write(&seg_path, &bytes).unwrap();
+
+        // Drop from memory; the on-disk corrupt log is what load_session
+        // will see.
+        engines.lock().await.remove("sC");
+        ctx.execution_log_registry.remove("sC");
+
+        // load_session succeeds; registry carries Unavailable with the
+        // typed rejection reason from REC-C1.5.2 strict replay.
+        let result = SessionsService::load_session("sC", &ctx).await.unwrap();
+        assert_eq!(result.event_count, 2, "metadata persists");
+        match ctx.execution_log_registry.peek_registration("sC") {
+            RegistrationState::Unavailable => {}
+            other => panic!("expected Unavailable after corrupt reopen, got {other:?}"),
+        }
+        let err = ctx
+            .execution_log_registry
+            .get("sC")
+            .expect_err("Unavailable get");
+        match err {
+            ServiceError::ExecutionLogUnavailable { reason, .. } => {
+                assert!(
+                    reason.contains("reopen")
+                        || reason.contains("Integrity")
+                        || reason.contains("Replay"),
+                    "the typed reason must come from the factory's strict-replay \
+                     refusal; got: {reason}"
+                );
+            }
+            other => panic!("expected ExecutionLogUnavailable, got {other:?}"),
+        }
+
+        // The corrupted segment must NOT have been silently replaced or
+        // truncated by load_session.
+        let bytes_after = std::fs::read(&seg_path).unwrap();
+        assert_eq!(
+            bytes_after.len(),
+            bytes.len(),
+            "load_session must not rewrite the durable segment"
+        );
     }
 }

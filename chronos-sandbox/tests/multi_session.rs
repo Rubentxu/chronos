@@ -491,3 +491,106 @@ async fn test_drop_session_not_in_load_list() {
 
     client.shutdown().await.ok();
 }
+
+/// CIH-F (operator-required integration): drop + load of one session must
+/// not perturb a second session that is also loaded concurrently.
+///
+/// This is the real-MCP-path companion of the unit tests
+/// `cih_f_multi_session_load_one_does_not_disturb_another` and
+/// `cih_f_repeated_load_does_not_overwrite_existing_handle`. The unit
+/// suite proves the service-level contract; this test proves the wire
+/// path the operator's CI gate is red on does not regress.
+///
+/// Asserts:
+///  * start two probes, save both, drop s1, load s1 -> events still
+///    queryable through `query_events` for s1;
+///  * s2 is still queryable (no cross-session registry contamination
+///    from s1's reopen);
+///  * s2's symmetric drop+load also succeeds (guarding against
+///    IdentityMismatch on the second session's reopen).
+#[tokio::test]
+async fn test_cih_f_drop_load_one_session_does_not_disturb_other() {
+    let fixture_add = McpSession::fixture_path("test_add").expect("test_add fixture not found");
+    let fixture_busyloop =
+        McpSession::fixture_path("test_busyloop").expect("test_busyloop fixture not found");
+
+    let mut client = McpTestClient::start()
+        .await
+        .expect("Failed to start MCP server");
+
+    // Probe 1 — must be saved + dropped + reloaded.
+    let session_id_1 = client
+        .probe_start(fixture_add.to_str().unwrap())
+        .await
+        .expect("probe_start s1");
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let _ = client.probe_drain(&session_id_1).await.expect("drain s1");
+    let _ = client.probe_stop(&session_id_1).await.expect("stop s1");
+    client
+        .save_session(&session_id_1, "cih_f_s1")
+        .await
+        .expect("save s1");
+
+    // Probe 2 — must be stopped before save_session (production gate).
+    let session_id_2 = client
+        .probe_start(fixture_busyloop.to_str().unwrap())
+        .await
+        .expect("probe_start s2");
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let _ = client.probe_drain(&session_id_2).await.expect("drain s2");
+    let _ = client.probe_stop(&session_id_2).await.expect("stop s2");
+    client
+        .save_session(&session_id_2, "cih_f_s2")
+        .await
+        .expect("save s2");
+
+    // Drop s1, then load s1 (this is the previously-red path).
+    client.drop_session(&session_id_1).await.expect("drop s1");
+    let load_1 = client
+        .load_session(&session_id_1)
+        .await
+        .expect("load s1 after drop");
+    assert!(
+        load_1.event_count > 0,
+        "reloaded s1 must carry events (was the gate-failing case)"
+    );
+    let events_s1 = client
+        .query_events(&session_id_1, QueryFilter::default())
+        .await
+        .expect("query s1 after reload");
+    assert!(
+        !events_s1.is_empty(),
+        "query_events for reloaded s1 must return events"
+    );
+
+    // s2 must not have been replaced or wiped by s1's reopen.
+    let load_2 = client
+        .load_session(&session_id_2)
+        .await
+        .expect("load s2 must not be perturbed by s1 reopen");
+    assert!(
+        load_2.event_count > 0,
+        "s2 must keep its events across s1 reopen"
+    );
+    let events_s2 = client
+        .query_events(&session_id_2, QueryFilter::default())
+        .await
+        .expect("query s2 must still hold after s1 reopen");
+    assert!(
+        !events_s2.is_empty(),
+        "query_events for s2 must return events across s1 reopen"
+    );
+
+    // Drop s2 and reload it too — sanity check on the symmetric path.
+    client.drop_session(&session_id_2).await.expect("drop s2");
+    let load_2_again = client
+        .load_session(&session_id_2)
+        .await
+        .expect("load s2 after drop");
+    assert!(
+        load_2_again.event_count > 0,
+        "s2 reload must also succeed (no IdentityMismatch on second session)"
+    );
+
+    client.shutdown().await.ok();
+}
