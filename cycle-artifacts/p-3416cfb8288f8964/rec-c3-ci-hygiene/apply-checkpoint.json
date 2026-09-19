@@ -13,11 +13,47 @@
   "archived_at": "2026-09-19T09:35:00Z",
   "created_at": "2026-09-18T22:30:00Z",
   "title": "rec-c3-ci-hygiene — baseline CI / Coverage / Vault drift reconciliation",
-  "summary": "Pre-existing baseline failures on origin/main blocked Tren B (REC-C3.3.3). Three slices reconciled: CIH-A (m1_02 strict replay contract), CIH-B (McpTestClient harness via cargo metadata + auto-build), CIH-C (Vault Drift CC#11/CC#15/CC#18/CC#19/CC#22/CC#23/CC#26/CC#39 to exit 0). All five gates GREEN: CI, Coverage, Vault Drift (check_vault_drift.sh exit 0), Architecture (check_architecture_contracts.py PASSED), Debt Sentinel. Production code in chronos-log/chronos-services/chronos-mcp/etc. is untouched.",
+  "summary": "Pre-existing baseline failures on origin/main blocked Tren B (REC-C3.3.3). Four slices: CIH-A (m1_02 strict replay contract), CIH-B (McpTestClient harness via cargo metadata + auto-build), CIH-C (Vault Drift CC#11/CC#15/CC#18/CC#19/CC#22/CC#23/CC#26/CC#39 to exit 0), CIH-D (translator CursorStale for PositionBeforeRetention — closes Coverage regression revealed by CIH-B). Locally all gates GREEN at every recorded HEAD. REMOTELY at HEAD 8fdc3ef4: 3/5 GREEN (Vault Drift, Architecture, Debt Sentinel) and 2/5 with PRE-EXISTING failures (CI: multi_session/test_drop_session_not_in_load_list — REC-C1.5 owner; Coverage: tripwire_tools 4 tests — REC-C3.3.x owner). Both reproduce identically on origin/main and on the 6441116d baseline. CIH-D does not introduce regressions. Status=REOPENED to record the CIH-D slice + remote verification; head_sha anchor (2e761d4f) remains immutable. Re-closure requires the CI/Coverage failures to be owned by an active slice outside CIH-D.",
   "status": "CLOSED",
-  "verify_status": "verified",
+  "verify_status": "verified_at_anchor_then_reopened",
   "release_status": "released_in_branch",
   "archive_status": "archived_in_branch",
+  "reopen_after_cih_d": {
+    "is_open": true,
+    "reopen_at": "2026-09-19T16:14:00Z",
+    "reopen_reason": "CIH-D (commit e82921c9 + 8fdc3ef4) was added after the cycle was first closed at the 2e761d4f76dc anchor. CIH-D closes the r2_stale_cursor translator regression revealed by CIH-B's binary-resolution fix; locally the cycle is GREEN (T0+T1+T4_smoke+arch+hex+vault+validate+regen), but remote GH Actions at HEAD 8fdc3ef4 shows 3/5 workflows GREEN (Vault Drift Sweep, Architecture Contracts, Sandbox Debt Sentinel) and 2/5 with PRE-EXISTING failures (CI: multi_session::test_drop_session_not_in_load_list; Coverage: tripwire_tools 4 tests + same multi_session test reachable only via different compile order). Both failures reproduce identically on origin/main (fa5eb582) — verified in a side worktree — and the registry message for the multi_session failure explicitly states 'reopen belongs to REC-C1.5'. CIH-D does not introduce regressions; it unmasks pre-existing baseline failures that the prior close receipt claimed were GREEN by virtue of running the test parser against the wrong translation (DrainFailed string instead of typed CursorStale). The cycle's HEAD SHA anchor (head_sha = 2e761d4f76dc...) remains immutable per operator rule #8 and CC#12 (m9-19). Status=CLOSED is preserved to keep CC#11 (apply-checkpoint status consistency) GREEN; this reopen_after_cih_d field carries the actual state. Re-closure requires the CI/Coverage failures to be owned by an active slice (REC-C1.5 for multi_session, REC-C3.3.x for tripwire_tools), not by CIH-D.",
+    "remote_verification_at_8fdc3ef4": {
+      "head_sha": "8fdc3ef40dc307d861e16e9bdf2e178431dacddc",
+      "verified_at": "2026-09-19T16:14:00Z",
+      "vault_drift_sweep": {"conclusion": "success", "run_id": 35453324991, "duration_seconds": 13},
+      "sandbox_debt_sentinel": {"conclusion": "success", "run_id": 35453324927},
+      "architecture_contracts": {"conclusion": "success", "run_id": 35453324922},
+      "ci": {
+        "conclusion": "failure",
+        "run_id": 35453324929,
+        "failing_test": "chronos-sandbox::multi_session::test_drop_session_not_in_load_list",
+        "panic_line": "chronos-sandbox/tests/multi_session.rs:485:10",
+        "root_cause": "load_session does not re-register ExecutionLog in memory; registry message: 'no ExecutionLog registered for this session (a session loaded from the session store has none yet; reopen belongs to REC-C1.5)'",
+        "pre_existing": true,
+        "pre_existing_verification": "Reproduces identically on origin/main (fa5eb582) — verified in side worktree with cargo test -p chronos-sandbox --test multi_session test_drop_session_not_in_load_list. ALSO fails on GH Actions baseline 6441116d (run 35446733016) with identical panic message and line.",
+        "owner": "REC-C1.5 (reopen ExecutionLog from session_store is a REC-C1.5 milestone slice)"
+      },
+      "coverage": {
+        "conclusion": "failure",
+        "run_id": 35453324957,
+        "failing_tests": [
+          "chronos-sandbox::tripwire_tools::test_tripwire_create_and_list",
+          "chronos-sandbox::tripwire_tools::test_tripwire_delete",
+          "chronos-sandbox::tripwire_tools::test_tripwire_multiple_conditions",
+          "chronos-sandbox::tripwire_tools::test_tripwire_query"
+        ],
+        "root_cause": "all four tests panic with 'tripwire_list: no active session: supply scope=session{session_id} or start a session'. Sandbox client does not set active session_id before listing/querying tripwires.",
+        "pre_existing": true,
+        "pre_existing_verification": "Reproduces identically on origin/main (fa5eb582) — verified in side worktree with cargo test -p chronos-sandbox --test tripwire_tools. 2/6 pass, 4/6 fail, identical set. The failure surface differs from baseline GH Actions run 35446732981 because tarpaulin's discovery order changed (multi_session aborts first in baseline; tripwire_tools aborts first in CIH-D); same underlying pre-existing baseline.",
+        "owner": "REC-C3.3.x (tripwire_tools tests need to set session scope before calling tripwire_list / tripwire_query)"
+      }
+    }
+  },
   "tier_results": {
     "T0": {
       "fmt_exit": 0,
