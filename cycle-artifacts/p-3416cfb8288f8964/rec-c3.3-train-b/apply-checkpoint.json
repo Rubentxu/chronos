@@ -7,7 +7,7 @@
   "created_at": "2026-09-19T10:45:00Z",
   "branch": "feat/rec-c3.3-train-b",
   "base_sha": "fa5eb5827e997c874047c6c2318ad2b5b1c8f323",
-  "head_sha": "fa5eb5827e997c874047c6c2318ad2b5b1c8f323",
+  "head_sha": "9a68e9f1a0ae8686438072518a3cba3a327430cd",
   "merge_sha": null,
   "path": "A-min",
   "route": "A-min",
@@ -74,11 +74,22 @@
     "vault_drift_check_vault_drift_sh_exit": null
   },
   "findings_introduced": {
-    "no_action": []
+    "no_action": [
+      {
+        "id": "FIND-TB-01-cas-cli-format-mismatch",
+        "description": "sddk CLI cycle identifier format rejects `<project>/<cycle>` strings; only bare `<cycle>` accepted. sddk artifact store CAS step in sddk-propose envelope failed with FOREIGN KEY constraint; resolved by deferring CAS persistence to git commit chain. Adoption status verified complete via `sddk adopt status`. No action this cycle (B8).",
+        "owner_cycle": "rec-c3.3-train-b",
+        "rationale": "CLI format gap, not a project registration gap. Persistence via git suffices per B7.",
+        "raised_at": "2026-09-19T11:23:30Z"
+      }
+    ]
   },
   "findings_closed": [],
   "slices_executed": [],
-  "commits_since_base": [],
+  "commits_since_base": [
+    "acda8447",
+    "9a68e9f1"
+  ],
   "carry_forward_debt": [],
   "notes": [
     "Cycle opened 2026-09-19T10:45Z after rec-c3-ci-hygiene closed with all five gates GREEN (5bcb2b63 + post-closure sync to 3fdcbf13).",
@@ -87,7 +98,8 @@
     "Model substitution recorded per sddk-explore envelope: deepseek-chat unavailable (api.deepseek.com auth failed); MiniMax-M3 used. Acceptance: applying B9 (honesty over coverage) — substitution is visible in the exploration-report envelope.",
     "exploration-report.md identifies Tren A does NOT have capture_session. My initial apply-checkpoint summary incorrectly attributed it to Tren A. Corrected in this commit per B8/B9.",
     "Confirmed: B1..B9 hold. Composition root stays at chronos-mcp::composition with bootstrap-scoped (default_session_archive, default_counterexample_repository) + session-scoped (advance/step via ProbeService per-call) split.",
-    "Carry-forward debt C31-DEBT-03 (services->ports inversion not finished) will be partially addressed (SessionArchive + CounterexampleRepository); remaining services->native direction logged as no_action_in_current_cycle per B8 — REC-C3.4 owns it."
+    "Carry-forward debt C31-DEBT-03 (services->ports inversion not finished) will be partially addressed (SessionArchive + CounterexampleRepository); remaining services->native direction logged as no_action_in_current_cycle per B8 — REC-C3.4 owns it.",
+    "sddk-propose complete (proposal.md, 407 lines, sha256 3a3078d5...). CAS persistence deferred per FIND-TB-01 (CLI cycle identifier format gap); evidence chain via git commits preserved."
   ],
   "ledger_progression": [
     {
@@ -105,6 +117,31 @@
       "context_quality": "C2",
       "open_questions_resolved": 3,
       "transition_ready": true
+    },
+    {
+      "stage": "phase.propose.complete",
+      "sha": "9a68e9f1a0ae8686438072518a3cba3a327430cd",
+      "at": "2026-09-19T11:23:00Z",
+      "by": "sddk-propose (MiniMax-M3)",
+      "evidence": "cycle-artifacts/p-3416cfb8288f8964/rec-c3.3-train-b/proposal.md (sha256 3a3078d569ec2e5eb5bc3e392ce2c24f33158b392e74be385e8482b4b5b9167d)",
+      "context_quality": "C2",
+      "approach": "Approach 1 (single-shot capture_session + probe_advance + probe_step; SessionArchive + CounterexampleRepository ports; SessionMetadata lift to chronos-domain; no NativeProbeServicePort — B1 preserved)",
+      "capabilities_new": 10,
+      "capabilities_modified": 1,
+      "transition_ready": true,
+      "cas_note": "sddk artifact store failed with FOREIGN KEY constraint (project p-3416cfb8288f8964 has no SDDK-CLI workspace; no cycle registered via 'sddk cycle start'). Orchestrator handles the SDDK-CLI ledger transition out-of-band. Proposal artifact is in place under cycle-artifacts/ and SHA-256 verified."
+    },
+    {
+      "stage": "phase.propose.complete",
+      "sha": "9a68e9f1a0ae8686438072518a3cba3a327430cd",
+      "at": "2026-09-19T11:23:30Z",
+      "by": "sddk-propose (MiniMax-M3)",
+      "evidence": "cycle-artifacts/p-3416cfb8288f8964/rec-c3.3-train-b/proposal.md (sha256 3a3078d569ec2e5eb5bc3e392ce2c24f33158b392e74be385e8482b4b5b9167d, 407 lines)",
+      "context_quality": "C2",
+      "cas_status": "skipped",
+      "cas_note": "sddk-propose reported FOREIGN KEY constraint on sddk artifact store, suggesting project not registered. Verified via `sddk adopt status`: project p-3416cfb8288f8964 / workspace w-361237634265a0a7d986676e are complete. The constraint appears to be a CLI cycle identifier format mismatch (CLI rejects 'p-3416cfb8288f8964/rec-c3.3-train-b' as invalid cycle_id; requires bare 'rec-c3.3-train-b'). Resolution deferred: persistence via git commit per B7 (no SHA rewrite). Recorded as no_action_in_current_cycle.",
+      "transition_ready": true,
+      "next_phase": "sddk-spec"
     }
   ],
   "layer_completion": {
@@ -116,7 +153,8 @@
     "debt_verify": false,
     "release": false,
     "archive": false,
-    "explore": true
+    "explore": true,
+    "propose": true
   },
   "ratchet_state": "ready"
 }
