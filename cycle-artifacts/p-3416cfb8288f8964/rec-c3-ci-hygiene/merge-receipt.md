@@ -29,6 +29,8 @@
 9. `3fdcbf13` chore(vault): rec-c3-ci-hygiene — finalize apply-checkpoint ledger fields, sync SHA-driven artifacts to HEAD
 10. `6f03f58d` chore(vault): rec-c3-ci-hygiene — CIH-C.1 cycle artifact reconciliation
 11. `8639a3ff` chore(vault): rec-c3-ci-hygiene — restore historical SHA anchor + reconcile receipt contradictions
+12. `6441116d` chore(vault): rec-c3-ci-hygiene — main_sha=head_sha per CC#12 + reconcile merge receipt narrative
+13. `e82921c9` fix(services): CIH-D — map_execution_log_error splits PositionBeforeRetention into typed CursorStale
 
 ## Integration plan (REQUIRED before Tren B)
 

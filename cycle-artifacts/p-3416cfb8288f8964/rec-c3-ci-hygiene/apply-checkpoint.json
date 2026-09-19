@@ -59,17 +59,21 @@
   ],
   "carry_forward_debt": {
     "FIND-Tren-A-01": "OPEN — slice C (Vault drift CC#18/19/39 reconciliation).",
-    "FIND-CI-PRE-EXISTING-TEST-FAILURES": "OPEN — slice A (m1_02) + slice B (tripwire_depth)."
+    "FIND-CI-PRE-EXISTING-TEST-FAILURES": "OPEN — slice A (m1_02) + slice B (tripwire_depth).",
+    "FIND-CIH-D-pre-existing-multi-session-drop-load": "OPEN — chronos-sandbox::multi_session::test_drop_session_not_in_load_list. Pre-existing failure, not introduced by CIH-D. Reproduces identically on origin/main (verified in side worktree at fa5eb582): assumes load_session re-registers the ExecutionLog in memory; registry message explicitly states 'reopen belongs to REC-C1.5'. Owner: REC-C1.5 milestone. CIH-D leaves this finding as-is (CIH-D owns translator mapping only).",
+    "FIND-CIH-D-unstaged-violations-staged-by-pre-pause-operator": "OPEN — chronos-sandbox/src/client/process.rs, chronos-sandbox/src/client/tools.rs, chronos-sandbox/tests/m1_acceptance.rs have unstaged modifications in the worktree that violate CIH-B evidence contract and REC-C1.5.2 strict-replay architectural rule #6. NOT committed in e82921c9. Operator triage required: either git checkout (revert) or fold into a separate architectural-decision slice."
   },
   "findings_introduced": {
     "no_action": [
       "CIH-A",
       "CIH-A-doc-fix",
       "CIH-B",
-      "CIH-C"
+      "CIH-C",
+      "CIH-D"
     ],
     "notes": [
-      "CIH-C reconciled Vault Drift CC#11/CC#18/CC#19/CC#39 to exit 0: CC#11 no_action subfield added where missing; CC#18 verify-findings.json synthesized for cycles where it was lost; CC#19 free-text notes moved from no_action to notes; CC#39 cycles/index.md Total cycles aligned to actual folder count (98). Pre-existing failure m1_02 was owned by CIH-A; pre-existing harness breakage was owned by CIH-B. No waivers, no occlusion."
+      "CIH-C reconciled Vault Drift CC#11/CC#18/CC#19/CC#39 to exit 0: CC#11 no_action subfield added where missing; CC#18 verify-findings.json synthesized for cycles where it was lost; CC#19 free-text notes moved from no_action to notes; CC#39 cycles/index.md Total cycles aligned to actual folder count (98). Pre-existing failure m1_02 was owned by CIH-A; pre-existing harness breakage was owned by CIH-B. No waivers, no occlusion.",
+      "CIH-D (commit e82921c9): production translator fix that splits ExecutionLogError::PositionBeforeRetention out of the DrainFailed wildcard arm into its own match arm constructing the typed ServiceError::CursorStale { requested_next_seq: u64, retained_from_seq: u64 }. Slice is required for the Coverage workflow to go GREEN (restart_uat::r2_stale_cursor parses the typed CursorStale Display format). Five new unit tests pin the contract: one positive (PositionBeforeRetention -> CursorStale with both fields), one Display-format check (matches restart_uat parser tokens), three negative (Unavailable/IntegrityFailure/Sealed must NOT collapse into CursorStale). T0 fmt+clippy clean. chronos-services lib 382/382 pass. chronos-sandbox restart_uat 4/4 pass (r1, r2, r3, r4). All five gates remain GREEN locally. NOTE: this slice DOES change production runtime behavior for the canonical-evidence cursor path — it is a follow-up to CIH-C, NOT a no-op reconciliation."
     ]
   },
   "findings_closed": [],
@@ -79,7 +83,14 @@
     "7447ea56",
     "b71c1adc",
     "10138acc",
-    "5bcb2b63"
+    "5bcb2b63",
+    "2e761d4f",
+    "27c5c811",
+    "3fdcbf13",
+    "6f03f58d",
+    "8639a3ff",
+    "6441116d",
+    "e82921c9"
   ],
   "tren_a_real_commits": [],
   "layer_completion": {
@@ -237,6 +248,43 @@
       ],
       "production_changed": false,
       "rationale": "CC#18's os.listdir loop conflates files with folders. The doc SESSION_HANDOFF_2026-09-18.md was a leftover at the cycle-artifacts root; relocated to session-handoff/ where it belongs per m10-vault-handoff-relocate."
+    },
+    {
+      "id": "CIH-D",
+      "title": "fix(services): split PositionBeforeRetention into typed ServiceError::CursorStale",
+      "executed_at": "2026-09-19T14:28:00Z",
+      "head_sha_before": "6441116df383e960d01f751fe7f5d8179d42793a",
+      "head_sha_after": "e82921c995a46cd60a2ee43ed3fae269f3f1a45a",
+      "files_changed": [
+        "crates/chronos-services/src/session_log.rs"
+      ],
+      "production_changed": true,
+      "rationale": "The canonical-evidence translator collapsed ExecutionLogError::PositionBeforeRetention into the opaque ServiceError::DrainFailed via a wildcard arm, hiding the typed ServiceError::CursorStale { requested_next_seq, retained_from_seq } that the port was defined to surface and that chronos-sandbox::restart_uat::r2_stale_cursor expects. Regression was masked by CIH-B's pre-existing spawn failure in McpTestClient::start (binary not found, every test panicked in fixture setup). Once CIH-B fixed binary resolution, the Coverage workflow surfaced the missing CursorStale. Slice is the minimal production fix: split PositionBeforeRetention into its own match arm that constructs ServiceError::CursorStale with both numeric fields; keep Sealed/IntegrityFailure/InvalidGap/Unavailable/Open in DrainFailed (Display formatting remains the legacy path).",
+      "evidence": {
+        "tier_T0_fmt_exit": 0,
+        "tier_T0_clippy_exit": 0,
+        "tier_T1_chronos_services_lib": "382 passed; 0 failed; 0 ignored (377 existing + 5 new translator tests: map_position_before_retention_yields_cursor_stale_with_values, map_cursor_stale_message_format_matches_test_parser, map_unavailable_does_not_become_cursor_stale, map_integrity_failure_does_not_become_cursor_stale, map_sealed_does_not_become_cursor_stale)",
+        "tier_T4_smoke_restart_uat": "4 passed; 0 failed (r1_unclean_restart_reproduces_same_events_page, r2_stale_cursor_is_identical_before_and_after_restart, r3_clean_session_stop_seals_and_restart_bootstraps_it, r4_delete_session_is_absent_after_restart)",
+        "tier_arch_hex_boundary": "OK: chronos hexagonal boundary clean",
+        "tier_arch_contracts": "PASSED",
+        "vault_drift_check_vault_drift_sh_exit": 0,
+        "vault_drift_remediated": "no new CCs remediated by CIH-D; existing 9 (CC#4/11/15/18/19/22/23/26/39) remain clean"
+      },
+      "behavior_change": "Production error mapping for ExecutionLogError::PositionBeforeRetention now produces ServiceError::CursorStale { requested_next_seq: u64, retained_from_seq: u64 } (typed, both numeric fields) instead of the opaque ServiceError::DrainFailed(String). No other variant behavior changes.",
+      "pre_existing_failures_unchanged": [
+        "chronos-sandbox::multi_session::test_drop_session_not_in_load_list fails identically on origin/main (verified in side worktree at fa5eb582): assumes load_session re-registers ExecutionLog in memory, but registry message explicitly states 'reopen belongs to REC-C1.5'. That milestone owns this slice; CIH-D does not."
+      ],
+      "pre_existing_unstaged_work_NOT_in_commit": [
+        "chronos-sandbox/src/client/process.rs: unstaged modification that reverts CIH-B's SpawnFailed instrumentation (executable path + exit status). Violates CIH-B's evidence contract.",
+        "chronos-sandbox/src/client/tools.rs: 190 deletions and 33 insertions that partially revert CIH-B's McpTestClient::start improvements. Regen --check fails (m9-75 manifest SHA stale for this file).",
+        "chronos-sandbox/tests/m1_acceptance.rs: reverts REC-C1.5.2 strict-replay contract on m1_02 Case 6 from 'corrupt retained segment => ReplayIntegrity typed' back to 'skip first, recover second' (legacy lenient semantics). Violates architectural rule #6 (no modificar REC-C1.5.2 strict replay)."
+      ],
+      "findings_introduced": [],
+      "findings_closed": [
+        "FIND-CIH-D-coverage-r2-stale-cursor-DrainFailed-mask"
+      ],
+      "next_slice": "operator must triage the three pre-existing unstaged violations (process.rs/tools.rs/m1_acceptance.rs) BEFORE pushing e82921c9 to origin/rec-c3-ci-hygiene: either revert them with git checkout or fold them into a separate architectural-decision slice (NOT a hygiene slice). CIH-D itself is ready; it neither includes nor depends on them.",
+      "next_slice_owner_gate": "operator triage + REC-C3 ci hygiene"
     }
   ],
   "remote_tag": null,
