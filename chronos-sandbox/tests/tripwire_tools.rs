@@ -332,8 +332,7 @@ async fn test_tripwire_scope_awareness_at_mcp_boundary() {
 
     // Start ONE real probe session so every tripwire tool has a
     // canonical session to scope against.
-    let fixture = McpSession::fixture_path("test_busyloop")
-        .expect("test_busyloop fixture missing");
+    let fixture = McpSession::fixture_path("test_busyloop").expect("test_busyloop fixture missing");
     let session_a = client
         .probe_start(fixture.to_str().unwrap())
         .await
@@ -410,8 +409,12 @@ async fn test_tripwire_scope_awareness_at_mcp_boundary() {
     let _ = query_b;
 
     // Cleanup
-    let _ = client.tripwire_delete(Some(&session_a), &tw_session_a).await;
-    let _ = client.tripwire_delete(Some(&session_b), &tw_session_b).await;
+    let _ = client
+        .tripwire_delete(Some(&session_a), &tw_session_a)
+        .await;
+    let _ = client
+        .tripwire_delete(Some(&session_b), &tw_session_b)
+        .await;
     let _ = client.probe_stop(&session_a).await;
     let _ = client.probe_stop(&session_b).await;
 

@@ -4298,11 +4298,13 @@ impl ChronosServer {
         // CIH-E: explicit scope from `session_id`. The observe pipeline
         // resolves the canonical session with precedence
         // `scope=session{id}` → `active_session` → `NoActiveSession`.
-        let scope = params.session_id.as_ref().map(|s| {
-            chronos_services::output::ObserveScope::Session {
-                session_id: s.clone(),
-            }
-        });
+        let scope =
+            params
+                .session_id
+                .as_ref()
+                .map(|s| chronos_services::output::ObserveScope::Session {
+                    session_id: s.clone(),
+                });
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
             execution_logs: &self.execution_logs,
@@ -4370,11 +4372,13 @@ impl ChronosServer {
         let params = params.0;
         // CIH-E: explicit scope from `session_id` (precedence:
         // `scope=session{id}` → `active_session` → `NoActiveSession`).
-        let scope = params.session_id.as_ref().map(|s| {
-            chronos_services::output::ObserveScope::Session {
-                session_id: s.clone(),
-            }
-        });
+        let scope =
+            params
+                .session_id
+                .as_ref()
+                .map(|s| chronos_services::output::ObserveScope::Session {
+                    session_id: s.clone(),
+                });
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
             execution_logs: &self.execution_logs,
@@ -4470,11 +4474,13 @@ impl ChronosServer {
             ))));
         }
         // CIH-E: explicit scope from `session_id`.
-        let scope = params.session_id.as_ref().map(|s| {
-            chronos_services::output::ObserveScope::Session {
-                session_id: s.clone(),
-            }
-        });
+        let scope =
+            params
+                .session_id
+                .as_ref()
+                .map(|s| chronos_services::output::ObserveScope::Session {
+                    session_id: s.clone(),
+                });
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
             execution_logs: &self.execution_logs,
@@ -4543,11 +4549,13 @@ impl ChronosServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
         // CIH-E: explicit scope from `session_id`.
-        let scope = params.session_id.as_ref().map(|s| {
-            chronos_services::output::ObserveScope::Session {
-                session_id: s.clone(),
-            }
-        });
+        let scope =
+            params
+                .session_id
+                .as_ref()
+                .map(|s| chronos_services::output::ObserveScope::Session {
+                    session_id: s.clone(),
+                });
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
             execution_logs: &self.execution_logs,
