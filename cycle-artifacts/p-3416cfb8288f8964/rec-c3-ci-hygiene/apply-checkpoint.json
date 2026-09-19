@@ -3,7 +3,7 @@
   "project_id": "p-3416cfb8288f8964",
   "milestone": "REC-C3 — Hexagonal boundary closure",
   "sub_cycle": "rec-c3-ci-hygiene — baseline CI / Coverage / Vault drift reconciliation",
-  "head_sha": null,
+  "head_sha": "533304b4",
   "merge_sha": null,
   "base_sha": "5b7b7de17fe0a80c83e25d9c07c24c179bfc6097",
   "branch": "rec-c3-ci-hygiene",
