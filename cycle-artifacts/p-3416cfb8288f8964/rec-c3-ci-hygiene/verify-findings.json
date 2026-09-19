@@ -1,6 +1,6 @@
 {
   "subject": {
-    "head_sha": "5bcb2b6351f216ec95430b18e15ed5a6999d561e",
+    "head_sha": "2e761d4f76dc4c7b2a78972753770ac2aedf0357",
     "base_sha": "fa5eb5827e997c874047c6c2318ad2b5b1c8f323",
     "cycle_id": "rec-c3-ci-hygiene",
     "branch": "rec-c3-ci-hygiene",
@@ -48,7 +48,7 @@
   "synthesized_at": null,
   "synthesized_by": null,
   "owner_cycle": "rec-c3-ci-hygiene",
-  "verified_at": "2026-09-19T10:12:34Z",
+  "verified_at": "2026-09-19T10:14:00Z",
   "verifier": "rec-c3-ci-hygiene CIH-C final closure",
   "_restoration_note": null
 }

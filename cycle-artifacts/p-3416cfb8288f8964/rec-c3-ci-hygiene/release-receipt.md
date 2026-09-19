@@ -41,9 +41,10 @@
 
 | Field | Value |
 |---|---|
-| Head SHA | `5bcb2b6351f216ec95430b18e15ed5a6999d561e` |
-| Remote tag | `rec-c3-ci-hygiene-closure` (pending push) |
-| Remote tag_peel | `5bcb2b6351f216ec95430b18e15ed5a6999d561e` |
+| Cycle | `rec-c3-ci-hygiene` |
+| Head SHA | `2e761d4f76dc4c7b2a78972753770ac2aedf0357` |
+| Remote tag | `rec-c3-ci-hygiene-closure` |
+| Remote tag_peel | `2e761d4f76dc4c7b2a78972753770ac2aedf0357` |
 | Peel match | true |
-| Date | `2026-09-19T10:12:34Z` |
+| Date | `2026-09-19T10:14:00Z` |
 | Base SHA | `fa5eb5827e997c874047c6c2318ad2b5b1c8f323` |

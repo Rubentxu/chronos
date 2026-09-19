@@ -3,9 +3,9 @@
   "project_id": "p-3416cfb8288f8964",
   "milestone": "REC-C3 — Hexagonal boundary closure",
   "sub_cycle": "rec-c3-ci-hygiene — baseline CI / Coverage / Vault drift reconciliation",
-  "head_sha": "b71c1adc",
+  "head_sha": "2e761d4f76dc4c7b2a78972753770ac2aedf0357",
   "merge_sha": null,
-  "base_sha": "5b7b7de17fe0a80c83e25d9c07c24c179bfc6097",
+  "base_sha": "fa5eb5827e997c874047c6c2318ad2b5b1c8f323",
   "branch": "rec-c3-ci-hygiene",
   "path": "A-min",
   "route": "A-min",
@@ -74,12 +74,13 @@
   },
   "findings_closed": [],
   "commits_since_base": [
-    "533304b4 test(sandbox): reconcile m1_02 Case 6 to REC-C1.5.2 strict replay contract (CIH-A)",
-    "2b5ff2e1 chore(checkpoint): record CIH-A head_sha and evidence",
-    "7447ea56 test(sandbox): correct CIH-A atomicity comment — second reopen proves reproducibility, not atomicity (CIH-A-doc-fix)",
-    "b71c1adc fix(sandbox): McpTestClient::start locates chronos-mcp binary via cargo metadata + auto-build (CIH-B)",
-    "10138acc chore(checkpoint): record CIH-B + CIH-A-doc-fix head_sha and evidence",
-    "<pending> chore(vault): reconcile Vault Drift CC#11/15/18/19/22/23/26/39 to exit 0 (CIH-C)"
+    "533304b4",
+    "2b5ff2e1",
+    "7447ea56",
+    "b71c1adc",
+    "10138acc",
+    "5bcb2b63",
+    "2e761d4f"
   ],
   "tren_a_real_commits": [],
   "layer_completion": {
@@ -238,5 +239,8 @@
       "production_changed": false,
       "rationale": "CC#18's os.listdir loop conflates files with folders. The doc SESSION_HANDOFF_2026-09-18.md was a leftover at the cycle-artifacts root; relocated to session-handoff/ where it belongs per m10-vault-handoff-relocate."
     }
-  ]
+  ],
+  "remote_tag": "rec-c3-ci-hygiene-closure",
+  "remote_tag_peel": "2e761d4f76dc4c7b2a78972753770ac2aedf0357",
+  "peel_match": true
 }
