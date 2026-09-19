@@ -318,11 +318,22 @@ pub enum TripwireConditionType {
     Signal { numbers: Vec<i32> },
 }
 
-/// Parameters for tripwire_create.
+/// Parameters for tripwire_create. CIH-E: optional `session_id` to scope
+/// the tripwire to a real session. Prefers explicit scope over the implicit
+/// `active_session` fallback so that callers (test fixtures, MCP clients)
+/// can drive the canonical-evidence observe pipeline without depending on
+/// server-side session state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TripwireCreateParams {
     pub condition: TripwireConditionType,
     pub label: Option<String>,
+    /// CIH-E: explicit session scope. When `Some`, the server maps this
+    /// to `scope=session{session_id}` and the observe pipeline resolves the
+    /// canonical session from the explicit scope (precedence:
+    /// `scope=session{id}` wins). When `None`, the server falls back to
+    /// the `active_session` slot, and reports `NoActiveSession` if no
+    /// session is active.
+    pub session_id: Option<String>,
 }
 
 /// Response from tripwire_create.
@@ -362,10 +373,33 @@ pub struct TripwireListResponse {
     pub fired_count: usize,
 }
 
-/// Parameters for tripwire_delete.
+/// Parameters for tripwire_delete. CIH-E: optional `session_id` to scope
+/// the delete operation to a real session (same precedence as the create
+/// params). Without an explicit scope, the server falls back to the
+/// `active_session` slot.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TripwireDeleteParams {
     pub tripwire_id: String,
+    /// CIH-E: explicit session scope.
+    pub session_id: Option<String>,
+}
+
+/// Parameters for tripwire_list. CIH-E: optional `session_id` to scope the
+/// list to a real session. Replaces the previous `NoParams` placeholder so
+/// the canonical-evidence observe pipeline can resolve the canonical session
+/// without depending on `active_session` fallback.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TripwireListParams {
+    /// CIH-E: explicit session scope.
+    pub session_id: Option<String>,
+}
+
+/// Parameters for tripwire_query. CIH-E: same rationale as
+/// `TripwireListParams`. Non-destructive read.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TripwireQueryParams {
+    /// CIH-E: explicit session scope.
+    pub session_id: Option<String>,
 }
 
 /// Response from tripwire_delete.

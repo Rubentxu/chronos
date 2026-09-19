@@ -63,13 +63,21 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
     // derived at the accepted-Raw seam with the subscriptions of that moment,
     // so a subscription created later cannot retroactively match accepted
     // evidence. (That ordering is itself the property, not a test artifact.)
+    // CIH-E: start a real probe session and scope the subscription to it.
+    let pre_session = start_probe(&mut client)
+        .await
+        .expect("UAT-C2-01: a real probe session must exist");
     client
-        .tripwire_create(TripwireCreateParams {
-            condition: TripwireConditionType::EventType {
-                event_types: vec!["syscall_enter".to_string()],
+        .tripwire_create(
+            Some(&pre_session),
+            TripwireCreateParams {
+                condition: TripwireConditionType::EventType {
+                    event_types: vec!["syscall_enter".to_string()],
+                },
+                label: Some("uat-c2-01".to_string()),
+                session_id: Some(pre_session.clone()),
             },
-            label: Some("uat-c2-01".to_string()),
-        })
+        )
         .await
         .expect("UAT-C2-01: the matching subscription must exist before the capture starts");
 
@@ -114,7 +122,8 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
             .probe_drain_wire(&session, None)
             .await
             .expect("diagnostic re-read");
-        let listed = client.tripwire_list().await;
+        // CIH-E: scope the diagnostic list to the session that owns the subscription.
+        let listed = client.tripwire_list(Some(&pre_session)).await;
         panic!(
             "UAT-C2-01: the EventType(SyscallEnter) tripwire must match the stream, otherwise the \
              invariance below is vacuous (raw event count {}, tripwire_list {:?}, drain {:?})",
@@ -142,13 +151,18 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
     // subscription matching the same stream. Durable evidence can only gain
     // firings from events that arrive from now on; a live recomputation over
     // the returned range would double the historical prefix instead.
+    // CIH-E: scope to the same session that owns the capture.
     client
-        .tripwire_create(TripwireCreateParams {
-            condition: TripwireConditionType::EventType {
-                event_types: vec!["syscall_enter".to_string()],
+        .tripwire_create(
+            Some(&pre_session),
+            TripwireCreateParams {
+                condition: TripwireConditionType::EventType {
+                    event_types: vec!["syscall_enter".to_string()],
+                },
+                label: Some("uat-c2-01-perturbation".to_string()),
+                session_id: Some(pre_session.clone()),
             },
-            label: Some("uat-c2-01-perturbation".to_string()),
-        })
+        )
         .await
         .ok();
 

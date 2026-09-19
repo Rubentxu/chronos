@@ -213,10 +213,14 @@ async fn probe_drain_firing_count_is_evidence_not_subscription_state() {
     // Add a subscription that would match essentially everything already
     // captured. If decision-at-read-time were still in force, the next read of
     // the same range would report more firings than were ever persisted.
+    // CIH-E: scope the tripwire to the same session that owns the capture
+    // so the canonical-evidence observe pipeline resolves the canonical
+    // session from the explicit scope.
     let created = client
         .call_tool(
             "tripwire_create",
             serde_json::json!({
+                "session_id": session_id.clone(),
                 "condition": { "type": "event_type", "event_types": ["function_entry"] },
                 "label": "post-hoc subscription (C2.2 falsification)"
             }),

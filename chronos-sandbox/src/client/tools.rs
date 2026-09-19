@@ -454,12 +454,25 @@ impl McpSession {
     // =========================================================================
 
     /// Tripwire create — sets a watchpoint that triggers on condition.
+    ///
+    /// CIH-E: `session_id` is forwarded to the server as the canonical
+    /// scope. When `Some`, the canonical-evidence observe pipeline
+    /// resolves the canonical session from the explicit scope
+    /// (precedence: `scope=session{id}` wins). When `None`, the server
+    /// falls back to the `active_session` slot.
     pub async fn tripwire_create(
         &mut self,
+        session_id: Option<&str>,
         config: TripwireCreateParams,
     ) -> Result<String, McpSandboxError> {
-        let params =
+        let mut params =
             serde_json::to_value(config).map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
+        // CIH-E: forward the explicit session_id scope to the server.
+        // Keep it at the top level (not nested) to match the v1 wire shape
+        // and avoid breaking older clients that already send session_id here.
+        if let Some(sid) = session_id {
+            params["session_id"] = serde_json::Value::String(sid.to_string());
+        }
 
         let response = self.rpc_client.call_tool("tripwire_create", params).await?;
 
@@ -470,8 +483,20 @@ impl McpSession {
     }
 
     /// Tripwire list — lists all active tripwires.
-    pub async fn tripwire_list(&mut self) -> Result<Vec<TripwireInfo>, McpSandboxError> {
-        let params = serde_json::json!({});
+    ///
+    /// CIH-E: `session_id` is forwarded as the canonical scope. The
+    /// previous `NoParams` shape left the server in a NoActiveSession
+    /// state on the canonical-evidence observe pipeline; the explicit
+    /// scope removes that dependency.
+    pub async fn tripwire_list(
+        &mut self,
+        session_id: Option<&str>,
+    ) -> Result<Vec<TripwireInfo>, McpSandboxError> {
+        let mut params = serde_json::json!({});
+        // CIH-E: forward the explicit session_id scope.
+        if let Some(sid) = session_id {
+            params["session_id"] = serde_json::Value::String(sid.to_string());
+        }
 
         let response = self.rpc_client.call_tool("tripwire_list", params).await?;
 
@@ -482,18 +507,37 @@ impl McpSession {
     }
 
     /// Tripwire delete — removes a tripwire by ID.
-    pub async fn tripwire_delete(&mut self, tripwire_id: &str) -> Result<(), McpSandboxError> {
-        let params = serde_json::json!({
+    ///
+    /// CIH-E: `session_id` forwarded as the canonical scope.
+    pub async fn tripwire_delete(
+        &mut self,
+        session_id: Option<&str>,
+        tripwire_id: &str,
+    ) -> Result<(), McpSandboxError> {
+        let mut params = serde_json::json!({
             "tripwire_id": tripwire_id
         });
+        // CIH-E: forward the explicit session_id scope.
+        if let Some(sid) = session_id {
+            params["session_id"] = serde_json::Value::String(sid.to_string());
+        }
 
         let _response = self.rpc_client.call_tool("tripwire_delete", params).await?;
         Ok(())
     }
 
     /// Tripwire query — queries tripwire state without draining fired events.
-    pub async fn tripwire_query(&mut self) -> Result<Vec<TripwireInfo>, McpSandboxError> {
-        let params = serde_json::json!({});
+    ///
+    /// CIH-E: `session_id` forwarded as the canonical scope.
+    pub async fn tripwire_query(
+        &mut self,
+        session_id: Option<&str>,
+    ) -> Result<Vec<TripwireInfo>, McpSandboxError> {
+        let mut params = serde_json::json!({});
+        // CIH-E: forward the explicit session_id scope.
+        if let Some(sid) = session_id {
+            params["session_id"] = serde_json::Value::String(sid.to_string());
+        }
 
         let response = self.rpc_client.call_tool("tripwire_query", params).await?;
 

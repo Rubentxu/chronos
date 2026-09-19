@@ -1250,6 +1250,14 @@ pub struct TripwireCreateParams {
     pub condition: TripwireConditionType,
     /// Optional human-readable label for this tripwire.
     pub label: Option<String>,
+    /// Optional session id to scope this tripwire to. CIH-E: explicit scope
+    /// is required by the canonical-evidence observe pipeline (resolve_session
+    /// precedence: scope=session{id} wins, else active_session fallback,
+    /// else NoActiveSession). Tripwires are global manager state but their
+    /// `fire_count` and `fired_events` reads are scoped to the session id;
+    /// a session-scoped tripwire keeps its identity across the session, but
+    /// its firings are only visible to observers with the same scope.
+    pub session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, JsonSchema)]
@@ -1331,6 +1339,32 @@ impl TripwireConditionType {
 pub struct TripwireDeleteParams {
     /// ID of the tripwire to delete.
     pub tripwire_id: String,
+    /// Optional session id to scope the delete operation. CIH-E: same
+    /// precedence as `TripwireCreateParams::session_id`. Without an explicit
+    /// scope, the canonical-evidence observe pipeline falls back to
+    /// `active_session` and reports `NoActiveSession` if no active session
+    /// exists.
+    pub session_id: Option<String>,
+}
+
+/// Parameters for `tripwire_list`. CIH-E: introduced to carry the explicit
+/// `session_id` scope required by the canonical-evidence observe pipeline.
+/// Replaces the previous `NoParams` placeholder so that callers can pass
+/// `scope=session{session_id}` and the manager's read path does not need
+/// an implicit `active_session` fallback.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TripwireListParams {
+    /// Optional session id to scope the list to. CIH-E.
+    pub session_id: Option<String>,
+}
+
+/// Parameters for `tripwire_query`. CIH-E: same rationale as
+/// `TripwireListParams`. Non-destructive read; the same precedence rules
+/// apply (scope wins, else active_session fallback, else NoActiveSession).
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TripwireQueryParams {
+    /// Optional session id to scope the query to. CIH-E.
+    pub session_id: Option<String>,
 }
 
 // ============================================================================
@@ -4261,6 +4295,14 @@ impl ChronosServer {
             }
         };
         let label_for_v2 = params.label.clone();
+        // CIH-E: explicit scope from `session_id`. The observe pipeline
+        // resolves the canonical session with precedence
+        // `scope=session{id}` → `active_session` → `NoActiveSession`.
+        let scope = params.session_id.as_ref().map(|s| {
+            chronos_services::output::ObserveScope::Session {
+                session_id: s.clone(),
+            }
+        });
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
             execution_logs: &self.execution_logs,
@@ -4285,7 +4327,7 @@ impl ChronosServer {
             action: None,
             retention: None,
             requested_evidence: None,
-            scope: None,
+            scope,
             cursor: None,
             label: label_for_v2,
         };
@@ -4323,8 +4365,16 @@ impl ChronosServer {
     )]
     async fn tripwire_list(
         &self,
-        _params: Parameters<NoParams>,
+        params: Parameters<TripwireListParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        // CIH-E: explicit scope from `session_id` (precedence:
+        // `scope=session{id}` → `active_session` → `NoActiveSession`).
+        let scope = params.session_id.as_ref().map(|s| {
+            chronos_services::output::ObserveScope::Session {
+                session_id: s.clone(),
+            }
+        });
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
             execution_logs: &self.execution_logs,
@@ -4346,7 +4396,7 @@ impl ChronosServer {
             action: None,
             retention: None,
             requested_evidence: None,
-            scope: None,
+            scope,
             cursor: None,
             label: None,
         };
@@ -4419,6 +4469,12 @@ impl ChronosServer {
                 tripwire_id
             ))));
         }
+        // CIH-E: explicit scope from `session_id`.
+        let scope = params.session_id.as_ref().map(|s| {
+            chronos_services::output::ObserveScope::Session {
+                session_id: s.clone(),
+            }
+        });
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
             execution_logs: &self.execution_logs,
@@ -4440,7 +4496,7 @@ impl ChronosServer {
             action: None,
             retention: None,
             requested_evidence: None,
-            scope: None,
+            scope,
             cursor: None,
             label: None,
         };
@@ -4483,8 +4539,15 @@ impl ChronosServer {
     )]
     async fn tripwire_query(
         &self,
-        _params: Parameters<NoParams>,
+        params: Parameters<TripwireQueryParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        // CIH-E: explicit scope from `session_id`.
+        let scope = params.session_id.as_ref().map(|s| {
+            chronos_services::output::ObserveScope::Session {
+                session_id: s.clone(),
+            }
+        });
         let probe_ctx = chronos_services::probe::ProbeContext {
             live_probes: &self.live_probes,
             execution_logs: &self.execution_logs,
@@ -4506,7 +4569,7 @@ impl ChronosServer {
             action: None,
             retention: None,
             requested_evidence: None,
-            scope: None,
+            scope,
             cursor: None,
             label: None,
         };

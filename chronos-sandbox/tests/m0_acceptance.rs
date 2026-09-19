@@ -809,25 +809,41 @@ async fn m0_04_tripwires_evaluated_on_canonical_flow_impl() {
         }
     };
 
+    // CIH-E: start the probe session FIRST so we have a canonical session
+    // id, then create the tripwire scoped to it. Otherwise the canonical
+    // observe pipeline cannot resolve the canonical session.
+    let session_id = match client.probe_start(fixture.to_str().unwrap()).await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("m0_04: probe_start failed: {}", e);
+            let _ = client.shutdown().await;
+            return;
+        }
+    };
+
     // tripwire_create returns just the tripwire_id (string). It is non-empty
     // iff the tripwire was registered successfully.
     let tw_id = match client
-        .tripwire_create(chronos_sandbox::client::types::TripwireCreateParams {
-            // REC-C2.2.2: a `FunctionName` condition matches a *function
-            // location* (`TraceEvent.location.function`). The ptrace syscall
-            // stream `test_busyloop` produces carries no function location, so
-            // that condition cannot fire here. Use the condition that matches
-            // the stream under test; the narrowing is asserted explicitly
-            // below rather than left implicit.
-            // REC-C2.2.5: the event type must be one `tripwire_create`
-            // accepts. `"SyscallEnter"` is the *semantic* spelling and is
-            // rejected, which previously made this test bail out silently and
-            // pass without asserting anything.
-            condition: chronos_sandbox::client::types::TripwireConditionType::EventType {
-                event_types: vec!["syscall_enter".to_string()],
+        .tripwire_create(
+            Some(&session_id),
+            chronos_sandbox::client::types::TripwireCreateParams {
+                // REC-C2.2.2: a `FunctionName` condition matches a *function
+                // location* (`TraceEvent.location.function`). The ptrace syscall
+                // stream `test_busyloop` produces carries no function location, so
+                // that condition cannot fire here. Use the condition that matches
+                // the stream under test; the narrowing is asserted explicitly
+                // below rather than left implicit.
+                // REC-C2.2.5: the event type must be one `tripwire_create`
+                // accepts. `"SyscallEnter"` is the *semantic* spelling and is
+                // rejected, which previously made this test bail out silently and
+                // pass without asserting anything.
+                condition: chronos_sandbox::client::types::TripwireConditionType::EventType {
+                    event_types: vec!["syscall_enter".to_string()],
+                },
+                label: Some("m0_04-syscall-enter".to_string()),
+                session_id: Some(session_id.clone()),
             },
-            label: Some("m0_04-syscall-enter".to_string()),
-        })
+        )
         .await
     {
         Ok(s) => s,
@@ -838,15 +854,6 @@ async fn m0_04_tripwires_evaluated_on_canonical_flow_impl() {
         }
     };
     assert!(!tw_id.is_empty(), "m0_04: tripwire id must be non-empty");
-
-    let session_id = match client.probe_start(fixture.to_str().unwrap()).await {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("m0_04: probe_start failed: {}", e);
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
 
     tokio::time::sleep(Duration::from_secs(2)).await;
 
