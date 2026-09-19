@@ -2,7 +2,7 @@
   "project_id": "p-3416cfb8288f8964",
   "cycle_id": "rec-c3.3-train-b",
   "title": "REC-C3.3.3 (Tren B): Native probe mcp tool surface — service-port expansion",
-  "summary": "Expand the chronos MCP tool surface so that AI agents can drive the native probe to investigate a target process: capture, query, extract, advance, and step. Tren B does NOT introduce new ports; it reuses existing service-port abstractions (Rule B1). It does NOT cross the chronos_store port with chronos_store DTOs (Rule B2). It does NOT own store->native direction (REC-C3.4).",
+  "summary": "REC-C3.3.3 (Tren B): introduce capture_session (single-shot probe compose) + probe_advance + probe_step MCP tools; route save_session/load_session/list_sessions/delete_session through a new SessionArchive port; route counterexample_* tools through a new CounterexampleRepository port; lift SessionMetadata from chronos-store::storage.rs:22 to chronos-domain (mirrors C3.3.1 SessionId lift). CRITICAL CORRECTION: Tren A (REC-C3.3.2) did NOT introduce capture_session as an MCP tool (zero hits in crates/); the previous apply-checkpoint summary line was incorrect. capture_session is a Tren B deliverable.",
   "status": "OPEN",
   "created_at": "2026-09-19T10:45:00Z",
   "branch": "feat/rec-c3.3-train-b",
@@ -34,7 +34,27 @@
     "out_of_scope": [
       "store->native direction (REC-C3.4)",
       "Production schema changes unrelated to native probe capture"
-    ]
+    ],
+    "resolved_open_questions": {
+      "q_a_capture_session_origin": {
+        "resolution": "Tren B introduces capture_session as a new MCP tool.",
+        "evidence": "sddk-explore envelope §Affected Areas §Approaches §1 + §Ownership boundaries: zero hits for name='capture_session' in crates/",
+        "decided_at": "2026-09-19T11:21:42Z",
+        "decided_by": "operator (auto-run)"
+      },
+      "q_b_advance_step_routing": {
+        "resolution": "Via existing ProbeService (no new NativeProbeServicePort — B1 preserved).",
+        "evidence": "envelope §Approaches §1 + §Recommendation: advance/step as new methods on NativeProbeBackend, exposed via ProbeService::advance/step.",
+        "decided_at": "2026-09-19T11:21:42Z",
+        "decided_by": "operator (auto-run)"
+      },
+      "q_c_native_probe_tools_smoke": {
+        "resolution": "Create chronos-sandbox/tests/native_probe_tools.rs in the first apply slice (Slice B), not deferred.",
+        "evidence": "apply-checkpoint.smoke_subset already references the file; producing in first slice aligns the smoke subset with reality.",
+        "decided_at": "2026-09-19T11:21:42Z",
+        "decided_by": "operator (auto-run)"
+      }
+    }
   },
   "smoke_subset": [
     "e2e_connectivity",
@@ -63,10 +83,29 @@
   "notes": [
     "Cycle opened 2026-09-19T10:45Z after rec-c3-ci-hygiene closed with all five gates GREEN (5bcb2b63 + post-closure sync to 3fdcbf13).",
     "Trunk = main (fa5eb582). Tren A merge to main: c11de1fa (Tren A: capture_session MCP tool finalization per REC-C3.3.2).",
-    "Tren B inherits the McpTestClient harness fix (CIH-B) so bucket C smoke subsets exercise the live chronos-mcp binary."
+    "Tren B inherits the McpTestClient harness fix (CIH-B) so bucket C smoke subsets exercise the live chronos-mcp binary.",
+    "Model substitution recorded per sddk-explore envelope: deepseek-chat unavailable (api.deepseek.com auth failed); MiniMax-M3 used. Acceptance: applying B9 (honesty over coverage) — substitution is visible in the exploration-report envelope.",
+    "exploration-report.md identifies Tren A does NOT have capture_session. My initial apply-checkpoint summary incorrectly attributed it to Tren A. Corrected in this commit per B8/B9.",
+    "Confirmed: B1..B9 hold. Composition root stays at chronos-mcp::composition with bootstrap-scoped (default_session_archive, default_counterexample_repository) + session-scoped (advance/step via ProbeService per-call) split.",
+    "Carry-forward debt C31-DEBT-03 (services->ports inversion not finished) will be partially addressed (SessionArchive + CounterexampleRepository); remaining services->native direction logged as no_action_in_current_cycle per B8 — REC-C3.4 owns it."
   ],
   "ledger_progression": [
-    {"stage": "open", "sha": "fa5eb5827e997c874047c6c2318ad2b5b1c8f323", "at": "2026-09-19T10:45:00Z", "by": "feat/rec-c3.3-train-b rec-c3-ci-hygiene unblock"}
+    {
+      "stage": "open",
+      "sha": "fa5eb5827e997c874047c6c2318ad2b5b1c8f323",
+      "at": "2026-09-19T10:45:00Z",
+      "by": "feat/rec-c3.3-train-b rec-c3-ci-hygiene unblock"
+    },
+    {
+      "stage": "phase.explore.complete",
+      "sha": "fa5eb5827e997c874047c6c2318ad2b5b1c8f323",
+      "at": "2026-09-19T11:21:42Z",
+      "by": "sddk-explore (MiniMax-M3 substituted for deepseek-chat auth failure)",
+      "evidence": "cycle-artifacts/p-3416cfb8288f8964/rec-c3.3-train-b/exploration-report.md (sha256 0aaae8777ff0ad6e90b9c42b9d09eda4d450b2b4a7c5fcfec334bc36b920b9b1)",
+      "context_quality": "C2",
+      "open_questions_resolved": 3,
+      "transition_ready": true
+    }
   ],
   "layer_completion": {
     "spec": false,
@@ -76,7 +115,8 @@
     "verify": false,
     "debt_verify": false,
     "release": false,
-    "archive": false
+    "archive": false,
+    "explore": true
   },
   "ratchet_state": "ready"
 }
