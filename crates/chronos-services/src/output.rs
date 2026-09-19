@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use crate::debug_trace::CallGraph;
 use chronos_domain::query::{ExecutionSummary, StackFrame, StateDiff};
-use chronos_store::SessionMetadata;
+use chronos_domain::SessionMetadata;
 
 // Re-exports so MCP wrappers can refer to property types via
 // `chronos_services::output::ComparisonOp` / `::PropertyValue`

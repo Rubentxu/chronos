@@ -464,7 +464,7 @@ impl ChronosSessionLifecycleService {
                     // fields).
                     if let Ok(guard) = ctx.probe.live_probes.lock() {
                         if let Some(live) = guard.get(sid) {
-                            let stub_meta = chronos_store::SessionMetadata {
+                            let stub_meta = chronos_domain::SessionMetadata {
                                 session_id: sid.clone(),
                                 created_at: 0,
                                 language: live.language.to_string(),
@@ -563,7 +563,7 @@ impl ChronosSessionLifecycleService {
         }
     }
 
-    fn dynamic_capabilities(meta: &chronos_store::SessionMetadata) -> DynamicCapabilities {
+    fn dynamic_capabilities(meta: &chronos_domain::SessionMetadata) -> DynamicCapabilities {
         // Build a HashMap<EventType, u64> from the persisted events if
         // available. Without per-event type counts persisted, we
         // approximate from `event_count` (treats every event as
