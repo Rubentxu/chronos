@@ -194,8 +194,14 @@ fn m1_02_execution_log_persistence_impl() {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // -- Case 6: crash-safe segments (truncate one; verify replay
-    //    skips it and the surviving segment is fully replayed). ----
+    // -- Case 6: strict-replay contract on a corrupted retained segment. ----
+    //   REC-C1.5.2 (commit 3cc511ef) froze the semantics: a reopen may only
+    //   publish an ExecutionLog when EVERY segment of the retained region is
+    //   intact. A corrupt retained segment MUST surface as a typed
+    //   `LogError::ReplayIntegrity` carrying `ReplayIntegrityError::CorruptSegment`,
+    //   with no handle, no partial in-memory backend, and no invented Gap.
+    //   The legacy "skip the first segment, recover from the second" path was
+    //   deliberately removed; this case is the regression guard.
     {
         let dir = tempdir("m1-02-case6");
         let session = SessionId::new("m1-02-uat-6");
@@ -216,21 +222,59 @@ fn m1_02_execution_log_persistence_impl() {
         log.flush().unwrap();
         let segments = log.flushed_segments();
         assert_eq!(segments.len(), 2, "two segments flushed");
-        // Truncate the first segment by 8 bytes to corrupt its
-        // BLAKE3 checksum.
-        let path = segments[0].2.clone();
-        let len = std::fs::metadata(&path).unwrap().len();
+        // Truncate the first segment by 8 bytes so its BLAKE3 checksum no
+        // longer matches the body. The second segment is left intact on
+        // purpose: the test must NOT regress to "skip the first, recover
+        // from the second".
+        let corrupted_path = segments[0].2.clone();
+        let len = std::fs::metadata(&corrupted_path).unwrap().len();
         std::fs::OpenOptions::new()
             .write(true)
-            .open(&path)
+            .open(&corrupted_path)
             .unwrap()
             .set_len(len - 8)
             .unwrap();
         drop(log);
 
-        let log2 = SegmentedExecutionLog::open(session.clone(), cfg).expect("reopen");
-        // First segment is skipped; second segment still recovers.
-        assert_eq!(log2.tail_seq(), Some(EventSeq::new(2)));
+        // Strict replay MUST refuse the reopen with the typed error.
+        let reopen = SegmentedExecutionLog::open(session.clone(), cfg.clone());
+        match reopen {
+            Err(chronos_log::LogError::ReplayIntegrity { session_id, kind }) => {
+                assert_eq!(
+                    session_id, "m1-02-uat-6",
+                    "ReplayIntegrity error must carry the session id"
+                );
+                match *kind {
+                    chronos_log::replay::ReplayIntegrityError::CorruptSegment {
+                        ref path, ..
+                    } => {
+                        assert!(
+                            path.ends_with(corrupted_path.file_name().unwrap()),
+                            "CorruptSegment must point at the truncated segment, got {path:?}"
+                        );
+                    }
+                    other => panic!(
+                        "expected ReplayIntegrityError::CorruptSegment, got variant {other:?}"
+                    ),
+                }
+            }
+            Ok(_) => panic!(
+                "REC-C1.5.2 violated: strict replay MUST refuse a corrupted retained segment, \
+                 but SegmentedExecutionLog::open returned Ok and would have published a partial log"
+            ),
+            Err(other) => {
+                panic!("expected LogError::ReplayIntegrity(CorruptSegment), got {other:?}")
+            }
+        }
+
+        // Atomicity: a rejected open leaves no usable handle behind. A second
+        // open with the SAME dir + cfg must still be refused — there is no
+        // "salvageable tail" to discover.
+        let second = SegmentedExecutionLog::open(session.clone(), cfg);
+        assert!(
+            matches!(second, Err(chronos_log::LogError::ReplayIntegrity { .. })),
+            "second reopen must still be refused; strict replay does not salvage",
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -58,6 +58,28 @@
     "Tren B (REC-C3.3.3) MUST NOT start until this cycle closes with all five gates GREEN: CI / Coverage / Vault Drift / Architecture / Debt Sentinel.",
     "Pre-flight before starting: git fetch origin && git checkout main && git pull --ff-only origin main (head expected: 5b7b7de1).",
     "Tren A close receipt: cycle-artifacts/p-3416cfb8288f8964/rec-c3-3-2-composition-integration-inversion/close-receipt.md.",
-    "Tren A apply-checkpoint (already merged): cycle-artifacts/p-3416cfb8288f8964/rec-c3-3-2-composition-integration-inversion/apply-checkpoint.json."
+    "Tren A apply-checkpoint (already merged): cycle-artifacts/p-3416cfb8288f8964/rec-c3-3-2-composition-integration-inversion/apply-checkpoint.json.",
+    "CIH-A executed 2026-09-19 against HEAD fa5eb582: test m1_02_execution_log_persistence_impl Case 6 reconciled to REC-C1.5.2 strict replay contract. Diff: chronos-sandbox/tests/m1_acceptance.rs +54/-10 (no production change). T0 (fmt + clippy -D warnings) exit 0. T1 m1_acceptance suite 7/7 passed. T1 chronos-log full suite 0 failed across 11 integration files (persistence, m1_gap_segment_accounting, rec_c1_5_3_tail_state, rec_c2_1_tripwire_evidence, v1_v2_coexistence, rec_c1_8_uat_c1_05_four_dim, cursor_sidecar, seg_decompaction_round_trip, etc.). Architecture gates: check_hex_boundary.py OK, check_architecture_contracts.py PASSED. The reconcile asserts `LogError::ReplayIntegrity { kind: ReplayIntegrityError::CorruptSegment { path, .. } }` (typed, not string match), preserves the two-segments-and-corrupted-first scenario, and adds an atomicity guard via a second reopen that must also be refused (no salvage). Strict replay / fail-closed semantics from 3cc511ef are not modified. Pre-existing baseline failures remain for Slice B (tripwire_depth / McpTestClient under tarpaulin) and Slice C (Vault Drift CC#18/19/39)."
+  ],
+  "slices_executed": [
+    {
+      "id": "CIH-A",
+      "title": "m1_02 strict replay reconciliation",
+      "executed_at": "2026-09-19T09:00:00Z",
+      "head_sha_before": "fa5eb5827e997c874047c6c2318ad2b5b1c8f323",
+      "files_changed": ["chronos-sandbox/tests/m1_acceptance.rs"],
+      "production_changed": false,
+      "evidence": {
+        "tier_T0_fmt_exit": 0,
+        "tier_T0_clippy_exit": 0,
+        "tier_T1_m1_acceptance": "7 passed; 0 failed; 0 ignored",
+        "tier_T1_chronos_log": "0 failed across 11 integration files",
+        "tier_arch_hex_boundary": "OK: chronos hexagonal boundary clean",
+        "tier_arch_contracts": "PASSED"
+      },
+      "findings_closed": ["m1_02_lenient_replay_assertion_stale"],
+      "next_slice": "CIH-B (tripwire_depth / McpTestClient under tarpaulin)",
+      "next_slice_owner_gate": "REC-C3 ci hygiene"
+    }
   ]
 }
