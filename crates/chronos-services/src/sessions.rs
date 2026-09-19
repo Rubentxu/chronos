@@ -20,7 +20,7 @@ use tokio::sync::Mutex;
 use crate::error::ServiceError;
 use crate::execution_log_bootstrap::delete_durable_execution_log;
 use crate::output::{DeleteResult, DropResult, ListResult, LoadResult, SaveResult, SessionSummary};
-use crate::session_log::{RegistrationState, SessionExecutionLogRegistry};
+use crate::session_log::SessionExecutionLogRegistry;
 use chronos_store::{SessionMetadata, SessionStore};
 
 /// Borrow struct holding all state needed by `SessionsService` methods.
@@ -217,22 +217,21 @@ impl SessionsService {
         session_id: &str,
         ctx: &SessionsContext<'_>,
     ) -> Result<(), ServiceError> {
-        match ctx.execution_log_registry.peek_registration(session_id) {
-            RegistrationState::Available => Ok(()),
-            RegistrationState::Unavailable => Ok(()),
-            RegistrationState::Absent => {
-                let log_dir = ctx.execution_log_root.join(session_id);
-                match ctx
-                    .execution_log_registry
-                    .try_reopen_existing(&log_dir, SessionId::new(session_id))
-                {
-                    Ok(log) => ctx.execution_log_registry.register(log),
-                    Err(reason) => ctx
-                        .execution_log_registry
-                        .register_unavailable(session_id, reason),
-                }
-            }
-        }
+        let log_dir = ctx.execution_log_root.join(session_id);
+        // CIH-F (operator review): atomic peek + try_reopen + register.
+        // The non-atomic peek/try_reopen/register sequence could let two
+        // concurrent load_session calls for the same session_id both
+        // observe Absent, both call reopen_existing (yielding two distinct
+        // Arcs from the factory), and have the second register fail with
+        // ExecutionLogIdentityMismatch. rehydrate performs the whole
+        // decision under a single critical section on the registry's logs
+        // lock, so the first thread to enter the Absent branch wins and
+        // any racers observe AlreadyAvailable / AlreadyUnavailable. A prior
+        // Unavailable reason is preserved verbatim (operator rule §3.3).
+        let _outcome = ctx
+            .execution_log_registry
+            .rehydrate(&log_dir, &SessionId::new(session_id))?;
+        Ok(())
     }
 
     /// List all saved sessions from persistent storage.

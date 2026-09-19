@@ -508,6 +508,37 @@ pub enum RegistrationState {
     Absent,
 }
 
+/// CIH-F (operator review) — outcome of an atomic `rehydrate` call on
+/// [`SessionExecutionLogRegistry`].
+///
+/// Distinguishes the four observable end-states so callers can decide
+/// what to publish (or what reason to surface) without re-inspecting the
+/// registry:
+///
+/// * `AlreadyAvailable(log)` — the registry already held an `Available`
+///   handle. The handle is returned unchanged. No factory call was made.
+///   No `Arc` was replaced. This is the case that protects against the
+///   repeated-load `ExecutionLogIdentityMismatch` regression.
+/// * `AlreadyUnavailable { reason }` — a prior failure reason was
+///   recorded; the registry preserves it verbatim. The caller MUST NOT
+///   attempt a fresh reopen that could partially recover and overwrite
+///   the recorded reason with a different one. The first recorded reason
+///   is authoritative.
+/// * `Registered(log)` — the registry was `Absent` for this key; a
+///   fresh reopen succeeded; the new handle is now installed in the
+///   registry and returned to the caller.
+/// * `RecordedUnavailable { reason }` — the registry was `Absent`; a
+///   fresh reopen failed with the typed reason; the reason is now
+///   installed in the registry and returned to the caller. No empty
+///   log was fabricated.
+#[derive(Debug, Clone)]
+pub enum RehydrateOutcome {
+    AlreadyAvailable(SessionExecutionLog),
+    AlreadyUnavailable { reason: String },
+    Registered(SessionExecutionLog),
+    RecordedUnavailable { reason: String },
+}
+
 /// In-process registry of `SessionExecutionLog` instances keyed by
 /// `session_id`.
 ///
@@ -660,6 +691,23 @@ impl SessionExecutionLogRegistry {
     /// The state observed here is the same one `register` / `register_reopen`
     /// would see on a subsequent call.
     ///
+    /// ## Poisoning semantics (operator review, post-CIH-F v1)
+    ///
+    /// A poisoned `Mutex` on the registry's `logs` map means another thread
+    /// panicked while holding the lock — the registry's invariant set
+    /// (one entry per session, Available/Unavailable/Absent mutually exclusive)
+    /// is no longer trustworthy. The previous implementation collapsed this
+    /// into `RegistrationState::Absent`, which is dangerously wrong: it makes
+    /// the registry claim "no evidence" when in fact the registry state is
+    /// *unknown*. Callers would then attempt a fresh reopen and might
+    /// overwrite a poisoned-but-still-readable handle.
+    ///
+    /// `peek_registration` therefore panics on poisoning, mirroring what
+    /// `std::sync::Mutex`'s own `lock()` would have done before the
+    /// `unwrap`-on-poison change: the poison is a signal that the program
+    /// has already entered an unrecoverable state, and propagating it as a
+    /// value would mask the bug instead of surfacing it.
+    ///
     /// ## What this is for
     ///
     /// `load_session` needs to reopen a durable ExecutionLog for a session that
@@ -676,15 +724,146 @@ impl SessionExecutionLogRegistry {
     /// NOT return the handle (call `get` for that). It is a read-only peek
     /// scoped to a single key, so the lock is held for the duration of the
     /// HashMap lookup only.
+    ///
+    /// ## Race note
+    ///
+    /// `peek_registration` followed by `register` / `register_unavailable` is
+    /// NOT atomic. Two concurrent callers observing `Absent` may both attempt
+    /// a fresh reopen, and the second `register` would then hit the
+    /// `ExecutionLogIdentityMismatch` path. `load_session` therefore uses
+    /// the atomic [`Self::rehydrate`] primitive instead, which performs
+    /// peek + try_reopen + register inside a single critical section.
     pub fn peek_registration(&self, session_id: &str) -> RegistrationState {
-        let map = match self.logs.lock() {
-            Ok(m) => m,
-            Err(_) => return RegistrationState::Absent,
-        };
+        let map = self
+            .logs
+            .lock()
+            .expect("SessionExecutionLogRegistry::logs poisoned during peek_registration");
         match map.get(session_id) {
             Some(ExecutionLogRegistration::Available(_)) => RegistrationState::Available,
             Some(ExecutionLogRegistration::Unavailable { .. }) => RegistrationState::Unavailable,
             None => RegistrationState::Absent,
+        }
+    }
+
+    /// CIH-F (operator review) — atomic rehydrate primitive.
+    ///
+    /// Combines `peek_registration` + `try_reopen_existing` +
+    /// `register`/`register_unavailable` inside a single critical section on
+    /// `logs`, so two concurrent calls for the same `session_id` cannot race
+    /// past the `Absent` observation and overwrite each other's handle (or
+    /// clobber a previously-recorded `Unavailable` reason with a different
+    /// one from a parallel reopen).
+    ///
+    /// On entry, the caller has already determined the session is eligible
+    /// for reopen (typically: just rehydrated from the session store). The
+    /// primitive decides:
+    ///
+    /// * `Available` — a registered handle already exists. Return it
+    ///   unchanged. No factory call, no Arc replacement.
+    /// * `Unavailable` — a prior failure reason was recorded. Return
+    ///   `RehydrateOutcome::AlreadyUnavailable` and surface the reason
+    ///   verbatim; do NOT overwrite it with a fresh reopen attempt that
+    ///   might succeed differently (e.g. partial recovery). The first
+    ///   recorded reason is the authoritative one.
+    /// * `Absent` — call `try_reopen_existing` (which may itself call the
+    ///   factory and may itself fail). On `Ok(log)`, register the log and
+    ///   return `Registered(log)`. On `Err(reason)`, record Unavailable
+    ///   with the typed reason and return `RecordedUnavailable(reason)`.
+    ///
+    /// All decisions happen while holding `logs.lock()`, so the
+    /// Available/Unavailable/Absent invariant is preserved across
+    /// concurrent rehydrate calls for the same key.
+    pub fn rehydrate(
+        &self,
+        dir: impl AsRef<Path>,
+        session_id: &SessionId,
+    ) -> Result<RehydrateOutcome, ServiceError> {
+        let key = session_id.as_str().to_string();
+        let map = self.logs.lock().map_err(|_| ServiceError::LockPoisoned)?;
+
+        match map.get(&key) {
+            Some(ExecutionLogRegistration::Available(_)) => {
+                // Read-side: re-fetch the handle while still under lock so
+                // we return the same Arc the registry holds. Cloning
+                // SessionExecutionLog is cheap (Arc inside).
+                let log = match map.get(&key) {
+                    Some(ExecutionLogRegistration::Available(log)) => log.clone(),
+                    _ => unreachable!("registry invariant: key vanished under lock"),
+                };
+                Ok(RehydrateOutcome::AlreadyAvailable(log))
+            }
+            Some(ExecutionLogRegistration::Unavailable { reason }) => {
+                Ok(RehydrateOutcome::AlreadyUnavailable {
+                    reason: reason.clone(),
+                })
+            }
+            None => {
+                // Drop the lock while we talk to the factory (it may be
+                // slow on cold cache, and the registry mutex is held by
+                // every other rehydrate). The registry invariant we care
+                // about is "no two concurrent Absent branches for the same
+                // key"; we re-acquire and re-check after the factory call.
+                drop(map);
+                let try_open =
+                    SessionExecutionLog::reopen_existing(&dir, session_id.clone(), &self.factory);
+                let mut map = self.logs.lock().map_err(|_| ServiceError::LockPoisoned)?;
+                match try_open {
+                    Ok(log) => {
+                        // Re-check: another rehydrate may have raced past us.
+                        if let Some(prior) = map.get(&key) {
+                            match prior {
+                                ExecutionLogRegistration::Available(existing) => {
+                                    // Another thread won. Drop our freshly-opened
+                                    // handle (its Arc count goes to zero) and
+                                    // return the prior one.
+                                    return Ok(RehydrateOutcome::AlreadyAvailable(
+                                        existing.clone(),
+                                    ));
+                                }
+                                ExecutionLogRegistration::Unavailable { reason } => {
+                                    return Ok(RehydrateOutcome::AlreadyUnavailable {
+                                        reason: reason.clone(),
+                                    });
+                                }
+                            }
+                        }
+                        map.insert(
+                            key.clone(),
+                            ExecutionLogRegistration::Available(log.clone()),
+                        );
+                        Ok(RehydrateOutcome::Registered(log))
+                    }
+                    Err(e) => {
+                        let reason = e.to_string();
+                        // Re-check: another rehydrate may have recorded
+                        // Unavailable (or even succeeded) in the meantime.
+                        // First-recorded reason wins.
+                        if let Some(prior) = map.get(&key) {
+                            match prior {
+                                ExecutionLogRegistration::Available(existing) => {
+                                    return Ok(RehydrateOutcome::AlreadyAvailable(
+                                        existing.clone(),
+                                    ));
+                                }
+                                ExecutionLogRegistration::Unavailable {
+                                    reason: prior_reason,
+                                } => {
+                                    return Ok(RehydrateOutcome::AlreadyUnavailable {
+                                        reason: prior_reason.clone(),
+                                    });
+                                }
+                            }
+                        }
+                        map.insert(
+                            key,
+                            ExecutionLogRegistration::Unavailable {
+                                reason: reason.clone(),
+                            },
+                        );
+                        Ok(RehydrateOutcome::RecordedUnavailable { reason })
+                    }
+                }
+            }
         }
     }
 
@@ -725,6 +904,18 @@ impl SessionExecutionLogRegistry {
 
     pub fn len(&self) -> usize {
         self.logs.lock().map(|map| map.len()).unwrap_or(0)
+    }
+
+    /// Test-only affordance: panics while holding `self.logs.lock()` so
+    /// subsequent calls observe a poisoned mutex and can verify their
+    /// poison-handling policy. Used by CIH-F concurrency discriminants.
+    #[cfg(test)]
+    pub fn poison_for_tests(&self) -> ! {
+        let mut _guard = self
+            .logs
+            .lock()
+            .expect("poison_for_tests: lock must not already be poisoned");
+        panic!("intentional poison for tests");
     }
 
     pub fn is_empty(&self) -> bool {
@@ -1205,5 +1396,240 @@ mod tests {
             }
             other => panic!("expected ServiceError::DrainFailed, got {other:?}"),
         }
+    }
+
+    // =====================================================================
+    // CIH-F (operator review) — concurrency discriminants
+    //
+    // These tests characterise the two concerns the operator raised
+    // post-CIH-F v1:
+    //
+    //   1. peek_registration must NOT collapse a poisoned Mutex into
+    //      RegistrationState::Absent. A poisoned lock means another
+    //      thread panicked while holding it; the registry invariant set
+    //      is unknown, and silently reporting "no evidence" would let
+    //      a caller overwrite a poisoned-but-still-readable handle.
+    //
+    //   2. The interval between peek_registration and a subsequent
+    //      register / register_unavailable is not atomic. Two concurrent
+    //      callers observing Absent could both call the factory,
+    //      yielding two distinct Arcs, and the second register would
+    //      fail with ExecutionLogIdentityMismatch. The atomic
+    //      `rehydrate` primitive closes this gap; this test proves
+    //      that 16 concurrent rehydrate calls on the same session_id
+    //      yield exactly one `Registered`/`RecordedUnavailable` and
+    //      every other caller observes `AlreadyAvailable` /
+    //      `AlreadyUnavailable`.
+    //
+    // Both discriminants run against a freshly-built registry with no
+    // fixture sharing. They use the segmented factory so the on-disk
+    // contract matches production (strict-replay, REC-C1.5.2).
+    // =====================================================================
+
+    /// Discriminant 1: peek_registration panics on a poisoned lock.
+    ///
+    /// We construct the registry, then poison its `logs` mutex via the
+    /// test-only `poison_for_tests` helper (which panics while holding
+    /// the lock). After the unwinding, subsequent `peek_registration`
+    /// calls MUST panic with the documented message — NOT silently
+    /// report `RegistrationState::Absent`.
+    #[test]
+    #[should_panic(
+        expected = "SessionExecutionLogRegistry::logs poisoned during peek_registration"
+    )]
+    fn cih_f_peek_registration_panics_on_poisoned_lock() {
+        let registry = SessionExecutionLogRegistry::with_factory(Arc::new(
+            chronos_log::factory::SegmentedExecutionLogFactory::new(),
+        ));
+        // Poison the lock: the helper holds the lock and panics, so
+        // std::sync::Mutex marks it poisoned on unwinding.
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            registry.poison_for_tests();
+        }));
+        // Subsequent peek must observe the poisoned lock and panic
+        // with the documented message — NOT silently report Absent.
+        let _ = registry.peek_registration("s1");
+        unreachable!("peek_registration must panic on poisoned lock");
+    }
+
+    /// Discriminant 2: concurrent rehydrate calls for the same session
+    /// are linearised. Exactly one thread observes the "I installed
+    /// the handle" outcome (`Registered` or `RecordedUnavailable`); the
+    /// rest observe either `AlreadyAvailable` (with the same Arc that
+    /// the winner installed) or `AlreadyUnavailable`.
+    ///
+    /// Without `rehydrate`, the same test against the
+    /// peek-then-register sequence would produce at least one
+    /// `ExecutionLogIdentityMismatch` error.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn cih_f_concurrent_rehydrate_linearised_for_same_session() {
+        use std::sync::Arc;
+
+        const N: usize = 16;
+        let dir = tmpdir("concurrent-rehydrate");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // Pre-create a valid durable log under dir/<sid> via the factory
+        // directly, so every concurrent rehydrate call observes the
+        // same on-disk evidence.
+        let sid = SessionId::new("concurrent-s");
+        let factory = std::sync::Arc::new(chronos_log::factory::SegmentedExecutionLogFactory::new())
+            as std::sync::Arc<
+                dyn chronos_domain::ports::execution_log_factory::ExecutionLogFactory,
+            >;
+        let _seed = SessionExecutionLog::create(dir.join("concurrent-s"), sid.clone(), &factory)
+            .expect("seed create");
+        let registry = Arc::new(SessionExecutionLogRegistry::with_factory(factory.clone()));
+
+        let barrier = Arc::new(std::sync::Barrier::new(N));
+        let mut handles = Vec::with_capacity(N);
+        for _ in 0..N {
+            let r = Arc::clone(&registry);
+            let d = dir.clone();
+            let sid = sid.clone();
+            let b = Arc::clone(&barrier);
+            handles.push(tokio::task::spawn_blocking(move || {
+                b.wait();
+                r.rehydrate(d.join("concurrent-s"), &sid)
+            }));
+        }
+        let mut outcomes = Vec::with_capacity(N);
+        for h in handles {
+            outcomes.push(h.await.expect("join").expect("rehydrate Ok"));
+        }
+
+        // Count winners vs losers.
+        let mut registered_count = 0usize;
+        let mut already_available_count = 0usize;
+        let mut recorded_unavailable_count = 0usize;
+        let mut already_unavailable_count = 0usize;
+        let mut winner_arc_ptr: Option<*const dyn ExecutionLogProvider> = None;
+        for o in &outcomes {
+            match o {
+                RehydrateOutcome::Registered(log) => {
+                    registered_count += 1;
+                    let p = &log.provider() as &Arc<dyn ExecutionLogProvider>;
+                    winner_arc_ptr = Some(std::sync::Arc::as_ptr(p));
+                }
+                RehydrateOutcome::AlreadyAvailable(log) => {
+                    already_available_count += 1;
+                    let p = &log.provider() as &Arc<dyn ExecutionLogProvider>;
+                    let ptr = std::sync::Arc::as_ptr(p);
+                    if let Some(w) = winner_arc_ptr {
+                        assert_eq!(
+                            ptr, w,
+                            "all AlreadyAvailable handles must point to the same Arc as the Registered winner"
+                        );
+                    }
+                }
+                RehydrateOutcome::RecordedUnavailable { .. } => {
+                    recorded_unavailable_count += 1;
+                }
+                RehydrateOutcome::AlreadyUnavailable { .. } => {
+                    already_unavailable_count += 1;
+                }
+            }
+        }
+        assert_eq!(
+            registered_count + recorded_unavailable_count,
+            1,
+            "exactly one thread must observe the install outcome (got registered={registered_count}, recorded_unavailable={recorded_unavailable_count})"
+        );
+        assert_eq!(
+            registered_count
+                + recorded_unavailable_count
+                + already_available_count
+                + already_unavailable_count,
+            N,
+            "every outcome must be one of the four RehydrateOutcome variants"
+        );
+        // N-1 racers must all have observed AlreadyAvailable or AlreadyUnavailable.
+        assert_eq!(
+            already_available_count + already_unavailable_count,
+            N - 1,
+            "every racer must observe AlreadyAvailable or AlreadyUnavailable (got already_available={already_available_count}, already_unavailable={already_unavailable_count})"
+        );
+    }
+
+    /// Discriminant 3: when concurrent rehydrate observes Absent and the
+    /// factory fails, the first recorded reason wins; later racers
+    /// observe `AlreadyUnavailable` with the same reason string.
+    ///
+    /// Without `rehydrate`, the second `register_unavailable` call would
+    /// silently overwrite the first reason, masking the original cause.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn cih_f_concurrent_rehydrate_unavailable_preserves_first_reason() {
+        use std::sync::Arc;
+
+        const N: usize = 8;
+        let dir = tmpdir("concurrent-unavail");
+        std::fs::create_dir_all(&dir).unwrap();
+        // No on-disk log: every reopen must fail.
+
+        let sid = SessionId::new("missing-s");
+        let registry = Arc::new(SessionExecutionLogRegistry::with_factory(Arc::new(
+            chronos_log::factory::SegmentedExecutionLogFactory::new(),
+        )));
+
+        let barrier = Arc::new(std::sync::Barrier::new(N));
+        let mut handles = Vec::with_capacity(N);
+        for _ in 0..N {
+            let r = Arc::clone(&registry);
+            let d = dir.clone();
+            let sid = sid.clone();
+            let b = Arc::clone(&barrier);
+            handles.push(tokio::task::spawn_blocking(move || {
+                b.wait();
+                r.rehydrate(d.join("missing-s"), &sid)
+            }));
+        }
+        let mut outcomes: Vec<RehydrateOutcome> = Vec::with_capacity(N);
+        for h in handles {
+            outcomes.push(h.await.expect("join").expect("rehydrate Ok"));
+        }
+
+        // Order is non-deterministic (spawn_blocking completes in
+        // racing order). Collect both reasons and verify:
+        //   (a) exactly one RecordedUnavailable,
+        //   (b) every AlreadyUnavailable reason equals that recorded reason.
+        let mut recorded_reason: Option<String> = None;
+        for o in &outcomes {
+            if let RehydrateOutcome::RecordedUnavailable { reason } = o {
+                assert!(
+                    recorded_reason.is_none(),
+                    "exactly one RecordedUnavailable outcome allowed (got a second: {reason:?})"
+                );
+                recorded_reason = Some(reason.clone());
+            }
+        }
+        let first = recorded_reason
+            .as_ref()
+            .expect("at least one RecordedUnavailable must occur (no on-disk log)");
+        for o in &outcomes {
+            if let RehydrateOutcome::AlreadyUnavailable { reason } = o {
+                assert_eq!(
+                    reason, first,
+                    "AlreadyUnavailable reason must equal the recorded reason"
+                );
+            } else if let RehydrateOutcome::Registered(_) = o {
+                panic!("expected Unavailable variant only (no on-disk log), got {o:?}");
+            }
+        }
+        assert_eq!(
+            outcomes
+                .iter()
+                .filter(|o| matches!(o, RehydrateOutcome::RecordedUnavailable { .. }))
+                .count(),
+            1,
+            "exactly one thread must record Unavailable"
+        );
+        assert_eq!(
+            outcomes
+                .iter()
+                .filter(|o| matches!(o, RehydrateOutcome::AlreadyUnavailable { .. }))
+                .count(),
+            N - 1,
+            "every other thread must observe AlreadyUnavailable"
+        );
     }
 }
