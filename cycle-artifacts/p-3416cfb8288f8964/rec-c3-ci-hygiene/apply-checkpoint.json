@@ -242,6 +242,6 @@
   "remote_tag": null,
   "remote_tag_peel": null,
   "peel_match": false,
-  "main_sha": null,
-  "_remote_tag_note": "Cierre CIH-C scope_decisions declares \"No tag. This is a hygiene cycle, not a behavior-bumping cycle.\" Verified 2026-09-19 via git ls-remote --tags origin refs/tags/rec-c3-ci-hygiene-closure: tag does NOT exist in origin. Convention for cycles without remote tag: remote_tag=null, remote_tag_peel=null, peel_match=false. The historical remote_tag field declared at 3fdcbf13 was an error; corrected by post-closure maintenance commit. Validator CC#22/CC#23 accept these null fields and only require the markdown rows be present."
+  "main_sha": "2e761d4f76dc4c7b2a78972753770ac2aedf0357",
+  "_remote_tag_note": "Cierre CIH-C scope_decisions declares \"No tag. This is a hygiene cycle, not a behavior-bumping cycle.\" Verified 2026-09-19 via git ls-remote --tags origin refs/tags/rec-c3-ci-hygiene-closure: tag does NOT exist in origin. Convention for cycles without remote tag: remote_tag=null, remote_tag_peel=null, peel_match=false. The historical remote_tag field declared at 3fdcbf13 was an error; corrected by post-closure maintenance commit. Validator CC#22/CC#23 accept these null fields and only require the markdown rows be present.\n\nmain_sha (per CC#12, m9-19 convention): post-cycle main HEAD = head_sha = 2e761d4f76dc4c7b2a78972753770ac2aedf0357. This is the historical closure anchor of the cycle, not an anticipatory assignment. Fast-forward integration is still pending as of 2026-09-19; once integrated, the integration commit becomes the new HEAD but the cycle head_sha anchor remains 2e761d4f."
 }
