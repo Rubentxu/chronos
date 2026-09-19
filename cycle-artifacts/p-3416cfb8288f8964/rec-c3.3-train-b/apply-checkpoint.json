@@ -1,0 +1,82 @@
+{
+  "project_id": "p-3416cfb8288f8964",
+  "cycle_id": "rec-c3.3-train-b",
+  "title": "REC-C3.3.3 (Tren B): Native probe mcp tool surface — service-port expansion",
+  "summary": "Expand the chronos MCP tool surface so that AI agents can drive the native probe to investigate a target process: capture, query, extract, advance, and step. Tren B does NOT introduce new ports; it reuses existing service-port abstractions (Rule B1). It does NOT cross the chronos_store port with chronos_store DTOs (Rule B2). It does NOT own store->native direction (REC-C3.4).",
+  "status": "OPEN",
+  "created_at": "2026-09-19T10:45:00Z",
+  "branch": "feat/rec-c3.3-train-b",
+  "base_sha": "fa5eb5827e997c874047c6c2318ad2b5b1c8f323",
+  "head_sha": "fa5eb5827e997c874047c6c2318ad2b5b1c8f323",
+  "merge_sha": null,
+  "path": "A-min",
+  "route": "A-min",
+  "milestone": "REC-C3.3.3",
+  "sub_cycle": null,
+  "scope_decisions": {
+    "constraints": {
+      "B1_no_native_probe_service_port": "Tren B reuses existing service-port abstractions; no NativeProbeServicePort introduced.",
+      "B2_no_dyn_any_store_dto_across_port": "No dyn Any / downcast / chronos_store DTO crossing the port.",
+      "B2_session_lifecycle_only": "SessionRepository stays lifecycle/registry (no inflation); Tren B introduces SessionArchive + CounterexampleRepository + moves SessionMetadata to chronos-domain.",
+      "B3_store_to_native_is_rec_c3_4": "store->native direction belongs to REC-C3.4, NOT Tren B.",
+      "B4_composition_root_chronos_mcp": "Composition root in chronos-mcp::composition; bootstrap-scoped vs session-scoped factory distinction is mandatory.",
+      "B5_no_ignore_no_skip": "No #[ignore] and no --skip ever. Pre-existing failures get owner + cycle, not waivers.",
+      "B6_strict_replay_untouched": "REC-C1.5.2 strict replay semantics stay untouched; Cycle A reconciled the test, not the production code.",
+      "B7_no_squash_no_rebase": "No squash, no rebase, no merge commit; preserve full SHA chain.",
+      "B8_no_permanent_waivers": "Findings are no_action_in_current_cycle, not permanent waivers.",
+      "B9_honesty_over_coverage": "Comments must match what code actually verifies."
+    },
+    "owned_by_this_cycle": [
+      "expansion of native probe tool surface at chronos-mcp level",
+      "Reuse existing service-port abstractions for probe semantics",
+      "SessionArchive + CounterexampleRepository + SessionMetadata to chronos-domain (lifecycle split per B2)"
+    ],
+    "out_of_scope": [
+      "store->native direction (REC-C3.4)",
+      "Production schema changes unrelated to native probe capture"
+    ]
+  },
+  "smoke_subset": [
+    "e2e_connectivity",
+    "analytics_tools",
+    "program_scenarios",
+    "native_probe_tools"
+  ],
+  "tier_results": {
+    "T0": null,
+    "T1": null,
+    "T2": null,
+    "T3": null,
+    "T4_smoke": null,
+    "T5": null,
+    "arch_hex_boundary": null,
+    "arch_contracts": null,
+    "vault_drift_check_vault_drift_sh_exit": null
+  },
+  "findings_introduced": {
+    "no_action": []
+  },
+  "findings_closed": [],
+  "slices_executed": [],
+  "commits_since_base": [],
+  "carry_forward_debt": [],
+  "notes": [
+    "Cycle opened 2026-09-19T10:45Z after rec-c3-ci-hygiene closed with all five gates GREEN (5bcb2b63 + post-closure sync to 3fdcbf13).",
+    "Trunk = main (fa5eb582). Tren A merge to main: c11de1fa (Tren A: capture_session MCP tool finalization per REC-C3.3.2).",
+    "Tren B inherits the McpTestClient harness fix (CIH-B) so bucket C smoke subsets exercise the live chronos-mcp binary."
+  ],
+  "ledger_progression": [
+    {"stage": "open", "sha": "fa5eb5827e997c874047c6c2318ad2b5b1c8f323", "at": "2026-09-19T10:45:00Z", "by": "feat/rec-c3.3-train-b rec-c3-ci-hygiene unblock"}
+  ],
+  "layer_completion": {
+    "spec": false,
+    "design": false,
+    "tasks": false,
+    "apply": false,
+    "verify": false,
+    "debt_verify": false,
+    "release": false,
+    "archive": false
+  },
+  "ratchet_state": "ready"
+}
