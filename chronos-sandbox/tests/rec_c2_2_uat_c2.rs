@@ -96,13 +96,36 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
     // tarpaulin instrumentation on CI runners the 2s sleep is not
     // always enough, so we wait until the log has at least one event
     // (5s hard deadline = 2x the busyloop fixture's claimed runtime).
-    let (first_event_after_ms, _) =
+    let (first_event_after_ms, first_event_count) =
         wait_for_first_event(&mut client, &session, UAT_C2_01_FIRST_EVENT_DEADLINE).await;
     eprintln!(
-        "CIH-G uat_c2_01 first_event_after_ms={} deadline_ms={}",
+        "CIH-G uat_c2_01 first_event_after_ms={} deadline_ms={} count={}",
         first_event_after_ms.as_millis(),
-        UAT_C2_01_FIRST_EVENT_DEADLINE.as_millis()
+        UAT_C2_01_FIRST_EVENT_DEADLINE.as_millis(),
+        first_event_count
     );
+    if first_event_count == 0 {
+        // The fixture's ExecutionLog did not produce any records within the
+        // deadline. The contract under test ("an examined page must advance
+        // the cursor") is vacuous against an empty log, and continuing would
+        // only produce a `cursor stays at seq=0` no-op that fails later. Bail
+        // here with an actionable diagnostic instead.
+        let wire = client
+            .probe_drain_wire(&session, None)
+            .await
+            .expect("diagnostic re-read");
+        panic!(
+            "UAT-C2-01: the fixture's ExecutionLog produced no records within \
+             {}ms (first_event_after_ms={}). The probe did not capture anything \
+             before the deadline; either the fixture's busyloop did not start, \
+             the probe subscription was not wired to the same session, or the \
+             tarpaulin-instrumented busyloop is so slow that the first event \
+             arrives after the 5s window. wire={:?}",
+            UAT_C2_01_FIRST_EVENT_DEADLINE.as_millis(),
+            first_event_after_ms.as_millis(),
+            wire
+        );
+    }
 
     // CIH-G-fix-2: do the first drain with a SMALL limit (1) so it cannot
     // consume the entire busyloop output in one pass. The contract under
@@ -412,8 +435,14 @@ async fn uat_c2_03_durable_evidence_exceeds_the_ring() {
 // CIH-G — discriminant + bounded-poll wait for `uat_c2_01`.
 // =====================================================================
 
-const UAT_C2_01_FIRST_EVENT_DEADLINE: Duration = Duration::from_secs(5);
-const UAT_C2_01_LOG_ADVANCE_DEADLINE: Duration = Duration::from_secs(5);
+// 10s hard deadline for the first-event wait. The fixture's test_busyloop
+// claims ~3s wall clock under native execution; under tarpaulin coverage
+// instrumentation on stressed CI runners the fixture can take 6-8x longer
+// to produce its first event (observed 5078ms on run 35472264098), so 5s
+// is not enough margin. 10s gives us 2x the worst observed CI time and is
+// still a hard cap (no blind sleep).
+const UAT_C2_01_FIRST_EVENT_DEADLINE: Duration = Duration::from_secs(10);
+const UAT_C2_01_LOG_ADVANCE_DEADLINE: Duration = Duration::from_secs(10);
 
 async fn wait_for_first_event(
     client: &mut McpTestClient,
