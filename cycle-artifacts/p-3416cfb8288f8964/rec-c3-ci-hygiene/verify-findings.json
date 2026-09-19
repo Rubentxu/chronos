@@ -9,10 +9,10 @@
   "cycle_id": "rec-c3-ci-hygiene",
   "verdict": "PARTIAL",
   "all_passed": false,
-  "verdict_explanation": "At the cycle's historical anchor (head_sha=2e761d4f76dc...) all five gates were GREEN LOCALLY — PASS-equivalent at that anchor. At the post-CIH-D HEAD (8fdc3ef40dc...) remote GH Actions shows 3/5 GREEN and 2/5 with PRE-EXISTING failures (CI: chronos-sandbox::multi_session::test_drop_session_not_in_load_list, owner=REC-C1.5; Coverage: chronos-sandbox::tripwire_tools (4 tests), owner=REC-C3.3.x). The CIH-D translator fix is required for the r2_stale_cursor regression to pass; the remaining two failures are NOT introduced by CIH-D and reproduce identically on origin/main (verified in side worktree at fa5eb582). verdict=PARTIAL reflects the cycle's closure-grade at the most recent HEAD that has been remotely verified. _legacy_verdict=passed is preserved for the historical anchor (2e761d4f76dc...).",
+  "verdict_explanation": "At the cycle's historical anchor (head_sha=2e761d4f76dc...) all five gates were GREEN LOCALLY — PASS-equivalent at that anchor. At the post-CIH-E HEAD (379ba34d5eef76d2510ca2d7f0b7c2d7d3b1df2b) remote GH Actions is expected to flip Coverage back to GREEN (CIH-E delivered the explicit-scope plumbing that the tripwire_tools smoke tests required); the only remaining remote failure is CI: chronos-sandbox::multi_session::test_drop_session_not_in_load_list, owned by REC-C1.5 (CIH-F). All other gates remain GREEN. CIH-E is verified locally at 379ba34d with T0=0/0, T1=1233/1233 (+108 chronos-native serial), T4=tripwire_tools 7/7, tripwire_depth 6/6, probe_drain_canonical 4/4, rec_c2_2_uat_c2 3/3. _legacy_verdict='passed' is preserved for the historical anchor (2e761d4f76dc...).",
   "lens_summary": {
     "drift": "0 (Vault Drift reconciled to exit 0)",
-    "findings_count": 4,
+    "findings_count": 5,
     "tiers_run": [
       "T0",
       "T1",
@@ -38,8 +38,8 @@
     ],
     "vault_drift_script_exit": 0,
     "five_gates": {
-      "CI": "GREEN (cargo test --workspace --lib --tests --exclude chronos-sandbox --exclude chronos-e2e: 62 suites, 0 failed)",
-      "Coverage": "GREEN (smoke subset e2e_connectivity + analytics_tools + session_persistence: 9/9 passed; m1_07/m1_08 no longer silently eprintln)",
+      "CI": "GREEN locally at HEAD 379ba34d (cargo test --workspace --lib --tests --exclude chronos-sandbox --exclude chronos-e2e: 62 suites, 0 failed). Remote at HEAD 8fdc3ef40dc was RED on multi_session::test_drop_session_not_in_load_list (owner REC-C1.5; pre-existing); remote at HEAD 379ba34d expected same state until CIH-F ships.",
+      "Coverage": "GREEN locally at HEAD 379ba34d (smoke subset tripwire_tools 7/7, tripwire_depth 6/6, probe_drain_canonical 4/4, rec_c2_2_uat_c2 3/3; m1_07/m1_08 no longer silently eprintln). Remote expected GREEN once 379ba34d reaches origin/main (CIH-E flipped the tripwire_tools 4-test surface).",
       "Vault_Drift": "GREEN (bash scripts/check_vault_drift.sh: exit 0)",
       "Architecture": "GREEN (python3 scripts/check_architecture_contracts.py: PASSED; python3 scripts/check_hex_boundary.py: OK)",
       "Debt_Sentinel": "GREEN (manifest empty + 0 unclassified regressions across 62 T3 suites)"
@@ -53,9 +53,11 @@
   "verifier_first_closure": "rec-c3-ci-hygiene CIH-C final closure",
   "verified_at_cih_d_reopen": "2026-09-19T16:14:00Z",
   "verifier_cih_d_reopen": "rec-c3-ci-hygiene CIH-D reopen — GH Actions observation on HEAD 8fdc3ef40dc307d861e16e9bdf2e178431dacddc",
-  "verified_at": "2026-09-19T16:14:00Z",
-  "verifier": "rec-c3-ci-hygiene CIH-D reopen — GH Actions observation on HEAD 8fdc3ef40dc307d861e16e9bdf2e178431dacddc (originally closed 2026-09-19T09:35:00Z at anchor 2e761d4f76dc... when all five gates were GREEN LOCALLY)",
-  "_restoration_note": "verdict was 'PASS' at the historical anchor and is now 'PARTIAL_PASS_3_OF_5_REMOTE' at the post-CIH-D HEAD because remote GH Actions shows pre-existing baseline failures (CI: test_drop_session_not_in_load_list, owner REC-C1.5; Coverage: tripwire_tools 4 tests, owner REC-C3.3.x). The two failures reproduce identically on origin/main and on the 6441116d baseline. CIH-D does NOT introduce regressions. _legacy_verdict is preserved.",
+  "verified_at_cih_e": "2026-09-19T17:29:00Z",
+  "verifier_cih_e": "rec-c3-ci-hygiene CIH-E local verification at HEAD 379ba34d5eef76d2510ca2d7f0b7c2d7d3b1df2b",
+  "verified_at": "2026-09-19T17:29:00Z",
+  "verifier": "rec-c3-ci-hygiene CIH-E local verification at HEAD 379ba34d5eef76d2510ca2d7f0b7c2d7d3b1df2b (originally closed 2026-09-19T09:35:00Z at anchor 2e761d4f76dc... when all five gates were GREEN LOCALLY)",
+  "_restoration_note": "verdict was 'PASS' at the historical anchor and is now 'PARTIAL' at the post-CIH-D HEAD because remote GH Actions showed pre-existing baseline failures (CI: test_drop_session_not_in_load_list, owner REC-C1.5; Coverage: tripwire_tools 4 tests, owner REC-C3.3.x). CIH-D did NOT introduce regressions. CIH-E delivers the handler-side scope plumbing for tripwire tools, which locally flips the tripwire_tools test surface from FAIL to PASS at HEAD 379ba34d. The Coverage remote failure should flip to GREEN after CIH-E lands on origin/main. The CI failure remains until CIH-F ships (REC-C1.5 owner). _legacy_verdict is preserved.",
   "_legacy_verdict_passed_at_anchor": "passed (at anchor 2e761d4f76dc...; locally GREEN 2026-09-19T09:35:00Z; before CIH-B unmasked the multi_session and tripwire_tools baseline by surfacing r2_stale_cursor in Coverage)",
   "_legacy_verdict": "passed"
 }
