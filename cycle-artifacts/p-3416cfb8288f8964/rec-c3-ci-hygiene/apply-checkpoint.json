@@ -61,7 +61,15 @@
         ],
         "tests_passing": "uat_c2_01 + uat_c2_02 + uat_c2_03 + diagnostic: 4/4 green. multi_session (CIH-F surface): 7/7.",
         "no_assertion_change": "line 114 cursor-advances contract untouched; only the precondition that the log must have advanced between drains is now met by an observable bounded poll instead of a fixed sleep.",
-        "no_blind_waits": "both helpers poll observable signals with hard deadlines and panic with actionable diagnostics on timeout"
+        "no_blind_waits": "both helpers poll observable signals with hard deadlines and panic with actionable diagnostics on timeout",
+        "fix_2": {
+          "delivered_at": "2026-09-19T22:04:00Z",
+          "delivered_commit_sha": "fd9dae9e",
+          "supersedes_claim": "v1 claimed total_buffered was the monotonic log-advance signal; it is not — it is the count of raw events in the page.",
+          "root_cause_of_fix_2": "GH Actions Coverage run 35471023325 at b98b747f failed uat_c2_01 with 'did not produce any new records within 5000ms after the first drain (first_total=19...)'. CI tarpaulin instrumentation makes the fixture produce events much more slowly than local (~19 events vs 270+); with limit=1000 the first drain takes everything the fixture has at that point, the log then drains the rest of the 3s busyloop window into the file while no drain is observing it, and after the first drain finishes `total_buffered > 19` on a same-size page is false (total_buffered is `events.len()` of THIS page, not a log total — see canonical_drain.rs:299).",
+          "fix": "Two coordinated changes, no assertion change: (1) first drain uses limit=1 + call_tool (not probe_drain_with_evidence_cursor which hardcodes limit=1000) so it cannot consume the entire output; the drain logic pairs each requested Raw with its derived TripwireFired records (canonical_drain.rs logical-boundary check), so even limit=1 returns the Raw plus its firing records. (2) wait_for_log_advance compares cursor STRINGS, not total_buffered; the canonical ECV1 token includes the seq in its last segment, so a different token means new records were examined. Still bounded (5s deadline = 2x the fixture's 3s runtime), still observable (cursor's encoded seq is the canonical evidence of forward progress), still no blind sleep.",
+          "tests_passing_post_fix_2": "4/4 rec_c2_2_uat_c2 (uat_c2_01 + uat_c2_02 + uat_c2_03 + cih_g_uat_c2_01_diagnostic_first_event_timing). clippy clean."
+        }
       },
       {
         "slice_id": "CIH-H",
@@ -205,8 +213,8 @@
       ]
     },
     "remote_verification_at_e471221c": {
-      "head_sha": "29f0bef6",
-      "verified_at": "2026-09-19T21:38:00Z",
+      "head_sha": "fd9dae9e",
+      "verified_at": "2026-09-19T22:05:00Z",
       "delivered_slices": {
         "CIH-F_v2": {
           "commit_sha": "8f49d48d",
@@ -345,7 +353,8 @@
     "8f49d48d",
     "59b2dfcc",
     "e471221c",
-    "29f0bef6"
+    "29f0bef6",
+    "fd9dae9e"
   ],
   "tren_a_real_commits": [],
   "layer_completion": {
@@ -746,7 +755,7 @@
       "findings_closed": [
         "FIND-CIH-E-gate-uat-c2-01-timing closed at 59b2dfcc (closed at this slice; FIND migrated from REC-C3.x future to CLOSED; no waiver/skip introduced)"
       ],
-      "next_slice": "CIH-H (manifest SHA regen for sessions.rs row) — already delivered at e471221c."
+      "next_slice": "CIH-H (manifest SHA regen for sessions.rs row) — already delivered at e471221c. CIH-H-followup (post-fmt SHA rewrite) at 29f0bef6. CIH-G-fix-2 (first drain limit=1 + cursor-based wait_for_log_advance) at fd9dae9e."
     },
     {
       "id": "CIH-H",
