@@ -9,7 +9,7 @@
 
 - Branch: `rec-c3-ci-hygiene`
 - Cycle merge base: `fa5eb582`
-- Cycle merge head: `5bcb2b63`
+- Cycle merge head: `2e761d4f76dc4c7b2a78972753770ac2aedf0357`
 - Project: `p-3416cfb8288f8964`
 - Cycle: `p-3416cfb8288f8964/rec-c3-ci-hygiene`
 
@@ -43,8 +43,8 @@
 |---|---|
 | Cycle | `rec-c3-ci-hygiene` |
 | Head SHA | `2e761d4f76dc4c7b2a78972753770ac2aedf0357` |
-| Remote tag | `rec-c3-ci-hygiene-closure` |
-| Remote tag_peel | `2e761d4f76dc4c7b2a78972753770ac2aedf0357` |
-| Peel match | true |
+| Remote tag | (no remote tag pushed; this is a hygiene cycle — see scope_decisions: "No tag.") |
+| Remote tag_peel | n/a (no remote tag) |
+| Peel match | false |
 | Date | `2026-09-19T09:35:00Z` |
 | Base SHA | `fa5eb5827e997c874047c6c2318ad2b5b1c8f323` |
