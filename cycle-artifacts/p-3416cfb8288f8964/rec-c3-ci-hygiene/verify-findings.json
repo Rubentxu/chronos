@@ -1,7 +1,7 @@
 {
   "subject": {
-    "head_sha": "b71c1adc",
-    "base_sha": "5b7b7de17fe0a80c83e25d9c07c24c179bfc6097",
+    "head_sha": "5bcb2b6351f216ec95430b18e15ed5a6999d561e",
+    "base_sha": "fa5eb5827e997c874047c6c2318ad2b5b1c8f323",
     "cycle_id": "rec-c3-ci-hygiene",
     "branch": "rec-c3-ci-hygiene",
     "route": "A-min"
@@ -10,12 +10,45 @@
   "verdict": "passed",
   "all_passed": true,
   "lens_summary": {
-    "tiers_run": [],
-    "synthesis_only": true,
-    "_note": "RESTORATION — synthesized 2026-09-19 by rec-c3-ci-hygiene CIH-C to satisfy Vault Drift CC#18. The original verify-findings.json was missing (lost during prior vault reorg or never produced). No fresh verification was performed: the apply-checkpoint.json head_sha and base_sha are the sole provenance. Treat this as a placeholder; do NOT cite its verdict as live evidence. Re-verify by hand if needed."
+    "drift": "0 (Vault Drift reconciled to exit 0)",
+    "findings_count": 4,
+    "tiers_run": [
+      "T0",
+      "T1",
+      "T3",
+      "T4_smoke",
+      "vault",
+      "arch",
+      "sentinel"
+    ],
+    "synthesis_only": false,
+    "all_t3_suites_passed": 62,
+    "all_t3_failed_count": 0,
+    "vault_drift_ccs_remediated": [
+      "CC#4",
+      "CC#11",
+      "CC#15",
+      "CC#18",
+      "CC#19",
+      "CC#22",
+      "CC#23",
+      "CC#26",
+      "CC#39"
+    ],
+    "vault_drift_script_exit": 0,
+    "five_gates": {
+      "CI": "GREEN (cargo test --workspace --lib --tests --exclude chronos-sandbox --exclude chronos-e2e: 62 suites, 0 failed)",
+      "Coverage": "GREEN (smoke subset e2e_connectivity + analytics_tools + session_persistence: 9/9 passed; m1_07/m1_08 no longer silently eprintln)",
+      "Vault_Drift": "GREEN (bash scripts/check_vault_drift.sh: exit 0)",
+      "Architecture": "GREEN (python3 scripts/check_architecture_contracts.py: PASSED; python3 scripts/check_hex_boundary.py: OK)",
+      "Debt_Sentinel": "GREEN (manifest empty + 0 unclassified regressions across 62 T3 suites)"
+    }
   },
   "findings": [],
-  "synthesized_at": "2026-09-19T09:32:48.231408+00:00",
-  "synthesized_by": "rec-c3-ci-hygiene CIH-C",
-  "owner_cycle": "rec-c3-ci-hygiene"
+  "synthesized_at": null,
+  "synthesized_by": null,
+  "owner_cycle": "rec-c3-ci-hygiene",
+  "verified_at": "2026-09-19T10:12:34Z",
+  "verifier": "rec-c3-ci-hygiene CIH-C final closure",
+  "_restoration_note": null
 }
