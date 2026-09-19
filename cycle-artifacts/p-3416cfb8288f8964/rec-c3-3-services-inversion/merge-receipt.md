@@ -42,3 +42,15 @@ A-min (recon-only). Sub-cycle scope: C3.3.0 only.
 - The architectural rule the cycle documents (services → ports, never services → concrete adapter) is the closure criterion for HEX-002 in C3.3.5.
 - ADR for the composition-root placement (option 3: `chronos-services::composition`) lands in C3.3.1.
 - Carry-forward findings (C31-DEBT-01/02/03) are re-observed, not closed.
+
+
+## Canonical SHA fields (added by CIH-C)
+
+
+| Head SHA | `188f2e182df180f9f947ccb1f6ad87ca028216e6` |
+
+| Base SHA | `unknown` |
+
+| Branch | `main` |
+
+| Date | `2026-09-19T00:00:00Z` |

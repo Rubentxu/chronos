@@ -1,0 +1,35 @@
+{
+  "cycle_id": "rec-c2.3-eventbus-removal",
+  "project_id": "p-3416cfb8288f8964",
+  "head_sha": "d435557e",
+  "merge_sha": null,
+  "base_sha": null,
+  "branch": null,
+  "path": null,
+  "route": null,
+  "completed_at": null,
+  "archived_at": null,
+  "created_at": "2026-09-19T00:00:00Z",
+  "title": "rec-c2.3-eventbus-removal",
+  "summary": "Legacy cycle / handoff restored by CIH-C; head_sha from git log merge 'feat/rec-c2.3-eventbus-removal'.",
+  "status": "CLOSED",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived",
+  "tier_results": {},
+  "scope_decisions": [
+    "Restoration only: provenance from documented closing commit."
+  ],
+  "carry_forward_debt": {},
+  "findings_introduced": {
+    "no_action": [],
+    "notes": [
+      "verify-findings.json synthesized as RESTORATION in CIH-C; do not cite its verdict as live evidence."
+    ]
+  },
+  "findings_closed": [],
+  "commits_since_base": [],
+  "_restoration_note": "RESTORATION — synthesized 2026-09-19 by rec-c3-ci-hygiene CIH-C. Original apply-checkpoint.json missing (legacy cycle / handoff-only directory). head_sha extracted from the documented closing commit. NO fresh verification was performed.",
+  "restored_at": "2026-09-19T09:33:11.058249+00:00",
+  "restored_by": "rec-c3-ci-hygiene CIH-C"
+}

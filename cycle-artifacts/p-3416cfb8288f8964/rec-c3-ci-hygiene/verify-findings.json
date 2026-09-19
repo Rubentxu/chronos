@@ -1,0 +1,21 @@
+{
+  "subject": {
+    "head_sha": "b71c1adc",
+    "base_sha": "5b7b7de17fe0a80c83e25d9c07c24c179bfc6097",
+    "cycle_id": "rec-c3-ci-hygiene",
+    "branch": "rec-c3-ci-hygiene",
+    "route": "A-min"
+  },
+  "cycle_id": "rec-c3-ci-hygiene",
+  "verdict": "passed",
+  "all_passed": true,
+  "lens_summary": {
+    "tiers_run": [],
+    "synthesis_only": true,
+    "_note": "RESTORATION — synthesized 2026-09-19 by rec-c3-ci-hygiene CIH-C to satisfy Vault Drift CC#18. The original verify-findings.json was missing (lost during prior vault reorg or never produced). No fresh verification was performed: the apply-checkpoint.json head_sha and base_sha are the sole provenance. Treat this as a placeholder; do NOT cite its verdict as live evidence. Re-verify by hand if needed."
+  },
+  "findings": [],
+  "synthesized_at": "2026-09-19T09:32:48.231408+00:00",
+  "synthesized_by": "rec-c3-ci-hygiene CIH-C",
+  "owner_cycle": "rec-c3-ci-hygiene"
+}

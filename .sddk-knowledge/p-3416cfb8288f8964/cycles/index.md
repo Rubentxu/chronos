@@ -53,7 +53,7 @@ See `changes/archive/` for full archive manifests of closed cycles.
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
 | Last updated | 2026-09-17T20:07Z |
-| Total cycles | 106 |
+| Total cycles | 98 |
 | m10 cycles | 13 (rows above) |
 | m1 cycles | 2 (m1-execution-log-vertical-slice, m1-gap-segment-accounting-repair) |
 | rec-c1 cycles | 4 (rec-c1-5-closure, rec-c1-6-lifecycle-retention-wire, rec-c1-7-projection-authority-acceptance, rec-c1-8-authoritative-evidence-handoff) |

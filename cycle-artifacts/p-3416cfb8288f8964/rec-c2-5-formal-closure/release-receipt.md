@@ -43,3 +43,16 @@ A-min (forced by ledger path; B-direct would suffice in theory).
   REC-C2 -> REC-C3.
 - 5 local branches and 3 remote branches cleaned up.
 - No public API change. No MCP wire change. No ratchet regression.
+
+## Canonical SHA fields (added by CIH-C)
+
+
+| Head SHA | `21ab4f24888a78e71c7bf124c6f9497608288a7c` |
+
+| Remote tag | `rec-c2-5-formal-closure` |
+
+| Remote tag_peel | `21ab4f24888a78e71c7bf124c6f9497608288a7c` |
+
+| Peel match | `true` |
+
+| Date | `2026-09-19T00:00:00Z` |

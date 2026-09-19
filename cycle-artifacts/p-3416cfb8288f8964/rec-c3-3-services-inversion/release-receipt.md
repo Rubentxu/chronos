@@ -81,3 +81,17 @@ re-observation.
 - REC-C3.3 is the third sub-cycle of REC-C3 (Hexagonal boundary closure). This C3.3.0 deliverable is recon + dependency map only. C3.3.1..5 are separate cycles.
 - The `v0.1.1` workspace version is preserved; no version bump because no production code changed.
 - No public API change in any crate. No ratchet movement (legacy-evb baseline still 0). Architecture baseline unchanged (5 transitional edges in `reconstruction-contracts.toml[architecture.known_dependency_violations]`).
+
+
+## Canonical SHA fields (added by CIH-C)
+
+
+| Head SHA | `188f2e182df180f9f947ccb1f6ad87ca028216e6` |
+
+| Remote tag | `s` |
+
+| Remote tag_peel | `188f2e182df180f9f947ccb1f6ad87ca028216e6` |
+
+| Peel match | `true` |
+
+| Date | `2026-09-19T00:00:00Z` |

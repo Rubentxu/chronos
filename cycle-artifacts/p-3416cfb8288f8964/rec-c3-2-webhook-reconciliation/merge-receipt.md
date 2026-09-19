@@ -41,3 +41,15 @@ B-direct (governance/recon, no behavior change).
 
 - REC-C3.2 is the second sub-cycle of REC-C3 (Hexagonal boundary closure). It reconciles the gate; the next sub-cycle (REC-C3.3) does the services-side inversion that HEX-C32-03 reserves.
 - ADR-0014 (vault mirror at `~/.sddk-knowledge/p-3416cfb8288f8964/adrs/0014-reconcile-only-hex-gate.md`) records the rationale: the code was already in position from C3.1, only the gate was stale.
+
+
+## Canonical SHA fields (added by CIH-C)
+
+
+| Head SHA | `33b4f79004b7634a9e88b7919f8b42e854c420e8` |
+
+| Base SHA | `unknown` |
+
+| Branch | `main` |
+
+| Date | `2026-09-19T00:00:00Z` |

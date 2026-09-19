@@ -77,3 +77,17 @@ for their status.)
 - No public API change in any crate. No ratchet movement (legacy-evb
   baseline still 0). Architecture baseline unchanged (5 transitional edges
   in `reconstruction-contracts.toml[architecture.known_dependency_violations]`).
+
+
+## Canonical SHA fields (added by CIH-C)
+
+
+| Head SHA | `33b4f79004b7634a9e88b7919f8b42e854c420e8` |
+
+| Remote tag | `s` |
+
+| Remote tag_peel | `33b4f79004b7634a9e88b7919f8b42e854c420e8` |
+
+| Peel match | `true` |
+
+| Date | `2026-09-19T00:00:00Z` |

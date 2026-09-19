@@ -19,14 +19,15 @@
   "summary": "Tripwire firings become durable ExecutionLog evidence. C2.1.1 adds ExecutionKind::TripwireFired (appended last; Raw=0/GapMarker=1 pinned) and TripwireFiredEvidence { tripwire_id, source_seq: EventSeq, source_event_id, condition, label, source_timestamp_ns, source_thread_id }, plus the NewExecutionRecord.kind field the backends previously hardcoded to Raw. C2.1.2 inverts dual_push: append first, publish only on success (no observation without acceptance). C2.1.3 derives firings from an accepted Raw record with the recursion barrier enforced by ExecutionKind. C2.1.4-7 (observe-from-log with an independent consumer cursor, derived fire_count, honest retained_until_session_end, fired_buffer removal, restart UAT) are NOT done: observe is synchronous and cannot reach the active session id behind a tokio Mutex; see tasks.md.",
   "blockers": [],
   "findings_introduced": {
-    "no_action": [
-      "FIND-C2.1-03 (derivation has no production caller; scoped to REC-C2.2)"
-    ],
+    "no_action": [],
     "applied": [
       "FIND-C2.1-01",
       "FIND-C2.1-02",
       "FIND-C2.0-01",
       "FIND-C2.0-02"
+    ],
+    "notes": [
+      "FIND-C2.1-03 (derivation has no production caller; scoped to REC-C2.2)"
     ]
   },
   "findings_detail": {
@@ -64,7 +65,7 @@
     },
     {
       "sha": "686a364c",
-      "title": "Merge REC-C2.1 \u2014 TripwireFired as ExecutionLog evidence"
+      "title": "Merge REC-C2.1 — TripwireFired as ExecutionLog evidence"
     }
   ],
   "gates": {

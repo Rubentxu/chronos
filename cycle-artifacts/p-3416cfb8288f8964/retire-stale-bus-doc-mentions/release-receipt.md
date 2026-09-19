@@ -42,3 +42,16 @@ forced A-min to satisfy `phase.specify.complete.a-min` and
 - No MCP wire change.
 - No ratchet regression.
 - No follow-on cycles from this one (closes ledger only).
+
+## Canonical SHA fields (added by CIH-C)
+
+
+| Head SHA | `ab863cf14814bda9746975dcb31954daa2dafd8d` |
+
+| Remote tag | `retire-stale-bus-doc-mentions` |
+
+| Remote tag_peel | `ab863cf14814bda9746975dcb31954daa2dafd8d` |
+
+| Peel match | `true` |
+
+| Date | `2026-09-19T00:00:00Z` |

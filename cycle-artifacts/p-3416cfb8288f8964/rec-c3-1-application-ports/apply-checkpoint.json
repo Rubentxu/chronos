@@ -1,0 +1,36 @@
+{
+  "cycle_id": "rec-c3-1-application-ports",
+  "project_id": "p-3416cfb8288f8964",
+  "head_sha": "33b4f79004b7634a9e88b7919f8b42e854c420e8",
+  "merge_sha": null,
+  "base_sha": null,
+  "branch": null,
+  "path": null,
+  "route": null,
+  "completed_at": null,
+  "archived_at": null,
+  "created_at": "2026-09-19T00:00:00Z",
+  "title": "rec-c3-1-application-ports",
+  "summary": "Legacy cycle restored by CIH-C; original apply-checkpoint.json missing.",
+  "status": "CLOSED",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived",
+  "tier_results": {},
+  "scope_decisions": [
+    "Restoration only: provenance from existing release-receipt.md / merge-receipt.md."
+  ],
+  "carry_forward_debt": {},
+  "findings_introduced": {
+    "no_action": [],
+    "notes": [
+      "verify-findings.json synthesized as RESTORATION in CIH-C; do not cite its verdict as live evidence."
+    ]
+  },
+  "findings_closed": [],
+  "commits_since_base": [],
+  "_restoration_note": "RESTORATION — synthesized 2026-09-19 by rec-c3-ci-hygiene CIH-C. Original apply-checkpoint.json missing (legacy cycle predating the m9-11+ metadata convention). head_sha extracted from release-receipt.md as the sole provenance. NO fresh verification was performed.",
+  "restored_at": "2026-09-19T09:33:02.288554+00:00",
+  "restored_by": "rec-c3-ci-hygiene CIH-C",
+  "remote_tag_peel": "33b4f79004b7634a9e88b7919f8b42e854c420e8"
+}

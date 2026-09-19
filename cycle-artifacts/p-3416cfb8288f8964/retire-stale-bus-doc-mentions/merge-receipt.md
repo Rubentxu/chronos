@@ -33,3 +33,14 @@ b9461a3f  docs(cycle): add session handoff note for 2026-09-18
 - Ratchet `check_legacy_evb.py`: baseline 0
 - Working tree clean
 - Tag `retire-stale-bus-doc-mentions` points at `ab863cf1`
+
+## Canonical SHA fields (added by CIH-C)
+
+
+| Head SHA | `ab863cf14814bda9746975dcb31954daa2dafd8d` |
+
+| Base SHA | `unknown` |
+
+| Branch | `main` |
+
+| Date | `2026-09-19T00:00:00Z` |

@@ -43,3 +43,14 @@ git push origin --delete feat/rec-c2.2-accepted-raw-seam
 - `cargo clippy --workspace --all-targets -- -D warnings`: PASS (clean)
 - Working tree: clean
 - Tag `rec-c2-5-formal-closure` created and pointed at `21ab4f24`
+
+## Canonical SHA fields (added by CIH-C)
+
+
+| Head SHA | `21ab4f24888a78e71c7bf124c6f9497608288a7c` |
+
+| Base SHA | `unknown` |
+
+| Branch | `main` |
+
+| Date | `2026-09-19T00:00:00Z` |

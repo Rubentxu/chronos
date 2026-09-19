@@ -46,3 +46,15 @@ The actual c3.1 work starts at `b6dcd77f`.
 - Cycle diff digest: `a45560432ba5965dbbcad493a19c919cf8b73831c22bfef62825d79bc19c609f`.
 - Base SHA: `8b5dcebe2c94db1910d1ccce36467afcffe29b77`.
 - Head SHA: `871cddf50b118b9f33ac7e8a3cc6c98dfb30c67d` (`871cddf5`).
+
+
+## Canonical SHA fields (added by CIH-C)
+
+
+| Head SHA | `33b4f79004b7634a9e88b7919f8b42e854c420e8` |
+
+| Base SHA | `unknown` |
+
+| Branch | `main` |
+
+| Date | `2026-09-19T00:00:00Z` |

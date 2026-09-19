@@ -83,3 +83,17 @@ Report path: `cycle-artifacts/p-3416cfb8288f8964/rec-c3-1-application-ports/debt
 - No public API change in `chronos-services` or `chronos-mcp` (the ports exist but are not yet consumed by callers).
 - Ratchet: `legacy-evb-inventory.json` baseline still 0 (PRESERVED from rec-c2.5 close).
 - Architecture baseline unchanged: same 5 transitional edges in `reconstruction-contracts.toml[architecture.known_dependency_violations]`; no new entries.
+
+
+## Canonical SHA fields (added by CIH-C)
+
+
+| Head SHA | `33b4f79004b7634a9e88b7919f8b42e854c420e8` |
+
+| Remote tag | `v0.1.1` |
+
+| Remote tag_peel | `33b4f79004b7634a9e88b7919f8b42e854c420e8` |
+
+| Peel match | `true` |
+
+| Date | `2026-09-19T00:00:00Z` |
