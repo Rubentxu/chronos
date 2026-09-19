@@ -4,6 +4,7 @@
   "milestone": "REC-C3 — Hexagonal boundary closure",
   "sub_cycle": "rec-c3-ci-hygiene — baseline CI / Coverage / Vault drift reconciliation",
   "head_sha": "2e761d4f76dc4c7b2a78972753770ac2aedf0357",
+  "branch_head_sha": "29f0bef6",
   "merge_sha": null,
   "base_sha": "fa5eb5827e997c874047c6c2318ad2b5b1c8f323",
   "branch": "rec-c3-ci-hygiene",
@@ -35,7 +36,48 @@
       {
         "slice_id": "CIH-F",
         "owner": "cih-f/multi_session registry reopen (REC-C1.5 milestone owns)",
-        "expected_at": "post-CIH-F commit (if no architectural redesign needed)"
+        "expected_at": "post-CIH-F commit (if no architectural redesign needed)",
+        "delivered_at": "2026-09-19T20:33:00Z",
+        "delivered_commit_sha": "8f49d48d",
+        "delivered_head_sha": "8f49d48d",
+        "concurrent_correction": "v2 atomic rehydrate + peek-panics-on-poison + 3 concurrency discriminants; supersedes CIH-F v1 (7ee267d9)",
+        "tests_added": [
+          "session_log::tests::cih_f_peek_registration_panics_on_poisoned_lock",
+          "session_log::tests::cih_f_concurrent_rehydrate_linearised_for_same_session",
+          "session_log::tests::cih_f_concurrent_rehydrate_unavailable_preserves_first_reason"
+        ],
+        "tests_passing": "9/9 CIH-F tests green (6 v1 + 3 discriminants). 391/391 chronos-services lib green."
+      },
+      {
+        "slice_id": "CIH-G",
+        "owner": "cih-g/uat_c2_01 timing hardening (REC-C3.x future slice per FIND-CIH-E-gate-uat-c2-01-timing)",
+        "expected_at": "post-CIH-G commit (operator authorized 2026-09-19)",
+        "delivered_at": "2026-09-19T21:00:00Z",
+        "delivered_commit_sha": "59b2dfcc",
+        "delivered_head_sha": "59b2dfcc",
+        "root_cause": "Two distinct signatures: (1) original `tokio::time::sleep(2s)` not enough under tarpaulin-instrumented CI runners — replaced by `wait_for_first_event` bounded poll on probe_drain_log with observable exit criterion (events.length > 0). (2) `cursor remains identical` on second drain — NOT a server-side probe_drain bug; cursor staying identical is CORRECT behaviour when the log has produced no new records between drains. The fixture's test_busyloop generates events at a rate the first drain consumes in one pass, so by the time the second drain runs, there are no new records. Fix: `wait_for_log_advance` bounded poll on probe_drain (not probe_drain_log) with exit criterion total_buffered > first_total, 5s deadline.",
+        "tests_added": [
+          "rec_c2_2_uat_c2::tests::cih_g_uat_c2_01_diagnostic_first_event_timing"
+        ],
+        "tests_passing": "uat_c2_01 + uat_c2_02 + uat_c2_03 + diagnostic: 4/4 green. multi_session (CIH-F surface): 7/7.",
+        "no_assertion_change": "line 114 cursor-advances contract untouched; only the precondition that the log must have advanced between drains is now met by an observable bounded poll instead of a fixed sleep.",
+        "no_blind_waits": "both helpers poll observable signals with hard deadlines and panic with actionable diagnostics on timeout"
+      },
+      {
+        "slice_id": "CIH-H",
+        "owner": "cih-h/regenerate m9-71 archive-manifest Artifact index SHA (CC#4)",
+        "expected_at": "after last code commit that touches sessions.rs",
+        "delivered_at": "2026-09-19T21:37:00Z",
+        "delivered_commit_sha": "29f0bef6",
+        "delivered_head_sha": "29f0bef6",
+        "supersedes_commit_sha": "e471221c",
+        "root_cause_of_followup": "e471221c wrote SHA-256 cfd02d4f for crates/chronos-services/src/sessions.rs but the file content committed in 8f49d48d is 50e4d619. The regen script ran against the working tree BEFORE `cargo fmt --all` reformatted the function-call chain — the post-fmt indentation moved .rehydrate() from a 1-line call to a 3-line chain, which changed the bytes the SHA covers. The fmt-clean content was what landed in 8f49d48d, but e471221c's manifest row pointed at the pre-fmt bytes. GH Actions vault drift sweep at e471221c (run 35470646147) caught CC#4 on the same row.",
+        "fix_commit_sha": "29f0bef6",
+        "fix": "Re-ran python3 scripts/regen_manifest_index_shas.py against the committed post-fmt content; row rewritten cfd02d4f -> 50e4d619. --check clean (102 manifests). scripts/check_vault_drift.sh PASS. This is exactly the post-format SHA-rewrite ritual that CIH-C documented for PR-32 / fffff332: any change to file content forces a SHA rewrite, and the script must run AFTER the formatting commit that changed the bytes. CIH-H needs to run AFTER `cargo fmt --all`, not before.",
+        "stale_row_rewritten_v1": "185d6df3... -> cfd02d4f...",
+        "stale_row_rewritten_v2": "cfd02d4f... -> 50e4d619...",
+        "tool": "scripts/regen_manifest_index_shas.py",
+        "vault_drift_post": "PASS (48 python CCs + 7 bash CCs all clean, 102 manifests checked)"
       }
     ],
     "reopen_reason": "CIH-D (commit e82921c9 + 8fdc3ef4) was added after the cycle was first closed at the 2e761d4f76dc anchor. CIH-D closes the r2_stale_cursor translator regression revealed by CIH-B's binary-resolution fix; locally the cycle is GREEN (T0+T1+T4_smoke+arch+hex+vault+validate+regen), but remote GH Actions at HEAD 8fdc3ef4 shows 3/5 workflows GREEN (Vault Drift Sweep, Architecture Contracts, Sandbox Debt Sentinel) and 2/5 with PRE-EXISTING failures (CI: multi_session::test_drop_session_not_in_load_list; Coverage: tripwire_tools 4 tests + same multi_session test reachable only via different compile order). Both failures reproduce identically on origin/main (fa5eb582) — verified in a side worktree — and the registry message for the multi_session failure explicitly states 'reopen belongs to REC-C1.5'. CIH-D does not introduce regressions; it unmasks pre-existing baseline failures that the prior close receipt claimed were GREEN by virtue of running the test parser against the wrong translation (DrainFailed string instead of typed CursorStale). The cycle's HEAD SHA anchor (head_sha = 2e761d4f76dc...) remains immutable per operator rule #8 and CC#12 (m9-19). Status=CLOSED is preserved to keep CC#11 (apply-checkpoint status consistency) GREEN; this reopen_after_cih_d field carries the actual state. Re-closure requires the CI/Coverage failures to be owned by an active slice (REC-C1.5 for multi_session, REC-C3.3.x for tripwire_tools), not by CIH-D.",
@@ -161,6 +203,57 @@
         "Coverage: tripwire_tools 4 tests PASS (CIH-E root cause removed).",
         "Test and Coverage both fail on the SAME pre-existing test (multi_session::test_drop_session_not_in_load_list) with the SAME panic message and line — no new regression introduced by CIH-E."
       ]
+    },
+    "remote_verification_at_e471221c": {
+      "head_sha": "29f0bef6",
+      "verified_at": "2026-09-19T21:38:00Z",
+      "delivered_slices": {
+        "CIH-F_v2": {
+          "commit_sha": "8f49d48d",
+          "summary": "atomic rehydrate + peek-panics-on-poison + 3 concurrency discriminants (peek_panics_on_poisoned_lock, concurrent_rehydrate_linearised_for_same_session, concurrent_rehydrate_unavailable_preserves_first_reason)",
+          "tests_passing_locally": "9/9 CIH-F tests, 391/391 chronos-services lib"
+        },
+        "CIH-G": {
+          "commit_sha": "59b2dfcc",
+          "summary": "UAT-C2-01 timing root-cause: (1) tokio::time::sleep(2s) replaced by wait_for_first_event bounded poll (probe_drain_log, criterion events.length > 0). (2) wait_for_log_advance bounded poll (probe_drain, criterion total_buffered > first_total, 5s deadline) between drains; cursor-advances assertion untouched.",
+          "tests_passing_locally": "uat_c2_01 + uat_c2_02 + uat_c2_03 + diagnostic: 4/4. multi_session: 7/7."
+        },
+        "CIH-H": {
+          "commit_sha": "e471221c",
+          "summary": "regenerate m9-71 archive-manifest Artifact index SHA (sessions.rs row: 185d6df3 -> cfd02d4f) per AGENTS.md §5; check_vault_drift.sh PASS"
+        }
+      },
+      "local_tier_results": {
+        "T0": {
+          "fmt_exit": 0,
+          "clippy_exit": 0,
+          "command": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings"
+        },
+        "T3_excluding_sandbox_e2e_native": "all test_result lines `0 failed`. chronos-services 391/391, chronos-store 77/77, chronos-query etc.",
+        "T3_native_serial": "108/108 passed (--test-threads=1)",
+        "T4_smoke_subset": "multi_session + rec_c2_2_uat_c2 + e2e_connectivity + analytics_tools: 16/16 passed (run --test-threads=1, 5m 8s)",
+        "vault_drift_check_sh_exit": 0,
+        "vault_drift_sweep_summary": "48 python CCs all clean, 7 bash CCs all clean"
+      },
+      "remote_runs_in_flight": {
+        "head_sha": "e471221cbe08a787305563d837d431f79d9f52d8",
+        "pr_runs": {
+          "vault_drift_sweep": { "run_id": 35470646147, "status": "in_progress" },
+          "ci": { "run_id": 35470646181, "status": "in_progress" },
+          "architecture_contracts": { "run_id": 35470646145, "status": "in_progress" },
+          "coverage": { "run_id": 35470646268, "status": "in_progress" },
+          "sandbox_debt_sentinel": { "run_id": 35470646152, "status": "in_progress" }
+        },
+        "polling_target": "all 5/5 GREEN on exact HEAD e471221c before ff-merge",
+        "fast_forward_to_main": "BLOCKED until 5/5 GREEN. No anticipatory merge."
+      },
+      "dependency_ledger": {
+        "cih_dependencies_unchanged": "3 waivers on Tren A path, no services→ebpf or services→browser reopening",
+        "sddk_dependencies_unmodified": "REC-C1.5.2 strict replay intact (m1_acceptance Case 6 still typed-error path)",
+        "hexagonal_seam_intact": "chronos-services still does not import concrete adapters; services.rs uses SessionExecutionLogRegistry::rehydrate (registry abstraction, not direct file/EBPF access)",
+        "session_repository_unwidened": "SessionRepository surface unchanged; only the rehydrate helper inside the registry was made atomic"
+      },
+      "next_action": "wait for 5/5 GH Actions GREEN on remote HEAD e471221c; if GREEN, ff-merge rec-c3-ci-hygiene to origin/main and re-run the 5-gate check on the integrated main HEAD; if any gate RED, diagnose + own to a slice before further push."
     }
   },
   "tier_results": {
@@ -247,7 +340,12 @@
     "ecc2d69f",
     "379ba34d",
     "f7c98018",
-    "fffff332"
+    "fffff332",
+    "9265aae2",
+    "8f49d48d",
+    "59b2dfcc",
+    "e471221c",
+    "29f0bef6"
   ],
   "tren_a_real_commits": [],
   "layer_completion": {
@@ -266,13 +364,17 @@
   "ratchet_state": {
     "c33_25_capability_bundle_ratchet": "unchanged by this cycle — Tren A already GREEN; hygiene must not break it"
   },
-  "smoke_subset": "TBD during cycle execution; this is a hygiene cycle, so the smoke subset will be the three failing jobs themselves (CI, Coverage, Vault Drift).",
+  "smoke_subset": "CIH-F/G surface: multi_session + rec_c2_2_uat_c2 + e2e_connectivity + analytics_tools. 16/16 passed (--test-threads=1, 5m 8s) on local HEAD 8f49d48d/59b2dfcc/e471221c.",
   "notes": [
-    "Origin/head: this cycle branches off origin/main = 5b7b7de1 (which includes Tren A merge + close-receipt).",
+    "Origin/head: this cycle branches off origin/main = fa5eb582 (Tren A merge + close-receipt + post-Tren-A drift corrections).",
     "Tren B (REC-C3.3.3) MUST NOT start until this cycle closes with all five gates GREEN: CI / Coverage / Vault Drift / Architecture / Debt Sentinel.",
-    "Pre-flight before starting: git fetch origin && git checkout main && git pull --ff-only origin main (head expected: 5b7b7de1).",
+    "Pre-flight before starting: git fetch origin && git checkout main && git pull --ff-only origin main (head expected: fa5eb582).",
     "Tren A close receipt: cycle-artifacts/p-3416cfb8288f8964/rec-c3-3-2-composition-integration-inversion/close-receipt.md.",
     "Tren A apply-checkpoint (already merged): cycle-artifacts/p-3416cfb8288f8964/rec-c3-3-2-composition-integration-inversion/apply-checkpoint.json.",
+    "CIH-F-v2 + CIH-G + CIH-H delivered at 8f49d48d + 59b2dfcc + e471221c (pushed to origin/rec-c3-ci-hygiene, remote HEAD e471221c). Local gates GREEN on e471221c: T0 (fmt + clippy) 0/0; T3 workspace lib/integration excluding sandbox/e2e/native all test_result lines 0 failed; T3 native serial 108/108; T4-smoke (multi_session + rec_c2_2_uat_c2 + e2e_connectivity + analytics_tools) 16/16. Vault drift check PASS. Pending: 5/5 GH Actions GREEN on remote HEAD e471221c, then ff-merge to main, then re-run 5-gate check on the integrated main HEAD.",
+    "Concurrency review outcome: CIH-F v2 atomic rehydrate + peek-panics-on-poison. SessionRepository surface unchanged. REC-C1.5.2 strict replay intact. No dyn Any / downcast. No concrete adapter import in services. No second authoritative registry.",
+    "UAT-C2-01 root cause: (1) original tokio::time::sleep(2s) not always enough under tarpaulin-instrumented CI runners — replaced by wait_for_first_event bounded poll (probe_drain_log, criterion events.length > 0, 5s deadline). (2) cursor remains identical on second drain — NOT a server-side probe_drain bug; cursor staying identical is CORRECT behaviour when the log has produced no new records between drains. Fix: wait_for_log_advance bounded poll (probe_drain, criterion total_buffered > first_total, 5s deadline) between drains. The cursor-advances assertion at line 114 is untouched.",
+    "Dependency ledger: 3 waivers on Tren A path unchanged; no services→ebpf or services→browser reopening; SDDK dependencies unmodified.",
     "CIH-A executed 2026-09-19 against HEAD fa5eb582: test m1_02_execution_log_persistence_impl Case 6 reconciled to REC-C1.5.2 strict replay contract. Diff: chronos-sandbox/tests/m1_acceptance.rs +54/-10 (no production change). T0 (fmt + clippy -D warnings) exit 0. T1 m1_acceptance suite 7/7 passed. T1 chronos-log full suite 0 failed across 11 integration files (persistence, m1_gap_segment_accounting, rec_c1_5_3_tail_state, rec_c2_1_tripwire_evidence, v1_v2_coexistence, rec_c1_8_uat_c1_05_four_dim, cursor_sidecar, seg_decompaction_round_trip, etc.). Architecture gates: check_hex_boundary.py OK, check_architecture_contracts.py PASSED. The reconcile asserts `LogError::ReplayIntegrity { kind: ReplayIntegrityError::CorruptSegment { path, .. } }` (typed, not string match), preserves the two-segments-and-corrupted-first scenario, and adds an atomicity guard via a second reopen that must also be refused (no salvage). Strict replay / fail-closed semantics from 3cc511ef are not modified. Pre-existing baseline failures remain for Slice B (tripwire_depth / McpTestClient under tarpaulin) and Slice C (Vault Drift CC#18/19/39)."
   ],
   "slices_executed": [
@@ -581,6 +683,119 @@
       ],
       "findings_closed": [],
       "next_slice": "Block on operator decision: either (A) authorize CIH-E.1 timing-hardening for uat_c2_01 (touch test only, no production change, no waiver/skip), or (B) advance to CIH-F (REC-C1.5 owner) for multi_session::test_drop_session_not_in_load_list and accept that Coverage remains red on the integrated main HEAD until REC-C3.x ships the timing fix."
+    },
+    {
+      "id": "CIH-F-v2",
+      "title": "multi_session registry reopen — concurrency review (peek/try_reopen race + poisoned mutex)",
+      "executed_at": "2026-09-19T20:33:00Z",
+      "head_sha_before": "9265aae2",
+      "head_sha_after": "8f49d48d",
+      "files_changed": [
+        "crates/chronos-services/src/session_log.rs",
+        "crates/chronos-services/src/sessions.rs"
+      ],
+      "production_changed": true,
+      "rationale": "Concurrency review of the SessionExecutionLogRegistry rehydrate path established by CIH-F v1 (peek-before-write reopen, 7ee267d9). Three corrections: (1) atomic rehydrate(dir, session_id) — replaces the open TOCTOU race between peek_registration, the factory call, and register/register_unavailable. Two-pass design (peek under lock, drop lock to call factory, re-acquire and re-check). Typed RehydrateOutcome (AlreadyAvailable / AlreadyUnavailable / Registered / RecordedUnavailable) so the caller does not fabricate an empty handle. (2) peek_registration no longer collapses Err(poisoned) into RegistrationState::Absent (which was silently wrong on both concurrent-correctness and failure-visibility axes); now expect(\"poisoned during peek_registration\") — consistent with try_reopen and register. (3) #[cfg(test)] pub fn poison_for_tests() — deterministic poison affordance for the discriminant below.",
+      "tests_added": [
+        "session_log::tests::cih_f_peek_registration_panics_on_poisoned_lock",
+        "session_log::tests::cih_f_concurrent_rehydrate_linearised_for_same_session",
+        "session_log::tests::cih_f_concurrent_rehydrate_unavailable_preserves_first_reason"
+      ],
+      "evidence": {
+        "tier_T0_fmt_exit": 0,
+        "tier_T0_clippy_exit": 0,
+        "tier_T1_lib_chronos_services": "391/391 passed",
+        "tier_T3_workspace_excl_sandbox_e2e_native": "0 failed",
+        "tier_T3_native_serial": "108/108 passed (--test-threads=1)",
+        "tier_T4_smoke_subset": "multi_session + rec_c2_2_uat_c2 + e2e_connectivity + analytics_tools: 16/16 passed (--test-threads=1, 5m 8s)",
+        "vault_drift_check_sh_exit": 0,
+        "concurrent_correction_scope": "atomic rehydrate + poison semantics inside SessionExecutionLogRegistry only; SessionsService::rehydrate_execution_log calls the new helper. SessionRepository surface unchanged. REC-C1.5.2 strict replay intact. No dyn Any / downcast. No concrete adapter import in services. No second authoritative registry."
+      },
+      "behavior_change": "atomic rehydrate is the new code path for SessionsService::rehydrate_execution_log; concurrent calls now linearise on logs.lock() with peek→factory→re-check and return typed outcomes instead of racing. Peek on a poisoned mutex now panics instead of silently returning Absent.",
+      "findings_introduced": [],
+      "findings_closed": [],
+      "next_slice": "CIH-G (UAT-C2-01 timing root cause) — already delivered at 59b2dfcc."
+    },
+    {
+      "id": "CIH-G",
+      "title": "UAT-C2-01 root cause: bounded poll for log advance + diagnostic",
+      "executed_at": "2026-09-19T21:00:00Z",
+      "head_sha_before": "8f49d48d",
+      "head_sha_after": "59b2dfcc",
+      "files_changed": [
+        "chronos-sandbox/tests/rec_c2_2_uat_c2.rs"
+      ],
+      "production_changed": false,
+      "rationale": "Two distinct UAT-C2-01 failures under tarpaulin-instrumented CI runners. (1) Original tokio::time::sleep(2s) not always enough — wait_for_first_event replaces it (bounded poll on probe_drain_log with criterion events.length > 0, 5s deadline). (2) cursor remains identical on second drain — NOT a server-side probe_drain bug; the cursor staying identical is the CORRECT behaviour when the log has produced no new records between drains. Reproduced locally: first_drain total_buffered=270 cursor=ecv1:...:405, second drain reads from seq=405 with nothing new, encodes back to ecv1:...:405. The contract under test ('an examined page must advance the cursor') necessarily requires new records between drains; the previous setup assumed wall-clock would produce them. wait_for_log_advance — bounded poll on probe_drain (NOT probe_drain_log, so we hit the same handler and read total_buffered which is the only signal that says the log has new records without consuming them). Exit criterion total_buffered > first_total. 5s deadline matches busyloop's claimed runtime x 2. No assertion change: line 114 cursor-advances contract is untouched. No blind waits: both helpers poll observable signals with hard deadlines and panic with actionable diagnostics on timeout.",
+      "tests_added": [
+        "rec_c2_2_uat_c2::tests::cih_g_uat_c2_01_diagnostic_first_event_timing"
+      ],
+      "evidence": {
+        "tier_T0_fmt_exit": 0,
+        "tier_T0_clippy_exit": 0,
+        "uit_c2_01_first_drain_local": "events=270..272 total_buffered=270..272 cursor=ecv1:...:405..408 (depends on busyloop timing)",
+        "uit_c2_01_log_advance_after_first_drain": "advance_ms=48..60 first_total=270..272 advanced_total=276..280 (8 events new in ~50ms)",
+        "uit_c2_01_second_drain": "cursor advances; assertion UAT-C2-01 holds",
+        "uit_c2_01_diagnostic_first_event_timing": "first_event_after_ms=7..17 (vs 2000 in original sleep; confirms fixture is not the bottleneck)",
+        "tier_T1_lib_chronos_services": "391/391 passed",
+        "tier_T4_smoke_subset": "rec_c2_2_uat_c2 (4/4) + multi_session (7/7)",
+        "vault_drift_check_sh_exit": 0
+      },
+      "behavior_change": "none in production. Test-side: uat_c2_01 now bounded-polls until the log has produced at least one new record between the two drains, so the cursor-advances assertion is exercised against a log that has actually advanced. Diagnostic print added to uat_c2_01 and to the discriminant so failures expose first_total / first_cursor / wire shape.",
+      "findings_introduced": [],
+      "findings_closed": [
+        "FIND-CIH-E-gate-uat-c2-01-timing closed at 59b2dfcc (closed at this slice; FIND migrated from REC-C3.x future to CLOSED; no waiver/skip introduced)"
+      ],
+      "next_slice": "CIH-H (manifest SHA regen for sessions.rs row) — already delivered at e471221c."
+    },
+    {
+      "id": "CIH-H",
+      "title": "regenerate m9-71 archive-manifest Artifact index SHA (CC#4)",
+      "executed_at": "2026-09-19T21:00:00Z",
+      "head_sha_before": "59b2dfcc",
+      "head_sha_after": "e471221c",
+      "files_changed": [
+        ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-71-services-list-store-contract/archive-manifest.md"
+      ],
+      "production_changed": false,
+      "rationale": "Per AGENTS.md §5: regenerate CC#4 SHA on the row that lists crates/chronos-services/src/sessions.rs (the source row touched by CIH-F v2 / 8f49d48d). Stale row 185d6df3...; expected cfd02d4f...; --dry-run flagged it. python3 scripts/regen_manifest_index_shas.py rewrote 1 row across 102 manifests to fixpoint. --check exits 0. check_vault_drift.sh: PASS (48 python CCs + 7 bash CCs all clean). Per CIH-H rule: ran AFTER the last code commit that touches sessions.rs (CIH-F v2 8f49d48d).",
+      "evidence": {
+        "vault_drift_remediated_row": "crates/chronos-services/src/sessions.rs: 185d6df37e6a7db21ef9945d0beea43b8ea2ab43c08279ab87e1d8defa9aabd5 -> cfd02d4fcb491a92888c6817119f7a5a3ea742ce8ee7846b1b166849350d6137",
+        "manifests_checked": 102,
+        "rows_rewritten": 1,
+        "self_referential_rows_preserved": 1,
+        "regen_tool": "scripts/regen_manifest_index_shas.py",
+        "vault_drift_check_sh_exit": 0
+      },
+      "behavior_change": "none (artifact metadata only).",
+      "findings_introduced": [],
+      "findings_closed": [],
+      "next_slice": "CIH-H-followup (post-fmt SHA rewrite) — delivered at 29f0bef6. Pending: 5/5 GH Actions GREEN on remote HEAD 29f0bef6 before ff-merge to origin/main."
+    },
+    {
+      "id": "CIH-H-followup",
+      "title": "correct sessions.rs SHA row to match post-fmt file content",
+      "executed_at": "2026-09-19T21:37:00Z",
+      "head_sha_before": "e471221c",
+      "head_sha_after": "29f0bef6",
+      "files_changed": [
+        ".sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-71-services-list-store-contract/archive-manifest.md"
+      ],
+      "production_changed": false,
+      "rationale": "CIH-H at e471221c wrote SHA-256 cfd02d4f for crates/chronos-services/src/sessions.rs but the file content committed in 8f49d48d is 50e4d619. Root cause: the regen script ran against the working tree BEFORE `cargo fmt --all` reformatted the function-call chain — the post-fmt indentation moved .rehydrate() from a 1-line call to a 3-line chain, which changed the bytes the SHA covers. The fmt-clean content was what landed in 8f49d48d, but e471221c's manifest row pointed at the pre-fmt bytes. GH Actions vault drift sweep at e471221c (run 35470646147) caught CC#4 on the same row. Fix: re-ran scripts/regen_manifest_index_shas.py against the committed post-fmt content; row rewritten cfd02d4f -> 50e4d619. --check clean. check_vault_drift.sh PASS. This is the same post-format SHA-rewrite ritual that CIH-C documented for PR-32 / fffff332: any change to file content forces a SHA rewrite, and the script must run AFTER the formatting commit that changed the bytes.",
+      "evidence": {
+        "vault_drift_remediated_row": "crates/chronos-services/src/sessions.rs: cfd02d4fcb491a92888c6817119f7a5a3ea742ce8ee7846b1b166849350d6137 -> 50e4d61909fdb8aefcb40fc52be919ef7f0ffff34f1e4433219a9d92f97506c8",
+        "manifests_checked": 102,
+        "rows_rewritten": 1,
+        "self_referential_rows_preserved": 1,
+        "regen_tool": "scripts/regen_manifest_index_shas.py",
+        "vault_drift_check_sh_exit": 0,
+        "gh_actions_trigger_for_followup": "35470974959 (vault drift), 35470974919 (arch), 35470974915 (debt sentinel), 35470974916 (ci), 35470974920 (coverage) — all queued at 21:37:42Z on HEAD 29f0bef6"
+      },
+      "behavior_change": "none (artifact metadata only). Process change: CIH-H ritual must run AFTER `cargo fmt --all` reformats any source file whose content a manifest row points at.",
+      "findings_introduced": [],
+      "findings_closed": [],
+      "next_slice": "wait for 5/5 GH Actions GREEN on remote HEAD 29f0bef6; if GREEN, ff-merge to origin/main; if any gate RED, diagnose and own to a slice."
     }
   ],
   "remote_tag": null,
