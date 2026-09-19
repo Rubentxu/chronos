@@ -3,7 +3,7 @@
   "project_id": "p-3416cfb8288f8964",
   "milestone": "REC-C3 — Hexagonal boundary closure",
   "sub_cycle": "rec-c3-ci-hygiene — baseline CI / Coverage / Vault drift reconciliation",
-  "head_sha": "533304b4",
+  "head_sha": "b71c1adc",
   "merge_sha": null,
   "base_sha": "5b7b7de17fe0a80c83e25d9c07c24c179bfc6097",
   "branch": "rec-c3-ci-hygiene",
@@ -79,6 +79,47 @@
       },
       "findings_closed": ["m1_02_lenient_replay_assertion_stale"],
       "next_slice": "CIH-B (tripwire_depth / McpTestClient under tarpaulin)",
+      "next_slice_owner_gate": "REC-C3 ci hygiene"
+    },
+    {
+      "id": "CIH-A-doc-fix",
+      "title": "tighten CIH-A atomicity comment to what the assertions prove",
+      "executed_at": "2026-09-19T09:03:00Z",
+      "head_sha_before": "533304b4",
+      "files_changed": ["chronos-sandbox/tests/m1_acceptance.rs"],
+      "production_changed": false,
+      "evidence": {
+        "rationale": "second reopen proves reproducibility of refusal, not internal atomicity; the latter is owned by apply_plan() and REC-C1.5.2 unit tests"
+      },
+      "findings_closed": ["cih_a_overclaim_atomicity"]
+    },
+    {
+      "id": "CIH-B",
+      "title": "McpTestClient harness: locate chronos-mcp via cargo metadata + auto-build",
+      "executed_at": "2026-09-19T09:23:00Z",
+      "head_sha_before": "7447ea56",
+      "files_changed": [
+        "chronos-sandbox/src/client/tools.rs",
+        "chronos-sandbox/src/client/process.rs"
+      ],
+      "production_changed": false,
+      "evidence": {
+        "tier_T0_fmt_exit": 0,
+        "tier_T0_clippy_exit": 0,
+        "tier_T1_m1_acceptance": "7 passed; 0 failed; 0 ignored (m1_07 and m1_08 no longer early-return on McpTestClient::start failure)",
+        "tier_T1_smoke_e2e_connectivity": "1 passed",
+        "tier_T1_smoke_analytics_tools": "4 passed",
+        "tier_T1_smoke_session_persistence": "4 passed",
+        "tier_arch_hex_boundary": "OK: chronos hexagonal boundary clean",
+        "tier_arch_contracts": "PASSED",
+        "binary_built_on_demand": "/var/home/rubentxu/cargo-targets/debug/chronos-mcp (149 MB) created by resolve_mcp_path slow-path during first m1_07 run; cached thereafter"
+      },
+      "findings_closed": [
+        "mcp_test_client_path_walk_broken_for_nonzero_target_dir",
+        "spawn_failed_error_missing_executable_path",
+        "m1_07_m1_08_silently_eprintln_return_on_harness_failure"
+      ],
+      "next_slice": "CIH-C (Vault Drift CC#18/19/39)",
       "next_slice_owner_gate": "REC-C3 ci hygiene"
     }
   ]
