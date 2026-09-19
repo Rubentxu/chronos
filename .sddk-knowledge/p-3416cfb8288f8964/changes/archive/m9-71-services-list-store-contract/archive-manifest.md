@@ -73,7 +73,7 @@ Two commits:
 | Kind | Path | SHA-256 |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-71-services-list-store-contract/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
-| source (services sessions) | `crates/chronos-services/src/sessions.rs` | `cfd02d4fcb491a92888c6817119f7a5a3ea742ce8ee7846b1b166849350d6137` |
+| source (services sessions) | `crates/chronos-services/src/sessions.rs` | `50e4d61909fdb8aefcb40fc52be919ef7f0ffff34f1e4433219a9d92f97506c8` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/apply-checkpoint.json` | `cc5bb8dddb0d4ab50013f024f2267816c5293e4c230cf1b804708077e46b838b` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/verify-report.md` | `7c71a52040000a94cc8377134ce861c54eb5abdfeacf499a8b73e651a27cfb7b` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/verify-findings.json` | `f4dff9ccff6892cf56f16951a2f6ca083f378ff1716c55f2f2e36657544b57d3` |
