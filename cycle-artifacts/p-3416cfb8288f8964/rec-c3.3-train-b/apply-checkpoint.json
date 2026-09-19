@@ -3,7 +3,7 @@
   "cycle_id": "rec-c3.3-train-b",
   "title": "REC-C3.3.3 (Tren B): Native probe mcp tool surface — service-port expansion",
   "summary": "REC-C3.3.3 (Tren B): introduce capture_session (single-shot probe compose) + probe_advance + probe_step MCP tools; route save_session/load_session/list_sessions/delete_session through a new SessionArchive port; route counterexample_* tools through a new CounterexampleRepository port; lift SessionMetadata from chronos-store::storage.rs:22 to chronos-domain (mirrors C3.3.1 SessionId lift). CRITICAL CORRECTION: Tren A (REC-C3.3.2) did NOT introduce capture_session as an MCP tool (zero hits in crates/); the previous apply-checkpoint summary line was incorrect. capture_session is a Tren B deliverable.",
-  "status": "OPEN",
+  "status": "SUSPENDED_AT_APPLY",
   "created_at": "2026-09-19T10:45:00Z",
   "branch": "feat/rec-c3.3-train-b",
   "base_sha": "fa5eb5827e997c874047c6c2318ad2b5b1c8f323",
@@ -107,7 +107,13 @@
     "Carry-forward debt C31-DEBT-03 (services->ports inversion not finished) will be partially addressed (SessionArchive + CounterexampleRepository); remaining services->native direction logged as no_action_in_current_cycle per B8 — REC-C3.4 owns it.",
     "sddk-propose complete (proposal.md, 407 lines, sha256 3a3078d5...). CAS persistence deferred per FIND-TB-01 (CLI cycle identifier format gap); evidence chain via git commits preserved.",
     "specification.md complete (17 REQ, 35 scenarios, 14 EC, 10 AP, sha256 a56520380a9d76dc...). Slice traceability index maps each REQ to one of 7 slices (A..G). Three non-blocking questions to resolve in sddk-tasks: StoreKind disclosure, SessionArchive::delete semantics, CounterexampleBundleFilter derives.",
-    "task-graph.json complete (7 tasks, sha256 a4a8753a3c9cd44a...). Forecast 1450 LOC vs 400 budget = High risk; per ADR-0070 the single-PR strategy with per-slice atomic commits satisfies the size-exception reviewer-bounded-diffs contract. Three Qs resolved: is_persistent on SessionArchive port, refusal of live delete at service layer, CounterexampleBundleFilter move to domain with owned fields."
+    "task-graph.json complete (7 tasks, sha256 a4a8753a3c9cd44a...). Forecast 1450 LOC vs 400 budget = High risk; per ADR-0070 the single-PR strategy with per-slice atomic commits satisfies the size-exception reviewer-bounded-diffs contract. Three Qs resolved: is_persistent on SessionArchive port, refusal of live delete at service layer, CounterexampleBundleFilter move to domain with owned fields.",
+    "SUSPENDED 2026-09-19T11:58Z at apply phase before any slice commit.",
+    "Cause: cross-project contamination detected. The operator's message stream shifted to CogniCode (Scorecard Reader Refresh, ADR-031, e77, CP1.x, G4/G6 negotiations). Cycle rec-c3.3-train-b belongs to Chronos only; mixing gate evidence or roadmap forks across projects is forbidden.",
+    "Action taken: agent buffalo (apply/TASK-TB-A) was running uncommitted edits (8 mods + 1 new file in crates/) — agent stopped, working tree reverted via `git checkout -- crates/`; `crates/chronos-domain/src/session.rs` deleted. HEAD preserved at d193366b (4 commits of phases; no slice commits). All phase artifacts (exploration-report, proposal, specification, task-graph) retained on disk for resumption.",
+    "Decision: do NOT continue apply slices for rec-c3.3-train-b in this session. Resumption requires: (a) explicit Chronos reconfirmation from operator, (b) revalidation that rec-c3-ci-hygiene closure is intact (HEAD acda8447 on rec-c3-ci-hygiene branch; origin/main=fa5eb582; 5/5 gates historically GREEN at 3fdcbf13 / 5bcb2b63).",
+    "CogniCode work must follow operator-defined order: (1) G4/G6 metric reconnaissance, (2) e77 vertical, (3) re-measure, (4) ADR-031 decision only with evidence. Streak remains 1/3 HELD.",
+    "Sanity: pwd=Rubentxu/chronos (verified at 11:58Z); remote=git@github.com:Rubentxu/chronos.git; branch=feat/rec-c3.3-train-b; HEAD=d193366b."
   ],
   "ledger_progression": [
     {
@@ -188,7 +194,7 @@
     "spec": true,
     "design": false,
     "tasks": true,
-    "apply": false,
+    "apply": null,
     "verify": false,
     "debt_verify": false,
     "release": false,
