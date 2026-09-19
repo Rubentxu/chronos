@@ -43,14 +43,23 @@ A-min (recon-only). Sub-cycle scope: C3.3.0 only.
 - ADR for the composition-root placement (option 3: `chronos-services::composition`) lands in C3.3.1.
 - Carry-forward findings (C31-DEBT-01/02/03) are re-observed, not closed.
 
+## Canonical SHA fields (added by CIH-C.1)
 
-## Canonical SHA fields (added by CIH-C)
-
-
+| Field | Value |
+|---|---|
 | Head SHA | `188f2e182df180f9f947ccb1f6ad87ca028216e6` |
+| Base SHA | `188f2e182df180f9f947ccb1f6ad87ca028216e6` |
+| Branch | `rec-c3-3-services-inversion` |
+| Date | (original merge date not verifiable from current artifacts; see _restoration_note) |
 
-| Base SHA | `unknown` |
+## Restoration note
 
-| Branch | `main` |
-
-| Date | `2026-09-19T00:00:00Z` |
+CIH-C.1 (2026-09-19) appended these canonical SHA fields because the
+original merge-receipt.md artifact produced by the prior cycle did
+not carry them. The Head SHA and Base SHA were reconstructed from
+the apply-checkpoint.json `head_sha` and `base_sha` fields (which in
+turn were reconciled from git history by CIH-C.1 — see
+apply-checkpoint.json restorations for related cycles). The Branch
+field reflects the cycle's branch (from apply-checkpoint.json `branch` field).
+The Date field is left as a restoration placeholder because the
+original receipt did not record a verifiable merge timestamp.

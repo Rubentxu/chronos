@@ -116,7 +116,7 @@ Three commits:
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-74-cas-put-many-batching/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
 | source (content store) | `crates/chronos-store/src/cas.rs` | `a0f32a00c732bde1cd2e2be7744cb25be1c2e583aaa987593e7c80b31510660a` |
-| source (session storage) | `crates/chronos-store/src/storage.rs` | `6c42c78f4ea8e5b73bb3d7ffd5a228396a12a1e6052c8fc6b8354c816469a113` |
+| source (session storage) | `crates/chronos-store/src/storage.rs` | `7502633557250e3cc54fa37d68e60b4914f05b9e39c267c0ff0dcfd84452e696` |
 | source (store crate root) | `crates/chronos-store/src/lib.rs` | `093934f02101a7f6404fcd3cebe7fce972861731a6657becaa8bba5eb6f687fa` |
 | test support (sync barrier counter) | `crates/chronos-store/src/test_support.rs` | `60f6d32eddead5721c5e6ebb6037f54f945562f88cc4c6c0038869d0a5b42680` |
 | source (mcp server, tool wire shapes) | `crates/chronos-mcp/src/server.rs` | `c894842904b37378f71dd6104d8d9941c7d0b5bbfb969243200f5a4271c21d75` |
@@ -128,5 +128,5 @@ Three commits:
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/release-receipt.md` | `5de5a22a246d5cb8bb8f8b47260d09b767fd7250f38dcd6362432c36f4c55a53` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/merge-receipt.md` | `54c887e312366589c08ac19109959ff6d88367b553ab0c6a78535615c762ac76` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-74-cas-put-many-batching/change-entry.md` | `898af1d8a0e49a2fc63a79a5f4b0a1aa9fa60383c48b826d84dad41f06f2263d` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `2abe826f997082a6423ebc4f487782b92630a82ab695d9a3e698868e82313e4e` |
-| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `03221130e4cfca65f7b145f2907767c3c01a4e27a966af20dfec38249774de8d` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `b32588ee70600b9af3583750f308b59009ebeb7d6a79cf7cd79f3a76cd139e1a` |
+| vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `8d262955b5079b561d8c5097dc14c48284031aeb746a152ad12575287967ac2c` |

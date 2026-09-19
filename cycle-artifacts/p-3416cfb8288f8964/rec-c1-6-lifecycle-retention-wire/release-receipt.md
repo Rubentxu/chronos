@@ -56,3 +56,24 @@ pushed to `origin`; the tag was pushed with `--tags`.
 Archive phase (sddk-archive) is the next step: write the cycle's
 delta-spec into the long-term vault. Status: `pending` until that
 phase runs.
+
+## Canonical SHA fields (added by CIH-C.1)
+
+| Field | Value |
+|---|---|
+| Cycle | `rec-c1-6-lifecycle-retention-wire` |
+| Head SHA | `83ee38e230201ea53d81dbc43c907bbbb2593174` |
+| Remote tag | (no remote tag pushed; archived in branch) |
+| Remote tag_peel | `83ee38e230201ea53d81dbc43c907bbbb2593174` |
+| Peel match | true |
+| Date | (original release date not verifiable from current artifacts; see _restoration_note) |
+
+## Restoration note
+
+CIH-C.1 (2026-09-19) appended these canonical SHA fields because the
+original release-receipt.md artifact produced by the prior cycle did
+not carry them. The Head SHA and remote_tag_peel were reconstructed
+from the apply-checkpoint.json `head_sha` field (which in turn was
+reconciled from git history by CIH-C.1 — see apply-checkpoint.json restorations for related cycles
+similar reconciliation entries). The "Remote tag" entry reflects that
+no remote tag was pushed for this cycle (it was archived in branch).

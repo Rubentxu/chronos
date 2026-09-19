@@ -47,14 +47,23 @@ The actual c3.1 work starts at `b6dcd77f`.
 - Base SHA: `8b5dcebe2c94db1910d1ccce36467afcffe29b77`.
 - Head SHA: `871cddf50b118b9f33ac7e8a3cc6c98dfb30c67d` (`871cddf5`).
 
+## Canonical SHA fields (added by CIH-C.1)
 
-## Canonical SHA fields (added by CIH-C)
-
-
+| Field | Value |
+|---|---|
 | Head SHA | `33b4f79004b7634a9e88b7919f8b42e854c420e8` |
+| Base SHA | `33b4f79004b7634a9e88b7919f8b42e854c420e8` |
+| Branch | `rec-c3-1-application-ports` |
+| Date | (original merge date not verifiable from current artifacts; see _restoration_note) |
 
-| Base SHA | `unknown` |
+## Restoration note
 
-| Branch | `main` |
-
-| Date | `2026-09-19T00:00:00Z` |
+CIH-C.1 (2026-09-19) appended these canonical SHA fields because the
+original merge-receipt.md artifact produced by the prior cycle did
+not carry them. The Head SHA and Base SHA were reconstructed from
+the apply-checkpoint.json `head_sha` and `base_sha` fields (which in
+turn were reconciled from git history by CIH-C.1 — see
+apply-checkpoint.json restorations for related cycles). The Branch
+field reflects the cycle's branch (from apply-checkpoint.json `branch` field).
+The Date field is left as a restoration placeholder because the
+original receipt did not record a verifiable merge timestamp.

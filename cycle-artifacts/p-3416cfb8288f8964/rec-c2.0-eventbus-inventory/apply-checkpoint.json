@@ -6,7 +6,7 @@
   "release_status": "passed",
   "archive_status": "ready",
   "head_sha": "4c7df70e70e268f05de5708d7bdfdb0ede9a30f1",
-  "base_sha": "063cbdf8",
+  "base_sha": "063cbdf826e16aa6e28ab63ed75899fb3d9f3c45",
   "main_sha": "4c7df70e70e268f05de5708d7bdfdb0ede9a30f1",
   "tag": "rec-c2.0-eventbus-inventory",
   "branch": "feat/rec-c2.0-eventbus-inventory",
@@ -38,21 +38,21 @@
     },
     {
       "sha": "4c7df70e",
-      "title": "Merge REC-C2.0 \u2014 EventBus legacy inventory + ratchet (REC-C2 opened)"
+      "title": "Merge REC-C2.0 — EventBus legacy inventory + ratchet (REC-C2 opened)"
     }
   ],
   "gates": {
     "T0_fmt": "PASS (cargo fmt --all -- --check)",
     "T0_clippy": "PASS (cargo clippy --workspace --all-targets -- -D warnings)",
     "T1_workspace_lib_plus_tests": "PASS (workspace --lib excluding sandbox/e2e/native: 16 groups 0 failed; chronos-domain 161, chronos-services 350)",
-    "T_chronos_native_serial": "PASS (105 passed; --test-threads=1 per AGENTS.md \u00a76.5)",
+    "T_chronos_native_serial": "PASS (105 passed; --test-threads=1 per AGENTS.md §6.5)",
     "arch_gate_default": "PASS (python3 scripts/check_architecture_contracts.py)",
     "arch_gate_strict_legacy": "FAIL by design with exactly 7 CANONICAL destructive reads (the gate REC-C2 must clear)",
     "legacy_evb_ratchet": "PASS (37 tracked, baseline 37, CANONICAL=11); both new-use and stale-waiver rules mutation-verified"
   },
   "pre_existing_flakes_handled": [
-    "chronos-native lib tests require --test-threads=1 (ptrace collisions; documented in AGENTS.md \u00a76.5)",
-    "check_architecture_contracts.py was RED on main (TRUTH-001/002/003 missing uat) \u2014 repaired in-cycle, documented as FIND-C2.0-03"
+    "chronos-native lib tests require --test-threads=1 (ptrace collisions; documented in AGENTS.md §6.5)",
+    "check_architecture_contracts.py was RED on main (TRUTH-001/002/003 missing uat) — repaired in-cycle, documented as FIND-C2.0-03"
   ],
   "smoke_subset": [],
   "verify_commands": [
@@ -67,5 +67,6 @@
     "CC#39_pre_existing_intentional": "cycles/index.md Total cycles vs m9-only filesystem count; structural delta, pre-existing. gov-* owns it (do NOT silently mask).",
     "CC#18_rec_c1_7_pre_existing": "rec-c1-7-projection-authority-acceptance missing verify-findings.json (C1.7 gap). gov-* owns the backfill."
   },
-  "notes": "Opened at the user's direction immediately after M1 closure. C2.0 is inventory + measurement only: no EventBus removal, no behavior change. The ratchet makes the legacy surface monotonically shrinking and names the 7 CANONICAL destructive reads REC-C2 must clear (--strict-legacy). Two real defects surfaced (FIND-C2.0-01/02) and became REC-C2.1 DoD items; the pre-existing red architecture gate (FIND-C2.0-03) was repaired in-cycle per AGENTS.md \u00a74. Next: REC-C2.1 (TripwireFired as ExecutionLog evidence; persist first, derive second, fan-out last)."
+  "notes": "Opened at the user's direction immediately after M1 closure. C2.0 is inventory + measurement only: no EventBus removal, no behavior change. The ratchet makes the legacy surface monotonically shrinking and names the 7 CANONICAL destructive reads REC-C2 must clear (--strict-legacy). Two real defects surfaced (FIND-C2.0-01/02) and became REC-C2.1 DoD items; the pre-existing red architecture gate (FIND-C2.0-03) was repaired in-cycle per AGENTS.md §4. Next: REC-C2.1 (TripwireFired as ExecutionLog evidence; persist first, derive second, fan-out last).",
+  "remote_tag_peel": "4c7df70e70e268f05de5708d7bdfdb0ede9a30f1"
 }

@@ -6,7 +6,7 @@
   "release_status": "passed",
   "archive_status": "ready",
   "head_sha": "5bd67b79a2cc7784261577ff2043bc50fa9ff472",
-  "base_sha": "4e0a1344",
+  "base_sha": "4e0a1344ee2cfa5508deb9865dd3b9b7cbb289bf",
   "main_sha": "5bd67b79a2cc7784261577ff2043bc50fa9ff472",
   "tag": "m1-gap-segment-accounting-repair",
   "branch": "feat/m1-gap-segment-accounting-repair",
@@ -23,12 +23,30 @@
     "applied": []
   },
   "commits": [
-    {"sha": "0853fe2c", "title": "test(m1-gap-segment-accounting): characterize header/replay count divergence (RED)"},
-    {"sha": "79426b46", "title": "fix(m1-gap-segment-accounting): one unit for writer/header/replay (entry_count)"},
-    {"sha": "e0c0785d", "title": "test(m1-gap-segment-accounting): un-ignore the C1.8 forced-gap UAT (2/2 GREEN)"},
-    {"sha": "9f647740", "title": "chore(m1-gap-segment-accounting): FIND-C1.8-01 closed in the REC-C1.8 artifacts"},
-    {"sha": "5d405d26", "title": "chore(m1-gap-segment-accounting): gates PASS (T0/T3/native-serial/T4-smoke) + commit list"},
-    {"sha": "5bd67b79", "title": "Merge M1 — gap segment accounting repair (FIND-C1.8-01 closed)"}
+    {
+      "sha": "0853fe2c",
+      "title": "test(m1-gap-segment-accounting): characterize header/replay count divergence (RED)"
+    },
+    {
+      "sha": "79426b46",
+      "title": "fix(m1-gap-segment-accounting): one unit for writer/header/replay (entry_count)"
+    },
+    {
+      "sha": "e0c0785d",
+      "title": "test(m1-gap-segment-accounting): un-ignore the C1.8 forced-gap UAT (2/2 GREEN)"
+    },
+    {
+      "sha": "9f647740",
+      "title": "chore(m1-gap-segment-accounting): FIND-C1.8-01 closed in the REC-C1.8 artifacts"
+    },
+    {
+      "sha": "5d405d26",
+      "title": "chore(m1-gap-segment-accounting): gates PASS (T0/T3/native-serial/T4-smoke) + commit list"
+    },
+    {
+      "sha": "5bd67b79",
+      "title": "Merge M1 — gap segment accounting repair (FIND-C1.8-01 closed)"
+    }
   ],
   "gates": {
     "T0_fmt": "PASS (cargo fmt --all -- --check)",
@@ -55,5 +73,6 @@
     "CC#39_pre_existing_intentional": "cycles/index.md Total cycles vs filesystem. Pre-existing; belongs in a separate gov-* cycle (do NOT silently mask).",
     "CC#18_rec_c1_7_pre_existing": "rec-c1-7-projection-authority-acceptance missing verify-findings.json (C1.7 gap). gov-* owns the backfill."
   },
-  "notes": "Cycle opened off main@4e0a1344 immediately after REC-C1.8 closure, at the user's direction, before starting REC-C2. Root cause fully characterized before any fix: writer counts entries, replay counts records. CLOSED: one unit (entry_count = persisted SegmentEntry count) shared by writer/header/replay; the C1.8 forced-gap UAT is un-ignored and GREEN (2/2); GAP-PERSIST-1..6 added; FIND-C1.8-01 flipped to closed in the REC-C1.8 verify-findings. Closure conventions match rec-c1-5/6/7: archive_status=ready, no .sddk-knowledge/changes/archive/m1-gap-* directory, single-branch cycle, annotated tag m1-gap-segment-accounting-repair. Next: REC-C2.0 (inventory + ratchet)."
+  "notes": "Cycle opened off main@4e0a1344 immediately after REC-C1.8 closure, at the user's direction, before starting REC-C2. Root cause fully characterized before any fix: writer counts entries, replay counts records. CLOSED: one unit (entry_count = persisted SegmentEntry count) shared by writer/header/replay; the C1.8 forced-gap UAT is un-ignored and GREEN (2/2); GAP-PERSIST-1..6 added; FIND-C1.8-01 flipped to closed in the REC-C1.8 verify-findings. Closure conventions match rec-c1-5/6/7: archive_status=ready, no .sddk-knowledge/changes/archive/m1-gap-* directory, single-branch cycle, annotated tag m1-gap-segment-accounting-repair. Next: REC-C2.0 (inventory + ratchet).",
+  "remote_tag_peel": "5bd67b79a2cc7784261577ff2043bc50fa9ff472"
 }

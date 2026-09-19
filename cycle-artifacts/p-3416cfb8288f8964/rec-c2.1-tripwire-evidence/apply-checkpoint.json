@@ -6,7 +6,7 @@
   "release_status": "passed",
   "archive_status": "ready",
   "head_sha": "686a364cff38d90fe1540293dcd7b7e88b54f8ad",
-  "base_sha": "09ef1c63",
+  "base_sha": "09ef1c6354be6633e197df9b64a891cd34ce290d",
   "main_sha": "686a364cff38d90fe1540293dcd7b7e88b54f8ad",
   "tag": "rec-c2.1-tripwire-evidence",
   "branch": "feat/rec-c2.1-tripwire-evidence",
@@ -92,5 +92,9 @@
     "CC#39_pre_existing_intentional": "cycles/index.md Total cycles vs m9-only filesystem count; structural delta, pre-existing; gov-* owns it.",
     "CC#18_rec_c1_7_pre_existing": "rec-c1-7 missing verify-findings.json (C1.7 gap); gov-* owns the backfill."
   },
-  "notes": "IN PROGRESS. C2.1.0-3 are done, committed and verified. C2.1.4-7 are not: observe is synchronous and cannot resolve the active session's ExecutionLog without either an async conversion or a duplicated active-session source. The proposal and this checkpoint record the choice to make observe async, which is a standalone commit. No merge or tag until C2.1.4-7 land."
+  "notes": [
+    "IN PROGRESS. C2.1.0-3 are done, committed and verified. C2.1.4-7 are not: observe is synchronous and cannot resolve the active session's ExecutionLog without either an async conversion or a duplicated active-session source. The proposal and this checkpoint record the choice to make observe async, which is a standalone commit. No merge or tag until C2.1.4-7 land.",
+    "Free-text note migrated from findings_introduced.no_action: FIND-C2.1-03 (derivation has no production caller; scoped to REC-C2.2)"
+  ],
+  "remote_tag_peel": "686a364cff38d90fe1540293dcd7b7e88b54f8ad"
 }

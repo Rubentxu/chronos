@@ -1,13 +1,13 @@
 {
   "subject": {
     "head_sha": "6190390d399a3978cbbf7ee7cda77ab4e10019e3",
-    "base_sha": "e4af63b6",
+    "base_sha": "e4af63b62ca980d46eb9ed0238cb3f44c854a33c",
     "cycle_id": "rec-c1-7-projection-authority-acceptance",
     "branch": "feat/rec-c1.7-projection-authority-acceptance",
     "route": ""
   },
   "cycle_id": "rec-c1-7-projection-authority-acceptance",
-  "verdict": "passed",
+  "verdict": "PASS",
   "all_passed": true,
   "lens_summary": {
     "tiers_run": [],
@@ -17,5 +17,6 @@
   "findings": [],
   "synthesized_at": "2026-09-19T09:32:48.231408+00:00",
   "synthesized_by": "rec-c3-ci-hygiene CIH-C",
-  "owner_cycle": "rec-c3-ci-hygiene"
+  "owner_cycle": "rec-c3-ci-hygiene",
+  "_legacy_verdict": "passed"
 }

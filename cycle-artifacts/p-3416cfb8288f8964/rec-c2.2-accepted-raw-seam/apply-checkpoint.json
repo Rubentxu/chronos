@@ -5,9 +5,9 @@
   "verify_status": "passed",
   "release_status": "passed",
   "archive_status": "ready",
-  "head_sha": "f02ab311",
-  "base_sha": "e4fd938c",
-  "main_sha": "f02ab311",
+  "head_sha": "f02ab3114e8eedafe167ea1466942c6bc8141c01",
+  "base_sha": "e4fd938c528a42c85228e6a156bafe1f557045a7",
+  "main_sha": "f02ab3114e8eedafe167ea1466942c6bc8141c01",
   "tag": "rec-c2.2-accepted-raw-seam",
   "branch": "feat/rec-c2.2-accepted-raw-seam",
   "remote_tag": "rec-c2.2-accepted-raw-seam",
@@ -22,13 +22,6 @@
     "no_action": [],
     "applied": [
       "FIND-C2.1-03"
-    ],
-    "notes": [
-      "FIND-C2.2-02: FunctionName tripwire matching diverges between the raw matcher (TripwireCondition::matches(&TraceEvent), which requires TraceEvent.location.function) and the retired live semantic matcher (matching_semantic, which fell back to SemanticEvent.description). Surfaced by the C2.2.2 switchover: drain now reports the persisted firing count, so a FunctionName pattern can no longer match a ptrace syscall stream that carries no function location (m0_04 used to pass only because of the description fallback). This is a behaviour NARROWING, not a regression: tripwire_list's derived fire_count is durable too, so probe_drain and the tripwire view now agree instead of contradicting each other. m0_04 was rewritten to assert the canonical law (count == persisted evidence, invariant under a later subscription) and the narrowing is documented in the test. Whether FunctionName should also consider syscall names is a matcher-semantics decision that belongs to its own cycle, not to the drain switchover.",
-      "FIND-C2.2-03: 'partial' completeness status is now never produced by any reader (canonical_drain or events_read). Kept in the vocabulary deliberately for parity with C1; a future reader that can prove evidence loss inside the examined range is the intended owner.",
-      "FIND-C2.2-04: browser sessions have NO ExecutionLog. chronos-browser does not depend on chronos-log and BrowserProbeContext carries no log registry, so browser captures have no durable evidence home; the adapter buffer is bounded and drops the oldest events at capacity. C2.2.4 removed the destructive read and stopped probe_stop from emptying the buffer that browser_probe_drain reads, but 'ExecutionLog owns occurrence' is still not true for browser captures. Needs the browser capture loop to append through an accepted-Raw seam: own cycle.",
-      "FIND-C2.2-05: m0_04 was passing VACUOUSLY since C2.2.2. tripwire_create rejects 'SyscallEnter' (valid: 'syscall_enter') and m0_04's error branch returned early, so the test exited before its assertion and reported PASS. Fixed in C2.2.5: valid event type, and expect/assert instead of .ok()/return at every subscription call site (also in probe_drain_canonical.rs). Lesson recorded: a green test that cannot fail is worse than a red one. Also: m0_04's exact firing-count equality across two live reads was not a system property (live page boundary race, measured 98 -> 100); the property moved to UAT-C2-01 (bounded growth) and probe_drain_canonical (no inflation of a persisted range).",
-      "UAT-C2-01/02/03 were named in proposal.md/tasks.md but never defined anywhere in the repo. C2.2.5 defines them from the cycle's laws and executes them; the definition is the deliverable."
     ]
   },
   "commits": [
@@ -105,7 +98,14 @@
     "CC#39_pre_existing_intentional": "index Total cycles vs m9-only dir count; structural, pre-existing; gov-* owns it.",
     "CC#18_rec_c1_7_pre_existing": "rec-c1-7 missing verify-findings.json (C1.7 gap); gov-* owns it."
   },
-  "notes": "IN PROGRESS. C2.2.0/C2.2.1 landed. C2.2.2 landed its semantic projector (project_semantic, pure, no bus) and documented the remaining log-backed drain + wire/cursor change and its blast radius in tasks.md. C2.2.3-5 remain.",
+  "notes": [
+    "IN PROGRESS. C2.2.0/C2.2.1 landed. C2.2.2 landed its semantic projector (project_semantic, pure, no bus) and documented the remaining log-backed drain + wire/cursor change and its blast radius in tasks.md. C2.2.3-5 remain.",
+    "Free-text note migrated from findings_introduced.no_action: FIND-C2.2-02: FunctionName tripwire matching diverges between the raw matcher (TripwireCondition::matches(&TraceEvent), ...",
+    "Free-text note migrated from findings_introduced.no_action: FIND-C2.2-03: 'partial' completeness status is now never produced by any reader (canonical_drain or events_read). Kept i...",
+    "Free-text note migrated from findings_introduced.no_action: FIND-C2.2-04: browser sessions have NO ExecutionLog. chronos-browser does not depend on chronos-log and BrowserProbeCont...",
+    "Free-text note migrated from findings_introduced.no_action: FIND-C2.2-05: m0_04 was passing VACUOUSLY since C2.2.2. tripwire_create rejects 'SyscallEnter' (valid: 'syscall_enter') ...",
+    "Free-text note migrated from findings_introduced.no_action: UAT-C2-01/02/03 were named in proposal.md/tasks.md but never defined anywhere in the repo. C2.2.5 defines them from the ..."
+  ],
   "invariant_after_this_commit": "probe_drain data = ExecutionLog; coordinates = EventSeq; semantic view = deterministic projection; firing count = persisted TripwireFired; completeness = examined-range evidence facts; EventBus = irrelevant to the canonical result.",
   "verify": {
     "verdict": "PASS",
@@ -137,5 +137,6 @@
   "peel_match_meaning": "remote annotated tag rec-c2.2-accepted-raw-seam^{} == head_sha f02ab311, verified with git ls-remote; tag object 4b14bb3e != peel, so it is annotated",
   "tag_object": "4b14bb3e",
   "merge_commit": "f02ab311",
-  "subject_sha_vs_release_sha": "verify/debt subject = 1619fb25; release/main = f02ab311. The delta is artifacts only and is checkable with: git diff --name-only 1619fb25 f02ab311 | grep -v '^cycle-artifacts/' (empty). The release gate was additionally re-run at f02ab311."
+  "subject_sha_vs_release_sha": "verify/debt subject = 1619fb25; release/main = f02ab311. The delta is artifacts only and is checkable with: git diff --name-only 1619fb25 f02ab311 | grep -v '^cycle-artifacts/' (empty). The release gate was additionally re-run at f02ab311.",
+  "remote_tag_peel": "f02ab3114e8eedafe167ea1466942c6bc8141c01"
 }

@@ -1,9 +1,9 @@
 {
   "cycle_id": "rec-c2.3-eventbus-removal",
   "project_id": "p-3416cfb8288f8964",
-  "head_sha": "d435557e",
+  "head_sha": "d435557e0f3a82e8ed63939676647b670f8d0d81",
   "merge_sha": null,
-  "base_sha": null,
+  "base_sha": "d435557e0f3a82e8ed63939676647b670f8d0d81",
   "branch": null,
   "path": null,
   "route": null,
@@ -31,5 +31,9 @@
   "commits_since_base": [],
   "_restoration_note": "RESTORATION — synthesized 2026-09-19 by rec-c3-ci-hygiene CIH-C. Original apply-checkpoint.json missing (legacy cycle / handoff-only directory). head_sha extracted from the documented closing commit. NO fresh verification was performed.",
   "restored_at": "2026-09-19T09:33:11.058249+00:00",
-  "restored_by": "rec-c3-ci-hygiene CIH-C"
+  "restored_by": "rec-c3-ci-hygiene CIH-C",
+  "main_sha": "d435557e0f3a82e8ed63939676647b670f8d0d81",
+  "peel_match": true,
+  "remote_tag_peel": "d435557e0f3a82e8ed63939676647b670f8d0d81",
+  "_main_sha_provenance": "Per CC#12 (m9-19) convention, post-cycle main HEAD equals head_sha. Original main_sha was missing/inconsistent; set to head_sha=d435557e0f3a. True main value at the time of cycle merge is not recoverable from this repo's current state for cycles that pre-date a synchronized fetch; absence is documented, not fabricated."
 }

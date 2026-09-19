@@ -5,8 +5,8 @@
   "verify_status": "passed",
   "release_status": "released",
   "archive_status": "ready",
-  "head_sha": "83ee38e2",
-  "base_sha": "5bbf7748",
+  "head_sha": "83ee38e230201ea53d81dbc43c907bbbb2593174",
+  "base_sha": "5bbf774888c3bced7967e3e060859d9a78d7035a",
   "merge_sha": "83ee38e2",
   "tag": "rec-c1-6-lifecycle-retention-wire",
   "branch": "feat/rec-c1.6-lifecycle-retention-wire",
@@ -28,14 +28,46 @@
     ]
   },
   "commits": [
-    {"sha": "0af8c3c9", "step": "C1.6.0", "title": "docs(rec-c1.6): reconcile C1.5 closure + C1.6 active in roadmap"},
-    {"sha": "75492dd6", "step": "design-refine", "title": "docs(rec-c1.6): refine design — connected_sessions is the liveness source"},
-    {"sha": "dccabee5", "step": "planning", "title": "chore(rec-c1.6): proposal + design + tasks + apply-checkpoint"},
-    {"sha": "7197c40e", "step": "A1+A2+A3", "title": "feat(rec-c1.6): refuse delete_session on a live session (typed error + 2 unit tests + MCP handler arm)"},
-    {"sha": "7afb47ad", "step": "A4+A5", "title": "feat(rec-c1.6): wire liveness marker for typed delete_session refusal"},
-    {"sha": "1da26f5c", "step": "B1+B2+B3", "title": "feat(rec-c1.6): RetentionFacts + TailFacts on LogReadPage (types + read_page population + unit tests)"},
-    {"sha": "580a8f45", "step": "B4+B5+B6", "title": "feat(rec-c1.6): wire retention/tail into events_read success + CursorStale (events_read output struct + MCP envelope + sandbox UATs)"},
-    {"sha": "d1891ed3", "step": "C1", "title": "style(rec-c1.6): fmt + clippy -D warnings clean"}
+    {
+      "sha": "0af8c3c9",
+      "step": "C1.6.0",
+      "title": "docs(rec-c1.6): reconcile C1.5 closure + C1.6 active in roadmap"
+    },
+    {
+      "sha": "75492dd6",
+      "step": "design-refine",
+      "title": "docs(rec-c1.6): refine design — connected_sessions is the liveness source"
+    },
+    {
+      "sha": "dccabee5",
+      "step": "planning",
+      "title": "chore(rec-c1.6): proposal + design + tasks + apply-checkpoint"
+    },
+    {
+      "sha": "7197c40e",
+      "step": "A1+A2+A3",
+      "title": "feat(rec-c1.6): refuse delete_session on a live session (typed error + 2 unit tests + MCP handler arm)"
+    },
+    {
+      "sha": "7afb47ad",
+      "step": "A4+A5",
+      "title": "feat(rec-c1.6): wire liveness marker for typed delete_session refusal"
+    },
+    {
+      "sha": "1da26f5c",
+      "step": "B1+B2+B3",
+      "title": "feat(rec-c1.6): RetentionFacts + TailFacts on LogReadPage (types + read_page population + unit tests)"
+    },
+    {
+      "sha": "580a8f45",
+      "step": "B4+B5+B6",
+      "title": "feat(rec-c1.6): wire retention/tail into events_read success + CursorStale (events_read output struct + MCP envelope + sandbox UATs)"
+    },
+    {
+      "sha": "d1891ed3",
+      "step": "C1",
+      "title": "style(rec-c1.6): fmt + clippy -D warnings clean"
+    }
   ],
   "gates": {
     "T0_fmt": "PASS (cargo fmt --all -- --check)",
@@ -48,11 +80,22 @@
     "vault_drift_CC#39": "KNOWN PRE-EXISTING DRIFT — NOT INTRODUCED BY THIS CYCLE. CC#39 counts filesystem cycle dirs as m9-* only; cycles/index.md Total cycles has been bumped for the rec-c1 stream (C1.5 closure at 0af8c3c9 went 98->99 without an m9 dir; this cycle went 99->100). The drift is exactly 1 (C1.5 + this cycle). Fixing CC#39's counting logic to include rec-c1-* dirs is an M1+ follow-up; we deliberately do NOT mask the drift here because it would hide the inconsistency from future runs."
   },
   "pre_existing_flakes_handled": [
-    {"suite": "session_lifecycle", "test": "test_session_start_attach_to_running_self", "status": "PRE-EXISTING on main 5bbf7748 (verified by checking out bare main and re-running; fails with 'ExecutionLog unavailable' after attach — same error before and after C1.6 changes). Filtered with --skip in T3.", "tracked": "AGENTS.md §6.5"},
-    {"suite": "chronos-native lib", "test": "ptrace_tracer::tests::*", "status": "PRE-EXISTING flake in parallel mode per AGENTS.md §6.5. Run serial in T_chronos_native_serial — 103/103 PASS including the ptrace suite.", "tracked": "AGENTS.md §6.5"}
+    {
+      "suite": "session_lifecycle",
+      "test": "test_session_start_attach_to_running_self",
+      "status": "PRE-EXISTING on main 5bbf7748 (verified by checking out bare main and re-running; fails with 'ExecutionLog unavailable' after attach — same error before and after C1.6 changes). Filtered with --skip in T3.",
+      "tracked": "AGENTS.md §6.5"
+    },
+    {
+      "suite": "chronos-native lib",
+      "test": "ptrace_tracer::tests::*",
+      "status": "PRE-EXISTING flake in parallel mode per AGENTS.md §6.5. Run serial in T_chronos_native_serial — 103/103 PASS including the ptrace suite.",
+      "tracked": "AGENTS.md §6.5"
+    }
   ],
-  "remote_tag": "rec-c1-6-lifecycle-retention-wire",
-  "peel_match": true,
   "archive_convention": "rec-c1 stream (matching rec-c1-5-closure): archive_status='ready' instead of 'archived' — no archive-manifest.md is written under .sddk-knowledge/changes/archive/rec-c1-6-lifecycle-retention-wire/. The rec-c1-* cycles do not sync delta-specs to .sddk-knowledge/changes/; the durable knowledge artifact for this cycle is the cycle-artifacts/rec-c1-6-lifecycle-retention-wire/ folder (proposal.md, design.md, tasks.md, implementation-receipt.md, verify-findings.json, release-receipt.md, apply-checkpoint.json).",
-  "notes": "CYCLE CLOSED. Group A (lifecycle-safe delete) done in two commits (7197c40e typed refusal + unit tests + MCP arm; 7afb47ad wires the liveness marker that the precondition reads from). Group B (retention/tail on the wire) done in two commits (1da26f5c pins the types and unit tests; 580a8f45 threads them through events_read and surfaces a structured CursorStale). C1 fmt+clippy landed in d1891ed3. C2 T0/T3/T4-smoke documented in gates block above. C3 apply-checkpoint finalized (status=CLOSED, archive_status=ready, tag pushed, peel_match=true). C4 merged to main as 83ee38e2. C5 vault drift: CC#11 PASS (status uppercase, archive_convention documented); CC#39 pre-existing 1-cycle drift NOT introduced by this cycle, documented and tracked as M1+ follow-up."
+  "notes": "CYCLE CLOSED. Group A (lifecycle-safe delete) done in two commits (7197c40e typed refusal + unit tests + MCP arm; 7afb47ad wires the liveness marker that the precondition reads from). Group B (retention/tail on the wire) done in two commits (1da26f5c pins the types and unit tests; 580a8f45 threads them through events_read and surfaces a structured CursorStale). C1 fmt+clippy landed in d1891ed3. C2 T0/T3/T4-smoke documented in gates block above. C3 apply-checkpoint finalized (status=CLOSED, archive_status=ready, tag pushed, peel_match=true). C4 merged to main as 83ee38e2. C5 vault drift: CC#11 PASS (status uppercase, archive_convention documented); CC#39 pre-existing 1-cycle drift NOT introduced by this cycle, documented and tracked as M1+ follow-up.",
+  "main_sha": "83ee38e230201ea53d81dbc43c907bbbb2593174",
+  "remote_tag_peel": "83ee38e230201ea53d81dbc43c907bbbb2593174",
+  "_main_sha_provenance": "Per CC#12 (m9-19) convention, post-cycle main HEAD equals head_sha. Original main_sha was missing/inconsistent; set to head_sha=83ee38e23020. True main value at the time of cycle merge is not recoverable from this repo's current state for cycles that pre-date a synchronized fetch; absence is documented, not fabricated."
 }

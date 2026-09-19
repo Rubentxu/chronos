@@ -7,7 +7,7 @@
     "route": "A-min"
   },
   "cycle_id": "rec-c3-ci-hygiene",
-  "verdict": "passed",
+  "verdict": "PASS",
   "all_passed": true,
   "lens_summary": {
     "drift": "0 (Vault Drift reconciled to exit 0)",
@@ -50,5 +50,6 @@
   "owner_cycle": "rec-c3-ci-hygiene",
   "verified_at": "2026-09-19T09:35:00Z",
   "verifier": "rec-c3-ci-hygiene CIH-C final closure",
-  "_restoration_note": null
+  "_restoration_note": null,
+  "_legacy_verdict": "passed"
 }

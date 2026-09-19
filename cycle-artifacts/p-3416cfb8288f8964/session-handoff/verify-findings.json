@@ -1,13 +1,13 @@
 {
   "subject": {
-    "head_sha": "c11de1fa",
-    "base_sha": "c11de1fa",
+    "head_sha": "c11de1fa7aa715ef80e47a5dac23abea516c2f04",
+    "base_sha": "c11de1fa7aa715ef80e47a5dac23abea516c2f04",
     "cycle_id": "session-handoff",
     "branch": null,
     "route": null
   },
   "cycle_id": "session-handoff",
-  "verdict": "passed",
+  "verdict": "PASS",
   "all_passed": true,
   "lens_summary": {
     "tiers_run": [],
@@ -17,5 +17,6 @@
   "findings": [],
   "synthesized_at": "2026-09-19T09:33:11.058249+00:00",
   "synthesized_by": "rec-c3-ci-hygiene CIH-C",
-  "owner_cycle": "rec-c3-ci-hygiene"
+  "owner_cycle": "rec-c3-ci-hygiene",
+  "_legacy_verdict": "passed"
 }
