@@ -1,0 +1,30 @@
+=== POST-AUDIT R4 LOG EVIDENCE (2026-09-20T08:38Z) ===
+
+--- HEAD ---
+0322e4c65705fe886e3cce9cc11593de248e8865
+0322e4c65705fe886e3cce9cc11593de248e8865
+rubentxu
+2026-09-20T10:34:34+02:00
+chore(vault): record FIND-TB-AUDIT-2026-09-20 + mark counterexample port experimental
+
+
+--- binary SHA256 (post-audit, post-F+E-rewire, post-comments) ---
+49f90cb98b87b69b2f9cdd92f230c2e796e150dc5033510081a83dc1d2fa9463  /var/home/rubentxu/cargo-targets/debug/chronos-mcp
+
+--- binary mtime ---
+-rwxr-xr-x. 2 rubentxu rubentxu 150172824 sep 20 10:34 /var/home/rubentxu/cargo-targets/debug/chronos-mcp
+
+--- T4-smoke (final) ---
+native_probe_tools: 4/4 passed in 60.98s
+e2e_connectivity:   1/1 passed in 33.88s (after stale proc cleanup)
+
+--- files changed since base ---
+ .../rec-c3.3-train-b/exploration-report.md         | 322 ++++++++++++++
+ .../rec-c3.3-train-b/proposal.md                   | 407 +++++++++++++++++
+ .../rec-c3.3-train-b/specification.md              | 401 +++++++++++++++++
+ .../rec-c3.3-train-b/task-graph.json               | 490 +++++++++++++++++++++
+ 31 files changed, 3575 insertions(+), 292 deletions(-)
+
+--- trunk sync state ---
+65754dcb85e2c7b6d3902a78fe70a6bca4871b77
+(origin/main NOT YET merged with Tren B — merge deferred to next operator session)
