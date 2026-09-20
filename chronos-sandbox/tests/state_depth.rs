@@ -379,20 +379,22 @@ async fn test_evaluate_expression_simple_arithmetic() {
     let event_id = events[0].event_id;
     println!("Using event_id: {}", event_id);
 
-    // Evaluate expression using raw RPC call since the wrapper doesn't expose event_id
+    // REC-C5-C5.2: migrated to the v2 `state_query` dispatcher with
+    // `kind=expression_eval` (same event_id/expression fields).
     let params = serde_json::json!({
         "session_id": session_id,
+        "kind": "expression_eval",
         "event_id": event_id,
         "expression": "1 + 2 * 3"
     });
 
     let result = client
-        .call_with_timeout("evaluate_expression", params, Duration::from_secs(5))
+        .call_with_timeout("state_query", params, Duration::from_secs(5))
         .await;
 
     match result {
         Ok(json) => {
-            println!("✓ evaluate_expression returned valid JSON");
+            println!("✓ state_query(kind=expression_eval) returned valid JSON");
             // The response should have a "result" field
             // Result may be "no variables" or actual "7"
             if let Some(result_val) = json.get("result") {
