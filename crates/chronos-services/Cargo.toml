@@ -23,7 +23,6 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 chronos-query = { workspace = true }
 chronos-domain = { workspace = true }
-chronos-store = { workspace = true }
 chronos-index = { workspace = true }
 chronos-log = { workspace = true }
 proptest = { workspace = true }
@@ -37,3 +36,10 @@ proptest = { workspace = true }
 # the concrete backend; it consumes `Arc<dyn NativeProbeController>`
 # and `Arc<dyn NativeProbeControllerFactory>` ports from `chronos-domain`.
 chronos-native = { workspace = true }
+# REC-C3.5-residual-inversion R.5: chronos-store is only consumed
+# inside `#[cfg(test)]` blocks (test rigs wire the redb-backed
+# adapters: SessionStoreBackedSessionReader, Blake3DiffEngine,
+# SessionStoreBackedSessionArchive, SessionStoreBackedLifecycleStore,
+# SessionStoreBackedCounterexampleRepository). Production code
+# consumes only chronos-domain ports.
+chronos-store = { workspace = true }

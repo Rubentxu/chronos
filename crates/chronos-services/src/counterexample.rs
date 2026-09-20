@@ -562,39 +562,34 @@ impl ChronosCounterexampleService {
         // mirror and persist alongside the minimised payload.
         let target_hypothesis_wire = hypothesis_input_to_wire(target_hypothesis);
 
-        let summary = chronos_store::counterexample_storage::CounterexampleBundleSummary {
-            bundle_id: bundle_id.clone(),
-            property_kind: hypothesis_kind_as_str(property_kind).to_string(),
-            workspace_id: workspace_id.to_string(),
-            created_at_ms,
-            rounds_used,
-            has_full_bundle: true, // m8-03 ships full bundle persistence.
-            schema_version: chronos_store::counterexample_storage::CURRENT_BUNDLE_SCHEMA_VERSION,
-            // events_count will be overwritten by save_counterexample_bundle
-            // which takes events from the record and sets the count there.
-            events_count: 0,
-        };
         // Build the port-shaped record. minimised and target_hypothesis
         // become opaque bincode bytes; the adapter translates to the
         // strongly-typed store form at the storage boundary (REC-C3.5-B').
+        // REC-C3.5-R.5: no store-typed intermediate summary — the port
+        // record is built directly and the schema version comes from the
+        // domain-owned wire constant.
         let minimised_bytes = minimised_opt.as_ref().map(encode_minimised_for_port);
         let target_hypothesis_bytes = Some(encode_hypothesis_for_port(&target_hypothesis_wire));
         let port_record = chronos_domain::ports::counterexample::CounterexampleBundleRecord {
             summary: chronos_domain::ports::counterexample::CounterexampleBundleSummary {
-                bundle_id: summary.bundle_id.clone(),
-                property_kind: summary.property_kind.clone(),
-                workspace_id: summary.workspace_id.clone(),
-                created_at_ms: summary.created_at_ms,
-                rounds_used: summary.rounds_used,
-                has_full_bundle: summary.has_full_bundle,
-                schema_version: summary.schema_version,
-                events_count: summary.events_count,
+                bundle_id: bundle_id.clone(),
+                property_kind: hypothesis_kind_as_str(property_kind).to_string(),
+                workspace_id: workspace_id.to_string(),
+                created_at_ms,
+                rounds_used,
+                has_full_bundle: true, // m8-03 ships full bundle persistence.
+                schema_version:
+                    chronos_domain::ports::counterexample::wire::CURRENT_BUNDLE_SCHEMA_VERSION,
+                // events_count will be overwritten by save_counterexample_bundle
+                // which takes events from the record and sets the count there.
+                events_count: 0,
             },
             events,
             minimised: minimised_bytes,
             event_cas_hashes: Vec::new(),
             target_hypothesis: target_hypothesis_bytes,
-            schema_version: chronos_store::counterexample_storage::CURRENT_BUNDLE_SCHEMA_VERSION,
+            schema_version:
+                chronos_domain::ports::counterexample::wire::CURRENT_BUNDLE_SCHEMA_VERSION,
         };
         let returned_id = ctx
             .repository

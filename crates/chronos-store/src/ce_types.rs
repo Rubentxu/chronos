@@ -14,7 +14,7 @@
 //! external imports stable; bincode/serde encoding is unchanged.
 
 use crate::cas::ContentHash;
-use crate::counterexample_storage::CURRENT_BUNDLE_SCHEMA_VERSION;
+use chronos_domain::ports::counterexample::wire::CURRENT_BUNDLE_SCHEMA_VERSION;
 use chronos_domain::TraceEvent;
 use serde::{Deserialize, Serialize};
 

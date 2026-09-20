@@ -24,6 +24,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::property::PropertyValue;
 
+/// Current counterexample bundle envelope schema version (REC-C3.5-R.5).
+///
+/// Part of the wire contract, so the domain owns it; the storage crate
+/// re-exports it (path `chronos_store::counterexample_storage::
+/// CURRENT_BUNDLE_SCHEMA_VERSION` is unchanged) and keeps the
+/// compile-time known-versions invariant. Bumping this requires
+/// updating the storage-side `KNOWN_BUNDLE_SCHEMA_VERSIONS`.
+pub const CURRENT_BUNDLE_SCHEMA_VERSION: u32 = 3;
+
 /// What causal slice triggered the violation. Plumbed via the bundle so
 /// `counterexample_get` can re-emit the relevant trace window without
 /// re-running the shrink.
