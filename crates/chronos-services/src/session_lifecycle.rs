@@ -23,6 +23,8 @@
 //!   (`StaticCapabilities`) for the target and the dynamic live state
 //!   (`DynamicCapabilities`) for the session.
 
+use std::sync::Arc;
+
 use crate::error::ServiceError;
 use crate::observe::{ChronosObserveService, ObserveContext};
 use crate::output::{
@@ -41,13 +43,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const ENGINE_VERSION: &str = "chronos-0.1.0";
 
 /// Borrowed handle to the live probe state, observe state, and the
-/// session store.
+/// session store (REC-C3.5-B.4).
 ///
 /// The context is owned by `chronos-mcp::Server` for the duration of
 /// the call; the service holds references and releases them when the
 /// future completes. No locking past the await point.
 pub struct SessionLifecycleContext<'a> {
-    pub store: &'a chronos_store::SessionStore,
+    pub store: Arc<dyn chronos_domain::ports::lifecycle_store::LifecycleStore>,
     pub probe: &'a ProbeContext<'a>,
     pub observe: &'a ObserveContext<'a>,
 }
@@ -94,7 +96,7 @@ impl ChronosSessionLifecycleService {
     ) -> Result<SessionStartOutput, ServiceError> {
         match input.action {
             SessionStartAction::Spawn => Self::spawn(ctx, input).await,
-            SessionStartAction::Load => Self::load(ctx.store, input),
+            SessionStartAction::Load => Self::load(&*ctx.store, input),
             SessionStartAction::Attach => Self::attach(ctx, input),
         }
     }
@@ -142,7 +144,7 @@ impl ChronosSessionLifecycleService {
     }
 
     fn load(
-        store: &chronos_store::SessionStore,
+        store: &dyn chronos_domain::ports::lifecycle_store::LifecycleStore,
         input: SessionStartInput,
     ) -> Result<SessionStartOutput, ServiceError> {
         let session_id = input.session_id.ok_or_else(|| {
@@ -388,7 +390,7 @@ impl ChronosSessionLifecycleService {
     /// per-tool availability record in the response. `probed_at` is always
     /// set to the current epoch-ms.
     pub fn capabilities(
-        store: &chronos_store::SessionStore,
+        store: &dyn chronos_domain::ports::lifecycle_store::LifecycleStore,
         input: CapabilitiesInput,
         tool_availability: Option<HashMap<String, ToolAvailability>>,
     ) -> Result<CapabilitiesOutput, ServiceError> {
@@ -464,7 +466,7 @@ impl ChronosSessionLifecycleService {
                     // fields).
                     if let Ok(guard) = ctx.probe.live_probes.lock() {
                         if let Some(live) = guard.get(sid) {
-                            let stub_meta = chronos_store::SessionMetadata {
+                            let stub_meta = chronos_domain::SessionMetadata {
                                 session_id: sid.clone(),
                                 created_at: 0,
                                 language: live.language.to_string(),
@@ -563,7 +565,7 @@ impl ChronosSessionLifecycleService {
         }
     }
 
-    fn dynamic_capabilities(meta: &chronos_store::SessionMetadata) -> DynamicCapabilities {
+    fn dynamic_capabilities(meta: &chronos_domain::SessionMetadata) -> DynamicCapabilities {
         // Build a HashMap<EventType, u64> from the persisted events if
         // available. Without per-event type counts persisted, we
         // approximate from `event_count` (treats every event as
@@ -596,7 +598,7 @@ impl ChronosSessionLifecycleService {
     /// `build_and_store_engine` writes the metadata.
     #[allow(dead_code)] // kept for future callers; not used by m7-07 dispatcher (see note above)
     pub(crate) fn mark_sealed(
-        store: &chronos_store::SessionStore,
+        store: &dyn chronos_domain::ports::lifecycle_store::LifecycleStore,
         session_id: &str,
         sealed_at: u64,
     ) -> Result<(), ServiceError> {
@@ -605,7 +607,7 @@ impl ChronosSessionLifecycleService {
         })?;
         meta.tail_sealed = true;
         meta.sealed_at = Some(sealed_at);
-        store.save_session(meta, &events).map_err(|e| {
+        store.save_session(&meta, &events).map_err(|e| {
             ServiceError::SaveFailed(format!("save_session({}) failed: {}", session_id, e))
         })?;
         Ok(())
@@ -647,8 +649,78 @@ mod tests {
         }
     }
 
+    /// REC-C3.5-residual-inversion R.3 — null
+    /// `NativeProbeControllerFactory` used by the session-lifecycle
+    /// test rig. Mirrors the pattern of `SessionLifecycleTestInjector`:
+    /// the rig carries a port-shaped instance without invoking real
+    /// ptrace. `build_for_spawn` and `build_for_attach` both surface a
+    /// `NativeProbeBuildError` because the tests exercise the rig
+    /// outside the probe-start code path.
+    #[derive(Debug, Default, Clone, Copy)]
+    struct SessionLifecycleNullNativeProbeFactory;
+
+    impl chronos_domain::ports::NativeProbeControllerFactory
+        for SessionLifecycleNullNativeProbeFactory
+    {
+        fn build_for_spawn(
+            &self,
+            _config: chronos_domain::trace::CaptureConfig,
+            _session_id: chronos_domain::session_id::SessionId,
+            _language: chronos_domain::trace::Language,
+            _log_provider: std::sync::Arc<
+                dyn chronos_domain::ports::execution_log::ExecutionLogProvider,
+            >,
+            _accepted_raw_observer: Option<chronos_domain::ports::RawAcceptedObserver>,
+            _track_function_frames: bool,
+        ) -> Result<
+            (
+                Box<dyn chronos_domain::ports::NativeProbeController>,
+                chronos_domain::trace::CaptureSession,
+            ),
+            chronos_domain::ports::NativeProbeBuildError,
+        > {
+            Err(chronos_domain::ports::NativeProbeBuildError::new(
+                "session_lifecycle tests: native probe not exercised",
+            ))
+        }
+
+        fn build_for_attach(
+            &self,
+            _config: chronos_domain::trace::CaptureConfig,
+            _pid: u32,
+            _session_id: chronos_domain::session_id::SessionId,
+            _language: chronos_domain::trace::Language,
+            _log_provider: std::sync::Arc<
+                dyn chronos_domain::ports::execution_log::ExecutionLogProvider,
+            >,
+            _accepted_raw_observer: Option<chronos_domain::ports::RawAcceptedObserver>,
+        ) -> Result<
+            (
+                Box<dyn chronos_domain::ports::NativeProbeController>,
+                chronos_domain::trace::CaptureSession,
+            ),
+            chronos_domain::ports::NativeProbeBuildError,
+        > {
+            Err(chronos_domain::ports::NativeProbeBuildError::new(
+                "session_lifecycle tests: native probe not exercised",
+            ))
+        }
+    }
+
     fn empty_store() -> SessionStore {
         SessionStore::in_memory().unwrap()
+    }
+
+    fn empty_arc_store() -> std::sync::Arc<SessionStore> {
+        std::sync::Arc::new(SessionStore::in_memory().unwrap())
+    }
+
+    fn make_adapter(
+        store: std::sync::Arc<SessionStore>,
+    ) -> std::sync::Arc<dyn chronos_domain::ports::lifecycle_store::LifecycleStore> {
+        use chronos_store::lifecycle_store_adapter::SessionStoreBackedLifecycleStore;
+        std::sync::Arc::new(SessionStoreBackedLifecycleStore::new(store))
+            as std::sync::Arc<dyn chronos_domain::ports::lifecycle_store::LifecycleStore>
     }
 
     fn save_meta(store: &SessionStore, id: &str) {
@@ -672,7 +744,7 @@ mod tests {
         // The validation guard fires before any probe call, so a
         // minimal context (whose probe is never read) is sufficient.
         let store = empty_store();
-        let ctx = build_minimal_ctx(&store);
+        let ctx = build_minimal_ctx(std::sync::Arc::new(store));
         let input = SessionStartInput {
             action: SessionStartAction::Spawn,
             spawn_fields: None,
@@ -688,7 +760,7 @@ mod tests {
 
     #[tokio::test]
     async fn start_load_returns_metadata_snapshot() {
-        let store = empty_store();
+        let store = empty_arc_store();
         save_meta(&store, "load-1");
         let input = SessionStartInput {
             action: SessionStartAction::Load,
@@ -697,7 +769,11 @@ mod tests {
             pid: None,
             path: None,
         };
-        let out = ChronosSessionLifecycleService::load(&store, input).unwrap();
+        let out = ChronosSessionLifecycleService::load(
+            &*make_adapter(std::sync::Arc::clone(&store)),
+            input,
+        )
+        .unwrap();
         assert_eq!(out.session_id, "load-1");
         assert_eq!(out.event_count, Some(5));
         assert_eq!(out.duration_ms, Some(250));
@@ -707,7 +783,7 @@ mod tests {
 
     #[tokio::test]
     async fn start_load_session_not_found() {
-        let store = empty_store();
+        let store = empty_arc_store();
         let input = SessionStartInput {
             action: SessionStartAction::Load,
             spawn_fields: None,
@@ -715,7 +791,7 @@ mod tests {
             pid: None,
             path: None,
         };
-        let err = ChronosSessionLifecycleService::load(&store, input).unwrap_err();
+        let err = ChronosSessionLifecycleService::load(&*make_adapter(store), input).unwrap_err();
         assert!(matches!(err, ServiceError::LoadFailed(_)));
     }
 
@@ -724,7 +800,7 @@ mod tests {
         // Guard fires before any probe call, so the minimal ctx (whose
         // probe is never read) is sufficient.
         let store = empty_store();
-        let ctx = build_minimal_ctx(&store);
+        let ctx = build_minimal_ctx(std::sync::Arc::new(store));
         let input = SessionStartInput {
             action: SessionStartAction::Attach,
             spawn_fields: None,
@@ -743,7 +819,7 @@ mod tests {
         // it as `ServiceError::AttachFailed`. The minimal probe context
         // is fine because the failure happens before any ptrace call.
         let store = empty_store();
-        let ctx = build_minimal_ctx(&store);
+        let ctx = build_minimal_ctx(std::sync::Arc::new(store));
         let input = SessionStartInput {
             action: SessionStartAction::Attach,
             spawn_fields: None,
@@ -767,7 +843,7 @@ mod tests {
     #[test]
     fn start_attach_with_zero_pid_returns_invalid_input() {
         let store = empty_store();
-        let ctx = build_minimal_ctx(&store);
+        let ctx = build_minimal_ctx(std::sync::Arc::new(store));
         let input = SessionStartInput {
             action: SessionStartAction::Attach,
             spawn_fields: None,
@@ -783,7 +859,7 @@ mod tests {
 
     #[test]
     fn capabilities_target_only_returns_static_only() {
-        let store = empty_store();
+        let store = empty_arc_store();
         let input = CapabilitiesInput {
             target: Some(TargetSpec {
                 program: "/bin/foo".to_string(),
@@ -792,7 +868,12 @@ mod tests {
             }),
             session_id: None,
         };
-        let out = ChronosSessionLifecycleService::capabilities(&store, input, None).unwrap();
+        let out = ChronosSessionLifecycleService::capabilities(
+            &*make_adapter(std::sync::Arc::clone(&store)),
+            input,
+            None,
+        )
+        .unwrap();
         assert!(out.static_capabilities.is_some());
         assert!(out.dynamic_capabilities.is_none());
         let s = out.static_capabilities.unwrap();
@@ -803,13 +884,18 @@ mod tests {
 
     #[test]
     fn capabilities_session_only_returns_dynamic_only() {
-        let store = empty_store();
+        let store = empty_arc_store();
         save_meta(&store, "cap-1");
         let input = CapabilitiesInput {
             target: None,
             session_id: Some("cap-1".to_string()),
         };
-        let out = ChronosSessionLifecycleService::capabilities(&store, input, None).unwrap();
+        let out = ChronosSessionLifecycleService::capabilities(
+            &*make_adapter(std::sync::Arc::clone(&store)),
+            input,
+            None,
+        )
+        .unwrap();
         assert!(out.static_capabilities.is_none());
         let d = out.dynamic_capabilities.unwrap();
         assert!(d.query_engine_ready);
@@ -818,7 +904,7 @@ mod tests {
 
     #[test]
     fn capabilities_target_and_session_returns_both() {
-        let store = empty_store();
+        let store = empty_arc_store();
         save_meta(&store, "cap-2");
         let input = CapabilitiesInput {
             target: Some(TargetSpec {
@@ -828,30 +914,37 @@ mod tests {
             }),
             session_id: Some("cap-2".to_string()),
         };
-        let out = ChronosSessionLifecycleService::capabilities(&store, input, None).unwrap();
+        let out = ChronosSessionLifecycleService::capabilities(
+            &*make_adapter(std::sync::Arc::clone(&store)),
+            input,
+            None,
+        )
+        .unwrap();
         assert!(out.static_capabilities.is_some());
         assert!(out.dynamic_capabilities.is_some());
     }
 
     #[test]
     fn capabilities_neither_set_returns_invalid_input() {
-        let store = empty_store();
+        let store = empty_arc_store();
         let input = CapabilitiesInput {
             target: None,
             session_id: None,
         };
-        let err = ChronosSessionLifecycleService::capabilities(&store, input, None).unwrap_err();
+        let err = ChronosSessionLifecycleService::capabilities(&*make_adapter(store), input, None)
+            .unwrap_err();
         assert!(matches!(err, ServiceError::InvalidInput(_)));
     }
 
     #[test]
     fn capabilities_session_not_found() {
-        let store = empty_store();
+        let store = empty_arc_store();
         let input = CapabilitiesInput {
             target: None,
             session_id: Some("no-such".to_string()),
         };
-        let err = ChronosSessionLifecycleService::capabilities(&store, input, None).unwrap_err();
+        let err = ChronosSessionLifecycleService::capabilities(&*make_adapter(store), input, None)
+            .unwrap_err();
         assert!(matches!(err, ServiceError::LoadFailed(_)));
     }
 
@@ -906,9 +999,10 @@ mod tests {
 
     #[test]
     fn mark_sealed_updates_metadata_and_persists() {
-        let store = empty_store();
+        let store = empty_arc_store();
         save_meta(&store, "seal-1");
-        ChronosSessionLifecycleService::mark_sealed(&store, "seal-1", 9999).unwrap();
+        let adapter = make_adapter(std::sync::Arc::clone(&store));
+        ChronosSessionLifecycleService::mark_sealed(&*adapter, "seal-1", 9999).unwrap();
         let (meta, _events) = store.load_session("seal-1").unwrap();
         assert!(meta.tail_sealed);
         assert_eq!(meta.sealed_at, Some(9999));
@@ -916,8 +1010,12 @@ mod tests {
 
     #[test]
     fn mark_sealed_missing_session_returns_load_failed() {
-        let store = empty_store();
-        let result = ChronosSessionLifecycleService::mark_sealed(&store, "no-such-session", 9999);
+        let store = empty_arc_store();
+        let result = ChronosSessionLifecycleService::mark_sealed(
+            &*make_adapter(store),
+            "no-such-session",
+            9999,
+        );
         assert!(
             matches!(result, Err(ServiceError::LoadFailed(_))),
             "expected mark_sealed to return LoadFailed when session is missing"
@@ -932,7 +1030,7 @@ mod tests {
     /// wrappers around empty `HashMap`s, so the references are valid
     /// but unused. Tests that need a working `ProbeContext` /
     /// `ObserveContext` (spawn, stop, drain) live in the sandbox suite.
-    fn build_minimal_ctx<'a>(store: &'a SessionStore) -> SessionLifecycleContext<'a> {
+    fn build_minimal_ctx(store: std::sync::Arc<SessionStore>) -> SessionLifecycleContext<'static> {
         use chronos_domain::tripwire::TripwireManager;
         use std::sync::{Arc, Mutex as StdMutex};
         use tokio::sync::Mutex as TokioMutex;
@@ -962,6 +1060,8 @@ mod tests {
         // did on a default build.
         let injector: Arc<dyn chronos_domain::ports::uprobe::UprobeInjector> =
             Arc::new(SessionLifecycleTestInjector);
+        let native_probe_factory: Arc<dyn chronos_domain::ports::NativeProbeControllerFactory> =
+            Arc::new(SessionLifecycleNullNativeProbeFactory);
         let probe: &'static ProbeContext<'static> = Box::leak(Box::new(ProbeContext {
             live_probes,
             execution_logs,
@@ -970,14 +1070,17 @@ mod tests {
             tripwire_manager: tripwire,
             active_session,
             uprobe_injector: Box::leak(Box::new(injector)),
+            native_probe_factory: Box::leak(Box::new(native_probe_factory)),
         }));
         let observe: &'static ObserveContext<'static> = Box::leak(Box::new(ObserveContext {
             tripwire_manager: tripwire,
             probe,
             uprobe_counter,
         }));
+        let store_arc: std::sync::Arc<dyn chronos_domain::ports::lifecycle_store::LifecycleStore> =
+            make_adapter(store);
         SessionLifecycleContext {
-            store,
+            store: store_arc,
             probe,
             observe,
         }

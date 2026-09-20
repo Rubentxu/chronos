@@ -145,8 +145,14 @@ pub(crate) mod ce_schema;
 pub use ce_schema::{
     collect_bundle_chunks, collect_bundle_chunks_legacy, collect_bundle_chunks_range,
     collect_v3_keys_for_bundle, BUNDLE_EVENTS_CHUNK_SIZE, COUNTEREXAMPLE_BUNDLES,
-    COUNTEREXAMPLE_BUNDLE_EVENTS, CURRENT_BUNDLE_SCHEMA_VERSION, KNOWN_BUNDLE_SCHEMA_VERSIONS,
+    COUNTEREXAMPLE_BUNDLE_EVENTS, KNOWN_BUNDLE_SCHEMA_VERSIONS,
 };
+// REC-C3.5-R.5: the schema-version constant is part of the wire
+// contract and is domain-owned. The external path
+// `chronos_store::counterexample_storage::CURRENT_BUNDLE_SCHEMA_VERSION`
+// is preserved via this re-export; the known-versions invariant stays
+// in ce_schema.
+pub use chronos_domain::ports::counterexample::wire::CURRENT_BUNDLE_SCHEMA_VERSION;
 
 /// Load events for a bundle, handling both legacy (blob-embedded) and
 /// post-m9-02 (side-table) layouts.

@@ -21,12 +21,11 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
+use chronos_domain::ports::counterexample::wire::{ExistencePredicateWire, MinimisedPayload};
 use chronos_query::engine::QueryEngine;
 use chronos_services::hypothesis_test::{ChronosHypothesisTestService, HypothesisInput};
 use chronos_services::output::{ExistencePredicate, HypothesisKind};
-use chronos_store::counterexample_storage::{
-    bundle_events_or_legacy, CounterexampleBundleRecord, ExistencePredicateWire, MinimisedPayload,
-};
+use chronos_store::counterexample_storage::{bundle_events_or_legacy, CounterexampleBundleRecord};
 use chronos_store::SessionStore;
 use serde::Serialize;
 use tokio::sync::Mutex as TokioMutex;
@@ -251,6 +250,7 @@ fn project_report(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chronos_domain::ports::counterexample::wire::HypothesisInputWire;
     use chronos_domain::property::PropertyValue;
     use chronos_services::output::HypothesisScope;
     use chronos_store::counterexample_storage::{
@@ -453,7 +453,7 @@ mod tests {
             event_cas_hashes: vec![],
             // m8-07: the persisted target_hypothesis carries the original
             // scope=EventCount, comparison=Ge, constant=Number(1000.0).
-            target_hypothesis: Some(chronos_store::counterexample_storage::HypothesisInputWire {
+            target_hypothesis: Some(HypothesisInputWire {
                 session_id: "live-probe-session".into(),
                 kind: "invariant".into(),
                 scope: Some("event_count".into()),
@@ -501,7 +501,7 @@ mod tests {
             event_cas_hashes: vec![],
             // The pre-m8-07 fallback would reconstruct scope=PropertyValue here.
             // With target_hypothesis present, the real scope=LatencyMs must survive.
-            target_hypothesis: Some(chronos_store::counterexample_storage::HypothesisInputWire {
+            target_hypothesis: Some(HypothesisInputWire {
                 session_id: "live".into(),
                 kind: "invariant".into(),
                 scope: Some("latency_ms".into()),
@@ -551,11 +551,9 @@ mod tests {
         let rec = chronos_store::counterexample_storage::CounterexampleBundleRecord {
             summary,
             events: vec![],
-            minimised: Some(
-                chronos_store::counterexample_storage::MinimisedPayload::Constant(
-                    chronos_domain::property::PropertyValue::Number(0.0),
-                ),
-            ),
+            minimised: Some(MinimisedPayload::Constant(
+                chronos_domain::property::PropertyValue::Number(0.0),
+            )),
             event_cas_hashes: vec![],
             target_hypothesis: None,
             schema_version: 1,
@@ -583,9 +581,7 @@ mod tests {
     fn m9_02_synthetic_bundle_fixture_has_empty_events_and_events_count_zero() {
         let bundle = synthetic_bundle(
             "invariant",
-            chronos_store::counterexample_storage::MinimisedPayload::Constant(
-                chronos_domain::property::PropertyValue::Number(0.0),
-            ),
+            MinimisedPayload::Constant(chronos_domain::property::PropertyValue::Number(0.0)),
         );
         assert!(
             bundle.events.is_empty(),

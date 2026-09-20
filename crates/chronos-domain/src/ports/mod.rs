@@ -14,17 +14,26 @@
 //! and the rationale behind each one.
 
 pub mod browser_probe;
+pub mod counterexample;
+pub mod diff;
 pub mod execution_log;
 pub mod execution_log_factory;
 pub mod execution_log_maintenance;
 pub mod execution_log_retention;
+pub mod lifecycle_store;
 pub mod notification;
 mod probe;
-mod session;
+pub mod session;
+pub mod session_reader;
 mod telemetry;
 pub mod uprobe;
 
 pub use browser_probe::{BrowserError, BrowserProbeBackend, BrowserProbeFactory};
+pub use counterexample::{
+    CounterexampleBundleFilter, CounterexampleBundleRecord, CounterexampleBundleSummary,
+    CounterexampleRepository, CounterexampleRepositoryError, InMemoryCounterexampleRepository,
+};
+pub use diff::{DiffEngine, DiffReport, TimingDelta};
 pub use execution_log::{
     ExecutionLogError, ExecutionLogKind, ExecutionLogPage, ExecutionLogProvider,
 };
@@ -33,14 +42,21 @@ pub use execution_log_maintenance::{
     CompactionMetrics, CompactionReport, ExecutionLogMaintenance, ExecutionLogMaintenanceError,
 };
 pub use execution_log_retention::{ExecutionLogRetention, RetentionError, RetentionOutcome};
+pub use lifecycle_store::{InMemoryLifecycleStore, LifecycleStore, LifecycleStoreError};
 pub use notification::{
     NotificationDeliveryError, NotificationRequest, NotificationSink, NotificationTarget,
     NullNotificationSink,
 };
 pub use probe::{
+    AdvanceOutcome, NativeProbeBuildError, NativeProbeController, NativeProbeControllerFactory,
     NullProbeFactory, NullProbeRegistry, ProbeController, ProbeFactory, ProbeRegistry,
+    RawAcceptedObserver, StepOutcome,
 };
-pub use session::{InMemorySessionRepository, SessionHandle, SessionRepository, SessionState};
+pub use session::{
+    InMemorySessionArchive, InMemorySessionRepository, SessionArchive, SessionArchiveError,
+    SessionHandle, SessionRepository, SessionState,
+};
+pub use session_reader::{InMemorySessionReader, SessionReader, SessionReaderError};
 pub use telemetry::{
     Counters, InMemoryTelemetry, Metric, NoopTelemetry, TelemetryError, TelemetryReceiver,
 };

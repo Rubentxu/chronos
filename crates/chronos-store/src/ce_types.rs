@@ -1,89 +1,32 @@
-//! Counterexample bundle type definitions — owns the 6 `pub` types used
-//! by counterexample bundle persistence, plus the
-//! `default_schema_version` serde helper.
+//! Counterexample bundle type definitions — re-exports the domain-owned
+//! wire types plus the storage-owned record/filter/summary types
+//! (REC-C3.5-R.4).
 //!
 //! Submodule of `counterexample_storage`. The parent module re-exports
 //! the types with `pub use` so external callers continue to find them
-//! at `chronos_store::counterexample_storage::*` (path unchanged by
-//! this split).
+//! at `chronos_store::counterexample_storage::*` (path unchanged).
+//!
+//! **R.4 note:** `MinimisedPayload`, `ExistencePredicateWire`,
+//! `HypothesisInputWire` and the new `CounterexampleBundleSummaryWire`
+//! live in `chronos_domain::ports::counterexample::wire` since
+//! REC-C3.5-R.4 (audit §3.2 A2: application layer consuming storage
+//! wire types). The aliases here keep the redb encoding path and
+//! external imports stable; bincode/serde encoding is unchanged.
 
 use crate::cas::ContentHash;
-use crate::counterexample_storage::CURRENT_BUNDLE_SCHEMA_VERSION;
-use chronos_domain::property::PropertyValue;
+use chronos_domain::ports::counterexample::wire::CURRENT_BUNDLE_SCHEMA_VERSION;
 use chronos_domain::TraceEvent;
 use serde::{Deserialize, Serialize};
 
+// Re-export the domain-owned wire types so `ce_write`/`ce_read` and
+// external consumers keep the `chronos_store::counterexample_storage::*`
+// path without churn (R.4 alias requirement).
+pub use chronos_domain::ports::counterexample::wire::{
+    ExistencePredicateWire, HypothesisInputWire, MinimisedPayload,
+};
+
 pub(crate) fn default_schema_version() -> u32 {
     CURRENT_BUNDLE_SCHEMA_VERSION
-}
-
-/// What causal slice triggered the violation. Plumbed via the bundle so
-/// `counterexample_get` can re-emit the relevant trace window without
-/// re-running the shrink.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum MinimisedPayload {
-    /// Minimised `PropertyValue` for an `Invariant` shrink.
-    Constant(PropertyValue),
-    /// Minimised predicate for an `Existence` shrink. Same wire shape as
-    /// `chronos_services::output::ExistencePredicate` but a separate type
-    /// to break the circular dep. The dispatcher in
-    /// `services::counterexample` does a `match`-based conversion at
-    /// the boundary.
-    Predicate(ExistencePredicateWire),
-    /// Minimised (caller, callee, optional max_depth) for a `CallPath` shrink.
-    CallPath {
-        caller: String,
-        callee: String,
-        max_depth: Option<u64>,
-    },
-}
-
-/// Wire-friendly existence predicate, owned by chronos-store.
-///
-/// Mirrors `chronos_services::output::ExistencePredicate` line-for-line
-/// (same three variants, same field names). Kept independent to break
-/// the circular dependency.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum ExistencePredicateWire {
-    EventTypeEquals { event_type: String },
-    ThreadEquals { thread_id: u64 },
-    PropertyKeyEquals { target: String },
-}
-
-/// m8-07: wire mirror of `chronos_services::hypothesis_test::HypothesisInput`.
-///
-/// Persisted in the bundle record (alongside the `minimised` payload) so
-/// `chronos test replay` can reconstruct the EXACT HypothesisInput the user
-/// passed to `counterexample_shrink`, instead of synthesising defaults from
-/// the minimised payload (the m8-04 R-hypothesis-reconstruction-fidelity gap).
-///
-/// R1 disclosure (m8-07): this is a hand-maintained mirror of the
-/// chronos-services type. Drift is possible if `HypothesisInput` evolves
-/// without updating this mirror; mitigated by the roundtrip test in
-/// `crates/chronos-services/src/counterexample.rs::tests`.
-///
-/// All fields are plain string / Option types to avoid cross-crate type
-/// sharing. Kind/scope/comparison are stringified to keep chronos-store
-/// independent of chronos-services' enum types (same precedent as
-/// `CounterexampleBundleSummary.property_kind`).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct HypothesisInputWire {
-    pub session_id: String,
-    /// "invariant" | "existence" | "call_path".
-    pub kind: String,
-    /// "event_count" | "property_value" | "latency_ms" | None.
-    pub scope: Option<String>,
-    /// "Eq" | "Ne" | "Ge" | "Gt" | "Le" | "Lt" | None.
-    pub comparison: Option<String>,
-    pub constant: Option<PropertyValue>,
-    pub property_target: Option<String>,
-    pub predicate: Option<ExistencePredicateWire>,
-    pub caller: Option<String>,
-    pub callee: Option<String>,
-    /// HypothesisInput::max_depth is Option<usize>; we persist as Option<u64>
-    /// for forward compatibility (future widening to u128). Cast is
-    /// saturating in `hypothesis_input_from_wire` (bounded by usize::MAX).
-    pub max_depth: Option<u64>,
 }
 
 /// Filter shape for `SessionStore::list_counterexample_bundles`.

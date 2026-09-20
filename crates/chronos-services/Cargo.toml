@@ -16,18 +16,30 @@ test-utils = []
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+bincode = { workspace = true }
 schemars = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
 chronos-query = { workspace = true }
 chronos-domain = { workspace = true }
-chronos-store = { workspace = true }
 chronos-index = { workspace = true }
-chronos-native = { workspace = true }
 chronos-log = { workspace = true }
 proptest = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }
 proptest = { workspace = true }
+# REC-C3.5-residual-inversion R.3: chronos-native is only consumed
+# inside `#[cfg(test)]` blocks (stub_session in probe.rs + the
+# SessionLifecycleTestInjector rig). Production code no longer names
+# the concrete backend; it consumes `Arc<dyn NativeProbeController>`
+# and `Arc<dyn NativeProbeControllerFactory>` ports from `chronos-domain`.
+chronos-native = { workspace = true }
+# REC-C3.5-residual-inversion R.5: chronos-store is only consumed
+# inside `#[cfg(test)]` blocks (test rigs wire the redb-backed
+# adapters: SessionStoreBackedSessionReader, Blake3DiffEngine,
+# SessionStoreBackedSessionArchive, SessionStoreBackedLifecycleStore,
+# SessionStoreBackedCounterexampleRepository). Production code
+# consumes only chronos-domain ports.
+chronos-store = { workspace = true }

@@ -1,6 +1,6 @@
 version = 1
 updated = "2026-09-18"
-active_gate = "REC-C3"
+active_gate = "REC-C4"
 
 # Gate history (rec-c1 + rec-c2 stream closures):
 #   REC-C1.7 = closed on tag rec-c1-7-projection-authority-acceptance
@@ -23,11 +23,7 @@ verified_requires = ["evidence", "uat", "verify"]
 # Transitional violations observed at the convergence baseline. The checker
 # fails when a new forbidden edge appears AND when a removed edge remains in
 # this baseline, forcing the debt inventory to shrink with the code.
-known_dependency_violations = [
-  "chronos-services->chronos-store",
-  "chronos-services->chronos-native",
-  "chronos-store->chronos-native",
-]
+known_dependency_violations = []
 
 # REC-C0 baseline scope — explicit gate classification for the 27 residual
 # workspace failures observed at REC-C0.5-D close-out (2026-09-16):

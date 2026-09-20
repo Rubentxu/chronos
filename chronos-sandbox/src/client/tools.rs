@@ -1817,6 +1817,18 @@ impl McpTestClient {
     /// real `$HOME/.local/share/chronos/sessions.redb`). Use
     /// `start_with_db_path` when two clients must deliberately share one store.
     pub async fn start_path(mcp_path: &Path) -> Result<Self, McpSandboxError> {
+        // REC-C0.5-harness (Etapa D): capture and verify the binary
+        // identity before spawning. log-warn by default; fail-hard when
+        // CHRONOS_MCP_EXPECTED_SHA is set (audit §8.3).
+        let identity = crate::client::identity::BinaryIdentity::from_path(mcp_path)?;
+        tracing::info!(
+            "chronos-mcp identity: sha256={} mtime_unix_nanos={:?} path={}",
+            identity.sha256,
+            identity.mtime_unix_nanos,
+            mcp_path.display()
+        );
+        identity.verify_expected_sha()?;
+
         let (db_dir, db_path) = Self::allocate_store_dir()?;
         let (process, stdin, reader) =
             crate::client::process::factory::start_with_env(mcp_path, Self::db_env(&db_path))

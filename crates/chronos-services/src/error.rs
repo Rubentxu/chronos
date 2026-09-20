@@ -101,6 +101,20 @@ pub enum ServiceError {
     #[error("probe not found: {0}")]
     ProbeNotFound(String),
 
+    /// REC-C3.3.3 (Tren B slice G) — the live probe session exists but the
+    /// target is currently running (not paused), so `probe_step` cannot
+    /// advance the program counter. Surfaced by the MCP layer as
+    /// `error.code = "session_running"`.
+    #[error("probe {0} is running; step requires a paused target")]
+    SessionRunning(String),
+
+    /// REC-C3.3.3 (Tren B slice G) — the live probe session exists but
+    /// the target has already stopped, so `probe_advance` cannot resume
+    /// execution. Surfaced by the MCP layer as
+    /// `error.code = "session_stopped"`.
+    #[error("probe {0} has stopped; advance requires a paused target")]
+    SessionStopped(String),
+
     /// A `probe_start` call failed to start the backend.
     #[error("probe start failed: {0}")]
     ProbeStartFailed(String),
@@ -263,4 +277,10 @@ pub enum ServiceError {
     /// A required parameter was missing or invalid for the requested slice kind.
     #[error("invalid input: {0}")]
     InvalidInput(String),
+}
+
+impl From<chronos_domain::TraceError> for ServiceError {
+    fn from(e: chronos_domain::TraceError) -> Self {
+        ServiceError::ProbeStartFailed(e.to_string())
+    }
 }

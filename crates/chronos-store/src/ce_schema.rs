@@ -218,6 +218,18 @@ pub const CURRENT_BUNDLE_SCHEMA_VERSION: u32 = 3;
 /// `crate::counterexample_storage::KNOWN_BUNDLE_SCHEMA_VERSIONS`.
 pub const KNOWN_BUNDLE_SCHEMA_VERSIONS: &[u32] = &[1, 2, 3];
 
+// REC-C3.5-R.5 drift guard: the canonical constant now lives in
+// chronos_domain::ports::counterexample::wire. This compile-time
+// assertion fails if ce_schema's local copy diverges from the
+// domain-owned value.
+const _: () = {
+    use chronos_domain::ports::counterexample::wire::CURRENT_BUNDLE_SCHEMA_VERSION as DOMAIN_CURRENT;
+    assert!(
+        CURRENT_BUNDLE_SCHEMA_VERSION == DOMAIN_CURRENT,
+        "ce_schema::CURRENT_BUNDLE_SCHEMA_VERSION diverged from the domain-owned wire constant"
+    );
+};
+
 /// Compile-time invariant: `CURRENT_BUNDLE_SCHEMA_VERSION` must be in the
 /// known set. Touching `KNOWN_BUNDLE_SCHEMA_VERSIONS` is required to bump it.
 /// This block also forces the constant to be evaluated in the production build.

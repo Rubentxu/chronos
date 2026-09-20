@@ -1,5 +1,6 @@
-use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
-use chronos_store::{SessionMetadata, SessionStore, TraceDiff};
+use chronos_domain::ports::diff::DiffEngine;
+use chronos_domain::{EventData, EventType, SessionMetadata, SourceLocation, TraceEvent};
+use chronos_store::{Blake3DiffEngine, SessionStore};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use tempfile::tempdir;
 
@@ -134,15 +135,14 @@ fn bench_trace_diff(c: &mut Criterion) {
     let meta_b = meta_a.clone();
     c.bench_function("trace_diff_1k_50pct_overlap", |b| {
         b.iter(|| {
-            TraceDiff::compare(
+            black_box(Blake3DiffEngine.compare(
                 "a",
                 "b",
                 black_box(&events_a),
                 black_box(&events_b),
                 &meta_a,
                 &meta_b,
-                None,
-            )
+            ))
         })
     });
 }

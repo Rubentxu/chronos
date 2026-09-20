@@ -15,6 +15,7 @@
 use super::*;
 use proptest::strategy::{Strategy, ValueTree};
 use proptest::test_runner::Config;
+use std::sync::Arc;
 
 #[allow(dead_code)]
 fn assert_send<T: Send>(_: T) {}
@@ -42,37 +43,37 @@ fn dummy_target_invariant(c: PropertyValue) -> HypothesisInput {
     }
 }
 
-// Test 1: CounterexampleContext<'a> is Send when the inner refs are Send.
+// Test 1: CounterexampleContext<'a> is Send when the inner fields are Send.
 // Compile-time check — never actually runs the assertion function body.
 #[test]
-fn counterexample_context_is_send_when_inner_refs_are_send() {
-    fn _check<'a>(store: &'a chronos_store::SessionStore, hyp_ctx: &'a HypothesisTestContext<'a>) {
+fn counterexample_context_is_send_when_inner_fields_are_send() {
+    fn _check<'a>(
+        repository: Arc<dyn chronos_domain::ports::counterexample::CounterexampleRepository>,
+        hyp_ctx: &'a HypothesisTestContext<'a>,
+    ) {
         let ctx: CounterexampleContext<'a> = CounterexampleContext {
-            store,
+            repository,
             hypothesis_ctx: hyp_ctx,
         };
         assert_send(ctx);
     }
 }
 
-// Test 2: `get` returns LoadFailed with the m8-03-stub message.
-// We can't easily construct a SessionStore in unit tests (it requires the
-// store crate's real redb plumbing), so this test asserts *only* that
-// the bundle_id parameter is preserved through the stub return path via
-// a manual error formatting matching. `get` doesn't read the id, but
-// the test exercises the callable surface to keep m8-03's signature
-// tripwire honest.
+// Test 2: `get` accepts the (repository, hypothesis_ctx) shape — pins
+// the m8-03-era tripwire that the constructor accepts a real repository
+// port. Uses InMemoryCounterexampleRepository from the port module
+// (no redb plumbing required) so the test runs without a SessionStore.
 #[test]
 fn counterexample_get_signature_accepts_bundle_id_string() {
     // Compile-time + type-equality tripwire: ensure the function accepts
     // any `&str` and returns `Result<CounterexampleOutput, ServiceError>`.
     fn _check_shape(
-        store: &chronos_store::SessionStore,
+        repository: Arc<dyn chronos_domain::ports::counterexample::CounterexampleRepository>,
         hyp_ctx: &HypothesisTestContext<'_>,
     ) -> Result<CounterexampleOutput, ServiceError> {
         ChronosCounterexampleService::get(
             &CounterexampleContext {
-                store,
+                repository,
                 hypothesis_ctx: hyp_ctx,
             },
             "any-bundle-id",
@@ -486,12 +487,12 @@ fn m8_03_save_get_list_round_trip_through_session_store() {
     use std::collections::HashMap;
     use tokio::sync::Mutex as TokioMutex;
 
-    let store = SessionStore::in_memory().expect("in_memory store");
+    let store = std::sync::Arc::new(SessionStore::in_memory().expect("in_memory store"));
     let engines: HashMap<String, QueryEngine> = HashMap::new();
     let engines = TokioMutex::new(engines);
     let hyp_ctx = HypothesisTestContext { engines: &engines };
     let ctx = CounterexampleContext {
-        store: &store,
+        repository: chronos_store::counterexample_repository::SessionStoreBackedCounterexampleRepository::new(std::sync::Arc::clone(&store)).into_arc(),
         hypothesis_ctx: &hyp_ctx,
     };
 
@@ -584,7 +585,7 @@ async fn m8_04_pull_engine_events_returns_session_events() {
     use std::collections::HashMap;
     use tokio::sync::Mutex as TokioMutex;
 
-    let store = SessionStore::in_memory().expect("in_memory store");
+    let store = std::sync::Arc::new(SessionStore::in_memory().expect("in_memory store"));
     let mut engines_map: HashMap<String, QueryEngine> = HashMap::new();
     let events = vec![
         make_test_trace_event(0, 100, 1),
@@ -595,7 +596,7 @@ async fn m8_04_pull_engine_events_returns_session_events() {
     let engines = TokioMutex::new(engines_map);
     let hyp_ctx = HypothesisTestContext { engines: &engines };
     let ctx = CounterexampleContext {
-        store: &store,
+        repository: chronos_store::counterexample_repository::SessionStoreBackedCounterexampleRepository::new(std::sync::Arc::clone(&store)).into_arc(),
         hypothesis_ctx: &hyp_ctx,
     };
 
@@ -615,12 +616,12 @@ async fn m8_04_pull_engine_events_missing_session_errors() {
     use std::collections::HashMap;
     use tokio::sync::Mutex as TokioMutex;
 
-    let store = SessionStore::in_memory().expect("in_memory store");
+    let store = std::sync::Arc::new(SessionStore::in_memory().expect("in_memory store"));
     let engines_map: HashMap<String, QueryEngine> = HashMap::new();
     let engines = TokioMutex::new(engines_map);
     let hyp_ctx = HypothesisTestContext { engines: &engines };
     let ctx = CounterexampleContext {
-        store: &store,
+        repository: chronos_store::counterexample_repository::SessionStoreBackedCounterexampleRepository::new(std::sync::Arc::clone(&store)).into_arc(),
         hypothesis_ctx: &hyp_ctx,
     };
 
@@ -900,12 +901,12 @@ fn m8_05_list_full_page_sets_next_cursor() {
     use std::collections::HashMap;
     use tokio::sync::Mutex as TokioMutex;
 
-    let store = SessionStore::in_memory().expect("in_memory store");
+    let store = std::sync::Arc::new(SessionStore::in_memory().expect("in_memory store"));
     let engines: HashMap<String, QueryEngine> = HashMap::new();
     let engines = TokioMutex::new(engines);
     let hyp_ctx = HypothesisTestContext { engines: &engines };
     let ctx = CounterexampleContext {
-        store: &store,
+        repository: chronos_store::counterexample_repository::SessionStoreBackedCounterexampleRepository::new(std::sync::Arc::clone(&store)).into_arc(),
         hypothesis_ctx: &hyp_ctx,
     };
 
@@ -958,12 +959,12 @@ fn m8_05_list_with_cursor_returns_next_page() {
     use std::collections::HashMap;
     use tokio::sync::Mutex as TokioMutex;
 
-    let store = SessionStore::in_memory().expect("in_memory store");
+    let store = std::sync::Arc::new(SessionStore::in_memory().expect("in_memory store"));
     let engines: HashMap<String, QueryEngine> = HashMap::new();
     let engines = TokioMutex::new(engines);
     let hyp_ctx = HypothesisTestContext { engines: &engines };
     let ctx = CounterexampleContext {
-        store: &store,
+        repository: chronos_store::counterexample_repository::SessionStoreBackedCounterexampleRepository::new(std::sync::Arc::clone(&store)).into_arc(),
         hypothesis_ctx: &hyp_ctx,
     };
 
@@ -1066,12 +1067,12 @@ fn m8_05_list_last_page_has_no_cursor() {
     use std::collections::HashMap;
     use tokio::sync::Mutex as TokioMutex;
 
-    let store = SessionStore::in_memory().expect("in_memory store");
+    let store = std::sync::Arc::new(SessionStore::in_memory().expect("in_memory store"));
     let engines: HashMap<String, QueryEngine> = HashMap::new();
     let engines = TokioMutex::new(engines);
     let hyp_ctx = HypothesisTestContext { engines: &engines };
     let ctx = CounterexampleContext {
-        store: &store,
+        repository: chronos_store::counterexample_repository::SessionStoreBackedCounterexampleRepository::new(std::sync::Arc::clone(&store)).into_arc(),
         hypothesis_ctx: &hyp_ctx,
     };
 
@@ -1121,12 +1122,12 @@ fn m8_05_events_count_returns_persisted_length() {
     use std::collections::HashMap;
     use tokio::sync::Mutex as TokioMutex;
 
-    let store = SessionStore::in_memory().expect("in_memory store");
+    let store = std::sync::Arc::new(SessionStore::in_memory().expect("in_memory store"));
     let engines: HashMap<String, QueryEngine> = HashMap::new();
     let engines = TokioMutex::new(engines);
     let hyp_ctx = HypothesisTestContext { engines: &engines };
     let ctx = CounterexampleContext {
-        store: &store,
+        repository: chronos_store::counterexample_repository::SessionStoreBackedCounterexampleRepository::new(std::sync::Arc::clone(&store)).into_arc(),
         hypothesis_ctx: &hyp_ctx,
     };
 
@@ -1183,12 +1184,12 @@ fn m8_05_events_count_unknown_bundle_errors() {
     use std::collections::HashMap;
     use tokio::sync::Mutex as TokioMutex;
 
-    let store = SessionStore::in_memory().expect("in_memory store");
+    let store = std::sync::Arc::new(SessionStore::in_memory().expect("in_memory store"));
     let engines: HashMap<String, QueryEngine> = HashMap::new();
     let engines = TokioMutex::new(engines);
     let hyp_ctx = HypothesisTestContext { engines: &engines };
     let ctx = CounterexampleContext {
-        store: &store,
+        repository: chronos_store::counterexample_repository::SessionStoreBackedCounterexampleRepository::new(std::sync::Arc::clone(&store)).into_arc(),
         hypothesis_ctx: &hyp_ctx,
     };
 
@@ -1662,12 +1663,12 @@ fn m9_01_save_persists_schema_version_1() {
     use std::collections::HashMap;
     use tokio::sync::Mutex as TokioMutex;
 
-    let store = SessionStore::in_memory().expect("in_memory store");
+    let store = std::sync::Arc::new(SessionStore::in_memory().expect("in_memory store"));
     let engines: HashMap<String, QueryEngine> = HashMap::new();
     let engines = TokioMutex::new(engines);
     let hyp_ctx = HypothesisTestContext { engines: &engines };
     let ctx = CounterexampleContext {
-        store: &store,
+        repository: chronos_store::counterexample_repository::SessionStoreBackedCounterexampleRepository::new(std::sync::Arc::clone(&store)).into_arc(),
         hypothesis_ctx: &hyp_ctx,
     };
 
@@ -1706,12 +1707,12 @@ fn m9_01_save_persists_schema_version_1() {
 
     assert_eq!(
         loaded.schema_version,
-        cs::CURRENT_BUNDLE_SCHEMA_VERSION,
+        chronos_store::counterexample_storage::CURRENT_BUNDLE_SCHEMA_VERSION,
         "record.schema_version must equal CURRENT"
     );
     assert_eq!(
         loaded.summary.schema_version,
-        cs::CURRENT_BUNDLE_SCHEMA_VERSION,
+        chronos_store::counterexample_storage::CURRENT_BUNDLE_SCHEMA_VERSION,
         "summary.schema_version must equal CURRENT"
     );
 }
@@ -1726,12 +1727,12 @@ async fn m9_02_save_persists_events_count_in_summary() {
     use std::collections::HashMap;
     use tokio::sync::Mutex as TokioMutex;
 
-    let store = SessionStore::in_memory().expect("in_memory store");
+    let store = std::sync::Arc::new(SessionStore::in_memory().expect("in_memory store"));
     let engines: HashMap<String, QueryEngine> = HashMap::new();
     let engines = TokioMutex::new(engines);
     let hyp_ctx = HypothesisTestContext { engines: &engines };
     let ctx = CounterexampleContext {
-        store: &store,
+        repository: chronos_store::counterexample_repository::SessionStoreBackedCounterexampleRepository::new(std::sync::Arc::clone(&store)).into_arc(),
         hypothesis_ctx: &hyp_ctx,
     };
 
@@ -1781,12 +1782,12 @@ async fn m9_02_events_count_reads_from_summary() {
     use std::collections::HashMap;
     use tokio::sync::Mutex as TokioMutex;
 
-    let store = SessionStore::in_memory().expect("in_memory store");
+    let store = std::sync::Arc::new(SessionStore::in_memory().expect("in_memory store"));
     let engines: HashMap<String, QueryEngine> = HashMap::new();
     let engines = TokioMutex::new(engines);
     let hyp_ctx = HypothesisTestContext { engines: &engines };
     let ctx = CounterexampleContext {
-        store: &store,
+        repository: chronos_store::counterexample_repository::SessionStoreBackedCounterexampleRepository::new(std::sync::Arc::clone(&store)).into_arc(),
         hypothesis_ctx: &hyp_ctx,
     };
 
@@ -1839,12 +1840,12 @@ async fn m9_04_save_load_roundtrip_through_services() {
     use std::collections::HashMap;
     use tokio::sync::Mutex as TokioMutex;
 
-    let store = SessionStore::in_memory().expect("in_memory store");
+    let store = std::sync::Arc::new(SessionStore::in_memory().expect("in_memory store"));
     let engines: HashMap<String, QueryEngine> = HashMap::new();
     let engines = TokioMutex::new(engines);
     let hyp_ctx = HypothesisTestContext { engines: &engines };
     let ctx = CounterexampleContext {
-        store: &store,
+        repository: chronos_store::counterexample_repository::SessionStoreBackedCounterexampleRepository::new(std::sync::Arc::clone(&store)).into_arc(),
         hypothesis_ctx: &hyp_ctx,
     };
 
@@ -1934,12 +1935,12 @@ async fn m9_91_events_returns_full_stream_with_no_pagination() {
     use std::collections::HashMap;
     use tokio::sync::Mutex as TokioMutex;
 
-    let store = SessionStore::in_memory().expect("in_memory store");
+    let store = std::sync::Arc::new(SessionStore::in_memory().expect("in_memory store"));
     let engines: HashMap<String, QueryEngine> = HashMap::new();
     let engines = TokioMutex::new(engines);
     let hyp_ctx = HypothesisTestContext { engines: &engines };
     let ctx = CounterexampleContext {
-        store: &store,
+        repository: chronos_store::counterexample_repository::SessionStoreBackedCounterexampleRepository::new(std::sync::Arc::clone(&store)).into_arc(),
         hypothesis_ctx: &hyp_ctx,
     };
 
@@ -2019,12 +2020,12 @@ async fn m9_91_events_pagination_with_limit_and_offset() {
     use std::collections::HashMap;
     use tokio::sync::Mutex as TokioMutex;
 
-    let store = SessionStore::in_memory().expect("in_memory store");
+    let store = std::sync::Arc::new(SessionStore::in_memory().expect("in_memory store"));
     let engines: HashMap<String, QueryEngine> = HashMap::new();
     let engines = TokioMutex::new(engines);
     let hyp_ctx = HypothesisTestContext { engines: &engines };
     let ctx = CounterexampleContext {
-        store: &store,
+        repository: chronos_store::counterexample_repository::SessionStoreBackedCounterexampleRepository::new(std::sync::Arc::clone(&store)).into_arc(),
         hypothesis_ctx: &hyp_ctx,
     };
 
@@ -2153,12 +2154,12 @@ async fn m9_91_events_missing_bundle_returns_load_failed() {
     use std::collections::HashMap;
     use tokio::sync::Mutex as TokioMutex;
 
-    let store = SessionStore::in_memory().expect("in_memory store");
+    let store = std::sync::Arc::new(SessionStore::in_memory().expect("in_memory store"));
     let engines: HashMap<String, QueryEngine> = HashMap::new();
     let engines = TokioMutex::new(engines);
     let hyp_ctx = HypothesisTestContext { engines: &engines };
     let ctx = CounterexampleContext {
-        store: &store,
+        repository: chronos_store::counterexample_repository::SessionStoreBackedCounterexampleRepository::new(std::sync::Arc::clone(&store)).into_arc(),
         hypothesis_ctx: &hyp_ctx,
     };
 

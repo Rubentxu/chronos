@@ -19,6 +19,7 @@
 //! the full spec + algorithm details.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use crate::error::ServiceError;
 use crate::output::{
@@ -26,12 +27,16 @@ use crate::output::{
     HypothesisTestKind, HypothesisTestPlan, InferredBundle, InferredTag, SessionExplainInput,
     SessionExplainKind, SessionExplainOutput, SessionExplainProvenance,
 };
+use chronos_domain::ports::session_reader::{SessionReader, SessionReaderError};
 use chronos_query::QueryEngine;
-use chronos_store::{SessionStore, StoreError};
 
-/// Borrowed handle to the live `SessionStore`.
-pub struct SessionExplainContext<'a> {
-    pub store: &'a SessionStore,
+/// Borrowed handle to the live `SessionReader` port (REC-C3.5-B.2).
+///
+/// The adapter behind the port is owned by `chronos-mcp::Server`; the
+/// service holds an `Arc<dyn SessionReader>` for the duration of the
+/// call. No locking past the await point.
+pub struct SessionExplainContext {
+    pub reader: Arc<dyn SessionReader>,
 }
 
 /// Threshold for the IoHeavy inference (share of events that are
@@ -62,7 +67,7 @@ impl ChronosSessionExplainService {
     /// - `Inferred`   → reads session + applies heuristic tags
     /// - `Hypothesis` → returns a typed plan the agent can execute
     pub fn explain(
-        ctx: &SessionExplainContext<'_>,
+        ctx: &SessionExplainContext,
         input: SessionExplainInput,
     ) -> Result<SessionExplainOutput, ServiceError> {
         let (meta, events) = load_session(ctx, &input.session_id)?;
@@ -111,27 +116,30 @@ fn kind_source(kind: &SessionExplainKind) -> &'static str {
 }
 
 fn load_session(
-    ctx: &SessionExplainContext<'_>,
+    ctx: &SessionExplainContext,
     session_id: &str,
 ) -> Result<
     (
-        chronos_store::SessionMetadata,
+        chronos_domain::SessionMetadata,
         Vec<chronos_domain::TraceEvent>,
     ),
     ServiceError,
 > {
-    ctx.store.load_session(session_id).map_err(map_load_error)
+    ctx.reader.load_session(session_id).map_err(map_load_error)
 }
 
-fn map_load_error(e: StoreError) -> ServiceError {
+fn map_load_error(e: SessionReaderError) -> ServiceError {
     match e {
-        StoreError::SessionNotFound(s) => ServiceError::SessionNotFound(s),
+        SessionReaderError::NotFound(s) => ServiceError::SessionNotFound(s),
+        SessionReaderError::InvalidId(s) => {
+            ServiceError::InvalidInput(format!("invalid session id: '{}'", s))
+        }
         other => ServiceError::LoadFailed(format!("session_explain: store error: {}", other)),
     }
 }
 
 fn build_facts(
-    meta: &chronos_store::SessionMetadata,
+    meta: &chronos_domain::SessionMetadata,
     summary: &chronos_domain::query::ExecutionSummary,
     events: &[chronos_domain::TraceEvent],
 ) -> FactsBundle {
@@ -381,15 +389,22 @@ mod tests {
         store.save_session(meta, &events).unwrap();
     }
 
-    fn empty_store() -> SessionStore {
-        SessionStore::in_memory().unwrap()
+    fn empty_arc_store() -> std::sync::Arc<SessionStore> {
+        std::sync::Arc::new(SessionStore::in_memory().unwrap())
+    }
+
+    fn make_ctx(store: std::sync::Arc<SessionStore>) -> SessionExplainContext {
+        use chronos_store::session_reader_adapter::SessionStoreBackedSessionReader;
+        let adapter = std::sync::Arc::new(SessionStoreBackedSessionReader::new(store))
+            as std::sync::Arc<dyn SessionReader>;
+        SessionExplainContext { reader: adapter }
     }
 
     fn build_session_with_potential_issue(
         issue_type: &str,
         signal: Option<&str>,
-    ) -> (SessionStore, String) {
-        let store = empty_store();
+    ) -> (std::sync::Arc<SessionStore>, String) {
+        let store = empty_arc_store();
         let mut events = vec![make_event(0, "main")];
         if let Some(sig) = signal {
             let loc = SourceLocation::new("test.rs", 1, "main", 0x2000);
@@ -422,9 +437,9 @@ mod tests {
 
     #[test]
     fn explain_facts_returns_facts_bundle() {
-        let store = empty_store();
+        let store = empty_arc_store();
         save_session(&store, "s1", &["main", "helper", "main"]);
-        let ctx = SessionExplainContext { store: &store };
+        let ctx = make_ctx(std::sync::Arc::clone(&store));
         let input = SessionExplainInput {
             kind: SessionExplainKind::Facts,
             session_id: "s1".to_string(),
@@ -444,9 +459,9 @@ mod tests {
 
     #[test]
     fn explain_derived_returns_derived_bundle() {
-        let store = empty_store();
+        let store = empty_arc_store();
         save_session(&store, "s1", &["main", "helper", "main"]);
-        let ctx = SessionExplainContext { store: &store };
+        let ctx = make_ctx(std::sync::Arc::clone(&store));
         let input = SessionExplainInput {
             kind: SessionExplainKind::Derived,
             session_id: "s1".to_string(),
@@ -467,7 +482,7 @@ mod tests {
     #[test]
     fn explain_inferred_crash_detected_when_signal_delivered() {
         let (store, sid) = build_session_with_potential_issue("signal", Some("SIGSEGV"));
-        let ctx = SessionExplainContext { store: &store };
+        let ctx = make_ctx(std::sync::Arc::clone(&store));
         let input = SessionExplainInput {
             kind: SessionExplainKind::Inferred,
             session_id: sid,
@@ -488,9 +503,9 @@ mod tests {
 
     #[test]
     fn explain_inferred_single_threaded_when_thread_count_one() {
-        let store = empty_store();
+        let store = empty_arc_store();
         save_session(&store, "s1", &["main"]);
-        let ctx = SessionExplainContext { store: &store };
+        let ctx = make_ctx(std::sync::Arc::clone(&store));
         let input = SessionExplainInput {
             kind: SessionExplainKind::Inferred,
             session_id: "s1".to_string(),
@@ -517,7 +532,7 @@ mod tests {
         // and a perfectly even function distribution so CpuBound does
         // not fire. With thread_count > 1 and no dominant function, only
         // the typed fallback Unknown should remain.
-        let store = empty_store();
+        let store = empty_arc_store();
         // 12 events across 4 functions (3 each), 4 distinct threads.
         let events: Vec<TraceEvent> = (0..12)
             .map(|i| {
@@ -551,7 +566,7 @@ mod tests {
         };
         store.save_session(meta, &events).unwrap();
 
-        let ctx = SessionExplainContext { store: &store };
+        let ctx = make_ctx(std::sync::Arc::clone(&store));
         let input = SessionExplainInput {
             kind: SessionExplainKind::Inferred,
             session_id: "s1".to_string(),
@@ -596,9 +611,9 @@ mod tests {
 
     #[test]
     fn explain_hypothesis_crash_invariant_returns_plan() {
-        let store = empty_store();
+        let store = empty_arc_store();
         save_session(&store, "s1", &["main"]);
-        let ctx = SessionExplainContext { store: &store };
+        let ctx = make_ctx(std::sync::Arc::clone(&store));
         let input = SessionExplainInput {
             kind: SessionExplainKind::Hypothesis,
             session_id: "s1".to_string(),
@@ -622,9 +637,9 @@ mod tests {
 
     #[test]
     fn explain_hypothesis_dominant_callpath_returns_plan() {
-        let store = empty_store();
+        let store = empty_arc_store();
         save_session(&store, "s1", &["main", "main", "main", "helper"]);
-        let ctx = SessionExplainContext { store: &store };
+        let ctx = make_ctx(std::sync::Arc::clone(&store));
         let input = SessionExplainInput {
             kind: SessionExplainKind::Hypothesis,
             session_id: "s1".to_string(),
@@ -650,9 +665,9 @@ mod tests {
 
     #[test]
     fn explain_hypothesis_missing_kind_returns_invalid_input() {
-        let store = empty_store();
+        let store = empty_arc_store();
         save_session(&store, "s1", &["main"]);
-        let ctx = SessionExplainContext { store: &store };
+        let ctx = make_ctx(std::sync::Arc::clone(&store));
         let input = SessionExplainInput {
             kind: SessionExplainKind::Hypothesis,
             session_id: "s1".to_string(),
@@ -668,8 +683,8 @@ mod tests {
 
     #[test]
     fn explain_session_not_found() {
-        let store = empty_store();
-        let ctx = SessionExplainContext { store: &store };
+        let store = empty_arc_store();
+        let ctx = make_ctx(std::sync::Arc::clone(&store));
         let input = SessionExplainInput {
             kind: SessionExplainKind::Facts,
             session_id: "missing".to_string(),
@@ -681,9 +696,9 @@ mod tests {
 
     #[test]
     fn explain_provenance_present_on_all_kinds() {
-        let store = empty_store();
+        let store = empty_arc_store();
         save_session(&store, "s1", &["main", "helper"]);
-        let ctx = SessionExplainContext { store: &store };
+        let ctx = make_ctx(std::sync::Arc::clone(&store));
 
         for kind in [
             SessionExplainKind::Facts,

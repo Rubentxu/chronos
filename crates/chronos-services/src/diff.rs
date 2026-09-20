@@ -1,11 +1,15 @@
 //! M5 diff & compare algorithms extracted from `chronos-mcp::server`:
 //! `performance_regression_audit` and `compare_sessions`.
 //!
-//! The heavy lifting for `compare_sessions` is already done by
-//! `chronos_store::TraceDiff::compare` (BLAKE3 hash-based set diff,
-//! similarity_pct, address normalization with feature flag). This service
-//! owns the *audit* algorithm (per-function call-count regression detection)
-//! and the LLM-readable `summary` formatter used by both tools.
+//! `compare_sessions` consumes the [`DiffEngine`] port from
+//! `chronos_domain::ports::diff` (REC-C3.5-residual-inversion R.2).
+//! The composition root (`chronos_mcp::composition::default_diff_engine`)
+//! supplies the concrete `Blake3DiffEngine` adapter; this service
+//! holds an `Arc<dyn DiffEngine>` for the duration of the call.
+//!
+//! This service owns the *audit* algorithm (per-function call-count
+//! regression detection) and the LLM-readable `summary` formatter used
+//! by both tools.
 //!
 //! The MCP wrappers at `crates/chronos-mcp/src/server.rs` only:
 //!   1. read params + build `DiffContext`,
@@ -14,20 +18,26 @@
 
 use std::collections::{HashMap, HashSet};
 
+use chronos_domain::ports::diff::DiffEngine;
+use chronos_domain::ports::session_reader::{SessionReader, SessionReaderError};
 use chronos_query::QueryEngine;
-use chronos_store::{SessionStore, StoreError, TraceDiff};
 
 use crate::error::ServiceError;
 use crate::output::{
     CompareSessionsResult, FunctionRegressionEntry, PerformanceRegressionAuditResult,
 };
 
-/// Borrowed handle to the live `SessionStore`.
+/// Borrowed handle to the live `SessionReader` port + the live
+/// `DiffEngine` port.
 ///
-/// The store is owned by `chronos-mcp::Server`; the service holds a reference
-/// for the duration of the call. No locking past the await point.
-pub struct DiffContext<'a> {
-    pub store: &'a SessionStore,
+/// Both adapters behind the ports are owned by `chronos-mcp::Server`;
+/// the service holds `Arc<dyn ...>` for the duration of the call. No
+/// locking past the await point. The `DiffEngine` field was added by
+/// REC-C3.5-residual-inversion R.2 to close the residual edge
+/// `chronos-services -> chronos-store::TraceDiff`.
+pub struct DiffContext {
+    pub reader: std::sync::Arc<dyn SessionReader>,
+    pub engine: std::sync::Arc<dyn DiffEngine>,
 }
 
 #[derive(Debug, Clone)]
@@ -57,17 +67,17 @@ impl ChronosDiffService {
     /// Both lists are sorted (descending / ascending by `call_delta_pct`).
     /// A `summary` string is produced for LLM consumers.
     pub fn performance_regression_audit(
-        ctx: &DiffContext<'_>,
+        ctx: &DiffContext,
         input: PerformanceRegressionAuditInput,
     ) -> Result<PerformanceRegressionAuditResult, ServiceError> {
         let top_n = input.top_n.unwrap_or(20);
 
         let (_meta_a, events_a) = ctx
-            .store
+            .reader
             .load_session(&input.baseline_session_id)
             .map_err(|e| map_load_error(e, &input.baseline_session_id))?;
         let (_meta_b, events_b) = ctx
-            .store
+            .reader
             .load_session(&input.target_session_id)
             .map_err(|e| map_load_error(e, &input.target_session_id))?;
 
@@ -162,33 +172,35 @@ impl ChronosDiffService {
 
     /// Compare two saved sessions and produce a set-diff report.
     ///
-    /// Delegates the heavy lifting to [`chronos_store::TraceDiff::compare`]
-    /// (BLAKE3 hash-based set difference, similarity_pct, address
-    /// normalization). Formats a 3-tier LLM-readable `summary`:
+    /// Delegates the heavy lifting to the [`DiffEngine`] port via
+    /// `ctx.engine` (BLAKE3 hash-based set difference,
+    /// similarity_pct). The composition root
+    /// (`chronos_mcp::composition::default_diff_engine`) supplies the
+    /// `Blake3DiffEngine` adapter. Formats a 3-tier LLM-readable
+    /// `summary`:
     ///   - `>= 90%` similar   => "Sessions are highly similar..."
     ///   - `>= 50%` similar   => "Sessions differ in N events..."
     ///   - `< 50%` similar    => "Sessions are largely different..."
     pub fn compare_sessions(
-        ctx: &DiffContext<'_>,
+        ctx: &DiffContext,
         input: CompareSessionsInput,
     ) -> Result<CompareSessionsResult, ServiceError> {
         let (meta_a, events_a) = ctx
-            .store
+            .reader
             .load_session(&input.session_a)
             .map_err(|e| map_load_error(e, &input.session_a))?;
         let (meta_b, events_b) = ctx
-            .store
+            .reader
             .load_session(&input.session_b)
             .map_err(|e| map_load_error(e, &input.session_b))?;
 
-        let report = TraceDiff::compare(
+        let report = ctx.engine.compare(
             &input.session_a,
             &input.session_b,
             &events_a,
             &events_b,
             &meta_a,
             &meta_b,
-            None,
         );
 
         let summary = if report.similarity_pct >= 90.0 {
@@ -227,24 +239,30 @@ impl ChronosDiffService {
     }
 }
 
-/// Map a `StoreError` from `load_session` to a `ServiceError`.
+/// Map a `SessionReaderError` from `load_session` to a `ServiceError`.
 ///
-/// `SessionNotFound` is mapped to the canonical `ServiceError::SessionNotFound`
-/// (preserves the session id; the MCP wrapper reconstructs the legacy literal
-/// error string `"session '{}' not found: {}"`).
+/// `SessionReaderError::NotFound` is mapped to the canonical
+/// `ServiceError::SessionNotFound` (preserves the session id; the MCP
+/// wrapper reconstructs the legacy literal error string
+/// `"session '{}' not found: {}"`).
+/// `SessionReaderError::InvalidId` is mapped to `InvalidInput` because
+/// the id was rejected by the port validator.
 /// All other errors map to `ServiceError::LoadFailed`.
-fn map_load_error(e: StoreError, session_id: &str) -> ServiceError {
+fn map_load_error(e: SessionReaderError, session_id: &str) -> ServiceError {
     match e {
-        StoreError::SessionNotFound(_) => ServiceError::SessionNotFound(session_id.to_string()),
-        other => ServiceError::LoadFailed(other.to_string()),
+        SessionReaderError::NotFound(_) => ServiceError::SessionNotFound(session_id.to_string()),
+        SessionReaderError::InvalidId(_) => {
+            ServiceError::InvalidInput(format!("invalid session id: '{}'", session_id))
+        }
+        other => ServiceError::LoadFailed(format!("diff: {}", other)),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
-    use chronos_store::SessionMetadata;
+    use chronos_domain::{EventData, EventType, SessionMetadata, SourceLocation, TraceEvent};
+    use chronos_store::SessionStore;
 
     fn make_event(id: u64, func: &str) -> TraceEvent {
         let loc = SourceLocation::new("test.rs", 1, func, 0x1000 + id);
@@ -283,18 +301,32 @@ mod tests {
         store.save_session(meta, &events).unwrap();
     }
 
-    fn empty_store() -> SessionStore {
-        SessionStore::in_memory().unwrap()
+    /// Empty in-memory store wrapped in `Arc`, ready to seed and
+    /// hand to the adapter.
+    fn empty_arc_store() -> std::sync::Arc<SessionStore> {
+        std::sync::Arc::new(SessionStore::in_memory().unwrap())
     }
 
-    fn make_ctx<'a>(store: &'a SessionStore) -> DiffContext<'a> {
-        DiffContext { store }
+    /// Build a `DiffContext` from a pre-seeded `Arc<SessionStore>`.
+    /// Use this when the test seeds sessions into a specific store
+    /// before exercising the service.
+    fn make_ctx_with_arc(store: std::sync::Arc<SessionStore>) -> DiffContext {
+        use chronos_domain::ports::diff::DiffEngine;
+        use chronos_store::diff_engine_adapter::Blake3DiffEngine;
+        use chronos_store::session_reader_adapter::SessionStoreBackedSessionReader;
+        let adapter = std::sync::Arc::new(SessionStoreBackedSessionReader::new(store))
+            as std::sync::Arc<dyn chronos_domain::ports::session_reader::SessionReader>;
+        let engine = std::sync::Arc::new(Blake3DiffEngine) as std::sync::Arc<dyn DiffEngine>;
+        DiffContext {
+            reader: adapter,
+            engine,
+        }
     }
 
     #[test]
     fn performance_regression_audit_returns_session_not_found() {
-        let store = empty_store();
-        let ctx = make_ctx(&store);
+        let store = empty_arc_store();
+        let ctx = make_ctx_with_arc(std::sync::Arc::clone(&store));
 
         let result = ChronosDiffService::performance_regression_audit(
             &ctx,
@@ -310,7 +342,7 @@ mod tests {
 
     #[test]
     fn performance_regression_audit_classifies_regressions_and_improvements() {
-        let store = empty_store();
+        let store = empty_arc_store();
         // Baseline: 2 calls to "main" (id=0), 2 calls to "helper" (id=1).
         save_session(&store, "base", &["main", "main", "helper", "helper"]);
         // Target:   4 calls to "main" (id=0..3), 1 call to "helper" (id=4),
@@ -321,7 +353,7 @@ mod tests {
             &["main", "main", "main", "main", "helper", "newcomer"],
         );
 
-        let ctx = make_ctx(&store);
+        let ctx = make_ctx_with_arc(std::sync::Arc::clone(&store));
         let result = ChronosDiffService::performance_regression_audit(
             &ctx,
             PerformanceRegressionAuditInput {
@@ -348,8 +380,8 @@ mod tests {
 
     #[test]
     fn compare_sessions_returns_session_not_found() {
-        let store = empty_store();
-        let ctx = make_ctx(&store);
+        let store = empty_arc_store();
+        let ctx = make_ctx_with_arc(std::sync::Arc::clone(&store));
 
         let result = ChronosDiffService::compare_sessions(
             &ctx,
@@ -364,11 +396,11 @@ mod tests {
 
     #[test]
     fn compare_sessions_identical_sessions_have_high_similarity() {
-        let store = empty_store();
+        let store = empty_arc_store();
         save_session(&store, "a", &["main", "helper"]);
         save_session(&store, "b", &["main", "helper"]);
 
-        let ctx = make_ctx(&store);
+        let ctx = make_ctx_with_arc(std::sync::Arc::clone(&store));
         let result = ChronosDiffService::compare_sessions(
             &ctx,
             CompareSessionsInput {
@@ -387,11 +419,11 @@ mod tests {
 
     #[test]
     fn compare_sessions_disjoint_sessions_have_low_similarity() {
-        let store = empty_store();
+        let store = empty_arc_store();
         save_session(&store, "a", &["main", "helper", "init", "main"]);
         save_session(&store, "b", &["worker", "render", "tick"]);
 
-        let ctx = make_ctx(&store);
+        let ctx = make_ctx_with_arc(std::sync::Arc::clone(&store));
         let result = ChronosDiffService::compare_sessions(
             &ctx,
             CompareSessionsInput {

@@ -1,9 +1,10 @@
 //! Native probe service — live ptrace-based probes (`probe_*` tool family).
 //!
 //! This module owns the long-lived state associated with a live native probe:
-//! `LiveProbeSession` (carrying the `NativeProbeBackend`, the underlying
-//! `CaptureSession`, and the optional eBPF adapter). The MCP-server tool
-//! functions in `chronos-mcp` are thin wrappers that delegate here.
+//! `LiveProbeSession` (carrying a `Box<dyn NativeProbeController>` — the port
+//! introduced in REC-C3-hexagonal-closure Etapa A — instead of the concrete
+//! `NativeProbeBackend`). The MCP-server tool functions in `chronos-mcp` are
+//! thin wrappers that delegate here.
 //!
 //! Browser-probe sessions live in a sibling service (deferred to m5-06b).
 //!
@@ -11,6 +12,10 @@
 //! accepted-Raw seam (`accept_raw`) is the only producer, and consumers read
 //! the session's `ExecutionLog`. There is no mirror and no parallel source of
 //! truth left to keep in sync.
+//!
+//! REC-C3.3.4-native / REC-C3-hexagonal-closure Etapa A — services no longer
+//! hold `NativeProbeBackend` directly; they consume the port. This is the
+//! inversion that audit §3.2 A2 required.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -18,15 +23,28 @@ use std::sync::{Arc, Mutex};
 
 use chronos_domain::ports::execution_log::ExecutionLogProvider;
 use chronos_domain::ports::uprobe::{UprobeAttachError, UprobeHandle, UprobeInjector};
+use chronos_domain::ports::{NativeProbeController, NativeProbeControllerFactory};
 use chronos_domain::{CaptureConfig, CaptureSession, Language};
-use chronos_native::probe_backend::NativeProbeBackend;
 use tokio::sync::Mutex as TokioMutex;
 use tracing::info;
+
+#[cfg(test)]
+use chronos_native::native_probe_controller::NativeProbeControllerImpl;
+// REC-C3.5-residual-inversion R.3: `chronos_native::probe_backend` is
+// only used in `#[cfg(test)]` blocks (`stub_session`) — those tests
+// wire a noop ptrace backend and never spawn real processes. Production
+// code only consumes the `NativeProbeController` port through the
+// `NativeProbeControllerFactory` from `ProbeContext` (audit §4.5 S4).
+#[cfg(test)]
+use chronos_native::probe_backend::NativeProbeBackend;
 
 use chronos_query::QueryEngine;
 
 use crate::error::ServiceError;
-use crate::output::{ProbeDrainResult, ProbeSnapshotResult, ProbeStartOutput, ProbeStopResult};
+use crate::output::{
+    AdvanceOutput, ProbeDrainResult, ProbeSnapshotResult, ProbeStartOutput, ProbeStopResult,
+    StepOutput,
+};
 use chronos_domain::semantic::{ResolveContext, SemanticEvent};
 use chronos_domain::tripwire::TripwireManager;
 use chronos_domain::TraceEvent;
@@ -37,8 +55,18 @@ use chronos_domain::TraceEvent;
 /// each `TraceEvent` through the accepted-Raw seam (`accept_raw`) and consumers
 /// read the session's `ExecutionLog` via `probe_drain` and `probe_stop`.
 pub struct LiveProbeSession {
-    /// The native probe backend driving the ptrace loop.
-    pub backend: NativeProbeBackend,
+    /// The native probe controller driving the ptrace loop.
+    ///
+    /// REC-C3.3.4-native / REC-C3-hexagonal-closure Etapa A: this used
+    /// to be a concrete `NativeProbeBackend` field, which coupled
+    /// the application layer to a specific probe backend. The audit
+    /// §3.2 A2 flagged this as the canonical example of the inversion
+    /// that was missing. Now it is a `Box<dyn NativeProbeController>`
+    /// (the port declared in `chronos-domain/src/ports/probe.rs`),
+    /// and the production adapter is `NativeProbeControllerImpl`
+    /// (in `chronos-native`). Tests can substitute any
+    /// `NativeProbeController` impl without touching this module.
+    pub controller: Box<dyn NativeProbeController>,
     /// The capture session returned by `start_probe`.
     pub session: CaptureSession,
     /// Language of the target program.
@@ -115,6 +143,16 @@ pub struct ProbeContext<'a> {
     /// the server creates, which is guaranteed because `ChronosServer` owns
     /// it as a field.
     pub uprobe_injector: &'a Arc<dyn UprobeInjector>,
+    /// REC-C3.5-residual-inversion R.3 — factory that builds a
+    /// production-side `Box<dyn NativeProbeController>`.
+    ///
+    /// Composition-root supplied (`chronos_mcp::composition::default_native_probe_controller_factory`).
+    /// The factory must outlive every probe session the server creates,
+    /// which is guaranteed because `ChronosServer` owns it as a field.
+    /// Before R.3 the service constructed the production
+    /// `NativeProbeBackend` directly, which kept a production edge
+    /// `chronos-services -> chronos-native` (audit §4.5 S4).
+    pub native_probe_factory: &'a Arc<dyn NativeProbeControllerFactory>,
 }
 
 /// Type alias matching `ProbeContext<'a>` — used in tests and follow-up
@@ -284,27 +322,29 @@ impl ProbeService {
         //   3. hand the backend only a clone for writing.
         // REC-C2.3: there is no longer a parallel `EventBus` to construct; the
         // accepted-Raw seam is the only producer.
+        // REC-C3.5-residual-inversion R.3: services no longer construct
+        // the production `NativeProbeBackend` directly; they ask the
+        // port-shaped factory for a fresh `Box<dyn NativeProbeController>`
+        // and the corresponding `CaptureSession` (audit §4.5 S4).
         let session_id = uuid::Uuid::new_v4().to_string();
         let owned_log = ctx.execution_logs.register_create(
             execution_log_dir(input.execution_log_dir.as_deref(), &session_id),
             chronos_log::SessionId::new(session_id.clone()),
         )?;
-        let backend = {
-            let b = NativeProbeBackend::new()
-                .with_language(language)
-                .with_accepted_raw_observer(Self::accepted_raw_observer(
-                    owned_log.clone(),
-                    Arc::clone(ctx.tripwire_manager),
-                ));
-            b.attach_execution_log(owned_log.provider());
-            b
-        };
-
-        // Start the probe (non-blocking — spawns background thread)
+        let accepted_raw_observer =
+            Self::accepted_raw_observer(owned_log.clone(), Arc::clone(ctx.tripwire_manager));
         let track_function_frames = input.track_function_frames.unwrap_or(false);
-        let session = backend
-            .start_probe(config, track_function_frames)
-            .map_err(|e| ServiceError::ProbeStartFailed(e.to_string()))?;
+        let (controller, session) = ctx
+            .native_probe_factory
+            .build_for_spawn(
+                config.clone(),
+                chronos_domain::session_id::SessionId::from(session_id.clone()),
+                language,
+                owned_log.provider(),
+                Some(accepted_raw_observer),
+                track_function_frames,
+            )
+            .map_err(|e| ServiceError::ProbeStartFailed(e.detail))?;
 
         info!(
             "Live probe started for '{}' (session: {})",
@@ -313,7 +353,7 @@ impl ProbeService {
 
         // Store the live probe session. The log is mandatory and session-owned.
         let live_probe = LiveProbeSession {
-            backend,
+            controller,
             session,
             language,
             target: input.program.clone(),
@@ -402,29 +442,34 @@ impl ProbeService {
         // via the registry's factory (C3.3.2), then let the backend write
         // through a clone.
         // REC-C2.3: no EventBus to construct.
+        // REC-C3.5-residual-inversion R.3: services no longer reach into
+        // `chronos_native::probe_backend`; the factory port handles
+        // construction (audit §4.5 S4).
         let session_id = uuid::Uuid::new_v4().to_string();
         let owned_log = ctx.execution_logs.register_create(
             execution_log_dir(input.execution_log_dir.as_deref(), &session_id),
             chronos_log::SessionId::new(session_id.clone()),
         )?;
-        let backend = {
-            let b = NativeProbeBackend::new()
-                .with_language(language)
-                .with_accepted_raw_observer(Self::accepted_raw_observer(
-                    owned_log.clone(),
-                    Arc::clone(ctx.tripwire_manager),
-                ));
-            b.attach_execution_log(owned_log.provider());
-            b
-        };
-        let session = backend.attach_probe(input.pid, config).map_err(|e| {
-            ServiceError::AttachFailed(format!(
-                "NativeProbeBackend::attach_probe({}) failed: {}",
-                input.pid, e
-            ))
-        })?;
+        let accepted_raw_observer =
+            Self::accepted_raw_observer(owned_log.clone(), Arc::clone(ctx.tripwire_manager));
+        let (controller, session) = ctx
+            .native_probe_factory
+            .build_for_attach(
+                config.clone(),
+                input.pid,
+                chronos_domain::session_id::SessionId::from(session_id.clone()),
+                language,
+                owned_log.provider(),
+                Some(accepted_raw_observer),
+            )
+            .map_err(|e| {
+                ServiceError::AttachFailed(format!(
+                    "native probe controller factory::build_for_attach(pid {}) failed: {}",
+                    input.pid, e.detail
+                ))
+            })?;
         let live = crate::probe::LiveProbeSession {
-            backend,
+            controller,
             session,
             language,
             target: target.clone(),
@@ -459,12 +504,13 @@ impl ProbeService {
     /// This is where application policy meets the durable seam: `chronos-native`
     /// persists the `Raw` record and hands over its `source_seq`; the
     /// derivation into durable `TripwireFired` evidence happens here, in the
-    /// services layer. Matches `chronos-services` -> `chronos-native`, never
-    /// the reverse.
+    /// services layer. Returns the port-shaped `RawAcceptedObserver` so
+    /// the application layer does not depend on the concrete backend
+    /// type (REC-C3.5-residual-inversion R.3, audit §4.5 S4).
     pub fn accepted_raw_observer(
         log: crate::session_log::SessionExecutionLog,
         manager: Arc<TripwireManager>,
-    ) -> chronos_native::probe_backend::AcceptedRawObserver {
+    ) -> chronos_domain::ports::RawAcceptedObserver {
         Arc::new(
             move |source_seq, event| match crate::tripwire_evidence::derive_firings_from_event(
                 &log, &manager, source_seq, event,
@@ -510,7 +556,7 @@ impl ProbeService {
         // blocking: it joins the capture thread (bounded) before returning,
         // so draining afterwards observes every event the probe emitted.
         // Draining before stopping loses events emitted in the race window.
-        if let Err(e) = live_probe.backend.stop_probe(&live_probe.session) {
+        if let Err(e) = live_probe.controller.stop() {
             tracing::warn!("Probe stop error for session {}: {}", session_id, e);
         }
 
@@ -561,6 +607,55 @@ impl ProbeService {
         })
     }
 
+    /// REC-C3.3.3 (Tren B slice E/G) — advance a paused probe session.
+    ///
+    /// Looks up the live probe by `session_id` and delegates to
+    /// [`NativeProbeBackend::advance`]. The session must exist in
+    /// `live_probes`; if not, `ServiceError::ProbeNotFound` is returned.
+    /// The backend resolves the traced PID itself (mirrors the pattern
+    /// used by [`Self::stop`]).
+    ///
+    /// Returns an [`AdvanceOutput`] with `advanced=true` on success.
+    /// The MCP layer maps this onto the existing JSON shape for
+    /// `probe_advance` (slice G wires the handler).
+    pub fn advance(
+        ctx: &ProbeContext<'_>,
+        session_id: &str,
+    ) -> Result<AdvanceOutput, ServiceError> {
+        let live_probes = ctx
+            .live_probes
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?;
+        let live_probe = live_probes
+            .get(session_id)
+            .ok_or_else(|| ServiceError::ProbeNotFound(session_id.to_string()))?;
+        let (advanced, paused_reason, running) = live_probe.controller.advance()?;
+        Ok(AdvanceOutput {
+            advanced,
+            paused_reason,
+            running,
+        })
+    }
+
+    /// REC-C3.3.3 (Tren B slice E/G) — single-step a paused probe session.
+    ///
+    /// Same lookup as [`Self::advance`]. Returns
+    /// [`ServiceError::SessionRunning`] when the backend reports the
+    /// target is currently running (the legacy backend's `attached_target`
+    /// flag is the canonical signal). On success returns a
+    /// [`StepOutput`] with `stepped=true`.
+    pub fn step(ctx: &ProbeContext<'_>, session_id: &str) -> Result<StepOutput, ServiceError> {
+        let live_probes = ctx
+            .live_probes
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?;
+        let live_probe = live_probes
+            .get(session_id)
+            .ok_or_else(|| ServiceError::ProbeNotFound(session_id.to_string()))?;
+        let (stepped, _paused_reason) = live_probe.controller.step()?;
+        Ok(StepOutput { stepped })
+    }
+
     /// Non-destructive drain from a live probe session.
     ///
     /// Returns the semantic events + cursor metadata. The server wrapper is
@@ -602,9 +697,9 @@ impl ProbeService {
                 .ok_or_else(|| ServiceError::ProbeNotFound(input.session_id.clone()))?;
             (
                 live_probe
-                    .backend
+                    .controller
                     .resolve_context(Some(live_probe.target.clone())),
-                live_probe.backend.clone_resolver_pipeline(),
+                live_probe.controller.clone_resolver_pipeline(),
             )
         };
 
@@ -778,11 +873,7 @@ impl ProbeService {
             let live_probe = probes
                 .get(&input.session_id)
                 .ok_or_else(|| ServiceError::ProbeNotFound(input.session_id.clone()))?;
-            live_probe
-                .backend
-                .get_traced_pid()
-                .map(|p| p as u32)
-                .unwrap_or(live_probe.session.pid)
+            live_probe.session.pid
         };
 
         let pid = input.pid.unwrap_or(target_pid);
@@ -925,11 +1016,7 @@ impl ProbeService {
                 "adapter_owned": live_probe.uprobe_handle.is_some(),
             })
         });
-        let traced_pid = live_probe
-            .backend
-            .get_traced_pid()
-            .map(|p| p as u32)
-            .unwrap_or(live_probe.session.pid);
+        let traced_pid = live_probe.session.pid;
 
         Ok(crate::output::ProbeStatusOutput {
             session_id: session_id.to_string(),
@@ -1016,16 +1103,23 @@ mod rec_c1_2_tests {
     }
 
     fn stub_session(execution_log: crate::session_log::SessionExecutionLog) -> LiveProbeSession {
-        // REC-C2.3: no EventBus — the backend's only sink is the
-        // caller-attached ExecutionLog.
-        let backend = {
+        // REC-C2.3: no EventBus — the controller's only sink is the
+        // caller-attached ExecutionLog. The controller wraps the
+        // concrete backend; the test sees only the port surface.
+        let backend = Arc::new({
             let b = NativeProbeBackend::new();
             b.attach_execution_log(execution_log.provider());
             b
-        };
+        });
         let session = CaptureSession::new(0, Language::Rust, CaptureConfig::new("noop"));
-        LiveProbeSession {
+        let session_id = chronos_domain::session_id::SessionId::from(session.session_id.clone());
+        let controller: Box<dyn NativeProbeController> = Box::new(NativeProbeControllerImpl::new(
             backend,
+            session_id,
+            session.clone(),
+        ));
+        LiveProbeSession {
+            controller,
             session,
             language: Language::Rust,
             target: "noop".to_string(),
@@ -1052,7 +1146,10 @@ mod rec_c1_2_tests {
     #[test]
     fn backend_and_session_share_one_log_identity() {
         let live = stub_session(test_log("shared"));
-        let backend_log = live.backend.execution_log().expect("backend holds a clone");
+        let backend_log = live
+            .controller
+            .execution_log()
+            .expect("controller holds a clone");
         // REC-C3.3.2 — the canonical writer holds an
         // `Arc<dyn ExecutionLogProvider>` and the canonical owner holds the
         // matching Arc. The bridge to a concrete `SegmentedExecutionLog`
@@ -1061,7 +1158,7 @@ mod rec_c1_2_tests {
         let session_provider = live.execution_log.provider();
         assert!(
             std::sync::Arc::ptr_eq(&backend_log, &session_provider),
-            "backend must write to the very log the session owns"
+            "controller must write to the very log the session owns"
         );
         assert_eq!(
             backend_log.session_id(),

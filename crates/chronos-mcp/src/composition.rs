@@ -35,6 +35,7 @@ use chronos_domain::ports::browser_probe::BrowserProbeFactory;
 use chronos_domain::ports::execution_log_factory::ExecutionLogFactory;
 use chronos_domain::ports::uprobe::UprobeInjector;
 use chronos_log::factory::SegmentedExecutionLogFactory;
+use chronos_native::native_probe_factory::ChronosNativeProbeControllerFactory;
 use chronos_store::{SessionStore, StoreError};
 
 /// REC-C3.3.2 — build the production `ExecutionLogFactory`.
@@ -88,6 +89,52 @@ pub fn default_uprobe_injector() -> Arc<dyn UprobeInjector> {
 /// creation has no async work — capability detection is sync.
 pub fn default_browser_probe_factory() -> Arc<dyn BrowserProbeFactory> {
     Arc::new(chronos_browser::BrowserProbeFactoryImpl::new())
+}
+
+/// REC-C3.3.3 (Tren B slice C) — build the production `SessionArchive`.
+///
+/// Returns an `Arc<dyn SessionArchive>` driven by the existing
+/// `SessionStore`. The factory is the only seam: services consume
+/// the port, not the concrete store. Bootstrap-scoped: constructed
+/// once at startup and held by `ChronosServer`.
+pub fn default_session_archive(
+    store: Arc<SessionStore>,
+) -> Arc<dyn chronos_domain::ports::session::SessionArchive> {
+    chronos_store::session_archive::SessionStoreBackedSessionArchive::new(store).into_arc()
+}
+
+/// REC-C3.3.3 (Tren B slice C) — build an in-memory `SessionArchive`
+/// for tests and degraded mode.
+///
+/// Mirrors the `InMemorySessionRepository` pattern (REC-C3.3 territory):
+/// composition-root fallback when no persistent store is configured,
+/// or when tests need isolation between sessions.
+pub fn in_memory_session_archive() -> Arc<dyn chronos_domain::ports::session::SessionArchive> {
+    chronos_domain::ports::session::InMemorySessionArchive::new().into_arc()
+}
+
+/// REC-C3.3.3 (Tren B slice D) — build the production
+/// `CounterexampleRepository`.
+///
+/// **EXPERIMENTAL (FIND-TB-AUDIT-2026-09-20)**: this port currently has
+/// NO production consumer. `ChronosCounterexampleService` still uses
+/// `&SessionStore` directly. The adapter is correct and the factory
+/// works, but per audit §13 ("no abstraction without a real consumer"),
+/// this is filed as experimental until a real service-side rewire lands.
+/// See `apply-checkpoint.json` `carry_forward_debt` (C33.3-TB-DEBT-01).
+pub fn default_counterexample_repository(
+    store: Arc<SessionStore>,
+) -> Arc<dyn chronos_domain::ports::counterexample::CounterexampleRepository> {
+    chronos_store::counterexample_repository::SessionStoreBackedCounterexampleRepository::new(store)
+        .into_arc()
+}
+
+/// REC-C3.3.3 (Tren B slice D) — build an in-memory
+/// `CounterexampleRepository` for tests and degraded mode.
+/// See `default_counterexample_repository` for the experimental-status note.
+pub fn in_memory_counterexample_repository(
+) -> Arc<dyn chronos_domain::ports::counterexample::CounterexampleRepository> {
+    chronos_domain::ports::counterexample::InMemoryCounterexampleRepository::new().into_arc()
 }
 
 /// Default path for the session store, mirrored from `server.rs` so the
@@ -195,6 +242,46 @@ impl std::error::Error for StoreOpenError {
     }
 }
 
+/// REC-C3.5-residual-inversion R.2 — build the production
+/// [`DiffEngine`] adapter.
+///
+/// The adapter is `Blake3DiffEngine` (BLAKE3 hash-based symmetric
+/// difference), supplied as `Arc<dyn DiffEngine>` so the
+/// `ChronosDiffService::compare_sessions` consumer does not need to
+/// know the concrete type. Zero-size struct, so the construction cost
+/// is a single Arc bump.
+pub fn default_diff_engine() -> Arc<dyn chronos_domain::ports::diff::DiffEngine> {
+    Arc::new(chronos_store::diff_engine_adapter::Blake3DiffEngine)
+}
+
+// =====================================================================
+// REC-C3.5-residual-inversion R.3 — `default_native_probe_controller_factory`
+// =====================================================================
+//
+// The composition helper that wires the production ptrace-based
+// backend behind the `NativeProbeControllerFactory` port (audit §4.5 S4,
+// REC-C3-hexagonal-closure). Before R.3 the application layer reached
+// into `chronos_native::probe_backend::NativeProbeBackend` directly;
+// after R.3 the application layer only consumes the port, and the
+// composition root is the single place where the concrete factory is
+// named.
+//
+// `ChronosNativeProbeControllerFactory` is a zero-size struct, so the
+// construction cost is a single Arc bump. The factory is stateless and
+// can be shared across the lifetime of the server.
+
+/// REC-C3.5-R.3 — build the production
+/// [`NativeProbeControllerFactory`] (audit §4.5 S4).
+///
+/// The function lives in the composition root because it names the
+/// concrete factory [`ChronosNativeProbeControllerFactory`]. Services
+/// never know the concrete type. The factory is stateless, so it is
+/// safe to share a single instance across the whole server.
+pub fn default_native_probe_controller_factory(
+) -> Arc<dyn chronos_domain::ports::NativeProbeControllerFactory> {
+    Arc::new(ChronosNativeProbeControllerFactory::new())
+}
+
 // =====================================================================
 // Tests for the composition module live in `composition_tests` (below).
 // They exercise `default_store_path` and `allow_in_memory_fallback`
@@ -239,5 +326,133 @@ mod composition_tests {
         assert!(!allow_in_memory_fallback(Some("0")));
         assert!(!allow_in_memory_fallback(Some("false")));
         assert!(!allow_in_memory_fallback(None));
+    }
+
+    // =============================================================
+    // REC-C3.3.3 (Tren B slice C) — SessionArchive factory tests
+    // =============================================================
+
+    fn temp_store() -> (std::path::PathBuf, Arc<SessionStore>) {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir =
+            std::env::temp_dir().join(format!("chronos-comp-tests-{}-{}", std::process::id(), seq));
+        std::fs::create_dir_all(&dir).expect("create temp store dir");
+        let path = dir.join("sessions.redb");
+        let store = SessionStore::try_open(&path).expect("open temp store");
+        (path, Arc::new(store))
+    }
+
+    fn sample_metadata(id: &str) -> chronos_domain::SessionMetadata {
+        chronos_domain::SessionMetadata {
+            session_id: id.to_string(),
+            created_at: 1,
+            language: "native".to_string(),
+            target: "/bin/true".to_string(),
+            event_count: 0,
+            duration_ms: 0,
+            tail_sealed: false,
+            sealed_at: None,
+        }
+    }
+
+    #[test]
+    fn default_session_archive_roundtrips_via_real_store() {
+        let (_path, store) = temp_store();
+        let archive = default_session_archive(store.clone());
+
+        let meta = sample_metadata("session-roundtrip");
+        archive.save(meta.clone(), &[]).expect("save");
+        let (loaded, _events) = archive.load("session-roundtrip").expect("load");
+        assert_eq!(loaded.session_id, meta.session_id);
+    }
+
+    #[test]
+    fn in_memory_session_archive_is_fake() {
+        let archive = in_memory_session_archive();
+        assert!(!archive.is_persistent());
+        let meta = sample_metadata("mem-1");
+        archive.save(meta, &[]).expect("save");
+        let (loaded, _) = archive.load("mem-1").expect("load");
+        assert_eq!(loaded.session_id, "mem-1");
+    }
+
+    #[test]
+    fn session_archive_is_persistent_true_for_persistent_store() {
+        let (_path, store) = temp_store();
+        assert!(store.is_persistent(), "temp redb store must be persistent");
+        let archive = default_session_archive(store);
+        assert!(archive.is_persistent());
+    }
+
+    #[test]
+    fn session_archive_is_persistent_false_for_in_memory_store() {
+        let store = SessionStore::in_memory().expect("in-memory store");
+        assert!(!store.is_persistent());
+        let archive = default_session_archive(Arc::new(store));
+        assert!(!archive.is_persistent());
+    }
+
+    // =============================================================
+    // REC-C3.3.3 (Tren B slice D) — CounterexampleRepository factory tests
+    // =============================================================
+
+    use chronos_domain::ports::counterexample::{
+        CounterexampleBundleFilter, CounterexampleBundleRecord, CounterexampleBundleSummary,
+    };
+
+    fn ce_record(id: &str, kind: &str, ws: &str) -> CounterexampleBundleRecord {
+        CounterexampleBundleRecord {
+            summary: CounterexampleBundleSummary {
+                bundle_id: id.to_string(),
+                property_kind: kind.to_string(),
+                workspace_id: ws.to_string(),
+                created_at_ms: 1000,
+                rounds_used: 1,
+                has_full_bundle: true,
+                schema_version: 1,
+                events_count: 0,
+            },
+            events: vec![],
+            minimised: None,
+            event_cas_hashes: vec![],
+            target_hypothesis: None,
+            schema_version: 1,
+        }
+    }
+
+    #[test]
+    fn default_counterexample_repository_roundtrips_bundle() {
+        let (_path, store) = temp_store();
+        let repo = default_counterexample_repository(store);
+
+        let id = repo
+            .save_bundle(ce_record("b-1", "invariant", "ws-1"))
+            .expect("save");
+        assert_eq!(id, "b-1");
+        let events = repo.load_bundle_events("b-1").expect("load events");
+        assert!(events.is_empty());
+        let count = repo.count_bundle_events("b-1").expect("count");
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn in_memory_counterexample_repository_filters_by_kind() {
+        let repo = in_memory_counterexample_repository();
+        repo.save_bundle(ce_record("b-a", "invariant", "ws-1"))
+            .expect("save");
+        repo.save_bundle(ce_record("b-b", "existence", "ws-1"))
+            .expect("save");
+        repo.save_bundle(ce_record("b-c", "invariant", "ws-2"))
+            .expect("save");
+
+        let filter = CounterexampleBundleFilter {
+            property_kind: Some("invariant".to_string()),
+            ..Default::default()
+        };
+        let summaries = repo.list_bundles(&filter).expect("list");
+        assert_eq!(summaries.len(), 2);
+        assert!(summaries.iter().all(|s| s.property_kind == "invariant"));
     }
 }

@@ -60,6 +60,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
 flatbuffers = "24"
+sha2 = "0.10"
 nix = { version = "0.29", features = ["ptrace", "signal", "process"] }
 gimli = "0.29"
 object = "0.36"

@@ -115,6 +115,33 @@ pub struct ChronosServer {
     session_languages: Arc<Mutex<HashMap<String, chronos_domain::Language>>>,
     /// Persistent session store.
     store: Arc<SessionStore>,
+    /// `SessionReader` port (REC-C3.5-B.1). Built from `store` via
+    /// `SessionStoreBackedSessionReader` at composition time. Services
+    /// consume the port; `store` stays for non-port consumers (probe
+    /// persistence, etc.).
+    reader: Arc<dyn chronos_domain::ports::session_reader::SessionReader>,
+    /// `DiffEngine` port (REC-C3.5-residual-inversion R.2). Built once
+    /// at composition time via `default_diff_engine()`. Services
+    /// (`ChronosDiffService::compare_sessions`,
+    /// `ChronosSessionCompareService::compare`) consume the port; the
+    /// store stays out of the production code path.
+    diff_engine: Arc<dyn chronos_domain::ports::diff::DiffEngine>,
+    /// `LifecycleStore` port (REC-C3.5-B.4). Extends `SessionReader` with
+    /// write-side methods (`save_session_meta`, `delete_session`) needed by
+    /// `SessionLifecycleService`. Built from `store` via
+    /// `SessionStoreBackedLifecycleStore` at composition time.
+    lifecycle_store: Arc<dyn chronos_domain::ports::lifecycle_store::LifecycleStore>,
+    /// `CounterexampleRepository` port (REC-C3.5-B'). Built from `store` via
+    /// `SessionStoreBackedCounterexampleRepository` at composition time.
+    /// `CounterexampleService` consumes the port; the store stays for
+    /// non-port consumers (probe persistence, etc.).
+    counterexample_repository:
+        Arc<dyn chronos_domain::ports::counterexample::CounterexampleRepository>,
+    /// `SessionArchive` port (REC-C3.3.3 Tren B). Built from `store` via
+    /// `SessionStoreBackedSessionArchive` at composition time. Services
+    /// consume the port; `store` stays for non-port consumers (probe
+    /// persistence, etc.).
+    archive: Arc<dyn chronos_domain::ports::session::SessionArchive>,
     /// Active background sessions: session_id → events vector.
     /// Tracks pending sessions that are still running in background threads.
     /// Uses `std::sync::Mutex` (not tokio) intentionally: all lock holders are
@@ -177,6 +204,18 @@ pub struct ChronosServer {
     /// outlive every probe session, which is guaranteed because the
     /// server holds it as an `Arc` for its entire lifetime.
     uprobe_injector: Arc<dyn UprobeInjector>,
+    /// REC-C3.5-residual-inversion R.3 — composition-root
+    /// `NativeProbeControllerFactory` (audit §4.5 S4).
+    ///
+    /// `chronos_services::probe` cannot name the concrete
+    /// `NativeProbeBackend`; it receives the construction capability
+    /// through this `Arc<dyn NativeProbeControllerFactory>` and threads
+    /// it into every `ProbeContext`. The factory must outlive every
+    /// probe session, which is guaranteed because the server holds it
+    /// as an `Arc` for its entire lifetime. Before R.3 the production
+    /// edge `chronos-services -> chronos-native` was the composition
+    /// leak; after R.3 it disappears.
+    native_probe_factory: Arc<dyn chronos_domain::ports::NativeProbeControllerFactory>,
     /// REC-C3.3.2.4 — composition-root browser probe factory.
     ///
     /// `chronos_services::browser_probe` cannot name the concrete
@@ -472,7 +511,7 @@ const MINIMAL_TOOL_NAMES: &[&str] = &[
     "capabilities",
 ];
 
-/// Complete list of all registered tool names (61 total).
+/// Complete list of all registered tool names (63 total).
 /// Used by `build_tool_availability` to populate the full `tool_availability` map.
 ///
 /// Authoritative source: the live `#[rmcp::tool_router]` registration on
@@ -523,6 +562,8 @@ pub const ALL_TOOL_NAMES: &[&str] = &[
     "session_snapshot",
     "probe_inject",
     "probe_status",
+    "probe_advance",
+    "probe_step",
     "browser_probe_start",
     "browser_probe_stop",
     "browser_probe_drain",
@@ -1372,6 +1413,16 @@ pub struct TripwireQueryParams {
 // ============================================================================
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct ProbeAdvanceParams {
+    pub session_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ProbeStepParams {
+    pub session_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct ProbeStartParams {
     /// Path to the target binary.
     pub program: String,
@@ -1809,10 +1860,32 @@ impl ChronosServer {
         // across all probe sessions; each `create` produces a fresh
         // backend.
         let browser_probe_factory = crate::composition::default_browser_probe_factory();
+        let store_arc = Arc::new(store);
+        let archive = crate::composition::default_session_archive(store_arc.clone());
+        let reader: Arc<dyn chronos_domain::ports::session_reader::SessionReader> = Arc::new(
+            chronos_store::session_reader_adapter::SessionStoreBackedSessionReader::new(
+                store_arc.clone(),
+            ),
+        );
+        let diff_engine = crate::composition::default_diff_engine();
+        let lifecycle_store: Arc<dyn chronos_domain::ports::lifecycle_store::LifecycleStore> =
+            Arc::new(
+                chronos_store::lifecycle_store_adapter::SessionStoreBackedLifecycleStore::new(
+                    store_arc.clone(),
+                ),
+            );
+        let counterexample_repository: Arc<
+            dyn chronos_domain::ports::counterexample::CounterexampleRepository,
+        > = crate::composition::default_counterexample_repository(store_arc.clone());
         Self {
             engines: Arc::new(Mutex::new(HashMap::new())),
             session_languages: Arc::new(Mutex::new(HashMap::new())),
-            store: Arc::new(store),
+            store: store_arc,
+            reader,
+            diff_engine,
+            lifecycle_store,
+            counterexample_repository,
+            archive,
             background_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
             connected_sessions: Arc::new(std::sync::Mutex::new(HashSet::new())),
             active_session: Arc::new(Mutex::new(None)),
@@ -1830,6 +1903,7 @@ impl ChronosServer {
             degraded,
             active_toolset,
             uprobe_injector,
+            native_probe_factory: crate::composition::default_native_probe_controller_factory(),
             browser_probe_factory,
         }
     }
@@ -1841,27 +1915,55 @@ impl ChronosServer {
     #[cfg(test)]
     pub fn with_toolset(toolset: &str) -> Self {
         match Self::try_open_default_store() {
-            Ok(store) => Self {
-                engines: Arc::new(Mutex::new(HashMap::new())),
-                session_languages: Arc::new(Mutex::new(HashMap::new())),
-                store: Arc::new(store),
-                background_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
-                connected_sessions: Arc::new(std::sync::Mutex::new(HashSet::new())),
-                active_session: Arc::new(Mutex::new(None)),
-                tripwire_manager: Arc::new(TripwireManager::new()),
-                uprobe_counter: Arc::new(std::sync::Mutex::new(HashMap::new())),
-                execution_logs: Arc::new(
-                    chronos_services::session_log::SessionExecutionLogRegistry::new(),
-                ),
-                execution_log_root: chronos_log::resolve_execution_log_root(),
-                projection_meta: Arc::new(Mutex::new(HashMap::new())),
-                live_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
-                live_browser_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
-                degraded: false,
-                active_toolset: toolset.to_string(),
-                uprobe_injector: crate::composition::default_uprobe_injector(),
-                browser_probe_factory: crate::composition::default_browser_probe_factory(),
-            },
+            Ok(store) => {
+                let store_arc = Arc::new(store);
+                let archive = crate::composition::default_session_archive(store_arc.clone());
+                let reader: Arc<dyn chronos_domain::ports::session_reader::SessionReader> =
+                    Arc::new(
+                        chronos_store::session_reader_adapter::SessionStoreBackedSessionReader::new(
+                            store_arc.clone(),
+                        ),
+                    );
+                let diff_engine = crate::composition::default_diff_engine();
+                let lifecycle_store: Arc<
+                    dyn chronos_domain::ports::lifecycle_store::LifecycleStore,
+                > = Arc::new(
+                    chronos_store::lifecycle_store_adapter::SessionStoreBackedLifecycleStore::new(
+                        store_arc.clone(),
+                    ),
+                );
+                let counterexample_repository: Arc<
+                    dyn chronos_domain::ports::counterexample::CounterexampleRepository,
+                > = crate::composition::default_counterexample_repository(store_arc.clone());
+                Self {
+                    engines: Arc::new(Mutex::new(HashMap::new())),
+                    session_languages: Arc::new(Mutex::new(HashMap::new())),
+                    store: store_arc,
+                    reader,
+                    diff_engine,
+                    lifecycle_store,
+                    counterexample_repository,
+                    archive,
+                    background_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
+                    connected_sessions: Arc::new(std::sync::Mutex::new(HashSet::new())),
+                    active_session: Arc::new(Mutex::new(None)),
+                    tripwire_manager: Arc::new(TripwireManager::new()),
+                    uprobe_counter: Arc::new(std::sync::Mutex::new(HashMap::new())),
+                    execution_logs: Arc::new(
+                        chronos_services::session_log::SessionExecutionLogRegistry::new(),
+                    ),
+                    execution_log_root: chronos_log::resolve_execution_log_root(),
+                    projection_meta: Arc::new(Mutex::new(HashMap::new())),
+                    live_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
+                    live_browser_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
+                    degraded: false,
+                    active_toolset: toolset.to_string(),
+                    uprobe_injector: crate::composition::default_uprobe_injector(),
+                    native_probe_factory:
+                        crate::composition::default_native_probe_controller_factory(),
+                    browser_probe_factory: crate::composition::default_browser_probe_factory(),
+                }
+            }
             Err(e) => panic!("{e}"),
         }
     }
@@ -2926,6 +3028,14 @@ impl ChronosServer {
                     "internal error: unexpected memory error",
                 )));
             }
+            // REC-C3.3.3 (Tren B slice G): SessionRunning/SessionStopped
+            // cannot occur from list_threads, but the enum gained two
+            // variants and the match must remain exhaustive.
+            Err(ServiceError::SessionRunning(_)) | Err(ServiceError::SessionStopped(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected probe-state error",
+                )));
+            }
             // REC-C3.3.2.5: retention errors cannot occur from
             // list_threads either; listed for exhaustiveness.
             Err(ServiceError::RetentionBackwardsMove { .. })
@@ -3570,7 +3680,7 @@ impl ChronosServer {
             engines: &self.engines,
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
-            store: &self.store,
+            archive: &*self.archive,
             execution_log_registry: &self.execution_logs,
             execution_log_root: &self.execution_log_root,
         };
@@ -3632,7 +3742,7 @@ impl ChronosServer {
             engines: &self.engines,
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
-            store: &self.store,
+            archive: &*self.archive,
             execution_log_registry: &self.execution_logs,
             execution_log_root: &self.execution_log_root,
         };
@@ -3677,7 +3787,7 @@ impl ChronosServer {
             engines: &self.engines,
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
-            store: &self.store,
+            archive: &*self.archive,
             execution_log_registry: &self.execution_logs,
             execution_log_root: &self.execution_log_root,
         };
@@ -3724,7 +3834,7 @@ impl ChronosServer {
             engines: &self.engines,
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
-            store: &self.store,
+            archive: &*self.archive,
             execution_log_registry: &self.execution_logs,
             execution_log_root: &self.execution_log_root,
         };
@@ -3777,7 +3887,7 @@ impl ChronosServer {
             engines: &self.engines,
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
-            store: &self.store,
+            archive: &*self.archive,
             execution_log_registry: &self.execution_logs,
             execution_log_root: &self.execution_log_root,
         };
@@ -4313,6 +4423,7 @@ impl ChronosServer {
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
         let ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -4387,6 +4498,7 @@ impl ChronosServer {
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
         let ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -4489,6 +4601,7 @@ impl ChronosServer {
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
         let ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -4564,6 +4677,7 @@ impl ChronosServer {
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
         let ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -4624,6 +4738,88 @@ impl ChronosServer {
     // ========================================================================
 
     #[tool(
+        name = "probe_advance",
+        description = "REC-C3.3.3 (Tren B slice G): advance a paused live probe session. The native backend delegates to PtraceTracer::continue_execution. Returns the AdvanceOutput (advanced, paused_reason, running) on success. Maps ServiceError::ProbeNotFound -> error.code = session_not_found; ServiceError::SessionStopped -> error.code = session_stopped."
+    )]
+    async fn probe_advance(
+        &self,
+        params: Parameters<ProbeAdvanceParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let probe_ctx = chronos_services::probe::ProbeContext {
+            live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            tripwire_manager: &self.tripwire_manager,
+            active_session: &self.active_session,
+            uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
+        };
+        match chronos_services::probe::ProbeService::advance(&probe_ctx, &params.session_id) {
+            Ok(out) => Ok(CallToolResult::success(text_content(
+                serde_json::to_string(&out).unwrap_or_else(|e| format!("serialise error: {e}")),
+            ))),
+            Err(ServiceError::ProbeNotFound(_)) => {
+                Ok(CallToolResult::error(text_content(format!(
+                    "session_not_found: session '{}' not found",
+                    params.session_id
+                ))))
+            }
+            Err(ServiceError::SessionStopped(_)) => {
+                Ok(CallToolResult::error(text_content(format!(
+                    "session_stopped: session '{}' has stopped; cannot advance",
+                    params.session_id
+                ))))
+            }
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "advance failed: {e}"
+            )))),
+        }
+    }
+
+    #[tool(
+        name = "probe_step",
+        description = "REC-C3.3.3 (Tren B slice G): single-step a paused live probe session by one instruction. The native backend delegates to PtraceTracer::step. Returns StepOutput { stepped: true } on success. Maps ServiceError::ProbeNotFound -> error.code = session_not_found; ServiceError::SessionRunning -> error.code = session_running (the target must be paused to step)."
+    )]
+    async fn probe_step(
+        &self,
+        params: Parameters<ProbeStepParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let probe_ctx = chronos_services::probe::ProbeContext {
+            live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            tripwire_manager: &self.tripwire_manager,
+            active_session: &self.active_session,
+            uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
+        };
+        match chronos_services::probe::ProbeService::step(&probe_ctx, &params.session_id) {
+            Ok(out) => Ok(CallToolResult::success(text_content(
+                serde_json::to_string(&out).unwrap_or_else(|e| format!("serialise error: {e}")),
+            ))),
+            Err(ServiceError::ProbeNotFound(_)) => {
+                Ok(CallToolResult::error(text_content(format!(
+                    "session_not_found: session '{}' not found",
+                    params.session_id
+                ))))
+            }
+            Err(ServiceError::SessionRunning(_)) => {
+                Ok(CallToolResult::error(text_content(format!(
+                    "session_running: session '{}' is running; cannot step",
+                    params.session_id
+                ))))
+            }
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "step failed: {e}"
+            )))),
+        }
+    }
+
+    #[tool(
         name = "probe_start",
         description = "Start a live probe on a target program. Unlike debug_run (which blocks until the program exits), probe_start returns immediately and streams events to a ring buffer. Use probe_drain to read events in real-time and probe_stop to finalize the session."
     )]
@@ -4667,6 +4863,7 @@ impl ChronosServer {
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
         let observe_ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -4674,7 +4871,7 @@ impl ChronosServer {
             uprobe_counter: &self.uprobe_counter,
         };
         let lifecycle_ctx = SessionLifecycleContext {
-            store: &self.store,
+            store: std::sync::Arc::clone(&self.lifecycle_store),
             probe: &probe_ctx,
             observe: &observe_ctx,
         };
@@ -4729,6 +4926,7 @@ impl ChronosServer {
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
 
         match chronos_services::probe::ProbeService::stop(&ctx, &params.session_id) {
@@ -4831,6 +5029,7 @@ impl ChronosServer {
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
         let observe_ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -4838,7 +5037,7 @@ impl ChronosServer {
             uprobe_counter: &self.uprobe_counter,
         };
         let lifecycle_ctx = SessionLifecycleContext {
-            store: &self.store,
+            store: std::sync::Arc::clone(&self.lifecycle_store),
             probe: &probe_ctx,
             observe: &observe_ctx,
         };
@@ -4915,6 +5114,7 @@ impl ChronosServer {
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
         let observe_ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -4922,7 +5122,7 @@ impl ChronosServer {
             uprobe_counter: &self.uprobe_counter,
         };
         let lifecycle_ctx = SessionLifecycleContext {
-            store: &self.store,
+            store: std::sync::Arc::clone(&self.lifecycle_store),
             probe: &probe_ctx,
             observe: &observe_ctx,
         };
@@ -5111,6 +5311,7 @@ impl ChronosServer {
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
         let observe_ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -5118,7 +5319,7 @@ impl ChronosServer {
             uprobe_counter: &self.uprobe_counter,
         };
         let lifecycle_ctx = SessionLifecycleContext {
-            store: &self.store,
+            store: std::sync::Arc::clone(&self.lifecycle_store),
             probe: &probe_ctx,
             observe: &observe_ctx,
         };
@@ -5169,6 +5370,7 @@ impl ChronosServer {
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
 
         match chronos_services::probe::ProbeService::drain(&ctx, input) {
@@ -5274,6 +5476,7 @@ further would be a Silent Lie."
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
 
         match chronos_services::probe::ProbeService::drain_log(
@@ -5357,6 +5560,7 @@ further would be a Silent Lie."
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
 
         match chronos_services::probe::ProbeService::compaction_metrics(&ctx, &params.session_id) {
@@ -5415,6 +5619,7 @@ further would be a Silent Lie."
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
 
         match chronos_services::probe::ProbeService::session_snapshot(&ctx, &params.session_id) {
@@ -5475,6 +5680,7 @@ further would be a Silent Lie."
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
         let ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -5582,6 +5788,7 @@ further would be a Silent Lie."
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
 
         match chronos_services::probe::ProbeService::status(&ctx, &session_id) {
@@ -5775,7 +5982,10 @@ further would be a Silent Lie."
         params: Parameters<PerformanceRegressionAuditParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let ctx = chronos_services::session_compare::SessionCompareContext { store: &self.store };
+        let ctx = chronos_services::session_compare::SessionCompareContext {
+            reader: Arc::clone(&self.reader),
+            engine: Arc::clone(&self.diff_engine),
+        };
         let v2_params = SessionCompareParams {
             kind: "regression".to_string(),
             session_a: params.baseline_session_id,
@@ -5794,7 +6004,10 @@ further would be a Silent Lie."
         params: Parameters<CompareSessionsParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let ctx = chronos_services::session_compare::SessionCompareContext { store: &self.store };
+        let ctx = chronos_services::session_compare::SessionCompareContext {
+            reader: Arc::clone(&self.reader),
+            engine: Arc::clone(&self.diff_engine),
+        };
         let v2_params = SessionCompareParams {
             kind: "divergence".to_string(),
             session_a: params.session_a,
@@ -5813,7 +6026,10 @@ further would be a Silent Lie."
         params: Parameters<SessionCompareParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let ctx = chronos_services::session_compare::SessionCompareContext { store: &self.store };
+        let ctx = chronos_services::session_compare::SessionCompareContext {
+            reader: Arc::clone(&self.reader),
+            engine: Arc::clone(&self.diff_engine),
+        };
         Self::dispatch_session_compare(&ctx, params, SessionCompareWire::V2Envelope).await
     }
 
@@ -5826,8 +6042,9 @@ further would be a Silent Lie."
         params: Parameters<SessionExplainParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let explain_ctx =
-            chronos_services::session_explain::SessionExplainContext { store: &self.store };
+        let explain_ctx = chronos_services::session_explain::SessionExplainContext {
+            reader: Arc::clone(&self.reader),
+        };
         let kind = parse_session_explain_kind(&params.kind)?;
         let input = chronos_services::output::SessionExplainInput {
             kind,
@@ -6267,6 +6484,7 @@ further would be a Silent Lie."
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
 
         let ctx = ObserveContext {
@@ -6315,7 +6533,7 @@ further would be a Silent Lie."
     /// validation and error mapping stay identical; only the response wire
     /// shape differs, and `wire` selects it.
     async fn dispatch_session_compare(
-        ctx: &chronos_services::session_compare::SessionCompareContext<'_>,
+        ctx: &chronos_services::session_compare::SessionCompareContext,
         params: SessionCompareParams,
         wire: SessionCompareWire,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
@@ -6377,7 +6595,7 @@ further would be a Silent Lie."
             engines: &self.engines,
         };
         let counterexample_ctx = chronos_services::counterexample::CounterexampleContext {
-            store: &self.store,
+            repository: std::sync::Arc::clone(&self.counterexample_repository),
             hypothesis_ctx: &hyp_ctx,
         };
         let input = chronos_services::counterexample::CounterexampleShrinkInput::Shrink {
@@ -6418,7 +6636,7 @@ further would be a Silent Lie."
             engines: &self.engines,
         };
         let counterexample_ctx = chronos_services::counterexample::CounterexampleContext {
-            store: &self.store,
+            repository: std::sync::Arc::clone(&self.counterexample_repository),
             hypothesis_ctx: &hyp_ctx,
         };
         match chronos_services::counterexample::ChronosCounterexampleService::get(
@@ -6449,7 +6667,7 @@ further would be a Silent Lie."
             engines: &self.engines,
         };
         let counterexample_ctx = chronos_services::counterexample::CounterexampleContext {
-            store: &self.store,
+            repository: std::sync::Arc::clone(&self.counterexample_repository),
             hypothesis_ctx: &hyp_ctx,
         };
         let filter = chronos_services::counterexample::CounterexampleListFilter {
@@ -6493,7 +6711,7 @@ further would be a Silent Lie."
             engines: &self.engines,
         };
         let counterexample_ctx = chronos_services::counterexample::CounterexampleContext {
-            store: &self.store,
+            repository: std::sync::Arc::clone(&self.counterexample_repository),
             hypothesis_ctx: &hyp_ctx,
         };
         match chronos_services::counterexample::ChronosCounterexampleService::events_count(
@@ -6536,7 +6754,7 @@ further would be a Silent Lie."
             engines: &self.engines,
         };
         let counterexample_ctx = chronos_services::counterexample::CounterexampleContext {
-            store: &self.store,
+            repository: std::sync::Arc::clone(&self.counterexample_repository),
             hypothesis_ctx: &hyp_ctx,
         };
         match chronos_services::counterexample::ChronosCounterexampleService::events(
@@ -8945,16 +9163,18 @@ mod tests {
     /// compaction activity on probes that opted out of the log.
     #[tokio::test(flavor = "current_thread")]
     async fn m1_08_auto_compaction_round_skips_backends_without_log() {
+        use chronos_domain::ports::NativeProbeController;
         use chronos_domain::{CaptureConfig, CaptureSession, Language};
+        use chronos_native::native_probe_controller::NativeProbeControllerImpl;
         use chronos_native::probe_backend::NativeProbeBackend;
 
         let server = Arc::new(ChronosServer::new());
 
         // Register a backend with NO execution log attached.
-        let backend_no_log = NativeProbeBackend::new();
+        let backend_no_log = std::sync::Arc::new(NativeProbeBackend::new());
         // Build the minimum LiveProbeSession: the daemon only
-        // reads `backend`, so we stub the other fields with
-        // dummies that compile.
+        // reads `controller.execution_log()`, so we stub the other
+        // fields with dummies that compile.
         let dummy_session = CaptureSession::new(0, Language::Rust, CaptureConfig::new("noop"));
         // REC-C1.2a: a session always owns a log (the type is not `Option`), so
         // the pre-C1.2a "no log attached" fixture is not representable. What the
@@ -8972,8 +9192,14 @@ mod tests {
             chronos_log::SessionId::new("rec-c1-2a-compaction"),
         )
         .expect("test log");
+        let controller_no_log: Box<dyn NativeProbeController> =
+            Box::new(NativeProbeControllerImpl::new(
+                backend_no_log,
+                chronos_domain::session_id::SessionId::from("no-log-session"),
+                dummy_session.clone(),
+            ));
         let live = LiveProbeSession {
-            backend: backend_no_log,
+            controller: controller_no_log,
             session: dummy_session,
             language: Language::Rust,
             target: "noop".to_string(),
@@ -9010,6 +9236,7 @@ mod tests {
             ExecutionPayload, NewExecutionRecord, SegmentedConfig, SegmentedExecutionLog,
             SessionId as LogSessionId,
         };
+        use chronos_native::native_probe_controller::NativeProbeControllerImpl;
         use chronos_native::probe_backend::NativeProbeBackend;
         use std::sync::Arc;
 
@@ -9046,7 +9273,7 @@ mod tests {
         );
 
         // Open a log, attach it to the backend, and append the record.
-        let backend = NativeProbeBackend::new();
+        let backend = std::sync::Arc::new(NativeProbeBackend::new());
         let concrete = Arc::new(
             SegmentedExecutionLog::open(
                 LogSessionId::new(&log_session_id),
@@ -9093,7 +9320,11 @@ mod tests {
             Some(dir.clone()),
         );
         let live = LiveProbeSession {
-            backend,
+            controller: Box::new(NativeProbeControllerImpl::new(
+                backend,
+                chronos_domain::session_id::SessionId::from(log_session_id.clone()),
+                dummy_session.clone(),
+            )),
             session: dummy_session,
             language: chronos_domain::Language::C,
             target: "noop".to_string(),
@@ -9337,7 +9568,7 @@ mod cap_discovery_tests {
 
     #[test]
     fn all_tool_names_count_61() {
-        // All 61 tools are registered. Sourced from the live `#[tool]`
+        // All 63 tools are registered. Sourced from the live `#[tool]`
         // router so this assertion cannot drift relative to the actual
         // tool registrations in this file.
         let from_router = ChronosServer::tool_router().list_all().len();
@@ -9357,7 +9588,7 @@ mod cap_discovery_tests {
     fn tool_availability_map_has_61_entries() {
         let server = ChronosServer::new();
         let map = server.build_tool_availability(ALL_TOOL_NAMES, Some("rust"));
-        assert_eq!(map.len(), 61, "tool_availability must have 61 entries");
+        assert_eq!(map.len(), 63, "tool_availability must have 63 entries");
     }
 
     #[test]
