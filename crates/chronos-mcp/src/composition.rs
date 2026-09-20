@@ -90,6 +90,28 @@ pub fn default_browser_probe_factory() -> Arc<dyn BrowserProbeFactory> {
     Arc::new(chronos_browser::BrowserProbeFactoryImpl::new())
 }
 
+/// REC-C3.3.3 (Tren B slice C) — build the production `SessionArchive`.
+///
+/// Returns an `Arc<dyn SessionArchive>` driven by the existing
+/// `SessionStore`. The factory is the only seam: services consume
+/// the port, not the concrete store. Bootstrap-scoped: constructed
+/// once at startup and held by `ChronosServer`.
+pub fn default_session_archive(
+    store: Arc<SessionStore>,
+) -> Arc<dyn chronos_domain::ports::session::SessionArchive> {
+    chronos_store::session_archive::SessionStoreBackedSessionArchive::new(store).into_arc()
+}
+
+/// REC-C3.3.3 (Tren B slice C) — build an in-memory `SessionArchive`
+/// for tests and degraded mode.
+///
+/// Mirrors the `InMemorySessionRepository` pattern (REC-C3.3 territory):
+/// composition-root fallback when no persistent store is configured,
+/// or when tests need isolation between sessions.
+pub fn in_memory_session_archive() -> Arc<dyn chronos_domain::ports::session::SessionArchive> {
+    chronos_domain::ports::session::InMemorySessionArchive::new().into_arc()
+}
+
 /// Default path for the session store, mirrored from `server.rs` so the
 /// resolution stays testable without mutating the process environment.
 ///
@@ -239,5 +261,71 @@ mod composition_tests {
         assert!(!allow_in_memory_fallback(Some("0")));
         assert!(!allow_in_memory_fallback(Some("false")));
         assert!(!allow_in_memory_fallback(None));
+    }
+
+    // =============================================================
+    // REC-C3.3.3 (Tren B slice C) — SessionArchive factory tests
+    // =============================================================
+
+    fn temp_store() -> (std::path::PathBuf, Arc<SessionStore>) {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir =
+            std::env::temp_dir().join(format!("chronos-comp-tests-{}-{}", std::process::id(), seq));
+        std::fs::create_dir_all(&dir).expect("create temp store dir");
+        let path = dir.join("sessions.redb");
+        let store = SessionStore::try_open(&path).expect("open temp store");
+        (path, Arc::new(store))
+    }
+
+    fn sample_metadata(id: &str) -> chronos_domain::SessionMetadata {
+        chronos_domain::SessionMetadata {
+            session_id: id.to_string(),
+            created_at: 1,
+            language: "native".to_string(),
+            target: "/bin/true".to_string(),
+            event_count: 0,
+            duration_ms: 0,
+            tail_sealed: false,
+            sealed_at: None,
+        }
+    }
+
+    #[test]
+    fn default_session_archive_roundtrips_via_real_store() {
+        let (_path, store) = temp_store();
+        let archive = default_session_archive(store.clone());
+
+        let meta = sample_metadata("session-roundtrip");
+        archive.save(meta.clone(), &[]).expect("save");
+        let (loaded, _events) = archive.load("session-roundtrip").expect("load");
+        assert_eq!(loaded.session_id, meta.session_id);
+    }
+
+    #[test]
+    fn in_memory_session_archive_is_fake() {
+        let archive = in_memory_session_archive();
+        assert!(!archive.is_persistent());
+        let meta = sample_metadata("mem-1");
+        archive.save(meta, &[]).expect("save");
+        let (loaded, _) = archive.load("mem-1").expect("load");
+        assert_eq!(loaded.session_id, "mem-1");
+    }
+
+    #[test]
+    fn session_archive_is_persistent_true_for_persistent_store() {
+        let (_path, store) = temp_store();
+        assert!(store.is_persistent(), "temp redb store must be persistent");
+        let archive = default_session_archive(store);
+        assert!(archive.is_persistent());
+    }
+
+    #[test]
+    fn session_archive_is_persistent_false_for_in_memory_store() {
+        let store = SessionStore::in_memory().expect("in-memory store");
+        assert!(!store.is_persistent());
+        let archive = default_session_archive(Arc::new(store));
+        assert!(!archive.is_persistent());
     }
 }

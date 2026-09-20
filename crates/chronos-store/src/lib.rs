@@ -11,6 +11,7 @@ pub mod cas;
 pub mod counterexample_storage;
 pub mod diff;
 pub mod error;
+pub mod session_archive;
 pub mod storage;
 mod table_error;
 #[cfg(test)]

@@ -20,7 +20,7 @@ pub mod execution_log_maintenance;
 pub mod execution_log_retention;
 pub mod notification;
 mod probe;
-mod session;
+pub mod session;
 mod telemetry;
 pub mod uprobe;
 
@@ -40,7 +40,10 @@ pub use notification::{
 pub use probe::{
     NullProbeFactory, NullProbeRegistry, ProbeController, ProbeFactory, ProbeRegistry,
 };
-pub use session::{InMemorySessionRepository, SessionHandle, SessionRepository, SessionState};
+pub use session::{
+    InMemorySessionArchive, InMemorySessionRepository, SessionArchive, SessionArchiveError,
+    SessionHandle, SessionRepository, SessionState,
+};
 pub use telemetry::{
     Counters, InMemoryTelemetry, Metric, NoopTelemetry, TelemetryError, TelemetryReceiver,
 };
