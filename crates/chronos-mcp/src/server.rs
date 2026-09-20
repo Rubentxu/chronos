@@ -204,6 +204,18 @@ pub struct ChronosServer {
     /// outlive every probe session, which is guaranteed because the
     /// server holds it as an `Arc` for its entire lifetime.
     uprobe_injector: Arc<dyn UprobeInjector>,
+    /// REC-C3.5-residual-inversion R.3 — composition-root
+    /// `NativeProbeControllerFactory` (audit §4.5 S4).
+    ///
+    /// `chronos_services::probe` cannot name the concrete
+    /// `NativeProbeBackend`; it receives the construction capability
+    /// through this `Arc<dyn NativeProbeControllerFactory>` and threads
+    /// it into every `ProbeContext`. The factory must outlive every
+    /// probe session, which is guaranteed because the server holds it
+    /// as an `Arc` for its entire lifetime. Before R.3 the production
+    /// edge `chronos-services -> chronos-native` was the composition
+    /// leak; after R.3 it disappears.
+    native_probe_factory: Arc<dyn chronos_domain::ports::NativeProbeControllerFactory>,
     /// REC-C3.3.2.4 — composition-root browser probe factory.
     ///
     /// `chronos_services::browser_probe` cannot name the concrete
@@ -1891,6 +1903,7 @@ impl ChronosServer {
             degraded,
             active_toolset,
             uprobe_injector,
+            native_probe_factory: crate::composition::default_native_probe_controller_factory(),
             browser_probe_factory,
         }
     }
@@ -1946,6 +1959,8 @@ impl ChronosServer {
                     degraded: false,
                     active_toolset: toolset.to_string(),
                     uprobe_injector: crate::composition::default_uprobe_injector(),
+                    native_probe_factory:
+                        crate::composition::default_native_probe_controller_factory(),
                     browser_probe_factory: crate::composition::default_browser_probe_factory(),
                 }
             }
@@ -4408,6 +4423,7 @@ impl ChronosServer {
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
         let ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -4482,6 +4498,7 @@ impl ChronosServer {
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
         let ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -4584,6 +4601,7 @@ impl ChronosServer {
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
         let ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -4659,6 +4677,7 @@ impl ChronosServer {
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
         let ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -4735,6 +4754,7 @@ impl ChronosServer {
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
         match chronos_services::probe::ProbeService::advance(&probe_ctx, &params.session_id) {
             Ok(out) => Ok(CallToolResult::success(text_content(
@@ -4775,6 +4795,7 @@ impl ChronosServer {
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
         match chronos_services::probe::ProbeService::step(&probe_ctx, &params.session_id) {
             Ok(out) => Ok(CallToolResult::success(text_content(
@@ -4842,6 +4863,7 @@ impl ChronosServer {
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
         let observe_ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -4904,6 +4926,7 @@ impl ChronosServer {
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
 
         match chronos_services::probe::ProbeService::stop(&ctx, &params.session_id) {
@@ -5006,6 +5029,7 @@ impl ChronosServer {
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
         let observe_ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -5090,6 +5114,7 @@ impl ChronosServer {
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
         let observe_ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -5286,6 +5311,7 @@ impl ChronosServer {
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
         let observe_ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -5344,6 +5370,7 @@ impl ChronosServer {
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
 
         match chronos_services::probe::ProbeService::drain(&ctx, input) {
@@ -5449,6 +5476,7 @@ further would be a Silent Lie."
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
 
         match chronos_services::probe::ProbeService::drain_log(
@@ -5532,6 +5560,7 @@ further would be a Silent Lie."
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
 
         match chronos_services::probe::ProbeService::compaction_metrics(&ctx, &params.session_id) {
@@ -5590,6 +5619,7 @@ further would be a Silent Lie."
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
 
         match chronos_services::probe::ProbeService::session_snapshot(&ctx, &params.session_id) {
@@ -5650,6 +5680,7 @@ further would be a Silent Lie."
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
         let ctx = ObserveContext {
             tripwire_manager: &self.tripwire_manager,
@@ -5757,6 +5788,7 @@ further would be a Silent Lie."
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
 
         match chronos_services::probe::ProbeService::status(&ctx, &session_id) {
@@ -6452,6 +6484,7 @@ further would be a Silent Lie."
             tripwire_manager: &self.tripwire_manager,
             active_session: &self.active_session,
             uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
         };
 
         let ctx = ObserveContext {

@@ -27,7 +27,7 @@ use crate::error::TraceError;
 use crate::ports::execution_log::ExecutionLogProvider;
 use crate::semantic::{ResolveContext, ResolverPipeline};
 use crate::session_id::SessionId;
-use crate::trace::{CaptureConfig, CaptureSession};
+use crate::trace::{CaptureConfig, CaptureSession, Language};
 
 /// Lifetime-focused trait for one running probe.
 ///
@@ -306,3 +306,113 @@ pub trait NativeProbeController: Send + Sync + Debug {
 // (B7 in tasks.md). Behavioral coverage for NullProbeFactory and
 // NullProbeRegistry is concentrated there.
 // =====================================================================
+
+// =====================================================================
+// `NativeProbeControllerFactory` — REC-C3.5-residual-inversion R.3
+// =====================================================================
+//
+// The composition-leak fix for `services::probe.rs`. Before R.3 the
+// service layer constructed the production `NativeProbeBackend`
+// directly and wrapped it in `NativeProbeControllerImpl`, which kept a
+// production edge `chronos-services -> chronos-native`. After R.3 the
+// service layer only consumes `Arc<dyn NativeProbeControllerFactory>`
+// and the composition root (chronos_mcp::composition) wires the
+// production impl.
+//
+// The factory has one method, `build_for_spawn`, which constructs a
+// session-scoped port controller. The contract is intentionally narrow:
+// it returns the port controller + the freshly minted `CaptureSession`
+// that the consumer is responsible for storing alongside the port in
+// the live probe registry. The factory does NOT register the session
+// in any global map; composition stays at the consumer's discretion.
+
+/// Factory for fresh, session-scoped [`NativeProbeController`] ports.
+///
+/// Implementations wrap a real ptrace-based backend (production) or
+/// simulate one (tests). The factory itself is stateless and cheap to
+/// share (`Arc<dyn NativeProbeControllerFactory>`).
+///
+/// The contract is one method (`build_for_spawn`) that returns the
+/// freshly minted port controller + the canonical `CaptureSession`
+/// that downstream APIs drive. The factory does NOT mutate any global
+/// state — composition stays at the consumer's discretion.
+pub trait NativeProbeControllerFactory: Send + Sync {
+    /// Build a fresh port controller for one probe session.
+    ///
+    /// `config` carries the spawn / capture parameters. `session_id` is
+    /// the canonical session identifier (mint-side must be the
+    /// consumer; the factory re-uses it). `language` declares the
+    /// probe target's runtime language. `log_provider` is the
+    /// session-scoped execution log the controller writes evidence
+    /// into. `accepted_raw_observer` is the application hook notified
+    /// once each accepted Raw record is durable (REC-C3.3.2); the
+    /// services layer uses this to derive TripwireFired evidence.
+    /// `track_function_frames` toggles function-frame tracking on the
+    /// capture thread; the caller decides (services forward whatever
+    /// the MCP tool input said, defaulting to `false`).
+    ///
+    /// On success the returned `CaptureSession` is the live session
+    /// handle the consumer stores alongside the controller in its
+    /// registry. Errors are surfaced as
+    /// [`NativeProbeBuildError::Factory`] with a string detail so the
+    /// port does not leak the concrete error type from
+    /// `chronos_native`.
+    fn build_for_spawn(
+        &self,
+        config: CaptureConfig,
+        session_id: SessionId,
+        language: Language,
+        log_provider: Arc<dyn ExecutionLogProvider>,
+        accepted_raw_observer: Option<RawAcceptedObserver>,
+        track_function_frames: bool,
+    ) -> Result<(Box<dyn NativeProbeController>, CaptureSession), NativeProbeBuildError>;
+
+    /// Build a fresh port controller for an **attach-to-pid** probe
+    /// session.
+    ///
+    /// Mirrors [`Self::build_for_spawn`] but the backend attaches to an
+    /// already-running tracee (`config.target` is interpreted as the
+    /// pid). All port-shaped inputs (`session_id`, `log_provider`,
+    /// `accepted_raw_observer`) are identical; only the construction
+    /// action differs (no spawn, no function-frame knob).
+    fn build_for_attach(
+        &self,
+        config: CaptureConfig,
+        pid: u32,
+        session_id: SessionId,
+        language: Language,
+        log_provider: Arc<dyn ExecutionLogProvider>,
+        accepted_raw_observer: Option<RawAcceptedObserver>,
+    ) -> Result<(Box<dyn NativeProbeController>, CaptureSession), NativeProbeBuildError>;
+}
+
+/// The application hook notified when an accepted Raw record has been
+/// made durable by the probe backend (REC-C3.3.2 accepted-Raw seam).
+///
+/// `source_seq` is the authoritative identity of the accepted source.
+/// The observer is never called for an event whose append failed. The
+/// type alias mirrors `chronos_native::probe_backend::AcceptedRawObserver`
+/// but lives in the port module so services do not need to depend on
+/// the concrete backend to construct one.
+pub type RawAcceptedObserver =
+    std::sync::Arc<dyn Fn(crate::seq::EventSeq, &crate::trace::TraceEvent) + Send + Sync>;
+
+/// Error returned by [`NativeProbeControllerFactory::build_for_spawn`].
+///
+/// Concrete error variants are kept in
+/// `chronos_native::native_probe_factory::NativeProbeBuildErrorImpl`;
+/// the port carries a string detail to avoid leaking the concrete
+/// error type into `chronos_domain`.
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("native probe controller factory error: {detail}")]
+pub struct NativeProbeBuildError {
+    pub detail: String,
+}
+
+impl NativeProbeBuildError {
+    pub fn new(detail: impl Into<String>) -> Self {
+        Self {
+            detail: detail.into(),
+        }
+    }
+}

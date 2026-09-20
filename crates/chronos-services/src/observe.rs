@@ -583,6 +583,155 @@ mod tests {
         }
     }
 
+    /// REC-C3.5-residual-inversion R.3 — test double for
+    /// [`NativeProbeControllerFactory`] that yields a no-op port
+    /// controller. Lets the `TestRig` carry the new
+    /// `native_probe_factory` field without invoking real ptrace. The
+    /// returned controller is wired with the session's execution log
+    /// so reads return an empty stream rather than panic, matching the
+    /// "tests do not spawn real traces" contract.
+    #[derive(Debug, Clone)]
+    struct NullNativeProbeControllerFactory;
+
+    impl chronos_domain::ports::NativeProbeControllerFactory for NullNativeProbeControllerFactory {
+        fn build_for_spawn(
+            &self,
+            _config: chronos_domain::trace::CaptureConfig,
+            session_id: chronos_domain::session_id::SessionId,
+            _language: chronos_domain::trace::Language,
+            log_provider: std::sync::Arc<
+                dyn chronos_domain::ports::execution_log::ExecutionLogProvider,
+            >,
+            _accepted_raw_observer: Option<chronos_domain::ports::RawAcceptedObserver>,
+            _track_function_frames: bool,
+        ) -> Result<
+            (
+                Box<dyn chronos_domain::ports::NativeProbeController>,
+                chronos_domain::trace::CaptureSession,
+            ),
+            chronos_domain::ports::NativeProbeBuildError,
+        > {
+            let session = chronos_domain::trace::CaptureSession::new(0, _language, _config.clone());
+            let controller: Box<dyn chronos_domain::ports::NativeProbeController> = Box::new(
+                NullNativeProbeController::new(session_id.clone(), log_provider),
+            );
+            Ok((controller, session))
+        }
+
+        fn build_for_attach(
+            &self,
+            _config: chronos_domain::trace::CaptureConfig,
+            _pid: u32,
+            session_id: chronos_domain::session_id::SessionId,
+            _language: chronos_domain::trace::Language,
+            log_provider: std::sync::Arc<
+                dyn chronos_domain::ports::execution_log::ExecutionLogProvider,
+            >,
+            _accepted_raw_observer: Option<chronos_domain::ports::RawAcceptedObserver>,
+        ) -> Result<
+            (
+                Box<dyn chronos_domain::ports::NativeProbeController>,
+                chronos_domain::trace::CaptureSession,
+            ),
+            chronos_domain::ports::NativeProbeBuildError,
+        > {
+            let session = chronos_domain::trace::CaptureSession::new(0, _language, _config.clone());
+            let controller: Box<dyn chronos_domain::ports::NativeProbeController> = Box::new(
+                NullNativeProbeController::new(session_id.clone(), log_provider),
+            );
+            Ok((controller, session))
+        }
+    }
+
+    /// REC-C3.5-residual-inversion R.3 — test-only port impl that
+    /// returns empty / no-op answers for every method. Wired by
+    /// `NullNativeProbeControllerFactory`.
+    struct NullNativeProbeController {
+        session_id: chronos_domain::session_id::SessionId,
+        log: Option<std::sync::Arc<dyn chronos_domain::ports::execution_log::ExecutionLogProvider>>,
+    }
+
+    impl std::fmt::Debug for NullNativeProbeController {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("NullNativeProbeController")
+                .field("session_id", &self.session_id)
+                .finish()
+        }
+    }
+
+    impl NullNativeProbeController {
+        fn new(
+            session_id: chronos_domain::session_id::SessionId,
+            log: std::sync::Arc<dyn chronos_domain::ports::execution_log::ExecutionLogProvider>,
+        ) -> Self {
+            Self {
+                session_id,
+                log: Some(log),
+            }
+        }
+    }
+
+    impl chronos_domain::ports::NativeProbeController for NullNativeProbeController {
+        fn session_id(&self) -> &chronos_domain::session_id::SessionId {
+            &self.session_id
+        }
+
+        fn attach_to_pid(
+            &self,
+            _pid: u32,
+            _config: &chronos_domain::trace::CaptureConfig,
+        ) -> Result<chronos_domain::trace::CaptureSession, chronos_domain::TraceError> {
+            Err(chronos_domain::TraceError::capture_failed(
+                "NullNativeProbeController: no real ptrace in tests",
+            ))
+        }
+
+        fn start(
+            &self,
+            _config: &chronos_domain::trace::CaptureConfig,
+            _track_function_frames: bool,
+        ) -> Result<chronos_domain::trace::CaptureSession, chronos_domain::TraceError> {
+            Err(chronos_domain::TraceError::capture_failed(
+                "NullNativeProbeController: no real ptrace in tests",
+            ))
+        }
+
+        fn stop(&self) -> Result<(), chronos_domain::TraceError> {
+            Ok(())
+        }
+
+        fn advance(
+            &self,
+        ) -> Result<chronos_domain::ports::AdvanceOutcome, chronos_domain::TraceError> {
+            Ok((false, None, false))
+        }
+
+        fn step(&self) -> Result<chronos_domain::ports::StepOutcome, chronos_domain::TraceError> {
+            Ok((false, None))
+        }
+
+        fn execution_log(
+            &self,
+        ) -> Option<std::sync::Arc<dyn chronos_domain::ports::execution_log::ExecutionLogProvider>>
+        {
+            self.log.clone()
+        }
+
+        fn clone_resolver_pipeline(&self) -> chronos_domain::semantic::ResolverPipeline {
+            chronos_domain::semantic::ResolverPipeline::new()
+        }
+
+        fn resolve_context(
+            &self,
+            _binary_path: Option<String>,
+        ) -> chronos_domain::semantic::ResolveContext {
+            chronos_domain::semantic::ResolveContext {
+                pid: 0,
+                binary_path: None,
+            }
+        }
+    }
+
     /// Test double that succeeds at attach and counts invocations so
     /// tests can assert `stop → detach` was invoked. Counters are
     /// shared via `Arc` between the injector (which owns them) and the
@@ -673,6 +822,13 @@ mod tests {
         /// tests that need attach/detach semantics swap it for a
         /// `RecordingUprobeInjector` via `with_injector`.
         uprobe_injector: Arc<dyn UprobeInjector>,
+        /// REC-C3.5-residual-inversion R.3 — composition-root
+        /// injectable native probe controller factory. Tests do not
+        /// spawn real ptrace sessions; the rig carries a
+        /// `NullNativeProbeControllerFactory` that returns an
+        /// `NativeProbeController` port whose operations are no-ops
+        /// (only used by code paths that exercise the wiring).
+        native_probe_factory: Arc<dyn chronos_domain::ports::NativeProbeControllerFactory>,
     }
 
     impl TestRig {
@@ -687,6 +843,7 @@ mod tests {
                 active_session: tokio::sync::Mutex::new(None),
                 execution_logs: crate::session_log::SessionExecutionLogRegistry::new(),
                 uprobe_injector: Arc::new(UnavailableUprobeInjector),
+                native_probe_factory: Arc::new(NullNativeProbeControllerFactory),
             }
         }
 
@@ -710,6 +867,7 @@ mod tests {
                 tripwire_manager: &self.manager,
                 active_session: &self.active_session,
                 uprobe_injector: &self.uprobe_injector,
+                native_probe_factory: &self.native_probe_factory,
             }
         }
 

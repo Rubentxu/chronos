@@ -23,12 +23,20 @@ use std::sync::{Arc, Mutex};
 
 use chronos_domain::ports::execution_log::ExecutionLogProvider;
 use chronos_domain::ports::uprobe::{UprobeAttachError, UprobeHandle, UprobeInjector};
-use chronos_domain::ports::NativeProbeController;
+use chronos_domain::ports::{NativeProbeController, NativeProbeControllerFactory};
 use chronos_domain::{CaptureConfig, CaptureSession, Language};
-use chronos_native::native_probe_controller::NativeProbeControllerImpl;
-use chronos_native::probe_backend::NativeProbeBackend;
 use tokio::sync::Mutex as TokioMutex;
 use tracing::info;
+
+#[cfg(test)]
+use chronos_native::native_probe_controller::NativeProbeControllerImpl;
+// REC-C3.5-residual-inversion R.3: `chronos_native::probe_backend` is
+// only used in `#[cfg(test)]` blocks (`stub_session`) — those tests
+// wire a noop ptrace backend and never spawn real processes. Production
+// code only consumes the `NativeProbeController` port through the
+// `NativeProbeControllerFactory` from `ProbeContext` (audit §4.5 S4).
+#[cfg(test)]
+use chronos_native::probe_backend::NativeProbeBackend;
 
 use chronos_query::QueryEngine;
 
@@ -135,6 +143,16 @@ pub struct ProbeContext<'a> {
     /// the server creates, which is guaranteed because `ChronosServer` owns
     /// it as a field.
     pub uprobe_injector: &'a Arc<dyn UprobeInjector>,
+    /// REC-C3.5-residual-inversion R.3 — factory that builds a
+    /// production-side `Box<dyn NativeProbeController>`.
+    ///
+    /// Composition-root supplied (`chronos_mcp::composition::default_native_probe_controller_factory`).
+    /// The factory must outlive every probe session the server creates,
+    /// which is guaranteed because `ChronosServer` owns it as a field.
+    /// Before R.3 the service constructed the production
+    /// `NativeProbeBackend` directly, which kept a production edge
+    /// `chronos-services -> chronos-native` (audit §4.5 S4).
+    pub native_probe_factory: &'a Arc<dyn NativeProbeControllerFactory>,
 }
 
 /// Type alias matching `ProbeContext<'a>` — used in tests and follow-up
@@ -304,33 +322,29 @@ impl ProbeService {
         //   3. hand the backend only a clone for writing.
         // REC-C2.3: there is no longer a parallel `EventBus` to construct; the
         // accepted-Raw seam is the only producer.
+        // REC-C3.5-residual-inversion R.3: services no longer construct
+        // the production `NativeProbeBackend` directly; they ask the
+        // port-shaped factory for a fresh `Box<dyn NativeProbeController>`
+        // and the corresponding `CaptureSession` (audit §4.5 S4).
         let session_id = uuid::Uuid::new_v4().to_string();
         let owned_log = ctx.execution_logs.register_create(
             execution_log_dir(input.execution_log_dir.as_deref(), &session_id),
             chronos_log::SessionId::new(session_id.clone()),
         )?;
-        let backend = Arc::new(
-            NativeProbeBackend::new()
-                .with_language(language)
-                .with_accepted_raw_observer(Self::accepted_raw_observer(
-                    owned_log.clone(),
-                    Arc::clone(ctx.tripwire_manager),
-                )),
-        );
-        backend.attach_execution_log(owned_log.provider());
-
-        // REC-C3.3.4-native / REC-C3-hexagonal-closure Etapa A: wrap
-        // the backend in the port adapter. The session then holds
-        // `Box<dyn NativeProbeController>` instead of `NativeProbeBackend`.
+        let accepted_raw_observer =
+            Self::accepted_raw_observer(owned_log.clone(), Arc::clone(ctx.tripwire_manager));
         let track_function_frames = input.track_function_frames.unwrap_or(false);
-        let session = backend
-            .start_probe(config.clone(), track_function_frames)
-            .map_err(|e| ServiceError::ProbeStartFailed(e.to_string()))?;
-        let controller: Box<dyn NativeProbeController> = Box::new(NativeProbeControllerImpl::new(
-            backend,
-            chronos_domain::session_id::SessionId::from(session_id.clone()),
-            session.clone(),
-        ));
+        let (controller, session) = ctx
+            .native_probe_factory
+            .build_for_spawn(
+                config.clone(),
+                chronos_domain::session_id::SessionId::from(session_id.clone()),
+                language,
+                owned_log.provider(),
+                Some(accepted_raw_observer),
+                track_function_frames,
+            )
+            .map_err(|e| ServiceError::ProbeStartFailed(e.detail))?;
 
         info!(
             "Live probe started for '{}' (session: {})",
@@ -428,36 +442,32 @@ impl ProbeService {
         // via the registry's factory (C3.3.2), then let the backend write
         // through a clone.
         // REC-C2.3: no EventBus to construct.
+        // REC-C3.5-residual-inversion R.3: services no longer reach into
+        // `chronos_native::probe_backend`; the factory port handles
+        // construction (audit §4.5 S4).
         let session_id = uuid::Uuid::new_v4().to_string();
         let owned_log = ctx.execution_logs.register_create(
             execution_log_dir(input.execution_log_dir.as_deref(), &session_id),
             chronos_log::SessionId::new(session_id.clone()),
         )?;
-        let backend = Arc::new(
-            NativeProbeBackend::new()
-                .with_language(language)
-                .with_accepted_raw_observer(Self::accepted_raw_observer(
-                    owned_log.clone(),
-                    Arc::clone(ctx.tripwire_manager),
-                )),
-        );
-        backend.attach_execution_log(owned_log.provider());
-        let session = backend
-            .attach_probe(input.pid, config.clone())
+        let accepted_raw_observer =
+            Self::accepted_raw_observer(owned_log.clone(), Arc::clone(ctx.tripwire_manager));
+        let (controller, session) = ctx
+            .native_probe_factory
+            .build_for_attach(
+                config.clone(),
+                input.pid,
+                chronos_domain::session_id::SessionId::from(session_id.clone()),
+                language,
+                owned_log.provider(),
+                Some(accepted_raw_observer),
+            )
             .map_err(|e| {
                 ServiceError::AttachFailed(format!(
-                    "NativeProbeBackend::attach_probe({}) failed: {}",
-                    input.pid, e
+                    "native probe controller factory::build_for_attach(pid {}) failed: {}",
+                    input.pid, e.detail
                 ))
             })?;
-        // REC-C3.3.4-native / REC-C3-hexagonal-closure Etapa A: wrap
-        // the backend in the port adapter. The session holds the
-        // port instead of the concrete backend.
-        let controller: Box<dyn NativeProbeController> = Box::new(NativeProbeControllerImpl::new(
-            backend,
-            chronos_domain::session_id::SessionId::from(session_id.clone()),
-            session.clone(),
-        ));
         let live = crate::probe::LiveProbeSession {
             controller,
             session,
@@ -494,12 +504,13 @@ impl ProbeService {
     /// This is where application policy meets the durable seam: `chronos-native`
     /// persists the `Raw` record and hands over its `source_seq`; the
     /// derivation into durable `TripwireFired` evidence happens here, in the
-    /// services layer. Matches `chronos-services` -> `chronos-native`, never
-    /// the reverse.
+    /// services layer. Returns the port-shaped `RawAcceptedObserver` so
+    /// the application layer does not depend on the concrete backend
+    /// type (REC-C3.5-residual-inversion R.3, audit §4.5 S4).
     pub fn accepted_raw_observer(
         log: crate::session_log::SessionExecutionLog,
         manager: Arc<TripwireManager>,
-    ) -> chronos_native::probe_backend::AcceptedRawObserver {
+    ) -> chronos_domain::ports::RawAcceptedObserver {
         Arc::new(
             move |source_seq, event| match crate::tripwire_evidence::derive_firings_from_event(
                 &log, &manager, source_seq, event,

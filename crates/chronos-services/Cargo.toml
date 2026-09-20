@@ -25,10 +25,15 @@ chronos-query = { workspace = true }
 chronos-domain = { workspace = true }
 chronos-store = { workspace = true }
 chronos-index = { workspace = true }
-chronos-native = { workspace = true }
 chronos-log = { workspace = true }
 proptest = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }
 proptest = { workspace = true }
+# REC-C3.5-residual-inversion R.3: chronos-native is only consumed
+# inside `#[cfg(test)]` blocks (stub_session in probe.rs + the
+# SessionLifecycleTestInjector rig). Production code no longer names
+# the concrete backend; it consumes `Arc<dyn NativeProbeController>`
+# and `Arc<dyn NativeProbeControllerFactory>` ports from `chronos-domain`.
+chronos-native = { workspace = true }

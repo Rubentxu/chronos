@@ -35,6 +35,7 @@ use chronos_domain::ports::browser_probe::BrowserProbeFactory;
 use chronos_domain::ports::execution_log_factory::ExecutionLogFactory;
 use chronos_domain::ports::uprobe::UprobeInjector;
 use chronos_log::factory::SegmentedExecutionLogFactory;
+use chronos_native::native_probe_factory::ChronosNativeProbeControllerFactory;
 use chronos_store::{SessionStore, StoreError};
 
 /// REC-C3.3.2 — build the production `ExecutionLogFactory`.
@@ -251,6 +252,34 @@ impl std::error::Error for StoreOpenError {
 /// is a single Arc bump.
 pub fn default_diff_engine() -> Arc<dyn chronos_domain::ports::diff::DiffEngine> {
     Arc::new(chronos_store::diff_engine_adapter::Blake3DiffEngine)
+}
+
+// =====================================================================
+// REC-C3.5-residual-inversion R.3 — `default_native_probe_controller_factory`
+// =====================================================================
+//
+// The composition helper that wires the production ptrace-based
+// backend behind the `NativeProbeControllerFactory` port (audit §4.5 S4,
+// REC-C3-hexagonal-closure). Before R.3 the application layer reached
+// into `chronos_native::probe_backend::NativeProbeBackend` directly;
+// after R.3 the application layer only consumes the port, and the
+// composition root is the single place where the concrete factory is
+// named.
+//
+// `ChronosNativeProbeControllerFactory` is a zero-size struct, so the
+// construction cost is a single Arc bump. The factory is stateless and
+// can be shared across the lifetime of the server.
+
+/// REC-C3.5-R.3 — build the production
+/// [`NativeProbeControllerFactory`] (audit §4.5 S4).
+///
+/// The function lives in the composition root because it names the
+/// concrete factory [`ChronosNativeProbeControllerFactory`]. Services
+/// never know the concrete type. The factory is stateless, so it is
+/// safe to share a single instance across the whole server.
+pub fn default_native_probe_controller_factory(
+) -> Arc<dyn chronos_domain::ports::NativeProbeControllerFactory> {
+    Arc::new(ChronosNativeProbeControllerFactory::new())
 }
 
 // =====================================================================

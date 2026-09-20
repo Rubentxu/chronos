@@ -12,6 +12,7 @@ pub mod int3_injector;
 pub mod invocation_tracker;
 pub mod native_adapter;
 pub mod native_probe_controller;
+pub mod native_probe_factory;
 pub mod probe_backend;
 pub mod ptrace_tracer;
 pub mod symbol_resolver;

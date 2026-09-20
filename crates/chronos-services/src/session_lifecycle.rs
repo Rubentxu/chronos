@@ -649,6 +649,64 @@ mod tests {
         }
     }
 
+    /// REC-C3.5-residual-inversion R.3 — null
+    /// `NativeProbeControllerFactory` used by the session-lifecycle
+    /// test rig. Mirrors the pattern of `SessionLifecycleTestInjector`:
+    /// the rig carries a port-shaped instance without invoking real
+    /// ptrace. `build_for_spawn` and `build_for_attach` both surface a
+    /// `NativeProbeBuildError` because the tests exercise the rig
+    /// outside the probe-start code path.
+    #[derive(Debug, Default, Clone, Copy)]
+    struct SessionLifecycleNullNativeProbeFactory;
+
+    impl chronos_domain::ports::NativeProbeControllerFactory
+        for SessionLifecycleNullNativeProbeFactory
+    {
+        fn build_for_spawn(
+            &self,
+            _config: chronos_domain::trace::CaptureConfig,
+            _session_id: chronos_domain::session_id::SessionId,
+            _language: chronos_domain::trace::Language,
+            _log_provider: std::sync::Arc<
+                dyn chronos_domain::ports::execution_log::ExecutionLogProvider,
+            >,
+            _accepted_raw_observer: Option<chronos_domain::ports::RawAcceptedObserver>,
+            _track_function_frames: bool,
+        ) -> Result<
+            (
+                Box<dyn chronos_domain::ports::NativeProbeController>,
+                chronos_domain::trace::CaptureSession,
+            ),
+            chronos_domain::ports::NativeProbeBuildError,
+        > {
+            Err(chronos_domain::ports::NativeProbeBuildError::new(
+                "session_lifecycle tests: native probe not exercised",
+            ))
+        }
+
+        fn build_for_attach(
+            &self,
+            _config: chronos_domain::trace::CaptureConfig,
+            _pid: u32,
+            _session_id: chronos_domain::session_id::SessionId,
+            _language: chronos_domain::trace::Language,
+            _log_provider: std::sync::Arc<
+                dyn chronos_domain::ports::execution_log::ExecutionLogProvider,
+            >,
+            _accepted_raw_observer: Option<chronos_domain::ports::RawAcceptedObserver>,
+        ) -> Result<
+            (
+                Box<dyn chronos_domain::ports::NativeProbeController>,
+                chronos_domain::trace::CaptureSession,
+            ),
+            chronos_domain::ports::NativeProbeBuildError,
+        > {
+            Err(chronos_domain::ports::NativeProbeBuildError::new(
+                "session_lifecycle tests: native probe not exercised",
+            ))
+        }
+    }
+
     fn empty_store() -> SessionStore {
         SessionStore::in_memory().unwrap()
     }
@@ -1002,6 +1060,8 @@ mod tests {
         // did on a default build.
         let injector: Arc<dyn chronos_domain::ports::uprobe::UprobeInjector> =
             Arc::new(SessionLifecycleTestInjector);
+        let native_probe_factory: Arc<dyn chronos_domain::ports::NativeProbeControllerFactory> =
+            Arc::new(SessionLifecycleNullNativeProbeFactory);
         let probe: &'static ProbeContext<'static> = Box::leak(Box::new(ProbeContext {
             live_probes,
             execution_logs,
@@ -1010,6 +1070,7 @@ mod tests {
             tripwire_manager: tripwire,
             active_session,
             uprobe_injector: Box::leak(Box::new(injector)),
+            native_probe_factory: Box::leak(Box::new(native_probe_factory)),
         }));
         let observe: &'static ObserveContext<'static> = Box::leak(Box::new(ObserveContext {
             tripwire_manager: tripwire,
