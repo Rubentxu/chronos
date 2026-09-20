@@ -129,7 +129,8 @@ pub struct ChronosServer {
     /// `SessionStoreBackedCounterexampleRepository` at composition time.
     /// `CounterexampleService` consumes the port; the store stays for
     /// non-port consumers (probe persistence, etc.).
-    counterexample_repository: Arc<dyn chronos_domain::ports::counterexample::CounterexampleRepository>,
+    counterexample_repository:
+        Arc<dyn chronos_domain::ports::counterexample::CounterexampleRepository>,
     /// `SessionArchive` port (REC-C3.3.3 Tren B). Built from `store` via
     /// `SessionStoreBackedSessionArchive` at composition time. Services
     /// consume the port; `store` stays for non-port consumers (probe
@@ -1848,11 +1849,12 @@ impl ChronosServer {
                 store_arc.clone(),
             ),
         );
-        let lifecycle_store: Arc<dyn chronos_domain::ports::lifecycle_store::LifecycleStore> = Arc::new(
-            chronos_store::lifecycle_store_adapter::SessionStoreBackedLifecycleStore::new(
-                store_arc.clone(),
-            ),
-        );
+        let lifecycle_store: Arc<dyn chronos_domain::ports::lifecycle_store::LifecycleStore> =
+            Arc::new(
+                chronos_store::lifecycle_store_adapter::SessionStoreBackedLifecycleStore::new(
+                    store_arc.clone(),
+                ),
+            );
         let counterexample_repository: Arc<
             dyn chronos_domain::ports::counterexample::CounterexampleRepository,
         > = crate::composition::default_counterexample_repository(store_arc.clone());
@@ -1901,7 +1903,9 @@ impl ChronosServer {
                             store_arc.clone(),
                         ),
                     );
-                let lifecycle_store: Arc<dyn chronos_domain::ports::lifecycle_store::LifecycleStore> = Arc::new(
+                let lifecycle_store: Arc<
+                    dyn chronos_domain::ports::lifecycle_store::LifecycleStore,
+                > = Arc::new(
                     chronos_store::lifecycle_store_adapter::SessionStoreBackedLifecycleStore::new(
                         store_arc.clone(),
                     ),

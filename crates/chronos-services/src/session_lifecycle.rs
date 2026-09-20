@@ -657,9 +657,9 @@ mod tests {
         std::sync::Arc::new(SessionStore::in_memory().unwrap())
     }
 
-    fn make_adapter(store: std::sync::Arc<SessionStore>) -> std::sync::Arc<
-        dyn chronos_domain::ports::lifecycle_store::LifecycleStore,
-    > {
+    fn make_adapter(
+        store: std::sync::Arc<SessionStore>,
+    ) -> std::sync::Arc<dyn chronos_domain::ports::lifecycle_store::LifecycleStore> {
         use chronos_store::lifecycle_store_adapter::SessionStoreBackedLifecycleStore;
         std::sync::Arc::new(SessionStoreBackedLifecycleStore::new(store))
             as std::sync::Arc<dyn chronos_domain::ports::lifecycle_store::LifecycleStore>
@@ -711,7 +711,11 @@ mod tests {
             pid: None,
             path: None,
         };
-        let out = ChronosSessionLifecycleService::load(&*make_adapter(std::sync::Arc::clone(&store)), input).unwrap();
+        let out = ChronosSessionLifecycleService::load(
+            &*make_adapter(std::sync::Arc::clone(&store)),
+            input,
+        )
+        .unwrap();
         assert_eq!(out.session_id, "load-1");
         assert_eq!(out.event_count, Some(5));
         assert_eq!(out.duration_ms, Some(250));
@@ -869,12 +873,8 @@ mod tests {
             target: None,
             session_id: None,
         };
-        let err = ChronosSessionLifecycleService::capabilities(
-            &*make_adapter(store),
-            input,
-            None,
-        )
-        .unwrap_err();
+        let err = ChronosSessionLifecycleService::capabilities(&*make_adapter(store), input, None)
+            .unwrap_err();
         assert!(matches!(err, ServiceError::InvalidInput(_)));
     }
 
@@ -885,12 +885,8 @@ mod tests {
             target: None,
             session_id: Some("no-such".to_string()),
         };
-        let err = ChronosSessionLifecycleService::capabilities(
-            &*make_adapter(store),
-            input,
-            None,
-        )
-        .unwrap_err();
+        let err = ChronosSessionLifecycleService::capabilities(&*make_adapter(store), input, None)
+            .unwrap_err();
         assert!(matches!(err, ServiceError::LoadFailed(_)));
     }
 
@@ -1020,9 +1016,8 @@ mod tests {
             probe,
             uprobe_counter,
         }));
-        let store_arc: std::sync::Arc<
-            dyn chronos_domain::ports::lifecycle_store::LifecycleStore,
-        > = make_adapter(store);
+        let store_arc: std::sync::Arc<dyn chronos_domain::ports::lifecycle_store::LifecycleStore> =
+            make_adapter(store);
         SessionLifecycleContext {
             store: store_arc,
             probe,
