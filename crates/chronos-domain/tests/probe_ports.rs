@@ -188,6 +188,16 @@ impl NativeProbeController for StubNativeController {
         ))
     }
 
+    fn start(
+        &self,
+        _config: &CaptureConfig,
+        _track_function_frames: bool,
+    ) -> Result<chronos_domain::CaptureSession, TraceError> {
+        Err(TraceError::capture_failed(
+            "StubNativeController::start is not exercised in LSP tests",
+        ))
+    }
+
     fn stop(&self) -> Result<(), TraceError> {
         Ok(())
     }
@@ -204,8 +214,18 @@ impl NativeProbeController for StubNativeController {
         None
     }
 
-    fn resolver_pipeline(&self) -> Option<Arc<dyn chronos_domain::semantic::SemanticResolver>> {
-        None
+    fn clone_resolver_pipeline(&self) -> chronos_domain::semantic::ResolverPipeline {
+        chronos_domain::semantic::ResolverPipeline::new()
+    }
+
+    fn resolve_context(
+        &self,
+        _binary_path: Option<String>,
+    ) -> chronos_domain::semantic::ResolveContext {
+        chronos_domain::semantic::ResolveContext {
+            pid: 0,
+            binary_path: _binary_path,
+        }
     }
 }
 
@@ -236,7 +256,8 @@ fn native_probe_controller_round_trip_via_dyn() {
 
     // Capability surfaces (no backend() / no ProbeBackend exposure).
     assert!(controller.execution_log().is_none());
-    assert!(controller.resolver_pipeline().is_none());
+    // clone_resolver_pipeline returns an empty pipeline; resolver_count() == 0
+    assert_eq!(controller.clone_resolver_pipeline().resolver_count(), 0);
 }
 
 #[test]

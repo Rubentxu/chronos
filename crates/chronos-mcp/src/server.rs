@@ -477,7 +477,7 @@ const MINIMAL_TOOL_NAMES: &[&str] = &[
     "capabilities",
 ];
 
-/// Complete list of all registered tool names (61 total).
+/// Complete list of all registered tool names (63 total).
 /// Used by `build_tool_availability` to populate the full `tool_availability` map.
 ///
 /// Authoritative source: the live `#[rmcp::tool_router]` registration on
@@ -528,6 +528,8 @@ pub const ALL_TOOL_NAMES: &[&str] = &[
     "session_snapshot",
     "probe_inject",
     "probe_status",
+    "probe_advance",
+    "probe_step",
     "browser_probe_start",
     "browser_probe_stop",
     "browser_probe_drain",
@@ -9056,16 +9058,18 @@ mod tests {
     /// compaction activity on probes that opted out of the log.
     #[tokio::test(flavor = "current_thread")]
     async fn m1_08_auto_compaction_round_skips_backends_without_log() {
+        use chronos_domain::ports::NativeProbeController;
         use chronos_domain::{CaptureConfig, CaptureSession, Language};
+        use chronos_native::native_probe_controller::NativeProbeControllerImpl;
         use chronos_native::probe_backend::NativeProbeBackend;
 
         let server = Arc::new(ChronosServer::new());
 
         // Register a backend with NO execution log attached.
-        let backend_no_log = NativeProbeBackend::new();
+        let backend_no_log = std::sync::Arc::new(NativeProbeBackend::new());
         // Build the minimum LiveProbeSession: the daemon only
-        // reads `backend`, so we stub the other fields with
-        // dummies that compile.
+        // reads `controller.execution_log()`, so we stub the other
+        // fields with dummies that compile.
         let dummy_session = CaptureSession::new(0, Language::Rust, CaptureConfig::new("noop"));
         // REC-C1.2a: a session always owns a log (the type is not `Option`), so
         // the pre-C1.2a "no log attached" fixture is not representable. What the
@@ -9083,8 +9087,14 @@ mod tests {
             chronos_log::SessionId::new("rec-c1-2a-compaction"),
         )
         .expect("test log");
+        let controller_no_log: Box<dyn NativeProbeController> =
+            Box::new(NativeProbeControllerImpl::new(
+                backend_no_log,
+                chronos_domain::session_id::SessionId::from("no-log-session"),
+                dummy_session.clone(),
+            ));
         let live = LiveProbeSession {
-            backend: backend_no_log,
+            controller: controller_no_log,
             session: dummy_session,
             language: Language::Rust,
             target: "noop".to_string(),
@@ -9121,6 +9131,7 @@ mod tests {
             ExecutionPayload, NewExecutionRecord, SegmentedConfig, SegmentedExecutionLog,
             SessionId as LogSessionId,
         };
+        use chronos_native::native_probe_controller::NativeProbeControllerImpl;
         use chronos_native::probe_backend::NativeProbeBackend;
         use std::sync::Arc;
 
@@ -9157,7 +9168,7 @@ mod tests {
         );
 
         // Open a log, attach it to the backend, and append the record.
-        let backend = NativeProbeBackend::new();
+        let backend = std::sync::Arc::new(NativeProbeBackend::new());
         let concrete = Arc::new(
             SegmentedExecutionLog::open(
                 LogSessionId::new(&log_session_id),
@@ -9204,7 +9215,11 @@ mod tests {
             Some(dir.clone()),
         );
         let live = LiveProbeSession {
-            backend,
+            controller: Box::new(NativeProbeControllerImpl::new(
+                backend,
+                chronos_domain::session_id::SessionId::from(log_session_id.clone()),
+                dummy_session.clone(),
+            )),
             session: dummy_session,
             language: chronos_domain::Language::C,
             target: "noop".to_string(),
@@ -9448,7 +9463,7 @@ mod cap_discovery_tests {
 
     #[test]
     fn all_tool_names_count_61() {
-        // All 61 tools are registered. Sourced from the live `#[tool]`
+        // All 63 tools are registered. Sourced from the live `#[tool]`
         // router so this assertion cannot drift relative to the actual
         // tool registrations in this file.
         let from_router = ChronosServer::tool_router().list_all().len();
@@ -9468,7 +9483,7 @@ mod cap_discovery_tests {
     fn tool_availability_map_has_61_entries() {
         let server = ChronosServer::new();
         let map = server.build_tool_availability(ALL_TOOL_NAMES, Some("rust"));
-        assert_eq!(map.len(), 61, "tool_availability must have 61 entries");
+        assert_eq!(map.len(), 63, "tool_availability must have 63 entries");
     }
 
     #[test]

@@ -1472,7 +1472,7 @@ mod tests {
     /// surfaces as `ServiceError::EbpfUnsupported(reason)`. That is the
     /// path exercised by these unit tests.
     fn register_fake_probe_session(rig: &TestRig, session_id: &str, pid: u32) {
-        let backend = chronos_native::probe_backend::NativeProbeBackend::new();
+        let backend = std::sync::Arc::new(chronos_native::probe_backend::NativeProbeBackend::new());
         let capture_session = chronos_domain::CaptureSession {
             session_id: session_id.to_string(),
             pid,
@@ -1482,8 +1482,16 @@ mod tests {
             config: chronos_domain::CaptureConfig::new("/fake/binary"),
             state: chronos_domain::SessionState::Active,
         };
+        let session_id_typed = chronos_domain::session_id::SessionId::from(session_id.to_string());
+        let controller: Box<dyn chronos_domain::ports::NativeProbeController> = Box::new(
+            chronos_native::native_probe_controller::NativeProbeControllerImpl::new(
+                backend,
+                session_id_typed,
+                capture_session.clone(),
+            ),
+        );
         let live = crate::probe::LiveProbeSession {
-            backend,
+            controller,
             session: capture_session,
             language: chronos_domain::Language::Native,
             target: "/fake/binary".to_string(),

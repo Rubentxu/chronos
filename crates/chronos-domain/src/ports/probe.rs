@@ -25,7 +25,7 @@ use crate::adapter::ProbeBackend;
 use crate::capability::{Capability, CapabilityUnavailable};
 use crate::error::TraceError;
 use crate::ports::execution_log::ExecutionLogProvider;
-use crate::semantic::SemanticResolver;
+use crate::semantic::{ResolveContext, ResolverPipeline};
 use crate::session_id::SessionId;
 use crate::trace::{CaptureConfig, CaptureSession};
 
@@ -244,6 +244,18 @@ pub trait NativeProbeController: Send + Sync + Debug {
     fn attach_to_pid(&self, pid: u32, config: &CaptureConfig)
         -> Result<CaptureSession, TraceError>;
 
+    /// Spawn a new process and trace it from birth.
+    ///
+    /// `track_function_frames` controls whether the backend tracks
+    /// function-entry / function-exit events in addition to syscall
+    /// events. The returned `CaptureSession` carries the new pid
+    /// and the language inferred from the binary.
+    fn start(
+        &self,
+        config: &CaptureConfig,
+        track_function_frames: bool,
+    ) -> Result<CaptureSession, TraceError>;
+
     /// Stop the probe and release all resources (blocking).
     ///
     /// See `ProbeBackend::stop_probe` for the rationale on blocking
@@ -273,9 +285,20 @@ pub trait NativeProbeController: Send + Sync + Debug {
 
     /// Reach the resolver pipeline for snapshot generation.
     ///
-    /// Returns `None` if no resolver pipeline has been configured
-    /// (production defaults it; mocks may return `None`).
-    fn resolver_pipeline(&self) -> Option<Arc<dyn SemanticResolver>>;
+    /// Returns a snapshot of the resolver pipeline. The pipeline is
+    /// `Clone`, so callers can hold it without locking the
+    /// controller. Returns an empty pipeline if no resolvers have
+    /// been attached (mocks may return `None` semantics by returning
+    /// an empty pipeline).
+    fn clone_resolver_pipeline(&self) -> ResolverPipeline;
+
+    /// Build a `ResolveContext` for projecting events.
+    ///
+    /// The `binary_path` is optional and is used to seed the resolver
+    /// pipeline with module/symbol information. The returned context
+    /// is fed to [`SemanticResolver::resolve`] to project raw events
+    /// into semantic events.
+    fn resolve_context(&self, binary_path: Option<String>) -> ResolveContext;
 }
 
 // =====================================================================

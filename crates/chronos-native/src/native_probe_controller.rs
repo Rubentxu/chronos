@@ -34,7 +34,6 @@ use std::sync::Arc;
 use chronos_domain::error::TraceError;
 use chronos_domain::ports::execution_log::ExecutionLogProvider;
 use chronos_domain::ports::{AdvanceOutcome, NativeProbeController, StepOutcome};
-use chronos_domain::semantic::SemanticResolver;
 use chronos_domain::session_id::SessionId;
 use chronos_domain::trace::{CaptureConfig, CaptureSession};
 
@@ -93,6 +92,15 @@ impl NativeProbeController for NativeProbeControllerImpl {
         self.backend.attach_probe(pid, config.clone())
     }
 
+    fn start(
+        &self,
+        config: &CaptureConfig,
+        track_function_frames: bool,
+    ) -> Result<CaptureSession, TraceError> {
+        self.backend
+            .start_probe(config.clone(), track_function_frames)
+    }
+
     fn stop(&self) -> Result<(), TraceError> {
         self.backend.stop_probe(&self.session)
     }
@@ -122,24 +130,15 @@ impl NativeProbeController for NativeProbeControllerImpl {
         self.backend.execution_log()
     }
 
-    fn resolver_pipeline(&self) -> Option<Arc<dyn SemanticResolver>> {
-        // The backend owns a `ResolverPipeline` struct, not a single
-        // `Box<dyn SemanticResolver>`. The port asks for a single
-        // resolver; the closest representation is "the first
-        // resolver in the pipeline, if any".
-        //
-        // `ResolverPipeline::clone_resolver_pipeline()` returns a
-        // clone of the struct; the struct's resolver list is private.
-        // Returning `None` is the honest choice here: exposing the
-        // first resolver through the port would require widening the
-        // domain `ResolverPipeline` API, which is out of scope for
-        // REC-C3-hexagonal-closure (it is owned by REC-C4
-        // ChronosServer vertical-slice work per the audit §6.2).
-        //
-        // The composition root can still attach a resolver through a
-        // separate code path (e.g. a future `attach_resolver` method
-        // on the controller) when needed.
-        None
+    fn clone_resolver_pipeline(&self) -> chronos_domain::semantic::ResolverPipeline {
+        self.backend.clone_resolver_pipeline()
+    }
+
+    fn resolve_context(
+        &self,
+        binary_path: Option<String>,
+    ) -> chronos_domain::semantic::ResolveContext {
+        self.backend.resolve_context(binary_path)
     }
 }
 
