@@ -1,6 +1,6 @@
 //! Probe ports — domain-side abstractions over the probe/query adapters.
 //!
-//! This module declares three related abstractions:
+//! This module declares four related abstractions:
 //!
 //! - `ProbeController`: a lifetime-focused trait for one running probe
 //!   (who owns it, when does it stop, how does it detach?).
@@ -9,17 +9,25 @@
 //!   requested capabilities.
 //! - `ProbeRegistry`: a registry that owns the controllers by session id
 //!   and exposes attach/detach/list.
+//! - `NativeProbeController` (REC-C3.3.4-native / REC-C3-hexagonal-closure
+//!   Etapa A): a capability-focused port that `chronos-services`
+//!   consumes instead of the concrete `NativeProbeBackend`.
 //!
 //! See `REC-C3.1` design (AD-2, AD-5, AD-6) for the rationale behind
-//! this trait split.
+//! the lifetime/registry/factory split.
+//! See the audit §3.2 A2 + §4.5 S4 for the rationale behind the new
+//! capability-focused `NativeProbeController`.
 
 use std::fmt::Debug;
+use std::sync::Arc;
 
 use crate::adapter::ProbeBackend;
 use crate::capability::{Capability, CapabilityUnavailable};
 use crate::error::TraceError;
+use crate::ports::execution_log::ExecutionLogProvider;
+use crate::semantic::SemanticResolver;
 use crate::session_id::SessionId;
-use crate::trace::CaptureConfig;
+use crate::trace::{CaptureConfig, CaptureSession};
 
 /// Lifetime-focused trait for one running probe.
 ///
@@ -163,6 +171,111 @@ impl ProbeRegistry for NullProbeRegistry {
         let guard = self.inner.lock().expect("NullProbeRegistry mutex poisoned");
         guard.iter().any(|(id, _)| id == session_id)
     }
+}
+
+// =====================================================================
+// `NativeProbeController` — capability-focused port for native ptrace probes
+// (REC-C3.3.4-native, REC-C3-hexagonal-closure Etapa A)
+// =====================================================================
+//
+// This trait is the inverse dependency that `chronos-services` consumes
+// instead of `chronos_native::probe_backend::NativeProbeBackend`. The
+// audit §3.2 A2 flagged that `LiveProbeSession` held a concrete
+// `NativeProbeBackend`, which coupled the application layer to a
+// specific probe backend.
+//
+// Design rationale (REC-C3-hexagonal-closure):
+//
+// 1. **No `backend() -> &dyn ProbeBackend` accessor**. The audit §4.5 S4
+//    flagged the equivalent accessor on `ProbeController` as a smell
+//    that "permite acceder desde un contrato centrado en el ciclo de
+//    vida hacia una interfaz de capacidades más amplia". This trait
+//    exposes the capabilities `services/*` actually need directly.
+//
+// 2. **Returns primitive tuples for advance/step**, not the
+//    `AdvanceOutput`/`StepOutput` structs (those live in
+//    `chronos-services::output`). This keeps the port contract narrow
+//    and ISP-compliant (audit §3.2 A1). The conversion from tuple to
+//    output struct lives in `ProbeService`, where the JSON shape is
+//    canonicalised.
+//
+// 3. **Implementations live in `chronos-native`** (production) and in
+//    tests (`MockNativeProbeController` in `chronos-services`). The
+//    composition root wires the production impl via a factory.
+
+/// Outcome of `advance`: `(advanced, paused_reason, running)`.
+///
+/// `advanced = true` means the tracee was signalled to continue. If the
+/// tracee paused again during the same call, `paused_reason` carries a
+/// short string from the kernel event (e.g. `"SIGTRAP"`,
+/// `"single-step"`, `None` if no event observed). `running` reports
+/// whether the tracee is currently executing.
+pub type AdvanceOutcome = (bool, Option<String>, bool);
+
+/// Outcome of `step`: `(stepped, paused_reason)`.
+///
+/// `stepped = true` means the tracee executed one instruction.
+pub type StepOutcome = (bool, Option<String>);
+
+/// Capability-focused port for native ptrace probes.
+///
+/// Implementations wrap a real probe backend (production) or simulate
+/// one (tests). The contract describes the operations
+/// `chronos_services::probe::ProbeService` performs on a live session.
+///
+/// Implementations MUST be `Send + Sync` because they are shared
+/// across the lifetime of a session and may be touched from multiple
+/// tokio tasks (probe_start spawns the capture thread; probe_stop
+/// signals it from another task).
+pub trait NativeProbeController: Send + Sync + Debug {
+    /// Stable session identity for the controller.
+    ///
+    /// Same value as the `CaptureSession::session_id` returned by
+    /// `attach_to_pid`. The duplicate field exists so that
+    /// `LiveProbeSession` can correlate the controller with its
+    /// `CaptureSession` without exposing the latter through this trait.
+    fn session_id(&self) -> &SessionId;
+
+    /// Attach the probe to an existing process by pid.
+    ///
+    /// The returned `CaptureSession` is the application's handle to
+    /// the running capture; subsequent `advance`/`step`/`stop` calls
+    /// operate against the same tracee.
+    fn attach_to_pid(&self, pid: i32, config: &CaptureConfig)
+        -> Result<CaptureSession, TraceError>;
+
+    /// Stop the probe and release all resources (blocking).
+    ///
+    /// See `ProbeBackend::stop_probe` for the rationale on blocking
+    /// semantics (MS-RACE-FIX, ADR-0005): the caller can rely on a
+    /// subsequent read of the execution log observing every event the
+    /// probe emitted.
+    fn stop(&self) -> Result<(), TraceError>;
+
+    /// Signal the tracee to continue execution.
+    ///
+    /// Returns `(advanced, paused_reason, running)`. Returns
+    /// `TraceError::capture_failed` if there is no traced pid.
+    fn advance(&self) -> Result<AdvanceOutcome, TraceError>;
+
+    /// Single-step the tracee by one instruction.
+    ///
+    /// Returns `(stepped, paused_reason)`. Returns
+    /// `TraceError::capture_failed` if there is no traced pid.
+    fn step(&self) -> Result<StepOutcome, TraceError>;
+
+    /// Reach the session-owned execution log, if any.
+    ///
+    /// Returns `None` if no log has been attached via
+    /// `attach_execution_log` (production wiring) or if the controller
+    /// is a mock with no log.
+    fn execution_log(&self) -> Option<Arc<dyn ExecutionLogProvider>>;
+
+    /// Reach the resolver pipeline for snapshot generation.
+    ///
+    /// Returns `None` if no resolver pipeline has been configured
+    /// (production defaults it; mocks may return `None`).
+    fn resolver_pipeline(&self) -> Option<Arc<dyn SemanticResolver>>;
 }
 
 // =====================================================================
