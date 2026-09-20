@@ -5,7 +5,7 @@
 
 ## Active milestone
 
-**REC-C3 — Hexagonal boundary closure — Status: NEXT (not yet opened)**
+**REC-C3 — Hexagonal boundary closure — Status: CLOSED (C3.5 residual inversion landed 2026-09-20; zero forbidden edges, zero waivers)**
 
 REC-C1 and REC-C2 are both CLOSED on `main`:
 
@@ -29,7 +29,18 @@ dependency graph gate to zero.
 
 **REC-C3.1 (closed 2026-09-18, tag `v0.1.1`):** `crates/chronos-domain/src/ports/{execution_log,notification,probe,session,telemetry}.rs` declared; `chronos_domain::session_id::SessionId` introduced to break the cyclic dep with `chronos_log`. `scripts/check_hex_boundary.py` enforces ports/* outbound purity + surface shape. HEX-001 moved `gap -> partial`. `ExecutionLogProvider` is a documented placeholder for C3.3.
 
-**REC-C3.2 (active cycle — reconcile-only):** `scripts/check_hex_boundary.py` hardened. The gate now enforces (a) chronos-domain `Cargo.toml` blacklist (no reqwest/hyper/tokio/tracing/axum/warp/http and no other workspace `chronos_*` infra crate), (b) full `crates/chronos-domain/src/**/*.rs` outbound purity (no forbidden external crates — type-only deps and intrinsics are whitelisted), (c) chronos-webhook adapter direction (`chronos-webhook -> chronos_domain` only — services-side is C3.3), and (d) `ports/mod.rs` public surface shape with stale-waiver detection. No waiver list is configured (zero waivers is the target; REC-C3.5 will keep that property). HEX-001 promotes `partial -> verified`; HEX-C32-01/02/03 are added as `verified` (V5 direction settled). chronos-webhook remains the single home of reqwest — that is unchanged by this cycle; C3.2 reconciles the contract/gate because the code was already in position from C3.1. HEX-002 stays `gap`; the services-side inversion is C3.3.
+**REC-C3.2 (closed 2026-09-19):** `scripts/check_hex_boundary.py` hardened. The gate now enforces (a) chronos-domain `Cargo.toml` blacklist (no reqwest/hyper/tokio/tracing/axum/warp/http and no other workspace `chronos_*` infra crate), (b) full `crates/chronos-domain/src/**/*.rs` outbound purity (no forbidden external crates — type-only deps and intrinsics are whitelisted), (c) chronos-webhook adapter direction (`chronos-webhook -> chronos_domain` only — services-side is C3.3), and (d) `ports/mod.rs` public surface shape with stale-waiver detection. No waiver list is configured (zero waivers is the target; REC-C3.5 will keep that property). HEX-001 promotes `partial -> verified`; HEX-C32-01/02/03 are added as `verified` (V5 direction settled). chronos-webhook remains the single home of reqwest — that is unchanged by this cycle; C3.2 reconciles the contract/gate because the code was already in position from C3.1. HEX-002 stays `gap`; the services-side inversion is C3.3.
+
+**REC-C3.3 / C3.4 (closed 2026-09-19/20):** services-side inversion executed. `SessionReader`/`SessionArchive`/`LifecycleStore`/`CounterexampleRepository`/`ExecutionLog` ports consumed by services; redb-backed adapters (`session_reader_adapter`, `session_archive`, `lifecycle_store_adapter`, `counterexample_repository`) wired at the `chronos_mcp::composition` root. `chronos-services` stopped naming `SessionStore` in production code.
+
+**REC-C3.5 — residual inversion (closed 2026-09-20, branch `feat/rec-c3.5-residual-inversion`):** closed the three residual production edges and emptied the architecture debt baseline:
+- **R.1** (`110a47e4`): dropped the stale `chronos-store -> chronos-native` waiver (edge already gone after C3.3.4).
+- **R.2** (`8e8d7b48`): `DiffEngine` port in `chronos_domain::ports::diff` + `Blake3DiffEngine` adapter in chronos-store; `chronos_store::diff::TraceDiff` is a `#[deprecated]` delegating wrapper. Services consume `Arc<dyn DiffEngine>` via `DiffContext`/`SessionCompareContext`.
+- **R.3** (`2a8d5b8b`): `NativeProbeControllerFactory` port (`build_for_spawn`/`build_for_attach`) + `ChronosNativeProbeControllerFactory` impl; `ProbeService` no longer names `NativeProbeBackend`/`NativeProbeControllerImpl`; `chronos-native` moved to services `[dev-dependencies]`. Audit §4.5 S4 composition leak closed.
+- **R.4** (counterexample wire types moved to `chronos_domain::ports::counterexample::wire`; store re-exports for the redb path): `MinimisedPayload`, `ExistencePredicateWire`, `HypothesisInputWire` + domain-owned `CURRENT_BUNDLE_SCHEMA_VERSION` with a compile-time drift guard in `ce_schema`.
+- **R.5** (`b7a55d9e`): `chronos-store` moved to services `[dev-dependencies]`; `known_dependency_violations = []`. `check_architecture_contracts.py` reports zero forbidden edges, zero waivers; `check_hex_boundary.py` clean.
+
+REC-C3 hexagonal closure objective met: the application layer (chronos-services) consumes only `chronos_domain::ports::*`; every concrete backend is wired at the composition root (`chronos_mcp::composition`). Known environmental flake observed during close: `test_get_execution_summary_busyloop` fails when analytics_tools runs immediately after e2e_connectivity under system load (pass in isolation and 3/3 in back-to-back suite runs) — tracked for AGENTS.md §6.5 if it reproduces at release.
 
 The `## Convergence sequence` table below reflects this state.
 
@@ -38,8 +49,8 @@ The `## Convergence sequence` table below reflects this state.
 1. **REC-C0 — Restore the truth baseline** — CLOSED (C0.5-D sentinel)
 2. **REC-C1 — ExecutionLog cutover and truthful reads** — CLOSED
 3. **REC-C2 — Legacy evidence/event-path deletion** — CLOSED
-4. **REC-C3 — Hexagonal boundary closure** — NEXT (active_gate)
-5. **REC-C4 — SOLID + connascence reduction**
+4. **REC-C3 — Hexagonal boundary closure** — CLOSED (2026-09-20, `feat/rec-c3.5-residual-inversion`)
+5. **REC-C4 — SOLID + connascence reduction** — NEXT (active_gate)
 6. **REC-C5 — Canonical Agent API convergence**
 7. **REC-C6 — Close unfinished M1–M4 reconstruction contracts**
 8. **REC-C7 — Reconstruction convergence close**
