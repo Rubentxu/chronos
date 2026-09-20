@@ -112,6 +112,22 @@ pub fn in_memory_session_archive() -> Arc<dyn chronos_domain::ports::session::Se
     chronos_domain::ports::session::InMemorySessionArchive::new().into_arc()
 }
 
+/// REC-C3.3.3 (Tren B slice D) — build the production
+/// `CounterexampleRepository`.
+pub fn default_counterexample_repository(
+    store: Arc<SessionStore>,
+) -> Arc<dyn chronos_domain::ports::counterexample::CounterexampleRepository> {
+    chronos_store::counterexample_repository::SessionStoreBackedCounterexampleRepository::new(store)
+        .into_arc()
+}
+
+/// REC-C3.3.3 (Tren B slice D) — build an in-memory
+/// `CounterexampleRepository` for tests and degraded mode.
+pub fn in_memory_counterexample_repository(
+) -> Arc<dyn chronos_domain::ports::counterexample::CounterexampleRepository> {
+    chronos_domain::ports::counterexample::InMemoryCounterexampleRepository::new().into_arc()
+}
+
 /// Default path for the session store, mirrored from `server.rs` so the
 /// resolution stays testable without mutating the process environment.
 ///
@@ -327,5 +343,67 @@ mod composition_tests {
         assert!(!store.is_persistent());
         let archive = default_session_archive(Arc::new(store));
         assert!(!archive.is_persistent());
+    }
+
+    // =============================================================
+    // REC-C3.3.3 (Tren B slice D) — CounterexampleRepository factory tests
+    // =============================================================
+
+    use chronos_domain::ports::counterexample::{
+        CounterexampleBundleFilter, CounterexampleBundleRecord, CounterexampleBundleSummary,
+    };
+
+    fn ce_record(id: &str, kind: &str, ws: &str) -> CounterexampleBundleRecord {
+        CounterexampleBundleRecord {
+            summary: CounterexampleBundleSummary {
+                bundle_id: id.to_string(),
+                property_kind: kind.to_string(),
+                workspace_id: ws.to_string(),
+                created_at_ms: 1000,
+                rounds_used: 1,
+                has_full_bundle: true,
+                schema_version: 1,
+                events_count: 0,
+            },
+            events: vec![],
+            minimised: None,
+            event_cas_hashes: vec![],
+            target_hypothesis: None,
+            schema_version: 1,
+        }
+    }
+
+    #[test]
+    fn default_counterexample_repository_roundtrips_bundle() {
+        let (_path, store) = temp_store();
+        let repo = default_counterexample_repository(store);
+
+        let id = repo
+            .save_bundle(ce_record("b-1", "invariant", "ws-1"))
+            .expect("save");
+        assert_eq!(id, "b-1");
+        let events = repo.load_bundle_events("b-1").expect("load events");
+        assert!(events.is_empty());
+        let count = repo.count_bundle_events("b-1").expect("count");
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn in_memory_counterexample_repository_filters_by_kind() {
+        let repo = in_memory_counterexample_repository();
+        repo.save_bundle(ce_record("b-a", "invariant", "ws-1"))
+            .expect("save");
+        repo.save_bundle(ce_record("b-b", "existence", "ws-1"))
+            .expect("save");
+        repo.save_bundle(ce_record("b-c", "invariant", "ws-2"))
+            .expect("save");
+
+        let filter = CounterexampleBundleFilter {
+            property_kind: Some("invariant".to_string()),
+            ..Default::default()
+        };
+        let summaries = repo.list_bundles(&filter).expect("list");
+        assert_eq!(summaries.len(), 2);
+        assert!(summaries.iter().all(|s| s.property_kind == "invariant"));
     }
 }

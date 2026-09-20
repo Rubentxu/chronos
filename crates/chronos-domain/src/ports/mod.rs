@@ -14,6 +14,7 @@
 //! and the rationale behind each one.
 
 pub mod browser_probe;
+pub mod counterexample;
 pub mod execution_log;
 pub mod execution_log_factory;
 pub mod execution_log_maintenance;
@@ -25,6 +26,11 @@ mod telemetry;
 pub mod uprobe;
 
 pub use browser_probe::{BrowserError, BrowserProbeBackend, BrowserProbeFactory};
+pub use counterexample::{
+    CounterexampleBundleFilter, CounterexampleBundleRecord, CounterexampleBundleSummary,
+    CounterexampleRepository, CounterexampleRepositoryError, HypothesisInputWire,
+    InMemoryCounterexampleRepository, MinimisedPayload,
+};
 pub use execution_log::{
     ExecutionLogError, ExecutionLogKind, ExecutionLogPage, ExecutionLogProvider,
 };
