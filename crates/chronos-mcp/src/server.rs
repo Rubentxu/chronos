@@ -1338,6 +1338,16 @@ pub struct TripwireDeleteParams {
 // ============================================================================
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct ProbeAdvanceParams {
+    pub session_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ProbeStepParams {
+    pub session_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct ProbeStartParams {
     /// Path to the target binary.
     pub program: String,
@@ -4559,6 +4569,86 @@ impl ChronosServer {
     // ========================================================================
     // SF9 — Live Probe Tools
     // ========================================================================
+
+    #[tool(
+        name = "probe_advance",
+        description = "REC-C3.3.3 (Tren B slice G): advance a paused live probe session. The native backend delegates to PtraceTracer::continue_execution. Returns the AdvanceOutput (advanced, paused_reason, running) on success. Maps ServiceError::ProbeNotFound -> error.code = session_not_found; ServiceError::SessionStopped -> error.code = session_stopped."
+    )]
+    async fn probe_advance(
+        &self,
+        params: Parameters<ProbeAdvanceParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let probe_ctx = chronos_services::probe::ProbeContext {
+            live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            tripwire_manager: &self.tripwire_manager,
+            active_session: &self.active_session,
+            uprobe_injector: &self.uprobe_injector,
+        };
+        match chronos_services::probe::ProbeService::advance(&probe_ctx, &params.session_id) {
+            Ok(out) => Ok(CallToolResult::success(text_content(
+                serde_json::to_string(&out).unwrap_or_else(|e| format!("serialise error: {e}")),
+            ))),
+            Err(ServiceError::ProbeNotFound(_)) => {
+                Ok(CallToolResult::error(text_content(format!(
+                    "session_not_found: session '{}' not found",
+                    params.session_id
+                ))))
+            }
+            Err(ServiceError::SessionStopped(_)) => {
+                Ok(CallToolResult::error(text_content(format!(
+                    "session_stopped: session '{}' has stopped; cannot advance",
+                    params.session_id
+                ))))
+            }
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "advance failed: {e}"
+            )))),
+        }
+    }
+
+    #[tool(
+        name = "probe_step",
+        description = "REC-C3.3.3 (Tren B slice G): single-step a paused live probe session by one instruction. The native backend delegates to PtraceTracer::step. Returns StepOutput { stepped: true } on success. Maps ServiceError::ProbeNotFound -> error.code = session_not_found; ServiceError::SessionRunning -> error.code = session_running (the target must be paused to step)."
+    )]
+    async fn probe_step(
+        &self,
+        params: Parameters<ProbeStepParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let probe_ctx = chronos_services::probe::ProbeContext {
+            live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            tripwire_manager: &self.tripwire_manager,
+            active_session: &self.active_session,
+            uprobe_injector: &self.uprobe_injector,
+        };
+        match chronos_services::probe::ProbeService::step(&probe_ctx, &params.session_id) {
+            Ok(out) => Ok(CallToolResult::success(text_content(
+                serde_json::to_string(&out).unwrap_or_else(|e| format!("serialise error: {e}")),
+            ))),
+            Err(ServiceError::ProbeNotFound(_)) => {
+                Ok(CallToolResult::error(text_content(format!(
+                    "session_not_found: session '{}' not found",
+                    params.session_id
+                ))))
+            }
+            Err(ServiceError::SessionRunning(_)) => {
+                Ok(CallToolResult::error(text_content(format!(
+                    "session_running: session '{}' is running; cannot step",
+                    params.session_id
+                ))))
+            }
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "step failed: {e}"
+            )))),
+        }
+    }
 
     #[tool(
         name = "probe_start",

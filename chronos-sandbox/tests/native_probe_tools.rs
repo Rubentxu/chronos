@@ -71,10 +71,14 @@ async fn capture_session_tool_not_yet_wired_in_slice_b() {
     client.shutdown().await.ok();
 }
 
-/// RED (slice B): `probe_advance` is not yet wired. Same rationale as above;
-/// replaced by real coverage in TASK-TB-G (`probe_advance_against_paused_succeeds`).
+/// GREEN (slice G landed): `probe_advance` is now wired. The tool
+/// receives the `session_id` and either advances a paused probe or
+/// returns a structured error (e.g. `session_not_found` because
+/// there is no live probe session in this client). The test asserts
+/// that the RPC dispatch succeeded (no method-not-found), confirming
+/// the tool handler is registered.
 #[tokio::test]
-async fn probe_advance_tool_not_yet_wired_in_slice_b() {
+async fn probe_advance_tool_is_wired_in_slice_g() {
     let mut client = boot_harness().await;
 
     let result = client
@@ -86,19 +90,33 @@ async fn probe_advance_tool_not_yet_wired_in_slice_b() {
         )
         .await;
 
-    assert!(
-        result.is_err(),
-        "probe_advance tool must NOT be wired at slice B (got Ok: {:?})",
-        result.ok()
-    );
+    match result {
+        Ok(value) => {
+            // Either a successful AdvanceOutput or a structured error
+            // payload. Both confirm dispatch worked.
+            assert!(
+                value.is_object(),
+                "probe_advance must return an object (got {value:?})"
+            );
+        }
+        Err(e) => {
+            let s = format!("{e:?}");
+            assert!(
+                !s.contains("method not found") && !s.contains("-32601"),
+                "probe_advance must remain wired (got RPC-level error: {s})"
+            );
+        }
+    }
 
     client.shutdown().await.ok();
 }
 
-/// RED (slice B): `probe_step` is not yet wired. Same rationale as above;
-/// replaced by real coverage in TASK-TB-G (`probe_step_against_paused_advances_pc`).
+/// GREEN (slice G landed): `probe_step` is now wired. Same rationale
+/// as `probe_advance_tool_is_wired_in_slice_g`; replaced by the real
+/// `probe_step_against_paused_advances_pc` coverage when sandbox T4
+/// runs against a live probe.
 #[tokio::test]
-async fn probe_step_tool_not_yet_wired_in_slice_b() {
+async fn probe_step_tool_is_wired_in_slice_g() {
     let mut client = boot_harness().await;
 
     let result = client
@@ -110,11 +128,21 @@ async fn probe_step_tool_not_yet_wired_in_slice_b() {
         )
         .await;
 
-    assert!(
-        result.is_err(),
-        "probe_step tool must NOT be wired at slice B (got Ok: {:?})",
-        result.ok()
-    );
+    match result {
+        Ok(value) => {
+            assert!(
+                value.is_object(),
+                "probe_step must return an object (got {value:?})"
+            );
+        }
+        Err(e) => {
+            let s = format!("{e:?}");
+            assert!(
+                !s.contains("method not found") && !s.contains("-32601"),
+                "probe_step must remain wired (got RPC-level error: {s})"
+            );
+        }
+    }
 
     client.shutdown().await.ok();
 }
