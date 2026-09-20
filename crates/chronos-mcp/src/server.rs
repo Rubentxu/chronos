@@ -705,8 +705,10 @@ pub struct ObserveParams {
     #[schemars(rename = "verb")]
     pub verb: chronos_services::output::ObserveVerb,
     /// Subscription ID (required for `verb=delete`).
+    /// String on the wire; parsed into the typed
+    /// [`chronos_domain::SubscriptionId`] at the boundary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub subscription_id: Option<String>,
+    pub subscription_id: Option<chronos_domain::SubscriptionId>,
     /// Subscription body — discriminator + payload. Required for
     /// `verb=create`. Shape:
     /// `{kind: "tripwire", condition: {...}, label: "..."}` for tripwires,
@@ -4448,7 +4450,7 @@ impl ChronosServer {
         match ChronosObserveService::observe(&ctx, input).await {
             Ok(chronos_services::output::ObserveOutput::Create(c)) => {
                 let output = serde_json::json!({
-                    "tripwire_id": c.subscription_id,
+                    "tripwire_id": c.subscription_id.to_string(),
                     "status": c.status,
                     "active_count": c.active_count,
                     "label": c.label,
@@ -4611,7 +4613,7 @@ impl ChronosServer {
         };
         let input = ObserveInput {
             verb: chronos_services::output::ObserveVerb::Delete,
-            subscription_id: Some(tripwire_id.to_string()),
+            subscription_id: Some(tripwire_id.into()),
             condition: None,
             action: None,
             retention: None,
@@ -4623,7 +4625,7 @@ impl ChronosServer {
         match ChronosObserveService::observe(&ctx, input).await {
             Ok(chronos_services::output::ObserveOutput::Delete(d)) => {
                 let output = serde_json::json!({
-                    "tripwire_id": d.subscription_id,
+                    "tripwire_id": d.subscription_id.to_string(),
                     "status": "deleted",
                     "remaining_active": d.remaining_active,
                 });
