@@ -844,6 +844,22 @@ pub struct ProbeStopOutput {
     pub hint: String,
 }
 
+/// Output of `probe_advance` (REC-C3.3.3 / Tren B slice G).
+/// JSON shape: `{ advanced, paused_reason, running }`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AdvanceOutput {
+    pub advanced: bool,
+    pub paused_reason: Option<String>,
+    pub running: bool,
+}
+
+/// Output of `probe_step` (REC-C3.3.3 / Tren B slice G).
+/// JSON shape: `{ stepped }`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StepOutput {
+    pub stepped: bool,
+}
+
 /// Result of `ProbeService::stop` — the raw events + metadata needed by the
 /// server-side wrapper to call `build_and_store_engine`. The wrapper then
 /// turns this into the byte-identical MCP JSON shape.

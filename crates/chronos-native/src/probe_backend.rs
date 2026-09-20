@@ -1102,6 +1102,36 @@ impl NativeProbeBackend {
     pub fn get_traced_pid(&self) -> Option<i32> {
         *self.traced_pid.lock().unwrap_or_else(|e| e.into_inner())
     }
+
+    /// REC-C3.3.3 (Tren B slice E) — advance the traced target.
+    ///
+    /// Resolves the PID via [`Self::get_traced_pid`] and calls
+    /// [`PtraceTracer::continue_execution`]. Mirrors the PID
+    /// resolution pattern used by [`Self::stop_probe`].
+    ///
+    /// Returns `TraceError::ProbeNotRunning` when no PID is currently
+    /// published (probe has not started or has already stopped). All
+    /// other errors propagate from `PtraceTracer::continue_execution`.
+    pub fn advance(&self, _session: &CaptureSession) -> Result<(), TraceError> {
+        let pid = self
+            .get_traced_pid()
+            .ok_or_else(|| TraceError::capture_failed("advance called with no traced PID"))?;
+        let tracer = PtraceTracer::new(PtraceConfig::default());
+        tracer.continue_execution(pid)
+    }
+
+    /// REC-C3.3.3 (Tren B slice E) — single-step the traced target by one
+    /// instruction.
+    ///
+    /// Same PID resolution as [`Self::advance`]; delegates to
+    /// [`PtraceTracer::step`]. Used by the `probe_step` MCP tool.
+    pub fn step(&self, _session: &CaptureSession) -> Result<(), TraceError> {
+        let pid = self
+            .get_traced_pid()
+            .ok_or_else(|| TraceError::capture_failed("step called with no traced PID"))?;
+        let tracer = PtraceTracer::new(PtraceConfig::default());
+        tracer.step(pid)
+    }
 }
 
 #[cfg(test)]

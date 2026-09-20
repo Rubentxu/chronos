@@ -2892,6 +2892,14 @@ impl ChronosServer {
                     "internal error: unexpected memory error",
                 )));
             }
+            // REC-C3.3.3 (Tren B slice G): SessionRunning/SessionStopped
+            // cannot occur from list_threads, but the enum gained two
+            // variants and the match must remain exhaustive.
+            Err(ServiceError::SessionRunning(_)) | Err(ServiceError::SessionStopped(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected probe-state error",
+                )));
+            }
             // REC-C3.3.2.5: retention errors cannot occur from
             // list_threads either; listed for exhaustiveness.
             Err(ServiceError::RetentionBackwardsMove { .. })
