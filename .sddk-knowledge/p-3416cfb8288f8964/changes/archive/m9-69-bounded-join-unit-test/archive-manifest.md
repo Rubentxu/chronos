@@ -60,7 +60,7 @@ Two commits:
 | Kind | Path | SHA-256 |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-69-bounded-join-unit-test/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
-| source (probe backend) | `crates/chronos-native/src/probe_backend.rs` | `7e62525d8f798df357e7072a7f40d5be36bae4a9138b197d4d41c40575270130` |
+| source (probe backend) | `crates/chronos-native/src/probe_backend.rs` | `b6e08051895e2db587c99151b7cef867c37da3c662ff8d062d525635c6e0774b` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-69-bounded-join-unit-test/apply-checkpoint.json` | `ce9cfca6537a6ae896517e6beda238930833d14a82615d1711e110a75a987248` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-69-bounded-join-unit-test/verify-report.md` | `626c4dfb765d3a365a7e0062a66f0590cbd6345808e1dca439d9b0f22dc9c620` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-69-bounded-join-unit-test/verify-findings.json` | `48384792281075b2833f54281001715fc93c3b4acdc84cef8466377d719934fb` |

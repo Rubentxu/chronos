@@ -115,11 +115,11 @@ Three commits:
 | Kind | Path | SHA-256 |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-74-cas-put-many-batching/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
-| source (content store) | `crates/chronos-store/src/cas.rs` | `a0f32a00c732bde1cd2e2be7744cb25be1c2e583aaa987593e7c80b31510660a` |
-| source (session storage) | `crates/chronos-store/src/storage.rs` | `6c42c78f4ea8e5b73bb3d7ffd5a228396a12a1e6052c8fc6b8354c816469a113` |
-| source (store crate root) | `crates/chronos-store/src/lib.rs` | `093934f02101a7f6404fcd3cebe7fce972861731a6657becaa8bba5eb6f687fa` |
+| source (content store) | `crates/chronos-store/src/cas.rs` | `09690b516e54890e79d716845c52bad14b9f50e35d8e792e442285da84ae4f6f` |
+| source (session storage) | `crates/chronos-store/src/storage.rs` | `7971d253211974da6e3f8c268b3c399684493550569f31d50888a26a66673427` |
+| source (store crate root) | `crates/chronos-store/src/lib.rs` | `63e440bb325b553a22bd34e56c695458d0133f56d4152392031d72c3f8a7710e` |
 | test support (sync barrier counter) | `crates/chronos-store/src/test_support.rs` | `60f6d32eddead5721c5e6ebb6037f54f945562f88cc4c6c0038869d0a5b42680` |
-| source (mcp server, tool wire shapes) | `crates/chronos-mcp/src/server.rs` | `4f43689130abadac4c277c2559f874acf0135a4dd7bdaa5cb3c80e2b7bd8b0d8` |
+| source (mcp server, tool wire shapes) | `crates/chronos-mcp/src/server.rs` | `1776c4046442aa3a31b568fab0c0138d46159875a8b0cfe03ede61fb913e29a3` |
 | docs (agents manual) | `AGENTS.md` | `83d09aa421c0c0c06a8dc28d4a5ba27dbb66772f7a1310103f3c133969fe8924` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/apply-checkpoint.json` | `dab499eb017af26c3bf2a2a696d7c2b3dfdb47502f58429e00ace325181610d9` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/verify-report.md` | `2e2037009420c18c53cbcd718d6dd66941b394edb661e6ac5fa0d05257fbdcbf` |
@@ -128,5 +128,5 @@ Three commits:
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/release-receipt.md` | `5de5a22a246d5cb8bb8f8b47260d09b767fd7250f38dcd6362432c36f4c55a53` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/merge-receipt.md` | `54c887e312366589c08ac19109959ff6d88367b553ab0c6a78535615c762ac76` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-74-cas-put-many-batching/change-entry.md` | `898af1d8a0e49a2fc63a79a5f4b0a1aa9fa60383c48b826d84dad41f06f2263d` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `b32588ee70600b9af3583750f308b59009ebeb7d6a79cf7cd79f3a76cd139e1a` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `338efb9ea142c93c1595454cd3c130b86dae82a8d8be78eb892da9d9299cf436` |
 | vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `8d262955b5079b561d8c5097dc14c48284031aeb746a152ad12575287967ac2c` |

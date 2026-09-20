@@ -73,12 +73,12 @@ Two commits:
 | Kind | Path | SHA-256 |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-71-services-list-store-contract/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
-| source (services sessions) | `crates/chronos-services/src/sessions.rs` | `50e4d61909fdb8aefcb40fc52be919ef7f0ffff34f1e4433219a9d92f97506c8` |
+| source (services sessions) | `crates/chronos-services/src/sessions.rs` | `587c3dd84afd1f4edc59069eac3b46cea69a1a5fc07252c187095af936516a84` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/apply-checkpoint.json` | `cc5bb8dddb0d4ab50013f024f2267816c5293e4c230cf1b804708077e46b838b` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/verify-report.md` | `7c71a52040000a94cc8377134ce861c54eb5abdfeacf499a8b73e651a27cfb7b` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/verify-findings.json` | `f4dff9ccff6892cf56f16951a2f6ca083f378ff1716c55f2f2e36657544b57d3` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/release-report.md` | `b532010f348b5552b2b4d57f3104e152ecbd7158c5e88f76ff9bf4185add7fd6` |
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/release-receipt.md` | `5328e9ef4a76b1f48de59833052b2a65c9c6653c34aa1aa7f5188c85b7b97227` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-71-services-list-store-contract/merge-receipt.md` | `9e92a663e685bed2f31cf8b64a3ae3b8ad53107164702ac60209121a738c3717` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `b32588ee70600b9af3583750f308b59009ebeb7d6a79cf7cd79f3a76cd139e1a` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `338efb9ea142c93c1595454cd3c130b86dae82a8d8be78eb892da9d9299cf436` |
 | vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `8d262955b5079b561d8c5097dc14c48284031aeb746a152ad12575287967ac2c` |
