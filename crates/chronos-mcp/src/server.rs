@@ -115,6 +115,11 @@ pub struct ChronosServer {
     session_languages: Arc<Mutex<HashMap<String, chronos_domain::Language>>>,
     /// Persistent session store.
     store: Arc<SessionStore>,
+    /// `SessionArchive` port (REC-C3.3.3 Tren B). Built from `store` via
+    /// `SessionStoreBackedSessionArchive` at composition time. Services
+    /// consume the port; `store` stays for non-port consumers (probe
+    /// persistence, etc.).
+    archive: Arc<dyn chronos_domain::ports::session::SessionArchive>,
     /// Active background sessions: session_id → events vector.
     /// Tracks pending sessions that are still running in background threads.
     /// Uses `std::sync::Mutex` (not tokio) intentionally: all lock holders are
@@ -1372,6 +1377,16 @@ pub struct TripwireQueryParams {
 // ============================================================================
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct ProbeAdvanceParams {
+    pub session_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ProbeStepParams {
+    pub session_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct ProbeStartParams {
     /// Path to the target binary.
     pub program: String,
@@ -1809,10 +1824,13 @@ impl ChronosServer {
         // across all probe sessions; each `create` produces a fresh
         // backend.
         let browser_probe_factory = crate::composition::default_browser_probe_factory();
+        let store_arc = Arc::new(store);
+        let archive = crate::composition::default_session_archive(store_arc.clone());
         Self {
             engines: Arc::new(Mutex::new(HashMap::new())),
             session_languages: Arc::new(Mutex::new(HashMap::new())),
-            store: Arc::new(store),
+            store: store_arc,
+            archive,
             background_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
             connected_sessions: Arc::new(std::sync::Mutex::new(HashSet::new())),
             active_session: Arc::new(Mutex::new(None)),
@@ -1841,27 +1859,32 @@ impl ChronosServer {
     #[cfg(test)]
     pub fn with_toolset(toolset: &str) -> Self {
         match Self::try_open_default_store() {
-            Ok(store) => Self {
-                engines: Arc::new(Mutex::new(HashMap::new())),
-                session_languages: Arc::new(Mutex::new(HashMap::new())),
-                store: Arc::new(store),
-                background_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
-                connected_sessions: Arc::new(std::sync::Mutex::new(HashSet::new())),
-                active_session: Arc::new(Mutex::new(None)),
-                tripwire_manager: Arc::new(TripwireManager::new()),
-                uprobe_counter: Arc::new(std::sync::Mutex::new(HashMap::new())),
-                execution_logs: Arc::new(
-                    chronos_services::session_log::SessionExecutionLogRegistry::new(),
-                ),
-                execution_log_root: chronos_log::resolve_execution_log_root(),
-                projection_meta: Arc::new(Mutex::new(HashMap::new())),
-                live_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
-                live_browser_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
-                degraded: false,
-                active_toolset: toolset.to_string(),
-                uprobe_injector: crate::composition::default_uprobe_injector(),
-                browser_probe_factory: crate::composition::default_browser_probe_factory(),
-            },
+            Ok(store) => {
+                let store_arc = Arc::new(store);
+                let archive = crate::composition::default_session_archive(store_arc.clone());
+                Self {
+                    engines: Arc::new(Mutex::new(HashMap::new())),
+                    session_languages: Arc::new(Mutex::new(HashMap::new())),
+                    store: store_arc,
+                    archive,
+                    background_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
+                    connected_sessions: Arc::new(std::sync::Mutex::new(HashSet::new())),
+                    active_session: Arc::new(Mutex::new(None)),
+                    tripwire_manager: Arc::new(TripwireManager::new()),
+                    uprobe_counter: Arc::new(std::sync::Mutex::new(HashMap::new())),
+                    execution_logs: Arc::new(
+                        chronos_services::session_log::SessionExecutionLogRegistry::new(),
+                    ),
+                    execution_log_root: chronos_log::resolve_execution_log_root(),
+                    projection_meta: Arc::new(Mutex::new(HashMap::new())),
+                    live_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
+                    live_browser_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
+                    degraded: false,
+                    active_toolset: toolset.to_string(),
+                    uprobe_injector: crate::composition::default_uprobe_injector(),
+                    browser_probe_factory: crate::composition::default_browser_probe_factory(),
+                }
+            }
             Err(e) => panic!("{e}"),
         }
     }
@@ -2926,6 +2949,14 @@ impl ChronosServer {
                     "internal error: unexpected memory error",
                 )));
             }
+            // REC-C3.3.3 (Tren B slice G): SessionRunning/SessionStopped
+            // cannot occur from list_threads, but the enum gained two
+            // variants and the match must remain exhaustive.
+            Err(ServiceError::SessionRunning(_)) | Err(ServiceError::SessionStopped(_)) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected probe-state error",
+                )));
+            }
             // REC-C3.3.2.5: retention errors cannot occur from
             // list_threads either; listed for exhaustiveness.
             Err(ServiceError::RetentionBackwardsMove { .. })
@@ -3570,7 +3601,7 @@ impl ChronosServer {
             engines: &self.engines,
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
-            store: &self.store,
+            archive: &*self.archive,
             execution_log_registry: &self.execution_logs,
             execution_log_root: &self.execution_log_root,
         };
@@ -3632,7 +3663,7 @@ impl ChronosServer {
             engines: &self.engines,
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
-            store: &self.store,
+            archive: &*self.archive,
             execution_log_registry: &self.execution_logs,
             execution_log_root: &self.execution_log_root,
         };
@@ -3677,7 +3708,7 @@ impl ChronosServer {
             engines: &self.engines,
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
-            store: &self.store,
+            archive: &*self.archive,
             execution_log_registry: &self.execution_logs,
             execution_log_root: &self.execution_log_root,
         };
@@ -3724,7 +3755,7 @@ impl ChronosServer {
             engines: &self.engines,
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
-            store: &self.store,
+            archive: &*self.archive,
             execution_log_registry: &self.execution_logs,
             execution_log_root: &self.execution_log_root,
         };
@@ -3777,7 +3808,7 @@ impl ChronosServer {
             engines: &self.engines,
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
-            store: &self.store,
+            archive: &*self.archive,
             execution_log_registry: &self.execution_logs,
             execution_log_root: &self.execution_log_root,
         };
@@ -4622,6 +4653,86 @@ impl ChronosServer {
     // ========================================================================
     // SF9 — Live Probe Tools
     // ========================================================================
+
+    #[tool(
+        name = "probe_advance",
+        description = "REC-C3.3.3 (Tren B slice G): advance a paused live probe session. The native backend delegates to PtraceTracer::continue_execution. Returns the AdvanceOutput (advanced, paused_reason, running) on success. Maps ServiceError::ProbeNotFound -> error.code = session_not_found; ServiceError::SessionStopped -> error.code = session_stopped."
+    )]
+    async fn probe_advance(
+        &self,
+        params: Parameters<ProbeAdvanceParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let probe_ctx = chronos_services::probe::ProbeContext {
+            live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            tripwire_manager: &self.tripwire_manager,
+            active_session: &self.active_session,
+            uprobe_injector: &self.uprobe_injector,
+        };
+        match chronos_services::probe::ProbeService::advance(&probe_ctx, &params.session_id) {
+            Ok(out) => Ok(CallToolResult::success(text_content(
+                serde_json::to_string(&out).unwrap_or_else(|e| format!("serialise error: {e}")),
+            ))),
+            Err(ServiceError::ProbeNotFound(_)) => {
+                Ok(CallToolResult::error(text_content(format!(
+                    "session_not_found: session '{}' not found",
+                    params.session_id
+                ))))
+            }
+            Err(ServiceError::SessionStopped(_)) => {
+                Ok(CallToolResult::error(text_content(format!(
+                    "session_stopped: session '{}' has stopped; cannot advance",
+                    params.session_id
+                ))))
+            }
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "advance failed: {e}"
+            )))),
+        }
+    }
+
+    #[tool(
+        name = "probe_step",
+        description = "REC-C3.3.3 (Tren B slice G): single-step a paused live probe session by one instruction. The native backend delegates to PtraceTracer::step. Returns StepOutput { stepped: true } on success. Maps ServiceError::ProbeNotFound -> error.code = session_not_found; ServiceError::SessionRunning -> error.code = session_running (the target must be paused to step)."
+    )]
+    async fn probe_step(
+        &self,
+        params: Parameters<ProbeStepParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let probe_ctx = chronos_services::probe::ProbeContext {
+            live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            tripwire_manager: &self.tripwire_manager,
+            active_session: &self.active_session,
+            uprobe_injector: &self.uprobe_injector,
+        };
+        match chronos_services::probe::ProbeService::step(&probe_ctx, &params.session_id) {
+            Ok(out) => Ok(CallToolResult::success(text_content(
+                serde_json::to_string(&out).unwrap_or_else(|e| format!("serialise error: {e}")),
+            ))),
+            Err(ServiceError::ProbeNotFound(_)) => {
+                Ok(CallToolResult::error(text_content(format!(
+                    "session_not_found: session '{}' not found",
+                    params.session_id
+                ))))
+            }
+            Err(ServiceError::SessionRunning(_)) => {
+                Ok(CallToolResult::error(text_content(format!(
+                    "session_running: session '{}' is running; cannot step",
+                    params.session_id
+                ))))
+            }
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "step failed: {e}"
+            )))),
+        }
+    }
 
     #[tool(
         name = "probe_start",

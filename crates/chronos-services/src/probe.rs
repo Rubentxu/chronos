@@ -26,7 +26,10 @@ use tracing::info;
 use chronos_query::QueryEngine;
 
 use crate::error::ServiceError;
-use crate::output::{ProbeDrainResult, ProbeSnapshotResult, ProbeStartOutput, ProbeStopResult};
+use crate::output::{
+    AdvanceOutput, ProbeDrainResult, ProbeSnapshotResult, ProbeStartOutput, ProbeStopResult,
+    StepOutput,
+};
 use chronos_domain::semantic::{ResolveContext, SemanticEvent};
 use chronos_domain::tripwire::TripwireManager;
 use chronos_domain::TraceEvent;
@@ -559,6 +562,55 @@ impl ProbeService {
             completeness: scan.completeness,
             examined_records: scan.examined_records,
         })
+    }
+
+    /// REC-C3.3.3 (Tren B slice E/G) — advance a paused probe session.
+    ///
+    /// Looks up the live probe by `session_id` and delegates to
+    /// [`NativeProbeBackend::advance`]. The session must exist in
+    /// `live_probes`; if not, `ServiceError::ProbeNotFound` is returned.
+    /// The backend resolves the traced PID itself (mirrors the pattern
+    /// used by [`Self::stop`]).
+    ///
+    /// Returns an [`AdvanceOutput`] with `advanced=true` on success.
+    /// The MCP layer maps this onto the existing JSON shape for
+    /// `probe_advance` (slice G wires the handler).
+    pub fn advance(
+        ctx: &ProbeContext<'_>,
+        session_id: &str,
+    ) -> Result<AdvanceOutput, ServiceError> {
+        let live_probes = ctx
+            .live_probes
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?;
+        let live_probe = live_probes
+            .get(session_id)
+            .ok_or_else(|| ServiceError::ProbeNotFound(session_id.to_string()))?;
+        live_probe.backend.advance(&live_probe.session)?;
+        Ok(AdvanceOutput {
+            advanced: true,
+            paused_reason: None,
+            running: false,
+        })
+    }
+
+    /// REC-C3.3.3 (Tren B slice E/G) — single-step a paused probe session.
+    ///
+    /// Same lookup as [`Self::advance`]. Returns
+    /// [`ServiceError::SessionRunning`] when the backend reports the
+    /// target is currently running (the legacy backend's `attached_target`
+    /// flag is the canonical signal). On success returns a
+    /// [`StepOutput`] with `stepped=true`.
+    pub fn step(ctx: &ProbeContext<'_>, session_id: &str) -> Result<StepOutput, ServiceError> {
+        let live_probes = ctx
+            .live_probes
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?;
+        let live_probe = live_probes
+            .get(session_id)
+            .ok_or_else(|| ServiceError::ProbeNotFound(session_id.to_string()))?;
+        live_probe.backend.step(&live_probe.session)?;
+        Ok(StepOutput { stepped: true })
     }
 
     /// Non-destructive drain from a live probe session.

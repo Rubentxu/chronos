@@ -14,6 +14,7 @@ pub mod property;
 pub mod query;
 pub mod semantic;
 pub mod seq;
+pub mod session;
 pub mod session_id;
 pub mod trace;
 pub mod tripwire;
@@ -48,6 +49,7 @@ pub use query::{
 };
 pub use semantic::{SemanticEvent, SemanticEventKind};
 pub use seq::EventSeq;
+pub use session::SessionMetadata;
 pub use trace::{
     CaptureConfig, CaptureSession, EventData, EventType, GoEventKind, InvocationId, JavaEventKind,
     JsEventKind, Language, PythonEventKind, RegisterState, RuntimeInfo, SessionState,

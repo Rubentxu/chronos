@@ -41,9 +41,8 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use chronos_domain::{Language, TraceEvent};
+use chronos_domain::{Language, SessionMetadata, TraceEvent};
 use chronos_query::QueryEngine;
-use chronos_store::SessionMetadata;
 use serde_json::json;
 use tokio::sync::Mutex as TokioMutex;
 
@@ -304,7 +303,6 @@ mod tests {
     use chronos_domain::trace::{EventData, EventType, SourceLocation};
     use chronos_index::builder::IndexBuilder;
     use chronos_query::QueryEngine;
-    use chronos_store::SessionMetadata;
 
     use std::collections::HashMap;
 

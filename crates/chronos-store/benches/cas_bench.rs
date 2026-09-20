@@ -1,5 +1,5 @@
-use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
-use chronos_store::{SessionMetadata, SessionStore, TraceDiff};
+use chronos_domain::{EventData, EventType, SessionMetadata, SourceLocation, TraceEvent};
+use chronos_store::{SessionStore, TraceDiff};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use tempfile::tempdir;
 

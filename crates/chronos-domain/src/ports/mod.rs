@@ -14,17 +14,23 @@
 //! and the rationale behind each one.
 
 pub mod browser_probe;
+pub mod counterexample;
 pub mod execution_log;
 pub mod execution_log_factory;
 pub mod execution_log_maintenance;
 pub mod execution_log_retention;
 pub mod notification;
 mod probe;
-mod session;
+pub mod session;
 mod telemetry;
 pub mod uprobe;
 
 pub use browser_probe::{BrowserError, BrowserProbeBackend, BrowserProbeFactory};
+pub use counterexample::{
+    CounterexampleBundleFilter, CounterexampleBundleRecord, CounterexampleBundleSummary,
+    CounterexampleRepository, CounterexampleRepositoryError, HypothesisInputWire,
+    InMemoryCounterexampleRepository, MinimisedPayload,
+};
 pub use execution_log::{
     ExecutionLogError, ExecutionLogKind, ExecutionLogPage, ExecutionLogProvider,
 };
@@ -40,7 +46,10 @@ pub use notification::{
 pub use probe::{
     NullProbeFactory, NullProbeRegistry, ProbeController, ProbeFactory, ProbeRegistry,
 };
-pub use session::{InMemorySessionRepository, SessionHandle, SessionRepository, SessionState};
+pub use session::{
+    InMemorySessionArchive, InMemorySessionRepository, SessionArchive, SessionArchiveError,
+    SessionHandle, SessionRepository, SessionState,
+};
 pub use telemetry::{
     Counters, InMemoryTelemetry, Metric, NoopTelemetry, TelemetryError, TelemetryReceiver,
 };

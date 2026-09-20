@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use crate::debug_trace::CallGraph;
 use chronos_domain::query::{ExecutionSummary, StackFrame, StateDiff};
-use chronos_store::SessionMetadata;
+use chronos_domain::SessionMetadata;
 
 // Re-exports so MCP wrappers can refer to property types via
 // `chronos_services::output::ComparisonOp` / `::PropertyValue`
@@ -842,6 +842,22 @@ pub struct ProbeStopOutput {
     pub duration_ms: u64,
     pub ebpf_detached: bool,
     pub hint: String,
+}
+
+/// Output of `probe_advance` (REC-C3.3.3 / Tren B slice G).
+/// JSON shape: `{ advanced, paused_reason, running }`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AdvanceOutput {
+    pub advanced: bool,
+    pub paused_reason: Option<String>,
+    pub running: bool,
+}
+
+/// Output of `probe_step` (REC-C3.3.3 / Tren B slice G).
+/// JSON shape: `{ stepped }`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StepOutput {
+    pub stepped: bool,
 }
 
 /// Result of `ProbeService::stop` — the raw events + metadata needed by the

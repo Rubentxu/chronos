@@ -115,7 +115,7 @@ fn load_session(
     session_id: &str,
 ) -> Result<
     (
-        chronos_store::SessionMetadata,
+        chronos_domain::SessionMetadata,
         Vec<chronos_domain::TraceEvent>,
     ),
     ServiceError,
@@ -131,7 +131,7 @@ fn map_load_error(e: StoreError) -> ServiceError {
 }
 
 fn build_facts(
-    meta: &chronos_store::SessionMetadata,
+    meta: &chronos_domain::SessionMetadata,
     summary: &chronos_domain::query::ExecutionSummary,
     events: &[chronos_domain::TraceEvent],
 ) -> FactsBundle {

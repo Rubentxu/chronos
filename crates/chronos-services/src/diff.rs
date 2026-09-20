@@ -243,8 +243,7 @@ fn map_load_error(e: StoreError, session_id: &str) -> ServiceError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
-    use chronos_store::SessionMetadata;
+    use chronos_domain::{EventData, EventType, SessionMetadata, SourceLocation, TraceEvent};
 
     fn make_event(id: u64, func: &str) -> TraceEvent {
         let loc = SourceLocation::new("test.rs", 1, func, 0x1000 + id);
