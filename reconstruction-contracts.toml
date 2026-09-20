@@ -26,7 +26,6 @@ verified_requires = ["evidence", "uat", "verify"]
 known_dependency_violations = [
   "chronos-services->chronos-store",
   "chronos-services->chronos-native",
-  "chronos-store->chronos-native",
 ]
 
 # REC-C0 baseline scope — explicit gate classification for the 27 residual
