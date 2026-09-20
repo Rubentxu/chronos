@@ -14,6 +14,7 @@ pub mod diff;
 pub mod error;
 pub mod session_archive;
 pub mod session_reader_adapter;
+pub mod lifecycle_store_adapter;
 pub mod storage;
 mod table_error;
 #[cfg(test)]

@@ -120,6 +120,11 @@ pub struct ChronosServer {
     /// consume the port; `store` stays for non-port consumers (probe
     /// persistence, etc.).
     reader: Arc<dyn chronos_domain::ports::session_reader::SessionReader>,
+    /// `LifecycleStore` port (REC-C3.5-B.4). Extends `SessionReader` with
+    /// write-side methods (`save_session_meta`, `delete_session`) needed by
+    /// `SessionLifecycleService`. Built from `store` via
+    /// `SessionStoreBackedLifecycleStore` at composition time.
+    lifecycle_store: Arc<dyn chronos_domain::ports::lifecycle_store::LifecycleStore>,
     /// `SessionArchive` port (REC-C3.3.3 Tren B). Built from `store` via
     /// `SessionStoreBackedSessionArchive` at composition time. Services
     /// consume the port; `store` stays for non-port consumers (probe
@@ -1838,11 +1843,17 @@ impl ChronosServer {
                 store_arc.clone(),
             ),
         );
+        let lifecycle_store: Arc<dyn chronos_domain::ports::lifecycle_store::LifecycleStore> = Arc::new(
+            chronos_store::lifecycle_store_adapter::SessionStoreBackedLifecycleStore::new(
+                store_arc.clone(),
+            ),
+        );
         Self {
             engines: Arc::new(Mutex::new(HashMap::new())),
             session_languages: Arc::new(Mutex::new(HashMap::new())),
             store: store_arc,
             reader,
+            lifecycle_store,
             archive,
             background_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
             connected_sessions: Arc::new(std::sync::Mutex::new(HashSet::new())),
@@ -1881,11 +1892,17 @@ impl ChronosServer {
                             store_arc.clone(),
                         ),
                     );
+                let lifecycle_store: Arc<dyn chronos_domain::ports::lifecycle_store::LifecycleStore> = Arc::new(
+                    chronos_store::lifecycle_store_adapter::SessionStoreBackedLifecycleStore::new(
+                        store_arc.clone(),
+                    ),
+                );
                 Self {
                     engines: Arc::new(Mutex::new(HashMap::new())),
                     session_languages: Arc::new(Mutex::new(HashMap::new())),
                     store: store_arc,
                     reader,
+                    lifecycle_store,
                     archive,
                     background_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
                     connected_sessions: Arc::new(std::sync::Mutex::new(HashSet::new())),
@@ -4805,7 +4822,7 @@ impl ChronosServer {
             uprobe_counter: &self.uprobe_counter,
         };
         let lifecycle_ctx = SessionLifecycleContext {
-            store: &self.store,
+            store: std::sync::Arc::clone(&self.lifecycle_store),
             probe: &probe_ctx,
             observe: &observe_ctx,
         };
@@ -4969,7 +4986,7 @@ impl ChronosServer {
             uprobe_counter: &self.uprobe_counter,
         };
         let lifecycle_ctx = SessionLifecycleContext {
-            store: &self.store,
+            store: std::sync::Arc::clone(&self.lifecycle_store),
             probe: &probe_ctx,
             observe: &observe_ctx,
         };
@@ -5053,7 +5070,7 @@ impl ChronosServer {
             uprobe_counter: &self.uprobe_counter,
         };
         let lifecycle_ctx = SessionLifecycleContext {
-            store: &self.store,
+            store: std::sync::Arc::clone(&self.lifecycle_store),
             probe: &probe_ctx,
             observe: &observe_ctx,
         };
@@ -5249,7 +5266,7 @@ impl ChronosServer {
             uprobe_counter: &self.uprobe_counter,
         };
         let lifecycle_ctx = SessionLifecycleContext {
-            store: &self.store,
+            store: std::sync::Arc::clone(&self.lifecycle_store),
             probe: &probe_ctx,
             observe: &observe_ctx,
         };

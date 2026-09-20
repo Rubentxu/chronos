@@ -19,6 +19,7 @@ pub mod execution_log;
 pub mod execution_log_factory;
 pub mod execution_log_maintenance;
 pub mod execution_log_retention;
+pub mod lifecycle_store;
 pub mod notification;
 mod probe;
 pub mod session;
@@ -53,6 +54,9 @@ pub use session::{
     SessionHandle, SessionRepository, SessionState,
 };
 pub use session_reader::{InMemorySessionReader, SessionReader, SessionReaderError};
+pub use lifecycle_store::{
+    InMemoryLifecycleStore, LifecycleStore, LifecycleStoreError,
+};
 pub use telemetry::{
     Counters, InMemoryTelemetry, Metric, NoopTelemetry, TelemetryError, TelemetryReceiver,
 };
