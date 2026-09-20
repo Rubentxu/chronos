@@ -333,6 +333,7 @@ id = "CONN-001"
 title = "Sequence, monotonic time and wall-clock time have distinct semantics"
 status = "partial"
 owner_gate = "REC-C4"
+notes = "C4.2 (e901f285): MonotonicNs + WallClockMs newtypes in chronos-domain, #[serde(transparent)] u64 wire/on-disk compat (tested), TimestampNs = alias of MonotonicNs; TraceEvent.timestamp_ns typed; risk sites (python convert.rs, ebpf RawEvent) annotated with clock-domain docs. Remaining for verified: chronos-log wall-clock-ms boundary constructors typed (~12 sites)."
 
 [[requirement]]
 id = "CONN-002"
