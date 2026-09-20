@@ -13,6 +13,7 @@ pub mod counterexample_storage;
 pub mod diff;
 pub mod error;
 pub mod session_archive;
+pub mod session_reader_adapter;
 pub mod storage;
 mod table_error;
 #[cfg(test)]

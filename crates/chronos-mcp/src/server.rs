@@ -115,6 +115,11 @@ pub struct ChronosServer {
     session_languages: Arc<Mutex<HashMap<String, chronos_domain::Language>>>,
     /// Persistent session store.
     store: Arc<SessionStore>,
+    /// `SessionReader` port (REC-C3.5-B.1). Built from `store` via
+    /// `SessionStoreBackedSessionReader` at composition time. Services
+    /// consume the port; `store` stays for non-port consumers (probe
+    /// persistence, etc.).
+    reader: Arc<dyn chronos_domain::ports::session_reader::SessionReader>,
     /// `SessionArchive` port (REC-C3.3.3 Tren B). Built from `store` via
     /// `SessionStoreBackedSessionArchive` at composition time. Services
     /// consume the port; `store` stays for non-port consumers (probe
@@ -1828,10 +1833,16 @@ impl ChronosServer {
         let browser_probe_factory = crate::composition::default_browser_probe_factory();
         let store_arc = Arc::new(store);
         let archive = crate::composition::default_session_archive(store_arc.clone());
+        let reader: Arc<dyn chronos_domain::ports::session_reader::SessionReader> = Arc::new(
+            chronos_store::session_reader_adapter::SessionStoreBackedSessionReader::new(
+                store_arc.clone(),
+            ),
+        );
         Self {
             engines: Arc::new(Mutex::new(HashMap::new())),
             session_languages: Arc::new(Mutex::new(HashMap::new())),
             store: store_arc,
+            reader,
             archive,
             background_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
             connected_sessions: Arc::new(std::sync::Mutex::new(HashSet::new())),
@@ -1864,10 +1875,17 @@ impl ChronosServer {
             Ok(store) => {
                 let store_arc = Arc::new(store);
                 let archive = crate::composition::default_session_archive(store_arc.clone());
+                let reader: Arc<dyn chronos_domain::ports::session_reader::SessionReader> =
+                    Arc::new(
+                        chronos_store::session_reader_adapter::SessionStoreBackedSessionReader::new(
+                            store_arc.clone(),
+                        ),
+                    );
                 Self {
                     engines: Arc::new(Mutex::new(HashMap::new())),
                     session_languages: Arc::new(Mutex::new(HashMap::new())),
                     store: store_arc,
+                    reader,
                     archive,
                     background_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
                     connected_sessions: Arc::new(std::sync::Mutex::new(HashSet::new())),
@@ -5888,7 +5906,9 @@ further would be a Silent Lie."
         params: Parameters<PerformanceRegressionAuditParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let ctx = chronos_services::session_compare::SessionCompareContext { store: &self.store };
+        let ctx = chronos_services::session_compare::SessionCompareContext {
+            reader: Arc::clone(&self.reader),
+        };
         let v2_params = SessionCompareParams {
             kind: "regression".to_string(),
             session_a: params.baseline_session_id,
@@ -5907,7 +5927,9 @@ further would be a Silent Lie."
         params: Parameters<CompareSessionsParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let ctx = chronos_services::session_compare::SessionCompareContext { store: &self.store };
+        let ctx = chronos_services::session_compare::SessionCompareContext {
+            reader: Arc::clone(&self.reader),
+        };
         let v2_params = SessionCompareParams {
             kind: "divergence".to_string(),
             session_a: params.session_a,
@@ -5926,7 +5948,9 @@ further would be a Silent Lie."
         params: Parameters<SessionCompareParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let ctx = chronos_services::session_compare::SessionCompareContext { store: &self.store };
+        let ctx = chronos_services::session_compare::SessionCompareContext {
+            reader: Arc::clone(&self.reader),
+        };
         Self::dispatch_session_compare(&ctx, params, SessionCompareWire::V2Envelope).await
     }
 
@@ -5939,8 +5963,9 @@ further would be a Silent Lie."
         params: Parameters<SessionExplainParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let explain_ctx =
-            chronos_services::session_explain::SessionExplainContext { store: &self.store };
+        let explain_ctx = chronos_services::session_explain::SessionExplainContext {
+            reader: Arc::clone(&self.reader),
+        };
         let kind = parse_session_explain_kind(&params.kind)?;
         let input = chronos_services::output::SessionExplainInput {
             kind,
@@ -6428,7 +6453,7 @@ further would be a Silent Lie."
     /// validation and error mapping stay identical; only the response wire
     /// shape differs, and `wire` selects it.
     async fn dispatch_session_compare(
-        ctx: &chronos_services::session_compare::SessionCompareContext<'_>,
+        ctx: &chronos_services::session_compare::SessionCompareContext,
         params: SessionCompareParams,
         wire: SessionCompareWire,
     ) -> Result<CallToolResult, rmcp::ErrorData> {

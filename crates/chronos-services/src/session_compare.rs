@@ -9,6 +9,8 @@
 //! See `docs/milestones/m7-03-session-compare-explain-merge.md` for
 //! the full spec + algorithm details.
 
+use std::sync::Arc;
+
 use crate::diff::{
     ChronosDiffService, CompareSessionsInput, DiffContext, PerformanceRegressionAuditInput,
 };
@@ -16,13 +18,15 @@ use crate::error::ServiceError;
 use crate::output::{
     SessionCompareInput, SessionCompareKind, SessionCompareOutput, SessionCompareProvenance,
 };
+use chronos_domain::ports::session_reader::SessionReader;
 
-/// Borrowed handle to the live `SessionStore`.
+/// Borrowed handle to the live `SessionReader` port (REC-C3.5-B.3).
 ///
-/// The store is owned by `chronos-mcp::Server`; the service holds a reference
-/// for the duration of the call. No locking past the await point.
-pub struct SessionCompareContext<'a> {
-    pub store: &'a chronos_store::SessionStore,
+/// The adapter behind the port is owned by `chronos-mcp::Server`; the
+/// service holds an `Arc<dyn SessionReader>` for the duration of the
+/// call. No locking past the await point.
+pub struct SessionCompareContext {
+    pub reader: Arc<dyn SessionReader>,
 }
 
 /// Stateless holder for the v2 `session_compare` dispatcher.
@@ -40,7 +44,7 @@ impl ChronosSessionCompareService {
     /// that kind-gated fields are populated and rejects mismatched
     /// input with `ServiceError::InvalidInput`.
     pub fn compare(
-        ctx: &SessionCompareContext<'_>,
+        ctx: &SessionCompareContext,
         input: SessionCompareInput,
     ) -> Result<SessionCompareOutput, ServiceError> {
         match input.kind {
@@ -50,7 +54,7 @@ impl ChronosSessionCompareService {
     }
 
     fn divergence(
-        ctx: &SessionCompareContext<'_>,
+        ctx: &SessionCompareContext,
         input: SessionCompareInput,
     ) -> Result<SessionCompareOutput, ServiceError> {
         let session_a = input.session_a.ok_or_else(|| {
@@ -64,7 +68,9 @@ impl ChronosSessionCompareService {
             )
         })?;
         let result = ChronosDiffService::compare_sessions(
-            &DiffContext { store: ctx.store },
+            &DiffContext {
+                reader: ctx.reader.clone(),
+            },
             CompareSessionsInput {
                 session_a,
                 session_b,
@@ -80,7 +86,7 @@ impl ChronosSessionCompareService {
     }
 
     fn regression(
-        ctx: &SessionCompareContext<'_>,
+        ctx: &SessionCompareContext,
         input: SessionCompareInput,
     ) -> Result<SessionCompareOutput, ServiceError> {
         let baseline_session_id = input.baseline_session_id.ok_or_else(|| {
@@ -94,7 +100,9 @@ impl ChronosSessionCompareService {
             )
         })?;
         let result = ChronosDiffService::performance_regression_audit(
-            &DiffContext { store: ctx.store },
+            &DiffContext {
+                reader: ctx.reader.clone(),
+            },
             PerformanceRegressionAuditInput {
                 baseline_session_id,
                 target_session_id,
@@ -158,12 +166,19 @@ mod tests {
         store.save_session(meta, &events).unwrap();
     }
 
-    fn empty_store() -> SessionStore {
-        SessionStore::in_memory().unwrap()
+    fn empty_arc_store() -> std::sync::Arc<SessionStore> {
+        std::sync::Arc::new(SessionStore::in_memory().unwrap())
     }
 
-    fn populate_two_sessions() -> (SessionStore, String, String) {
-        let store = empty_store();
+    fn make_ctx(store: std::sync::Arc<SessionStore>) -> SessionCompareContext {
+        use chronos_store::session_reader_adapter::SessionStoreBackedSessionReader;
+        let adapter = std::sync::Arc::new(SessionStoreBackedSessionReader::new(store))
+            as std::sync::Arc<dyn SessionReader>;
+        SessionCompareContext { reader: adapter }
+    }
+
+    fn populate_two_sessions() -> (std::sync::Arc<SessionStore>, String, String) {
+        let store = empty_arc_store();
         save_session(&store, "sess-a", &["main", "helper", "main"]);
         save_session(&store, "sess-b", &["main", "helper", "helper"]);
         (store, "sess-a".to_string(), "sess-b".to_string())
@@ -172,7 +187,7 @@ mod tests {
     #[test]
     fn compare_divergence_returns_divergence_variant() {
         let (store, a, b) = populate_two_sessions();
-        let ctx = SessionCompareContext { store: &store };
+        let ctx = make_ctx(std::sync::Arc::clone(&store));
         let input = SessionCompareInput {
             kind: SessionCompareKind::Divergence,
             session_a: Some(a),
@@ -195,7 +210,7 @@ mod tests {
     #[test]
     fn compare_regression_returns_regression_variant() {
         let (store, a, b) = populate_two_sessions();
-        let ctx = SessionCompareContext { store: &store };
+        let ctx = make_ctx(std::sync::Arc::clone(&store));
         let input = SessionCompareInput {
             kind: SessionCompareKind::Regression,
             session_a: None,
@@ -220,7 +235,7 @@ mod tests {
     #[test]
     fn compare_divergence_session_not_found() {
         let (store, a, _) = populate_two_sessions();
-        let ctx = SessionCompareContext { store: &store };
+        let ctx = make_ctx(std::sync::Arc::clone(&store));
         let input = SessionCompareInput {
             kind: SessionCompareKind::Divergence,
             session_a: Some(a),
@@ -236,7 +251,7 @@ mod tests {
     #[test]
     fn compare_regression_session_not_found() {
         let (store, a, _) = populate_two_sessions();
-        let ctx = SessionCompareContext { store: &store };
+        let ctx = make_ctx(std::sync::Arc::clone(&store));
         let input = SessionCompareInput {
             kind: SessionCompareKind::Regression,
             session_a: None,
@@ -251,8 +266,8 @@ mod tests {
 
     #[test]
     fn compare_divergence_missing_session_a_returns_invalid_input() {
-        let store = empty_store();
-        let ctx = SessionCompareContext { store: &store };
+        let store = empty_arc_store();
+        let ctx = make_ctx(store);
         let input = SessionCompareInput {
             kind: SessionCompareKind::Divergence,
             session_a: None,
@@ -271,8 +286,8 @@ mod tests {
 
     #[test]
     fn compare_regression_missing_target_returns_invalid_input() {
-        let store = empty_store();
-        let ctx = SessionCompareContext { store: &store };
+        let store = empty_arc_store();
+        let ctx = make_ctx(store);
         let input = SessionCompareInput {
             kind: SessionCompareKind::Regression,
             session_a: None,
@@ -292,7 +307,7 @@ mod tests {
     #[test]
     fn compare_divergence_preserves_summary_string() {
         let (store, a, b) = populate_two_sessions();
-        let ctx = SessionCompareContext { store: &store };
+        let ctx = make_ctx(std::sync::Arc::clone(&store));
         let input = SessionCompareInput {
             kind: SessionCompareKind::Divergence,
             session_a: Some(a),
@@ -315,7 +330,7 @@ mod tests {
     #[test]
     fn compare_regression_classifies_threshold() {
         // Baseline: 2 calls to "main". Target: 10 calls to "main" => +400% regression.
-        let store = empty_store();
+        let store = empty_arc_store();
         save_session(&store, "b", &["main", "main"]);
         save_session(
             &store,
@@ -324,7 +339,7 @@ mod tests {
                 "main", "main", "main", "main", "main", "main", "main", "main", "main", "main",
             ],
         );
-        let ctx = SessionCompareContext { store: &store };
+        let ctx = make_ctx(std::sync::Arc::clone(&store));
         let input = SessionCompareInput {
             kind: SessionCompareKind::Regression,
             session_a: None,
@@ -351,7 +366,7 @@ mod tests {
     #[test]
     fn compare_provenance_present_on_both_kinds() {
         let (store, a, b) = populate_two_sessions();
-        let ctx = SessionCompareContext { store: &store };
+        let ctx = make_ctx(std::sync::Arc::clone(&store));
 
         let div_in = SessionCompareInput {
             kind: SessionCompareKind::Divergence,

@@ -22,6 +22,7 @@ pub mod execution_log_retention;
 pub mod notification;
 mod probe;
 pub mod session;
+pub mod session_reader;
 mod telemetry;
 pub mod uprobe;
 
@@ -51,6 +52,7 @@ pub use session::{
     InMemorySessionArchive, InMemorySessionRepository, SessionArchive, SessionArchiveError,
     SessionHandle, SessionRepository, SessionState,
 };
+pub use session_reader::{InMemorySessionReader, SessionReader, SessionReaderError};
 pub use telemetry::{
     Counters, InMemoryTelemetry, Metric, NoopTelemetry, TelemetryError, TelemetryReceiver,
 };
