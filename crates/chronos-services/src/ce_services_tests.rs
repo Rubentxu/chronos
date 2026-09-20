@@ -1707,12 +1707,12 @@ fn m9_01_save_persists_schema_version_1() {
 
     assert_eq!(
         loaded.schema_version,
-        cs::CURRENT_BUNDLE_SCHEMA_VERSION,
+        chronos_store::counterexample_storage::CURRENT_BUNDLE_SCHEMA_VERSION,
         "record.schema_version must equal CURRENT"
     );
     assert_eq!(
         loaded.summary.schema_version,
-        cs::CURRENT_BUNDLE_SCHEMA_VERSION,
+        chronos_store::counterexample_storage::CURRENT_BUNDLE_SCHEMA_VERSION,
         "summary.schema_version must equal CURRENT"
     );
 }

@@ -19,6 +19,12 @@
 //! storage boundary using JSON-serialise / deserialise roundtrips.
 //! See REC-C3.5-B' notes for the design rationale.
 
+pub mod wire;
+
+pub use wire::{
+    CounterexampleBundleSummaryWire, ExistencePredicateWire, HypothesisInputWire, MinimisedPayload,
+};
+
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 

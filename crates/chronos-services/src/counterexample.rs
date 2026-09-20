@@ -38,12 +38,10 @@ use proptest::strategy::Strategy;
 use proptest::test_runner::TestRunner;
 use serde::{Deserialize, Serialize};
 
-use chronos_domain::property::PropertyValue;
-use chronos_store::counterexample_storage as cs;
-use chronos_store::counterexample_storage::{
-    CounterexampleBundleSummary as CounterexampleBundleSummaryWire, ExistencePredicateWire,
-    HypothesisInputWire, MinimisedPayload,
+use chronos_domain::ports::counterexample::wire::{
+    ExistencePredicateWire, HypothesisInputWire, MinimisedPayload,
 };
+use chronos_domain::property::PropertyValue;
 
 use crate::error::ServiceError;
 use crate::hypothesis_test::{HypothesisInput, HypothesisTestContext};
@@ -564,14 +562,14 @@ impl ChronosCounterexampleService {
         // mirror and persist alongside the minimised payload.
         let target_hypothesis_wire = hypothesis_input_to_wire(target_hypothesis);
 
-        let summary = CounterexampleBundleSummaryWire {
+        let summary = chronos_store::counterexample_storage::CounterexampleBundleSummary {
             bundle_id: bundle_id.clone(),
             property_kind: hypothesis_kind_as_str(property_kind).to_string(),
             workspace_id: workspace_id.to_string(),
             created_at_ms,
             rounds_used,
             has_full_bundle: true, // m8-03 ships full bundle persistence.
-            schema_version: cs::CURRENT_BUNDLE_SCHEMA_VERSION,
+            schema_version: chronos_store::counterexample_storage::CURRENT_BUNDLE_SCHEMA_VERSION,
             // events_count will be overwritten by save_counterexample_bundle
             // which takes events from the record and sets the count there.
             events_count: 0,
@@ -596,7 +594,7 @@ impl ChronosCounterexampleService {
             minimised: minimised_bytes,
             event_cas_hashes: Vec::new(),
             target_hypothesis: target_hypothesis_bytes,
-            schema_version: cs::CURRENT_BUNDLE_SCHEMA_VERSION,
+            schema_version: chronos_store::counterexample_storage::CURRENT_BUNDLE_SCHEMA_VERSION,
         };
         let returned_id = ctx
             .repository
