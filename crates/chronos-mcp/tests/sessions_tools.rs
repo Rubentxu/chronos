@@ -7,20 +7,31 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 
+use chronos_domain::ports::session::SessionArchive;
 use chronos_domain::{Language, SourceLocation, TraceEvent};
 use chronos_query::QueryEngine;
 use chronos_services::error::ServiceError;
 use chronos_services::session_log::SessionExecutionLogRegistry;
 use chronos_services::sessions::{SessionsContext, SessionsService};
+use chronos_store::SessionStore;
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
 // ---------------------------------------------------------------------------
 // Test fixtures
 // ---------------------------------------------------------------------------
 
-/// Build a minimal in-memory SessionStore.
-fn make_store() -> chronos_store::SessionStore {
-    chronos_store::SessionStore::in_memory().unwrap()
+/// Build a minimal in-memory SessionStore (used by `make_archive`).
+fn make_store() -> SessionStore {
+    SessionStore::in_memory().unwrap()
+}
+
+/// Build a leaked `&'static dyn SessionArchive` backed by a fresh
+/// `SessionStore` (mirrors the composition-root wiring).
+fn make_archive() -> &'static dyn SessionArchive {
+    let store = Arc::new(make_store());
+    let adapter = chronos_store::session_archive::SessionStoreBackedSessionArchive::new(store);
+    Box::leak(Box::new(adapter)) as &'static dyn SessionArchive
 }
 
 /// Build a HashMap with one engine containing 2 trace events.
@@ -82,13 +93,13 @@ fn make_context<'a>(
     engines: &'a Mutex<HashMap<String, QueryEngine>>,
     languages: &'a Mutex<HashMap<String, Language>>,
     connected: &'a std::sync::Mutex<HashSet<String>>,
-    store: &'a chronos_store::SessionStore,
+    archive: &'a dyn SessionArchive,
 ) -> SessionsContext<'a> {
     SessionsContext {
         engines,
         session_languages: languages,
         connected_sessions: connected,
-        store,
+        archive,
         execution_log_registry: Box::leak(Box::new(SessionExecutionLogRegistry::new())),
         execution_log_root: Box::leak(Box::new(std::env::temp_dir())),
     }
@@ -100,11 +111,11 @@ fn make_context<'a>(
 
 #[tokio::test]
 async fn save_session_ok() {
-    let store = make_store();
+    let store = make_archive();
     let engines = make_engines("s1");
     let languages = make_languages();
     let connected = make_connected();
-    let ctx = make_context(&engines, &languages, &connected, &store);
+    let ctx = make_context(&engines, &languages, &connected, store);
 
     let result =
         SessionsService::save_session("s1", Language::Python, "/usr/bin/python3".to_string(), &ctx)
@@ -120,11 +131,11 @@ async fn save_session_ok() {
 
 #[tokio::test]
 async fn save_session_not_in_memory() {
-    let store = make_store();
+    let store = make_archive();
     let engines = make_engines("s1");
     let languages = make_languages();
     let connected = make_connected();
-    let ctx = make_context(&engines, &languages, &connected, &store);
+    let ctx = make_context(&engines, &languages, &connected, store);
 
     let result = SessionsService::save_session("s2", Language::C, "main".to_string(), &ctx).await;
 
@@ -140,11 +151,11 @@ async fn save_session_not_in_memory() {
 
 #[tokio::test]
 async fn load_session_ok() {
-    let store = make_store();
+    let store = make_archive();
     let engines = make_engines("s1");
     let languages = make_languages();
     let connected = make_connected();
-    let ctx = make_context(&engines, &languages, &connected, &store);
+    let ctx = make_context(&engines, &languages, &connected, store);
 
     // Save first
     SessionsService::save_session("s1", Language::Go, "./server".to_string(), &ctx)
@@ -166,11 +177,11 @@ async fn load_session_ok() {
 
 #[tokio::test]
 async fn load_session_not_found() {
-    let store = make_store();
+    let store = make_archive();
     let engines = make_engines("s1");
     let languages = make_languages();
     let connected = make_connected();
-    let ctx = make_context(&engines, &languages, &connected, &store);
+    let ctx = make_context(&engines, &languages, &connected, store);
 
     let result = SessionsService::load_session("no-such-session", &ctx).await;
 
@@ -186,11 +197,11 @@ async fn load_session_not_found() {
 
 #[tokio::test]
 async fn list_sessions_empty() {
-    let store = make_store();
+    let store = make_archive();
     let engines = make_engines("s1");
     let languages = make_languages();
     let connected = make_connected();
-    let ctx = make_context(&engines, &languages, &connected, &store);
+    let ctx = make_context(&engines, &languages, &connected, store);
 
     let result = SessionsService::list_sessions(&ctx).await.unwrap();
 
@@ -199,11 +210,11 @@ async fn list_sessions_empty() {
 
 #[tokio::test]
 async fn list_sessions_one() {
-    let store = make_store();
+    let store = make_archive();
     let engines = make_engines("s1");
     let languages = make_languages();
     let connected = make_connected();
-    let ctx = make_context(&engines, &languages, &connected, &store);
+    let ctx = make_context(&engines, &languages, &connected, store);
 
     SessionsService::save_session("s1", Language::Python, "script.py".to_string(), &ctx)
         .await
@@ -224,11 +235,11 @@ async fn list_sessions_one() {
 
 #[tokio::test]
 async fn delete_session_ok() {
-    let store = make_store();
+    let store = make_archive();
     let engines = make_engines("s1");
     let languages = make_languages();
     let connected = make_connected();
-    let ctx = make_context(&engines, &languages, &connected, &store);
+    let ctx = make_context(&engines, &languages, &connected, store);
 
     SessionsService::save_session("s1", Language::C, "main".to_string(), &ctx)
         .await
@@ -241,11 +252,11 @@ async fn delete_session_ok() {
 
 #[tokio::test]
 async fn delete_session_not_found() {
-    let store = make_store();
+    let store = make_archive();
     let engines = make_engines("s1");
     let languages = make_languages();
     let connected = make_connected();
-    let ctx = make_context(&engines, &languages, &connected, &store);
+    let ctx = make_context(&engines, &languages, &connected, store);
 
     let result = SessionsService::delete_session("no-such", &ctx).await;
 

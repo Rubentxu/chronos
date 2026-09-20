@@ -20,7 +20,8 @@ use crate::error::ServiceError;
 use crate::execution_log_bootstrap::delete_durable_execution_log;
 use crate::output::{DeleteResult, DropResult, ListResult, LoadResult, SaveResult, SessionSummary};
 use crate::session_log::SessionExecutionLogRegistry;
-use chronos_store::{SessionMetadata, SessionStore};
+use chronos_domain::ports::session::SessionArchive;
+use chronos_domain::SessionMetadata;
 
 /// Borrow struct holding all state needed by `SessionsService` methods.
 ///
@@ -35,8 +36,11 @@ pub struct SessionsContext<'a> {
     pub session_languages: &'a Mutex<HashMap<String, Language>>,
     /// Sessions that are currently "connected" (active probes).
     pub connected_sessions: &'a std::sync::Mutex<HashSet<String>>,
-    /// Persistent session store.
-    pub store: &'a SessionStore,
+    /// Persistent session archive (REC-C3.3.3 Tren B — `SessionArchive` port).
+    /// Replaces the previous `&SessionStore` field; the concrete `Arc<SessionStore>`
+    /// still exists on `ChronosServer` and is wrapped via
+    /// `SessionStoreBackedSessionArchive` at the composition root.
+    pub archive: &'a dyn SessionArchive,
     /// Canonical durable ExecutionLog registry and root.
     pub execution_log_registry: &'a SessionExecutionLogRegistry,
     pub execution_log_root: &'a Path,
@@ -107,9 +111,9 @@ impl SessionsService {
         // SessionStore methods are sync — drop the lock first
         drop(guard);
 
-        let store_ref = ctx.store;
-        let hashes = store_ref
-            .save_session(metadata, &events)
+        let archive = ctx.archive;
+        let hashes = archive
+            .save(metadata, &events)
             .map_err(|e| ServiceError::SaveFailed(e.to_string()))?;
 
         Ok(SaveResult {
@@ -133,9 +137,9 @@ impl SessionsService {
         session_id: &str,
         ctx: &SessionsContext<'_>,
     ) -> Result<LoadResult, ServiceError> {
-        let store_ref = ctx.store;
-        let (metadata, events) = store_ref
-            .load_session(session_id)
+        let archive = ctx.archive;
+        let (metadata, events) = archive
+            .load(session_id)
             .map_err(|e| ServiceError::LoadFailed(e.to_string()))?;
 
         // Build engine from loaded events with all 4 indices
@@ -177,8 +181,8 @@ impl SessionsService {
     /// - `ListFailed` if the store read fails.
     pub async fn list_sessions(ctx: &SessionsContext<'_>) -> Result<ListResult, ServiceError> {
         let sessions = ctx
-            .store
-            .list_sessions()
+            .archive
+            .list()
             .map_err(|e| ServiceError::ListFailed(e.to_string()))?;
 
         let summaries: Vec<SessionSummary> = sessions
@@ -231,9 +235,9 @@ impl SessionsService {
             }
         }
 
-        let store_ref = ctx.store;
-        store_ref
-            .delete_session(session_id)
+        let archive = ctx.archive;
+        archive
+            .delete(session_id)
             .map_err(|e| ServiceError::DeleteFailed(e.to_string()))?;
 
         let paths_removed = delete_durable_execution_log(
@@ -277,12 +281,35 @@ impl SessionsService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chronos_domain::ports::session::SessionArchive;
     use chronos_domain::{SourceLocation, TraceEvent};
+    use chronos_store::SessionStore;
     use std::collections::HashSet;
+    use std::sync::Arc;
 
-    /// Helper: build a minimal in-memory SessionStore.
+    /// Helper: build a minimal in-memory SessionStore (still used by the
+    /// `SessionStoreBackedSessionArchive` adapter in some tests).
     fn make_store() -> SessionStore {
         SessionStore::in_memory().unwrap()
+    }
+
+    /// Helper: build a leaked-Arc `&'static dyn SessionArchive` backed by a
+    /// fresh `SessionStore`. Mirrors the composition-root wiring.
+    fn make_archive() -> &'static dyn SessionArchive {
+        let store = Arc::new(make_store());
+        let adapter = chronos_store::session_archive::SessionStoreBackedSessionArchive::new(store);
+        Box::leak(Box::new(adapter)) as &'static dyn SessionArchive
+    }
+
+    /// Helper: build a leaked-Arc `&'static dyn SessionArchive` backed by
+    /// the pure in-memory implementation (no SessionStore round-trip).
+    /// Used by tests that want to exercise the port contract without
+    /// touching the SQLite backend.
+    #[allow(dead_code)] // available for future port-contract tests; not exercised yet
+    fn make_in_memory_archive() -> &'static dyn SessionArchive {
+        Box::leak(Box::new(
+            chronos_domain::ports::session::InMemorySessionArchive::new(),
+        )) as &'static dyn SessionArchive
     }
 
     /// Helper: build a HashMap with one engine containing two trace events
@@ -345,13 +372,13 @@ mod tests {
         engines: &'a Mutex<HashMap<String, QueryEngine>>,
         languages: &'a Mutex<HashMap<String, Language>>,
         connected: &'a std::sync::Mutex<HashSet<String>>,
-        store: &'a SessionStore,
+        archive: &'a dyn SessionArchive,
     ) -> SessionsContext<'a> {
         SessionsContext {
             engines,
             session_languages: languages,
             connected_sessions: connected,
-            store,
+            archive,
             execution_log_registry: Box::leak(Box::new(SessionExecutionLogRegistry::new())),
             execution_log_root: Box::leak(Box::new(std::env::temp_dir())),
         }
@@ -363,11 +390,11 @@ mod tests {
 
     #[tokio::test]
     async fn save_session_ok() {
-        let store = make_store();
+        let store = make_archive();
         let engines = make_engines("s1");
         let languages = make_languages();
         let connected = make_connected();
-        let ctx = make_context(&engines, &languages, &connected, &store);
+        let ctx = make_context(&engines, &languages, &connected, store);
 
         let result = SessionsService::save_session(
             "s1",
@@ -391,11 +418,11 @@ mod tests {
 
     #[tokio::test]
     async fn save_session_not_in_memory() {
-        let store = make_store();
+        let store = make_archive();
         let engines = make_engines("s1"); // only s1 exists
         let languages = make_languages();
         let connected = make_connected();
-        let ctx = make_context(&engines, &languages, &connected, &store);
+        let ctx = make_context(&engines, &languages, &connected, store);
 
         let result =
             SessionsService::save_session("s2", Language::C, "main".to_string(), &ctx).await;
@@ -411,10 +438,10 @@ mod tests {
         // Empty engines map — session not in memory
         let engines = Mutex::new(HashMap::new());
 
-        let store = make_store();
+        let store = make_archive();
         let languages = make_languages();
         let connected = make_connected();
-        let ctx = make_context(&engines, &languages, &connected, &store);
+        let ctx = make_context(&engines, &languages, &connected, store);
 
         let result =
             SessionsService::save_session("s1", Language::C, "main".to_string(), &ctx).await;
@@ -432,11 +459,11 @@ mod tests {
     #[tokio::test]
     async fn load_session_ok() {
         // First save a session so we have something to load
-        let store = make_store();
+        let store = make_archive();
         let engines = make_engines("s1");
         let languages = make_languages();
         let connected = make_connected();
-        let ctx = make_context(&engines, &languages, &connected, &store);
+        let ctx = make_context(&engines, &languages, &connected, store);
 
         // Save
         SessionsService::save_session("s1", Language::Go, "./server".to_string(), &ctx)
@@ -465,11 +492,11 @@ mod tests {
 
     #[tokio::test]
     async fn load_session_not_found() {
-        let store = make_store();
+        let store = make_archive();
         let engines = make_engines("s1");
         let languages = make_languages();
         let connected = make_connected();
-        let ctx = make_context(&engines, &languages, &connected, &store);
+        let ctx = make_context(&engines, &languages, &connected, store);
 
         let result = SessionsService::load_session("no-such-session", &ctx).await;
 
@@ -493,11 +520,11 @@ mod tests {
     /// store-side absent-table handling in m9-70 — this test then fails).
     #[tokio::test]
     async fn list_sessions_empty() {
-        let store = make_store();
+        let store = make_archive();
         let engines = make_engines("s1");
         let languages = make_languages();
         let connected = make_connected();
-        let ctx = make_context(&engines, &languages, &connected, &store);
+        let ctx = make_context(&engines, &languages, &connected, store);
 
         let result = SessionsService::list_sessions(&ctx).await.unwrap();
 
@@ -506,11 +533,11 @@ mod tests {
 
     #[tokio::test]
     async fn list_sessions_one() {
-        let store = make_store();
+        let store = make_archive();
         let engines = make_engines("s1");
         let languages = make_languages();
         let connected = make_connected();
-        let ctx = make_context(&engines, &languages, &connected, &store);
+        let ctx = make_context(&engines, &languages, &connected, store);
 
         SessionsService::save_session("s1", Language::Python, "script.py".to_string(), &ctx)
             .await
@@ -541,11 +568,11 @@ mod tests {
     #[tokio::test]
     async fn delete_session_ok() {
         // First save a session
-        let store = make_store();
+        let store = make_archive();
         let engines = make_engines("s1");
         let languages = make_languages();
         let connected = make_connected();
-        let ctx = make_context(&engines, &languages, &connected, &store);
+        let ctx = make_context(&engines, &languages, &connected, store);
 
         SessionsService::save_session("s1", Language::C, "main".to_string(), &ctx)
             .await
@@ -564,11 +591,11 @@ mod tests {
 
     #[tokio::test]
     async fn delete_session_not_found() {
-        let store = make_store();
+        let store = make_archive();
         let engines = make_engines("s1");
         let languages = make_languages();
         let connected = make_connected();
-        let ctx = make_context(&engines, &languages, &connected, &store);
+        let ctx = make_context(&engines, &languages, &connected, store);
 
         let result = SessionsService::delete_session("no-such", &ctx).await;
 
@@ -594,14 +621,14 @@ mod tests {
     ///      refusal happened BEFORE the store.delete_session call.
     #[tokio::test]
     async fn delete_session_refuses_live_session_unit() {
-        let store = make_store();
+        let store = make_archive();
         let engines = make_engines("live-s1");
         let languages = make_languages();
         // Mark the session as live (probe writer attached).
         let mut active = HashSet::new();
         active.insert("live-s1".to_string());
         let connected = std::sync::Mutex::new(active);
-        let ctx = make_context(&engines, &languages, &connected, &store);
+        let ctx = make_context(&engines, &languages, &connected, store);
 
         // First save so the row exists; this simulates a "real" session
         // that the user might want to delete later.
@@ -629,16 +656,16 @@ mod tests {
             ),
         }
 
-        // The store row is still there — the refusal happened BEFORE
+        // The archive row is still there — the refusal happened BEFORE
         // any destructive call.
         let still_there = store
-            .list_sessions()
+            .list()
             .unwrap_or_default()
             .iter()
-            .any(|s| s.session_id == "live-s1");
+            .any(|m| m.session_id == "live-s1");
         assert!(
             still_there,
-            "store row for live-s1 must survive a refused delete"
+            "archive row for live-s1 must survive a refused delete"
         );
     }
 
@@ -649,13 +676,13 @@ mod tests {
     /// stand-in.
     #[tokio::test]
     async fn delete_session_after_unconnected_succeeds() {
-        let store = make_store();
+        let store = make_archive();
         let engines = make_engines("transitions-to-deletable");
         let languages = make_languages();
         let mut active = HashSet::new();
         active.insert("transitions-to-deletable".to_string());
         let connected = std::sync::Mutex::new(active);
-        let ctx = make_context(&engines, &languages, &connected, &store);
+        let ctx = make_context(&engines, &languages, &connected, store);
 
         SessionsService::save_session(
             "transitions-to-deletable",
@@ -695,11 +722,11 @@ mod tests {
 
     #[tokio::test]
     async fn drop_session_existed() {
-        let store = make_store();
+        let store = make_archive();
         let engines = make_engines("s1");
         let languages = make_languages();
         let connected = make_connected();
-        let ctx = make_context(&engines, &languages, &connected, &store);
+        let ctx = make_context(&engines, &languages, &connected, store);
 
         let result = SessionsService::drop_session("s1", &ctx).await.unwrap();
 
@@ -709,11 +736,11 @@ mod tests {
 
     #[tokio::test]
     async fn drop_session_not_found_idempotent() {
-        let store = make_store();
+        let store = make_archive();
         let engines = make_engines("s1"); // only s1 in engines
         let languages = make_languages();
         let connected = make_connected();
-        let ctx = make_context(&engines, &languages, &connected, &store);
+        let ctx = make_context(&engines, &languages, &connected, store);
 
         // Dropping a non-existent session must NOT return an error (idempotent)
         let result = SessionsService::drop_session("s2", &ctx).await.unwrap();
@@ -728,11 +755,11 @@ mod tests {
 
     #[tokio::test]
     async fn save_load_roundtrip() {
-        let store = make_store();
+        let store = make_archive();
         let engines = make_engines("s1");
         let languages = make_languages();
         let connected = make_connected();
-        let ctx = make_context(&engines, &languages, &connected, &store);
+        let ctx = make_context(&engines, &languages, &connected, store);
 
         // Save with known values
         let save_result = SessionsService::save_session(
@@ -764,7 +791,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_sessions_multiple() {
-        let store = make_store();
+        let store = make_archive();
 
         // Create two engines
         let make_engine = |id: &str| -> (String, QueryEngine) {
@@ -811,7 +838,7 @@ mod tests {
 
         let languages = make_languages();
         let connected = make_connected();
-        let ctx = make_context(&engines, &languages, &connected, &store);
+        let ctx = make_context(&engines, &languages, &connected, store);
 
         // Save both
         SessionsService::save_session("s1", Language::Python, "a.py".to_string(), &ctx)

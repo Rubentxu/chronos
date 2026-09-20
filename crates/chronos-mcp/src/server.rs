@@ -115,6 +115,11 @@ pub struct ChronosServer {
     session_languages: Arc<Mutex<HashMap<String, chronos_domain::Language>>>,
     /// Persistent session store.
     store: Arc<SessionStore>,
+    /// `SessionArchive` port (REC-C3.3.3 Tren B). Built from `store` via
+    /// `SessionStoreBackedSessionArchive` at composition time. Services
+    /// consume the port; `store` stays for non-port consumers (probe
+    /// persistence, etc.).
+    archive: Arc<dyn chronos_domain::ports::session::SessionArchive>,
     /// Active background sessions: session_id → events vector.
     /// Tracks pending sessions that are still running in background threads.
     /// Uses `std::sync::Mutex` (not tokio) intentionally: all lock holders are
@@ -1785,10 +1790,13 @@ impl ChronosServer {
         // across all probe sessions; each `create` produces a fresh
         // backend.
         let browser_probe_factory = crate::composition::default_browser_probe_factory();
+        let store_arc = Arc::new(store);
+        let archive = crate::composition::default_session_archive(store_arc.clone());
         Self {
             engines: Arc::new(Mutex::new(HashMap::new())),
             session_languages: Arc::new(Mutex::new(HashMap::new())),
-            store: Arc::new(store),
+            store: store_arc,
+            archive,
             background_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
             connected_sessions: Arc::new(std::sync::Mutex::new(HashSet::new())),
             active_session: Arc::new(Mutex::new(None)),
@@ -1817,27 +1825,32 @@ impl ChronosServer {
     #[cfg(test)]
     pub fn with_toolset(toolset: &str) -> Self {
         match Self::try_open_default_store() {
-            Ok(store) => Self {
-                engines: Arc::new(Mutex::new(HashMap::new())),
-                session_languages: Arc::new(Mutex::new(HashMap::new())),
-                store: Arc::new(store),
-                background_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
-                connected_sessions: Arc::new(std::sync::Mutex::new(HashSet::new())),
-                active_session: Arc::new(Mutex::new(None)),
-                tripwire_manager: Arc::new(TripwireManager::new()),
-                uprobe_counter: Arc::new(std::sync::Mutex::new(HashMap::new())),
-                execution_logs: Arc::new(
-                    chronos_services::session_log::SessionExecutionLogRegistry::new(),
-                ),
-                execution_log_root: chronos_log::resolve_execution_log_root(),
-                projection_meta: Arc::new(Mutex::new(HashMap::new())),
-                live_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
-                live_browser_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
-                degraded: false,
-                active_toolset: toolset.to_string(),
-                uprobe_injector: crate::composition::default_uprobe_injector(),
-                browser_probe_factory: crate::composition::default_browser_probe_factory(),
-            },
+            Ok(store) => {
+                let store_arc = Arc::new(store);
+                let archive = crate::composition::default_session_archive(store_arc.clone());
+                Self {
+                    engines: Arc::new(Mutex::new(HashMap::new())),
+                    session_languages: Arc::new(Mutex::new(HashMap::new())),
+                    store: store_arc,
+                    archive,
+                    background_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
+                    connected_sessions: Arc::new(std::sync::Mutex::new(HashSet::new())),
+                    active_session: Arc::new(Mutex::new(None)),
+                    tripwire_manager: Arc::new(TripwireManager::new()),
+                    uprobe_counter: Arc::new(std::sync::Mutex::new(HashMap::new())),
+                    execution_logs: Arc::new(
+                        chronos_services::session_log::SessionExecutionLogRegistry::new(),
+                    ),
+                    execution_log_root: chronos_log::resolve_execution_log_root(),
+                    projection_meta: Arc::new(Mutex::new(HashMap::new())),
+                    live_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
+                    live_browser_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
+                    degraded: false,
+                    active_toolset: toolset.to_string(),
+                    uprobe_injector: crate::composition::default_uprobe_injector(),
+                    browser_probe_factory: crate::composition::default_browser_probe_factory(),
+                }
+            }
             Err(e) => panic!("{e}"),
         }
     }
@@ -3554,7 +3567,7 @@ impl ChronosServer {
             engines: &self.engines,
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
-            store: &self.store,
+            archive: &*self.archive,
             execution_log_registry: &self.execution_logs,
             execution_log_root: &self.execution_log_root,
         };
@@ -3616,7 +3629,7 @@ impl ChronosServer {
             engines: &self.engines,
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
-            store: &self.store,
+            archive: &*self.archive,
             execution_log_registry: &self.execution_logs,
             execution_log_root: &self.execution_log_root,
         };
@@ -3661,7 +3674,7 @@ impl ChronosServer {
             engines: &self.engines,
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
-            store: &self.store,
+            archive: &*self.archive,
             execution_log_registry: &self.execution_logs,
             execution_log_root: &self.execution_log_root,
         };
@@ -3708,7 +3721,7 @@ impl ChronosServer {
             engines: &self.engines,
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
-            store: &self.store,
+            archive: &*self.archive,
             execution_log_registry: &self.execution_logs,
             execution_log_root: &self.execution_log_root,
         };
@@ -3761,7 +3774,7 @@ impl ChronosServer {
             engines: &self.engines,
             session_languages: &self.session_languages,
             connected_sessions: &self.connected_sessions,
-            store: &self.store,
+            archive: &*self.archive,
             execution_log_registry: &self.execution_logs,
             execution_log_root: &self.execution_log_root,
         };
