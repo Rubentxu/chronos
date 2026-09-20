@@ -18,15 +18,20 @@ use crate::error::ServiceError;
 use crate::output::{
     SessionCompareInput, SessionCompareKind, SessionCompareOutput, SessionCompareProvenance,
 };
+use chronos_domain::ports::diff::DiffEngine;
 use chronos_domain::ports::session_reader::SessionReader;
 
 /// Borrowed handle to the live `SessionReader` port (REC-C3.5-B.3).
 ///
 /// The adapter behind the port is owned by `chronos-mcp::Server`; the
 /// service holds an `Arc<dyn SessionReader>` for the duration of the
-/// call. No locking past the await point.
+/// call. No locking past the await point. The `engine` field was added
+/// by REC-C3.5-residual-inversion R.2 to close the residual edge
+/// `chronos-services -> chronos_store::TraceDiff` when this context is
+/// forwarded to `ChronosDiffService`.
 pub struct SessionCompareContext {
     pub reader: Arc<dyn SessionReader>,
+    pub engine: Arc<dyn DiffEngine>,
 }
 
 /// Stateless holder for the v2 `session_compare` dispatcher.
@@ -70,6 +75,7 @@ impl ChronosSessionCompareService {
         let result = ChronosDiffService::compare_sessions(
             &DiffContext {
                 reader: ctx.reader.clone(),
+                engine: ctx.engine.clone(),
             },
             CompareSessionsInput {
                 session_a,
@@ -102,6 +108,7 @@ impl ChronosSessionCompareService {
         let result = ChronosDiffService::performance_regression_audit(
             &DiffContext {
                 reader: ctx.reader.clone(),
+                engine: ctx.engine.clone(),
             },
             PerformanceRegressionAuditInput {
                 baseline_session_id,
@@ -171,10 +178,15 @@ mod tests {
     }
 
     fn make_ctx(store: std::sync::Arc<SessionStore>) -> SessionCompareContext {
+        use chronos_store::diff_engine_adapter::Blake3DiffEngine;
         use chronos_store::session_reader_adapter::SessionStoreBackedSessionReader;
         let adapter = std::sync::Arc::new(SessionStoreBackedSessionReader::new(store))
             as std::sync::Arc<dyn SessionReader>;
-        SessionCompareContext { reader: adapter }
+        let engine = std::sync::Arc::new(Blake3DiffEngine) as std::sync::Arc<dyn DiffEngine>;
+        SessionCompareContext {
+            reader: adapter,
+            engine,
+        }
     }
 
     fn populate_two_sessions() -> (std::sync::Arc<SessionStore>, String, String) {

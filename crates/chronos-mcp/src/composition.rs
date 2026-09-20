@@ -241,6 +241,18 @@ impl std::error::Error for StoreOpenError {
     }
 }
 
+/// REC-C3.5-residual-inversion R.2 — build the production
+/// [`DiffEngine`] adapter.
+///
+/// The adapter is `Blake3DiffEngine` (BLAKE3 hash-based symmetric
+/// difference), supplied as `Arc<dyn DiffEngine>` so the
+/// `ChronosDiffService::compare_sessions` consumer does not need to
+/// know the concrete type. Zero-size struct, so the construction cost
+/// is a single Arc bump.
+pub fn default_diff_engine() -> Arc<dyn chronos_domain::ports::diff::DiffEngine> {
+    Arc::new(chronos_store::diff_engine_adapter::Blake3DiffEngine)
+}
+
 // =====================================================================
 // Tests for the composition module live in `composition_tests` (below).
 // They exercise `default_store_path` and `allow_in_memory_fallback`

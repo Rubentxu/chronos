@@ -1,11 +1,15 @@
 //! M5 diff & compare algorithms extracted from `chronos-mcp::server`:
 //! `performance_regression_audit` and `compare_sessions`.
 //!
-//! The heavy lifting for `compare_sessions` is already done by
-//! `chronos_store::TraceDiff::compare` (BLAKE3 hash-based set diff,
-//! similarity_pct, address normalization with feature flag). This service
-//! owns the *audit* algorithm (per-function call-count regression detection)
-//! and the LLM-readable `summary` formatter used by both tools.
+//! `compare_sessions` consumes the [`DiffEngine`] port from
+//! `chronos_domain::ports::diff` (REC-C3.5-residual-inversion R.2).
+//! The composition root (`chronos_mcp::composition::default_diff_engine`)
+//! supplies the concrete `Blake3DiffEngine` adapter; this service
+//! holds an `Arc<dyn DiffEngine>` for the duration of the call.
+//!
+//! This service owns the *audit* algorithm (per-function call-count
+//! regression detection) and the LLM-readable `summary` formatter used
+//! by both tools.
 //!
 //! The MCP wrappers at `crates/chronos-mcp/src/server.rs` only:
 //!   1. read params + build `DiffContext`,
@@ -14,25 +18,26 @@
 
 use std::collections::{HashMap, HashSet};
 
+use chronos_domain::ports::diff::DiffEngine;
 use chronos_domain::ports::session_reader::{SessionReader, SessionReaderError};
 use chronos_query::QueryEngine;
-use chronos_store::TraceDiff;
 
 use crate::error::ServiceError;
 use crate::output::{
     CompareSessionsResult, FunctionRegressionEntry, PerformanceRegressionAuditResult,
 };
 
-/// Borrowed handle to the live `SessionReader` port.
+/// Borrowed handle to the live `SessionReader` port + the live
+/// `DiffEngine` port.
 ///
-/// The adapter behind the port is owned by `chronos-mcp::Server`; the
-/// service holds an `Arc<dyn SessionReader>` for the duration of the
-/// call. No locking past the await point. Replaces the previous
-/// `&SessionStore` direct dependency (REC-C3-hexagonal-closure Etapa
-/// B.1). The Arc lets tests construct the reader with `Arc::new(...)`
-/// without lifetime gymnastics.
+/// Both adapters behind the ports are owned by `chronos-mcp::Server`;
+/// the service holds `Arc<dyn ...>` for the duration of the call. No
+/// locking past the await point. The `DiffEngine` field was added by
+/// REC-C3.5-residual-inversion R.2 to close the residual edge
+/// `chronos-services -> chronos-store::TraceDiff`.
 pub struct DiffContext {
     pub reader: std::sync::Arc<dyn SessionReader>,
+    pub engine: std::sync::Arc<dyn DiffEngine>,
 }
 
 #[derive(Debug, Clone)]
@@ -167,9 +172,12 @@ impl ChronosDiffService {
 
     /// Compare two saved sessions and produce a set-diff report.
     ///
-    /// Delegates the heavy lifting to [`chronos_store::TraceDiff::compare`]
-    /// (BLAKE3 hash-based set difference, similarity_pct, address
-    /// normalization). Formats a 3-tier LLM-readable `summary`:
+    /// Delegates the heavy lifting to the [`DiffEngine`] port via
+    /// `ctx.engine` (BLAKE3 hash-based set difference,
+    /// similarity_pct). The composition root
+    /// (`chronos_mcp::composition::default_diff_engine`) supplies the
+    /// `Blake3DiffEngine` adapter. Formats a 3-tier LLM-readable
+    /// `summary`:
     ///   - `>= 90%` similar   => "Sessions are highly similar..."
     ///   - `>= 50%` similar   => "Sessions differ in N events..."
     ///   - `< 50%` similar    => "Sessions are largely different..."
@@ -186,7 +194,7 @@ impl ChronosDiffService {
             .load_session(&input.session_b)
             .map_err(|e| map_load_error(e, &input.session_b))?;
 
-        let report = TraceDiff::compare(
+        let report = ctx.engine.compare(
             &input.session_a,
             &input.session_b,
             &events_a,
@@ -303,10 +311,16 @@ mod tests {
     /// Use this when the test seeds sessions into a specific store
     /// before exercising the service.
     fn make_ctx_with_arc(store: std::sync::Arc<SessionStore>) -> DiffContext {
+        use chronos_domain::ports::diff::DiffEngine;
+        use chronos_store::diff_engine_adapter::Blake3DiffEngine;
         use chronos_store::session_reader_adapter::SessionStoreBackedSessionReader;
         let adapter = std::sync::Arc::new(SessionStoreBackedSessionReader::new(store))
             as std::sync::Arc<dyn chronos_domain::ports::session_reader::SessionReader>;
-        DiffContext { reader: adapter }
+        let engine = std::sync::Arc::new(Blake3DiffEngine) as std::sync::Arc<dyn DiffEngine>;
+        DiffContext {
+            reader: adapter,
+            engine,
+        }
     }
 
     #[test]

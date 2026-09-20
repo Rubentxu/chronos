@@ -120,6 +120,12 @@ pub struct ChronosServer {
     /// consume the port; `store` stays for non-port consumers (probe
     /// persistence, etc.).
     reader: Arc<dyn chronos_domain::ports::session_reader::SessionReader>,
+    /// `DiffEngine` port (REC-C3.5-residual-inversion R.2). Built once
+    /// at composition time via `default_diff_engine()`. Services
+    /// (`ChronosDiffService::compare_sessions`,
+    /// `ChronosSessionCompareService::compare`) consume the port; the
+    /// store stays out of the production code path.
+    diff_engine: Arc<dyn chronos_domain::ports::diff::DiffEngine>,
     /// `LifecycleStore` port (REC-C3.5-B.4). Extends `SessionReader` with
     /// write-side methods (`save_session_meta`, `delete_session`) needed by
     /// `SessionLifecycleService`. Built from `store` via
@@ -1849,6 +1855,7 @@ impl ChronosServer {
                 store_arc.clone(),
             ),
         );
+        let diff_engine = crate::composition::default_diff_engine();
         let lifecycle_store: Arc<dyn chronos_domain::ports::lifecycle_store::LifecycleStore> =
             Arc::new(
                 chronos_store::lifecycle_store_adapter::SessionStoreBackedLifecycleStore::new(
@@ -1863,6 +1870,7 @@ impl ChronosServer {
             session_languages: Arc::new(Mutex::new(HashMap::new())),
             store: store_arc,
             reader,
+            diff_engine,
             lifecycle_store,
             counterexample_repository,
             archive,
@@ -1903,6 +1911,7 @@ impl ChronosServer {
                             store_arc.clone(),
                         ),
                     );
+                let diff_engine = crate::composition::default_diff_engine();
                 let lifecycle_store: Arc<
                     dyn chronos_domain::ports::lifecycle_store::LifecycleStore,
                 > = Arc::new(
@@ -1918,6 +1927,7 @@ impl ChronosServer {
                     session_languages: Arc::new(Mutex::new(HashMap::new())),
                     store: store_arc,
                     reader,
+                    diff_engine,
                     lifecycle_store,
                     counterexample_repository,
                     archive,
@@ -5942,6 +5952,7 @@ further would be a Silent Lie."
         let params = params.0;
         let ctx = chronos_services::session_compare::SessionCompareContext {
             reader: Arc::clone(&self.reader),
+            engine: Arc::clone(&self.diff_engine),
         };
         let v2_params = SessionCompareParams {
             kind: "regression".to_string(),
@@ -5963,6 +5974,7 @@ further would be a Silent Lie."
         let params = params.0;
         let ctx = chronos_services::session_compare::SessionCompareContext {
             reader: Arc::clone(&self.reader),
+            engine: Arc::clone(&self.diff_engine),
         };
         let v2_params = SessionCompareParams {
             kind: "divergence".to_string(),
@@ -5984,6 +5996,7 @@ further would be a Silent Lie."
         let params = params.0;
         let ctx = chronos_services::session_compare::SessionCompareContext {
             reader: Arc::clone(&self.reader),
+            engine: Arc::clone(&self.diff_engine),
         };
         Self::dispatch_session_compare(&ctx, params, SessionCompareWire::V2Envelope).await
     }

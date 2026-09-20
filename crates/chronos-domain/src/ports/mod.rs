@@ -15,6 +15,7 @@
 
 pub mod browser_probe;
 pub mod counterexample;
+pub mod diff;
 pub mod execution_log;
 pub mod execution_log_factory;
 pub mod execution_log_maintenance;
@@ -32,6 +33,7 @@ pub use counterexample::{
     CounterexampleBundleFilter, CounterexampleBundleRecord, CounterexampleBundleSummary,
     CounterexampleRepository, CounterexampleRepositoryError, InMemoryCounterexampleRepository,
 };
+pub use diff::{DiffEngine, DiffReport, TimingDelta};
 pub use execution_log::{
     ExecutionLogError, ExecutionLogKind, ExecutionLogPage, ExecutionLogProvider,
 };
