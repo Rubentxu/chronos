@@ -26,7 +26,7 @@
 
 use std::fmt;
 
-use crate::ports::session_reader::{SessionReader, SessionReaderError};
+use crate::ports::session_reader::SessionReader;
 use crate::session::SessionMetadata;
 use crate::trace::TraceEvent;
 
