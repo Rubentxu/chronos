@@ -1,6 +1,6 @@
 version = 1
 updated = "2026-09-18"
-active_gate = "REC-C3"
+active_gate = "REC-C4"
 
 # Gate history (rec-c1 + rec-c2 stream closures):
 #   REC-C1.7 = closed on tag rec-c1-7-projection-authority-acceptance
