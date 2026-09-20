@@ -114,6 +114,13 @@ pub fn in_memory_session_archive() -> Arc<dyn chronos_domain::ports::session::Se
 
 /// REC-C3.3.3 (Tren B slice D) — build the production
 /// `CounterexampleRepository`.
+///
+/// **EXPERIMENTAL (FIND-TB-AUDIT-2026-09-20)**: this port currently has
+/// NO production consumer. `ChronosCounterexampleService` still uses
+/// `&SessionStore` directly. The adapter is correct and the factory
+/// works, but per audit §13 ("no abstraction without a real consumer"),
+/// this is filed as experimental until a real service-side rewire lands.
+/// See `apply-checkpoint.json` `carry_forward_debt` (C33.3-TB-DEBT-01).
 pub fn default_counterexample_repository(
     store: Arc<SessionStore>,
 ) -> Arc<dyn chronos_domain::ports::counterexample::CounterexampleRepository> {
@@ -123,6 +130,7 @@ pub fn default_counterexample_repository(
 
 /// REC-C3.3.3 (Tren B slice D) — build an in-memory
 /// `CounterexampleRepository` for tests and degraded mode.
+/// See `default_counterexample_repository` for the experimental-status note.
 pub fn in_memory_counterexample_repository(
 ) -> Arc<dyn chronos_domain::ports::counterexample::CounterexampleRepository> {
     chronos_domain::ports::counterexample::InMemoryCounterexampleRepository::new().into_arc()
