@@ -3,12 +3,12 @@
   "cycle_id": "rec-c3.3-train-b",
   "title": "REC-C3.3.3 (Tren B): Native probe mcp tool surface — service-port expansion",
   "summary": "REC-C3.3.3 (Tren B): introduce capture_session (single-shot probe compose) + probe_advance + probe_step MCP tools; route save_session/load_session/list_sessions/delete_session through a new SessionArchive port; route counterexample_* tools through a new CounterexampleRepository port; lift SessionMetadata from chronos-store::storage.rs:22 to chronos-domain (mirrors C3.3.1 SessionId lift). CRITICAL CORRECTION: Tren A (REC-C3.3.2) did NOT introduce capture_session as an MCP tool (zero hits in crates/); the previous apply-checkpoint summary line was incorrect. capture_session is a Tren B deliverable.",
-  "status": "apply_in_progress",
+  "status": "apply_complete_pending_capture_session",
   "created_at": "2026-09-19T10:45:00Z",
   "resumed_at": "2026-09-20T07:50:00Z",
   "branch": "feat/rec-c3.3-train-b",
   "base_sha": "fa5eb5827e997c874047c6c2318ad2b5b1c8f323",
-  "head_sha": "d7cdbae9b6013ff047136e116fd35044ad38ecd5",
+  "head_sha": "8327324354d4814eb5b2dd01c2b441908e93cfcd",
   "merge_sha": null,
   "path": "A-min",
   "route": "A-min",
@@ -164,6 +164,13 @@
       "owner_cycle": "follow-up slice",
       "severity": "low",
       "priority": "P3"
+    },
+    {
+      "id": "C33.3-TB-DEBT-04",
+      "description": "capture_session MCP tool NOT wired (sandbox test capture_session_tool_not_yet_wired_in_slice_b still asserts it fails). Original Tren B proposal listed it as a deliverable but the task-graph (7 slices A..G) did NOT include it; Tren A (REC-C3.3.2) also did not implement it (B9 correction). CaptureService + capture_session handler need a dedicated cycle.",
+      "owner_cycle": "REC-C3.3.4 (proposed follow-up cycle)",
+      "severity": "high",
+      "priority": "P1"
     }
   ],
   "tier_results": {
@@ -202,8 +209,8 @@
     "Slice D (ac999bc4): CounterexampleRepository port with owned CounterexampleBundleFilter (Q3 dropped 'a borrow). Critical B9-honest decision: minimised/target_hypothesis exposed as Option<Vec<u8>> opaque bytes because store types are enums (MinimisedPayload::Constant/Predicate/CallPath); adapter bincode-decodes with warn-and-pass-None fallback for forward compat.",
     "Slice E partial (c96d513a): Deliberate split. This commit adds NativeProbeBackend::advance/step + ProbeService::advance/step + AdvanceOutput/StepOutput + ServiceError::{SessionRunning, SessionStopped} + From<TraceError> + server.rs exhaustiveness fix. The full rewire of SessionsService/ChronosCounterexampleService to the new ports is DEFERRED to follow-up.",
     "Slice G (d6509b9a): probe_advance + probe_step MCP handlers added in server.rs (SF9 section). Both return JSON-encoded AdvanceOutput/StepOutput on success. ProbeNotFound -> session_not_found; SessionStopped -> session_stopped (advance requires paused); SessionRunning -> session_running (step requires paused). Bug fix en route: text_content returns Vec<Annotated<RawContent>>, not Vec<Vec<...>>; flattened success(text_content(...)). Sandbox tests flipped from RED (_not_yet_wired_in_slice_b) to GREEN (_is_wired_in_slice_g). 4/4 passed in 80.82s.",
-    "Slices B, C, D, E-partial, G, F+E-rewire committed cleanly (6 commits since resumption). Slice capture_session MCP handler still pending — the tool surface was scaffolded (test for 'not_yet_wired_in_slice_b' passes) but the actual handler is the next deliverable.",
-    "Carry-forward debt updated: C33.3-TB-DEBT-01 (counterexample port rewire; P2), C33.3-TB-DEBT-02 (CounterexampleBundleFilter opaque fields; P3).",
+    "Slices B, C, D, E-partial, G, F+E-rewire committed cleanly (6 commits since resumption). capture_session MCP handler was NOT in the 7-slice task-graph — recorded as C33.3-TB-DEBT-04 (high/P1) with proposed follow-up cycle REC-C3.3.4. Sandbox test capture_session_tool_not_yet_wired_in_slice_b still passes (asserting method-not-found), which is the honest baseline.",
+    "Carry-forward debt updated: C33.3-TB-DEBT-01 (counterexample port rewire; P2), C33.3-TB-DEBT-02 (CounterexampleBundleFilter opaque fields; P3), C33.3-TB-DEBT-04 (capture_session MCP tool; P1 — high).",
     "Honest-by-design: R4 release gate previously failed without explicit root cause; will need explicit log evidence at release time (memory correction). No #[ignore], no --skip, no waiver (B5)."
   ],
   "ledger_progression": [
@@ -285,7 +292,7 @@
     "spec": true,
     "design": false,
     "tasks": true,
-    "apply": "in_progress (6 of 7 slices complete: A, B, C, D, E-partial, F+E-rewire, G; pending: capture_session MCP handler + counterexample port rewire)",
+    "apply": "in_progress (6 of 7 task-graph slices complete: A, B, C, D, E-partial, F+E-rewire, G; capture_session is NOT a task-graph slice — recorded as C33.3-TB-DEBT-04)",
     "verify": false,
     "debt_verify": false,
     "release": false,
