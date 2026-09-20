@@ -1,0 +1,28 @@
+{
+  "cycle": "rec-c4-solid-connascence",
+  "branch": "feat/rec-c4-solid-connascence",
+  "date": "2026-09-20",
+  "slices": [
+    {"id": "C4.1", "commit": "6c2e0d36", "contract": "SOLID-001", "result": "gap->partial", "verified": true},
+    {"id": "C4.2", "commit": "e901f285", "contract": "CONN-001", "result": "partial (notes updated)", "verified": true},
+    {"id": "C4.3", "commit": "ff559f31", "contract": "CONN-002", "result": "partial (notes updated)", "verified": true}
+  ],
+  "gates": {
+    "fmt": "ok",
+    "clippy_-D_warnings_workspace": "ok",
+    "domain_lib": "173 passed 0 failed",
+    "native_lib_serial": "109 passed 0 failed",
+    "workspace_lib_excluding_sandbox_e2e_native": "16 suites all ok",
+    "mcp_tests": "109 passed 0 failed",
+    "services_tests": "391 passed 0 failed",
+    "t4_smoke": "e2e_connectivity 1 passed; analytics_tools serial 4 passed (after binary rebuild)",
+    "architecture_contracts": "PASSED",
+    "hex_boundary": "clean"
+  },
+  "pre_existing_debt": ["DEBT-C4-01", "DEBT-C4-02", "DEBT-C4-03", "DEBT-C4-04"],
+  "surprises": [
+    "analytics_tools initial 4/4 failure was a stale build artifact (target dir poisoned by /tmp/origin-main-test ebpf paths); clean after rebuild",
+    "known ptrace parallel flake (AGENTS.md 6.5) hit once; serial clean"
+  ],
+  "verdict": "PASS"
+}

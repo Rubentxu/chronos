@@ -216,11 +216,14 @@ The detailed plan is `../reconstruction/CONVERGENCE_PLAN.md`.
 
 ## REC-C4 — SOLID and connascence reduction
 
-- split broad TraceAdapter by capabilities;
+Status: DONE (cycle rec-c4-solid-connascence, tag `3a572db4`, 2026-09-20).
+
+- split broad TraceAdapter by capabilities; ✅ C4.1 CaptureLifecycle + DebugInspect blanket split (SOLID-001 gap→partial)
 - capability-first agent planning;
-- typed identities;
-- separate sequence/monotonic/wall-clock semantics;
-- eliminate drain/merge/rebuild ordering coupling.
+- typed identities; ✅ C4.3 SubscriptionId typed MCP→services (CONN-002 partial; probe_id pending)
+- separate sequence/monotonic/wall-clock semantics; ✅ C4.2 MonotonicNs + WallClockMs newtypes (CONN-001 partial; chronos-log boundary pending)
+- eliminate drain/merge/rebuild ordering coupling. (not in C4 scope; deferred)
+- new pre-existing debt: DEBT-C4-01..04 (see vault maintenance/debt-ledger.md)
 
 ## REC-C5 — Agent API convergence
 

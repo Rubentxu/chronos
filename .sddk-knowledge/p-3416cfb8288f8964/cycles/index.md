@@ -25,6 +25,8 @@ Append-only index of all completed cycles in this vault.
 | m10 | m10-stale-branch-cleanup-2 | B-direct | — | `5a76fd1d17f363a36cc62969dffcca0280ce9c7d` | CLOSED |
 | m10 | m10-roadmap-reconcile | B-direct | — | `7130cf6e4dc8545d8ddf6108048f1ca914209c61` | CLOSED |
 | m10 | m10-vault-index-reconcile | B-direct | — | `dee1a3d328ad06f5e710afbfcde9887d5d9bbf69` | CLOSED |
+| rec | rec-c3-hexagonal-closure | A-lite | rec-c3.5-residual-inversion | `75d04447` | CLOSED |
+| rec | rec-c4-solid-connascence | A-lite | rec-c4-solid-connascence | `3a572db4` | CLOSED |
 | m9-03-side-table-debt-cleanup | m9-03-side-table-debt-cleanup | B-direct | — | `2c98ce9a1df65d44ae865376fee46eb0d95ac425` | CLOSED |
 | m9-04-side-table-key-layout | m9-04-side-table-key-layout | B-direct | — | `d6b3b8c51c50d2ce6d0fe4f8c804cf793137f0dc` | CLOSED |
 | m9-05-side-table-overeng-cleanup | m9-05-side-table-overeng-cleanup | B-direct | — | `07d01d5869ff6e3ffed29315b761e6e476f3b70d` | CLOSED |
@@ -147,9 +149,9 @@ See `changes/archive/` for full archive manifests of closed cycles.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-17T20:07Z |
+| Last updated | 2026-09-20T20:15Z |
 | Total cycles | 98 |
 | m10 cycles | 13 (rows above) |
 | m1 cycles | 2 (m1-execution-log-vertical-slice, m1-gap-segment-accounting-repair) |
 | rec-c1 cycles | 4 (rec-c1-5-closure, rec-c1-6-lifecycle-retention-wire, rec-c1-7-projection-authority-acceptance, rec-c1-8-authoritative-evidence-handoff) |
-| Last archive | rec-c2.2-accepted-raw-seam (apply-checkpoint archive_status=ready; durable knowledge sync deferred to gov-* cycle per CC#39) |
+| rec cycles (c3+) | rec-c3-hexagonal-closure (+c3.5, tag `75d04447`), rec-c4-solid-connascence (tag `3a572db4`) — CLOSED |
