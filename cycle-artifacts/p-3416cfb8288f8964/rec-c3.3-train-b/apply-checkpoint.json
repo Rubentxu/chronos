@@ -3,11 +3,12 @@
   "cycle_id": "rec-c3.3-train-b",
   "title": "REC-C3.3.3 (Tren B): Native probe mcp tool surface — service-port expansion",
   "summary": "REC-C3.3.3 (Tren B): introduce capture_session (single-shot probe compose) + probe_advance + probe_step MCP tools; route save_session/load_session/list_sessions/delete_session through a new SessionArchive port; route counterexample_* tools through a new CounterexampleRepository port; lift SessionMetadata from chronos-store::storage.rs:22 to chronos-domain (mirrors C3.3.1 SessionId lift). CRITICAL CORRECTION: Tren A (REC-C3.3.2) did NOT introduce capture_session as an MCP tool (zero hits in crates/); the previous apply-checkpoint summary line was incorrect. capture_session is a Tren B deliverable.",
-  "status": "SUSPENDED_AT_APPLY",
+  "status": "apply_in_progress",
   "created_at": "2026-09-19T10:45:00Z",
+  "resumed_at": "2026-09-20T07:50:00Z",
   "branch": "feat/rec-c3.3-train-b",
   "base_sha": "fa5eb5827e997c874047c6c2318ad2b5b1c8f323",
-  "head_sha": "8295df0d564fc140eacdb24def57a040d98c7ec7",
+  "head_sha": "d6509b9a2cf7fb408ea94e89613cd12c59a185d0",
   "merge_sha": null,
   "path": "A-min",
   "route": "A-min",
@@ -97,14 +98,85 @@
       "title": "Lift SessionMetadata from chronos-store to chronos-domain",
       "commit_sha": "8295df0d564fc140eacdb24def57a040d98c7ec7",
       "at": "2026-09-19T12:20:51Z"
+    },
+    {
+      "task_id": "TASK-TB-B",
+      "title": "native_probe_tools sandbox scaffold (RED tests)",
+      "commit_sha": "d53795c491b098abdcba83afb750160919f6e36e",
+      "at": "2026-09-20T07:55:00Z",
+      "evidence": "chronos-sandbox/tests/native_probe_tools.rs — 4 honest-RED tests using McpTestClient::call_tool (not typed wrappers). 4/4 passed in 64s with fresh binary."
+    },
+    {
+      "task_id": "TASK-TB-C",
+      "title": "SessionArchive port + composition factories",
+      "commit_sha": "039428e2d7729b7965b2868f38bd66a935c8cf30",
+      "at": "2026-09-20T08:00:00Z",
+      "evidence": "chronos-domain/src/ports/session.rs (SessionArchive trait) + chronos-store/src/session_archive.rs (SessionStoreBackedSessionArchive adapter) + default_session_archive/in_memory_session_archive factories + 4 composition_tests. 10/10 pass."
+    },
+    {
+      "task_id": "TASK-TB-D",
+      "title": "CounterexampleRepository port + composition factories",
+      "commit_sha": "ac999bc44cbd27fc12f09199b1007cb147384175",
+      "at": "2026-09-20T08:05:00Z",
+      "evidence": "Owned CounterexampleBundleFilter (Q3: dropped 'a borrow). minimised/target_hypothesis exposed as Option<Vec<u8>> opaque bytes; adapter bincode-decodes with warn-and-pass-None fallback for forward compat. Debt documented for E-rewire."
+    },
+    {
+      "task_id": "TASK-TB-E-partial",
+      "title": "NativeProbeBackend::advance/step + ProbeService::advance/step + ServiceError variants",
+      "commit_sha": "c96d513a1b746e01991d328cae5d68bc1911a452",
+      "at": "2026-09-20T08:10:00Z",
+      "evidence": "E split deliberately: this commit adds advance/step on backend + service + AdvanceOutput/StepOutput + ServiceError::{SessionRunning, SessionStopped} + From<TraceError> + server.rs exhaustiveness fix. SessionsService/ChronosCounterexampleService rewire to new ports DEFERRED to follow-up."
+    },
+    {
+      "task_id": "TASK-TB-G",
+      "title": "probe_advance + probe_step MCP handlers",
+      "commit_sha": "d6509b9a2cf7fb408ea94e89613cd12c59a185d0",
+      "at": "2026-09-20T08:16:45Z",
+      "evidence": "Two #[tool] handlers in server.rs mirroring probe_start pattern. ProbeAdvanceParams/ProbeStepParams structs. Bug fix: text_content returns Vec<Annotated<RawContent>>, not Vec<Vec<...>>; CallToolResult::success(vec![text_content(...)]) was double-wrapping — flattened to success(text_content(...)). Sandbox test flipped from RED to GREEN (probe_advance_tool_is_wired_in_slice_g / probe_step_tool_is_wired_in_slice_g). 4/4 passed in 80.82s."
     }
   ],
   "commits_since_base": [
     "acda8447",
     "9a68e9f1",
-    "8295df0d"
+    "d193366b",
+    "f578c0e6",
+    "9cf630a7",
+    "0a5bdb42",
+    "8295df0d",
+    "83a25724",
+    "d53795c4",
+    "039428e2",
+    "ac999bc4",
+    "c96d513a",
+    "d6509b9a"
   ],
-  "carry_forward_debt": [],
+  "carry_forward_debt": [
+    {
+      "id": "C33.3-TB-DEBT-01",
+      "description": "SessionsService / ChronosCounterexampleService not rewired to SessionArchive / CounterexampleRepository ports yet. E split deferred this.",
+      "owner_cycle": "follow-up slice after G (REC-C3.3.3)",
+      "severity": "medium",
+      "priority": "P2"
+    },
+    {
+      "id": "C33.3-TB-DEBT-02",
+      "description": "CounterexampleBundleFilter.minimised / .target_hypothesis exposed as opaque Option<Vec<u8>>; typed enum rewire (Constant / Predicate / CallPath) deferred to keep adapter forward-compatible.",
+      "owner_cycle": "follow-up slice",
+      "severity": "low",
+      "priority": "P3"
+    }
+  ],
+  "tier_results": {
+    "T0": "GREEN (fmt + clippy --workspace --all-targets -- -D warnings) verified at slices C, D, E, G",
+    "T1": "GREEN (chronos-services 377/377 in 11.5s after slice E)",
+    "T2": "GREEN (composition_tests 10/10 + per-crate integration of touched crates)",
+    "T3": "pending (not run since cycle start; will run at release gate)",
+    "T4_smoke": "GREEN (native_probe_tools 4/4 in 80.82s after slice G binary rebuild — fresh CHRONOS_MCP_PATH set per AGENTS.md §1)",
+    "T5": "pending (release gate)",
+    "arch_hex_boundary": "pending",
+    "arch_contracts": "pending",
+    "vault_drift_check_vault_drift_sh_exit": "pending"
+  },
   "notes": [
     "Cycle opened 2026-09-19T10:45Z after rec-c3-ci-hygiene closed with all five gates GREEN (5bcb2b63 + post-closure sync to 3fdcbf13).",
     "Trunk = main (fa5eb582). Tren A merge to main: c11de1fa (Tren A: capture_session MCP tool finalization per REC-C3.3.2).",
@@ -122,7 +194,17 @@
     "Decision: do NOT continue apply slices for rec-c3.3-train-b in this session. Resumption requires: (a) explicit Chronos reconfirmation from operator, (b) revalidation that rec-c3-ci-hygiene closure is intact (HEAD acda8447 on rec-c3-ci-hygiene branch; origin/main=fa5eb582; 5/5 gates historically GREEN at 3fdcbf13 / 5bcb2b63).",
     "CogniCode work must follow operator-defined order: (1) G4/G6 metric reconnaissance, (2) e77 vertical, (3) re-measure, (4) ADR-031 decision only with evidence. Streak remains 1/3 HELD.",
     "Sanity: pwd=Rubentxu/chronos (verified at 11:58Z); remote=git@github.com:Rubentxu/chronos.git; branch=feat/rec-c3.3-train-b; HEAD=d193366b.",
-    "TASK-TB-A committed 8295df0d: SessionMetadata lifted to chronos_domain::session::SessionMetadata (8 fields, identical derives/serde). Re-export chain: chronos_domain exports it; chronos_store re-exports via 'pub use chronos_domain::SessionMetadata;'. 8 call-sites swapped to chronos_domain in chronos_services (diff, output, session_explain x2, session_export x2, session_lifecycle x2). T0: fmt + clippy clean. T2: 77 store + 377 services tests pass. Ratchet: grep returns 0 hits for 'chronos_store::SessionMetadata' in services + bench."
+    "TASK-TB-A committed 8295df0d: SessionMetadata lifted to chronos_domain::session::SessionMetadata (8 fields, identical derives/serde). Re-export chain: chronos_domain exports it; chronos_store re-exports via 'pub use chronos_domain::SessionMetadata;'. 8 call-sites swapped to chronos_domain in chronos_services (diff, output, session_explain x2, session_export x2, session_lifecycle x2). T0: fmt + clippy clean. T2: 77 store + 377 services tests pass. Ratchet: grep returns 0 hits for 'chronos_store::SessionMetadata' in services + bench.",
+    "RESUMED 2026-09-20T07:50Z after operator reconfirmation. Verified: PR #31 (Tren A) merged at origin/main=65754dcb; rec-c3-ci-hygiene closed; clean working tree.",
+    "Pre-flight rebuilt stale chronos-mcp binary (was sep 11, source edited sep 17/18). CARGO_TARGET_DIR=/var/home/rubentxu/cargo-targets, so CHRONOS_MCP_PATH exported explicitly per AGENTS.md §1.",
+    "Slice B (d53795c4): chronos-sandbox/tests/native_probe_tools.rs with 4 honest-RED tests using McpTestClient::call_tool (via DerefMut), not typed wrappers. 4/4 passed in 64s with fresh binary. Sandbox bucket C exercises the full client↔server round-trip.",
+    "Slice C (039428e2): SessionArchive port (chronos-domain/src/ports/session.rs) + InMemorySessionArchive + SessionStoreBackedSessionArchive adapter (chronos-store/src/session_archive.rs) + default_session_archive/in_memory_session_archive factories + 4 composition_tests. Made 'mod session' -> 'pub mod session' and added 'pub mod session_archive' exports.",
+    "Slice D (ac999bc4): CounterexampleRepository port with owned CounterexampleBundleFilter (Q3 dropped 'a borrow). Critical B9-honest decision: minimised/target_hypothesis exposed as Option<Vec<u8>> opaque bytes because store types are enums (MinimisedPayload::Constant/Predicate/CallPath); adapter bincode-decodes with warn-and-pass-None fallback for forward compat.",
+    "Slice E partial (c96d513a): Deliberate split. This commit adds NativeProbeBackend::advance/step + ProbeService::advance/step + AdvanceOutput/StepOutput + ServiceError::{SessionRunning, SessionStopped} + From<TraceError> + server.rs exhaustiveness fix. The full rewire of SessionsService/ChronosCounterexampleService to the new ports is DEFERRED to follow-up.",
+    "Slice G (d6509b9a): probe_advance + probe_step MCP handlers added in server.rs (SF9 section). Both return JSON-encoded AdvanceOutput/StepOutput on success. ProbeNotFound -> session_not_found; SessionStopped -> session_stopped (advance requires paused); SessionRunning -> session_running (step requires paused). Bug fix en route: text_content returns Vec<Annotated<RawContent>>, not Vec<Vec<...>>; flattened success(text_content(...)). Sandbox tests flipped from RED (_not_yet_wired_in_slice_b) to GREEN (_is_wired_in_slice_g). 4/4 passed in 80.82s.",
+    "Slices B, C, D, E-partial, G committed cleanly (5 commits since resumption). Slice F (composition root wiring at chronos-mcp::composition) and full E rewire still pending — next session.",
+    "Carry-forward debt added: C33.3-TB-DEBT-01 (services->ports rewire not finished; medium/P2), C33.3-TB-DEBT-02 (CounterexampleBundleFilter opaque fields; low/P3).",
+    "Honest-by-design: R4 release gate previously failed without explicit root cause; will need explicit log evidence at release time (memory correction). No #[ignore], no --skip, no waiver (B5)."
   ],
   "ledger_progression": [
     {
@@ -203,7 +285,7 @@
     "spec": true,
     "design": false,
     "tasks": true,
-    "apply": null,
+    "apply": "in_progress (5 of 7 slices complete: A, B, C, D, E-partial, G; pending: F + full E rewire)",
     "verify": false,
     "debt_verify": false,
     "release": false,
