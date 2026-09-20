@@ -76,13 +76,14 @@ impl Default for CapturePipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chronos_domain::MonotonicNs;
 
     #[tokio::test]
     async fn test_pipeline_send_receive() {
         let mut pipeline = CapturePipeline::with_capacity(100);
         let mut rx = pipeline.take_receiver().unwrap();
 
-        let event = TraceEvent::function_entry(1, 100, 1, "main", 0x1000);
+        let event = TraceEvent::function_entry(1, MonotonicNs::from(100), 1, "main", 0x1000);
         pipeline.send(event.clone()).await.unwrap();
 
         let received = rx.recv().await.unwrap();
@@ -95,15 +96,33 @@ mod tests {
 
         // Fill the channel
         assert!(pipeline
-            .try_send(TraceEvent::function_entry(1, 100, 1, "a", 0x1))
+            .try_send(TraceEvent::function_entry(
+                1,
+                MonotonicNs::from(100),
+                1,
+                "a",
+                0x1
+            ))
             .unwrap());
         assert!(pipeline
-            .try_send(TraceEvent::function_entry(2, 200, 1, "b", 0x2))
+            .try_send(TraceEvent::function_entry(
+                2,
+                MonotonicNs::from(200),
+                1,
+                "b",
+                0x2
+            ))
             .unwrap());
 
         // Channel is full, backpressure
         assert!(!pipeline
-            .try_send(TraceEvent::function_entry(3, 300, 1, "c", 0x3))
+            .try_send(TraceEvent::function_entry(
+                3,
+                MonotonicNs::from(300),
+                1,
+                "c",
+                0x3
+            ))
             .unwrap());
     }
 

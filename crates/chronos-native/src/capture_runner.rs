@@ -16,7 +16,7 @@ use crate::invocation_tracker::InvocationTracker;
 use crate::native_adapter::NativeAdapter;
 use crate::ptrace_tracer::{PtraceConfig, PtraceEvent, PtraceTracer};
 use crate::symbol_resolver::SymbolResolver;
-use chronos_domain::{CaptureConfig, Language, SourceLocation, SymbolId, TraceEvent};
+use chronos_domain::{CaptureConfig, Language, MonotonicNs, SourceLocation, SymbolId, TraceEvent};
 use nix::sys::ptrace;
 use nix::unistd::Pid;
 use std::collections::HashMap;
@@ -534,10 +534,12 @@ fn run_capture_loop(
             }
         };
 
-        let timestamp_ns = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos() as u64;
+        let timestamp_ns = MonotonicNs::from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos() as u64,
+        );
 
         // --- Function entry detection --------------------------------
         // Check if this is a SIGTRAP stop at a known function entry address.

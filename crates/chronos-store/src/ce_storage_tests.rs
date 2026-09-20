@@ -677,7 +677,7 @@ fn make_event(id: u64, func: &str) -> chronos_domain::TraceEvent {
     use chronos_domain::{EventData, EventType, SourceLocation};
     chronos_domain::TraceEvent::new(
         id,
-        id * 100,
+        chronos_domain::MonotonicNs::from(id * 100),
         1,
         EventType::FunctionEntry,
         SourceLocation::new("test.rs", 10, func, 0x1000 + id),

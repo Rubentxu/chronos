@@ -9,8 +9,92 @@ use uuid::Uuid;
 /// Unique identifier for events within a session.
 pub type EventId = u64;
 
-/// Timestamp in nanoseconds since session start.
-pub type TimestampNs = u64;
+/// Timestamp in nanoseconds on the session's monotonic clock (since
+/// session start).
+///
+/// Newtype over `u64` (REC-C4 CONN-001): replaces connascence-of-name on
+/// bare `u64` timestamps with a typed clock domain. Wire/on-disk
+/// representation is identical to plain `u64` (`#[serde(transparent)]`).
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    Default,
+    JsonSchema,
+)]
+#[repr(transparent)]
+#[serde(transparent)]
+pub struct MonotonicNs(pub u64);
+
+impl MonotonicNs {
+    /// Return the raw nanosecond count.
+    pub const fn as_u64(self) -> u64 {
+        self.0
+    }
+
+    /// Alias of [`MonotonicNs::as_u64`].
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+impl From<u64> for MonotonicNs {
+    fn from(ns: u64) -> Self {
+        Self(ns)
+    }
+}
+
+/// Milliseconds since the Unix epoch (wall clock).
+///
+/// Distinct clock domain from [`MonotonicNs`] (REC-C4 CONN-001): the two
+/// are not interchangeable, which is exactly the point. Wire/on-disk
+/// representation is identical to plain `u64` (`#[serde(transparent)]`).
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    Default,
+    JsonSchema,
+)]
+#[repr(transparent)]
+#[serde(transparent)]
+pub struct WallClockMs(pub u64);
+
+impl WallClockMs {
+    /// Return the raw millisecond count.
+    pub const fn as_u64(self) -> u64 {
+        self.0
+    }
+
+    /// Alias of [`WallClockMs::as_u64`].
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+impl From<u64> for WallClockMs {
+    fn from(ms: u64) -> Self {
+        Self(ms)
+    }
+}
+
+/// Timestamp in nanoseconds since session start (legacy alias for
+/// [`MonotonicNs`], kept so existing uses keep compiling).
+pub type TimestampNs = MonotonicNs;
 
 /// Thread identifier.
 pub type ThreadId = u64;
@@ -938,14 +1022,14 @@ mod tests {
     fn test_trace_event_new() {
         let event = TraceEvent::new(
             1,
-            1000,
+            MonotonicNs::from(1000),
             42,
             EventType::FunctionEntry,
             SourceLocation::new("main.rs", 10, "main", 0x401000),
             EventData::Empty,
         );
         assert_eq!(event.event_id, 1);
-        assert_eq!(event.timestamp_ns, 1000);
+        assert_eq!(event.timestamp_ns, MonotonicNs::from(1000));
         assert_eq!(event.thread_id, 42);
         assert_eq!(event.event_type, EventType::FunctionEntry);
         assert_eq!(event.function_name(), Some("main"));
@@ -953,7 +1037,7 @@ mod tests {
 
     #[test]
     fn test_trace_event_function_entry() {
-        let event = TraceEvent::function_entry(1, 500, 1, "add", 0x402000);
+        let event = TraceEvent::function_entry(1, MonotonicNs::from(500), 1, "add", 0x402000);
         assert_eq!(event.event_type, EventType::FunctionEntry);
         assert_eq!(event.function_name(), Some("add"));
         assert_eq!(event.location.address, 0x402000);
@@ -961,7 +1045,7 @@ mod tests {
 
     #[test]
     fn test_trace_event_signal() {
-        let event = TraceEvent::signal(5, 9999, 1, 11, "SIGSEGV", 0xDEAD);
+        let event = TraceEvent::signal(5, MonotonicNs::from(9999), 1, 11, "SIGSEGV", 0xDEAD);
         assert_eq!(event.event_type, EventType::SignalDelivered);
         match &event.data {
             EventData::Signal {
@@ -984,7 +1068,8 @@ mod tests {
 
     #[test]
     fn test_event_serialization_roundtrip() {
-        let event = TraceEvent::function_entry(42, 12345, 1, "process_data", 0x5000);
+        let event =
+            TraceEvent::function_entry(42, MonotonicNs::from(12345), 1, "process_data", 0x5000);
         let json = serde_json::to_string(&event).unwrap();
         let deserialized: TraceEvent = serde_json::from_str(&json).unwrap();
         assert_eq!(event, deserialized);
@@ -1042,14 +1127,14 @@ mod tests {
         // Test python_call constructor
         let call_event = TraceEvent::python_call(
             1,
-            1000,
+            MonotonicNs::from(1000),
             42,
             "my_module.MyClass.my_method",
             "/path/to/script.py",
             42,
         );
         assert_eq!(call_event.event_id, 1);
-        assert_eq!(call_event.timestamp_ns, 1000);
+        assert_eq!(call_event.timestamp_ns, MonotonicNs::from(1000));
         assert_eq!(call_event.thread_id, 42);
         assert_eq!(
             call_event.location.file.as_deref(),
@@ -1078,14 +1163,14 @@ mod tests {
         // Test python_return constructor
         let return_event = TraceEvent::python_return(
             2,
-            2000,
+            MonotonicNs::from(2000),
             42,
             "my_module.MyClass.my_method",
             "/path/to/script.py",
             50,
         );
         assert_eq!(return_event.event_id, 2);
-        assert_eq!(return_event.timestamp_ns, 2000);
+        assert_eq!(return_event.timestamp_ns, MonotonicNs::from(2000));
         match &return_event.data {
             EventData::PythonFrame { event_kind, .. } => {
                 assert_eq!(event_kind, &PythonEventKind::Return);
@@ -1103,7 +1188,7 @@ mod tests {
         )];
         let call_with_locals = TraceEvent::python_call_with_locals(
             3,
-            1500,
+            MonotonicNs::from(1500),
             42,
             "my_func",
             "/path/to/script.py",
@@ -1256,7 +1341,7 @@ mod tests {
     fn test_java_call_constructor() {
         let event = super::TraceEvent::java_call(
             1,
-            1000,
+            MonotonicNs::from(1000),
             42,
             "com.example.Foo",
             "bar",
@@ -1264,7 +1349,7 @@ mod tests {
             Some(10),
         );
         assert_eq!(event.event_id, 1);
-        assert_eq!(event.timestamp_ns, 1000);
+        assert_eq!(event.timestamp_ns, MonotonicNs::from(1000));
         assert_eq!(event.thread_id, 42);
         assert_eq!(event.event_type, super::EventType::FunctionEntry);
         match &event.data {
@@ -1284,9 +1369,15 @@ mod tests {
 
     #[test]
     fn test_java_return_constructor() {
-        let event = super::TraceEvent::java_return(2, 2000, 42, "com.example.Foo", "bar");
+        let event = super::TraceEvent::java_return(
+            2,
+            MonotonicNs::from(2000),
+            42,
+            "com.example.Foo",
+            "bar",
+        );
         assert_eq!(event.event_id, 2);
-        assert_eq!(event.timestamp_ns, 2000);
+        assert_eq!(event.timestamp_ns, MonotonicNs::from(2000));
         match &event.data {
             super::EventData::JavaFrame {
                 class_name,
@@ -1306,7 +1397,7 @@ mod tests {
     fn test_go_frame_constructor() {
         let event = super::TraceEvent::go_frame(
             1,
-            1000,
+            MonotonicNs::from(1000),
             12345,
             "main.foo",
             Some("foo.go".to_string()),
@@ -1314,7 +1405,7 @@ mod tests {
             super::GoEventKind::Breakpoint,
         );
         assert_eq!(event.event_id, 1);
-        assert_eq!(event.timestamp_ns, 1000);
+        assert_eq!(event.timestamp_ns, MonotonicNs::from(1000));
         match &event.data {
             super::EventData::GoFrame {
                 goroutine_id,
@@ -1402,7 +1493,7 @@ mod tests {
     fn test_js_frame_constructor() {
         let event = super::TraceEvent::js_frame(
             1,
-            1000,
+            MonotonicNs::from(1000),
             42,
             "myFunction",
             "http://localhost:3000/app.js".to_string(),
@@ -1411,7 +1502,7 @@ mod tests {
             super::JsEventKind::Breakpoint,
         );
         assert_eq!(event.event_id, 1);
-        assert_eq!(event.timestamp_ns, 1000);
+        assert_eq!(event.timestamp_ns, MonotonicNs::from(1000));
         assert_eq!(event.thread_id, 42);
         assert_eq!(event.event_type, super::EventType::BreakpointHit);
         assert_eq!(event.location.line, Some(42));
@@ -1558,5 +1649,88 @@ mod tests {
             "EventData schema should enumerate >=10 variants, got {}",
             variants.len()
         );
+    }
+
+    #[test]
+    fn monotonic_ns_ordering_and_conversions() {
+        let small = MonotonicNs::from(1_000);
+        let big = MonotonicNs::from(2_000);
+
+        assert!(small < big);
+        assert!(big > small);
+        assert_eq!(small, MonotonicNs::from(1_000));
+        assert_ne!(small, big);
+
+        // conversions round-trip
+        assert_eq!(small.as_u64(), 1_000);
+        assert_eq!(small.get(), 1_000);
+        assert_eq!(MonotonicNs::from(small.get()), small);
+
+        // TimestampNs alias points at the same type
+        let alias: TimestampNs = small;
+        assert_eq!(alias, small);
+
+        // Default is zero
+        assert_eq!(MonotonicNs::default(), MonotonicNs::from(0));
+
+        // Hash/Eq consistent with Ord: equal values hash equal
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let h = |v: &MonotonicNs| {
+            let mut s = DefaultHasher::new();
+            v.hash(&mut s);
+            s.finish()
+        };
+        assert_eq!(h(&small), h(&MonotonicNs::from(1_000)));
+    }
+
+    #[test]
+    fn monotonic_ns_serde_wire_compat_with_plain_u64() {
+        // The on-disk/wire format must remain a bare JSON integer, exactly
+        // as it was when timestamp_ns was a plain u64. `#[serde(transparent)]`
+        // guarantees this; these pins make a regression loud.
+        let ts = MonotonicNs::from(12_345);
+
+        let json = serde_json::to_string(&ts).expect("serialize");
+        assert_eq!(json, "12345");
+
+        let back: MonotonicNs = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, ts);
+
+        // A field previously typed u64 deserializes from a bare integer
+        // into the newtype transparently.
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct WireV1 {
+            timestamp_ns: u64,
+        }
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct WireV2 {
+            timestamp_ns: MonotonicNs,
+        }
+        let v1_json = serde_json::to_string(&WireV1 { timestamp_ns: 99 }).unwrap();
+        let v2: WireV2 = serde_json::from_str(&v1_json).expect("v1 wire format loads into v2");
+        assert_eq!(v2.timestamp_ns, MonotonicNs::from(99));
+
+        let v2_json = serde_json::to_string(&WireV2 {
+            timestamp_ns: MonotonicNs::from(99),
+        })
+        .unwrap();
+        assert_eq!(v2_json, v1_json);
+    }
+
+    #[test]
+    fn wall_clock_ms_is_a_distinct_type_from_monotonic_ns() {
+        // The whole point of REC-C4 C4.2: wall-clock millis and monotonic
+        // nanoseconds are different clock domains and must not be
+        // interchangeable. The type system enforces it; mixing them is a
+        // compile error (connascence of name -> connascence of type).
+        let wall = WallClockMs::from(1_700_000_000_000);
+        let mono = MonotonicNs::from(1_000);
+
+        assert_eq!(wall.get(), 1_700_000_000_000);
+        assert_eq!(mono.get(), 1_000);
+        // No cross-type comparison exists; equality is only same-type.
+        assert_ne!(WallClockMs::from(1), WallClockMs::from(2));
+        assert!(WallClockMs::from(1) < WallClockMs::from(2));
     }
 }

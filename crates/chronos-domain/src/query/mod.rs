@@ -483,12 +483,13 @@ pub struct PerfResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::trace::MonotonicNs;
     use crate::trace::{EventData, SourceLocation};
 
     fn make_event(id: u64, ts: u64, tid: u64, event_type: EventType, func: &str) -> TraceEvent {
         TraceEvent::new(
             id,
-            ts,
+            MonotonicNs::from(ts),
             tid,
             event_type,
             SourceLocation::new("test.rs", 1, func, 0x1000),
@@ -507,13 +508,13 @@ mod tests {
     #[test]
     fn test_query_builder() {
         let q = TraceQuery::new("s1")
-            .time_range(100, 1000)
+            .time_range(MonotonicNs::from(100), MonotonicNs::from(1000))
             .event_types(vec![EventType::FunctionEntry])
             .function_pattern("main")
             .pagination(50, 10);
 
-        assert_eq!(q.timestamp_start, Some(100));
-        assert_eq!(q.timestamp_end, Some(1000));
+        assert_eq!(q.timestamp_start, Some(MonotonicNs::from(100)));
+        assert_eq!(q.timestamp_end, Some(MonotonicNs::from(1000)));
         assert_eq!(q.event_types.as_ref().unwrap().len(), 1);
         assert_eq!(q.function_pattern.as_deref(), Some("main"));
         assert_eq!(q.limit, 50);
@@ -532,7 +533,7 @@ mod tests {
 
     #[test]
     fn test_query_matches_time_range() {
-        let q = TraceQuery::new("s1").time_range(100, 500);
+        let q = TraceQuery::new("s1").time_range(MonotonicNs::from(100), MonotonicNs::from(500));
         let e_ok = make_event(1, 200, 1, EventType::FunctionEntry, "main");
         let e_before = make_event(2, 50, 1, EventType::FunctionEntry, "main");
         let e_after = make_event(3, 500, 1, EventType::FunctionEntry, "main");
@@ -595,7 +596,7 @@ mod tests {
             address: 0,
             write_a: MutationRecord {
                 event_id: 0,
-                timestamp: 0,
+                timestamp: MonotonicNs::from(0),
                 thread_id: 0,
                 value_before: None,
                 value_after: String::new(),
@@ -605,7 +606,7 @@ mod tests {
             },
             write_b: MutationRecord {
                 event_id: 0,
-                timestamp: 0,
+                timestamp: MonotonicNs::from(0),
                 thread_id: 0,
                 value_before: None,
                 value_after: String::new(),

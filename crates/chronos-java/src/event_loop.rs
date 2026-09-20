@@ -97,6 +97,7 @@ pub fn jdwp_event_to_trace(
 mod tests {
     use super::*;
     use crate::protocol::event_kind;
+    use chronos_domain::MonotonicNs;
 
     #[test]
     fn test_jdwp_event_to_trace_conversion() {
@@ -111,7 +112,7 @@ mod tests {
         let trace = jdwp_event_to_trace(jdwp_event, 1, 1000);
 
         assert_eq!(trace.event_id, 1);
-        assert_eq!(trace.timestamp_ns, 1000);
+        assert_eq!(trace.timestamp_ns, MonotonicNs::from(1000));
         assert_eq!(trace.thread_id, 12345);
     }
 

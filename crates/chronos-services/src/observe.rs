@@ -48,6 +48,7 @@
 use std::sync::Arc;
 
 use chronos_domain::tripwire::TripwireManager;
+use chronos_domain::SubscriptionId;
 use std::collections::HashMap;
 use std::sync::Mutex as StdMutex;
 
@@ -201,7 +202,7 @@ impl ChronosObserveService {
                 let label = label.or(input.label);
                 let result = TripwiresService::create(condition, label, ctx.tripwire_manager)?;
                 Ok(ObserveOutput::Create(ObserveCreateResult {
-                    subscription_id: result.tripwire_id,
+                    subscription_id: SubscriptionId::new(result.tripwire_id),
                     kind: "tripwire".to_string(),
                     status: "registered".to_string(),
                     active_count: result.active_count,
@@ -304,7 +305,7 @@ impl ChronosObserveService {
 
                 let active_count = ctx.tripwire_manager.active_count();
                 Ok(ObserveOutput::Create(ObserveCreateResult {
-                    subscription_id: uprobe_id,
+                    subscription_id: SubscriptionId::new(uprobe_id),
                     kind: "uprobe".to_string(),
                     status: "registered".to_string(),
                     active_count,
@@ -523,6 +524,7 @@ impl ChronosObserveService {
             .ok_or_else(|| {
                 ServiceError::Unsupported("verb=delete requires 'subscription_id'".into())
             })?
+            .into_inner()
             .trim()
             .to_string();
 
@@ -535,7 +537,7 @@ impl ChronosObserveService {
 
         let result = TripwiresService::delete(&sub_id, ctx.tripwire_manager)?;
         Ok(ObserveOutput::Delete(ObserveDeleteResult {
-            subscription_id: result.tripwire_id,
+            subscription_id: SubscriptionId::new(result.tripwire_id),
             remaining_active: result.remaining_active,
         }))
     }
@@ -918,7 +920,7 @@ mod tests {
                 .append(chronos_log::NewExecutionRecord {
                     session_id: log.session_id().clone(),
                     kind: K::Raw,
-                    monotonic_ns: event.timestamp_ns,
+                    monotonic_ns: event.timestamp_ns.get(),
                     payload,
                     ..Default::default()
                 })
@@ -1002,7 +1004,7 @@ mod tests {
         let out = rig.observe(input).await.unwrap();
         match out {
             ObserveOutput::Create(c) => {
-                assert!(c.subscription_id.starts_with("tripwire-"));
+                assert!(c.subscription_id.as_str().starts_with("tripwire-"));
                 assert_eq!(c.kind, "tripwire");
                 assert_eq!(c.status, "registered");
                 assert_eq!(c.active_count, 1);
@@ -1155,10 +1157,10 @@ mod tests {
     /// A `FunctionEntry` whose `location.function` is matched (or not) by the
     /// rig's `main*` condition.
     fn fn_event(name: &str, event_id: u64, ts: u64) -> chronos_domain::TraceEvent {
-        use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
+        use chronos_domain::{EventData, EventType, MonotonicNs, SourceLocation, TraceEvent};
         TraceEvent {
             event_id,
-            timestamp_ns: ts,
+            timestamp_ns: MonotonicNs::from(ts),
             thread_id: 1,
             event_type: EventType::FunctionEntry,
             location: SourceLocation {
@@ -1578,7 +1580,7 @@ mod tests {
     async fn delete_with_non_tripwire_id_returns_unsupported() {
         let rig = TestRig::new();
         let mut input = tripwire_input(ObserveVerb::Delete);
-        input.subscription_id = Some("not-a-tripwire-id".to_string());
+        input.subscription_id = Some(SubscriptionId::new("not-a-tripwire-id"));
         let err = rig.observe(input).await.unwrap_err();
         assert!(matches!(err, ServiceError::Unsupported(_)), "got {:?}", err);
     }
@@ -1587,7 +1589,7 @@ mod tests {
     async fn delete_with_unknown_id_returns_not_found() {
         let rig = TestRig::new();
         let mut input = tripwire_input(ObserveVerb::Delete);
-        input.subscription_id = Some("tripwire-99999".to_string());
+        input.subscription_id = Some(SubscriptionId::new("tripwire-99999"));
         let err = rig.observe(input).await.unwrap_err();
         assert!(
             matches!(err, ServiceError::TripwireNotFound(_)),

@@ -252,6 +252,7 @@ mod tests {
     use super::*;
     use crate::events_log_read::decode;
     use chronos_domain::trace::{EventData, EventType, SourceLocation};
+    use chronos_domain::MonotonicNs;
     use chronos_log::{ExecutionPayload, NewExecutionRecord};
 
     fn tempdir(tag: &str) -> std::path::PathBuf {
@@ -267,8 +268,8 @@ mod tests {
 
     fn make_event(seq: u64) -> TraceEvent {
         TraceEvent::new(
-            seq + 40,                 // event_id ≠ seq
-            10_000_500 + seq * 1_000, // session-relative ns
+            seq + 40,                                    // event_id ≠ seq
+            MonotonicNs::from(10_000_500 + seq * 1_000), // session-relative ns
             1,
             EventType::FunctionEntry,
             SourceLocation::default(),
@@ -395,7 +396,7 @@ mod tests {
         let decoded = decode(record).expect("decode");
         // The record's payload was JSON-encoded by append_event above.
         assert_eq!(decoded.event_id, 40);
-        assert_eq!(decoded.timestamp_ns, 10_000_500);
+        assert_eq!(decoded.timestamp_ns.as_u64(), 10_000_500);
     }
 
     #[test]
@@ -407,7 +408,7 @@ mod tests {
         // 1 noisy event: Custom+Registers (registers snapshot).
         let noisy = TraceEvent::new(
             999,
-            10_000_000,
+            MonotonicNs::from(10_000_000),
             1,
             EventType::Custom,
             SourceLocation::default(),
@@ -507,8 +508,8 @@ mod tests {
             // they don't perturb the test's three canonical records.
             for filler_i in 0..fillers {
                 let ev = TraceEvent::new(
-                    u64::MAX - filler_i, // distinct event_id from the test records
-                    0,                   // timestamp_ns that won't match
+                    u64::MAX - filler_i,  // distinct event_id from the test records
+                    MonotonicNs::from(0), // timestamp_ns that won't match
                     1,
                     EventType::FunctionEntry,
                     SourceLocation::default(),
@@ -535,7 +536,7 @@ mod tests {
             // Append the canonical record at its target seq position.
             let ev = TraceEvent::new(
                 event_id,
-                timestamp_ns,
+                MonotonicNs::from(timestamp_ns),
                 1,
                 EventType::FunctionEntry,
                 SourceLocation::default(),
@@ -583,7 +584,11 @@ mod tests {
             // Keep only the three canonical records (filter by
             // event_id in our test set).
             if matches!(decoded.event_id, 10_000_500 | 25_320_700 | 25_999_001) {
-                canonicals.push((decoded.event_id, decoded.timestamp_ns, record.seq.0));
+                canonicals.push((
+                    decoded.event_id,
+                    decoded.timestamp_ns.as_u64(),
+                    record.seq.0,
+                ));
             }
         }
         assert_eq!(

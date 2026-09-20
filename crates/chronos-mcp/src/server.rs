@@ -33,6 +33,7 @@ use chronos_browser::BrowserAdapter;
 use chronos_domain::ports::browser_probe::BrowserProbeFactory;
 use chronos_domain::ports::uprobe::UprobeInjector;
 use chronos_domain::tripwire::{TripwireCondition, TripwireManager};
+use chronos_domain::MonotonicNs;
 #[allow(unused_imports)]
 use chronos_domain::{
     CaptureConfig, CaptureSession, EventData, EventType, Language, TraceEvent, VariableInfo,
@@ -704,8 +705,10 @@ pub struct ObserveParams {
     #[schemars(rename = "verb")]
     pub verb: chronos_services::output::ObserveVerb,
     /// Subscription ID (required for `verb=delete`).
+    /// String on the wire; parsed into the typed
+    /// [`chronos_domain::SubscriptionId`] at the boundary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub subscription_id: Option<String>,
+    pub subscription_id: Option<chronos_domain::SubscriptionId>,
     /// Subscription body — discriminator + payload. Required for
     /// `verb=create`. Shape:
     /// `{kind: "tripwire", condition: {...}, label: "..."}` for tripwires,
@@ -4447,7 +4450,7 @@ impl ChronosServer {
         match ChronosObserveService::observe(&ctx, input).await {
             Ok(chronos_services::output::ObserveOutput::Create(c)) => {
                 let output = serde_json::json!({
-                    "tripwire_id": c.subscription_id,
+                    "tripwire_id": c.subscription_id.to_string(),
                     "status": c.status,
                     "active_count": c.active_count,
                     "label": c.label,
@@ -4610,7 +4613,7 @@ impl ChronosServer {
         };
         let input = ObserveInput {
             verb: chronos_services::output::ObserveVerb::Delete,
-            subscription_id: Some(tripwire_id.to_string()),
+            subscription_id: Some(tripwire_id.into()),
             condition: None,
             action: None,
             retention: None,
@@ -4622,7 +4625,7 @@ impl ChronosServer {
         match ChronosObserveService::observe(&ctx, input).await {
             Ok(chronos_services::output::ObserveOutput::Delete(d)) => {
                 let output = serde_json::json!({
-                    "tripwire_id": d.subscription_id,
+                    "tripwire_id": d.subscription_id.to_string(),
                     "status": "deleted",
                     "remaining_active": d.remaining_active,
                 });
@@ -7177,7 +7180,7 @@ mod tests {
         let loc = SourceLocation::new("", 0, func, 0x1000 + id);
         TraceEvent::new(
             id,
-            ts,
+            MonotonicNs::from(ts),
             tid,
             EventType::FunctionEntry,
             loc,
@@ -7195,7 +7198,14 @@ mod tests {
     fn make_fn_exit(id: u64, ts: u64, tid: u64, func: &str) -> TraceEvent {
         use chronos_domain::{EventData, SourceLocation};
         let loc = SourceLocation::new("", 0, func, 0x1000 + id);
-        TraceEvent::new(id, ts, tid, EventType::FunctionExit, loc, EventData::Empty)
+        TraceEvent::new(
+            id,
+            MonotonicNs::from(ts),
+            tid,
+            EventType::FunctionExit,
+            loc,
+            EventData::Empty,
+        )
     }
 
     #[tokio::test]
@@ -7405,7 +7415,7 @@ mod tests {
         let loc = SourceLocation::new("", 0, func, 0x1000 + id);
         TraceEvent::new(
             id,
-            ts,
+            MonotonicNs::from(ts),
             tid,
             EventType::FunctionEntry,
             loc,
@@ -7840,7 +7850,7 @@ mod tests {
     ) -> TraceEvent {
         TraceEvent::python_call_with_locals(
             id,
-            ts,
+            MonotonicNs::from(ts),
             tid,
             "my_module.my_func",
             "/path/to/script.py",
@@ -7861,7 +7871,7 @@ mod tests {
         use chronos_domain::{EventData, EventType, SourceLocation};
         TraceEvent::new(
             id,
-            ts,
+            MonotonicNs::from(ts),
             tid,
             EventType::MemoryWrite,
             SourceLocation::from_address(address),
@@ -8042,8 +8052,14 @@ mod tests {
     #[tokio::test]
     async fn test_debug_get_variables_empty() {
         // PythonFrame with None locals
-        let event =
-            TraceEvent::python_call(0, 100, 1, "my_module.my_func", "/path/to/script.py", 10);
+        let event = TraceEvent::python_call(
+            0,
+            MonotonicNs::from(100),
+            1,
+            "my_module.my_func",
+            "/path/to/script.py",
+            10,
+        );
         let events = vec![event];
         let (server, sid) = server_with_session(events).await;
 
@@ -8151,7 +8167,7 @@ mod tests {
         use chronos_domain::{EventData, EventType, SourceLocation};
         TraceEvent::new(
             id,
-            ts,
+            MonotonicNs::from(ts),
             tid,
             EventType::Custom,
             SourceLocation::from_address(regs.rip),
@@ -8253,8 +8269,24 @@ mod tests {
             VariableScope::Local,
         )];
         let events = vec![
-            TraceEvent::python_call_with_locals(0, 100, 1, "f", "test.py", 10, locals_a),
-            TraceEvent::python_call_with_locals(1, 200, 1, "f", "test.py", 15, locals_b),
+            TraceEvent::python_call_with_locals(
+                0,
+                MonotonicNs::from(100),
+                1,
+                "f",
+                "test.py",
+                10,
+                locals_a,
+            ),
+            TraceEvent::python_call_with_locals(
+                1,
+                MonotonicNs::from(200),
+                1,
+                "f",
+                "test.py",
+                15,
+                locals_b,
+            ),
         ];
         let (server, sid) = server_with_session(events).await;
 
@@ -8509,7 +8541,7 @@ mod tests {
             let loc = SourceLocation::new("test.rs", 1, func, 0x1000 + id);
             TraceEvent::new(
                 id,
-                id * 100,
+                MonotonicNs::from(id * 100),
                 1,
                 EventType::FunctionEntry,
                 loc,
@@ -8583,7 +8615,7 @@ mod tests {
             let loc = SourceLocation::new("test.rs", 1, func.to_string(), 0x1000 + id);
             TraceEvent::new(
                 id,
-                id * 100,
+                MonotonicNs::from(id * 100),
                 1,
                 EventType::FunctionEntry,
                 loc,
@@ -8662,7 +8694,7 @@ mod tests {
             let loc = SourceLocation::new("test.rs", 1, func.to_string(), 0x3000 + id);
             TraceEvent::new(
                 id,
-                id * 100,
+                MonotonicNs::from(id * 100),
                 1,
                 EventType::FunctionEntry,
                 loc,
@@ -9259,7 +9291,7 @@ mod tests {
         let parent = chronos_domain::InvocationId::now();
         let ev = TraceEvent::new(
             7,
-            700,
+            MonotonicNs::from(700),
             1,
             EventType::FunctionEntry,
             SourceLocation::new("main.c", 3, "main", 0x1000),
@@ -9376,7 +9408,7 @@ mod tests {
         let loc = SourceLocation::new("", 0, "", 0x1000 + id);
         TraceEvent::new(
             id,
-            ts,
+            MonotonicNs::from(ts),
             tid,
             EventType::VariableWrite,
             loc,

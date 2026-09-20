@@ -40,7 +40,7 @@ async fn m9_04_replay_uses_v3_layout() {
             .map(|id| {
                 chronos_domain::TraceEvent::new(
                     id,
-                    id * 100,
+                    chronos_domain::MonotonicNs::from(id * 100),
                     1,
                     chronos_domain::EventType::FunctionEntry,
                     chronos_domain::SourceLocation::new("test.rs", 10, "fn", 0x1000 + id),
@@ -139,7 +139,7 @@ async fn m9_04_replay_v2_bundle_uses_legacy_path() {
         // (replaces the previous raw db().begin_write() + open_table(...).insert(...) path).
         let v2_events = vec![chronos_domain::TraceEvent::new(
             42,
-            4200,
+            chronos_domain::MonotonicNs::from(4200),
             1,
             chronos_domain::EventType::FunctionEntry,
             chronos_domain::SourceLocation::new("legacy.rs", 1, "legacy_fn", 0x2000),

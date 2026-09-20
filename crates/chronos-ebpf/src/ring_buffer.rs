@@ -196,6 +196,7 @@ mod tests {
     use super::*;
     use crate::types::EbpfEvent;
     use chronos_domain::EventType;
+    use chronos_domain::MonotonicNs;
 
     fn make_entry_event(ts: u64, tid: u64, addr: u64, name: &str) -> EbpfEvent {
         EbpfEvent::function_entry(ts, tid, addr, name)
@@ -261,7 +262,7 @@ mod tests {
         let buf = MockRingBuffer::new(vec![ev]);
 
         let te = buf.next_trace_event().unwrap();
-        assert_eq!(te.timestamp_ns, 999);
+        assert_eq!(te.timestamp_ns, MonotonicNs::from(999));
         assert_eq!(te.thread_id, 7);
         assert_eq!(te.location.address, 0xABCD);
         assert_eq!(te.event_type, EventType::FunctionEntry);

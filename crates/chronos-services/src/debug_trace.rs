@@ -18,6 +18,7 @@ use crate::error::ServiceError;
 use crate::output::QueryEventsResult;
 use chronos_domain::query::{ExecutionSummary, StackFrame, StateDiff};
 use chronos_domain::trace::{EventType, TraceEvent};
+use chronos_domain::MonotonicNs;
 use chronos_domain::TraceQuery;
 use chronos_query::QueryEngine;
 
@@ -54,7 +55,7 @@ impl DebugTraceService {
         }
 
         if let (Some(start), Some(end)) = (timestamp_start, timestamp_end) {
-            query = query.time_range(start, end);
+            query = query.time_range(MonotonicNs::from(start), MonotonicNs::from(end));
         }
 
         if let Some(pattern) = function_pattern {
@@ -132,7 +133,10 @@ impl DebugTraceService {
             .get(session_id)
             .ok_or_else(|| ServiceError::SessionNotFound(session_id.to_string()))?;
 
-        Ok(engine.state_diff(timestamp_a, timestamp_b))
+        Ok(engine.state_diff(
+            MonotonicNs::from(timestamp_a),
+            MonotonicNs::from(timestamp_b),
+        ))
     }
 
     /// Build the call graph for a session up to a given depth.
@@ -311,7 +315,7 @@ mod tests {
     ) -> TraceEvent {
         TraceEvent {
             event_id,
-            timestamp_ns,
+            timestamp_ns: MonotonicNs::from(timestamp_ns),
             thread_id,
             event_type,
             location: SourceLocation {
@@ -463,8 +467,8 @@ mod tests {
             .await
             .unwrap();
         // No register evidence → empty diff is expected
-        assert_eq!(result.timestamp_a, 100);
-        assert_eq!(result.timestamp_b, 200);
+        assert_eq!(result.timestamp_a.as_u64(), 100);
+        assert_eq!(result.timestamp_b.as_u64(), 200);
     }
 
     #[tokio::test]

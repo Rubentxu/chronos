@@ -89,8 +89,11 @@ impl SessionsService {
         // Compute duration from first/last event timestamps
         let (duration_ms, created_at) =
             if let (Some(first), Some(last)) = (events.first(), events.last()) {
-                let dur_ns = last.timestamp_ns.saturating_sub(first.timestamp_ns);
-                (dur_ns / 1_000_000, last.timestamp_ns / 1_000_000)
+                let dur_ns = last
+                    .timestamp_ns
+                    .get()
+                    .saturating_sub(first.timestamp_ns.get());
+                (dur_ns / 1_000_000, last.timestamp_ns.get() / 1_000_000)
             } else {
                 (0, 0)
             };
@@ -357,6 +360,7 @@ mod tests {
     use super::*;
     use crate::session_log::RegistrationState;
     use chronos_domain::ports::session::SessionArchive;
+    use chronos_domain::MonotonicNs;
     use chronos_domain::{SourceLocation, TraceEvent};
     use chronos_store::SessionStore;
     use std::collections::HashSet;
@@ -393,7 +397,7 @@ mod tests {
         let events = vec![
             TraceEvent {
                 event_id: 1,
-                timestamp_ns: 1_000_000_000, // 1 second
+                timestamp_ns: MonotonicNs::from(1_000_000_000), // 1 second
                 thread_id: 1,
                 event_type: chronos_domain::EventType::FunctionEntry,
                 location: SourceLocation::default(),
@@ -407,7 +411,7 @@ mod tests {
             },
             TraceEvent {
                 event_id: 2,
-                timestamp_ns: 2_001_000_000, // 2 seconds + 1ms
+                timestamp_ns: MonotonicNs::from(2_001_000_000), // 2 seconds + 1ms
                 thread_id: 1,
                 event_type: chronos_domain::EventType::FunctionExit,
                 location: SourceLocation::default(),
@@ -873,7 +877,7 @@ mod tests {
             let events = vec![
                 TraceEvent {
                     event_id: 1,
-                    timestamp_ns: 1_000_000_000,
+                    timestamp_ns: MonotonicNs::from(1_000_000_000),
                     thread_id: 1,
                     event_type: chronos_domain::EventType::FunctionEntry,
                     location: SourceLocation::default(),
@@ -887,7 +891,7 @@ mod tests {
                 },
                 TraceEvent {
                     event_id: 2,
-                    timestamp_ns: 2_001_000_000,
+                    timestamp_ns: MonotonicNs::from(2_001_000_000),
                     thread_id: 1,
                     event_type: chronos_domain::EventType::FunctionExit,
                     location: SourceLocation::default(),

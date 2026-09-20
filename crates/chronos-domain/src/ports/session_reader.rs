@@ -143,6 +143,7 @@ impl SessionReader for InMemorySessionReader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::trace::MonotonicNs;
     use crate::trace::{EventData, EventType, SourceLocation};
 
     fn sample_metadata(id: &str) -> SessionMetadata {
@@ -161,7 +162,7 @@ mod tests {
     fn sample_events() -> Vec<TraceEvent> {
         vec![TraceEvent::new(
             1,
-            100,
+            MonotonicNs::from(100),
             1,
             EventType::FunctionEntry,
             SourceLocation::new("noop.rs", 1, "main", 0x1000),

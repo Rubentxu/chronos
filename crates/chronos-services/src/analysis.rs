@@ -174,7 +174,7 @@ impl ChronosAnalysisService {
 mod tests {
     use super::*;
     use chronos_domain::{
-        property::PropertyValue, EventData, EventType, SourceLocation, TraceEvent,
+        property::PropertyValue, EventData, EventType, MonotonicNs, SourceLocation, TraceEvent,
     };
     use chronos_query::QueryEngine;
     use std::collections::HashMap;
@@ -182,7 +182,7 @@ mod tests {
     fn dummy_event(id: u64, thread: u64, name: &str, value: &str) -> TraceEvent {
         TraceEvent {
             event_id: id,
-            timestamp_ns: id * 1000,
+            timestamp_ns: MonotonicNs::from(id * 1000),
             thread_id: thread,
             event_type: EventType::VariableWrite,
             location: SourceLocation::default(),

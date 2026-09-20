@@ -112,7 +112,7 @@ mod tests {
     fn make_entry(event_id: u64, timestamp: u64, thread_id: u64, value: &str) -> CausalityEntry {
         CausalityEntry {
             event_id,
-            timestamp,
+            timestamp: TimestampNs::from(timestamp),
             thread_id,
             value_before: None,
             value_after: value.to_string(),
@@ -132,16 +132,22 @@ mod tests {
         idx.record_write(addr, make_entry(3, 300, 1, "30"), None);
 
         // Last write before ts=250 is the one at ts=200
-        let entry = idx.find_last_mutation(addr, 250).unwrap();
-        assert_eq!(entry.timestamp, 200);
+        let entry = idx
+            .find_last_mutation(addr, TimestampNs::from(250))
+            .unwrap();
+        assert_eq!(entry.timestamp, TimestampNs::from(200));
         assert_eq!(entry.value_after, "20");
 
         // Last write before ts=100 — nothing (ts=100 is not strictly before 100)
-        assert!(idx.find_last_mutation(addr, 100).is_none());
+        assert!(idx
+            .find_last_mutation(addr, TimestampNs::from(100))
+            .is_none());
 
         // Last write before ts=400 is the one at ts=300
-        let entry = idx.find_last_mutation(addr, 400).unwrap();
-        assert_eq!(entry.timestamp, 300);
+        let entry = idx
+            .find_last_mutation(addr, TimestampNs::from(400))
+            .unwrap();
+        assert_eq!(entry.timestamp, TimestampNs::from(300));
     }
 
     #[test]
@@ -157,9 +163,9 @@ mod tests {
         let lineage = idx.trace_lineage("my_var");
         assert_eq!(lineage.len(), 3);
         // Ordered by timestamp
-        assert_eq!(lineage[0].timestamp, 100);
-        assert_eq!(lineage[1].timestamp, 200);
-        assert_eq!(lineage[2].timestamp, 300);
+        assert_eq!(lineage[0].timestamp, TimestampNs::from(100));
+        assert_eq!(lineage[1].timestamp, TimestampNs::from(200));
+        assert_eq!(lineage[2].timestamp, TimestampNs::from(300));
 
         // Exact match only — partial name returns empty
         assert!(idx.trace_lineage("my").is_empty());
@@ -203,6 +209,8 @@ mod tests {
     #[test]
     fn test_find_last_mutation_unknown_addr() {
         let idx = CausalityIndex::new();
-        assert!(idx.find_last_mutation(0xDEAD, 9999).is_none());
+        assert!(idx
+            .find_last_mutation(0xDEAD, TimestampNs::from(9999))
+            .is_none());
     }
 }

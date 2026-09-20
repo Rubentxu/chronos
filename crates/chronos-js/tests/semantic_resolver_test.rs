@@ -1,15 +1,15 @@
 use chronos_domain::semantic::SemanticResolver;
 use chronos_domain::semantic::{ResolveContext, SemanticEventKind};
 use chronos_domain::{
-    EventData, EventType, JsEventKind, Language, SourceLocation, TraceEvent, VariableInfo,
-    VariableScope,
+    EventData, EventType, JsEventKind, Language, MonotonicNs, SourceLocation, TraceEvent,
+    VariableInfo, VariableScope,
 };
 use chronos_js::semantic_resolver::JsSemanticResolver;
 
 fn make_js_call_event() -> TraceEvent {
     TraceEvent::new(
         1,
-        1_000_000,
+        MonotonicNs::from(1_000_000),
         100,
         EventType::FunctionEntry,
         SourceLocation {
@@ -88,7 +88,7 @@ fn test_resolve_non_js_returns_none() {
     let resolver = JsSemanticResolver::new();
     let event = TraceEvent::new(
         1,
-        0,
+        MonotonicNs::from(0),
         1,
         EventType::FunctionEntry,
         SourceLocation::default(),

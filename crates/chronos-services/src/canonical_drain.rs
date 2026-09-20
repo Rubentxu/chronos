@@ -311,7 +311,7 @@ pub fn read_canonical_drain_page(
 mod tests {
     use super::*;
     use chronos_domain::semantic::{SemanticEvent, SemanticEventKind};
-    use chronos_domain::{EventData, EventType, Language, SourceLocation, TraceEvent};
+    use chronos_domain::{EventData, EventType, Language, MonotonicNs, SourceLocation, TraceEvent};
     use chronos_log::{
         ExecutionPayload, Gap, GapReason, NewExecutionRecord, SegmentedConfig,
         SegmentedExecutionLog, SessionId, TripwireFiredEvidence,
@@ -346,7 +346,7 @@ mod tests {
     fn trace_event(id: u64) -> TraceEvent {
         TraceEvent {
             event_id: id,
-            timestamp_ns: id * 1000,
+            timestamp_ns: MonotonicNs::from(id * 1000),
             thread_id: 1,
             event_type: EventType::FunctionEntry,
             location: SourceLocation {
@@ -404,7 +404,7 @@ mod tests {
     fn trivial_project(event: &TraceEvent, _ctx: &ResolveContext) -> SemanticEvent {
         SemanticEvent {
             source_event_id: event.event_id,
-            timestamp_ns: event.timestamp_ns,
+            timestamp_ns: event.timestamp_ns.get(),
             thread_id: event.thread_id,
             language: Language::Unknown,
             kind: SemanticEventKind::Unresolved,

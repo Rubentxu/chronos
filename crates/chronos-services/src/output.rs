@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use crate::debug_trace::CallGraph;
 use chronos_domain::query::{ExecutionSummary, StackFrame, StateDiff};
 use chronos_domain::SessionMetadata;
+use chronos_domain::SubscriptionId;
 
 // Re-exports so MCP wrappers can refer to property types via
 // `chronos_services::output::ComparisonOp` / `::PropertyValue`
@@ -497,7 +498,7 @@ pub struct ObserveInput {
     /// Which verb to dispatch (create | list | update | delete | query).
     pub verb: ObserveVerb,
     /// Subscription id (required for `update`, `delete`, `query`).
-    pub subscription_id: Option<String>,
+    pub subscription_id: Option<SubscriptionId>,
     /// Subscription body (required for `create`).
     pub condition: Option<ObserveCondition>,
     /// What to do when a subscription fires (optional; defaults to `Record`).
@@ -523,7 +524,7 @@ pub struct ObserveInput {
 pub struct ObserveCreateResult {
     /// Assigned subscription id (`tripwire-<n>` for tripwire conditions,
     /// `uprobe-<session>-<n>` for uprobe conditions).
-    pub subscription_id: String,
+    pub subscription_id: SubscriptionId,
     /// Subscription kind (`tripwire` or `uprobe`).
     pub kind: String,
     /// Status string (`"registered"` on success).
@@ -574,7 +575,7 @@ pub struct ObserveListResult {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ObserveDeleteResult {
     /// ID of the deleted subscription.
-    pub subscription_id: String,
+    pub subscription_id: SubscriptionId,
     /// Number of active subscriptions remaining after deletion.
     pub remaining_active: usize,
 }
@@ -668,7 +669,7 @@ impl From<chronos_domain::query::MutationRecord> for LineageEntry {
     fn from(m: chronos_domain::query::MutationRecord) -> Self {
         LineageEntry {
             event_id: m.event_id,
-            timestamp_ns: m.timestamp,
+            timestamp_ns: m.timestamp.get(),
             thread_id: m.thread_id,
             value_before: m.value_before,
             value_after: m.value_after,
@@ -2257,7 +2258,7 @@ mod tests {
                 total_matching: 42,
                 events: vec![chronos_domain::TraceEvent {
                     event_id: 1,
-                    timestamp_ns: 1000,
+                    timestamp_ns: chronos_domain::MonotonicNs::from(1000),
                     thread_id: 1,
                     event_type: EventType::FunctionEntry,
                     location: SourceLocation::default(),

@@ -123,7 +123,7 @@ impl DebugTraceSpecializedService {
                     crash_found: true,
                     signal: signal_name,
                     event_id: ev.event_id,
-                    timestamp_ns: ev.timestamp_ns,
+                    timestamp_ns: ev.timestamp_ns.get(),
                     thread_id: ev.thread_id,
                     call_stack_depth: stack.len(),
                     call_stack: stack.into_iter().map(CrashStackFrame::from).collect(),
@@ -379,6 +379,7 @@ mod tests {
     use super::*;
     use chronos_domain::trace::SourceLocation;
     use chronos_domain::EventData;
+    use chronos_domain::MonotonicNs;
 
     fn make_engine(events: Vec<TraceEvent>) -> QueryEngine {
         QueryEngine::new(events)
@@ -393,7 +394,7 @@ mod tests {
     ) -> TraceEvent {
         TraceEvent {
             event_id,
-            timestamp_ns,
+            timestamp_ns: MonotonicNs::from(timestamp_ns),
             thread_id,
             event_type,
             location: SourceLocation {
@@ -413,7 +414,7 @@ mod tests {
     ) -> TraceEvent {
         TraceEvent {
             event_id,
-            timestamp_ns,
+            timestamp_ns: MonotonicNs::from(timestamp_ns),
             thread_id,
             event_type: EventType::SignalDelivered,
             location: SourceLocation::default(),

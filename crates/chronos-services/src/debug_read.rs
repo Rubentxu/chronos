@@ -19,6 +19,7 @@ use crate::output::{
     RegisterChange, RegisterRead, RegisterSet, StateDiffSnapshot, VariableChange,
 };
 use chronos_domain::EventData;
+use chronos_domain::MonotonicNs;
 use chronos_query::QueryEngine;
 
 /// A zero-sized service struct. All state is passed in as arguments.
@@ -76,13 +77,12 @@ impl DebugReadService {
             .get(session_id)
             .ok_or_else(|| ServiceError::SessionNotFound(session_id.to_string()))?;
 
-        let mem =
-            engine
-                .get_memory_at(address, timestamp_ns)
-                .ok_or(ServiceError::MemoryNotFound {
-                    address,
-                    timestamp_ns,
-                })?;
+        let mem = engine
+            .get_memory_at(address, MonotonicNs::from(timestamp_ns))
+            .ok_or(ServiceError::MemoryNotFound {
+                address,
+                timestamp_ns,
+            })?;
 
         let hex = mem
             .data
@@ -235,7 +235,7 @@ impl DebugReadService {
         let event_a = engine.get_event_by_id(event_id_a);
         let event_b = engine.get_event_by_id(event_id_b);
         let timestamp_delta_ns = match (event_a, event_b) {
-            (Some(ea), Some(eb)) => eb.timestamp_ns.saturating_sub(ea.timestamp_ns),
+            (Some(ea), Some(eb)) => eb.timestamp_ns.get().saturating_sub(ea.timestamp_ns.get()),
             _ => 0,
         };
 
@@ -269,7 +269,7 @@ impl DebugReadService {
         let mut total_writes = 0u64;
 
         for event in all_events {
-            if event.timestamp_ns < start_ts || event.timestamp_ns > end_ts {
+            if event.timestamp_ns.get() < start_ts || event.timestamp_ns.get() > end_ts {
                 continue;
             }
 
@@ -291,7 +291,7 @@ impl DebugReadService {
                         .unwrap_or_default();
                     accesses.push(MemoryAccess {
                         address: format!("0x{:x}", address),
-                        timestamp_ns: event.timestamp_ns,
+                        timestamp_ns: event.timestamp_ns.get(),
                         data_hex: hex,
                         event_id: event.event_id,
                         size: *size,
@@ -347,7 +347,7 @@ impl DebugReadService {
                         })
                         .unwrap_or_default();
                     writes.push(AuditEntry {
-                        timestamp_ns: event.timestamp_ns,
+                        timestamp_ns: event.timestamp_ns.get(),
                         event_id: event.event_id,
                         data_hex: hex,
                         call_stack: stack
@@ -398,7 +398,7 @@ mod tests {
     ) -> chronos_domain::TraceEvent {
         chronos_domain::TraceEvent {
             event_id,
-            timestamp_ns,
+            timestamp_ns: MonotonicNs::from(timestamp_ns),
             thread_id,
             event_type,
             location: SourceLocation::default(),

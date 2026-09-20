@@ -79,7 +79,7 @@ impl PropertyProjection {
             return None;
         }
         let value = Self::parse_value(&var.value, &var.type_name);
-        Some((value, event.timestamp_ns, event.event_id))
+        Some((value, event.timestamp_ns.get(), event.event_id))
     }
 
     /// Parse a `VariableInfo` string value into a `PropertyValue`.
@@ -102,6 +102,7 @@ impl PropertyProjection {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chronos_domain::MonotonicNs;
     use chronos_domain::VariableInfo;
     use chronos_domain::{
         property::{ComparisonOp, InvariantCheck},
@@ -118,7 +119,7 @@ mod tests {
     ) -> TraceEvent {
         TraceEvent::new(
             event_id,
-            ts,
+            MonotonicNs::from(ts),
             1,
             EventType::VariableWrite,
             SourceLocation::new("test.rs", 10, "fn", 0x1000),

@@ -196,12 +196,12 @@ impl LogReadFilters {
             }
         }
         if let Some(start) = self.timestamp_start {
-            if r.timestamp_ns < start {
+            if r.timestamp_ns.get() < start {
                 return false;
             }
         }
         if let Some(end) = self.timestamp_end {
-            if r.timestamp_ns > end {
+            if r.timestamp_ns.get() > end {
                 return false;
             }
         }
@@ -620,6 +620,7 @@ mod rec_c1_3_tests {
     //! independent readers, and filters that never move the position.
 
     use super::*;
+    use chronos_domain::MonotonicNs;
     use chronos_domain::{EventType, SourceLocation};
     use chronos_log::{ExecutionPayload, NewExecutionRecord, SessionId};
 
@@ -637,7 +638,7 @@ mod rec_c1_3_tests {
         for (i, (event_type, ts, thread)) in events.iter().enumerate() {
             let event = TraceEvent::new(
                 i as u64,
-                *ts,
+                MonotonicNs::from(*ts),
                 *thread as u64,
                 *event_type,
                 SourceLocation {
@@ -678,7 +679,7 @@ mod rec_c1_3_tests {
     ) {
         let event = TraceEvent::new(
             i,
-            i * 10,
+            MonotonicNs::from(i * 10),
             i,
             event_type,
             SourceLocation {

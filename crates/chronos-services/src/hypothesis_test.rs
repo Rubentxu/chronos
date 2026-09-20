@@ -219,6 +219,7 @@ mod tests {
     use chronos_index::builder::IndexBuilder;
     use chronos_query::QueryEngine;
 
+    use chronos_domain::MonotonicNs;
     use std::sync::Arc;
 
     fn make_engine(events: Vec<TraceEvent>) -> Arc<TokioMutex<HashMap<String, QueryEngine>>> {
@@ -236,7 +237,7 @@ mod tests {
     fn var_event(id: u64, thread: u64, name: &str, value: &str) -> TraceEvent {
         TraceEvent {
             event_id: id,
-            timestamp_ns: id * 1000,
+            timestamp_ns: MonotonicNs::from(id * 1000),
             thread_id: thread,
             event_type: EventType::VariableWrite,
             location: SourceLocation::default(),
@@ -253,7 +254,7 @@ mod tests {
     fn func_event(id: u64, thread: u64, kind: EventType, name: &str) -> TraceEvent {
         TraceEvent {
             event_id: id,
-            timestamp_ns: id * 1000,
+            timestamp_ns: MonotonicNs::from(id * 1000),
             thread_id: thread,
             event_type: kind,
             location: SourceLocation {

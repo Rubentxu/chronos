@@ -153,6 +153,7 @@ impl ChronosTraceSliceService {
 mod tests {
     use super::*;
     use chronos_domain::trace::{EventData, EventType, SourceLocation, TraceEvent};
+    use chronos_domain::MonotonicNs;
     use std::collections::HashMap;
     use tokio::sync::Mutex;
 
@@ -176,7 +177,7 @@ mod tests {
     fn var_event(event_id: u64, ts: u64, tid: u64, name: &str, value: &str) -> TraceEvent {
         TraceEvent {
             event_id,
-            timestamp_ns: ts,
+            timestamp_ns: MonotonicNs::from(ts),
             thread_id: tid,
             event_type: EventType::VariableWrite,
             location: SourceLocation::default(),
@@ -193,7 +194,7 @@ mod tests {
     fn signal_event(event_id: u64, ts: u64, tid: u64, signum: i32, name: &str) -> TraceEvent {
         TraceEvent {
             event_id,
-            timestamp_ns: ts,
+            timestamp_ns: MonotonicNs::from(ts),
             thread_id: tid,
             event_type: EventType::SignalDelivered,
             location: SourceLocation::default(),

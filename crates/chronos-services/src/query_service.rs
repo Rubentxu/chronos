@@ -36,6 +36,7 @@ impl QueryService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chronos_domain::MonotonicNs;
     use chronos_domain::{EventData, EventType, SourceLocation};
 
     fn trace_event(
@@ -47,7 +48,7 @@ mod tests {
     ) -> chronos_domain::TraceEvent {
         chronos_domain::TraceEvent {
             event_id,
-            timestamp_ns,
+            timestamp_ns: MonotonicNs::from(timestamp_ns),
             thread_id,
             event_type,
             location: SourceLocation::default(),

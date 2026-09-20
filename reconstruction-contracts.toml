@@ -324,22 +324,23 @@ owner_gate = "REC-C3"
 [[requirement]]
 id = "SOLID-001"
 title = "Debugger backends expose small capability interfaces"
-status = "gap"
+status = "partial"
 owner_gate = "REC-C4"
-notes = "Wide TraceAdapter still uses UnsupportedOperation defaults."
+notes = "C4.1: TraceAdapter split via derived capability traits CaptureLifecycle + DebugInspect (blanket impls, zero impl churn). Narrow binding available for new consumers; DebugInspect documented as production-unconsumed. Remaining for verified: migrate production consumers (factory/ebpf) to bind on CaptureLifecycle and shrink the legacy TraceAdapter surface."
 
 [[requirement]]
 id = "CONN-001"
 title = "Sequence, monotonic time and wall-clock time have distinct semantics"
 status = "partial"
 owner_gate = "REC-C4"
+notes = "C4.2 (e901f285): MonotonicNs + WallClockMs newtypes in chronos-domain, #[serde(transparent)] u64 wire/on-disk compat (tested), TimestampNs = alias of MonotonicNs; TraceEvent.timestamp_ns typed; risk sites (python convert.rs, ebpf RawEvent) annotated with clock-domain docs. Remaining for verified: chronos-log wall-clock-ms boundary constructors typed (~12 sites)."
 
 [[requirement]]
 id = "CONN-002"
 title = "Inner identities are strongly typed"
 status = "partial"
 owner_gate = "REC-C4"
-notes = "InvocationId/SymbolId/EventSeq exist; session/probe/subscription identities remain mixed with strings in several boundaries."
+notes = "C4.3 (ff559f31): SubscriptionId newtype in chronos-domain, typed through chronos-mcp server and chronos-services (observe/output). SessionId/EventSeq/InvocationId/SymbolId already typed. Remaining for verified: probe_id still String at MCP/services boundaries."
 
 [[requirement]]
 id = "API-001"

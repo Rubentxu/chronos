@@ -8,7 +8,7 @@ pub mod pipeline;
 pub mod session_feed;
 pub mod state_recorder;
 
-pub use adapter::TraceAdapter;
+pub use adapter::{CaptureLifecycle, DebugInspect, TraceAdapter};
 pub use config::CaptureConfig;
 pub use factory::AdapterRegistry;
 pub use observation_log::{

@@ -137,12 +137,12 @@ impl Default for IndexBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chronos_domain::{EventData, EventType, SourceLocation};
+    use chronos_domain::{EventData, EventType, MonotonicNs, SourceLocation};
 
     fn make_event(id: u64, ts: u64, event_type: EventType, addr: u64) -> TraceEvent {
         TraceEvent::new(
             id,
-            ts,
+            MonotonicNs::from(ts),
             1,
             event_type,
             SourceLocation::from_address(addr),
@@ -160,7 +160,7 @@ mod tests {
         };
         TraceEvent::new(
             id,
-            ts,
+            MonotonicNs::from(ts),
             1,
             EventType::VariableWrite,
             chronos_domain::SourceLocation::from_address(addr),
@@ -171,7 +171,7 @@ mod tests {
     fn make_function_entry(id: u64, ts: u64, addr: u64, name: &str) -> TraceEvent {
         TraceEvent::new(
             id,
-            ts,
+            MonotonicNs::from(ts),
             1,
             EventType::FunctionEntry,
             chronos_domain::SourceLocation::from_address(addr),
@@ -207,8 +207,14 @@ mod tests {
 
         // Temporal should have all 4 events
         assert_eq!(indices.temporal.len(), 4);
-        assert_eq!(indices.temporal.min_timestamp(), Some(100));
-        assert_eq!(indices.temporal.max_timestamp(), Some(400));
+        assert_eq!(
+            indices.temporal.min_timestamp(),
+            Some(MonotonicNs::from(100))
+        );
+        assert_eq!(
+            indices.temporal.max_timestamp(),
+            Some(MonotonicNs::from(400))
+        );
     }
 
     #[test]
@@ -258,7 +264,9 @@ mod tests {
         let indices = builder.finalize();
 
         // Query events between 20ms and 50ms
-        let events = indices.temporal.range(20_000, 50_000);
+        let events = indices
+            .temporal
+            .range(MonotonicNs::from(20_000), MonotonicNs::from(50_000));
         assert_eq!(events.len(), 30); // events 20..49
     }
 
@@ -320,11 +328,14 @@ mod tests {
         // Should have 2 causality entries for addr
         let writes = indices.causality.writes_at(addr);
         assert_eq!(writes.len(), 2);
-        assert_eq!(writes[0].timestamp, 100);
-        assert_eq!(writes[1].timestamp, 200);
+        assert_eq!(writes[0].timestamp, MonotonicNs::from(100));
+        assert_eq!(writes[1].timestamp, MonotonicNs::from(200));
 
         // find_last_mutation before ts=250 returns ts=200 entry
-        let last = indices.causality.find_last_mutation(addr, 250).unwrap();
+        let last = indices
+            .causality
+            .find_last_mutation(addr, MonotonicNs::from(250))
+            .unwrap();
         assert_eq!(last.event_id, 1);
 
         // trace_lineage by name

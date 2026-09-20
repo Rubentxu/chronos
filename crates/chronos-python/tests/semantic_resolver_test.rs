@@ -1,14 +1,14 @@
 use chronos_domain::semantic::{ResolveContext, SemanticEventKind, SemanticResolver};
 use chronos_domain::{
-    EventData, EventType, Language, PythonEventKind, SourceLocation, TraceEvent, VariableInfo,
-    VariableScope,
+    EventData, EventType, Language, MonotonicNs, PythonEventKind, SourceLocation, TraceEvent,
+    VariableInfo, VariableScope,
 };
 use chronos_python::semantic_resolver::PythonSemanticResolver;
 
 fn make_python_call_event() -> TraceEvent {
     TraceEvent::new(
         1,
-        1_000_000,
+        MonotonicNs::from(1_000_000),
         100,
         EventType::FunctionEntry,
         SourceLocation {
@@ -88,7 +88,7 @@ fn test_resolve_non_python_returns_none() {
     let resolver = PythonSemanticResolver::new();
     let event = TraceEvent::new(
         1,
-        0,
+        MonotonicNs::from(0),
         1,
         EventType::FunctionEntry,
         SourceLocation::default(),

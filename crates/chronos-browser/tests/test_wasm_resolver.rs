@@ -3,6 +3,7 @@
 use chronos_browser::wasm_resolver::WasmSemanticResolver;
 use chronos_domain::semantic::{ResolveContext, SemanticResolver};
 use chronos_domain::trace::{Language, TraceEvent, WasmEventKind};
+use chronos_domain::MonotonicNs;
 
 fn make_wasm_frame(
     function_index: u32,
@@ -16,7 +17,7 @@ fn make_wasm_frame(
 
     TraceEvent::wasm_frame(
         event_id,
-        timestamp_ns,
+        MonotonicNs::from(timestamp_ns),
         thread_id,
         function_index,
         function_name,
@@ -96,7 +97,7 @@ fn test_wasm_semantic_resolver_exception() {
 #[test]
 fn test_wasm_semantic_resolver_non_wasm_event() {
     let resolver = WasmSemanticResolver::new();
-    let event = TraceEvent::function_entry(1, 1000, 1, "main", 0x1000);
+    let event = TraceEvent::function_entry(1, MonotonicNs::from(1000), 1, "main", 0x1000);
 
     let semantic = resolver.resolve(
         &event,

@@ -1,7 +1,7 @@
 //! Convert Delve stack frames into Chronos trace events.
 
 use crate::rpc::StackFrame;
-use chronos_domain::{EventData, GoEventKind, SourceLocation, TraceEvent};
+use chronos_domain::{EventData, GoEventKind, MonotonicNs, SourceLocation, TraceEvent};
 
 /// Convert a Delve stack frame into a Chronos TraceEvent.
 pub fn stack_frame_to_trace_event(
@@ -53,7 +53,7 @@ pub fn stack_frame_to_trace_event(
 
     TraceEvent {
         event_id,
-        timestamp_ns,
+        timestamp_ns: MonotonicNs::from(timestamp_ns),
         thread_id: goroutine_id,
         event_type: chronos_domain::EventType::BreakpointHit,
         location,
@@ -65,6 +65,7 @@ pub fn stack_frame_to_trace_event(
 mod tests {
     use super::*;
     use crate::rpc::FunctionInfo;
+    use chronos_domain::MonotonicNs;
 
     #[test]
     fn test_stack_frame_to_trace_event_basic() {
@@ -80,7 +81,7 @@ mod tests {
         let event = stack_frame_to_trace_event(&frame, 1, 1, 1000, GoEventKind::Breakpoint);
 
         assert_eq!(event.event_id, 1);
-        assert_eq!(event.timestamp_ns, 1000);
+        assert_eq!(event.timestamp_ns, MonotonicNs::from(1000));
         assert_eq!(event.thread_id, 1);
         assert_eq!(event.event_type, chronos_domain::EventType::BreakpointHit);
 

@@ -17,6 +17,7 @@
 //! (`m1_03_execution_log_migrates_one_producer_and_query_path`).
 
 use chronos_domain::ports::execution_log::ExecutionLogProvider;
+use chronos_domain::MonotonicNs;
 use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
 use chronos_log::{
     provider::SegmentedExecutionLogProvider, EventSeq, NewExecutionRecord, SegmentedConfig,
@@ -51,7 +52,7 @@ fn decode_trace_event(bytes: &[u8]) -> TraceEvent {
 fn push_event(log: &SegmentedExecutionLog, session: &str, i: u64, kind: EventType) {
     let ev = TraceEvent {
         event_id: i,
-        timestamp_ns: i * 100,
+        timestamp_ns: MonotonicNs::from(i * 100),
         thread_id: 1,
         event_type: kind,
         location: SourceLocation::default(),
@@ -102,7 +103,7 @@ fn accept_and_publish_lands_in_attached_provider() {
     // Build a minimal TraceEvent.
     let ev = TraceEvent {
         event_id: 0,
-        timestamp_ns: 0,
+        timestamp_ns: MonotonicNs::from(0),
         thread_id: 1,
         event_type: EventType::FunctionEntry,
         location: SourceLocation::default(),
@@ -127,7 +128,7 @@ fn accept_and_publish_lands_in_attached_provider() {
     assert_eq!(page.records.len(), 1);
     let observed = decode_trace_event(&page.records[0].payload.bytes);
     assert_eq!(observed.event_id, 0);
-    assert_eq!(observed.timestamp_ns, 0);
+    assert_eq!(observed.timestamp_ns.as_u64(), 0);
     // `exhausted` means "nothing at or after the input position" (see
     // chronos_log::cursor::LogPage). After 1 record the read saw something,
     // so the *first* page is not exhausted. The follow-up read from

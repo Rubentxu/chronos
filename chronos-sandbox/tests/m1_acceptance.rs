@@ -7,6 +7,8 @@
 
 use std::sync::Arc;
 
+use chronos_domain::MonotonicNs;
+
 use chronos_log::{
     EventSeq, ExecutionLogBackend, Gap, GapReason, InMemoryExecutionLog, LogConsumerId, ReadResult,
     SessionId,
@@ -457,7 +459,7 @@ fn m1_03_execution_log_migration_impl() {
     let synth_events: Vec<chronos_domain::TraceEvent> = (0..5u64)
         .map(|i| chronos_domain::TraceEvent {
             event_id: i,
-            timestamp_ns: i * 1000,
+            timestamp_ns: MonotonicNs::from(i * 1000),
             thread_id: 42,
             event_type: chronos_domain::EventType::FunctionEntry,
             location: chronos_domain::SourceLocation {
@@ -505,7 +507,7 @@ fn m1_03_execution_log_migration_impl() {
     // and timestamp_ns against what was recovered from the log.
     for (i, ev_back) in decoded.iter().enumerate() {
         assert_eq!(ev_back.event_id, i as u64);
-        assert_eq!(ev_back.timestamp_ns, i as u64 * 1000);
+        assert_eq!(ev_back.timestamp_ns.as_u64(), i as u64 * 1000);
         assert_eq!(ev_back.event_type, synth_events[i].event_type);
     }
 
@@ -621,7 +623,7 @@ fn m1_04_execution_log_durable_cursors_and_decoders_impl() {
     use chronos_log::provider::SegmentedExecutionLogProvider;
     let good = chronos_domain::TraceEvent {
         event_id: 7,
-        timestamp_ns: 7000,
+        timestamp_ns: MonotonicNs::from(7000),
         thread_id: 1,
         event_type: chronos_domain::EventType::FunctionEntry,
         location: chronos_domain::SourceLocation::default(),

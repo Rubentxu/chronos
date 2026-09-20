@@ -111,8 +111,11 @@ impl ChronosSessionExportService {
 
             let (duration_ms, created_at) =
                 if let (Some(first), Some(last)) = (events.first(), events.last()) {
-                    let dur_ns = last.timestamp_ns.saturating_sub(first.timestamp_ns);
-                    (dur_ns / 1_000_000, last.timestamp_ns / 1_000_000)
+                    let dur_ns = last
+                        .timestamp_ns
+                        .get()
+                        .saturating_sub(first.timestamp_ns.get());
+                    (dur_ns / 1_000_000, last.timestamp_ns.get() / 1_000_000)
                 } else {
                     (0, 0)
                 };
@@ -195,8 +198,8 @@ fn serialize_bundle_otlp_json(bundle: &ExportBundle) -> Result<Vec<u8>, ServiceE
         .map(|ev| {
             json!({
                 "name": format!("{:?}", ev.event_type),
-                "start_time_unix_nano": ev.timestamp_ns.to_string(),
-                "end_time_unix_nano":   ev.timestamp_ns.to_string(),
+                "start_time_unix_nano": ev.timestamp_ns.get().to_string(),
+                "end_time_unix_nano":   ev.timestamp_ns.get().to_string(),
                 "attributes": [{
                     "key": "chronos.event_id",
                     "value": { "intValue": ev.event_id as i64 },
@@ -304,12 +307,13 @@ mod tests {
     use chronos_index::builder::IndexBuilder;
     use chronos_query::QueryEngine;
 
+    use chronos_domain::MonotonicNs;
     use std::collections::HashMap;
 
     fn func_event(id: u64, thread: u64, name: &str) -> TraceEvent {
         TraceEvent {
             event_id: id,
-            timestamp_ns: id * 1_000,
+            timestamp_ns: MonotonicNs::from(id * 1_000),
             thread_id: thread,
             event_type: EventType::FunctionEntry,
             location: SourceLocation {
@@ -620,8 +624,8 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
         let events: Vec<TraceEvent> = serde_json::from_value(v["events"].clone()).unwrap();
         assert_eq!(events.len(), 2);
-        assert_eq!(events.first().unwrap().timestamp_ns, 1_000);
-        assert_eq!(events.last().unwrap().timestamp_ns, 5_000);
+        assert_eq!(events.first().unwrap().timestamp_ns.as_u64(), 1_000);
+        assert_eq!(events.last().unwrap().timestamp_ns.as_u64(), 5_000);
     }
 
     #[tokio::test]

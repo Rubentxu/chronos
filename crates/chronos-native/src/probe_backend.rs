@@ -21,7 +21,8 @@ use crate::symbol_resolver::SymbolResolver;
 use chronos_domain::ports::execution_log::ExecutionLogProvider;
 use chronos_domain::semantic::{ResolveContext, ResolverPipeline, SemanticResolver};
 use chronos_domain::{
-    CaptureConfig, CaptureSession, Language, ProbeBackend, SourceLocation, TraceError, TraceEvent,
+    CaptureConfig, CaptureSession, Language, MonotonicNs, ProbeBackend, SourceLocation, TraceError,
+    TraceEvent,
 };
 use chronos_log::{ExecutionPayload, NewExecutionRecord, SegmentedConfig, SegmentedExecutionLog};
 use std::path::{Path, PathBuf};
@@ -796,10 +797,12 @@ impl NativeProbeBackend {
         // let the thread exit normally.
         if ptrace_config.track_function_frames {
             if let Some(resolver) = symbol_resolver {
-                let timestamp_ns = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos() as u64;
+                let timestamp_ns = MonotonicNs::from(
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_nanos() as u64,
+                );
                 // The live backend exposes an `Arc<AtomicBool>` named `running`
                 // (true = continue, false = stop). The capture helper expects a
                 // `stop_flag` (true = stop). Bridge the two with a mirror
@@ -829,7 +832,7 @@ impl NativeProbeBackend {
                         let accepted = Self::accept_and_publish(
                             seam.log.as_ref(),
                             &trace_event,
-                            timestamp_ns,
+                            timestamp_ns.get(),
                             seam.observer.as_ref(),
                         )
                         .is_ok();
@@ -875,10 +878,12 @@ impl NativeProbeBackend {
                 }
             };
 
-            let timestamp_ns = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos() as u64;
+            let timestamp_ns = MonotonicNs::from(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos() as u64,
+            );
 
             // Convert to TraceEvent and push to bus
             if let Some(mut trace_event) =
@@ -906,7 +911,7 @@ impl NativeProbeBackend {
                 let accepted = Self::accept_and_publish(
                     seam.log.as_ref(),
                     &trace_event,
-                    timestamp_ns,
+                    timestamp_ns.get(),
                     seam.observer.as_ref(),
                 )
                 .is_ok();
@@ -1013,10 +1018,12 @@ impl NativeProbeBackend {
                 }
             };
 
-            let timestamp_ns = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos() as u64;
+            let timestamp_ns = MonotonicNs::from(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos() as u64,
+            );
 
             // Convert to TraceEvent and push to bus
             if let Some(trace_event) =
@@ -1028,7 +1035,7 @@ impl NativeProbeBackend {
                 let accepted = Self::accept_and_publish(
                     seam.log.as_ref(),
                     &trace_event,
-                    timestamp_ns,
+                    timestamp_ns.get(),
                     seam.observer.as_ref(),
                 )
                 .is_ok();
@@ -1181,7 +1188,7 @@ mod tests {
         ));
         let log: Arc<dyn ExecutionLogProvider> = Arc::clone(&provider);
 
-        let event = TraceEvent::signal(1, 100, 1, 11, "SIGSEGV", 0);
+        let event = TraceEvent::signal(1, MonotonicNs::from(100), 1, 11, "SIGSEGV", 0);
 
         // Accepted: the log assigned a seq, and a read returns the event.
         let accepted = NativeProbeBackend::accept_and_publish(Some(&log), &event, 123, None)
@@ -1220,7 +1227,7 @@ mod tests {
     #[test]
     fn c2_3_projecting_semantics_is_a_pure_function_of_inputs() {
         let backend = NativeProbeBackend::new();
-        let event = TraceEvent::signal(1, 100, 1, 11, "SIGSEGV", 0);
+        let event = TraceEvent::signal(1, MonotonicNs::from(100), 1, 11, "SIGSEGV", 0);
 
         let ctx = backend.resolve_context(None);
         let a = backend.project_semantic(&event, &ctx);
@@ -1270,7 +1277,7 @@ mod tests {
         ));
         let log: Arc<dyn ExecutionLogProvider> = Arc::clone(&provider);
 
-        let event = TraceEvent::signal(1, 100, 1, 11, "SIGSEGV", 0);
+        let event = TraceEvent::signal(1, MonotonicNs::from(100), 1, 11, "SIGSEGV", 0);
 
         let seen: std::sync::Arc<std::sync::Mutex<Vec<u64>>> = Default::default();
         let seen_for_obs = seen.clone();
@@ -1369,7 +1376,7 @@ mod tests {
         ));
         let log: Arc<dyn ExecutionLogProvider> = Arc::clone(&provider);
 
-        let ev = TraceEvent::signal(1, 100, 1, 11, "SIGSEGV", 0);
+        let ev = TraceEvent::signal(1, MonotonicNs::from(100), 1, 11, "SIGSEGV", 0);
 
         // Accepted append ⇒ Some(seq).
         let accepted =
@@ -1415,7 +1422,7 @@ mod tests {
         let parent = chronos_domain::InvocationId::now();
         let event = TraceEvent {
             event_id: 1,
-            timestamp_ns: 1000,
+            timestamp_ns: MonotonicNs::from(1000),
             thread_id: 1,
             event_type: chronos_domain::EventType::FunctionEntry,
             location: Default::default(),
@@ -1437,7 +1444,8 @@ mod tests {
     fn bridge_keeps_identity_empty_for_non_function_events() {
         // REQ-BridgeProjectsEventIdentity: non-Function payloads (here a
         // syscall) keep all three identity fields None.
-        let event = TraceEvent::syscall_enter(1, 1000, 1, "read", 0, vec![], 0x4000);
+        let event =
+            TraceEvent::syscall_enter(1, MonotonicNs::from(1000), 1, "read", 0, vec![], 0x4000);
         let rec = super::trace_event_to_log_record_for_test("s", 1000, &event);
         assert_eq!(rec.symbol_id, None);
         assert_eq!(rec.invocation_id, None);

@@ -14,7 +14,7 @@
 //! the M2 replacement.
 
 use crate::symbol_resolver::SymbolResolver;
-use chronos_domain::trace::{ThreadId, TimestampNs};
+use chronos_domain::trace::{MonotonicNs, ThreadId, TimestampNs};
 use chronos_domain::{EventData, EventType, InvocationId, Language, SourceLocation, TraceEvent};
 use std::collections::HashMap;
 
@@ -232,13 +232,14 @@ impl InvocationTracker {
     }
 }
 
-// `TimestampNs` is a u64 type alias; this is just for clarity in callsites.
+// `TimestampNs` is now the typed `MonotonicNs` newtype; keep the local
+// helper so callsites stay explicit about the clock domain.
 trait FromNs {
     fn from_ns(ns: u64) -> Self;
 }
 impl FromNs for TimestampNs {
     fn from_ns(ns: u64) -> Self {
-        ns
+        MonotonicNs::from(ns)
     }
 }
 

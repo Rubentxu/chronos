@@ -1,7 +1,7 @@
 //! Convert DAP events to TraceEvents.
 
 use crate::client::DapEvent;
-use chronos_domain::{EventData, EventType, PythonEventKind, TraceEvent};
+use chronos_domain::{EventData, EventType, MonotonicNs, PythonEventKind, TraceEvent};
 use serde::Deserialize;
 
 /// DAP stopped event body.
@@ -85,7 +85,9 @@ fn convert_stopped(event: &DapEvent) -> Option<TraceEvent> {
 
     Some(TraceEvent {
         event_id: 0, // Will be assigned by session
-        timestamp_ns: 0,
+        // Clock domain: DAP `stopped` events carry no timestamp, so this
+        // synthetic marker uses t=0 on the session's monotonic clock.
+        timestamp_ns: MonotonicNs::from(0),
         thread_id: body.thread_id.unwrap_or(1),
         event_type,
         location: chronos_domain::trace::SourceLocation::default(),
@@ -112,7 +114,11 @@ fn convert_output(event: &DapEvent) -> Option<TraceEvent> {
 
     Some(TraceEvent {
         event_id: 0,
-        timestamp_ns: body.timestamp.unwrap_or(0),
+        // Clock domain: `body.timestamp` is a wall-clock millis value from
+        // the DAP `output` event; it is stored on the monotonic trace
+        // timeline as-is (milliseconds in a nanosecond field, t=0 default).
+        // It is NOT comparable with native monotonic nanoseconds.
+        timestamp_ns: MonotonicNs::from(body.timestamp.unwrap_or(0)),
         thread_id: 1,
         event_type: EventType::Custom,
         location: chronos_domain::trace::SourceLocation::default(),

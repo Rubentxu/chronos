@@ -10,8 +10,8 @@ use crate::parser::{locals_to_variable_info, RawPythonEvent};
 use crate::subprocess::PythonSubprocess;
 use chronos_capture::TraceAdapter;
 use chronos_domain::{
-    CaptureConfig, CaptureSession, EventData, EventType, Language, PythonEventKind, SourceLocation,
-    TraceError, TraceEvent,
+    CaptureConfig, CaptureSession, EventData, EventType, Language, MonotonicNs, PythonEventKind,
+    SourceLocation, TraceError, TraceEvent,
 };
 use std::sync::Mutex;
 use std::time::Instant;
@@ -97,7 +97,7 @@ impl PythonAdapter {
 
         TraceEvent {
             event_id,
-            timestamp_ns,
+            timestamp_ns: MonotonicNs::from(timestamp_ns),
             thread_id,
             event_type,
             location,
