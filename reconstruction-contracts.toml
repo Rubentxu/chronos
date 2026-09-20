@@ -340,7 +340,7 @@ id = "CONN-002"
 title = "Inner identities are strongly typed"
 status = "partial"
 owner_gate = "REC-C4"
-notes = "InvocationId/SymbolId/EventSeq exist; session/probe/subscription identities remain mixed with strings in several boundaries."
+notes = "C4.3 (ff559f31): SubscriptionId newtype in chronos-domain, typed through chronos-mcp server and chronos-services (observe/output). SessionId/EventSeq/InvocationId/SymbolId already typed. Remaining for verified: probe_id still String at MCP/services boundaries."
 
 [[requirement]]
 id = "API-001"
