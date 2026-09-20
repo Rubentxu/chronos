@@ -141,7 +141,6 @@ fn bench_trace_diff(c: &mut Criterion) {
                 black_box(&events_b),
                 &meta_a,
                 &meta_b,
-                None,
             )
         })
     });
