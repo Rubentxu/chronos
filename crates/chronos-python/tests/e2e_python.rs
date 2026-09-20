@@ -100,14 +100,16 @@ async fn test_python_nested_calls() {
 fn test_query_events_python_frame_filter() {
     // T17: Verify query_events filter works on Python traces
     use chronos_domain::TraceQuery;
-    use chronos_domain::{EventData, EventType, PythonEventKind, SourceLocation, TraceEvent};
+    use chronos_domain::{
+        EventData, EventType, MonotonicNs, PythonEventKind, SourceLocation, TraceEvent,
+    };
     use chronos_query::QueryEngine;
 
     // Create sample Python trace events
     let events = vec![
         TraceEvent {
             event_id: 1,
-            timestamp_ns: 1000,
+            timestamp_ns: MonotonicNs::from(1000),
             thread_id: 1,
             event_type: EventType::FunctionEntry,
             location: SourceLocation {
@@ -127,7 +129,7 @@ fn test_query_events_python_frame_filter() {
         },
         TraceEvent {
             event_id: 2,
-            timestamp_ns: 2000,
+            timestamp_ns: MonotonicNs::from(2000),
             thread_id: 1,
             event_type: EventType::FunctionExit,
             location: SourceLocation {
@@ -147,7 +149,7 @@ fn test_query_events_python_frame_filter() {
         },
         TraceEvent {
             event_id: 3,
-            timestamp_ns: 3000,
+            timestamp_ns: MonotonicNs::from(3000),
             thread_id: 1,
             event_type: EventType::FunctionEntry,
             location: SourceLocation {
@@ -193,14 +195,16 @@ fn test_query_events_python_frame_filter() {
 #[test]
 fn test_get_call_stack_python_frames() {
     // T16: Verify get_call_stack returns Python frames
-    use chronos_domain::{EventData, EventType, PythonEventKind, SourceLocation, TraceEvent};
+    use chronos_domain::{
+        EventData, EventType, MonotonicNs, PythonEventKind, SourceLocation, TraceEvent,
+    };
     use chronos_query::QueryEngine;
 
     // Create nested Python call events
     let events = vec![
         TraceEvent {
             event_id: 1,
-            timestamp_ns: 1000,
+            timestamp_ns: MonotonicNs::from(1000),
             thread_id: 1,
             event_type: EventType::FunctionEntry,
             location: SourceLocation {
@@ -220,7 +224,7 @@ fn test_get_call_stack_python_frames() {
         },
         TraceEvent {
             event_id: 2,
-            timestamp_ns: 2000,
+            timestamp_ns: MonotonicNs::from(2000),
             thread_id: 1,
             event_type: EventType::FunctionEntry,
             location: SourceLocation {
@@ -240,7 +244,7 @@ fn test_get_call_stack_python_frames() {
         },
         TraceEvent {
             event_id: 3,
-            timestamp_ns: 3000,
+            timestamp_ns: MonotonicNs::from(3000),
             thread_id: 1,
             event_type: EventType::FunctionExit,
             location: SourceLocation {
@@ -260,7 +264,7 @@ fn test_get_call_stack_python_frames() {
         },
         TraceEvent {
             event_id: 4,
-            timestamp_ns: 4000,
+            timestamp_ns: MonotonicNs::from(4000),
             thread_id: 1,
             event_type: EventType::FunctionExit,
             location: SourceLocation {

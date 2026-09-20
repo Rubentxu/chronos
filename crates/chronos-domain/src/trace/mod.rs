@@ -7,8 +7,8 @@ mod session;
 
 pub use event::{
     EventData, EventId, EventType, GoEventKind, InvocationId, JavaEventKind, JsEventKind,
-    PythonEventKind, RegisterState, SymbolId, ThreadId, TimestampNs, TraceEvent, WasmEventKind,
-    WasmFunctionInfo, WasmModuleInfo,
+    MonotonicNs, PythonEventKind, RegisterState, SymbolId, ThreadId, TimestampNs, TraceEvent,
+    WallClockMs, WasmEventKind, WasmFunctionInfo, WasmModuleInfo,
 };
 pub use inspect::{RuntimeInfo, StackFrame, ThreadInfo, ThreadState};
 pub use location::SourceLocation;

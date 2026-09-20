@@ -918,7 +918,7 @@ mod tests {
                 .append(chronos_log::NewExecutionRecord {
                     session_id: log.session_id().clone(),
                     kind: K::Raw,
-                    monotonic_ns: event.timestamp_ns,
+                    monotonic_ns: event.timestamp_ns.get(),
                     payload,
                     ..Default::default()
                 })
@@ -1155,10 +1155,10 @@ mod tests {
     /// A `FunctionEntry` whose `location.function` is matched (or not) by the
     /// rig's `main*` condition.
     fn fn_event(name: &str, event_id: u64, ts: u64) -> chronos_domain::TraceEvent {
-        use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
+        use chronos_domain::{EventData, EventType, MonotonicNs, SourceLocation, TraceEvent};
         TraceEvent {
             event_id,
-            timestamp_ns: ts,
+            timestamp_ns: MonotonicNs::from(ts),
             thread_id: 1,
             event_type: EventType::FunctionEntry,
             location: SourceLocation {

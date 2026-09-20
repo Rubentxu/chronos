@@ -17,7 +17,7 @@ fn make_var_event(
 ) -> chronos_domain::TraceEvent {
     chronos_domain::TraceEvent::new(
         event_id,
-        ts,
+        chronos_domain::MonotonicNs::from(ts),
         1,
         EventType::VariableWrite,
         SourceLocation::new("test.rs", 10, "apply_discount", 0x1000),

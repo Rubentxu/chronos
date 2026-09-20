@@ -322,6 +322,7 @@ impl EventReceiver for VecEventReceiver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chronos_domain::MonotonicNs;
 
     struct MockAdapter;
 
@@ -370,7 +371,7 @@ mod tests {
         let receiver = VecEventReceiver::new();
         assert_eq!(receiver.event_count(), 0);
 
-        let event = TraceEvent::function_entry(1, 100, 1, "main", 0x1000);
+        let event = TraceEvent::function_entry(1, MonotonicNs::from(100), 1, "main", 0x1000);
         receiver.on_event(event).unwrap();
         assert_eq!(receiver.event_count(), 1);
 

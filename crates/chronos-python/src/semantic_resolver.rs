@@ -113,7 +113,7 @@ impl SemanticResolver for PythonSemanticResolver {
 
         Some(SemanticEvent {
             source_event_id: event.event_id,
-            timestamp_ns: event.timestamp_ns,
+            timestamp_ns: event.timestamp_ns.get(),
             thread_id: event.thread_id,
             language: Language::Python,
             kind,

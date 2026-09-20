@@ -48,6 +48,9 @@ pub struct EbpfEvent {
 impl Default for EbpfEvent {
     fn default() -> Self {
         Self {
+            // Clock domain: `timestamp_ns` is bpf_ktime_get_ns()
+            // (kernel monotonic, boot-relative), NOT wall-clock time.
+            // Downstream consumers must treat it as monotonic only.
             timestamp_ns: 0,
             thread_id: 0,
             address: 0,
@@ -149,7 +152,7 @@ impl EbpfEvent {
 
     /// Convert to a `chronos_domain::TraceEvent`.
     pub fn to_trace_event(&self, event_id: u64) -> chronos_domain::TraceEvent {
-        use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
+        use chronos_domain::{EventData, EventType, MonotonicNs, SourceLocation, TraceEvent};
 
         let is_return = matches!(self.kind, EbpfEventKind::FunctionExit);
 
@@ -171,7 +174,7 @@ impl EbpfEvent {
 
         TraceEvent::new(
             event_id,
-            self.timestamp_ns,
+            MonotonicNs::from(self.timestamp_ns),
             self.thread_id,
             event_type,
             location,
@@ -264,9 +267,9 @@ mod tests {
         let ev = EbpfEvent::function_entry(1234, 7, 0x5000, "compute");
         let te = ev.to_trace_event(10);
 
-        use chronos_domain::{EventData, EventType};
+        use chronos_domain::{EventData, EventType, MonotonicNs};
         assert_eq!(te.event_id, 10);
-        assert_eq!(te.timestamp_ns, 1234);
+        assert_eq!(te.timestamp_ns, MonotonicNs::from(1234));
         assert_eq!(te.thread_id, 7);
         assert_eq!(te.event_type, EventType::FunctionEntry);
         assert_eq!(te.location.address, 0x5000);
@@ -292,9 +295,9 @@ mod tests {
         let ev = EbpfEvent::function_exit(5678, 10, 0x6000);
         let te = ev.to_trace_event(20);
 
-        use chronos_domain::{EventData, EventType};
+        use chronos_domain::{EventData, EventType, MonotonicNs};
         assert_eq!(te.event_id, 20);
-        assert_eq!(te.timestamp_ns, 5678);
+        assert_eq!(te.timestamp_ns, MonotonicNs::from(5678));
         assert_eq!(te.thread_id, 10);
         assert_eq!(te.event_type, EventType::FunctionExit);
         match &te.data {

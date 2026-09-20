@@ -5,7 +5,7 @@
 
 use crate::wasm_probes::WasmBreakpointManager;
 use chronos_domain::trace::{
-    EventData, EventType, SourceLocation, TraceEvent, WasmEventKind, WasmFunctionInfo,
+    EventData, EventType, MonotonicNs, SourceLocation, TraceEvent, WasmEventKind, WasmFunctionInfo,
     WasmModuleInfo,
 };
 use serde::Deserialize;
@@ -204,7 +204,7 @@ pub fn paused_to_wasm_events(
 
         events.push(TraceEvent {
             event_id,
-            timestamp_ns,
+            timestamp_ns: MonotonicNs::from(timestamp_ns),
             thread_id: 1, // WASM is single-threaded in MVP
             event_type: EventType::BreakpointHit,
             location,

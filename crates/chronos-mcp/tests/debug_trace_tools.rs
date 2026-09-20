@@ -5,7 +5,7 @@
 //! chronos-mcp binary.
 
 use chronos_domain::trace::{EventType, SourceLocation};
-use chronos_domain::{EventData, TraceEvent};
+use chronos_domain::{EventData, MonotonicNs, TraceEvent};
 use chronos_services::debug_trace::DebugTraceService;
 use chronos_services::error::ServiceError;
 use std::collections::HashMap;
@@ -24,7 +24,7 @@ fn trace_event(
 ) -> TraceEvent {
     TraceEvent {
         event_id,
-        timestamp_ns,
+        timestamp_ns: MonotonicNs::from(timestamp_ns),
         thread_id,
         event_type,
         location: SourceLocation {

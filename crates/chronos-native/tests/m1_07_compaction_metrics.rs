@@ -18,6 +18,7 @@
 //! lives in `chronos-sandbox/tests/m1_07_compaction_metrics.rs`
 //! (T4 smoke).
 
+use chronos_domain::MonotonicNs;
 use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
 use chronos_log::{
     EventSeq, ExecutionPayload, LogConsumerId, NewExecutionRecord, SegmentedConfig,
@@ -85,7 +86,7 @@ fn compaction_metrics_reflects_real_compaction_runs() {
     for i in 0..4u64 {
         let ev = TraceEvent {
             event_id: i,
-            timestamp_ns: i * 10,
+            timestamp_ns: MonotonicNs::from(i * 10),
             thread_id: 1,
             event_type: EventType::FunctionEntry,
             location: SourceLocation::default(),

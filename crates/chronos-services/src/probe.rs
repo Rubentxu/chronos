@@ -585,7 +585,10 @@ impl ProbeService {
 
         // Compute duration before moving events
         let duration_ms = if let (Some(first), Some(last)) = (events.first(), events.last()) {
-            last.timestamp_ns.saturating_sub(first.timestamp_ns) / 1_000_000
+            last.timestamp_ns
+                .get()
+                .saturating_sub(first.timestamp_ns.get())
+                / 1_000_000
         } else {
             0
         };

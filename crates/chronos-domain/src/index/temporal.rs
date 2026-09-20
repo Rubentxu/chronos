@@ -60,19 +60,19 @@ impl TemporalIndex {
         let mut event_count = 0u64;
 
         for (&ts, &eid) in &self.entries {
-            if ts >= current_end {
+            if ts.get() >= current_end {
                 // Flush current chunk
                 if let Some(first_eid) = first_event_id {
                     self.chunks.push(TimeChunk {
-                        start_ts: current_start,
-                        end_ts: current_end,
+                        start_ts: TimestampNs::from(current_start),
+                        end_ts: TimestampNs::from(current_end),
                         first_event_id: first_eid,
                         event_count,
                     });
                 }
 
                 // Advance to the chunk containing this timestamp
-                current_start = (ts / CHUNK_SIZE_NS) * CHUNK_SIZE_NS;
+                current_start = (ts.get() / CHUNK_SIZE_NS) * CHUNK_SIZE_NS;
                 current_end = current_start + CHUNK_SIZE_NS;
                 first_event_id = Some(eid);
                 event_count = 0;
@@ -87,8 +87,8 @@ impl TemporalIndex {
         // Flush last chunk
         if let Some(first_eid) = first_event_id {
             self.chunks.push(TimeChunk {
-                start_ts: current_start,
-                end_ts: current_end,
+                start_ts: TimestampNs::from(current_start),
+                end_ts: TimestampNs::from(current_end),
                 first_event_id: first_eid,
                 event_count,
             });
@@ -119,8 +119,8 @@ impl TemporalIndex {
 
         match (before, after) {
             (Some((ts_before, eid_before)), Some((ts_after, eid_after))) => {
-                let dist_before = target - ts_before;
-                let dist_after = ts_after - target;
+                let dist_before = target.get() - ts_before.get();
+                let dist_after = ts_after.get() - target.get();
                 if dist_before <= dist_after {
                     Some((*ts_before, *eid_before))
                 } else {
@@ -166,48 +166,63 @@ mod tests {
     #[test]
     fn test_insert_and_range() {
         let mut index = TemporalIndex::new();
-        index.insert(100, 1);
-        index.insert(200, 2);
-        index.insert(300, 3);
-        index.insert(400, 4);
+        index.insert(TimestampNs::from(100), 1);
+        index.insert(TimestampNs::from(200), 2);
+        index.insert(TimestampNs::from(300), 3);
+        index.insert(TimestampNs::from(400), 4);
 
-        let range = index.range(150, 350);
+        let range = index.range(TimestampNs::from(150), TimestampNs::from(350));
         assert_eq!(range, vec![2, 3]);
     }
 
     #[test]
     fn test_range_empty_result() {
         let mut index = TemporalIndex::new();
-        index.insert(100, 1);
-        index.insert(200, 2);
+        index.insert(TimestampNs::from(100), 1);
+        index.insert(TimestampNs::from(200), 2);
 
-        let range = index.range(500, 600);
+        let range = index.range(TimestampNs::from(500), TimestampNs::from(600));
         assert!(range.is_empty());
     }
 
     #[test]
     fn test_nearest() {
         let mut index = TemporalIndex::new();
-        index.insert(100, 1);
-        index.insert(200, 2);
-        index.insert(400, 3);
+        index.insert(TimestampNs::from(100), 1);
+        index.insert(TimestampNs::from(200), 2);
+        index.insert(TimestampNs::from(400), 3);
 
         // Exact match
-        assert_eq!(index.nearest(200), Some((200, 2)));
+        assert_eq!(
+            index.nearest(TimestampNs::from(200)),
+            Some((TimestampNs::from(200), 2))
+        );
         // Closer to 200 than to 400
-        assert_eq!(index.nearest(250), Some((200, 2)));
+        assert_eq!(
+            index.nearest(TimestampNs::from(250)),
+            Some((TimestampNs::from(200), 2))
+        );
         // Closer to 400
-        assert_eq!(index.nearest(350), Some((400, 3)));
+        assert_eq!(
+            index.nearest(TimestampNs::from(350)),
+            Some((TimestampNs::from(400), 3))
+        );
         // Before first
-        assert_eq!(index.nearest(50), Some((100, 1)));
+        assert_eq!(
+            index.nearest(TimestampNs::from(50)),
+            Some((TimestampNs::from(100), 1))
+        );
         // After last
-        assert_eq!(index.nearest(500), Some((400, 3)));
+        assert_eq!(
+            index.nearest(TimestampNs::from(500)),
+            Some((TimestampNs::from(400), 3))
+        );
     }
 
     #[test]
     fn test_nearest_empty() {
         let index = TemporalIndex::new();
-        assert!(index.nearest(100).is_none());
+        assert!(index.nearest(TimestampNs::from(100)).is_none());
     }
 
     #[test]
@@ -216,12 +231,12 @@ mod tests {
         assert!(index.min_timestamp().is_none());
         assert!(index.max_timestamp().is_none());
 
-        index.insert(500, 1);
-        index.insert(100, 2);
-        index.insert(1000, 3);
+        index.insert(TimestampNs::from(500), 1);
+        index.insert(TimestampNs::from(100), 2);
+        index.insert(TimestampNs::from(1000), 3);
 
-        assert_eq!(index.min_timestamp(), Some(100));
-        assert_eq!(index.max_timestamp(), Some(1000));
+        assert_eq!(index.min_timestamp(), Some(TimestampNs::from(100)));
+        assert_eq!(index.max_timestamp(), Some(TimestampNs::from(1000)));
     }
 
     #[test]
@@ -229,7 +244,7 @@ mod tests {
         let mut index = TemporalIndex::new();
         // Insert events across multiple 10ms chunks
         for i in 0..25 {
-            index.insert(i * 5_000_000, i); // every 5ms
+            index.insert(TimestampNs::from(i * 5_000_000), i); // every 5ms
         }
         index.build_chunks();
 
@@ -241,7 +256,7 @@ mod tests {
     #[test]
     fn test_build_chunks_noop_when_clean() {
         let mut index = TemporalIndex::new();
-        index.insert(100, 1);
+        index.insert(TimestampNs::from(100), 1);
         index.build_chunks();
         let count = index.chunk_count();
 
@@ -256,7 +271,7 @@ mod tests {
         assert_eq!(index.len(), 0);
 
         for i in 0..100 {
-            index.insert(i * 1000, i);
+            index.insert(TimestampNs::from(i * 1000), i);
         }
         assert_eq!(index.len(), 100);
     }

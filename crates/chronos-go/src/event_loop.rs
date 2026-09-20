@@ -17,8 +17,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use chronos_domain::{
-    EventData, GoEventKind, SourceLocation, StackFrame as ChronosStackFrame, ThreadInfo,
-    ThreadState, TraceEvent, VariableInfo,
+    EventData, GoEventKind, MonotonicNs, SourceLocation, StackFrame as ChronosStackFrame,
+    ThreadInfo, ThreadState, TraceEvent, VariableInfo,
 };
 use tokio::sync::{mpsc, Mutex as TokioMutex};
 
@@ -231,7 +231,7 @@ fn goroutine_to_trace_event(
     // Go goroutines are M:N scheduled onto OS threads
     TraceEvent {
         event_id,
-        timestamp_ns,
+        timestamp_ns: MonotonicNs::from(timestamp_ns),
         thread_id: goroutine.id as u64,
         event_type: chronos_domain::EventType::BreakpointHit,
         location,

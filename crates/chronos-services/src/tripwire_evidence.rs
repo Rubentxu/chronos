@@ -102,7 +102,7 @@ pub fn derive_firings_from_event(
             source_event_id: Some(event.event_id),
             condition: m.condition,
             label: m.label,
-            source_timestamp_ns: event.timestamp_ns,
+            source_timestamp_ns: event.timestamp_ns.get(),
             source_thread_id: event.thread_id,
         };
         let payload = match codec::encode(&evidence) {
@@ -121,7 +121,7 @@ pub fn derive_firings_from_event(
             session_id: session_id.clone(),
             // The firing happens right after the source it derives from;
             // ordering stays consistent with the log's session-relative clock.
-            monotonic_ns: event.timestamp_ns,
+            monotonic_ns: event.timestamp_ns.get(),
             payload,
             ..Default::default()
         };
@@ -374,7 +374,8 @@ const READ_CHUNK: usize = 512;
 mod tests {
     use super::*;
     use chronos_domain::{
-        EventData, EventType, SourceLocation, TraceEvent, TripwireCondition, TripwireManager,
+        EventData, EventType, MonotonicNs, SourceLocation, TraceEvent, TripwireCondition,
+        TripwireManager,
     };
     use chronos_log::{
         ExecutionPayload, NewExecutionRecord, SegmentedConfig, SegmentedExecutionLog,
@@ -401,7 +402,7 @@ mod tests {
         };
         TraceEvent {
             event_id: 83,
-            timestamp_ns: 419_000,
+            timestamp_ns: MonotonicNs::from(419_000),
             thread_id: 1,
             event_type: EventType::FunctionEntry,
             location,
@@ -419,7 +420,7 @@ mod tests {
         use chronos_domain::{EventData, EventType, SourceLocation};
         TraceEvent {
             event_id: id,
-            timestamp_ns: id * 1000,
+            timestamp_ns: MonotonicNs::from(id * 1000),
             thread_id: 1,
             event_type: EventType::FunctionEntry,
             location: SourceLocation {
@@ -463,7 +464,7 @@ mod tests {
             .append(NewExecutionRecord {
                 kind: ExecutionKind::Raw,
                 session_id: log.session_id().clone(),
-                monotonic_ns: event.timestamp_ns,
+                monotonic_ns: event.timestamp_ns.get(),
                 payload,
                 ..Default::default()
             })

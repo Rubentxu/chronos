@@ -220,7 +220,7 @@ impl ResolverPipeline {
         // No resolver handled this event
         SemanticEvent {
             source_event_id: event.event_id,
-            timestamp_ns: event.timestamp_ns,
+            timestamp_ns: event.timestamp_ns.get(),
             thread_id: event.thread_id,
             language: Language::Unknown,
             kind: SemanticEventKind::Unresolved,
@@ -255,6 +255,7 @@ impl ResolverPipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::trace::MonotonicNs;
     use crate::{EventData, EventType, SourceLocation};
 
     /// A minimal test resolver that handles FunctionEntry events.
@@ -269,7 +270,7 @@ mod tests {
             match event.event_type {
                 EventType::FunctionEntry => Some(SemanticEvent {
                     source_event_id: event.event_id,
-                    timestamp_ns: event.timestamp_ns,
+                    timestamp_ns: event.timestamp_ns.get(),
                     thread_id: event.thread_id,
                     language: Language::Rust,
                     kind: SemanticEventKind::FunctionCalled {
@@ -294,7 +295,14 @@ mod tests {
     fn make_event(id: u64, event_type: EventType, func: &str) -> TraceEvent {
         let mut loc = SourceLocation::from_address(0x1000);
         loc.function = Some(func.to_string());
-        TraceEvent::new(id, id * 1000, 1, event_type, loc, EventData::Empty)
+        TraceEvent::new(
+            id,
+            MonotonicNs::from(id * 1000),
+            1,
+            event_type,
+            loc,
+            EventData::Empty,
+        )
     }
 
     #[test]

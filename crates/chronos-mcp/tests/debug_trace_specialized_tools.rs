@@ -5,6 +5,7 @@
 //! the MCP transport layer.
 
 use chronos_domain::trace::{EventData, EventType, SourceLocation, TraceEvent};
+use chronos_domain::MonotonicNs;
 use chronos_query::QueryEngine;
 use chronos_services::debug_trace_specialized::DebugTraceSpecializedService;
 use std::collections::HashMap;
@@ -29,7 +30,7 @@ fn trace_event(
 ) -> TraceEvent {
     TraceEvent {
         event_id,
-        timestamp_ns,
+        timestamp_ns: MonotonicNs::from(timestamp_ns),
         thread_id,
         event_type,
         location: SourceLocation {
@@ -49,7 +50,7 @@ fn signal_event(
 ) -> TraceEvent {
     TraceEvent {
         event_id,
-        timestamp_ns,
+        timestamp_ns: MonotonicNs::from(timestamp_ns),
         thread_id,
         event_type: EventType::SignalDelivered,
         location: SourceLocation::default(),

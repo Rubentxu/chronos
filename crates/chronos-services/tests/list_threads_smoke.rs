@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use tokio::sync::Mutex;
 
+use chronos_domain::MonotonicNs;
 use chronos_domain::{EventData, EventType, SourceLocation};
 use chronos_query::QueryEngine;
 use chronos_services::error::ServiceError;
@@ -18,7 +19,7 @@ fn trace_event(
 ) -> chronos_domain::TraceEvent {
     chronos_domain::TraceEvent {
         event_id,
-        timestamp_ns,
+        timestamp_ns: MonotonicNs::from(timestamp_ns),
         thread_id,
         event_type,
         location: SourceLocation::default(),

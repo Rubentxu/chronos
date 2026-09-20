@@ -41,7 +41,7 @@ fn tempdir(label: &str) -> PathBuf {
 }
 
 fn ptracenonevent_to_trace_event(event: &PtraceEvent, seq: u64) -> chronos_domain::TraceEvent {
-    use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
+    use chronos_domain::{EventData, EventType, MonotonicNs, SourceLocation, TraceEvent};
     let pid = event.pid();
     let (kind, label) = match event {
         PtraceEvent::Exited { exit_code, .. } => {
@@ -72,7 +72,7 @@ fn ptracenonevent_to_trace_event(event: &PtraceEvent, seq: u64) -> chronos_domai
     };
     TraceEvent {
         event_id: seq,
-        timestamp_ns: seq * 1000,
+        timestamp_ns: MonotonicNs::from(seq * 1000),
         thread_id: pid as u64,
         event_type: kind,
         location: SourceLocation {
@@ -211,10 +211,10 @@ fn decoder_counters_surface_unparseable_payloads() {
     backend.attach_execution_log(provider.clone());
 
     // One valid TraceEvent.
-    use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
+    use chronos_domain::{EventData, EventType, MonotonicNs, SourceLocation, TraceEvent};
     let good_ev = TraceEvent {
         event_id: 0,
-        timestamp_ns: 0,
+        timestamp_ns: MonotonicNs::from(0),
         thread_id: 1,
         event_type: EventType::FunctionEntry,
         location: SourceLocation::default(),

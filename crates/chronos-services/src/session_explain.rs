@@ -349,6 +349,7 @@ const _IO_SYSCALLS_REF: &[&str] = IO_SYSCALLS;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chronos_domain::MonotonicNs;
     use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
     use chronos_store::{SessionMetadata, SessionStore};
 
@@ -356,7 +357,7 @@ mod tests {
         let loc = SourceLocation::new("test.rs", 1, func.to_string(), 0x1000 + id);
         TraceEvent::new(
             id,
-            id * 100,
+            MonotonicNs::from(id * 100),
             1,
             EventType::FunctionEntry,
             loc,
@@ -410,7 +411,7 @@ mod tests {
             let loc = SourceLocation::new("test.rs", 1, "main", 0x2000);
             events.push(TraceEvent::new(
                 1,
-                100,
+                MonotonicNs::from(100),
                 1,
                 EventType::SignalDelivered,
                 loc,
@@ -540,7 +541,7 @@ mod tests {
                 let loc = SourceLocation::new("test.rs", 1, func_name.clone(), 0x1000 + i);
                 TraceEvent::new(
                     i,
-                    i * 100,
+                    MonotonicNs::from(i * 100),
                     i % 4, // threads 0..3
                     EventType::FunctionEntry,
                     loc,

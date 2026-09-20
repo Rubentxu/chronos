@@ -11,8 +11,8 @@ use chronos_domain::{
         PerfEntry, PerfQuery, PerfResult, PerfSortBy, PotentialIssue, RaceDetectionQuery,
         RaceDetectionResult, StackFrame, StateChange, StateDiff, SuspiciousConcurrentAccess,
     },
-    CausalityIndex, EventData, EventType, PerformanceIndex, QueryResult, ShadowIndex,
-    TemporalIndex, TraceEvent, TraceQuery,
+    CausalityIndex, EventData, EventType, MonotonicNs, PerformanceIndex, QueryResult, ShadowIndex,
+    TemporalIndex, TimestampNs, TraceEvent, TraceQuery,
 };
 use std::collections::HashMap;
 
@@ -257,8 +257,8 @@ impl QueryEngine {
         let mut event_counts: HashMap<EventType, u64> = HashMap::new();
         let mut function_counts: HashMap<String, u64> = HashMap::new();
         let mut threads: std::collections::HashSet<u64> = std::collections::HashSet::new();
-        let mut min_ts: Option<u64> = None;
-        let mut max_ts: Option<u64> = None;
+        let mut min_ts: Option<TimestampNs> = None;
+        let mut max_ts: Option<TimestampNs> = None;
         let mut issues: Vec<PotentialIssue> = Vec::new();
 
         for event in &self.events {
@@ -298,7 +298,7 @@ impl QueryEngine {
         }
 
         let duration_ns = match (min_ts, max_ts) {
-            (Some(min), Some(max)) => max - min,
+            (Some(min), Some(max)) => max.get() - min.get(),
             _ => 0,
         };
 
@@ -389,7 +389,7 @@ impl QueryEngine {
     /// explains why the diff is empty. This lets callers distinguish "the
     /// program did not change registers" from "no register snapshots were
     /// captured for this session".
-    pub fn state_diff(&self, timestamp_a: u64, timestamp_b: u64) -> StateDiff {
+    pub fn state_diff(&self, timestamp_a: TimestampNs, timestamp_b: TimestampNs) -> StateDiff {
         let mut changes: Vec<StateChange> = Vec::new();
 
         // Find register snapshots at or before each timestamp
@@ -426,7 +426,8 @@ impl QueryEngine {
         let evidence_note = if !register_evidence {
             Some(format!(
                 "no register snapshots found in [{}, {}]. Register capture must be enabled when starting the probe.",
-                timestamp_a, timestamp_b
+                timestamp_a.get(),
+                timestamp_b.get()
             ))
         } else if regs_a.is_none() || regs_b.is_none() {
             Some(format!(
@@ -448,7 +449,7 @@ impl QueryEngine {
     }
 
     /// Find the register snapshot at or immediately before a timestamp.
-    fn find_registers_at(&self, timestamp: u64) -> Option<chronos_domain::RegisterState> {
+    fn find_registers_at(&self, timestamp: TimestampNs) -> Option<chronos_domain::RegisterState> {
         let mut latest: Option<chronos_domain::RegisterState> = None;
 
         for event in &self.events {
@@ -525,7 +526,7 @@ impl QueryEngine {
     ///
     /// Returns `None` if no memory event exists at that address at or before
     /// the requested timestamp.
-    pub fn get_memory_at(&self, address: u64, timestamp_ns: u64) -> Option<MemoryValue> {
+    pub fn get_memory_at(&self, address: u64, timestamp_ns: TimestampNs) -> Option<MemoryValue> {
         // Try shadow index first for O(1) address lookup
         let candidate_ids: Vec<u64> = if let Some(ref shadow) = self.shadow_index {
             shadow.get(address).to_vec()
@@ -556,12 +557,12 @@ impl QueryEngine {
                     {
                         let is_newer = best
                             .as_ref()
-                            .map(|b| event.timestamp_ns > b.timestamp_ns)
+                            .map(|b| event.timestamp_ns.get() > b.timestamp_ns)
                             .unwrap_or(true);
                         if is_newer {
                             best = Some(MemoryValue {
                                 event_id: event.event_id,
-                                timestamp_ns: event.timestamp_ns,
+                                timestamp_ns: event.timestamp_ns.get(),
                                 address: *addr,
                                 size: *size,
                                 data: data.clone().unwrap_or_default(),
@@ -744,7 +745,9 @@ impl QueryEngine {
             })
         } else {
             // Return only last mutation before timestamp
-            let before_ts = query.before_timestamp.unwrap_or(u64::MAX);
+            let before_ts = query
+                .before_timestamp
+                .unwrap_or(TimestampNs::from(u64::MAX));
             let entry = causality.find_last_mutation(addr, before_ts)?;
             Some(CausalityResult {
                 address: addr,
@@ -807,15 +810,15 @@ impl QueryEngine {
                     if a.thread_id == b.thread_id {
                         continue; // same thread — not a suspicious concurrent access
                     }
-                    let delta = a.timestamp_ns.abs_diff(b.timestamp_ns);
+                    let delta = a.timestamp_ns.get().abs_diff(b.timestamp_ns.get());
                     if delta <= query.threshold_ns {
                         // Build MutationRecords from causality index
                         let wa = causality
-                            .find_last_mutation(*addr, a.timestamp_ns + 1)
+                            .find_last_mutation(*addr, MonotonicNs::from(a.timestamp_ns.get() + 1))
                             .map(mutation_record_from_entry)
                             .unwrap_or_else(|| event_to_mutation_record(a));
                         let wb = causality
-                            .find_last_mutation(*addr, b.timestamp_ns + 1)
+                            .find_last_mutation(*addr, MonotonicNs::from(b.timestamp_ns.get() + 1))
                             .map(mutation_record_from_entry)
                             .unwrap_or_else(|| event_to_mutation_record(b));
                         accesses.push(SuspiciousConcurrentAccess {
@@ -877,7 +880,7 @@ mod tests {
     ) -> TraceEvent {
         TraceEvent::new(
             id,
-            ts,
+            MonotonicNs::from(ts),
             tid,
             event_type,
             SourceLocation::new("test.rs", 10, func, addr),
@@ -886,13 +889,13 @@ mod tests {
     }
 
     fn make_signal_event(id: u64, ts: u64, tid: u64, sig_num: i32, sig_name: &str) -> TraceEvent {
-        TraceEvent::signal(id, ts, tid, sig_num, sig_name, 0)
+        TraceEvent::signal(id, MonotonicNs::from(ts), tid, sig_num, sig_name, 0)
     }
 
     fn make_register_event(id: u64, ts: u64, regs: RegisterState) -> TraceEvent {
         TraceEvent::new(
             id,
-            ts,
+            MonotonicNs::from(ts),
             1,
             EventType::Custom,
             SourceLocation::from_address(regs.rip),
@@ -984,7 +987,8 @@ mod tests {
     #[test]
     fn test_execute_query_filter_by_time() {
         let engine = QueryEngine::new(sample_events());
-        let query = TraceQuery::new("session-1").time_range(300, 700);
+        let query =
+            TraceQuery::new("session-1").time_range(MonotonicNs::from(300), MonotonicNs::from(700));
         let result = engine.execute(&query);
         // Events with ts 300-699: IDs 2(300),3(400),4(500),5(600) = 4 events
         // ID 6 has ts 700 which is excluded (end is exclusive)
@@ -1003,7 +1007,8 @@ mod tests {
     #[test]
     fn test_execute_query_empty_result() {
         let engine = QueryEngine::new(sample_events());
-        let query = TraceQuery::new("session-1").time_range(99999, 100000);
+        let query = TraceQuery::new("session-1")
+            .time_range(MonotonicNs::from(99999), MonotonicNs::from(100000));
         let result = engine.execute(&query);
         assert_eq!(result.total_matching, 0);
         assert!(result.events.is_empty());
@@ -1108,10 +1113,10 @@ mod tests {
         ];
 
         let engine = QueryEngine::new(events);
-        let diff = engine.state_diff(100, 200);
+        let diff = engine.state_diff(MonotonicNs::from(100), MonotonicNs::from(200));
 
-        assert_eq!(diff.timestamp_a, 100);
-        assert_eq!(diff.timestamp_b, 200);
+        assert_eq!(diff.timestamp_a, MonotonicNs::from(100));
+        assert_eq!(diff.timestamp_b, MonotonicNs::from(200));
         assert!(!diff.changes.is_empty());
 
         // rax changed from 42 to 99
@@ -1146,7 +1151,7 @@ mod tests {
         ];
 
         let engine = QueryEngine::new(events);
-        let diff = engine.state_diff(100, 200);
+        let diff = engine.state_diff(MonotonicNs::from(100), MonotonicNs::from(200));
 
         assert!(diff.changes.is_empty());
     }
@@ -1154,7 +1159,7 @@ mod tests {
     #[test]
     fn test_state_diff_no_registers() {
         let engine = QueryEngine::new(sample_events());
-        let diff = engine.state_diff(100, 500);
+        let diff = engine.state_diff(MonotonicNs::from(100), MonotonicNs::from(500));
         assert!(diff.changes.is_empty());
         // m0-06: when no register snapshots are captured, the diff must
         // explicitly report zero register evidence and a note that explains
@@ -1183,7 +1188,7 @@ mod tests {
         for ts in [100u64, 200u64] {
             events.push(TraceEvent::new(
                 1,
-                ts,
+                MonotonicNs::from(ts),
                 1,
                 EventType::BreakpointHit,
                 SourceLocation::default(),
@@ -1194,7 +1199,7 @@ mod tests {
             ));
         }
         let engine = QueryEngine::new(events);
-        let diff = engine.state_diff(100, 200);
+        let diff = engine.state_diff(MonotonicNs::from(100), MonotonicNs::from(200));
         assert!(diff.register_evidence);
         assert!(diff.changes.is_empty());
         assert!(
@@ -1244,7 +1249,8 @@ mod tests {
         assert_eq!(engine.event_count(), 10);
 
         // Query with time range should use temporal index
-        let query = TraceQuery::new("session-1").time_range(300, 700);
+        let query =
+            TraceQuery::new("session-1").time_range(MonotonicNs::from(300), MonotonicNs::from(700));
         let result = engine.execute(&query);
         // Same as test_execute_query_filter_by_time: 4 events
         assert_eq!(result.total_matching, 4);
@@ -1255,7 +1261,7 @@ mod tests {
         let engine = QueryEngine::new(sample_events());
         let query = TraceQuery::new("session-1")
             .event_types(vec![EventType::FunctionEntry])
-            .time_range(200, 600);
+            .time_range(MonotonicNs::from(200), MonotonicNs::from(600));
 
         let result = engine.execute(&query);
         // FunctionEntry events in [200, 600): IDs 1 (helper, ts 200), 5 (process, ts 600 is excluded)
@@ -1278,7 +1284,7 @@ mod tests {
             addr,
             CausalityEntry {
                 event_id: 10,
-                timestamp: 100,
+                timestamp: MonotonicNs::from(100),
                 thread_id: 1,
                 value_before: None,
                 value_after: "0".to_string(),
@@ -1293,7 +1299,7 @@ mod tests {
             addr,
             CausalityEntry {
                 event_id: 11,
-                timestamp: 200,
+                timestamp: MonotonicNs::from(200),
                 thread_id: 1,
                 value_before: Some("0".to_string()),
                 value_after: "1".to_string(),
@@ -1308,7 +1314,7 @@ mod tests {
             addr,
             CausalityEntry {
                 event_id: 12,
-                timestamp: 300,
+                timestamp: MonotonicNs::from(300),
                 thread_id: 2,
                 value_before: Some("1".to_string()),
                 value_after: "2".to_string(),
@@ -1327,11 +1333,13 @@ mod tests {
         use chronos_domain::query::CausalityQuery;
 
         let engine = make_causality_engine();
-        let query = CausalityQuery::new("s1").by_address(0xA000).before(250);
+        let query = CausalityQuery::new("s1")
+            .by_address(0xA000)
+            .before(MonotonicNs::from(250));
 
         let result = engine.query_causality(&query).unwrap();
         assert_eq!(result.mutations.len(), 1);
-        assert_eq!(result.mutations[0].timestamp, 200);
+        assert_eq!(result.mutations[0].timestamp, MonotonicNs::from(200));
         assert_eq!(result.mutations[0].value_after, "1");
     }
 
@@ -1347,7 +1355,7 @@ mod tests {
         let result = engine.query_causality(&query).unwrap();
         assert_eq!(result.mutations.len(), 3);
         // Ordered by timestamp
-        assert_eq!(result.mutations[0].timestamp, 100);
+        assert_eq!(result.mutations[0].timestamp, MonotonicNs::from(100));
         assert_eq!(result.mutations[2].value_after, "2");
     }
 
@@ -1365,7 +1373,7 @@ mod tests {
             addr,
             CausalityEntry {
                 event_id: 1,
-                timestamp: 1000,
+                timestamp: MonotonicNs::from(1000),
                 thread_id: 1,
                 value_before: None,
                 value_after: "x".to_string(),
@@ -1379,7 +1387,7 @@ mod tests {
             addr,
             CausalityEntry {
                 event_id: 2,
-                timestamp: 1050,
+                timestamp: MonotonicNs::from(1050),
                 thread_id: 2,
                 value_before: None,
                 value_after: "y".to_string(),
@@ -1394,7 +1402,7 @@ mod tests {
         let events = vec![
             TraceEvent::new(
                 1,
-                1000,
+                MonotonicNs::from(1000),
                 1,
                 EventType::VariableWrite,
                 SourceLocation::from_address(addr),
@@ -1402,7 +1410,7 @@ mod tests {
             ),
             TraceEvent::new(
                 2,
-                1050,
+                MonotonicNs::from(1050),
                 2,
                 EventType::VariableWrite,
                 SourceLocation::from_address(addr),
@@ -1517,7 +1525,7 @@ mod tests {
             .map(|i| {
                 TraceEvent::new(
                     i,
-                    i * 100,
+                    MonotonicNs::from(i * 100),
                     1,
                     EventType::FunctionEntry,
                     SourceLocation::new("test.rs", 10, format!("fn_{}", i), 0x1000 + i),
@@ -1556,7 +1564,7 @@ mod tests {
     ) -> TraceEvent {
         TraceEvent::python_call_with_locals(
             id,
-            ts,
+            MonotonicNs::from(ts),
             tid,
             "my_module.my_func",
             "/path/to/script.py",
@@ -1574,7 +1582,7 @@ mod tests {
         use chronos_domain::JavaEventKind;
         TraceEvent::new(
             id,
-            ts,
+            MonotonicNs::from(ts),
             tid,
             EventType::FunctionEntry,
             SourceLocation::new("Test.java", 10, "com.example.Foo.bar", 0x1000 + id),
@@ -1599,7 +1607,7 @@ mod tests {
         use chronos_domain::GoEventKind;
         TraceEvent::new(
             id,
-            ts,
+            MonotonicNs::from(ts),
             tid,
             EventType::BreakpointHit,
             SourceLocation::new("main.go", 10, "main.foo", 0x1000 + id),
@@ -1623,7 +1631,7 @@ mod tests {
         use chronos_domain::JsEventKind;
         TraceEvent::new(
             id,
-            ts,
+            MonotonicNs::from(ts),
             tid,
             EventType::BreakpointHit,
             SourceLocation::new("app.js", 10, "myFunction", 0x1000 + id),
@@ -1647,7 +1655,7 @@ mod tests {
     ) -> TraceEvent {
         TraceEvent::new(
             id,
-            ts,
+            MonotonicNs::from(ts),
             tid,
             EventType::VariableWrite,
             SourceLocation::new("test.rs", 10, "main", 0x1000 + id),
@@ -1692,8 +1700,14 @@ mod tests {
     #[test]
     fn test_get_variables_python_frame_empty_locals() {
         // PythonFrame with None locals
-        let event =
-            TraceEvent::python_call(0, 100, 1, "my_module.my_func", "/path/to/script.py", 10);
+        let event = TraceEvent::python_call(
+            0,
+            MonotonicNs::from(100),
+            1,
+            "my_module.my_func",
+            "/path/to/script.py",
+            10,
+        );
         let engine = QueryEngine::new(vec![event]);
 
         let vars = engine.get_variables_at_event(0);
@@ -1741,7 +1755,7 @@ mod tests {
         // JsFrame with None locals
         let event = TraceEvent::js_frame(
             0,
-            100,
+            MonotonicNs::from(100),
             1,
             "myFunction",
             "http://localhost:3000/app.js".to_string(),
@@ -1810,7 +1824,7 @@ mod tests {
     ) -> TraceEvent {
         TraceEvent::new(
             id,
-            ts,
+            MonotonicNs::from(ts),
             tid,
             EventType::MemoryWrite,
             SourceLocation::from_address(address),
@@ -1832,7 +1846,7 @@ mod tests {
         let engine = QueryEngine::new(events);
 
         // Get memory at timestamp 1500 - should return first event
-        let result = engine.get_memory_at(addr, 1500);
+        let result = engine.get_memory_at(addr, MonotonicNs::from(1500));
         assert!(result.is_some());
         let mem = result.unwrap();
         assert_eq!(mem.event_id, 1);
@@ -1851,7 +1865,7 @@ mod tests {
         let engine = QueryEngine::new(events);
 
         // Get memory at timestamp 2500 - should return second event
-        let result = engine.get_memory_at(addr, 2500);
+        let result = engine.get_memory_at(addr, MonotonicNs::from(2500));
         assert!(result.is_some());
         let mem = result.unwrap();
         assert_eq!(mem.event_id, 2);
@@ -1872,7 +1886,7 @@ mod tests {
         let engine = QueryEngine::new(events);
 
         // Address doesn't exist
-        let result = engine.get_memory_at(0x12345678, 2000);
+        let result = engine.get_memory_at(0x12345678, MonotonicNs::from(2000));
         assert!(result.is_none());
     }
 
@@ -1886,7 +1900,7 @@ mod tests {
         ];
         let engine = QueryEngine::new(events); // No indices
 
-        let result = engine.get_memory_at(addr, 1500);
+        let result = engine.get_memory_at(addr, MonotonicNs::from(1500));
         assert!(result.is_some());
         let mem = result.unwrap();
         assert_eq!(mem.event_id, 1);
@@ -1903,7 +1917,7 @@ mod tests {
         let engine = QueryEngine::new(events);
 
         // Get at exactly timestamp 1000 - should return first event
-        let result = engine.get_memory_at(addr, 1000);
+        let result = engine.get_memory_at(addr, MonotonicNs::from(1000));
         assert!(result.is_some());
         assert_eq!(result.unwrap().event_id, 1);
     }
@@ -1922,7 +1936,7 @@ mod tests {
         let engine = QueryEngine::new(events);
 
         // Get before first write - should return None
-        let result = engine.get_memory_at(addr, 500);
+        let result = engine.get_memory_at(addr, MonotonicNs::from(500));
         assert!(result.is_none());
     }
 
@@ -1959,7 +1973,7 @@ mod tests {
         // The duplicate event_id 5 keeps its original metadata
         // (timestamp_ns=600 in sample_events), not the new one (ts=999).
         let ev5 = engine.get_event_by_id(5).unwrap();
-        assert_eq!(ev5.timestamp_ns, 600);
+        assert_eq!(ev5.timestamp_ns, MonotonicNs::from(600));
         assert_eq!(ev5.thread_id, 1);
     }
 

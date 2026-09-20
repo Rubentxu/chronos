@@ -261,6 +261,7 @@ fn map_load_error(e: SessionReaderError, session_id: &str) -> ServiceError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chronos_domain::MonotonicNs;
     use chronos_domain::{EventData, EventType, SessionMetadata, SourceLocation, TraceEvent};
     use chronos_store::SessionStore;
 
@@ -268,7 +269,7 @@ mod tests {
         let loc = SourceLocation::new("test.rs", 1, func, 0x1000 + id);
         TraceEvent::new(
             id,
-            id * 100,
+            MonotonicNs::from(id * 100),
             1,
             EventType::FunctionEntry,
             loc,

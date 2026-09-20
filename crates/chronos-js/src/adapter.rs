@@ -6,8 +6,8 @@ use crate::error::JsAdapterError;
 use crate::subprocess::NodeProcess;
 use chronos_capture::TraceAdapter;
 use chronos_domain::{
-    CaptureConfig, CaptureSession, EventData, EventType, JsEventKind, Language, SourceLocation,
-    TraceError, TraceEvent,
+    CaptureConfig, CaptureSession, EventData, EventType, JsEventKind, Language, MonotonicNs,
+    SourceLocation, TraceError, TraceEvent,
 };
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -96,7 +96,7 @@ impl JsAdapter {
 
             events.push(TraceEvent {
                 event_id,
-                timestamp_ns,
+                timestamp_ns: MonotonicNs::from(timestamp_ns),
                 thread_id: 1, // JavaScript is single-threaded in MVP
                 event_type: EventType::BreakpointHit,
                 location,
@@ -531,7 +531,7 @@ fn cdp_event_to_trace_event(event: CdpEvent) -> TraceEvent {
 
             TraceEvent {
                 event_id: 0,
-                timestamp_ns,
+                timestamp_ns: MonotonicNs::from(timestamp_ns),
                 thread_id: 1,
                 event_type: EventType::BreakpointHit,
                 location,
@@ -562,7 +562,7 @@ fn cdp_event_to_trace_event(event: CdpEvent) -> TraceEvent {
 
             TraceEvent {
                 event_id: 0,
-                timestamp_ns,
+                timestamp_ns: MonotonicNs::from(timestamp_ns),
                 thread_id: 1,
                 event_type: EventType::Custom,
                 location: SourceLocation::default(),
@@ -581,7 +581,7 @@ fn cdp_event_to_trace_event(event: CdpEvent) -> TraceEvent {
 
             TraceEvent {
                 event_id: 0,
-                timestamp_ns,
+                timestamp_ns: MonotonicNs::from(timestamp_ns),
                 thread_id: 1,
                 event_type: EventType::ExceptionThrown,
                 location: SourceLocation::default(),
@@ -600,7 +600,7 @@ fn cdp_event_to_trace_event(event: CdpEvent) -> TraceEvent {
             // Other events don't produce trace events - use Custom to mark them
             TraceEvent {
                 event_id: 0,
-                timestamp_ns: 0,
+                timestamp_ns: MonotonicNs::from(0),
                 thread_id: 1,
                 event_type: EventType::Unknown,
                 location: SourceLocation::default(),

@@ -4,6 +4,7 @@
 //! PropertySequenceOutcome → PropertyViolation) for the canonical M3 bug:
 //! `apply_discount` with discount > total causes total to go negative.
 
+use chronos_domain::MonotonicNs;
 use chronos_domain::{
     property::{ComparisonOp, InvariantCheck, Property, PropertySequenceOutcome, PropertyValue},
     trace::{EventData, EventType, SourceLocation},
@@ -22,7 +23,7 @@ fn make_var_event(
 ) -> chronos_domain::TraceEvent {
     chronos_domain::TraceEvent::new(
         event_id,
-        timestamp_ns,
+        MonotonicNs::from(timestamp_ns),
         thread_id,
         EventType::VariableWrite,
         SourceLocation::from_address(address),

@@ -134,7 +134,7 @@ impl SemanticResolver for WasmSemanticResolver {
 
         Some(SemanticEvent {
             source_event_id: event.event_id,
-            timestamp_ns: event.timestamp_ns,
+            timestamp_ns: event.timestamp_ns.get(),
             thread_id: event.thread_id,
             language: Language::WebAssembly,
             kind,
@@ -146,6 +146,7 @@ impl SemanticResolver for WasmSemanticResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chronos_domain::MonotonicNs;
 
     fn make_wasm_frame(
         function_index: u32,
@@ -159,7 +160,7 @@ mod tests {
 
         TraceEvent::wasm_frame(
             event_id,
-            timestamp_ns,
+            MonotonicNs::from(timestamp_ns),
             thread_id,
             function_index,
             function_name,
@@ -274,7 +275,7 @@ mod tests {
     #[test]
     fn test_wasm_semantic_resolver_non_wasm_event() {
         let resolver = WasmSemanticResolver::new();
-        let event = TraceEvent::function_entry(1, 1000, 1, "main", 0x1000);
+        let event = TraceEvent::function_entry(1, MonotonicNs::from(1000), 1, "main", 0x1000);
 
         let semantic = resolver.resolve(
             &event,

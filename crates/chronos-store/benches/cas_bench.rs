@@ -1,5 +1,7 @@
 use chronos_domain::ports::diff::DiffEngine;
-use chronos_domain::{EventData, EventType, SessionMetadata, SourceLocation, TraceEvent};
+use chronos_domain::{
+    EventData, EventType, MonotonicNs, SessionMetadata, SourceLocation, TraceEvent,
+};
 use chronos_store::{Blake3DiffEngine, SessionStore};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use tempfile::tempdir;
@@ -10,7 +12,7 @@ fn bench_session_store_save_single_event(c: &mut Criterion) {
 
     let event = TraceEvent::new(
         0,
-        1000,
+        MonotonicNs::from(1000),
         1,
         EventType::FunctionEntry,
         SourceLocation::new("main.rs", 10, "bench_fn", 0x1000),
@@ -57,7 +59,7 @@ fn bench_content_store_put(c: &mut Criterion) {
 
     let event = TraceEvent::new(
         0,
-        1000,
+        MonotonicNs::from(1000),
         1,
         EventType::FunctionEntry,
         SourceLocation::new("main.rs", 10, "bench_fn", 0x1000),
@@ -84,7 +86,7 @@ fn bench_session_store_load(c: &mut Criterion) {
 
     let event = TraceEvent::new(
         0,
-        1000,
+        MonotonicNs::from(1000),
         1,
         EventType::FunctionEntry,
         SourceLocation::new("main.rs", 10, "bench_fn", 0x1000),
@@ -117,10 +119,26 @@ fn bench_session_store_load(c: &mut Criterion) {
 
 fn bench_trace_diff(c: &mut Criterion) {
     let events_a: Vec<TraceEvent> = (0..1_000)
-        .map(|i| TraceEvent::function_entry(i, i * 100, 1, format!("fn_{}", i), 0x1000 + i))
+        .map(|i| {
+            TraceEvent::function_entry(
+                i,
+                MonotonicNs::from(i * 100),
+                1,
+                format!("fn_{}", i),
+                0x1000 + i,
+            )
+        })
         .collect();
     let events_b: Vec<TraceEvent> = (500..1_500)
-        .map(|i| TraceEvent::function_entry(i, i * 100, 1, format!("fn_{}", i), 0x1000 + i))
+        .map(|i| {
+            TraceEvent::function_entry(
+                i,
+                MonotonicNs::from(i * 100),
+                1,
+                format!("fn_{}", i),
+                0x1000 + i,
+            )
+        })
         .collect();
     let meta_a = SessionMetadata {
         session_id: "a".into(),

@@ -5,8 +5,8 @@
 
 use chronos_capture::TraceAdapter;
 use chronos_domain::{
-    CaptureConfig, CaptureSession, EventData, EventType, Language, SourceLocation, TraceError,
-    TraceEvent,
+    CaptureConfig, CaptureSession, EventData, EventType, Language, MonotonicNs, SourceLocation,
+    TraceError, TraceEvent,
 };
 use std::path::Path;
 use tracing::info;
@@ -56,7 +56,7 @@ impl NativeAdapter {
         &self,
         ptrace_evt: &PtraceEvent,
         event_id: u64,
-        timestamp_ns: u64,
+        timestamp_ns: MonotonicNs,
     ) -> Option<TraceEvent> {
         match ptrace_evt {
             PtraceEvent::Stopped {
@@ -297,7 +297,7 @@ mod tests {
         };
 
         let trace_evt = adapter
-            .ptrace_event_to_trace_event(&ptrace_evt, 1, 1000)
+            .ptrace_event_to_trace_event(&ptrace_evt, 1, MonotonicNs::from(1000))
             .expect("should convert");
 
         assert_eq!(trace_evt.event_type, EventType::BreakpointHit);
@@ -315,7 +315,7 @@ mod tests {
         };
 
         let trace_evt = adapter
-            .ptrace_event_to_trace_event(&ptrace_evt, 2, 2000)
+            .ptrace_event_to_trace_event(&ptrace_evt, 2, MonotonicNs::from(2000))
             .expect("should convert");
 
         assert_eq!(trace_evt.event_type, EventType::SignalDelivered);
@@ -341,7 +341,7 @@ mod tests {
             is_entry: true,
         };
         let trace_evt = adapter
-            .ptrace_event_to_trace_event(&ptrace_evt, 3, 3000)
+            .ptrace_event_to_trace_event(&ptrace_evt, 3, MonotonicNs::from(3000))
             .expect("should convert");
         assert_eq!(trace_evt.event_type, EventType::SyscallEnter);
         assert_eq!(trace_evt.thread_id, 5678);
@@ -352,7 +352,7 @@ mod tests {
             is_entry: false,
         };
         let trace_evt_exit = adapter
-            .ptrace_event_to_trace_event(&ptrace_evt_exit, 4, 4000)
+            .ptrace_event_to_trace_event(&ptrace_evt_exit, 4, MonotonicNs::from(4000))
             .expect("should convert");
         assert_eq!(trace_evt_exit.event_type, EventType::SyscallExit);
     }
@@ -366,7 +366,7 @@ mod tests {
         };
 
         let trace_evt = adapter
-            .ptrace_event_to_trace_event(&ptrace_evt, 10, 10000)
+            .ptrace_event_to_trace_event(&ptrace_evt, 10, MonotonicNs::from(10000))
             .expect("should convert");
 
         assert_eq!(trace_evt.event_type, EventType::Custom);
@@ -390,7 +390,7 @@ mod tests {
         };
 
         let trace_evt = adapter
-            .ptrace_event_to_trace_event(&ptrace_evt, 11, 11000)
+            .ptrace_event_to_trace_event(&ptrace_evt, 11, MonotonicNs::from(11000))
             .expect("should convert");
 
         assert_eq!(trace_evt.event_type, EventType::SignalDelivered);
@@ -407,7 +407,7 @@ mod tests {
         };
 
         let trace_evt = adapter
-            .ptrace_event_to_trace_event(&ptrace_evt, 12, 12000)
+            .ptrace_event_to_trace_event(&ptrace_evt, 12, MonotonicNs::from(12000))
             .expect("should convert");
 
         assert_eq!(trace_evt.event_type, EventType::ThreadCreate);
@@ -427,7 +427,7 @@ mod tests {
         };
 
         let trace_evt = adapter
-            .ptrace_event_to_trace_event(&ptrace_evt, 13, 13000)
+            .ptrace_event_to_trace_event(&ptrace_evt, 13, MonotonicNs::from(13000))
             .expect("should convert");
 
         assert_eq!(trace_evt.event_type, EventType::Custom);

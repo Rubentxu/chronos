@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 use chronos_domain::ports::session::SessionArchive;
+use chronos_domain::MonotonicNs;
 use chronos_domain::{Language, SourceLocation, TraceEvent};
 use chronos_query::QueryEngine;
 use chronos_services::error::ServiceError;
@@ -39,7 +40,7 @@ fn make_engine_with_two_events(session_id: &str) -> (String, QueryEngine) {
     let events = vec![
         TraceEvent {
             event_id: 1,
-            timestamp_ns: 1_000_000_000,
+            timestamp_ns: MonotonicNs::from(1_000_000_000),
             thread_id: 1,
             event_type: chronos_domain::EventType::FunctionEntry,
             location: SourceLocation::default(),
@@ -53,7 +54,7 @@ fn make_engine_with_two_events(session_id: &str) -> (String, QueryEngine) {
         },
         TraceEvent {
             event_id: 2,
-            timestamp_ns: 2_001_000_000,
+            timestamp_ns: MonotonicNs::from(2_001_000_000),
             thread_id: 1,
             event_type: chronos_domain::EventType::FunctionExit,
             location: SourceLocation::default(),

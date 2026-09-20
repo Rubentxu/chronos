@@ -52,8 +52,9 @@ pub use seq::EventSeq;
 pub use session::SessionMetadata;
 pub use trace::{
     CaptureConfig, CaptureSession, EventData, EventType, GoEventKind, InvocationId, JavaEventKind,
-    JsEventKind, Language, PythonEventKind, RegisterState, RuntimeInfo, SessionState,
-    SourceLocation, StackFrame, SymbolId, ThreadInfo, ThreadState, TraceEvent,
+    JsEventKind, Language, MonotonicNs, PythonEventKind, RegisterState, RuntimeInfo, SessionState,
+    SourceLocation, StackFrame, SymbolId, ThreadInfo, ThreadState, TimestampNs, TraceEvent,
+    WallClockMs,
 };
 pub use tripwire::{Tripwire, TripwireCondition, TripwireId, TripwireManager, TripwireMatch};
 pub use value::{DwarfValue, RegisterSnapshot, TypedValue, VariableInfo, VariableScope};

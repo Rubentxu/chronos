@@ -1,7 +1,9 @@
 //! Convert JDWP debugger events into Chronos trace events.
 
 use crate::protocol::JdwpEvent;
-use chronos_domain::{EventData, EventType, JavaEventKind, SourceLocation, TraceEvent};
+use chronos_domain::{
+    EventData, EventType, JavaEventKind, MonotonicNs, SourceLocation, TraceEvent,
+};
 
 /// Convert a JDWP event into a Chronos TraceEvent.
 pub fn jdwp_event_to_trace_event(ev: JdwpEvent, event_id: u64, timestamp_ns: u64) -> TraceEvent {
@@ -40,7 +42,7 @@ pub fn jdwp_event_to_trace_event(ev: JdwpEvent, event_id: u64, timestamp_ns: u64
 
     TraceEvent {
         event_id,
-        timestamp_ns,
+        timestamp_ns: MonotonicNs::from(timestamp_ns),
         thread_id: ev.thread_id,
         event_type,
         location,
@@ -84,7 +86,7 @@ mod tests {
         let trace = jdwp_event_to_trace_event(jdwp_event, 1, 1000);
 
         assert_eq!(trace.event_id, 1);
-        assert_eq!(trace.timestamp_ns, 1000);
+        assert_eq!(trace.timestamp_ns, MonotonicNs::from(1000));
         assert_eq!(trace.thread_id, 12345);
         assert_eq!(trace.event_type, EventType::FunctionEntry);
 

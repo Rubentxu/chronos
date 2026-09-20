@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use chronos_domain::trace::TraceEvent;
+use chronos_domain::MonotonicNs;
 use chronos_domain::{EventData, EventType, SourceLocation};
 use chronos_domain::{TripwireCondition, TripwireId};
 use chronos_log::{
@@ -31,7 +32,7 @@ fn tempdir(tag: &str) -> PathBuf {
 fn trace_event(event_id: u64) -> TraceEvent {
     TraceEvent {
         event_id,
-        timestamp_ns: event_id * 1000,
+        timestamp_ns: MonotonicNs::from(event_id * 1000),
         thread_id: 1,
         event_type: EventType::FunctionEntry,
         location: SourceLocation {

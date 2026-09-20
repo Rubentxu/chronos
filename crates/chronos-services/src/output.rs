@@ -668,7 +668,7 @@ impl From<chronos_domain::query::MutationRecord> for LineageEntry {
     fn from(m: chronos_domain::query::MutationRecord) -> Self {
         LineageEntry {
             event_id: m.event_id,
-            timestamp_ns: m.timestamp,
+            timestamp_ns: m.timestamp.get(),
             thread_id: m.thread_id,
             value_before: m.value_before,
             value_after: m.value_after,
@@ -2257,7 +2257,7 @@ mod tests {
                 total_matching: 42,
                 events: vec![chronos_domain::TraceEvent {
                     event_id: 1,
-                    timestamp_ns: 1000,
+                    timestamp_ns: chronos_domain::MonotonicNs::from(1000),
                     thread_id: 1,
                     event_type: EventType::FunctionEntry,
                     location: SourceLocation::default(),

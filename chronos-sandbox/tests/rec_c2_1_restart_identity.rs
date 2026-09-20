@@ -58,7 +58,7 @@ fn unique_root(tag: &str) -> PathBuf {
 fn trace_event(event_id: u64, name: &str, ts: u64) -> TraceEvent {
     TraceEvent {
         event_id,
-        timestamp_ns: ts,
+        timestamp_ns: chronos_domain::MonotonicNs::from(ts),
         thread_id: 1,
         event_type: EventType::FunctionEntry,
         location: SourceLocation {

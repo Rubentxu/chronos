@@ -311,6 +311,7 @@ pub type TripwireManagerHandle = Arc<TripwireManager>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::trace::MonotonicNs;
 
     /// CHAR-C2-04 (kept, re-expressed): `Tripwire.fire_count` is initialized to
     /// 0 and never mutated by any matching path. It is still present for
@@ -339,7 +340,7 @@ mod tests {
     }
 
     fn make_signal_event(id: u64, signal: i32) -> TraceEvent {
-        TraceEvent::signal(id, id * 1000, 1, signal, "SIGTEST", 0)
+        TraceEvent::signal(id, MonotonicNs::from(id * 1000), 1, signal, "SIGTEST", 0)
     }
 
     #[test]

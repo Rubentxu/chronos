@@ -12,6 +12,8 @@
 //! makes this module a submodule of `counterexample`, preserving the
 //! same module graph as before the extraction.
 
+use chronos_domain::MonotonicNs;
+
 use super::*;
 use proptest::strategy::{Strategy, ValueTree};
 use proptest::test_runner::Config;
@@ -569,7 +571,7 @@ fn make_test_trace_event(id: u64, ts: u64, tid: u64) -> chronos_domain::TraceEve
     use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
     TraceEvent::new(
         id,
-        ts,
+        MonotonicNs::from(ts),
         tid,
         EventType::FunctionEntry,
         SourceLocation::new("test.rs", 10, "main", 0x1000),
@@ -1854,7 +1856,7 @@ async fn m9_04_save_load_roundtrip_through_services() {
         .map(|id| {
             chronos_domain::TraceEvent::new(
                 id,
-                id * 100,
+                MonotonicNs::from(id * 100),
                 1,
                 chronos_domain::EventType::FunctionEntry,
                 chronos_domain::SourceLocation::new("test.rs", 10, "fn", 0x1000 + id),
@@ -1949,7 +1951,7 @@ async fn m9_91_events_returns_full_stream_with_no_pagination() {
         .map(|id| {
             chronos_domain::TraceEvent::new(
                 id,
-                id * 100,
+                MonotonicNs::from(id * 100),
                 1,
                 chronos_domain::EventType::FunctionEntry,
                 chronos_domain::SourceLocation::new("test.rs", 10, "fn", 0x1000 + id),
@@ -2034,7 +2036,7 @@ async fn m9_91_events_pagination_with_limit_and_offset() {
         .map(|id| {
             chronos_domain::TraceEvent::new(
                 id,
-                id * 100,
+                MonotonicNs::from(id * 100),
                 1,
                 chronos_domain::EventType::FunctionEntry,
                 chronos_domain::SourceLocation::new("test.rs", 10, "fn", 0x1000 + id),

@@ -21,7 +21,7 @@
 
 use std::path::PathBuf;
 
-use chronos_domain::{EventData, EventType, SourceLocation, TraceEvent};
+use chronos_domain::{EventData, EventType, MonotonicNs, SourceLocation, TraceEvent};
 use chronos_log::{
     ExecutionPayload, NewExecutionRecord, SegmentedConfig, SegmentedExecutionLog, SessionId,
 };
@@ -57,7 +57,7 @@ fn unique_root(label: &str) -> PathBuf {
 fn trace_event_for(i: u64) -> TraceEvent {
     TraceEvent::new(
         40 + i,
-        10_000_500 + i * 1_000,
+        MonotonicNs::from(10_000_500 + i * 1_000),
         1,
         EventType::FunctionEntry,
         SourceLocation::from_address(0),

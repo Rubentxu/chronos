@@ -438,6 +438,7 @@ impl ProbeBackend for BrowserAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chronos_domain::MonotonicNs;
 
     #[test]
     fn test_browser_adapter_name() {
@@ -499,7 +500,12 @@ mod tests {
         {
             let mut s = adapter.state.lock().unwrap();
             s.event_buffer.push_back(chronos_domain::TraceEvent::signal(
-                1, 100, 1, 11, "SIGSEGV", 0,
+                1,
+                MonotonicNs::from(100),
+                1,
+                11,
+                "SIGSEGV",
+                0,
             ));
         }
         let read = BrowserAdapter::raw_events(&adapter);

@@ -229,6 +229,7 @@ fn map_cursor_error(err: EventsCursorError) -> ServiceError {
 mod tests {
     use super::*;
     use crate::output::EventsReadKind;
+    use chronos_domain::MonotonicNs;
     use chronos_domain::{EventData, EventType, SourceLocation};
     use chronos_log::{ExecutionPayload, NewExecutionRecord, SessionId};
     struct Fixture {
@@ -257,7 +258,7 @@ mod tests {
             for i in 0..n {
                 let event = TraceEvent::new(
                     i as u64,
-                    i as u64 * 10,
+                    MonotonicNs::from(i as u64 * 10),
                     1,
                     EventType::FunctionEntry,
                     SourceLocation {

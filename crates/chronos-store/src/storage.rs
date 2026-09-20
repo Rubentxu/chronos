@@ -400,12 +400,12 @@ impl SessionStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chronos_domain::{EventData, EventType, SourceLocation};
+    use chronos_domain::{EventData, EventType, MonotonicNs, SourceLocation};
 
     fn make_event(id: u64, func: &str) -> TraceEvent {
         TraceEvent::new(
             id,
-            id * 100,
+            MonotonicNs::from(id * 100),
             1,
             EventType::FunctionEntry,
             SourceLocation::new("test.rs", 10, func, 0x1000 + id),
