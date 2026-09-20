@@ -10,6 +10,14 @@
 //! (Q3 decision — the lifetime disappears because the port no longer
 //! borrows from chronos-store). The adapter does the slice borrow at
 //! the storage boundary.
+//!
+//! **Port-shape note (B'):** `minimised` and `target_hypothesis` are
+//! carried as opaque `Vec<u8>` blobs (JSON serialised payload bytes
+//! from the store-side types). The store-side wire types
+//! (`MinimisedPayload`, `HypothesisInputWire`, `ExistencePredicateWire`)
+//! are richer than the port needs — the adapter translates at the
+//! storage boundary using JSON-serialise / deserialise roundtrips.
+//! See REC-C3.5-B' notes for the design rationale.
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -76,18 +84,20 @@ fn default_schema_version() -> u32 {
     1
 }
 
-/// Full bundle record (envelope + events + minimised payload +
-/// target_hypothesis + schema_version). Mirrors
+/// Full bundle record (envelope + events + minimised bytes +
+/// target_hypothesis bytes + schema_version). Mirrors
 /// `chronos_store::CounterexampleBundleRecord` so the adapter can
 /// forward without translation at the schema level — the chronos_store
 /// type remains the wire shape, the domain type is the port shape.
 ///
-/// **Wire compatibility note (B9):** the field names, types, and
+/// **Wire compatibility note (B9):** the field names and the
 /// `serde` annotations mirror the chronos_store record exactly so a
 /// `CounterexampleBundleRecord` round-trips through this port without
-/// any conversion. The chronos_store internal type is kept as the
-/// authoritative source-of-truth for the redb value; the adapter does
-/// a thin pass-through for `save_bundle`.
+/// any conversion **at the JSON wire level**. The opaque `Vec<u8>`
+/// fields for `minimised` and `target_hypothesis` are JSON-encoded
+/// serialisations of the store-side types
+/// (`MinimisedPayload` / `HypothesisInputWire`); the adapter does the
+/// encode/decode at the storage boundary.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CounterexampleBundleRecord {
     pub summary: CounterexampleBundleSummary,
@@ -99,23 +109,6 @@ pub struct CounterexampleBundleRecord {
     pub target_hypothesis: Option<Vec<u8>>,
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
-}
-
-/// Opaque bytes for the minimised payload. Kept as a free-standing
-/// struct so the adapter can return `Option<MinimisedPayload>` when
-/// the bytes successfully deserialise to the typed store form.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
-pub struct MinimisedPayload {
-    #[serde(default)]
-    pub raw: Vec<u8>,
-}
-
-/// Opaque bytes for the user's original hypothesis input. Same
-/// rationale as [`MinimisedPayload`].
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
-pub struct HypothesisInputWire {
-    #[serde(default)]
-    pub raw: Vec<u8>,
 }
 
 /// `CounterexampleRepository` — domain-side port for persisting and
@@ -141,6 +134,16 @@ pub trait CounterexampleRepository: Send + Sync {
 
     /// Number of events stored for a bundle.
     fn count_bundle_events(&self, bundle_id: &str) -> Result<u64, CounterexampleRepositoryError>;
+
+    /// Load the full bundle record (envelope + events + minimised
+    /// payload + target_hypothesis) by `bundle_id`. Returns `Ok(None)`
+    /// when the bundle is absent. The port-shape record mirrors the
+    /// chronos-store wire record 1:1; the adapter is a thin
+    /// pass-through (see file-level note).
+    fn load_bundle(
+        &self,
+        bundle_id: &str,
+    ) -> Result<Option<CounterexampleBundleRecord>, CounterexampleRepositoryError>;
 }
 
 /// `CounterexampleRepository` backed by an in-memory map. Used by
@@ -243,6 +246,17 @@ impl CounterexampleRepository for InMemoryCounterexampleRepository {
             .get(bundle_id)
             .map(|r| r.events.len() as u64)
             .ok_or_else(|| CounterexampleRepositoryError::BundleNotFound(bundle_id.to_string()))
+    }
+
+    fn load_bundle(
+        &self,
+        bundle_id: &str,
+    ) -> Result<Option<CounterexampleBundleRecord>, CounterexampleRepositoryError> {
+        let guard = self
+            .inner
+            .read()
+            .expect("InMemoryCounterexampleRepository read-lock poisoned");
+        Ok(guard.get(bundle_id).cloned())
     }
 }
 

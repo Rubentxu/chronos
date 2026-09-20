@@ -125,6 +125,11 @@ pub struct ChronosServer {
     /// `SessionLifecycleService`. Built from `store` via
     /// `SessionStoreBackedLifecycleStore` at composition time.
     lifecycle_store: Arc<dyn chronos_domain::ports::lifecycle_store::LifecycleStore>,
+    /// `CounterexampleRepository` port (REC-C3.5-B'). Built from `store` via
+    /// `SessionStoreBackedCounterexampleRepository` at composition time.
+    /// `CounterexampleService` consumes the port; the store stays for
+    /// non-port consumers (probe persistence, etc.).
+    counterexample_repository: Arc<dyn chronos_domain::ports::counterexample::CounterexampleRepository>,
     /// `SessionArchive` port (REC-C3.3.3 Tren B). Built from `store` via
     /// `SessionStoreBackedSessionArchive` at composition time. Services
     /// consume the port; `store` stays for non-port consumers (probe
@@ -1848,12 +1853,16 @@ impl ChronosServer {
                 store_arc.clone(),
             ),
         );
+        let counterexample_repository: Arc<
+            dyn chronos_domain::ports::counterexample::CounterexampleRepository,
+        > = crate::composition::default_counterexample_repository(store_arc.clone());
         Self {
             engines: Arc::new(Mutex::new(HashMap::new())),
             session_languages: Arc::new(Mutex::new(HashMap::new())),
             store: store_arc,
             reader,
             lifecycle_store,
+            counterexample_repository,
             archive,
             background_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
             connected_sessions: Arc::new(std::sync::Mutex::new(HashSet::new())),
@@ -1897,12 +1906,16 @@ impl ChronosServer {
                         store_arc.clone(),
                     ),
                 );
+                let counterexample_repository: Arc<
+                    dyn chronos_domain::ports::counterexample::CounterexampleRepository,
+                > = crate::composition::default_counterexample_repository(store_arc.clone());
                 Self {
                     engines: Arc::new(Mutex::new(HashMap::new())),
                     session_languages: Arc::new(Mutex::new(HashMap::new())),
                     store: store_arc,
                     reader,
                     lifecycle_store,
+                    counterexample_repository,
                     archive,
                     background_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
                     connected_sessions: Arc::new(std::sync::Mutex::new(HashSet::new())),
@@ -6532,7 +6545,7 @@ further would be a Silent Lie."
             engines: &self.engines,
         };
         let counterexample_ctx = chronos_services::counterexample::CounterexampleContext {
-            store: &self.store,
+            repository: std::sync::Arc::clone(&self.counterexample_repository),
             hypothesis_ctx: &hyp_ctx,
         };
         let input = chronos_services::counterexample::CounterexampleShrinkInput::Shrink {
@@ -6573,7 +6586,7 @@ further would be a Silent Lie."
             engines: &self.engines,
         };
         let counterexample_ctx = chronos_services::counterexample::CounterexampleContext {
-            store: &self.store,
+            repository: std::sync::Arc::clone(&self.counterexample_repository),
             hypothesis_ctx: &hyp_ctx,
         };
         match chronos_services::counterexample::ChronosCounterexampleService::get(
@@ -6604,7 +6617,7 @@ further would be a Silent Lie."
             engines: &self.engines,
         };
         let counterexample_ctx = chronos_services::counterexample::CounterexampleContext {
-            store: &self.store,
+            repository: std::sync::Arc::clone(&self.counterexample_repository),
             hypothesis_ctx: &hyp_ctx,
         };
         let filter = chronos_services::counterexample::CounterexampleListFilter {
@@ -6648,7 +6661,7 @@ further would be a Silent Lie."
             engines: &self.engines,
         };
         let counterexample_ctx = chronos_services::counterexample::CounterexampleContext {
-            store: &self.store,
+            repository: std::sync::Arc::clone(&self.counterexample_repository),
             hypothesis_ctx: &hyp_ctx,
         };
         match chronos_services::counterexample::ChronosCounterexampleService::events_count(
@@ -6691,7 +6704,7 @@ further would be a Silent Lie."
             engines: &self.engines,
         };
         let counterexample_ctx = chronos_services::counterexample::CounterexampleContext {
-            store: &self.store,
+            repository: std::sync::Arc::clone(&self.counterexample_repository),
             hypothesis_ctx: &hyp_ctx,
         };
         match chronos_services::counterexample::ChronosCounterexampleService::events(

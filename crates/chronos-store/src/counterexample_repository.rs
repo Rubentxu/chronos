@@ -104,6 +104,26 @@ fn decode_hypothesis(
     }
 }
 
+/// Encode a strongly-typed store form into opaque port bytes.
+///
+/// Returns `None` for a `None` typed value, otherwise the bincode bytes.
+/// Used for the round-trip from `SessionStore::load_counterexample_bundle`
+/// to the port-shaped `CounterexampleBundleRecord.minimised` /
+/// `.target_hypothesis`. Forward-compat is preserved: legacy bundles
+/// with `minimised: None` round-trip as `None` and the port's
+/// `events_count: 0` fallback applies (m9-02 D2).
+fn encode_minimised_to_port(
+    m: Option<&crate::counterexample_storage::MinimisedPayload>,
+) -> Option<Vec<u8>> {
+    m.map(|v| bincode::serialize(v).expect("MinimisedPayload is bincode-friendly"))
+}
+
+fn encode_hypothesis_to_port(
+    h: Option<&crate::counterexample_storage::HypothesisInputWire>,
+) -> Option<Vec<u8>> {
+    h.map(|v| bincode::serialize(v).expect("HypothesisInputWire is bincode-friendly"))
+}
+
 impl CounterexampleRepository for SessionStoreBackedCounterexampleRepository {
     fn save_bundle(
         &self,
@@ -186,5 +206,32 @@ impl CounterexampleRepository for SessionStoreBackedCounterexampleRepository {
         self.store
             .count_counterexample_bundle_events(bundle_id)
             .map_err(convert)
+    }
+
+    fn load_bundle(
+        &self,
+        bundle_id: &str,
+    ) -> Result<Option<CounterexampleBundleRecord>, CounterexampleRepositoryError> {
+        let store_record = self
+            .store
+            .load_counterexample_bundle(bundle_id)
+            .map_err(convert)?;
+        Ok(store_record.map(|r| CounterexampleBundleRecord {
+            summary: CounterexampleBundleSummary {
+                bundle_id: r.summary.bundle_id,
+                property_kind: r.summary.property_kind,
+                workspace_id: r.summary.workspace_id,
+                created_at_ms: r.summary.created_at_ms,
+                rounds_used: r.summary.rounds_used,
+                has_full_bundle: r.summary.has_full_bundle,
+                schema_version: r.summary.schema_version,
+                events_count: r.summary.events_count,
+            },
+            events: r.events,
+            minimised: encode_minimised_to_port(r.minimised.as_ref()),
+            event_cas_hashes: r.event_cas_hashes,
+            target_hypothesis: encode_hypothesis_to_port(r.target_hypothesis.as_ref()),
+            schema_version: r.schema_version,
+        }))
     }
 }

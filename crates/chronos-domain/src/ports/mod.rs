@@ -30,8 +30,8 @@ pub mod uprobe;
 pub use browser_probe::{BrowserError, BrowserProbeBackend, BrowserProbeFactory};
 pub use counterexample::{
     CounterexampleBundleFilter, CounterexampleBundleRecord, CounterexampleBundleSummary,
-    CounterexampleRepository, CounterexampleRepositoryError, HypothesisInputWire,
-    InMemoryCounterexampleRepository, MinimisedPayload,
+    CounterexampleRepository, CounterexampleRepositoryError,
+    InMemoryCounterexampleRepository,
 };
 pub use execution_log::{
     ExecutionLogError, ExecutionLogKind, ExecutionLogPage, ExecutionLogProvider,

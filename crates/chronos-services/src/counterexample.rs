@@ -32,6 +32,8 @@ use std::cell::RefCell;
 #[cfg(test)]
 use std::collections::HashMap;
 
+use std::sync::Arc;
+
 use proptest::strategy::Strategy;
 use proptest::test_runner::TestRunner;
 use serde::{Deserialize, Serialize};
@@ -59,13 +61,15 @@ pub const DEFAULT_SHRINK_MAX_ROUNDS: u32 = 64;
 
 /// Borrowed handle to the live state needed by [`ChronosCounterexampleService`].
 ///
-/// Carries the same pattern as `m7-05::SessionLifecycleContext`: a borrowed
-/// `&SessionStore` (for m8-03 redb lookups) plus a borrowed
-/// `&HypothesisTestContext` (which transitively borrows the live engines
-/// map). No new `Arc` wrapping happens here — `&'a` lifetime ties the
-/// counterexample service to the same lifetime as the server's `ChronosServer`.
+/// Carries the same pattern as `m7-05::SessionLifecycleContext`: an
+/// `Arc<dyn CounterexampleRepository>` port (REC-C3.5-B') for
+/// counterexample bundle persistence plus a borrowed
+/// `&HypothesisTestContext` (which transitively borrows the live
+/// engines map). No new `Arc` wrapping happens here — `&'a` lifetime
+/// ties the counterexample service to the same lifetime as the
+/// server's `ChronosServer`.
 pub struct CounterexampleContext<'a> {
-    pub store: &'a chronos_store::SessionStore,
+    pub repository: Arc<dyn chronos_domain::ports::counterexample::CounterexampleRepository>,
     pub hypothesis_ctx: &'a HypothesisTestContext<'a>,
 }
 
@@ -336,8 +340,8 @@ impl ChronosCounterexampleService {
         bundle_id: &str,
     ) -> Result<CounterexampleOutput, ServiceError> {
         let opt = ctx
-            .store
-            .load_counterexample_bundle(bundle_id)
+            .repository
+            .load_bundle(bundle_id)
             .map_err(|e| ServiceError::LoadFailed(format!("counterexample load: {e}")))?;
         let record = match opt {
             Some(r) => r,
@@ -347,7 +351,7 @@ impl ChronosCounterexampleService {
                 )));
             }
         };
-        let summary = counterexample_summary_from_wire(&record.summary, &record.minimised);
+        let summary = port_record_to_services_summary(&record);
         Ok(CounterexampleOutput::Got { summary })
     }
 
@@ -371,8 +375,8 @@ impl ChronosCounterexampleService {
         bundle_id: &str,
     ) -> Result<CounterexampleOutput, ServiceError> {
         let opt = ctx
-            .store
-            .load_counterexample_bundle(bundle_id)
+            .repository
+            .load_bundle(bundle_id)
             .map_err(|e| ServiceError::LoadFailed(format!("counterexample load: {e}")))?;
         let record = match opt {
             Some(r) => r,
@@ -384,8 +388,14 @@ impl ChronosCounterexampleService {
         };
         // m9-02 D2: prefer summary.events_count (O(1)) when it is populated.
         // Fall back to record.events.len() only when events_count == 0 AND
-        // the blob has non-empty events (legacy pre-m9-02 bundle).
-        let count = cs::bundle_events_count_or_legacy(&record);
+        // the blob has non-empty events (legacy pre-m9-02 bundle). Mirrors
+        // `chronos_store::counterexample_storage::bundle_events_count_or_legacy`
+        // inlined here so the service doesn't need a store-side helper.
+        let count = if record.summary.events_count > 0 {
+            record.summary.events_count
+        } else {
+            record.events.len() as u64
+        };
         Ok(CounterexampleOutput::EventsCount {
             bundle_id: bundle_id.to_string(),
             events_count: count as usize,
@@ -416,8 +426,8 @@ impl ChronosCounterexampleService {
     ) -> Result<CounterexampleOutput, ServiceError> {
         // Verify the bundle exists before reading events.
         let bundle = ctx
-            .store
-            .load_counterexample_bundle(bundle_id)
+            .repository
+            .load_bundle(bundle_id)
             .map_err(|e| ServiceError::LoadFailed(format!("counterexample load: {e}")))?;
         if bundle.is_none() {
             return Err(ServiceError::LoadFailed(format!(
@@ -426,8 +436,8 @@ impl ChronosCounterexampleService {
         }
         // Load the events stream.
         let all_events = ctx
-            .store
-            .load_counterexample_bundle_events(bundle_id)
+            .repository
+            .load_bundle_events(bundle_id)
             .map_err(|e| ServiceError::LoadFailed(format!("counterexample events load: {e}")))?;
         let events_count = all_events.len();
         // Apply pagination.
@@ -471,30 +481,26 @@ impl ChronosCounterexampleService {
         ctx: &CounterexampleContext<'_>,
         filter: CounterexampleListFilter,
     ) -> Result<CounterexampleOutput, ServiceError> {
-        let workspace_id = filter.workspace_id.as_deref();
-        let property_kind = filter
-            .property_kind
-            .map(|k| hypothesis_kind_as_str(k).to_string());
-        let property_kind_str: Option<&str> = property_kind.as_deref();
-        let store_filter = cs::CounterexampleBundleFilter {
-            workspace_id,
-            property_kind: property_kind_str,
+        let port_filter = chronos_domain::ports::counterexample::CounterexampleBundleFilter {
+            workspace_id: filter.workspace_id,
+            property_kind: filter
+                .property_kind
+                .map(|k| hypothesis_kind_as_str(k).to_string()),
             since_ms: filter.since_ms,
             until_ms: filter.until_ms,
             limit: filter.limit,
-            cursor: filter.cursor.clone(),
+            cursor: filter.cursor,
         };
         let summaries = ctx
-            .store
-            .list_counterexample_bundles(store_filter)
+            .repository
+            .list_bundles(&port_filter)
             .map_err(|e| ServiceError::LoadFailed(format!("counterexample list: {e}")))?;
         // The list path only carries summary fields (no minimised payload),
-        // so we synthesise a placeholder None payload for the boundary
-        // conversion. `counterexample_summary_from_wire` handles the
-        // None-minimised branch by setting `has_full_bundle=false`.
+        // so we hide `has_full_bundle` from the wire view: the MCP tool
+        // surface returns summary-only entries.
         let summaries = summaries
-            .iter()
-            .map(|s| counterexample_summary_from_wire(s, &None))
+            .into_iter()
+            .map(port_summary_to_services_summary)
             .collect::<Vec<_>>();
         // m8-05 B2: forward-pagination cursor. If the page is full,
         // set `next_cursor` to the last returned bundle_id; otherwise
@@ -570,17 +576,31 @@ impl ChronosCounterexampleService {
             // which takes events from the record and sets the count there.
             events_count: 0,
         };
-        let record = cs::CounterexampleBundleRecord {
-            summary,
+        // Build the port-shaped record. minimised and target_hypothesis
+        // become opaque bincode bytes; the adapter translates to the
+        // strongly-typed store form at the storage boundary (REC-C3.5-B').
+        let minimised_bytes = minimised_opt.as_ref().map(encode_minimised_for_port);
+        let target_hypothesis_bytes = Some(encode_hypothesis_for_port(&target_hypothesis_wire));
+        let port_record = chronos_domain::ports::counterexample::CounterexampleBundleRecord {
+            summary: chronos_domain::ports::counterexample::CounterexampleBundleSummary {
+                bundle_id: summary.bundle_id.clone(),
+                property_kind: summary.property_kind.clone(),
+                workspace_id: summary.workspace_id.clone(),
+                created_at_ms: summary.created_at_ms,
+                rounds_used: summary.rounds_used,
+                has_full_bundle: summary.has_full_bundle,
+                schema_version: summary.schema_version,
+                events_count: summary.events_count,
+            },
             events,
-            minimised: minimised_opt,
+            minimised: minimised_bytes,
             event_cas_hashes: Vec::new(),
-            target_hypothesis: Some(target_hypothesis_wire),
+            target_hypothesis: target_hypothesis_bytes,
             schema_version: cs::CURRENT_BUNDLE_SCHEMA_VERSION,
         };
         let returned_id = ctx
-            .store
-            .save_counterexample_bundle(record)
+            .repository
+            .save_bundle(port_record)
             .map_err(|e| ServiceError::LoadFailed(format!("counterexample save: {e}")))?;
 
         let summary_back = CounterexampleBundleSummary {
@@ -600,16 +620,23 @@ impl ChronosCounterexampleService {
         // shortcut this by inlining the count into save()'s return
         // type).
         let loaded = ctx
-            .store
-            .load_counterexample_bundle(&summary_back.bundle_id)
+            .repository
+            .load_bundle(&summary_back.bundle_id)
             .map_err(|e| ServiceError::LoadFailed(format!("counterexample reload: {e}")))?;
         // m9-02: after mem::take events into the side table, the persisted
         // record has events=[] but record.summary.events_count = events.len().
         // For pre-m9-02 blobs (where summary.events_count stays 0) we fall
-        // back to the blob-embedded event count.
+        // back to the blob-embedded event count. Mirrors the inlined helper
+        // in `events_count` — keeps the store-side helper off the hot path.
         let events_count = loaded
             .as_ref()
-            .map(|r| cs::bundle_events_count_or_legacy(r) as usize)
+            .map(|r| {
+                if r.summary.events_count > 0 {
+                    r.summary.events_count as usize
+                } else {
+                    r.events.len()
+                }
+            })
             .unwrap_or(0);
         Ok(CounterexampleOutput::Saved {
             summary: summary_back,
@@ -1602,33 +1629,87 @@ fn minimised_payload_from_services(
     }
 }
 
-/// Convert a chronos-store `CounterexampleBundleSummary` (string-typed
-/// `property_kind`) into the services-side `CounterexampleBundleSummary`
-/// (enum-typed `property_kind`). Unknown string-typed kinds map to
-/// `HypothesisKind::Invariant` with a recorded wire-side `property_kind`
-/// string preserved in `workspace_id` is not the right place — kept here
-/// for the boundary conversion. The wire string is rejected silently
-/// because chronos-store's string encoding is the canonical form.
-fn counterexample_summary_from_wire(
-    s: &CounterexampleBundleSummaryWire,
-    minimised: &Option<MinimisedPayload>,
+/// Encode a wire-shape [`MinimisedPayload`] (store-typed) as opaque
+/// bincode bytes for the port-record (`Vec<u8>`). This is the **single**
+/// place in `chronos-services` that performs the
+/// store-typed-`MinimisedPayload` → port-shape `Vec<u8>` conversion,
+/// keeping the port's `minimised: Option<Vec<u8>>` shape and confining
+/// the store-side type dependency to this helper.
+///
+/// The adapter deserialises the bytes back to the store-typed
+/// `MinimisedPayload` at the storage boundary; nothing in the service
+/// hot path sees the deserialised value.
+///
+/// **B' refinement (R-roadmap):** ideally the service would consume
+/// only port-types and the store types would live in `chronos_domain`.
+/// Moving them is a follow-up cycle (REC-C3.5-B'.1) because 43 use
+/// sites across `chronos-services` / `chronos-cli` / `chronos-store`
+/// would churn. Until then, this helper is the deliberate boundary:
+/// store types flow in here as opaque bytes and leave via the port.
+fn encode_minimised_for_port(p: &MinimisedPayload) -> Vec<u8> {
+    bincode::serialize(p).expect("MinimisedPayload is bincode-friendly; this cannot fail")
+}
+
+/// Encode a wire-shape [`HypothesisInputWire`] (store-typed) as opaque
+/// bincode bytes for the port-record (`Vec<u8>`). Same rationale as
+/// [`encode_minimised_for_port`].
+fn encode_hypothesis_for_port(h: &HypothesisInputWire) -> Vec<u8> {
+    bincode::serialize(h).expect("HypothesisInputWire is bincode-friendly; this cannot fail")
+}
+
+/// Convert a port-shaped [`CounterexampleBundleRecord`] into the
+/// services-side [`CounterexampleBundleSummary`].
+///
+/// - `property_kind` (string form on the port) → `HypothesisKind` enum
+///   using the same mapping as the wire-side helper
+///   (`counterexample_summary_from_wire`); unknown values map to
+///   `Invariant` silently because chronos-store's string encoding is
+///   canonical.
+/// - `has_full_bundle` carries the port's value **AND** requires that
+///   `minimised` bytes are present (mirrors the previous
+///   `s.has_full_bundle && minimised.is_some()` semantics for the
+///   `get` path).
+///
+/// The list path uses [`port_summary_to_services_summary`] instead
+/// because it hides `has_full_bundle` regardless of the underlying
+/// record state.
+fn port_record_to_services_summary(
+    r: &chronos_domain::ports::counterexample::CounterexampleBundleRecord,
+) -> CounterexampleBundleSummary {
+    let property_kind = match r.summary.property_kind.as_str() {
+        "existence" => HypothesisKind::Existence,
+        "call_path" => HypothesisKind::CallPath,
+        _ => HypothesisKind::Invariant,
+    };
+    CounterexampleBundleSummary {
+        bundle_id: r.summary.bundle_id.clone(),
+        property_kind,
+        workspace_id: r.summary.workspace_id.clone(),
+        created_at_ms: r.summary.created_at_ms,
+        rounds_used: r.summary.rounds_used,
+        has_full_bundle: r.summary.has_full_bundle && r.minimised.is_some(),
+    }
+}
+
+/// Convert a port-shaped [`CounterexampleBundleSummary`] (returned by
+/// `list_bundles`) into the services-side summary. Hides
+/// `has_full_bundle` from the wire view because the list path doesn't
+/// carry the minimised payload.
+fn port_summary_to_services_summary(
+    s: chronos_domain::ports::counterexample::CounterexampleBundleSummary,
 ) -> CounterexampleBundleSummary {
     let property_kind = match s.property_kind.as_str() {
         "existence" => HypothesisKind::Existence,
         "call_path" => HypothesisKind::CallPath,
-        // default + "invariant" + unknown
         _ => HypothesisKind::Invariant,
     };
     CounterexampleBundleSummary {
-        bundle_id: s.bundle_id.clone(),
+        bundle_id: s.bundle_id,
         property_kind,
-        workspace_id: s.workspace_id.clone(),
+        workspace_id: s.workspace_id,
         created_at_ms: s.created_at_ms,
         rounds_used: s.rounds_used,
-        // List path passes a placeholder None — set has_full_bundle=false
-        // so the MCP wire's "summary" view doesn't promise more than it
-        // carries. Get path has the real minimised payload.
-        has_full_bundle: s.has_full_bundle && minimised.is_some(),
+        has_full_bundle: false,
     }
 }
 
