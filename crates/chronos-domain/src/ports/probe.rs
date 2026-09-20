@@ -241,7 +241,7 @@ pub trait NativeProbeController: Send + Sync + Debug {
     /// The returned `CaptureSession` is the application's handle to
     /// the running capture; subsequent `advance`/`step`/`stop` calls
     /// operate against the same tracee.
-    fn attach_to_pid(&self, pid: i32, config: &CaptureConfig)
+    fn attach_to_pid(&self, pid: u32, config: &CaptureConfig)
         -> Result<CaptureSession, TraceError>;
 
     /// Stop the probe and release all resources (blocking).

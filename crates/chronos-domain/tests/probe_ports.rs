@@ -178,7 +178,7 @@ impl NativeProbeController for StubNativeController {
 
     fn attach_to_pid(
         &self,
-        _pid: i32,
+        _pid: u32,
         _config: &CaptureConfig,
     ) -> Result<chronos_domain::CaptureSession, TraceError> {
         // The stub does not spawn a real tracee; tests exercise this
