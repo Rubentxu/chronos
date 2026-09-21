@@ -370,8 +370,21 @@ notes = "C4.3 (ff559f31): SubscriptionId newtype in chronos-domain, typed throug
 [[requirement]]
 id = "API-001"
 title = "Canonical v2 agent API is small and composable"
-status = "partial"
+status = "verified"
 owner_gate = "REC-C5"
+evidence = [
+  "docs/chronos-agentic-reconstruction/docs/specs/AGENT_API_V2.md (Current surface (REC-C6 ratification, 2026-09-21) — 12 canonical v2 tools + 29 not-yet-converged neighbours; future migration order documented per neighbour group)",
+  "crates/chronos-mcp/src/server.rs::ALL_TOOL_NAMES (41 entries; toolset_sync_check enforces parity)",
+  "crates/chronos-mcp/tests/alias_deletion.rs (regression test: DELETED_ALIASES.len() == 22)",
+  "REC-C5 closeout (commit 350f91c6): 22 alias handlers deleted, ALL_TOOL_NAMES pruned 63 -> 41, wire shims removed from events_read/diff/output",
+]
+uat = [
+  "cargo test -p chronos-mcp --lib toolset_sync_check (2/2 PASS post-REC-C5; still 2/2 PASS post-REC-C6.3)",
+  "cargo test -p chronos-mcp --test alias_deletion (2/2 PASS; DELETED_ALIASES.len() == 22)",
+  "grep -rE '^\\s*#\\[tool\\(' crates/chronos-mcp/src/ | wc -l == 41 (live router)",
+]
+notes = "REC-C5 closed the alias sunset (22 v1 aliases deleted, C5.3.2). REC-C6.3 ratified the post-REC-C5 surface: 12 v2 canonical + 29 not-yet-converged neighbours, with the future migration order for the 29 documented in AGENT_API_V2.md (probe_*, browser_probe_*, counterexample_*, sessions CRUD, mutation_lens / causal_slice / compare_sessions, misc). 'Small and composable' is satisfied at 12 v2 canonicals (the spec's 8-12 target)."
+verify = "cargo test -p chronos-mcp --lib toolset_sync_check && cargo test -p chronos-mcp --test alias_deletion && test $(grep -rE '^\\s*#\\[tool\\(' crates/chronos-mcp/src/ | wc -l) -eq 41"
 
 [[requirement]]
 id = "API-002"
