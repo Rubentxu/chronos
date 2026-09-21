@@ -143,6 +143,8 @@ Append-only index of all completed cycles in this vault.
 | rec-c2 | rec-c2.1-tripwire-evidence | A-lite | rec-c2.1-tripwire-evidence | `686a364c` | CLOSED |
 | rec-c2 | rec-c2.2-accepted-raw-seam | A-lite | rec-c2.2-accepted-raw-seam | `f02ab311` | CLOSED |
 | rec-c2 | rec-c2.5-formal-closure | A-lite | — | `21ab4f24888a78e71c7bf124c6f9497608288a7c` | CLOSED |
+<!-- G0.3 CC#39 re-closure (2026-09-21): the cycle row above was inserted in commit `08a78c49` with the human-readable name `rec-c2.5-formal-closure` (with dot), matching the cycle's own receipt/report titles. However, the canonical machine-readable identifiers all use the dashed form `rec-c2-5-formal-closure`: filesystem directory `cycle-artifacts/p-3416cfb8288f8964/rec-c2-5-formal-closure/`, git tag `rec-c2-5-formal-closure` (annotated, peel `21ab4f24888a78e71c7bf124c6f9497608288a7c`), and `apply-checkpoint.json: cycle_id = "rec-c2-5-formal-closure"`. The dashed form is what the canonical-cycle-rule script (CC#39 spec) uses to match `git ls-files` output. Correcting in-place below; previous row preserved per AGENTS.md §0.4 additivity. -->
+| rec-c2 | rec-c2-5-formal-closure | A-lite | rec-c2-5-formal-closure | `21ab4f24888a78e71c7bf124c6f9497608288a7c` | CLOSED |
 | rec-c2 | rec-c2.3-eventbus-removal | A-lite | — | `d435557e0f3a82e8ed63939676647b670f8d0d81` | CLOSED |
 
 | rec-c3 | rec-c3-1-application-ports | A-min | — | `33b4f79004b7634a9e88b7919f8b42e854c420e8` | CLOSED |
@@ -167,10 +169,10 @@ See `changes/archive/` for full archive manifests of closed cycles.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-21T11:30Z |
-| Total cycles | 149 |
-| Tracked canonical cycles (G0.3 CC#39) | 139 (built from `git ls-files cycle-artifacts/p-3416cfb8288f8964/*/**`; excludes bookkeeping dirs `handoffs/`, `retire-stale-bus-doc-mentions/` and untracked WIP dirs `rec-c3.3.4-native/`, `rec-c3.5-residual-inversion/`) |
-| Historical refs (no on-disk artifacts, real in git history) | 10 (m0-01-live-pagination, m0-truth-first-foundation, m1-execution-log-vertical-slice, m2-function-level-capture, m2-native-live-probe-frame-capture, m2-native-live-probe-frame-capture-v2, m8-07-hypothesis-reconstruction-fidelity, m10-ms-cap-discovery, m10-ms-cap-discovery-followup, rec-c3-hexagonal-closure — each has verified tag or commit SHA in git) |
+| Last updated | 2026-09-21T11:48Z |
+| Total cycles | 148 |
+| Tracked canonical cycles (G0.3 CC#39) | 137 (built from `git ls-files cycle-artifacts/p-3416cfb8288f8964/*/**` minus bookkeeping dirs `handoffs/`, `retire-stale-bus-doc-mentions/`; no `_suspended-*` survive in git history as tracked files) |
+| Historical refs (no on-disk artifacts, real in git history) | 11 (m0-01-live-pagination, m0-truth-first-foundation, m1-execution-log-vertical-slice, m2-function-level-capture, m2-native-live-probe-frame-capture, m2-native-live-probe-frame-capture-v2, m8-07-hypothesis-reconstruction-fidelity, m10-ms-cap-discovery, m10-ms-cap-discovery-followup, rec-c2.5-formal-closure [dotted-name legacy duplicate row preserved per §0.4; canonical machine form is `rec-c2-5-formal-closure`], rec-c3-hexagonal-closure — each has verified tag or commit SHA in git) |
 | m10 cycles | 13 (rows above) |
 | m1 cycles | 2 (m1-execution-log-vertical-slice, m1-gap-segment-accounting-repair) |
 | rec-c1 cycles | 4 (rec-c1-5-closure, rec-c1-6-lifecycle-retention-wire, rec-c1-7-projection-authority-acceptance, rec-c1-8-authoritative-evidence-handoff) |

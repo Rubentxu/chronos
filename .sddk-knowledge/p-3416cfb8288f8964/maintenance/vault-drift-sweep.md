@@ -1911,13 +1911,21 @@ if total_m:
         cols = [c.strip() for c in r.split('|')[1:-1]]
         if len(cols) >= 2:
             cid = cols[1]
+            col1 = cols[0]
             # Defensive: skip rows where col 2 looks like a number
             # (a breakdown count, e.g. "13") or starts with a digit
-            # alone (a summary). Skip rows marked _legacy_dup_*
-            # (CC#39 G0.3: legacy duplicate placeholders kept for
-            # append-only history, not part of the canonical set).
+            # alone (a summary).
+            # Skip rows where col 1 is `_legacy_dup_*` (Milestone
+            # column says so; col 2 carries a descriptive placeholder
+            # like `(legacy short row, see rec-c3 below)`). These are
+            # CC#39 G0.3 legacy duplicate placeholders kept for
+            # append-only history, not part of the canonical set.
+            # Also skip rows where col 2 starts with `(` or `_legacy_dup_`
+            # (descriptive text / explicit legacy marker).
             if (cid and not cid[0].isdigit()
-                    and not cid.startswith('_legacy_dup_')):
+                    and not col1.startswith('_legacy_dup_')
+                    and not cid.startswith('_legacy_dup_')
+                    and not cid.startswith('(')):
                 indexed_ids.add(cid)
     actual = len(indexed_ids)
     if expected != actual:
@@ -1948,6 +1956,21 @@ because after REC-C0..REC-C7 and m10+ the universe is no longer
 m9-only; the old m9-only formula produced a 3-line false-positive
 once rec-c5/rec-c6/rec-c7 landed. The widened formula matches the
 universe that `cycles/index.md` already enumerates.
+
+**G0.3 canonical-name rule (2026-09-21):** the Part C parser matches
+`git ls-files cycle-artifacts/p-3416cfb8288f8964/<cycle>` against
+the Cycle ID column in the index, so the canonical machine-readable
+form is the **filesystem directory name**. When the cycle's own
+artifacts disagree (e.g. `rec-c2-5-formal-closure` filesystem dir
+but receipt/report titles use `rec-c2.5-formal-closure` with a
+dot), the dashed form wins because `apply-checkpoint.json: cycle_id`
+and the git tag both use it. If a row in the index uses the dotted
+form, it counts as **not matching** the tracked filesystem entry
+even though the same SHA is cited — fix by inserting a corrected
+row beside the original (per §0.4 additivity), do not delete the
+original. CC#39 was initially closed with one such row
+(`rec-c2.5-formal-closure` in commit `08a78c49`); a follow-up
+commit added the corrected `rec-c2-5-formal-closure` row.
 
 ### 40. comprehensive schema backfill (closed by m9-48)
 
