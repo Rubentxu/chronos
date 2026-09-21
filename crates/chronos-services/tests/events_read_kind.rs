@@ -36,15 +36,15 @@ fn serialize_by_id_yields_by_id_string() {
 
 #[test]
 fn deserialize_query_string_yields_query_variant() {
-    let parsed: EventsReadKind = serde_json::from_value(Value::String("query".to_string()))
-        .expect("deserialize 'query'");
+    let parsed: EventsReadKind =
+        serde_json::from_value(Value::String("query".to_string())).expect("deserialize 'query'");
     assert_eq!(parsed, EventsReadKind::Query);
 }
 
 #[test]
 fn deserialize_by_id_string_yields_by_id_variant() {
-    let parsed: EventsReadKind = serde_json::from_value(Value::String("by_id".to_string()))
-        .expect("deserialize 'by_id'");
+    let parsed: EventsReadKind =
+        serde_json::from_value(Value::String("by_id".to_string())).expect("deserialize 'by_id'");
     assert_eq!(parsed, EventsReadKind::ById);
 }
 

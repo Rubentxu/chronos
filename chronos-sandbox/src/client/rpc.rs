@@ -71,10 +71,7 @@ impl RpcClient {
         let response = timeout(init_timeout, self.read_response())
             .await
             .map_err(|_| {
-                McpSandboxError::TimeoutError(
-                    "initialize response".to_string(),
-                    init_timeout,
-                )
+                McpSandboxError::TimeoutError("initialize response".to_string(), init_timeout)
             })??;
 
         tracing::debug!(response = ?response, "Received initialize response");

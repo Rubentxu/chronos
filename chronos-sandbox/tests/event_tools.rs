@@ -64,7 +64,9 @@ async fn test_get_event_after_probe_stop() {
     // REC-C8 (G0.4 fix): the v2 server wraps the by_id payload inside
     // `{event: {...}, mode, provenance, session_id}`. The fields are
     // nested under `event`, not at the root of the response.
-    let inner_event = event_detail.get("event").expect("envelope should have 'event' field");
+    let inner_event = event_detail
+        .get("event")
+        .expect("envelope should have 'event' field");
     assert!(
         inner_event.get("event_id").is_some(),
         "Should have event_id (inside 'event' envelope)"
