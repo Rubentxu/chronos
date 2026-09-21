@@ -2,15 +2,11 @@
 
 Chronos is an agent-first runtime for observing, querying and verifying what a program actually did. The long-term goal is not to reproduce a human debugger UI: it is to give coding agents trustworthy execution evidence, causal context, runtime properties and adaptive instrumentation.
 
-> **Reconstruction status (2026-09-15): convergence in progress.**
-> Chronos already has substantial ExecutionLog, invocation-identity, property/Mutation-Lens, query and MCP foundations, but the repository still contains legacy/parallel evidence paths and unfinished adaptive-instrumentation contracts. Official reconstruction M6+ is blocked until the mandatory `REC-C0..REC-C7` convergence gates close.
+> **Estado operativo (2026-09-21):** REC-C0..REC-C7 constan cerrados documentalmente, pero el baseline auditado de `main` presenta fallos en CI, Coverage y Vault Drift. **No se declara production-ready ni se afirma que M4/M6+ estén completos.** Consultar el puntero vivo y los tests del SHA actual antes de continuar.
 
-Current truth and plan:
+**Única entrada al trabajo nuevo:** [docs/ROADMAP.md](docs/ROADMAP.md) → [STATE.md](docs/roadmap/STATE.md) → [CERTIFICATION.md](docs/roadmap/CERTIFICATION.md) → [UAT_CATALOG.md](docs/roadmap/UAT_CATALOG.md) → [JOURNAL.md](docs/roadmap/JOURNAL.md).
 
-- `docs/ROADMAP.md`
-- `docs/chronos-agentic-reconstruction/docs/reconstruction/CONVERGENCE_PLAN.md`
-- `docs/chronos-agentic-reconstruction/docs/roadmap/MILESTONE_ACCEPTANCE.md`
-- `reconstruction-contracts.toml` — machine-readable requirement status
+Los roadmaps/backlogs obsoletos se preservan en [docs/historico/](docs/historico/README.md), con punteros en sus antiguas rutas. El ledger de contratos y los ADR/UAT normativos permanecen activos. El resto de esta guía contiene contexto histórico del producto; **el estado actual y la secuencia de trabajo se consultan en docs/ROADMAP.md y STATE.md**.
 
 ## Product principle
 

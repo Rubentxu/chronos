@@ -1,132 +1,107 @@
-# Chronos roadmap
+# Chronos — Roadmap operativo único (2026-09-21)
 
-> **Status:** reconstruction convergence phase. See `docs/chronos-agentic-reconstruction/`
-> for the target architecture, compliance ledger, convergence gates and official milestones.
+**Estado:** propuesta de ejecución y criterios de aceptación, no certificación de código ni declaración de preparación para producción. **Fuente de estado vivo:** [STATE.md](roadmap/STATE.md). **Política de calidad:** [CERTIFICATION.md](roadmap/CERTIFICATION.md). **Casos UAT:** [UAT_CATALOG.md](roadmap/UAT_CATALOG.md). **Diario:** [JOURNAL.md](roadmap/JOURNAL.md).
 
-## Active milestone
+## 0. Autoridad, alcance y línea base
 
-**REC-C6 — Close unfinished M1–M4 reconstruction contracts — Status: CLOSED (REC-C6 2026-09-21; 9 contracts closed via inline audit + targeted C6.4 enum serde fix; M4A-001/M4B-001 deferred to M4-future as planned)**
+1. Este documento es el **único roadmap operativo** para el trabajo nuevo. Los roadmaps de REC-C0..REC-C7 y los backlogs de reconstrucción se conservan en [docs/historico/](historico/README.md) como **historia**, no como órdenes actuales. Los ADR aceptados, especificaciones, contratos de evidencia y criterios de aceptación históricos siguen siendo restricciones normativas hasta su supersesión explícita.
+2. El estado de cada requisito se registra en el ledger existente [reconstruction-contracts.toml](../reconstruction-contracts.toml); un hito/PR archivado, un tag o un test unitario verde **no convierten** un requisito en verificado. El estado de ejecución de este plan se actualiza en STATE.md con SHA, UAT y evidencias verificables.
+3. Baseline revisada el 2026-09-21: main 59c9b1eb0fac9fec63ac766e02ad84dac10a3719. REC-C0..REC-C7 **figuran archivados**; 19/25 requisitos figuran verified y 6 planned (M4A/B, OTEL, DIFF, CONC, UI). En ese SHA fallaban CI, Coverage y Vault Drift; Architecture Contracts y Sandbox Debt Sentinel terminaban correctamente. **No dar por revalidado REC-C7, ni anunciar “production-ready”.**
+4. El cierre del gate documental REC-C7 y la **recertificación operativa del HEAD** son hechos diferentes. Se conserva la historia; G0 recupera la garantía operativa sin reescribir cierres históricos. M4A/B no se convierten en completos por haberse reasignado a M4-future.
+5. No confundir ciclos internos antiguos `m6-*`, `m7-*`, `m8-*`, `m9-*`, `m10-*` con hitos **oficiales** M6–M11. Las nuevas tareas usan IDs únicos G0.*, H1.*, M4G.*, M4R.*, M6.*, ..., OPS.*.
+6. Un solo gate de producto **activo** por vez. Spikes aislados o mantenimiento de gobernanza pueden ejecutarse en paralelo si no alteran la línea base ni se presentan como certificación. Las fases son dependencias, no promesas calendáricas; no inventar % de avance.
 
-**REC-C7 — Reconstruction convergence close — Status: CLOSED (REC-C7 2026-09-21; strict-no-gaps PASSED; wire surface 63 → 41 tools ratified; tag v0.7.112 cut; M6/M7/M8 milestones unblocked)**
+## 1. Invariantes innegociables
 
-Convergence phase closed (REC-C0..REC-C7 all CLOSED). Post-convergence roadmap below.
+- ExecutionLog por sesión es la evidencia autoritativa; lecturas independientes con EventSeq, gap, cursor, procedencia, replay y sellado veraces. Ninguna cola destructiva equivale a evidencia histórica.
+- No Silent Lies: `unknown`, `unsupported`, `incomplete`, pérdida y heurísticas distinguibles de `complete`/éxito. Las afirmaciones de capacidad se acotan por backend, versión y entorno.
+- Dominio sin infraestructura; servicios consumen puertos y la raíz de composición conecta adaptadores; evitar duplicación de políticas entre MCP, CLI y servicios.
+- Las identidades estáticas de símbolos, las invocaciones dinámicas y los trace/span externos son distintas. Nunca convertir EventSeq o tiempo monotónico en timestamp Unix.
+- Seguridad de ejecución y de artefactos, reproducción local-first, límites de recursos, aislamiento de procesos, retención/recuperación y protección de datos forman parte de la definición de terminado.
+- La interfaz agent-first debe ser tipada y coherente con el JSON Schema; no eliminar herramientas si todavía no tienen sustituto verificado; preferir verticales a infraestructuras especulativas.
 
-REC-C1 and REC-C2 are both CLOSED on `main`:
+## 2. Camino crítico temporal y hitos
 
-- REC-C1.5 closure at `a1a79c80` (tag `rec-c1.5-closure`)
-- REC-C1.6 lifecycle-safe delete + retention/tail on wire at `83ee38e2` (tag `rec-c1-6-lifecycle-retention-wire`)
-- REC-C1.7 projection authority acceptance at `6190390d` (tag `rec-c1-7-projection-authority-acceptance`)
-- REC-C1.8 authoritative evidence handoff at `451a29b6` (tag `rec-c1-8-authoritative-evidence-handoff`) — REC-C1 fully closed
-- REC-C2.0 eventbus legacy inventory + ratchet at `4c7df70e`
-- REC-C2.1 TripwireFired as ExecutionLog evidence at `686a364c`
-- REC-C2.2 accepted-Raw seam + producer convergence at `f02ab311` (tag `rec-c2.2-accepted-raw-seam`)
-- REC-C2.3 EventBus removal at `d435557e` (tag `rec-c2.3-eventbus-removal`)
-- REC-C2.5 formal closure at `<pending merge>` (tag `rec-c2-5-formal-closure`) — REC-C2 fully closed
+| Orden | Gate / entregable | Dependencias | Condición de salida verificable |
+|---|---|---|---|
+| **G0** | Baseline operativa y veracidad | Ninguna | Mismo SHA: CI, Coverage, Architecture Contracts, Vault Drift, pruebas contractuales y UAT obligatorias verdes; evidencia de privilegios separada |
+| **H1** | Endurecimiento transversal M1–M5 | G0 | Seguridad y reproducibilidad controladas; ciclo de vida y API v2 sin regresiones; deuda categorizada, no “todo refactorizado” |
+| **M4-F0** | M4 Go/Rust: mecanismos mínimos y contratos de captura reutilizables | H1 | Spikes OTel/OBI/eBPF y matriz de capacidades con resultados medidos; no reclamar M4 completo |
+| **M6** | OTLP ingestión, correlación y exportación | M4-F0 y G0/H1 | Dos servicios reales: trace/span externo -> invocación -> mutación -> violación, con procedencia y tiempos correctos |
+| **M7** | Ejecución diferencial semántica | M6 para alineación distribuida; M1/M2/M3 acreditados | Comparación tolerante a ruido de tiempo/orden detecta la divergencia causal conocida |
+| **M8** | Contraejemplos y test intelligence end-to-end | M3 y G0/H1; M7 sólo para los flujos que usan comparación | Input mínimo conserva **la misma** violación al reejecutar; artefactos reproducibles y procedencia persistida |
+| **M4-F1** | Instrumentación adaptativa Go y Rust completa | M4-F0, M6; M8 para fixtures de reproducción | Go y Rust, individualmente, pasan deepening/overlay + comparación de perturbación + fallback y UAT de bug real |
+| **M9** | Inteligencia de concurrencia happens-before | M1/M2 y medidas de perturbación M4-F1 | Fixture sincronizado no se clasifica como carrera confirmada; fixture sin sincronizar produce evidencia causal, no sólo ventanas temporales |
+| **M10** | Execution Explorer | M6–M9: sólo las vistas cuya evidencia ya esté verificada | Trazas voluminosas mediante paginación/virtualización, no materialización completa; renderiza incertidumbre/procedencia |
+| **M11** | Profundidad multilenguaje | Núcleo y plataforma certificados; M4 para capacidades adaptativas | Matriz por lenguaje y runtime con UAT real y límites declarados, sin equivalencia ficticia |
+| **OPS** | Certificación de publicación/production-ready **por perfil de despliegue** | Funcionalidades incluidas certificadas y plataforma comprobada | CERT-4, seguridad, recuperación, rendimiento, documentación, instalación y operación probados en entorno representativo |
 
-Next gate is **REC-C3 — Hexagonal boundary closure**, owned by the
-`HEX-*` and `CONN-*` contracts in `reconstruction-contracts.toml`.
-REC-C3 is multi-cycle (C3.1..C3.5 per
-`docs/chronos-agentic-reconstruction/docs/roadmap/CONVERGENCE_BACKLOG.md`):
-application ports, extract webhook infrastructure, invert
-services -> concrete adapter dependencies, remove store -> native,
-dependency graph gate to zero.
+**Dependencias laterales:** M8 puede avanzar tras H1 sin esperar toda M7 si no consume su comparador; M4-F1 puede diseñarse por slices después de M6 y antes de cerrar M8, pero **no se declara completo** hasta cubrir sus dependencias de prueba. OPS es un trabajo transversal desde G0 y un gate de publicación, no una “fase final de endurecimiento”. No ampliar GUI, protocolo remoto ni nuevos lenguajes para ocultar un fallo del núcleo.
 
-**REC-C3.1 (closed 2026-09-18, tag `v0.1.1`):** `crates/chronos-domain/src/ports/{execution_log,notification,probe,session,telemetry}.rs` declared; `chronos_domain::session_id::SessionId` introduced to break the cyclic dep with `chronos_log`. `scripts/check_hex_boundary.py` enforces ports/* outbound purity + surface shape. HEX-001 moved `gap -> partial`. `ExecutionLogProvider` is a documented placeholder for C3.3.
+### G0 — Recuperar la confianza en main (primera iteración obligatoria)
 
-**REC-C3.2 (closed 2026-09-19):** `scripts/check_hex_boundary.py` hardened. The gate now enforces (a) chronos-domain `Cargo.toml` blacklist (no reqwest/hyper/tokio/tracing/axum/warp/http and no other workspace `chronos_*` infra crate), (b) full `crates/chronos-domain/src/**/*.rs` outbound purity (no forbidden external crates — type-only deps and intrinsics are whitelisted), (c) chronos-webhook adapter direction (`chronos-webhook -> chronos_domain` only — services-side is C3.3), and (d) `ports/mod.rs` public surface shape with stale-waiver detection. No waiver list is configured (zero waivers is the target; REC-C3.5 will keep that property). HEX-001 promotes `partial -> verified`; HEX-C32-01/02/03 are added as `verified` (V5 direction settled). chronos-webhook remains the single home of reqwest — that is unchanged by this cycle; C3.2 reconciles the contract/gate because the code was already in position from C3.1. HEX-002 stays `gap`; the services-side inversion is C3.3.
+- **G0.1** Reparar el enum `EventsReadKind`: serde y schemars deben aceptar/publicar `query` y `by_id`; tests negativos y JSON-RPC end-to-end.
+- **G0.2** Migrar las aserciones antiguas de `probe_inject` al contrato tipado de `observe`, conservando tests reales de error y una UAT privilegiada de inyección.
+- **G0.3** Diagnosticar y resolver los ocho controles de Vault Drift sin fabricar SHAs ni relajar la validación.
+- **G0.4** CI, Coverage y contratos sobre el mismo SHA; caracterizar pruebas privilegiadas PTR-001..003. La CI normal no finge cubrirlas.
+- **G0.5** Rectificar discrepancias de documentación/ledger (p. ej. M8 != CONC-001/M9, M10=UI-001); añadir contratos de M8 y M11 cuando haya UAT ejecutable. Reconciliar alcance de los 29 tools adicionales.
+- **G0.6** Evidencia de revalidación REC-C7 posterior a las correcciones, sin alterar el cierre histórico. Certificar C0–C2 del baseline conforme a CERTIFICATION.md.
+- **G0.7** Establecer SHA, duración de ejecución, perfil de test, artefactos y matriz de fallos en el registro de STATE; no sustituir tests rojos por skips silenciosos.
 
-**REC-C3.3 / C3.4 (closed 2026-09-19/20):** services-side inversion executed. `SessionReader`/`SessionArchive`/`LifecycleStore`/`CounterexampleRepository`/`ExecutionLog` ports consumed by services; redb-backed adapters (`session_reader_adapter`, `session_archive`, `lifecycle_store_adapter`, `counterexample_repository`) wired at the `chronos_mcp::composition` root. `chronos-services` stopped naming `SessionStore` in production code.
+**G0 NO modifica productos durante esta reorganización documental.** G0 figura bloqueado hasta que exista evidencia nueva; documentar sus tareas no equivale a ejecutarlas.
 
-**REC-C3.5 — residual inversion (closed 2026-09-20, branch `feat/rec-c3.5-residual-inversion`):** closed the three residual production edges and emptied the architecture debt baseline:
-- **R.1** (`110a47e4`): dropped the stale `chronos-store -> chronos-native` waiver (edge already gone after C3.3.4).
-- **R.2** (`8e8d7b48`): `DiffEngine` port in `chronos_domain::ports::diff` + `Blake3DiffEngine` adapter in chronos-store; `chronos_store::diff::TraceDiff` is a `#[deprecated]` delegating wrapper. Services consume `Arc<dyn DiffEngine>` via `DiffContext`/`SessionCompareContext`.
-- **R.3** (`2a8d5b8b`): `NativeProbeControllerFactory` port (`build_for_spawn`/`build_for_attach`) + `ChronosNativeProbeControllerFactory` impl; `ProbeService` no longer names `NativeProbeBackend`/`NativeProbeControllerImpl`; `chronos-native` moved to services `[dev-dependencies]`. Audit §4.5 S4 composition leak closed.
-- **R.4** (counterexample wire types moved to `chronos_domain::ports::counterexample::wire`; store re-exports for the redb path): `MinimisedPayload`, `ExistencePredicateWire`, `HypothesisInputWire` + domain-owned `CURRENT_BUNDLE_SCHEMA_VERSION` with a compile-time drift guard in `ce_schema`.
-- **R.5** (`b7a55d9e`): `chronos-store` moved to services `[dev-dependencies]`; `known_dependency_violations = []`. `check_architecture_contracts.py` reports zero forbidden edges, zero waivers; `check_hex_boundary.py` clean.
+### H1 — Calidad operativa y deuda selectiva
 
-REC-C3 hexagonal closure objective met: the application layer (chronos-services) consumes only `chronos_domain::ports::*`; every concrete backend is wired at the composition root (`chronos_mcp::composition`). Known environmental flake observed during close: `test_get_execution_summary_busyloop` fails when analytics_tools runs immediately after e2e_connectivity under system load (pass in isolation and 3/3 in back-to-back suite runs) — tracked for AGENTS.md §6.5 if it reproduces at release.
+- **H1.1** Versionar Cargo.lock para binarios, fijar Rust/tooling en CI, escanear CVE/licencias/SBOM y generar artefactos reproducibles.
+- **H1.2** Modelo de amenazas local/stdio vs remoto; política real de rutas ejecutables, privilegios ptrace/eBPF, límites de CPU/memoria/tiempo, aislamiento y redacción de datos sensibles.
+- **H1.3** Contract tests de cada discriminador RPC, estados No-Silent-Lies, identidad, cursor, pérdida, lectura independiente y replay/crash-restart.
+- **H1.4** Caracterizar `ChronosServer` y extraer verticalmente contextos cohesivos; primero test de comportamiento, luego extracción; no imponer límite arbitrario de líneas.
+- **H1.5** Matriz de runtimes y capacidades, rendimiento base (captura, append, query, replay, memoria, perturbación) con host/kernel/fixture/percentiles, metas y tolerancias escritas.
+- **H1.6** Manual de instalación, recuperación, upgrade, compatibilidad de schema y soporte; perfil local-first y perfil remoto sólo cuando estén efectivamente verificados.
 
-The `## Convergence sequence` table below reflects this state.
+**Gate:** CERT-2 núcleo + CERT-3 para los backends privilegiados que se anuncien como operativos. No afirmar CERT-4 por contar con unit tests.
 
-## Convergence sequence
+### M4-F0 — Prerrequisitos técnicos para M6
 
-1. **REC-C0 — Restore the truth baseline** — CLOSED (C0.5-D sentinel)
-2. **REC-C1 — ExecutionLog cutover and truthful reads** — CLOSED
-3. **REC-C2 — Legacy evidence/event-path deletion** — CLOSED
-4. **REC-C3 — Hexagonal boundary closure** — CLOSED (2026-09-20, `feat/rec-c3.5-residual-inversion`)
-5. **REC-C4 — SOLID + connascence reduction** — CLOSED (2026-09-20, tag `rec-c4-archive`)
-6. **REC-C5 — Canonical Agent API convergence** — CLOSED (2026-09-21, `feat/rec-c5-api-convergence`, wire surface 63 → 41 tools)
-7. **REC-C6 — Close unfinished M1–M4 reconstruction contracts** — CLOSED (2026-09-21, `feat/rec-c6-contracts-close`, 9 contracts closed via inline audit + C6.4 enum serde fix)
-8. **REC-C7 — Reconstruction convergence close** — CLOSED (2026-09-21, `feat/rec-c7-convergence-close`, strict-no-gaps PASSED, tag v0.7.112 cut)
+- Go: reutilización de OTel existente, inventario de OBI/Auto SDK soportados, captura de contexto/IDs y versión de mecanismos.
+- Rust: reutilización de tracing/OTel existente, eBPF dirigido y evaluación inicial de perturbación; XRay/USDT requieren spikes separados, no dependencia obligatoria antes de M6 si no son necesarios.
+- Probar exactitud/procedencia con un proceso real por lenguaje y fallos `unsupported` explícitos; registrar overhead en entorno y binario concreto.
+- Documentar ADR aceptado/rechazado de cada mecanismo, fallback y criterios de exclusión de plataformas.
 
-Only REC-C7 can unblock official reconstruction **M6 OpenTelemetry correlation + export**.
+### M6 — OpenTelemetry
 
-## Closed historical delivery cycles
+M6.1 contrato `ExternalTraceContext` separado de `InvocationId`; M6.2 adapter OTLP de ingesta local; M6.3 correlación no ambigua con evidencia de mutaciones; M6.4 exportación opt-in de eventos compatibles y límites; M6.5 seguridad/redacción y cardinalidad; M6.6 UAT-M6-01/02 con dos servicios y requests concurrentes; M6.7 gates de carga/recuperación/errores.
 
-The following cycle/milestone records remain historically closed. Their close state does **not** automatically mean that every reconstruction requirement is currently verified; residual obligations are tracked in `reconstruction-contracts.toml` and owned by REC-C gates.
+### M7 — Differential execution v2
 
-- **m0-truth-first-foundation** — closed
-- **m5-agent-api-v2** — closed 2026-09-10
-- **m6-v2-spec-surface-reduction** — closed 2026-09-11
-  - internal API sub-cycle; distinct from official reconstruction M6.
-- **m7-v2-spec-introspection** — closed 2026-09-11
-  - internal API sub-cycle; distinct from official reconstruction M7.
-- **m8-counterexample-shrinking** — closed 2026-09-11
-  - foundation delivered; official roadmap M8 still requires end-to-end test-intelligence completion.
-- **m9-vault-hygiene** — closed 2026-09-14
-  - repository governance/vault hygiene; distinct from official reconstruction M9.
-- **m10-vault-ms-cleanup** — closed 2026-09-15
-  - repository governance namespace; distinct from official reconstruction M10 Execution Explorer.
-- **rec-c1-5-closure** — closed 2026-09-17 (merged --no-ff into `main` as `a1a79c80`; tag `rec-c1.5-closure`).
-  - canonical ExecutionLog root resolver, MCP startup bootstrap, durable delete, durable seal on clean stop. Four real-process sandbox UATs (R1..R4) plus the readiness invariant.
-- **rec-c1-6-lifecycle-retention-wire** — closed (tag `rec-c1-6-lifecycle-retention-wire` at `83ee38e2`). Lifecycle-safe `delete_session` + `RetentionFacts`/`TailFacts` on `events_read` wire + `CursorStale` envelope with structured `requested_next_seq`/`retained_from_seq`.
-- **rec-c1-7-projection-authority-acceptance** — closed (tag at `6190390d`). `chronos_services::projection::build_engine` + projection gate in MCP handlers. UAT-REC-C1-01 (two consumers), UAT-REC-C1-05 (time semantics), restart-equivalence on the wire.
-- **rec-c1-8-authoritative-evidence-handoff** — closed (tag at `451a29b6`). Three acceptance discrepancies from C1.7 closed; `chronos_log::segmented` bookkeeping bug surfaced as `FIND-C1.8-01` (deferred). REC-C1 fully closed.
-- **rec-c2-eventbus-removal** (C2.0..C2.3) — closed (C2.3 tag `rec-c2.3-eventbus-removal` at `d435557e`). `chronos-domain::bus` deleted; `ProbeBackend::read_since` removed; `bus_capacity`/`bus_fill` removed from wire; ratchet at baseline 0.
-- **rec-c2-5-formal-closure** — closed (tag `rec-c2-5-formal-closure`, see `cycle-artifacts/p-3416cfb8288f8964/rec-c2-5-formal-closure/`). LEGACY-001/002 contracts flipped to `verified`; `reconstruction-contracts.toml` `active_gate` flipped from `REC-C2` to `REC-C3`. REC-C2 fully closed.
-- **rec-c3-1-application-ports** — closed 2026-09-18 (tag `v0.1.1` at `33b4f790`). HEX-001 promoted `gap -> partial`; `ExecutionLogProvider` is a documented placeholder; `session_id::SessionId` introduced to break the cyclic dep with `chronos_log`. REC-C3.1 is the foundation; REC-C3.2 reconciles the gate.
+M7.1 criterio de equivalencia semántica y hashes jerárquicos; M7.2 alineación por invocación/contexto, no sólo timestamps; M7.3 comparación de estado/propiedades y BehaviourFingerprint como spike medido; M7.4 UAT-M7-01/02 y baselines de coste/memoria.
 
-## Naming rule
+### M8 — Counterexample shrinking y test intelligence
 
-From this point forward:
+M8.1 preservar e inventariar el foundation histórico de shrinking; M8.2 runner/proptest/Hypothesis con id de experimento, entradas y seed; M8.3 rerun determinista y predicado invariante; M8.4 reducción + slice causal; M8.5 CLI `chronos test` como spike, si aporta valor; M8.6 UAT-M8-01/02. No confundir con CONC-001 (M9).
 
-- `REC-C*` = reconstruction convergence gates;
-- `M*` = official product reconstruction milestones;
-- governance/vault/housekeeping cycles must use a non-product prefix and must not be presented as completion of an official `M*` milestone.
+### M4-F1 — Cerrar M4, no sólo redefinirlo
 
-This removes the previous ambiguity where an internal `m10-*` cycle could be confused with M10 Execution Explorer.
+M4G.1 `otelc` spike y compilación aislada, M4G.2 `InstrumentationSpec` determinista, M4G.3 Go checkout-bug con coarse -> deep -> patch verification; M4R.1 XRay spike medido y ADR, M4R.2 USDT spike/ADR, M4R.3 overlay semántico tipado temporal, M4R.4 Rust state-corruption y timing-sensitive bug, M4R.5 perturbación detectada + fallback; UAT-M4G-01/02 y UAT-M4R-01/02. Si una opción técnica se rechaza razonadamente, conservar el objetivo de evidencia y justificar sustituto; no falsear una entrega.
 
-## Specification truth
+### M9 — Causal concurrency
 
-Machine-readable current compliance:
+M9.1 modelo typed de lock/atomic/task/goroutine/message con procedencia; M9.2 happens-before projection incremental/replay; M9.3 clasificador suspicious/confirmed/unsupported; M9.4 fixtures con y sin sincronización, pérdidas de evidencia y perturbación; UAT-M9-01/02.
 
-`/reconstruction-contracts.toml`
+### M10 — Execution Explorer
 
-Architecture/spec fitness gate:
+M10.1 contrato de lectura/paginación y permisos; M10.2 live/evidence/provenance; M10.3 causality/mutation/properties/compare cuando cada fuente se haya certificado; M10.4 virtualización de trazas grandes; M10.5 accesibilidad y validación UX/seguridad; UAT-M10-01/02.
 
-```bash
-python3 scripts/check_architecture_contracts.py
-```
+### M11 — Lenguajes por demanda y capacidad verificable
 
-REC-C7 strict close:
+M11.1 priorizar Python `sys.monitoring`, JVM JFR+OTel, Node/JS, browser/WASM, C/C++ XRay/rr según evidencias de uso y viabilidad; M11.2 por runtime: capabilities -> fixtures -> negativos -> overhead -> compatibilidad -> UAT-M11-XX. Una plataforma no certificada se anuncia como experimental o unsupported, no como equivalente a otra.
 
-```bash
-python3 scripts/check_architecture_contracts.py --strict-no-gaps
-cargo check --workspace --all-targets --all-features
-cargo test --workspace -- --test-threads=1
-```
+### OPS — Production-ready por perfil, no como eslogan general
 
-## Official future milestones after convergence
+Definir primero perfiles `local/stdio`, `Linux privileged capture` y cualquier futuro `remote/multi-tenant` **por separado**. Checklist OPS.1–OPS.8: amenaza/acceso, supply chain/SBOM, aislamiento y secretos, límites y rendimiento, backup/restore y schema migration, telemetry y diagnóstico, instalación/upgrade/rollback, soporte y respuesta a incidentes. Publicar solo el perfil que alcance CERT-4 con pruebas y artefactos del mismo commit/release.
 
-1. **M6 — OpenTelemetry correlation + export**
-2. **M7 — Differential execution v2**
-3. **M8 — Counterexample shrinking and test intelligence**
-4. **M9 — Concurrency intelligence / happens-before**
-5. **M10 — Execution Explorer**
-6. **M11 — Additional language depth**
+## 3. Definición de hecho por tarea y fase
 
-See `docs/chronos-agentic-reconstruction/docs/roadmap/ROADMAP.md` for detailed scope and gates.
+Una tarea se acepta sólo si tiene: ID y propietario; prerequisitos; especificación y ADR si cambia semántica; commit/PR identificables; tests positivos/negativos y regresión; UAT real con fixtures y comandos; métricas y límites cuando aplican; evidencia CI con SHA y entorno; resultado de CERT-* por perfil; actualización de ledger/STATE/JOURNAL y riesgos; rollback o compatibilidad. `blocked` y `not_run` son estados válidos, **nunca** se transforman en `passed`.
 
-## Cycle serialization lock
-
-Only one product/convergence milestone is `Status: in_progress` at a time. The owning cycle must complete, be explicitly blocked, or be abandoned before another product/convergence milestone is promoted. Repository housekeeping may run independently only when it cannot alter product-delivery claims or acceptance evidence.
+Para continuar una sesión: leer **AGENTS.md §0** y después STATE.md -> último JOURNAL.md -> este roadmap -> CERTIFICATION.md -> UAT_CATALOG.md; verificar `git rev-parse HEAD` y ramas/CI antes de actuar. El diario es un índice reproducible, no reemplaza Git, pruebas ni el ledger.

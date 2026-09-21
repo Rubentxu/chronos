@@ -1,5 +1,19 @@
 # AGENTS.md
 
+## 0. Protocolo obligatorio de recuperación y continuidad entre sesiones
+
+**Antes de cualquier cambio, auditoría o agente nuevo**, leer en este orden: [docs/roadmap/STATE.md](docs/roadmap/STATE.md) (puntero a gate activo, baseline, bloqueos y próxima tarea), últimas entradas de [JOURNAL.md](docs/roadmap/JOURNAL.md), [docs/ROADMAP.md](docs/ROADMAP.md) (roadmap operativo único), [CERTIFICATION.md](docs/roadmap/CERTIFICATION.md), [UAT_CATALOG.md](docs/roadmap/UAT_CATALOG.md), `reconstruction-contracts.toml` y los ADR/spec aplicables. Los planes `docs/historico/` son **consulta histórica**: nunca infieras el estado actual desde sus campos ACTIVE/DONE.
+
+1. **Grounding de HEAD real:** `git fetch origin && git status --short && git branch --show-current && git rev-parse HEAD && git rev-parse origin/main`; revisar PR/rama activa, últimos commits, logs del SHA actual y el checkpoint del ciclo. STATE contiene un snapshot fechado, no reemplaza Git ni GitHub Actions; si hay drift, actualizar el diagnóstico **antes de actuar**. Nunca sumar trabajo de ramas sin merge como entregado en main.
+2. **Elegir la primera slice desbloqueada** de STATE/ROADMAP. Enunciar su ID, contrato del ledger, UAT positivos/negativos, nivel de certificación, riesgos, dependencias y resultado esperado. Sólo un gate de producto in_progress; ningún "DONE" por archivo/commit sin evidencias reales. Las decisiones técnicas pueden evolucionar mediante ADR explícito, sin rebajar invariantes.
+3. **Preservar el trabajo anterior:** no sobreescribir worktree ajeno, no falsear SHA/timestamps/contadores, no borrar pruebas ni relajar CI para aprobar. Diferenciar `planned`, `implemented_unverified`, `verified`, `blocked`, `not_run`; CERT-4 se concede por perfil de despliegue, no por repo.
+4. **Cierre de sesión obligatorio:** añadir una entrada fechada y append-only a JOURNAL con base/HEAD, tarea y commits, pruebas ejecutadas/no ejecutadas y enlaces a recibos, UAT, nivel CERT, bloqueos y siguiente acción exacta; actualizar STATE con el **puntero** a la primera tarea pendiente y motivo del estado. Conservar resultados del ciclo en el vault/artefactos existentes y respetar la regeneración de índices de la §5.
+5. **Regla docs-only:** reorganizar docs **no** certifica el producto, no convalida REC-C7 ni repara CI/coverage/vault. Para cambios que afecten las rutas del roadmap, verificar que `docs/ROADMAP.md` siga existiendo y que punteros históricos continúen resolviendo; no mover ADRs, specs ni evidencias de ciclo como si fueran planes obsoletos.
+
+**Puerta actual al establecer este protocolo (snapshot 2026-09-21):** G0 — recertificación operativa de REC-C7 y corrección de CI/Coverage/Vault. Consultar STATE para comprobar si ya cambió. El roadmap histórico de convergencia NO vuelve a activarse por defecto.
+
+---
+
 Operating rules for any agent (human or AI) working in this repository. Read
 this before touching code.
 
