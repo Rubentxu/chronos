@@ -98,7 +98,7 @@ Two commits:
 | test (counterexample tools) | `chronos-sandbox/tests/counterexample_tools.rs` | `e47fbc3890e4ca8cc2361669c295b3018eff15802a8bd4df56f2e882923ca98d` |
 | docs (agents manual) | `AGENTS.md` | `66d94ce9f7bdfa51a3cde4d4b59680757c1aef5f808585c1d6fa78b06bb13585` |
 | script (cc smoke test) | `scripts/smoke_test_ccs.sh` | `86def49d7e23b4e521687ddcb53a384aac18ec3f91f0e2845396f90d7ac3e7d3` |
-| vault maintenance (drift sweep) | `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md` | `56087d372ec77815c6c83764396202e0de72258d75a5c01cdfb34ddcc93371c3` |
+| vault maintenance (drift sweep) | `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md` | `e93b1a90898eafbee72180d3fc3a0686594ea09c68fdcab1a59a12c88c400442` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/apply-checkpoint.json` | `35408c5d6ab2a0a9250228401b91f4f0b484cd7874ccb3f8b538bac2b5587931` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/verify-report.md` | `2bf8eaaf02d38409f4a7259e506c7e3d421f67fcc3383f82e5f85a9113009f5f` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/verify-findings.json` | `2bd75fa34fbd5eada906ea91c664d7b8719ad3fa9de2d973fadfc4609c7e4c9b` |
@@ -106,5 +106,5 @@ Two commits:
 | release-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/release-receipt.md` | `5872b2538d4b743dfa1c3b5c20894c340172d274b8a30fb657b463c5e311e3a1` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/merge-receipt.md` | `9f2ee96b248a5800c1cb96ed16a13dc2e44908d26d2dcf83b07c07644f382647` |
 | change-entry | `.sddk-knowledge/p-3416cfb8288f8964/changes/m9-73-sandbox-client-store-isolation/change-entry.md` | `0669b9d2740f447337a475e8cfd9c16bb041ad608ffc732c0e9a53e99fa2e31e` |
-| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `427f1921b0002e84c5c436ad1e19451ea46ab262680e388669f9bb865e3d0099` |
+| vault index (cycles) | `.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md` | `221aeaf6753e3e8150dc61806134c1335fe6585f4f78418e0a411c2688be5bee` |
 | vault index (terms) | `.sddk-knowledge/p-3416cfb8288f8964/terms/index.md` | `8d262955b5079b561d8c5097dc14c48284031aeb746a152ad12575287967ac2c` |
