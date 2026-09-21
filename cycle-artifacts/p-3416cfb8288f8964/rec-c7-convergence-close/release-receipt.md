@@ -83,3 +83,28 @@ The `v0.7.112` tag is the convergence close marker, not a feature release. The f
 ### Merge
 
 - `0be2ec2d` Merge REC-C7: Reconstruction convergence close (`--no-ff`)
+
+<!-- CC#22 additive normalization: canonical SHA fields.
+     Appended 2026-09-21 by G0.3 vault drift sweep.
+     Values reconciled to cycle-artifacts/.../rec-c7-convergence-close/apply-checkpoint.json
+     and re-verified directly against git (annotated tag object, tag peel, merge commit).
+     This is a structural addition for the drift gate; it does NOT re-certify the release
+     and does NOT modify the narrative above (per AGENTS.md §0.4 and §0.5). -->
+
+## Canonical SHA fields (CC#22)
+
+| Field | Value |
+|---|---|
+| Cycle | `p-3416cfb8288f8964/rec-c7-convergence-close` |
+| Head SHA | `1fd11d9826339f1605249fd2ef7ae07d7acf38e3` |
+| Remote tag | `v0.7.112` |
+| Remote tag_peel | `0be2ec2d53d9698956ae705938b32b80d7365ad7` |
+| Peel match | `false` |
+
+### Notes on these values
+
+- **Head SHA = `1fd11d98`** is the post-archive main HEAD at the time the cycle record was sealed (matches `apply-checkpoint.json::head_sha` and `head_sha_post_archive`). It is **not** the merge commit.
+- **Remote tag_peel = `0be2ec2d`** is the annotated tag peel (`v0.7.112 -> 0be2ec2d^{commit}`), which is the REC-C7 merge commit. The narrative above is correct: the tag is "fixed at the merge commit … the convergence close marker" and that is intentional.
+- **Peel match = `false`** is the honest reading: `peel (0be2ec2d) != head_sha (1fd11d98)`. The apply-checkpoint's `peel_match: true` field was correct at the moment the cycle was sealed (when `1fd11d98` was the post-archive tip), but subsequent docs-only slices on main (e.g. `cf9b3a0a`, `5981d12f`, `2c454e0d`) advanced main past `1fd11d98`. This is the m9-19+ fix-peel pattern (CC#3 spec: "head_sha != remote_tag_peel is honest when peel_match=False is honest"). I do not edit `apply-checkpoint.json::peel_match` here — that is a behavior change, out of scope for the CC#22 mechanical fix.
+- The four values above were re-verified at append time (2026-09-21) via `git cat-file -p <tag-object>`, `git rev-parse v0.7.112^{commit}`, and `git log -n 1 --format=%H` on the merge commit. The apply-checkpoint was used to **locate** the candidates; the values themselves come from git.
+- This block does not certify the release. CERT-n for REC-C7 remains governed by `docs/roadmap/CERTIFICATION.md`; this is a T0 documentary normalization under G0.3.

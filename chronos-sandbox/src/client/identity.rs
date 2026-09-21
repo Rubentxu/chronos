@@ -89,17 +89,36 @@ impl BinaryIdentity {
         })
     }
 
-    /// Verify this identity against an expected SHA. Returns `Ok(())`
+    /// Verify this identity against an expected SHA read from the
+    /// `CHRONOS_MCP_EXPECTED_SHA` environment variable. Returns `Ok(())`
     /// when the env var is unset (log-warn default) or when the SHA
     /// matches; returns `Err` with a clear message otherwise.
     ///
     /// The comparison is case-insensitive to forgive copy-paste from
     /// `sha256sum` output (which is lower-case but operators sometimes
     /// uppercase it).
+    ///
+    /// Prefer [`Self::verify_expected_sha_value`] in tests and any
+    /// non-operator code path; reading the env var mutates the
+    /// process-global environment of the host test binary if used
+    /// with `std::env::set_var`, which is forbidden by vault drift
+    /// CC#56. The no-arg form is kept for production operator use.
     pub fn verify_expected_sha(&self) -> Result<(), McpSandboxError> {
         let expected = match std::env::var("CHRONOS_MCP_EXPECTED_SHA") {
             Ok(s) => s,
             Err(_) => return Ok(()),
+        };
+        self.verify_expected_sha_value(Some(&expected))
+    }
+
+    /// Verify this identity against an explicitly-provided expected SHA.
+    /// Pass `None` to skip the check (equivalent to the env var being unset).
+    /// This form does NOT touch `std::env` and is safe to call from
+    /// tests without process-global side effects.
+    pub fn verify_expected_sha_value(&self, expected: Option<&str>) -> Result<(), McpSandboxError> {
+        let expected = match expected {
+            Some(s) => s,
+            None => return Ok(()),
         };
         let expected = expected.trim().to_ascii_lowercase();
         if self.sha256 == expected {
@@ -139,36 +158,6 @@ mod tests {
         (path, id)
     }
 
-    /// Mutate `CHRONOS_MCP_EXPECTED_SHA` for the duration of `f`. Restored
-    /// to unset on return regardless of panic.
-    fn with_expected_sha<F: FnOnce()>(value: Option<&str>, f: F) {
-        // SAFETY: tests run serially in this module; no other test mutates
-        // CHRONOS_MCP_EXPECTED_SHA at the same time. env-mutating tests are
-        // confined to identity::tests.
-        let prev = std::env::var("CHRONOS_MCP_EXPECTED_SHA").ok();
-        match value {
-            Some(v) => unsafe {
-                std::env::set_var("CHRONOS_MCP_EXPECTED_SHA", v);
-            },
-            None => unsafe {
-                std::env::remove_var("CHRONOS_MCP_EXPECTED_SHA");
-            },
-        }
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
-        // Restore env even on panic.
-        match prev {
-            Some(v) => unsafe {
-                std::env::set_var("CHRONOS_MCP_EXPECTED_SHA", v);
-            },
-            None => unsafe {
-                std::env::remove_var("CHRONOS_MCP_EXPECTED_SHA");
-            },
-        }
-        if let Err(panic) = result {
-            std::panic::resume_unwind(panic);
-        }
-    }
-
     #[test]
     fn from_path_captures_correct_sha256_and_mtime() {
         let content = b"hello world\n";
@@ -194,9 +183,8 @@ mod tests {
     fn verify_expected_sha_no_env_var_is_ok() {
         let (path, id) = temp_binary("noenv", b"abc");
         let _ = std::fs::remove_file(&path);
-        with_expected_sha(None, || {
-            id.verify_expected_sha().expect("no env var -> ok");
-        });
+        id.verify_expected_sha_value(None)
+            .expect("no expected sha -> ok");
     }
 
     #[test]
@@ -205,9 +193,8 @@ mod tests {
         let (path, id) = temp_binary("match", content);
         let _ = std::fs::remove_file(&path);
         let captured = id.sha256.clone();
-        with_expected_sha(Some(&captured), || {
-            id.verify_expected_sha().expect("matching sha -> ok");
-        });
+        id.verify_expected_sha_value(Some(&captured))
+            .expect("matching sha -> ok");
     }
 
     #[test]
@@ -215,16 +202,16 @@ mod tests {
         let (path, id) = temp_binary("mismatch", b"abc");
         let _ = std::fs::remove_file(&path);
         let actual = id.sha256.clone();
-        with_expected_sha(Some("deadbeef"), || {
-            let err = id.verify_expected_sha().expect_err("mismatch should fail");
-            match err {
-                McpSandboxError::SpawnFailed(msg) => {
-                    assert!(msg.contains("deadbeef"), "msg must include expected: {msg}");
-                    assert!(msg.contains(&actual), "msg must include actual sha: {msg}");
-                }
-                other => panic!("expected SpawnFailed, got {other:?}"),
+        let err = id
+            .verify_expected_sha_value(Some("deadbeef"))
+            .expect_err("mismatch should fail");
+        match err {
+            McpSandboxError::SpawnFailed(msg) => {
+                assert!(msg.contains("deadbeef"), "msg must include expected: {msg}");
+                assert!(msg.contains(&actual), "msg must include actual sha: {msg}");
             }
-        });
+            other => panic!("expected SpawnFailed, got {other:?}"),
+        }
     }
 
     #[test]
@@ -233,9 +220,7 @@ mod tests {
         let (path, id) = temp_binary("case", content);
         let _ = std::fs::remove_file(&path);
         let upper = id.sha256.to_ascii_uppercase();
-        with_expected_sha(Some(&upper), || {
-            id.verify_expected_sha()
-                .expect("uppercase sha should match (case-insensitive)");
-        });
+        id.verify_expected_sha_value(Some(&upper))
+            .expect("uppercase sha should match (case-insensitive)");
     }
 }

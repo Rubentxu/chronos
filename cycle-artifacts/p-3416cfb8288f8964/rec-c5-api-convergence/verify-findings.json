@@ -1,0 +1,35 @@
+{
+  "cycle_id": "rec-c5-api-convergence",
+  "subject": {
+    "cycle_id": "rec-c5-api-convergence",
+    "branch": "feat/rec-c5-api-convergence",
+    "head": "9357aadacaac2f7e8771de36cc17757c29b778b1",
+    "head_sha": "9357aadacaac2f7e8771de36cc17757c29b778b1",
+    "base_sha": "9db697a594241c0f10838c84f72e82fb1ef368b4",
+    "route": "a-lite",
+    "subject_added_by": "G0.3 vault drift CC#18 — synthesized minimal verify-findings.json (the cycle predated the standard 6-artifact set; original verify findings were inline in proposal.md and design.md). head_sha is the cycle merge commit (9357aada); base_sha is its main-side first parent (9db697a5, the main HEAD just before the merge). Both verified via 'git cat-file -e'."
+  },
+  "summary": "REC-C5 verified — wire surface 63 -> 41 tools via 22 alias deletions. ALL_TOOL_NAMES synced with #[tool] router. Alias regression test green (DELETED_ALIASES.len()==22).",
+  "verdict": "passed",
+  "all_passed": true,
+  "lens_summary": "The 22 alias deletion regression test (alias_deletion.rs: 2/2 PASS) and the toolset_sync_check (2/2 PASS) constitute the wire-side invariant; the 84/84 chronos-mcp lib + 12/12 chronos-sandbox lib + 391/391 chronos-services lib are the workspace-side invariant. T0 fmt+clippy+workspace check clean. Architecture contracts PASSED. No T4 sandbox failures after the rebuild.",
+  "findings": [
+    {
+      "id": "FIND-C5.2-1",
+      "verdict": "deferred",
+      "summary": "m0_03_ebpf_probe_lifecycle_impl fails both before and after C5.2 migration. Pre-existing flake owned by REC-C3.5 Tren B, NOT introduced by REC-C5.",
+      "severity": "low",
+      "priority": "P3",
+      "owner_gate": "REC-C3.5-Tren-B"
+    },
+    {
+      "id": "FIND-C5.2-2",
+      "verdict": "deferred",
+      "summary": "Sandbox test_get_execution_summary_busyloop flakes when analytics_tools runs immediately after e2e_connectivity under system load. Passes in isolation and 3/3 in back-to-back runs. Documented in AGENTS.md §6.5.",
+      "severity": "low",
+      "priority": "P3",
+      "owner_gate": "REC-C5 / AGENTS.md §6.5"
+    }
+  ],
+  "_note": "G0.3 vault drift CC#18 — this verify-findings.json is synthesized 2026-09-21 because rec-c5 predates the m9-25 enforcement of the standard 6-artifact set. The original verify findings were inline in cycle-artifacts/.../rec-c5-api-convergence/{proposal.md, design.md, specification.md}. The synthesis head_sha comes from apply-checkpoint.json head_sha (verified via 'git cat-file -e'). All other fields are populated from the design.md verification evidence and the apply-checkpoint phases.verify block. This is a restoration, not an original."
+}

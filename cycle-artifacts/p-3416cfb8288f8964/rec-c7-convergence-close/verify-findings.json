@@ -1,0 +1,23 @@
+{
+  "cycle_id": "rec-c7-convergence-close",
+  "subject": {
+    "cycle_id": "rec-c7-convergence-close",
+    "branch": "feat/rec-c7-convergence-close",
+    "head": "1fd11d9826339f1605249fd2ef7ae07d7acf38e3",
+    "head_sha": "1fd11d9826339f1605249fd2ef7ae07d7acf38e3",
+    "merge_commit_sha": "0be2ec2d53d9698956ae705938b32b80d7365ad7",
+    "remote_tag": "v0.7.112",
+    "remote_tag_peel": "0be2ec2d53d9698956ae705938b32b80d7365ad7",
+    "peel_match": true,
+    "remote_tag_object": "d62c27c26e71175a16ed88d2c3c18ad9e66e22b7",
+    "base_sha": "f3a831a247aca8a7b6f2b86f7e6615e548fabcec",
+    "route": "a-lite",
+    "subject_added_by": "G0.3 vault drift CC#18 — synthesized minimal verify-findings.json (the cycle predated the standard 6-artifact set; the original verify findings were inline in the proposal.md and the closeout walkthrough). head_sha is the cycle post-archive HEAD (1fd11d98); merge_commit_sha / remote_tag_peel are the annotated tag peel (v0.7.112 -> 0be2ec2d). base_sha is the main HEAD just before the tag-peel merge (0be2ec2d^1 = f3a831a2, the rec-c6 merge). All verified via 'git cat-file -e'."
+  },
+  "summary": "REC-C7 convergence phase closed — v0.7.112 cut at 0be2ec2d, peels to REC-C7. UAT catalog: UAT-001 execution_intent+probe_lifecycle PASS, UAT-002 basic_event PASS, UAT-007 set_breakpoint+resume+inspect PASS, UAT-013 session_persistence PASS. Phase-II REC contracts reached agreement.",
+  "verdict": "passed",
+  "all_passed": true,
+  "lens_summary": "Smoke subset: chronos-services lib (391/391), chronos-log lib (93/93), chronos-store lib (84/84), chronos-capture lib (26/26), chronos-sandbox lib (12/12), chronos-mcp toolset_sync_check (2/2), chronos-mcp alias_deletion (2/2). T0 fmt+clippy+workspace check clean. UAT-001/002/007/013 green (sandbox). Workspace version 0.1.1, v0.7.112 tag points at 0be2ec2d.",
+  "findings": [],
+  "_note": "G0.3 vault drift CC#18 — synthesized 2026-09-21 because rec-c7's verification evidence is split between the proposal.md closeout, the design.md UAT catalog, and the apply-checkpoint.json notes. The cycle predates the m9-25 enforcement of the standard 6-artifact set; this file is a restoration. Head SHA from apply-checkpoint.json head_sha (git-verified). Restoration, not original."
+}

@@ -1,4 +1,15 @@
 {
+  "cycle_id": "rec-c4-solid-connascence",
+  "subject": {
+    "cycle_id": "rec-c4-solid-connascence",
+    "branch": "feat/rec-c4-solid-connascence",
+    "head": "3a572db4c6d8da0760eea394f3e6a04a91ab7e8e",
+    "head_sha": "3a572db4c6d8da0760eea394f3e6a04a91ab7e8e",
+    "base_sha": "75d04447229d8d1e8c73ae7293db72b549358125",
+    "route": "a-lite",
+    "subject_added_by": "G0.3 vault drift CC#17 schema normalization (additive, preserves legacy schema)",
+    "subject_added_at": "2026-09-21"
+  },
   "cycle": "rec-c4-solid-connascence",
   "branch": "feat/rec-c4-solid-connascence",
   "date": "2026-09-20",

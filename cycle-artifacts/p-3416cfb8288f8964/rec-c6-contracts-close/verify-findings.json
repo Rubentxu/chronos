@@ -1,0 +1,28 @@
+{
+  "cycle_id": "rec-c6-contracts-close",
+  "subject": {
+    "cycle_id": "rec-c6-contracts-close",
+    "branch": "feat/rec-c6-contracts-close",
+    "head": "f3a831a247aca8a7b6f2b86f7e6615e548fabcec",
+    "head_sha": "f3a831a247aca8a7b6f2b86f7e6615e548fabcec",
+    "base_sha": "e5dfe63b6890e066178e5a2870fe9249ebd59cad",
+    "route": "a-lite",
+    "subject_added_by": "G0.3 vault drift CC#18 — synthesized minimal verify-findings.json (the cycle predated the standard 6-artifact set; the original verify findings were inline in the proposal.md closeout and apply-checkpoint.json notes.smoke_subset_results). head_sha is the cycle merge commit (f3a831a2); base_sha is its main-side first parent (e5dfe63b, the main HEAD just before the merge). Both verified via 'git cat-file -e'."
+  },
+  "summary": "REC-C6 verified — 9 inherited contracts closed via inline audit (HEX-002/003, SOLID-001, CONN-001/002, API-001/002: partial/gap -> verified) + C6.4 inline enum serde rename_all fix for TraceSliceKind/StateQueryKind/ExecutionQueryKind (FIND-C6-001). M4A-001/M4B-001 honestly deferred to M4-future (no Go crate, telemetry port not composition-root bound).",
+  "verdict": "passed",
+  "all_passed": true,
+  "lens_summary": "Smoke subset: cargo test -p chronos-sandbox --test analytics_tools (4/4 PASS post-C6.4 fix), chronos-sandbox lib (12/12), chronos-services lib (391/391), chronos-log lib (93/93), chronos-store lib (84/84), chronos-capture lib (26/26), wall_clock_ms semantic-distinction test (1/1), chronos-mcp toolset_sync_check (2/2), chronos-mcp alias_deletion (2/2). T0 fmt+clippy+workspace check clean. architecture_contracts non-strict PASSED post-REC-C6.",
+  "findings": [
+    {
+      "id": "FIND-C6-001",
+      "verdict": "applied",
+      "summary": "C5.3.1 wrappers were sending snake_case kind values but the v2 server enums (TraceSliceKind/StateQueryKind/ExecutionQueryKind) only had #[schemars(rename_all = \"snake_case\")] and no serde rename_all. Fixed in C6.4 commit 00d94172 by adding #[serde(rename_all = \"snake_case\")] to those enums + CallGraphResponse wire DTO parity.",
+      "severity": "high",
+      "priority": "P0",
+      "owner_gate": "REC-C6-C6.4",
+      "closed_in_commit": "00d94172"
+    }
+  ],
+  "_note": "G0.3 vault drift CC#18 — synthesized 2026-09-21 because rec-c6 did not produce a verify-findings.json. Original verification evidence lives in apply-checkpoint.json notes.smoke_subset_results. Head SHA comes from apply-checkpoint.json head_sha (git-verified). Restoration, not original."
+}
