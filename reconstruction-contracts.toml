@@ -1,6 +1,6 @@
 version = 1
 updated = "2026-09-21"
-active_gate = "REC-C6"
+active_gate = ""  # REC-C7 closed 2026-09-21; convergence phase ended. Post-convergence milestones (M6/M7/M8) own the roadmap.
 
 # Gate history (rec-c1 + rec-c2 stream closures):
 #   REC-C1.7 = closed on tag rec-c1-7-projection-authority-acceptance
@@ -449,16 +449,16 @@ verify = "cargo test -p chronos-query -- --test-threads=1"
 [[requirement]]
 id = "M4A-001"
 title = "Go adaptive instrumentation: OTel discovery, OBI, Auto SDK and otelc"
-status = "blocked"
-owner_gate = "REC-C6"
-notes = "Substrate absence (2026-09-21 REC-C6.1 audit): no Go crate in workspace, no Go capture path, no Cargo.toml dep that pulls a Go-side adapter. Closing this contract requires a separate architecture cycle that introduces a Go crate (or Go build step) and lands the OTel/OBI/Auto SDK/otelc discovery flow against it. Until then, status = blocked (not gap, not partial) — there is no in-tree implementation to verify. Deferral owner: future gate with real Go substrate scope. See cycle-artifacts/p-3416cfb8288f8964/rec-c6-contracts-close/proposal.md C6.1."
+status = "planned"
+owner_gate = "M4-future"
+notes = "Substrate absence (2026-09-21 REC-C6.1 audit): no Go crate in workspace, no Go capture path, no Cargo.toml dep that pulls a Go-side adapter. REC-C7 promotes status from blocked to planned and reassigns owner_gate from REC-C6 to M4-future — there is no in-tree implementation to verify, no REC-C* gate can close this contract, and REC-C7 strict-no-gaps rejects blocked. Future M4 milestone cycle that introduces a Go crate (or Go build step) and lands the OTel/OBI/Auto SDK/otelc discovery flow against it will close this contract. See cycle-artifacts/p-3416cfb8288f8964/rec-c6-contracts-close/proposal.md C6.1."
 
 [[requirement]]
 id = "M4B-001"
 title = "Rust adaptive instrumentation: telemetry reuse, eBPF, XRay/USDT decisions and semantic probes"
-status = "blocked"
-owner_gate = "REC-C6"
-notes = "Port declaration (REC-C4.1) without composition-root binding: chronos_domain::ports::telemetry::TelemetryReceiver is declared (NoopTelemetry + InMemoryTelemetry impls present) and tested in crates/chronos-domain/tests/telemetry_ports.rs, but zero crates/ files outside chronos-domain consume the port (workspace grep 2026-09-21: 4 hits, all in chronos-domain). No adapter is wired at chronos_mcp::composition; no call site in chronos_native::native_probe_*, chronos_services::observe, or the probe_inject path consumes the port. eBPF/USDT/XRay decision logic for runtime probe selection is not implemented. Closing this contract requires a separate architecture cycle that lands (a) composition-root adapter wiring, (b) integration with at least one capture path, and (c) an eBPF/USDT/XRay decision module. Until then, status = blocked — the port exists but the bridge to capture probes does not. Deferral owner: future gate with real instrumentation scope. See cycle-artifacts/p-3416cfb8288f8964/rec-c6-contracts-close/proposal.md C6.1."
+status = "planned"
+owner_gate = "M4-future"
+notes = "Port declaration (REC-C4.1) without composition-root binding: chronos_domain::ports::telemetry::TelemetryReceiver is declared (NoopTelemetry + InMemoryTelemetry impls present) and tested in crates/chronos-domain/tests/telemetry_ports.rs, but zero crates/ files outside chronos-domain consume the port (workspace grep 2026-09-21: 4 hits, all in chronos-domain). No adapter is wired at chronos_mcp::composition; no call site in chronos_native::native_probe_*, chronos_services::observe, or the probe_inject path consumes the port. eBPF/USDT/XRay decision logic for runtime probe selection is not implemented. REC-C7 promotes status from blocked to planned and reassigns owner_gate from REC-C6 to M4-future — the port exists but the bridge to capture probes does not, and REC-C7 strict-no-gaps rejects blocked. Future M4 milestone cycle that lands (a) composition-root adapter wiring, (b) integration with at least one capture path, and (c) an eBPF/USDT/XRay decision module will close this contract. See cycle-artifacts/p-3416cfb8288f8964/rec-c6-contracts-close/proposal.md C6.1."
 
 [[requirement]]
 id = "OTEL-001"
