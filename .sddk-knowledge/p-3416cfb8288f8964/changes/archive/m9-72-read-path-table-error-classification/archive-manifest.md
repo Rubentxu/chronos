@@ -99,7 +99,7 @@ Three commits:
 | source (store lib) | `crates/chronos-store/src/lib.rs` | `63e440bb325b553a22bd34e56c695458d0133f56d4152392031d72c3f8a7710e` |
 | source (store cas) | `crates/chronos-store/src/cas.rs` | `09690b516e54890e79d716845c52bad14b9f50e35d8e792e442285da84ae4f6f` |
 | source (store storage) | `crates/chronos-store/src/storage.rs` | `7971d253211974da6e3f8c268b3c399684493550569f31d50888a26a66673427` |
-| docs (agents manual) | `AGENTS.md` | `83d09aa421c0c0c06a8dc28d4a5ba27dbb66772f7a1310103f3c133969fe8924` |
+| docs (agents manual) | `AGENTS.md` | `66d94ce9f7bdfa51a3cde4d4b59680757c1aef5f808585c1d6fa78b06bb13585` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-72-read-path-table-error-classification/apply-checkpoint.json` | `0475383cd18fbccf83e647f29bf17ddfaeefab66300c489c96147a761f8daa28` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-72-read-path-table-error-classification/verify-report.md` | `e2f4694b3b6105b75b1d72b1af71db43e12cf8ab4ba1349b41f889319eec637b` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-72-read-path-table-error-classification/verify-findings.json` | `4258d8ec331d27a0a2b062910908e2c0fe9e186d9019ea9b8dddea00c4fd226d` |

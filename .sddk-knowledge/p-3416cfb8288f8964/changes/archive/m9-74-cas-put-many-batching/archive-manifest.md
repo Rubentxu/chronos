@@ -120,7 +120,7 @@ Three commits:
 | source (store crate root) | `crates/chronos-store/src/lib.rs` | `63e440bb325b553a22bd34e56c695458d0133f56d4152392031d72c3f8a7710e` |
 | test support (sync barrier counter) | `crates/chronos-store/src/test_support.rs` | `60f6d32eddead5721c5e6ebb6037f54f945562f88cc4c6c0038869d0a5b42680` |
 | source (mcp server, tool wire shapes) | `crates/chronos-mcp/src/server.rs` | `c15aa346088f42bed26256a6f8ee12c33873320ae39ae68abc7902f7ab8a045b` |
-| docs (agents manual) | `AGENTS.md` | `83d09aa421c0c0c06a8dc28d4a5ba27dbb66772f7a1310103f3c133969fe8924` |
+| docs (agents manual) | `AGENTS.md` | `66d94ce9f7bdfa51a3cde4d4b59680757c1aef5f808585c1d6fa78b06bb13585` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/apply-checkpoint.json` | `dab499eb017af26c3bf2a2a696d7c2b3dfdb47502f58429e00ace325181610d9` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/verify-report.md` | `2e2037009420c18c53cbcd718d6dd66941b394edb661e6ac5fa0d05257fbdcbf` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/verify-findings.json` | `ab23e7466a09bb1a876496e94bb09200d16da722bbc21caeec9914ce9551b3b5` |

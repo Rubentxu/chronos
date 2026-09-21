@@ -96,7 +96,7 @@ Two commits:
 | test (store isolation) | `chronos-sandbox/tests/client_store_isolation.rs` | `a48c78a31a5a1517418e560a2982b2ec39ea435f78b627cda79d38133ce56495` |
 | test (session edge cases) | `chronos-sandbox/tests/session_edge_cases.rs` | `9e7fe072358918c156502cc8093e9164aff59b1eeb17e460a475db10ee2d82b3` |
 | test (counterexample tools) | `chronos-sandbox/tests/counterexample_tools.rs` | `e47fbc3890e4ca8cc2361669c295b3018eff15802a8bd4df56f2e882923ca98d` |
-| docs (agents manual) | `AGENTS.md` | `83d09aa421c0c0c06a8dc28d4a5ba27dbb66772f7a1310103f3c133969fe8924` |
+| docs (agents manual) | `AGENTS.md` | `66d94ce9f7bdfa51a3cde4d4b59680757c1aef5f808585c1d6fa78b06bb13585` |
 | script (cc smoke test) | `scripts/smoke_test_ccs.sh` | `86def49d7e23b4e521687ddcb53a384aac18ec3f91f0e2845396f90d7ac3e7d3` |
 | vault maintenance (drift sweep) | `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md` | `0b5e5dcee918ea5a7d8aa6c1838b732c593f9c8db295aa26d37715f761f0159e` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/apply-checkpoint.json` | `35408c5d6ab2a0a9250228401b91f4f0b484cd7874ccb3f8b538bac2b5587931` |
