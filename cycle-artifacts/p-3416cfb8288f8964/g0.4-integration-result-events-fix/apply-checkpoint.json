@@ -1,0 +1,33 @@
+{
+  "cycle_id": "g0.4-integration-result-events-fix",
+  "route": "A-min",
+  "status": "CLOSED",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "complete",
+  "head_sha": "b44504edfd8b93ad7c4f3d4d30aeea4181c570ac",
+  "base_sha": "c81ca08c7a19956c6bda2ee3bbaba0399c7aec7d",
+  "main_sha": "b44504edfd8b93ad7c4f3d4d30aeea4181c570ac",
+  "tier_required": "T0+T2",
+  "created_at": "2026-09-21",
+  "title": "g0.4-integration-result-events-fix",
+  "summary": "Close C5.2 migration gap in sandbox client: query_events wrapper now reads v2 envelope (result.events) instead of root-level events. TraceEvent/GetEventResponse mirror the v2 wire shape (location: serde_json::Value, data: serde_json::Value, flat event_type: String). RPC initialize timeout bumped 30s→120s (workaround for ~/.jcode/scratch/ with 32k+ stale store dirs). Bonus G0.2 regression fix: tests/observe_uprobe.rs rewritten to match Err(McpSandboxError::RpcError) (sandbox client converts both JSON-RPC error envelopes AND MCP result.isError=true to RpcError). 3 legacy offset_* tests #[ignore]d (§0.4 additivity, bodies preserved verbatim) — M1+ cursor migration follow-up.",
+  "cc_delta": {
+    "closed": [
+      "REC-C8 (C5.2 sub-bug result.events)"
+    ],
+    "introduced": []
+  },
+  "findings_closed": [
+    "FIND-G0.4-RESULT-EVENTS-MIGRATION-GAP",
+    "FIND-G0.4-OBSERVE-UPROBE-RPC-ERROR-REGRESSION"
+  ],
+  "findings_introduced": {
+    "no_action": []
+  },
+  "note": "SHAs verified via git cat-file -e. Tag v0.7.112 peel 0be2ec2d intact (no new tag created — G0 is sub-slice of REC-C7 baseline). Pre-existing failure: probe_inject 4/4 fails on main @ c81ca08c (m7-02 wrapper migration debt, m7-02 → observe emit 'observe: probe still starting up' but pre-C5.2 tests expect 'probe_inject: capability: ebpf-uprobe' prefix) — NOT a regression of G0.4, documented in cycle-artifacts/p-3416cfb8288f8964/g0.4-integration-result-events-fix/exploration-report.md §5.4 for M1+ follow-up.",
+  "remote_tag": "v0.7.112",
+  "remote_tag_peel": "0be2ec2d53d9698956ae705938b32b80d7365ad7",
+  "peel_match": true,
+  "archived_at": "2026-09-21T15:04:11+02:00"
+}

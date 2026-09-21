@@ -1,0 +1,40 @@
+{
+  "subject": {
+    "head_sha": "13495faee3c6a6ec25ea1b8dab42b06c6624858a",
+    "base_sha": "c27765bd1acf421f9fc7a8a4cf8c4cdd824daee4",
+    "cycle_id": "g0.2-observe-uprobe-migration"
+  },
+  "cycle_id": "g0.2-observe-uprobe-migration",
+  "verdict": "passed",
+  "all_passed": true,
+  "lens_summary": {
+    "drift": "Pinned the negative contract of the observe tool surface with 2 typed-error tests. Wire smoke confirms 3 contracts (ObserveVerb snake_case discriminator, ObserveScopeWire tagged-enum, RpcClient::call_tool converts MCP errors).",
+    "findings_count": 1,
+    "tiers_run": [
+      "T0",
+      "T1"
+    ],
+    "source_schema": "g0.2-observe-uprobe-migration"
+  },
+  "findings": [
+    {
+      "id": "FIND-G0.2-OBSERVE-UPROBE-MIGRATION-CONTRACT-PIN",
+      "severity": "low",
+      "status": "closed",
+      "title": "No code changes required — probe_inject → observe migration was already done in m7-02",
+      "evidence": [
+        "git cat-file -e verified SHAs: 13495fae, c27765bd, 2a363752, fae978ce",
+        "Wire smoke /tmp/g0.2-wire-smoke (341 lines, JSON-RPC manual, no rmcp) against real chronos-mcp binary: 3/3 GREEN",
+        "observe(frobnicate) → -32602 'unknown variant frobnicate, expected one of create/list/update/delete/query'",
+        "observe(create, fake-session) → result.isError=true with UUID in content[0].text",
+        "observe(scope=42) → -32602 mentioning ObserveScopeWire",
+        "T0 cargo fmt + clippy clean",
+        "T1 cargo test -p chronos-sandbox --lib: 12/12",
+        "T1 cargo test -p chronos-services --lib: 391/391",
+        "T1 cargo test -p chronos-mcp --lib: 84/84",
+        "Tag v0.7.112 peel 0be2ec2d intact"
+      ]
+    }
+  ],
+  "_note": "Synthesized retroactively by G0.5 (ledger-coherence) cycle. Source: apply-checkpoint.json head_sha/base_sha + JOURNAL.md row 10 + exploration-report.md §11. Documented as restoration (not original) per vault-drift-sweep.md CC#18 resolution policy."
+}
