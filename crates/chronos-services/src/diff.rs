@@ -242,9 +242,7 @@ impl ChronosDiffService {
 /// Map a `SessionReaderError` from `load_session` to a `ServiceError`.
 ///
 /// `SessionReaderError::NotFound` is mapped to the canonical
-/// `ServiceError::SessionNotFound` (preserves the session id; the MCP
-/// wrapper reconstructs the legacy literal error string
-/// `"session '{}' not found: {}"`).
+/// `ServiceError::SessionNotFound` (preserves the session id).
 /// `SessionReaderError::InvalidId` is mapped to `InvalidInput` because
 /// the id was rejected by the port validator.
 /// All other errors map to `ServiceError::LoadFailed`.
