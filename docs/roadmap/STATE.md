@@ -9,11 +9,13 @@
 | Estado | **not_started** en este plan; documentación reorganizada, ninguna corrección de producto implementada en esta entrega |
 | Baseline auditado | `main` @ `59c9b1eb0fac9fec63ac766e02ad84dac10a3719` (2026-09-21) |
 | HEAD real al retomar | **NO FIJAR AQUÍ:** ejecutar `git fetch origin; git rev-parse HEAD; git rev-parse origin/main; git status --short` |
+| HEAD real observado en sesión de recuperación | `ec61fa4bdeee1bea252584f0e47064e6e4b7e355` == `origin/main`; diff respecto al baseline = 1 commit (`docs(roadmap): archive competing plans and establish certified delivery roadmap`). El snapshot de STATE no se actualizó automáticamente — registrado en JOURNAL (entrada 2026-09-21 sesión de recuperación). |
 | Hecho histórico | REC-C0..REC-C7 declarados archivados; 19/25 contratos en `verified`, 6 `planned` al baseline; NO representa certificación global |
 | Bloqueos conocidos del baseline | CI `35580556913` (boundary_conditions); Coverage `35580556941` (probe_inject); Vault `35580556922` (8 controles drift); Architecture `35580556933` y Debt Sentinel `35580556898` green |
+| Bloqueos adicionales identificados en recuperación | Drift de mapping M8/M9/M10 en archive-manifest.md y apply-checkpoint.json de REC-C7 (CONC-001→M9, UI-001→M10 según ledger canónico; mi reporte previo decía M8/M9). Pendiente de corrección docs-only en un próximo slice. No bloquea G0, pero debe corregirse antes de cerrar G0.6 (recertificación REC-C7). |
 | Última modificación de planificación | Reorganización documental / creación del nuevo roadmap y sistema de certificación, **sin pruebas ni cambios de código** |
 | Próximas tareas | G0.1 enum, G0.2 observe, G0.3 drift, G0.4 CI/coverage/UAT, G0.5 coherencia ledger, G0.6 recertificación |
-| Siguiente paso inmediato | Revisar si main avanzó y reproducir fallos del HEAD actual antes de corregir; seleccionar **una** tarea G0 |
+| Siguiente paso inmediato | **Decisión de scope del usuario (ver JOURNAL entrada 2026-09-21 sesión de recuperación):** (a) corregir mapping M8/M9/M10 primero (docs-only, ~10 min); (b) arrancar G0.1 (reparar enum `EventsReadKind`); (c) esperar instrucción explícita antes de cualquier cambio. Esta sesión paró en (c) sin invocar G0.1. |
 | Actualización del puntero | Actualizar este archivo y añadir fila fechada a JOURNAL.md al cerrar cada sesión/ciclo, indicando SHA real y evidencias |
 
 ## Protocolo de recuperación sin memoria implícita
