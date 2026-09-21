@@ -63,9 +63,9 @@ async fn test_observe_with_invalid_verb_returns_typed_error() {
     // The sandbox client converts MCP errors to `McpSandboxError::RpcError`
     // before returning (see module docs). We must accept that here.
     let err_str = match result {
-        Ok(value) => panic!(
-            "expected RpcError for unknown verb, but call_tool returned Ok: {value}"
-        ),
+        Ok(value) => {
+            panic!("expected RpcError for unknown verb, but call_tool returned Ok: {value}")
+        }
         Err(McpSandboxError::RpcError(msg)) => msg,
         Err(e) => panic!("expected RpcError for unknown verb, got {e:?}"),
     };
@@ -116,9 +116,9 @@ async fn test_observe_uprobe_against_nonexistent_session_returns_typed_error() {
         .await;
 
     let err_str = match result {
-        Ok(value) => panic!(
-            "expected RpcError for missing session, but call_tool returned Ok: {value}"
-        ),
+        Ok(value) => {
+            panic!("expected RpcError for missing session, but call_tool returned Ok: {value}")
+        }
         Err(McpSandboxError::RpcError(msg)) => msg,
         Err(e) => panic!("expected RpcError for missing session, got {e:?}"),
     };
