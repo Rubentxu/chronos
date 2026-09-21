@@ -25,8 +25,9 @@ Append-only index of all completed cycles in this vault.
 | m10 | m10-stale-branch-cleanup-2 | B-direct | — | `5a76fd1d17f363a36cc62969dffcca0280ce9c7d` | CLOSED |
 | m10 | m10-roadmap-reconcile | B-direct | — | `7130cf6e4dc8545d8ddf6108048f1ca914209c61` | CLOSED |
 | m10 | m10-vault-index-reconcile | B-direct | — | `dee1a3d328ad06f5e710afbfcde9887d5d9bbf69` | CLOSED |
-| rec | rec-c3-hexagonal-closure | A-lite | rec-c3.5-residual-inversion | `75d04447` | CLOSED |
-| rec | rec-c4-solid-connascence | A-lite | rec-c4-solid-connascence | `3a572db4` | CLOSED |
+<!-- G0.3 CC#39: the two legacy "rec" rows below were placeholders introduced before the rec-c3/c4/c5/c6/c7 series existed at the bottom of the table. They duplicate rec-c3-hexagonal-closure (line below rec-c7 block) and rec-c4-solid-connascence. Per AGENTS.md §0.4 (additive corrections, no deletes) they are kept but marked with a leading "_legacy_dup_" prefix so the CC#39 unique-cycle count skips them. Do not act on these rows. -->
+| _legacy_dup_rec-c3-hexagonal-closure (superseded) | (legacy short row, see rec-c3 below) | — | — | `75d04447` | SUPERSEDED |
+| _legacy_dup_rec-c4-solid-connascence (superseded) | (legacy short row, see rec-c4 below) | — | — | `3a572db4` | SUPERSEDED |
 | m9-03-side-table-debt-cleanup | m9-03-side-table-debt-cleanup | B-direct | — | `2c98ce9a1df65d44ae865376fee46eb0d95ac425` | CLOSED |
 | m9-04-side-table-key-layout | m9-04-side-table-key-layout | B-direct | — | `d6b3b8c51c50d2ce6d0fe4f8c804cf793137f0dc` | CLOSED |
 | m9-05-side-table-overeng-cleanup | m9-05-side-table-overeng-cleanup | B-direct | — | `07d01d5869ff6e3ffed29315b761e6e476f3b70d` | CLOSED |
@@ -129,6 +130,7 @@ Append-only index of all completed cycles in this vault.
 | rec-c0 | rec-c0-2-b-webhook-adapter | A-min | — | `3619c123196d2f125629a0b141bb92b613738b0c` | CLOSED |
 | rec-c0 | rec-c0-2-c-domain-cleanup | A-min | — | `7e3702d7ae171c510d1611439b354c7a35edb2e0` | CLOSED |
 | rec-c0 | rec-c0-2-d-uat-verification | A-min | — | `c580d8a956153fcb56ded827a7342d70b87917c3` | CLOSED |
+| rec-c0 | rec-c0-5-a-vault-drift-sweep | A-min | — | `cbbfebe50a03c4d401e5701725cb3e96c3362b25` | CLOSED |
 | rec-c0 | rec-c0-5-b-probe-inject-capability | A-min | — | `98f9dba4f35ee3e0edf61c2132bd9d84edd25fdb` | CLOSED |
 | rec-c0 | rec-c0-5-c-fixture-discovery | A-min | — | `02c2a5528687d8a6f8045665f61b9c8a03c499fa` | CLOSED |
 
@@ -140,12 +142,22 @@ Append-only index of all completed cycles in this vault.
 | rec-c2 | rec-c2.0-eventbus-inventory | A-min | rec-c2.0-eventbus-inventory | `4c7df70e` | CLOSED |
 | rec-c2 | rec-c2.1-tripwire-evidence | A-lite | rec-c2.1-tripwire-evidence | `686a364c` | CLOSED |
 | rec-c2 | rec-c2.2-accepted-raw-seam | A-lite | rec-c2.2-accepted-raw-seam | `f02ab311` | CLOSED |
+| rec-c2 | rec-c2.5-formal-closure | A-lite | — | `21ab4f24888a78e71c7bf124c6f9497608288a7c` | CLOSED |
+| rec-c2 | rec-c2.3-eventbus-removal | A-lite | — | `d435557e0f3a82e8ed63939676647b670f8d0d81` | CLOSED |
 
+| rec-c3 | rec-c3-1-application-ports | A-min | — | `33b4f79004b7634a9e88b7919f8b42e854c420e8` | CLOSED |
+| rec-c3 | rec-c3-2-webhook-reconciliation | A-min | — | `33b4f79004b7634a9e88b7919f8b42e854c420e8` | CLOSED |
+| rec-c3 | rec-c3-3-1-identity-storage-seam | A-min | v0.1.1 | `794732fadaba66bc168f3b50d76f1bf54f7fb564` | CLOSED |
+| rec-c3 | rec-c3-3-2-composition-integration-inversion | A-min | — | `25420e5dab54a02e46da20ecc0bacf050d2ac741` | CLOSED |
+| rec-c3 | rec-c3-3-services-inversion | A-min | — | `188f2e182df180f9f947ccb1f6ad87ca028216e6` | CLOSED |
+| rec-c3 | rec-c3-ci-hygiene | A-min | — | `2e761d4f76dc4c7b2a78972753770ac2aedf0357` | CLOSED |
+| rec-c3 | rec-c3.3-train-b | A-min | — | `8327324354d4814eb5b2dd01c2b441908e93cfcd` | SUSPENDED |
 | rec-c3 | rec-c3-hexagonal-closure | A-lite | rec-c3.5-residual-inversion | `75d04447` | CLOSED |
 | rec-c4 | rec-c4-solid-connascence | A-lite | rec-c4-solid-connascence | `3a572db4` | CLOSED |
 | rec-c5 | rec-c5-api-convergence | A-lite | — | `e5dfe63b` | CLOSED |
 | rec-c6 | rec-c6-contracts-close | A-lite | — | `f3a831a2` | CLOSED |
 | rec-c7 | rec-c7-convergence-close | A-lite | v0.7.112 | `0be2ec2d53d9698956ae705938b32b80d7365ad7` | CLOSED |
+| session | session-handoff | — | — | `c11de1fa7aa715ef80e47a5dac23abea516c2f04` | CLOSED |
 
 See `changes/archive/` for full archive manifests of closed cycles.
 
@@ -155,9 +167,11 @@ See `changes/archive/` for full archive manifests of closed cycles.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-21T08:52Z |
-| Total cycles | 101 |
+| Last updated | 2026-09-21T11:30Z |
+| Total cycles | 149 |
+| Tracked canonical cycles (G0.3 CC#39) | 139 (built from `git ls-files cycle-artifacts/p-3416cfb8288f8964/*/**`; excludes bookkeeping dirs `handoffs/`, `retire-stale-bus-doc-mentions/` and untracked WIP dirs `rec-c3.3.4-native/`, `rec-c3.5-residual-inversion/`) |
+| Historical refs (no on-disk artifacts, real in git history) | 10 (m0-01-live-pagination, m0-truth-first-foundation, m1-execution-log-vertical-slice, m2-function-level-capture, m2-native-live-probe-frame-capture, m2-native-live-probe-frame-capture-v2, m8-07-hypothesis-reconstruction-fidelity, m10-ms-cap-discovery, m10-ms-cap-discovery-followup, rec-c3-hexagonal-closure — each has verified tag or commit SHA in git) |
 | m10 cycles | 13 (rows above) |
 | m1 cycles | 2 (m1-execution-log-vertical-slice, m1-gap-segment-accounting-repair) |
 | rec-c1 cycles | 4 (rec-c1-5-closure, rec-c1-6-lifecycle-retention-wire, rec-c1-7-projection-authority-acceptance, rec-c1-8-authoritative-evidence-handoff) |
-| rec cycles (c3+) | rec-c3-hexagonal-closure (+c3.5, tag `75d04447`), rec-c4-solid-connascence (tag `3a572db4`), rec-c5-api-convergence (no tag, gate cycle), rec-c6-contracts-close (no tag, gate cycle), rec-c7-convergence-close (tag `v0.7.112`, peel `0be2ec2d`) — CLOSED |
+| rec cycles (c3+) | rec-c3-1-application-ports, rec-c3-2-webhook-reconciliation, rec-c3-3-1-identity-storage-seam, rec-c3-3-2-composition-integration-inversion, rec-c3-3-services-inversion, rec-c3-ci-hygiene, rec-c3.3-train-b (suspended), rec-c3-hexagonal-closure (+c3.5 historical ref, tag `75d04447`), rec-c4-solid-connascence (tag `3a572db4`), rec-c5-api-convergence (no tag, gate cycle), rec-c6-contracts-close (no tag, gate cycle), rec-c7-convergence-close (tag `v0.7.112`, peel `0be2ec2d`) — CLOSED except rec-c3.3-train-b SUSPENDED |

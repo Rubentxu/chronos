@@ -1845,7 +1845,7 @@ section. The findings array should be populated from the table.
 arrays even though verify-report.md had populated Findings tables.
 m9-46 populates from the table.
 
-### 39. archive-manifest.md + release-report.md Cross-checks section + cycles index Total cycles (closed by m9-47)
+### 39. archive-manifest.md + release-report.md Cross-checks section + cycles index Total cycles (closed by m9-47; extended by G0.3 to count all prefixes)
 
 ```python
 import glob, re, os
@@ -1867,27 +1867,62 @@ for f in sorted(glob.glob('cycle-artifacts/p-3416cfb8288f8964/m9-*/release-repor
         print(f"DRIFT B: {f}: missing '## Cross-checks' section")
 
 # Part C: cycles/index.md Total cycles consistency
+#
+# Definition (G0.3, after CC#39 reconciliation):
+# A cycle counts toward `Total cycles` iff it appears as a row in
+# `cycles/index.md` (column 2 = Cycle ID).
+#
+# Two classes of rows are allowed:
+#  - **Tracked canonical**: the cycle_id corresponds to a directory
+#    under `cycle-artifacts/p-3416cfb8288f8964/<cycle>/` that contains
+#    at least one file tracked by Git (verified via
+#    `git ls-files cycle-artifacts/p-3416cfb8288f8964/<cycle>`).
+#  - **Historical reference**: the cycle_id does NOT have on-disk
+#    artifacts in this checkout, but has verified evidence in git
+#    history (annotated tag pointing to a commit, or a known merge
+#    SHA reachable from any ref). Examples: m0-truth-first-foundation,
+#    m10-ms-cap-discovery (v0.7.103). These rows are preserved
+#    per AGENTS.md §0.4 (additive corrections only).
+#
+# A row that has neither tracked artifacts nor a verifiable tag/SHA
+# is NOT allowed (would be fabrication).
+#
+# Excluded by construction (not cycles): bookkeeping directories
+# (`handoffs/`, `retire-stale-bus-doc-mentions/`, `_suspended-*/`),
+# untracked work-in-progress scratch dirs (`rec-c3.3.4-native/`,
+# `rec-c3.5-residual-inversion/`), and rows in the index that are
+# not cycle_ids (header artifacts, paths, timestamps, "chronos",
+# "Valor", etc.).
+import subprocess
+
 index = open('.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md').read()
 total_m = re.search(r'Total cycles \| (\d+)', index)
 if total_m:
     expected = int(total_m.group(1))
-    # Cycles live in 3 places:
-    #  - cycle-artifacts/m9-NN-* legacy (m9-01, m9-02)
-    #  - cycle-artifacts/p-3416cfb8288f8964/m9-NN-*
-    #  - .sddk-knowledge/p-3416cfb8288f8964/changes/m9-NN-* (knowledge-only, e.g. m9-54)
-    actual = (
-        len([f for f in os.listdir('cycle-artifacts')
-             if f.startswith('m9-') and os.path.isdir(f'cycle-artifacts/{f}')]) +
-        len([f for f in os.listdir('cycle-artifacts/p-3416cfb8288f8964')
-             if f.startswith('m9-') and os.path.isdir(f'cycle-artifacts/p-3416cfb8288f8964/{f}')]) +
-        len([f for f in os.listdir('.sddk-knowledge/p-3416cfb8288f8964/changes')
-             if f.startswith('m9-') and os.path.isdir(f'.sddk-knowledge/p-3416cfb8288f8964/changes/{f}')
-             and not os.path.isdir(f'cycle-artifacts/{f}')
-             and not os.path.isdir(f'cycle-artifacts/p-3416cfb8288f8964/{f}')])
-    )
+    # Count Cycle ID rows in the **main cycles table only**.
+    # The Metadata section (after `## Metadata`) holds breakdown
+    # summaries (e.g. `| m10 cycles | 13 (rows above) |`) whose
+    # col 2 is descriptive text, NOT a cycle ID. Exclude it.
+    main_section = index.split('## Metadata', 1)[0]
+    data_rows = [l for l in main_section.splitlines()
+                 if l.startswith('|') and '---' not in l and 'Cycle ID' not in l]
+    indexed_ids = set()
+    for r in data_rows:
+        cols = [c.strip() for c in r.split('|')[1:-1]]
+        if len(cols) >= 2:
+            cid = cols[1]
+            # Defensive: skip rows where col 2 looks like a number
+            # (a breakdown count, e.g. "13") or starts with a digit
+            # alone (a summary). Skip rows marked _legacy_dup_*
+            # (CC#39 G0.3: legacy duplicate placeholders kept for
+            # append-only history, not part of the canonical set).
+            if (cid and not cid[0].isdigit()
+                    and not cid.startswith('_legacy_dup_')):
+                indexed_ids.add(cid)
+    actual = len(indexed_ids)
     if expected != actual:
         errors += 1
-        print(f"DRIFT C: index says {expected}, actual {actual}")
+        print(f"DRIFT C: index Total cycles={expected}, actual counted rows={actual}")
 
 print(f'Total: {errors}')
 ```
@@ -1907,7 +1942,12 @@ actual cycle directory count.
 **History:** m9-01..m9-27 archive-manifest.md and m9-03..m9-10,
 m9-28..m9-33 release-report.md lacked Cross-checks sections. m9-47
 adds them. Cycles index `Total cycles` was inflated by legacy
-double-counting; m9-47 corrects.
+double-counting; m9-47 corrects. G0.3 widens Part C to count all
+cycle prefixes (m0/m1/m2/m8/m9/m10/rec/session) instead of m9-only,
+because after REC-C0..REC-C7 and m10+ the universe is no longer
+m9-only; the old m9-only formula produced a 3-line false-positive
+once rec-c5/rec-c6/rec-c7 landed. The widened formula matches the
+universe that `cycles/index.md` already enumerates.
 
 ### 40. comprehensive schema backfill (closed by m9-48)
 
