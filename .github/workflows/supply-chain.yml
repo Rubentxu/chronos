@@ -1,0 +1,113 @@
+# Supply chain security — H1.1.1 cycle (slice A).
+#
+# Runs cargo-deny (licenses, sources, bans, advisories),
+# cargo-audit (RustSec compat layer), and cargo-cyclonedx (SBOM) on every
+# push to main / PR and on release tags. SBOM is uploaded as an artifact
+# so the release.yml job can pick it up.
+#
+# Refs:
+# - docs/security/H1.1.1-supply-chain-baseline.md (full spec)
+# - docs/ROADMAP.md §H1.1 / §H1.1.1 (cargo-deny + cargo-audit + cargo-cyclonedx)
+# - docs/security/H1.2-threat-model.md §4.2 OPS.2 (SBOM)
+name: Supply chain security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  supply-chain:
+    name: cargo-deny + cargo-audit + cargo-cyclonedx
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      # Install the three supply-chain plugins. They are not vendored in
+      # Cargo.toml because they are operator-only scanners; the install
+      # cache key is the lockfile so the install re-runs only when the
+      # Cargo.lock changes substantially.
+      - name: Cache cargo tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-deny
+          key: tools-cargo-deny-v1
+      - name: Cache cargo tools (audit + cyclonedx)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/cargo-audit
+            ~/.cargo/bin/cargo-cyclonedx
+          key: tools-cargo-audit-cyclonedx-v1
+
+      - name: Install cargo plugins
+        run: |
+          cargo install cargo-deny      --locked --quiet || true
+          cargo install cargo-audit     --locked --quiet || true
+          cargo install cargo-cyclonedx --locked --quiet || true
+
+      # License check is a HARD gate today — zero allowed exceptions.
+      - name: cargo deny check licenses
+        run: cargo deny check licenses
+
+      # Sources check is a HARD gate today — only crates.io allowed.
+      - name: cargo deny check sources
+        run: cargo deny check sources
+
+      # Bans check today carries known baseline warnings (see §5.2 of
+      # H1.1.1 doc). WARN ⇒ non-blocking for H1.1.1; promoted to gate
+      # in H1.1.2 once the duplicate / wildcard migration is complete.
+      - name: cargo deny check bans
+        if: always()
+        run: |
+          mkdir -p .sddk-state/supply-chain
+          cargo deny check bans 2>&1 | tee .sddk-state/supply-chain/bans.log || true
+
+      # Advisories today reports 9 known failures (see §5.1 of H1.1.1 doc).
+      # H1.1.1 ships the SCANNER; H1.1.2 fixes the CVEs. Non-blocking for
+      # this cycle; logs are uploaded as artifact for the operator.
+      - name: cargo deny check advisories
+        if: always()
+        run: |
+          mkdir -p .sddk-state/supply-chain
+          cargo deny check advisories 2>&1 | tee .sddk-state/supply-chain/advisories.log || true
+
+      # cargo-audit is the historical JSON-form reporter; it stays for
+      # audit-cache population (`.cargo/audit-cache/`) so an operator
+      # can later compare H1.1.2 vs H1.1.1 advisories with `cargo audit
+      # diff`. Non-blocking for H1.1.1.
+      - name: cargo audit (cached DB)
+        if: always()
+        run: |
+          mkdir -p .sddk-state/supply-chain
+          cargo audit 2>&1 | tee .sddk-state/supply-chain/audit.log || true
+
+      # SBOM generator runs unconditionally. Uses the cargo-cyclonedx
+      # plugin if available; falls back to a synthetic SBOM built from
+      # Cargo.lock (see scripts/generate_chronos_sbom.py §7.1).
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          mkdir -p .sddk-state/sbom
+          python3 scripts/generate_chronos_sbom.py --out-dir .sddk-state/sbom --print-summary
+
+      - name: Upload supply-chain logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: supply-chain-logs
+          path: .sddk-state/supply-chain/
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chronos-sbom
+          path: .sddk-state/sbom/chronos-sbom.cdx.json
+          if-no-files-found: warn

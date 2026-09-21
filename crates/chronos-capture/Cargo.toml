@@ -2,7 +2,7 @@
 name = "chronos-capture"
 version.workspace = true
 edition.workspace = true
-
+license.workspace = true
 [dependencies]
 chronos-domain = { workspace = true }
 chronos-log = { path = "../chronos-log" }

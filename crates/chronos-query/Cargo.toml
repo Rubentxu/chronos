@@ -2,7 +2,7 @@
 name = "chronos-query"
 version.workspace = true
 edition.workspace = true
-
+license.workspace = true
 [dependencies]
 chronos-domain = { workspace = true }
 chronos-index = { workspace = true }
