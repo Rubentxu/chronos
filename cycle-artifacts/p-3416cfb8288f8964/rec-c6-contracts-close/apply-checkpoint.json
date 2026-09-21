@@ -1,0 +1,45 @@
+{
+  "cycle_id": "rec-c6-contracts-close",
+  "title": "REC-C6 — Close unfinished M1–M4 reconstruction contracts",
+  "summary": "Advance the convergence sequence from REC-C5 (canonical Agent API surface, 63 → 41 tools) to REC-C6. Close the seven inherited partial/gap contracts from REC-C3/REC-C4/REC-C5 (HEX-002, HEX-003, SOLID-001, CONN-001, CONN-002, API-001, API-002) by landing the missing bindings and types. Reclassify M4A-001 (Go adaptive instrumentation, no Go crate in workspace) and M4B-001 (Rust adaptive instrumentation, port declared but not composition-root bound) from gap/partial to blocked with honest deferral notes.",
+  "cycle_record": "p-3416cfb8288f8964/rec-c6-contracts-close",
+  "project_id": "p-3416cfb8288f8964",
+  "created_at": "2026-09-21T07:44:26+00:00",
+  "archived_at": null,
+  "findings_introduced": [],
+  "preconditions": [
+    "REC-C5 archived at main @ 9357aada (merge) + e5dfe63b (closeout).",
+    "REC-C5 closeout docs/vault commit a097576d advanced active_gate REC-C4 -> REC-C6.",
+    "Wire surface 41 tools, ALL_TOOL_NAMES synced with #[tool] router.",
+    "alias_deletion regression test green (chronos-mcp/tests/alias_deletion.rs)."
+  ],
+  "gates_planned": [
+    {"slice": "C6.1", "tier": "T0", "rationale": "doc + contracts.toml only; no Rust changes."},
+    {"slice": "C6.2", "tier": "T0+T1+T2+T3", "rationale": "hex binding touching services + projection + composition."},
+    {"slice": "C6.3", "tier": "T0+T1+T2+T3", "rationale": "store -> native dep edge; affects dependency graph."},
+    {"slice": "C6.4", "tier": "T0+T1+T2+T3", "rationale": "native consumer binding; touches capture path."},
+    {"slice": "C6.5", "tier": "T0+T1+T2+T3", "rationale": "type-only tightening in chronos-log."},
+    {"slice": "C6.6", "tier": "T0+T1+T2+T3", "rationale": "newtype threading through MCP/services boundaries."},
+    {"slice": "C6.7", "tier": "T0+T1+T2+T4-smoke", "rationale": "wrapper audit + doc ratification; sandbox smoke required."}
+  ],
+  "notes": {
+    "smoke_subset": [
+      "cargo test -p chronos-sandbox --test e2e_connectivity",
+      "cargo test -p chronos-sandbox --test analytics_tools",
+      "cargo test -p chronos-sandbox --test rec_c1_7_projection_restart_equivalence",
+      "cargo test -p chronos-sandbox --test rec_c1_7_uat_c1_01_two_consumers"
+    ],
+    "m4_status": "M4A-001 (gap -> blocked), M4B-001 (partial -> blocked). Substrate absence documented in contracts.toml notes.",
+    "risk_register": [
+      "C6-R1: HEX-002 binding may break chronos-services -> chronos_log direct edge (mitigate: pre-flight grep).",
+      "C6-R2: chronos-store decoupling may need a new StorageOpenError port (mitigate: add to chronos-domain in same slice).",
+      "C6-R3: ProbeId newtype may break sandbox tests (mitigate: grep + update in same slice).",
+      "C6-R4: WallClockMs boundary sites may be semantically monotonic (mitigate: re-classify to MonotonicNs)."
+    ],
+    "no_release_tag": "REC-C6 is a gate cycle (contracts closeout), not a shipped deliverable. Next v0.x.y lands with REC-C7."
+  },
+  "head_sha": null,
+  "remote_tag": null,
+  "peel_match": null,
+  "status": "in_progress"
+}
