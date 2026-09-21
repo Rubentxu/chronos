@@ -68,7 +68,7 @@ No new findings introduced by REC-C7. The only finding in the convergence stream
 - V2 `--strict-no-gaps`: PASSED at REC-C7 close (was FAILING at REC-C6 close due to blocked M4 contracts; M4 promotion in `380ca828` flipped them to `planned` under `owner_gate = "M4-future"`).
 - V3 non-strict architecture gate: PASSED.
 - V4 Cargo.toml workspace version: `0.1.1` unchanged (no API change).
-- V5 `git ls-remote origin main v0.7.112`: lines above; `HEAD == origin/main == 770e32aa` post-C7.4-archive; tag peel `0be2ec2d` is the merge commit (the convergence close marker).
+- V5 `git ls-remote origin main v0.7.112`: lines above; `HEAD == origin/main == 1fd11d98` post-C7.4-archive; tag peel `0be2ec2d` is the merge commit (the convergence close marker).
 
 ## Notes
 
