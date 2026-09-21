@@ -40,9 +40,9 @@
   "path": "a-lite",
   "branch": "feat/rec-c5-api-convergence",
   "base_sha": "9db697a594241c0f10838c84f72e82fb1ef368b4",
-  "head_sha": "350f91c6db25cd742d4f98e57c4f642c901a4209",
+  "head_sha": "9357aadacaac2f7e8771de36cc17757c29b778b1",
   "main_sha_at_start": "9db697a594241c0f10838c84f72e82fb1ef368b4",
-  "current_head_sha": "350f91c6db25cd742d4f98e57c4f642c901a4209",
+  "current_head_sha": "9357aadacaac2f7e8771de36cc17757c29b778b1",
   "status": "complete",
   "operational_status": "READY_FOR_RELEASE_RECEIPT_AND_ARCHIVE",
   "phases": {
