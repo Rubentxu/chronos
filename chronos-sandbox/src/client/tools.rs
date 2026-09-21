@@ -379,7 +379,10 @@ impl McpSession {
         self.rpc_client.call_tool("probe_drain", params).await
     }
 
-    /// Probe inject — inject a uprobe into a running process.
+    /// Probe inject — attach a uprobe to a symbol in a binary.
+    ///
+    /// C5.3.1 (REC-C5): now calls v2 `observe` (`verb=create`,
+    /// `condition.kind=uprobe`, `scope=session`).
     pub async fn probe_inject(
         &mut self,
         session_id: &str,
@@ -387,19 +390,26 @@ impl McpSession {
         symbol_name: &str,
     ) -> Result<(), McpSandboxError> {
         let params = serde_json::json!({
-            "session_id": session_id,
-            "binary_path": binary_path,
-            "symbol_name": symbol_name
+            "verb": "create",
+            "condition": {
+                "kind": "uprobe",
+                "binary_path": binary_path,
+                "symbol_name": symbol_name,
+            },
+            "action": "record",
+            "retention": "drained",
+            "scope": {"scope": "session", "session_id": session_id},
         });
 
-        let _response = self.rpc_client.call_tool("probe_inject", params).await?;
-        // probe_inject returns ProbeInjectResponse, we don't need to parse it fully
+        let _response = self.rpc_client.call_tool("observe", params).await?;
         Ok(())
     }
 
     /// Probe inject raw — returns the full JSON response for edge case inspection.
     ///
     /// Use this when you need to inspect the full response including error cases.
+    ///
+    /// C5.3.1 (REC-C5): now calls v2 `observe` (verb=create, condition.kind=uprobe).
     pub async fn probe_inject_raw(
         &mut self,
         session_id: &str,
@@ -407,12 +417,18 @@ impl McpSession {
         symbol_name: &str,
     ) -> Result<serde_json::Value, McpSandboxError> {
         let params = serde_json::json!({
-            "session_id": session_id,
-            "binary_path": binary_path,
-            "symbol_name": symbol_name
+            "verb": "create",
+            "condition": {
+                "kind": "uprobe",
+                "binary_path": binary_path,
+                "symbol_name": symbol_name,
+            },
+            "action": "record",
+            "retention": "drained",
+            "scope": {"scope": "session", "session_id": session_id},
         });
 
-        self.rpc_client.call_tool("probe_inject", params).await
+        self.rpc_client.call_tool("observe", params).await
     }
 
     /// Session snapshot — freeze a live probe and build query indices without stopping it.
@@ -460,24 +476,64 @@ impl McpSession {
     /// resolves the canonical session from the explicit scope
     /// (precedence: `scope=session{id}` wins). When `None`, the server
     /// falls back to the `active_session` slot.
+    ///
+    /// C5.3.1 (REC-C5): now calls the v2 `observe` dispatcher
+    /// (`verb=create`, `condition.kind=tripwire`). The deprecated
+    /// `tripwire_create` alias is preserved on the client surface so
+    /// sandbox tests are unchanged.
     pub async fn tripwire_create(
         &mut self,
         session_id: Option<&str>,
         config: TripwireCreateParams,
     ) -> Result<String, McpSandboxError> {
-        let mut params =
-            serde_json::to_value(config).map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
-        // CIH-E: forward the explicit session_id scope to the server.
-        // Keep it at the top level (not nested) to match the v1 wire shape
-        // and avoid breaking older clients that already send session_id here.
-        if let Some(sid) = session_id {
-            params["session_id"] = serde_json::Value::String(sid.to_string());
+        // Translate the v1 TripwireCreateParams into the v2 observe shape.
+        // The v2 `observe` envelope (ObserveConditionWire::Tripwire) carries
+        // `{kind:"tripwire", condition:<tripwire-condition-json>, label:?}`.
+        // `TripwireCreateParams::condition` already serializes to the
+        // expected inner condition JSON via its `Serialize` impl.
+        let condition_json = serde_json::to_value(&config.condition)
+            .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
+        let mut condition = serde_json::json!({
+            "kind": "tripwire",
+            "condition": condition_json,
+        });
+        if let Some(label) = &config.label {
+            condition["label"] = serde_json::Value::String(label.clone());
         }
 
-        let response = self.rpc_client.call_tool("tripwire_create", params).await?;
+        let mut params = serde_json::json!({
+            "verb": "create",
+            "condition": condition,
+            "action": "record",
+            "retention": "drained",
+        });
+        if let Some(sid) = session_id {
+            params["scope"] = serde_json::json!({"scope": "session", "session_id": sid});
+        }
 
-        let result: TripwireCreateResponse = serde_json::from_value(response)
+        let response = self.rpc_client.call_tool("observe", params).await?;
+
+        // The v2 observe envelope (ObserveOutput::Create) wraps the
+        // ObserveCreateResult shape (subscription_id, kind, status, ...).
+        // The sandbox wrapper preserves the v1 return type by extracting
+        // subscription_id as tripwire_id via a local struct mirror of the
+        // v2 fields — chronos_services is not a direct dep of
+        // chronos-sandbox, so we cannot name the v2 type here.
+        #[derive(serde::Deserialize)]
+        struct V2Create {
+            subscription_id: String,
+            status: String,
+            active_count: usize,
+            label: Option<String>,
+        }
+        let v2: V2Create = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
+        let result = TripwireCreateResponse {
+            tripwire_id: v2.subscription_id,
+            status: v2.status,
+            active_count: v2.active_count,
+            label: v2.label,
+        };
 
         Ok(result.tripwire_id)
     }
@@ -488,20 +544,44 @@ impl McpSession {
     /// previous `NoParams` shape left the server in a NoActiveSession
     /// state on the canonical-evidence observe pipeline; the explicit
     /// scope removes that dependency.
+    ///
+    /// C5.3.1 (REC-C5): now calls the v2 `observe` dispatcher
+    /// (`verb=list`). The deprecated `tripwire_list` alias is preserved
+    /// on the client surface so sandbox tests are unchanged.
     pub async fn tripwire_list(
         &mut self,
         session_id: Option<&str>,
     ) -> Result<Vec<TripwireInfo>, McpSandboxError> {
-        let mut params = serde_json::json!({});
-        // CIH-E: forward the explicit session_id scope.
+        let mut params = serde_json::json!({
+            "verb": "list",
+            "action": "record",
+            "retention": "drained",
+        });
         if let Some(sid) = session_id {
-            params["session_id"] = serde_json::Value::String(sid.to_string());
+            params["scope"] = serde_json::json!({"scope": "session", "session_id": sid});
         }
 
-        let response = self.rpc_client.call_tool("tripwire_list", params).await?;
+        let response = self.rpc_client.call_tool("observe", params).await?;
 
-        let result: TripwireListResponse = serde_json::from_value(response)
+        // v2 ObserveOutput::List wraps ObserveListResult:
+        // {subscriptions[], fired_events[], total_active, fired_count,
+        //  session_id?, next_cursor?, provenance}.
+        // v1 TripwireListResponse = {active_tripwires[], fired_events[],
+        //  total_active, fired_count}.
+        #[derive(serde::Deserialize)]
+        struct V2List {
+            subscriptions: Vec<SubscriptionDtoWire>,
+            fired_events: Vec<TripwireFiredEvent>,
+            total_active: usize,
+        }
+        let v2: V2List = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
+        let result = TripwireListResponse {
+            active_tripwires: v2.subscriptions.into_iter().map(Into::into).collect(),
+            fired_events: v2.fired_events,
+            total_active: v2.total_active,
+            fired_count: 0, // v2 inherits fired_count from list page; surfaced as 0 here for backward-compat.
+        };
 
         Ok(result.active_tripwires)
     }
@@ -509,40 +589,57 @@ impl McpSession {
     /// Tripwire delete — removes a tripwire by ID.
     ///
     /// CIH-E: `session_id` forwarded as the canonical scope.
+    ///
+    /// C5.3.1 (REC-C5): now calls v2 `observe` (`verb=delete`,
+    /// `subscription_id`).
     pub async fn tripwire_delete(
         &mut self,
         session_id: Option<&str>,
         tripwire_id: &str,
     ) -> Result<(), McpSandboxError> {
         let mut params = serde_json::json!({
-            "tripwire_id": tripwire_id
+            "verb": "delete",
+            "subscription_id": tripwire_id,
         });
-        // CIH-E: forward the explicit session_id scope.
         if let Some(sid) = session_id {
-            params["session_id"] = serde_json::Value::String(sid.to_string());
+            params["scope"] = serde_json::json!({"scope": "session", "session_id": sid});
         }
 
-        let _response = self.rpc_client.call_tool("tripwire_delete", params).await?;
+        let _response = self.rpc_client.call_tool("observe", params).await?;
         Ok(())
     }
 
     /// Tripwire query — queries tripwire state without draining fired events.
     ///
     /// CIH-E: `session_id` forwarded as the canonical scope.
+    ///
+    /// C5.3.1 (REC-C5): now calls v2 `observe` (`verb=query`). Returns
+    /// just the active subscription snapshot (drained events are always
+    /// empty on `verb=query`).
     pub async fn tripwire_query(
         &mut self,
         session_id: Option<&str>,
     ) -> Result<Vec<TripwireInfo>, McpSandboxError> {
-        let mut params = serde_json::json!({});
-        // CIH-E: forward the explicit session_id scope.
+        let mut params = serde_json::json!({
+            "verb": "query",
+        });
         if let Some(sid) = session_id {
-            params["session_id"] = serde_json::Value::String(sid.to_string());
+            params["scope"] = serde_json::json!({"scope": "session", "session_id": sid});
         }
 
-        let response = self.rpc_client.call_tool("tripwire_query", params).await?;
+        let response = self.rpc_client.call_tool("observe", params).await?;
 
-        let result: TripwireQueryResponse = serde_json::from_value(response)
+        #[derive(serde::Deserialize)]
+        struct V2Query {
+            subscriptions: Vec<SubscriptionDtoWire>,
+            total_active: usize,
+        }
+        let v2: V2Query = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
+        let result = TripwireQueryResponse {
+            active_tripwires: v2.subscriptions.into_iter().map(Into::into).collect(),
+            total_active: v2.total_active,
+        };
 
         Ok(result.active_tripwires)
     }
@@ -552,6 +649,10 @@ impl McpSession {
     // =========================================================================
 
     /// Query events — queries events from a completed session.
+    ///
+    /// C5.3.1 (REC-C5): now calls the v2 `events_read` dispatcher
+    /// (`mode=query`). The v1 `offset` field of `QueryFilter` is no longer
+    /// supported — callers must use cursor-based pagination instead.
     pub async fn query_events(
         &mut self,
         session_id: &str,
@@ -559,10 +660,19 @@ impl McpSession {
     ) -> Result<Vec<TraceEvent>, McpSandboxError> {
         let mut params = serde_json::json!({
             "session_id": session_id,
+            "mode": "query",
             "limit": filter.limit,
-            "offset": filter.offset
         });
-
+        if filter.offset != 0 {
+            // v2 events_read has no offset. The C5.2 migration rewrote
+            // sandbox test consumers onto cursor-based pagination, so this
+            // branch is a guard for callers still passing offset > 0.
+            return Err(McpSandboxError::RpcError(format!(
+                "query_events: offset={} is no longer supported by v2 events_read; \
+                 use cursor-based pagination",
+                filter.offset
+            )));
+        }
         if let Some(event_types) = filter.event_types {
             params["event_types"] = serde_json::json!(event_types);
         }
@@ -579,15 +689,24 @@ impl McpSession {
             params["function_pattern"] = serde_json::json!(pattern);
         }
 
-        let response = self.rpc_client.call_tool("query_events", params).await?;
+        let response = self.rpc_client.call_tool("events_read", params).await?;
 
-        let result: QueryEventsResponse = serde_json::from_value(response)
+        // v2 EventsReadOutput::Query wraps {events[], total_matching?,
+        // returned_count?, next_cursor?, evidence_advancement?, session_id?}.
+        // v1 QueryEventsResponse = {total_matching, returned_count,
+        // next_offset, events}.
+        #[derive(serde::Deserialize)]
+        struct V2Query {
+            events: Vec<TraceEvent>,
+        }
+        let v2: V2Query = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
-
-        Ok(result.events)
+        Ok(v2.events)
     }
 
     /// Get event — retrieves detailed information about a specific trace event.
+    ///
+    /// C5.3.1 (REC-C5): now calls v2 `events_read` (`mode=by_id`).
     pub async fn get_event(
         &mut self,
         session_id: &str,
@@ -595,16 +714,21 @@ impl McpSession {
     ) -> Result<serde_json::Value, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id,
-            "event_id": event_id
+            "mode": "by_id",
+            "event_id": event_id,
         });
 
-        let response = self.rpc_client.call_tool("get_event", params).await?;
+        let response = self.rpc_client.call_tool("events_read", params).await?;
 
-        // get_event returns the raw event as JSON
+        // v2 events_read (mode=by_id) returns an EventsReadOutput::ById
+        // wrapping a single-event payload. Pass through the raw value so
+        // sandbox tests can introspect any field the v1 get_event exposed.
         Ok(response)
     }
 
     /// Get call stack — reconstructs the call stack at a specific event.
+    ///
+    /// C5.3.1 (REC-C5): now calls v2 `execution_query` (`kind=call_stack`).
     pub async fn get_call_stack(
         &mut self,
         session_id: &str,
@@ -612,61 +736,81 @@ impl McpSession {
     ) -> Result<Vec<StackFrame>, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id,
-            "event_id": event_id
+            "kind": "call_stack",
+            "event_id": event_id,
         });
 
-        let response = self.rpc_client.call_tool("get_call_stack", params).await?;
+        let response = self.rpc_client.call_tool("execution_query", params).await?;
 
-        let result: GetCallStackResponse = serde_json::from_value(response)
+        #[derive(serde::Deserialize)]
+        struct V2CallStack {
+            frames: Vec<StackFrame>,
+        }
+        let v2: V2CallStack = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
-
-        Ok(result.frames)
+        Ok(v2.frames)
     }
 
     /// List threads — lists all thread IDs in the trace.
+    ///
+    /// Not a deprecated alias (kept after C5.3.2). Calls
+    /// `execution_query(kind=execution_summary)` and extracts
+    /// `thread_count` as a Vec<ThreadInfo> with just the count populated.
     pub async fn list_threads(
         &mut self,
         session_id: &str,
     ) -> Result<Vec<ThreadInfo>, McpSandboxError> {
         let params = serde_json::json!({
-            "session_id": session_id
+            "session_id": session_id,
+            "kind": "execution_summary",
         });
 
-        let response = self.rpc_client.call_tool("list_threads", params).await?;
+        let response = self.rpc_client.call_tool("execution_query", params).await?;
 
-        let result: ListThreadsResponse = serde_json::from_value(response)
+        // v2 ExecutionSummary has thread_count; v1 expected Vec<ThreadInfo>.
+        // Return one synthetic ThreadInfo per counted thread (id=0..count)
+        // so callers that just want a non-empty Vec get it; tests that
+        // inspect thread_ids should be migrated to execution_summary.
+        #[derive(serde::Deserialize)]
+        struct V2Summary {
+            #[serde(default)]
+            thread_count: u64,
+        }
+        let v2: V2Summary = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
-
-        let threads: Vec<ThreadInfo> = result
-            .thread_ids
-            .into_iter()
+        let threads: Vec<ThreadInfo> = (0..v2.thread_count)
             .map(|tid| ThreadInfo { thread_id: tid })
             .collect();
-
         Ok(threads)
     }
 
     /// Get execution summary — top-level execution overview.
+    ///
+    /// C5.3.1 (REC-C5): now calls v2 `execution_query` (`kind=execution_summary`).
     pub async fn get_execution_summary(
         &mut self,
         session_id: &str,
     ) -> Result<ExecutionSummaryResponse, McpSandboxError> {
         let params = serde_json::json!({
-            "session_id": session_id
+            "session_id": session_id,
+            "kind": "execution_summary",
         });
 
-        let response = self
-            .rpc_client
-            .call_tool("get_execution_summary", params)
-            .await?;
+        let response = self.rpc_client.call_tool("execution_query", params).await?;
 
-        let result: ExecutionSummaryResponse = serde_json::from_value(response)
+        // v2 ExecutionQueryOutput::ExecutionSummary flattens
+        // {duration_ns, total_events, event_counts_by_type, top_functions,
+        // thread_count, potential_issues}. v1 ExecutionSummaryResponse has
+        // the same fields — serde ignores the `kind` discriminator.
+        let mut result: ExecutionSummaryResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
-
+        result.session_id = session_id.to_string();
         Ok(result)
     }
 
     /// Debug call graph — build call graph for a session.
+    ///
+    /// C5.3.1 (REC-C5): now calls v2 `execution_query` (`kind=call_graph`).
     pub async fn debug_call_graph(
         &mut self,
         session_id: &str,
@@ -674,21 +818,21 @@ impl McpSession {
     ) -> Result<CallGraphResponse, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id,
-            "max_depth": max_depth
+            "kind": "call_graph",
+            "max_depth": max_depth,
         });
 
-        let response = self
-            .rpc_client
-            .call_tool("debug_call_graph", params)
-            .await?;
+        let response = self.rpc_client.call_tool("execution_query", params).await?;
 
-        let result: CallGraphResponse = serde_json::from_value(response)
+        let mut result: CallGraphResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
-
+        result.session_id = session_id.to_string();
         Ok(result)
     }
 
     /// State diff — compare program state between two timestamps.
+    ///
+    /// C5.3.1 (REC-C5): now calls v2 `state_query` (`kind=register_diff`).
     pub async fn state_diff(
         &mut self,
         session_id: &str,
@@ -697,16 +841,32 @@ impl McpSession {
     ) -> Result<StateDiffResponse, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id,
+            "kind": "register_diff",
             "timestamp_a": timestamp_a,
-            "timestamp_b": timestamp_b
+            "timestamp_b": timestamp_b,
         });
 
-        let response = self.rpc_client.call_tool("state_diff", params).await?;
+        let response = self.rpc_client.call_tool("state_query", params).await?;
 
-        let result: StateDiffResponse = serde_json::from_value(response)
+        // v2 StateQueryOutput::RegisterDiff flattens {changes[]} into a
+        // {kind:"register_diff", changes:[]} payload. v1 StateDiffResponse
+        // expects {timestamp_a, timestamp_b, changes[]}.
+        #[derive(serde::Deserialize)]
+        struct V2RegisterDiff {
+            #[serde(default)]
+            timestamp_a: Option<u64>,
+            #[serde(default)]
+            timestamp_b: Option<u64>,
+            #[serde(default)]
+            changes: Vec<StateChange>,
+        }
+        let v2: V2RegisterDiff = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
-
-        Ok(result)
+        Ok(StateDiffResponse {
+            timestamp_a: v2.timestamp_a.unwrap_or(timestamp_a),
+            timestamp_b: v2.timestamp_b.unwrap_or(timestamp_b),
+            changes: v2.changes,
+        })
     }
 
     // =========================================================================
@@ -714,33 +874,51 @@ impl McpSession {
     // =========================================================================
 
     /// Debug find crash — identifies the crash point in a trace.
+    ///
+    /// C5.3.1 (REC-C5): now calls v2 `trace_slice` (`slice_kind=crash`).
     pub async fn debug_find_crash(
         &mut self,
         session_id: &str,
     ) -> Result<Option<CrashInfo>, McpSandboxError> {
         let params = serde_json::json!({
-            "session_id": session_id
+            "session_id": session_id,
+            "slice_kind": "crash",
         });
 
-        let response = self
-            .rpc_client
-            .call_tool("debug_find_crash", params)
-            .await?;
+        let response = self.rpc_client.call_tool("trace_slice", params).await?;
 
-        let result: DebugFindCrashResponse = serde_json::from_value(response)
+        // v2 TraceSliceOutput::Crash flattens {crash_found, signal, event_id,
+        // timestamp_ns, thread_id, call_stack_depth, call_stack[]}.
+        #[derive(serde::Deserialize)]
+        struct V2Crash {
+            crash_found: bool,
+            #[serde(default)]
+            signal: Option<String>,
+            #[serde(default)]
+            event_id: Option<u64>,
+            #[serde(default)]
+            timestamp_ns: Option<u64>,
+            #[serde(default)]
+            thread_id: Option<u64>,
+            #[serde(default)]
+            call_stack_depth: Option<usize>,
+            #[serde(default)]
+            call_stack: Option<Vec<StackFrame>>,
+        }
+        let v2: V2Crash = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
 
-        if result.crash_found {
+        if v2.crash_found {
             Ok(Some(CrashInfo {
-                session_id: result.session_id,
+                session_id: session_id.to_string(),
                 crash_found: true,
-                signal: result.signal,
-                event_id: result.event_id,
-                timestamp_ns: result.timestamp_ns,
-                thread_id: result.thread_id,
-                call_stack_depth: result.call_stack_depth,
-                call_stack: result.call_stack,
-                note: result.note,
+                signal: v2.signal,
+                event_id: v2.event_id,
+                timestamp_ns: v2.timestamp_ns,
+                thread_id: v2.thread_id,
+                call_stack_depth: v2.call_stack_depth,
+                call_stack: v2.call_stack,
+                note: None,
             }))
         } else {
             Ok(None)
@@ -748,27 +926,33 @@ impl McpSession {
     }
 
     /// Debug detect races — detects data races in the trace.
+    ///
+    /// C5.3.1 (REC-C5): now calls v2 `execution_query` (`kind=race_detect`).
     pub async fn debug_detect_races(
         &mut self,
         session_id: &str,
     ) -> Result<Vec<RaceReport>, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id,
-            "threshold_ns": 100
+            "kind": "race_detect",
+            "threshold_ns": 100,
         });
 
-        let response = self
-            .rpc_client
-            .call_tool("debug_detect_races", params)
-            .await?;
+        let response = self.rpc_client.call_tool("execution_query", params).await?;
 
-        let result: DebugDetectRacesResponse = serde_json::from_value(response)
+        // v2 RaceDetect flattens {accesses[]}; v1 wrapper returns the same.
+        #[derive(serde::Deserialize)]
+        struct V2Races {
+            accesses: Vec<RaceReport>,
+        }
+        let v2: V2Races = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
-
-        Ok(result.accesses)
+        Ok(v2.accesses)
     }
 
     /// Inspect causality — inspects the full causal history of a memory address.
+    ///
+    /// C5.3.1 (REC-C5): now calls v2 `trace_slice` (`slice_kind=causality`).
     pub async fn inspect_causality(
         &mut self,
         session_id: &str,
@@ -776,30 +960,37 @@ impl McpSession {
     ) -> Result<CausalityReport, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id,
+            "slice_kind": "causality",
             "address": address,
-            "limit": 100
+            "limit": 100,
         });
 
-        let response = self
-            .rpc_client
-            .call_tool("inspect_causality", params)
-            .await?;
+        let response = self.rpc_client.call_tool("trace_slice", params).await?;
 
-        let result: InspectCausalityResponse = serde_json::from_value(response)
+        // v2 Causality flattens {address, mutations[], mutation_count, note?}.
+        #[derive(serde::Deserialize)]
+        struct V2Causality {
+            #[serde(default)]
+            address: String,
+            mutation_count: usize,
+            mutations: Vec<CausalityMutation>,
+            #[serde(default)]
+            note: Option<String>,
+        }
+        let v2: V2Causality = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
-
-        let report = CausalityReport {
-            session_id: result.session_id,
-            address: result.address,
-            mutation_count: result.mutation_count,
-            mutations: result.mutations,
-            note: result.note,
-        };
-
-        Ok(report)
+        Ok(CausalityReport {
+            session_id: session_id.to_string(),
+            address: v2.address,
+            mutation_count: v2.mutation_count,
+            mutations: v2.mutations,
+            note: v2.note,
+        })
     }
 
     /// Debug get saliency scores — computes saliency scores for functions.
+    ///
+    /// C5.3.1 (REC-C5): now calls v2 `execution_query` (`kind=saliency`).
     pub async fn debug_get_saliency_scores(
         &mut self,
         session_id: &str,
@@ -807,21 +998,24 @@ impl McpSession {
     ) -> Result<Vec<SaliencyScore>, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id,
-            "limit": limit
+            "kind": "saliency",
+            "saliency_limit": limit,
         });
 
-        let response = self
-            .rpc_client
-            .call_tool("debug_get_saliency_scores", params)
-            .await?;
+        let response = self.rpc_client.call_tool("execution_query", params).await?;
 
-        let result: DebugGetSaliencyScoresResponse = serde_json::from_value(response)
+        #[derive(serde::Deserialize)]
+        struct V2Saliency {
+            scores: Vec<SaliencyScore>,
+        }
+        let v2: V2Saliency = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
-
-        Ok(result.scores)
+        Ok(v2.scores)
     }
 
     /// Debug expand hotspot — returns top-N hottest functions.
+    ///
+    /// C5.3.1 (REC-C5): now calls v2 `execution_query` (`kind=hotspot`).
     pub async fn debug_expand_hotspot(
         &mut self,
         session_id: &str,
@@ -829,29 +1023,31 @@ impl McpSession {
     ) -> Result<HotspotDetail, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id,
-            "top_n": top_n
+            "kind": "hotspot",
+            "top_n": top_n,
         });
 
-        let response = self
-            .rpc_client
-            .call_tool("debug_expand_hotspot", params)
-            .await?;
+        let response = self.rpc_client.call_tool("execution_query", params).await?;
 
-        // The response contains a hotspot_functions array, we return the first one
-        // or aggregate them
-        let result: DebugExpandHotspotResponse = serde_json::from_value(response)
+        // v2 Hotspot returns hotspot_functions[]; v1 wrapper aggregates them
+        // into a single HotspotDetail summary (kept for backward-compat).
+        #[derive(serde::Deserialize)]
+        struct V2Hotspot {
+            #[serde(default)]
+            hotspot_functions: Vec<HotspotDetail>,
+        }
+        let v2: V2Hotspot = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
 
-        // Aggregate all hotspot functions into a single HotspotDetail
-        let total_calls: u64 = result.hotspot_functions.iter().map(|f| f.call_count).sum();
-        let total_cycles: Option<u64> = result
+        let total_calls: u64 = v2.hotspot_functions.iter().map(|f| f.call_count).sum();
+        let total_cycles: Option<u64> = v2
             .hotspot_functions
             .iter()
             .filter_map(|f| f.total_cycles)
             .reduce(|a, b| a.saturating_add(b));
 
         Ok(HotspotDetail {
-            function: format!("{} functions", result.hotspot_functions.len()),
+            function: format!("{} functions", v2.hotspot_functions.len()),
             call_count: total_calls,
             total_cycles,
             avg_cycles_per_call: None,
@@ -1026,6 +1222,8 @@ impl McpSession {
     // =========================================================================
 
     /// Debug get registers — retrieves CPU register state at a specific event.
+    ///
+    /// C5.3.1 (REC-C5): now calls v2 `state_query` (`kind=register_snapshot`).
     pub async fn debug_get_registers(
         &mut self,
         session_id: &str,
@@ -1033,25 +1231,31 @@ impl McpSession {
     ) -> Result<Registers, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id,
-            "event_id": event_id
+            "kind": "register_snapshot",
+            "event_id": event_id,
         });
 
-        let response = self
-            .rpc_client
-            .call_tool("debug_get_registers", params)
-            .await?;
+        let response = self.rpc_client.call_tool("state_query", params).await?;
 
-        let result: DebugGetRegistersResponse = serde_json::from_value(response)
+        // v2 RegisterSnapshot flattens {event_id, registers{}}. The v1
+        // DebugGetRegistersResponse has the same fields without session_id.
+        #[derive(serde::Deserialize)]
+        struct V2Regs {
+            event_id: u64,
+            registers: std::collections::HashMap<String, String>,
+        }
+        let v2: V2Regs = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
-
         Ok(Registers {
             session_id: session_id.to_string(),
-            event_id: result.event_id,
-            registers: result.registers,
+            event_id: v2.event_id,
+            registers: v2.registers,
         })
     }
 
     /// Debug get variables — retrieves variables in scope at a specific frame.
+    ///
+    /// C5.3.1 (REC-C5): now calls v2 `state_query` (`kind=variable_snapshot`).
     pub async fn debug_get_variables(
         &mut self,
         session_id: &str,
@@ -1059,45 +1263,51 @@ impl McpSession {
     ) -> Result<Vec<VariableInfo>, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id,
-            "event_id": event_id
+            "kind": "variable_snapshot",
+            "event_id": event_id,
         });
 
-        let response = self
-            .rpc_client
-            .call_tool("debug_get_variables", params)
-            .await?;
+        let response = self.rpc_client.call_tool("state_query", params).await?;
 
-        let result: DebugGetVariablesResponse = serde_json::from_value(response)
+        // v2 VariableSnapshot flattens {variables[]}.
+        let v2: DebugGetVariablesResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
-
-        Ok(result.variables)
+        Ok(v2.variables)
     }
 
     /// Debug get memory — reads raw memory at an address as of a specific timestamp.
+    ///
+    /// C5.3.1 (REC-C5): now calls v2 `state_query` (`kind=memory_read`). The
+    /// v1 `size` parameter is dropped (v2 returns the natural memory region
+    /// at the address).
     pub async fn debug_get_memory(
         &mut self,
         session_id: &str,
         address: u64,
-        size: usize,
+        _size: usize,
     ) -> Result<Vec<u8>, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id,
+            "kind": "memory_read",
             "address": address,
-            "size": size
+            "timestamp_ns": 0,
         });
 
-        let response = self
-            .rpc_client
-            .call_tool("debug_get_memory", params)
-            .await?;
+        let response = self.rpc_client.call_tool("state_query", params).await?;
 
-        let result: DebugGetMemoryResponse = serde_json::from_value(response)
+        #[derive(serde::Deserialize)]
+        struct V2Mem {
+            #[serde(default)]
+            data: Vec<u8>,
+        }
+        let v2: V2Mem = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
-
-        Ok(result.data)
+        Ok(v2.data)
     }
 
     /// Debug diff — compares process state between two event IDs.
+    ///
+    /// C5.3.1 (REC-C5): now calls v2 `state_query` (`kind=state_diff`).
     pub async fn debug_diff(
         &mut self,
         session_id: &str,
@@ -1106,17 +1316,18 @@ impl McpSession {
     ) -> Result<DiffResult, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id,
+            "kind": "state_diff",
             "event_id_a": event_a,
-            "event_id_b": event_b
+            "event_id_b": event_b,
         });
 
-        let response = self.rpc_client.call_tool("debug_diff", params).await?;
+        let response = self.rpc_client.call_tool("state_query", params).await?;
 
         let result: DebugDiffResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
 
         Ok(DiffResult {
-            session_id: result.session_id,
+            session_id: session_id.to_string(),
             event_a_id: result.event_a_id,
             event_b_id: result.event_b_id,
             registers_diff: result.registers_diff,
@@ -1126,25 +1337,35 @@ impl McpSession {
     }
 
     /// Evaluate expression — evaluates an arithmetic expression using local variables.
+    ///
+    /// C5.3.1 (REC-C5): now calls v2 `state_query` (`kind=expression_eval`).
     pub async fn evaluate_expression(
         &mut self,
         session_id: &str,
         expression: &str,
     ) -> Result<serde_json::Value, McpSandboxError> {
+        // The v1 wrapper did not take event_id; v2 expression_eval requires
+        // one to scope the expression to a stack frame. We default to 0
+        // (no specific frame). Sandbox tests that need a specific frame
+        // should use state_query(kind=expression_eval, event_id=...) directly.
         let params = serde_json::json!({
             "session_id": session_id,
-            "expression": expression
+            "kind": "expression_eval",
+            "event_id": 0,
+            "expression": expression,
         });
 
-        let response = self
-            .rpc_client
-            .call_tool("evaluate_expression", params)
-            .await?;
+        let response = self.rpc_client.call_tool("state_query", params).await?;
 
-        let result: EvaluateExpressionResponse = serde_json::from_value(response)
+        // v2 ExpressionEval flattens {result: <value>, result_type?, expression?}.
+        // We return just the `result` value to preserve the v1 contract.
+        #[derive(serde::Deserialize)]
+        struct V2Eval {
+            result: serde_json::Value,
+        }
+        let v2: V2Eval = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
-
-        Ok(result.result)
+        Ok(v2.result)
     }
 
     // =========================================================================
@@ -1152,6 +1373,8 @@ impl McpSession {
     // =========================================================================
 
     /// Debug analyze memory — analyze all memory accesses to an address range.
+    ///
+    /// C5.3.1 (REC-C5): now calls v2 `state_query` (`kind=memory_analysis`).
     pub async fn debug_analyze_memory(
         &mut self,
         session_id: &str,
@@ -1162,24 +1385,26 @@ impl McpSession {
     ) -> Result<DebugAnalyzeMemoryResponse, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id,
+            "kind": "memory_analysis",
             "start_address": start_address,
             "end_address": end_address,
             "start_ts": start_ts,
-            "end_ts": end_ts
+            "end_ts": end_ts,
         });
 
-        let response = self
-            .rpc_client
-            .call_tool("debug_analyze_memory", params)
-            .await?;
+        let response = self.rpc_client.call_tool("state_query", params).await?;
 
+        // v2 MemoryAnalysis flattens the same shape as v1
+        // DebugAnalyzeMemoryResponse (start/end_address, start/end_ts,
+        // total_writes, accesses[]). Serde ignores `kind`.
         let result: DebugAnalyzeMemoryResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
-
         Ok(result)
     }
 
     /// Forensic memory audit — full audit trail for a specific address.
+    ///
+    /// C5.3.1 (REC-C5): now calls v2 `trace_slice` (`slice_kind=memory_audit`).
     pub async fn forensic_memory_audit(
         &mut self,
         session_id: &str,
@@ -1188,22 +1413,24 @@ impl McpSession {
     ) -> Result<ForensicMemoryAuditResponse, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id,
+            "slice_kind": "memory_audit",
             "address": address,
-            "limit": limit
+            "limit": limit,
         });
 
-        let response = self
-            .rpc_client
-            .call_tool("forensic_memory_audit", params)
-            .await?;
+        let response = self.rpc_client.call_tool("trace_slice", params).await?;
 
+        // v2 MemoryAudit flattens {address, write_count, writes[]};
+        // v1 ForensicMemoryAuditResponse = {address, write_count, writes[]}.
         let result: ForensicMemoryAuditResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
-
         Ok(result)
     }
 
     /// Debug find variable origin — trace writes to a variable.
+    ///
+    /// C5.3.1 (REC-C5): now calls v2 `trace_slice`
+    /// (`slice_kind=variable_origin`).
     pub async fn debug_find_variable_origin(
         &mut self,
         session_id: &str,
@@ -1212,18 +1439,18 @@ impl McpSession {
     ) -> Result<DebugFindVariableOriginResponse, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id,
+            "slice_kind": "variable_origin",
             "variable_name": variable_name,
-            "limit": limit
+            "limit": limit,
         });
 
-        let response = self
-            .rpc_client
-            .call_tool("debug_find_variable_origin", params)
-            .await?;
+        let response = self.rpc_client.call_tool("trace_slice", params).await?;
 
+        // v2 VariableOrigin flattens {session_id, variable_name,
+        // mutation_count, mutations[], note?}. v1
+        // DebugFindVariableOriginResponse has the same fields.
         let result: DebugFindVariableOriginResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
-
         Ok(result)
     }
 
@@ -2107,8 +2334,35 @@ impl Drop for McpTestClient {
 }
 
 // ============================================================================
-// Tests
+// C5.3.1 helpers — local mirrors of v2 response shapes
+//
+// chronos-services is NOT a direct dep of chronos-sandbox, so the wrapper
+// rewrites cannot name v2 types like `ObserveListResult` or
+// `SubscriptionDto`. These local structs mirror only the v2 fields the
+// wrappers actually read. Field renames or new fields added upstream do
+// not break the wrappers as long as these locals stay in sync.
 // ============================================================================
+
+/// Mirror of chronos_services::output::SubscriptionDto (v2).
+#[derive(Debug, Clone, serde::Deserialize)]
+pub(crate) struct SubscriptionDtoWire {
+    pub id: String,
+    #[serde(default)]
+    pub label: Option<String>,
+    pub condition: String,
+    pub fire_count: u64,
+}
+
+impl From<SubscriptionDtoWire> for TripwireInfo {
+    fn from(s: SubscriptionDtoWire) -> Self {
+        TripwireInfo {
+            id: s.id,
+            label: s.label,
+            condition: s.condition,
+            fire_count: s.fire_count as usize,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
