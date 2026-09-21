@@ -2,6 +2,7 @@
 name = "chronos-cli"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 description = "Operator CLI for Chronos — replays persisted counterexample bundles (m8-04)."
 
 [[bin]]

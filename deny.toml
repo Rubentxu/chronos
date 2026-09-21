@@ -1,0 +1,92 @@
+# cargo-deny configuration for Chronos.
+#
+# Closes `CapChannelPin` (H1.6 §8.2) and contributes to H1.1 / H1.1.1 in
+# ROADMAP §H1 ("scan CVE/license/SBOM"). This file is the source of truth
+# for the license / advisory / source / bans policy applied on every CI
+# run and on every SBOM regeneration.
+#
+# Generated from cargo-deny's `init` template on 2026-09-21 (H1.1.1 cycle).
+# Schema is the modern `0.20.x` form: there is no `[note]` section,
+# sources have only `allow-registry`/`allow-git` (not `trusted`), and
+# bans use only `multiple-versions`/`wildcards`/`highlight`. Earlier
+# drafts used the pre-0.16 form which cargo-deny rejects with
+# `unexpected-keys`.
+#
+# Refs:
+# - docs/security/H1.2-threat-model.md §4.2 OPS.2 (supply chain / SBOM)
+# - docs/runbooks/H1.6-install-upgrade-rollback.md §3.3 (binary SHA-256)
+# - ROADMAP §H1.1, §H1.1.1
+
+[graph]
+all-features = false
+
+[advisories]
+# Local advisory DB clone path. CI sets CARGO_HOME explicitly to /home/runner/.
+db-path = "~/.cargo/advisory-dbs/advisory-db"
+# Upstream advisory DB. Single source of truth for RustSec.
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# Warn on yanked crates; promote to deny if H1.1.2 needs it.
+yanked = "warn"
+# No ignore entries today. Add IDs only with maintainer sign-off and
+# rationale documented in the PR body.
+ignore = []
+
+[licenses]
+# Allow the de-facto Rust ecosystem. Adding new entries requires PR review.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "Zlib",
+    "MPL-2.0",
+    "0BSD",
+    "BSL-1.0",
+]
+confidence-threshold = 0.8
+
+# Per-crate exceptions: each crate has a specific license footprint that's
+# hard to detect from metadata, but well-known in the ecosystem.
+# H1.1.1 baseline entry list — the following crates do not declare a clear
+# SPDX expression from registry metadata but are known to be canonical.
+# H1.1.2 will replace these with explicit publisher-confirmed SPDX entries
+# inside `Cargo.toml` of each consumer crate (preferred) rather than here.
+exceptions = [
+    # ring: custom ISC + OpenSSL license; documented upstream.
+    { allow = ["ISC", "OpenSSL"], crate = "ring" },
+    # blake3: dual CC0-1.0 + Apache-2.0. Allow either.
+    { allow = ["CC0-1.0", "Apache-2.0"], crate = "blake3" },
+]
+
+# Private/uncategorized workspace crates are still inspected (publish = false
+# is set on most of ours, so they fall into the ignore case).
+[licenses.private]
+ignore = false
+registries = []
+
+[bans]
+# Multiple-versions of the same crate in the graph. Some duplication is
+# expected for feature-gated trees (chrono, libc-like). WARN to surface
+# them but not block CI; promote to DENY only if H1.1.2 requires.
+multiple-versions = "warn"
+# Wildcards are outright denied — every version must be explicit.
+wildcards = "deny"
+# Highlight policy when emitting graphviz for duplicates.
+highlight = "all"
+# No tree-level skip; ban list is empty today.
+
+[sources]
+# Permitted registries. Anything else is denied (e.g. a private mirror).
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+# No allow-org today — every direct git dependency would need a separate
+# PR with `@maintainer` sign-off.
+
+[output]
+feature-depth = 1
