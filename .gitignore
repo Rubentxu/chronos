@@ -1,7 +1,11 @@
 # Rust
 /target/
 **/*.rs.bk
-Cargo.lock
+# Cargo.lock is intentionally NOT ignored: chronos-mcp is a long-lived
+# application/server binary (v2 wire protocol, MCP server) and reproducibility
+# requires pinning transitive dependencies. Library-only sub-crates inherit
+# workspace resolution; lockfile drift is bounded by `cargo update --workspace`.
+# (H1.1, 2026-09-21)
 
 # IDE
 .idea/

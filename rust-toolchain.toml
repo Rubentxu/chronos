@@ -1,0 +1,20 @@
+# Rust toolchain pinning for reproducible local + CI builds.
+#
+# Channel `stable` matches the 7 GitHub Actions workflows that pin
+# `dtolnay/rust-toolchain@stable` (see .github/workflows/*.yml). Components
+# `clippy, rustfmt` match the CI matrix at .github/workflows/ci.yml:21.
+#
+# MSRV remains 1.75 per workspace.package.rust-version in Cargo.toml; this
+# file pins only the toolchain *channel* (not a specific minor), keeping CI
+# and local builds consistent with the rustc 1.98.1 active on this host.
+#
+# Bit-exact pinning to a specific rustc version can be added later by pinning
+# `channel = "1.98.1"`; today we keep `stable` floating to match existing CI
+# and avoid breaking the current build pipeline.
+#
+# (H1.1, 2026-09-21)
+
+[toolchain]
+channel = "stable"
+components = ["clippy", "rustfmt"]
+profile = "minimal"
