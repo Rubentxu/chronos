@@ -1,268 +1,168 @@
-# AGENTS.md
+# GOAL / INITIATIVE — Completar el roadmap con SDDK en modo AUTO
 
-## 0. Protocolo obligatorio de recuperación y continuidad entre sesiones
+## 1. Objetivo y modalidad de trabajo
 
-**Antes de cualquier cambio, auditoría o agente nuevo**, leer en este orden: [docs/roadmap/STATE.md](docs/roadmap/STATE.md) (puntero a gate activo, baseline, bloqueos y próxima tarea), últimas entradas de [JOURNAL.md](docs/roadmap/JOURNAL.md), [docs/ROADMAP.md](docs/ROADMAP.md) (roadmap operativo único), [CERTIFICATION.md](docs/roadmap/CERTIFICATION.md), [UAT_CATALOG.md](docs/roadmap/UAT_CATALOG.md), `reconstruction-contracts.toml` y los ADR/spec aplicables. Los planes `docs/historico/` son **consulta histórica**: nunca infieras el estado actual desde sus campos ACTIVE/DONE.
+Completa íntegramente el roadmap vigente del proyecto mediante el goal y la iniciativa existentes en JCode (`/initiatives`), utilizando SDDK como sistema canónico de planificación, ejecución, verificación y trazabilidad.
+Trabaja en modo AUTO, mediante ciclos largos y continuos, hasta completar todas las capacidades adoptadas del roadmap.
+La autorización del operador cubre la iniciativa completa: no solicites confirmación después de cada tarea, slice, ciclo, investigación o hito ya comprendido en ella.
+El objetivo es resolver los problemas y entregar funcionalidades verificadas, no avanzar artificialmente entre ciclos ni cerrar gates para mantener el workflow en movimiento.
 
-1. **Grounding de HEAD real:** `git fetch origin && git status --short && git branch --show-current && git rev-parse HEAD && git rev-parse origin/main`; revisar PR/rama activa, últimos commits, logs del SHA actual y el checkpoint del ciclo. STATE contiene un snapshot fechado, no reemplaza Git ni GitHub Actions; si hay drift, actualizar el diagnóstico **antes de actuar**. Nunca sumar trabajo de ramas sin merge como entregado en main.
-2. **Elegir la primera slice desbloqueada** de STATE/ROADMAP. Enunciar su ID, contrato del ledger, UAT positivos/negativos, nivel de certificación, riesgos, dependencias y resultado esperado. Sólo un gate de producto in_progress; ningún "DONE" por archivo/commit sin evidencias reales. Las decisiones técnicas pueden evolucionar mediante ADR explícito, sin rebajar invariantes.
-3. **Preservar el trabajo anterior:** no sobreescribir worktree ajeno, no falsear SHA/timestamps/contadores, no borrar pruebas ni relajar CI para aprobar. Diferenciar `planned`, `implemented_unverified`, `verified`, `blocked`, `not_run`; CERT-4 se concede por perfil de despliegue, no por repo.
-4. **Cierre de sesión obligatorio:** añadir una entrada fechada y append-only a JOURNAL con base/HEAD, tarea y commits, pruebas ejecutadas/no ejecutadas y enlaces a recibos, UAT, nivel CERT, bloqueos y siguiente acción exacta; actualizar STATE con el **puntero** a la primera tarea pendiente y motivo del estado. Conservar resultados del ciclo en el vault/artefactos existentes y respetar la regeneración de índices de la §5.
-5. **Regla docs-only:** reorganizar docs **no** certifica el producto, no convalida REC-C7 ni repara CI/coverage/vault. Para cambios que afecten las rutas del roadmap, verificar que `docs/ROADMAP.md` siga existiendo y que punteros históricos continúen resolviendo; no mover ADRs, specs ni evidencias de ciclo como si fueran planes obsoletos.
+## 2. Agente principal: dirección y orquestación
 
-**Puerta actual al establecer este protocolo (snapshot 2026-09-21):** G0 — recertificación operativa de REC-C7 y corrección de CI/Coverage/Vault. Consultar STATE para comprobar si ya cambió. El roadmap histórico de convergencia NO vuelve a activarse por defecto.
+Actúa exclusivamente como director del workflow.
+Delega toda la carga operativa en los subagentes especializados disponibles: investigación, arquitectura, implementación, testing, seguridad, DevOps, documentación, auditoría e integración.
+Tu responsabilidad es identificar el trabajo pendiente, seleccionar especialistas, establecer contratos de delegación, coordinar dependencias, evaluar resultados y dirigir el siguiente paso.
+Cada delegación debe definir objetivo, alcance, restricciones, criterios de aceptación y entregables verificables.
+Utiliza paralelismo cuando los trabajos sean independientes y sus recursos estén aislados. No permitas modificaciones concurrentes incompatibles sobre el mismo código, estado o historial Git.
 
+## 3. Gates preautorizados: resolver, verificar y continuar
+
+Esta iniciativa preautoriza los `human_gate` ordinarios de continuidad que únicamente soliciten permiso para ejecutar trabajo ya aprobado.
+Cuando SDDK permita registrar esa autorización previa, utilízala para evitar interrupciones repetitivas. No vuelvas a consultar al operador por la misma decisión.
+Ante cualquier gate bloqueado, aplica obligatoriamente esta secuencia:
+
+1. Identifica qué requisito, invariante o condición impide avanzar.
+2. Delega la investigación de la causa raíz.
+3. Determina qué evidencia o cambio es necesario para satisfacer el gate.
+4. Si existe una solución sencilla y válida, delega su implementación.
+5. Si no existe, encarga una investigación profunda de alternativas y, cuando aporte valor, pruebas de concepto acotadas.
+6. Selecciona una solución fundamentada que resuelva el problema sin comprometer los requisitos del roadmap.
+7. Delega la implementación, los tests y la verificación independiente cuando corresponda.
+8. Comprueba que el gate está realmente satisfecho, registra la evidencia y continúa automáticamente.
+
+No confundas preautorización con aprobación técnica: un gate que exige tests, evidencias, integridad, seguridad o condiciones de aceptación debe superar realmente esas comprobaciones.
+No simules una aprobación humana ni modifiques, desactives o eludas gates para obtener un PASS.
+Los gates que exijan una decisión nueva de autoridad, permisos, seguridad, publicación o modificación material de contratos deben respetar el procedimiento de autorización correspondiente.
+
+## 4. Política de resolución de bloqueos
+
+Resolver el bloqueo es parte del trabajo del goal, no una razón para abandonar el ciclo.
+No te detengas ante el primer error ni presentes inmediatamente el problema al operador.
+Delega un diagnóstico reproducible y busca primero una solución compatible con la arquitectura y los contratos existentes.
+Si no resulta suficiente, profundiza: investiga código fuente, documentación, historial, alternativas técnicas y efectos sobre los siguientes hitos. Utiliza especialistas complementarios o spikes cuando permitan reducir incertidumbre.
+No elijas un parche únicamente porque supera un test. Prefiere soluciones que resuelvan la causa raíz, aporten valor real y eviten complejidad innecesaria.
+No avances por la línea de trabajo dependiente hasta resolver y verificar su bloqueo. Si la investigación descubre tareas independientes que pueden progresar sin comprometerlo, puedes delegarlas en paralelo, pero mantén el bloqueo abierto y con responsable hasta su resolución.
+Escala al operador únicamente cuando, después de investigar las alternativas viables, resulte imprescindible una autorización nueva que exceda esta iniciativa. Presenta entonces una decisión concreta, con evidencias y opciones, no una petición genérica de instrucciones.
+
+## 5. Respeto y refinamiento del roadmap
+
+Recupera el roadmap canónico, los WorkItems, las ADR, las especificaciones y los receipts existentes. Reutiliza las capacidades ya demostradas y trabaja únicamente sobre las carencias pendientes.
+Respeta las decisiones y criterios de aceptación vigentes.
+Si una investigación demuestra que una propuesta es incorrecta, contradictoria o técnicamente inadecuada, delega su refinamiento. Documenta la causa, compara alternativas y registra la mejora respecto al diseño original.
+Aplica autónomamente los refinamientos compatibles con los contratos aceptados. Tramita mediante la autoridad correspondiente los cambios materiales de arquitectura, seguridad, fuentes de verdad o criterios normativos.
+No introduzcas nuevas abstracciones, almacenes, orquestadores o protocolos si los mecanismos existentes pueden satisfacer el requisito.
+
+## 6. Uso eficiente de SDDK
+
+Minimiza consultas, latencia, tokens e informes redundantes sin reducir las garantías.
+
+Utiliza la configuración efectiva de SDDK y respeta su contrato de uso del CLI:
+* Ejecuta el bootstrap una vez por contexto válido y comparte un contexto compacto con los subagentes.
+* Asigna un único responsable a cada consulta de ciclo, lease, gate, transición y ledger.
+* Reutiliza información vigente; consulta de nuevo únicamente cuando haya cambios relevantes o lo exijan los contratos de frescura.
+* Prefiere salidas estructuradas y referencias a artefactos frente a volcados extensos de logs.
+* Carga únicamente la documentación y las evidencias necesarias para cada delegación.
+* Durante la implementación, ejecuta pruebas ajustadas al cambio; utiliza la batería completa en los gates que la exijan.
+
+No omitas verificaciones obligatorias para ahorrar llamadas.
+Conserva resultados detallados, receipts y trazabilidad en SDDK. Comunica al operador únicamente avances significativos, hallazgos que cambien el plan, decisiones imprescindibles y el cierre de la iniciativa.
+Los informes de progreso no deben convertirse en puntos de parada.
+
+## 7. Bucle de ejecución continua
+
+Mientras existan requisitos pendientes:
+
+1. Recupera el estado vigente del goal y sus dependencias.
+2. Selecciona el siguiente trabajo desbloqueado.
+3. Delega su caracterización, implementación y verificación.
+4. Investiga y resuelve cualquier bloqueo que aparezca.
+5. Comprueba los criterios de aceptación y los gates obligatorios.
+6. Registra evidencias, commits, receipts y estado de los WorkItems.
+7. Continúa automáticamente con el siguiente trabajo.
+
+No finalices la ejecución porque un subagente termine su tarea, se complete un ciclo o aparezca un problema técnico.
+Si una sesión termina, conserva un checkpoint duradero y reanuda desde él cuando exista un mecanismo de ejecución disponible.
+
+## 8. Criterio de finalización
+
+ Declara la iniciativa `COMPLETED` únicamente cuando todas las capacidades adoptadas del roadmap estén implementadas, integradas y verificadas; los gates obligatorios estén satisfechos; los bloqueos estén resueltos; y el código, las evidencias, los WorkItems y el roadmap reflejen un estado coherente.
+No contabilices pruebas ignoradas, resultados parciales ni gates bloqueados como satisfactorios.
+Respeta los procedimientos legítimos de Git y publicación: no utilices bypasses, bumps ceremoniales ni sustituyas commits expresamente autorizados por otros sin resolver antes su procedencia y autorización.
+
+## Orden de ejecución
+
+Localiza el goal y la iniciativa existentes en JCode, activa SDDK en modo AUTO y dirige mediante subagentes especializados la ejecución completa del roadmap.
+Ante cada bloqueo: investiga → determina la causa raíz → diseña la solución → implementa → verifica → satisface el gate → continúa.
+
+No saltes bloqueos para aparentar progreso. No solicites autorizaciones repetitivas para trabajo ya aprobado. Mantén ciclos largos de desarrollo orientados a resolver problemas y entregar capacidades reales hasta completar la iniciativa.
 ---
 
-Operating rules for any agent (human or AI) working in this repository. Read
-this before touching code.
+# ANEXO — Certificación, trazabilidad y recuperación continua
 
-This file replaces ad-hoc commands. Its purpose is to make every cycle cheap,
-predictable, and proportional to the scope of the change.
+## 1. Principio de continuidad
 
----
+La ejecución autónoma debe producir dos resultados inseparables: capacidades verificadas y un estado duradero que permita saber exactamente dónde continuar.
+El agente principal es responsable de garantizar esa continuidad, pero debe delegar la generación, actualización y comprobación de los documentos en los subagentes correspondientes.
+No detengas un ciclo para redactar informes ceremoniales. Actualiza el estado en los checkpoints relevantes: cierre de un trabajo, resolución o aparición de un bloqueo, decisión arquitectónica, cambio de hito, certificación y finalización de sesión.
 
-## 1. Test topology (one-time audit)
+## 2. Certificaciones y UAT
 
-The repository has five distinct test buckets. Knowing which one to run is
-the single most important decision.
+Utiliza `CERTIFICATIONS.md` y `UAT-MATRIX.md` como contratos de aceptación del proyecto, cuando existan y estén adoptados.
+`CERTIFICATIONS.md` define los perfiles de certificación aplicables, sus requisitos y la evidencia necesaria. Para el proyecto SDDK, contempla Base, Static Enhanced, Runtime Enhanced, Fully Enhanced, Agentic API y JCode Core GA.
+`UAT-MATRIX.md` contiene los escenarios de aceptación del proyecto. Para SDDK, debe conservar la trazabilidad de sus 35 escenarios, incluidos contratos, proveedores reales, agentes, concurrencia, seguridad, recuperación, instalación y publicación.
+Para cualquier otro proyecto, utiliza sus propios perfiles y escenarios adoptados. No impongas automáticamente las certificaciones específicas de SDDK a proyectos que no las contemplen.
+Una funcionalidad implementada no equivale a una funcionalidad certificada.
 
-| Bucket | What lives here | Speed | Count today | When to run |
-|---|---|---|---|---|
-| **A — lib unit** | `#[test]` / `#[tokio::test]` inside `crates/*/src/` | <1 s each | **634 tests** | Default inner loop |
-| **B — per-crate integration** | `crates/<c>/tests/*.rs` (16 files: browser, e2e, ebpf, go, java, js, python, …) | 1-5 s each | 16 files | When the changed crate exposes public API used by integration |
-| **C — chronos-sandbox** | `chronos-sandbox/tests/*.rs` (35 files; **34 of them spawn `chronos-mcp` as a subprocess**) | 5-100 s each | 35 files, ~10-30 min full | Release candidates only |
-| **D — chronos-e2e** | `crates/chronos-e2e/tests/*.rs` (1 file today: ptrace capture) | variable | 1 file | Explicit opt-in, needs root + ptrace kernel |
-| **E — benches** | `crates/chronos-query/benches/`, `crates/chronos-store/benches/` | minutes | 2 | Opt-in on perf changes |
+Cada certificación debe vincularse a requisitos, revisión Git, versión cuando corresponda, entorno, pruebas ejecutadas, resultados y receipts verificables.
+Distingue expresamente entre evidencia obtenida con mocks o Fakes, pruebas de integración, proveedores reales y UAT de extremo a extremo. No sustituyas un nivel obligatorio por otro inferior.
+Cuando un escenario falle, quede bloqueado o no pueda evaluarse, delega su investigación y resolución. No lo marques como satisfactorio para poder avanzar.
 
-`chronos-sandbox` integration tests need a pre-built server. They look up the
-binary in this order (`chronos-sandbox/src/client/tools.rs::McpTestClient::start`):
+## 3. Diario y estado recuperable
 
-1. `CHRONOS_MCP_PATH` env var
-2. `CARGO_BIN_EXE_chronos-mcp` env var (set by `cargo test` when a dev-dep on
-   the binary exists)
-3. `../../target/debug/chronos-mcp` relative to the test exe
-4. Bare `chronos-mcp` in `$PATH`
+Utiliza los siguientes documentos cuando formen parte de la estructura adoptada del proyecto:
+`CURRENT.md` — Puntero operativo
+Debe responder de forma inmediata:
+* ¿Cuál es el goal, hito y trabajo activo?
+* ¿Cuál es el último estado comprobado?
+* ¿Qué bloqueos permanecen abiertos y quién los está investigando?
+* ¿Cuál es la próxima acción concreta?
+`STATE.yaml` — Estado estructurado
 
-If (3) does not exist because `CARGO_TARGET_DIR` is somewhere else, sandbox
-tests fail with `SpawnFailed("No such file or directory")` and **every single
-one panics in fixture setup**. Symptom: hundreds of failures, all in
-`McpTestClient::start`. Fix: build the binary first and export the path:
+Debe identificar el goal, los WorkItems y ciclos relevantes, la revisión Git observada, las delegaciones, los resultados de verificación, las referencias a evidencias y el siguiente trabajo desbloqueado.
+Distingue los hechos comprobados de los estados comunicados por subagentes que todavía no se hayan verificado.
+`SESSION-JOURNAL.md` — Diario cronológico
 
-```bash
-cargo build --bin chronos-mcp
-export CHRONOS_MCP_PATH="$CARGO_TARGET_DIR/debug/chronos-mcp"
-```
+Registra los avances significativos, investigaciones, decisiones, commits, resultados UAT, certificaciones, bloqueos resueltos y pendientes, y siguientes acciones.
+No reproduzcas logs completos, transcripciones ni resultados que ya estén conservados en artefactos de SDDK: registra un resumen y su referencia verificable.
 
-The path (3) lookup uses the **last built** binary, so a stale
-`target/debug/chronos-mcp` silently tests the previous commit. After changing
-anything under `crates/chronos-mcp/src/`, rebuild the binary before running
-bucket C, otherwise a sandbox suite that spawns the server measures the old
-code. `chronos-sandbox/tests/store_open_failure.rs` is the suite that makes this
-visible: it asserts on the server's exit status, so a stale binary fails it.
+## 4. Reconciliación y actualización eficiente
 
----
+Al iniciar o recuperar una sesión:
 
-## 2. Tiered test gates (the rule)
+1. Recupera el checkpoint y los punteros existentes.
+2. Contrástalos con el estado real de SDDK, Git y los receipts.
+3. Identifica únicamente los cambios ocurridos desde el último estado verificado.
+4. Corrige las discrepancias de los documentos de recuperación sin alterar ni fabricar hechos canónicos.
+5. Reanuda las delegaciones desde la última acción válida.
 
-Run **only the buckets you need**. Match the tier to the SDDK path.
+Durante la ejecución, actualiza solamente los campos y entradas afectados. No reconstruyas el diario ni consultes repetidamente todo el roadmap después de cada microtarea.
+Si el proyecto ya dispone de un mecanismo equivalente de estado duradero, reutilízalo. No crees archivos duplicados que representen los mismos hechos con distinta autoridad.
 
-| SDDK path | Scope | Tier required | What to run |
-|---|---|---|---|
-| **B-direct** | Trivial, single crate, no probe/mcp touched | T0 + T1 | fmt + clippy + `--lib` of changed crate |
-| **A-min** | 1-3 crates, no architectural fork | T0 + T2 | T1 + integration of changed crates |
-| **A-lite** | Bounded, cross-cutting | T0 + T2 + T4-smoke | T2 + 1-3 representative sandbox suites |
-| **A-full** | Architectural / new domain | T0 + T3 + T5 | All lib + per-crate integration + full sandbox |
-| Pre-archive / release | Anything | T0 + T3 + T5 | Same as A-full |
+## 5. Responsabilidad del agente principal
 
-| Tier | Command (with `CARGO_TARGET_DIR` honored) | Wall time on this repo |
-|---|---|---|
-| **T0 — lint gate** | `cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings` | ~30 s |
-| **T1 — lib unit only** | `cargo test --workspace --lib --no-fail-fast` | ~5-10 s |
-| **T2 — unit + per-crate integration of changed crates** | `cargo test -p <c1> -p <c2> … --tests --no-fail-fast` | ~10-30 s |
-| **T3 — full unit + per-crate integration (no sandbox)** | `cargo test --workspace --lib --tests --exclude chronos-sandbox --exclude chronos-e2e --no-fail-fast` | ~30-60 s |
-| **T4-smoke — sandbox subset** | `cargo test -p chronos-sandbox --test <one> --test <two>` (pick probes that touch changed code) | ~1-3 min |
-| **T5 — full sandbox** | `cargo test -p chronos-sandbox --no-fail-fast -- --test-threads=1` | ~10-30 min |
+El agente principal debe delegar el mantenimiento de estos documentos, supervisar su coherencia y garantizar que cada handoff contenga el contexto mínimo necesario para continuar.
+Antes de cerrar una sesión o entregar el control a otro agente, comprueba que quedan identificados:
 
-When the cycle changes probe/mcp plumbing (anything that affects how sandbox
-spawns or talks to the server), **T4-smoke is mandatory before merge** even on
-A-min. Sandbox tests are the only signal that exercises the full client ↔
-server round-trip.
+* El último estado realmente verificado.
+* Las capacidades certificadas y las pendientes.
+* Los bloqueos abiertos, su investigación y su responsable.
+* Los trabajos delegados y sus resultados.
+* La siguiente acción exacta para avanzar hacia el goal.
 
-### How to pick the sandbox subset for T4-smoke
+No declares completado un hito por estar marcado como terminado en `CURRENT.md` o `STATE.yaml`. Su aceptación depende de los contratos, gates, pruebas y evidencias canónicas.
 
-1. Run `git diff --name-only main..HEAD` on the cycle branch.
-2. Look at the touched file paths and the affected MCP tool surface.
-3. Pick 2-4 sandbox suites whose names match:
-   - `analytics_tools.rs`, `boundary_conditions.rs` — broad coverage, slow
-   - `e2e_connectivity.rs` — confirms server starts
-   - `program_scenarios.rs` — exercises probe lifecycle on real binaries
-   - `<topic>_tools.rs` — if your change adds/modifies an MCP tool
-4. Document the chosen subset in the apply-checkpoint under
-   `notes[].smoke_subset`.
+## 6. Regla de ejecución
 
-If unsure, run `e2e_connectivity` + `analytics_tools` — they cover start,
-drain, stop, and basic analytics.
-
----
-
-## 3. Sandbox execution rules
-
-- **Pre-build the binary before running any bucket C.** Do not let cargo
-  spawn 35 individual test exes that each retry `cargo build --bin chronos-mcp`
-  on first call. The cache exists; use it.
-- **Always set `CHRONOS_MCP_PATH` explicitly** when `CARGO_TARGET_DIR` is not
-  `target/`. This is the single most common cause of "all tests panic".
-- **Default `--test-threads=1`** for sandbox runs: many tests share a fixture
-  path and `tmpdir()` collisions can produce spooky failures. Lib/integration
-  tests can use parallel threads; they are isolated by `cargo test`.
-- **Do not pass `--no-fail-fast` to clippy** (it does not accept it well) and
-  do **not** redirect `cargo test` output to `/dev/null` — you will lose the
-  panic messages that distinguish "MCP not found" from a real bug.
-
-### Background runs
-
-Long T5 runs should go to background. Rules:
-
-- Set `run_in_background: true` AND a `notify: true` flag (see jcode
-  background-task docs).
-- **Always poll at most every 30 s**, never sleep + tail. Use `bg status` or
-  `bg wait` with a max_wait_seconds.
-- Set `max_wait_seconds <= 600` (10 min) and re-`bg wait` if it elapses.
-- Kill with `bg cancel <task_id>` if progress stalls (>2 min between
-  `test result:` lines).
-- A stalled sandbox run usually means: (a) a real test hangs (kill and
-  inspect the partial log), (b) an MCP subprocess leaked (`pgrep -f
-  chronos-mcp` and `kill`), or (c) the test is waiting on a `tokio::time::sleep`
-  that is intentional. Distinguish by checking the most recent line in the
-  log before killing.
-
----
-
-## 4. Lint, fmt, and pre-existing breakage
-
-The repository accumulated clippy drift on `main` before this file existed
-(see commit history of `feat/m0-truth-first-foundation`). When you join an
-unclean tree:
-
-1. Run T0 first.
-2. If it fails on a site you did not touch, decide:
-   - **Fix in-cycle** (option A): apply the minimum patch, commit as
-     `chore(clippy): fix pre-existing lints blocking -D warnings`, then re-run
-     T0. This is the default.
-   - **File a follow-up cycle** (option B): only if the cascade exceeds ~10
-     sites or has behavior implications. Open a follow-up
-     `m0-preflight-cleanup` (or appropriate) change.
-3. Do **not** `#[allow(...)]` your way out of an unrelated lint cascade. The
-   allow goes into the cycle, becomes noise for the reviewer, and is forgotten.
-
----
-
-## 5. Branch / commit / cycle discipline
-
-- **Trunk = `main`.** All cycles branch off `main`. Gate every cycle on
-  `git fetch origin main && git checkout main && git pull --ff-only`.
-- **One cycle = one branch.** `feat/m0-*` for foundation work,
-  `feat/m<N>-*` for milestone N work, `fix/*` and `chore/*` for short-lived
-  branches.
-- **Commits are reviewable work units.** See `docs/manual-ai/01-core-pattern.md`
-  for the convention. A clippy cascade across 13 crates deserves **one**
-  `chore(clippy): …` commit, not 13.
-- **Archive-manifest SHA rows are generated, not hand-edited.** After the last
-  commit that touches a file listed in any `archive-manifest.md`, run
-  `python3 scripts/regen_manifest_index_shas.py` and confirm with
-  `python3 scripts/regen_manifest_index_shas.py --check` (it rewrites to a
-  fixpoint; the self-referential row is preserved by design). CC#4 in
-  `scripts/check_vault_drift.sh` is the gate; this tool is its repair half.
-- **Update `apply-checkpoint.json`** (in the SDDK vault) after every commit.
-  Include:
-  - Current `head_sha`
-  - Commit list since base
-  - `notes[]` array describing gate results, scope decisions, and any
-    sandbox subset chosen for T4-smoke.
-
----
-
-## 6. Forbidden patterns
-
-- ❌ `cargo test --workspace --tests -- --test-threads=1` run in the foreground
-  with a 50-minute budget. Use tiers.
-- ❌ Editing `docs/propuestas/` (legacy, frozen by repo convention).
-- ❌ Running `cargo fmt` without committing the diff.
-- ❌ Bypassing clippy with module-level `#[allow(clippy::all)]`.
-- ❌ Deleting or rewriting a test to make it pass without recording why in
-  `apply-checkpoint.json`.
-- ❌ Running the full sandbox suite as a smoke check on a docs-only cycle.
-- ❌ Spawning `cargo test` without `CHRONOS_MCP_PATH` when sandbox is in
-  scope.
-
----
-
-## 6.5. Known pre-existing flakes
-
-These tests fail intermittently on `main` without any cycle change. They are
-tracked here so we do not chase them as regressions in every cycle:
-
-| Test | Crate | When it flakes | Reproduction |
-|---|---|---|---|
-| `ptrace_tracer::tests::*` (`test_launch_with_syscall_tracing`, `test_launch_captures_events`, `test_launch_true_and_wait`) | `chronos-native` | The crate's **lib suite must run with `--test-threads=1`**. In parallel the ptrace tests collide: two fail outright and another blocks in `waitpid` until the harness is killed (m9-74 measured it hanging 17 min at 0% CPU on a `futex` wait, still hung after `--skip test_launch_with_syscall_tracing`). Serial: 101 passed in 13 s | Same on `main` (c76b1096) and on every `feat/*` cycle |
-| `test_ptrace_capture` | `chronos-e2e` | Hangs indefinitely (no ptrace permission in this environment) whenever a `--tests` run pulls the crate in. This is why T3 excludes `chronos-e2e`; the crate stays bucket D, opt-in only | Same on `main`; observed 10+ min with no output on a cycle that used the old T3 command |
-
-T3 therefore runs in two halves here — the documented command for everything
-except the ptrace-heavy crate, plus a serial run of that crate:
-
-```bash
-cargo test --workspace --lib --tests --exclude chronos-sandbox --exclude chronos-e2e --no-fail-fast
-cargo test -p chronos-native --lib --test-threads=1
-```
-
-Row removed in m9-74: the two `session_edge_cases` `save_session` timeouts
-(`test_compare_sessions_crash_vs_normal`,
-`test_performance_regression_audit_different_workloads`) were the visible
-symptom of `FIND-M9-73-CAS-PUT-ONE-WRITE-TRANSACTION-PER-EVENT`, not an
-environmental flake. `ContentStore::put_many` now commits a session's events in
-one write transaction, and both tests pass (6/6 in that suite, 65 s).
-
-If a new "flake" appears, first verify it reproduces on `main`:
-
-```bash
-git checkout main && cargo test -p <crate> --lib --no-fail-fast
-```
-
-If it does, treat it as pre-existing and file an M1+ follow-up. If it does
-not, it is a real regression and must be fixed in the current cycle.
-
-## 7. Quick reference
-
-```bash
-# Fastest useful gate (T0 only):
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-
-# Unit tests for one crate (T1 / T2 minimal):
-cargo test -p chronos-domain --lib
-
-# Unit tests for the workspace, no sandbox (T3):
-cargo test --workspace --lib --tests --exclude chronos-sandbox --exclude chronos-e2e --no-fail-fast
-
-# Sandbox smoke (T4) — set the binary path first:
-cargo build --bin chronos-mcp
-export CHRONOS_MCP_PATH="${CARGO_TARGET_DIR:-target}/debug/chronos-mcp"
-cargo test -p chronos-sandbox --test e2e_connectivity --test analytics_tools
-
-# Full sandbox (T5) — only on A-full or pre-archive:
-cargo test -p chronos-sandbox --no-fail-fast -- --test-threads=1
-
-# Vault gates (issue/vault cycles, no Rust):
-python3 scripts/tests/test_regen_manifest_index_shas.py   # unit tests, zero deps
-python3 scripts/regen_manifest_index_shas.py --check      # CC#4 repair-tool check
-bash scripts/check_vault_drift.sh                         # full CC sweep
-./scripts/smoke_test_ccs.sh                               # synthetic-drift smoke (6 checks)
-
-# Build-only check (compile but do not run; use when you suspect breakage):
-cargo test --workspace --lib --tests --no-run
-```
-
-If a command stalls or its output looks the same on two consecutive polls,
-kill it, inspect the partial log, and re-classify the cycle scope before
-re-running.
+Resuelve → verifica → registra la evidencia → actualiza el estado recuperable → continúa.
+No saltes bloqueos para producir avances aparentes. No conviertas la documentación en un gate administrativo adicional que interrumpa los ciclos largos.
+El goal solo termina cuando se cumplen los criterios de aceptación y certificación exigidos por el roadmap; no cuando se agota una sesión o se completa una lista de tareas.
