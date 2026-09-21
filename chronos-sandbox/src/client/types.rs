@@ -813,13 +813,50 @@ pub struct CallGraphNode {
     pub callees: Vec<String>,
 }
 
+/// A directed edge in the call graph (C6.4 — v2 wire DTO).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CallGraphEdge {
+    #[serde(default)]
+    pub from: String,
+    #[serde(default)]
+    pub to: String,
+    #[serde(default)]
+    pub count: u64,
+}
+
+/// Aggregate call-graph statistics (C6.4 — v2 wire DTO).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CallGraphStats {
+    #[serde(default)]
+    pub node_count: u64,
+    #[serde(default)]
+    pub edge_count: u64,
+    #[serde(default)]
+    pub max_depth: u64,
+}
+
 /// Response from debug_call_graph.
+///
+/// C6.4 (REC-C6): the v2 wire DTO is `CallGraph { nodes, edges, stats }`,
+/// not the legacy `{ session_id, max_depth, unique_functions, nodes }`.
+/// `session_id` / `max_depth` / `unique_functions` are kept as
+/// `#[serde(default)]` fields so legacy callers still deserialize (the
+/// wrapper assigns them after parsing); the source of truth for the v2
+/// wire shape is `chronos_services::debug_trace::CallGraph`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallGraphResponse {
+    #[serde(default)]
     pub session_id: String,
+    #[serde(default)]
     pub max_depth: usize,
+    #[serde(default)]
     pub unique_functions: usize,
+    #[serde(default)]
     pub nodes: Vec<CallGraphNode>,
+    #[serde(default)]
+    pub edges: Vec<CallGraphEdge>,
+    #[serde(default)]
+    pub stats: CallGraphStats,
 }
 
 /// A state change between two timestamps.

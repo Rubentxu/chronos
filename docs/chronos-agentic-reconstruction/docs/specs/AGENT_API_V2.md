@@ -61,6 +61,58 @@ DTO validation -> application service -> domain result -> MCP response
 
 No large capture/query algorithms in `server.rs`.
 
+## Current surface (REC-C6 ratification, 2026-09-21)
+
+The live MCP tool surface is **41 tools**, down from 63 at REC-C5 start
+(REC-C5 deleted the 22 v1 aliases in C5.3.2, see regression test
+`crates/chronos-mcp/tests/alias_deletion.rs`). The surface is split
+into two groups:
+
+**12 canonical v2 tools** (the orthogonal primitives defined in this
+spec, plus `session_compare` / `session_explain` / `session_export`):
+
+| Tool | Status | Owner |
+|---|---|---|
+| `session_start` | v2 canonical | REC-C5 |
+| `session_stop` | v2 canonical | REC-C5 |
+| `capabilities` | v2 canonical | REC-C5 |
+| `observe` | v2 canonical | REC-C5 (absorbs `tripwire_create/list/query/delete` + `probe_inject`) |
+| `events_read` | v2 canonical | REC-C5 (absorbs `query_events`, `get_event`) |
+| `execution_query` | v2 canonical | REC-C5 (absorbs `get_call_stack`, `get_execution_summary`, `debug_call_graph`, `debug_detect_races`, `debug_expand_hotspot`, `debug_get_saliency_scores`) |
+| `state_query` | v2 canonical | REC-C5 (absorbs `state_diff`, `debug_get_registers`, `debug_get_memory`, `debug_analyze_memory`, `evaluate_expression`) |
+| `trace_slice` | v2 canonical | REC-C5 (absorbs `debug_find_crash`, `inspect_causality`, `forensic_memory_audit`, `debug_find_variable_origin`) |
+| `hypothesis_test` | v2 canonical | REC-C5 |
+| `session_compare` | v2 canonical | REC-C5 |
+| `session_explain` | v2 canonical | REC-C5 |
+| `session_export` | v2 canonical | REC-C5 |
+
+**29 not-yet-converged neighbours**: working tools that predate the
+v2 spec and have not yet been folded into a v2 canonical. Each
+remains in `ALL_TOOL_NAMES` and is wired to the v2 dispatcher
+infrastructure (chronos-mcp/src/server.rs router), but the v2
+canonical tools above are the preferred entry points. The 29 names
+are tracked in the `crates/chronos-mcp/src/server.rs::ALL_TOOL_NAMES`
+constant and validated against the `#[tool]` router by the
+`toolset_sync_check` test.
+
+Future migration order (one cycle per neighbour group; not in REC-C6
+scope):
+
+1. The `probe_*` family — once a `probe` v2 canonical is designed.
+2. The `browser_probe_*` family — once a `browser` v2 canonical is designed.
+3. The `counterexample_*` family — once an `analysis` v2 canonical is designed.
+4. The `sessions` CRUD family (`session_create`, `session_list`,
+   `session_delete`, etc.) — absorbed by `session_start` /
+   `session_stop` semantics.
+5. The `mutation_lens` / `causal_slice` / `compare_sessions` family —
+   folded into `hypothesis_test` or `session_compare`.
+6. Misc — `get_variables`, `diff`, and any remaining standalone
+   tools.
+
+This future-migration order is documented here so each cycle that
+folds one neighbour group into a v2 canonical has a pre-approved
+direction; the order is not a release commitment.
+
 ## Deprecated aliases and sunset policy (REC-C5)
 
 The 22 v1 aliases below are deprecated shims over the v2 dispatchers. Every

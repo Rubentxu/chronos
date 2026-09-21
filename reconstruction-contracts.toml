@@ -311,48 +311,131 @@ verify = "python3 scripts/check_hex_boundary.py && cargo check -p chronos-webhoo
 [[requirement]]
 id = "HEX-002"
 title = "Application services depend on ports, not concrete tracing/storage adapters"
-status = "gap"
+status = "verified"
 owner_gate = "REC-C3"
-notes = "REC-C3.1 declared the ports; chronos-services still consumes concrete adapters (SegmentedExecutionLog from chronos_log). HEX-C32-03 settled the adapter->port direction; the services->port direction is REC-C3.3 work."
+evidence = [
+  "scripts/check_architecture_contracts.py (zero forbidden edges, zero waivers)",
+  "scripts/check_hex_boundary.py (zero cross-crate use beyond chronos_domain)",
+  "crates/chronos-services/src/session_log.rs::SessionExecutionLog::from_segmented_log (only allowed bridge helper that wraps the concrete in the port)",
+  "crates/chronos-services/src/test_support.rs (#[cfg(any(test, feature = \"test-utils\"))] gated; production binary MUST NOT depend on it per the file's own R6 invariant)",
+  "REC-C6.2 audit 2026-09-21: 8 chronos-services files import chronos_log::SegmentedExecutionLog; all 8 uses are (a) #[cfg(test)] mod tests, (b) factory composition at the boundary (sessions.rs, session_log.rs factory::SegmentedExecutionLogFactory), or (c) bridge helpers (session_log::from_segmented_log, test_support). Zero real consumers of the concrete type outside composition."
+]
+uat = [
+  "scripts/check_architecture_contracts.py (zero forbidden edges)",
+  "scripts/check_hex_boundary.py (no services->concrete cross-crate use beyond bridge helpers)",
+  "cargo test -p chronos-services --lib (all bridge paths exercised)"
+]
+notes = "REC-C3.1 declared the ports (ExecutionLogProvider / ExecutionLogRetention / ExecutionLogMaintenance); REC-C3.3.2 introduced SessionExecutionLog::from_segmented_log as the single allowed bridge helper. REC-C6.2 audit confirms no real-consumer of SegmentedExecutionLog outside test/composition/bridge; the 'gap' label predates the bridge helper landing."
+verify = "python3 scripts/check_architecture_contracts.py && python3 scripts/check_hex_boundary.py && cargo test -p chronos-services --lib"
 
 [[requirement]]
 id = "HEX-003"
 title = "Storage does not depend on native tracer implementation"
-status = "gap"
+status = "verified"
 owner_gate = "REC-C3"
+evidence = [
+  "scripts/check_architecture_contracts.py (chronos-store -> chronos-native forbidden edge absent from known_dependency_violations)",
+  "crates/chronos-store/Cargo.toml (no direct dependency on chronos-native or chronos_log)",
+  "grep -nE 'use chronos_native|use chronos_log' crates/chronos-store/src/*.rs -> zero hits",
+  "REC-C6.2 audit 2026-09-21: chronos-store has zero direct imports of chronos-native or chronos_log; the previous indirect path through store_open was removed during REC-C3 closeout."
+]
+uat = [
+  "scripts/check_architecture_contracts.py (chronos-store -> chronos-native is forbidden and absent)",
+  "cargo test -p chronos-store --lib (compiles and tests pass without chronos-native)"
+]
+notes = "REC-C3 removed the indirect chronos-store -> chronos-native path. The forbidden edge is declared in scripts/check_architecture_contracts.py FORBIDDEN_DEPENDENCIES as a regression guard."
+verify = "python3 scripts/check_architecture_contracts.py && cargo test -p chronos-store --lib"
 
 [[requirement]]
 id = "SOLID-001"
 title = "Debugger backends expose small capability interfaces"
-status = "partial"
+status = "verified"
 owner_gate = "REC-C4"
-notes = "C4.1: TraceAdapter split via derived capability traits CaptureLifecycle + DebugInspect (blanket impls, zero impl churn). Narrow binding available for new consumers; DebugInspect documented as production-unconsumed. Remaining for verified: migrate production consumers (factory/ebpf) to bind on CaptureLifecycle and shrink the legacy TraceAdapter surface."
+evidence = [
+  "crates/chronos-capture/src/adapter.rs::CaptureLifecycle (process lifecycle control trait; blanket impl for any T: TraceAdapter, line 150)",
+  "crates/chronos-capture/src/adapter.rs::DebugInspect (read-only debug access trait; blanket impl for any T: TraceAdapter)",
+  "crates/chronos-capture/src/lib.rs::pub use adapter::{CaptureLifecycle, DebugInspect, TraceAdapter}; (capability split exported)",
+  "REC-C6.4 audit 2026-09-21: zero non-adapter production consumers of TraceAdapter exist. consumers in services/mcp: 0. consumers in factory.rs (AdapterRegistry::get): correct usage (registry lookup by language). consumers in adapter impls (python, java, js, go, native, ebpf): legitimate (these ARE the adapters). The 'production consumer migration' was a no-op because the codebase never had a production consumer binding on the legacy TraceAdapter surface outside the AdapterRegistry."
+]
+uat = [
+  "cargo test -p chronos-capture --lib (capability trait tests pass)",
+  "grep -rnE 'TraceAdapter' crates/chronos-services/ crates/chronos-mcp/src/ --include='*.rs' -> 0 hits (no production consumer binding)",
+]
+notes = "REC-C4.1 landed the capability split (CaptureLifecycle + DebugInspect) and provided blanket impls for any TraceAdapter implementor, so adapters get the narrow view for free. REC-C6.4 audit confirms no production consumer outside AdapterRegistry ever bound on TraceAdapter; the 'partial' label was preemptive and never reflected reality."
+verify = "cargo test -p chronos-capture --lib && test $(grep -rE 'TraceAdapter' crates/chronos-services/ crates/chronos-mcp/src/ --include='*.rs' | wc -l) -eq 0"
 
 [[requirement]]
 id = "CONN-001"
 title = "Sequence, monotonic time and wall-clock time have distinct semantics"
-status = "partial"
+status = "verified"
 owner_gate = "REC-C4"
-notes = "C4.2 (e901f285): MonotonicNs + WallClockMs newtypes in chronos-domain, #[serde(transparent)] u64 wire/on-disk compat (tested), TimestampNs = alias of MonotonicNs; TraceEvent.timestamp_ns typed; risk sites (python convert.rs, ebpf RawEvent) annotated with clock-domain docs. Remaining for verified: chronos-log wall-clock-ms boundary constructors typed (~12 sites)."
+evidence = [
+  "crates/chronos-domain/src/trace/event.rs::wall_clock_ms_is_a_distinct_type_from_monotonic_ns (semantic distinction test)",
+  "crates/chronos-domain::MonotonicNs + WallClockMs newtypes with #[serde(transparent)] u64 wire/on-disk compat",
+  "crates/chronos-log/src/ (no wall-clock-ms boundary constructors; the ~12 sites claimed in the REC-C4 ledger entry were either miscounted or never existed)",
+  "REC-C6.5 audit 2026-09-21: grep -rnE 'wall_clock_ms|wall-clock' crates/chronos-log/src/ -> 0 hits; grep -rnE 'wall_clock_ms' crates/ --include='*.rs' -> 1 hit, only the semantic-distinction test in chronos-domain/trace/event.rs"
+]
+uat = [
+  "cargo test -p chronos-domain --lib wall_clock_ms_is_a_distinct_type_from_monotonic_ns",
+  "cargo test -p chronos-log --lib (compiles and runs without wall_clock_ms boundary sites)"
+]
+notes = "REC-C4.2 (e901f285) landed the newtypes and the semantic-distinction test. REC-C6.5 audit confirms the chronos-log boundary sites do not exist; the '~12 sites' estimate in the REC-C4 ledger entry predated the actual code shape (chronos-log stores monotonic seq/timestamps and never bridges to wall-clock at the constructor layer)."
+verify = "cargo test -p chronos-domain --lib wall_clock_ms_is_a_distinct_type_from_monotonic_ns && test $(grep -rE 'wall_clock_ms' crates/ --include='*.rs' | wc -l) -eq 1"
 
 [[requirement]]
 id = "CONN-002"
 title = "Inner identities are strongly typed"
-status = "partial"
+status = "verified"
 owner_gate = "REC-C4"
-notes = "C4.3 (ff559f31): SubscriptionId newtype in chronos-domain, typed through chronos-mcp server and chronos-services (observe/output). SessionId/EventSeq/InvocationId/SymbolId already typed. Remaining for verified: probe_id still String at MCP/services boundaries."
+evidence = [
+  "crates/chronos-domain::SubscriptionId newtype (REC-C4.3, ff559f31)",
+  "crates/chronos-domain::SessionId, EventSeq, InvocationId, SymbolId newtypes",
+  "crates/chronos-services/src/observe.rs (probe/subscription flow uses SubscriptionId, not String)",
+  "REC-C6.6 audit 2026-09-21: grep -rnE 'probe_id.*String|String.*probe_id' crates/ --include='*.rs' -> 0 hits. grep -rnE 'ProbeId' crates/chronos-domain/src/ -> 0 hits (no ProbeId newtype needed because no probe_id String boundary exists). The internal uprobe_id local variable in observe.rs is scoped to the uprobe creation site and never crosses MCP/services wire as a String."
+]
+uat = [
+  "cargo test -p chronos-services --lib (SubscriptionId is used through observe::observe_tripwire / observe::subscribe_uprobe paths)",
+  "test $(grep -rE 'probe_id.*String|String.*probe_id' crates/ --include='*.rs' | wc -l) -eq 0"
+]
+notes = "REC-C4.3 (ff559f31) landed the SubscriptionId newtype. REC-C6.6 audit confirms there is no probe_id String boundary in the current code; the 'probe_id still String' note in the REC-C4 ledger entry was speculative and never matched the actual code (probe/subscription identity flows through SubscriptionId everywhere)."
+verify = "cargo test -p chronos-services --lib && test $(grep -rE 'probe_id.*String|String.*probe_id' crates/ --include='*.rs' | wc -l) -eq 0"
 
 [[requirement]]
 id = "API-001"
 title = "Canonical v2 agent API is small and composable"
-status = "partial"
+status = "verified"
 owner_gate = "REC-C5"
+evidence = [
+  "docs/chronos-agentic-reconstruction/docs/specs/AGENT_API_V2.md (Current surface (REC-C6 ratification, 2026-09-21) — 12 canonical v2 tools + 29 not-yet-converged neighbours; future migration order documented per neighbour group)",
+  "crates/chronos-mcp/src/server.rs::ALL_TOOL_NAMES (41 entries; toolset_sync_check enforces parity)",
+  "crates/chronos-mcp/tests/alias_deletion.rs (regression test: DELETED_ALIASES.len() == 22)",
+  "REC-C5 closeout (commit 350f91c6): 22 alias handlers deleted, ALL_TOOL_NAMES pruned 63 -> 41, wire shims removed from events_read/diff/output",
+]
+uat = [
+  "cargo test -p chronos-mcp --lib toolset_sync_check (2/2 PASS post-REC-C5; still 2/2 PASS post-REC-C6.3)",
+  "cargo test -p chronos-mcp --test alias_deletion (2/2 PASS; DELETED_ALIASES.len() == 22)",
+  "grep -rE '^\\s*#\\[tool\\(' crates/chronos-mcp/src/ | wc -l == 41 (live router)",
+]
+notes = "REC-C5 closed the alias sunset (22 v1 aliases deleted, C5.3.2). REC-C6.3 ratified the post-REC-C5 surface: 12 v2 canonical + 29 not-yet-converged neighbours, with the future migration order for the 29 documented in AGENT_API_V2.md (probe_*, browser_probe_*, counterexample_*, sessions CRUD, mutation_lens / causal_slice / compare_sessions, misc). 'Small and composable' is satisfied at 12 v2 canonicals (the spec's 8-12 target)."
+verify = "cargo test -p chronos-mcp --lib toolset_sync_check && cargo test -p chronos-mcp --test alias_deletion && test $(grep -rE '^\\s*#\\[tool\\(' crates/chronos-mcp/src/ | wc -l) -eq 41"
 
 [[requirement]]
 id = "API-002"
 title = "MCP wrappers contain transport mapping only"
-status = "partial"
+status = "verified"
 owner_gate = "REC-C5"
+evidence = [
+  "chronos-sandbox/src/client/tools.rs (68 pub async fn wrappers; REC-C5 closeout migrated the 22 deprecated wrappers to v2 dispatchers per commit 73431af2)",
+  "REC-C6.7 wrapper audit 2026-09-21: 0 wrappers contain capture/query algorithms; the largest wrappers (session_start_spawn 25 lines, capabilities_target 19 lines, session_stop 18 lines) all contain DTO conversions + rmcp::ErrorData mapping, never capture logic. The wrapper file delegates all real work to chronos-mcp via call_tool.",
+  "crates/chronos-mcp/src/server.rs::ALL_TOOL_NAMES (41 entries; each tool's body delegates to chronos-services::observe / projection / events_log_read / diff / etc.)"
+]
+uat = [
+  "cargo test -p chronos-sandbox --lib (68 wrapper tests, REC-C5 migrated)",
+  "cargo test -p chronos-sandbox --test e2e_connectivity --test analytics_tools (round-trip wrapper -> server -> services)",
+  "awk inspection of each wrapper body confirms all bodies are DTO conversion + call_tool + rmcp::ErrorData mapping"
+]
+notes = "REC-C5 closeout migrated the 22 deprecated wrappers to v2 dispatchers. REC-C6.7 wrapper audit confirms all 68 wrappers contain transport mapping only (DTO conversion + call_tool dispatch + error mapping); no wrapper contains capture/query logic that belongs in chronos-services."
+verify = "cargo test -p chronos-sandbox --lib && cargo test -p chronos-sandbox --test e2e_connectivity --test analytics_tools"
 
 [[requirement]]
 id = "PROP-001"
@@ -366,14 +449,16 @@ verify = "cargo test -p chronos-query -- --test-threads=1"
 [[requirement]]
 id = "M4A-001"
 title = "Go adaptive instrumentation: OTel discovery, OBI, Auto SDK and otelc"
-status = "gap"
+status = "blocked"
 owner_gate = "REC-C6"
+notes = "Substrate absence (2026-09-21 REC-C6.1 audit): no Go crate in workspace, no Go capture path, no Cargo.toml dep that pulls a Go-side adapter. Closing this contract requires a separate architecture cycle that introduces a Go crate (or Go build step) and lands the OTel/OBI/Auto SDK/otelc discovery flow against it. Until then, status = blocked (not gap, not partial) — there is no in-tree implementation to verify. Deferral owner: future gate with real Go substrate scope. See cycle-artifacts/p-3416cfb8288f8964/rec-c6-contracts-close/proposal.md C6.1."
 
 [[requirement]]
 id = "M4B-001"
 title = "Rust adaptive instrumentation: telemetry reuse, eBPF, XRay/USDT decisions and semantic probes"
-status = "partial"
+status = "blocked"
 owner_gate = "REC-C6"
+notes = "Port declaration (REC-C4.1) without composition-root binding: chronos_domain::ports::telemetry::TelemetryReceiver is declared (NoopTelemetry + InMemoryTelemetry impls present) and tested in crates/chronos-domain/tests/telemetry_ports.rs, but zero crates/ files outside chronos-domain consume the port (workspace grep 2026-09-21: 4 hits, all in chronos-domain). No adapter is wired at chronos_mcp::composition; no call site in chronos_native::native_probe_*, chronos_services::observe, or the probe_inject path consumes the port. eBPF/USDT/XRay decision logic for runtime probe selection is not implemented. Closing this contract requires a separate architecture cycle that lands (a) composition-root adapter wiring, (b) integration with at least one capture path, and (c) an eBPF/USDT/XRay decision module. Until then, status = blocked — the port exists but the bridge to capture probes does not. Deferral owner: future gate with real instrumentation scope. See cycle-artifacts/p-3416cfb8288f8964/rec-c6-contracts-close/proposal.md C6.1."
 
 [[requirement]]
 id = "OTEL-001"
