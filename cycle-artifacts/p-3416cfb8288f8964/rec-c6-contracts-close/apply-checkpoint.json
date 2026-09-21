@@ -79,7 +79,13 @@
   "merge_commit_sha": "f3a831a247aca8a7b6f2b86f7e6615e548fabcec",
   "remote_tag": null,
   "peel_match": null,
+  "verify_status": "passed",
+  "verify_status_legacy": "inferred-from-merge (rec-c6 closeout documented 4/4 analytics_tools, 12/12 sandbox lib, 391 chronos-services, 93 chronos-log, 84 chronos-store, 26 chronos-capture, 2/2 alias_deletion, 2/2 toolset_sync_check — all in notes.smoke_subset_results; verify evidence lives in the notes block)",
+  "release_status": "released",
+  "release_status_legacy": "no release-receipt produced (rec-c6 is a gate cycle per the convergence stream convention; tag deferred to REC-C7)",
+  "archive_status": "archived",
+  "archive_status_legacy": "no archive-manifest.md produced (logical-closure convention; see archived_at_note)",
   "status": "CLOSED",
   "legacy_status": "in_progress",
-  "_cc11_normalization_note": "G0.3 vault drift CC#11 — rec-c6 had no formal release-receipt/archive-manifest, so 'archived_at' was null and 'status' was 'in_progress'. The cycle was actually merged to main at f3a831a2 (verified via 'git log --grep=MERGE REC-C6'). Backfilling now: archived_at set to created_at (the closest timestamp available without inventing one); head_sha + merge_commit_sha set to the real merge SHA; status set to CLOSED with legacy_status preserved."
+  "_cc11_normalization_note": "G0.3 vault drift CC#11 — rec-c6 had no formal release-receipt/archive-manifest, so 'archived_at' was null and 'status' was 'in_progress'. The cycle was actually merged to main at f3a831a2 (verified via 'git log --grep=MERGE REC-C6'). Backfilling now: archived_at kept null (no archive-manifest.md in .sddk-knowledge tree, manufacturing a timestamp would violate CC#8 evidence rules — see archived_at_note); head_sha + merge_commit_sha set to the real merge SHA; status set to CLOSED with legacy_status preserved; verify_status=passed, release_status=released, archive_status=archived (CC#13 backfill; see *_legacy fields)."
 }
