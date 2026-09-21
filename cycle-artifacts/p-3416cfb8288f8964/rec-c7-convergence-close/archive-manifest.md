@@ -73,6 +73,24 @@ Post-convergence roadmap unblocked by `v0.7.112`:
 - **M8 Counterexample shrinking and test intelligence** (CONC-001) — shrinks counterexamples and surfaces property-bundle updates.
 - **M9 Execution Explorer** (UI-001) — interactive query UI over captured runs.
 
+### Correction filed 2026-09-21 — do not act on the bullets above
+
+The four bullets immediately above label **M8/M9 incorrectly** against the canonical ledger (`reconstruction-contracts.toml`). The correct mapping is:
+
+- **M6** OpenTelemetry (OTEL-001, owner_gate=M6, planned).
+- **M7** Differential execution (DIFF-001, owner_gate=M7, planned; depends on M6).
+- **M4-F0** M4 mechanism prerequisites (spikes + capability matrix) — prerequisite for M6.
+- **M8** Counterexample shrinking + test intelligence (NO CONC contract in the ledger; CONC-001 belongs to M9, not M8).
+- **M9** Causal concurrency happens-before (CONC-001, owner_gate=M9, planned).
+- **M4-F1** M4 adaptive instrumentation closure (Go + Rust) — depends on M4-F0, M6, and M8 fixtures; cannot be declared complete without UAT-M4G-01/02 + UAT-M4R-01/02.
+- **M10** Execution Explorer (UI-001, owner_gate=M10, planned).
+- **M11** Multi-language depth (no contract in the ledger yet; created in G0.5 once UAT-M11-XX fixture plan exists).
+- **OPS** Production-ready by deployment profile (not a milestone; CERT-4 gate).
+
+This correction is filed here per AGENTS.md §0.4 (do not rewrite historical cycle records). The bullets above are kept verbatim so the historical record is intact; a future docs-only G0.5 slice may replace them with the correct mapping in its own commit, with a JOURNAL entry linking here. The correct mapping is the authoritative source: `reconstruction-contracts.toml` + `docs/ROADMAP.md` (post-reorg `ec61fa4b`) + `docs/roadmap/JOURNAL.md` row 2 + `docs/roadmap/STATE.md` “Bloqueos adicionales identificados en recuperación”.
+
+See also `cycle-artifacts/p-3416cfb8288f8964/rec-c7-convergence-close/apply-checkpoint.json` → `notes.post_convergence_roadmap_correction_2026_09_21`.
+
 ## Notes
 
 - The annotated tag `v0.7.112` peels to `0be2ec2d` (`refs/tags/v0.7.112 -> d62c27c26e71175a16ed88d2c3c18ad9e66e22b7`), which is the REC-C7 merge commit (the convergence close marker). After the C7.4 archive commit, `HEAD == origin/main == 1fd11d98`. The tag is fixed at the merge commit; that is intentional — v0.7.112 is the convergence close marker, not the post-archive tip. Anyone wanting the post-archive state can `git checkout 1fd11d98`.

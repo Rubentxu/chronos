@@ -27,6 +27,14 @@
       "M8 Counterexample shrinking and test intelligence (CONC-001, owner_gate=M8, planned)",
       "M9 Execution Explorer (UI-001, owner_gate=M9, planned)"
     ],
+    "post_convergence_roadmap_correction_2026_09_21": {
+      "filed_by": "session recovery after roadmap reorganisation commit ec61fa4b",
+      "filed_in_journal": "docs/roadmap/JOURNAL.md row 2 (2026-09-21 resume post-reorg)",
+      "what_was_wrong": "The four post-convergence roadmap bullets above labelled the M8/M9 columns incorrectly against the canonical ledger (reconstruction-contracts.toml). The canonical mapping is: M8 = counterexample shrinking (no CONC contract yet, future slice); M9 = causal concurrency happens-before (CONC-001, owner_gate=M9); M10 = Execution Explorer (UI-001, owner_gate=M10). M4-F0 / M4-F1 are two slices in between (M4-F0 spikes + matrix before M6; M4-F1 closes Go/Rust adaptive instrumentation after M6/M8 supply fixtures).",
+      "why_kept_in_place": "AGENTS.md §0.4 forbids rewriting historical cycle records to look green. The CORRECT mapping is documented in the new docs/ROADMAP.md + docs/roadmap/STATE.md + docs/roadmap/JOURNAL.md (post-reorg) instead. A future docs-only G0.5 slice may update this notes.post_convergence_roadmap array without touching any other field; the change should be its own commit with a 'docs(archive): correct M8/M9/M10 post-convergence mapping' message and a JOURNAL entry linking here.",
+      "do_not_act_on_old_array": "Any reader that needs the correct M8/M9/M10/M11 mapping for planning must consult reconstruction-contracts.toml and docs/ROADMAP.md, not this notes.post_convergence_roadmap array.",
+      "reference": "ROADMAP §G0.5 'M8 != CONC-001/M9, M10=UI-001'"
+    },
     "pre_existing_drift": "scripts/check_vault_drift.sh reports 8 pre-existing CCs drifting on main post-REC-C7: CC#8 (1 line), CC#11 (7), CC#17 (1), CC#18 (7), CC#22 (8), CC#26 (2), CC#39 (1), CC#56 (4) -- 31 drift lines total. The C7 proposal's CC#8/#11/#17/#18/#22/#26/#56 list was missing CC#39 (cycles-index Total cycles vs m9-only archive directory count; structural pre-existing). REC-C7 is doc + contracts.toml + active_gate flip and cannot mask, introduce, or repair vault drift. Tracked as follow-up for the next vault-sweep M-cycle.",
     "subagent_status": "sddk-propose/design sub-agent infra stuck 27+ min startup-queued in this session; REC-C7 proposal + design landed inline. (Same infra issue as REC-C6; documented at cycle level rather than per-slice.)",
     "release_type": "gate (no API change vs v0.7.111; v0.7.112 is the convergence close marker)",
