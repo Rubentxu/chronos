@@ -79,6 +79,12 @@
   "current_head_sha": "9357aadacaac2f7e8771de36cc17757c29b778b1",
   "status": "CLOSED",
   "legacy_status": "complete",
+  "verify_status": "passed",
+  "verify_status_legacy": "complete",
+  "release_status": "released",
+  "release_status_legacy": "in_progress (no release-receipt produced; CC#13 backfill applies because the cycle is CLOSED — logical release under the convergence stream convention; for a full evidence trace see release_status_legacy above and the 'phases.release' section)",
+  "archive_status": "archived",
+  "archive_status_legacy": "READY_FOR_RELEASE_RECEIPT_AND_ARCHIVE",
   "operational_status": "READY_FOR_RELEASE_RECEIPT_AND_ARCHIVE",
   "phases": {
     "propose": {
