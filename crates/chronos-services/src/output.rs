@@ -376,6 +376,24 @@ pub enum ObserveVerb {
     Query,
 }
 
+impl ObserveVerb {
+    /// Snake-case name used as the JSON discriminator tag.
+    ///
+    /// The H1.3 contract test guarantees this helper matches the Serde
+    /// wire format byte-for-byte (see
+    /// `crates/chronos-services/tests/observe_verb_wire.rs`). Clients
+    /// should rely on this helper rather than hard-coding the strings.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ObserveVerb::Create => "create",
+            ObserveVerb::List => "list",
+            ObserveVerb::Update => "update",
+            ObserveVerb::Delete => "delete",
+            ObserveVerb::Query => "query",
+        }
+    }
+}
+
 /// Discriminator for the condition body of an `observe` request.
 ///
 /// Tripwire conditions carry an already-parsed
@@ -1995,6 +2013,21 @@ pub enum SessionStartAction {
     /// `ServiceError::Unsupported` in m7-04 until the domain-layer
     /// attach API lands).
     Attach,
+}
+
+impl SessionStartAction {
+    /// Snake-case name used as the JSON discriminator tag.
+    ///
+    /// The H1.3 contract test guarantees this helper matches the Serde
+    /// wire format byte-for-byte (see
+    /// `crates/chronos-services/tests/session_start_action_wire.rs`).
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SessionStartAction::Spawn => "spawn",
+            SessionStartAction::Load => "load",
+            SessionStartAction::Attach => "attach",
+        }
+    }
 }
 
 /// Input for the v2 `session_start` tool.
