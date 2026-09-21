@@ -56,3 +56,6 @@ $JCODE_SCRATCH_DIR/
 # Loose docs artifacts (working drafts; committed when promoted)
 docs/*.zip
 /.cargo-target/
+
+# otelc compile-time instrumentation build cache (M4-F0/M4G.1 ADR-0007)
+.otelc-build/
