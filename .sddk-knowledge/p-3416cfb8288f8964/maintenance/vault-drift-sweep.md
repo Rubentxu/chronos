@@ -2877,3 +2877,17 @@ adds this cross-check. The class was invisible for as long as it existed
 because a shared store usually *works*: it only fails when one process writes
 a large session while another holds the database, which is a timing accident,
 not an assertion.
+
+**G0.3 re-closure (2026-09-21):** DEBT-C4-04 reported four additional drift
+lines in `chronos-sandbox/src/client/identity.rs` (the test-only
+`with_expected_sha` helper mutating `CHRONOS_MCP_EXPECTED_SHA` via
+`std::env::set_var` / `std::env::remove_var`). Fix: refactor
+`BinaryIdentity::verify_expected_sha` to delegate to a new
+`verify_expected_sha_value(expected: Option<&str>)` method that takes the
+expected SHA explicitly, and rewrite the four tests in `identity::tests` to
+call `verify_expected_sha_value` directly. No more process-global env mutation
+in `identity.rs`. Verification: `cargo test -p chronos-sandbox --lib` →
+12 passed (including all five identity tests); `cargo clippy -p
+chronos-sandbox --all-targets -- -D warnings` → 0 warnings; inline re-run of
+the CC#56 scanner over `chronos-sandbox/` → 0 drift lines remaining. Closes
+DEBT-C4-04 from `maintenance/debt-ledger.md`.
