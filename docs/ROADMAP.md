@@ -5,7 +5,11 @@
 
 ## Active milestone
 
-**REC-C3 — Hexagonal boundary closure — Status: CLOSED (C3.5 residual inversion landed 2026-09-20; zero forbidden edges, zero waivers)**
+**REC-C4 — SOLID capability split + connascence reduction — Status: CLOSED (REC-C4 archive landed 2026-09-20; ratchet at zero, zero waivers)**
+
+**REC-C5 — Canonical Agent API convergence — Status: CLOSED (REC-C5 C5.3.2 landed 2026-09-21; wire surface 63 → 41 tools, ALL_TOOL_NAMES synced with `#[tool]` router; alias_deletion regression test green)**
+
+Next active gate is **REC-C6 — Close unfinished M1–M4 reconstruction contracts**.
 
 REC-C1 and REC-C2 are both CLOSED on `main`:
 
@@ -50,9 +54,9 @@ The `## Convergence sequence` table below reflects this state.
 2. **REC-C1 — ExecutionLog cutover and truthful reads** — CLOSED
 3. **REC-C2 — Legacy evidence/event-path deletion** — CLOSED
 4. **REC-C3 — Hexagonal boundary closure** — CLOSED (2026-09-20, `feat/rec-c3.5-residual-inversion`)
-5. **REC-C4 — SOLID + connascence reduction** — NEXT (active_gate)
-6. **REC-C5 — Canonical Agent API convergence**
-7. **REC-C6 — Close unfinished M1–M4 reconstruction contracts**
+5. **REC-C4 — SOLID + connascence reduction** — CLOSED (2026-09-20, tag `rec-c4-archive`)
+6. **REC-C5 — Canonical Agent API convergence** — CLOSED (2026-09-21, `feat/rec-c5-api-convergence`, wire surface 63 → 41 tools)
+7. **REC-C6 — Close unfinished M1–M4 reconstruction contracts** — NEXT (active gate)
 8. **REC-C7 — Reconstruction convergence close**
 
 Only REC-C7 can unblock official reconstruction **M6 OpenTelemetry correlation + export**.
