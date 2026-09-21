@@ -5,11 +5,11 @@
 
 ## Active milestone
 
-**REC-C4 — SOLID capability split + connascence reduction — Status: CLOSED (REC-C4 archive landed 2026-09-20; ratchet at zero, zero waivers)**
+**REC-C6 — Close unfinished M1–M4 reconstruction contracts — Status: CLOSED (REC-C6 2026-09-21; 9 contracts closed via inline audit + targeted C6.4 enum serde fix; M4A-001/M4B-001 deferred to M4-future as planned)**
 
-**REC-C5 — Canonical Agent API convergence — Status: CLOSED (REC-C5 C5.3.2 landed 2026-09-21; wire surface 63 → 41 tools, ALL_TOOL_NAMES synced with `#[tool]` router; alias_deletion regression test green)**
+**REC-C7 — Reconstruction convergence close — Status: CLOSED (REC-C7 2026-09-21; strict-no-gaps PASSED; wire surface 63 → 41 tools ratified; tag v0.7.112 cut; M6/M7/M8 milestones unblocked)**
 
-Next active gate is **REC-C6 — Close unfinished M1–M4 reconstruction contracts**.
+Convergence phase closed (REC-C0..REC-C7 all CLOSED). Post-convergence roadmap below.
 
 REC-C1 and REC-C2 are both CLOSED on `main`:
 
@@ -56,8 +56,8 @@ The `## Convergence sequence` table below reflects this state.
 4. **REC-C3 — Hexagonal boundary closure** — CLOSED (2026-09-20, `feat/rec-c3.5-residual-inversion`)
 5. **REC-C4 — SOLID + connascence reduction** — CLOSED (2026-09-20, tag `rec-c4-archive`)
 6. **REC-C5 — Canonical Agent API convergence** — CLOSED (2026-09-21, `feat/rec-c5-api-convergence`, wire surface 63 → 41 tools)
-7. **REC-C6 — Close unfinished M1–M4 reconstruction contracts** — NEXT (active gate)
-8. **REC-C7 — Reconstruction convergence close**
+7. **REC-C6 — Close unfinished M1–M4 reconstruction contracts** — CLOSED (2026-09-21, `feat/rec-c6-contracts-close`, 9 contracts closed via inline audit + C6.4 enum serde fix)
+8. **REC-C7 — Reconstruction convergence close** — CLOSED (2026-09-21, `feat/rec-c7-convergence-close`, strict-no-gaps PASSED, tag v0.7.112 cut)
 
 Only REC-C7 can unblock official reconstruction **M6 OpenTelemetry correlation + export**.
 
