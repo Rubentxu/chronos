@@ -6,7 +6,13 @@
   "project_id": "p-3416cfb8288f8964",
   "created_at": "2026-09-21T08:48:08+00:00",
   "archived_at": "2026-09-21T08:51:30+00:00",
-  "findings_introduced": [],
+  "findings_introduced": {
+    "no_action": [],
+    "applied": [],
+    "deferred": [],
+    "_legacy_list_schema_preserved": "G0.3 vault drift CC#11 normalization (additive, preserves legacy). Original list schema (0 entries) preserved at apply-checkpoint.findings_introduced_legacy_list below.",
+    "findings_introduced_legacy_list": []
+  },
   "preconditions": [
     "REC-C6 merged at main @ f3a831a2.",
     "Wire surface 41 tools, ALL_TOOL_NAMES synced with #[tool] router.",
@@ -48,7 +54,8 @@
   "remote_tag_object": "d62c27c26e71175a16ed88d2c3c18ad9e66e22b7",
   "peel_match": true,
   "tag_at_merge_intentional": true,
-  "status": "ready",
+  "status": "CLOSED",
+  "legacy_status": "ready",
   "archive_status": "ready",
   "release_receipt": "cycle-artifacts/p-3416cfb8288f8964/rec-c7-convergence-close/release-receipt.md",
   "archive_manifest": "cycle-artifacts/p-3416cfb8288f8964/rec-c7-convergence-close/archive-manifest.md"
