@@ -1,0 +1,104 @@
+{
+  "cycle_id": "rec-c5-api-convergence",
+  "title": "REC-C5 — Agent API convergence via alias sunset+delete",
+  "summary": "Shrink the MCP tool surface to the canonical v2 agent API (12 v2 + 29 not-yet-converged = 41 tools, was 63). C5.1 sunset markers, C5.2 shrink sandbox test callers, C5.3 delete 22 alias handlers (split into C5.3.1 client migration and C5.3.2 server delete).",
+  "cycle_record": "p-3416cfb8288f8964/rec-c5-api-convergence",
+  "project_id": "p-3416cfb8288f8964",
+  "created_at": "2026-09-20T22:29:25+02:00",
+  "archived_at": null,
+  "findings_introduced": [
+    {
+      "id": "C5.3-MIGRATION-COUPLING",
+      "summary": "C5.2 deferred sandbox client wrapper migration; C5.3 must split into C5.3.1 (client) + C5.3.2 (server delete).",
+      "severity": "high",
+      "priority": "P0",
+      "owner_gate": "REC-C5-C5.3.1",
+      "filed_at": "2026-09-21"
+    },
+    {
+      "id": "FIND-C5.2-1",
+      "summary": "m0_03_ebpf_probe_lifecycle_impl fails both before and after C5.2 migration (per a035a3c9 commit message). Pre-existing flake owned by REC-C3.5 Tren B, NOT introduced by REC-C5.",
+      "severity": "low",
+      "priority": "P3",
+      "owner_gate": "REC-C3.5-Tren-B",
+      "filed_at": "2026-09-20"
+    },
+    {
+      "id": "FIND-C5.2-2",
+      "summary": "Sandbox test_get_execution_summary_busyloop fails when analytics_tools runs immediately after e2e_connectivity under system load (passes in isolation and 3/3 in back-to-back runs).",
+      "severity": "low",
+      "priority": "P3",
+      "owner_gate": "REC-C5 / AGENTS.md §6.5",
+      "filed_at": "2026-09-20"
+    }
+  ],
+  "findings_closed": [],
+  "path": "a-lite",
+  "branch": "feat/rec-c5-api-convergence",
+  "base_sha": "9db697a594241c0f10838c84f72e82fb1ef368b4",
+  "head_sha": "a035a3c9b5dce62b2893a219a16c99aa798aa018",
+  "main_sha_at_start": "9db697a594241c0f10838c84f72e82fb1ef368b4",
+  "current_head_sha": "a035a3c9b5dce62b2893a219a16c99aa798aa018",
+  "status": "in_progress",
+  "operational_status": "C5.3_DELETE_BLOCKED_BY_SANDBOX_CLIENT_MIGRATION",
+  "phases": {
+    "propose": {
+      "status": "complete",
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c5-api-convergence/proposal.md",
+      "commit": "de820196",
+      "summary": "Path A-lite. Three slices: C5.1 sunset markers (done, f9fa14b1), C5.2 shrink sandbox test callers (done, a035a3c9), C5.3 delete 22 alias handlers from server.rs and drop legacy shims (uncommitted working tree)."
+    },
+    "specify": {
+      "status": "pending",
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c5-api-convergence/specification.md",
+      "summary": "Will land after C5.3 design. Required: acceptance criteria per alias; map every test consumer to its v2 caller; pin ALL_TOOL_NAMES length (12 v2 + 29 not-yet-converged = 41, was 63); toolset_sync_check invariant."
+    },
+    "design": {
+      "status": "in_progress",
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c5-api-convergence/design.md",
+      "summary": "C5.3 design surfaces an unstated coupling: chronos-sandbox/src/client/tools.rs has 22 v1 wrapper methods that alias C5.3 to delete. C5.2 explicitly deferred them ('belong to a dedicated slice'). C5.3 must split: C5.3.1 (client migration) then C5.3.2 (server.rs delete commit)."
+    },
+    "tasks": {
+      "status": "pending",
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c5-api-convergence/tasks.md"
+    },
+    "apply": {
+      "status": "in_progress",
+      "working_tree": {
+        "modified": [
+          "crates/chronos-mcp/src/server.rs",
+          "crates/chronos-services/src/diff.rs",
+          "crates/chronos-services/src/events_read.rs"
+        ],
+        "untracked": [
+          ".atl/.skill-registry.cache.json",
+          ".atl/skill-registry.md",
+          "cycle-artifacts/_suspended-rec-c3.3-train-b/",
+          "cycle-artifacts/p-3416cfb8288f8964/rec-c3-hexagonal-closure/",
+          "cycle-artifacts/p-3416cfb8288f8964/rec-c3.3.4-native/",
+          "cycle-artifacts/p-3416cfb8288f8964/rec-c3.5-residual-inversion/",
+          "session-handoff/CIH_H_HANDOFF_2026-09-19_close.md"
+        ]
+      }
+    },
+    "verify": {
+      "status": "pending",
+      "evidence_observed": [
+        "Baseline cargo check -p chronos-mcp --all-targets at HEAD a035a3c9: Finished dev profile in 35.76s (clean, no errors).",
+        "Baseline branch contains 22 alias handlers (chronos-mcp/src/server.rs) and 22 corresponding sandbox client wrappers (chronos-sandbox/src/client/tools.rs).",
+        "Working tree (uncommitted) removes the 22 alias handlers; cargo check with the diff fails on chronos-mcp/tests/sessions_tools.rs:6637 calling server.forensic_memory_audit() and on the 14 sandbox test files using client.<v1_alias>() — 23 call sites across 14 files.",
+        "toolset_sync_check test at server.rs:7911 still references ALL_TOOL_NAMES length; must be revisited once C5.3.1 re-derives the v2-only length."
+      ],
+      "deferred_until": "after C5.3.1"
+    },
+    "release": {
+      "status": "pending"
+    },
+    "archive": {
+      "status": "pending"
+    }
+  },
+  "carry_forward_findings": [],
+  "_legacy_carry_forward_findings_removed_in_favor_of_findings_introduced": "The C5.3-MIGRATION-COUPLING finding moved to findings_introduced (P0, owned by C5.3.1). FIND-C5.2-1/2 moved to findings_introduced (P3 pre-existing flakes).",
+  "next_cycle_recommendation": "After REC-C5 closes, the next active gate is REC-C6 — Close unfinished M1–M4 reconstruction contracts. The contracts.toml will tell which sub-cycles still own partial contracts. After REC-C6, REC-C7 is the strict close gate that unlocks official M6 OpenTelemetry correlation + export."
+}
