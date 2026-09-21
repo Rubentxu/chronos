@@ -23,7 +23,7 @@ Remote verification:
 
 ```
 $ git ls-remote origin main v0.7.112
-0be2ec2d53d9698956ae705938b32b80d7365ad7	refs/heads/main
+770e32aad96b6cb06c61ba87382fed158e41f180	refs/heads/main
 d62c27c26e71175a16ed88d2c3c18ad9e66e22b7	refs/tags/v0.7.112
 ```
 
@@ -34,7 +34,7 @@ $ git rev-parse v0.7.112^{commit}
 0be2ec2d53d9698956ae705938b32b80d7365ad7
 ```
 
-The annotated tag at `d62c27c2` peels to `0be2ec2d` (= this cycle's head). The local peel and remote tag-object SHA match. `HEAD == origin/main`.
+The annotated tag at `d62c27c2` peels to `0be2ec2d` (= the REC-C7 merge commit; the convergence close marker). `HEAD == origin/main == 770e32aa` after the C7.4 archive commit. The tag is fixed at the merge commit; that is intentional — v0.7.112 marks the convergence close, not the post-archive tip. Anyone wanting the post-archive state can `git checkout 770e32aa`.
 
 ## Gate receipts
 
@@ -68,7 +68,7 @@ No new findings introduced by REC-C7. The only finding in the convergence stream
 - V2 `--strict-no-gaps`: PASSED at REC-C7 close (was FAILING at REC-C6 close due to blocked M4 contracts; M4 promotion in `380ca828` flipped them to `planned` under `owner_gate = "M4-future"`).
 - V3 non-strict architecture gate: PASSED.
 - V4 Cargo.toml workspace version: `0.1.1` unchanged (no API change).
-- V5 `git ls-remote origin main v0.7.112`: lines above; `HEAD == origin/main`.
+- V5 `git ls-remote origin main v0.7.112`: lines above; `HEAD == origin/main == 770e32aa` post-C7.4-archive; tag peel `0be2ec2d` is the merge commit (the convergence close marker).
 
 ## Notes
 

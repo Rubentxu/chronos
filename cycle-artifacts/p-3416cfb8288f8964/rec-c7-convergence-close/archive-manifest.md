@@ -19,8 +19,8 @@ archive-manifest: this file
 | status | **CLOSED** |
 | verify | PASS (`380ca828`) |
 | debt-verify | PASS (`380ca828`, no new findings) |
-| release-receipt | tag `v0.7.112` -> `0be2ec2d` |
-| merge | `main == origin/main == 0be2ec2d`, merge commit `0be2ec2d` |
+| release-receipt | tag `v0.7.112` -> `0be2ec2d` (the merge commit; the convergence close marker) |
+| merge | `main == origin/main == 770e32aa` after C7.4 archive commit (tag peel point is the merge commit, not HEAD; that is intentional — v0.7.112 is the convergence close marker, not the post-archive tip) |
 | closed_at | 2026-09-21 |
 
 ## Durable knowledge
@@ -66,7 +66,7 @@ Post-convergence roadmap unblocked by `v0.7.112`:
 
 ## Notes
 
-- The annotated tag `v0.7.112` peels to `0be2ec2d` (`refs/tags/v0.7.112 -> d62c27c26e71175a16ed88d2c3c18ad9e66e22b7`), which is the REC-C7 merge commit. `HEAD == origin/main == 0be2ec2d`.
+- The annotated tag `v0.7.112` peels to `0be2ec2d` (`refs/tags/v0.7.112 -> d62c27c26e71175a16ed88d2c3c18ad9e66e22b7`), which is the REC-C7 merge commit (the convergence close marker). After the C7.4 archive commit, `HEAD == origin/main == 770e32aa`. The tag is fixed at the merge commit; that is intentional — v0.7.112 is the convergence close marker, not the post-archive tip. Anyone wanting the post-archive state can `git checkout 770e32aa`.
 - `--strict-no-gaps` PASSED at REC-C7 close (was FAILING at REC-C6 close). M4A-001/M4B-001 promoted to `planned` under `owner_gate = "M4-future"` with honest substrate-absence notes.
 - `workspace.package.version` left at `0.1.1`; REC-C7 is gate-only (no API change). The next v0.x.y bump lands with the first post-convergence milestone that introduces a public-surface change.
 - Sub-agent infra (MiniMax-M3/M2.7) was unresponsive during this session; propose + design phases were executed inline for both REC-C6 and REC-C7. The actual work landed without subagent delegation. The swarm issue is documented and out of scope for the convergence stream; will be picked up by a follow-up infra cycle if persistent.
