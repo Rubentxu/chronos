@@ -8,7 +8,7 @@
   "path": null,
   "route": null,
   "completed_at": null,
-  "archived_at": null,
+  "archived_at": "2026-09-19T14:45:35+02:00",
   "created_at": "2026-09-19T00:00:00Z",
   "title": "rec-c3-1-application-ports",
   "summary": "Legacy cycle restored by CIH-C; original apply-checkpoint.json missing.",

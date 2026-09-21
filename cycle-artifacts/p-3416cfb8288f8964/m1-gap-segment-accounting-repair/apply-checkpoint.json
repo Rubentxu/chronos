@@ -74,5 +74,6 @@
     "CC#18_rec_c1_7_pre_existing": "rec-c1-7-projection-authority-acceptance missing verify-findings.json (C1.7 gap). gov-* owns the backfill."
   },
   "notes": "Cycle opened off main@4e0a1344 immediately after REC-C1.8 closure, at the user's direction, before starting REC-C2. Root cause fully characterized before any fix: writer counts entries, replay counts records. CLOSED: one unit (entry_count = persisted SegmentEntry count) shared by writer/header/replay; the C1.8 forced-gap UAT is un-ignored and GREEN (2/2); GAP-PERSIST-1..6 added; FIND-C1.8-01 flipped to closed in the REC-C1.8 verify-findings. Closure conventions match rec-c1-5/6/7: archive_status=ready, no .sddk-knowledge/changes/archive/m1-gap-* directory, single-branch cycle, annotated tag m1-gap-segment-accounting-repair. Next: REC-C2.0 (inventory + ratchet).",
-  "remote_tag_peel": "5bd67b79a2cc7784261577ff2043bc50fa9ff472"
+  "remote_tag_peel": "5bd67b79a2cc7784261577ff2043bc50fa9ff472",
+  "archived_at": "2026-09-19T14:45:35+02:00"
 }

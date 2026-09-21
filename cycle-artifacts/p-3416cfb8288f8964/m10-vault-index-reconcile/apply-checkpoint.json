@@ -26,5 +26,6 @@
   },
   "note": "SHAs populated post-commit. This cycle is docs+index only (no Rust changes); head_sha will be the docs commit SHA.",
   "remote_tag": null,
-  "peel_match": null
+  "peel_match": null,
+  "archived_at": "2026-09-15T16:30:54+02:00"
 }

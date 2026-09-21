@@ -74,7 +74,7 @@ Two commits:
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-70-mcp-store-isolation/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
 | source (session store) | `crates/chronos-store/src/storage.rs` | `7971d253211974da6e3f8c268b3c399684493550569f31d50888a26a66673427` |
-| source (mcp server) | `crates/chronos-mcp/src/server.rs` | `1776c4046442aa3a31b568fab0c0138d46159875a8b0cfe03ede61fb913e29a3` |
+| source (mcp server) | `crates/chronos-mcp/src/server.rs` | `c15aa346088f42bed26256a6f8ee12c33873320ae39ae68abc7902f7ab8a045b` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-70-mcp-store-isolation/apply-checkpoint.json` | `619c7367dc623d47ff703fade38c0d042e02b776c8fb0c46f378d4bf3226ab0d` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-70-mcp-store-isolation/verify-report.md` | `ded260435052b8cb7a3737a0462fa0e9498a97f0990d66324a428e7ca1a57403` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-70-mcp-store-isolation/verify-findings.json` | `8ea37a0a336953dd7cec411e85b13f60d4cb06b6ce10ca7b77abf3ea0f2b9ef4` |

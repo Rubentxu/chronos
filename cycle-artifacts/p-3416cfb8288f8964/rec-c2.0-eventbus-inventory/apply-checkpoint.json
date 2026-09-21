@@ -68,5 +68,6 @@
     "CC#18_rec_c1_7_pre_existing": "rec-c1-7-projection-authority-acceptance missing verify-findings.json (C1.7 gap). gov-* owns the backfill."
   },
   "notes": "Opened at the user's direction immediately after M1 closure. C2.0 is inventory + measurement only: no EventBus removal, no behavior change. The ratchet makes the legacy surface monotonically shrinking and names the 7 CANONICAL destructive reads REC-C2 must clear (--strict-legacy). Two real defects surfaced (FIND-C2.0-01/02) and became REC-C2.1 DoD items; the pre-existing red architecture gate (FIND-C2.0-03) was repaired in-cycle per AGENTS.md §4. Next: REC-C2.1 (TripwireFired as ExecutionLog evidence; persist first, derive second, fan-out last).",
-  "remote_tag_peel": "4c7df70e70e268f05de5708d7bdfdb0ede9a30f1"
+  "remote_tag_peel": "4c7df70e70e268f05de5708d7bdfdb0ede9a30f1",
+  "archived_at": "2026-09-19T14:45:35+02:00"
 }

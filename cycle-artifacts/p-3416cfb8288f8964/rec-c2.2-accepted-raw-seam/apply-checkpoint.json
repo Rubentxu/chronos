@@ -138,5 +138,6 @@
   "tag_object": "4b14bb3e",
   "merge_commit": "f02ab311",
   "subject_sha_vs_release_sha": "verify/debt subject = 1619fb25; release/main = f02ab311. The delta is artifacts only and is checkable with: git diff --name-only 1619fb25 f02ab311 | grep -v '^cycle-artifacts/' (empty). The release gate was additionally re-run at f02ab311.",
-  "remote_tag_peel": "f02ab3114e8eedafe167ea1466942c6bc8141c01"
+  "remote_tag_peel": "f02ab3114e8eedafe167ea1466942c6bc8141c01",
+  "archived_at": "2026-09-19T14:45:35+02:00"
 }

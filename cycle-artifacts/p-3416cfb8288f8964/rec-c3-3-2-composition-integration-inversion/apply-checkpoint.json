@@ -10,7 +10,7 @@
   "path": "A-min",
   "route": "A-min",
   "completed_at": "2026-09-18",
-  "archived_at": null,
+  "archived_at": "2026-09-19T14:45:35+02:00",
   "created_at": "2026-09-18T20:07:00Z",
   "title": "REC-C3.3.2 — composition / integration inversion (Tren A)",
   "summary": "Tren A closes the capability-bundle split for chronos_domain::ports::execution_log and the consumer migration in chronos-services. ExecutionLogProvider (canonical evidence) becomes a bundle of three independent ports: ExecutionLogProvider (evidence), ExecutionLogRetention (advance_retained_from), and ExecutionLogMaintenance (flush / compact_retired / metrics). SegmentedRetention + SegmentedMaintenance + InMemoryRetention + InMemoryMaintenance live in chronos-log. SessionExecutionLog in chronos-services holds three Arc<dyn ...> ports + provenance dir. ProviderKind enum + try_adopt constructor + take_over_segmented test bypass + ExecutionLogMaintenanceUnsupported ServiceError are all deleted. The closure eliminates the only narrow maintenance escape hatch left from C3.3.1. Plus the anti-stale-waiver ratchet at crates/chronos-services/tests/c33_25_capability_bundle_ratchet.rs (7 tests, validated by RED->GREEN injection on projection.rs) and a checker hygiene commit removing the stale ExecutionLogProviderShape/NoopExecutionLogProvider placeholders from the REC-C3.3 surface assertion. Tren A is local-only at HEAD (35 commits ahead of origin/main) until PR #31 is merged; remote seal happens at merge time. No tag in this cycle (structural inversion; next cycle earns the tag).",

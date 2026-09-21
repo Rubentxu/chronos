@@ -89,5 +89,6 @@
     "CC#39_pre_existing_intentional": "Grows from 1 to 2 with this cycle's index entry. Remains pre-existing. Belongs in a separate gov-* cycle per user instruction (do NOT silently mask)."
   },
   "notes": "Cycle closed on 8 sub-deliverables (C1.7.0 through C1.7.7). All 5 cycles-of-sub-deliverables GREEN on the wire (1 projection_restart_equivalence + 3 two_consumers + 1 e2e_connectivity smoke + 6 lib projection tests + 348 services lib tests). 3 dual_truth tests remain RED by design — they document the architectural split where the gate lives in the MCP wrapper, not in the service entries. CC#11 (cycle index entry) and CC#13 (cycles page lifecycle) expected PASS at closure. CC#39 grows by 1 (pre-existing), NOT masked per user instruction.",
-  "remote_tag_peel": "6190390d399a3978cbbf7ee7cda77ab4e10019e3"
+  "remote_tag_peel": "6190390d399a3978cbbf7ee7cda77ab4e10019e3",
+  "archived_at": "2026-09-19T14:45:35+02:00"
 }

@@ -54,5 +54,6 @@
   "title": "m9-78 safe attach detach",
   "summary": "Restore the safe-detach contract: session_stop on an attached session wakes the target with SIGSTOP and lets the ptrace loop PTRACE_DETACH instead of killing it. Spawned probes keep SIGKILL. B-direct, tag v0.7.80, merge 009b750. Backfill synthesized 2026-09-14 during m9-79 archival sweep.",
   "remote_tag_peel": "a2c70fe9b68120093313c88386d1ee6c53c5391c",
-  "peel_match": false
+  "peel_match": false,
+  "archived_at": "2026-09-15T13:23:52+02:00"
 }

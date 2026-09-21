@@ -44,7 +44,7 @@
     "crates/chronos-services/src/probe.rs (+160)",
     "crates/chronos-services/src/error.rs (+7)",
     "crates/chronos-mcp/src/server.rs (+16)",
-    "chronos-sandbox/src/client/tools.rs (\u00b18)",
+    "chronos-sandbox/src/client/tools.rs (±8)",
     "chronos-sandbox/tests/session_lifecycle.rs (+34)",
     "docs/manual-ai/en/08-session-management.md (+22)",
     "docs/manual-ai/es/08-gestion-sesiones.md (+23)"
@@ -58,5 +58,6 @@
   "title": "m9-77 attach runtime",
   "summary": "Wire session_start{action=attach} through native probe runtime, services, dispatcher and MCP. Closes the long-standing Unsupported(attach m7+) stub. A-min path, tag v0.7.79, merge 9d53316. Backfill synthesized 2026-09-14 during m9-79 archival sweep.",
   "remote_tag_peel": "4bd2da365d938cff734aa7f287597f854862ea58",
-  "peel_match": true
+  "peel_match": true,
+  "archived_at": "2026-09-15T13:23:52+02:00"
 }

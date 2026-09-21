@@ -118,5 +118,6 @@
   "remote_tag": "rec-c1.5-closure",
   "peel_match": true,
   "note": "Cycle SHAs populated post-merge. The branch feat/rec-c1.5-closure is ready for sddk release + archive.",
-  "remote_tag_peel": "a1a79c80122d3e8a859f44bb29f043f5422e1324"
+  "remote_tag_peel": "a1a79c80122d3e8a859f44bb29f043f5422e1324",
+  "archived_at": "2026-09-19T14:45:35+02:00"
 }
