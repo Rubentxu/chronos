@@ -28,11 +28,13 @@
 //! It is never `"complete"`: a completeness claim nothing backs would be a
 //! Silent Lie.
 //!
-//! ## Offset/limit compatibility
+//! ## Pagination
 //!
-//! The deprecated `query_events` shim translates `offset` into a cursor
-//! position at the MCP boundary and then calls this same dispatcher, so there
-//! is exactly one real read implementation.
+//! Results are paginated via the opaque `cursor` (encoded by
+//! `EventsCursorV1::encode`). The response carries `next_cursor` whenever
+//! more evidence at or after the returned position is available; pass it
+//! back in the next request to continue. A request without a cursor starts
+//! at `seq#0`.
 
 use chronos_domain::{EventType, TraceEvent};
 

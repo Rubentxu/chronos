@@ -216,13 +216,19 @@ async fn probe_drain_firing_count_is_evidence_not_subscription_state() {
     // CIH-E: scope the tripwire to the same session that owns the capture
     // so the canonical-evidence observe pipeline resolves the canonical
     // session from the explicit scope.
+    // REC-C5-C5.2: migrated to the v2 `observe` dispatcher
+    // (verb=create, condition.kind=tripwire, scope=session).
     let created = client
         .call_tool(
-            "tripwire_create",
+            "observe",
             serde_json::json!({
-                "session_id": session_id.clone(),
-                "condition": { "type": "event_type", "event_types": ["function_entry"] },
-                "label": "post-hoc subscription (C2.2 falsification)"
+                "verb": "create",
+                "condition": {
+                    "kind": "tripwire",
+                    "condition": { "type": "event_type", "event_types": ["function_entry"] },
+                    "label": "post-hoc subscription (C2.2 falsification)"
+                },
+                "scope": {"scope": "session", "session_id": session_id.clone()}
             }),
         )
         .await;

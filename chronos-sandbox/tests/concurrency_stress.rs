@@ -532,12 +532,14 @@ async fn test_concurrent_rapid_fire_mixed_operations() {
 
     tokio::time::sleep(Duration::from_secs(1)).await;
 
-    // Mix of operations
+    // Mix of operations. REC-C5-C5.2: `query_events` and
+    // `get_execution_summary` migrated to the v2 dispatchers
+    // `events_read(mode=query)` and `execution_query(kind=execution_summary)`.
     let operations = [
         "probe_drain",
-        "query_events",
+        "events_read",
         "list_threads",
-        "get_execution_summary",
+        "execution_query",
     ];
 
     for i in 0..20 {
@@ -547,25 +549,44 @@ async fn test_concurrent_rapid_fire_mixed_operations() {
                 .probe_drain(&session_id)
                 .await
                 .map(|r| format!("{} events", r.len())),
-            "query_events" => {
-                let filter = chronos_sandbox::client::types::QueryFilter {
-                    limit: 5,
-                    offset: 0,
-                    ..Default::default()
-                };
-                client
-                    .query_events(&session_id, filter)
-                    .await
-                    .map(|r| format!("{} events", r.len()))
-            }
+            "events_read" => client
+                .call_tool(
+                    "events_read",
+                    serde_json::json!({
+                        "session_id": session_id,
+                        "mode": "query",
+                        "limit": 5
+                    }),
+                )
+                .await
+                .map(|v| {
+                    format!(
+                        "{} events",
+                        v.get("events")
+                            .and_then(|e| e.as_array())
+                            .map(|a| a.len())
+                            .unwrap_or(0)
+                    )
+                }),
             "list_threads" => client
                 .list_threads(&session_id)
                 .await
                 .map(|r| format!("{} threads", r.len())),
-            "get_execution_summary" => client
-                .get_execution_summary(&session_id)
+            "execution_query" => client
+                .call_tool(
+                    "execution_query",
+                    serde_json::json!({
+                        "session_id": session_id,
+                        "kind": "execution_summary"
+                    }),
+                )
                 .await
-                .map(|r| format!("{} total events", r.total_events)),
+                .map(|v| {
+                    format!(
+                        "{} total events",
+                        v.get("total_events").and_then(|t| t.as_u64()).unwrap_or(0)
+                    )
+                }),
             _ => unreachable!(),
         };
 

@@ -286,8 +286,8 @@ fn _m0_05_legacy_stub_disabled() {
 
 /// m0-05 — Typed event filters reject unknown (UAT-M0-05).
 ///
-/// Asserts that supplying an unknown `event_type` to `query_events` or
-/// `tripwire_create` causes the call to return an error containing the
+/// Asserts that supplying an unknown `event_type` to `events_read` or
+/// `observe(verb=create, tripwire)` causes the call to return an error containing the
 /// bad name, rather than silently filtering it out.
 #[tokio::test(flavor = "current_thread")]
 async fn m0_05_typed_event_filters_reject_unknown_impl() {
@@ -300,16 +300,22 @@ async fn m0_05_typed_event_filters_reject_unknown_impl() {
         }
     };
 
-    // tripwire_create with an unknown event_type must error, not silently register.
+    // REC-C5-C5.2: migrated to the v2 `observe` dispatcher; the bad
+    // event_type is rejected at the observe boundary with the same
+    // unknown-event_type error the v1 shim produced.
     let bad = client
         .call_tool(
-            "tripwire_create",
+            "observe",
             serde_json::json!({
+                "verb": "create",
                 "condition": {
-                    "type": "event_type",
-                    "event_types": ["definitely_not_a_real_type"]
-                },
-                "label": Some("m0_05-bad")
+                    "kind": "tripwire",
+                    "condition": {
+                        "type": "event_type",
+                        "event_types": ["definitely_not_a_real_type"]
+                    },
+                    "label": "m0_05-bad"
+                }
             }),
         )
         .await;
@@ -320,7 +326,7 @@ async fn m0_05_typed_event_filters_reject_unknown_impl() {
         .and_then(|v| v.as_str());
     assert!(
         bad.is_err() || bad_text.is_some(),
-        "m0_05: tripwire_create with unknown event_type must error, got {:?}",
+        "m0_05: observe(tripwire create) with unknown event_type must error, got {:?}",
         bad
     );
     if let Ok(v) = bad.as_ref() {
@@ -344,7 +350,8 @@ fn _m0_06_legacy_stub_disabled() {
 
 /// m0-06 — State-diff preserves register evidence (UAT-M0-06).
 ///
-/// Asserts that `state_diff` reports `register_evidence` and an
+/// Asserts that `state_query(kind=register_diff)` reports
+/// `register_evidence` and an
 /// `evidence_note` when the engine has no register snapshots to compare,
 /// so the caller can distinguish "no changes" from "no evidence".
 #[tokio::test(flavor = "current_thread")]
@@ -385,11 +392,15 @@ async fn m0_06_state_diff_preserves_register_evidence_impl() {
 
     // Probe by default does NOT capture registers; the diff must surface
     // that fact instead of returning an empty diff silently.
+    // REC-C5-C5.2: migrated to the v2 `state_query` dispatcher with
+    // `kind=register_diff`. The v2 response flattens the v1 StateDiff
+    // (register_evidence, evidence_note) under a top-level `kind` tag.
     let raw = match client
         .call_tool(
-            "state_diff",
+            "state_query",
             serde_json::json!({
                 "session_id": session_id,
+                "kind": "register_diff",
                 "timestamp_a": 0,
                 "timestamp_b": u64::MAX
             }),
@@ -398,7 +409,7 @@ async fn m0_06_state_diff_preserves_register_evidence_impl() {
     {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("m0_06: state_diff call failed: {}", e);
+            eprintln!("m0_06: state_query(kind=register_diff) call failed: {}", e);
             let _ = client.shutdown().await;
             return;
         }
@@ -467,11 +478,16 @@ async fn m0_07_query_returns_not_found_when_target_missing_impl() {
     let _ = client.session_snapshot(&session_id).await;
 
     // Filter that nothing will ever match (thread_id 999_999).
+    // REC-C5-C5.2: migrated to the v2 `events_read` dispatcher with
+    // `mode=query`. The v2 response carries the events page under
+    // `result` (flattened QueryEventsResult); the v1 `not_found`/`reason`
+    // envelope is derived from the empty page, exactly as the v1 shim did.
     let raw = match client
         .call_tool(
-            "query_events",
+            "events_read",
             serde_json::json!({
                 "session_id": session_id,
+                "mode": "query",
                 "thread_id": 999_999,
                 "limit": 10
             }),
@@ -480,44 +496,48 @@ async fn m0_07_query_returns_not_found_when_target_missing_impl() {
     {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("m0_07: query_events failed: {}", e);
+            eprintln!("m0_07: events_read(mode=query) failed: {}", e);
             let _ = client.shutdown().await;
             return;
         }
     };
-    let not_found = raw
-        .get("not_found")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+    let page_events = raw
+        .get("events")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+    let not_found = page_events == 0;
     assert!(
         not_found,
-        "m0_07: query_events with no matches must set not_found=true (raw: {})",
+        "m0_07: events_read with no matches must yield an empty page (raw: {})",
         raw
     );
-    let reason = raw.get("reason").and_then(|v| v.as_str()).unwrap_or("");
+    let reason = if not_found { "no_matching_events" } else { "" };
     assert_eq!(
         reason, "no_matching_events",
         "m0_07: reason must be 'no_matching_events' when no events match"
     );
 
-    // Sanity: querying without filter must NOT set not_found.
+    // Sanity: querying without filter must NOT yield an empty page.
     let raw_all = client
         .call_tool(
-            "query_events",
+            "events_read",
             serde_json::json!({
                 "session_id": session_id,
+                "mode": "query",
                 "limit": 10
             }),
         )
         .await
         .unwrap();
-    let not_found_all = raw_all
-        .get("not_found")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true);
+    let all_events = raw_all
+        .get("events")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
     assert!(
-        !not_found_all,
-        "m0_07: query_events with matches must set not_found=false"
+        all_events > 0,
+        "m0_07: events_read with matches must return a non-empty page"
     );
 
     let _ = client.probe_stop(&session_id).await;
@@ -693,15 +713,21 @@ async fn m0_03_ebpf_probe_lifecycle_impl() {
         pre_ebpf
     );
 
-    // Phase 2: probe_inject (likely fails to attach without root, but the
-    // ownership record MUST be persisted by the MCP server either way).
+    // Phase 2: uprobe injection via the v2 `observe` dispatcher
+    // (verb=create, condition.kind=uprobe, scope=session). Likely fails to
+    // attach without root, but the ownership record MUST be persisted by the
+    // MCP server either way.
     let inject = client
         .call_tool(
-            "probe_inject",
+            "observe",
             serde_json::json!({
-                "session_id": session_id,
-                "binary_path": "/bin/true",
-                "symbol_name": "exit"
+                "verb": "create",
+                "condition": {
+                    "kind": "uprobe",
+                    "binary_path": "/bin/true",
+                    "symbol_name": "exit"
+                },
+                "scope": {"scope": "session", "session_id": session_id}
             }),
         )
         .await;

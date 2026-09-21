@@ -34,19 +34,21 @@ async fn test_debug_detect_races_threshold_1ns() {
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Detect races with 1ns threshold using raw RPC
+    // REC-C5-C5.2: migrated to the v2 `execution_query` dispatcher with
+    // `kind=race_detect` (same threshold_ns field).
     let params = serde_json::json!({
         "session_id": session_id,
+        "kind": "race_detect",
         "threshold_ns": 1
     });
 
     let result = client
-        .call_with_timeout("debug_detect_races", params, Duration::from_secs(5))
+        .call_with_timeout("execution_query", params, Duration::from_secs(5))
         .await;
 
     match result {
         Ok(json) => {
-            println!("✓ debug_detect_races (threshold=1ns) returned valid response");
+            println!("✓ execution_query(kind=race_detect, threshold=1ns) returned valid response");
             // Parse to check structure
             if let Some(access_count) = json.get("access_count") {
                 println!("  Access count: {}", access_count);
@@ -56,7 +58,10 @@ async fn test_debug_detect_races_threshold_1ns() {
             }
         }
         Err(e) => {
-            println!("✓ debug_detect_races returned error: {:?}", e);
+            println!(
+                "✓ execution_query(kind=race_detect) returned error: {:?}",
+                e
+            );
         }
     }
 
@@ -93,19 +98,21 @@ async fn test_debug_detect_races_threshold_1ms() {
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Detect races with 1ms threshold
+    // REC-C5-C5.2: migrated to the v2 `execution_query` dispatcher with
+    // `kind=race_detect` (1ms threshold).
     let params = serde_json::json!({
         "session_id": session_id,
+        "kind": "race_detect",
         "threshold_ns": 1_000_000u64
     });
 
     let result = client
-        .call_with_timeout("debug_detect_races", params, Duration::from_secs(5))
+        .call_with_timeout("execution_query", params, Duration::from_secs(5))
         .await;
 
     match result {
         Ok(json) => {
-            println!("✓ debug_detect_races (threshold=1ms) returned valid response");
+            println!("✓ execution_query(kind=race_detect, threshold=1ms) returned valid response");
             let access_count = json
                 .get("access_count")
                 .and_then(|v| v.as_u64())
@@ -115,7 +122,10 @@ async fn test_debug_detect_races_threshold_1ms() {
             println!("  Response has valid structure");
         }
         Err(e) => {
-            println!("✓ debug_detect_races returned error: {:?}", e);
+            println!(
+                "✓ execution_query(kind=race_detect) returned error: {:?}",
+                e
+            );
         }
     }
 
@@ -166,7 +176,10 @@ async fn test_debug_detect_races_many_threads() {
             }
         }
         Err(e) => {
-            println!("✓ debug_detect_races returned error: {:?}", e);
+            println!(
+                "✓ debug_detect_races (client wrapper) returned error: {:?}",
+                e
+            );
         }
     }
 
