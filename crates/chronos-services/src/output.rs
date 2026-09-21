@@ -1584,7 +1584,8 @@ pub struct ExportResult {
 /// - `Query` — formerly `query_events`. Cursor-based, paginated read
 ///   with filters (event types, thread, time range, function pattern).
 /// - `ById`  — formerly `get_event`. Single-event lookup by id.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 #[schemars(rename_all = "snake_case")]
 pub enum EventsReadKind {
     Query,
