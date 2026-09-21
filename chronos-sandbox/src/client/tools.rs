@@ -691,17 +691,39 @@ impl McpSession {
 
         let response = self.rpc_client.call_tool("events_read", params).await?;
 
-        // v2 EventsReadOutput::Query wraps {events[], total_matching?,
-        // returned_count?, next_cursor?, evidence_advancement?, session_id?}.
-        // v1 QueryEventsResponse = {total_matching, returned_count,
-        // next_offset, events}.
+        // REC-C8 (G0.4 fix): the v2 server wraps query-mode results inside
+        // an outer `{result: {events: [...], next_offset, total_matching},
+        // mode, completeness, ...}` envelope (see `EventsReadOutput::Query`
+        // in `crates/chronos-services/src/output.rs`). Reading `events`
+        // from the inner JSON root is what the client did before the C5.2
+        // migration and that is what was failing T1 integration with
+        // `RpcError("missing field 'events'")`. The wire smoke
+        // `/tmp/g0.4-wire-smoke` confirmed this exact shape against the
+        // real `chronos-mcp` binary (see exploration-report.md §11).
+        //
+        // We mirror the v2 envelope: an outer `V2Query { result: V2Result }`
+        // and read `v2.result.events`. The other top-level fields
+        // (`mode`, `completeness`, `next_cursor`, `provenance`,
+        // `retention`, `session_id`, `tail`) are preserved on the wire
+        // for MCP clients that need them, but the sandbox `query_events`
+        // API only exposes the `Vec<TraceEvent>` slice.
+        #[derive(serde::Deserialize)]
+        struct V2Result {
+            events: Vec<TraceEvent>,
+            #[serde(default)]
+            #[allow(dead_code)]
+            total_matching: Option<u64>,
+            #[serde(default)]
+            #[allow(dead_code)]
+            next_offset: Option<u64>,
+        }
         #[derive(serde::Deserialize)]
         struct V2Query {
-            events: Vec<TraceEvent>,
+            result: V2Result,
         }
         let v2: V2Query = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
-        Ok(v2.events)
+        Ok(v2.result.events)
     }
 
     /// Get event — retrieves detailed information about a specific trace event.

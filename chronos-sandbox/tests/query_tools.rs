@@ -58,9 +58,16 @@ async fn test_query_events_after_probe_stop() {
     // Debug: print first few events
     println!("First 3 events:");
     for (i, e) in events.iter().take(3).enumerate() {
+        // REC-C8 (G0.4 fix): the v2 wire shape exposes the function name
+        // inside `location.function`, not as a top-level `function` field.
+        let func = e
+            .location
+            .get("function")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         println!(
             "  [{}] event_id={}, type={}, function={:?}",
-            i, e.event_id, e.event_type, e.function
+            i, e.event_id, e.event_type, func
         );
     }
 
@@ -74,9 +81,16 @@ async fn test_query_events_after_probe_stop() {
     );
 
     println!("✓ query_events returned {} events", events.len());
+    // REC-C8 (G0.4 fix): the v2 wire shape exposes the function name
+    // inside `location.function`, not as a top-level `function` field.
+    let first_function = first
+        .location
+        .get("function")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     println!(
         "  First event: id={}, type={}, function={:?}",
-        first.event_id, first.event_type, first.function
+        first.event_id, first.event_type, first_function
     );
 
     // Query with limit

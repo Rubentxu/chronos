@@ -61,18 +61,25 @@ async fn test_get_event_after_probe_stop() {
     // Verify the response has expected structure
     println!("✓ get_event returned: {:?}", event_detail);
 
-    // Should have event_id, timestamp_ns, thread_id, type, location
+    // REC-C8 (G0.4 fix): the v2 server wraps the by_id payload inside
+    // `{event: {...}, mode, provenance, session_id}`. The fields are
+    // nested under `event`, not at the root of the response.
+    let inner_event = event_detail.get("event").expect("envelope should have 'event' field");
     assert!(
-        event_detail.get("event_id").is_some(),
-        "Should have event_id"
+        inner_event.get("event_id").is_some(),
+        "Should have event_id (inside 'event' envelope)"
     );
     assert!(
-        event_detail.get("timestamp_ns").is_some(),
-        "Should have timestamp_ns"
+        inner_event.get("timestamp_ns").is_some(),
+        "Should have timestamp_ns (inside 'event' envelope)"
     );
     assert!(
-        event_detail.get("thread_id").is_some(),
-        "Should have thread_id"
+        inner_event.get("thread_id").is_some(),
+        "Should have thread_id (inside 'event' envelope)"
+    );
+    assert!(
+        event_detail.get("mode").and_then(|v| v.as_str()) == Some("by_id"),
+        "envelope mode should be 'by_id'"
     );
 
     client.shutdown().await.ok();

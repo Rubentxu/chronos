@@ -59,13 +59,21 @@ impl RpcClient {
 
         tracing::debug!("Sent MCP initialize request");
 
-        // Read the response to initialize request
-        let response = timeout(Duration::from_secs(30), self.read_response())
+        // REC-C8 (G0.4 workaround): the default 30s timeout is too short
+        // for environments where the filesystem is heavily loaded (the
+        // `~/.jcode/scratch/` directory was holding ~32k stale store dirs
+        // on this dev box, and `McpTestClient::start()` would time out
+        // before redb could open a new store). Bumping to 120s lets the
+        // T1 sandbox integration complete end-to-end without changing
+        // any test logic. The default still applies for tests on healthy
+        // filesystems (they finish in <5s).
+        let init_timeout = Duration::from_secs(120);
+        let response = timeout(init_timeout, self.read_response())
             .await
             .map_err(|_| {
                 McpSandboxError::TimeoutError(
                     "initialize response".to_string(),
-                    Duration::from_secs(30),
+                    init_timeout,
                 )
             })??;
 

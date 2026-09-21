@@ -261,7 +261,16 @@ async fn test_query_events_function_pattern_glob() {
 /// QF5: test_query_events_offset_pagination
 /// Probe test_busyloop, query page1 (limit=10, offset=0) and page2 (limit=10, offset=10).
 /// Assert: no overlapping event_ids between pages.
+///
+/// REC-C8 (G0.4 status): this test exercises the v1 `QueryFilter.offset`
+/// field, which was retired by C5.2 in favor of cursor-based pagination
+/// (`next_cursor`). The sandbox `query_events()` wrapper now rejects
+/// `offset > 0` with a typed error at `chronos-sandbox/src/client/tools.rs:670`.
+/// This test is **ignored** in T1 sandbox integration (M1+ follow-up to
+/// migrate to cursor pagination); per §0.4 additivity we keep the body
+/// instead of deleting it.
 #[tokio::test]
+#[ignore = "G0.4: legacy pre-C5.2 offset pagination; migrate to cursor next_cursor (M1+)"]
 async fn test_query_events_offset_pagination() {
     let fixture = McpSession::fixture_path("test_busyloop")
         .expect("test_busyloop fixture not found - run cargo build first");
@@ -347,6 +356,7 @@ async fn test_query_events_offset_pagination() {
 /// Probe test_add (exits quickly), wait 2s, get total count N.
 /// Query with offset=N+1000, assert returns empty array (not error).
 #[tokio::test]
+#[ignore = "G0.4: legacy pre-C5.2 offset pagination; migrate to cursor next_cursor (M1+)"]
 async fn test_query_events_offset_beyond_total() {
     let fixture = McpSession::fixture_path("test_add")
         .expect("test_add fixture not found - run cargo build first");
@@ -489,6 +499,7 @@ async fn test_query_events_combined_filters() {
 /// Probe test_busyloop, query limit=5, offset=0 and limit=5, offset=5.
 /// Assert: no overlap.
 #[tokio::test]
+#[ignore = "G0.4: legacy pre-C5.2 offset pagination; migrate to cursor next_cursor (M1+)"]
 async fn test_query_events_limit_exact_pagination() {
     let fixture = McpSession::fixture_path("test_busyloop")
         .expect("test_busyloop fixture not found - run cargo build first");
@@ -623,9 +634,14 @@ async fn test_get_event_at_first_and_last() {
         .await
         .expect("get_event for first event failed");
 
+    // REC-C8 (G0.4 fix): the v2 server wraps the by_id payload inside
+    // `{event: {...}, mode, ...}` — the event_id is nested under `event`.
+    let first_inner = first_detail
+        .get("event")
+        .expect("envelope should have 'event' field");
     assert!(
-        first_detail.get("event_id").is_some(),
-        "First event should have event_id"
+        first_inner.get("event_id").is_some(),
+        "First event should have event_id (inside 'event' envelope)"
     );
     println!("✓ get_event first event_id={} works", first_event_id);
 
@@ -636,9 +652,13 @@ async fn test_get_event_at_first_and_last() {
         .await
         .expect("get_event for last event failed");
 
+    let last_inner = last_detail
+        .get("event")
+        .expect("envelope should have 'event' field");
+
     assert!(
-        last_detail.get("event_id").is_some(),
-        "Last event should have event_id"
+        last_inner.get("event_id").is_some(),
+        "Last event should have event_id (inside 'event' envelope)"
     );
     println!("✓ get_event last event_id={} works", last_event_id);
 
