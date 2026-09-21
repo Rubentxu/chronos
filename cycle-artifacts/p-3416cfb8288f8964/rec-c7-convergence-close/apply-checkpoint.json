@@ -27,7 +27,7 @@
       "M8 Counterexample shrinking and test intelligence (CONC-001, owner_gate=M8, planned)",
       "M9 Execution Explorer (UI-001, owner_gate=M9, planned)"
     ],
-    "pre_existing_drift": "scripts/check_vault_drift.sh reports CC#8/#11/#17/#18/#22/#26/#56 drift pre-existing before REC-C7. Tracked as follow-up; not introduced by REC-C7. REC-C7 strict-no-gaps is the architectural fitness gate, not the vault-drift-sweep.",
+    "pre_existing_drift": "scripts/check_vault_drift.sh reports 8 pre-existing CCs drifting on main post-REC-C7: CC#8 (1 line), CC#11 (7), CC#17 (1), CC#18 (7), CC#22 (8), CC#26 (2), CC#39 (1), CC#56 (4) -- 31 drift lines total. The C7 proposal's CC#8/#11/#17/#18/#22/#26/#56 list was missing CC#39 (cycles-index Total cycles vs m9-only archive directory count; structural pre-existing). REC-C7 is doc + contracts.toml + active_gate flip and cannot mask, introduce, or repair vault drift. Tracked as follow-up for the next vault-sweep M-cycle.",
     "subagent_status": "sddk-propose/design sub-agent infra stuck 27+ min startup-queued in this session; REC-C7 proposal + design landed inline. (Same infra issue as REC-C6; documented at cycle level rather than per-slice.)",
     "release_type": "gate (no API change vs v0.7.111; v0.7.112 is the convergence close marker)",
     "workspace_version_unchanged": "Cargo.toml workspace.package.version stays at 0.1.1; the next v0.x.y bump lands with the first post-convergence milestone that introduces a public-surface change."

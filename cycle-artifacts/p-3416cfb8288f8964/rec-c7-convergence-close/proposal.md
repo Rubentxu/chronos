@@ -68,7 +68,7 @@ must pass to close. It currently passes; the cycle preserves that.
   M6/M7/M8 and remain `planned` (OTEL-001 / DIFF-001 / CONC-001
   / UI-001). Closing them is the post-convergence roadmap.
 - We do not propose fixing the pre-existing vault drift
-  (CC#8/#11/#17/#18/#22/#26/#56). That is documented in
+  (CC#8/#11/#17/#18/#22/#26/#39/#56). That is documented in
   `cycle-artifacts/p-3416cfb8288f8964/rec-c7-convergence-close/notes.md`
   as a follow-up for a future gate.
 - We do not propose a #[allow(...)] cascade for any clippy drift
@@ -96,7 +96,7 @@ All `human_gate`s pre-approved per the user's standing instruction
 - M7 Differential execution v2 (DIFF-001).
 - M8 Counterexample shrinking and test intelligence (CONC-001).
 - M9 Execution Explorer (UI-001).
-- Pre-existing vault drift remediation (CC#8/#11/#17/#18/#22/#26/#56).
+- Pre-existing vault drift remediation (CC#8/#11/#17/#18/#22/#26/#39/#56).
 - The 29 not-yet-converged API neighbours documented in
   AGENT_API_V2.md (one cycle per neighbour group when the canonical
   v2 equivalent is designed).

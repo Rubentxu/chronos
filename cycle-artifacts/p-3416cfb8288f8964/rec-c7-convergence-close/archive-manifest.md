@@ -33,14 +33,23 @@ No new findings. The only finding touched by REC-C7 was `FIND-C6-001` (C5.3.1 en
 
 ## Pre-existing drift, not masked
 
-Measured, not asserted. `bash scripts/check_vault_drift.sh` on `main` before the closure edits versus after:
+Measured, not asserted. `bash scripts/check_vault_drift.sh` ran post-REC-C7 close (HEAD = `bd4b40e9`, tag peel `0be2ec2d`):
 
 ```text
-before REC-C7: CC#8 (1), CC#11 (1), CC#17 (1), CC#18 (1), CC#22 (1), CC#26 (1), CC#56 (1)   -> 7 CCs drifting (pre-existing)
-after REC-C7:  CC#8 (1), CC#11 (1), CC#17 (1), CC#18 (1), CC#22 (1), CC#26 (1), CC#56 (1)   -> 7 CCs drifting (pre-existing, unchanged)
+DRIFT detected (CC#48):
+DRIFT: CC#8  reported 1 drift lines
+DRIFT: CC#11 reported 7 drift lines
+DRIFT: CC#17 reported 1 drift lines
+DRIFT: CC#18 reported 7 drift lines
+DRIFT: CC#22 reported 8 drift lines
+DRIFT: CC#26 reported 2 drift lines
+DRIFT: CC#39 reported 1 drift lines
+DRIFT: CC#56 reported 4 drift lines
 ```
 
-REC-C7 is intentionally doc-only + contracts.toml + active_gate flip. It **cannot** mask, introduce, or repair vault drift. All seven drifting CCs were pre-existing on `main` at REC-C6 merge and remain so at REC-C7 close; they will be filed as a follow-up M-cycle (M11 or whichever owns the next vault sweep).
+Eight CCs drifting on `main` post-REC-C7: CC#8 (1), CC#11 (7), CC#17 (1), CC#18 (7), CC#22 (8), CC#26 (2), CC#39 (1), CC#56 (4). Total drift lines: 31.
+
+REC-C7 is intentionally doc-only + contracts.toml + active_gate flip. It **cannot** mask, introduce, or repair vault drift. Earlier closeout notes (REC-C5 and C7 proposal) listed CC#8/#11/#17/#18/#22/#26/#56 as seven pre-existing CCs — the actual count was already 8 (CC#39 was missing from those notes; CC#39 is the cycles-index `Total cycles` vs the m9-only archive directory count, structural pre-existing). The drift line counts above are the post-REC-C7 ground truth and will be filed as a follow-up M-cycle (M11 or whichever owns the next vault sweep).
 
 ## Convergence sequence complete
 
