@@ -311,15 +311,40 @@ verify = "python3 scripts/check_hex_boundary.py && cargo check -p chronos-webhoo
 [[requirement]]
 id = "HEX-002"
 title = "Application services depend on ports, not concrete tracing/storage adapters"
-status = "gap"
+status = "verified"
 owner_gate = "REC-C3"
-notes = "REC-C3.1 declared the ports; chronos-services still consumes concrete adapters (SegmentedExecutionLog from chronos_log). HEX-C32-03 settled the adapter->port direction; the services->port direction is REC-C3.3 work."
+evidence = [
+  "scripts/check_architecture_contracts.py (zero forbidden edges, zero waivers)",
+  "scripts/check_hex_boundary.py (zero cross-crate use beyond chronos_domain)",
+  "crates/chronos-services/src/session_log.rs::SessionExecutionLog::from_segmented_log (only allowed bridge helper that wraps the concrete in the port)",
+  "crates/chronos-services/src/test_support.rs (#[cfg(any(test, feature = \"test-utils\"))] gated; production binary MUST NOT depend on it per the file's own R6 invariant)",
+  "REC-C6.2 audit 2026-09-21: 8 chronos-services files import chronos_log::SegmentedExecutionLog; all 8 uses are (a) #[cfg(test)] mod tests, (b) factory composition at the boundary (sessions.rs, session_log.rs factory::SegmentedExecutionLogFactory), or (c) bridge helpers (session_log::from_segmented_log, test_support). Zero real consumers of the concrete type outside composition."
+]
+uat = [
+  "scripts/check_architecture_contracts.py (zero forbidden edges)",
+  "scripts/check_hex_boundary.py (no services->concrete cross-crate use beyond bridge helpers)",
+  "cargo test -p chronos-services --lib (all bridge paths exercised)"
+]
+notes = "REC-C3.1 declared the ports (ExecutionLogProvider / ExecutionLogRetention / ExecutionLogMaintenance); REC-C3.3.2 introduced SessionExecutionLog::from_segmented_log as the single allowed bridge helper. REC-C6.2 audit confirms no real-consumer of SegmentedExecutionLog outside test/composition/bridge; the 'gap' label predates the bridge helper landing."
+verify = "python3 scripts/check_architecture_contracts.py && python3 scripts/check_hex_boundary.py && cargo test -p chronos-services --lib"
 
 [[requirement]]
 id = "HEX-003"
 title = "Storage does not depend on native tracer implementation"
-status = "gap"
+status = "verified"
 owner_gate = "REC-C3"
+evidence = [
+  "scripts/check_architecture_contracts.py (chronos-store -> chronos-native forbidden edge absent from known_dependency_violations)",
+  "crates/chronos-store/Cargo.toml (no direct dependency on chronos-native or chronos_log)",
+  "grep -nE 'use chronos_native|use chronos_log' crates/chronos-store/src/*.rs -> zero hits",
+  "REC-C6.2 audit 2026-09-21: chronos-store has zero direct imports of chronos-native or chronos_log; the previous indirect path through store_open was removed during REC-C3 closeout."
+]
+uat = [
+  "scripts/check_architecture_contracts.py (chronos-store -> chronos-native is forbidden and absent)",
+  "cargo test -p chronos-store --lib (compiles and tests pass without chronos-native)"
+]
+notes = "REC-C3 removed the indirect chronos-store -> chronos-native path. The forbidden edge is declared in scripts/check_architecture_contracts.py FORBIDDEN_DEPENDENCIES as a regression guard."
+verify = "python3 scripts/check_architecture_contracts.py && cargo test -p chronos-store --lib"
 
 [[requirement]]
 id = "SOLID-001"
