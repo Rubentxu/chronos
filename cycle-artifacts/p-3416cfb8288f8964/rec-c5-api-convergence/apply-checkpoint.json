@@ -6,34 +6,68 @@
   "project_id": "p-3416cfb8288f8964",
   "created_at": "2026-09-20T22:29:25+02:00",
   "archived_at": "2026-09-21T07:11:53+02:00",
-  "findings_introduced": [
-    {
-      "id": "C5.3-MIGRATION-COUPLING",
-      "summary": "C5.2 deferred sandbox client wrapper migration; C5.3 must split into C5.3.1 (client) + C5.3.2 (server delete).",
-      "severity": "high",
-      "priority": "P0",
-      "owner_gate": "REC-C5-C5.3.1",
-      "filed_at": "2026-09-21",
-      "closed_at": "2026-09-21",
-      "closed_in_commit": "350f91c6"
-    },
-    {
-      "id": "FIND-C5.2-1",
-      "summary": "m0_03_ebpf_probe_lifecycle_impl fails both before and after C5.2 migration (per a035a3c9 commit message). Pre-existing flake owned by REC-C3.5 Tren B, NOT introduced by REC-C5.",
-      "severity": "low",
-      "priority": "P3",
-      "owner_gate": "REC-C3.5-Tren-B",
-      "filed_at": "2026-09-20"
-    },
-    {
-      "id": "FIND-C5.2-2",
-      "summary": "Sandbox test_get_execution_summary_busyloop fails when analytics_tools runs immediately after e2e_connectivity under system load (passes in isolation and 3/3 in back-to-back runs).",
-      "severity": "low",
-      "priority": "P3",
-      "owner_gate": "REC-C5 / AGENTS.md §6.5",
-      "filed_at": "2026-09-20"
-    }
-  ],
+  "findings_introduced": {
+    "no_action": [],
+    "applied": [
+      {
+        "id": "C5.3-MIGRATION-COUPLING",
+        "summary": "C5.2 deferred sandbox client wrapper migration; C5.3 must split into C5.3.1 (client) + C5.3.2 (server delete).",
+        "severity": "high",
+        "priority": "P0",
+        "owner_gate": "REC-C5-C5.3.1",
+        "filed_at": "2026-09-21",
+        "closed_at": "2026-09-21",
+        "closed_in_commit": "350f91c6"
+      }
+    ],
+    "deferred": [
+      {
+        "id": "FIND-C5.2-1",
+        "summary": "m0_03_ebpf_probe_lifecycle_impl fails both before and after C5.2 migration (per a035a3c9 commit message). Pre-existing flake owned by REC-C3.5 Tren B, NOT introduced by REC-C5.",
+        "severity": "low",
+        "priority": "P3",
+        "owner_gate": "REC-C3.5-Tren-B",
+        "filed_at": "2026-09-20"
+      },
+      {
+        "id": "FIND-C5.2-2",
+        "summary": "Sandbox test_get_execution_summary_busyloop fails when analytics_tools runs immediately after e2e_connectivity under system load (passes in isolation and 3/3 in back-to-back runs).",
+        "severity": "low",
+        "priority": "P3",
+        "owner_gate": "REC-C5 / AGENTS.md §6.5",
+        "filed_at": "2026-09-20"
+      }
+    ],
+    "_legacy_list_schema_preserved": "G0.3 vault drift CC#11 normalization (additive, preserves legacy). Original list schema (3 entries) preserved at apply-checkpoint.findings_introduced_legacy_list below.",
+    "findings_introduced_legacy_list": [
+      {
+        "id": "C5.3-MIGRATION-COUPLING",
+        "summary": "C5.2 deferred sandbox client wrapper migration; C5.3 must split into C5.3.1 (client) + C5.3.2 (server delete).",
+        "severity": "high",
+        "priority": "P0",
+        "owner_gate": "REC-C5-C5.3.1",
+        "filed_at": "2026-09-21",
+        "closed_at": "2026-09-21",
+        "closed_in_commit": "350f91c6"
+      },
+      {
+        "id": "FIND-C5.2-1",
+        "summary": "m0_03_ebpf_probe_lifecycle_impl fails both before and after C5.2 migration (per a035a3c9 commit message). Pre-existing flake owned by REC-C3.5 Tren B, NOT introduced by REC-C5.",
+        "severity": "low",
+        "priority": "P3",
+        "owner_gate": "REC-C3.5-Tren-B",
+        "filed_at": "2026-09-20"
+      },
+      {
+        "id": "FIND-C5.2-2",
+        "summary": "Sandbox test_get_execution_summary_busyloop fails when analytics_tools runs immediately after e2e_connectivity under system load (passes in isolation and 3/3 in back-to-back runs).",
+        "severity": "low",
+        "priority": "P3",
+        "owner_gate": "REC-C5 / AGENTS.md §6.5",
+        "filed_at": "2026-09-20"
+      }
+    ]
+  },
   "findings_closed": [
     "C5.3-MIGRATION-COUPLING"
   ],
@@ -43,7 +77,8 @@
   "head_sha": "9357aadacaac2f7e8771de36cc17757c29b778b1",
   "main_sha_at_start": "9db697a594241c0f10838c84f72e82fb1ef368b4",
   "current_head_sha": "9357aadacaac2f7e8771de36cc17757c29b778b1",
-  "status": "complete",
+  "status": "CLOSED",
+  "legacy_status": "complete",
   "operational_status": "READY_FOR_RELEASE_RECEIPT_AND_ARCHIVE",
   "phases": {
     "propose": {
