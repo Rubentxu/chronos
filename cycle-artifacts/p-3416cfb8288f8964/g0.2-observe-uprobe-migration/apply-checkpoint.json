@@ -1,0 +1,32 @@
+{
+  "cycle_id": "g0.2-observe-uprobe-migration",
+  "route": "A-min",
+  "status": "CLOSED",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "complete",
+  "head_sha": "13495faee3c6a6ec25ea1b8dab42b06c6624858a",
+  "base_sha": "c27765bd1acf421f9fc7a8a4cf8c4cdd824daee4",
+  "main_sha": "13495faee3c6a6ec25ea1b8dab42b06c6624858a",
+  "tier_required": "T0+T1",
+  "created_at": "2026-09-21",
+  "title": "g0.2-observe-uprobe-migration",
+  "summary": "No code changes required: probe_inject → observe(verb='create', condition.kind='uprobe') migration was already done in m7-02. The G0.2 cycle pins the negative contract of the observe tool surface with 2 typed-error tests in tests/observe_uprobe.rs (test_observe_with_invalid_verb_returns_typed_error, test_observe_uprobe_against_nonexistent_session_returns_typed_error). Wire smoke /tmp/g0.2-wire-smoke (3/3 GREEN against real chronos-mcp binary) confirms 3 contracts: schema (ObserveVerb snake_case), serde (tagged-enum ObserveScopeWire), JSON-RPC client (call_tool converts MCP errors to RpcError).",
+  "cc_delta": {
+    "closed": [
+      "UAT-G0-02 (observe uprobe migration wire contract)"
+    ],
+    "introduced": []
+  },
+  "findings_closed": [
+    "FIND-G0.2-OBSERVE-UPROBE-MIGRATION-CONTRACT-PIN"
+  ],
+  "findings_introduced": {
+    "no_action": []
+  },
+  "note": "SHAs verified via git cat-file -e. Tag v0.7.112 peel 0be2ec2d intact. Sub-bug 'call_tool must return Ok' assumption in tests/observe_uprobe.rs was a latent G0.2 regression that surfaced as 0/2 failures; fixed retroactively in G0.4 cycle as part of the C5.2 sandbox-client work.",
+  "remote_tag": "v0.7.112",
+  "remote_tag_peel": "0be2ec2d53d9698956ae705938b32b80d7365ad7",
+  "peel_match": true,
+  "archived_at": "2026-09-21T15:04:11+02:00"
+}

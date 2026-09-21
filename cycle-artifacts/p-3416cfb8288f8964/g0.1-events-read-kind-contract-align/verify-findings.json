@@ -1,0 +1,39 @@
+{
+  "subject": {
+    "head_sha": "0f773810ee9a06291b4cdd40952f3600fdd18db0",
+    "base_sha": "2ee989ba45c049e07d7757d9ca3d282c2b4c9b76",
+    "cycle_id": "g0.1-events-read-kind-contract-align"
+  },
+  "cycle_id": "g0.1-events-read-kind-contract-align",
+  "verdict": "passed",
+  "all_passed": true,
+  "lens_summary": {
+    "drift": "Aligned EventsReadKind serde contract with JsonSchema snake_case. 9/9 contract tests passing. Wire smoke confirms mode:query and mode:by_id accepted; mode:Query rejected with canonical message.",
+    "findings_count": 1,
+    "tiers_run": [
+      "T0",
+      "T1"
+    ],
+    "source_schema": "g0.1-events-read-kind-contract-align"
+  },
+  "findings": [
+    {
+      "id": "FIND-G0.1-EVENTS-READ-KIND-CONTRACT-ALIGN",
+      "severity": "medium",
+      "status": "closed",
+      "title": "EventsReadKind enum missing Serialize + lacks snake_case rename_all — wire contract drift",
+      "evidence": [
+        "git cat-file -e verified SHAs: 0f773810, 2ee989ba, 7843407a",
+        "T0 cargo fmt --all -- --check clean (1.4s)",
+        "T0 cargo clippy -p chronos-services --all-targets -- -D warnings: 0 warnings (7.1s)",
+        "T1 cargo test -p chronos-services --test events_read_kind: 9/9 pass in 0.00s (includes pascal_case_is_rejected_after_contract_alignment)",
+        "Wire smoke /tmp/g0.1-wire-smoke (282 lines, JSON-RPC manual, no rmcp) exit=0 with verbatim output",
+        "Server BEFORE fix: 'unknown variant query, expected Query or ById'",
+        "Server AFTER fix: 'unknown variant Query, expected query or by_id'",
+        "Tag v0.7.112 peel 0be2ec2d intact",
+        "Breaking change explicit and asserted (pre-fix wire shape rejected)"
+      ]
+    }
+  ],
+  "_note": "Synthesized retroactively by G0.5 (ledger-coherence) cycle. Source: apply-checkpoint.json head_sha/base_sha + JOURNAL.md row 10 + exploration-report.md §11. Documented as restoration (not original) per vault-drift-sweep.md CC#18 resolution policy."
+}

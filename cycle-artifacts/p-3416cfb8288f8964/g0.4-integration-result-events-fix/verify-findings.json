@@ -1,0 +1,48 @@
+{
+  "subject": {
+    "head_sha": "b44504edfd8b93ad7c4f3d4d30aeea4181c570ac",
+    "base_sha": "c81ca08c7a19956c6bda2ee3bbaba0399c7aec7d",
+    "cycle_id": "g0.4-integration-result-events-fix"
+  },
+  "cycle_id": "g0.4-integration-result-events-fix",
+  "verdict": "passed",
+  "all_passed": true,
+  "lens_summary": {
+    "drift": "Closed the C5.2 migration gap in the sandbox client: query_events wrapper now reads v2 envelope (result.events) instead of root-level events. TraceEvent/GetEventResponse mirror the v2 wire shape. 36/36 sandbox tests passing (12 lib + 24 integration across 7 suites).",
+    "findings_count": 2,
+    "tiers_run": [
+      "T0",
+      "T1"
+    ],
+    "source_schema": "g0.4-integration-result-events-fix"
+  },
+  "findings": [
+    {
+      "id": "FIND-G0.4-RESULT-EVENTS-MIGRATION-GAP",
+      "severity": "high",
+      "status": "closed",
+      "title": "C5.2 migration gap: query_events read events at root vs server publishes result.events",
+      "evidence": [
+        "git cat-file -e verified SHAs: b55efb8f, 3935b0d0, b44504ed, a28421c5",
+        "Wire smoke /tmp/g0.4-wire-smoke (402 lines, JSON-RPC manual, no rmcp) against real chronos-mcp binary: inner keys = ['completeness', 'gap_summary', 'mode', 'next_cursor', 'provenance', 'result', 'retention', 'session_id', 'tail']; events nested in result",
+        "T0 cargo clippy -p chronos-sandbox --all-targets -- -D warnings: 0 warnings",
+        "T1 cargo test -p chronos-sandbox --lib: 12/12",
+        "T1 sandbox integration suites: query_tools 1/1, event_tools 3/3, query_filters 6/6 + 3 ignored legacy, observe_uprobe 2/2 (G0.2 regression fixed), probe_drain_canonical 4/4, e2e_connectivity 1/1, probe_lifecycle_edge_cases 7/7 = 24/24 + 12 lib = 36/36",
+        "Tag v0.7.112 peel 0be2ec2d intact",
+        "Pre-existing failure (NOT regression): probe_inject 4/4 fails on main @ c81ca08c (verified by git checkout main + re-run) — m7-02 wrapper migration debt, pre-C5.2 tests expect 'probe_inject: capability: ebpf-uprobe' prefix"
+      ]
+    },
+    {
+      "id": "FIND-G0.4-OBSERVE-UPROBE-RPC-ERROR-REGRESSION",
+      "severity": "medium",
+      "status": "closed",
+      "title": "G0.2 regression in tests/observe_uprobe.rs: assumed Ok(body) but sandbox client converts to Err(RpcError)",
+      "evidence": [
+        "tests/observe_uprobe.rs rewritten from expect('call_tool must return Ok') to match Err(McpSandboxError::RpcError)",
+        "rpc.rs:153-165 confirmed: RpcClient::call_tool converts both JSON-RPC error envelopes AND MCP result.isError=true to Err(RpcError)",
+        "T1 cargo test -p chronos-sandbox --test observe_uprobe: 2/2 (was 0/2 pre-fix)"
+      ]
+    }
+  ],
+  "_note": "Synthesized retroactively by G0.5 (ledger-coherence) cycle. Source: apply-checkpoint.json head_sha/base_sha + JOURNAL.md row 12 + exploration-report.md §5. Documented as restoration (not original) per vault-drift-sweep.md CC#18 resolution policy."
+}
