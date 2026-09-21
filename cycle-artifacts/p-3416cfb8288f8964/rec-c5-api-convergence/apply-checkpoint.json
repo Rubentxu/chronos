@@ -5,7 +5,7 @@
   "cycle_record": "p-3416cfb8288f8964/rec-c5-api-convergence",
   "project_id": "p-3416cfb8288f8964",
   "created_at": "2026-09-20T22:29:25+02:00",
-  "archived_at": null,
+  "archived_at": "2026-09-21T07:11:53+02:00",
   "findings_introduced": [
     {
       "id": "C5.3-MIGRATION-COUPLING",
@@ -13,7 +13,9 @@
       "severity": "high",
       "priority": "P0",
       "owner_gate": "REC-C5-C5.3.1",
-      "filed_at": "2026-09-21"
+      "filed_at": "2026-09-21",
+      "closed_at": "2026-09-21",
+      "closed_in_commit": "350f91c6"
     },
     {
       "id": "FIND-C5.2-1",
@@ -32,73 +34,67 @@
       "filed_at": "2026-09-20"
     }
   ],
-  "findings_closed": [],
+  "findings_closed": [
+    "C5.3-MIGRATION-COUPLING"
+  ],
   "path": "a-lite",
   "branch": "feat/rec-c5-api-convergence",
   "base_sha": "9db697a594241c0f10838c84f72e82fb1ef368b4",
-  "head_sha": "a035a3c9b5dce62b2893a219a16c99aa798aa018",
+  "head_sha": "350f91c6db25cd742d4f98e57c4f642c901a4209",
   "main_sha_at_start": "9db697a594241c0f10838c84f72e82fb1ef368b4",
-  "current_head_sha": "a035a3c9b5dce62b2893a219a16c99aa798aa018",
-  "status": "in_progress",
-  "operational_status": "C5.3_DELETE_BLOCKED_BY_SANDBOX_CLIENT_MIGRATION",
+  "current_head_sha": "350f91c6db25cd742d4f98e57c4f642c901a4209",
+  "status": "complete",
+  "operational_status": "READY_FOR_RELEASE_RECEIPT_AND_ARCHIVE",
   "phases": {
     "propose": {
       "status": "complete",
       "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c5-api-convergence/proposal.md",
       "commit": "de820196",
-      "summary": "Path A-lite. Three slices: C5.1 sunset markers (done, f9fa14b1), C5.2 shrink sandbox test callers (done, a035a3c9), C5.3 delete 22 alias handlers from server.rs and drop legacy shims (uncommitted working tree)."
+      "summary": "Path A-lite. Three slices: C5.1 sunset markers (done, f9fa14b1), C5.2 shrink sandbox test callers (done, a035a3c9), C5.3 delete 22 alias handlers from server.rs and drop legacy shims (closed across C5.3.1 + C5.3.2)."
     },
     "specify": {
-      "status": "pending",
+      "status": "complete",
       "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c5-api-convergence/specification.md",
-      "summary": "Will land after C5.3 design. Required: acceptance criteria per alias; map every test consumer to its v2 caller; pin ALL_TOOL_NAMES length (12 v2 + 29 not-yet-converged = 41, was 63); toolset_sync_check invariant."
+      "commit": "b8aa1b9c",
+      "summary": "AC-31-1..6 (C5.3.1 wrappers) and AC-32-1..7 (C5.3.2 deletions) all closed. ALL_TOOL_NAMES = 41 entries. Wire surface 63 → 41. toolset_sync_check passes both as a unit test (2/2) and via integration (alias_deletion.rs 2/2)."
     },
     "design": {
-      "status": "in_progress",
+      "status": "complete",
       "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c5-api-convergence/design.md",
-      "summary": "C5.3 design surfaces an unstated coupling: chronos-sandbox/src/client/tools.rs has 22 v1 wrapper methods that alias C5.3 to delete. C5.2 explicitly deferred them ('belong to a dedicated slice'). C5.3 must split: C5.3.1 (client migration) then C5.3.2 (server.rs delete commit)."
+      "commit": "e96f5a1a",
+      "summary": "Wrapper-first split implemented exactly as designed: C5.3.1 rewires sandbox client wrappers to v2 dispatchers (commit 73431af2); C5.3.2 then deletes the server alias handlers (commit 350f91c6) without breaking any consumer."
     },
     "tasks": {
-      "status": "pending",
-      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c5-api-convergence/tasks.md"
+      "status": "complete",
+      "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c5-api-convergence/tasks.md",
+      "summary": "Tasks implicit in the design.md wrapper-first split. No separate tasks.md file required."
     },
     "apply": {
-      "status": "in_progress",
-      "working_tree": {
-        "modified": [
-          "crates/chronos-mcp/src/server.rs",
-          "crates/chronos-services/src/diff.rs",
-          "crates/chronos-services/src/events_read.rs"
-        ],
-        "untracked": [
-          ".atl/.skill-registry.cache.json",
-          ".atl/skill-registry.md",
-          "cycle-artifacts/_suspended-rec-c3.3-train-b/",
-          "cycle-artifacts/p-3416cfb8288f8964/rec-c3-hexagonal-closure/",
-          "cycle-artifacts/p-3416cfb8288f8964/rec-c3.3.4-native/",
-          "cycle-artifacts/p-3416cfb8288f8964/rec-c3.5-residual-inversion/",
-          "session-handoff/CIH_H_HANDOFF_2026-09-19_close.md"
-        ]
-      }
+      "status": "complete",
+      "commits": [
+        {"id": "73431af2", "message": "refactor(sandbox): migrate 24 deprecated MCP wrappers to v2 dispatcher (REC-C5-C5.3.1)"},
+        {"id": "350f91c6", "message": "refactor(mcp): delete 22 deprecated alias handlers and update ALL_TOOL_NAMES to 41 (REC-C5-C5.3.2)"}
+      ],
+      "summary": "Both apply commits landed. C5.3.1: 24 wrappers (22 spec-listed + 2 extemporaneous) migrated to v2 router. C5.3.2: 22 alias handlers deleted from server.rs; ALL_TOOL_NAMES reduced to 41 entries synced with the live router; alias_deletion.rs regression test added."
     },
     "verify": {
-      "status": "pending",
+      "status": "complete",
       "evidence_observed": [
-        "Baseline cargo check -p chronos-mcp --all-targets at HEAD a035a3c9: Finished dev profile in 35.76s (clean, no errors).",
-        "Baseline branch contains 22 alias handlers (chronos-mcp/src/server.rs) and 22 corresponding sandbox client wrappers (chronos-sandbox/src/client/tools.rs).",
-        "Working tree (uncommitted) removes the 22 alias handlers; cargo check with the diff fails on chronos-mcp/tests/sessions_tools.rs:6637 calling server.forensic_memory_audit() and on the 14 sandbox test files using client.<v1_alias>() — 23 call sites across 14 files.",
-        "toolset_sync_check test at server.rs:7911 still references ALL_TOOL_NAMES length; must be revisited once C5.3.1 re-derives the v2-only length."
-      ],
-      "deferred_until": "after C5.3.1"
+        "T0 + clippy + workspace check clean (no warnings, no errors).",
+        "cargo test -p chronos-mcp --lib --no-fail-fast: 84/84 passed.",
+        "cargo test -p chronos-sandbox --lib --no-fail-fast: 12/12 passed.",
+        "cargo test -p chronos-mcp --test alias_deletion --no-fail-fast: 2/2 passed (alias_deletion_set_has_22_entries + no_alias_handler_remains_in_server_rs).",
+        "toolset_sync_check::all_tool_names_matches_router_count passes (const vs router both = 41).",
+        "toolset_sync_check::router_has_expected_minimum_tool_count passes (>= 41)."
+      ]
     },
     "release": {
-      "status": "pending"
+      "status": "in_progress"
     },
     "archive": {
       "status": "pending"
     }
   },
   "carry_forward_findings": [],
-  "_legacy_carry_forward_findings_removed_in_favor_of_findings_introduced": "The C5.3-MIGRATION-COUPLING finding moved to findings_introduced (P0, owned by C5.3.1). FIND-C5.2-1/2 moved to findings_introduced (P3 pre-existing flakes).",
-  "next_cycle_recommendation": "After REC-C5 closes, the next active gate is REC-C6 — Close unfinished M1–M4 reconstruction contracts. The contracts.toml will tell which sub-cycles still own partial contracts. After REC-C6, REC-C7 is the strict close gate that unlocks official M6 OpenTelemetry correlation + export."
+  "next_cycle_recommendation": "After REC-C5 closes the agent API surface, the next active gate is REC-C6 — Close unfinished M1–M4 reconstruction contracts. The contracts.toml will tell which sub-cycles still own partial contracts. After REC-C6, REC-C7 is the strict close gate that unlocks official M6 OpenTelemetry correlation + export."
 }
