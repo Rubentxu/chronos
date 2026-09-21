@@ -110,10 +110,21 @@ async fn test_debug_call_graph_after_probe_stop() {
 
     // === Assertions ===
     assert_eq!(graph.session_id, session_id, "session_id should match");
-    assert_eq!(graph.max_depth, 10, "max_depth should be 10");
-    // unique_functions is u64; >=0 is always true — replaced with non-zero check via println below.
+    // C6.4 (REC-C6): v2 wire DTO doesn't echo max_depth as an output
+    // field; the request was sent with max_depth=10 and the server
+    // bounded the traversal internally. We assert the wrapper survived
+    // the round-trip instead of asserting on max_depth.
+    // The v2 execution_query::call_graph implementation may return an
+    // empty graph for short-lived fixtures (test_add exits cleanly in
+    // ~1s with ~140 events but no captured call frames); the wrapper
+    // test only validates the round-trip, not the call-graph density.
 
-    println!("✓ Call graph: {} unique functions", graph.unique_functions);
+    let function_count = if !graph.nodes.is_empty() {
+        graph.nodes.len() as u64
+    } else {
+        graph.stats.node_count
+    };
+    println!("✓ Call graph: {} functions", function_count);
 
     if !graph.nodes.is_empty() {
         println!("  Functions found:");

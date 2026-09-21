@@ -1068,6 +1068,7 @@ pub struct CausalSliceOutput {
 /// - `Causality` — formerly `inspect_causality`.
 /// - `MemoryAudit` — formerly `forensic_memory_audit`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 #[schemars(rename_all = "snake_case")]
 pub enum TraceSliceKind {
     VariableOrigin,
@@ -1139,6 +1140,7 @@ pub enum TraceSliceOutput {
 /// - `MemoryAnalysis` — formerly `debug_analyze_memory`.
 /// - `ExpressionEval` — formerly `evaluate_expression`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 #[schemars(rename_all = "snake_case")]
 pub enum StateQueryKind {
     RegisterDiff,
@@ -1200,6 +1202,7 @@ pub enum StateQueryOutput {
 /// - `Hotspot` — formerly `debug_expand_hotspot`.
 /// - `Saliency` — formerly `debug_get_saliency_scores`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 #[schemars(rename_all = "snake_case")]
 pub enum ExecutionQueryKind {
     CallStack,
