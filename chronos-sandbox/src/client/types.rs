@@ -454,49 +454,127 @@ impl Default for QueryFilter {
 }
 
 /// A trace event returned from query operations.
+///
+/// REC-C8 (G0.4 fix): mirrors the v2 wire shape that `chronos-mcp`
+/// `events_read(mode=query)` emits. We keep the **public API stable**
+/// (`event_type: String`) so existing sandbox tests and downstream code
+/// (`event.event_type == "syscall_enter"`, etc.) keep compiling. The
+/// wire shape of v2 is:
+///
+/// ```json
+/// {
+///   "event_id": 0,
+///   "timestamp_ns": 1789999773513880872,
+///   "thread_id": 2153525,
+///   "event_type": "syscall_enter",
+///   "location": { "address": 0, "column": null, "file": null,
+///                 "function": null, "line": null },
+///   "data": { "Syscall": { "args": [], "name": "...", "number": ...,
+///                          "return_value": 0 } }
+/// }
+/// ```
+///
+/// The previous flat shape with `function: Option<String>` (top-level) and
+/// `address: String` (top-level) reflected the v1 wire shape. It caused
+/// `RpcError("missing field 'type'")` because the server emits the
+/// canonical `event_type` string at top level (not under a `type` key).
+///
+/// We keep `location` and `data` as raw `serde_json::Value` because the
+/// sandbox API only inspects `event_type` and a handful of derived
+/// fields; full event decoding happens at the `chronos-domain` layer
+/// (`TraceEvent`), not in the sandbox client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TraceEvent {
     pub event_id: u64,
     pub timestamp_ns: u64,
     pub thread_id: u64,
-    #[serde(rename = "type")]
+    /// String form of `chronos_domain::EventType`
+    /// (e.g. `"syscall_enter"`, `"function_entry"`, `"variable_write"`).
     pub event_type: String,
-    pub function: Option<String>,
-    pub address: String,
-}
-
-/// Response from query_events.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QueryEventsResponse {
+    /// v2 source location (file, line, function, address, column).
     #[serde(default)]
-    pub total_matching: usize,
+    pub location: serde_json::Value,
+    /// v2 event-specific payload (variant-tagged by `EventData`).
     #[serde(default)]
-    pub returned_count: usize,
-    #[serde(default)]
-    pub next_offset: Option<usize>,
-    #[serde(default)]
-    pub events: Vec<TraceEvent>,
-}
-
-/// Response from get_event.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetEventResponse {
-    pub event_id: u64,
-    pub timestamp_ns: u64,
-    pub thread_id: u64,
-    #[serde(rename = "type")]
-    pub event_type: String,
-    pub location: SourceLocation,
     pub data: serde_json::Value,
 }
 
+/// Response from query_events.
+///
+/// REC-C8 (G0.4 fix): the v2 server response is the full
+/// `EventsReadOutput::Query` envelope. Wire shape:
+/// `{result: {events: [...], total_matching?, next_offset?}, mode, ...}`.
+/// We expose only `result.events` to the sandbox caller; the rest of
+/// the envelope is preserved on the wire but ignored here.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryEventsResponse {
+    /// Inner query result.
+    #[serde(default)]
+    pub result: Option<QueryEventsResult>,
+    /// Mode discriminator (always "query" for this response).
+    #[serde(default)]
+    pub mode: Option<String>,
+    /// Cursor for the next page (opaque).
+    #[serde(default)]
+    pub next_cursor: Option<String>,
+}
+
+/// Inner result payload of `QueryEventsResponse`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryEventsResult {
+    #[serde(default)]
+    pub events: Vec<TraceEvent>,
+    #[serde(default)]
+    pub total_matching: Option<u64>,
+    #[serde(default)]
+    pub next_offset: Option<u64>,
+}
+
+/// Response from get_event.
+///
+/// REC-C8 (G0.4 fix): the v2 server wraps the by_id payload inside
+/// `{event: {...}, mode: "by_id", provenance: {...}, session_id: "..."}`.
+/// The previous flat shape (with top-level `event_id`, `event_type`
+/// under `type` rename, `data`, etc.) reflected v1 and failed to parse
+/// the v2 envelope. We expose the inner `event` plus the envelope fields.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetEventResponse {
+    /// Inner event (canonical TraceEvent shape).
+    pub event: TraceEvent,
+    /// Mode discriminator (always "by_id" for this response).
+    #[serde(default)]
+    pub mode: Option<String>,
+    /// Provenance info (engine version, source).
+    #[serde(default)]
+    pub provenance: Option<serde_json::Value>,
+    /// Session id (duplicated from inner event for envelope consumers).
+    #[serde(default)]
+    pub session_id: Option<String>,
+}
+
 /// Source location for an event.
+///
+/// REC-C8 (G0.4 fix): the v2 server emits `{address, column, file,
+/// function, line}` (all optional except `address`). The previous shape
+/// required non-optional `line: u32` and `address: String` and rejected
+/// v2 events where `address` is a number.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceLocation {
+    /// Address as a decimal number (v2 may use 0 when symbolicated).
+    #[serde(default)]
+    pub address: u64,
+    /// Source line number (None for events without source attribution).
+    #[serde(default)]
+    pub line: Option<u32>,
+    /// Source file path (None for events without source attribution).
+    #[serde(default)]
     pub file: Option<String>,
-    pub line: u32,
+    /// Function name (None for events without symbol info).
+    #[serde(default)]
     pub function: Option<String>,
-    pub address: String,
+    /// Source column number (None for events without source attribution).
+    #[serde(default)]
+    pub column: Option<u32>,
 }
 
 /// A stack frame in a call stack.

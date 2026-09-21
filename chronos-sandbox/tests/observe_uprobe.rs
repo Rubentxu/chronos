@@ -14,6 +14,18 @@
 //! Both tests run against the real `chronos-mcp` binary, exercising the
 //! JSON-RPC layer end-to-end (initialize → tools/list → tools/call).
 //!
+//! Error model used by the sandbox client (`call_tool` in
+//! `chronos-sandbox/src/client/rpc.rs:153-165`):
+//!   - JSON-RPC `error` envelope failures (e.g. schema mismatch) are
+//!     returned as `Err(McpSandboxError::RpcError)` because rmcp's
+//!     transport layer converts them to RpcError before our `call_tool`
+//!     wrapper sees them.
+//!   - MCP `result.isError: true` failures (e.g. probe not found) are
+//!     also returned as `Err(McpSandboxError::RpcError)` with the
+//!     `content[0].text` as the error string.
+//! So the test asserts the error TYPE (RpcError) and that the diagnostic
+//! text contains the expected discriminator fragments.
+//!
 //! Note: the legacy `client.probe_inject()` wrapper (migrated in m7-02
 //! from `probe_inject` → `observe(verb=create, condition.kind=uprobe)`)
 //! is already covered by pre-existing tests in
@@ -26,6 +38,7 @@
 use std::time::Duration;
 
 use chronos_sandbox::client::tools::McpTestClient;
+use chronos_sandbox::McpSandboxError;
 
 const FAKE_SESSION_ID: &str = "00000000-0000-0000-0000-000000000000";
 
@@ -35,7 +48,7 @@ async fn test_observe_with_invalid_verb_returns_typed_error() {
         .await
         .expect("Failed to start MCP server");
 
-    let response = client
+    let result = client
         .call_tool(
             "observe",
             serde_json::json!({
@@ -43,30 +56,24 @@ async fn test_observe_with_invalid_verb_returns_typed_error() {
                 "condition": {"kind": "uprobe", "binary_path": "/bin/ls", "symbol_name": "main"},
             }),
         )
-        .await
-        .expect("call_tool must return Ok (the error is in the body, not the RPC envelope)");
+        .await;
+
+    // The sandbox client converts MCP errors to `McpSandboxError::RpcError`
+    // before returning (see module docs). We must accept that here.
+    let err_str = match result {
+        Ok(value) => panic!(
+            "expected RpcError for unknown verb, but call_tool returned Ok: {value}"
+        ),
+        Err(McpSandboxError::RpcError(msg)) => msg,
+        Err(e) => panic!("expected RpcError for unknown verb, got {e:?}"),
+    };
 
     // UAT-G0-02: "errores semánticos ... estables y tipados".
-    // The server must report a JSON-RPC -32602 (invalid params) error,
-    // not an empty result or a panic.
-    let code = response
-        .get("error")
-        .and_then(|e| e.get("code"))
-        .and_then(|c| c.as_i64());
-    assert_eq!(
-        code,
-        Some(-32602),
-        "expected -32602 (invalid params) for unknown verb, got {response}"
-    );
-
-    let msg = response
-        .get("error")
-        .and_then(|e| e.get("message"))
-        .and_then(|m| m.as_str())
-        .unwrap_or("");
+    // The diagnostic must mention the offending verb and the valid set
+    // (5 snake_case variants), matching the wire smoke G0.2 §11 evidence.
     assert!(
-        msg.contains("frobnicate") && msg.contains("create"),
-        "error message should mention the offending verb and the valid set; got: {msg}"
+        err_str.contains("frobnicate") && err_str.contains("create"),
+        "error message should mention the offending verb and the valid set; got: {err_str}"
     );
 
     // Give the server a moment to release the per-test store before the
@@ -89,7 +96,7 @@ async fn test_observe_uprobe_against_nonexistent_session_returns_typed_error() {
     // Wire shape uses the external tag discriminator
     // (`{"scope": "session", "session_id": "..."}`) that
     // `ObserveScopeWire` expects per its `#[serde(tag = "scope")]`.
-    let response = client
+    let result = client
         .call_tool(
             "observe",
             serde_json::json!({
@@ -104,29 +111,19 @@ async fn test_observe_uprobe_against_nonexistent_session_returns_typed_error() {
                 "scope": {"scope": "session", "session_id": FAKE_SESSION_ID},
             }),
         )
-        .await
-        .expect("call_tool must return Ok; the error is in the body");
+        .await;
 
-    // The error path here depends on the dispatcher implementation:
-    // it can be either a JSON-RPC -32602 (invalid params: no such
-    // session) or a typed body error. Both are acceptable — what is
-    // NOT acceptable is an Ok result that silently registered nothing,
-    // or a panic.
-    let has_error = response.get("error").is_some();
-    let has_status = response
-        .get("is_error")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    assert!(
-        has_error || has_status,
-        "observe against missing session must surface a typed error; got {response}"
-    );
+    let err_str = match result {
+        Ok(value) => panic!(
+            "expected RpcError for missing session, but call_tool returned Ok: {value}"
+        ),
+        Err(McpSandboxError::RpcError(msg)) => msg,
+        Err(e) => panic!("expected RpcError for missing session, got {e:?}"),
+    };
 
-    let err_str = response.to_string();
+    // The server's diagnostic must reference the missing session id.
     assert!(
-        err_str.contains(FAKE_SESSION_ID)
-            || err_str.contains("not found")
-            || err_str.contains("session"),
+        err_str.contains(FAKE_SESSION_ID) || err_str.contains("not found"),
         "error must reference the missing session id or 'not found'; got: {err_str}"
     );
 
