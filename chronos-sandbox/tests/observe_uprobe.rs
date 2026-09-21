@@ -16,6 +16,7 @@
 //!
 //! Error model used by the sandbox client (`call_tool` in
 //! `chronos-sandbox/src/client/rpc.rs:153-165`):
+//!
 //!   - JSON-RPC `error` envelope failures (e.g. schema mismatch) are
 //!     returned as `Err(McpSandboxError::RpcError)` because rmcp's
 //!     transport layer converts them to RpcError before our `call_tool`
@@ -23,6 +24,7 @@
 //!   - MCP `result.isError: true` failures (e.g. probe not found) are
 //!     also returned as `Err(McpSandboxError::RpcError)` with the
 //!     `content[0].text` as the error string.
+//!
 //! So the test asserts the error TYPE (RpcError) and that the diagnostic
 //! text contains the expected discriminator fragments.
 //!
