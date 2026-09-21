@@ -1,11 +1,11 @@
 {
   "cycle_id": "rec-c7-convergence-close",
   "title": "REC-C7 — Reconstruction convergence close",
-  "summary": "Final convergence gate in the REC-C0..REC-C7 sequence. Promotes M4 contracts to planned/M4-future (so strict-no-gaps passes), advances active_gate REC-C6 -> REC-C7, produces the v0.7.112 release tag (the deferred tag from REC-C5 close), and documents the post-convergence roadmap (M6 -> M7 -> M8 unblocked).",
+  "summary": "Final convergence gate in the REC-C0..REC-C7 sequence. Promotes M4 contracts to planned/M4-future (so strict-no-gaps passes), advances active_gate REC-C7 -> empty (end of convergence phase), produces the v0.7.112 release tag (the deferred tag from REC-C5 close), and documents the post-convergence roadmap (M6 -> M7 -> M8 unblocked).",
   "cycle_record": "p-3416cfb8288f8964/rec-c7-convergence-close",
   "project_id": "p-3416cfb8288f8964",
   "created_at": "2026-09-21T08:48:08+00:00",
-  "archived_at": null,
+  "archived_at": "2026-09-21T08:51:30+00:00",
   "findings_introduced": [],
   "preconditions": [
     "REC-C6 merged at main @ f3a831a2.",
@@ -15,10 +15,10 @@
     "scripts/check_architecture_contracts.py --strict-no-gaps FAILED at REC-C6 close (M4 contracts were blocked, which strict-no-gaps rejects)."
   ],
   "gates_planned": [
-    {"slice": "C7.1", "tier": "T0", "rationale": "doc + contracts.toml only; promote M4 blocked -> planned.", "completed": true},
-    {"slice": "C7.2", "tier": "git", "rationale": "annotated tag v0.7.112 on main HEAD.", "completed": false},
-    {"slice": "C7.3", "tier": "T0", "rationale": "docs/ROADMAP.md final closeout.", "completed": false},
-    {"slice": "C7.4", "tier": "archive", "rationale": "cycle record archive.", "completed": false}
+    {"slice": "C7.1", "tier": "T0", "rationale": "doc + contracts.toml only; promote M4 blocked -> planned.", "completed": true, "head_sha": "380ca828"},
+    {"slice": "C7.2", "tier": "git", "rationale": "annotated tag v0.7.112 on main HEAD.", "completed": true, "head_sha": "0be2ec2d", "tag": "v0.7.112", "tag_peel": "0be2ec2d53d9698956ae705938b32b80d7365ad7"},
+    {"slice": "C7.3", "tier": "T0", "rationale": "docs/ROADMAP.md final closeout.", "completed": true, "head_sha": "380ca828"},
+    {"slice": "C7.4", "tier": "archive", "rationale": "cycle record archive (release-receipt + archive-manifest).", "completed": true, "head_sha": "0be2ec2d"}
   ],
   "notes": {
     "post_convergence_roadmap": [
@@ -28,11 +28,16 @@
       "M9 Execution Explorer (UI-001, owner_gate=M9, planned)"
     ],
     "pre_existing_drift": "scripts/check_vault_drift.sh reports CC#8/#11/#17/#18/#22/#26/#56 drift pre-existing before REC-C7. Tracked as follow-up; not introduced by REC-C7. REC-C7 strict-no-gaps is the architectural fitness gate, not the vault-drift-sweep.",
-    "no_release_tag_yet": "v0.7.112 tag will be created in C7.2 (annotated, signed optional).",
-    "subagent_status": "sddk-propose/design sub-agent infra stuck 27+ min startup-queued in this session; REC-C7 proposal + design landed inline. (Same infra issue as REC-C6; documented at cycle level rather than per-slice.)"
+    "subagent_status": "sddk-propose/design sub-agent infra stuck 27+ min startup-queued in this session; REC-C7 proposal + design landed inline. (Same infra issue as REC-C6; documented at cycle level rather than per-slice.)",
+    "release_type": "gate (no API change vs v0.7.111; v0.7.112 is the convergence close marker)",
+    "workspace_version_unchanged": "Cargo.toml workspace.package.version stays at 0.1.1; the next v0.x.y bump lands with the first post-convergence milestone that introduces a public-surface change."
   },
-  "head_sha": null,
-  "remote_tag": null,
-  "peel_match": null,
-  "status": "in_progress"
+  "head_sha": "0be2ec2d53d9698956ae705938b32b80d7365ad7",
+  "remote_tag": "v0.7.112",
+  "remote_tag_peel": "0be2ec2d53d9698956ae705938b32b80d7365ad7",
+  "peel_match": true,
+  "status": "ready",
+  "archive_status": "ready",
+  "release_receipt": "cycle-artifacts/p-3416cfb8288f8964/rec-c7-convergence-close/release-receipt.md",
+  "archive_manifest": "cycle-artifacts/p-3416cfb8288f8964/rec-c7-convergence-close/archive-manifest.md"
 }

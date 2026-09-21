@@ -141,6 +141,12 @@ Append-only index of all completed cycles in this vault.
 | rec-c2 | rec-c2.1-tripwire-evidence | A-lite | rec-c2.1-tripwire-evidence | `686a364c` | CLOSED |
 | rec-c2 | rec-c2.2-accepted-raw-seam | A-lite | rec-c2.2-accepted-raw-seam | `f02ab311` | CLOSED |
 
+| rec-c3 | rec-c3-hexagonal-closure | A-lite | rec-c3.5-residual-inversion | `75d04447` | CLOSED |
+| rec-c4 | rec-c4-solid-connascence | A-lite | rec-c4-solid-connascence | `3a572db4` | CLOSED |
+| rec-c5 | rec-c5-api-convergence | A-lite | — | `e5dfe63b` | CLOSED |
+| rec-c6 | rec-c6-contracts-close | A-lite | — | `f3a831a2` | CLOSED |
+| rec-c7 | rec-c7-convergence-close | A-lite | v0.7.112 | `0be2ec2d53d9698956ae705938b32b80d7365ad7` | CLOSED |
+
 See `changes/archive/` for full archive manifests of closed cycles.
 
 ## Metadata
@@ -149,9 +155,9 @@ See `changes/archive/` for full archive manifests of closed cycles.
 |---|---|
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
-| Last updated | 2026-09-20T20:15Z |
-| Total cycles | 98 |
+| Last updated | 2026-09-21T08:52Z |
+| Total cycles | 101 |
 | m10 cycles | 13 (rows above) |
 | m1 cycles | 2 (m1-execution-log-vertical-slice, m1-gap-segment-accounting-repair) |
 | rec-c1 cycles | 4 (rec-c1-5-closure, rec-c1-6-lifecycle-retention-wire, rec-c1-7-projection-authority-acceptance, rec-c1-8-authoritative-evidence-handoff) |
-| rec cycles (c3+) | rec-c3-hexagonal-closure (+c3.5, tag `75d04447`), rec-c4-solid-connascence (tag `3a572db4`) — CLOSED |
+| rec cycles (c3+) | rec-c3-hexagonal-closure (+c3.5, tag `75d04447`), rec-c4-solid-connascence (tag `3a572db4`), rec-c5-api-convergence (no tag, gate cycle), rec-c6-contracts-close (no tag, gate cycle), rec-c7-convergence-close (tag `v0.7.112`, peel `0be2ec2d`) — CLOSED |
