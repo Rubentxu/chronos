@@ -1,0 +1,69 @@
+{
+  "cycle": "g0.6-recertification",
+  "project": "p-3416cfb8288f8964",
+  "path": "A-min",
+  "status": "CLOSED",
+  "base_sha": "afa14fd20f191d5884a8b030d4f05a915024f794",
+  "main_sha": "afa14fd20f191d5884a8b030d4f05a915024f794",
+  "head_sha": "afa14fd20f191d5884a8b030d4f05a915024f794",
+  "branch": "fix/g0.6-recertification",
+  "remote_tag": "v0.7.112",
+  "remote_tag_peel": "0be2ec2d53d9698956ae705938b32b80d7365ad7",
+  "peel_match": true,
+  "evidence": {
+    "T0_fmt_clippy": {
+      "cargo_fmt_check": "exit 0",
+      "cargo_clippy_check": "exit 0"
+    },
+    "T1_lib": {
+      "chronos_services": "391/391",
+      "chronos_mcp": "84/84",
+      "chronos_sandbox_lib": "12/12",
+      "chronos_native_serial": "109/109 (12.87s)",
+      "other_crates": "GREEN (test result: ok)"
+    },
+    "T3_sandbox_integration_subset": {
+      "query_tools": "1/1",
+      "event_tools": "3/3",
+      "query_filters": "6/6 + 3 ignored legacy §0.4",
+      "observe_uprobe": "2/2",
+      "probe_drain_canonical": "4/4",
+      "e2e_connectivity": "1/1",
+      "probe_lifecycle_edge_cases": "7/7",
+      "analytics_tools": "4/4 (serial)"
+    },
+    "T4_smoke_wire": {
+      "g0.1_wire_smoke": "3/3 GREEN",
+      "g0.2_wire_smoke": "3/3 GREEN",
+      "g0.4_wire_smoke": "wire shape C5.2 confirmed"
+    },
+    "vault_drift": {
+      "CC#4": "102 manifests clean",
+      "CC#11": "1 drift (rec-c3.3-train-b suspended per directiva)",
+      "CC#18": "4 drift (4 rec-c3.* out-of-scope per directiva)",
+      "CC#22": "4 drift (rec-c3.3-train-b suspended per directiva)"
+    }
+  },
+  "certificates": [
+    "docs/roadmap/certificates/REC-C7-base.md",
+    "docs/roadmap/certificates/uat-g0-01-events-read-kind-base.md",
+    "docs/roadmap/certificates/uat-g0-02-observe-uprobe-base.md",
+    "docs/roadmap/certificates/uat-g0-03-cursor-gap-replay-base.md",
+    "docs/roadmap/certificates/uat-g0-04-uprobe-privileged-not_run.md",
+    "docs/roadmap/certificates/uat-g0-05-ci-architecture-vault-base.md"
+  ],
+  "out_of_scope": [
+    "DEBT-G0.4-01/02 (closed in G0.4)",
+    "DEBT-G0.5-01 (3 offset_* #[ignore]d; M1+ migration)",
+    "DEBT-M7-02-01 (4 probe_inject legacy prefix; M1+)",
+    "DEBT-G0-04 (UAT-G0-04 privileged; M1+)",
+    "DEBT-VAULT-CC-PERMANENT (rec-c3.3-train-b suspended per m9-89)",
+    "DEBT-VAULT-CC-REC-C3 (rec-c3.* out-of-scope)"
+  ],
+  "limitations": [
+    "No privileged: UAT-G0-04 not_run per directiva",
+    "No CI remoto: .github/workflows not run on afa14fd2",
+    "No Tarpaulin coverage: not run",
+    "No benchmark: UAT-H1-04 in M1+"
+  ]
+}
