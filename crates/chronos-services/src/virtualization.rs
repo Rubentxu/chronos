@@ -232,6 +232,51 @@ pub fn summarize_log(
     EventSummary::from_bucket_counts(&bucket_counts)
 }
 
+/// Roll up events by **thread** (proxy for invocation grouping when
+/// `chronos_invocation_id` is not yet populated in `ExecutionRecord`
+/// payloads).
+///
+/// Per M10-CLOSE.md §6 follow-up #4: real implementation groups by
+/// `chronos_invocation_id`. Since `TraceEvent` does not currently
+/// expose `invocation_id` (the field lives in
+/// `chronos_log::ExecutionRecord`), this rollup uses `thread_id` as
+/// a defensible proxy — every invocation runs on one thread, so
+/// per-thread counts are an upper bound on per-invocation counts.
+///
+/// When `chronos_invocation_id` becomes available in the read path
+/// (post-M10.6 follow-up), the grouping key can be replaced without
+/// changing the public signature.
+pub fn rollup_log(
+    log: &crate::session_log::SessionExecutionLog,
+    cursor: &EventsCursorV1,
+) -> InvocationRollup {
+    use crate::events_log_read::{read_page, LogReadFilters};
+    use std::collections::HashMap;
+
+    let mut counts: HashMap<u64, u64> = HashMap::new();
+    let mut current_cursor = cursor.clone();
+    let page_limit = 1024;
+
+    while let Ok(page) = read_page(log, &current_cursor, page_limit, &LogReadFilters::default()) {
+        if page.records.is_empty() {
+            break;
+        }
+        for ev in &page.records {
+            *counts.entry(ev.thread_id).or_insert(0) += 1;
+        }
+        let next_cursor = page.next.clone();
+        if next_cursor.next_seq() == current_cursor.next_seq()
+            && page.records.len() < page_limit
+        {
+            break;
+        }
+        current_cursor = next_cursor;
+    }
+
+    let counts_vec: Vec<u64> = counts.values().copied().collect();
+    InvocationRollup::from_invocation_counts(&counts_vec)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -490,5 +535,23 @@ mod tests {
         let log = SessionExecutionLog::create_for_tests(&tmp, session.clone()).expect("log");
         let cursor = EventsCursorV1::start(session);
         let _ = summarize_log(&log, &cursor, 0);
+    }
+
+    #[test]
+    fn rollup_log_on_empty_log_returns_empty_rollup() {
+        use crate::session_log::SessionExecutionLog;
+        use std::env;
+        let session = sid();
+        let tmp = env::temp_dir().join(format!(
+            "virt_rollup_empty_{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let log = SessionExecutionLog::create_for_tests(&tmp, session.clone()).expect("log");
+        let cursor = EventsCursorV1::start(session);
+        let rollup = rollup_log(&log, &cursor);
+        assert_eq!(rollup.invocation_count, 0);
+        assert_eq!(rollup.total_events, 0);
+        assert_eq!(rollup.mean_per_invocation, 0);
+        assert_eq!(rollup.max_per_invocation, 0);
     }
 }
