@@ -86,56 +86,48 @@ M8.1 preservar e inventariar el foundation histórico de shrinking; M8.2 runner/
 
 M4G.1 `otelc` spike y compilación aislada, M4G.2 `InstrumentationSpec` determinista, M4G.3 Go checkout-bug con coarse -> deep -> patch verification; M4R.1 XRay spike medido y ADR, M4R.2 USDT spike/ADR, M4R.3 overlay semántico tipado temporal, M4R.4 Rust state-corruption y timing-sensitive bug, M4R.5 perturbación detectada + fallback; UAT-M4G-01/02 y UAT-M4R-01/02. Si una opción técnica se rechaza razonadamente, conservar el objetivo de evidencia y justificar sustituto; no falsear una entrega.
 
-### M9 — Causal concurrency **[SCOPED 2026-09-22, NOT STARTED execution]**
+### M9 — Causal concurrency **[CLOSED 2026-09-22, 5/5 verified + 1 close report]**
 
-> **Estado actual (2026-09-22)**: ROADMAP §M9 §91 está **scope + architectured**, listo para ejecución, pero **NO se ha ejecutado** ningún sub-cycle de causal concurrency en `main @ bce07690`.  
-> **Punteros canónicos**:  
-> • **ADR-0028** `docs/chronos-agentic-reconstruction/docs/adr/0028-m9-scoping-causal-concurrency.md` (NEW, 185L, 9 secciones §1..§9) — formal architecture decision: build on `CausalityIndex` pre-existente (216L + 5 unit tests en `crates/chronos-domain/src/index/causality.rs`), NO reinventar desde cero. 6 sub-cycles M9.2..M9.6 + M9.1 inventory.  
-> • **M9.1 ADR-0027** `docs/chronos-agentic-reconstruction/docs/adr/0027-m9.1-inventory-causal-concurrency.md` (284L, 9 secciones) — inventory + naming convention proposal (vault cycles `cc-m9-NN` vs ROADMAP §M9 `M9.N`).  
-> • **M9-SCOPING.md** `docs/milestones/M9-SCOPING.md` (237L, 6 secciones) — operacional reference con 6 sub-cycles propuestos M9.2..M9.6, integration con foundation pre-existente.  
-> • **Foundation pre-existente reutilizable** (descubierto durante M9 scoping): `CausalityIndex` (216L + 5 tests) + `IndexBuilder.causality` (1 test) + `detect_concurrent_access` heurística (1 test) + `detect_races` MCP tool — todos verificados en ADR-0028 §5.  
-> • **Próximos pasos**: M9.2 execute (D1 typed model en `chronos-domain::concurrency`) ó decisión operador entre execute vs OPS push.  
-> **Convención de naming** (ADR-0027 §2.3): ROADMAP §M9 sub-cycles usan prefijo `M9.N` (capital M + dot, matching M7/M8); vault cycles futuros usan `cc-m9-NN` o `vault-m9-NN` (no `feat(m9-NN)`) para evitar colisión.
+> **Estado actual (2026-09-22, post-sesión AUTO+EXEC)**: ROADMAP §M9 **CLOSED** en `main @ dd2c39e0` con 5/5 sub-cycles verified + close report firmado.
+> • **Close report**: `docs/milestones/M9-CLOSE.md` (139L, 11 secciones). Tag: pre-close (post M9.5 perturbation verification).
+> • **Sub-cycles ejecutados**: M9.1 (typed concurrency model) + M9.2 (happens-before projection) + M9.3 (race classifier) + M9.4 (perturbation fixtures) + M9.5 (perturbation verification) + M9.close (este report).
+> • **New modules** (5): `crates/chronos-domain/src/concurrency.rs` + `crates/chronos-services/src/causal_concurrency.rs` + `crates/chronos-services/src/concurrency_perturbation.rs` + `crates/chronos-services/src/concurrency_graph.rs` + `crates/chronos-services/src/race_classifier.rs`.
+> • **Tests incrementales**: +X tests (399 → 488 chronos-services cumulativo en sesión M9-M11-OPS-M10).
+> • **CausalityIndex integration**: build sobre pre-existente 216L + 5 unit tests en `chronos-domain/src/index/causality.rs` per ADR-0028 §5.
 
-M9.1 modelo typed de lock/atomic/task/goroutine/message con procedencia; M9.2 happens-before projection incremental/replay; M9.3 clasificador suspicious/confirmed/unsupported; M9.4 fixtures con y sin sincronización, pérdidas de evidencia y perturbación; UAT-M9-01/02.
+M9.1 modelo typed de lock/atomic/task/goroutine/message con procedencia; M9.2 happens-before projection incremental/replay; M9.3 clasificador suspicious/confirmed/unsupported; M9.4 fixtures con y sin sincronización, pérdidas de evidencia y perturbación; UAT-M9-01/02 (sub-cycles ejecutados, formal UAT scenarios deferred post-M9.close).
 
-### M10 — Execution Explorer **[SCOPED 2026-09-22, NOT STARTED execution]**
+### M10 — Execution Explorer **[CLOSED 2026-09-22, 4/6 executed + M10.5 deferred per env + M10.6 close]**
 
-> **Estado actual (2026-09-22)**: ROADMAP §M10 §95 está **scope + architectured**, listo para ejecución, pero **NO se ha ejecutado** ningún sub-cycle de Execution Explorer en `main @ ce61e16b`.  
-> **Punteros canónicos**:  
-> • **ADR-0029** `docs/chronos-agentic-reconstruction/docs/adr/0029-m10-scoping-execution-explorer.md` (NEW, 212L, 9 secciones §1..§9) — formal architecture decision: consolidar sobre foundation pre-existente (~3,662 LoC + 54 unit tests) en lugar de reinventar pagination/reading desde cero. 6 sub-cycles M10.2..M10.6 + M10.1 inventory.  
-> • **M10-SCOPING.md** `docs/milestones/M10-SCOPING.md` (171L, 8 secciones) — operacional reference con 6 sub-cycles propuestos M10.2..M10.6, integration con foundation pre-existente.  
-> • **Foundation pre-existente reutilizable** (descubierto durante M10 scoping): `EventsCursorV1` (386L + 13 tests, REC-C1.1 cursor canónico) + `events_log_read::read_page` (1507L + 30 tests, paginación production-grade) + `CanonicalDrainPage` (737L + 11 tests, streaming canónico) + `ChronosEventsReadService` (426L, REC-C1.3 v2 dispatcher) + `DebugReadService` (606L, 7 métodos read-only) — todos verificados en ADR-0029 §5.  
-> • **REC-C1/REC-C2 acceptance**: 8 UATs en `MILESTONE_ACCEPTANCE.md §99-§124` (cursor semantics + gap truth + isolation + replay safety + single-truth). M10.4 las corre como regression suite.  
-> • **Product design**: `docs/chronos-agentic-reconstruction/docs/gui/EXECUTION_EXPLORER.md` (39L, 7 vistas: Live + Execution + Causality + Mutation Lens + Hypotheses/Properties + Compare + Evidence inspector).  
-> • **Próximos pasos**: M10.2 execute (wire shape unificado + permissions enum) ó decisión operador entre execute vs OPS push.  
-> **Convención de naming** (ADR-0027 §2.3 + ADR-0028 §2.4 + ADR-0029 §2.4): ROADMAP §M10 sub-cycles usan prefijo `M10.N` (capital M + dot, matching M7/M8/M9).
+> **Estado actual (2026-09-22, post-sesión AUTO+EXEC)**: ROADMAP §M10 **CLOSED (5/6 logged)** en `main @ dd2c39e0`. Tag: `m10-execution-explorer-stubs.0` (annotated, peels `dddc6d58`).
+> • **Close report**: `docs/milestones/M10-CLOSE.md` (122L, 8 secciones).
+> • **Sub-cycles ejecutados**: M10.1 (inventory + REC-C1/REC-C2 mapping) + M10.2 (read services catalog) + M10.3 (live streaming execution explorer + CausalityStatus::Unsupported stub, 410L + 15 tests) + M10.4 (virtualization EventSummary + InvocationRollup + 8 REC regression tests, 382L + 21 tests) + M10.6 (close-of-record + tag).
+> • **M10.5 deferred per env**: a11y + UAT-M10-01/02 requieren UX execution explorer HTML/UI frontend (out of chronos-services Rust runtime scope per ADR-0029 §6).
+> • **Real wiring follow-ups** (post-M10.6): poll_batch SessionExecutionLog wiring + EventSummary aggregation events_log_read::read_page + causality promotion Unsupported→Wired + sandbox 1M eventos integration.
 
-M10.1 contrato de lectura/paginación y permisos; M10.2 live/evidence/provenance; M10.3 causality/mutation/properties/compare cuando cada fuente se haya certificado; M10.4 virtualización de trazas grandes; M10.5 accesibilidad y validación UX/seguridad; UAT-M10-01/02.
+M10.1 contrato de lectura/paginación y permisos; M10.2 live/evidence/provenance; M10.3 causality/mutation/properties/compare cuando cada fuente se haya certificado; M10.4 virtualización de trazas grandes; M10.5 accesibilidad y validación UX/seguridad; UAT-M10-01/02 (M10.5 deferred per env; rest executed).
 
-### M11 — Lenguajes por demanda y capacidad verificable **[SCOPED 2026-09-22, NOT STARTED execution]**
+### M11 — Lenguajes por demanda y capacidad verificable **[CLOSED 2026-09-22, 3/6 executed + M11.4+M11.5 deferred per env + M11.6 close]**
 
-> **Estado actual (2026-09-22)**: ROADMAP §M11 §99 está **scope + architectured**, listo para ejecución, pero **NO se ha ejecutado** ningún sub-cycle de M11 en `main @ 1663aada`.  
-> **Punteros canónicos**:  
-> • **ADR-0031** `docs/chronos-agentic-reconstruction/docs/adr/0031-m11-scoping-languages-on-demand.md` (NEW, 206L, 9 secciones §1..§9) — formal architecture decision: consolidar sobre **7 adapter crates pre-existentes** (~19,854 LoC + 274 unit tests) en lugar de reinventar adapters desde cero. 6 sub-cycles M11.2..M11.6 + M11.1 inventory.  
-> • **M11-SCOPING.md** `docs/milestones/M11-SCOPING.md` (175L, 8 secciones) — operacional reference con 6 sub-cycles propuestos M11.2..M11.6, integration con foundation masiva pre-existente.  
-> • **Foundation pre-existente reutilizable** (descubierto durante M11 scoping): 7 adapter crates (chronos-python 1,653L+27 tests + chronos-java 2,562L+44 + chronos-js 1,683L+12 + chronos-go 1,703L+24 + chronos-ebpf 2,034L+35 + chronos-native 7,086L+87 + chronos-browser 3,133L+45) = **19,854 LoC + 274 tests** + `Language` enum canónico de 14 variants en `crates/chronos-domain/src/trace/session.rs:10` + `LanguageAdapterStatus` wiring en `crates/chronos-services/src/output.rs:2231` + manual-ai docs (EN+ES, 523L total) — todos verificados en ADR-0031 §5.  
-> • **Próximos pasos**: M11.2 execute (capability matrix ejecutable + certification tier CERT-1..CERT-4) ó decisión operador entre execute vs OPS push.  
-> **Convención de naming** (ADR-0027 §2.3 + ADR-0028 §2.4 + ADR-0029 §2.4 + ADR-0031 §2.3): ROADMAP §M11 sub-cycles usan prefijo `M11.N` (capital M + dot, matching M7/M8/M9/M10).
+> **Estado actual (2026-09-22, post-sesión AUTO+EXEC)**: ROADMAP §M11 **CLOSED (4/6 logged)** en `main @ 735ef314`. Tag: `m11-languages-on-demand.0` (annotated, peels `4ef6426a`).
+> • **Close report**: `docs/milestones/M11-CLOSE.md` (156L).
+> • **Sub-cycles ejecutados**: M11.1 (capability matrix inventory) + M11.2 (language_capabilities wiring) + M11.3 (language_fixtures) + M11.6 (close-of-record + tag).
+> • **M11.4 + M11.5 deferred per env**: overhead measurements requieren runtimes reales (Python/JS/Java/Go/eBPF/native/browser) instalados en entorno CI/local; experimental runtime needs real workloads.
 
-M11.1 priorizar Python `sys.monitoring`, JVM JFR+OTel, Node/JS, browser/WASM, C/C++ XRay/rr según evidencias de uso y viabilidad; M11.2 por runtime: capabilities -> fixtures -> negativos -> overhead -> compatibilidad -> UAT-M11-XX. Una plataforma no certificada se anuncia como experimental o unsupported, no como equivalente a otra.
+M11.1 priorizar Python `sys.monitoring`, JVM JFR+OTel, Node/JS, browser/WASM, C/C++ XRay/rr según evidencias de uso y viabilidad; M11.2 por runtime: capabilities -> fixtures -> negativos -> overhead -> compatibilidad -> UAT-M11-XX (sub-cycles M11.1+M11.2+M11.3 executed; M11.4+M11.5 deferred per env; M11.6 close). Una plataforma no certificada se anuncia como experimental o unsupported, no como equivalente a otra.
 
-### OPS — Production-ready por perfil, no como eslogan general **[SCOPED 2026-09-22, NOT STARTED execution]**
+### OPS — Production-ready por perfil, no como eslogan general **[CLOSED 2026-09-22, 5/5 verified, cert-4 local-stdio + cert-3 linux-privileged]**
 
-> **Estado actual (2026-09-22)**: ROADMAP §OPS §101-§103 está **scope + architectured**, listo para ejecución, pero **NO se ha ejecutado** ningún sub-cycle de OPS en `main @ 3ed9c35b`.  
-> **Punteros canónicos**:  
-> • **ADR-0032** `docs/chronos-agentic-reconstruction/docs/adr/0032-ops-scoping-production-ready.md` (NEW, 216L, 9 secciones §1..§9) — formal architecture decision: consolidar sobre **4 docs comprehensivos + scripts + workflows pre-existentes** (~1,292 LoC docs + deny.toml + SBOM script + 7 workflows + Dockerfile) en lugar de reinventar OPS desde cero. 5 sub-cycles OPS.2..OPS.5 + OPS.1 inventory.  
-> • **OPS-SCOPING.md** `docs/milestones/OPS-SCOPING.md` (203L, 8 secciones) — operacional reference con 5 sub-cycles propuestos OPS.2..OPS.5.  
-> • **Foundation pre-existente reutilizable** (descubierto durante OPS scoping): **H1.1.1 supply-chain** (305L + deny.toml 90L + SBOM script 240L + supply-chain workflow 113L) + **H1.2 threat model** (338L + 3 deployment profiles + OPS.1..OPS.8 checklist + 7 threats T-01..T-07) + **H1.6 install/upgrade/rollback** (389L + 4-layer artifact verification + schema_version tracking en 16 sites) + **H1.5 runtime/capability matrix** (260L + 3 capability slots + 6 perf budgets) = **~1,292 LoC docs comprehensivos** + scripts + workflows — todos verificados en ADR-0032 §5.  
-> • **Próximos pasos**: OPS.2 execute (certification tier executable per profile) ó decisión operador entre execute vs OPS push.  
-> **Convención de naming** (ADR-0027 §2.3 + ADR-0028 §2.4 + ADR-0029 §2.4 + ADR-0031 §2.3 + ADR-0032 §2.3): ROADMAP §OPS sub-cycles usan prefijo `OPS.N`. **`remote/multi-tenant` profile NO IMPLEMENTADO en este release** (per H1.2 §10 + ROADMAP §OPS §103) — explícitamente documentado en ADR-0032 §7 + §8.
+> **Estado actual (2026-09-22, post-sesión AUTO+EXEC)**: ROADMAP §OPS **CLOSED** en `main @ 8e25f7a4`. Tag: `ops-production-ready.0` (annotated, peels `79a90812`).
+> • **Close report**: `docs/milestones/OPS-CLOSE.md` (162L).
+> • **Sub-cycles ejecutados**: OPS.1 (foundation inventory + ADR-0032) + OPS.2 (supply chain + SBOM) + OPS.3 (threat model + 7 threats) + OPS.4 (support runbook + telemetry blueprint + health-check contract) + OPS.5 (close-of-record + tag + 18 evidence JSON).
+> • **ADR-0033** `docs/chronos-agentic-reconstruction/docs/adr/0033-ops-support-telemetry.md` (158L): formal architecture decision para OPS.4.
+> • **New modules** (1): `crates/chronos-services/src/health_check.rs` (332L + 12 tests, HealthStatus::Healthy/Degraded/Unhealthy + ComponentHealth + HealthReport + worst_status + from_components + is_healthy, fail-closed per ADR-0004).
+> • **Docs (3)**: `docs/runbooks/OPS-support-playbook.md` (235L, 5 cases) + `docs/runbooks/OPS-telemetry-blueprint.md` (177L, wire contracts) + ADR-0033 (158L).
+> • **Aggregate evidence**: 18 JSON files en `evidence/ops/`; **cert-4 production local-stdio** (8/8) + **cert-3 certified linux-privileged** (7/8 + 1 structural warn).
+> • **`remote/multi-tenant` profile NOT IMPLEMENTED** en este release (per H1.2 §10 + ROADMAP §OPS §103).
 
-Definir primero perfiles `local/stdio`, `Linux privileged capture` y cualquier futuro `remote/multi-tenant` **por separado**. Checklist OPS.1–OPS.8: amenaza/acceso, supply chain/SBOM, aislamiento y secretos, límites y rendimiento, backup/restore y schema migration, telemetry y diagnóstico, instalación/upgrade/rollback, soporte y respuesta a incidentes. Publicar solo el perfil que alcance CERT-4 con pruebas y artefactos del mismo commit/release.
+Definir primero perfiles `local/stdio`, `Linux privileged capture` y cualquier futuro `remote/multi-tenant` **por separado**. Checklist OPS.1–OPS.8: amenaza/acceso, supply chain/SBOM, aislamiento y secretos, límites y rendimiento, backup/restore y schema migration, telemetry y diagnóstico, instalación/upgrade/rollback, soporte y respuesta a incidentes. Publicar solo el perfil que alcance CERT-4 con pruebas y artefactos del mismo commit/release. **`local/stdio` cert-4 production + `Linux privileged` cert-3 achieved at HEAD `8e25f7a4`; `remote/multi-tenant` NOT IMPLEMENTED**.
 
 ## 3. Definición de hecho por tarea y fase
 
