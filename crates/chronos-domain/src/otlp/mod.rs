@@ -17,6 +17,9 @@ pub mod redaction;
 // M7.2 lift (2026-09-22): differential execution v2 — alignment
 // by invocation/context. See module docs.
 pub mod alignment;
+// M7.3 lift (2026-09-22): session-level BehaviourFingerprint consuming
+// M7.2's AlignmentReport. See module docs.
+pub mod fingerprint;
 
 use uuid::Uuid;
 
