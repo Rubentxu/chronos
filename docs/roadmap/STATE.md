@@ -189,5 +189,29 @@ error: {parse error}
 
 **Cumulative**: 86 + 8 lifts + 1 fmt fix + 1 push = **96 actions**.
 
-**Next autonomous work** (operator-extended authorization intact): (a) **session-end checkpoint** (already complete with this row), or (b) **M6.6/M6.7 revisit** (would require M6.4 design reopening — ADR-0035 candidate, deferred per current constraint), or (c) **side-tracks** (H1.4-B / H1.5-B / H1.1.2 — previously deferred per env).
+**R0 — CI/Coverage RED → GREEN (2026-09-22)**: the operator review surfaced that the 10/10 chapter closes were disconnected from real CI (concurrency_stress 2 FAIL) and coverage (rec_c1_characterization 5 FAIL + 3 ignored in query_filters). All from one root cause: the v2 `events_read` cursor-only wire shape had never been propagated to the sandbox `client::QueryFilter`. R0.1 (commit `195d5ac6`) was an honest retraction of fabricated ADR-0004 §M6.2 references that had leaked into 5 sites across rustdoc + STATE + JOURNAL. R0.2 (commit `283a1445`) migrated the sandbox client:
+
+- `QueryFilter` gains `cursor: Option<String>` (default `None`); `offset` is kept for backward-compatible construction but the runtime guard rejects `offset > 0`.
+- `query_events` split into `query_events` (1st page shim, no breakage of existing call-sites) + `query_events_page` (full `QueryPage` with `next_cursor`) + `query_events_walk_all` (cursor walk to exhaustion).
+- 7 sandbox integration tests migrated from offset to cursor: `concurrency_stress::test_concurrent_sequential_queries_same_session` + `test_concurrent_high_frequency_queries` + `rec_c1_characterization` (all 5 contract tests) + `query_filters` (QF5/QF6/QF8 — the 3 previously `#[ignore]`d).
+
+**Verification (post-merge on `283a1445`)**:
+
+| Suite | Pre-R0.2 | Post-R0.2 |
+|---|---|---|
+| concurrency_stress | 8/10 PASS + **2 FAIL** | **10/10 PASS, 0 ignored** |
+| rec_c1_characterization | **5 FAIL** | **5/5 PASS, 0 ignored** |
+| query_filters | 6/9 PASS + **3 ignored** | **9/9 PASS, 0 ignored** |
+| chronos-domain lib | 184/184 PASS | 184/184 PASS |
+| chronos-services lib | 527/527 PASS | 527/527 PASS |
+| chronos-sandbox lib | 12/12 PASS | 12/12 PASS |
+| clippy -D warnings | clean | clean |
+| cargo fmt | clean | clean |
+
+**R0.2 honest notes**:
+- The 3 previously-`#[ignore]`d tests are now live; their `#[ignore]` annotation explicitly named this migration as the follow-up ("G0.4: legacy pre-C5.2 offset pagination; migrate to cursor next_cursor (M1+)"). M1+ is now triggered.
+- `CONTRACT-2` (`offset_beyond_total_returns_empty`) failed on the first migration attempt because I assumed a `limit = total + 1` page would produce a terminal cursor. It does not (the server returned all 1545 events with a valid `next_cursor`). The test was rewritten to walk to exhaustion and assert terminal-cursor semantics, which is the canonical cursor-API contract.
+- `OtlpInvocationId ↔ InvocationId` bridge is still a parallel-typed problem; the `use OtlpInvocationId as InvocationId` import alias remains the working interop. R1 will revisit this with a deliberate `OtlpSessionId` ↔ `chronos_log::SessionId` + typed bridge rather than silent UUID-version unification.
+
+**Next autonomous work** (operator-extended authorization intact): (a) **session-end checkpoint** (already complete with this row), or (b) **M6.6/M6.7 revisit** (would require M6.4 design reopening — ADR-0035 candidate, deferred per current constraint), or (c) **side-tracks** (H1.4-B / H1.5-B / H1.1.2 — previously deferred per env), or (d) **R1** — connect M6/M7 productionization to real services + MCP via explicit `OtlpInvocationId ↔ InvocationId` bridge (decision: A-then-C, not silent UUID-version merge).
 
