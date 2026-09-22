@@ -92,6 +92,7 @@ pub mod diff;
 pub mod error;
 pub mod execution_explorer;
 pub mod health_check;
+pub mod live_streaming;
 pub mod language_capabilities;
 pub mod language_fixtures;
 pub mod ops_evidence;
