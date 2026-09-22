@@ -10,6 +10,7 @@
 //! `docs/milestones/M6-CLOSE.md` §5 "honest limitations".
 
 pub mod correlation;
+pub mod equivalence;
 pub mod ingest;
 pub mod parse;
 pub mod redaction;

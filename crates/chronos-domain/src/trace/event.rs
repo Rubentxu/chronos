@@ -285,7 +285,13 @@ impl std::fmt::Display for InvocationId {
 
 /// 64-bit FNV-1a hash. Used to compute `SymbolId` hashes. Stable
 /// across runs and platforms (no Rust `Hash` involvement).
-fn fnv1a_64(bytes: &[u8]) -> u64 {
+///
+/// **Public** since 2026-09-22 (M7.1 lift) so the
+/// `chronos-domain::otlp::equivalence` module can hash canonical event
+/// bytes without duplicating the FNV-1a implementation. The constants
+/// (`0xcbf2_9ce4_8422_2325`, `0x100_0000_01b3`) are stable per IETF FNV
+/// reference and produce the same value on every Rust version.
+pub fn fnv1a_64(bytes: &[u8]) -> u64 {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for b in bytes {
         hash ^= *b as u64;

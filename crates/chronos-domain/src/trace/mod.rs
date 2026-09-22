@@ -1,6 +1,6 @@
 //! Trace event types and capture session management.
 
-mod event;
+pub mod event;
 mod inspect;
 mod location;
 mod session;
