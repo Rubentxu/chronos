@@ -154,8 +154,35 @@ pub enum CausalityStatus {
 
 /// Returned by `causality_status` to signal whether the live stream
 /// is currently emitting race-detection hints alongside events.
+///
+/// **Stub behavior** (default): returns `Unsupported` because the live
+/// stream doesn't have direct access to a causality index. M9 chapter
+/// (CausalityIndex + detect_concurrent_access heuristic) is now CLOSED
+/// in `chronos-query::ChronosEngine`, but the live stream itself does
+/// not own a query engine reference.
+///
+/// **Promotion to `Wired`** happens via `causality_status_for_engine`,
+/// which inspects whether a `ChronosEngine` has a `causality_index`
+/// configured. This is the M10.3 follow-up #2 wiring per
+/// M10-CLOSE.md §6.
 pub fn causality_status() -> CausalityStatus {
     CausalityStatus::Unsupported
+}
+
+/// Returned `CausalityStatus::Wired` when `engine` has a configured
+/// `causality_index` (M9 foundation integration).
+///
+/// This is the **promoted** status — when an engine is present and
+/// has the index wired, the live stream COULD in principle emit
+/// race-detection hints alongside events (M10.3 follow-up #2; full
+/// hint emission is a future work item, but the status itself
+/// reflects engine availability honestly per ADR-0004).
+pub fn causality_status_for_engine(engine: &chronos_query::QueryEngine) -> CausalityStatus {
+    if engine.causality_index_is_configured() {
+        CausalityStatus::Wired
+    } else {
+        CausalityStatus::Unsupported
+    }
 }
 
 impl LiveEventStream {
@@ -594,5 +621,36 @@ mod tests {
             initial_cursor.next_seq().get(),
             after_cursor.next_seq().get()
         );
+    }
+
+    // ============ Causality promotion tests (M10.3 follow-up #2) ============
+
+    #[test]
+    fn causality_status_for_engine_returns_unsupported_when_no_index() {
+        use chronos_query::QueryEngine;
+        let engine = QueryEngine::new(vec![]);
+        assert_eq!(
+            causality_status_for_engine(&engine),
+            CausalityStatus::Unsupported
+        );
+    }
+
+    #[test]
+    fn causality_status_for_engine_promotes_to_wired_with_index() {
+        use chronos_domain::index::CausalityIndex;
+        use chronos_query::QueryEngine;
+        let engine = QueryEngine::new(vec![]).with_causality(CausalityIndex::default());
+        assert_eq!(
+            causality_status_for_engine(&engine),
+            CausalityStatus::Wired
+        );
+    }
+
+    #[test]
+    fn causality_status_stub_still_returns_unsupported() {
+        // The original stub is unchanged — it never had access to an
+        // engine, so it always returns Unsupported. The promotion is
+        // available only via the new _for_engine variant.
+        assert_eq!(causality_status(), CausalityStatus::Unsupported);
     }
 }

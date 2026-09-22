@@ -109,6 +109,20 @@ impl QueryEngine {
         self
     }
 
+    /// True iff a causality index has been configured.
+    ///
+    /// Per M10.3 follow-up #2 wiring: this accessor lets
+    /// `chronos_services::live_streaming::causality_status_for_engine`
+    /// decide whether the live stream is `Wired` (causality
+    /// integration available) vs `Unsupported` (no index).
+    ///
+    /// ADR-0004 honest: this only inspects the field; it does NOT
+    /// try to construct a CausalityIndex on demand. If the caller
+    /// has not wired one, status is Unsupported — period.
+    pub fn causality_index_is_configured(&self) -> bool {
+        self.causality_index.is_some()
+    }
+
     /// Set or replace the performance index.
     pub fn with_performance(mut self, performance: PerformanceIndex) -> Self {
         self.performance_index = Some(performance);
