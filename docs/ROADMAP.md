@@ -76,7 +76,9 @@ M6.1 contrato `ExternalTraceContext` separado de `InvocationId`; M6.2 adapter OT
 
 M7.1 criterio de equivalencia semántica y hashes jerárquicos; M7.2 alineación por invocación/contexto, no sólo timestamps; M7.3 comparación de estado/propiedades y BehaviourFingerprint como spike medido; M7.4 UAT-M7-01/02 y baselines de coste/memoria.
 
-### M8 — Counterexample shrinking y test intelligence
+### M8 — Counterexample shrinking y test intelligence **[CLOSED 2026-09-11]**
+
+> **Estado canónico:** capítulo cerrado en `main` antes del inicio de este ciclo. Ver `docs/milestones/M8-CLOSE.md` (close report firmado en `m8-06-real-shrinkers.0` → `c8a4377a`) + `docs/milestones/m8-counterexample-shrinking-scoping.md` (scope general) + ADR-0026 (M8.1 inventory). Inventario: 6 sub-ciclos firmados con tags `m8-01..m8-06-*.0`, 14 milestones en `docs/milestones/`, 268 unit tests + 35 sandbox tests all-green, +6,712 LoC distribuidos en `chronos-store::ce_*` (m8-01), `chronos-services::counterexample` (m8-02/05/06), `chronos-mcp` (m8-03), nuevo workspace member `crates/chronos-cli` (m8-04). m8-07 (hypothesis reconstruction fidelity) parcial — código mergeado pero sin tag + sin close report (recomendado M8.7.1 close-of-record).
 
 M8.1 preservar e inventariar el foundation histórico de shrinking; M8.2 runner/proptest/Hypothesis con id de experimento, entradas y seed; M8.3 rerun determinista y predicado invariante; M8.4 reducción + slice causal; M8.5 CLI `chronos test` como spike, si aporta valor; M8.6 UAT-M8-01/02. No confundir con CONC-001 (M9).
 
