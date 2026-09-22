@@ -14,6 +14,9 @@ pub mod equivalence;
 pub mod ingest;
 pub mod parse;
 pub mod redaction;
+// M7.2 lift (2026-09-22): differential execution v2 — alignment
+// by invocation/context. See module docs.
+pub mod alignment;
 
 use uuid::Uuid;
 
