@@ -4,6 +4,7 @@
 //! the Chronos MCP server. It has zero external I/O dependencies.
 
 pub mod adapter;
+pub mod concurrency;
 pub mod capability;
 pub mod causal_slice;
 pub mod error;
