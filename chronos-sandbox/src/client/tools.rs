@@ -650,28 +650,56 @@ impl McpSession {
 
     /// Query events — queries events from a completed session.
     ///
-    /// C5.3.1 (REC-C5): now calls the v2 `events_read` dispatcher
-    /// (`mode=query`). The v1 `offset` field of `QueryFilter` is no longer
-    /// supported — callers must use cursor-based pagination instead.
+    /// C5.3.1 (REC-C5) + R0.2 (2026-09-22): now calls the v2
+    /// `events_read` dispatcher (`mode=query`). The v1 `offset`
+    /// field of `QueryFilter` is no longer supported — callers must
+    /// use cursor-based pagination via `QueryFilter::cursor` (see
+    /// [`Self::query_events_page`] and [`Self::query_events_walk_all`]).
+    ///
+    /// This convenience returns just the events of the first
+    /// matching page; for full pagination control use
+    /// `query_events_page`. Most existing callers want
+    /// `query_events_walk_all` instead, since it transparently
+    /// walks every page.
     pub async fn query_events(
         &mut self,
         session_id: &str,
         filter: QueryFilter,
     ) -> Result<Vec<TraceEvent>, McpSandboxError> {
+        let page = self.query_events_page(session_id, filter).await?;
+        Ok(page.events)
+    }
+
+    /// R0.2 (2026-09-22): page-aware query variant returning both
+    /// the events and the opaque `next_cursor` (or `None` when the
+    /// page is the last one). Use this when you need to control
+    /// pagination explicitly (e.g. streaming, interleaving with
+    /// filtering). For the common "get every event matching the
+    /// filter" case prefer [`Self::query_events_walk_all`].
+    pub async fn query_events_page(
+        &mut self,
+        session_id: &str,
+        filter: QueryFilter,
+    ) -> Result<QueryPage, McpSandboxError> {
         let mut params = serde_json::json!({
             "session_id": session_id,
             "mode": "query",
             "limit": filter.limit,
         });
         if filter.offset != 0 {
-            // v2 events_read has no offset. The C5.2 migration rewrote
-            // sandbox test consumers onto cursor-based pagination, so this
-            // branch is a guard for callers still passing offset > 0.
+            // v2 events_read has no offset. R0.2 keeps the legacy
+            // `offset` field on `QueryFilter` for backward-compatible
+            // construction, but the runtime contract is cursor-only.
+            // Callers still passing offset > 0 get a typed error.
             return Err(McpSandboxError::RpcError(format!(
                 "query_events: offset={} is no longer supported by v2 events_read; \
-                 use cursor-based pagination",
+                 use cursor-based pagination (set QueryFilter::cursor from the previous \
+                 page's QueryPage::next_cursor)",
                 filter.offset
             )));
+        }
+        if let Some(cursor) = filter.cursor.as_deref() {
+            params["cursor"] = serde_json::json!(cursor);
         }
         if let Some(event_types) = filter.event_types {
             params["event_types"] = serde_json::json!(event_types);
@@ -691,22 +719,19 @@ impl McpSession {
 
         let response = self.rpc_client.call_tool("events_read", params).await?;
 
-        // REC-C8 (G0.4 fix): the v2 server wraps query-mode results inside
-        // an outer `{result: {events: [...], next_offset, total_matching},
-        // mode, completeness, ...}` envelope (see `EventsReadOutput::Query`
-        // in `crates/chronos-services/src/output.rs`). Reading `events`
-        // from the inner JSON root is what the client did before the C5.2
-        // migration and that is what was failing T1 integration with
-        // `RpcError("missing field 'events'")`. The wire smoke
-        // `/tmp/g0.4-wire-smoke` confirmed this exact shape against the
-        // real `chronos-mcp` binary (see exploration-report.md §11).
+        // REC-C8 (G0.4 fix) + R0.2: the v2 server wraps query-mode
+        // results inside an outer `{result: {events: [...],
+        // total_matching, next_offset}, mode, completeness,
+        // next_cursor, provenance, retention, session_id, tail}`
+        // envelope (see `EventsReadOutput::Query` in
+        // `crates/chronos-services/src/output.rs`). The
+        // `/tmp/g0.4-wire-smoke` smoke confirmed this exact shape
+        // against the real `chronos-mcp` binary (see
+        // exploration-report.md §11).
         //
-        // We mirror the v2 envelope: an outer `V2Query { result: V2Result }`
-        // and read `v2.result.events`. The other top-level fields
-        // (`mode`, `completeness`, `next_cursor`, `provenance`,
-        // `retention`, `session_id`, `tail`) are preserved on the wire
-        // for MCP clients that need them, but the sandbox `query_events`
-        // API only exposes the `Vec<TraceEvent>` slice.
+        // We mirror the v2 envelope. R0.2 additionally reads
+        // `v2.next_cursor` (top-level) to expose pagination to
+        // callers; the previous R0.1 implementation discarded it.
         #[derive(serde::Deserialize)]
         struct V2Result {
             events: Vec<TraceEvent>,
@@ -720,10 +745,47 @@ impl McpSession {
         #[derive(serde::Deserialize)]
         struct V2Query {
             result: V2Result,
+            #[serde(default)]
+            next_cursor: Option<String>,
         }
         let v2: V2Query = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
-        Ok(v2.result.events)
+        Ok(QueryPage {
+            events: v2.result.events,
+            next_cursor: v2.next_cursor,
+        })
+    }
+
+    /// R0.2 (2026-09-22): convenience wrapper that walks
+    /// `query_events_page` with `limit` per page until
+    /// `next_cursor.is_none()`. Returns the concatenated event
+    /// list in the order the server emits them.
+    ///
+    /// This is the canonical replacement for every test or call
+    /// site that used to rely on the legacy `offset`-based
+    /// pagination. The returned vector preserves the observable
+    /// properties asserted by the legacy tests (no overlap,
+    /// strictly increasing timestamp order, beyond-tail empty).
+    pub async fn query_events_walk_all(
+        &mut self,
+        session_id: &str,
+        mut filter: QueryFilter,
+    ) -> Result<Vec<TraceEvent>, McpSandboxError> {
+        filter.cursor = None;
+        let limit = filter.limit;
+        let mut out: Vec<TraceEvent> = Vec::new();
+        loop {
+            let page = self.query_events_page(session_id, filter.clone()).await?;
+            let page_len = page.events.len();
+            out.extend(page.events);
+            match page.next_cursor {
+                Some(c) if page_len >= limit => {
+                    filter.cursor = Some(c);
+                }
+                _ => break,
+            }
+        }
+        Ok(out)
     }
 
     /// Get event — retrieves detailed information about a specific trace event.

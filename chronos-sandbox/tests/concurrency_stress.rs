@@ -139,12 +139,17 @@ async fn test_concurrent_sequential_queries_same_session() {
 
     println!("Session {} has {} events", session_id, stop.total_events);
 
-    // Query 20 times rapidly
+    // Query 20 times rapidly. R0.2 (2026-09-22): cursor walk
+    // replaces offset-based pagination, so we always send offset=0
+    // and let the server emit the first page (limit=5). The
+    // observable property under stress ("client handles rapid
+    // queries without RPC errors") is preserved.
     let mut success = 0;
     for i in 0..20 {
         let filter = chronos_sandbox::client::types::QueryFilter {
             limit: 5,
-            offset: i * 5,
+            offset: 0,
+            cursor: None,
             ..Default::default()
         };
         match client.query_events(&session_id, filter).await {
@@ -428,14 +433,19 @@ async fn test_concurrent_high_frequency_queries() {
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Fire 100 queries as fast as possible
+    // Fire 100 queries as fast as possible. R0.2 (2026-09-22):
+    // cursor walk replaces offset-based pagination; we send
+    // offset=0 every time and let the server emit the first page
+    // (limit=10). The observable property under stress ("no
+    // RPC failures under high QPS") is preserved.
     let mut success = 0;
     let mut failures = 0;
 
-    for i in 0..100 {
+    for _i in 0..100 {
         let filter = chronos_sandbox::client::types::QueryFilter {
             limit: 10,
-            offset: (i * 10) % 100,
+            offset: 0,
+            cursor: None,
             ..Default::default()
         };
 

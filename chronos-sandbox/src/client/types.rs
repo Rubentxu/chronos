@@ -422,6 +422,13 @@ pub struct TripwireQueryResponse {
 // ============================================================================
 
 /// Filter parameters for query_events.
+///
+/// R0.2 (2026-09-22): added `cursor` for v2 cursor-based pagination.
+/// `offset` is kept for backward-compatible construction but the
+/// client wrapper rejects any non-zero `offset` (it is no longer
+/// accepted by the v2 `events_read` wire shape; see G0.4 C5.2).
+/// New code should set `cursor` to the `next_cursor` returned by
+/// the previous page (or `None` for the first page).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryFilter {
     pub event_types: Option<Vec<String>>,
@@ -431,8 +438,17 @@ pub struct QueryFilter {
     pub function_pattern: Option<String>,
     #[serde(default = "default_query_limit")]
     pub limit: usize,
+    /// COMPATIBILITY ONLY: legacy pre-C5.2 offset pagination. Always
+    /// `0` in new code; the client wrapper returns an error if it
+    /// sees anything else. Kept in the type because some test
+    /// fixtures still construct it; the runtime contract is
+    /// cursor-only.
     #[serde(default)]
     pub offset: usize,
+    /// Opaque `next_cursor` from a previous `query_events` call, or
+    /// `None` for the first page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
 }
 
 fn default_query_limit() -> usize {
@@ -449,8 +465,21 @@ impl Default for QueryFilter {
             function_pattern: None,
             limit: default_query_limit(),
             offset: 0,
+            cursor: None,
         }
     }
+}
+
+/// A page of events returned by `query_events`.
+///
+/// R0.2 (2026-09-22): replaces the previous `Vec<TraceEvent>` return
+/// shape with `(events, next_cursor)` so callers can paginate using
+/// the v2 `events_read` wire cursor. `next_cursor` is `None` on the
+/// last page.
+#[derive(Debug, Clone)]
+pub struct QueryPage {
+    pub events: Vec<TraceEvent>,
+    pub next_cursor: Option<String>,
 }
 
 /// A trace event returned from query operations.
