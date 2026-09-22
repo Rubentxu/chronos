@@ -315,8 +315,8 @@ fn lib_rs_exposes_concurrency_wire_symbols() {
     //   - types are referenced via `_` annotation that requires the
     //     name to resolve
     use chronos_mcp::{
-        build_graph_from_wire, classify_pair_from_json, classify_pair_via_wire, wire_version,
-        GraphEdgeWire, RaceClassificationWire,
+        build_graph_from_wire, classify_pair_from_json, classify_pair_via_wire,
+        concurrency_wire_version, GraphEdgeWire, RaceClassificationWire,
     };
 
     // Function-pointer references (require items to be callable).
@@ -328,7 +328,7 @@ fn lib_rs_exposes_concurrency_wire_symbols() {
         &ConcurrentPair,
     ) -> RaceClassificationWire = classify_pair_via_wire;
     let _: fn(serde_json::Value) -> Result<serde_json::Value, String> = classify_pair_from_json;
-    let _: fn() -> &'static str = wire_version;
+    let _: fn() -> &'static str = concurrency_wire_version;
 
     // Type references (require types to resolve at the crate root).
     let _: Option<GraphEdgeWire> = None;
