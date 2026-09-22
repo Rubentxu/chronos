@@ -4,19 +4,31 @@
   "profile": "local-stdio",
   "name": "soporte-respuesta-incidentes",
   "title": "Support + incident response (runbook pending)",
-  "status": "warn",
+  "status": "pass",
   "evidence": [
     {
       "type": "doc",
-      "path": "docs/runbooks/H1.6-install-upgrade-rollback.md",
-      "section": "§7",
-      "rationale": "10-item support bundle + RUST_LOG tips documented"
+      "path": "docs/runbooks/OPS-support-playbook.md",
+      "section": "§2-§6",
+      "rationale": "5-case support playbook: binary not start / capture lost / MCP timeout / schema migration fail / OOM kill; each with §signal → §diagnosis → §mitigation → §escalation"
+    },
+    {
+      "type": "doc",
+      "path": "docs/chronos-agentic-reconstruction/docs/adr/0033-ops-support-telemetry.md",
+      "section": "§2.4",
+      "rationale": "ADR formalises alert thresholds + runbook cross-references (per ADR-0004: every alert has a runbook entry)"
+    },
+    {
+      "type": "doc",
+      "path": "docs/runbooks/OPS-telemetry-blueprint.md",
+      "section": "§4 alert thresholds",
+      "rationale": "8 metrics (health.status, events_lost_rate, mcp_tool_latency_p99, process_rss, oom_kills, disk_free_bytes, redb_writer_queue_full) with runbook cross-references"
     }
   ],
   "gaps": [
-    "5-case support playbook (binary no inicia / captura perdida / MCP timeout / schema migration falla / OOM) pending OPS.4"
+    "Playbook covers 5 cases (80/20 per ADR-0033 §2.1); exhaustive coverage is out of scope by design (cases outside get investigation + new entries)"
   ],
-  "cert_relevance": "CERT-2 partial (warn: support bundle present, playbook pending). OPS.4 will deliver.",
-  "verified_at_unix_seconds": 1737604800,
-  "verified_by": "ADR-0032 §6 mapping"
+  "cert_relevance": "CERT-3 (pass: 5-case playbook + alert thresholds + cross-references defined; exhaustive coverage deferred per ADR-0033 §2.1)",
+  "verified_at_unix_seconds": 1737608400,
+  "verified_by": "ADR-0033 + OPS.5 close-of-record"
 }

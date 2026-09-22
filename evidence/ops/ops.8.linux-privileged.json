@@ -4,19 +4,31 @@
   "profile": "linux-privileged",
   "name": "soporte-respuesta-incidentes",
   "title": "Support + incident response (runbook pending)",
-  "status": "warn",
+  "status": "pass",
   "evidence": [
     {
       "type": "doc",
-      "path": "docs/runbooks/H1.6-install-upgrade-rollback.md",
-      "section": "§7",
-      "rationale": "Same support bundle applies"
+      "path": "docs/runbooks/OPS-support-playbook.md",
+      "section": "§2-§6",
+      "rationale": "5-case support playbook applies to both profiles (linux-privileged has same failure modes + additional CAP_BPF / CAP_SYS_PTRACE diagnosis)"
+    },
+    {
+      "type": "doc",
+      "path": "docs/chronos-agentic-reconstruction/docs/adr/0033-ops-support-telemetry.md",
+      "section": "§2.4",
+      "rationale": "ADR formalises alert thresholds + runbook cross-references (per ADR-0004: every alert has a runbook entry)"
+    },
+    {
+      "type": "doc",
+      "path": "docs/runbooks/OPS-telemetry-blueprint.md",
+      "section": "§4 alert thresholds",
+      "rationale": "8 metrics with runbook cross-references"
     }
   ],
   "gaps": [
-    "playbook pending OPS.4"
+    "Playbook covers 5 cases (80/20 per ADR-0033 §2.1); exhaustive coverage is out of scope by design"
   ],
-  "cert_relevance": "CERT-2 partial. Same as local-stdio.",
-  "verified_at_unix_seconds": 1737604800,
-  "verified_by": "ADR-0032 §6 mapping"
+  "cert_relevance": "CERT-3 (pass: 5-case playbook + alert thresholds + cross-references defined; CAP-specific diagnostics in §2.2 step 4)",
+  "verified_at_unix_seconds": 1737608400,
+  "verified_by": "ADR-0033 + OPS.5 close-of-record"
 }

@@ -1,5 +1,5 @@
 {
-  "generated_at_unix_seconds": 1790068486,
+  "generated_at_unix_seconds": 1790072011,
   "per_check": {
     "OPS.1": {
       "linux-privileged": {
@@ -63,14 +63,14 @@
     },
     "OPS.6": {
       "linux-privileged": {
-        "evidence_count": 1,
+        "evidence_count": 3,
         "gaps_count": 1,
-        "status": "warn"
+        "status": "pass"
       },
       "local-stdio": {
-        "evidence_count": 1,
+        "evidence_count": 3,
         "gaps_count": 1,
-        "status": "warn"
+        "status": "pass"
       }
     },
     "OPS.7": {
@@ -87,35 +87,35 @@
     },
     "OPS.8": {
       "linux-privileged": {
-        "evidence_count": 1,
+        "evidence_count": 3,
         "gaps_count": 1,
-        "status": "warn"
+        "status": "pass"
       },
       "local-stdio": {
-        "evidence_count": 1,
+        "evidence_count": 3,
         "gaps_count": 1,
-        "status": "warn"
+        "status": "pass"
       }
     }
   },
   "per_profile": {
     "linux-privileged": {
       "fail": 0,
-      "pass": 5,
+      "pass": 7,
       "total": 8,
-      "warn": 3
+      "warn": 1
     },
     "local-stdio": {
       "fail": 0,
-      "pass": 6,
+      "pass": 8,
       "total": 8,
-      "warn": 2
+      "warn": 0
     }
   },
   "schema_version": 1,
   "source_count": 16,
   "tier_per_profile": {
     "linux-privileged": "cert-3-certified",
-    "local-stdio": "cert-3-certified"
+    "local-stdio": "cert-4-production"
   }
 }

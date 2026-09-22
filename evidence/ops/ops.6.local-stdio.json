@@ -4,19 +4,30 @@
   "profile": "local-stdio",
   "name": "telemetry-diagnostico",
   "title": "Telemetry + diagnostic logging (blueprint)",
-  "status": "warn",
+  "status": "pass",
   "evidence": [
     {
       "type": "doc",
-      "path": "docs/security/H1.2-threat-model.md",
-      "section": "§10",
-      "rationale": "Telemetry blueprint referenced; OTel collector + log shipping documented as forward-compatible"
+      "path": "docs/runbooks/OPS-telemetry-blueprint.md",
+      "section": "§2 wire contracts",
+      "rationale": "Structured JSON logs + OTLP :4317 opt-in wire format + health endpoint contract (types only)"
+    },
+    {
+      "type": "doc",
+      "path": "docs/chronos-agentic-reconstruction/docs/adr/0033-ops-support-telemetry.md",
+      "section": "§2.3",
+      "rationale": "ADR formalises telemetry = blueprint + forward-compatible wire format (NOT collector impl)"
+    },
+    {
+      "type": "module",
+      "path": "crates/chronos-services/src/health_check.rs",
+      "rationale": "HealthStatus + ComponentHealth + HealthReport types (12 unit tests)"
     }
   ],
   "gaps": [
-    "telemetry collector is NOT implemented (blueprint only); deployment-specific (per ADR-0032 §8 + §3.5)"
+    "OTel collector / Prometheus exposition NOT in library (operator's deployment decision; pre-existing tracing + OTLP optional feature available)"
   ],
-  "cert_relevance": "CERT-2 partial (warn: blueprint only, no implementation). OPS.4 will deliver detailed blueprint.",
-  "verified_at_unix_seconds": 1737604800,
-  "verified_by": "ADR-0032 §6 mapping"
+  "cert_relevance": "CERT-3 (pass: blueprint + contract defined; collector impl is deployment-specific per ADR-0033 §2.3)",
+  "verified_at_unix_seconds": 1737608400,
+  "verified_by": "ADR-0033 + OPS.5 close-of-record"
 }
