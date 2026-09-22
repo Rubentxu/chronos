@@ -104,6 +104,7 @@ pub mod output;
 pub mod probe;
 pub mod projection;
 pub mod query_service;
+pub mod race_classifier;
 pub mod session_compare;
 pub mod session_explain;
 pub mod session_export;
