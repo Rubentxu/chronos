@@ -7,7 +7,7 @@
 //! the canonical source of truth.
 
 use chronos_domain::otlp::parse::{
-    parse_traceparent, parse_tracestate, TracestateParseError, TraceparentParseError,
+    parse_traceparent, parse_tracestate, TraceparentParseError, TracestateParseError,
 };
 use chronos_domain::otlp::*;
 
@@ -40,7 +40,10 @@ fn traceparent_can_attach_tracestate() {
     let etc = parse_traceparent(tp).expect("parse");
     let ts = parse_tracestate("congo=t61rcWkgMzE,rojo=00f067aa0ba902b7").expect("parse ts");
     let etc2 = etc.with_tracestate(ts);
-    assert_eq!(etc2.to_tracestate(), "congo=t61rcWkgMzE,rojo=00f067aa0ba902b7");
+    assert_eq!(
+        etc2.to_tracestate(),
+        "congo=t61rcWkgMzE,rojo=00f067aa0ba902b7"
+    );
 }
 
 #[test]
@@ -63,8 +66,8 @@ fn traceparent_unknown_version_fails() {
 
 #[test]
 fn traceparent_all_zero_trace_id_fails() {
-    let err = parse_traceparent("00-00000000000000000000000000000000-00f067aa0ba902b7-01")
-        .unwrap_err();
+    let err =
+        parse_traceparent("00-00000000000000000000000000000000-00f067aa0ba902b7-01").unwrap_err();
     assert_eq!(
         err,
         TraceparentParseError::InvalidAllZero {
@@ -189,8 +192,8 @@ fn tracestate_empty_vendor_fails() {
 
 #[test]
 fn traceparent_invalid_hex_chars_fails() {
-    let err = parse_traceparent("00-zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-00f067aa0ba902b7-01")
-        .unwrap_err();
+    let err =
+        parse_traceparent("00-zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-00f067aa0ba902b7-01").unwrap_err();
     assert!(matches!(err, TraceparentParseError::InvalidHex { .. }));
 }
 
@@ -208,8 +211,8 @@ fn traceparent_wrong_trace_id_length_fails() {
 
 #[test]
 fn traceparent_wrong_flags_length_fails() {
-    let err = parse_traceparent("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-1")
-        .unwrap_err();
+    let err =
+        parse_traceparent("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-1").unwrap_err();
     assert!(matches!(
         err,
         TraceparentParseError::WrongLength {

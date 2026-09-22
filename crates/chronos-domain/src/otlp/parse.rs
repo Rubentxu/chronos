@@ -55,11 +55,9 @@ impl std::fmt::Display for TraceparentParseError {
             Self::InvalidHex { segment, value } => {
                 write!(f, "segment '{}' is not valid hex: '{}'", segment, value)
             }
-            Self::InvalidVersion { version } => write!(
-                f,
-                "version '{}' not supported (only 00)",
-                version
-            ),
+            Self::InvalidVersion { version } => {
+                write!(f, "version '{}' not supported (only 00)", version)
+            }
             Self::InvalidAllZero { segment } => {
                 write!(f, "segment '{}' is all-zero (invalid)", segment)
             }
@@ -157,18 +155,16 @@ pub fn parse_traceparent(s: &str) -> Result<ExternalTraceContext, TraceparentPar
             actual: flags_hex.len(),
         });
     }
-    let trace_id_bytes = parse_hex_16(trace_id_hex).ok_or_else(|| {
-        TraceparentParseError::InvalidHex {
+    let trace_id_bytes =
+        parse_hex_16(trace_id_hex).ok_or_else(|| TraceparentParseError::InvalidHex {
             segment: "trace-id",
             value: trace_id_hex.to_string(),
-        }
-    })?;
-    let span_id_bytes = parse_hex_8(parent_id_hex).ok_or_else(|| {
-        TraceparentParseError::InvalidHex {
+        })?;
+    let span_id_bytes =
+        parse_hex_8(parent_id_hex).ok_or_else(|| TraceparentParseError::InvalidHex {
             segment: "parent-id",
             value: parent_id_hex.to_string(),
-        }
-    })?;
+        })?;
     let flags_byte =
         parse_hex_byte(flags_hex).ok_or_else(|| TraceparentParseError::InvalidHex {
             segment: "trace-flags",

@@ -9,6 +9,7 @@
 //! Architectural decision: unify or stay parallel is deferred. See
 //! `docs/milestones/M6-CLOSE.md` §5 "honest limitations".
 
+pub mod ingest;
 pub mod parse;
 
 use uuid::Uuid;
