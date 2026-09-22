@@ -309,6 +309,7 @@ pub fn collision_hunt(seed: u64, corpus_size: usize) -> CollisionReport {
 /// Outcome of a UAT execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UatOutcome {
+    // ----- M7.4 variants (existing) -----
     /// UAT-M7-01: first semantic divergence was found.
     FoundDivergence,
     /// UAT-M7-02: gaps / missing context → unknown, no false equality.
@@ -318,6 +319,23 @@ pub enum UatOutcome {
     FalseEquality,
     /// UAT-M7-01 failed: divergence was expected but not found.
     NoDivergence,
+
+    // ----- M6.6 variants (R1 lift) -----
+    /// UAT-M6-01: two concurrent cross-service invocations did NOT mix
+    /// trace_ids / invocation_ids / events. Distinct per-service.
+    CrossServiceUnambiguous,
+    /// UAT-M6-02: monotonic-clock drift between services preserved, and an
+    /// idempotent retry with the same `traceparent` produced a new
+    /// `OtlpInvocationId` but the same `trace_id`.
+    DriftAndIdempotencyHold,
+    /// UAT-M6-01 failure: two concurrent invocations shared trace_id /
+    /// invocation_id (cross-mix detected). This is the failure mode the
+    /// scenario is testing for.
+    CrossServiceMixDetected,
+    /// UAT-M6-02 failure: monotonic drift collapsed (events from both
+    /// services merged under a single monotonic timestamp) or the retry
+    /// produced a different trace_id.
+    DriftOrIdempotencyCollapsed,
 }
 
 impl UatOutcome {
@@ -325,7 +343,10 @@ impl UatOutcome {
     pub fn is_pass(&self) -> bool {
         matches!(
             self,
-            UatOutcome::FoundDivergence | UatOutcome::UnknownUnsupported
+            UatOutcome::FoundDivergence
+                | UatOutcome::UnknownUnsupported
+                | UatOutcome::CrossServiceUnambiguous
+                | UatOutcome::DriftAndIdempotencyHold
         )
     }
 
@@ -336,6 +357,10 @@ impl UatOutcome {
             UatOutcome::UnknownUnsupported => "UnknownUnsupported",
             UatOutcome::FalseEquality => "FalseEquality",
             UatOutcome::NoDivergence => "NoDivergence",
+            UatOutcome::CrossServiceUnambiguous => "CrossServiceUnambiguous",
+            UatOutcome::DriftAndIdempotencyHold => "DriftAndIdempotencyHold",
+            UatOutcome::CrossServiceMixDetected => "CrossServiceMixDetected",
+            UatOutcome::DriftOrIdempotencyCollapsed => "DriftOrIdempotencyCollapsed",
         }
     }
 }

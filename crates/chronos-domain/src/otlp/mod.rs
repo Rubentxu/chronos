@@ -23,6 +23,11 @@ pub mod fingerprint;
 // M7.4 lift (2026-09-22): cost / memory baselines + collision hunt +
 // UAT-M7-01/02 executors. See module docs.
 pub mod cost_memory_collision;
+// M6.6 lift (2026-09-22, R1): cross-service correlation harness + UAT-M6-01/02
+// executors. Composes modules already lifted (parse + correlation + RecordedInvocation)
+// rather than re-implementing the spike's m6_4_otel_exporter path (which was not
+// lifted per ADR-0033 §2.2). See module docs for the UAT scope.
+pub mod cross_service;
 
 use uuid::Uuid;
 
