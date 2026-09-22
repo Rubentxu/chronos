@@ -4,7 +4,7 @@
   "base_sha": "148f009",
   "head_sha": "456824693e59a97e8167f39f770dee02ba7ed2a4",
   "status": "implemented",
-  "merge_sha": null,
+  "merge_sha": "bceddc94",
   "merge_doc": "docs/milestones/m8-07-hypothesis-reconstruction-fidelity-merge.md",
   "scoping_doc": "docs/milestones/m8-07-hypothesis-reconstruction-fidelity-scoping.md",
   "commits_since_base": [
