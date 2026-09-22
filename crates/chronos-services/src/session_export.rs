@@ -168,19 +168,30 @@ fn serialize_bundle_json(bundle: &ExportBundle) -> Result<Vec<u8>, ServiceError>
 /// Serialize the bundle in OTLP-compatible Json wire format.
 ///
 /// Shape: `{"resourceSpans": [{"resource": {"attributes": [...]}, "scopeSpans": [{"scope": {...}, "spans": [...]}]}]}`.
-/// - `resource.attributes` carries session metadata + schema_version.
-/// - `scope.attributes` carries properties_snapshot (empty in m6-05).
-/// - Each `TraceEvent` becomes one OTLP `Span` with `name` = event
-///   type, `start_time_unix_nano` = event.timestamp_ns, and
-///   `attributes` carrying the event's `data` as a JSON object.
+///
+/// **Important: timestamp semantics.** OTLP spec requires
+/// `start_time_unix_nano` to be Unix-epoch nanoseconds. Chronos
+/// `TraceEvent::timestamp_ns` is documented as `nanosegundos desde el
+/// inicio de la sesión` (REC-C4 CONN-001 — distinct clock domain from
+/// wall clock). M6 deliberately does NOT touch wall clock (ADR-0004 §M6.2:
+/// "no wall-clock Unix timestamps in M6.*"); therefore the OTLP span
+/// sets `start_time_unix_nano = 0` and carries the real monotonic value
+/// in the attribute `chronos.timestamp_monotonic_ns`, plus a resource
+/// attribute `chronos.timestamp_domain = "monotonic_ns_from_session_start"`
+/// so downstream consumers (Jaeger / Tempo / Honeycomb) can detect the
+/// domain instead of reading 0 as a real Unix epoch. See
+/// `docs/milestones/m6-close.md` §M6.5 "OTLP timestamp domain honesty".
 fn serialize_bundle_otlp_json(bundle: &ExportBundle) -> Result<Vec<u8>, ServiceError> {
     let resource_attrs = json!([
-        { "key": "schema.version",       "value": { "stringValue": bundle.schema_version } },
-        { "key": "session.id",           "value": { "stringValue": bundle.metadata.session_id } },
-        { "key": "session.language",     "value": { "stringValue": bundle.metadata.language } },
-        { "key": "session.target",       "value": { "stringValue": bundle.metadata.target } },
-        { "key": "session.event_count",  "value": { "intValue": bundle.metadata.event_count as i64 } },
-        { "key": "session.duration_ms",  "value": { "intValue": bundle.metadata.duration_ms as i64 } },
+        { "key": "schema.version",                "value": { "stringValue": bundle.schema_version } },
+        { "key": "session.id",                    "value": { "stringValue": bundle.metadata.session_id } },
+        { "key": "session.language",              "value": { "stringValue": bundle.metadata.language } },
+        { "key": "session.target",                "value": { "stringValue": bundle.metadata.target } },
+        { "key": "session.event_count",           "value": { "intValue": bundle.metadata.event_count as i64 } },
+        { "key": "session.duration_ms",           "value": { "intValue": bundle.metadata.duration_ms as i64 } },
+        // Honest OTLP timestamp domain disclosure. See function docs.
+        { "key": "chronos.timestamp_domain",      "value": { "stringValue": "monotonic_ns_from_session_start" } },
+        { "key": "chronos.created_at_monotonic_ms","value": { "intValue": bundle.metadata.created_at as i64 } },
     ]);
 
     let scope_attrs = json!(bundle
@@ -196,16 +207,23 @@ fn serialize_bundle_otlp_json(bundle: &ExportBundle) -> Result<Vec<u8>, ServiceE
         .events
         .iter()
         .map(|ev| {
+            // OTLP `start_time_unix_nano` MUST be Unix-epoch ns per spec.
+            // Chronos tracks monotonic ns from session start, not Unix
+            // time. Emit 0 in the canonical field and carry the real
+            // monotonic ns in a typed attribute. See function docs.
             json!({
                 "name": format!("{:?}", ev.event_type),
-                "start_time_unix_nano": ev.timestamp_ns.get().to_string(),
-                "end_time_unix_nano":   ev.timestamp_ns.get().to_string(),
+                "start_time_unix_nano": "0",
+                "end_time_unix_nano":   "0",
                 "attributes": [{
                     "key": "chronos.event_id",
                     "value": { "intValue": ev.event_id as i64 },
                 }, {
                     "key": "chronos.thread_id",
                     "value": { "intValue": ev.thread_id as i64 },
+                }, {
+                    "key": "chronos.timestamp_monotonic_ns",
+                    "value": { "intValue": ev.timestamp_ns.get() as i64 },
                 }, {
                     "key": "chronos.event_data",
                     "value": { "stringValue": format!("{:?}", ev.data) },
@@ -570,6 +588,65 @@ mod tests {
             .unwrap();
         let sv = attrs.iter().find(|a| a["key"] == "schema.version").unwrap();
         assert_eq!(sv["value"]["stringValue"], "v2-export.1");
+    }
+
+    /// Honest OTLP timestamp domain contract (m6-05 + post-v0.8.0 fix):
+    /// `start_time_unix_nano` MUST be Unix-epoch ns per OTLP spec.
+    /// Chronos `TraceEvent::timestamp_ns` is monotonic-from-session-start
+    /// (REC-C4 CONN-001, ADR-0004 §M6.2: no wall clock in M6.*).
+    /// Therefore we emit `start_time_unix_nano = "0"` and carry the
+    /// real monotonic ns in `chronos.timestamp_monotonic_ns` plus the
+    /// resource-level `chronos.timestamp_domain` disclosure attribute.
+    /// See `serialize_bundle_otlp_json` docs.
+    #[tokio::test]
+    async fn export_otlp_json_timestamp_domain_is_monotonic_honest() {
+        let dir = tempdir();
+        let path = dir.join("session.otlp.json");
+        // event_id=42, timestamp_ns=123_456_789_000 (123456789 us)
+        let mut ev = func_event(1, 1, "main");
+        ev.timestamp_ns = MonotonicNs::from(123_456_789_000_u64);
+        let ctx = make_engines_clean("s-ts", vec![ev]);
+        ChronosSessionExportService::export(
+            "s-ts",
+            Language::Python,
+            "ts.py".to_string(),
+            ExportFormat::OtlpJson,
+            &path,
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+
+        // Resource-level domain disclosure.
+        let rattrs = v["resourceSpans"][0]["resource"]["attributes"]
+            .as_array()
+            .unwrap();
+        let domain = rattrs
+            .iter()
+            .find(|a| a["key"] == "chronos.timestamp_domain")
+            .expect("chronos.timestamp_domain attribute MUST be present");
+        assert_eq!(
+            domain["value"]["stringValue"],
+            "monotonic_ns_from_session_start"
+        );
+
+        // Span-level: canonical OTLP field is honest 0, real value is in attribute.
+        let span = &v["resourceSpans"][0]["scopeSpans"][0]["spans"][0];
+        assert_eq!(
+            span["start_time_unix_nano"], "0",
+            "start_time_unix_nano MUST be 0 (Chronos does not produce Unix time in M6)"
+        );
+        assert_eq!(span["end_time_unix_nano"], "0");
+
+        let sattrs = span["attributes"].as_array().unwrap();
+        let mono = sattrs
+            .iter()
+            .find(|a| a["key"] == "chronos.timestamp_monotonic_ns")
+            .expect("chronos.timestamp_monotonic_ns attribute MUST be present");
+        assert_eq!(mono["value"]["intValue"], 123_456_789_000_i64);
     }
 
     #[tokio::test]

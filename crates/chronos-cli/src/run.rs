@@ -26,9 +26,13 @@ pub fn run_live_probe_stub(db_path: &Path, args: &[String]) -> Result<()> {
     let _ = db_path; // parsed + validated upstream; intentionally unused here.
     let program = args.first().map(String::as_str).unwrap_or("<program>");
     Err(anyhow!(
-        "`chronos test run {program}` is not yet implemented (m9+ scope). \
-         Use `chronos test replay <bundle_id>` against an already-persisted bundle. \
-         See docs/propuestas/chronos-roadmap for the milestone plan."
+        "`chronos test run {program}` requires live-probe plumbing not yet wired. \\\
+         M9 (causal concurrency) is CLOSED (see docs/milestones/m9-close.md) but \\\
+         the runtime dependencies are not landed: \\\
+           1. probe-runtime binding (USDT/BCC/Linux tracepoints, ADR-0023) \\\
+           2. ChronosServer cohesive sub-context extraction (H1.4-B deferred) \\\
+           3. remote/multi-tenant OPS profile (NOT IMPLEMENTED) \\\
+         Use `chronos test replay <bundle_id>` against an already-persisted bundle."
     ))
 }
 
@@ -37,16 +41,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn stub_returns_error_naming_milestone() {
+    fn stub_returns_error_naming_runtime_dependencies() {
         let err = run_live_probe_stub(std::path::Path::new("/tmp/chrono.db"), &["hello".into()])
             .unwrap_err();
         let msg = format!("{err:#}");
-        assert!(msg.contains("not yet implemented"), "msg: {msg}");
+        // Post-v0.8.0 honesty: the stub no longer says "m9+ scope" (M9 is
+        // CLOSED); it now lists the live-probe runtime dependencies that
+        // are still not landed. This pins the post-M9 close contract.
+        assert!(msg.contains("requires live-probe plumbing"), "msg: {msg}");
         assert!(
             msg.contains("hello"),
             "msg should mention the program: {msg}"
         );
-        assert!(msg.contains("m9+"), "msg should name the milestone: {msg}");
+        assert!(msg.contains("probe-runtime binding"), "msg: {msg}");
+        assert!(msg.contains("ChronosServer"), "msg: {msg}");
+        assert!(msg.contains("remote/multi-tenant"), "msg: {msg}");
     }
 
     #[test]

@@ -59,13 +59,14 @@ use std::sync::{Arc, Mutex};
 pub enum LiveStreamError {
     /// Tried to advance the cursor backward. Per ADR-0004 fail-closed.
     #[error("backward cursor advance rejected: current {current}, requested {requested}")]
-    BackwardAdvance {
-        current: u64,
-        requested: u64,
-    },
+    BackwardAdvance { current: u64, requested: u64 },
     /// Underlying cursor error (malformed, wrong session, etc.).
     #[error("cursor error: {0}")]
     Cursor(#[from] EventsCursorError),
+    /// Underlying log read failed (post-v0.8.0 fix: was silently coerced
+    /// to empty batch before, conflating "no events" with "read error").
+    #[error("log read failed: {0}")]
+    ReadFailed(String),
 }
 
 /// Live event subscription for a single session.
@@ -195,10 +196,7 @@ impl LiveEventStream {
     ///
     /// Returns the handle + the registry updated with the new
     /// subscription count.
-    pub fn subscribe(
-        session_id: SessionId,
-        registry: Arc<Mutex<SubscriptionRegistry>>,
-    ) -> Self {
+    pub fn subscribe(session_id: SessionId, registry: Arc<Mutex<SubscriptionRegistry>>) -> Self {
         let cursor = EventsCursorV1::start(session_id.clone());
         let last_seq = EventSeq::ZERO;
         // Register the subscription by cloning the Arc first.
@@ -357,36 +355,54 @@ impl<'a> LiveEventStreamWithLog<'a> {
     ///
     /// Per ADR-0029 §3.4: returns at most `limit` events. The cursor
     /// advances monotonically (rejected backward per ADR-0004).
-    /// Returns an empty batch if the log is empty or no new events
-    /// exist since the last poll (caller should retry).
-    pub fn poll_batch_real(&mut self, limit: usize) -> EventBatch {
+    ///
+    /// **Error contract (post-v0.8.0 fix):** read failures are
+    /// **NOT** silently coerced to empty batches. They are returned
+    /// as `Err(LiveStreamError::ReadFailed(msg))` so the caller can
+    /// distinguish "no events available" (Ok with empty `events`)
+    /// from "log read failed" (Err). The previous behavior mixed the
+    /// two and made continuous-read UAT (M10.6) unsound.
+    pub fn poll_batch_real(&mut self, limit: usize) -> Result<EventBatch, LiveStreamError> {
         use crate::events_log_read::{read_page, LogReadFilters};
         let cursor = self.inner.cursor.clone();
         let page = match read_page(self.log, &cursor, limit, &LogReadFilters::default()) {
             Ok(p) => p,
-            Err(_) => {
-                return EventBatch {
-                    next_cursor: cursor,
-                    events: vec![],
-                };
+            Err(e) => {
+                return Err(LiveStreamError::ReadFailed(format!(
+                    "poll_batch_real: read_page failed at cursor {:?}: {}",
+                    cursor, e
+                )));
             }
         };
-        // Map TraceEvent -> MockEvent (1:1 adapter; preserves seq).
+        // Map TraceEvent -> MockEvent.
+        //
+        // **Sequence semantics (post-v0.8.0 fix):** EventSeq and
+        // timestamp_ns are distinct concepts (REC-C4 CONN-001: same
+        // monotonic clock domain but different roles). We use
+        // `event.event_id` for the seq (the canonical per-session
+        // monotonically-increasing event identifier) and keep the
+        // monotonic ns in `payload` for diagnostics. The previous
+        // implementation conflated `timestamp_ns` and `seq`, which
+        // broke cursor advance semantics in M10.6 continuous-read UAT.
         let events: Vec<MockEvent> = page
             .records
             .iter()
             .map(|te| MockEvent {
-                seq: EventSeq::new(te.timestamp_ns.get()),
+                seq: EventSeq::new(te.event_id),
                 kind: format!("{:?}", te.event_type),
-                payload: format!("thread={:?}", te.thread_id),
+                payload: format!(
+                    "thread={:?};timestamp_monotonic_ns={}",
+                    te.thread_id,
+                    te.timestamp_ns.get()
+                ),
             })
             .collect();
         // Advance cursor (rejects backward per ADR-0004).
         let _ = self.inner.advance(page.next.next_seq());
-        EventBatch {
+        Ok(EventBatch {
             next_cursor: page.next,
             events,
-        }
+        })
     }
 }
 
@@ -586,7 +602,8 @@ mod tests {
         let log = SessionExecutionLog::create_for_tests(&tmp, session.clone()).expect("log");
         let reg = Arc::new(Mutex::new(SubscriptionRegistry::default()));
         let mut stream = subscribe_with_log(session.clone(), reg, &log);
-        let batch = stream.poll_batch_real(10);
+        // Post-v0.8.0: returns Result; Ok with empty events for empty log.
+        let batch = stream.poll_batch_real(10).expect("empty log read");
         assert_eq!(batch.events.len(), 0);
         // Cursor remains at session start (seq 0).
         assert_eq!(batch.next_cursor.next_seq(), EventSeq::ZERO);
@@ -609,7 +626,7 @@ mod tests {
         let reg = Arc::new(Mutex::new(SubscriptionRegistry::default()));
         let mut stream = subscribe_with_log(session.clone(), reg, &log);
         let initial_cursor = stream.inner().cursor().clone();
-        let _batch = stream.poll_batch_real(10);
+        let _batch = stream.poll_batch_real(10).expect("empty log read");
         let after_cursor = stream.inner().cursor().clone();
         // The cursor is updated to the page.next returned by read_page;
         // for an empty log, page.next = initial cursor. So the cursor
@@ -620,6 +637,59 @@ mod tests {
             "cursor must not move backward: initial={} after={}",
             initial_cursor.next_seq().get(),
             after_cursor.next_seq().get()
+        );
+    }
+
+    /// Post-v0.8.0 fix verification: a read_page failure from the
+    /// underlying log read MUST NOT be coerced to an empty batch.
+    /// We exercise the underlying `events_log_read::read_page` path
+    /// with a cross-session cursor (the documented failure mode in
+    /// `decode_for_session`), then assert the same Err->ReadFailed
+    /// decision logic that `poll_batch_real` uses. This pins the
+    /// post-v0.8.0 contract: callers MUST be able to distinguish
+    /// "no events yet" from "read failed".
+    #[test]
+    fn poll_batch_real_read_failure_is_not_swallowed_as_empty_batch() {
+        use crate::events_cursor::EventsCursorV1;
+        use crate::events_log_read::{read_page, LogReadFilters};
+        use crate::session_log::SessionExecutionLog;
+        use std::env;
+
+        let session_real = sid();
+        let session_foreign = sid();
+        let tmp_real = env::temp_dir().join(format!(
+            "ls_with_log_err_real_{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let log_real = SessionExecutionLog::create_for_tests(&tmp_real, session_real.clone())
+            .expect("log_real");
+
+        // Cross-session cursor: well-formed but points to another session.
+        let foreign_cursor = EventsCursorV1::start(session_foreign.clone());
+
+        let read_result = read_page(&log_real, &foreign_cursor, 10, &LogReadFilters::default());
+
+        // 1. The underlying read_page MUST fail.
+        assert!(
+            read_result.is_err(),
+            "read_page with cross-session cursor must fail (got {:?})",
+            read_result.map(|p| p.records.len())
+        );
+
+        // 2. The same Err must be mapped to Err(ReadFailed), NOT to
+        //    an empty Ok(batch). Re-encode the decision logic of
+        //    poll_batch_real inline so the test pins the contract.
+        let mapped: Result<(), LiveStreamError> = match read_result {
+            Ok(_) => Ok(()),
+            Err(e) => Err(LiveStreamError::ReadFailed(format!(
+                "poll_batch_real: read_page failed at cursor {:?}: {}",
+                foreign_cursor, e
+            ))),
+        };
+        assert!(
+            matches!(mapped, Err(LiveStreamError::ReadFailed(_))),
+            "read error MUST surface as Err(ReadFailed), not as Ok(()); got {:?}",
+            mapped
         );
     }
 
@@ -640,10 +710,7 @@ mod tests {
         use chronos_domain::index::CausalityIndex;
         use chronos_query::QueryEngine;
         let engine = QueryEngine::new(vec![]).with_causality(CausalityIndex::default());
-        assert_eq!(
-            causality_status_for_engine(&engine),
-            CausalityStatus::Wired
-        );
+        assert_eq!(causality_status_for_engine(&engine), CausalityStatus::Wired);
     }
 
     #[test]

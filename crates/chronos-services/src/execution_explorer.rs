@@ -284,8 +284,28 @@ impl ExecutionExplorerService {
             return Ok(ExecutionExplorerResult::Denied(denied));
         }
 
-        // Step 2: dispatch (stub for M10.2; M10.3/M10.4 implement actual
-        // delegation to events_cursor / debug_read / session_compare).
+        // Step 2: dispatch.
+        //
+        // Post-v0.8.0 honest state: this is a STUB that returns the
+        // wire-shape-only payload. The real delegation to
+        // `ChronosEventsReadService::read` /
+        // `DebugReadService::{evaluate_expression, get_memory, get_registers}` /
+        // `ChronosSessionCompareService::compare` requires the
+        // corresponding `Context` types (`EventsReadContext`,
+        // `DebugReadContext`, `SessionCompareContext`), which the MCP
+        // server owns. The MCP wrapper at
+        // `crates/chronos-mcp/src/server.rs::execution_explorer` is
+        // responsible for:
+        //
+        //   1. Resolving the live `QueryEngine` / `SessionReader` /
+        //      `DiffEngine` per session.
+        //   2. Building the right `Context`.
+        //   3. Translating `ExecutionExplorerAction` to the underlying
+        //      service call (ReadEvents -> events_read, ReadMemory/ReadRegisters/
+        //      EvaluateExpression -> debug_read, ReadCompare -> session_compare).
+        //
+        // Until that wrapper lands, the payload here is the contract
+        // test fixture (see `process_returns_stub_payload_for_permitted_action`).
         Ok(ExecutionExplorerResult::Payload(format!(
             "stub:action={} session_id={:?} cursor={:?} limit={:?}",
             req.action.label(),
@@ -432,6 +452,48 @@ mod tests {
         assert!(matches!(result, ExecutionExplorerResult::Payload(_)));
     }
 
+    /// Post-v0.8.0 honest contract pin: when a request is permitted,
+    /// `process` returns a `Payload` containing the literal substring
+    /// `"stub:"` so consumers (and tests) can detect the M10.2 wire
+    /// shape vs the future real delegation. The real delegation
+    /// (`ChronosEventsReadService::read` /
+    /// `DebugReadService::*` / `ChronosSessionCompareService::compare`)
+    /// requires the corresponding `Context` types owned by the MCP
+    /// server; until that wiring lands, the payload here is the
+    /// contract test fixture.
+    #[test]
+    fn process_returns_stub_payload_for_permitted_action() {
+        let req = ExecutionExplorerRequest {
+            action: ExecutionExplorerAction::ReadEvents,
+            granted_permissions: Permissions::from_permissions(&[Permission::ReadEvents]),
+            session_id: Some("s-1".to_string()),
+            cursor: Some("cur-1".to_string()),
+            limit: Some(50),
+        };
+        let svc = ExecutionExplorerService::new();
+        let result = svc.process(&req).expect("dispatch ok");
+        match result {
+            ExecutionExplorerResult::Payload(p) => {
+                assert!(
+                    p.starts_with("stub:"),
+                    "permitted actions return stub payload prefix; got {:?}",
+                    p
+                );
+                assert!(p.contains("action=read_events"), "p: {p}");
+                assert!(
+                    p.contains("Some(\"s-1\")"),
+                    "session_id must be present in stub payload: {p}"
+                );
+                assert!(
+                    p.contains("Some(\"cur-1\")"),
+                    "cursor must be present in stub payload: {p}"
+                );
+                assert!(p.contains("Some(50)"), "limit must be present: {p}");
+            }
+            other => panic!("expected Payload(stub:...), got {:?}", other),
+        }
+    }
+
     #[test]
     fn read_compare_requires_read_compare() {
         let req = ExecutionExplorerRequest {
@@ -460,8 +522,7 @@ mod tests {
             limit: Some(100),
         };
         let json = serde_json::to_string(&req).expect("serialize");
-        let parsed: ExecutionExplorerRequest =
-            serde_json::from_str(&json).expect("deserialize");
+        let parsed: ExecutionExplorerRequest = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed, req);
     }
 
