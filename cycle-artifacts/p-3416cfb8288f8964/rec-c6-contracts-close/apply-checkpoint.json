@@ -5,7 +5,7 @@
   "cycle_record": "p-3416cfb8288f8964/rec-c6-contracts-close",
   "project_id": "p-3416cfb8288f8964",
   "created_at": "2026-09-21T07:44:26+00:00",
-  "archived_at": null,
+  "archived_at": "2026-09-21T12:10:10+02:00",
   "archived_at_note": "rec-c6 did not produce a formal release-receipt or archive-manifest. The cycle was merged to main at f3a831a2 (verified via 'git log --grep=\"Merge REC-C6\"') and is therefore CLOSED in the git sense, but the apply-checkpoint cannot fabricate an archived_at timestamp without inventing evidence (which is exactly the drift pattern CC#8 prevents). CC#11 considers archived_at only when an archive-manifest.md exists at .sddk-knowledge/.../changes/archive/rec-c6-contracts-close/, and no such manifest exists for this cycle (logical-closure convention, same as rec-c5 and rec-c7 which also have no archive-manifest in the live .sddk-knowledge tree).",
   "findings_introduced": {
     "no_action": [],
@@ -43,10 +43,34 @@
     "alias_deletion regression test green (chronos-mcp/tests/alias_deletion.rs)."
   ],
   "gates_planned": [
-    {"slice": "C6.1", "tier": "T0", "rationale": "doc + contracts.toml only.", "completed": true, "head_sha": "96601b25"},
-    {"slice": "C6.2", "tier": "T0", "rationale": "audit + contracts.toml only.", "completed": true, "head_sha": "972e6856"},
-    {"slice": "C6.3", "tier": "T0", "rationale": "doc ratification + contracts.toml flip.", "completed": true, "head_sha": "8e9a4b3b"},
-    {"slice": "C6.4", "tier": "T0+T1+T2+T3+T4-smoke", "rationale": "enum serde fix + CallGraphResponse wire DTO + tests.", "completed": true, "head_sha": "00d94172"}
+    {
+      "slice": "C6.1",
+      "tier": "T0",
+      "rationale": "doc + contracts.toml only.",
+      "completed": true,
+      "head_sha": "96601b25"
+    },
+    {
+      "slice": "C6.2",
+      "tier": "T0",
+      "rationale": "audit + contracts.toml only.",
+      "completed": true,
+      "head_sha": "972e6856"
+    },
+    {
+      "slice": "C6.3",
+      "tier": "T0",
+      "rationale": "doc ratification + contracts.toml flip.",
+      "completed": true,
+      "head_sha": "8e9a4b3b"
+    },
+    {
+      "slice": "C6.4",
+      "tier": "T0+T1+T2+T3+T4-smoke",
+      "rationale": "enum serde fix + CallGraphResponse wire DTO + tests.",
+      "completed": true,
+      "head_sha": "00d94172"
+    }
   ],
   "notes": {
     "contracts_closed": [

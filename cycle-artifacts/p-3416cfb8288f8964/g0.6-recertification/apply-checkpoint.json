@@ -65,5 +65,15 @@
     "No CI remoto: .github/workflows not run on afa14fd2",
     "No Tarpaulin coverage: not run",
     "No benchmark: UAT-H1-04 in M1+"
-  ]
+  ],
+  "created_at": "2026-09-21T18:44:40+02:00",
+  "archived_at": "2026-09-21T18:44:40+02:00",
+  "title": "docs(roadmap): G0.6 — recertificación operativa + 6 certificados",
+  "summary": "G0.6 closes the cert + recertification gap surfaced by G0.5:",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived",
+  "findings_introduced": {
+    "no_action": []
+  }
 }

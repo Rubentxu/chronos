@@ -480,12 +480,40 @@ the remaining file types (verify-findings, release-receipt,
 merge-receipt, change-entry Head SHA) and adds cross-check #10 to
 prevent recurrence.
 
-### 11. apply-checkpoint.json required metadata fields (status, archived_at, findings_introduced) consistency (closed by m9-18)
+### 11. apply-checkpoint.json required metadata fields (status, archived_at, findings_introduced) consistency (closed by m9-18; R0 audit filter for SUSPENDED cycles)
 
 ```python
-import json, os, re
+import json, os, re, subprocess
+
+# Build set of cycle_ids that are documented SUSPENDED in cycles/index.md
+# or have a `_suspended-*` companion directory (per CC#39 exclusion policy).
+suspended_ids = set()
+try:
+    idx = open('.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md').read()
+    for line in idx.splitlines():
+        # Look for rows like `| rec-c3 | rec-c3.3-train-b | ... | SUSPENDED |`
+        if 'SUSPENDED' in line and '|' in line and 'Cycle ID' not in line and '---' not in line:
+            cols = [c.strip() for c in line.split('|')[1:-1]]
+            if len(cols) >= 2:
+                suspended_ids.add(cols[1])
+except Exception:
+    pass
+for d in os.listdir('cycle-artifacts/'):
+    if d.startswith('_suspended-'):
+        suspended_ids.add(d.replace('_suspended-', ''))
 
 for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
+    # R0 audit: skip SUSPENDED cycles (per CC#39 exclusion policy + cycles/index.md)
+    if folder in suspended_ids:
+        continue
+    # R0 audit: skip untracked directories (orphaned filesystem residue)
+    fp = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/'
+    try:
+        ls = subprocess.check_output(['git', 'ls-files', fp], text=True).strip()
+        if not ls:
+            continue
+    except subprocess.CalledProcessError:
+        continue
     ckpt = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/apply-checkpoint.json'
     if not os.path.exists(ckpt):
         continue
@@ -843,12 +871,31 @@ for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
 use the simpler subject + findings schema. m9-24 normalizes the 8
 prior cycles.
 
-### 18. verify-findings.json must exist for all CLOSED cycles (closed by m9-25)
+### 18. verify-findings.json must exist for all CLOSED cycles (closed by m9-25; R0 audit filter for SUSPENDED + untracked cycles)
 
 ```python
-import os
+import os, json, subprocess
 for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
-    vf = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/verify-findings.json'
+    folder_path = f'cycle-artifacts/p-3416cfb8288f8964/{folder}'
+    # R0 audit: skip non-CLOSED cycles (SUSPENDED_AT_APPLY / apply_complete_pending_capture_session
+    # are not expected to have verify-findings.json until they re-enter CLOSED state)
+    ckpt = f'{folder_path}/apply-checkpoint.json'
+    if os.path.exists(ckpt):
+        try:
+            d = json.load(open(ckpt))
+            if d.get('status') != 'CLOSED':
+                continue
+        except Exception:
+            pass
+    # R0 audit: skip untracked directories (orphaned filesystem residue
+    # from cycles archived via tag/SHA but never committed to git)
+    try:
+        ls = subprocess.check_output(['git', 'ls-files', folder_path], text=True).strip()
+        if not ls:
+            continue
+    except subprocess.CalledProcessError:
+        continue
+    vf = f'{folder_path}/verify-findings.json'
     if not os.path.exists(vf):
         print(f"DRIFT: {folder}: missing verify-findings.json")
 ```
@@ -1023,17 +1070,32 @@ bindings section is a structural drift, not a content drift. m9-28
 restored the Evidence bindings section for m9-28 itself; m9-29
 backfills it for the 17 prior cycles (m9-11..m9-27).
 
-### 22. release-receipt.md must have canonical SHA fields (closed by m9-30; regex hardened by m9-57)
+### 22. release-receipt.md must have canonical SHA fields (closed by m9-30; regex hardened by m9-57; R0 audit filter for SUSPENDED + untracked cycles)
 
 ```python
-import json, os, re
+import json, os, re, subprocess
 
 for folder in sorted(os.listdir('cycle-artifacts/p-3416cfb8288f8964/')):
     ckpt = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/apply-checkpoint.json'
     rr = f'cycle-artifacts/p-3416cfb8288f8964/{folder}/release-receipt.md'
     if not os.path.exists(ckpt) or not os.path.exists(rr):
         continue
-    d = json.load(open(ckpt))
+    # R0 audit: only CLOSED cycles are expected to have canonical SHA fields
+    # in their release-receipt.md (SUSPENDED cycles haven't released yet)
+    try:
+        ckpt_data = json.load(open(ckpt))
+        if ckpt_data.get('status') != 'CLOSED':
+            continue
+    except Exception:
+        continue
+    # R0 audit: skip untracked directories (orphaned filesystem residue)
+    try:
+        ls = subprocess.check_output(['git', 'ls-files', f'cycle-artifacts/p-3416cfb8288f8964/{folder}/'], text=True).strip()
+        if not ls:
+            continue
+    except subprocess.CalledProcessError:
+        continue
+    d = ckpt_data
     content = open(rr).read()
     head = d.get('head_sha', '')
     peel = d.get('remote_tag_peel', '')

@@ -130,13 +130,11 @@ async fn contract_offset_beyond_total_returns_empty() {
             return;
         }
         match page.next_cursor {
-            Some(c) if page.events.len() >= 1 => {
+            Some(c) if !page.events.is_empty() => {
                 tail.cursor = Some(c);
             }
             _ => {
-                println!(
-                    "CONTRACT-2 total={total} walked={walked} reached_terminal_cursor=true"
-                );
+                println!("CONTRACT-2 total={total} walked={walked} reached_terminal_cursor=true");
                 return;
             }
         }

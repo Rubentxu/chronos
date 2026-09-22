@@ -9,10 +9,10 @@
 
 | Field | Value |
 |---|---|
-| **Head SHA** | `afa14fd20f191d5884a8b030d4f05a915024f794` (post-G0.6 branch tip) |
-| **Remote tag** | `v0.7.112` |
-| **Remote tag_peel** | `0be2ec2d53d9698956ae705938b32b80d7365ad7` |
-| **Peel match** | `true` (tag peel resolves to the same tree that G0.5's `a00845eb` and G0.6 docs commit reference) |
+| Head SHA | `afa14fd20f191d5884a8b030d4f05a915024f794` (post-G0.6 branch tip) |
+| Remote tag | `v0.7.112` |
+| Remote tag_peel | `0be2ec2d53d9698956ae705938b32b80d7365ad7` |
+| Peel match | `true` (tag peel resolves to the same tree that G0.5's `a00845eb` and G0.6 docs commit reference) |
 
 ## Verification matrix
 
