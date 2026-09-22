@@ -61,7 +61,9 @@
 
 **Gate:** CERT-2 núcleo + CERT-3 para los backends privilegiados que se anuncien como operativos. No afirmar CERT-4 por contar con unit tests.
 
-### M4-F0 — Prerrequisitos técnicos para M6
+### M4-F0 — Prerrequisitos técnicos para M6 **[CLOSED 2026-09-22, 4/4 verified + 1 close report]**
+
+> **Estado actual (2026-09-22, post-sesión AUTO+EXEC)**: ROADMAP §M4-F0 **CLOSED** en `main @ 42fc8ea3`. Tag: `m4-f0-prerequisites.0` (annotated, peels `42fc8ea35c91df283699baa08d1a56d39e9046a8`; NEW). Close report: `docs/milestones/M4-F0-CLOSE.md` (115L, 8 secciones). Sub-cycles ejecutados M4G.1 (Go `otelc v1.1.0`, +0.4% wall-clock +26% binary) + M4R.1 (Rust `-Z instrument-xray`, +18% sleds-only / +650× patching) + M4R.2 (Rust `usdt = "0.6"`, +57% producer) + M4R.5 (3-tier perturbation ladder T0/T1/T3/T4). 4 ADRs formales (ADR-0007..0010). **Honest limitations**: consumer-side USDT validation (CapEff=0), MSRV bump 1.75→1.85 (`CapMsrvBumpTo1.85`), cross-arch aarch64, cold-start latency, memory-pressure modelling, OBI v0.13.0 Go execution (Linux privileged).
 
 - Go: reutilización de OTel existente, inventario de OBI/Auto SDK soportados, captura de contexto/IDs y versión de mecanismos.
 - Rust: reutilización de tracing/OTel existente, eBPF dirigido y evaluación inicial de perturbación; XRay/USDT requieren spikes separados, no dependencia obligatoria antes de M6 si no son necesarios.
@@ -86,7 +88,9 @@ M7.1 criterio de equivalencia semántica y hashes jerárquicos; M7.2 alineación
 
 M8.1 preservar e inventariar el foundation histórico de shrinking; M8.2 runner/proptest/Hypothesis con id de experimento, entradas y seed; M8.3 rerun determinista y predicado invariante; M8.4 reducción + slice causal; M8.5 CLI `chronos test` como spike, si aporta valor; M8.6 UAT-M8-01/02. No confundir con CONC-001 (M9).
 
-### M4-F1 — Cerrar M4, no sólo redefinirlo
+### M4-F1 — Cerrar M4, no sólo redefinirlo **[CLOSED 2026-09-22, 8/8 verified + 1 close report]**
+
+> **Estado actual (2026-09-22, post-sesión AUTO+EXEC)**: ROADMAP §M4-F1 **CLOSED** en `main @ b6244897`. Tag: `m4-f1-closed.0` (annotated, peels `b62448978470d2d6773cd736b54f2c452d4aec25`; NEW). Close report: `docs/milestones/M4-F1-CLOSE.md` (162L, 10 secciones). Sub-cycles ejecutados M4G.1 + M4G.2 (InstrumentationSpec determinista con schema validator + hierarchical validator) + M4G.3 (Go checkout-bug coarse→deep→patch verification con 4 binaries) + M4R.1 + M4R.2 + M4R.3 (overlay semántico tipado temporal con producer/consumer separation + typed overlay) + M4R.4 (Rust state-corruption reproducer con 4 binaries) + M4R.5. **M4 entero done (15 sub-cycles)** combinado M4-F0 + M4-F1. 8 ADRs formales (ADR-0007..0014). **Honest limitations**: productionization, JSON-Schema validator, multi-probe inheritance, hot reload, regex engine, streaming translation, real consumer-side validation privileged host, cross-arch aarch64, `CapOverlaySchema`, `CapReplayBound`, `CapColdStartLatency`.
 
 M4G.1 `otelc` spike y compilación aislada, M4G.2 `InstrumentationSpec` determinista, M4G.3 Go checkout-bug con coarse -> deep -> patch verification; M4R.1 XRay spike medido y ADR, M4R.2 USDT spike/ADR, M4R.3 overlay semántico tipado temporal, M4R.4 Rust state-corruption y timing-sensitive bug, M4R.5 perturbación detectada + fallback; UAT-M4G-01/02 y UAT-M4R-01/02. Si una opción técnica se rechaza razonadamente, conservar el objetivo de evidencia y justificar sustituto; no falsear una entrega.
 
