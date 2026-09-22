@@ -68,11 +68,15 @@
 - Probar exactitud/procedencia con un proceso real por lenguaje y fallos `unsupported` explícitos; registrar overhead en entorno y binario concreto.
 - Documentar ADR aceptado/rechazado de cada mecanismo, fallback y criterios de exclusión de plataformas.
 
-### M6 — OpenTelemetry
+### M6 — OpenTelemetry **[CLOSED 2026-09-22, 7/7 verified + 1 close report]**
+
+> **Estado actual (2026-09-22, post-sesión AUTO+EXEC)**: ROADMAP §M6 **CLOSED (7/7 logged)** en `main @ 64d28b28`. Tag: `m6-otel-correlation.0` (annotated, peels `64d28b284757796cb2bffe2d4172118696af8958`; NEW). Close report: `docs/milestones/M6-CLOSE.md` (103L, 8 secciones). Sub-cycles ejecutados M6.1..M6.7 con 7 ADRs formales (ADR-0015..0021) + 7 spikes off-repo en `/home/rubentxu/m6-spikes/` (durable path) + source SHA-256 preservados por sub-ciclo. **Honest limitations**: productionization (lift spikes a chronos-core + wire dispatchers/MCP), batched OTLP/HTTP-2/gRPC, TLS/auth, value-pattern redaction (regex), per-tenant policies, on-wire integrity, cross-process/cross-host transport, async runtime, persistent storage of gates output.
 
 M6.1 contrato `ExternalTraceContext` separado de `InvocationId`; M6.2 adapter OTLP de ingesta local; M6.3 correlación no ambigua con evidencia de mutaciones; M6.4 exportación opt-in de eventos compatibles y límites; M6.5 seguridad/redacción y cardinalidad; M6.6 UAT-M6-01/02 con dos servicios y requests concurrentes; M6.7 gates de carga/recuperación/errores.
 
-### M7 — Differential execution v2
+### M7 — Differential execution v2 **[CLOSED 2026-09-22, 4/4 verified + 1 close report]**
+
+> **Estado actual (2026-09-22, post-sesión AUTO+EXEC)**: ROADMAP §M7 **CLOSED (4/4 logged)** en `main @ f6e13843`. Tag: `m7-differential-v2.0` (annotated, peels `f6e1384321450ce4694663f35eecd7184287db46`; NEW). Close report: `docs/milestones/M7-CLOSE.md` (131L, 9 secciones). Sub-cycles ejecutados M7.1..M7.4 con 4 ADRs formales (ADR-0022..0025) + 4 spikes off-repo en `/home/rubentxu/m7-spikes/` (durable path) + source SHA-256 preservados. **Honest limitations**: persistent storage, cryptographic hash (FNV-1a is NOT crypto), 128-bit hash, per-probe canonicalisation, streaming hash, field-level diff, cross-session fingerprint aggregation, alignment across heterogeneous event sources (M4R.3 overlay), memory-pressure-aware streaming, productionization, cross-host/cross-process.
 
 M7.1 criterio de equivalencia semántica y hashes jerárquicos; M7.2 alineación por invocación/contexto, no sólo timestamps; M7.3 comparación de estado/propiedades y BehaviourFingerprint como spike medido; M7.4 UAT-M7-01/02 y baselines de coste/memoria.
 
