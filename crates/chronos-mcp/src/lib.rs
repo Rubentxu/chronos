@@ -9,6 +9,7 @@ pub mod cost_memory_wire;
 pub mod init_error;
 pub mod security;
 pub mod server;
+pub mod telemetry_wire;
 
 pub use concurrency_wire::{
     build_graph_from_wire, classify_pair_from_json, classify_pair_via_wire,
@@ -19,3 +20,4 @@ pub use cost_memory_wire::{
     to_wire as to_uat_wire, wire_version as cost_memory_wire_version, UatResultWire,
 };
 pub use server::ChronosServer;
+pub use telemetry_wire::{default_telemetry_receiver, in_memory_telemetry};
