@@ -99,7 +99,17 @@ M4G.1 `otelc` spike y compilación aislada, M4G.2 `InstrumentationSpec` determin
 
 M9.1 modelo typed de lock/atomic/task/goroutine/message con procedencia; M9.2 happens-before projection incremental/replay; M9.3 clasificador suspicious/confirmed/unsupported; M9.4 fixtures con y sin sincronización, pérdidas de evidencia y perturbación; UAT-M9-01/02.
 
-### M10 — Execution Explorer
+### M10 — Execution Explorer **[SCOPED 2026-09-22, NOT STARTED execution]**
+
+> **Estado actual (2026-09-22)**: ROADMAP §M10 §95 está **scope + architectured**, listo para ejecución, pero **NO se ha ejecutado** ningún sub-cycle de Execution Explorer en `main @ ce61e16b`.  
+> **Punteros canónicos**:  
+> • **ADR-0029** `docs/chronos-agentic-reconstruction/docs/adr/0029-m10-scoping-execution-explorer.md` (NEW, 212L, 9 secciones §1..§9) — formal architecture decision: consolidar sobre foundation pre-existente (~3,662 LoC + 54 unit tests) en lugar de reinventar pagination/reading desde cero. 6 sub-cycles M10.2..M10.6 + M10.1 inventory.  
+> • **M10-SCOPING.md** `docs/milestones/M10-SCOPING.md` (171L, 8 secciones) — operacional reference con 6 sub-cycles propuestos M10.2..M10.6, integration con foundation pre-existente.  
+> • **Foundation pre-existente reutilizable** (descubierto durante M10 scoping): `EventsCursorV1` (386L + 13 tests, REC-C1.1 cursor canónico) + `events_log_read::read_page` (1507L + 30 tests, paginación production-grade) + `CanonicalDrainPage` (737L + 11 tests, streaming canónico) + `ChronosEventsReadService` (426L, REC-C1.3 v2 dispatcher) + `DebugReadService` (606L, 7 métodos read-only) — todos verificados en ADR-0029 §5.  
+> • **REC-C1/REC-C2 acceptance**: 8 UATs en `MILESTONE_ACCEPTANCE.md §99-§124` (cursor semantics + gap truth + isolation + replay safety + single-truth). M10.4 las corre como regression suite.  
+> • **Product design**: `docs/chronos-agentic-reconstruction/docs/gui/EXECUTION_EXPLORER.md` (39L, 7 vistas: Live + Execution + Causality + Mutation Lens + Hypotheses/Properties + Compare + Evidence inspector).  
+> • **Próximos pasos**: M10.2 execute (wire shape unificado + permissions enum) ó decisión operador entre execute vs OPS push.  
+> **Convención de naming** (ADR-0027 §2.3 + ADR-0028 §2.4 + ADR-0029 §2.4): ROADMAP §M10 sub-cycles usan prefijo `M10.N` (capital M + dot, matching M7/M8/M9).
 
 M10.1 contrato de lectura/paginación y permisos; M10.2 live/evidence/provenance; M10.3 causality/mutation/properties/compare cuando cada fuente se haya certificado; M10.4 virtualización de trazas grandes; M10.5 accesibilidad y validación UX/seguridad; UAT-M10-01/02.
 
