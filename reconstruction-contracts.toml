@@ -456,30 +456,137 @@ notes = "Substrate absence (2026-09-21 REC-C6.1 audit): no Go crate in workspace
 [[requirement]]
 id = "M4B-001"
 title = "Rust adaptive instrumentation: telemetry reuse, eBPF, XRay/USDT decisions and semantic probes"
-status = "planned"
+status = "partial"
 owner_gate = "M4-future"
-notes = "Port declaration (REC-C4.1) without composition-root binding: chronos_domain::ports::telemetry::TelemetryReceiver is declared (NoopTelemetry + InMemoryTelemetry impls present) and tested in crates/chronos-domain/tests/telemetry_ports.rs, but zero crates/ files outside chronos-domain consume the port (workspace grep 2026-09-21: 4 hits, all in chronos-domain). No adapter is wired at chronos_mcp::composition; no call site in chronos_native::native_probe_*, chronos_services::observe, or the probe_inject path consumes the port. eBPF/USDT/XRay decision logic for runtime probe selection is not implemented. REC-C7 promotes status from blocked to planned and reassigns owner_gate from REC-C6 to M4-future — the port exists but the bridge to capture probes does not, and REC-C7 strict-no-gaps rejects blocked. Future M4 milestone cycle that lands (a) composition-root adapter wiring, (b) integration with at least one capture path, and (c) an eBPF/USDT/XRay decision module will close this contract. See cycle-artifacts/p-3416cfb8288f8964/rec-c6-contracts-close/proposal.md C6.1."
+evidence = [
+  # Port declaration (REC-C4.1) — verified in isolation
+  "crates/chronos-domain/src/ports/telemetry.rs::TelemetryReceiver (declared with NoopTelemetry + InMemoryTelemetry impls)",
+  "crates/chronos-domain/tests/telemetry_ports.rs (tests pinning the port contract)",
+  # M4R.1..M4R.5 spike evidence preserved in /home/rubentxu/m4-spikes/ — but spike-only, no product wiring
+  "M4R.1 XRay spike + ADR-0008 (332L; +18% sleds-only / +650× patching; documented viability + constraints)",
+  "M4R.2 USDT spike + ADR-0009 (441L; +57% producer; documented accept/reject decision)",
+  "M4R.3 semantic typed overlay + ADR-0013 (244L; producer/consumer separation with overlay schema YAML)",
+  "M4R.4 Rust state-corruption reproducer + ADR-0012 (334L; 4 tier chain Rust + perturbation 2-axis producer-only OK)",
+  "M4R.5 perturbation detector + fallback policy + ADR-0010 (245L; 3-tier ladder T0/T1/T2/T3/T4 with budgets measured)",
+]
+uat = [
+  "UAT-M4R-01 Rust state corruption: tracing/OTel + probe tipada temporal muestran valor before/after (spike evidence at /home/rubentxu/m4-spikes/m4-rust-state-corruption/)",
+  "UAT-M4R-02 timing-sensitive fixture: instrumentación profunda altera el fenómeno, detector identifica perturbación y cambia a mecanismo ligero (perturbation detector + fallback policy, ADR-0010)",
+]
+notes = "PARTIAL honest state (R1 reconciliation 2026-09-22): the TelemetryReceiver port is declared + tested in chronos-domain (verified in isolation), but no composition-root binding exists (chronos-mcp / chronos-services / chronos-native / chronos-sandbox do NOT consume the port). eBPF/USDT/XRay decision logic for runtime probe selection is NOT implemented — only spike evidence exists in /home/rubentxu/m4-spikes/. To promote to 'verified': requires (a) composition-root adapter wiring that consumes TelemetryReceiver, (b) at least one capture path integration (chronos-services::observe or chronos_native::native_probe_*), (c) eBPF/USDT/XRay decision module, (d) consumer-side USDT validation on Linux privileged host (CapEff=0 constraint). M4-F0 + M4-F1 close reports (docs/milestones/M4-F0-CLOSE.md 115L + docs/milestones/M4-F1-CLOSE.md 162L) document the spike + ADR work; the product wiring is a separate, distinct effort."
 
 [[requirement]]
 id = "OTEL-001"
 title = "External trace/span context correlates to Chronos invocation evidence"
-status = "planned"
+status = "partial"
 owner_gate = "M6"
+evidence = [
+  # W3C traceparent parsing + ExternalTraceContext construction
+  "crates/chronos-domain/src/otlp/parse.rs::parse_traceparent",
+  "crates/chronos-domain/src/otlp/mod.rs::ExternalTraceContext::root",
+  "crates/chronos-domain/src/otlp/mod.rs::OtlpInvocationId::new (UUID v4 random; intentionally distinct from trace::event::InvocationId UUID v7 per post-v0.8.0 reconciliation 2026-09-22)",
+  # M6.1: typed separation (no equating span ↔ invocation; not using monotonic as Unix wall clock)
+  "crates/chronos-domain/src/otlp/mod.rs::RecordedInvocation (pairs OtlpInvocationId with Optional<ExternalTraceContext>; identity never silently merged)",
+  "crates/chronos-domain/src/otlp/mod.rs::tests (type separation unit tests)",
+  # M6.2: OTLP ingest adapter (pure)
+  "crates/chronos-domain/src/otlp/ingest.rs::parse_block (227L, line-delimited OTLP HTTP body parsing; TCP server deferred per ADR-0033 §2.2)",
+  # M6.3: bidirectional correlation store
+  "crates/chronos-domain/src/otlp/correlation.rs::CorrelationStore (270L, event_idx ↔ RecordedInvocation + reverse indices by invocation_id and trace_id)",
+  # M6.5: redaction + cardinality (generic to avoid duplication with chronos-services::session_export)
+  "crates/chronos-domain/src/otlp/redaction.rs::redact_attributes (187L, generic over Vec<(String, String)>)",
+  # M6.6: UAT-M6-01/02 executors (lifted in R1 commit 945844a1 from spike to product)
+  "crates/chronos-domain/src/otlp/cross_service.rs::run_uat_m6_01 (no cross-mix between two concurrent invocations with distinct traceparents)",
+  "crates/chronos-domain/src/otlp/cross_service.rs::run_uat_m6_02 (monotonic-clock drift preserved + idempotent retry mints new UUID v4 but holds same trace_id)",
+  # Session-level real product integration (765L)
+  "crates/chronos-services/src/session_export.rs::serialize_bundle_otlp_json (takes TraceEvent, emits OTLP JSONL; carries chronos.timestamp_monotonic_ns + chronos.timestamp_domain disclosure)",
+]
+uat = [
+  "UAT-M6-01 two concurrent invocations distinct traces no-mix (chronos-domain::otlp::cross_service::run_uat_m6_01; 5 assertions: distinct invocation_ids + distinct trace_ids + CorrelationStore lookup by invocation + lookup by trace)",
+  "UAT-M6-02 monotonic drift + idempotent retry preserves trace_id (chronos-domain::otlp::cross_service::run_uat_m6_02; 3 assertions: drift preserved + retry produces distinct UUID v4 + retry preserves same trace_id)",
+  "chronos-domain/tests/otlp_cross_service.rs (9 tests pinning UAT-M6-01/02 contracts + internal CorrelationStore invariants)",
+  "chronos-domain/tests/otlp.rs (24 tests pinning M6.1 traceparent parsing + W3C Trace Context types)",
+  "chronos-domain/tests/otlp_correlation.rs (24 tests pinning M6.3 CorrelationStore bidirectional indexing)",
+  "chronos-domain/tests/otlp_ingest.rs (17 tests pinning M6.2 ingest adapter pure-function path)",
+  "chronos-domain/tests/otlp_redaction.rs (15 tests pinning M6.5 redaction + cardinality)",
+]
+notes = "PARTIAL honest state (R1 reconciliation 2026-09-22): the M6.6 spike's UAT-M6-01/02 executors have been lifted to product (R1 commit 945844a1 on main @ 945844a1), making M6.6 verifiable in product at the correlation layer. M6.1 (typed separation), M6.2 (ingest), M6.3 (correlation), M6.5 (redaction) all have product code + tests in chronos-domain::otlp. M6.4 (export_spans / render_json_line / OptInFilter / ExportLimits) was deliberately NOT lifted to avoid duplicating chronos-services::session_export::serialize_bundle_otlp_json (which already covers the OTLP wire format with honest timestamp domain disclosure). M6.7 (operational gates) was deferred for the same reason — depends on M6.4. UAT scope is the correlation layer (event↔invocation binding + reverse indices); an end-to-end OTLP/HTTP integration test lives in the durable M6.6 spike at /home/rubentxu/m6-spikes/m6.6-otel-cross-service/ and is preserved as canonical evidence per ADR-0033 §2.2. To promote to 'verified': requires lifting M6.4 to product + wiring M6.7 gates + e2e HTTP integration test (currently spike-only)."
+verify = "cargo test --manifest-path crates/chronos-domain/Cargo.toml --test otlp_cross_service --test otlp --test otlp_correlation --test otlp_ingest --test otlp_redaction --no-fail-fast && python3 scripts/check_architecture_contracts.py"
 
 [[requirement]]
 id = "DIFF-001"
 title = "Differential execution locates semantic divergence despite timing/order noise"
-status = "planned"
+status = "partial"
 owner_gate = "M7"
+evidence = [
+  # M7.1: differential equivalence + hierarchical hashes
+  "crates/chronos-domain/src/otlp/equivalence.rs::EquivalenceSpec (199L; primary status + fallback primary-by-status + fingerprint fallback)",
+  "crates/chronos-domain/src/otlp/equivalence.rs::equivalence_hash + equivalence_hash_with_fallback (FNV-1a 64-bit; reused from chronos_domain::trace::event)",
+  # M7.2: invocation/context alignment
+  "crates/chronos-domain/src/otlp/alignment.rs::align_sessions (474L; rejects ambiguous InvocationId per post-v0.8.0 reconciliation 2026-09-22; primary UUID v4 + fallback trace_id from W3C ExternalTraceContext)",
+  # M7.3: behaviour fingerprint
+  "crates/chronos-domain/src/otlp/fingerprint.rs::BehaviourFingerprint (250L; aggregate_hash + fingerprint_hash + counts)",
+  # M7.4: cost/memory baselines + collision hunt + UAT-M7 executors
+  "crates/chronos-domain/src/otlp/cost_memory_collision.rs::run_uat_m7_01 (found semantic divergence supported by events; not confused symbol vs invocation)",
+  "crates/chronos-domain/src/otlp/cost_memory_collision.rs::run_uat_m7_02 (gaps/missing context returns unknown/unsupported; no false equality)",
+  "crates/chronos-domain/src/otlp/cost_memory_collision.rs::measure_cost (invocations_per_sec + total duration)",
+  "crates/chronos-domain/src/otlp/cost_memory_collision.rs::measure_memory (peak Vec<u8> bytes + 0 reallocations)",
+  "crates/chronos-domain/src/otlp/cost_memory_collision.rs::collision_hunt (splitmix64 deterministic)",
+]
+uat = [
+  "UAT-M7-01 execution good/bad with timing noise + known state bug -> first divergence found (chronos-domain::otlp::cost_memory_collision::run_uat_m7_01)",
+  "UAT-M7-02 gaps/missing context -> unknown/unsupported, no false equality (chronos-domain::otlp::cost_memory_collision::run_uat_m7_02)",
+  "chronos-domain/tests/otlp_equivalence.rs (23 tests pinning M7.1 differential equivalence + hierarchical hashes)",
+  "chronos-domain/tests/otlp_alignment.rs (23 tests pinning M7.2 invocation alignment)",
+  "chronos-domain/tests/otlp_fingerprint.rs (22 tests pinning M7.3 BehaviourFingerprint)",
+  "chronos-domain/tests/otlp_cost_memory_collision.rs (21 tests pinning M7.4 cost/memory + collision + UAT executors)",
+]
+notes = "PARTIAL honest state (R1 reconciliation 2026-09-22): M7.1 + M7.2 + M7.3 + M7.4 all have product code + tests in chronos-domain::otlp. M7 chapter CLOSED per close report docs/milestones/M7-CLOSE.md (131L, 9 secciones) on tag m7-differential-v2.0 peels f6e13843. UAT-M7-01/02 executors are runnable in product. Known honest limitations per close report: persistent storage (in-memory cost/memory baselines), cryptographic hash (FNV-1a is NOT crypto), 128-bit hash, per-probe canonicalisation, streaming hash, field-level diff, cross-session fingerprint aggregation, alignment across heterogeneous event sources (M4R.3 overlay), memory-pressure-aware streaming, productionization, cross-host/cross-process. To promote to 'verified': requires lifting the M7 module behind a real chronos-services dispatch (currently only chronos-domain::otlp is wired; no consumer in chronos-services or chronos-mcp routes UAT calls). The spike evidence at /home/rubentxu/m7-spikes/m7.4-cost-memory-collision/ is the canonical end-to-end run; the product lift validates the same contracts in isolation."
+verify = "cargo test --manifest-path crates/chronos-domain/Cargo.toml --test otlp_equivalence --test otlp_alignment --test otlp_fingerprint --test otlp_cost_memory_collision --no-fail-fast && python3 scripts/check_architecture_contracts.py"
 
 [[requirement]]
 id = "CONC-001"
 title = "Race classification uses happens-before evidence"
-status = "planned"
+status = "partial"
 owner_gate = "M9"
+evidence = [
+  # M9.1: typed concurrency model with provenance
+  "crates/chronos-domain/src/concurrency.rs::ConcurrencyPrimitive enum (6 variants: Mutex/RwLock/Atomic/Channel/Task/Goroutine with Provenance)",
+  "crates/chronos-domain/src/concurrency.rs::TypedConcurrencyEvent (305L, 9 unit tests)",
+  # M9.2 (planned in STATE; verify before promoting)
+  # M9.3: happens-before graph
+  "crates/chronos-services/src/concurrency_graph.rs::HappensBeforeGraph (482L; HappensBeforeEdge + EdgeKind 6 variants + ConcurrentPair + BFS happens_before + O(n²) concurrent_pairs + cycles detection; 14 unit tests)",
+  # M9.4: race classifier
+  "crates/chronos-services/src/race_classifier.rs::RaceClassification enum (4 variants) + ClassificationReason enum (6 variants) + ClassificationExplanation struct + classify_pair pure function (418L; 8 unit tests)",
+  # M9.5: perturbation + missing-evidence handling
+  "crates/chronos-services/src/concurrency_perturbation.rs::ConcurrencyPerturbationDetector",
+  # Pre-existing CausalityIndex integration
+  "crates/chronos-domain/src/index/causality.rs (216L; 5 unit tests pre-existed; reused by M9.2/M9.3 per ADR-0028 §5)",
+]
+uat = [
+  "UAT-M9-01 two accesses same address lock-protected -> not classified as race (race_classifier::classify_pair with Mutex lock -> Synchronized variant, not RaceConfirmed)",
+  "UAT-M9-02 unsynchronized fixture -> happens-before evidence (race_classifier::classify_pair without synchronization -> Suspicious + explicit happens-before gap)",
+]
+notes = "PARTIAL honest state (R1 reconciliation 2026-09-22): M9.1 + M9.3 + M9.4 + M9.5 product code exists in chronos-domain/src/concurrency.rs + chronos-services/src/{concurrency_graph, race_classifier, concurrency_perturbation}.rs. M9 chapter CLOSED per close report docs/milestones/M9-CLOSE.md (139L, 11 secciones) on tag m9-causal-concurrency.0 peels dd2c39e0. **Honest gap**: no consumer wiring (chronos-mcp / chronos-cli / chronos-sandbox do not route UAT-M9-01/02 through the race_classifier module — only lib.rs exports it). The race_classifier module is wired in chronos-services lib but no public tool dispatches UAT calls to it. To promote to 'verified': requires (a) wiring chronos-mcp tool dispatch to race_classifier::classify_pair, (b) wiring UAT-M9-01/02 test fixtures in chronos-sandbox integration suite, (c) real-world happens-before graph on production event stream (currently only in-process unit tests)."
+verify = "cargo test -p chronos-domain --lib concurrency:: && cargo test -p chronos-services --lib concurrency_graph race_classifier concurrency_perturbation && python3 scripts/check_architecture_contracts.py"
 
 [[requirement]]
 id = "UI-001"
 title = "Execution Explorer visualizes Chronos evidence without becoming a second IDE"
-status = "planned"
+status = "partial"
 owner_gate = "M10"
+evidence = [
+  # M10.2: Execution Explorer wire shape unified + permissions
+  "crates/chronos-services/src/execution_explorer.rs::ExecutionExplorerRequest v3 unified contract + ExecutionExplorerService dispatch stub (504L, 14 unit tests; deny-by-default permissions)",
+  # M10.3: live streaming + causality promotion stub
+  "crates/chronos-services/src/live_streaming.rs (410L, 15 unit tests; poll_batch_real returns Result<EventBatch, LiveStreamError> per post-v0.8.0 reconciliation 2026-09-22 — read-error no longer coerced to empty Ok)",
+  # M10.4: virtualization EventSummary + InvocationRollup
+  "crates/chronos-services/src/execution_explorer.rs::InvocationRollup (382L, 21 unit tests; EventSummary aggregation; 8 REC regression tests)",
+  "crates/chronos-services/src/execution_explorer.rs::process_returns_stub_payload_for_permitted_action (pinned stub contract per post-v0.8.0 reconciliation 2026-09-22)",
+  # M10.5: deferred per env (UX execution explorer HTML/UI frontend, out of chronos-services Rust runtime scope per ADR-0029 §6)
+]
+uat = [
+  "UAT-M10-01 trace visualization with pagination/virtualization within memory budget (deferred to M10.5; UI/HTML layer required)",
+  "UAT-M10-02 gap/redacted/incomplete/no-permissions shown comprehensibly, never as false-complete (chronos-services/src/execution_explorer stub payload prefix 'stub:' lets consumers detect contract fixture; live_streaming::poll_batch_real returns Err on read failure, never empty batch)",
+]
+notes = "PARTIAL honest state (R1 reconciliation 2026-09-22): M10.2 + M10.3 + M10.4 + M10.6 product code exists in chronos-services/src/{execution_explorer, live_streaming}.rs. M10 chapter CLOSED per close report docs/milestones/M10-CLOSE.md (122L, 8 secciones) on tag m10-execution-explorer-stubs.0 peels dddc6d58. **Honest gap**: (a) M10.5 a11y + UAT-M10-01/02 deferred per env (UX execution explorer HTML/UI frontend required, out of Rust runtime scope); (b) real wiring follow-ups documented in close report — poll_batch SessionExecutionLog wiring, EventSummary aggregation via events_log_read::read_page, causality promotion Unsupported→Wired, sandbox 1M eventos integration. The execution_explorer module is wired in chronos-services lib but no real consumer wires poll_batch_real / EventSummary aggregation in production paths (only stub contract pinned per post-v0.8.0 reconciliation). To promote to 'verified': requires (a) M10.5 UX frontend lift, (b) real SessionExecutionLog wiring in poll_batch, (c) UAT-M10-01/02 integration tests with real paginated/virtualized trace fixtures."
+verify = "cargo test -p chronos-services --lib execution_explorer:: live_streaming:: && python3 scripts/check_architecture_contracts.py"
