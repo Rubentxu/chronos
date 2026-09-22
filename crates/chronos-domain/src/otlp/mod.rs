@@ -20,6 +20,9 @@ pub mod alignment;
 // M7.3 lift (2026-09-22): session-level BehaviourFingerprint consuming
 // M7.2's AlignmentReport. See module docs.
 pub mod fingerprint;
+// M7.4 lift (2026-09-22): cost / memory baselines + collision hunt +
+// UAT-M7-01/02 executors. See module docs.
+pub mod cost_memory_collision;
 
 use uuid::Uuid;
 
