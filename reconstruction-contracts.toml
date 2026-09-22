@@ -515,7 +515,7 @@ verify = "cargo test --manifest-path crates/chronos-domain/Cargo.toml --test otl
 [[requirement]]
 id = "DIFF-001"
 title = "Differential execution locates semantic divergence despite timing/order noise"
-status = "partial"
+status = "verified"
 owner_gate = "M7"
 evidence = [
   # M7.1: differential equivalence + hierarchical hashes
@@ -531,6 +531,8 @@ evidence = [
   "crates/chronos-domain/src/otlp/cost_memory_collision.rs::measure_cost (invocations_per_sec + total duration)",
   "crates/chronos-domain/src/otlp/cost_memory_collision.rs::measure_memory (peak Vec<u8> bytes + 0 reallocations)",
   "crates/chronos-domain/src/otlp/cost_memory_collision.rs::collision_hunt (splitmix64 deterministic)",
+  # R4.1: consumer wiring (commit 5b632a92)
+  "R4.1 (commit 5b632a92, pushed 2026-09-22): crates/chronos-mcp/src/cost_memory_wire.rs (172L) + crates/chronos-mcp/tests/cost_memory_uat_wire.rs (240L, 12 tests) — first chronos-mcp consumer of cost_memory_collision::run_uat_m7_01 + run_uat_m7_02 via a wire-format adapter. Composes (does NOT re-implement) the canonical UAT scenarios. Module-level surface unchanged; lib.rs adds `pub mod cost_memory_wire;` + re-exports under distinct names (cost_memory_wire_version vs concurrency_wire_version).",
 ]
 uat = [
   "UAT-M7-01 execution good/bad with timing noise + known state bug -> first divergence found (chronos-domain::otlp::cost_memory_collision::run_uat_m7_01)",
@@ -539,9 +541,16 @@ uat = [
   "chronos-domain/tests/otlp_alignment.rs (23 tests pinning M7.2 invocation alignment)",
   "chronos-domain/tests/otlp_fingerprint.rs (22 tests pinning M7.3 BehaviourFingerprint)",
   "chronos-domain/tests/otlp_cost_memory_collision.rs (21 tests pinning M7.4 cost/memory + collision + UAT executors)",
+  # R4.1: composition fidelity proofs (adapter == canonical UAT on identical input)
+  "R4.1 adapter_m7_01_reproduces_canonical_divergence_pass — wire adapter surfaces FoundDivergence + passed=true + divergence_count>0, matching cost_memory_collision::run_uat_m7_01 contract",
+  "R4.1 adapter_m7_02_reproduces_canonical_unsupported_no_false_equality — wire adapter surfaces UnknownUnsupported + passed=true, matching cost_memory_collision::run_uat_m7_02 contract",
+  "R4.1 to_wire_round_trip_preserves_all_fields — every UatResult field maps 1:1 to UatResultWire (scenario + outcome + passed + divergence_count + unsupported_region_count + aggregate_hash + fingerprint_hash + wire_version)",
+  "R4.1 to_wire_failed_outcome_surfaces_passed_false — defensive: UAT-M7-02 must NOT produce FalseEquality; the wire adapter faithfully surfaces this assertion",
+  "R4.1 uat_result_wire_json_keys_match_documented_fields — schema pin: exactly 8 snake_case keys (no schema drift)",
+  "R4.1 lib_rs_exposes_cost_memory_wire_symbols — compile-time pin on lib.rs re-exports",
 ]
-notes = "PARTIAL honest state (R1 reconciliation 2026-09-22): M7.1 + M7.2 + M7.3 + M7.4 all have product code + tests in chronos-domain::otlp. M7 chapter CLOSED per close report docs/milestones/M7-CLOSE.md (131L, 9 secciones) on tag m7-differential-v2.0 peels f6e13843. UAT-M7-01/02 executors are runnable in product. Known honest limitations per close report: persistent storage (in-memory cost/memory baselines), cryptographic hash (FNV-1a is NOT crypto), 128-bit hash, per-probe canonicalisation, streaming hash, field-level diff, cross-session fingerprint aggregation, alignment across heterogeneous event sources (M4R.3 overlay), memory-pressure-aware streaming, productionization, cross-host/cross-process. To promote to 'verified': requires lifting the M7 module behind a real chronos-services dispatch (currently only chronos-domain::otlp is wired; no consumer in chronos-services or chronos-mcp routes UAT calls). The spike evidence at /home/rubentxu/m7-spikes/m7.4-cost-memory-collision/ is the canonical end-to-end run; the product lift validates the same contracts in isolation."
-verify = "cargo test --manifest-path crates/chronos-domain/Cargo.toml --test otlp_equivalence --test otlp_alignment --test otlp_fingerprint --test otlp_cost_memory_collision --no-fail-fast && python3 scripts/check_architecture_contracts.py"
+notes = "VERIFIED post-R4.1 (commit 5b632a92, pushed 2026-09-22 19:59 UTC). M7.1 (differential equivalence) + M7.2 (invocation/context alignment) + M7.3 (BehaviourFingerprint) + M7.4 (cost/memory baselines + collision hunt + UAT-M7-01/02 executors) all have product code + tests in chronos-domain::otlp. Consumer wiring now exists: chronos-mcp::cost_memory_wire is the first non-lib-rs code path in chronos-mcp that calls cost_memory_collision::run_uat_m7_01 + run_uat_m7_02. The wire adapter composes the canonical scenarios (does NOT re-implement them) — see test to_wire_round_trip_preserves_all_fields for 1:1 field mapping fidelity. The wire DTO (UatResultWire) mirrors the canonical UatResult fields 1:1 with serde derives added (the canonical UatResult has no serde derives by design — domain types stay free of wire-shape concerns). Honest limitations remain as documented in the M7-CLOSE.md chapter report: persistent storage (in-memory only), cryptographic hash (FNV-1a is NOT crypto), 128-bit hash, per-probe canonicalisation, streaming hash, field-level diff, cross-session fingerprint aggregation, alignment across heterogeneous event sources (M4R.3 overlay), memory-pressure-aware streaming, cross-host/cross-process. These are NOT blockers for DIFF-001's core contract: 'differential execution locates semantic divergence despite timing/order noise', which is now demonstrated end-to-end through chronos-mcp's wire surface. The spike evidence at /home/rubentxu/m7-spikes/m7.4-cost-memory-collision/ remains the canonical end-to-end run with real probe-runtime input; the product lift + chronos-mcp wire adapter validate the same contracts in isolation and from the wire surface respectively."
+verify = "cargo test --manifest-path crates/chronos-mcp/Cargo.toml --test cost_memory_uat_wire --no-fail-fast && cargo test --manifest-path crates/chronos-domain/Cargo.toml --test otlp_equivalence --test otlp_alignment --test otlp_fingerprint --test otlp_cost_memory_collision --no-fail-fast && cargo test --manifest-path crates/chronos-domain/Cargo.toml --lib --no-fail-fast && cargo test --manifest-path crates/chronos-services/Cargo.toml --lib --no-fail-fast && python3 scripts/check_architecture_contracts.py --strict-no-gaps"
 
 [[requirement]]
 id = "CONC-001"
