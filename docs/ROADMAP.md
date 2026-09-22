@@ -86,7 +86,16 @@ M8.1 preservar e inventariar el foundation histórico de shrinking; M8.2 runner/
 
 M4G.1 `otelc` spike y compilación aislada, M4G.2 `InstrumentationSpec` determinista, M4G.3 Go checkout-bug con coarse -> deep -> patch verification; M4R.1 XRay spike medido y ADR, M4R.2 USDT spike/ADR, M4R.3 overlay semántico tipado temporal, M4R.4 Rust state-corruption y timing-sensitive bug, M4R.5 perturbación detectada + fallback; UAT-M4G-01/02 y UAT-M4R-01/02. Si una opción técnica se rechaza razonadamente, conservar el objetivo de evidencia y justificar sustituto; no falsear una entrega.
 
-### M9 — Causal concurrency
+### M9 — Causal concurrency **[SCOPED 2026-09-22, NOT STARTED execution]**
+
+> **Estado actual (2026-09-22)**: ROADMAP §M9 §91 está **scope + architectured**, listo para ejecución, pero **NO se ha ejecutado** ningún sub-cycle de causal concurrency en `main @ bce07690`.  
+> **Punteros canónicos**:  
+> • **ADR-0028** `docs/chronos-agentic-reconstruction/docs/adr/0028-m9-scoping-causal-concurrency.md` (NEW, 185L, 9 secciones §1..§9) — formal architecture decision: build on `CausalityIndex` pre-existente (216L + 5 unit tests en `crates/chronos-domain/src/index/causality.rs`), NO reinventar desde cero. 6 sub-cycles M9.2..M9.6 + M9.1 inventory.  
+> • **M9.1 ADR-0027** `docs/chronos-agentic-reconstruction/docs/adr/0027-m9.1-inventory-causal-concurrency.md` (284L, 9 secciones) — inventory + naming convention proposal (vault cycles `cc-m9-NN` vs ROADMAP §M9 `M9.N`).  
+> • **M9-SCOPING.md** `docs/milestones/M9-SCOPING.md` (237L, 6 secciones) — operacional reference con 6 sub-cycles propuestos M9.2..M9.6, integration con foundation pre-existente.  
+> • **Foundation pre-existente reutilizable** (descubierto durante M9 scoping): `CausalityIndex` (216L + 5 tests) + `IndexBuilder.causality` (1 test) + `detect_concurrent_access` heurística (1 test) + `detect_races` MCP tool — todos verificados en ADR-0028 §5.  
+> • **Próximos pasos**: M9.2 execute (D1 typed model en `chronos-domain::concurrency`) ó decisión operador entre execute vs OPS push.  
+> **Convención de naming** (ADR-0027 §2.3): ROADMAP §M9 sub-cycles usan prefijo `M9.N` (capital M + dot, matching M7/M8); vault cycles futuros usan `cc-m9-NN` o `vault-m9-NN` (no `feat(m9-NN)`) para evitar colisión.
 
 M9.1 modelo typed de lock/atomic/task/goroutine/message con procedencia; M9.2 happens-before projection incremental/replay; M9.3 clasificador suspicious/confirmed/unsupported; M9.4 fixtures con y sin sincronización, pérdidas de evidencia y perturbación; UAT-M9-01/02.
 
