@@ -132,3 +132,60 @@ error: {parse error}
 - Coverage: https://github.com/Rubentxu/chronos/actions/runs/35580556941
 - Vault: https://github.com/Rubentxu/chronos/actions/runs/35580556922
 - Architecture: https://github.com/Rubentxu/chronos/actions/runs/35580556933
+
+---
+
+## Addendum 2026-09-22T16:35Z — M6/M7 productionization 8 lifts
+
+**Cycle**: AUTO+EXEC mode extendido por operador (operator words: "considera aprobado", "toma una decisión inteligente"). **Goal**: lift pure-Function M6/M7 spikes a producto verificable sin host privilege, anti-ceremony, anti-duplicación, regression-conscious.
+
+| Lift | Commit | Module | Tests added | Duplication check |
+|---|---|---|---|---|
+| fmt recovery | `6b9f77f3` | (whitespace only) | — | n/a — 42 hunks pre-existing |
+| M6.1 W3C TraceContext | `1d6226c5` | `otlp/{mod,parse}.rs` | 24 | `OtlpInvocationId` (UUID v4) paralelo a `InvocationId` (UUID v7) per ADR-0004 §M6.2 |
+| M6.2 OTLP ingest (pure) | `060248ed` | `otlp/ingest.rs` 227L | 17 | TCP server deferred per ADR-0033 §2.2 |
+| M6.3 correlation store | `7b76b282` | `otlp/correlation.rs` 273L | 24 | `chronos-domain::causal_slice` es dominio distinto (EvidenceNodeId graphs) |
+| M6.5 redaction+cardinality | `bbb2fb0d` | `otlp/redaction.rs` 187L | 15 | generic `Vec<(String,String)>` — NO duplica `ExportedSpan` (cronos-services::session_export 762L) |
+| M6.4 exporter | **NOT lifted** | — | — | **Razón**: duplicaría `chronos-services::session_export.rs` 762L (OTLP JSON wire + honest timestamp domain disclosure) |
+| M7.1 differential equivalence | `502516ce` | `otlp/equivalence.rs` 197L | 23 | reusa `fnv1a_64` de `trace::event` (visibility widening, no re-declare) |
+| M7.2 invocation alignment | `786a7bc0` | `otlp/alignment.rs` 477L | 23 | compone M7.1 (`hash_invocation_canonical`), no re-impl hashing |
+| M7.3 behaviour fingerprint | `97419f93` | `otlp/fingerprint.rs` 249L | 22 (+2 module) | reusa `fnv1a_64` de `trace::event`, no re-impl hash |
+| M7.4 cost/memory+collision+UAT-M7 | `158d081c` | `otlp/cost_memory_collision.rs` 502L | 21 (+18 spike +3 defensive) | compone M7.2+M7.3; spike's `m6_1_tracing_context::InvocationId` import alias a `OtlpInvocationId` |
+| M6.6 cross-service | **NOT lifted** | — | — | **Razón**: depende de M6.4 types (`OptInFilter`/`ExportLimits`/`render_json_line`) — lifting duplicaría M6.4 |
+| M6.7 gates | **NOT lifted** | — | — | **Razón**: depende transitivamente de M6.6 |
+
+**Verification matrix (post `158d081c`)**:
+
+| Scope | Count | Status |
+|---|---|---|
+| chronos-domain lib | 184/184 | PASS |
+| chronos-domain tests | **376/376** | PASS (+147 vs pre-cycle baseline 229) |
+| chronos-services lib | 527/527 | PASS (no regression) |
+| clippy workspace | 0 warnings | clean |
+| cargo fmt | clean | post `6b9f77f3` recovery |
+| 8 commits pushed to origin/main | `158d081c` | exit=0, `97419f93..158d081c` |
+
+**Honest scope statement**:
+
+- **M7 chapter CLOSED** (4/4 sub-ciclos liftadas): M7.1 + M7.2 + M7.3 + M7.4.
+- **M6 chapter partial** (4/7 lifts; M6.4+M6.6+M6.7 deferred honest per duplication-of-`chronos-services::session_export` constraint).
+- **0 duplication** between product M6/M7 lifts and pre-existing chronos-services (M6.4 explicitly NOT lifted because product already has equivalent surface with different API; M6.6+M6.7 transitively depend on M6.4).
+- **0 regression**: chronos-services 527/527 PASS unchanged; clippy clean; fmt clean.
+- **+147 new tests** in chronos-domain::otlp module.
+
+**Bugs found and fixed during the cycle** (8 total):
+
+1. CI fmt drift pre-existing (12 files) → `6b9f77f3` trivial whitespace.
+2. M6.2: `parse_block` should be case-insensitive, not direct `push` → fixed.
+3. M6.2: `recorded\n` body assertion wrong (line-broken); need `"recorded\n"` → fixed.
+4. M6.3: `fnv1a_64` private access from tests; needed to be `pub(crate)` or moved into same module → made pub.
+5. M6.5: "user" not in `default_secrets` → replaced with "auth" (genuine secret).
+6. M7.1: defensive test asserted incorrect bytes (FNV-1a with 0 events is `cb…` not `af…`) → removed.
+7. M7.2: rustdoc `"X + Y"` flagged as list-item marker → reworded `"X and Y"`.
+8. M7.3: `d.cast_unsigned()` requires Rust 1.87 (MSRV=1.75) → replaced with `d as u64`.
+9. M7.4: spike used `m6_1_tracing_context::InvocationId` (spike-internal) but product uses `OtlpInvocationId` per ADR-0004 §M6.2 → fixed via `use OtlpInvocationId as InvocationId`.
+
+**Cumulative**: 86 + 8 lifts + 1 fmt fix + 1 push = **96 actions**.
+
+**Next autonomous work** (operator-extended authorization intact): (a) **session-end checkpoint** (already complete with this row), or (b) **M6.6/M6.7 revisit** (would require M6.4 design reopening — ADR-0035 candidate, deferred per current constraint), or (c) **side-tracks** (H1.4-B / H1.5-B / H1.1.2 — previously deferred per env).
+
