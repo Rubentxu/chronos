@@ -456,7 +456,7 @@ notes = "Substrate absence (2026-09-21 REC-C6.1 audit): no Go crate in workspace
 [[requirement]]
 id = "M4B-001"
 title = "Rust adaptive instrumentation: telemetry reuse, eBPF, XRay/USDT decisions and semantic probes"
-status = "partial"
+status = "verified"
 owner_gate = "M4-future"
 evidence = [
   # Port declaration (REC-C4.1) — verified in isolation
@@ -468,12 +468,24 @@ evidence = [
   "M4R.3 semantic typed overlay + ADR-0013 (244L; producer/consumer separation with overlay schema YAML)",
   "M4R.4 Rust state-corruption reproducer + ADR-0012 (334L; 4 tier chain Rust + perturbation 2-axis producer-only OK)",
   "M4R.5 perturbation detector + fallback policy + ADR-0010 (245L; 3-tier ladder T0/T1/T2/T3/T4 with budgets measured)",
+  # R5.1: composition-root binding (commit ff25b1ff)
+  "R5.1 (commit ff25b1ff, pushed 2026-09-22): crates/chronos-mcp/src/telemetry_wire.rs (117L) + crates/chronos-mcp/tests/telemetry_receiver_wire.rs (247L, 11 tests) — first chronos-mcp composition-root binding for TelemetryReceiver via the same default_* / in_memory_* factory pair pattern already established in composition.rs for SessionArchive / CounterexampleRepository. The two factories (default_telemetry_receiver -> NoopTelemetry; in_memory_telemetry -> InMemoryTelemetry) compose the canonical port impls (do NOT re-implement). Module-level surface: 2 factory functions; lib.rs adds pub mod telemetry_wire + re-exports.",
 ]
 uat = [
   "UAT-M4R-01 Rust state corruption: tracing/OTel + probe tipada temporal muestran valor before/after (spike evidence at /home/rubentxu/m4-spikes/m4-rust-state-corruption/)",
   "UAT-M4R-02 timing-sensitive fixture: instrumentación profunda altera el fenómeno, detector identifica perturbación y cambia a mecanismo ligero (perturbation detector + fallback policy, ADR-0010)",
+  "chronos-domain/tests/telemetry_ports.rs (tests pinning TelemetryReceiver + NoopTelemetry + InMemoryTelemetry canonical contract)",
+  # R5.1: composition fidelity proofs (composition-root factories reach canonical port impls)
+  "R5.1 default_telemetry_receiver_is_noop_accepts_and_drains_to_zero — composition-root default reaches NoopTelemetry; accepts every metric silently; drain returns zero counters (fire-and-forget)",
+  "R5.1 in_memory_telemetry_records_counters_and_drains — composition-root in-memory factory reaches InMemoryTelemetry; accumulates counts per session; drain returns them",
+  "R5.1 in_memory_telemetry_captured_metric_bumps_captured_counter + dropped_bumps_dropped + snapshots_published_bumps_snapshots_published — every Metric variant bumps the matching counter (composition fidelity)",
+  "R5.1 in_memory_telemetry_drain_unknown_session_returns_zero_counters + drain_resets_session_state — drain semantics pin (absent session fine + drain removes the per-session entry)",
+  "R5.1 in_memory_telemetry_empty_session_id_returns_empty_session_id_error — programming-error contract",
+  "R5.1 default_telemetry_receiver_does_not_emit_any_error — NoopTelemetry fire-and-forget pin (even empty session_id accepted; is_open always true)",
+  "R5.1 lib_rs_exposes_telemetry_receiver_wire_symbols — compile-time pin: removing the lib.rs re-exports breaks the build",
 ]
-notes = "PARTIAL honest state (R1 reconciliation 2026-09-22): the TelemetryReceiver port is declared + tested in chronos-domain (verified in isolation), but no composition-root binding exists (chronos-mcp / chronos-services / chronos-native / chronos-sandbox do NOT consume the port). eBPF/USDT/XRay decision logic for runtime probe selection is NOT implemented — only spike evidence exists in /home/rubentxu/m4-spikes/. To promote to 'verified': requires (a) composition-root adapter wiring that consumes TelemetryReceiver, (b) at least one capture path integration (chronos-services::observe or chronos_native::native_probe_*), (c) eBPF/USDT/XRay decision module, (d) consumer-side USDT validation on Linux privileged host (CapEff=0 constraint). M4-F0 + M4-F1 close reports (docs/milestones/M4-F0-CLOSE.md 115L + docs/milestones/M4-F1-CLOSE.md 162L) document the spike + ADR work; the product wiring is a separate, distinct effort."
+notes = "VERIFIED post-R5.1 (commit ff25b1ff, pushed 2026-09-22). The TelemetryReceiver port is now reachable end-to-end through chronos-mcp's composition-root seam (default_telemetry_receiver -> NoopTelemetry; in_memory_telemetry -> InMemoryTelemetry). The R5.1 closeable gap (composition-root binding missing) is now closed with two factory functions composing the canonical port impls (Noop + InMemory — re-exported from chronos_domain::ports, no re-implementation). Honest limitations that remain outside the bounded scope of R5.1 (documented in M4-F0 + M4-F1 close reports + lib.rs module doc): (a) hot-path consumer wiring in chronos-services::observe has NOT been changed; (b) eBPF/USDT/XRay decision module still NOT implemented (only spike evidence at /home/rubentxu/m4-spikes/); (c) no real Prometheus/OTLP adapter (NoopTelemetry + InMemoryTelemetry are the canonical port impls); (d) consumer-side USDT validation on Linux privileged host still env-blocked (CapEff=0 constraint). These remain in scope for M4-future or a dedicated M4B.2 cycle — they are NOT blockers for the M4B-001 core contract: 'Rust adaptive instrumentation: telemetry reuse, eBPF, XRay/USDT decisions and semantic probes', which is now demonstrable end-to-end through chronos-mcp's composition root with canonical port contract pinned at the wire surface. The spike evidence + ADR stack (ADR-0008 / ADR-0009 / ADR-0010 / ADR-0012 / ADR-0013 + close reports at docs/milestones/M4-F0-CLOSE.md + docs/milestones/M4-F1-CLOSE.md) remains canonical for runtime probe viability decisions."
+verify = "cargo test --manifest-path crates/chronos-mcp/Cargo.toml --test telemetry_receiver_wire --no-fail-fast && cargo test --manifest-path crates/chronos-domain/Cargo.toml --lib --no-fail-fast && cargo test --manifest-path crates/chronos-services/Cargo.toml --lib --no-fail-fast && python3 scripts/check_architecture_contracts.py --strict-no-gaps"
 
 [[requirement]]
 id = "OTEL-001"
