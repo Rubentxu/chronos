@@ -1,0 +1,74 @@
+{
+  "binary_sha256": "not-applicable",
+  "checks": [
+    {
+      "evidence": "docs/security/H1.2-threat-model.md",
+      "id": "OPS.1",
+      "name": "threat-model-present",
+      "status": "pass"
+    },
+    {
+      "evidence": "deny.toml=True, sbom_script=True, workflow=True",
+      "id": "OPS.2",
+      "name": "supply-chain-tooling-present",
+      "status": "pass"
+    },
+    {
+      "evidence": "H1.2 §6-§7 cross-reference",
+      "id": "OPS.3",
+      "name": "isolation-and-secrets-documented",
+      "status": "pass"
+    },
+    {
+      "evidence": "docs/architecture/H1.5-runtimes-capabilities-benchmarks.md",
+      "id": "OPS.4",
+      "name": "performance-budgets-documented",
+      "status": "pass"
+    },
+    {
+      "evidence": "docs/runbooks/H1.6-install-upgrade-rollback.md",
+      "id": "OPS.5",
+      "name": "install-upgrade-rollback-documented",
+      "status": "pass"
+    },
+    {
+      "evidence": "blueprint pending (OPS.4 deliverable)",
+      "id": "OPS.6",
+      "name": "telemetry-and-diagnostics-documented",
+      "status": "warn"
+    },
+    {
+      "evidence": "docs/runbooks/H1.6-install-upgrade-rollback.md",
+      "id": "OPS.7",
+      "name": "installation-procedure-documented",
+      "status": "pass"
+    },
+    {
+      "evidence": "runbook pending (OPS.4 deliverable)",
+      "id": "OPS.8",
+      "name": "support-runbook-present",
+      "status": "warn"
+    },
+    {
+      "evidence": "cargo check -p chronos-domain --lib exit=0",
+      "id": "OPS.LOCAL",
+      "name": "local-cargo-check-passes",
+      "status": "pass"
+    }
+  ],
+  "commit_sha": "52e8db37c2a126b404bdb16c06436e5bd3cbc31b",
+  "downgrade_reasons": [
+    "OPS.6 (telemetry-and-diagnostics-documented): blueprint pending (OPS.4 deliverable)",
+    "OPS.8 (support-runbook-present): runbook pending (OPS.4 deliverable)"
+  ],
+  "generated_at_unix_seconds": 1790068291,
+  "profile": "local-stdio",
+  "schema_version": 1,
+  "summary": {
+    "fail": 0,
+    "pass": 7,
+    "total": 9,
+    "warn": 2
+  },
+  "tier": "cert-3-certified"
+}
