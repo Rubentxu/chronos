@@ -12,6 +12,7 @@
 pub mod correlation;
 pub mod ingest;
 pub mod parse;
+pub mod redaction;
 
 use uuid::Uuid;
 
