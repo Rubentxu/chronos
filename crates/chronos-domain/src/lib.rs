@@ -7,6 +7,7 @@ pub mod adapter;
 pub mod capability;
 pub mod causal_slice;
 pub mod concurrency;
+pub mod otlp;
 pub mod error;
 pub mod evidence;
 pub mod index;
