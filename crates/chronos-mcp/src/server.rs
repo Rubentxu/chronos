@@ -148,6 +148,18 @@ pub struct ChronosServer {
     /// sync, locks are held only for short non-blocking operations, and std Mutex
     /// is faster than tokio Mutex for sub-microsecond critical sections.
     /// INVARIANT: Never hold this lock across an `.await` point.
+    ///
+    /// **ponytail:background-sessions-dead** — The field is allocated at
+    /// construction but never read or mutated after. The module-level doc
+    /// (server.rs:23) still describes the field as if it tracks pending
+    /// sessions, but no code path inserts or removes entries. Originally
+    /// intended for a deferred "session_start async mode" feature (m8+)
+    /// that landed elsewhere (`engines` map directly). The gap is tracked
+    /// as `CAP-GAP-CHRONOS-MCP-DEAD-CODE-BACKGROUND-SESSIONS` in
+    /// `docs/architecture/H1.4-chronos-server-cohesion-map.md` §6.2.
+    /// Resolution options: (a) wire it to the `engines` map for the
+    /// eventual streaming-warmup path, (b) remove it cleanly once the
+    /// module doc is updated. Decision deferred per H1.4 slice A scope.
     #[allow(dead_code)]
     background_sessions: Arc<std::sync::Mutex<HashMap<String, BackgroundSessionEvents>>>,
     /// Sessions with connected debug clients (Python debugpy or JS Node.js inspector).
@@ -194,7 +206,34 @@ pub struct ChronosServer {
     /// Active toolset profile. Controls which tools are listed and which
     /// language-specific tools are available. Set from `CHRONOS_ACTIVE_TOOLSET`
     /// env var at construction. Valid values: `auto`, `native`, `ebpf`,
-    /// `python`, `java`, `go`, `js`, `minimal`. Unknown values default to `auto`.
+    /// `python`, `java`, `go`, `js`, `minimal`.
+    ///
+    /// **Behavior on unset / unknown values (post-H1.4-B fix of the
+    /// doc-vs-code drift previously tracked as
+    /// `CAP-GAP-CHRONOS-MCP-TOOLSET-VALIDATION`):**
+    ///
+    /// - Unset → the field defaults to `"auto"` (`std::env::var::unwrap_or_else`).
+    /// - Set to a valid value → the field stores that value verbatim.
+    /// - Set to an unknown value (e.g. `"foo"`) → **the field stores
+    ///   the unknown value verbatim** (NOT normalized to `"auto"` at
+    ///   construction). At dispatch time, `is_tool_listed` normalizes
+    ///   unknown values to the `"auto"` behavior (all tools listed) per
+    ///   REQ-CAP-004. This is a two-layer design: the field preserves
+    ///   operator intent for diagnostics (so a wrong value is visible in
+    ///   `active_toolset()`), while the dispatch layer never silently
+    ///   rejects the request — it falls back to the safest profile.
+    ///
+    /// **Why this design?** `auto` is the most permissive profile, so
+    /// failing-open (treating unknown as auto) is the least surprising
+    /// choice. Failing-closed (treating unknown as minimal) would
+    /// silently disable tools that the operator may have been relying on.
+    /// The trade-off is documented: a typo in `CHRONOS_ACTIVE_TOOLSET`
+    /// gives the operator access to MORE tools than intended, not fewer.
+    ///
+    /// Pinned by `inv_5b_unknown_toolset_value_documented_as_passthrough`
+    /// (field-level, §3) and the implicit `is_tool_listed` invariant
+    /// (§3 fallback arm). See `docs/architecture/H1.4-chronos-server-
+    /// cohesion-map.md` §3 INV-5.
     active_toolset: String,
     /// REC-C3.3.2.3 — composition-root uprobe capability injector.
     ///
