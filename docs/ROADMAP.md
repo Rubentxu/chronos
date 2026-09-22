@@ -113,7 +113,15 @@ M9.1 modelo typed de lock/atomic/task/goroutine/message con procedencia; M9.2 ha
 
 M10.1 contrato de lectura/paginación y permisos; M10.2 live/evidence/provenance; M10.3 causality/mutation/properties/compare cuando cada fuente se haya certificado; M10.4 virtualización de trazas grandes; M10.5 accesibilidad y validación UX/seguridad; UAT-M10-01/02.
 
-### M11 — Lenguajes por demanda y capacidad verificable
+### M11 — Lenguajes por demanda y capacidad verificable **[SCOPED 2026-09-22, NOT STARTED execution]**
+
+> **Estado actual (2026-09-22)**: ROADMAP §M11 §99 está **scope + architectured**, listo para ejecución, pero **NO se ha ejecutado** ningún sub-cycle de M11 en `main @ 1663aada`.  
+> **Punteros canónicos**:  
+> • **ADR-0031** `docs/chronos-agentic-reconstruction/docs/adr/0031-m11-scoping-languages-on-demand.md` (NEW, 206L, 9 secciones §1..§9) — formal architecture decision: consolidar sobre **7 adapter crates pre-existentes** (~19,854 LoC + 274 unit tests) en lugar de reinventar adapters desde cero. 6 sub-cycles M11.2..M11.6 + M11.1 inventory.  
+> • **M11-SCOPING.md** `docs/milestones/M11-SCOPING.md` (175L, 8 secciones) — operacional reference con 6 sub-cycles propuestos M11.2..M11.6, integration con foundation masiva pre-existente.  
+> • **Foundation pre-existente reutilizable** (descubierto durante M11 scoping): 7 adapter crates (chronos-python 1,653L+27 tests + chronos-java 2,562L+44 + chronos-js 1,683L+12 + chronos-go 1,703L+24 + chronos-ebpf 2,034L+35 + chronos-native 7,086L+87 + chronos-browser 3,133L+45) = **19,854 LoC + 274 tests** + `Language` enum canónico de 14 variants en `crates/chronos-domain/src/trace/session.rs:10` + `LanguageAdapterStatus` wiring en `crates/chronos-services/src/output.rs:2231` + manual-ai docs (EN+ES, 523L total) — todos verificados en ADR-0031 §5.  
+> • **Próximos pasos**: M11.2 execute (capability matrix ejecutable + certification tier CERT-1..CERT-4) ó decisión operador entre execute vs OPS push.  
+> **Convención de naming** (ADR-0027 §2.3 + ADR-0028 §2.4 + ADR-0029 §2.4 + ADR-0031 §2.3): ROADMAP §M11 sub-cycles usan prefijo `M11.N` (capital M + dot, matching M7/M8/M9/M10).
 
 M11.1 priorizar Python `sys.monitoring`, JVM JFR+OTel, Node/JS, browser/WASM, C/C++ XRay/rr según evidencias de uso y viabilidad; M11.2 por runtime: capabilities -> fixtures -> negativos -> overhead -> compatibilidad -> UAT-M11-XX. Una plataforma no certificada se anuncia como experimental o unsupported, no como equivalente a otra.
 
