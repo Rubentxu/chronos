@@ -219,6 +219,23 @@ impl HappensBeforeGraph {
         self.events.get(&event_id)
     }
 
+    /// Look up an event by id (mutable). Used by perturbation code
+    /// (M9.5) to drop individual provenance fields without
+    /// rebuilding the graph.
+    pub fn get_event_mut(&mut self, event_id: u64) -> Option<&mut TypedConcurrencyEvent> {
+        self.events.get_mut(&event_id)
+    }
+
+    /// Remove an event from the graph entirely (M9.5 perturbation).
+    ///
+    /// Edges that reference this event remain in `edges_out`/`edges_in`
+    /// (orphan edges) but the event lookup returns `None`. This is
+    /// intentional — callers should also recompute concurrent pairs
+    /// after removal if they care about pair consistency.
+    pub fn remove_event(&mut self, event_id: u64) -> bool {
+        self.events.remove(&event_id).is_some()
+    }
+
     /// Check whether `earlier` happens-before `later` (transitive).
     ///
     /// BFS from `earlier` along `edges_out`; if we reach `later`, return

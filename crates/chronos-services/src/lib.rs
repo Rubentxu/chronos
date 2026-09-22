@@ -84,6 +84,7 @@ pub mod browser_probe;
 pub mod canonical_drain;
 pub mod counterexample;
 pub mod concurrency_graph;
+pub mod concurrency_perturbation;
 pub mod debug_read;
 pub mod debug_trace;
 pub mod debug_trace_specialized;

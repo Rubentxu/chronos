@@ -281,11 +281,19 @@ fn classify_pair_with_reasons(
     }
 }
 
-/// Check whether a `Provenance` is sufficient for classification.
+/// Check whether a `Provenance` meets the **minimum** evidence threshold
+/// for classification.
 ///
-/// Requires: thread_id, timestamp, AND function.
+/// Requires: timestamp + function. **NOT** thread_id — that is checked
+/// separately (missing thread_id → Suspicious, not Unsupported).
+///
+/// Per ADR-0028 §3 + ADR-0004:
+/// - Missing timestamp OR function → `Unsupported` (we cannot reason
+///   about causality or call-site).
+/// - Missing thread_id alone → `Suspicious` (we know there's contention
+///   but cannot confirm cross-thread race).
 fn provenance_is_sufficient(p: &Provenance) -> bool {
-    p.thread_id.is_some() && p.timestamp_ns.is_some() && p.function.is_some()
+    p.timestamp_ns.is_some() && p.function.is_some()
 }
 
 /// Heuristic read-only detection: a `TypedConcurrencyEvent` is read-only
