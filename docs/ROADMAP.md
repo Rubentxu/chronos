@@ -125,7 +125,15 @@ M10.1 contrato de lectura/paginación y permisos; M10.2 live/evidence/provenance
 
 M11.1 priorizar Python `sys.monitoring`, JVM JFR+OTel, Node/JS, browser/WASM, C/C++ XRay/rr según evidencias de uso y viabilidad; M11.2 por runtime: capabilities -> fixtures -> negativos -> overhead -> compatibilidad -> UAT-M11-XX. Una plataforma no certificada se anuncia como experimental o unsupported, no como equivalente a otra.
 
-### OPS — Production-ready por perfil, no como eslogan general
+### OPS — Production-ready por perfil, no como eslogan general **[SCOPED 2026-09-22, NOT STARTED execution]**
+
+> **Estado actual (2026-09-22)**: ROADMAP §OPS §101-§103 está **scope + architectured**, listo para ejecución, pero **NO se ha ejecutado** ningún sub-cycle de OPS en `main @ 3ed9c35b`.  
+> **Punteros canónicos**:  
+> • **ADR-0032** `docs/chronos-agentic-reconstruction/docs/adr/0032-ops-scoping-production-ready.md` (NEW, 216L, 9 secciones §1..§9) — formal architecture decision: consolidar sobre **4 docs comprehensivos + scripts + workflows pre-existentes** (~1,292 LoC docs + deny.toml + SBOM script + 7 workflows + Dockerfile) en lugar de reinventar OPS desde cero. 5 sub-cycles OPS.2..OPS.5 + OPS.1 inventory.  
+> • **OPS-SCOPING.md** `docs/milestones/OPS-SCOPING.md` (203L, 8 secciones) — operacional reference con 5 sub-cycles propuestos OPS.2..OPS.5.  
+> • **Foundation pre-existente reutilizable** (descubierto durante OPS scoping): **H1.1.1 supply-chain** (305L + deny.toml 90L + SBOM script 240L + supply-chain workflow 113L) + **H1.2 threat model** (338L + 3 deployment profiles + OPS.1..OPS.8 checklist + 7 threats T-01..T-07) + **H1.6 install/upgrade/rollback** (389L + 4-layer artifact verification + schema_version tracking en 16 sites) + **H1.5 runtime/capability matrix** (260L + 3 capability slots + 6 perf budgets) = **~1,292 LoC docs comprehensivos** + scripts + workflows — todos verificados en ADR-0032 §5.  
+> • **Próximos pasos**: OPS.2 execute (certification tier executable per profile) ó decisión operador entre execute vs OPS push.  
+> **Convención de naming** (ADR-0027 §2.3 + ADR-0028 §2.4 + ADR-0029 §2.4 + ADR-0031 §2.3 + ADR-0032 §2.3): ROADMAP §OPS sub-cycles usan prefijo `OPS.N`. **`remote/multi-tenant` profile NO IMPLEMENTADO en este release** (per H1.2 §10 + ROADMAP §OPS §103) — explícitamente documentado en ADR-0032 §7 + §8.
 
 Definir primero perfiles `local/stdio`, `Linux privileged capture` y cualquier futuro `remote/multi-tenant` **por separado**. Checklist OPS.1–OPS.8: amenaza/acceso, supply chain/SBOM, aislamiento y secretos, límites y rendimiento, backup/restore y schema migration, telemetry y diagnóstico, instalación/upgrade/rollback, soporte y respuesta a incidentes. Publicar solo el perfil que alcance CERT-4 con pruebas y artefactos del mismo commit/release.
 
