@@ -254,7 +254,10 @@ mod tests {
         let mut g = HappensBeforeGraph::new();
         g.add_event(event_with_full_prov(1, 1, 100));
         g.add_event(event_with_full_prov(2, 2, 200));
-        let pair = ConcurrentPair { earlier: 1, later: 2 };
+        let pair = ConcurrentPair {
+            earlier: 1,
+            later: 2,
+        };
         // Baseline (no perturbation): different threads + writes → Confirmed.
         assert_eq!(classify_pair(&g, &pair), RaceClassification::Confirmed);
         (g, pair)

@@ -270,37 +270,27 @@ mod tests {
     #[test]
     fn cert1_has_no_requirement_regardless_of_fixture() {
         assert_eq!(
-            effective_tier(
-                CertificationTier::Cert1Stub,
-                FixtureStatus::Missing
-            ),
+            effective_tier(CertificationTier::Cert1Stub, FixtureStatus::Missing),
             (CertificationTier::Cert1Stub, None)
         );
         assert_eq!(
-            effective_tier(
-                CertificationTier::Cert1Stub,
-                FixtureStatus::Present
-            ),
+            effective_tier(CertificationTier::Cert1Stub, FixtureStatus::Present),
             (CertificationTier::Cert1Stub, None)
         );
     }
 
     #[test]
     fn cert2_holds_even_with_missing_fixture() {
-        let (tier, reason) = effective_tier(
-            CertificationTier::Cert2Partial,
-            FixtureStatus::Missing,
-        );
+        let (tier, reason) =
+            effective_tier(CertificationTier::Cert2Partial, FixtureStatus::Missing);
         assert_eq!(tier, CertificationTier::Cert2Partial);
         assert!(reason.is_none());
     }
 
     #[test]
     fn cert3_missing_fixture_downgrades_to_cert2_with_reason() {
-        let (tier, reason) = effective_tier(
-            CertificationTier::Cert3Certified,
-            FixtureStatus::Missing,
-        );
+        let (tier, reason) =
+            effective_tier(CertificationTier::Cert3Certified, FixtureStatus::Missing);
         assert_eq!(tier, CertificationTier::Cert2Partial);
         assert!(reason.is_some());
         assert!(reason.unwrap().contains("cert-3"));
@@ -308,20 +298,16 @@ mod tests {
 
     #[test]
     fn cert3_present_fixture_holds() {
-        let (tier, reason) = effective_tier(
-            CertificationTier::Cert3Certified,
-            FixtureStatus::Present,
-        );
+        let (tier, reason) =
+            effective_tier(CertificationTier::Cert3Certified, FixtureStatus::Present);
         assert_eq!(tier, CertificationTier::Cert3Certified);
         assert!(reason.is_none());
     }
 
     #[test]
     fn cert4_missing_fixture_downgrades_to_cert3() {
-        let (tier, reason) = effective_tier(
-            CertificationTier::Cert4Production,
-            FixtureStatus::Missing,
-        );
+        let (tier, reason) =
+            effective_tier(CertificationTier::Cert4Production, FixtureStatus::Missing);
         assert_eq!(tier, CertificationTier::Cert3Certified);
         assert!(reason.is_some());
         assert!(reason.unwrap().contains("cert-4"));
@@ -361,7 +347,10 @@ mod tests {
     #[test]
     fn summary_counts_declared_tiers_and_fixture_statuses() {
         let report = audit_default_matrix_with_all_present();
-        assert!(report.summary.by_declared_tier.contains_key("CERT-3 (certified)"));
+        assert!(report
+            .summary
+            .by_declared_tier
+            .contains_key("CERT-3 (certified)"));
         assert!(report.summary.by_fixture_status.contains_key("Present"));
     }
 
@@ -369,8 +358,7 @@ mod tests {
     fn serde_round_trip_preserves_report() {
         let report = audit_default_matrix_with_all_present();
         let json = serde_json::to_string(&report).expect("serialize");
-        let parsed: FixtureAuditReport =
-            serde_json::from_str(&json).expect("deserialize");
+        let parsed: FixtureAuditReport = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed, report);
     }
 

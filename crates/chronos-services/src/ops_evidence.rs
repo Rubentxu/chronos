@@ -89,7 +89,8 @@ impl ProfileTier {
 pub struct OpsAggregateReport {
     pub schema_version: u32,
     /// Check id (`OPS.1`..`OPS.8`) → profile → per-check summary.
-    pub per_check: std::collections::BTreeMap<String, std::collections::BTreeMap<String, CheckSummary>>,
+    pub per_check:
+        std::collections::BTreeMap<String, std::collections::BTreeMap<String, CheckSummary>>,
     /// Profile → overall summary (counts).
     pub per_profile: std::collections::BTreeMap<String, ProfileSummary>,
     /// Profile → overall tier (derived).
@@ -115,31 +116,56 @@ mod tests {
 
     #[test]
     fn tier_all_pass_is_cert4() {
-        let s = ProfileSummary { pass: 8, warn: 0, fail: 0, total: 8 };
+        let s = ProfileSummary {
+            pass: 8,
+            warn: 0,
+            fail: 0,
+            total: 8,
+        };
         assert_eq!(tier_from_summary(&s), ProfileTier::Cert4Production);
     }
 
     #[test]
     fn tier_no_fail_with_warn_is_cert3() {
-        let s = ProfileSummary { pass: 6, warn: 2, fail: 0, total: 8 };
+        let s = ProfileSummary {
+            pass: 6,
+            warn: 2,
+            fail: 0,
+            total: 8,
+        };
         assert_eq!(tier_from_summary(&s), ProfileTier::Cert3Certified);
     }
 
     #[test]
     fn tier_one_fail_is_cert2() {
-        let s = ProfileSummary { pass: 5, warn: 2, fail: 1, total: 8 };
+        let s = ProfileSummary {
+            pass: 5,
+            warn: 2,
+            fail: 1,
+            total: 8,
+        };
         assert_eq!(tier_from_summary(&s), ProfileTier::Cert2Partial);
     }
 
     #[test]
     fn tier_two_fail_is_cert2() {
-        let s = ProfileSummary { pass: 4, warn: 2, fail: 2, total: 8 };
+        let s = ProfileSummary {
+            pass: 4,
+            warn: 2,
+            fail: 2,
+            total: 8,
+        };
         assert_eq!(tier_from_summary(&s), ProfileTier::Cert2Partial);
     }
 
     #[test]
     fn tier_three_fail_is_cert1() {
-        let s = ProfileSummary { pass: 3, warn: 2, fail: 3, total: 8 };
+        let s = ProfileSummary {
+            pass: 3,
+            warn: 2,
+            fail: 3,
+            total: 8,
+        };
         assert_eq!(tier_from_summary(&s), ProfileTier::Cert1Stub);
     }
 

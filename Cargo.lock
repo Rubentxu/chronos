@@ -564,6 +564,7 @@ dependencies = [
  "chronos-native",
  "chronos-query",
  "chronos-store",
+ "criterion",
  "proptest",
  "schemars",
  "serde",

@@ -165,11 +165,7 @@ impl TypedConcurrencyEvent {
     }
 
     /// Build an event with explicit provenance (no `CausalityEntry`).
-    pub fn new(
-        event_id: EventId,
-        primitive: ConcurrencyPrimitive,
-        provenance: Provenance,
-    ) -> Self {
+    pub fn new(event_id: EventId, primitive: ConcurrencyPrimitive, provenance: Provenance) -> Self {
         Self {
             event_id,
             primitive,
@@ -194,7 +190,9 @@ pub fn typed_events_from_index(
     let mut out = Vec::new();
     for addr in addresses {
         for entry in index.writes_at(addr) {
-            out.push(TypedConcurrencyEvent::from_causality_entry(entry, primitive));
+            out.push(TypedConcurrencyEvent::from_causality_entry(
+                entry, primitive,
+            ));
         }
     }
     out
@@ -259,14 +257,9 @@ mod tests {
 
     #[test]
     fn typed_event_serde_round_trip() {
-        let ev = TypedConcurrencyEvent::new(
-            99,
-            ConcurrencyPrimitive::Atomic,
-            Provenance::empty(),
-        );
+        let ev = TypedConcurrencyEvent::new(99, ConcurrencyPrimitive::Atomic, Provenance::empty());
         let json = serde_json::to_string(&ev).expect("serialize");
-        let parsed: TypedConcurrencyEvent =
-            serde_json::from_str(&json).expect("deserialize");
+        let parsed: TypedConcurrencyEvent = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(ev, parsed);
     }
 
@@ -281,7 +274,8 @@ mod tests {
     fn typed_events_from_empty_index_is_empty() {
         let index = CausalityIndex::new();
         // Empty iterator of addresses → empty events list.
-        let events = typed_events_from_index(&index, ConcurrencyPrimitive::Lock, std::iter::empty());
+        let events =
+            typed_events_from_index(&index, ConcurrencyPrimitive::Lock, std::iter::empty());
         assert!(
             events.is_empty(),
             "fresh CausalityIndex + empty address iterator yields no typed events"

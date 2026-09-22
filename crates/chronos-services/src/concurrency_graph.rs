@@ -189,18 +189,10 @@ impl HappensBeforeGraph {
         self.edge_kinds.insert((earlier, later), kind);
         // Ensure endpoints are in events map (placeholder if missing).
         self.events.entry(earlier).or_insert_with(|| {
-            TypedConcurrencyEvent::new(
-                earlier,
-                ConcurrencyPrimitive::Unknown,
-                Provenance::empty(),
-            )
+            TypedConcurrencyEvent::new(earlier, ConcurrencyPrimitive::Unknown, Provenance::empty())
         });
         self.events.entry(later).or_insert_with(|| {
-            TypedConcurrencyEvent::new(
-                later,
-                ConcurrencyPrimitive::Unknown,
-                Provenance::empty(),
-            )
+            TypedConcurrencyEvent::new(later, ConcurrencyPrimitive::Unknown, Provenance::empty())
         });
     }
 
@@ -286,7 +278,10 @@ impl HappensBeforeGraph {
         for (i, &a) in ids.iter().enumerate() {
             for &b in ids.iter().skip(i + 1) {
                 if !self.happens_before(a, b) && !self.happens_before(b, a) {
-                    result.push(ConcurrentPair { earlier: a, later: b });
+                    result.push(ConcurrentPair {
+                        earlier: a,
+                        later: b,
+                    });
                 }
             }
         }
@@ -304,7 +299,10 @@ impl HappensBeforeGraph {
         for (i, &a) in ids.iter().enumerate() {
             for &b in ids.iter().skip(i + 1) {
                 if self.happens_before(a, b) && self.happens_before(b, a) {
-                    result.push(ConcurrentPair { earlier: a, later: b });
+                    result.push(ConcurrentPair {
+                        earlier: a,
+                        later: b,
+                    });
                 }
             }
         }
@@ -414,10 +412,7 @@ mod tests {
         let pairs = g.concurrent_pairs();
         // Expected: {1,3} and {2,3} are concurrent; {1,2} is not.
         assert_eq!(pairs.len(), 2);
-        let pair_set: BTreeSet<(u64, u64)> = pairs
-            .iter()
-            .map(|p| (p.earlier, p.later))
-            .collect();
+        let pair_set: BTreeSet<(u64, u64)> = pairs.iter().map(|p| (p.earlier, p.later)).collect();
         assert!(pair_set.contains(&(1, 3)));
         assert!(pair_set.contains(&(2, 3)));
         assert!(!pair_set.contains(&(1, 2)));

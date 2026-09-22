@@ -72,9 +72,7 @@ use serde::{Deserialize, Serialize};
 /// Per ADR-0004 fail-closed, transitions are monotonic in severity
 /// (`Healthy < Degraded < Unhealthy`). Aggregate status is the
 /// **maximum** severity across all components.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HealthStatus {
     /// All components responding normally.
@@ -242,10 +240,7 @@ mod tests {
 
     #[test]
     fn worst_status_returns_max() {
-        let components = vec![
-            ComponentHealth::healthy("a"),
-            ComponentHealth::healthy("b"),
-        ];
+        let components = vec![ComponentHealth::healthy("a"), ComponentHealth::healthy("b")];
         assert_eq!(worst_status(&components), HealthStatus::Healthy);
 
         let components = vec![
@@ -323,7 +318,10 @@ mod tests {
         let report = HealthReport::from_components(
             "0.7.112",
             60,
-            vec![ComponentHealth::unhealthy("ebpf_probes", "no probes attached")],
+            vec![ComponentHealth::unhealthy(
+                "ebpf_probes",
+                "no probes attached",
+            )],
         );
         let json = serde_json::to_string(&report).expect("serialize");
         assert!(json.contains("\"status\":\"unhealthy\""));

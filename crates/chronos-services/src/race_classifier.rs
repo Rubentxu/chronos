@@ -141,10 +141,7 @@ pub struct ClassificationExplanation {
 /// Note: this function does NOT check whether the events are concurrent
 /// (caller already did via `happens_before`). It only classifies the
 /// nature of the conflict.
-pub fn classify_pair(
-    graph: &HappensBeforeGraph,
-    pair: &ConcurrentPair,
-) -> RaceClassification {
+pub fn classify_pair(graph: &HappensBeforeGraph, pair: &ConcurrentPair) -> RaceClassification {
     let a = match graph.get_event(pair.earlier) {
         Some(e) => e,
         None => return RaceClassification::Unsupported,
@@ -354,7 +351,10 @@ mod tests {
     #[test]
     fn missing_event_in_graph_returns_unsupported() {
         let g = HappensBeforeGraph::new();
-        let pair = ConcurrentPair { earlier: 1, later: 2 };
+        let pair = ConcurrentPair {
+            earlier: 1,
+            later: 2,
+        };
         assert_eq!(classify_pair(&g, &pair), RaceClassification::Unsupported);
     }
 
@@ -363,7 +363,10 @@ mod tests {
         let mut g = HappensBeforeGraph::new();
         g.add_event(empty_prov_event(1));
         g.add_event(empty_prov_event(2));
-        let pair = ConcurrentPair { earlier: 1, later: 2 };
+        let pair = ConcurrentPair {
+            earlier: 1,
+            later: 2,
+        };
         assert_eq!(classify_pair(&g, &pair), RaceClassification::Unsupported);
     }
 
@@ -372,7 +375,10 @@ mod tests {
         let mut g = HappensBeforeGraph::new();
         g.add_event(event_with_prov(1, 1, 100));
         g.add_event(event_with_prov(2, 2, 200));
-        let pair = ConcurrentPair { earlier: 1, later: 2 };
+        let pair = ConcurrentPair {
+            earlier: 1,
+            later: 2,
+        };
         assert_eq!(classify_pair(&g, &pair), RaceClassification::Confirmed);
     }
 
@@ -381,7 +387,10 @@ mod tests {
         let mut g = HappensBeforeGraph::new();
         g.add_event(event_with_prov(1, 1, 100));
         g.add_event(event_with_prov(2, 1, 200));
-        let pair = ConcurrentPair { earlier: 1, later: 2 };
+        let pair = ConcurrentPair {
+            earlier: 1,
+            later: 2,
+        };
         assert_eq!(classify_pair(&g, &pair), RaceClassification::Suspicious);
     }
 
@@ -390,7 +399,10 @@ mod tests {
         let mut g = HappensBeforeGraph::new();
         g.add_event(event_with_prov(1, 1, 100));
         g.add_event(event_with_prov(2, 2, 200));
-        let pair = ConcurrentPair { earlier: 1, later: 2 };
+        let pair = ConcurrentPair {
+            earlier: 1,
+            later: 2,
+        };
         let expl = explain_classification(&g, &pair);
         assert_eq!(expl.classification, RaceClassification::Confirmed);
         assert!(!expl.reasons.is_empty());
@@ -400,10 +412,15 @@ mod tests {
     #[test]
     fn explain_unsupported_when_events_missing() {
         let g = HappensBeforeGraph::new();
-        let pair = ConcurrentPair { earlier: 1, later: 2 };
+        let pair = ConcurrentPair {
+            earlier: 1,
+            later: 2,
+        };
         let expl = explain_classification(&g, &pair);
         assert_eq!(expl.classification, RaceClassification::Unsupported);
-        assert!(expl.reasons.contains(&ClassificationReason::InsufficientProvenance));
+        assert!(expl
+            .reasons
+            .contains(&ClassificationReason::InsufficientProvenance));
     }
 
     #[test]

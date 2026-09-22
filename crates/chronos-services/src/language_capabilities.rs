@@ -116,26 +116,110 @@ pub struct CapabilityMatrixEntry {
 pub fn default_capability_matrix() -> Vec<CapabilityMatrixEntry> {
     vec![
         // chronos-native: 7,086 LoC + 87 tests
-        entry(Language::Rust, CertificationTier::Cert3Certified, Some("chronos-native"), Some(7086), Some(87)),
-        entry(Language::C, CertificationTier::Cert3Certified, Some("chronos-native"), Some(7086), Some(87)),
-        entry(Language::Cpp, CertificationTier::Cert3Certified, Some("chronos-native"), Some(7086), Some(87)),
-        entry(Language::Native, CertificationTier::Cert3Certified, Some("chronos-native"), Some(7086), Some(87)),
+        entry(
+            Language::Rust,
+            CertificationTier::Cert3Certified,
+            Some("chronos-native"),
+            Some(7086),
+            Some(87),
+        ),
+        entry(
+            Language::C,
+            CertificationTier::Cert3Certified,
+            Some("chronos-native"),
+            Some(7086),
+            Some(87),
+        ),
+        entry(
+            Language::Cpp,
+            CertificationTier::Cert3Certified,
+            Some("chronos-native"),
+            Some(7086),
+            Some(87),
+        ),
+        entry(
+            Language::Native,
+            CertificationTier::Cert3Certified,
+            Some("chronos-native"),
+            Some(7086),
+            Some(87),
+        ),
         // chronos-python: 1,653 LoC + 27 tests
-        entry(Language::Python, CertificationTier::Cert3Certified, Some("chronos-python"), Some(1653), Some(27)),
+        entry(
+            Language::Python,
+            CertificationTier::Cert3Certified,
+            Some("chronos-python"),
+            Some(1653),
+            Some(27),
+        ),
         // chronos-java: 2,562 LoC + 44 tests
-        entry(Language::Java, CertificationTier::Cert3Certified, Some("chronos-java"), Some(2562), Some(44)),
-        entry(Language::Kotlin, CertificationTier::Cert3Certified, Some("chronos-java"), Some(2562), Some(44)),
-        entry(Language::Scala, CertificationTier::Cert3Certified, Some("chronos-java"), Some(2562), Some(44)),
-        entry(Language::CSharp, CertificationTier::Cert3Certified, Some("chronos-java"), Some(2562), Some(44)),
+        entry(
+            Language::Java,
+            CertificationTier::Cert3Certified,
+            Some("chronos-java"),
+            Some(2562),
+            Some(44),
+        ),
+        entry(
+            Language::Kotlin,
+            CertificationTier::Cert3Certified,
+            Some("chronos-java"),
+            Some(2562),
+            Some(44),
+        ),
+        entry(
+            Language::Scala,
+            CertificationTier::Cert3Certified,
+            Some("chronos-java"),
+            Some(2562),
+            Some(44),
+        ),
+        entry(
+            Language::CSharp,
+            CertificationTier::Cert3Certified,
+            Some("chronos-java"),
+            Some(2562),
+            Some(44),
+        ),
         // chronos-js: 1,683 LoC + 12 tests; chronos-browser: 3,133 LoC + 45 tests
-        entry(Language::JavaScript, CertificationTier::Cert3Certified, Some("chronos-js"), Some(1683), Some(12)),
-        entry(Language::WebAssembly, CertificationTier::Cert3Certified, Some("chronos-browser"), Some(3133), Some(45)),
+        entry(
+            Language::JavaScript,
+            CertificationTier::Cert3Certified,
+            Some("chronos-js"),
+            Some(1683),
+            Some(12),
+        ),
+        entry(
+            Language::WebAssembly,
+            CertificationTier::Cert3Certified,
+            Some("chronos-browser"),
+            Some(3133),
+            Some(45),
+        ),
         // chronos-go: 1,703 LoC + 24 tests
-        entry(Language::Go, CertificationTier::Cert3Certified, Some("chronos-go"), Some(1703), Some(24)),
+        entry(
+            Language::Go,
+            CertificationTier::Cert3Certified,
+            Some("chronos-go"),
+            Some(1703),
+            Some(24),
+        ),
         // chronos-ebpf: 2,034 LoC + 35 tests
-        entry(Language::Ebpf, CertificationTier::Cert3Certified, Some("chronos-ebpf"), Some(2034), Some(35)),
+        entry(
+            Language::Ebpf,
+            CertificationTier::Cert3Certified,
+            Some("chronos-ebpf"),
+            Some(2034),
+            Some(35),
+        ),
         // Unknown: no adapter, default CERT-1
-        entry(Language::Unknown, CertificationTier::Cert1Stub, None, None, None),
+        entry(
+            Language::Unknown,
+            CertificationTier::Cert1Stub,
+            None,
+            None,
+            None,
+        ),
     ]
 }
 
@@ -236,7 +320,10 @@ mod tests {
     #[test]
     fn tier_for_known_languages() {
         assert_eq!(tier_for(Language::Rust), CertificationTier::Cert3Certified);
-        assert_eq!(tier_for(Language::Python), CertificationTier::Cert3Certified);
+        assert_eq!(
+            tier_for(Language::Python),
+            CertificationTier::Cert3Certified
+        );
         assert_eq!(tier_for(Language::Go), CertificationTier::Cert3Certified);
     }
 

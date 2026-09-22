@@ -221,9 +221,7 @@ pub fn summarize_log(
         }
         let next_cursor = page.next.clone();
         // Stop if cursor does not advance (avoid infinite loop).
-        if next_cursor.next_seq() == current_cursor.next_seq()
-            && page.records.len() < page_limit
-        {
+        if next_cursor.next_seq() == current_cursor.next_seq() && page.records.len() < page_limit {
             break;
         }
         current_cursor = next_cursor;
@@ -265,9 +263,7 @@ pub fn rollup_log(
             *counts.entry(ev.thread_id).or_insert(0) += 1;
         }
         let next_cursor = page.next.clone();
-        if next_cursor.next_seq() == current_cursor.next_seq()
-            && page.records.len() < page_limit
-        {
+        if next_cursor.next_seq() == current_cursor.next_seq() && page.records.len() < page_limit {
             break;
         }
         current_cursor = next_cursor;
