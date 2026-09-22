@@ -50,7 +50,9 @@
 
 **G0 NO modifica productos durante esta reorganización documental.** G0 figura bloqueado hasta que exista evidencia nueva; documentar sus tareas no equivale a ejecutarlas.
 
-### H1 — Calidad operativa y deuda selectiva
+### H1 — Calidad operativa y deuda selectiva **[CLOSED 2026-09-22, 7/7 verified + 1 close report]**
+
+> **Estado actual (2026-09-22, post-sesión AUTO+EXEC)**: ROADMAP §H1 **CLOSED** en `main @ 30e237a8`. Tag: `h1-quality-debt.0` (annotated, peels `30e237a86bb0357c13eeb50f65ed516f29b39bde`; NEW). Close report: `docs/milestones/H1-CLOSE.md` (212L, 11 secciones). Sub-cycles ejecutados H1.1 (Cargo.lock versionado + rust-toolchain.toml pinning) + H1.1.1 (cargo-deny + cargo-audit + cargo-cyclonedx + license inheritance + SBOM 47 components + supply-chain CI workflow) + H1.2 (threat model 338L + T-01..T-07 + OPS.1..OPS.8 + systemd unit + 9 CapXxx) + H1.3 (27 contract tests for 3 RPC discriminators) + H1.4 slice A (ChronosServer cohesion map 276L + 7 sub-contexts + 9 server_cohesion tests) + H1.5 (runtime × capability matrix 260L + host fingerprint + 6 perf budgets + 4 OPEN follow-ups) + H1.6 (install/upgrade/rollback runbook 389L + 4 install methods + 16 schema_version sites + 8 gap rows). **Honest limitations**: H1.4 slice B (extract ChronosServer), H1.5 slice B (execute cargo bench), H1.1.2 (CVE remediation: reqwest 0.11→0.12 + MSRV 1.75→1.78), CapChannelPin, CapDockerfileRefresh, CapSchemaBump, CapPrebuiltArtifact, CapTraceArchive, CapRollbackAutoHealthcheck, CapReleaseSign, 7 remaining H1.2 CapXxx (CapPrivilegeDrop/RateLimit/Bounds/Export/TraceArchive/Runbook/Redact), 3 H1.4 sub-bugs, 4 H1.5 OPEN follow-ups, M6/M7 productionization, CI remoto GitHub Actions opt-in.
 
 - **H1.1** Versionar Cargo.lock para binarios, fijar Rust/tooling en CI, escanear CVE/licencias/SBOM y generar artefactos reproducibles.
 - **H1.2** Modelo de amenazas local/stdio vs remoto; política real de rutas ejecutables, privilegios ptrace/eBPF, límites de CPU/memoria/tiempo, aislamiento y redacción de datos sensibles.
