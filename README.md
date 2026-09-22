@@ -2,7 +2,7 @@
 
 Chronos is an agent-first runtime for observing, querying and verifying what a program actually did. The long-term goal is not to reproduce a human debugger UI: it is to give coding agents trustworthy execution evidence, causal context, runtime properties and adaptive instrumentation.
 
-> **Estado operativo (2026-09-21):** REC-C0..REC-C7 constan cerrados documentalmente, pero el baseline auditado de `main` presenta fallos en CI, Coverage y Vault Drift. **No se declara production-ready ni se afirma que M4/M6+ estén completos.** Consultar el puntero vivo y los tests del SHA actual antes de continuar.
+> **Estado operativo (2026-09-22, post-v0.8.0 release tag):** REC-C0..REC-C7 constan cerrados documentalmente; M9 + M10 + M11 + OPS chapters CLOSED (4 chapters, see `docs/milestones/{M9,OPS,M11,M10}-CLOSE.md` + `M10-CLOSE-FINAL.md`). Baseline `main` en `v0.8.0` (peel `9e3b928b`) con **519/519 tests PASS** (chronos-services) + **182/182** (chronos-domain) + **9/9 integration tests** + **clippy 0**. OPS chapter **cert-4 local-stdio** + **cert-3 linux-privileged**. **Honest limitations** (per ADR-0004 §2.2 No Silent Lies): remote/multi-tenant OPS profile NOT IMPLEMENTED in this release; sandbox test 1M eventos deferred per env; GPG-signed tags not available in this env (annotated tags used as honest workaround). Consultar el puntero vivo y los tests del SHA actual antes de continuar.
 
 **Única entrada al trabajo nuevo:** [docs/ROADMAP.md](docs/ROADMAP.md) → [STATE.md](docs/roadmap/STATE.md) → [CERTIFICATION.md](docs/roadmap/CERTIFICATION.md) → [UAT_CATALOG.md](docs/roadmap/UAT_CATALOG.md) → [JOURNAL.md](docs/roadmap/JOURNAL.md).
 
