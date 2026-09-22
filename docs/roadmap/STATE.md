@@ -142,7 +142,7 @@ error: {parse error}
 | Lift | Commit | Module | Tests added | Duplication check |
 |---|---|---|---|---|
 | fmt recovery | `6b9f77f3` | (whitespace only) | — | n/a — 42 hunks pre-existing |
-| M6.1 W3C TraceContext | `1d6226c5` | `otlp/{mod,parse}.rs` | 24 | `OtlpInvocationId` (UUID v4) paralelo a `InvocationId` (UUID v7) per ADR-0004 §M6.2 |
+| M6.1 W3C TraceContext | `1d6226c5` | `otlp/{mod,parse}.rs` | 24 | `OtlpInvocationId` (UUID v4) paralelo a `InvocationId` (UUID v7) — **decisión inicial sin ADR formal; corregida post-hoc como pendiente de puente explícito (ver §R0 honest retraction en STATE row posterior)** |
 | M6.2 OTLP ingest (pure) | `060248ed` | `otlp/ingest.rs` 227L | 17 | TCP server deferred per ADR-0033 §2.2 |
 | M6.3 correlation store | `7b76b282` | `otlp/correlation.rs` 273L | 24 | `chronos-domain::causal_slice` es dominio distinto (EvidenceNodeId graphs) |
 | M6.5 redaction+cardinality | `bbb2fb0d` | `otlp/redaction.rs` 187L | 15 | generic `Vec<(String,String)>` — NO duplica `ExportedSpan` (cronos-services::session_export 762L) |
@@ -183,7 +183,9 @@ error: {parse error}
 6. M7.1: defensive test asserted incorrect bytes (FNV-1a with 0 events is `cb…` not `af…`) → removed.
 7. M7.2: rustdoc `"X + Y"` flagged as list-item marker → reworded `"X and Y"`.
 8. M7.3: `d.cast_unsigned()` requires Rust 1.87 (MSRV=1.75) → replaced with `d as u64`.
-9. M7.4: spike used `m6_1_tracing_context::InvocationId` (spike-internal) but product uses `OtlpInvocationId` per ADR-0004 §M6.2 → fixed via `use OtlpInvocationId as InvocationId`.
+9. M7.4: spike used `m6_1_tracing_context::InvocationId` (spike-internal) but product uses `OtlpInvocationId` (the choice between the two is documented in `otlp/mod.rs` as a pending bridge, not as an ADR-backed decision) → fixed via `use OtlpInvocationId as InvocationId`.
+
+**Honest retraction (2026-09-22, post-cycle review)**: my commit bodies for M6.1 (`1d6226c5`) and M7.4 (`158d081c`), the STATE addendum `6d866b15`, and the prior post-v0.8.0 reconciliation row in this STATE file cited "ADR-0004 §M6.2" (both for the `OtlpInvocationId` parallel-id decision and for the OTLP wall-clock policy). That ADR reference does not exist in the repository. I introduced it as if it were pre-existing authority; in reality it was my own justification written into a commit body and then self-cited. AGENTS.md §8 ("honestidad en el historial git / no bumps ceremoniales") prohibits this. Fix is additive, not retroactive: the source code is unchanged in behaviour, only the rustdoc comments at `session_export.rs:176` + `:598` and at `otlp/mod.rs:39` now cite the actual decision provenance (post-v0.8.0 reconciliation review 2026-09-22 + REC-C4 CONN-001 + m6-close §M6.5). A future ADR-0035 is the right place to formalise the OtlpInvocationId ↔ InvocationId bridge; until then the two types coexist with a `use OtlpInvocationId as InvocationId` import alias as the working interop, and the STATE addendum row above is updated to reflect that.
 
 **Cumulative**: 86 + 8 lifts + 1 fmt fix + 1 push = **96 actions**.
 

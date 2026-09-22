@@ -34,10 +34,11 @@ use uuid::Uuid;
 /// - `chronos_domain::trace::event::InvocationId` — internal Chronos work-unit
 ///   id, sortable by capture time (used for analytics, replay, perturbation).
 /// - `otlp::OtlpInvocationId` — opaque correlation id minted at the W3C
-///   ingest boundary; only carried inside `RecordedInvocation`.
-///
-/// ADR-0004 §M6.2 forbids wall-clock in M6.* identifiers, so this stays
-/// UUID v4 (random) and never leaks the capture timestamp.
+///   ingest boundary; only carried inside `RecordedInvocation`. UUID v4
+///   (random) on purpose: the OTLP/W3C trace context contract carries
+///   no capture timestamp, and a random id keeps the two identities
+///   (`OtlpInvocationId` vs `trace::event::InvocationId`) free of
+///   cross-domain assumptions until a deliberate bridge is introduced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct OtlpInvocationId(Uuid);
 

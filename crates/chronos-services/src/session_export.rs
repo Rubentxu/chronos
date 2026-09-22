@@ -173,9 +173,11 @@ fn serialize_bundle_json(bundle: &ExportBundle) -> Result<Vec<u8>, ServiceError>
 /// `start_time_unix_nano` to be Unix-epoch nanoseconds. Chronos
 /// `TraceEvent::timestamp_ns` is documented as `nanosegundos desde el
 /// inicio de la sesión` (REC-C4 CONN-001 — distinct clock domain from
-/// wall clock). M6 deliberately does NOT touch wall clock (ADR-0004 §M6.2:
-/// "no wall-clock Unix timestamps in M6.*"); therefore the OTLP span
-/// sets `start_time_unix_nano = 0` and carries the real monotonic value
+/// wall clock). M6 deliberately does NOT touch wall clock (post-v0.8.0
+/// reconciliation review 2026-09-22, recorded in commit `32fb5ab0`;
+/// see also `docs/milestones/m6-close.md` §M6.5 "OTLP timestamp
+/// domain honesty"). Therefore the OTLP span sets
+/// `start_time_unix_nano = 0` and carries the real monotonic value
 /// in the attribute `chronos.timestamp_monotonic_ns`, plus a resource
 /// attribute `chronos.timestamp_domain = "monotonic_ns_from_session_start"`
 /// so downstream consumers (Jaeger / Tempo / Honeycomb) can detect the
@@ -593,11 +595,12 @@ mod tests {
     /// Honest OTLP timestamp domain contract (m6-05 + post-v0.8.0 fix):
     /// `start_time_unix_nano` MUST be Unix-epoch ns per OTLP spec.
     /// Chronos `TraceEvent::timestamp_ns` is monotonic-from-session-start
-    /// (REC-C4 CONN-001, ADR-0004 §M6.2: no wall clock in M6.*).
-    /// Therefore we emit `start_time_unix_nano = "0"` and carry the
-    /// real monotonic ns in `chronos.timestamp_monotonic_ns` plus the
-    /// resource-level `chronos.timestamp_domain` disclosure attribute.
-    /// See `serialize_bundle_otlp_json` docs.
+    /// (REC-C4 CONN-001; post-v0.8.0 reconciliation review 2026-09-22
+    /// pinned this contract). Therefore we emit
+    /// `start_time_unix_nano = "0"` and carry the real monotonic ns in
+    /// `chronos.timestamp_monotonic_ns` plus the resource-level
+    /// `chronos.timestamp_domain` disclosure attribute. See
+    /// `serialize_bundle_otlp_json` docs.
     #[tokio::test]
     async fn export_otlp_json_timestamp_domain_is_monotonic_honest() {
         let dir = tempdir();
