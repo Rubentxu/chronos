@@ -88,6 +88,7 @@ pub mod debug_trace;
 pub mod debug_trace_specialized;
 pub mod diff;
 pub mod error;
+pub mod execution_explorer;
 pub mod language_capabilities;
 pub mod language_fixtures;
 pub mod ops_evidence;
