@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "check_id": "OPS.8",
+  "profile": "linux-privileged",
+  "name": "soporte-respuesta-incidentes",
+  "title": "Support + incident response (runbook pending)",
+  "status": "warn",
+  "evidence": [
+    {
+      "type": "doc",
+      "path": "docs/runbooks/H1.6-install-upgrade-rollback.md",
+      "section": "§7",
+      "rationale": "Same support bundle applies"
+    }
+  ],
+  "gaps": [
+    "playbook pending OPS.4"
+  ],
+  "cert_relevance": "CERT-2 partial. Same as local-stdio.",
+  "verified_at_unix_seconds": 1737604800,
+  "verified_by": "ADR-0032 §6 mapping"
+}

@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "check_id": "OPS.7",
+  "profile": "local-stdio",
+  "name": "instalacion-upgrade-rollback",
+  "title": "Install / upgrade / rollback verified",
+  "status": "pass",
+  "evidence": [
+    {
+      "type": "doc",
+      "path": "docs/runbooks/H1.6-install-upgrade-rollback.md",
+      "lines": 389,
+      "rationale": "Install matrix: cargo install / container / prebuilt M1+ / dev"
+    },
+    {
+      "type": "doc",
+      "path": "docs/runbooks/H1.6-install-upgrade-rollback.md",
+      "section": "§2-§5",
+      "rationale": "4-layer artifact verification: Cargo.lock SHA + tag peel + binary SHA-256 + runtime smoke"
+    },
+    {
+      "type": "doc",
+      "path": "docs/runbooks/H1.6-install-upgrade-rollback.md",
+      "section": "§3-§4",
+      "rationale": "Upgrade paths (patch/minor/major/canary) + rollback paths (known-bad / data-corruption / capability-loss)"
+    }
+  ],
+  "gaps": [],
+  "cert_relevance": "CERT-3 baseline (install + upgrade + rollback documented). CERT-4 requires live upgrade drill.",
+  "verified_at_unix_seconds": 1737604800,
+  "verified_by": "ADR-0032 §6 mapping"
+}

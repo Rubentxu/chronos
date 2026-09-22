@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "check_id": "OPS.8",
+  "profile": "local-stdio",
+  "name": "soporte-respuesta-incidentes",
+  "title": "Support + incident response (runbook pending)",
+  "status": "warn",
+  "evidence": [
+    {
+      "type": "doc",
+      "path": "docs/runbooks/H1.6-install-upgrade-rollback.md",
+      "section": "§7",
+      "rationale": "10-item support bundle + RUST_LOG tips documented"
+    }
+  ],
+  "gaps": [
+    "5-case support playbook (binary no inicia / captura perdida / MCP timeout / schema migration falla / OOM) pending OPS.4"
+  ],
+  "cert_relevance": "CERT-2 partial (warn: support bundle present, playbook pending). OPS.4 will deliver.",
+  "verified_at_unix_seconds": 1737604800,
+  "verified_by": "ADR-0032 §6 mapping"
+}

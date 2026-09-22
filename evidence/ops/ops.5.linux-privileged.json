@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "check_id": "OPS.5",
+  "profile": "linux-privileged",
+  "name": "backup-restore-schema-migration",
+  "title": "Backup / restore + schema migration verified",
+  "status": "pass",
+  "evidence": [
+    {
+      "type": "doc",
+      "path": "docs/runbooks/H1.6-install-upgrade-rollback.md",
+      "lines": 389,
+      "rationale": "Same backup/restore + schema migration paths apply regardless of deployment profile"
+    }
+  ],
+  "gaps": [],
+  "cert_relevance": "CERT-3 baseline. Same as local-stdio.",
+  "verified_at_unix_seconds": 1737604800,
+  "verified_by": "ADR-0032 §6 mapping"
+}

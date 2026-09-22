@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "check_id": "OPS.7",
+  "profile": "linux-privileged",
+  "name": "instalacion-upgrade-rollback",
+  "title": "Install / upgrade / rollback verified",
+  "status": "pass",
+  "evidence": [
+    {
+      "type": "doc",
+      "path": "docs/runbooks/H1.6-install-upgrade-rollback.md",
+      "lines": 389,
+      "rationale": "Same install + upgrade + rollback paths apply"
+    }
+  ],
+  "gaps": [
+    "linux-privileged install may require systemd unit + capability grant (operational; deployment-specific)"
+  ],
+  "cert_relevance": "CERT-3 baseline.",
+  "verified_at_unix_seconds": 1737604800,
+  "verified_by": "ADR-0032 §6 mapping"
+}

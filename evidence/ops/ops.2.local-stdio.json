@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "check_id": "OPS.2",
+  "profile": "local-stdio",
+  "name": "supply-chain-sbom",
+  "title": "Supply chain SBOM + license inheritance verified",
+  "status": "pass",
+  "evidence": [
+    {
+      "type": "script",
+      "path": "scripts/generate_chronos_sbom.py",
+      "lines": 240,
+      "rationale": "CycloneDX 1.6 SBOM generator with synthetic fallback; 47 dedup'd components + 19 per-crate JSONs"
+    },
+    {
+      "type": "config",
+      "path": "deny.toml",
+      "lines": 90,
+      "rationale": "cargo-deny 0.20.x configuration: licenses/sources/bans/advisories all configured"
+    },
+    {
+      "type": "workflow",
+      "path": ".github/workflows/supply-chain.yml",
+      "lines": 113,
+      "rationale": "CI runs cargo-deny + SBOM generation on every push to main"
+    },
+    {
+      "type": "doc",
+      "path": "docs/security/H1.1.1-supply-chain-baseline.md",
+      "lines": 305,
+      "rationale": "9 advisories in reqwest 0.11.27 chain documented; 14/19 crates have license.workspace = true"
+    }
+  ],
+  "gaps": [
+    "license inheritance for remaining 5 crates pending (out of this slice)"
+  ],
+  "cert_relevance": "CERT-3 baseline. CERT-4 requires signed SBOM + SLSA provenance.",
+  "verified_at_unix_seconds": 1737604800,
+  "verified_by": "ADR-0032 §6 mapping"
+}

@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "check_id": "OPS.1",
+  "profile": "linux-privileged",
+  "name": "amenaza-acceso",
+  "title": "Threat model + access controls verified",
+  "status": "pass",
+  "evidence": [
+    {
+      "type": "doc",
+      "path": "docs/security/H1.2-threat-model.md",
+      "lines": 338,
+      "rationale": "Same H1.2 threat model applies; linux-privileged profile has elevated capability surface"
+    },
+    {
+      "type": "doc",
+      "path": "docs/security/H1.2-threat-model.md",
+      "section": "T-03..T-05",
+      "rationale": "Capability abuse threats (T-03 ptracer injection, T-04 eBPF ring0, T-05 ptrace capability leak) explicitly addressed for privileged profile"
+    }
+  ],
+  "gaps": [
+    "linux-privileged profile requires periodic red team exercise (not in this slice; CERT-4 territory)"
+  ],
+  "cert_relevance": "CERT-3 baseline. CERT-4 requires red team + periodic threat review.",
+  "verified_at_unix_seconds": 1737604800,
+  "verified_by": "ADR-0032 §6 mapping"
+}

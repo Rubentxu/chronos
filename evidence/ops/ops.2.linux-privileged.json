@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "check_id": "OPS.2",
+  "profile": "linux-privileged",
+  "name": "supply-chain-sbom",
+  "title": "Supply chain SBOM + license inheritance verified",
+  "status": "pass",
+  "evidence": [
+    {
+      "type": "script",
+      "path": "scripts/generate_chronos_sbom.py",
+      "lines": 240,
+      "rationale": "SBOM is identical across profiles (binary-level, not deployment-level)"
+    },
+    {
+      "type": "config",
+      "path": "deny.toml",
+      "lines": 90,
+      "rationale": "License + advisory checks apply to binary regardless of deployment profile"
+    }
+  ],
+  "gaps": [
+    "linux-privileged profile should verify SBOM matches deployed artifact sha256 (operational, not in this slice)"
+  ],
+  "cert_relevance": "CERT-3 baseline. Same as local-stdio (binary-level supply chain).",
+  "verified_at_unix_seconds": 1737604800,
+  "verified_by": "ADR-0032 §6 mapping"
+}

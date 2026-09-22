@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "check_id": "OPS.3",
+  "profile": "linux-privileged",
+  "name": "aislamiento-secretos",
+  "title": "Process isolation + secrets handling verified",
+  "status": "warn",
+  "evidence": [
+    {
+      "type": "doc",
+      "path": "docs/security/H1.2-threat-model.md",
+      "section": "§6-§7",
+      "rationale": "Same isolation model applies; capability isolation via CAP_BPF/CAP_SYS_PTRACE"
+    }
+  ],
+  "gaps": [
+    "linux-privileged isolation depends on host capability configuration (deployment concern); this profile is NOT IMPLEMENTED on this host (per OPS.2 cert report)"
+  ],
+  "cert_relevance": "CERT-2 partial (warn: profile not implemented on this host). Cannot certify without host verification.",
+  "verified_at_unix_seconds": 1737604800,
+  "verified_by": "ADR-0032 §6 mapping"
+}

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "check_id": "OPS.6",
+  "profile": "linux-privileged",
+  "name": "telemetry-diagnostico",
+  "title": "Telemetry + diagnostic logging (blueprint)",
+  "status": "warn",
+  "evidence": [
+    {
+      "type": "doc",
+      "path": "docs/security/H1.2-threat-model.md",
+      "section": "§10",
+      "rationale": "Same blueprint applies"
+    }
+  ],
+  "gaps": [
+    "telemetry collector blueprint pending (OPS.4 deliverable)"
+  ],
+  "cert_relevance": "CERT-2 partial. Same as local-stdio.",
+  "verified_at_unix_seconds": 1737604800,
+  "verified_by": "ADR-0032 §6 mapping"
+}

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "check_id": "OPS.6",
+  "profile": "local-stdio",
+  "name": "telemetry-diagnostico",
+  "title": "Telemetry + diagnostic logging (blueprint)",
+  "status": "warn",
+  "evidence": [
+    {
+      "type": "doc",
+      "path": "docs/security/H1.2-threat-model.md",
+      "section": "§10",
+      "rationale": "Telemetry blueprint referenced; OTel collector + log shipping documented as forward-compatible"
+    }
+  ],
+  "gaps": [
+    "telemetry collector is NOT implemented (blueprint only); deployment-specific (per ADR-0032 §8 + §3.5)"
+  ],
+  "cert_relevance": "CERT-2 partial (warn: blueprint only, no implementation). OPS.4 will deliver detailed blueprint.",
+  "verified_at_unix_seconds": 1737604800,
+  "verified_by": "ADR-0032 §6 mapping"
+}

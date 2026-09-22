@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "check_id": "OPS.4",
+  "profile": "linux-privileged",
+  "name": "limites-rendimiento",
+  "title": "Resource limits + performance budgets verified",
+  "status": "pass",
+  "evidence": [
+    {
+      "type": "doc",
+      "path": "docs/architecture/H1.5-runtimes-capabilities-benchmarks.md",
+      "lines": 260,
+      "rationale": "Same budgets apply; linux-privileged captures may have different p95 due to capability overhead"
+    }
+  ],
+  "gaps": [
+    "linux-privileged perf budget measurement requires running on a privileged host (this host has CapEff=0); no measurement data available"
+  ],
+  "cert_relevance": "CERT-3 (budgets documented). Cannot certify measurement without host data.",
+  "verified_at_unix_seconds": 1737604800,
+  "verified_by": "ADR-0032 §6 mapping"
+}

@@ -1,0 +1,121 @@
+{
+  "generated_at_unix_seconds": 1790068486,
+  "per_check": {
+    "OPS.1": {
+      "linux-privileged": {
+        "evidence_count": 2,
+        "gaps_count": 1,
+        "status": "pass"
+      },
+      "local-stdio": {
+        "evidence_count": 2,
+        "gaps_count": 0,
+        "status": "pass"
+      }
+    },
+    "OPS.2": {
+      "linux-privileged": {
+        "evidence_count": 2,
+        "gaps_count": 1,
+        "status": "pass"
+      },
+      "local-stdio": {
+        "evidence_count": 4,
+        "gaps_count": 1,
+        "status": "pass"
+      }
+    },
+    "OPS.3": {
+      "linux-privileged": {
+        "evidence_count": 1,
+        "gaps_count": 1,
+        "status": "warn"
+      },
+      "local-stdio": {
+        "evidence_count": 1,
+        "gaps_count": 1,
+        "status": "pass"
+      }
+    },
+    "OPS.4": {
+      "linux-privileged": {
+        "evidence_count": 1,
+        "gaps_count": 1,
+        "status": "pass"
+      },
+      "local-stdio": {
+        "evidence_count": 2,
+        "gaps_count": 1,
+        "status": "pass"
+      }
+    },
+    "OPS.5": {
+      "linux-privileged": {
+        "evidence_count": 1,
+        "gaps_count": 0,
+        "status": "pass"
+      },
+      "local-stdio": {
+        "evidence_count": 2,
+        "gaps_count": 1,
+        "status": "pass"
+      }
+    },
+    "OPS.6": {
+      "linux-privileged": {
+        "evidence_count": 1,
+        "gaps_count": 1,
+        "status": "warn"
+      },
+      "local-stdio": {
+        "evidence_count": 1,
+        "gaps_count": 1,
+        "status": "warn"
+      }
+    },
+    "OPS.7": {
+      "linux-privileged": {
+        "evidence_count": 1,
+        "gaps_count": 1,
+        "status": "pass"
+      },
+      "local-stdio": {
+        "evidence_count": 3,
+        "gaps_count": 0,
+        "status": "pass"
+      }
+    },
+    "OPS.8": {
+      "linux-privileged": {
+        "evidence_count": 1,
+        "gaps_count": 1,
+        "status": "warn"
+      },
+      "local-stdio": {
+        "evidence_count": 1,
+        "gaps_count": 1,
+        "status": "warn"
+      }
+    }
+  },
+  "per_profile": {
+    "linux-privileged": {
+      "fail": 0,
+      "pass": 5,
+      "total": 8,
+      "warn": 3
+    },
+    "local-stdio": {
+      "fail": 0,
+      "pass": 6,
+      "total": 8,
+      "warn": 2
+    }
+  },
+  "schema_version": 1,
+  "source_count": 16,
+  "tier_per_profile": {
+    "linux-privileged": "cert-3-certified",
+    "local-stdio": "cert-3-certified"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "check_id": "OPS.3",
+  "profile": "local-stdio",
+  "name": "aislamiento-secretos",
+  "title": "Process isolation + secrets handling verified",
+  "status": "pass",
+  "evidence": [
+    {
+      "type": "doc",
+      "path": "docs/security/H1.2-threat-model.md",
+      "section": "§6-§7",
+      "rationale": "Process isolation via stdio transport (no network surface); secrets = environment variables only (no embedded credentials per ADR-0004 + M6.* invariants)"
+    }
+  ],
+  "gaps": [
+    "env var secret rotation policy not in this slice (operational; CERT-4 territory)"
+  ],
+  "cert_relevance": "CERT-3 baseline. CERT-4 requires secret rotation cadence.",
+  "verified_at_unix_seconds": 1737604800,
+  "verified_by": "ADR-0032 §6 mapping"
+}
