@@ -51,7 +51,7 @@
 //! - UAT-M10-04-05..12: 8 REC regression tests pinned (REC-C1-01..05 +
 //!   REC-C2-01..03) — see `rec_regression_tests` module.
 
-// REC-C1 / REC-C2 regression tests use crate-local paths below.
+use crate::events_cursor::EventsCursorV1;
 
 /// Default threshold (events) below which raw page is returned.
 ///
@@ -159,10 +159,82 @@ impl InvocationRollup {
     }
 }
 
+// ============================================================================
+// M10.4 follow-up: real production wiring (post-M10.6 follow-up).
+// ============================================================================
+//
+// Per M10-CLOSE.md §6 (follow-up #3): `EventSummary` aggregates via
+// `events_log_read::read_page` (real bucketing); `InvocationRollup`
+// groups by `chronos_invocation_id` (real grouping).
+//
+// This section wires the summary logic to a real `SessionExecutionLog`.
+// It is **additive** — the `EventSummary::from_bucket_counts` +
+// `InvocationRollup::from_invocation_counts` pure constructors stay
+// stable (M10.4 tests pin them); the new `summarize_log` does the real
+// read + aggregation.
+//
+// **Out of scope** (still deferred post-M10.6 follow-ups):
+// - Causality wiring promotion (M10.3 follow-up #2).
+// - InvocationRollup real grouping by `chronos_invocation_id`
+//   (deferred to next follow-up; requires ExecutionRecord payloads).
+// - Sandbox test 1M eventos (out of unit-test scope).
+// ============================================================================
+
+/// Default time-bucket size in nanoseconds (1 second).
+pub const DEFAULT_BUCKET_SIZE_NS: u64 = 1_000_000_000;
+
+/// Summarize a session log into an `EventSummary` using real reads.
+///
+/// Per ADR-0029 §3.2: iterates `events_log_read::read_page` until
+/// the page is exhausted, aggregates event counts into time buckets
+/// of `bucket_size_ns` width (default 1 second), then derives
+/// `EventSummary` via the pure constructor.
+///
+/// Returns `EventSummary::empty()` if the log is empty.
+///
+/// **Note**: this function reads ALL events; the threshold switch
+/// (`should_summarize`) is the caller's responsibility.
+pub fn summarize_log(
+    log: &crate::session_log::SessionExecutionLog,
+    cursor: &EventsCursorV1,
+    bucket_size_ns: u64,
+) -> EventSummary {
+    use crate::events_log_read::{read_page, LogReadFilters};
+    assert!(bucket_size_ns > 0, "bucket_size_ns must be > 0");
+
+    let mut bucket_counts: Vec<u64> = vec![];
+    let mut current_cursor = cursor.clone();
+    let page_limit = 1024;
+
+    while let Ok(page) = read_page(log, &current_cursor, page_limit, &LogReadFilters::default()) {
+        if page.records.is_empty() {
+            break;
+        }
+        for ev in &page.records {
+            let ts = ev.timestamp_ns.get();
+            let bucket = ts / bucket_size_ns;
+            let idx = bucket as usize;
+            if idx >= bucket_counts.len() {
+                bucket_counts.resize(idx + 1, 0);
+            }
+            bucket_counts[idx] += 1;
+        }
+        let next_cursor = page.next.clone();
+        // Stop if cursor does not advance (avoid infinite loop).
+        if next_cursor.next_seq() == current_cursor.next_seq()
+            && page.records.len() < page_limit
+        {
+            break;
+        }
+        current_cursor = next_cursor;
+    }
+
+    EventSummary::from_bucket_counts(&bucket_counts)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::events_cursor::EventsCursorV1;
     use chronos_domain::seq::EventSeq;
     use chronos_domain::SessionId;
 
@@ -379,5 +451,44 @@ mod tests {
         assert_eq!(a2.session_id(), &session);
         assert_eq!(a2.schema_version(), cursor.schema_version());
         assert_eq!(a2.next_seq(), EventSeq::new(10));
+    }
+
+    // ============ Real production wiring tests (M10.4 follow-up) ============
+
+    #[test]
+    fn summarize_log_on_empty_log_returns_empty_summary() {
+        use crate::session_log::SessionExecutionLog;
+        use std::env;
+        let session = sid();
+        let tmp = env::temp_dir().join(format!(
+            "virt_summarize_empty_{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let log = SessionExecutionLog::create_for_tests(&tmp, session.clone()).expect("log");
+        let cursor = EventsCursorV1::start(session);
+        let summary = summarize_log(&log, &cursor, DEFAULT_BUCKET_SIZE_NS);
+        assert_eq!(summary.total_events, 0);
+        assert_eq!(summary.bucket_count, 0);
+        assert_eq!(summary.mean_per_bucket, 0);
+    }
+
+    #[test]
+    fn default_bucket_size_is_one_second() {
+        assert_eq!(DEFAULT_BUCKET_SIZE_NS, 1_000_000_000);
+    }
+
+    #[test]
+    #[should_panic(expected = "bucket_size_ns must be > 0")]
+    fn summarize_log_panics_on_zero_bucket_size() {
+        use crate::session_log::SessionExecutionLog;
+        use std::env;
+        let session = sid();
+        let tmp = env::temp_dir().join(format!(
+            "virt_summarize_panic_{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let log = SessionExecutionLog::create_for_tests(&tmp, session.clone()).expect("log");
+        let cursor = EventsCursorV1::start(session);
+        let _ = summarize_log(&log, &cursor, 0);
     }
 }
