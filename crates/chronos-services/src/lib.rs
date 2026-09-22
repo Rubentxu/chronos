@@ -38,6 +38,31 @@
 //! Total: **21 files, ~11,500 LoC** (algorithm + DTOs + supporting).
 //! Exact post-m7-05 numbers will be recorded in the next close cycle.
 //!
+//! ## Post-M7 update (post-v0.8.0 release tag, 2026-09-22)
+//!
+//! Per the v0.8.0 release tag (`docs/milestones/ROADMAP-CLOSE.md` +
+//! `ADR-0034`), 19 new modules were added on top of the M7 close baseline:
+//!
+//! - **M9 foundation** (5 modules): `concurrency` (re-exported via
+//!   `chronos_domain`), `concurrency_graph`, `concurrency_perturbation`,
+//!   `race_classifier`, `causal_concurrency` (re-exported via
+//!   `chronos_domain`).
+//! - **M10 Execution Explorer** (2 modules): `live_streaming`,
+//!   `virtualization`.
+//! - **M11 Languages on Demand** (2 modules): `language_capabilities`,
+//!   `language_fixtures`.
+//! - **OPS Production-ready** (1 module): `health_check`.
+//! - **M10.2 read services catalog** (1 module): `execution_explorer`.
+//! - **Foundation/pre-existing** (8 modules, pre-M9 but not in the
+//!   original M7-05 header): `canonical_drain`, `ce_services_tests`,
+//!   `counterexample`, `events_cursor`, `events_log_read`,
+//!   `execution_log_bootstrap`, `ops_evidence`, `projection`,
+//!   `race_classifier`, `test_support`, `tripwire_evidence`.
+//!
+//! **Total post-v0.8.0**: **43 `.rs` files** (was 21 at M7-05 close);
+//! **519/519 tests PASS** (was 397 baseline pre-AUTO+EXEC session;
+//! **+122 tests** cumulative in this session).
+//!
 //! ## M7 (sub-cycle) progress
 //!
 //! - m7-01: added [`events_read`] dispatcher. v1 tools `query_events` and
