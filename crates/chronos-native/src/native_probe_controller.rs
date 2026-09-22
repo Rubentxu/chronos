@@ -110,14 +110,15 @@ impl NativeProbeController for NativeProbeControllerImpl {
         // The Tren B slice E partial returns `()`. The port
         // discriminates `(advanced, paused_reason, running)`. We
         // surface `advanced = true` and a placeholder pause reason
-        // because the underlying `PtraceTracer` does not currently
-        // surface kernel event strings. `running = true` because a
-        // successful advance means the tracee was signalled to
-        // continue.
+        // ponytail:tracer-event-thread — `paused_reason` carries the
+        // literal "advanced" instead of the kernel event because the
+        // underlying `PtraceTracer` does not currently surface kernel
+        // event strings. `running = true` because a successful advance
+        // means the tracee was signalled to continue.
         //
         // TODO(REC-C3.4 or later): thread the kernel event through
         // `PtraceTracer` so `paused_reason` carries the actual event
-        // ("SIGTRAP", "single-step", etc.).
+        // ("SIGTRAP", "single-step", etc.). Harvester: ponytail-debt.
         Ok((true, Some("advanced".to_string()), true))
     }
 

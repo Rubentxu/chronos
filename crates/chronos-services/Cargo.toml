@@ -30,6 +30,11 @@ proptest = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }
 proptest = { workspace = true }
+# CAP-GAP-CHRONOS-H1.5-REPLAY-BENCH closure (2026-09-22):
+# ReplayService had no bench; this adds criterion for replay_bench.rs.
+criterion = { version = "0.5", features = ["html_reports"] }
+# chronos-log needed for SegmentedExecutionLog::replay() bench target.
+chronos-log = { workspace = true }
 # REC-C3.5-residual-inversion R.3: chronos-native is only consumed
 # inside `#[cfg(test)]` blocks (stub_session in probe.rs + the
 # SessionLifecycleTestInjector rig). Production code no longer names
@@ -43,3 +48,7 @@ chronos-native = { workspace = true }
 # SessionStoreBackedCounterexampleRepository). Production code
 # consumes only chronos-domain ports.
 chronos-store = { workspace = true }
+
+[[bench]]
+name = "replay_bench"
+harness = false
