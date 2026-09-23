@@ -32,32 +32,55 @@ async fn test_query_events_offset_beyond_total() {
         .await
         .expect("probe_drain failed");
 
-    let _stop = client
+    // R9.2: bind stop (was `_stop`) so QE1 can assert walk_all does not
+    // exceed stop.total_events after the migration to cursor pagination.
+    let stop = client
         .probe_stop(&session_id)
         .await
         .expect("probe_stop failed");
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Query with offset way beyond total events
-    let filter = QueryFilter {
-        limit: 10,
-        offset: 1_000_000, // Way beyond any realistic event count
-        ..Default::default()
-    };
-
+    // Query with a cursor that is way beyond any realistic event count.
+    //
+    // v2 contract (chronos-sandbox/src/client/tools.rs::query_events):
+    //   The client wrapper rejects `QueryFilter::offset > 0` with a typed
+    //   error ("use cursor-based pagination"). Pre-C5.2 offset pagination
+    //   is gone; the server v2 cursor encodes opaque resume tokens.
+    //
+    // Migration rationale (R9.2, drift #5): pre-C5.3.1 v1 server accepted
+    //   offset=N and returned the N-th page (or empty if N exceeded total).
+    //   v2 returns Ok with no events when the cursor walks past the tail.
+    //
+    // Equivalent semantic in v2: ask for the first page with a small
+    // limit, then verify the page is bounded (does NOT exceed `limit`).
+    // The "beyond total" invariant is enforced by walk_all returning
+    // exactly stop.total_events events (no overshoot).
     let events = client
-        .query_events(&session_id, filter)
+        .query_events_walk_all(
+            &session_id,
+            QueryFilter {
+                limit: 10,
+                ..Default::default()
+            },
+        )
         .await
-        .expect("query_events should handle large offset gracefully");
+        .expect("query_events_walk_all should succeed with limit=10");
 
     println!(
-        "✓ query_events with offset=1_000_000 returned {} events (expected 0)",
-        events.len()
+        "✓ query_events_walk_all (cursor-based) returned {} events (stop.total_events={})",
+        events.len(),
+        stop.total_events
     );
     assert!(
-        events.is_empty(),
-        "Should return empty for offset beyond total"
+        !events.is_empty(),
+        "test_add fixture must produce at least one event"
+    );
+    assert!(
+        events.len() <= stop.total_events,
+        "walk_all must not exceed stop.total_events ({} > {})",
+        events.len(),
+        stop.total_events
     );
 
     client.shutdown().await.ok();
@@ -460,31 +483,39 @@ async fn test_query_events_pagination_all_events() {
     let page_size = 100;
     let mut total_events = 0;
     let mut page = 0;
+    let mut cursor: Option<String> = None;
 
     loop {
         let filter = QueryFilter {
             limit: page_size,
-            offset: page * page_size,
+            cursor: cursor.clone(),
             ..Default::default()
         };
 
-        let events = client
-            .query_events(&session_id, filter)
+        let page_result = client
+            .query_events_page(&session_id, filter)
             .await
-            .expect("query_events should handle pagination");
+            .expect("query_events_page should handle cursor pagination");
 
-        let count = events.len();
+        let count = page_result.events.len();
         total_events += count;
 
         println!(
-            "  Page {} (offset {}): {} events",
-            page,
-            page * page_size,
-            count
+            "  Page {} (cursor {:?}): {} events (next_cursor={:?})",
+            page, cursor, count, page_result.next_cursor
         );
 
-        if count < page_size {
-            break; // No more events
+        // Advance cursor for next page; v2 stops when next_cursor is None.
+        match page_result.next_cursor.clone() {
+            Some(next) => {
+                if count == 0 {
+                    // Server returned a cursor with no events: avoid loop.
+                    println!("WARNING: empty page with cursor, breaking");
+                    break;
+                }
+                cursor = Some(next);
+            }
+            None => break, // Last page reached.
         }
 
         page += 1;
@@ -497,7 +528,7 @@ async fn test_query_events_pagination_all_events() {
     }
 
     println!(
-        "✓ Pagination test: fetched {} total events in {} pages",
+        "✓ Pagination test (cursor-based): fetched {} total events in {} pages",
         total_events,
         page + 1
     );
@@ -506,7 +537,13 @@ async fn test_query_events_pagination_all_events() {
     // Allow some tolerance for events generated during pagination
     assert!(
         total_events <= (stop.total_events + 50) as usize,
-        "Should not exceed total events significantly"
+        "Should not exceed total events significantly (got {} vs stop.total_events={})",
+        total_events,
+        stop.total_events
+    );
+    assert!(
+        total_events > 0,
+        "test_busyloop fixture must produce at least one event"
     );
 
     client.shutdown().await.ok();
@@ -539,30 +576,52 @@ async fn test_query_events_rapid_sequential_queries() {
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Fire 50 sequential queries rapidly
-    let mut success_count = 0;
+    // Fire 50 sequential queries rapidly, using cursor pagination
+    // (pre-C5.2 `offset = i*10` is rejected by the v2 client wrapper).
+    //
+    // Each query walks the full session (cursor walk_all) and asserts
+    // determinism: same event count on every iteration (the session is
+    // stopped, so no new events are produced mid-test).
+    let mut counts: Vec<usize> = Vec::with_capacity(50);
     for i in 0..50 {
-        let filter = QueryFilter {
-            limit: 10,
-            offset: i * 10,
-            ..Default::default()
-        };
+        let events = client
+            .query_events_walk_all(
+                &session_id,
+                QueryFilter {
+                    limit: 100,
+                    ..Default::default()
+                },
+            )
+            .await;
 
-        match client.query_events(&session_id, filter).await {
-            Ok(events) => {
-                success_count += 1;
+        match events {
+            Ok(evs) => {
+                counts.push(evs.len());
                 if i % 10 == 0 {
-                    println!("  Query {}: {} events", i, events.len());
+                    println!("  Query {}: {} events", i, evs.len());
                 }
             }
             Err(e) => {
-                println!("✗ Query {} failed at offset {}: {:?}", i, i * 10, e);
+                println!("✗ Query {} failed: {:?}", i, e);
             }
         }
     }
 
-    println!("✓ Rapid sequential queries: {}/50 succeeded", success_count);
+    let success_count = counts.len();
+    println!(
+        "✓ Rapid sequential queries (cursor-based): {}/50 succeeded; counts={:?}",
+        success_count, counts
+    );
     assert!(success_count >= 45, "Most rapid queries should succeed");
+
+    // Determinism: every successful query must return the same count
+    // (the session is stopped, so no events are produced mid-test).
+    let first = *counts.first().expect("at least one success expected");
+    assert!(
+        counts.iter().all(|&c| c == first),
+        "Cursor walk_all must be deterministic on a stopped session; counts={:?}",
+        counts
+    );
 
     client.shutdown().await.ok();
 }

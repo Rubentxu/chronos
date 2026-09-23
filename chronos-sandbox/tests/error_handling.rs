@@ -150,26 +150,43 @@ async fn test_get_event_out_of_range() {
     // Give the query engine time to build
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Call get_event with an event ID that's definitely out of range
+    // Call get_event with an event ID that's definitely out of range.
+    //
+    // v2 contract (chronos-services/src/events_read.rs::read_event_by_id):
+    //   Returns Ok(EventsReadOutput::ById { event: None, ... })
+    //   when the event id does not exist. `event: None` is serialized as
+    //   JSON `null` by serde (Option<None> → null), NOT omitted.
+    //
+    // chronos-sandbox/src/client/tools.rs::get_event flattens the envelope:
+    //   let flattened = response.get("event").cloned()
+    //       .unwrap_or_else(|| serde_json::json!({}));
+    // `response.get("event")` returns Some(Null) (the field is present but
+    // null), so the fallback does NOT trigger and flattened = Value::Null.
+    //
+    // Migration rationale (R9.1, drift #6): pre-C5.3.1 v1 server returned
+    // an error envelope; v2 server returns Ok with event:null. The test
+    // must accept the v2 contract.
     let result = client.get_event(&session_id, 999999).await;
 
     match result {
         Ok(value) => {
-            // Check if the response indicates "not found"
-            let value_str = serde_json::to_string(&value).unwrap_or_default();
-            println!("get_event returned: {}", value_str);
-            // Should contain "not found" or "not found" in the error message
+            // v2 contract: out-of-range event id returns Ok(Value::Null).
+            // The client flattens the `event` field directly without
+            // substituting a fallback object, so missing events surface
+            // as JSON null (NOT an empty object).
+            println!("get_event(999999) returned: {}", value);
             assert!(
-                value_str.to_lowercase().contains("not found")
-                    || value_str.to_lowercase().contains("error"),
-                "Expected 'not found' or 'error' in response, got: {}",
-                value_str
+                value.is_null(),
+                "Expected JSON null for missing event id, got: {}",
+                value
             );
         }
         Err(e) => {
-            // Error is also acceptable
-            println!(
-                "get_event correctly returned error for out-of-range ID: {}",
+            // Future-proofing: if a future server variant returns an error,
+            // surface the change loudly instead of silently passing.
+            panic!(
+                "Unexpected Err for out-of-range event id; v2 server must \
+                 return Ok with event:null per EventsReadOutput::ById. Error: {}",
                 e
             );
         }

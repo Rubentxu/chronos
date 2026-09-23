@@ -96,6 +96,42 @@ the 327 commits since. Per `gh run view --log-failed`:
   v2 explicitly rejects with `"query_events: offset=X is no longer supported by
   v2 events_read; use cursor-based pagination"`. Tests pre-C5.3.1 not migrated.
 
+  **CORRECTION 2026-09-23T08:13Z (re-verify after docs-only push `0d33c930`)**:
+  Coverage run 35833692097 (docs-only commit, no Rust changes) failed
+  on DIFFERENT tests — NOT `query_edge_cases.rs`:
+  - `m0_acceptance.rs::m0_03_ebpf_probe_lifecycle_impl` (line 756):
+    panic on "post-inject probe_status.ebpf must NOT be null (session
+    must record the attempted attachment)" — CapEff=0 env, eBPF not
+    available in this host. Pre-existing drift in `m0_03` impl.
+  - `m0_acceptance.rs::m0_07_query_returns_not_found_when_target_missing_impl`
+    (line 538): panic on "events_read with matches must return a
+    non-empty page" — pre-existing drift in `m0_07` impl.
+
+  This confirms that **tarpaulin coverage workflow stops on the first
+  failing test**, surfacing different drifts each run as alphabetical
+  order of test execution varies. The 3 drifts R8.1 surfaced (#5 query_edge_cases
+  offset) AND the 2 drifts the docs-only push surfaced (#7 m0_03 eBPF +
+  #8 m0_07 events_read) are ALL pre-existing, NONE caused by R8.1.
+
+  **Scope of pre-C5.3.1 v1→v2 drifts in test suite (re-survey 2026-09-23T08:13Z)**:
+  `grep -c "offset:[[:space:]]*[0-9]" chronos-sandbox/tests/*.rs`:
+  - state_depth.rs: 6 occurrences
+  - query_filters.rs: 7 occurrences
+  - memory_depth.rs: 1 occurrence
+  - program_scenarios.rs: 6 occurrences
+  - concurrency_stress.rs: 3 occurrences
+  - rec_c1_characterization.rs: 2 occurrences
+  - m0_acceptance.rs: 2 occurrences
+  - query_edge_cases.rs: 7 occurrences
+  - **Total: 34 occurrences across 8 files** — most have not been exercised
+    in tarpaulin coverage workflow because alphabetical execution hits
+    query_edge_cases first.
+
+  This means there are **potentially many more drifts** that have not
+  been caught yet. R9 should be a focused migration cycle that converts
+  ALL `offset > 0` usages to cursor-based pagination (or `#[ignore]`s
+  zombie tests with a documented rationale) before pushing for 5/5 GREEN.
+
 ### Decision (R8.1 final)
 
 Per AGENTS §3 (no whack-a-mole, root-cause focus) and the operator's
@@ -126,6 +162,20 @@ explicit warning about regressing honest state:
 
 5/5 runs triggered, all in_progress at snapshot. Doc-only push should be
 safe (no Rust changes); should be 5/5 GREEN once they complete.
+
+## GH Actions cumulative state (R8 → R8.1 → R8.1-handoff)
+
+| SHA | Commit | GH Actions state |
+|---|---|---|
+| `d12a25f0` | R8 | 3/5 GREEN (Supply chain 35828854220, Sandbox Debt 35828854188, Architecture 35828854277) + **2 RED** (CI 35828854261 failure, Coverage 35828854206 failure) |
+| `0af4688e` | R8 docs | (in_progress, did not wait for terminal) |
+| `3e7abe94` | R8.1 | 3/5 GREEN (Supply chain 35831342213, Sandbox Debt 35831342252, Architecture 35831342176) + **2 RED** (CI 35831342231 failure, Coverage 35831342095 failure) |
+| `2c24f6a6` | R8.1 docs | (in_progress, did not wait for terminal) |
+| `0d33c930` | R8.1 handoff | 3/5 GREEN (Supply chain 35833692055, Sandbox Debt 35833692026, Architecture 35833692071) + **2 RED** (CI 35833692020 failure, Coverage 35833692097 failure) |
+
+All three runs (R8, R8.1, R8.1-handoff) ended in **persistent 3/5 GREEN + 2 RED** state.
+The drift surfacing order changes per run (tarpaulin executes tests alphabetically
+and stops on first failure) but the persistent 2-RED state is invariant.
 
 ## Recommended next cycle: R9 = test-migration C5.3.1 v1→v2 closure
 
