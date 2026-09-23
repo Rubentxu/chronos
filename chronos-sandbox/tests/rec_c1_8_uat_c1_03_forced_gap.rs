@@ -148,7 +148,7 @@ fn seed_log_with_gap(exec_log_root: &std::path::Path, session_id: &str) {
     log.flush().expect("flush");
 }
 
-/// Read a single `events_read{mode=Query}` page and return the parsed
+/// Read a single `events_read{mode=query}` page and return the parsed
 /// `completeness` envelope plus the events array.
 async fn read_for_completeness(
     client: &mut McpTestClient,
@@ -157,7 +157,13 @@ async fn read_for_completeness(
     limit: usize,
 ) -> (Vec<serde_json::Value>, serde_json::Value, Option<String>) {
     let mut params = serde_json::json!({
-        "mode": "Query",
+        // R9.7 (drift #12): EventsReadKind is snake_case on the wire
+        // (`"query"` lowercase, see `crates/chronos-services/src/output.rs:1631`
+        // and contract tests at `crates/chronos-services/tests/events_read_kind.rs`).
+        // The pre-C5.3.2 test used `"Query"` PascalCase, which the v2
+        // `EventsReadParams` deserializer correctly rejects with:
+        //   `unknown variant `Query`, expected `query` or `by_id``
+        "mode": "query",
         "session_id": session_id,
         "limit": limit,
     });
