@@ -212,20 +212,34 @@ async fn test_state_diff_first_and_last_timestamps() {
     let ts_first = first_events[0].timestamp_ns;
     println!("First timestamp: {}", ts_first);
 
-    // Get last event by querying with large offset
-    let filter_last = QueryFilter {
-        limit: 1,
-        offset: 10000, // Try high offset to get last
-        ..Default::default()
-    };
+    // Get last event.
+    //
+    // R9.8 (drift #13): the pre-C5.3.1 v1 server accepted `offset: 10000`
+    // as "skip the first 10k events" and returned whatever was next.
+    // The v2 server (`client/tools.rs:689`) explicitly rejects with
+    //   `query_events: offset=N is no longer supported by v2 events_read;
+    //    use cursor-based pagination (set QueryFilter::cursor from the
+    //    previous page's QueryPage::next_cursor)`
+    // so we walk the whole session cursor-style and take the last event.
     let last_events = client
-        .query_events(&session_id, filter_last)
+        .query_events_walk_all(
+            &session_id,
+            QueryFilter {
+                limit: 1,
+                ..Default::default()
+            },
+        )
         .await
-        .expect("query_events for last failed");
+        .expect("query_events_walk_all for last failed");
+    let last_events_opt = if last_events.is_empty() {
+        None
+    } else {
+        Some(vec![last_events.last().cloned().unwrap()])
+    };
 
-    // If high offset returns empty, try offset 0 with total_events
-    let ts_last = if !last_events.is_empty() {
-        last_events[0].timestamp_ns
+    // If walk returned empty, fall back to estimate from `stop.duration_ms`.
+    let ts_last = if let Some(ref events) = last_events_opt {
+        events[0].timestamp_ns
     } else {
         // Use duration_ms from stop result to estimate
         (stop.duration_ms as u64 * 1_000_000) + ts_first
