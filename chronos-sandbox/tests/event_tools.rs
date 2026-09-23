@@ -61,28 +61,41 @@ async fn test_get_event_after_probe_stop() {
     // Verify the response has expected structure
     println!("✓ get_event returned: {:?}", event_detail);
 
-    // REC-C8 (G0.4 fix): the v2 server wraps the by_id payload inside
-    // `{event: {...}, mode, provenance, session_id}`. The fields are
-    // nested under `event`, not at the root of the response.
-    let inner_event = event_detail
-        .get("event")
-        .expect("envelope should have 'event' field");
+    // R9.4 (drift #10): R8 fixed get_event to flatten the v2 envelope
+    // — the client now returns the TraceEvent object directly instead
+    // of `{event: {...}, mode, ...}`. For a found event, `event_detail`
+    // IS the TraceEvent (has `event_id`, `timestamp_ns`, `thread_id`
+    // at the root). For a missing event, `event_detail` is JSON `null`
+    // (server v2 returns `event: None` with `Ok`, serde renders as null).
+    //
+    // This test passes an `event_id` that just got captured, so the
+    // event exists: assert the fields are at the root, not nested
+    // under `event`.
+    //
+    // The legacy pre-R8 contract expected a nested `envelope.event`
+    // field — that path was retired by the R8 `get_event` envelope
+    // flatten (see commit `d12a25f0`).
     assert!(
-        inner_event.get("event_id").is_some(),
-        "Should have event_id (inside 'event' envelope)"
+        event_detail.get("event_id").is_some(),
+        "Should have event_id (get_event returns the flattened TraceEvent directly, \
+         not the v1 envelope; event_detail={})",
+        event_detail
     );
     assert!(
-        inner_event.get("timestamp_ns").is_some(),
-        "Should have timestamp_ns (inside 'event' envelope)"
+        event_detail.get("timestamp_ns").is_some(),
+        "Should have timestamp_ns (get_event returns the flattened TraceEvent directly, \
+         not the v1 envelope; event_detail={})",
+        event_detail
     );
     assert!(
-        inner_event.get("thread_id").is_some(),
-        "Should have thread_id (inside 'event' envelope)"
+        event_detail.get("thread_id").is_some(),
+        "Should have thread_id (get_event returns the flattened TraceEvent directly, \
+         not the v1 envelope; event_detail={})",
+        event_detail
     );
-    assert!(
-        event_detail.get("mode").and_then(|v| v.as_str()) == Some("by_id"),
-        "envelope mode should be 'by_id'"
-    );
+    // mode is no longer present in the flattened response — the
+    // canonical contract is "TraceEvent fields at root", not the v1
+    // envelope with mode/provenance. Drop the legacy mode check.
 
     client.shutdown().await.ok();
 }

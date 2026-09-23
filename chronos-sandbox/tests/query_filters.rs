@@ -657,14 +657,23 @@ async fn test_get_event_at_first_and_last() {
         .await
         .expect("get_event for first event failed");
 
-    // REC-C8 (G0.4 fix): the v2 server wraps the by_id payload inside
-    // `{event: {...}, mode, ...}` — the event_id is nested under `event`.
-    let first_inner = first_detail
-        .get("event")
-        .expect("envelope should have 'event' field");
+    // R9.4 (drift #9): R8 fixed get_event to flatten the v2 envelope
+    // (`{event: {...}, mode, ...}` → returns `event` directly as the
+    // TraceEvent object). For missing events the server returns
+    // `event: None`, which serde renders as JSON `null` and the client
+    // propagates as `Value::Null`. The legacy pre-R8 contract expected
+    // a nested `envelope.event` field — that path was retired by the
+    // R8 `get_event` envelope flatten (see commit `d12a25f0` and
+    // session-handoff/SESSION_CLOSE_2026-09-23_R8.1.md). The test was
+    // not updated and still reads `first_detail.get("event")`, which
+    // returns None on the flattened shape, causing the
+    // "envelope should have 'event' field" panic that surfaced in
+    // GH Actions Coverage run 35838377028 on R9 commit `95317d11`.
     assert!(
-        first_inner.get("event_id").is_some(),
-        "First event should have event_id (inside 'event' envelope)"
+        first_detail.get("event_id").is_some(),
+        "First event should have event_id (get_event returns the flattened \
+         TraceEvent directly, not the v1 envelope; first_detail={})",
+        first_detail
     );
     println!("✓ get_event first event_id={} works", first_event_id);
 
@@ -675,13 +684,13 @@ async fn test_get_event_at_first_and_last() {
         .await
         .expect("get_event for last event failed");
 
-    let last_inner = last_detail
-        .get("event")
-        .expect("envelope should have 'event' field");
-
+    // R9.4 (drift #9): same migration as above — read event_id directly
+    // from the flattened get_event response.
     assert!(
-        last_inner.get("event_id").is_some(),
-        "Last event should have event_id (inside 'event' envelope)"
+        last_detail.get("event_id").is_some(),
+        "Last event should have event_id (get_event returns the flattened \
+         TraceEvent directly, not the v1 envelope; last_detail={})",
+        last_detail
     );
     println!("✓ get_event last event_id={} works", last_event_id);
 
