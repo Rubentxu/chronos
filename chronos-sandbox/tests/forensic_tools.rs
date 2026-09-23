@@ -280,12 +280,12 @@ async fn test_debug_find_variable_origin_after_probe_stop() {
 
     for mutation in result.mutations.iter().take(3) {
         println!(
-            "  Event {}: {} -> {} (thread {}, fn {:?})",
+            "  Event {}: {} -> {} (thread {}, fn {})",
             mutation.event_id,
             mutation.value_before.as_deref().unwrap_or("?"),
             mutation.value_after.as_deref().unwrap_or("?"),
             mutation.thread_id,
-            mutation.function.as_deref().unwrap_or("?")
+            mutation.function.as_deref().unwrap_or("?"),
         );
     }
 

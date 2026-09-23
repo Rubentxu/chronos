@@ -702,24 +702,34 @@ pub struct DebugDetectRacesResponse {
 }
 
 /// A mutation entry in a causality report.
+///
+/// Wire shape mirrors `chronos_services::output::LineageEntry`
+/// (canonical type, services::output.rs:675). When `chronos-sandbox`
+/// cannot import from `chronos-services` (cycles dep graph) this struct
+/// duplicates the canonical fields with `#[serde(default)]` on the new
+/// ones so deserialization tolerates wire entries that omit `file`/`line`
+/// (forward-compatible).
+///
+/// **R8 drift fix**: `value_after` and `function` are non-Option to
+/// match the canonical `LineageEntry` contract (both required on the
+/// server side). The legacy `Option<String>` typing was a v1 hedge that
+/// would silently swallow future additions (every Option becomes None).
+/// `#[serde(default)]` keeps backwards compat with v1 fixtures that
+/// emitted `value_after: null` / `function: null`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CausalityMutation {
     pub event_id: u64,
     pub timestamp_ns: u64,
     pub thread_id: u64,
     pub value_before: Option<String>,
-    pub value_after: Option<String>,
-    pub function: Option<String>,
-}
-
-/// Response from inspect_causality.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InspectCausalityResponse {
-    pub session_id: String,
-    pub address: String,
-    pub mutation_count: usize,
-    pub mutations: Vec<CausalityMutation>,
-    pub note: Option<String>,
+    #[serde(default)]
+    pub value_after: String,
+    #[serde(default)]
+    pub function: String,
+    #[serde(default)]
+    pub file: Option<String>,
+    #[serde(default)]
+    pub line: Option<u32>,
 }
 
 /// A hotspot function entry.

@@ -791,6 +791,15 @@ impl McpSession {
     /// Get event — retrieves detailed information about a specific trace event.
     ///
     /// C5.3.1 (REC-C5): now calls v2 `events_read` (`mode=by_id`).
+    ///
+    /// **R8 drift fix**: the v2 server returns `EventsReadOutput::ById`
+    /// which envelopes the event under `{"event": ..., "provenance": ...,
+    /// "mode": "by_id"}`. Sandbox consumers (and the v1 `get_event`
+    /// contract that the data-rich tests pin) expect a flat object. The
+    /// client unwraps the `event` field here, so the wire envelope does
+    /// not leak into the test surface. When `event` is `None`
+    /// (no event found), returns an empty object so `.get("event_id")`
+    /// returns `None` and the failure mode is unambiguous.
     pub async fn get_event(
         &mut self,
         session_id: &str,
@@ -803,11 +812,14 @@ impl McpSession {
         });
 
         let response = self.rpc_client.call_tool("events_read", params).await?;
-
-        // v2 events_read (mode=by_id) returns an EventsReadOutput::ById
-        // wrapping a single-event payload. Pass through the raw value so
-        // sandbox tests can introspect any field the v1 get_event exposed.
-        Ok(response)
+        // Flatten the v2 envelope to the v1 shape the sandbox tests expect:
+        // response = {event: Option<TraceEvent>, provenance, mode, ...}
+        // → unwrap `event` (or return {} if missing for nil-found semantic).
+        let flattened = response
+            .get("event")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({}));
+        Ok(flattened)
     }
 
     /// Get call stack — reconstructs the call stack at a specific event.
@@ -1052,10 +1064,13 @@ impl McpSession {
         let response = self.rpc_client.call_tool("trace_slice", params).await?;
 
         // v2 Causality flattens {address, mutations[], mutation_count, note?}.
+        // `address` is wire-format `u64` (canonical `CausalityReport.address`,
+        // services::output.rs). The legacy v1 client typed it as `String`, which
+        // surfaced as the contract drift that turned CI red after R7:
+        // `RpcError("invalid type: integer '0', expected a string")`.
         #[derive(serde::Deserialize)]
         struct V2Causality {
-            #[serde(default)]
-            address: String,
+            address: u64,
             mutation_count: usize,
             mutations: Vec<CausalityMutation>,
             #[serde(default)]
@@ -1727,10 +1742,22 @@ impl McpSession {
 // ============================================================================
 
 /// Causality report for memory address inspection.
+///
+/// Wire shape mirrors `chronos_services::output::CausalityReport`
+/// (canonical DTO, services::output.rs:769). The types are kept
+/// independent here because `chronos-sandbox` does NOT depend on
+/// `chronos-services` (services depends on mcp, mcp dev-dep on
+/// sandbox — adding services would cycle). When the wire shape
+/// evolves, both structs MUST evolve together.
+///
+/// **R8 drift fix**: `address` is `u64` on the wire (canonical DTO),
+/// not `String`. The legacy `String` typing was a v1 inheritance that
+/// surfaced post-R7 as `inspect_causality` returning
+/// `RpcError("invalid type: integer '0', expected a string")`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CausalityReport {
     pub session_id: String,
-    pub address: String,
+    pub address: u64,
     pub mutation_count: usize,
     pub mutations: Vec<CausalityMutation>,
     pub note: Option<String>,

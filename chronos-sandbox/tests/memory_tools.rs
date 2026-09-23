@@ -213,7 +213,7 @@ async fn test_inspect_causality_valid_address() {
             mutation.event_id,
             mutation.thread_id,
             mutation.value_before.as_deref().unwrap_or("?"),
-            mutation.value_after.as_deref().unwrap_or("?")
+            mutation.value_after,
         );
     }
 

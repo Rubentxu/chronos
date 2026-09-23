@@ -435,14 +435,19 @@ async fn uat_c2_03_durable_evidence_exceeds_the_ring() {
 // CIH-G — discriminant + bounded-poll wait for `uat_c2_01`.
 // =====================================================================
 
-// 10s hard deadline for the first-event wait. The fixture's test_busyloop
-// claims ~3s wall clock under native execution; under tarpaulin coverage
-// instrumentation on stressed CI runners the fixture can take 6-8x longer
-// to produce its first event (observed 5078ms on run 35472264098), so 5s
-// is not enough margin. 10s gives us 2x the worst observed CI time and is
-// still a hard cap (no blind sleep).
-const UAT_C2_01_FIRST_EVENT_DEADLINE: Duration = Duration::from_secs(10);
-const UAT_C2_01_LOG_ADVANCE_DEADLINE: Duration = Duration::from_secs(10);
+// 30s hard deadline for the first-event wait. The fixture's
+// `test_busyloop` claims ~3s wall clock under native execution;
+// under tarpaulin coverage instrumentation on stressed CI runners the
+// fixture can take much longer to produce its first event. **R8 audit
+// finding**: GH Actions run 35790442438 observed
+// `first_event_after_ms=10041` (41ms above the prior 10s deadline).
+// The 5s CIH-G-fix-3 ceiling was raised to 10s in CIH-G-fix-3
+// commit `437eded8` based on a single 5,078ms observation; subsequent
+// tarpaulin-stressed runs have hit 10s. 30s gives 3x worst-observed
+// margin and is still a hard cap (no blind sleep). The bounding poll
+// is preserved — this is NOT a sleep-eradication regression.
+const UAT_C2_01_FIRST_EVENT_DEADLINE: Duration = Duration::from_secs(30);
+const UAT_C2_01_LOG_ADVANCE_DEADLINE: Duration = Duration::from_secs(30);
 
 async fn wait_for_first_event(
     client: &mut McpTestClient,
