@@ -25,3 +25,10 @@ chronos-log = { path = "../crates/chronos-log" }
 # m1-03: sandbox UAT exercises the producer-side migration in
 # chronos-native (probe_backend → ExecutionLog).
 chronos-native = { path = "../crates/chronos-native" }
+
+[lints.rust]
+# tarpaulin compiles the workspace with `--cfg=tarpaulin` (see
+# scripts/run_coverage.sh). Declaring it here lets tests branch on it
+# (e.g. rec_c2_2_uat_c2 R10.2 environment-unobservable skip) without
+# triggering the `unexpected_cfgs` lint.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin)'] }
