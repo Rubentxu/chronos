@@ -17,7 +17,7 @@ async fn read_events_page(
     limit: usize,
 ) -> (Vec<u64>, Option<String>) {
     let mut params = serde_json::json!({
-        "mode": "Query",
+        "mode": "query",
         "session_id": session_id,
         "limit": limit,
     });
@@ -309,7 +309,7 @@ async fn r2_stale_cursor_is_identical_before_and_after_restart() {
             .call_tool(
                 "events_read",
                 serde_json::json!({
-                    "mode": "Query",
+                    "mode": "query",
                     "session_id": sid,
                     "cursor": cursor_encoded,
                     "limit": 16,

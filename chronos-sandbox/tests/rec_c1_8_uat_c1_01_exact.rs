@@ -105,7 +105,7 @@ async fn read_page(
     limit: usize,
 ) -> (Vec<u64>, Option<String>) {
     let mut params = serde_json::json!({
-        "mode": "Query",
+        "mode": "query",
         "session_id": session_id,
         "limit": limit,
     });

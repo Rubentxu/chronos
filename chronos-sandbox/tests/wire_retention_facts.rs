@@ -94,7 +94,7 @@ async fn wire_1_success_envelope_flattens_retention_and_tail() {
         &mut client,
         "events_read",
         serde_json::json!({
-            "mode": "Query",
+            "mode": "query",
             "session_id": session_id,
             "cursor": cursor_encoded,
             "limit": 16,
@@ -166,7 +166,7 @@ async fn wire_2_success_envelope_reports_advanced_retained_from() {
         &mut client,
         "events_read",
         serde_json::json!({
-            "mode": "Query",
+            "mode": "query",
             "session_id": session_id,
             "cursor": advanced,
             "limit": 16,
@@ -208,7 +208,7 @@ async fn wire_cursor_1_stale_envelope_carries_structured_numbers() {
         &mut client,
         "events_read",
         serde_json::json!({
-            "mode": "Query",
+            "mode": "query",
             "session_id": session_id,
             "cursor": cursor_encoded,
             "limit": 16,

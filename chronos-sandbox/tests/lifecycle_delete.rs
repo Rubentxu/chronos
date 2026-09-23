@@ -114,7 +114,7 @@ async fn del_live_1_live_probe_delete_is_refused() {
         .call_tool(
             "events_read",
             serde_json::json!({
-                "mode": "Query",
+                "mode": "query",
                 "session_id": session_id,
                 "limit": 16,
             }),
@@ -275,7 +275,7 @@ async fn del_live_4_sibling_delete_does_not_perturb_live_a() {
         .call_tool(
             "events_read",
             serde_json::json!({
-                "mode": "Query",
+                "mode": "query",
                 "session_id": started_a,
                 "limit": 16,
             }),

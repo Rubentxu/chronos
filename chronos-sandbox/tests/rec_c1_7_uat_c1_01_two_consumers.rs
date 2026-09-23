@@ -62,7 +62,7 @@ async fn read_page(
     limit: usize,
 ) -> (Vec<u64>, Option<String>, bool) {
     let mut params = serde_json::json!({
-        "mode": "Query",
+        "mode": "query",
         "session_id": session_id,
         "limit": limit,
     });
@@ -268,7 +268,7 @@ async fn uat_rec_c1_01_clean_session_reports_complete_not_gap() {
         .call_tool(
             "events_read",
             serde_json::json!({
-                "mode": "Query",
+                "mode": "query",
                 "session_id": started.session_id,
                 "limit": 100,
             }),
