@@ -324,12 +324,15 @@ impl QueryEngine {
         top_functions.sort_by_key(|a| std::cmp::Reverse(a.call_count));
         top_functions.truncate(20); // Top 20
 
-        // Sort event counts by count descending
+        // REC-C1.7 drift #20: sort_by_key(Reverse(count)) alone leaves ties in
+        // HashMap iteration order, which differs between process lifetimes. The
+        // tie-break by event type name makes the projection a deterministic
+        // function of the log (required for restart equivalence).
         let mut event_counts_by_type: Vec<(String, u64)> = event_counts
             .into_iter()
             .map(|(et, count)| (et.to_string(), count))
             .collect();
-        event_counts_by_type.sort_by_key(|a| std::cmp::Reverse(a.1));
+        event_counts_by_type.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 
         ExecutionSummary {
             session_id: session_id.into(),
