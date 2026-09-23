@@ -31,7 +31,7 @@ use tokio::sync::Mutex as TokioMutex;
 use crate::debug_read::DebugReadService;
 use crate::debug_trace::DebugTraceService;
 use crate::error::ServiceError;
-use crate::output::{StateQueryKind, StateQueryOutput};
+use crate::output::{StateQueryKind, StateQueryOutput, VariableSnapshotResult};
 use crate::projection::ProjectionMeta;
 
 /// Borrowed handle to the live engine map (shared with the MCP server).
@@ -83,6 +83,7 @@ impl ChronosStateQueryService {
     /// - `RegisterSnapshot` → `event_id`
     /// - `MemoryAnalysis`   → `start_address`, `end_address`, `start_ts`, `end_ts`
     /// - `ExpressionEval`   → `event_id`, `expression`
+    /// - `VariableSnapshot` → `event_id`
     ///
     /// Returns [`ServiceError::InvalidInput`] when a required target field
     /// is missing. The MCP wrapper forwards this verbatim to the agent.
@@ -168,6 +169,21 @@ impl ChronosStateQueryService {
                 )
                 .await?;
                 Ok(StateQueryOutput::ExpressionEval { result: r })
+            }
+            StateQueryKind::VariableSnapshot => {
+                let eid = input.event_id.ok_or_else(|| {
+                    ServiceError::InvalidInput(
+                        "event_id required for kind=variable_snapshot".into(),
+                    )
+                })?;
+                let variables =
+                    DebugReadService::get_variables(&input.session_id, eid, ctx.engines).await?;
+                Ok(StateQueryOutput::VariableSnapshot {
+                    result: VariableSnapshotResult {
+                        event_id: eid,
+                        variables,
+                    },
+                })
             }
         }
     }

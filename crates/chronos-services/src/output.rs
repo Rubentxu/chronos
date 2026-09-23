@@ -1157,6 +1157,7 @@ pub enum TraceSliceOutput {
 /// - `RegisterSnapshot` — formerly `debug_get_registers`.
 /// - `MemoryAnalysis` — formerly `debug_analyze_memory`.
 /// - `ExpressionEval` — formerly `evaluate_expression`.
+/// - `VariableSnapshot` — formerly `debug_get_variables` (C5.3.1 / REC-C5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[schemars(rename_all = "snake_case")]
@@ -1166,6 +1167,9 @@ pub enum StateQueryKind {
     RegisterSnapshot,
     MemoryAnalysis,
     ExpressionEval,
+    /// Captures the variables in scope at a given `event_id`. Returns the
+    /// empty list when the event has no frame data (e.g. native traces).
+    VariableSnapshot,
 }
 
 /// Output envelope of the v2 `state_query` tool.
@@ -1202,6 +1206,25 @@ pub enum StateQueryOutput {
         #[serde(flatten)]
         result: EvalResult,
     },
+    /// Variable snapshot at a given `event_id`. The payload is flattened
+    /// so the on-wire shape preserves the v1 `debug_get_variables` DTO
+    /// (`{kind: "variable_snapshot", event_id, variables[]}`) plus the
+    /// `kind` discriminator tag.
+    #[serde(rename = "variable_snapshot")]
+    VariableSnapshot {
+        #[serde(flatten)]
+        result: VariableSnapshotResult,
+    },
+}
+
+/// Wire payload for `state_query` `kind=variable_snapshot`.
+///
+/// Mirrors `debug_get_variables`'s v1 response so that downstream
+/// consumers that already understand v1 keep working without change.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VariableSnapshotResult {
+    pub event_id: u64,
+    pub variables: Vec<chronos_domain::VariableInfo>,
 }
 
 // ============================================================================
