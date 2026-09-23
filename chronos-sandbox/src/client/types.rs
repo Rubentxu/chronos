@@ -1012,12 +1012,18 @@ pub struct DebugGetRegistersResponse {
 }
 
 /// Variable information at a frame.
+///
+/// C5.3.1 (REC-C5) v2 contract: mirrors `chronos_domain::VariableInfo` exactly
+/// (server is source of truth). The legacy v1 shape (`var_type: Option<String>`,
+/// `address: Option<String>`) was retired in R10.1 — deserialization now fails
+/// closed on wire drift instead of silently degrading to `None`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VariableInfo {
     pub name: String,
     pub value: String,
-    pub var_type: Option<String>,
-    pub address: Option<String>,
+    pub type_name: String,
+    pub address: u64,
+    pub scope: String,
 }
 
 /// Response from debug_get_variables.

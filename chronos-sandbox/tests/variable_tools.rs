@@ -58,7 +58,7 @@ async fn test_debug_get_variables_empty_session() {
             "  {} = {} ({})",
             var.name,
             var.value,
-            var.var_type.as_deref().unwrap_or("?")
+            var.type_name.as_str()
         );
     }
 
