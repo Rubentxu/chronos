@@ -182,7 +182,7 @@ async fn wrapper_rebuilds_engine_from_log_when_map_is_empty() {
             "execution_query",
             serde_json::json!({
                 "session_id": session_id,
-                "kind": "ExecutionSummary",
+                "kind": "execution_summary",
             }),
         )
         .await
@@ -233,7 +233,7 @@ async fn wrapper_rebuilds_engine_after_late_append_via_fresh_process() {
                 "execution_query",
                 serde_json::json!({
                     "session_id": session_id,
-                    "kind": "ExecutionSummary",
+                    "kind": "execution_summary",
                 }),
             )
             .await
@@ -268,7 +268,7 @@ async fn wrapper_rebuilds_engine_after_late_append_via_fresh_process() {
             "execution_query",
             serde_json::json!({
                 "session_id": session_id,
-                "kind": "ExecutionSummary",
+                "kind": "execution_summary",
             }),
         )
         .await
@@ -328,7 +328,7 @@ async fn wrapper_rebuilds_for_state_query_against_log_only() {
             "state_query",
             serde_json::json!({
                 "session_id": session_id,
-                "kind": "RegisterSnapshot",
+                "kind": "register_snapshot",
                 "event_id": 40,
             }),
         )

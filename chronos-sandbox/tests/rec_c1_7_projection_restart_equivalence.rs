@@ -62,7 +62,7 @@ async fn run_execution_summary(client: &mut McpTestClient, session_id: &str) -> 
             "execution_query",
             serde_json::json!({
                 "session_id": session_id,
-                "kind": "ExecutionSummary",
+                "kind": "execution_summary",
             }),
         )
         .await
