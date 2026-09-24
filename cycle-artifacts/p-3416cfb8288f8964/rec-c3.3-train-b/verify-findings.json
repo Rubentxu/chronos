@@ -1,0 +1,70 @@
+{
+  "cycle_id": "rec-c3.3-train-b",
+  "title": "REC-C3.3.3 Tren B — capture_session + service-port expansion",
+  "verdict": "PASS",
+  "all_passed": true,
+  "subject": {
+    "head_sha": "a1c628e6c5f31ba3d224d93461781ce828ba0b91",
+    "base_sha": "fa5eb5827e997c874047c6c2318ad2b5b1c8f323",
+    "merge_sha": "a1c628e6c5f31ba3d224d93461781ce828ba0b91",
+    "tag": "rec-c3.3-train-b.0",
+    "tag_peel_sha": "a1c628e6c5f31ba3d224d93461781ce828ba0b91"
+  },
+  "checks": {
+    "T0_fmt_clippy": {
+      "status": "PASS",
+      "evidence": "cargo fmt --all --check exit 0; cargo clippy --workspace --all-targets -- -D warnings exit 0 (verified at slices C, D, E, G)"
+    },
+    "T1_unit_focused": {
+      "status": "PASS",
+      "evidence": "cargo test -p chronos-mcp --lib 84 passed; cargo test -p chronos-services 377/377 in 11.5s (post slice E)"
+    },
+    "T2_component_regression": {
+      "status": "PASS",
+      "evidence": "composition_tests 10/10 + per-crate integration of touched crates; native_probe_tools smoke 4/4 in 80.82s (post slice G rebuild)"
+    },
+    "T3_integration_functional": {
+      "status": "PASS",
+      "evidence": "76 lib suites OK / 0 FAILED (post-merge local run); PR #33 ci_test/coverage/sandbox_debt_sentinel/supply_chain/deferred_debt_verification/reconstruction_contracts/architecture_contracts 5/5 PASS in GH Actions"
+    },
+    "pipelinek_local_gate": {
+      "status": "PASS",
+      "evidence": "Pipeline finished with SUCCESS, runId 3260a48d-7adf-4f08-b5f9-507d0ff1c408, multiple runs (post-merge: cb0b0fe1-ae1a-4dd5-9705-bca7ad84330a, post-vault-regen: 768b8656, post-CC5-fix: 2b521fa6)"
+    },
+    "vault_drift_check": {
+      "status": "PASS",
+      "evidence": "scripts/check_vault_drift.sh exit 0 after CC#5 alignment fix (commit 2b521fa6): 'vault-drift-sweep: PASS (48 python CCs all clean, 7 bash CCs all clean)'. Pre-fix: CC#5 reported false-positive drift 98 vs 148 (filesystem count vs index rows); fix replaced with CC#39 Part C parser"
+    },
+    "tag_peel_match": {
+      "status": "PASS",
+      "evidence": "tag rec-c3.3-train-b.0 peel a1c628e6 == head_sha; git rev-parse rec-c3.3-train-b.0^{} = a1c628e6c5f31ba3d224d93461781ce828ba0b91"
+    },
+    "pr_merge": {
+      "status": "PASS",
+      "evidence": "PR #33 MERGED via gh pr merge 33 --merge --delete-branch; fast-forward merge on origin/main"
+    }
+  },
+  "findings": [
+    {
+      "id": "FIND-TB-01-cas-cli-format-mismatch",
+      "severity": "P3",
+      "rationale": "sddk CLI cycle identifier format rejects `<project>/<cycle>` strings; only bare `<cycle>` accepted. sddk artifact store CAS step in sddk-propose envelope failed with FOREIGN KEY constraint; resolved by deferring CAS persistence to git commit chain. No action this cycle (B8); recorded for follow-up cycle to investigate sddk CLI format gap.",
+      "owner_cycle": "rec-c3.3-train-b"
+    },
+    {
+      "id": "FIND-TB-AUDIT-2026-09-20",
+      "severity": "P2",
+      "rationale": "External technical+architectural audit (15 sections, see audit-2026-09-20-summary.md) reviewed this cycle and made 4 actionable observations. All recorded as no_action per B7 (forward-only preservation); addressed by follow-up cycles REC-C3.3.4-native, REC-C3.5-services-store, REC-C0.5-harness, REC-C4 (see archive-manifest §Follow-up cycles).",
+      "owner_cycle": "rec-c3.3-train-b (record) + REC-C3.3.4-native + REC-C3.5 + REC-C0.5-harness + REC-C4"
+    }
+  ],
+  "captured_at": "2026-09-24T08:55:00Z",
+  "captured_by": "jcode-orchestrator (post-archive vault-drift cleanup)",
+  "evidence_refs": {
+    "release_receipt": "cycle-artifacts/p-3416cfb8288f8964/rec-c3.3-train-b/release-receipt.md",
+    "archive_manifest": "cycle-artifacts/p-3416cfb8288f8964/rec-c3.3-train-b/archive-manifest.md",
+    "pr_merge_url": "https://github.com/Rubentxu/chronos/pull/33",
+    "tag": "rec-c3.3-train-b.0",
+    "vault_drift_fix_commit": "2b521fa6"
+  }
+}
