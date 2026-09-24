@@ -91,12 +91,12 @@ Two commits:
 | Kind | Path | SHA-256 |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-73-sandbox-client-store-isolation/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
-| source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `2650421210219e229fb0bc856e34c731647854e2e8d4a50e83f86335f3bb119a` |
+| source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `50e6089729db9f261e6ff00bbd895d129c94ab46268abc792f997f32a17c730e` |
 | source (sandbox process spawn) | `chronos-sandbox/src/client/process.rs` | `1040f4ae8cea744fe273518b60af586b553d117f0c7b23d24eef24e73d8d3959` |
 | test (store isolation) | `chronos-sandbox/tests/client_store_isolation.rs` | `a48c78a31a5a1517418e560a2982b2ec39ea435f78b627cda79d38133ce56495` |
 | test (session edge cases) | `chronos-sandbox/tests/session_edge_cases.rs` | `9e7fe072358918c156502cc8093e9164aff59b1eeb17e460a475db10ee2d82b3` |
 | test (counterexample tools) | `chronos-sandbox/tests/counterexample_tools.rs` | `e47fbc3890e4ca8cc2361669c295b3018eff15802a8bd4df56f2e882923ca98d` |
-| docs (agents manual) | `AGENTS.md` | `e4f7c0b8aaf7f11ea46212c4cee6bcf0e40fdc16a89346d4fb747d95321872cb` |
+| docs (agents manual) | `AGENTS.md` | `74a160853f405bc14779fadccb5c01b0f84f1e07a68e18f6899c299e77fe822d` |
 | script (cc smoke test) | `scripts/smoke_test_ccs.sh` | `86def49d7e23b4e521687ddcb53a384aac18ec3f91f0e2845396f90d7ac3e7d3` |
 | vault maintenance (drift sweep) | `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md` | `32e7062cbb24106bcf9b119a914df81190a07e6b2b975c12deecdc8c8f23d2a8` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/apply-checkpoint.json` | `35408c5d6ab2a0a9250228401b91f4f0b484cd7874ccb3f8b538bac2b5587931` |
