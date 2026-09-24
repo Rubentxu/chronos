@@ -774,3 +774,78 @@ En todo momento:
 * No confundas funcionalidad implementada con funcionalidad integrada o certificada.
 
 **El objetivo es desarrollar rápidamente mediante feedback incremental y entregar con garantías mediante validación integral.**
+
+---
+
+## CI Local Obligatorio — pipelinek
+
+**Este proyecto adopta `pipelinek` como mecanismo canónico de CI local.**
+
+Toda verificación de estado del repositorio debe ejecutarse a través del script
+versionado en `.pipeline.kts`, ubicado en la raíz del proyecto. Ningún agente,
+sesión humana o pipeline externo puede declarar el repositorio en estado
+"verificado" sin haber ejecutado ese script y observado un `Pipeline finished
+with SUCCESS` terminal.
+
+### Binario
+
+`pipelinek` v0.39.0 — instalable desde `pipelinek-0.39.0.zip` (build local:
+`v2/pipeline-application/build/install/pipelinek/bin/pipelinek`). Comando
+canónico desde la raíz del proyecto:
+
+```bash
+pipelinek run --db .pipelinek/db.sqlite \
+              --control-root .pipelinek/control \
+              .pipeline.kts
+```
+
+### Criterios de éxito (todos deben cumplirse)
+
+1. `Pipeline finished with SUCCESS` en la línea final del run.
+2. Journal SQLite presente en `.pipelinek/db.sqlite` con eventos tipados
+   (`CompilationStarted`, `RunStarted`, `StageStarted`, `StepStarted`,
+   `EchoOutputCaptured` o equivalente, `StageFinished/success`,
+   `RunFinished/success`).
+3. Control root presente en `.pipelinek/control/{last-run, retry-control,
+   wait-until-control, workspace/<stage-name>}`.
+4. Cero `StepFailed` ni `RunFinished/failure` en el journal del último run.
+5. SHA-256 del `.pipeline.kts` registrado en la sesión y comparable con
+   `git log -- .pipeline.kts` para detectar drift no intencional.
+
+### Comando de validación rápida
+
+```bash
+test -f .pipeline.kts && \
+  pipelinek validate .pipeline.kts && \
+  echo "pipelinek CI local: configuración válida"
+```
+
+### Extensión del script
+
+Cualquier stage nuevo debe:
+
+* Declarar su propósito en el `echo` inicial del stage.
+* Usar **rutas absolutas** dentro de los `sh(...)` (el motor v0.39.0 no
+  resuelve el cwd del script).
+* Producir efectos secundarios solo a través de los directorios
+  `.pipelinek/` y `evidence/` (no contaminar el árbol del proyecto).
+* Mantener `discover-repo` como primer stage para que un run nuevo
+  siempre documente el estado del repositorio.
+* Respetar la separación entre `evidence/`, `cycle-artifacts/`,
+  `metrics/` y `.atl/`: nada del CI debe escribirse fuera de esos
+  directorios o de `.pipelinek/`.
+
+### Compatibilidad con otros runners
+
+`pipelinek` es la fuente de verdad local. GitHub Actions, GitLab CI,
+Jenkins o cualquier otro runner remoto **debe** invocar el mismo
+`.pipeline.kts` desde el mismo checkout. Si un runner remoto produce
+PASS y `pipelinek` local produce FAIL, prevalece `pipelinek` local hasta
+que la divergencia se investigue y documente en este mismo archivo.
+
+### Excepciones documentadas
+
+Ninguna hasta la fecha. Toda excepción requiere entrada en
+`SESSION-JOURNAL.md` y aprobación explícita del maintainer del proyecto.
+
+---

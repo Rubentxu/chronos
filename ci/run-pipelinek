@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+# run-pipelinek — Lanzador portable para pipelinek v0.39.0 con estado externo.
+# Copyright (c) 2026 Rubentxu
+# Licencia: MIT
+#
+# OBJETIVO:
+#   Ejecutar pipelinek sin escribir estado interno del motor dentro del
+#   repositorio del proyecto. Todo el estado (journal SQLite, control root,
+#   logs, eventos) se sitúa bajo:
+#
+#       ${XDG_STATE_HOME:-$HOME/.local/state}/pipelinek/projects/<id>/
+#
+#   donde <id> = nombre legible + huella corta derivada de la ruta canónica
+#   del proyecto. Esto:
+#     * evita que .pipelinek contamine el árbol del repositorio,
+#     * aísla el estado entre proyectos aunque coincida el nombre del dir,
+#     * aprovecha XDG (Linux) sin obligar a editar rutas absolutas en el
+#       .pipeline.kts.
+#
+# USO:
+#   ./run-pipelinek <comando> [args...]
+#     comando ∈ {validate, run}
+#
+# EJEMPLOS:
+#   ./run-pipelinek validate pipeline.kts
+#   ./run-pipelinek run pipeline.kts
+#
+# VARIABLES DE ENTORNO RECONOCIDAS:
+#   PIPELINEK_BIN           ruta al binario pipelinek (auto-detecta si vacío)
+#   PIPELINEK_STATE_ROOT    raíz de estado (default: XDG_STATE_HOME o
+#                           $HOME/.local/state)
+#   PIPELINEK_CACHE_ROOT    raíz de caché (default: XDG_CACHE_HOME o
+#                           $HOME/.cache)
+
+set -euo pipefail
+
+# ─── Localización del binario pipelinek ────────────────────────────────
+PIPELINEK_BIN="${PIPELINEK_BIN:-}"
+if [[ -z "${PIPELINEK_BIN}" ]]; then
+    if command -v pipelinek >/dev/null 2>&1; then
+        PIPELINEK_BIN="$(command -v pipelinek)"
+    elif [[ -x "/var/home/rubentxu/Proyectos/kotlin/pipeline-kotlin/v2/pipeline-application/build/install/pipelinek/bin/pipelinek" ]]; then
+        PIPELINEK_BIN="/var/home/rubentxu/Proyectos/kotlin/pipeline-kotlin/v2/pipeline-application/build/install/pipelinek/bin/pipelinek"
+    elif [[ -x "${HOME}/Proyectos/kotlin/pipeline-kotlin/v2/pipeline-application/build/install/pipelinek/bin/pipelinek" ]]; then
+        PIPELINEK_BIN="${HOME}/Proyectos/kotlin/pipeline-kotlin/v2/pipeline-application/build/install/pipelinek/bin/pipelinek"
+    else
+        echo "ERROR: pipelinek no encontrado. Define PIPELINEK_BIN=/path/to/pipelinek" >&2
+        exit 127
+    fi
+fi
+
+# ─── Resolver REPO_ROOT (cwd si no se pasa) ───────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${REPO_ROOT:-${PWD}}"
+
+# Si .pipeline.kts está en SCRIPT_DIR, usarlo como REPO_ROOT.
+if [[ ! -f "${REPO_ROOT}/pipeline.kts" && ! -f "${REPO_ROOT}/.pipeline.kts" ]]; then
+    if [[ -f "${SCRIPT_DIR}/pipeline.kts" || -f "${SCRIPT_DIR}/.pipeline.kts" ]]; then
+        REPO_ROOT="${SCRIPT_DIR}"
+    elif [[ -f "${SCRIPT_DIR}/../pipeline.kts" || -f "${SCRIPT_DIR}/../.pipeline.kts" ]]; then
+        REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+    fi
+fi
+
+# ─── Identificador estable del proyecto ────────────────────────────────
+# Combina nombre legible (basename del repo) con huella corta de la ruta
+# canónica. Evita colisiones cuando dos proyectos comparten nombre.
+REPO_BASENAME="$(basename "${REPO_ROOT}")"
+# Canonical path (resuelve symlinks)
+CANON_PATH="$(cd "${REPO_ROOT}" && pwd -P 2>/dev/null || echo "${REPO_ROOT}")"
+# Huella corta no-secreta: 12 chars hex de sha1 de la ruta canónica.
+PATH_HASH="$(printf '%s' "${CANON_PATH}" | sha1sum | cut -c1-12)"
+# Sanitizar nombre legible (solo [a-z0-9-]).
+SAFE_NAME="$(printf '%s' "${REPO_BASENAME}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g')"
+PROJECT_ID="${SAFE_NAME}-${PATH_HASH}"
+
+# ─── Raíces de estado y caché (XDG) ───────────────────────────────────
+STATE_ROOT="${PIPELINEK_STATE_ROOT:-${XDG_STATE_HOME:-$HOME/.local/state}}"
+CACHE_ROOT="${PIPELINEK_CACHE_ROOT:-${XDG_CACHE_HOME:-$HOME/.cache}}"
+
+# ─── Rutas de proyecto bajo STATE_ROOT ────────────────────────────────
+PROJECT_STATE="${STATE_ROOT}/pipelinek/projects/${PROJECT_ID}"
+PROJECT_CACHE="${CACHE_ROOT}/pipelinek/projects/${PROJECT_ID}"
+
+JOURNAL_DIR="${PROJECT_STATE}/journal"
+CONTROL_DIR="${PROJECT_STATE}/control"
+RUNS_DIR="${PROJECT_STATE}/runs"
+LOGS_DIR="${PROJECT_STATE}/logs"
+EVENTS_DIR="${PROJECT_STATE}/events"
+
+# Crear estructura (idempotente).
+mkdir -p "${JOURNAL_DIR}" "${CONTROL_DIR}" "${RUNS_DIR}" "${LOGS_DIR}" "${EVENTS_DIR}" "${PROJECT_CACHE}"
+
+# ─── Default DB / control-root (estado externo) ──────────────────────
+DEFAULT_DB="${JOURNAL_DIR}/db.sqlite"
+DEFAULT_CONTROL_ROOT="${CONTROL_DIR}"
+
+# ─── Parsear argumentos del usuario ───────────────────────────────────
+ARGS=("$@")
+NEEDS_DB=true
+NEEDS_CTRL=true
+SCRIPT_PATH=""
+SUBCOMMAND=""
+for i in "${!ARGS[@]}"; do
+    case "${ARGS[$i]}" in
+        validate|run) SUBCOMMAND="${ARGS[$i]}" ;;
+        --db) NEEDS_DB=false ;;
+        --control-root) NEEDS_CTRL=false ;;
+        *.pipeline.kts|*.kts) SCRIPT_PATH="${ARGS[$i]}" ;;
+    esac
+done
+
+# ─── Insertar defaults por subcomando (entre SUBCOMMAND y SCRIPT_PATH) ─
+if [[ "${SUBCOMMAND}" == "run" ]]; then
+    NEW_ARGS=()
+    for i in "${!ARGS[@]}"; do
+        NEW_ARGS+=("${ARGS[$i]}")
+        if [[ "${ARGS[$i]}" == "run" ]]; then
+            [[ "${NEEDS_DB}" == true ]] && NEW_ARGS+=(--db "${DEFAULT_DB}")
+            [[ "${NEEDS_CTRL}" == true ]] && NEW_ARGS+=(--control-root "${DEFAULT_CONTROL_ROOT}")
+        fi
+    done
+    ARGS=("${NEW_ARGS[@]}")
+fi
+
+# ─── Resolver script path a absoluto si es relativo ──────────────────
+if [[ -n "${SCRIPT_PATH}" && "${SCRIPT_PATH}" != /* ]]; then
+    if [[ -f "${REPO_ROOT}/${SCRIPT_PATH}" ]]; then
+        for i in "${!ARGS[@]}"; do
+            if [[ "${ARGS[$i]}" == "${SCRIPT_PATH}" ]]; then
+                ARGS[$i]="${REPO_ROOT}/${SCRIPT_PATH}"
+            fi
+        done
+    fi
+fi
+
+# ─── Cambiar cwd a REPO_ROOT (para .tool-versions) ──────────────────
+cd "${REPO_ROOT}"
+
+# ─── Propagar variables al entorno (útiles para los pipelines) ──────
+export REPO_ROOT
+export PIPELINEK_PROJECT_ID="${PROJECT_ID}"
+export PIPELINEK_STATE_ROOT="${STATE_ROOT}"
+export PIPELINEK_PROJECT_STATE="${PROJECT_STATE}"
+export PIPELINEK_PROJECT_CACHE="${PROJECT_CACHE}"
+export PIPELINEK_JOURNAL_DIR="${JOURNAL_DIR}"
+export PIPELINEK_CONTROL_DIR="${CONTROL_DIR}"
+export PIPELINEK_RUNS_DIR="${RUNS_DIR}"
+export PIPELINEK_LOGS_DIR="${LOGS_DIR}"
+export PIPELINEK_EVENTS_DIR="${EVENTS_DIR}"
+
+# ─── Resolver JAVA_HOME (asdf) ───────────────────────────────
+# PipelineK es una app JVM y necesita JAVA_HOME. Se resuelve desde
+# asdf (fuente de verdad del toolchain Java) si no está ya definido.
+if [[ -z "${JAVA_HOME:-}" ]]; then
+    JAVA_HOME_FROM_ASDF="$(asdf where java 2>/dev/null || true)"
+    if [[ -n "${JAVA_HOME_FROM_ASDF}" ]]; then
+        export JAVA_HOME="${JAVA_HOME_FROM_ASDF}"
+    fi
+fi
+
+# ─── Log diagnóstico a stderr (no afecta JSON del run) ──────────────
+cat >&2 <<INFO
+[run-pipelinek] PIPELINEK_BIN         = ${PIPELINEK_BIN}
+[run-pipelinek] REPO_ROOT              = ${REPO_ROOT}
+[run-pipelinek] PROJECT_ID             = ${PROJECT_ID}
+[run-pipelinek] PROJECT_STATE          = ${PROJECT_STATE}
+[run-pipelinek] PROJECT_CACHE          = ${PROJECT_CACHE}
+[run-pipelinek] JOURNAL (--db)         = ${DEFAULT_DB}
+[run-pipelinek] CONTROL (--control-root)= ${DEFAULT_CONTROL_ROOT}
+[run-pipelinek] args                    = ${ARGS[*]}
+INFO
+
+exec "${PIPELINEK_BIN}" "${ARGS[@]}"

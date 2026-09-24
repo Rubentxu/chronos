@@ -59,3 +59,6 @@ docs/*.zip
 
 # otelc compile-time instrumentation build cache (M4-F0/M4G.1 ADR-0007)
 .otelc-build/
+
+# Pipelinek local CI runtime state (per-machine; never committed)
+.pipelinek/
