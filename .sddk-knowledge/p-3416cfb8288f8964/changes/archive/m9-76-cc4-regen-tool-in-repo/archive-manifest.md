@@ -154,7 +154,7 @@ observed to fail for the reason the guard exists:
 | test (regen unit tests) | `scripts/tests/test_regen_manifest_index_shas.py` | `57168dbb1942ac0cd58f5edd42edc2dd407abe1a6cd23b2dcb355f654e8a4672` |
 | test (cc smoke suite) | `scripts/smoke_test_ccs.sh` | `86def49d7e23b4e521687ddcb53a384aac18ec3f91f0e2845396f90d7ac3e7d3` |
 | docs (agents manual) | `AGENTS.md` | `74a160853f405bc14779fadccb5c01b0f84f1e07a68e18f6899c299e77fe822d` |
-| docs (vault drift sweep) | `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md` | `32e7062cbb24106bcf9b119a914df81190a07e6b2b975c12deecdc8c8f23d2a8` |
+| docs (vault drift sweep) | `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md` | `13350229f5ab3dc456f928b96e39999550eda60533167164894a14af886075d3` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/apply-checkpoint.json` | `232613564d78f9c0839f732c4b1647cf12f4582602c4073580cbf0cc6e20df0c` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/verify-report.md` | `f1cb8a70dff389ce95e8ea8283b7045ba0ba05adeb47c5b2846f3777fec4988a` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/verify-findings.json` | `50e67041b0abecd8ddf3a8aa48bf11bb89e4a1fb87daa9a305d48c0f3890dbce` |

@@ -217,18 +217,32 @@ manifests (m9-01, m9-02) which use the literal word "pending" as a
 placeholder before the SHA is captured; those are intentionally not in
 the Artifact-index format.
 
-### 5. cycles/index.md metadata consistency (closed by m9-11, superseded by m9-47 + REC-C0.5-A)
+### 5. cycles/index.md metadata consistency (closed by m9-11; aligned with CC#39 Part C by G0.3-CC5-fix)
 
 ```bash
-# Total cycles counts filesystem m9-* cycle dirs (CC#39 Part C supersedes the
-# older row-count check from m9-11; the awk pattern was designed when the
-# index used `| m9-XX |` rows but the index now uses milestone tokens like
-# `| m10 |` / `| m0 |` / `| rec-c0 |` so the row-count never matched.
-# REC-C0.5-A aligned CC#5 with CC#39's filesystem count.)
-total_fs=$(ls -d cycle-artifacts/m9-* 2>/dev/null | wc -l)
-total_fs2=$(ls -d cycle-artifacts/p-3416cfb8288f8964/m9-* 2>/dev/null | wc -l)
-total_fs3=$(ls -d .sddk-knowledge/p-3416cfb8288f8964/changes/m9-* 2>/dev/null | wc -l)
-actual=$((total_fs + total_fs2 + total_fs3))
+# Total cycles = number of unique Cycle ID rows in the main cycles/index.md
+# table (before `## Metadata`). Mirrors CC#39 Part C exactly:
+# - Skip rows where col 2 starts with a digit (breakdown counts).
+# - Skip `_legacy_dup_*` rows (CC#39 G0.3 legacy duplicate placeholders).
+# - Skip rows where col 2 starts with `(` (descriptive placeholder text).
+actual=$(python3 -c "
+import re
+index = open('.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md').read()
+main = index.split('## Metadata', 1)[0]
+rows = [l for l in main.splitlines()
+        if l.startswith('|') and '---' not in l and 'Cycle ID' not in l]
+ids = set()
+for r in rows:
+    cols = [c.strip() for c in r.split('|')[1:-1]]
+    if len(cols) >= 2:
+        cid, col1 = cols[1], cols[0]
+        if (cid and not cid[0].isdigit()
+                and not col1.startswith('_legacy_dup_')
+                and not cid.startswith('_legacy_dup_')
+                and not cid.startswith('(')):
+            ids.add(cid)
+print(len(ids))
+")
 declared=$(awk -F'|' '/Total cycles/{gsub(/[ \t]+/, "", $3); print $3}' .sddk-knowledge/p-3416cfb8288f8964/cycles/index.md)
 [ "$actual" = "$declared" ] && echo "OK: $actual == $declared" || echo "DRIFT: actual=$actual declared=$declared"
 ```
@@ -236,13 +250,19 @@ declared=$(awk -F'|' '/Total cycles/{gsub(/[ \t]+/, "", $3); print $3}' .sddk-kn
 **Expected output (clean):** `OK: <n> == <n>`.
 
 **If `DRIFT`:** the `Total cycles` metadata field in `cycles/index.md`
-diverges from the filesystem m9-* cycle directory count. Resolution:
+diverges from the CC#39 Part C cycle-row count (137 tracked canonical +
+11 historical refs = 148 as of G0.3 reconciliation). Resolution:
 bump the field to the actual count, update `Last updated`. Resolution
 is mechanical (1-character edit). **History:** the original m9-11 check
-counted `| m9-XX |` rows; m9-47 replaced it with the filesystem count
-(CC#39 Part C); REC-C0.5-A aligned CC#5 with CC#39 to eliminate the
-duplicate signal. First caught in m9-11 (drift of 4 cycles, 26 actual
-vs 22 declared).
+counted `| m9-XX |` rows; m9-47 replaced it with a filesystem count
+that never matched the index because historical-ref cycles (no on-disk
+artifacts, real in git history) were absent from filesystem scans;
+REC-C0.5-A attempted to align CC#5 with CC#39 but the script in
+`check_vault_drift.sh` was never updated. The G0.3-CC5-fix replaces
+CC#5's logic with the exact CC#39 Part C parser to eliminate the
+false-positive drift line that CC#5 produced on every push since the
+historical-refs reconciliation landed. First caught on commit
+768b8656 (rec-c3.3-train-b vault-drift post-release).
 
 ### 6. terms/index.md "Last archive" ↔ cycles/index.md most-recent-cycle consistency (closed by m9-12)
 
@@ -2758,16 +2778,25 @@ for manifest in .sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-*/archive-
 done
 errors=$((errors + ${#drift_lines_cc4[@]}))
 
-# CC#5: cycles/index.md Total cycles consistency (superseded by CC#39 Part C;
-# CC#5 now mirrors CC#39's filesystem count with the same dedup logic to keep
-# the meta-check clean).
+# CC#5: cycles/index.md Total cycles consistency (mirrors CC#39 Part C exactly:
+# count unique Cycle ID rows in cycles/index.md main table, before `## Metadata`).
 actual=$(python3 -c "
-import os
-print(
-    len([f for f in os.listdir('cycle-artifacts') if f.startswith('m9-') and os.path.isdir(f'cycle-artifacts/{f}')]) +
-    len([f for f in os.listdir('cycle-artifacts/p-3416cfb8288f8964') if f.startswith('m9-') and os.path.isdir(f'cycle-artifacts/p-3416cfb8288f8964/{f}')]) +
-    len([f for f in os.listdir('.sddk-knowledge/p-3416cfb8288f8964/changes') if f.startswith('m9-') and os.path.isdir(f'.sddk-knowledge/p-3416cfb8288f8964/changes/{f}') and not os.path.isdir(f'cycle-artifacts/{f}') and not os.path.isdir(f'cycle-artifacts/p-3416cfb8288f8964/{f}')])
-)
+import re
+index = open('.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md').read()
+main = index.split('## Metadata', 1)[0]
+rows = [l for l in main.splitlines()
+        if l.startswith('|') and '---' not in l and 'Cycle ID' not in l]
+ids = set()
+for r in rows:
+    cols = [c.strip() for c in r.split('|')[1:-1]]
+    if len(cols) >= 2:
+        cid, col1 = cols[1], cols[0]
+        if (cid and not cid[0].isdigit()
+                and not col1.startswith('_legacy_dup_')
+                and not cid.startswith('_legacy_dup_')
+                and not cid.startswith('(')):
+            ids.add(cid)
+print(len(ids))
 ")
 declared=$(awk -F'|' '/Total cycles/{gsub(/[ \t]+/, "", $3); print $3}' .sddk-knowledge/p-3416cfb8288f8964/cycles/index.md)
 [ "$actual" != "$declared" ] && { echo "DRIFT: CC#5: actual=$actual declared=$declared"; errors=$((errors+1)); }
