@@ -18,5 +18,6 @@
   "findings_introduced": {
     "no_action": []
   },
-  "archived_at": "2026-09-15T16:34:28+02:00"
+  "archived_at": "2026-09-15T16:34:28+02:00",
+  "peel_match": true
 }

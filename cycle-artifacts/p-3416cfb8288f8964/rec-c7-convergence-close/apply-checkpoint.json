@@ -1,6 +1,6 @@
 {
   "cycle_id": "rec-c7-convergence-close",
-  "title": "REC-C7 — Reconstruction convergence close",
+  "title": "REC-C7 \u2014 Reconstruction convergence close",
   "summary": "Final convergence gate in the REC-C0..REC-C7 sequence. Promotes M4 contracts to planned/M4-future (so strict-no-gaps passes), advances active_gate REC-C7 -> empty (end of convergence phase), produces the v0.7.112 release tag (the deferred tag from REC-C5 close), and documents the post-convergence roadmap (M6 -> M7 -> M8 unblocked).",
   "cycle_record": "p-3416cfb8288f8964/rec-c7-convergence-close",
   "project_id": "p-3416cfb8288f8964",
@@ -21,10 +21,36 @@
     "scripts/check_architecture_contracts.py --strict-no-gaps FAILED at REC-C6 close (M4 contracts were blocked, which strict-no-gaps rejects)."
   ],
   "gates_planned": [
-    {"slice": "C7.1", "tier": "T0", "rationale": "doc + contracts.toml only; promote M4 blocked -> planned.", "completed": true, "head_sha": "380ca828"},
-    {"slice": "C7.2", "tier": "git", "rationale": "annotated tag v0.7.112 on main HEAD.", "completed": true, "head_sha": "0be2ec2d", "tag": "v0.7.112", "tag_peel": "0be2ec2d53d9698956ae705938b32b80d7365ad7"},
-    {"slice": "C7.3", "tier": "T0", "rationale": "docs/ROADMAP.md final closeout.", "completed": true, "head_sha": "380ca828"},
-    {"slice": "C7.4", "tier": "archive", "rationale": "cycle record archive (release-receipt + archive-manifest).", "completed": true, "head_sha": "0be2ec2d"}
+    {
+      "slice": "C7.1",
+      "tier": "T0",
+      "rationale": "doc + contracts.toml only; promote M4 blocked -> planned.",
+      "completed": true,
+      "head_sha": "380ca828"
+    },
+    {
+      "slice": "C7.2",
+      "tier": "git",
+      "rationale": "annotated tag v0.7.112 on main HEAD.",
+      "completed": true,
+      "head_sha": "0be2ec2d",
+      "tag": "v0.7.112",
+      "tag_peel": "0be2ec2d53d9698956ae705938b32b80d7365ad7"
+    },
+    {
+      "slice": "C7.3",
+      "tier": "T0",
+      "rationale": "docs/ROADMAP.md final closeout.",
+      "completed": true,
+      "head_sha": "380ca828"
+    },
+    {
+      "slice": "C7.4",
+      "tier": "archive",
+      "rationale": "cycle record archive (release-receipt + archive-manifest).",
+      "completed": true,
+      "head_sha": "0be2ec2d"
+    }
   ],
   "notes": {
     "post_convergence_roadmap": [
@@ -37,9 +63,9 @@
       "filed_by": "session recovery after roadmap reorganisation commit ec61fa4b",
       "filed_in_journal": "docs/roadmap/JOURNAL.md row 2 (2026-09-21 resume post-reorg)",
       "what_was_wrong": "The four post-convergence roadmap bullets above labelled the M8/M9 columns incorrectly against the canonical ledger (reconstruction-contracts.toml). The canonical mapping is: M8 = counterexample shrinking (no CONC contract yet, future slice); M9 = causal concurrency happens-before (CONC-001, owner_gate=M9); M10 = Execution Explorer (UI-001, owner_gate=M10). M4-F0 / M4-F1 are two slices in between (M4-F0 spikes + matrix before M6; M4-F1 closes Go/Rust adaptive instrumentation after M6/M8 supply fixtures).",
-      "why_kept_in_place": "AGENTS.md §0.4 forbids rewriting historical cycle records to look green. The CORRECT mapping is documented in the new docs/ROADMAP.md + docs/roadmap/STATE.md + docs/roadmap/JOURNAL.md (post-reorg) instead. A future docs-only G0.5 slice may update this notes.post_convergence_roadmap array without touching any other field; the change should be its own commit with a 'docs(archive): correct M8/M9/M10 post-convergence mapping' message and a JOURNAL entry linking here.",
+      "why_kept_in_place": "AGENTS.md \u00a70.4 forbids rewriting historical cycle records to look green. The CORRECT mapping is documented in the new docs/ROADMAP.md + docs/roadmap/STATE.md + docs/roadmap/JOURNAL.md (post-reorg) instead. A future docs-only G0.5 slice may update this notes.post_convergence_roadmap array without touching any other field; the change should be its own commit with a 'docs(archive): correct M8/M9/M10 post-convergence mapping' message and a JOURNAL entry linking here.",
       "do_not_act_on_old_array": "Any reader that needs the correct M8/M9/M10/M11 mapping for planning must consult reconstruction-contracts.toml and docs/ROADMAP.md, not this notes.post_convergence_roadmap array.",
-      "reference": "ROADMAP §G0.5 'M8 != CONC-001/M9, M10=UI-001'"
+      "reference": "ROADMAP \u00a7G0.5 'M8 != CONC-001/M9, M10=UI-001'"
     },
     "pre_existing_drift": "scripts/check_vault_drift.sh reports 8 pre-existing CCs drifting on main post-REC-C7: CC#8 (1 line), CC#11 (7), CC#17 (1), CC#18 (7), CC#22 (8), CC#26 (2), CC#39 (1), CC#56 (4) -- 31 drift lines total. The C7 proposal's CC#8/#11/#17/#18/#22/#26/#56 list was missing CC#39 (cycles-index Total cycles vs m9-only archive directory count; structural pre-existing). REC-C7 is doc + contracts.toml + active_gate flip and cannot mask, introduce, or repair vault drift. Tracked as follow-up for the next vault-sweep M-cycle.",
     "subagent_status": "sddk-propose/design sub-agent infra stuck 27+ min startup-queued in this session; REC-C7 proposal + design landed inline. (Same infra issue as REC-C6; documented at cycle level rather than per-slice.)",
@@ -57,10 +83,12 @@
   "status": "CLOSED",
   "legacy_status": "ready",
   "verify_status": "passed",
-  "verify_status_legacy": "ready (the cycle's own assertion; CC#13 backfill applies because the cycle is CLOSED in the git sense — see release-receipt.md verification highlights)",
+  "verify_status_legacy": "ready (the cycle's own assertion; CC#13 backfill applies because the cycle is CLOSED in the git sense \u2014 see release-receipt.md verification highlights)",
   "release_status": "released",
   "release_status_legacy": "ready (annotated tag v0.7.112 cut on merge commit 0be2ec2d; see release-receipt.md)",
   "archive_status": "ready",
   "release_receipt": "cycle-artifacts/p-3416cfb8288f8964/rec-c7-convergence-close/release-receipt.md",
-  "archive_manifest": "cycle-artifacts/p-3416cfb8288f8964/rec-c7-convergence-close/archive-manifest.md"
+  "archive_manifest": "cycle-artifacts/p-3416cfb8288f8964/rec-c7-convergence-close/archive-manifest.md",
+  "base_sha": "f3a831a247aca8a7b6f2b86f7e6615e548fabcec",
+  "main_sha": "1fd11d9826339f1605249fd2ef7ae07d7acf38e3"
 }

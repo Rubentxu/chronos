@@ -25,7 +25,7 @@
     "T3_sandbox_integration_subset": {
       "query_tools": "1/1",
       "event_tools": "3/3",
-      "query_filters": "6/6 + 3 ignored legacy §0.4",
+      "query_filters": "6/6 + 3 ignored legacy \u00a70.4",
       "observe_uprobe": "2/2",
       "probe_drain_canonical": "4/4",
       "e2e_connectivity": "1/1",
@@ -68,12 +68,13 @@
   ],
   "created_at": "2026-09-21T18:44:40+02:00",
   "archived_at": "2026-09-21T18:44:40+02:00",
-  "title": "docs(roadmap): G0.6 — recertificación operativa + 6 certificados",
+  "title": "docs(roadmap): G0.6 \u2014 recertificaci\u00f3n operativa + 6 certificados",
   "summary": "G0.6 closes the cert + recertification gap surfaced by G0.5:",
   "verify_status": "passed",
   "release_status": "released",
   "archive_status": "archived",
   "findings_introduced": {
     "no_action": []
-  }
+  },
+  "cycle_id": "g0.6-recertification"
 }

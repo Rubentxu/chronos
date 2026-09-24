@@ -100,10 +100,21 @@ def validate_verify_findings(data, errors):
         errors.append("verify-findings.json: missing `cycle_id`")
     if "all_passed" not in data:
         errors.append("verify-findings.json: missing `all_passed`")
-    if data.get("verdict") not in (None, "PASS", "FAIL", "PARTIAL"):
-        errors.append(
-            f"verify-findings.json: verdict={data.get('verdict')!r} not in PASS/FAIL/PARTIAL"
-        )
+    # Accept uppercase canonical (PASS/FAIL/PARTIAL) per spec and lowercase
+    # legacy variants (passed/failed/partial) for pre-m9-28 verify-findings
+    # files. Uppercase is the canonical form per CC#46-era gate.
+    verdict = data.get("verdict")
+    if verdict is not None:
+        v_norm = verdict.strip().upper() if isinstance(verdict, str) else verdict
+        # Map common lowercase suffixes: "passed" -> "PASS", etc.
+        if v_norm == "PASSED":
+            v_norm = "PASS"
+        elif v_norm == "FAILED":
+            v_norm = "FAIL"
+        if v_norm not in ("PASS", "FAIL", "PARTIAL"):
+            errors.append(
+                f"verify-findings.json: verdict={verdict!r} not in PASS/FAIL/PARTIAL"
+            )
     sub = data.get("subject")
     if not isinstance(sub, dict):
         errors.append("verify-findings.json: `subject` is not a dict")

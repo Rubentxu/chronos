@@ -1,6 +1,6 @@
 {
   "cycle_id": "rec-c5-api-convergence",
-  "title": "REC-C5 — Agent API convergence via alias sunset+delete",
+  "title": "REC-C5 \u2014 Agent API convergence via alias sunset+delete",
   "summary": "Shrink the MCP tool surface to the canonical v2 agent API (12 v2 + 29 not-yet-converged = 41 tools, was 63). C5.1 sunset markers, C5.2 shrink sandbox test callers, C5.3 delete 22 alias handlers (split into C5.3.1 client migration and C5.3.2 server delete).",
   "cycle_record": "p-3416cfb8288f8964/rec-c5-api-convergence",
   "project_id": "p-3416cfb8288f8964",
@@ -34,7 +34,7 @@
         "summary": "Sandbox test_get_execution_summary_busyloop fails when analytics_tools runs immediately after e2e_connectivity under system load (passes in isolation and 3/3 in back-to-back runs).",
         "severity": "low",
         "priority": "P3",
-        "owner_gate": "REC-C5 / AGENTS.md §6.5",
+        "owner_gate": "REC-C5 / AGENTS.md \u00a76.5",
         "filed_at": "2026-09-20"
       }
     ],
@@ -63,7 +63,7 @@
         "summary": "Sandbox test_get_execution_summary_busyloop fails when analytics_tools runs immediately after e2e_connectivity under system load (passes in isolation and 3/3 in back-to-back runs).",
         "severity": "low",
         "priority": "P3",
-        "owner_gate": "REC-C5 / AGENTS.md §6.5",
+        "owner_gate": "REC-C5 / AGENTS.md \u00a76.5",
         "filed_at": "2026-09-20"
       }
     ]
@@ -74,7 +74,7 @@
   "path": "a-lite",
   "branch": "feat/rec-c5-api-convergence",
   "base_sha": "9db697a594241c0f10838c84f72e82fb1ef368b4",
-  "head_sha": "9357aadacaac2f7e8771de36cc17757c29b778b1",
+  "head_sha": "d0b72e59496500999dc566328af849eb3d2252f0",
   "main_sha_at_start": "9db697a594241c0f10838c84f72e82fb1ef368b4",
   "current_head_sha": "9357aadacaac2f7e8771de36cc17757c29b778b1",
   "status": "CLOSED",
@@ -82,7 +82,7 @@
   "verify_status": "passed",
   "verify_status_legacy": "complete",
   "release_status": "released",
-  "release_status_legacy": "in_progress (no release-receipt produced; CC#13 backfill applies because the cycle is CLOSED — logical release under the convergence stream convention; for a full evidence trace see release_status_legacy above and the 'phases.release' section)",
+  "release_status_legacy": "in_progress (no release-receipt produced; CC#13 backfill applies because the cycle is CLOSED \u2014 logical release under the convergence stream convention; for a full evidence trace see release_status_legacy above and the 'phases.release' section)",
   "archive_status": "archived",
   "archive_status_legacy": "READY_FOR_RELEASE_RECEIPT_AND_ARCHIVE",
   "operational_status": "READY_FOR_RELEASE_RECEIPT_AND_ARCHIVE",
@@ -97,7 +97,7 @@
       "status": "complete",
       "artifact_path": "cycle-artifacts/p-3416cfb8288f8964/rec-c5-api-convergence/specification.md",
       "commit": "b8aa1b9c",
-      "summary": "AC-31-1..6 (C5.3.1 wrappers) and AC-32-1..7 (C5.3.2 deletions) all closed. ALL_TOOL_NAMES = 41 entries. Wire surface 63 → 41. toolset_sync_check passes both as a unit test (2/2) and via integration (alias_deletion.rs 2/2)."
+      "summary": "AC-31-1..6 (C5.3.1 wrappers) and AC-32-1..7 (C5.3.2 deletions) all closed. ALL_TOOL_NAMES = 41 entries. Wire surface 63 \u2192 41. toolset_sync_check passes both as a unit test (2/2) and via integration (alias_deletion.rs 2/2)."
     },
     "design": {
       "status": "complete",
@@ -113,8 +113,14 @@
     "apply": {
       "status": "complete",
       "commits": [
-        {"id": "73431af2", "message": "refactor(sandbox): migrate 24 deprecated MCP wrappers to v2 dispatcher (REC-C5-C5.3.1)"},
-        {"id": "350f91c6", "message": "refactor(mcp): delete 22 deprecated alias handlers and update ALL_TOOL_NAMES to 41 (REC-C5-C5.3.2)"}
+        {
+          "id": "73431af2",
+          "message": "refactor(sandbox): migrate 24 deprecated MCP wrappers to v2 dispatcher (REC-C5-C5.3.1)"
+        },
+        {
+          "id": "350f91c6",
+          "message": "refactor(mcp): delete 22 deprecated alias handlers and update ALL_TOOL_NAMES to 41 (REC-C5-C5.3.2)"
+        }
       ],
       "summary": "Both apply commits landed. C5.3.1: 24 wrappers (22 spec-listed + 2 extemporaneous) migrated to v2 router. C5.3.2: 22 alias handlers deleted from server.rs; ALL_TOOL_NAMES reduced to 41 entries synced with the live router; alias_deletion.rs regression test added."
     },
@@ -137,5 +143,7 @@
     }
   },
   "carry_forward_findings": [],
-  "next_cycle_recommendation": "After REC-C5 closes the agent API surface, the next active gate is REC-C6 — Close unfinished M1–M4 reconstruction contracts. The contracts.toml will tell which sub-cycles still own partial contracts. After REC-C6, REC-C7 is the strict close gate that unlocks official M6 OpenTelemetry correlation + export."
+  "next_cycle_recommendation": "After REC-C5 closes the agent API surface, the next active gate is REC-C6 \u2014 Close unfinished M1\u2013M4 reconstruction contracts. The contracts.toml will tell which sub-cycles still own partial contracts. After REC-C6, REC-C7 is the strict close gate that unlocks official M6 OpenTelemetry correlation + export.",
+  "main_sha": "d0b72e59496500999dc566328af849eb3d2252f0",
+  "peel_match": true
 }
