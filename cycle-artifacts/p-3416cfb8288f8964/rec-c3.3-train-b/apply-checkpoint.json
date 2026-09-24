@@ -10,7 +10,7 @@
   "base_sha": "fa5eb5827e997c874047c6c2318ad2b5b1c8f323",
   "head_sha": "a1c628e6c5f31ba3d224d93461781ce828ba0b91",
   "merge_sha": "a1c628e6c5f31ba3d224d93461781ce828ba0b91",
-  "main_sha": "2b521fa69e88ece35766eb7f48463e3576a8486d",
+  "main_sha": "a1c628e6c5f31ba3d224d93461781ce828ba0b91",
   "remote_tag_peel": "a1c628e6c5f31ba3d224d93461781ce828ba0b91",
   "peel_match": true,
   "verify_status": "passed",

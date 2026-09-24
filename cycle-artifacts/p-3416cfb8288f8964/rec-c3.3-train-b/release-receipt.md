@@ -16,6 +16,16 @@
 - release_at: 2026-09-24T08:37:00Z
 - releaser: jcode-orchestrator (glm-5-turbo executor for capture_session slice; sddk-release executor this session)
 
+## Canonical SHA fields (m9-28+ format, CC#22)
+
+| Field | Value |
+|---|---|
+| Cycle | rec-c3.3-train-b |
+| Head SHA | `a1c628e6c5f31ba3d224d93461781ce828ba0b91` |
+| Remote tag | `rec-c3.3-train-b.0` |
+| Remote tag_peel | `a1c628e6c5f31ba3d224d93461781ce828ba0b91` |
+| Peel match | `true` |
+
 ## Notes
 - Tag scheme chosen `<cycle>.<N>` matching repo pattern (m4-f1-closed.0, m6-otel-correlation.0, h1-quality-debt.0, …).
 - HEAD == origin/main verified before tag (no scope_drift).
