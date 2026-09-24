@@ -554,7 +554,7 @@ const MINIMAL_TOOL_NAMES: &[&str] = &[
     "capabilities",
 ];
 
-/// Complete list of all registered tool names (41 total).
+/// Complete list of all registered tool names (42 total).
 /// Used by `build_tool_availability` to populate the full `tool_availability` map.
 ///
 /// Authoritative source: the live `#[rmcp::tool_router]` registration on
@@ -583,6 +583,7 @@ pub const ALL_TOOL_NAMES: &[&str] = &[
     "probe_compaction_metrics",
     "session_snapshot",
     "probe_status",
+    "capture_session",
     "probe_advance",
     "probe_step",
     "browser_probe_start",
@@ -1467,6 +1468,26 @@ pub struct ProbeStartParams {
     /// syscall/registers events. Requires symbols in the binary.
     #[serde(default)]
     pub track_function_frames: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CaptureSessionParams {
+    /// Path to the target binary to spawn and capture.
+    pub program: String,
+    /// Command-line arguments for the target.
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Whether to trace syscalls (default: true).
+    #[serde(default = "default_true")]
+    pub trace_syscalls: bool,
+    /// Working directory for the target.
+    #[serde(default)]
+    pub cwd: Option<String>,
+    /// Language metadata tag used when persisting the session
+    /// (same vocabulary as `save_session`). Defaults to the
+    /// server-side inference from the program path.
+    #[serde(default)]
+    pub language: Option<String>,
 }
 
 /// Map a language string (from JSON) to a `Language` enum variant.
@@ -3342,6 +3363,183 @@ impl ChronosServer {
     // ========================================================================
     // SF9 — Live Probe Tools
     // ========================================================================
+
+    #[tool(
+        name = "capture_session",
+        description = "REC-C3.3.3 (Tren B slice F): single-shot capture. Spawns the target under a live probe, waits for the target to exit on its own, stops the probe, and persists the session (metadata + events) via the SessionArchive port. Returns the session id and a `saved: true` acknowledgement. Non-zero target exit is NOT a capture failure. Use load_session to re-query the captured session."
+    )]
+    async fn capture_session(
+        &self,
+        params: Parameters<CaptureSessionParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+
+        // Security gate, identical to probe_start.
+        if let Err(e) = crate::security::validate_program_path(&params.program) {
+            return Ok(CallToolResult::error(text_content(format!(
+                "Invalid program path: {}",
+                e
+            ))));
+        }
+
+        // ---- Step 1: start the live probe (mirrors probe_start's spawn path).
+        let v2_input = chronos_services::output::SessionStartInput {
+            action: chronos_services::output::SessionStartAction::Spawn,
+            spawn_fields: Some(chronos_services::output::SessionStartSpawnFields {
+                program: params.program.clone(),
+                args: params.args.clone(),
+                trace_syscalls: params.trace_syscalls,
+                cwd: params.cwd.clone(),
+                track_function_frames: false,
+            }),
+            session_id: None,
+            pid: None,
+            path: None,
+        };
+        let probe_ctx = chronos_services::probe::ProbeContext {
+            live_probes: &self.live_probes,
+            execution_logs: &self.execution_logs,
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            tripwire_manager: &self.tripwire_manager,
+            active_session: &self.active_session,
+            uprobe_injector: &self.uprobe_injector,
+            native_probe_factory: &self.native_probe_factory,
+        };
+        let observe_ctx = ObserveContext {
+            tripwire_manager: &self.tripwire_manager,
+            probe: &probe_ctx,
+            uprobe_counter: &self.uprobe_counter,
+        };
+        let lifecycle_ctx = SessionLifecycleContext {
+            store: std::sync::Arc::clone(&self.lifecycle_store),
+            probe: &probe_ctx,
+            observe: &observe_ctx,
+        };
+
+        let session_id = match ChronosSessionLifecycleService::start(&lifecycle_ctx, v2_input).await
+        {
+            Ok(out) => out.session_id,
+            Err(e) => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "capture failed at probe_start: {e}"
+                ))));
+            }
+        };
+
+        // ---- Step 2: wait for the target to exit on its own.
+        // The probe registry entry is removed by ProbeService::stop, so its
+        // disappearance means either the target exited and someone stopped the
+        // probe, or we stopped it below. We poll `live_probes` while the target
+        // is still traced; when the traced pid is gone from /proc the target
+        // has exited and we finalise. Poll every 20 ms, bounded by a generous
+        // wall-clock cap so a runaway target cannot hang the server forever.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
+        loop {
+            // Scope the std MutexGuard so it never crosses the `.await`.
+            let target_gone = {
+                let probes = self.live_probes.try_lock().ok();
+                match probes
+                    .as_ref()
+                    .and_then(|p| p.get(&session_id))
+                    .map(|lp| lp.session.pid)
+                {
+                    Some(pid) => pid != 0 && std::path::Path::new(&format!("/proc/{pid}")).exists(),
+                    // Contended lock or probe already removed (stopped elsewhere)
+                    // → do not block; retry next tick / go to persistence.
+                    None => false,
+                }
+            };
+            if !target_gone || std::time::Instant::now() >= deadline {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        // ---- Step 3: stop the probe (drains durable evidence, builds nothing yet).
+        let stop_result = match chronos_services::probe::ProbeService::stop(&probe_ctx, &session_id)
+        {
+            Ok(r) => r,
+            Err(ServiceError::ProbeNotFound(_)) => {
+                // Probe already removed (e.g. concurrently stopped): finalise
+                // from the durable log instead of failing the capture.
+                return Ok(CallToolResult::error(text_content(format!(
+                    "capture_session: live probe '{}' vanished before stop; run load_session after save_session to query it",
+                    session_id
+                ))));
+            }
+            Err(e) => {
+                return Ok(CallToolResult::error(text_content(format!(
+                    "capture failed at probe_stop: {e}"
+                ))));
+            }
+        };
+
+        // Build the in-memory query engine (same side effect as probe_stop).
+        self.build_and_store_engine(
+            &session_id,
+            stop_result.events.clone(),
+            stop_result.language,
+        )
+        .await;
+
+        // ---- Step 4: persist via the SessionArchive port (SessionsService).
+        let sessions_ctx = SessionsContext {
+            engines: &self.engines,
+            session_languages: &self.session_languages,
+            connected_sessions: &self.connected_sessions,
+            archive: &*self.archive,
+            execution_log_registry: &self.execution_logs,
+            execution_log_root: &self.execution_log_root,
+        };
+        let language = match params.language.as_deref() {
+            Some(tag) => {
+                let parsed = Language::from_string(tag);
+                if matches!(parsed, Language::Unknown) && !tag.eq_ignore_ascii_case("unknown") {
+                    stop_result.language
+                } else {
+                    parsed
+                }
+            }
+            None => stop_result.language,
+        };
+
+        match SessionsService::save_session(
+            &session_id,
+            language,
+            params.program.clone(),
+            &sessions_ctx,
+        )
+        .await
+        {
+            Ok(result) => {
+                let output = serde_json::json!({
+                    "session_id": session_id,
+                    "saved": true,
+                    "status": "captured",
+                    "event_count": result.event_count,
+                    "duration_ms": result.duration_ms,
+                    "target": params.program,
+                    "hint": "Session persisted and queryable. Use load_session / query_events against this session_id.",
+                });
+                Ok(CallToolResult::success(json_content(&session_envelope(
+                    self.degraded,
+                    output,
+                ))))
+            }
+            Err(ServiceError::EmptySession(_)) => {
+                // REQ-TB-01 EC-TB-01: an empty capture still persisted zero-event
+                // sessions is NOT supported by save_session (it refuses). Surface
+                // this honestly instead of fabricating a save.
+                Ok(CallToolResult::error(text_content(format!(
+                    "capture_session: target produced zero events; session '{}' was not saved",
+                    session_id
+                ))))
+            }
+            Err(e) => Ok(CallToolResult::error(text_content(format!(
+                "capture failed at save: {e}"
+            )))),
+        }
+    }
 
     #[tool(
         name = "probe_advance",
@@ -7489,8 +7687,10 @@ mod cap_discovery_tests {
 
     #[test]
     fn all_tool_names_matches_router_count() {
-        // C5.3 (REC-C5): 41 tools remain after deleting the 22 deprecated
-        // alias handlers (was 63). Sourced from the live `#[tool]`
+        // C5.3 (REC-C5): 41 tools remained after deleting the 22 deprecated
+        // alias handlers (was 63). REC-C3.3 (Tren B slice F) added
+        // `capture_session`, bringing the total to 42. Sourced from the
+        // live `#[tool]`
         // router so this assertion cannot drift relative to the actual
         // tool registrations in this file.
         let from_router = ChronosServer::tool_router().list_all().len();
@@ -7507,11 +7707,11 @@ mod cap_discovery_tests {
     }
 
     #[test]
-    fn tool_availability_map_has_41_entries() {
-        // C5.3 (REC-C5): ALL_TOOL_NAMES shrunk from 63 → 41 entries.
+    fn tool_availability_map_has_42_entries() {
+        // REC-C3.3 (Tren B slice F): `capture_session` grew the set 41 → 42.
         let server = ChronosServer::new();
         let map = server.build_tool_availability(ALL_TOOL_NAMES, Some("rust"));
-        assert_eq!(map.len(), 41, "tool_availability must have 41 entries");
+        assert_eq!(map.len(), 42, "tool_availability must have 42 entries");
     }
 
     #[test]
@@ -7642,18 +7842,18 @@ mod toolset_sync_check {
         );
     }
 
-    /// Asserts the router has at least 41 tools — a tripwire against
+    /// Asserts the router has at least 42 tools — a tripwire against
     /// accidental bulk deletion of `#[tool]` registrations.
     ///
-    /// C5.3 (REC-C5) shrank the wire surface from 63 → 41 tools.
-    /// The previous floor (50) assumed the legacy 63-tool set; the new
-    /// floor mirrors the post-C5.3 budget (AC-32-2).
+    /// C5.3 (REC-C5) shrank the wire surface from 63 → 41 tools;
+    /// REC-C3.3 (Tren B slice F) added `capture_session` (42). The
+    /// floor mirrors the current budget (AC-32-2).
     #[test]
     fn router_has_expected_minimum_tool_count() {
         let count = router_tool_names().len();
         assert!(
-            count >= 41,
-            "Router has only {count} tools, expected at least 41. \
+            count >= 42,
+            "Router has only {count} tools, expected at least 42. \
              Did someone delete a chunk of #[tool] registrations?"
         );
     }
