@@ -5,7 +5,9 @@
 //! - `chronos test replay <bundle_id>` — re-run a persisted counterexample
 //!   bundle against the events captured at shrink time. Working today.
 //! - `chronos test run` — start a live probe against a target program.
-//!   Stub (m9+).
+//!   Stub. M9 (causal concurrency) is CLOSED, but the live-probe runtime
+//!   dependencies are not landed; see `run::run_live_probe_stub` for the
+//!   three that block it.
 //!
 //! B-decision B2 (m8-04 scoping doc): the CLI dispatches directly into the
 //! services / store layer — it does NOT open a JSON-RPC channel to the
@@ -33,7 +35,10 @@ Flags:
   --db <path>   redb session store path (default: $XDG_DATA_HOME/chronos/chronos.db)
   --help, -h    print this message
 
-m8-04: `test replay` is fully implemented; `test run` is a stub (m9+).";
+`test replay` is fully implemented. `test run` is a stub: M9 is CLOSED, but
+live-probe runtime dependencies (probe-runtime binding per ADR-0023, the
+H1.4-B sub-context extraction, and the remote/multi-tenant OPS profile)
+are not landed.";
 
 #[tokio::main]
 async fn main() {
@@ -88,7 +93,8 @@ async fn run() -> Result<()> {
         }
         Command::Run { db, args } => {
             // The stub takes the db path for symmetry with `replay`; it isn't
-            // opened today but will be in m9+ when live-probe plumbing lands.
+            // opened today. It will be needed once live-probe runtime
+            // dependencies land (see `run::run_live_probe_stub`).
             let _ = &db;
             run::run_live_probe_stub(&db, &args)
         }

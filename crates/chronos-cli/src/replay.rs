@@ -11,7 +11,7 @@
 //! only replays already-persisted bundles. The engines map is populated with
 //! a synthetic `QueryEngine` built from the bundle's `events` field. This is a
 //! pure read-only operation against the redb store, which is why this subcommand
-//! can be implemented today even though live probe plumbing is m9+.
+//! can be implemented today even though live probe plumbing is not landed.
 //!
 //! B-decision R-in-memory-engines (m8-04 §3): the temporary engines map lives
 //! in the CLI's own `HashMap`, not in any MCP-scope state. `SessionStore::open`

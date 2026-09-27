@@ -37,11 +37,11 @@ pub enum Command {
     /// against that synthetic engine. Prints the resulting verdict and the
     /// summary JSON for operator inspection.
     Replay { bundle_id: String, db: PathBuf },
-    /// Run the live probe against a target program (STUB in m8-04).
+    /// Run the live probe against a target program (STUB).
     ///
-    /// Full live-probe plumbing is m9+; this subcommand currently returns
-    /// `NotImplemented` with a clear message so operators get a sane failure
-    /// instead of a cryptic "command not found".
+    /// Returns an operator-facing error naming the three live-probe runtime
+    /// dependencies that are not landed (see `run::run_live_probe_stub`), so
+    /// operators get a sane failure instead of a cryptic "command not found".
     Run { db: PathBuf, args: Vec<String> },
     /// Print usage.
     Help,
