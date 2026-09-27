@@ -3706,7 +3706,7 @@ impl ChronosServer {
 
     #[tool(
         name = "probe_stop",
-        description = "Stop a live probe session. Drains remaining events from the ring buffer, builds a QueryEngine, and makes the session fully queryable (query_events, get_call_stack, etc.)."
+        description = "Stop a live probe session. Drains remaining events from the ring buffer, builds a QueryEngine, and makes the session fully queryable (events_read, execution_query, trace_slice, etc.)."
     )]
     async fn probe_stop(
         &self,
@@ -4407,7 +4407,7 @@ further would be a Silent Lie."
 
     #[tool(
         name = "session_snapshot",
-        description = "Freeze a live probe session and build query indices without stopping the probe. This makes the session queryable (query_events, get_call_stack, etc.) while the probe continues collecting events. Call again to refresh the indices with newer events."
+        description = "Freeze a live probe session and build query indices without stopping the probe. This makes the session queryable (events_read, execution_query, trace_slice, etc.) while the probe continues collecting events. Call again to refresh the indices with newer events."
     )]
     async fn session_snapshot(
         &self,

@@ -145,3 +145,45 @@ fn server_instructions_reference_only_live_tools() {
         );
     }
 }
+
+/// No tool `description` may point an agent at a deleted alias as if it
+/// were callable.
+///
+/// Regression: `probe_stop` and `session_snapshot` both ended with
+/// "makes the session fully queryable (query_events, get_call_stack,
+/// etc.)" — telling agents the read path runs through two tools removed
+/// by C5.3.2. Mentions that explicitly say `Supersedes` are fine and
+/// kept: those tell an agent which tool replaced what, which is useful.
+#[test]
+fn no_tool_description_routes_to_a_deleted_alias() {
+    let src = std::fs::read_to_string("src/server.rs").expect("src/server.rs must be readable");
+    let mut checked = 0usize;
+    for line in src.lines() {
+        let trimmed = line.trim_start();
+        let Some(rest) = trimmed.strip_prefix("description = \"") else {
+            continue;
+        };
+        let desc = rest.trim_end_matches("\",");
+        checked += 1;
+        // A `Supersedes ...` clause is documentation, not routing.
+        let routing = match desc.find("Supersedes") {
+            Some(i) => {
+                let (before, after) = desc.split_at(i);
+                // Only the routing part (before the notice) is a problem.
+                let _ = after;
+                before
+            }
+            None => desc,
+        };
+        for alias in DELETED_ALIASES {
+            assert!(
+                !routing.contains(alias),
+                "tool description routes agents to deleted alias `{alias}`: {desc}"
+            );
+        }
+    }
+    assert!(
+        checked >= 40,
+        "expected to scan every tool description (>=40); only found {checked}"
+    );
+}
