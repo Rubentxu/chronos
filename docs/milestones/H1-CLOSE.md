@@ -100,7 +100,7 @@ ROADMAP §H1 §53-62 framed the H1 chapter around six primary deliverables (H1.1
   - **Host fingerprint**: kernel 7.2.4, Xeon E5-2682 v4 @ 2.50GHz, 64 cores, 94 GiB RAM, rustc 1.98.1 (post-H1.1), CapEff=0 (no CAP_BPF/CAP_SYS_PTRACE), no Chrome on PATH.
   - **6-class cross-host matrix**: privileged/no-privileged/kernel<5.8/feature-off/local-stdio/remote-multi-tenant NOT IMPLEMENTED per H1.2 §4.3.
   - **Capability wiring**: `CapabilitySnapshot` (`crates/chronos-services/src/output.rs:2194-2217`) + session publish in `session_lifecycle.rs:125,158`.
-  - **Benchmark inventory**: 2 criterion benches pre-existing (`chronos-query/benches/query_bench.rs` 5,483L + `chronos-store/benches/cas_bench.rs` 5,144L); covers `query` + `append` but NOT `memory`, `perturbation`, `replay`, `capture`.
+  - **Benchmark inventory**: 2 criterion benches pre-existing (`chronos-query/benches/query_bench.rs` 5,483 bytes / 162 lines + `chronos-store/benches/cas_bench.rs` 5,144 bytes / 175 lines); covers `query` + `append` but NOT `memory`, `perturbation`, `replay`, `capture`.
   - **6 perf budgets** with tolerance: events_read ≤ 50ms ±30%, query_100k_all ≤ 500ms ±30%, query_100k_paginated ≤ 50ms ±30%, cas_put ≤ 5ms ±50%, save_session ≤ 10ms ±50%, try_new ≤ 1s ±100%.
   - **4 OPEN follow-ups** (CAP-GAP-CHRONOS-H1.5-MEMORY-PROBE / -PERTURBATION / -REPLAY-BENCH / -CAPTURE-BENCH).
 - **H1.5 deliberately did not run `cargo bench` to completion** (3 reasons: cycle budget, single-host noise floor, forward contract). Slice B will execute.
