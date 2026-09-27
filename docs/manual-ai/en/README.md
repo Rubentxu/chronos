@@ -130,4 +130,4 @@ Use `query_events`, `get_call_stack`, `debug_get_variables`, etc. — only after
 
 When developing or debugging Chronos itself, the following tools are useful:
 
-- **[tokio-console-setup.md](../../../tokio-console-setup.md)** — Debug async task behavior in Chronos using `tokio-console`. Useful for investigating slow probe operations, session management issues, and async resource contention.
+- **[tokio-console-setup.md](../../tokio-console-setup.md)** — Debug async task behavior in Chronos using `tokio-console`. Useful for investigating slow probe operations, session management issues, and async resource contention.
