@@ -7658,7 +7658,7 @@ mod tests {
 #[rmcp::tool_handler(
     name = "chronos-mcp",
     version = "0.1.0",
-    instructions = "Time-travel debugging server for AI agents. Use probe_start to capture program execution, then query with query_events, get_call_stack, debug_detect_races, inspect_causality, etc."
+    instructions = "Time-travel debugging server for AI agents. Use session_start to capture program execution, then query with events_read, execution_query (kind=call_stack / race_detect / execution_summary / call_graph / hotspot / saliency), causal_slice (kind=causality / variable_origin / crash / memory_audit), state_query, observe, and session_compare. The v1 read aliases were removed in C5.3.2; only the v2 tools above are callable."
 )]
 impl rmcp::handler::server::ServerHandler for ChronosServer {}
 

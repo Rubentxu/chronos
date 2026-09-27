@@ -77,3 +77,71 @@ fn no_alias_handler_remains_in_server_rs() {
          found {count}. Pattern: {pattern}. Dropout detection: re-run grep manually."
     );
 }
+
+/// Extract the `instructions = "..."` string from the live
+/// `#[rmcp::tool_handler]` attribute in `server.rs`.
+///
+/// Parsing the real attribute (rather than hardcoding the expected text)
+/// is the point: this test must fail if the server keeps advertising a
+/// deleted alias to every agent that connects.
+fn server_instructions() -> String {
+    let src = std::fs::read_to_string("src/server.rs")
+        .expect("src/server.rs must be readable from the crate root");
+    // Anchor on the attribute line so we do not match unrelated strings.
+    let marker = "instructions = \"";
+    let start = src
+        .find(marker)
+        .expect("server.rs must declare `instructions` on the tool_handler")
+        + marker.len();
+    let rest = &src[start..];
+    let end = rest
+        .find('"')
+        .expect("instructions string must be terminated");
+    rest[..end].to_string()
+}
+
+/// The `instructions` the server hands to every connecting agent must not
+/// advertise any of the 22 deleted v1 aliases as callable.
+///
+/// Regression: the instructions previously read `query with query_events,
+/// get_call_stack, debug_detect_races, inspect_causality` — all four were
+/// removed in C5.3.2 and have no handler. Every agent that connected was
+/// told to call tools that did not exist.
+#[test]
+fn server_instructions_do_not_advertise_deleted_aliases() {
+    let instructions = server_instructions();
+    for alias in DELETED_ALIASES {
+        // The string is allowed to *name* aliases so agents learn they were
+        // removed, but only inside an explicit removal notice. Anything that
+        // presents the alias as usable is a defect.
+        let advertised = instructions.contains(&format!("{alias},"))
+            || instructions.contains(&format!("{alias}."))
+            || instructions.contains(&format!("{alias} "))
+            || instructions.contains(&format!(" {alias},"))
+            || instructions.contains(&format!(" {alias}."));
+        assert!(
+            !advertised,
+            "server instructions advertise the deleted alias `{alias}` as callable: {instructions}"
+        );
+    }
+}
+
+/// And the instructions must point at tools that actually exist.
+#[test]
+fn server_instructions_reference_only_live_tools() {
+    let instructions = server_instructions();
+    for tool in [
+        "session_start",
+        "events_read",
+        "execution_query",
+        "causal_slice",
+        "state_query",
+        "observe",
+        "session_compare",
+    ] {
+        assert!(
+            instructions.contains(tool),
+            "server instructions should mention the live tool `{tool}`: {instructions}"
+        );
+    }
+}
