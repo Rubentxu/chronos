@@ -59,7 +59,7 @@ Per ADR-0029 §2.3 + ADR-0028 §2.2: `CausalityStatus` stub returns `Unsupported
 ## 3. M10.5 deferred per env (honesto)
 
 **Reason for deferral**: M10.5 asks for a11y + UAT-M10-01/02 on the **UX execution explorer HTML**. This requires:
-- A real HTML/UI for the execution explorer (currently nonexistent — `live_streaming::poll_batch` returns empty stub).
+- A real HTML/UI for the execution explorer (currently nonexistent). **Correction (audit 2026-09-27)**: this entry previously justified the deferral with "`live_streaming::poll_batch` returns empty stub". That is true of the legacy `poll_batch` (live_streaming.rs:234) but misleading as a blocker: the real read path `poll_batch_real` (live_streaming.rs:365) already drains `SessionExecutionLog` through `events_log_read::read_page`, and `summarize_log` (virtualization.rs:197) already aggregates it into `EventSummary`. The actual gap is that neither has a production caller — the module is an orphan leaf, so there is no UI *and* no service entry point. The blocker is the missing front end, not a missing read implementation.
 - Browser-based a11y testing (axe-core, NVDA/VoiceOver screen readers).
 - UAT scenarios (operator-driven walks).
 
