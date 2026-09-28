@@ -78,38 +78,55 @@ verde el lint: inventar contratos que el proyecto no ha decidido para
 satisfacer un linter sería fabricar evidencia, justo lo contrario de lo que este
 informe pretende.
 
-### Investigación posterior: 2 de los 5 son un defecto de la herramienta
+### Investigación posterior: un bucle, y dos correcciones a mi diagnóstico
 
-Los errores SDDK009 y SDDK010 (docs ausentes o stale) sí tienen una vía
-legítima: `sddk generate docs` y `sddk generate inventory`. **La vía está rota
-en SDDK 2.0.1.** Ambos comandos imprimen
+**Corrección 1.** Mi hipótesis inicial fue que `sddk generate docs` e
+`inventory` eran un no-op defectuoso: imprimen `wrote …` y salen con exit 0 sin
+crear nada. **Es falso.** La generación funciona; por defecto el output va a
+`~/.local/share/sddk/projects/p-3416cfb8288f8964/generated/docs/generated/`
+(XDG), y `sddk generate docs --root . --check` responde
+`docs/generated/workflow.md is current`.
 
-```
-wrote docs/generated/workflow.md
-wrote docs/generated/inventory.md
-```
+**Corrección 2.** Escribí que `--in-repo` era un flag oculto ausente del help y
+que **ambos** generadores estaban bloqueados. **También es falso.**
+`sddk generate docs --help` sí documenta `--root`, `--check` e `--in-repo`
+("Write into the repo (docs/generated/) instead of XDG — dogfooding only"), y
+`generate inventory --in-repo` **funciona**: escribe el fichero en el repo sin
+necesidad de `workflow/workflow.yaml`.
 
-y terminan con exit 0, pero **no crean ningún fichero**. Verificado por
-`find . -name workflow.md -newermt "-5 minutes"` (vacío), `ls docs/generated/`
-(No existe el directorio) y `git status --porcelain` (sin entradas nuevas).
+**Resultado real: SDDK010 resuelto, 5 errores → 4.** El fichero generado es un
+informe exacto del estado actual del repositorio (0 agentes, 0 skills
+registrados), no un stub.
 
-Es un no-op silencioso que reporta éxito: el peor modo de fallo posible en una
-herramienta de gate, porque un agente que confíe en el exit code daría el
-bloqueador por resuelto. Ningún template ni implementación de referencia
-existe en el framework instalado que permita reconstruir la salida esperada.
+**Lo que queda bloqueado es un bucle de dependencias real**, sobre
+`workflow/workflow.yaml` y `schemas/`:
 
-**Estado de los 5 errores de lint:**
+1. `sddk generate docs --in-repo` falla con
+   `failed to load canonical workflow: failed to read workflow manifest "./workflow/workflow.yaml"`.
+   Ese manifest no existe en el repositorio. (El framework trae cuatro
+   definiciones de workflow en `prompts/sddk/workflows/`, pero son de capa
+   prompt: no tienen `schema_version` ni la forma de objeto que el CLI exige.)
+2. SDDK005 exige `schemas/` con seis schemas canónicos por nombre exacto:
+   `adoption`, `agent-result`, `artifact-ref`, `cycle`, `phase-result`,
+   `workflow`. El propio binario referencia
+   `schemas/workflow.schema.json` como contrato para validar (1).
+3. SDDK011 y SDDK014 exigen `permissions.yaml` y `manifest.toml`.
+
+No existe scaffolding que rompa el bucle: `sddk pack scaffold` genera un pack,
+no el manifest del repositorio, y no hay comando que emita `schemas/`.
+
+**Estado final de los 4 errores restantes:**
 
 | error | vía de resolución | estado |
 |---|---|---|
-| SDDK009 `docs/generated/workflow.md` | `sddk generate docs` | **bloqueado: la herramienta no escribe** |
-| SDDK010 `docs/generated/inventory.md` | `sddk generate inventory` | **bloqueado: la herramienta no escribe** |
-| SDDK005 `schemas/` | decisión del proyecto | requiere decisión |
-| SDDK011 `permissions.yaml` | decisión del proyecto | requiere decisión |
-| SDDK014 `manifest.toml` | decisión del proyecto | requiere decisión |
+| SDDK005 `schemas/` (6 schemas canónicos) | authoring manual del contrato | requiere decisión del proyecto |
+| SDDK009 `docs/generated/workflow.md` | `sddk generate docs --in-repo` | bloqueado por el bucle: falta `workflow/workflow.yaml` |
+| SDDK011 `permissions.yaml` | decisión del proyecto (mapa de `agents`) | requiere decisión |
+| SDDK014 `manifest.toml` | sin scaffolding disponible | requiere decisión |
 
-Registrado en el backlog SDDK como
-`bl-bl-01M3KDHHEF0003876V3S8XMV40`.
+Backlog: `bl-bl-01M3KDNYW30003876VBVWD2G80` (corrección de
+`bl-bl-01M3KDHHEF0003876V3S8XMV40`, descartado como `superseded` por su
+diagnóstico erróneo; se conserva el rastro en vez de reescribir la historia).
 
 **Impacto en el cierre de la iniciativa:** este blocker impide declarar la
 iniciativa `COMPLETED`, pero no invalida el WorkItem verificado.
