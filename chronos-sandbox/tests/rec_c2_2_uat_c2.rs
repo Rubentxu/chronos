@@ -107,6 +107,7 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
 
     let Some(session) = start_probe_with_ring(&mut client, 50_000).await else {
         eprintln!("uat_c2: fixture unavailable, skipping");
+        let _ = client.probe_stop(&pre_session).await;
         let _ = client.shutdown().await;
         return;
     };
@@ -388,6 +389,11 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
     );
 
     let _ = client.probe_stop(&session).await;
+    // `pre_session` is a second, independent probe target, created only to
+    // establish the subscription-before-capture ordering. It was never
+    // stopped, so it stayed ptrace-attached for the remainder of the test.
+    // A leaked target outlives the test and competes for the tracer.
+    let _ = client.probe_stop(&pre_session).await;
     let _ = client.shutdown().await;
 }
 
