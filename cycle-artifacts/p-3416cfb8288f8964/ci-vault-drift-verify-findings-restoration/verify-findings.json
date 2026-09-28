@@ -1,0 +1,49 @@
+{
+ "subject": {
+  "base_sha": "970e5d73",
+  "head_sha": "08b3b089c644ad4ab4019c40d3c305ff35796edd",
+  "verified_subject_sha": "08b3b089c644ad4ab4019c40d3c305ff35796edd",
+  "cycle_id": "ci-vault-drift-verify-findings-restoration",
+  "branch": "main",
+  "route": "b-direct",
+  "tree_state": "clean for cycle: HEAD == 08b3b089; untracked legacy preserved (.atl/, cycle-artifacts/ partials, session-handoff/) documented, untouched"
+ },
+ "cycle_id": "ci-vault-drift-verify-findings-restoration",
+ "verdict": "PASS_WITH_WARNINGS",
+ "all_passed": true,
+ "findings": [
+  {
+   "finding_id": "warn-external-ci-coverage-pending-08b3b089",
+   "rule_id": "external-evidence-pending",
+   "subject": {"base": "970e5d73", "head": "08b3b089", "diff_digest": null},
+   "location": {"path": ".github/workflows (remote)", "start_line": 0, "end_line": 0, "symbol": null},
+   "classification": "warning",
+   "severity": "medium",
+   "confidence": "high",
+   "production_reachable": "no",
+   "evidence": [{"kind": "artifact", "observation": "On 08b3b089: Vault Drift Sweep=success, Supply chain=success, Debt Sentinel=success, Architecture Contracts=success; CI run 36476907039 and Coverage run 36476906790 in_progress (~58 min typical). Local gate check_vault_drift.sh PASS exit 0 reproduces Vault Drift Sweep deterministically.", "command": null, "exit_code": null, "output_digest": null}],
+   "exemption": null,
+   "owner_phase": "human"
+  }
+ ],
+ "mandatory_gates": {
+  "subject_identity": "PASS",
+  "behavioral_compliance": "PASS",
+  "real_implementation": "PASS",
+  "documentation_discipline": "PASS",
+  "test_strength": "PASS",
+  "regression_and_build": "PASS",
+  "production_readiness": "PASS"
+ },
+ "behavioral_rows": [
+  {"scenario": "CC#18 verify-findings.json restored for committed CLOSED cycle folders", "status": "COMPLIANT", "evidence": "commit 3321b79c adds 2 verify-findings.json (m10-readpath-production-entry, rec-c3.2-stale-binary-closure) with RESTORATION synthesis provenance in _note; local check_vault_drift.sh PASS (48 python CCs, 7 bash CCs clean, exit 0)"},
+  {"scenario": "CC#54/CC#4 stale artifact-index rows regenerated via m9-76 ritual", "status": "COMPLIANT", "evidence": "commit 08b3b089 rewrites 5 rows across 4 archive manifests (m9-70/73/74/75); regen_manifest_index_shas.py --check clean, 102 manifests, exit 0; 13/13 unit tests pass"}
+ ],
+ "notes": "No production code changed in 970e5d73..08b3b089: only .sddk-knowledge archive manifests + cycle-artifacts verify-findings.json evidence. Verified via diff-tree name-only (6 files, all vault/evidence) and absence of code paths.",
+ "external_evidence_pending": [
+  "GitHub Vault Drift Sweep on 08b3b089 = success (observed via launch context; not re-run here)",
+  "GitHub Supply chain = success, Debt Sentinel = success, Architecture Contracts = success",
+  "CI run 36476907039: in_progress",
+  "Coverage run 36476906790: in_progress"
+ ]
+}
