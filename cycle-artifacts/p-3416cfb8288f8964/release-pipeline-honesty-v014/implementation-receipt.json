@@ -1,0 +1,88 @@
+{
+  "cycle_id": "p-3416cfb8288f8964/release-pipeline-honesty-v014",
+  "work_item": "a7695ce6-d1f4-4def-9a1d-5a5224cf79fc",
+  "path": "B-direct",
+  "phase": "execute",
+  "status": "success",
+  "head_sha": "3d935b6a3d022f8ddc85b511e7dca414de010f2d",
+  "commit": "3d935b6a3d022f8ddc85b511e7dca414de010f2d",
+  "conventional_commit": "fix(release): gate linux-only capture code and make release workflows honest",
+  "files_changed": [
+    "crates/chronos-native/src/ptrace_tracer.rs",
+    "crates/chronos-native/src/capture_runner.rs",
+    "crates/chronos-native/src/native_adapter.rs",
+    "crates/chronos-native/src/int3_injector.rs",
+    "crates/chronos-native/src/probe_backend.rs",
+    "crates/chronos-native/src/lib.rs",
+    ".github/workflows/release.yml",
+    ".github/workflows/docker.yml"
+  ],
+  "root_cause": "chronos-native used Linux-only nix ptrace APIs with no target_os gating, so every tagged release failed the macOS leg (Release workflow 0 successes in its last 100 runs) and the Docker workflow failed at login when repo secrets are absent (0 successes in its last N runs).",
+  "fix_summary": "ptrace_tracer keeps a linux-only implementation plus field/variant-identical bridge stubs for PtraceConfig and PtraceEvent; capture_runner, native_adapter and int3_injector moved their bodies into linux-only imp modules; probe_backend gates the three run_probe_loop fns and the bodies of start_probe/attach_probe/advance/step, failing closed with TraceError::UnsupportedOperation off Linux; lib.rs re-exports conditionally; release.yml fails loud when the binary is missing and uses fail-fast false; docker.yml skips the publish path with a workflow notice when DOCKERHUB secrets are absent.",
+  "verification": [
+    {
+      "argv": "CC_x86_64_apple_darwin=clang cargo check -p chronos-mcp --target x86_64-apple-darwin",
+      "exit_code": 0,
+      "result": "0 errors, 0 warnings (exact binary built by the macOS CI leg)",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "CC_x86_64_apple_darwin=clang cargo clippy -p chronos-native --target x86_64-apple-darwin",
+      "exit_code": 0,
+      "result": "0 warnings on darwin",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo clippy -p chronos-native --all-targets",
+      "exit_code": 0,
+      "result": "0 warnings on linux",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo test -p chronos-native --lib -- --test-threads=1",
+      "exit_code": 0,
+      "result": "109 passed, 0 failed (baseline preserved)",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo test -p chronos-capture --lib -- --test-threads=1",
+      "exit_code": 0,
+      "result": "26 passed, 0 failed",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo test -p chronos-services --lib -- --test-threads=1",
+      "exit_code": 0,
+      "result": "539 passed, 0 failed",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo fmt -p chronos-native --check",
+      "exit_code": 0,
+      "result": "clean",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "python3 yaml.safe_load on .github/workflows/release.yml and docker.yml",
+      "exit_code": 0,
+      "result": "both workflows parse, steps structurally valid",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "shellcheck --severity=warning on the two inline workflow shell bodies",
+      "exit_code": 0,
+      "result": "clean; docker credential guard simulated on both branches (configured and not configured)",
+      "class": "OBSERVED"
+    }
+  ],
+  "scope_non_goals": [
+    "no macOS support claim: non-Linux callers fail closed with TraceError::UnsupportedOperation",
+    "no Dockerfile refresh (CapDockerfileRefresh stays OPEN)",
+    "no windows leg"
+  ],
+  "known_unknowns": [
+    "real macOS runner execution pending until push; local cross-check cannot run ring/blake3 native build scripts for unrelated workspace crates (local cross-cc artifact, documented, not a product defect)"
+  ],
+  "superseded_cycle_id": "p-3416cfb8288f8964/release-pipeline-honesty",
+  "supersede_reason": "the local release route requires the cycle to point at trunk main; the original cycle was declared with the default feat/ branch. Implementation and verification artifacts carried over unchanged: same tree, same verified HEAD 3d935b6a, plus the version lockstep bump 5842075e."
+}
