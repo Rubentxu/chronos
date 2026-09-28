@@ -177,6 +177,13 @@ pub struct ChronosServer {
     /// REC-C1.3: session-scoped ExecutionLog registry. Outlives `live_probes`
     /// so a stopped session's log stays readable without a second source.
     execution_logs: Arc<chronos_services::session_log::SessionExecutionLogRegistry>,
+    /// M10 read-path entry point (`read_path`): resolves a `session_id`
+    /// to its authoritative `SessionExecutionLog` and drives the live
+    /// stream / virtualization / causality consumers. Built from the
+    /// SAME `execution_logs` registry, so there is exactly one
+    /// authority for reads (REC-C1 single-truth). Cheap to clone
+    /// (Arc inside), so it can be handed to tool handlers by value.
+    read_path: chronos_services::read_path::ReadPathService,
     execution_log_root: std::path::PathBuf,
     /// REC-C1.7: projection metadata for the canonical MCP operations.
     /// A session is in this map iff a projection has been built from its
@@ -599,6 +606,7 @@ pub const ALL_TOOL_NAMES: &[&str] = &[
     "session_export",
     "trace_slice",
     "events_read",
+    "execution_log_read",
     "observe",
     "counterexample_shrink",
     "counterexample_get",
@@ -663,6 +671,15 @@ fn default_limit() -> usize {
     100
 }
 
+/// Default time-bucket width for `execution_log_read` mode=summarize.
+///
+/// 1 second, matching the `CHRONOS_EXEC_EXPLORER_VIRT_THRESHOLD`
+/// default documented in ADR-0029 §2.3. It is a DEFAULT, not a claim:
+/// callers can widen it, and the response echoes the width actually used.
+fn default_bucket_size_ns() -> u64 {
+    1_000_000_000
+}
+
 /// Parameters for the v2 `events_read` tool (m7-01).
 ///
 /// `mode=query` is the paginated event-list read (supersedes v1
@@ -706,6 +723,52 @@ pub struct EventsReadParams {
     /// at seq#0 inclusive. A cursor minted for another session is refused.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cursor: Option<String>,
+}
+
+/// Parameters for the `execution_log_read` tool (M10 read path).
+///
+/// Read-path views over the SAME authoritative per-session
+/// `ExecutionLog` that `events_read` consults. It is a distinct
+/// discriminator on purpose: `events_read` returns paged evidence,
+/// this returns the Execution Explorer's stream and aggregate views.
+/// Keeping them separate stops an aggregate from being mistaken for
+/// evidence (REC-C1 single-truth).
+#[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema)]
+pub struct ExecutionLogReadParams {
+    /// Session whose log to read.
+    pub session_id: String,
+    /// Discriminator: `poll` | `summarize` | `rollup` | `causality`.
+    #[schemars(rename = "mode")]
+    pub mode: ExecutionLogReadKind,
+    /// Bucket width in nanoseconds (mode=summarize only; must be > 0).
+    #[serde(default = "default_bucket_size_ns")]
+    pub bucket_size_ns: u64,
+    /// Maximum events per poll (mode=poll only).
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+    /// Opaque cursor (`ecv1:…`), as returned in `next_cursor`. Omitted
+    /// starts at seq#0. A cursor minted for another session is refused.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+}
+
+/// Which read-path view an agent is asking for.
+///
+/// Kept separate from `EventsReadKind` on purpose: `events_read` is the
+/// paged evidence reader, this is the Execution Explorer's aggregate and
+/// stream view. Both read the same authoritative log; conflating them
+/// would make the explorer's aggregates look like evidence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionLogReadKind {
+    /// Bounded live poll of new events past the cursor.
+    Poll,
+    /// Time-bucketed summary of the whole log.
+    Summarize,
+    /// Per-invocation (per-thread) rollup of the whole log.
+    Rollup,
+    /// Causality availability for this session.
+    Causality,
 }
 
 /// Parameters for the v2 `observe` tool (m7-02).
@@ -1896,6 +1959,15 @@ impl ChronosServer {
         // so every session-scoped log construction goes through the
         // composition root.
         let execution_log_factory = crate::composition::default_execution_log_factory();
+        // The events reader (`events_read`) and the read path
+        // (`read_path`) MUST share ONE registry: they are two views of
+        // the same authoritative per-session ExecutionLog, not two
+        // sources. Bind the Arc once, clone it into both fields.
+        let execution_logs = Arc::new(
+            chronos_services::session_log::SessionExecutionLogRegistry::with_factory(
+                execution_log_factory,
+            ),
+        );
         // REC-C3.3.2.3 — uprobe capability injector is built once and
         // threaded into every probe call. `chronos_services` only sees
         // the trait object.
@@ -1935,11 +2007,8 @@ impl ChronosServer {
             active_session: Arc::new(Mutex::new(None)),
             tripwire_manager: Arc::new(TripwireManager::new()),
             uprobe_counter: Arc::new(std::sync::Mutex::new(HashMap::new())),
-            execution_logs: Arc::new(
-                chronos_services::session_log::SessionExecutionLogRegistry::with_factory(
-                    execution_log_factory,
-                ),
-            ),
+            execution_logs: execution_logs.clone(),
+            read_path: chronos_services::read_path::ReadPathService::new(execution_logs),
             execution_log_root: chronos_log::resolve_execution_log_root(),
             projection_meta: Arc::new(Mutex::new(HashMap::new())),
             live_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
@@ -1979,6 +2048,8 @@ impl ChronosServer {
                 let counterexample_repository: Arc<
                     dyn chronos_domain::ports::counterexample::CounterexampleRepository,
                 > = crate::composition::default_counterexample_repository(store_arc.clone());
+                let execution_logs =
+                    Arc::new(chronos_services::session_log::SessionExecutionLogRegistry::new());
                 Self {
                     engines: Arc::new(Mutex::new(HashMap::new())),
                     session_languages: Arc::new(Mutex::new(HashMap::new())),
@@ -1993,9 +2064,8 @@ impl ChronosServer {
                     active_session: Arc::new(Mutex::new(None)),
                     tripwire_manager: Arc::new(TripwireManager::new()),
                     uprobe_counter: Arc::new(std::sync::Mutex::new(HashMap::new())),
-                    execution_logs: Arc::new(
-                        chronos_services::session_log::SessionExecutionLogRegistry::new(),
-                    ),
+                    execution_logs: execution_logs.clone(),
+                    read_path: chronos_services::read_path::ReadPathService::new(execution_logs),
                     execution_log_root: chronos_log::resolve_execution_log_root(),
                     projection_meta: Arc::new(Mutex::new(HashMap::new())),
                     live_probes: Arc::new(std::sync::Mutex::new(HashMap::new())),
@@ -5101,6 +5171,125 @@ further would be a Silent Lie."
     }
 
     #[tool(
+        name = "execution_log_read",
+        description = "Execution Explorer read path over a session's authoritative ExecutionLog. Select the view via `mode`: `poll` returns a bounded batch of new events past the cursor plus the next cursor; `summarize` returns time-bucketed counts for the whole log; `rollup` returns per-invocation (per-thread) counts; `causality` reports whether causality hints are available for the session. Aggregates are NOT evidence — use `events_read` for paged event evidence. Fails closed: a session with no readable log returns an error, never an empty result."
+    )]
+    async fn execution_log_read(
+        &self,
+        params: Parameters<ExecutionLogReadParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let session = chronos_domain::SessionId::new(params.session_id.clone());
+
+        // Resolve the cursor against the requested session so a cursor
+        // minted elsewhere is refused rather than silently reinterpreted.
+        let cursor = match params.cursor.as_deref() {
+            Some(encoded) => {
+                match chronos_services::events_cursor::EventsCursorV1::decode_for_session(
+                    encoded, &session,
+                ) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        return Ok(CallToolResult::error(text_content(format!(
+                            "invalid cursor for session '{}': {e}",
+                            params.session_id
+                        ))))
+                    }
+                }
+            }
+            None => chronos_services::events_cursor::EventsCursorV1::start(session.clone()),
+        };
+
+        let outcome = match params.mode {
+            ExecutionLogReadKind::Poll => self
+                .read_path
+                .poll_batch(&params.session_id, &cursor, params.limit)
+                .map(|batch| {
+                    // `MockEvent` is intentionally not `Serialize` (it is
+                    // a test-shaped adapter), so map it explicitly rather
+                    // than widening a test type's public contract.
+                    let events: Vec<serde_json::Value> = batch
+                        .events
+                        .iter()
+                        .map(|e| {
+                            serde_json::json!({
+                                "seq": e.seq.get(),
+                                "kind": e.kind,
+                                "payload": e.payload,
+                            })
+                        })
+                        .collect();
+                    serde_json::json!({
+                        "mode": "poll",
+                        "session_id": params.session_id,
+                        "event_count": events.len(),
+                        "events": events,
+                        "next_cursor": batch.next_cursor.encode(),
+                    })
+                }),
+            ExecutionLogReadKind::Summarize => {
+                if params.bucket_size_ns == 0 {
+                    return Ok(CallToolResult::error(text_content(
+                        "bucket_size_ns must be > 0 (a zero-width bucket is not a time bucket)",
+                    )));
+                }
+                self.read_path
+                    .summarize(&params.session_id, &cursor, params.bucket_size_ns)
+                    .map(|summary| {
+                        serde_json::json!({
+                            "mode": "summarize",
+                            "session_id": params.session_id,
+                            "bucket_size_ns": params.bucket_size_ns,
+                            "total_events": summary.total_events,
+                            "bucket_count": summary.bucket_count,
+                            "mean_per_bucket": summary.mean_per_bucket,
+                        })
+                    })
+            }
+            ExecutionLogReadKind::Rollup => {
+                self.read_path
+                    .rollup(&params.session_id, &cursor)
+                    .map(|rollup| {
+                        serde_json::json!({
+                            "mode": "rollup",
+                            "session_id": params.session_id,
+                            "invocation_count": rollup.invocation_count,
+                            "total_events": rollup.total_events,
+                            "mean_per_invocation": rollup.mean_per_invocation,
+                            "max_per_invocation": rollup.max_per_invocation,
+                        })
+                    })
+            }
+            ExecutionLogReadKind::Causality => {
+                // Causality needs the engine half as well as the log half.
+                // Only this mode takes the engine lock: the other three are
+                // pure log reads and must not serialise behind it.
+                // `QueryEngine` is not `Clone`, so the engine is borrowed
+                // under the guard rather than copied out of the map.
+                let engines = self.engines.lock().await;
+                let engine_loaded = engines.contains_key(&params.session_id);
+                self.read_path
+                    .causality_status(&params.session_id, engines.get(&params.session_id))
+                    .map(|status| {
+                        serde_json::json!({
+                            "mode": "causality",
+                            "session_id": params.session_id,
+                            "status": format!("{status:?}"),
+                            "engine_loaded": engine_loaded,
+                        })
+                    })
+            }
+        };
+
+        match outcome {
+            Ok(value) => Ok(CallToolResult::success(json_content(&value))),
+            // Fail-closed: the registry's own reason is surfaced, never
+            // replaced by an empty-success envelope.
+            Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
+        }
+    }
+
+    #[tool(
         name = "observe",
         description = "v2 dispatcher for observation/subscription/instrumentation. Select the operation via `verb` (create | list | update | delete | query). `verb=create` registers a tripwire or uprobe subscription; `verb=list` enumerates subscriptions and drains fired events (destructive); `verb=query` is a non-destructive snapshot; `verb=delete` unregisters a subscription by id; `verb=update` is reserved (rejected with `unsupported`). Supersedes the v1 `tripwire_create`, `tripwire_list`, `tripwire_delete`, `tripwire_query`, and `probe_inject` tools. See docs/chronos-agentic-reconstruction/docs/specs/AGENT_API_V2.md (line 14)."
     )]
@@ -7706,12 +7895,133 @@ mod cap_discovery_tests {
         );
     }
 
+    #[tokio::test]
+    async fn execution_log_read_fails_closed_for_unknown_session() {
+        // M10: the read path must never turn "no log" into an empty
+        // success. A caller that sees `events: []` with no error will
+        // conclude the session is quiet, which is a false negative about
+        // evidence — the most dangerous failure mode for a read path.
+        let server = ChronosServer::new();
+        let result = server
+            .execution_log_read(Parameters(ExecutionLogReadParams {
+                session_id: "definitely-not-a-session".to_string(),
+                mode: ExecutionLogReadKind::Poll,
+                cursor: None,
+                bucket_size_ns: default_bucket_size_ns(),
+                limit: 10,
+            }))
+            .await
+            .expect("tool call returns a result, not a transport error");
+
+        assert_eq!(
+            result.is_error,
+            Some(true),
+            "unknown session must fail closed, not return an empty envelope"
+        );
+        let text = format!("{:?}", result.content);
+        assert!(
+            !text.contains("\"event_count\":0"),
+            "fail-closed response must not carry a zero-count success shape, got: {text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn execution_log_read_rejects_cursor_from_another_session() {
+        // A cursor is minted for one session; replaying it against another
+        // would silently reinterpret positions. The tool must refuse
+        // instead of anchoring to the wrong log.
+        let server = ChronosServer::new();
+        let foreign = chronos_services::events_cursor::EventsCursorV1::start(
+            chronos_domain::SessionId::new("session-a".to_string()),
+        );
+        let result = server
+            .execution_log_read(Parameters(ExecutionLogReadParams {
+                session_id: "session-b".to_string(),
+                mode: ExecutionLogReadKind::Poll,
+                cursor: Some(foreign.encode()),
+                bucket_size_ns: default_bucket_size_ns(),
+                limit: 10,
+            }))
+            .await
+            .expect("tool call returns a result");
+        assert_eq!(
+            result.is_error,
+            Some(true),
+            "a cursor minted for another session must be rejected"
+        );
+    }
+
+    #[tokio::test]
+    async fn execution_log_read_causality_reports_unsupported_without_engine() {
+        // Causality over a *readable* log but with no engine loaded is a
+        // legitimate status, not a failure: the agent learns that hints are
+        // unavailable instead of seeing a spurious error. This must stay
+        // distinguishable from the fail-closed case above, where there is
+        // no log to speak of at all.
+        use chronos_services::session_log::SessionExecutionLog;
+        let session = chronos_domain::SessionId::new("m10-causality-probe".to_string());
+        let dir =
+            std::env::temp_dir().join(format!("m10_causality_{}", uuid::Uuid::new_v4().simple()));
+        let log = SessionExecutionLog::create_for_tests(&dir, session.clone())
+            .expect("create a real log for the probe");
+        let server = ChronosServer::new();
+        // Register through the very registry the production server built,
+        // so the read path and `events_read` observe the same single
+        // authority. No engine is ever registered for this session.
+        server
+            .execution_log_registry()
+            .register(log)
+            .expect("register log");
+
+        let result = server
+            .execution_log_read(Parameters(ExecutionLogReadParams {
+                session_id: session.as_str().to_string(),
+                mode: ExecutionLogReadKind::Causality,
+                cursor: None,
+                bucket_size_ns: default_bucket_size_ns(),
+                limit: default_limit(),
+            }))
+            .await
+            .expect("tool call returns a result");
+
+        assert_ne!(
+            result.is_error,
+            Some(true),
+            "causality over a readable log must answer, not fail: {:?}",
+            result.content
+        );
+        let text = format!("{:?}", result.content);
+        assert!(
+            text.contains("engine_loaded"),
+            "causality mode must report engine_loaded, got: {text}"
+        );
+        assert!(
+            text.contains("Unsupported"),
+            "with no engine loaded the status is Unsupported, got: {text}"
+        );
+    }
+
     #[test]
-    fn tool_availability_map_has_42_entries() {
-        // REC-C3.3 (Tren B slice F): `capture_session` grew the set 41 → 42.
+    fn tool_availability_map_covers_every_registered_tool() {
+        // The map is built by inserting one entry per `ALL_TOOL_NAMES`
+        // member, so its size cannot diverge from the toolset: the real
+        // invariant is coverage, not a hand-maintained count. Pin the
+        // count only as a cheap canary, and derive it from the router so
+        // adding a `#[tool]` handler cannot leave it stale.
         let server = ChronosServer::new();
         let map = server.build_tool_availability(ALL_TOOL_NAMES, Some("rust"));
-        assert_eq!(map.len(), 42, "tool_availability must have 42 entries");
+        assert_eq!(
+            map.len(),
+            ChronosServer::tool_router().list_all().len(),
+            "tool_availability must cover every tool the router exposes",
+        );
+        for name in ALL_TOOL_NAMES {
+            assert!(
+                map.contains_key(*name),
+                "tool '{name}' is missing from tool_availability; a tool that \
+                 is registered but not discoverable is invisible to clients",
+            );
+        }
     }
 
     #[test]
