@@ -2025,13 +2025,20 @@ impl McpTestClient {
         // falls back to PATH — which is how `m1_07`/`m1_08` reported
         // "No such file or directory" under tarpaulin (CIH-B).
         if let Some(target_dir) = Self::resolve_target_dir() {
-            let candidate = target_dir.join("debug").join("chronos-mcp");
-            if candidate.exists() {
+            for profile in ["debug", "release"] {
+                let candidate = target_dir.join(profile).join("chronos-mcp");
+                if !candidate.exists() {
+                    continue;
+                }
+                if let Err(reason) = Self::assert_fresh(&candidate) {
+                    eprintln!(
+                        "McpTestClient: refusing to use a stale chronos-mcp at {}: {reason}\n\
+                         Build it first: cargo build --bin chronos-mcp",
+                        candidate.display()
+                    );
+                    return PathBuf::from("chronos-mcp-not-built");
+                }
                 return candidate;
-            }
-            let release_candidate = target_dir.join("release").join("chronos-mcp");
-            if release_candidate.exists() {
-                return release_candidate;
             }
         }
 
@@ -2060,6 +2067,93 @@ impl McpTestClient {
             }
         }
         Self::cargo_metadata_target_dir().ok()
+    }
+
+    /// Reject a `chronos-mcp` binary that predates the sources it is supposed
+    /// to have been built from.
+    ///
+    /// `cargo test -p chronos-sandbox` does NOT rebuild this binary: it lives
+    /// in `crates/chronos-mcp`, and `CARGO_BIN_EXE_<name>` is only defined for
+    /// binaries declared in the crate under test. The resolver therefore finds
+    /// whatever happens to be in the target dir, however old. The consequence
+    /// is a **false green**: mutating `decode_for_session` left the E2E suite
+    /// passing against a binary built before the mutation, because the suite
+    /// was exercising the old code.
+    ///
+    /// Rather than try to auto-rebuild (a nested `cargo build` from inside
+    /// `cargo test` is fragile, and `cargo build --dry-run` emits an empty
+    /// diagnostic stream whether the tree is fresh or stale, so it carries no
+    /// signal), this fails loud and points at the fix. A test that cannot find
+    /// a trustworthy server should say so, not quietly test yesterday's.
+    fn assert_fresh(binary: &std::path::Path) -> Result<(), String> {
+        let binary_mtime = std::fs::metadata(binary)
+            .and_then(|m| m.modified())
+            .map_err(|e| format!("cannot stat binary: {e}"))?;
+
+        let workspace_root =
+            Self::workspace_root().map_err(|e| format!("cannot locate workspace root: {e}"))?;
+
+        let mut newest: Option<(std::time::SystemTime, std::path::PathBuf)> = None;
+        for src in Self::mcp_dependency_sources(&workspace_root) {
+            if let Some(mtime) = walk_newest_mtime(&src) {
+                if newest.as_ref().is_none_or(|(best, _)| mtime > *best) {
+                    newest = Some((mtime, src));
+                }
+            }
+        }
+
+        match newest {
+            // No sources to compare against: nothing to be stale relative to.
+            None => Ok(()),
+            Some((src_mtime, _)) if src_mtime <= binary_mtime => Ok(()),
+            Some((src_mtime, src)) => Err(format!(
+                "binary built at {:?} but {} changed at {:?}",
+                binary_mtime,
+                src.display(),
+                src_mtime
+            )),
+        }
+    }
+
+    /// The crate source trees `chronos-mcp` is actually built from.
+    ///
+    /// Scoped to the dependency set rather than the whole workspace on
+    /// purpose. A first attempt watched only `crates/chronos-mcp/src` and was
+    /// **wrong**: disabling the cross-session check in
+    /// `chronos-services/src/events_cursor.rs` — a direct dependency, and the
+    /// very mutation that motivated this guard — still produced a green run,
+    /// because the mutated file was outside the watched tree.
+    ///
+    /// Watching every workspace member instead would produce the opposite
+    /// error: editing an unrelated crate would invalidate the binary and force
+    /// a rebuild for no reason.
+    fn mcp_dependency_sources(workspace_root: &std::path::Path) -> Vec<std::path::PathBuf> {
+        const DEPENDENCY_CRATES: &[&str] = &[
+            "chronos-mcp",
+            "chronos-services",
+            "chronos-domain",
+            "chronos-store",
+            "chronos-log",
+            "chronos-capture",
+            "chronos-query",
+            "chronos-index",
+        ];
+        let mut sources = Vec::with_capacity(DEPENDENCY_CRATES.len());
+        for name in DEPENDENCY_CRATES {
+            // Covers both `crates/<name>` and top-level members such as
+            // chronos-log, which sits beside crates/ in this repo.
+            let in_crates = workspace_root.join("crates").join(name);
+            let crate_dir = if in_crates.is_dir() {
+                in_crates
+            } else {
+                workspace_root.join(name)
+            };
+            let src = crate_dir.join("src");
+            if src.is_dir() {
+                sources.push(src);
+            }
+        }
+        sources
     }
 
     fn cargo_metadata_target_dir() -> Result<PathBuf, String> {
@@ -2521,6 +2615,38 @@ impl From<SubscriptionDtoWire> for TripwireInfo {
             fire_count: s.fire_count as usize,
         }
     }
+}
+
+/// Newest mtime under `dir`, or `None` if the directory is missing or empty.
+///
+/// Deliberately shallow-tolerant: an unreadable entry is skipped rather than
+/// aborting the walk, because the caller's job is to answer "could this
+/// binary be stale?", and one unreadable file should not turn into a false
+/// verdict either way. A directory we cannot read at all yields `None`, which
+/// the caller treats as "no evidence of staleness" — the safe direction, since
+/// the alternative would be failing every test on an exotic filesystem.
+fn walk_newest_mtime(dir: &std::path::Path) -> Option<std::time::SystemTime> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    let mut newest: Option<std::time::SystemTime> = None;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        if metadata.is_dir() {
+            if let Some(nested) = walk_newest_mtime(&path) {
+                newest = Some(newest.map_or(nested, |n: std::time::SystemTime| n.max(nested)));
+            }
+            continue;
+        }
+        let Ok(modified) = metadata.modified() else {
+            continue;
+        };
+        newest = Some(newest.map_or(modified, |n: std::time::SystemTime| n.max(modified)));
+    }
+
+    newest
 }
 
 #[cfg(test)]
