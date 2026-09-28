@@ -1,0 +1,74 @@
+# SDDK agent permission registry — default-deny.
+# Agents absent from this file are denied all phases and capabilities.
+# SDDK011 requires every agents/*.md file of the resolved framework
+# (2.0.1) to be declared here. Only the release-path agent carries grants;
+# all other framework agents are listed explicitly with empty grants so the
+# policy remains closed-by-default.
+
+agents:
+  sddk-release:
+    phases: [release]
+    capabilities: [release, git.inspect, git.push, git.tag]
+  sddk-apply: { phases: [], capabilities: [] }
+  sddk-archive: { phases: [], capabilities: [] }
+  sddk-coherence: { phases: [], capabilities: [] }
+  sddk-debt-verify: { phases: [], capabilities: [] }
+  sddk-design: { phases: [], capabilities: [] }
+  sddk-explore: { phases: [], capabilities: [] }
+  sddk-init: { phases: [], capabilities: [] }
+  sddk-plan: { phases: [], capabilities: [] }
+  sddk-propose: { phases: [], capabilities: [] }
+  sddk-recover: { phases: [], capabilities: [] }
+  sddk-run: { phases: [], capabilities: [] }
+  sddk-ship: { phases: [], capabilities: [] }
+  sddk-spec: { phases: [], capabilities: [] }
+  sddk-status: { phases: [], capabilities: [] }
+  sddk-tasks: { phases: [], capabilities: [] }
+  sddk-verify: { phases: [], capabilities: [] }
+  sddk-adopt: { phases: [], capabilities: [] }
+  orchestrator: { phases: [], capabilities: [] }
+  analytics-judge: { phases: [], capabilities: [] }
+  analytics-reporter: { phases: [], capabilities: [] }
+  analytics-researcher: { phases: [], capabilities: [] }
+  architecture-critic: { phases: [], capabilities: [] }
+  auto-grill-code-researcher: { phases: [], capabilities: [] }
+  auto-grill-coverage-auditor: { phases: [], capabilities: [] }
+  auto-grill-evidence-synthesizer: { phases: [], capabilities: [] }
+  auto-grill-internet-researcher: { phases: [], capabilities: [] }
+  auto-grill-interviewer: { phases: [], capabilities: [] }
+  auto-grill-judge: { phases: [], capabilities: [] }
+  auto-grill-loop-orchestrator: { phases: [], capabilities: [] }
+  auto-grill-ops-researcher: { phases: [], capabilities: [] }
+  auto-grill-repo-docs-researcher: { phases: [], capabilities: [] }
+  auto-grill-reporter: { phases: [], capabilities: [] }
+  auto-grill-scribe: { phases: [], capabilities: [] }
+  auto-grill-security-researcher: { phases: [], capabilities: [] }
+  auto-grill-skeptic: { phases: [], capabilities: [] }
+  auto-grill-standards-researcher: { phases: [], capabilities: [] }
+  auto-grill-user-proxy: { phases: [], capabilities: [] }
+  balance-advisor: { phases: [], capabilities: [] }
+  book-orchestrator: { phases: [], capabilities: [] }
+  debt-architecture-cluster: { phases: [], capabilities: [] }
+  debt-coupling-cluster: { phases: [], capabilities: [] }
+  debt-duplication-cluster: { phases: [], capabilities: [] }
+  debt-overeng-cluster: { phases: [], capabilities: [] }
+  debt-smells-cluster: { phases: [], capabilities: [] }
+  deep-research-orchestrator: { phases: [], capabilities: [] }
+  impeccable-primary: { phases: [], capabilities: [] }
+  jd-fix-agent: { phases: [], capabilities: [] }
+  jd-judge-a: { phases: [], capabilities: [] }
+  jd-judge-b: { phases: [], capabilities: [] }
+  test-pyramid-builder: { phases: [], capabilities: [] }
+  uat-discovery: { phases: [], capabilities: [] }
+  uat-form-quality: { phases: [], capabilities: [] }
+  uat-guide: { phases: [], capabilities: [] }
+  uat-planner: { phases: [], capabilities: [] }
+  uat-reporter: { phases: [], capabilities: [] }
+  uat-runner: { phases: [], capabilities: [] }
+  uat-ux-form: { phases: [], capabilities: [] }
+  ui-auditor: { phases: [], capabilities: [] }
+
+phases: {}
+capabilities: {}
+skills: {}
+prompts: {}
