@@ -56,7 +56,7 @@ Lo que **no** está verificado, y no se declara: `sddk lint` sigue fallando con
 - Las pruebas usan `SessionExecutionLog::create_for_tests` sobre un log real en
   disco temporal, no un proveedor real de probes.
 
-## Blocker 1 — `sddk lint` (abierto, fuera de este WorkItem)
+## Blocker 1 — `sddk lint` (abierto, deuda de contrato, NO gatea la integración)
 
 ```
 SDDK005 schemas/            no existe
@@ -114,6 +114,25 @@ registrados), no un stub.
 
 No existe scaffolding que rompa el bucle: `sddk pack scaffold` genera un pack,
 no el manifest del repositorio, y no hay comando que emita `schemas/`.
+`sddk adopt apply` se ejecutó y **no escribe nada en el repositorio** (solo
+gestiona identidad, que ya estaba completa).
+
+**Verificación de que los schemas no son recuperables:** el framework instalado
+contiene exactamente tres schemas de referencia
+(`claim`, `inventory`, `verify-finding`) y **ninguno** de los seis requeridos
+(`adoption`, `agent-result`, `artifact-ref`, `cycle`, `phase-result`,
+`workflow`). No hay fuente de la que copiarlos.
+
+**Sobre `permissions.yaml` en particular.** El framework sí define un roster
+real de 70 agentes en `assets/agent-models.yaml`, así que la lista de nombres no
+es inventada. Pero ese fichero asigna *capacidades* por agente y por fase, es
+decir, permisos de escritura sobre el repositorio. Escribirlo sería decidir qué
+agentes pueden modificar el código del proyecto, y un error de ese fichero
+amplía privilegios en lugar de restringirlos. No lo hago.
+
+Dato relevante para el riesgo: sin `permissions.yaml`, `sddk permission check`
+**no concede nada y sale con código 1** (verificado). El estado actual es
+fail-closed: la ausencia del fichero no abre permisos, los cierra.
 
 **Estado final de los 4 errores restantes:**
 
