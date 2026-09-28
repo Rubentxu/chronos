@@ -17,24 +17,32 @@
 //! So "the call failed closed" is observed as an `Err` whose message is the
 //! registry's own reason.
 //!
-//! STRUCTURE: one `#[tokio::test]`, one server, many assertions. This is
-//! deliberate on two counts.
+//! STRUCTURE: one `#[tokio::test]` per server, many assertions. Sharing one
+//! process across `#[tokio::test]` functions is unsound, not merely
+//! inefficient: each test gets its OWN runtime, a server booted in test A has
+//! its stdio bound to A's runtime, and that runtime is dropped when A finishes,
+//! so a later test reusing the process observes a dead transport. Booting a
+//! fresh `chronos-mcp` per test also costs seconds and hundreds of MB, and six
+//! concurrent boots exhausted the box with spurious 120s `initialize`
+//! timeouts that read as product failures and were not.
 //!
-//!   1. Every `#[tokio::test]` gets its OWN runtime. A server booted in test A
-//!      has its stdio tasks bound to A's runtime, so once A finishes, that
-//!      runtime is dropped and any later test reusing the process observes a
-//!      dead transport. Sharing a process across `#[tokio::test]` functions is
-//!      therefore unsound, not merely inefficient.
-//!   2. Booting a fresh `chronos-mcp` per test costs seconds and hundreds of
-//!      MB. Six concurrent boots exhausted the box and produced spurious 120s
-//!      `initialize` timeouts that read as product failures and were not.
-//!
-//! One process, one runtime, sequential assertions: no cross-runtime reuse,
-//! no resource contention, ~1s of startup total. Every assertion still runs,
-//! and the first failure still panics with its own message.
+//! The two tests below therefore cover complementary halves, each with its own
+//! server: `execution_log_read_over_the_wire` for the contract surface and
+//! fail-closed behaviour, `execution_log_read_serves_a_real_log_over_the_wire`
+//! for the success path against persisted evidence.
 
+use chronos_domain::trace::TraceEvent;
+use chronos_domain::{EventData, EventType, MonotonicNs, SourceLocation};
+use chronos_log::{
+    ExecutionKind, ExecutionPayload, NewExecutionRecord, SegmentedConfig, SegmentedExecutionLog,
+    SessionId,
+};
 use chronos_sandbox::client::tools::McpTestClient;
 use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+
+const SESSION: &str = "e2e-read-path-session";
 
 /// Fetch the advertised tool list. `McpTestClient` derefs to `McpSession`,
 /// which owns the raw RPC client.
@@ -196,4 +204,242 @@ async fn execution_log_read_over_the_wire() {
             );
         }
     }
+}
+
+/// Write a real, persisted execution log for `SESSION` under `root`.
+///
+/// Uses the production writer rather than hand-writing a manifest, so the
+/// segments and retention metadata on disk are exactly what the server will
+/// reopen. A hand-crafted manifest parses but leaves the log with no segments,
+/// which is a different thing from a session that genuinely recorded events.
+fn seed_execution_log(root: &Path, session: &str, events: u64) {
+    let dir = root.join(session);
+    std::fs::create_dir_all(&dir).expect("create execution-log dir");
+
+    let session_id = SessionId::new(session);
+    let log = SegmentedExecutionLog::open(session_id.clone(), SegmentedConfig::with_dir(&dir))
+        .expect("open execution log for seeding");
+    for i in 1..=events {
+        log.append(NewExecutionRecord {
+            session_id: session_id.clone(),
+            kind: ExecutionKind::Raw,
+            monotonic_ns: i * 1_000,
+            // The reader decodes every record into a `TraceEvent`, and an
+            // undecodable record fails the whole read closed rather than being
+            // skipped. So the seeded payload must be a real `TraceEvent` under
+            // the canonical `"trace_event"` tag; arbitrary bytes here would
+            // make the log unreadable rather than empty.
+            payload: ExecutionPayload::new(
+                serde_json::to_vec(&trace_event(i)).expect("encode trace event"),
+                "trace_event",
+            ),
+            ..Default::default()
+        })
+        .expect("append event");
+    }
+    log.flush().expect("flush seeded log");
+    // Dropping `log` here releases the handle. The server must be able to
+    // reopen the log purely from what is on disk; if it needed a live handle
+    // from this process, the bootstrap would be doing nothing.
+}
+
+/// A minimal but well-formed `TraceEvent` for the seeded log.
+fn trace_event(event_id: u64) -> TraceEvent {
+    TraceEvent {
+        event_id,
+        timestamp_ns: MonotonicNs::from(event_id * 1_000),
+        thread_id: 1,
+        event_type: EventType::FunctionEntry,
+        location: SourceLocation {
+            function: Some("e2e_work".to_string()),
+            ..SourceLocation::default()
+        },
+        data: EventData::Function {
+            name: "e2e_work".to_string(),
+            signature: None,
+            symbol_id: None,
+            invocation_id: None,
+            parent_invocation_id: None,
+        },
+    }
+}
+
+fn temp_root(tag: &str) -> PathBuf {
+    let p = std::env::temp_dir().join(format!(
+        "chronos-e2e-read-{tag}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    let _ = std::fs::remove_dir_all(&p);
+    std::fs::create_dir_all(&p).expect("create temp root");
+    p
+}
+
+/// The success path, against a session that genuinely recorded events.
+///
+/// Everything above exercises refusal. This exercises delivery: the four modes
+/// must each return their own real result for the same persisted log, and
+/// `poll` must advance its cursor so a second call resumes instead of
+/// replaying. A read path that only ever fails closed is not a read path.
+#[tokio::test]
+async fn execution_log_read_serves_a_real_log_over_the_wire() {
+    let root = temp_root("real");
+    seed_execution_log(&root, SESSION, 5);
+
+    let mcp_path = McpTestClient::resolve_mcp_path();
+    let mut env = HashMap::new();
+    env.insert(
+        "CHRONOS_EXECUTION_LOG_DIR".to_string(),
+        root.to_string_lossy().to_string(),
+    );
+    let mut client = McpTestClient::start_with_env(&mcp_path, &env)
+        .await
+        .expect("MCP server must start against the seeded log root");
+
+    // ----------------------------------------------------------------- poll
+    // `poll` must return the seeded events. Asserting on the count (not just
+    // "no error") is what makes this a delivery test rather than a smoke test.
+    let first = client
+        .call_tool(
+            "execution_log_read",
+            json!({ "session_id": SESSION, "mode": "poll", "limit": 5 }),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("poll against a readable log must succeed, got: {e}"));
+    let batch = &first["events"]
+        .as_array()
+        .unwrap_or_else(|| panic!("poll must return an events array, got: {first}"));
+    assert_eq!(
+        batch.len(),
+        5,
+        "poll must return every seeded event on the first read: {first}"
+    );
+
+    // The cursor must advance. A poll loop that re-seats at seq 0 forever can
+    // never terminate and would replay the same events to an agent. After five
+    // events the cursor must sit past the last one, not at the start.
+    let cursor_after_first = first["next_cursor"]
+        .as_str()
+        .unwrap_or_else(|| panic!("poll must return a next_cursor, got: {first}"))
+        .to_string();
+    assert!(
+        cursor_after_first.ends_with(":5"),
+        "the resume cursor must sit past the five seeded events, \
+         otherwise poll would replay them forever: {first}"
+    );
+
+    // Resuming from the returned cursor must NOT replay: the log is exhausted.
+    let second = client
+        .call_tool(
+            "execution_log_read",
+            json!({
+                "session_id": SESSION,
+                "mode": "poll",
+                "limit": 5,
+                "cursor": cursor_after_first,
+            }),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("resumed poll must succeed, got: {e}"));
+    assert_eq!(
+        second["events"].as_array().map(|a| a.len()),
+        Some(0),
+        "a resumed poll past the end must return no events, not a replay: {second}"
+    );
+
+    // ------------------------------------------------------------ summarize
+    // `summarize` must bucket the same evidence. It must agree with the raw
+    // count rather than inventing a total of its own: the five seeded events
+    // sit 1000ns apart, so a 1000ns bucket must yield five buckets of one.
+    let summary = client
+        .call_tool(
+            "execution_log_read",
+            json!({
+                "session_id": SESSION,
+                "mode": "summarize",
+                "bucket_size_ns": 1_000,
+            }),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("summarize against a readable log must succeed, got: {e}"));
+    let summarized = summary["total_events"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("summarize must report total_events, got: {summary}"));
+    assert_eq!(
+        summarized, 5,
+        "summarize must count every seeded event: {summary}"
+    );
+    assert_eq!(
+        summary["bucket_count"].as_u64(),
+        Some(5),
+        "five events 1000ns apart under a 1000ns bucket must be five buckets: {summary}"
+    );
+
+    // ---------------------------------------------------------------- rollup
+    // `rollup` is per-invocation (per-thread), a different axis from the time
+    // buckets above. It must still cover the same evidence.
+    let rollup = client
+        .call_tool(
+            "execution_log_read",
+            json!({ "session_id": SESSION, "mode": "rollup" }),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("rollup against a readable log must succeed, got: {e}"));
+    let rolled = rollup["total_events"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("rollup must report total_events, got: {rollup}"));
+    assert_eq!(
+        rolled, 5,
+        "rollup must cover the same evidence as poll and summarize: {rollup}"
+    );
+    // All five events were recorded on thread 1, so there is exactly one
+    // invocation. This distinguishes rollup from summarize, which buckets by
+    // time and would have counted five.
+    assert_eq!(
+        rollup["invocation_count"].as_u64(),
+        Some(1),
+        "five events on one thread must roll up to one invocation: {rollup}"
+    );
+
+    // ------------------------------------------------------------- causality
+    // Causality is the one mode that reads engine state, so it is the one most
+    // likely to differ from the other three. It must still answer rather than
+    // fail closed now that a readable log exists.
+    match client
+        .call_tool(
+            "execution_log_read",
+            json!({ "session_id": SESSION, "mode": "causality" }),
+        )
+        .await
+    {
+        Ok(v) => assert!(
+            v.is_object(),
+            "causality must return an object envelope when a log is readable, got: {v}"
+        ),
+        Err(e) => panic!("causality must not fail closed for a session with a readable log: {e}"),
+    }
+
+    // ------------------------------------------- a foreign cursor is still refused
+    // The seeded session now exists, so this is the strongest form of the
+    // binding check: the log IS readable, and the cursor STILL must be refused.
+    // Earlier, an unregistered session made this pass trivially.
+    assert!(
+        client
+            .call_tool(
+                "execution_log_read",
+                json!({
+                    "session_id": SESSION,
+                    "mode": "poll",
+                    "cursor": "ecv1:1:9:session-a:0",
+                }),
+            )
+            .await
+            .is_err(),
+        "a foreign cursor must be refused even when the target session is readable"
+    );
+
+    let _ = std::fs::remove_dir_all(&root);
 }

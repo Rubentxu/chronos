@@ -2178,7 +2178,30 @@ impl McpTestClient {
     /// client never reads or writes another client's data (nor the developer's
     /// real `$HOME/.local/share/chronos/sessions.redb`). Use
     /// `start_with_db_path` when two clients must deliberately share one store.
+    ///
+    /// Prefer [`Self::start_with_env`] when a test needs the server to observe
+    /// specific filesystem state, such as a seeded execution-log root.
     pub async fn start_path(mcp_path: &Path) -> Result<Self, McpSandboxError> {
+        Self::start_with_env(mcp_path, &std::collections::HashMap::new()).await
+    }
+
+    /// Start an MCP test session with extra environment variables applied to
+    /// the server process.
+    ///
+    /// `extra_env` is layered ON TOP of the harness-controlled variables, so a
+    /// caller cannot accidentally redirect `CHRONOS_DB_PATH` and break store
+    /// isolation. Later entries win on conflict, which means a caller CAN
+    /// deliberately override a harness default if a test needs to.
+    ///
+    /// The server bootstraps its execution-log registry from
+    /// `CHRONOS_EXECUTION_LOG_DIR` at startup (see
+    /// `bootstrap_execution_logs`). Seeding that directory before spawn is the
+    /// only way to give a test a session with a genuinely readable log, since
+    /// no MCP tool registers one on demand.
+    pub async fn start_with_env(
+        mcp_path: &Path,
+        extra_env: &std::collections::HashMap<String, String>,
+    ) -> Result<Self, McpSandboxError> {
         // REC-C0.5-harness (Etapa D): capture and verify the binary
         // identity before spawning. log-warn by default; fail-hard when
         // CHRONOS_MCP_EXPECTED_SHA is set (audit §8.3).
@@ -2192,9 +2215,10 @@ impl McpTestClient {
         identity.verify_expected_sha()?;
 
         let (db_dir, db_path) = Self::allocate_store_dir()?;
+        let mut env = Self::db_env(&db_path);
+        env.extend(extra_env.clone());
         let (process, stdin, reader) =
-            crate::client::process::factory::start_with_env(mcp_path, Self::db_env(&db_path))
-                .await?;
+            crate::client::process::factory::start_with_env(mcp_path, env).await?;
         let session = McpSession::new(stdin, reader).await?;
         Ok(Self {
             process: Some(process),
