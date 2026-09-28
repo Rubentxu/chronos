@@ -128,8 +128,16 @@ Backlog: `bl-bl-01M3KDNYW30003876VBVWD2G80` (corrección de
 `bl-bl-01M3KDHHEF0003876V3S8XMV40`, descartado como `superseded` por su
 diagnóstico erróneo; se conserva el rastro en vez de reescribir la historia).
 
-**Impacto en el cierre de la iniciativa:** este blocker impide declarar la
-iniciativa `COMPLETED`, pero no invalida el WorkItem verificado.
+**Impacto real en el cierre de la iniciativa.** El bucle NO bloquea la
+verificación de integración: `grep -c sddk .pipeline.kts` devuelve **0**. El
+CI canónico (`discover-repo`, `workspace-check`, `build-domain`, `evidence`) no
+invoca `sddk lint` en ninguna etapa, y según AGENTS.md es la única fuente de
+verdad para declarar el repositorio verificado. Los 4 errores de lint son
+deuda de contrato del repositorio, no un fallo de la batería que gobierna el
+push.
+
+Lo que sí bloquea el cierre es `release-uat-approved`, que no es fabricable sin
+UAT real (ver "Límites de esta verificación").
 
 ## Estado
 
