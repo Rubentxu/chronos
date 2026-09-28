@@ -2,11 +2,15 @@ name: Sandbox Smoke Tests
 on:
   push:
     paths:
-      - 'crates/chronos-sandbox/**'
+      # chronos-sandbox is a top-level workspace member, NOT under crates/.
+      # The old `crates/chronos-sandbox/**` filter matched no file in the
+      # repository, so this workflow could never fire.
+      - 'chronos-sandbox/**'
       - '.github/workflows/sandbox-smoke.yml'
   pull_request:
     paths:
-      - 'crates/chronos-sandbox/**'
+      - 'chronos-sandbox/**'
+      - '.github/workflows/sandbox-smoke.yml'
 
 jobs:
   smoke:
