@@ -24,6 +24,13 @@ jobs:
           key: chronos-sandbox
       - name: Build sandbox
         run: cargo build -p chronos-sandbox
+      # These tests spawn the real chronos-mcp server binary, which lives in
+      # crates/chronos-mcp and is therefore NOT built by `-p chronos-sandbox`.
+      # ci.yml gets this for free from its `cargo build --workspace` step; this
+      # workflow had no equivalent, so the server the tests talked to was not
+      # guaranteed to match the revision under test. Build it explicitly.
+      - name: Build MCP server binary (test dependency)
+        run: cargo build --bin chronos-mcp
       - name: Clippy
         run: cargo clippy -p chronos-sandbox -- -D warnings
       - name: Smoke tests
