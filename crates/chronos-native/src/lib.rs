@@ -23,14 +23,19 @@ pub mod syscall_table;
 pub mod perf;
 
 pub use address_normalizer::{AddressNormalizer, SymbolOffset, SymbolOffsetNormalizer};
+#[cfg(target_os = "linux")]
 pub use capture_runner::{
     run_function_frame_capture_with_callback, AttachMode, CaptureEndReason, CaptureResult,
     CaptureRunner, CaptureState,
 };
 pub use dwarf::{BasicLocationEvaluator, DwarfLocationEvaluator, DwarfReader};
+#[cfg(target_os = "linux")]
 pub use int3_injector::{InstalledBreakpoint, Int3Injector, INT3};
+#[cfg(target_os = "linux")]
 pub use native_adapter::NativeAdapter;
 pub use probe_backend::NativeProbeBackend;
-pub use ptrace_tracer::{PtraceConfig, PtraceEvent, PtraceTracer};
+#[cfg(target_os = "linux")]
+pub use ptrace_tracer::PtraceTracer;
+pub use ptrace_tracer::{PtraceConfig, PtraceEvent};
 pub use symbol_resolver::{SymbolInfo, SymbolResolver, SymbolResolverError};
 pub use syscall_table::resolve_syscall;

@@ -14,22 +14,31 @@
 //! retired the parallel `EventBus` mirror: the canonical log is the only
 //! sink, and consumers read it directly.
 
+#[cfg(target_os = "linux")]
 use crate::capture_runner::run_function_frame_capture_with_callback;
+#[cfg(target_os = "linux")]
 use crate::native_adapter::NativeAdapter;
-use crate::ptrace_tracer::{PtraceConfig, PtraceTracer};
+#[cfg(target_os = "linux")]
+use crate::ptrace_tracer::PtraceConfig;
+#[cfg(target_os = "linux")]
+use crate::ptrace_tracer::PtraceTracer;
+#[cfg(target_os = "linux")]
 use crate::symbol_resolver::SymbolResolver;
 use chronos_domain::ports::execution_log::ExecutionLogProvider;
 use chronos_domain::semantic::{ResolveContext, ResolverPipeline, SemanticResolver};
 use chronos_domain::{
-    CaptureConfig, CaptureSession, Language, MonotonicNs, ProbeBackend, SourceLocation, TraceError,
-    TraceEvent,
+    CaptureConfig, CaptureSession, Language, ProbeBackend, TraceError, TraceEvent,
 };
+#[cfg(target_os = "linux")]
+use chronos_domain::{MonotonicNs, SourceLocation};
 use chronos_log::{ExecutionPayload, NewExecutionRecord, SegmentedConfig, SegmentedExecutionLog};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(target_os = "linux")]
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 /// Serialize a `TraceEvent` into a `NewExecutionRecord` suitable for
 /// `ExecutionLogProvider::append`. The `tag` is set to
@@ -441,134 +450,146 @@ impl NativeProbeBackend {
         config: CaptureConfig,
         track_function_frames: bool,
     ) -> Result<CaptureSession, TraceError> {
-        // HIGH-4: Guard against double-start
-        if self.running.load(Ordering::SeqCst) {
-            return Err(TraceError::CaptureFailed(
-                "A probe is already running on this backend. Call stop_probe first.".into(),
-            ));
-        }
-        self.attached_target.store(false, Ordering::SeqCst);
-
-        let program_path = PathBuf::from(&config.target);
-
-        if !program_path.exists() {
-            return Err(TraceError::CaptureFailed(format!(
-                "Target binary not found: {}",
-                config.target
-            )));
-        }
-
-        let language = config
-            .language
-            .unwrap_or_else(|| Language::from_path(&config.target));
-
-        let running = self.running.clone();
-        let resolver_pipeline = self.resolver_pipeline.clone();
-
-        // Pre-load symbols from the binary
-        let symbol_resolver = {
-            let mut resolver = SymbolResolver::new();
-            match resolver.load_from_binary(&program_path) {
-                Ok(()) => {
-                    info!(
-                        "Loaded {} symbols from {}",
-                        resolver.symbol_count(),
-                        config.target
-                    );
-                    Some(resolver)
-                }
-                Err(e) => {
-                    warn!("Could not load symbols from {}: {}", config.target, e);
-                    None
-                }
-            }
-        };
-
-        let ptrace_config = PtraceConfig {
-            trace_syscalls: config.capture_syscalls,
-            capture_registers: true,
-            follow_children: true,
-            track_function_frames,
-        };
-
-        // Build the (placeholder) session up front so we have a
-        // stable id for the ExecutionLog directory.
-        let session = CaptureSession::new(0, language, config.clone());
-
-        // REC-C1.2a + REC-C3.3.2: an `ExecutionLogProvider` attached
-        // by the caller (the composition root → session → wrapper)
-        // is the ONLY canonical sink for this probe. The backend
-        // does NOT invent a log from a path and does NOT open
-        // `SegmentedExecutionLog` on its own.
-        let log_for_thread: Option<Arc<dyn ExecutionLogProvider>> = match self
-            .execution_log
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
+        #[cfg(not(target_os = "linux"))]
         {
-            Some(arc) => {
-                info!(
-                    "REC-C1.2a: using caller-owned ExecutionLog for session {}",
-                    arc.session_id().as_str()
-                );
-                Some(arc)
-            }
-            None => {
+            let _ = (config, track_function_frames);
+            Err(TraceError::UnsupportedOperation(
+                "native ptrace probe requires Linux; this platform provides no ptrace backend"
+                    .into(),
+            ))
+        }
+        #[cfg(target_os = "linux")]
+        {
+            // HIGH-4: Guard against double-start
+            if self.running.load(Ordering::SeqCst) {
                 return Err(TraceError::CaptureFailed(
-                    "REC-C3.3.2: no canonical execution-log provider attached. Call \
-                     NativeProbeBackend::attach_execution_log(...) with the session-owned \
-                     provider before start_probe."
-                        .into(),
+                    "A probe is already running on this backend. Call stop_probe first.".into(),
                 ));
             }
-        };
+            self.attached_target.store(false, Ordering::SeqCst);
 
-        let accepted_raw_observer_for_thread = self.accepted_raw_observer.clone();
+            let program_path = PathBuf::from(&config.target);
 
-        // Spawn background thread to run the event loop
-        let target = config.target.clone();
-        let args = config.args.clone();
+            if !program_path.exists() {
+                return Err(TraceError::CaptureFailed(format!(
+                    "Target binary not found: {}",
+                    config.target
+                )));
+            }
 
-        // Shared slot so the thread can publish its PID back for stop_probe to kill.
-        let traced_pid_thread = self.traced_pid.clone();
-        // Clone for the closure - original `running` stays available for error handling
-        let running_clone = running.clone();
+            let language = config
+                .language
+                .unwrap_or_else(|| Language::from_path(&config.target));
 
-        // CRIT-1: Set running=true BEFORE spawn so the thread never sees a stale false
-        running.store(true, Ordering::SeqCst);
+            let running = self.running.clone();
+            let resolver_pipeline = self.resolver_pipeline.clone();
 
-        let handle = thread::Builder::new()
-            .name("chronos-native-probe".into())
-            .spawn(move || {
-                Self::run_probe_loop_with_pid_cb(
-                    &target,
-                    args,
-                    &ptrace_config,
-                    &running_clone,
-                    symbol_resolver.as_ref(),
-                    resolver_pipeline,
-                    language,
-                    AcceptanceSeam {
-                        log: log_for_thread,
-                        observer: accepted_raw_observer_for_thread,
-                    },
-                    move |pid: i32| {
-                        *traced_pid_thread.lock().unwrap_or_else(|e| e.into_inner()) = Some(pid);
-                    },
-                );
-            })
-            .map_err(|e| {
-                // CRIT-1: Reset running flag on spawn failure
-                running.store(false, Ordering::SeqCst);
-                TraceError::CaptureFailed(format!("Failed to spawn probe thread: {}", e))
-            })?;
+            // Pre-load symbols from the binary
+            let symbol_resolver = {
+                let mut resolver = SymbolResolver::new();
+                match resolver.load_from_binary(&program_path) {
+                    Ok(()) => {
+                        info!(
+                            "Loaded {} symbols from {}",
+                            resolver.symbol_count(),
+                            config.target
+                        );
+                        Some(resolver)
+                    }
+                    Err(e) => {
+                        warn!("Could not load symbols from {}: {}", config.target, e);
+                        None
+                    }
+                }
+            };
 
-        // Store the handle - we need to get the PID first
-        // Since the thread manages its own PID, we'll store a placeholder for now
-        // The actual PID tracking happens inside the thread
-        *self.thread_handle.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
+            let ptrace_config = PtraceConfig {
+                trace_syscalls: config.capture_syscalls,
+                capture_registers: true,
+                follow_children: true,
+                track_function_frames,
+            };
 
-        Ok(session)
+            // Build the (placeholder) session up front so we have a
+            // stable id for the ExecutionLog directory.
+            let session = CaptureSession::new(0, language, config.clone());
+
+            // REC-C1.2a + REC-C3.3.2: an `ExecutionLogProvider` attached
+            // by the caller (the composition root → session → wrapper)
+            // is the ONLY canonical sink for this probe. The backend
+            // does NOT invent a log from a path and does NOT open
+            // `SegmentedExecutionLog` on its own.
+            let log_for_thread: Option<Arc<dyn ExecutionLogProvider>> = match self
+                .execution_log
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone()
+            {
+                Some(arc) => {
+                    info!(
+                        "REC-C1.2a: using caller-owned ExecutionLog for session {}",
+                        arc.session_id().as_str()
+                    );
+                    Some(arc)
+                }
+                None => {
+                    return Err(TraceError::CaptureFailed(
+                        "REC-C3.3.2: no canonical execution-log provider attached. Call \
+                     NativeProbeBackend::attach_execution_log(...) with the session-owned \
+                     provider before start_probe."
+                            .into(),
+                    ));
+                }
+            };
+
+            let accepted_raw_observer_for_thread = self.accepted_raw_observer.clone();
+
+            // Spawn background thread to run the event loop
+            let target = config.target.clone();
+            let args = config.args.clone();
+
+            // Shared slot so the thread can publish its PID back for stop_probe to kill.
+            let traced_pid_thread = self.traced_pid.clone();
+            // Clone for the closure - original `running` stays available for error handling
+            let running_clone = running.clone();
+
+            // CRIT-1: Set running=true BEFORE spawn so the thread never sees a stale false
+            running.store(true, Ordering::SeqCst);
+
+            let handle = thread::Builder::new()
+                .name("chronos-native-probe".into())
+                .spawn(move || {
+                    Self::run_probe_loop_with_pid_cb(
+                        &target,
+                        args,
+                        &ptrace_config,
+                        &running_clone,
+                        symbol_resolver.as_ref(),
+                        resolver_pipeline,
+                        language,
+                        AcceptanceSeam {
+                            log: log_for_thread,
+                            observer: accepted_raw_observer_for_thread,
+                        },
+                        move |pid: i32| {
+                            *traced_pid_thread.lock().unwrap_or_else(|e| e.into_inner()) =
+                                Some(pid);
+                        },
+                    );
+                })
+                .map_err(|e| {
+                    // CRIT-1: Reset running flag on spawn failure
+                    running.store(false, Ordering::SeqCst);
+                    TraceError::CaptureFailed(format!("Failed to spawn probe thread: {}", e))
+                })?;
+
+            // Store the handle - we need to get the PID first
+            // Since the thread manages its own PID, we'll store a placeholder for now
+            // The actual PID tracking happens inside the thread
+            *self.thread_handle.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
+
+            Ok(session)
+        }
     }
 
     /// Attach a probe to an existing process.
@@ -580,67 +601,78 @@ impl NativeProbeBackend {
         pid: u32,
         config: CaptureConfig,
     ) -> Result<CaptureSession, TraceError> {
-        // HIGH-4: Guard against double-start
-        if self.running.load(Ordering::SeqCst) {
-            return Err(TraceError::CaptureFailed(
-                "A probe is already running on this backend. Call stop_probe first.".into(),
-            ));
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = (pid, config);
+            Err(TraceError::UnsupportedOperation(
+                "native ptrace probe requires Linux; this platform provides no ptrace backend"
+                    .into(),
+            ))
         }
-        self.attached_target.store(true, Ordering::SeqCst);
+        #[cfg(target_os = "linux")]
+        {
+            // HIGH-4: Guard against double-start
+            if self.running.load(Ordering::SeqCst) {
+                return Err(TraceError::CaptureFailed(
+                    "A probe is already running on this backend. Call stop_probe first.".into(),
+                ));
+            }
+            self.attached_target.store(true, Ordering::SeqCst);
 
-        let language = config.language.unwrap_or(Language::C);
-        let running = self.running.clone();
-        let resolver_pipeline = self.resolver_pipeline.clone();
-        // REC-C2.2.1: attach accepts through the same seam as spawn.
-        let attach_log_for_thread = self.execution_log();
-        let attach_observer_for_thread = self.accepted_raw_observer.clone();
+            let language = config.language.unwrap_or(Language::C);
+            let running = self.running.clone();
+            let resolver_pipeline = self.resolver_pipeline.clone();
+            // REC-C2.2.1: attach accepts through the same seam as spawn.
+            let attach_log_for_thread = self.execution_log();
+            let attach_observer_for_thread = self.accepted_raw_observer.clone();
 
-        let ptrace_config = PtraceConfig {
-            trace_syscalls: config.capture_syscalls,
-            capture_registers: true,
-            follow_children: true,
-            track_function_frames: false,
-        };
+            let ptrace_config = PtraceConfig {
+                trace_syscalls: config.capture_syscalls,
+                capture_registers: true,
+                follow_children: true,
+                track_function_frames: false,
+            };
 
-        // Shared slot so the thread can publish its PID back for stop_probe to kill.
-        let traced_pid_thread = self.traced_pid.clone();
-        // Clone for the closure - original `running` stays available for error handling
-        let running_clone = running.clone();
+            // Shared slot so the thread can publish its PID back for stop_probe to kill.
+            let traced_pid_thread = self.traced_pid.clone();
+            // Clone for the closure - original `running` stays available for error handling
+            let running_clone = running.clone();
 
-        // CRIT-1: Set running=true BEFORE spawn so the thread never sees a stale false
-        running.store(true, Ordering::SeqCst);
+            // CRIT-1: Set running=true BEFORE spawn so the thread never sees a stale false
+            running.store(true, Ordering::SeqCst);
 
-        // Spawn background thread to run the event loop in attach mode
-        let handle = thread::Builder::new()
-            .name("chronos-native-probe-attach".into())
-            .spawn(move || {
-                // Set traced_pid at START of thread (before attaching),
-                // since we know the PID upfront for attach.
-                *traced_pid_thread.lock().unwrap_or_else(|e| e.into_inner()) = Some(pid as i32);
-                Self::run_probe_loop_attach(
-                    pid,
-                    &ptrace_config,
-                    &running_clone,
-                    resolver_pipeline,
-                    language,
-                    AcceptanceSeam {
-                        log: attach_log_for_thread,
-                        observer: attach_observer_for_thread,
-                    },
-                );
-            })
-            .map_err(|e| {
-                // CRIT-1: Reset running flag on spawn failure
-                running.store(false, Ordering::SeqCst);
-                TraceError::CaptureFailed(format!("Failed to spawn probe thread: {}", e))
-            })?;
+            // Spawn background thread to run the event loop in attach mode
+            let handle = thread::Builder::new()
+                .name("chronos-native-probe-attach".into())
+                .spawn(move || {
+                    // Set traced_pid at START of thread (before attaching),
+                    // since we know the PID upfront for attach.
+                    *traced_pid_thread.lock().unwrap_or_else(|e| e.into_inner()) = Some(pid as i32);
+                    Self::run_probe_loop_attach(
+                        pid,
+                        &ptrace_config,
+                        &running_clone,
+                        resolver_pipeline,
+                        language,
+                        AcceptanceSeam {
+                            log: attach_log_for_thread,
+                            observer: attach_observer_for_thread,
+                        },
+                    );
+                })
+                .map_err(|e| {
+                    // CRIT-1: Reset running flag on spawn failure
+                    running.store(false, Ordering::SeqCst);
+                    TraceError::CaptureFailed(format!("Failed to spawn probe thread: {}", e))
+                })?;
 
-        *self.thread_handle.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
+            *self.thread_handle.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
 
-        let mut session = CaptureSession::new(pid, language, config);
-        session.activate();
+            let mut session = CaptureSession::new(pid, language, config);
+            session.activate();
 
-        Ok(session)
+            Ok(session)
+        }
     }
 
     /// Stop an active probe session.
@@ -715,6 +747,7 @@ impl NativeProbeBackend {
         Ok(())
     }
 
+    #[cfg(target_os = "linux")]
     /// Internal wrapper: calls run_probe_loop with a PID callback.
     #[allow(clippy::too_many_arguments)]
     fn run_probe_loop_with_pid_cb(
@@ -743,6 +776,7 @@ impl NativeProbeBackend {
 
     /// Internal: Run the probe event loop for a spawned process.
     #[allow(clippy::too_many_arguments)]
+    #[cfg(target_os = "linux")]
     fn run_probe_loop(
         program_path: &str,
         args: Vec<String>,
@@ -771,7 +805,7 @@ impl NativeProbeBackend {
                 p
             }
             Err(e) => {
-                error!("Failed to launch {}: {}", program_path, e);
+                tracing::error!("Failed to launch {}: {}", program_path, e);
                 return;
             }
         };
@@ -979,6 +1013,7 @@ impl NativeProbeBackend {
     }
 
     /// Internal: Run the probe event loop for an attached process.
+    #[cfg(target_os = "linux")]
     fn run_probe_loop_attach(
         pid: u32,
         ptrace_config: &PtraceConfig,
@@ -991,7 +1026,7 @@ impl NativeProbeBackend {
         let adapter = NativeAdapter::new();
 
         if let Err(e) = tracer.attach(pid as i32) {
-            error!("Failed to attach to PID {}: {}", pid, e);
+            tracing::error!("Failed to attach to PID {}: {}", pid, e);
             // HIGH-4: clear `running` so the backend can be reused. The
             // attach thread set it true before the ptrace call; if ptrace
             // fails we must release that flag or every subsequent
@@ -1120,11 +1155,21 @@ impl NativeProbeBackend {
     /// published (probe has not started or has already stopped). All
     /// other errors propagate from `PtraceTracer::continue_execution`.
     pub fn advance(&self, _session: &CaptureSession) -> Result<(), TraceError> {
-        let pid = self
-            .get_traced_pid()
-            .ok_or_else(|| TraceError::capture_failed("advance called with no traced PID"))?;
-        let tracer = PtraceTracer::new(PtraceConfig::default());
-        tracer.continue_execution(pid)
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = _session;
+            Err(TraceError::UnsupportedOperation(
+                "native ptrace probe requires Linux".into(),
+            ))
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let pid = self
+                .get_traced_pid()
+                .ok_or_else(|| TraceError::capture_failed("advance called with no traced PID"))?;
+            let tracer = PtraceTracer::new(PtraceConfig::default());
+            tracer.continue_execution(pid)
+        }
     }
 
     /// REC-C3.3.3 (Tren B slice E) — single-step the traced target by one
@@ -1133,11 +1178,21 @@ impl NativeProbeBackend {
     /// Same PID resolution as [`Self::advance`]; delegates to
     /// [`PtraceTracer::step`]. Used by the `probe_step` MCP tool.
     pub fn step(&self, _session: &CaptureSession) -> Result<(), TraceError> {
-        let pid = self
-            .get_traced_pid()
-            .ok_or_else(|| TraceError::capture_failed("step called with no traced PID"))?;
-        let tracer = PtraceTracer::new(PtraceConfig::default());
-        tracer.step(pid)
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = _session;
+            Err(TraceError::UnsupportedOperation(
+                "native ptrace probe requires Linux".into(),
+            ))
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let pid = self
+                .get_traced_pid()
+                .ok_or_else(|| TraceError::capture_failed("step called with no traced PID"))?;
+            let tracer = PtraceTracer::new(PtraceConfig::default());
+            tracer.step(pid)
+        }
     }
 }
 

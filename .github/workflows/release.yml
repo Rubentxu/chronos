@@ -10,8 +10,9 @@ env:
 
 jobs:
   build:
-    name: Build Release Binary
+    name: Build Release Binary (${{ matrix.target }})
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -27,6 +28,16 @@ jobs:
           targets: ${{ matrix.target }}
       - name: Build
         run: cargo build -p chronos-mcp --release --target ${{ matrix.target }}
+      - name: Fail loud if binary was not produced
+        run: |
+          set -euo pipefail
+          BIN="target/${{ matrix.target }}/release/chronos-mcp"
+          if [ ! -f "$BIN" ]; then
+            echo "::error::chronos-mcp binary missing for ${{ matrix.target }} after a green build step."
+            echo "::error::The build must not silently skip targets. Inspect the Build step above."
+            exit 1
+          fi
+          echo "binary ok: $BIN ($(wc -c < "$BIN") bytes)"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:

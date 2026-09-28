@@ -1,1002 +1,1103 @@
-//! Core ptrace tracing functionality.
+//! Core ptrace tracing functionality (Linux-only).
 //!
 //! Provides low-level ptrace operations: fork+exec under trace,
 //! waitpid event loop, register capture, and signal handling.
 //!
+//! # Platform support
+//!
+//! ptrace is a Linux facility. The implementation lives in [`imp`], compiled
+//! only on `target_os = "linux"`. On every other target this module still
+//! exposes the two bridge types the portable layers need (`PtraceConfig`,
+//! `PtraceEvent`), field- and variant-identical to the Linux ones, so the
+//! portable probe plumbing compiles unchanged; the tracer itself does not
+//! exist and no event can ever be produced. Probing on a non-linux host is
+//! rejected fail-closed with `TraceError::UnsupportedOperation` (see
+//! `probe_backend`).
+//!
 //! # Safety
 //!
-//! This module uses `unsafe` for `fork()` which is inherently unsafe in
-//! Rust (per nix's API). The parent-child communication follows the
-//! standard ptrace pattern documented in `ptrace(2)`.
+//! The Linux implementation uses `unsafe` for `fork()` which is inherently
+//! unsafe in Rust (per nix's API). The parent-child communication follows
+//! the standard ptrace pattern documented in `ptrace(2)`.
 
-use chronos_domain::RegisterState;
-use chronos_domain::TraceError;
-use nix::sys::ptrace;
-use nix::sys::signal::Signal;
-use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
-use nix::unistd::{execvp, fork, ForkResult, Pid};
-use std::collections::VecDeque;
-use std::ffi::CString;
-use std::path::Path;
-use tracing::{debug, info, warn};
+/// Non-linux bridge types. Field- and variant-identical to the Linux
+/// definitions so portable consumers compile without behavioral surface.
+#[cfg(not(target_os = "linux"))]
+mod bridge {
+    use chronos_domain::RegisterState;
 
-/// Events produced by the ptrace event loop.
-#[derive(Debug, Clone)]
-pub enum PtraceEvent {
-    /// Tracee was stopped by a signal.
-    Stopped {
-        pid: i32,
-        signal: i32,
-        signal_name: String,
-    },
-    /// Tracee hit a syscall entry or exit.
-    Syscall {
-        pid: i32,
-        syscall_nr: u64,
-        is_entry: bool,
-    },
-    /// Tracee exited normally with an exit code.
-    Exited { pid: i32, exit_code: i32 },
-    /// Tracee was killed by a signal.
-    Signaled {
-        pid: i32,
-        signal: i32,
-        signal_name: String,
-        core_dumped: bool,
-    },
-    /// Tracee hit a ptrace event (clone, fork, exec, etc.).
-    /// `new_pid` contains the PID of the newly created child (if applicable).
-    PtraceEvent {
-        pid: i32,
-        event_code: i32,
-        new_pid: Option<i32>,
-    },
-    /// Register state snapshot captured for this stop.
-    Registers { pid: i32, regs: RegisterState },
-}
+    /// Probe configuration. Identical fields to the Linux definition.
+    #[derive(Debug, Clone)]
+    pub struct PtraceConfig {
+        pub trace_syscalls: bool,
+        pub capture_registers: bool,
+        pub follow_children: bool,
+        pub track_function_frames: bool,
+    }
 
-impl PtraceEvent {
-    /// Get the PID associated with this event.
-    pub fn pid(&self) -> i32 {
-        match self {
-            PtraceEvent::Stopped { pid, .. } => *pid,
-            PtraceEvent::Syscall { pid, .. } => *pid,
-            PtraceEvent::Exited { pid, .. } => *pid,
-            PtraceEvent::Signaled { pid, .. } => *pid,
-            PtraceEvent::PtraceEvent { pid, .. } => *pid,
-            PtraceEvent::Registers { pid, .. } => *pid,
+    impl Default for PtraceConfig {
+        fn default() -> Self {
+            Self {
+                trace_syscalls: false,
+                capture_registers: true,
+                follow_children: true,
+                track_function_frames: false,
+            }
+        }
+    }
+
+    /// Events produced by the ptrace event loop. Identical variants to the
+    /// Linux definition; never constructed on non-linux targets.
+    #[derive(Debug, Clone)]
+    pub enum PtraceEvent {
+        /// Tracee was stopped by a signal.
+        Stopped {
+            pid: i32,
+            signal: i32,
+            signal_name: String,
+        },
+        /// Tracee hit a syscall entry or exit.
+        Syscall {
+            pid: i32,
+            syscall_nr: u64,
+            is_entry: bool,
+        },
+        /// Tracee exited normally with an exit code.
+        Exited { pid: i32, exit_code: i32 },
+        /// Tracee was killed by a signal.
+        Signaled {
+            pid: i32,
+            signal: i32,
+            signal_name: String,
+            core_dumped: bool,
+        },
+        /// Tracee hit a ptrace event (clone, fork, exec, etc.).
+        PtraceEvent {
+            pid: i32,
+            event_code: i32,
+            new_pid: Option<i32>,
+        },
+        /// Register state snapshot captured for this stop.
+        Registers { pid: i32, regs: RegisterState },
+    }
+
+    impl PtraceEvent {
+        /// Get the PID associated with this event.
+        pub fn pid(&self) -> i32 {
+            match self {
+                PtraceEvent::Stopped { pid, .. }
+                | PtraceEvent::Syscall { pid, .. }
+                | PtraceEvent::Exited { pid, .. }
+                | PtraceEvent::Signaled { pid, .. }
+                | PtraceEvent::PtraceEvent { pid, .. }
+                | PtraceEvent::Registers { pid, .. } => *pid,
+            }
         }
     }
 }
 
-/// Configuration for a ptrace tracing session.
-#[derive(Debug, Clone)]
-pub struct PtraceConfig {
-    /// Whether to trace syscall entry/exit events.
-    pub trace_syscalls: bool,
-    /// Whether to capture register state on each stop.
-    pub capture_registers: bool,
-    /// Whether to follow clone/fork children (multi-threaded programs).
-    pub follow_children: bool,
-    /// Whether to capture real function frames. When `true`, `launch()`
-    /// pauses the child at exec so the capture pipeline can plant INT3
-    /// breakpoints at the relocated function-entry addresses; each hit is
-    /// classified as a `FunctionEntry` and the M2 `InvocationTracker`
-    /// pre-populates the emitted events with `invocation_id`,
-    /// `parent_invocation_id`, and `symbol_id`. The on-disk `ExecutionRecord`
-    /// then carries these fields and reads as `chronos_exec_v2`. Default:
-    /// `false` so the M0/M1 perf and v1 segment shape are preserved (and the
-    /// child resumes immediately after exec, as before).
-    pub track_function_frames: bool,
-}
+#[cfg(not(target_os = "linux"))]
+pub use bridge::{PtraceConfig, PtraceEvent};
 
-impl Default for PtraceConfig {
-    fn default() -> Self {
-        Self {
-            trace_syscalls: false,
-            capture_registers: true,
-            follow_children: true,
-            track_function_frames: false,
-        }
+/// Linux implementation of the tracer. Everything in here is allowed to
+/// assume `target_os = "linux"`.
+#[cfg(target_os = "linux")]
+mod imp {
+    use chronos_domain::RegisterState;
+    use chronos_domain::TraceError;
+    use nix::sys::ptrace;
+    use nix::sys::signal::Signal;
+    use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
+    use nix::unistd::{execvp, fork, ForkResult, Pid};
+    use std::collections::VecDeque;
+    use std::ffi::CString;
+    use std::path::Path;
+    use tracing::{debug, info, warn};
+
+    /// Events produced by the ptrace event loop.
+    #[derive(Debug, Clone)]
+    pub enum PtraceEvent {
+        /// Tracee was stopped by a signal.
+        Stopped {
+            pid: i32,
+            signal: i32,
+            signal_name: String,
+        },
+        /// Tracee hit a syscall entry or exit.
+        Syscall {
+            pid: i32,
+            syscall_nr: u64,
+            is_entry: bool,
+        },
+        /// Tracee exited normally with an exit code.
+        Exited { pid: i32, exit_code: i32 },
+        /// Tracee was killed by a signal.
+        Signaled {
+            pid: i32,
+            signal: i32,
+            signal_name: String,
+            core_dumped: bool,
+        },
+        /// Tracee hit a ptrace event (clone, fork, exec, etc.).
+        /// `new_pid` contains the PID of the newly created child (if applicable).
+        PtraceEvent {
+            pid: i32,
+            event_code: i32,
+            new_pid: Option<i32>,
+        },
+        /// Register state snapshot captured for this stop.
+        Registers { pid: i32, regs: RegisterState },
     }
-}
 
-/// Core ptrace tracer — wraps all low-level ptrace operations.
-///
-/// Usage:
-/// 1. `launch()` — fork+exec target under ptrace
-/// 2. `wait_event()` — wait for next ptrace stop event
-/// 3. `continue_execution()` / `step()` / `syscall_continue()` — resume
-/// 4. `read_registers()` — capture register state
-pub struct PtraceTracer {
-    /// PID of the main traced process.
-    main_pid: Option<Pid>,
-    /// Set of all PIDs being traced (includes cloned children).
-    traced_pids: std::collections::HashSet<i32>,
-    /// Configuration.
-    config: PtraceConfig,
-    /// Whether initial setup (setoptions) has been done.
-    initialized: bool,
-    /// Buffered events from a previous wait_event that produced multiple events.
-    pending_events: VecDeque<PtraceEvent>,
-    /// Tracks which PIDs are currently at syscall-entry state (vs exit).
-    /// With PTRACE_O_TRACESYSGOOD, ptrace alternates entry/exit stops per PID.
-    /// This set toggles on each PtraceSyscall event to track the state.
-    syscall_entry_pids: std::collections::HashSet<i32>,
-    /// Performance counter handles (feature-gated).
-    #[cfg(feature = "perf_counters")]
-    perf_handles: Vec<super::perf::PerfCounterHandle>,
-}
-
-impl PtraceTracer {
-    /// Create a new tracer with the given configuration.
-    pub fn new(config: PtraceConfig) -> Self {
-        Self {
-            main_pid: None,
-            traced_pids: std::collections::HashSet::new(),
-            config,
-            initialized: false,
-            pending_events: VecDeque::new(),
-            syscall_entry_pids: std::collections::HashSet::new(),
-            #[cfg(feature = "perf_counters")]
-            perf_handles: Vec::new(),
+    impl PtraceEvent {
+        /// Get the PID associated with this event.
+        pub fn pid(&self) -> i32 {
+            match self {
+                PtraceEvent::Stopped { pid, .. } => *pid,
+                PtraceEvent::Syscall { pid, .. } => *pid,
+                PtraceEvent::Exited { pid, .. } => *pid,
+                PtraceEvent::Signaled { pid, .. } => *pid,
+                PtraceEvent::PtraceEvent { pid, .. } => *pid,
+                PtraceEvent::Registers { pid, .. } => *pid,
+            }
         }
     }
 
-    /// Create a new tracer with default configuration.
-    pub fn new_default() -> Self {
-        Self::new(PtraceConfig::default())
+    /// Configuration for a ptrace tracing session.
+    #[derive(Debug, Clone)]
+    pub struct PtraceConfig {
+        /// Whether to trace syscall entry/exit events.
+        pub trace_syscalls: bool,
+        /// Whether to capture register state on each stop.
+        pub capture_registers: bool,
+        /// Whether to follow clone/fork children (multi-threaded programs).
+        pub follow_children: bool,
+        /// Whether to capture real function frames. When `true`, `launch()`
+        /// pauses the child at exec so the capture pipeline can plant INT3
+        /// breakpoints at the relocated function-entry addresses; each hit is
+        /// classified as a `FunctionEntry` and the M2 `InvocationTracker`
+        /// pre-populates the emitted events with `invocation_id`,
+        /// `parent_invocation_id`, and `symbol_id`. The on-disk `ExecutionRecord`
+        /// then carries these fields and reads as `chronos_exec_v2`. Default:
+        /// `false` so the M0/M1 perf and v1 segment shape are preserved (and the
+        /// child resumes immediately after exec, as before).
+        pub track_function_frames: bool,
     }
 
-    /// Get the main traced PID, if set.
-    pub fn main_pid(&self) -> Option<i32> {
-        self.main_pid.map(|p| p.as_raw())
+    impl Default for PtraceConfig {
+        fn default() -> Self {
+            Self {
+                trace_syscalls: false,
+                capture_registers: true,
+                follow_children: true,
+                track_function_frames: false,
+            }
+        }
     }
 
-    /// Get all traced PIDs.
-    pub fn traced_pids(&self) -> &std::collections::HashSet<i32> {
-        &self.traced_pids
-    }
-
-    /// Launch a program under ptrace trace.
+    /// Core ptrace tracer — wraps all low-level ptrace operations.
     ///
-    /// Forks the current process. The child calls `PTRACE_TRACEME` then
-    /// `execvp` to replace itself with the target program. The parent
-    /// waits for the initial stop (SIGTRAP from exec).
-    ///
-    /// Returns the child PID on success.
-    pub fn launch(&mut self, program: &Path, args: &[String]) -> Result<i32, TraceError> {
-        let program_str = program
-            .to_str()
-            .ok_or_else(|| TraceError::CaptureFailed("Invalid program path".into()))?;
+    /// Usage:
+    /// 1. `launch()` — fork+exec target under ptrace
+    /// 2. `wait_event()` — wait for next ptrace stop event
+    /// 3. `continue_execution()` / `step()` / `syscall_continue()` — resume
+    /// 4. `read_registers()` — capture register state
+    pub struct PtraceTracer {
+        /// PID of the main traced process.
+        main_pid: Option<Pid>,
+        /// Set of all PIDs being traced (includes cloned children).
+        traced_pids: std::collections::HashSet<i32>,
+        /// Configuration.
+        config: PtraceConfig,
+        /// Whether initial setup (setoptions) has been done.
+        initialized: bool,
+        /// Buffered events from a previous wait_event that produced multiple events.
+        pending_events: VecDeque<PtraceEvent>,
+        /// Tracks which PIDs are currently at syscall-entry state (vs exit).
+        /// With PTRACE_O_TRACESYSGOOD, ptrace alternates entry/exit stops per PID.
+        /// This set toggles on each PtraceSyscall event to track the state.
+        syscall_entry_pids: std::collections::HashSet<i32>,
+        /// Performance counter handles (feature-gated).
+        #[cfg(feature = "perf_counters")]
+        perf_handles: Vec<super::perf::PerfCounterHandle>,
+    }
 
-        let c_program = CString::new(program_str)
-            .map_err(|e| TraceError::CaptureFailed(format!("Invalid path: {}", e)))?;
+    impl PtraceTracer {
+        /// Create a new tracer with the given configuration.
+        pub fn new(config: PtraceConfig) -> Self {
+            Self {
+                main_pid: None,
+                traced_pids: std::collections::HashSet::new(),
+                config,
+                initialized: false,
+                pending_events: VecDeque::new(),
+                syscall_entry_pids: std::collections::HashSet::new(),
+                #[cfg(feature = "perf_counters")]
+                perf_handles: Vec::new(),
+            }
+        }
 
-        let c_args: Vec<CString> = std::iter::once(c_program.clone())
-            .chain(args.iter().map(|a| {
-                CString::new(a.as_str()).unwrap_or_else(|_| CString::new("invalid").unwrap())
-            }))
-            .collect();
+        /// Create a new tracer with default configuration.
+        pub fn new_default() -> Self {
+            Self::new(PtraceConfig::default())
+        }
 
-        let pid = unsafe {
-            fork().map_err(|e| TraceError::CaptureFailed(format!("Fork failed: {}", e)))?
-        };
+        /// Get the main traced PID, if set.
+        pub fn main_pid(&self) -> Option<i32> {
+            self.main_pid.map(|p| p.as_raw())
+        }
 
-        match pid {
-            ForkResult::Child => {
-                // Child process: close inherited file descriptors to prevent leaking
-                // the parent's MCP stdio pipes into the traced program. This prevents
-                // the parent (MCP server) from dying when the child exits.
-                unsafe {
-                    // Redirect stdin/stdout to /dev/null (keep stderr for debug output)
-                    let devnull_path = b"/dev/null\0";
-                    let devnull = nix::libc::open(
-                        devnull_path.as_ptr() as *const nix::libc::c_char,
-                        nix::libc::O_RDWR,
-                    );
-                    if devnull >= 0 {
-                        nix::libc::dup2(devnull, 0);
-                        nix::libc::dup2(devnull, 1);
-                        if devnull > 2 {
-                            nix::libc::close(devnull);
+        /// Get all traced PIDs.
+        pub fn traced_pids(&self) -> &std::collections::HashSet<i32> {
+            &self.traced_pids
+        }
+
+        /// Launch a program under ptrace trace.
+        ///
+        /// Forks the current process. The child calls `PTRACE_TRACEME` then
+        /// `execvp` to replace itself with the target program. The parent
+        /// waits for the initial stop (SIGTRAP from exec).
+        ///
+        /// Returns the child PID on success.
+        pub fn launch(&mut self, program: &Path, args: &[String]) -> Result<i32, TraceError> {
+            let program_str = program
+                .to_str()
+                .ok_or_else(|| TraceError::CaptureFailed("Invalid program path".into()))?;
+
+            let c_program = CString::new(program_str)
+                .map_err(|e| TraceError::CaptureFailed(format!("Invalid path: {}", e)))?;
+
+            let c_args: Vec<CString> = std::iter::once(c_program.clone())
+                .chain(args.iter().map(|a| {
+                    CString::new(a.as_str()).unwrap_or_else(|_| CString::new("invalid").unwrap())
+                }))
+                .collect();
+
+            let pid = unsafe {
+                fork().map_err(|e| TraceError::CaptureFailed(format!("Fork failed: {}", e)))?
+            };
+
+            match pid {
+                ForkResult::Child => {
+                    // Child process: close inherited file descriptors to prevent leaking
+                    // the parent's MCP stdio pipes into the traced program. This prevents
+                    // the parent (MCP server) from dying when the child exits.
+                    unsafe {
+                        // Redirect stdin/stdout to /dev/null (keep stderr for debug output)
+                        let devnull_path = b"/dev/null\0";
+                        let devnull = nix::libc::open(
+                            devnull_path.as_ptr() as *const nix::libc::c_char,
+                            nix::libc::O_RDWR,
+                        );
+                        if devnull >= 0 {
+                            nix::libc::dup2(devnull, 0);
+                            nix::libc::dup2(devnull, 1);
+                            if devnull > 2 {
+                                nix::libc::close(devnull);
+                            }
+                        }
+                        // Close extra inherited fds to prevent pipe leaks.
+                        // Try close_range (Linux 5.9+) first, fall back to getrlimit+loop.
+                        let close_result =
+                            nix::libc::syscall(nix::libc::SYS_close_range, 3i32, u32::MAX, 0u32);
+                        if close_result != 0 {
+                            // Fallback: close up to RLIMIT_NOFILE
+                            let mut rl = nix::libc::rlimit {
+                                rlim_cur: 0,
+                                rlim_max: 0,
+                            };
+                            nix::libc::getrlimit(nix::libc::RLIMIT_NOFILE, &mut rl);
+                            let max_fd = rl.rlim_cur.min(65536) as i32;
+                            for fd in 3..max_fd {
+                                nix::libc::close(fd);
+                            }
                         }
                     }
-                    // Close extra inherited fds to prevent pipe leaks.
-                    // Try close_range (Linux 5.9+) first, fall back to getrlimit+loop.
-                    let close_result =
-                        nix::libc::syscall(nix::libc::SYS_close_range, 3i32, u32::MAX, 0u32);
-                    if close_result != 0 {
-                        // Fallback: close up to RLIMIT_NOFILE
-                        let mut rl = nix::libc::rlimit {
-                            rlim_cur: 0,
-                            rlim_max: 0,
-                        };
-                        nix::libc::getrlimit(nix::libc::RLIMIT_NOFILE, &mut rl);
-                        let max_fd = rl.rlim_cur.min(65536) as i32;
-                        for fd in 3..max_fd {
-                            nix::libc::close(fd);
+
+                    // Request tracing by parent
+                    if let Err(e) = ptrace::traceme() {
+                        eprintln!("chronos: PTRACE_TRACEME failed: {}", e);
+                        std::process::exit(1);
+                    }
+
+                    // Raise SIGSTOP so parent can set options before we exec
+                    // Actually, PTRACE_TRACEME + exec will deliver SIGTRAP to parent
+                    let _ = execvp(&c_program, &c_args);
+
+                    // execvp only returns on error
+                    let err = std::io::Error::last_os_error();
+                    eprintln!("chronos: execvp failed: {}", err);
+                    std::process::exit(127);
+                }
+                ForkResult::Parent { child } => {
+                    info!("Launched child process PID {}", child);
+
+                    // Wait for the initial SIGTRAP delivered after exec
+                    match waitpid(child, None) {
+                        Ok(WaitStatus::Stopped(_, Signal::SIGTRAP)) => {
+                            debug!("Child {} stopped with SIGTRAP (post-exec)", child);
+                        }
+                        Ok(WaitStatus::Stopped(_, sig)) => {
+                            warn!("Child stopped with unexpected signal: {:?}", sig);
+                        }
+                        Ok(WaitStatus::Signaled(_, sig, core)) => {
+                            return Err(TraceError::TargetCrashed(format!(
+                                "Child killed by {:?} (core: {})",
+                                sig, core
+                            )));
+                        }
+                        Ok(other) => {
+                            return Err(TraceError::CaptureFailed(format!(
+                                "Unexpected wait status: {:?}",
+                                other
+                            )));
+                        }
+                        Err(e) => {
+                            return Err(TraceError::CaptureFailed(format!(
+                                "waitpid failed: {}",
+                                e
+                            )));
                         }
                     }
-                }
 
-                // Request tracing by parent
-                if let Err(e) = ptrace::traceme() {
-                    eprintln!("chronos: PTRACE_TRACEME failed: {}", e);
-                    std::process::exit(1);
-                }
+                    // Set ptrace options
+                    self.setup_ptrace_options(child)?;
 
-                // Raise SIGSTOP so parent can set options before we exec
-                // Actually, PTRACE_TRACEME + exec will deliver SIGTRAP to parent
-                let _ = execvp(&c_program, &c_args);
+                    self.main_pid = Some(child);
+                    self.traced_pids.insert(child.as_raw());
+                    self.initialized = true;
 
-                // execvp only returns on error
-                let err = std::io::Error::last_os_error();
-                eprintln!("chronos: execvp failed: {}", err);
-                std::process::exit(127);
-            }
-            ForkResult::Parent { child } => {
-                info!("Launched child process PID {}", child);
-
-                // Wait for the initial SIGTRAP delivered after exec
-                match waitpid(child, None) {
-                    Ok(WaitStatus::Stopped(_, Signal::SIGTRAP)) => {
-                        debug!("Child {} stopped with SIGTRAP (post-exec)", child);
+                    // Real function-frame capture (track_function_frames=true)
+                    // needs a window to plant INT3 breakpoints at the relocated
+                    // function-entry addresses before any program code runs, so
+                    // we leave the child stopped at this post-exec SIGTRAP and let
+                    // the capture pipeline resume it after injection. All other
+                    // modes resume here exactly as before (no behavioural change).
+                    if self.config.track_function_frames {
+                        debug!(
+                            "Child {} left paused at exec for breakpoint injection",
+                            child
+                        );
+                        return Ok(child.as_raw());
                     }
-                    Ok(WaitStatus::Stopped(_, sig)) => {
-                        warn!("Child stopped with unexpected signal: {:?}", sig);
+
+                    // Resume the child — the SIGTRAP stop was consumed by waitpid above.
+                    // Without this, wait_event() will never see a stop because the initial
+                    // SIGTRAP was already reaped. Use PTRACE_SYSCALL if trace_syscalls=true
+                    // so the child stops at the next syscall entry/exit.
+                    if self.config.trace_syscalls {
+                        ptrace::syscall(child, None).map_err(|e| {
+                            TraceError::CaptureFailed(format!("PTRACE_SYSCALL failed: {}", e))
+                        })?;
+                        debug!("Child {} resumed with PTRACE_SYSCALL", child);
+                    } else {
+                        ptrace::cont(child, None).map_err(|e| {
+                            TraceError::CaptureFailed(format!("PTRACE_CONT failed: {}", e))
+                        })?;
+                        debug!("Child {} resumed with PTRACE_CONT", child);
                     }
-                    Ok(WaitStatus::Signaled(_, sig, core)) => {
-                        return Err(TraceError::TargetCrashed(format!(
-                            "Child killed by {:?} (core: {})",
-                            sig, core
-                        )));
-                    }
-                    Ok(other) => {
-                        return Err(TraceError::CaptureFailed(format!(
-                            "Unexpected wait status: {:?}",
-                            other
-                        )));
-                    }
-                    Err(e) => {
-                        return Err(TraceError::CaptureFailed(format!("waitpid failed: {}", e)));
-                    }
+
+                    Ok(child.as_raw())
                 }
-
-                // Set ptrace options
-                self.setup_ptrace_options(child)?;
-
-                self.main_pid = Some(child);
-                self.traced_pids.insert(child.as_raw());
-                self.initialized = true;
-
-                // Real function-frame capture (track_function_frames=true)
-                // needs a window to plant INT3 breakpoints at the relocated
-                // function-entry addresses before any program code runs, so
-                // we leave the child stopped at this post-exec SIGTRAP and let
-                // the capture pipeline resume it after injection. All other
-                // modes resume here exactly as before (no behavioural change).
-                if self.config.track_function_frames {
-                    debug!(
-                        "Child {} left paused at exec for breakpoint injection",
-                        child
-                    );
-                    return Ok(child.as_raw());
-                }
-
-                // Resume the child — the SIGTRAP stop was consumed by waitpid above.
-                // Without this, wait_event() will never see a stop because the initial
-                // SIGTRAP was already reaped. Use PTRACE_SYSCALL if trace_syscalls=true
-                // so the child stops at the next syscall entry/exit.
-                if self.config.trace_syscalls {
-                    ptrace::syscall(child, None).map_err(|e| {
-                        TraceError::CaptureFailed(format!("PTRACE_SYSCALL failed: {}", e))
-                    })?;
-                    debug!("Child {} resumed with PTRACE_SYSCALL", child);
-                } else {
-                    ptrace::cont(child, None).map_err(|e| {
-                        TraceError::CaptureFailed(format!("PTRACE_CONT failed: {}", e))
-                    })?;
-                    debug!("Child {} resumed with PTRACE_CONT", child);
-                }
-
-                Ok(child.as_raw())
-            }
-        }
-    }
-
-    /// Attach to an already-running process.
-    pub fn attach(&mut self, pid: i32) -> Result<(), TraceError> {
-        let nix_pid = Pid::from_raw(pid);
-        ptrace::attach(nix_pid)
-            .map_err(|e| TraceError::CaptureFailed(format!("PTRACE_ATTACH failed: {}", e)))?;
-
-        // Wait for the tracee to stop
-        match waitpid(nix_pid, None) {
-            Ok(WaitStatus::Stopped(_, Signal::SIGSTOP)) => {
-                debug!("Attached to PID {} (stopped)", pid);
-            }
-            Ok(other) => {
-                warn!("Unexpected status after attach: {:?}", other);
-            }
-            Err(e) => {
-                return Err(TraceError::CaptureFailed(format!(
-                    "waitpid after attach failed: {}",
-                    e
-                )));
             }
         }
 
-        self.setup_ptrace_options(nix_pid)?;
+        /// Attach to an already-running process.
+        pub fn attach(&mut self, pid: i32) -> Result<(), TraceError> {
+            let nix_pid = Pid::from_raw(pid);
+            ptrace::attach(nix_pid)
+                .map_err(|e| TraceError::CaptureFailed(format!("PTRACE_ATTACH failed: {}", e)))?;
 
-        self.main_pid = Some(nix_pid);
-        self.traced_pids.insert(pid);
-        self.initialized = true;
-
-        Ok(())
-    }
-
-    /// Configure ptrace options on a traced process.
-    fn setup_ptrace_options(&self, pid: Pid) -> Result<(), TraceError> {
-        let mut options = ptrace::Options::empty();
-
-        if self.config.follow_children {
-            options |= ptrace::Options::PTRACE_O_TRACECLONE;
-            options |= ptrace::Options::PTRACE_O_TRACEFORK;
-            options |= ptrace::Options::PTRACE_O_TRACEVFORK;
-        }
-
-        if self.config.trace_syscalls {
-            options |= ptrace::Options::PTRACE_O_TRACESYSGOOD;
-        }
-
-        if !options.is_empty() {
-            ptrace::setoptions(pid, options).map_err(|e| {
-                TraceError::CaptureFailed(format!("PTRACE_SETOPTIONS failed: {}", e))
-            })?;
-        }
-
-        Ok(())
-    }
-
-    /// Wait for the next ptrace event from any traced process.
-    ///
-    /// Returns the event and associated data. Blocks until an event occurs.
-    /// If capture_registers is enabled, register snapshots are yielded as
-    /// separate events before the stop event that triggered them.
-    ///
-    /// When `follow_children` is enabled and multiple PIDs are being traced,
-    /// uses `waitpid(-1, __WALL)` to catch events from all threads/processes.
-    /// Otherwise, waits on the main PID only.
-    pub fn wait_event(&mut self) -> Result<Option<PtraceEvent>, TraceError> {
-        // Return buffered events first
-        if !self.pending_events.is_empty() {
-            return Ok(Some(self.pending_events.pop_front().unwrap()));
-        }
-
-        // Decide whether to wait on any child or a specific PID.
-        // When follow_children is enabled, use waitpid(-1, __WALL) to catch
-        // clone/fork events from any traced process.
-        if self.config.follow_children || self.main_pid.is_none() {
-            // Use BLOCKING waitpid for reliability — clone events are delivered
-            // immediately and we don't want to miss them with polling.
-            // The caller must ensure probe_stop interrupts us (e.g., by killing
-            // the traced process or sending PTRACE_INTERRUPT).
-            let status = match waitpid(Pid::from_raw(-1), Some(WaitPidFlag::__WALL)) {
-                Ok(s) => s,
-                Err(nix::errno::Errno::ECHILD) => {
-                    debug!("No more traced processes");
-                    return Ok(None);
+            // Wait for the tracee to stop
+            match waitpid(nix_pid, None) {
+                Ok(WaitStatus::Stopped(_, Signal::SIGSTOP)) => {
+                    debug!("Attached to PID {} (stopped)", pid);
+                }
+                Ok(other) => {
+                    warn!("Unexpected status after attach: {:?}", other);
                 }
                 Err(e) => {
                     return Err(TraceError::CaptureFailed(format!(
-                        "waitpid(-1, __WALL) error: {}",
+                        "waitpid after attach failed: {}",
                         e
                     )));
                 }
-            };
-            return self.process_wait_status_impl(status);
-        }
-
-        // No follow_children: wait on the main PID specifically.
-        let pid = match self.main_pid {
-            Some(p) => p,
-            None => return Ok(None),
-        };
-
-        use nix::sys::signal::kill;
-        let start = std::time::Instant::now();
-
-        let status = loop {
-            if kill(pid, None).is_err() {
-                debug!("Process {} no longer exists", pid);
-                return Ok(None);
             }
 
-            match waitpid(pid, Some(WaitPidFlag::WNOHANG)) {
-                Ok(WaitStatus::StillAlive) => {
-                    if start.elapsed().as_secs() > 5 {
-                        match ptrace::cont(pid, None) {
-                            Ok(()) => {
-                                std::thread::sleep(std::time::Duration::from_millis(100));
-                                continue;
-                            }
-                            Err(nix::errno::Errno::ESRCH) => {
-                                debug!("PTRACE_CONT ESRCH — child gone");
-                                return Ok(None);
-                            }
-                            Err(e) => {
-                                debug!("PTRACE_CONT failed: {}", e);
-                                return Ok(None);
-                            }
-                        }
+            self.setup_ptrace_options(nix_pid)?;
+
+            self.main_pid = Some(nix_pid);
+            self.traced_pids.insert(pid);
+            self.initialized = true;
+
+            Ok(())
+        }
+
+        /// Configure ptrace options on a traced process.
+        fn setup_ptrace_options(&self, pid: Pid) -> Result<(), TraceError> {
+            let mut options = ptrace::Options::empty();
+
+            if self.config.follow_children {
+                options |= ptrace::Options::PTRACE_O_TRACECLONE;
+                options |= ptrace::Options::PTRACE_O_TRACEFORK;
+                options |= ptrace::Options::PTRACE_O_TRACEVFORK;
+            }
+
+            if self.config.trace_syscalls {
+                options |= ptrace::Options::PTRACE_O_TRACESYSGOOD;
+            }
+
+            if !options.is_empty() {
+                ptrace::setoptions(pid, options).map_err(|e| {
+                    TraceError::CaptureFailed(format!("PTRACE_SETOPTIONS failed: {}", e))
+                })?;
+            }
+
+            Ok(())
+        }
+
+        /// Wait for the next ptrace event from any traced process.
+        ///
+        /// Returns the event and associated data. Blocks until an event occurs.
+        /// If capture_registers is enabled, register snapshots are yielded as
+        /// separate events before the stop event that triggered them.
+        ///
+        /// When `follow_children` is enabled and multiple PIDs are being traced,
+        /// uses `waitpid(-1, __WALL)` to catch events from all threads/processes.
+        /// Otherwise, waits on the main PID only.
+        pub fn wait_event(&mut self) -> Result<Option<PtraceEvent>, TraceError> {
+            // Return buffered events first
+            if !self.pending_events.is_empty() {
+                return Ok(Some(self.pending_events.pop_front().unwrap()));
+            }
+
+            // Decide whether to wait on any child or a specific PID.
+            // When follow_children is enabled, use waitpid(-1, __WALL) to catch
+            // clone/fork events from any traced process.
+            if self.config.follow_children || self.main_pid.is_none() {
+                // Use BLOCKING waitpid for reliability — clone events are delivered
+                // immediately and we don't want to miss them with polling.
+                // The caller must ensure probe_stop interrupts us (e.g., by killing
+                // the traced process or sending PTRACE_INTERRUPT).
+                let status = match waitpid(Pid::from_raw(-1), Some(WaitPidFlag::__WALL)) {
+                    Ok(s) => s,
+                    Err(nix::errno::Errno::ECHILD) => {
+                        debug!("No more traced processes");
+                        return Ok(None);
                     }
-                    std::thread::sleep(std::time::Duration::from_millis(10));
-                }
-                Ok(s) => break s,
-                Err(nix::errno::Errno::ECHILD) => {
-                    debug!("waitpid({}) ECHILD", pid.as_raw());
+                    Err(e) => {
+                        return Err(TraceError::CaptureFailed(format!(
+                            "waitpid(-1, __WALL) error: {}",
+                            e
+                        )));
+                    }
+                };
+                return self.process_wait_status_impl(status);
+            }
+
+            // No follow_children: wait on the main PID specifically.
+            let pid = match self.main_pid {
+                Some(p) => p,
+                None => return Ok(None),
+            };
+
+            use nix::sys::signal::kill;
+            let start = std::time::Instant::now();
+
+            let status = loop {
+                if kill(pid, None).is_err() {
+                    debug!("Process {} no longer exists", pid);
                     return Ok(None);
                 }
-                Err(e) => {
-                    return Err(TraceError::CaptureFailed(format!("waitpid error: {}", e)));
-                }
-            }
-        };
 
-        self.process_wait_status_impl(status)
-    }
-
-    /// Process a wait status and convert it to a PtraceEvent.
-    fn process_wait_status_impl(
-        &mut self,
-        status: nix::sys::wait::WaitStatus,
-    ) -> Result<Option<PtraceEvent>, TraceError> {
-        let event = match status {
-            WaitStatus::Stopped(pid, sig) => {
-                debug!("PID {} stopped by {:?}", pid, sig);
-
-                // Capture registers if configured
-                let regs_event = if self.config.capture_registers {
-                    match self.read_registers(pid) {
-                        Ok(regs) => Some(PtraceEvent::Registers {
-                            pid: pid.as_raw(),
-                            regs,
-                        }),
-                        Err(e) => {
-                            warn!("Failed to read registers for PID {}: {}", pid, e);
-                            None
-                        }
-                    }
-                } else {
-                    None
-                };
-
-                // If we haven't seen this PID, add it to traced set and configure it
-                let pid_raw = pid.as_raw();
-                if !self.traced_pids.contains(&pid_raw) {
-                    debug!("New traced PID: {}", pid_raw);
-                    self.traced_pids.insert(pid_raw);
-                    let _ = self.setup_ptrace_options(pid);
-                }
-
-                // Buffer registers event if captured
-                if let Some(re) = regs_event {
-                    self.pending_events.push_back(re);
-                }
-
-                Some(PtraceEvent::Stopped {
-                    pid: pid.as_raw(),
-                    signal: sig as i32,
-                    signal_name: format!("{:?}", sig),
-                })
-            }
-
-            WaitStatus::PtraceSyscall(pid) => {
-                let pid_raw = pid.as_raw();
-                // Toggle: if currently in entry state → this is exit; after, flip to entry
-                let is_entry = !self.syscall_entry_pids.contains(&pid_raw);
-                if is_entry {
-                    self.syscall_entry_pids.insert(pid_raw);
-                } else {
-                    self.syscall_entry_pids.remove(&pid_raw);
-                }
-                let regs = if self.config.capture_registers {
-                    self.read_registers(pid).ok()
-                } else {
-                    None
-                };
-                let syscall_nr = regs.as_ref().map(|r| r.rax).unwrap_or(0);
-                Some(PtraceEvent::Syscall {
-                    pid: pid_raw,
-                    syscall_nr,
-                    is_entry,
-                })
-            }
-
-            WaitStatus::PtraceEvent(pid, _sig, event_code) => {
-                debug!(
-                    "PID {} ptrace event {} (clone/fork/vfork/exec)",
-                    pid, event_code
-                );
-                let new_pid = if matches!(
-                    event_code,
-                    nix::libc::PTRACE_EVENT_CLONE
-                        | nix::libc::PTRACE_EVENT_FORK
-                        | nix::libc::PTRACE_EVENT_VFORK
-                ) {
-                    match ptrace::getevent(pid) {
-                        Ok(data) => {
-                            let child_pid = data as i32;
-                            if child_pid > 0 {
-                                debug!(
-                                    "PID {} created new child PID {} (event {})",
-                                    pid, child_pid, event_code
-                                );
-                                self.traced_pids.insert(child_pid);
-
-                                // Set ptrace options on the new child so we get its events
-                                let child_nix_pid = Pid::from_raw(child_pid);
-                                if let Err(e) = self.setup_ptrace_options(child_nix_pid) {
-                                    warn!(
-                                        "Failed to set ptrace options on child PID {}: {}",
-                                        child_pid, e
-                                    );
+                match waitpid(pid, Some(WaitPidFlag::WNOHANG)) {
+                    Ok(WaitStatus::StillAlive) => {
+                        if start.elapsed().as_secs() > 5 {
+                            match ptrace::cont(pid, None) {
+                                Ok(()) => {
+                                    std::thread::sleep(std::time::Duration::from_millis(100));
+                                    continue;
                                 }
-
-                                // Resume the new child — it's born in a stopped state.
-                                // Use PTRACE_SYSCALL if syscall tracing is on, else PTRACE_CONT.
-                                let resume_result = if self.config.trace_syscalls {
-                                    ptrace::syscall(child_nix_pid, None)
-                                } else {
-                                    ptrace::cont(child_nix_pid, None)
-                                };
-                                if let Err(e) = resume_result {
-                                    warn!("Failed to resume child PID {}: {}", child_pid, e);
+                                Err(nix::errno::Errno::ESRCH) => {
+                                    debug!("PTRACE_CONT ESRCH — child gone");
+                                    return Ok(None);
+                                }
+                                Err(e) => {
+                                    debug!("PTRACE_CONT failed: {}", e);
+                                    return Ok(None);
                                 }
                             }
-                            Some(child_pid)
                         }
-                        Err(e) => {
-                            warn!("PTRACE_GETEVENTMSG failed for PID {}: {}", pid, e);
-                            None
-                        }
+                        std::thread::sleep(std::time::Duration::from_millis(10));
                     }
-                } else {
+                    Ok(s) => break s,
+                    Err(nix::errno::Errno::ECHILD) => {
+                        debug!("waitpid({}) ECHILD", pid.as_raw());
+                        return Ok(None);
+                    }
+                    Err(e) => {
+                        return Err(TraceError::CaptureFailed(format!("waitpid error: {}", e)));
+                    }
+                }
+            };
+
+            self.process_wait_status_impl(status)
+        }
+
+        /// Process a wait status and convert it to a PtraceEvent.
+        fn process_wait_status_impl(
+            &mut self,
+            status: nix::sys::wait::WaitStatus,
+        ) -> Result<Option<PtraceEvent>, TraceError> {
+            let event = match status {
+                WaitStatus::Stopped(pid, sig) => {
+                    debug!("PID {} stopped by {:?}", pid, sig);
+
+                    // Capture registers if configured
+                    let regs_event = if self.config.capture_registers {
+                        match self.read_registers(pid) {
+                            Ok(regs) => Some(PtraceEvent::Registers {
+                                pid: pid.as_raw(),
+                                regs,
+                            }),
+                            Err(e) => {
+                                warn!("Failed to read registers for PID {}: {}", pid, e);
+                                None
+                            }
+                        }
+                    } else {
+                        None
+                    };
+
+                    // If we haven't seen this PID, add it to traced set and configure it
+                    let pid_raw = pid.as_raw();
+                    if !self.traced_pids.contains(&pid_raw) {
+                        debug!("New traced PID: {}", pid_raw);
+                        self.traced_pids.insert(pid_raw);
+                        let _ = self.setup_ptrace_options(pid);
+                    }
+
+                    // Buffer registers event if captured
+                    if let Some(re) = regs_event {
+                        self.pending_events.push_back(re);
+                    }
+
+                    Some(PtraceEvent::Stopped {
+                        pid: pid.as_raw(),
+                        signal: sig as i32,
+                        signal_name: format!("{:?}", sig),
+                    })
+                }
+
+                WaitStatus::PtraceSyscall(pid) => {
+                    let pid_raw = pid.as_raw();
+                    // Toggle: if currently in entry state → this is exit; after, flip to entry
+                    let is_entry = !self.syscall_entry_pids.contains(&pid_raw);
+                    if is_entry {
+                        self.syscall_entry_pids.insert(pid_raw);
+                    } else {
+                        self.syscall_entry_pids.remove(&pid_raw);
+                    }
+                    let regs = if self.config.capture_registers {
+                        self.read_registers(pid).ok()
+                    } else {
+                        None
+                    };
+                    let syscall_nr = regs.as_ref().map(|r| r.rax).unwrap_or(0);
+                    Some(PtraceEvent::Syscall {
+                        pid: pid_raw,
+                        syscall_nr,
+                        is_entry,
+                    })
+                }
+
+                WaitStatus::PtraceEvent(pid, _sig, event_code) => {
+                    debug!(
+                        "PID {} ptrace event {} (clone/fork/vfork/exec)",
+                        pid, event_code
+                    );
+                    let new_pid = if matches!(
+                        event_code,
+                        nix::libc::PTRACE_EVENT_CLONE
+                            | nix::libc::PTRACE_EVENT_FORK
+                            | nix::libc::PTRACE_EVENT_VFORK
+                    ) {
+                        match ptrace::getevent(pid) {
+                            Ok(data) => {
+                                let child_pid = data as i32;
+                                if child_pid > 0 {
+                                    debug!(
+                                        "PID {} created new child PID {} (event {})",
+                                        pid, child_pid, event_code
+                                    );
+                                    self.traced_pids.insert(child_pid);
+
+                                    // Set ptrace options on the new child so we get its events
+                                    let child_nix_pid = Pid::from_raw(child_pid);
+                                    if let Err(e) = self.setup_ptrace_options(child_nix_pid) {
+                                        warn!(
+                                            "Failed to set ptrace options on child PID {}: {}",
+                                            child_pid, e
+                                        );
+                                    }
+
+                                    // Resume the new child — it's born in a stopped state.
+                                    // Use PTRACE_SYSCALL if syscall tracing is on, else PTRACE_CONT.
+                                    let resume_result = if self.config.trace_syscalls {
+                                        ptrace::syscall(child_nix_pid, None)
+                                    } else {
+                                        ptrace::cont(child_nix_pid, None)
+                                    };
+                                    if let Err(e) = resume_result {
+                                        warn!("Failed to resume child PID {}: {}", child_pid, e);
+                                    }
+                                }
+                                Some(child_pid)
+                            }
+                            Err(e) => {
+                                warn!("PTRACE_GETEVENTMSG failed for PID {}: {}", pid, e);
+                                None
+                            }
+                        }
+                    } else {
+                        None
+                    };
+                    Some(PtraceEvent::PtraceEvent {
+                        pid: pid.as_raw(),
+                        event_code,
+                        new_pid,
+                    })
+                }
+
+                WaitStatus::Exited(pid, exit_code) => {
+                    info!("PID {} exited with code {}", pid, exit_code);
+                    self.traced_pids.remove(&pid.as_raw());
+                    self.syscall_entry_pids.remove(&pid.as_raw());
+                    Some(PtraceEvent::Exited {
+                        pid: pid.as_raw(),
+                        exit_code,
+                    })
+                }
+
+                WaitStatus::Signaled(pid, sig, core_dumped) => {
+                    warn!("PID {} killed by {:?} (core: {})", pid, sig, core_dumped);
+                    self.traced_pids.remove(&pid.as_raw());
+                    self.syscall_entry_pids.remove(&pid.as_raw());
+                    Some(PtraceEvent::Signaled {
+                        pid: pid.as_raw(),
+                        signal: sig as i32,
+                        signal_name: format!("{:?}", sig),
+                        core_dumped,
+                    })
+                }
+
+                _ => {
+                    warn!("Unhandled wait status: {:?}", status);
                     None
-                };
-                Some(PtraceEvent::PtraceEvent {
-                    pid: pid.as_raw(),
-                    event_code,
-                    new_pid,
-                })
-            }
+                }
+            };
 
-            WaitStatus::Exited(pid, exit_code) => {
-                info!("PID {} exited with code {}", pid, exit_code);
-                self.traced_pids.remove(&pid.as_raw());
-                self.syscall_entry_pids.remove(&pid.as_raw());
-                Some(PtraceEvent::Exited {
-                    pid: pid.as_raw(),
-                    exit_code,
-                })
-            }
-
-            WaitStatus::Signaled(pid, sig, core_dumped) => {
-                warn!("PID {} killed by {:?} (core: {})", pid, sig, core_dumped);
-                self.traced_pids.remove(&pid.as_raw());
-                self.syscall_entry_pids.remove(&pid.as_raw());
-                Some(PtraceEvent::Signaled {
-                    pid: pid.as_raw(),
-                    signal: sig as i32,
-                    signal_name: format!("{:?}", sig),
-                    core_dumped,
-                })
-            }
-
-            _ => {
-                warn!("Unhandled wait status: {:?}", status);
-                None
-            }
-        };
-
-        Ok(event)
-    }
-
-    /// Continue execution of a traced process.
-    pub fn continue_execution(&self, pid: i32) -> Result<(), TraceError> {
-        ptrace::cont(Pid::from_raw(pid), None)
-            .map_err(|e| TraceError::CaptureFailed(format!("PTRACE_CONT failed: {}", e)))
-    }
-
-    /// Continue execution, delivering a specific signal.
-    pub fn continue_with_signal(&self, pid: i32, sig: Signal) -> Result<(), TraceError> {
-        ptrace::cont(Pid::from_raw(pid), Some(sig))
-            .map_err(|e| TraceError::CaptureFailed(format!("PTRACE_CONT failed: {}", e)))
-    }
-
-    /// Single-step the traced process.
-    pub fn step(&self, pid: i32) -> Result<(), TraceError> {
-        ptrace::step(Pid::from_raw(pid), None)
-            .map_err(|e| TraceError::CaptureFailed(format!("PTRACE_SINGLESTEP failed: {}", e)))
-    }
-
-    /// Continue until next syscall entry/exit.
-    pub fn syscall_continue(&self, pid: i32) -> Result<(), TraceError> {
-        ptrace::syscall(Pid::from_raw(pid), None)
-            .map_err(|e| TraceError::CaptureFailed(format!("PTRACE_SYSCALL failed: {}", e)))
-    }
-
-    /// Read the current register state of a traced process.
-    pub fn read_registers(&self, pid: Pid) -> Result<RegisterState, TraceError> {
-        let regs = ptrace::getregs(pid)
-            .map_err(|e| TraceError::CaptureFailed(format!("PTRACE_GETREGS failed: {}", e)))?;
-
-        Ok(RegisterState {
-            rax: regs.rax,
-            rbx: regs.rbx,
-            rcx: regs.rcx,
-            rdx: regs.rdx,
-            rsi: regs.rsi,
-            rdi: regs.rdi,
-            rbp: regs.rbp,
-            rsp: regs.rsp,
-            r8: regs.r8,
-            r9: regs.r9,
-            r10: regs.r10,
-            r11: regs.r11,
-            r12: regs.r12,
-            r13: regs.r13,
-            r14: regs.r14,
-            r15: regs.r15,
-            rip: regs.rip,
-            rflags: regs.eflags,
-        })
-    }
-
-    /// Open performance counter file descriptors for the traced process.
-    ///
-    /// This is called automatically during `launch()` when the `perf_counters`
-    /// feature is enabled. Opens HW_CPU_CYCLES and HW_INSTRUCTIONS counters.
-    #[cfg(feature = "perf_counters")]
-    pub fn open_perf_counters(&mut self, pid: Pid) -> Result<(), TraceError> {
-        use super::perf::{PerfCounterConfig, PerfCounterType};
-
-        // Open cycle counter
-        let cycle_config = PerfCounterConfig::new(PerfCounterType::Cycle);
-        match self.open_single_counter(pid, cycle_config) {
-            Ok(handle) => {
-                debug!("Opened perf counter for cycles");
-                self.perf_handles.push(handle);
-            }
-            Err(e) => {
-                warn!(
-                    "Failed to open cycle counter (perf_event_open unavailable): {}",
-                    e
-                );
-                // Continue without counters - graceful degradation
-            }
+            Ok(event)
         }
 
-        // Open instruction counter
-        let instr_config = PerfCounterConfig::new(PerfCounterType::Instruction);
-        match self.open_single_counter(pid, instr_config) {
-            Ok(handle) => {
-                debug!("Opened perf counter for instructions");
-                self.perf_handles.push(handle);
-            }
-            Err(e) => {
-                warn!("Failed to open instruction counter: {}", e);
-            }
+        /// Continue execution of a traced process.
+        pub fn continue_execution(&self, pid: i32) -> Result<(), TraceError> {
+            ptrace::cont(Pid::from_raw(pid), None)
+                .map_err(|e| TraceError::CaptureFailed(format!("PTRACE_CONT failed: {}", e)))
         }
 
-        Ok(())
-    }
+        /// Continue execution, delivering a specific signal.
+        pub fn continue_with_signal(&self, pid: i32, sig: Signal) -> Result<(), TraceError> {
+            ptrace::cont(Pid::from_raw(pid), Some(sig))
+                .map_err(|e| TraceError::CaptureFailed(format!("PTRACE_CONT failed: {}", e)))
+        }
 
-    /// Open a single perf counter for a PID.
-    #[cfg(feature = "perf_counters")]
-    fn open_single_counter(
-        &mut self,
-        pid: Pid,
-        config: super::perf::PerfCounterConfig,
-    ) -> Result<super::perf::PerfCounterHandle, TraceError> {
-        use super::perf::counters::{
-            perf_event_open, PerfCounterType, PERF_HW_BRANCH_MISSES, PERF_HW_CACHE_MISSES,
-            PERF_HW_CPU_CYCLES, PERF_SW_CPU_CLOCK, PERF_TYPE_HARDWARE, PERF_TYPE_SOFTWARE,
-        };
+        /// Single-step the traced process.
+        pub fn step(&self, pid: i32) -> Result<(), TraceError> {
+            ptrace::step(Pid::from_raw(pid), None)
+                .map_err(|e| TraceError::CaptureFailed(format!("PTRACE_SINGLESTEP failed: {}", e)))
+        }
 
-        let (type_, config_val) = match config.counter_type {
-            PerfCounterType::Cycle => (PERF_TYPE_HARDWARE, PERF_HW_CPU_CYCLES),
-            PerfCounterType::Instruction => (
-                PERF_TYPE_SOFTWARE,
-                PERF_SW_CPU_CLOCK, // Software clock for instruction counting approximation
-            ),
-            PerfCounterType::CacheMiss => (PERF_TYPE_HARDWARE, PERF_HW_CACHE_MISSES),
-            PerfCounterType::BranchMiss => (PERF_TYPE_HARDWARE, PERF_HW_BRANCH_MISSES),
-        };
+        /// Continue until next syscall entry/exit.
+        pub fn syscall_continue(&self, pid: i32) -> Result<(), TraceError> {
+            ptrace::syscall(Pid::from_raw(pid), None)
+                .map_err(|e| TraceError::CaptureFailed(format!("PTRACE_SYSCALL failed: {}", e)))
+        }
 
-        let fd = perf_event_open(type_, config_val, pid.as_raw(), -1, None)
-            .map_err(|e| TraceError::CaptureFailed(format!("perf_event_open failed: {}", e)))?;
+        /// Read the current register state of a traced process.
+        pub fn read_registers(&self, pid: Pid) -> Result<RegisterState, TraceError> {
+            let regs = ptrace::getregs(pid)
+                .map_err(|e| TraceError::CaptureFailed(format!("PTRACE_GETREGS failed: {}", e)))?;
 
-        Ok(super::perf::PerfCounterHandle::from_fd(
-            fd,
-            config.counter_type,
-        ))
-    }
+            Ok(RegisterState {
+                rax: regs.rax,
+                rbx: regs.rbx,
+                rcx: regs.rcx,
+                rdx: regs.rdx,
+                rsi: regs.rsi,
+                rdi: regs.rdi,
+                rbp: regs.rbp,
+                rsp: regs.rsp,
+                r8: regs.r8,
+                r9: regs.r9,
+                r10: regs.r10,
+                r11: regs.r11,
+                r12: regs.r12,
+                r13: regs.r13,
+                r14: regs.r14,
+                r15: regs.r15,
+                rip: regs.rip,
+                rflags: regs.eflags,
+            })
+        }
 
-    /// Read all performance counters and return a snapshot.
-    ///
-    /// Returns a snapshot with all counter values, or `None` if counters
-    /// could not be read (e.g., counters were not opened due to permission denied).
-    #[cfg(feature = "perf_counters")]
-    pub fn read_perf_counters(&self) -> Result<super::perf::PerfCountersSnapshot, TraceError> {
-        use super::perf::PerfCountersSnapshot;
+        /// Open performance counter file descriptors for the traced process.
+        ///
+        /// This is called automatically during `launch()` when the `perf_counters`
+        /// feature is enabled. Opens HW_CPU_CYCLES and HW_INSTRUCTIONS counters.
+        #[cfg(feature = "perf_counters")]
+        pub fn open_perf_counters(&mut self, pid: Pid) -> Result<(), TraceError> {
+            use super::perf::{PerfCounterConfig, PerfCounterType};
 
-        let mut cycles = None;
-        let mut instructions = None;
-
-        for handle in &self.perf_handles {
-            match handle.read() {
-                Ok(value) => match handle.counter_type() {
-                    super::perf::PerfCounterType::Cycle => cycles = Some(value),
-                    super::perf::PerfCounterType::Instruction => instructions = Some(value),
-                    _ => {}
-                },
+            // Open cycle counter
+            let cycle_config = PerfCounterConfig::new(PerfCounterType::Cycle);
+            match self.open_single_counter(pid, cycle_config) {
+                Ok(handle) => {
+                    debug!("Opened perf counter for cycles");
+                    self.perf_handles.push(handle);
+                }
                 Err(e) => {
-                    debug!("Failed to read perf counter: {}", e);
+                    warn!(
+                        "Failed to open cycle counter (perf_event_open unavailable): {}",
+                        e
+                    );
+                    // Continue without counters - graceful degradation
                 }
+            }
+
+            // Open instruction counter
+            let instr_config = PerfCounterConfig::new(PerfCounterType::Instruction);
+            match self.open_single_counter(pid, instr_config) {
+                Ok(handle) => {
+                    debug!("Opened perf counter for instructions");
+                    self.perf_handles.push(handle);
+                }
+                Err(e) => {
+                    warn!("Failed to open instruction counter: {}", e);
+                }
+            }
+
+            Ok(())
+        }
+
+        /// Open a single perf counter for a PID.
+        #[cfg(feature = "perf_counters")]
+        fn open_single_counter(
+            &mut self,
+            pid: Pid,
+            config: super::perf::PerfCounterConfig,
+        ) -> Result<super::perf::PerfCounterHandle, TraceError> {
+            use super::perf::counters::{
+                perf_event_open, PerfCounterType, PERF_HW_BRANCH_MISSES, PERF_HW_CACHE_MISSES,
+                PERF_HW_CPU_CYCLES, PERF_SW_CPU_CLOCK, PERF_TYPE_HARDWARE, PERF_TYPE_SOFTWARE,
+            };
+
+            let (type_, config_val) = match config.counter_type {
+                PerfCounterType::Cycle => (PERF_TYPE_HARDWARE, PERF_HW_CPU_CYCLES),
+                PerfCounterType::Instruction => (
+                    PERF_TYPE_SOFTWARE,
+                    PERF_SW_CPU_CLOCK, // Software clock for instruction counting approximation
+                ),
+                PerfCounterType::CacheMiss => (PERF_TYPE_HARDWARE, PERF_HW_CACHE_MISSES),
+                PerfCounterType::BranchMiss => (PERF_TYPE_HARDWARE, PERF_HW_BRANCH_MISSES),
+            };
+
+            let fd = perf_event_open(type_, config_val, pid.as_raw(), -1, None)
+                .map_err(|e| TraceError::CaptureFailed(format!("perf_event_open failed: {}", e)))?;
+
+            Ok(super::perf::PerfCounterHandle::from_fd(
+                fd,
+                config.counter_type,
+            ))
+        }
+
+        /// Read all performance counters and return a snapshot.
+        ///
+        /// Returns a snapshot with all counter values, or `None` if counters
+        /// could not be read (e.g., counters were not opened due to permission denied).
+        #[cfg(feature = "perf_counters")]
+        pub fn read_perf_counters(&self) -> Result<super::perf::PerfCountersSnapshot, TraceError> {
+            use super::perf::PerfCountersSnapshot;
+
+            let mut cycles = None;
+            let mut instructions = None;
+
+            for handle in &self.perf_handles {
+                match handle.read() {
+                    Ok(value) => match handle.counter_type() {
+                        super::perf::PerfCounterType::Cycle => cycles = Some(value),
+                        super::perf::PerfCounterType::Instruction => instructions = Some(value),
+                        _ => {}
+                    },
+                    Err(e) => {
+                        debug!("Failed to read perf counter: {}", e);
+                    }
+                }
+            }
+
+            Ok(PerfCountersSnapshot {
+                cycles,
+                instructions,
+                cache_misses: None,
+                branch_misses: None,
+            })
+        }
+
+        /// Check if performance counters are available.
+        #[cfg(feature = "perf_counters")]
+        pub fn has_perf_counters(&self) -> bool {
+            !self.perf_handles.is_empty()
+        }
+
+        /// Detach from a traced process, allowing it to continue freely.
+        pub fn detach(&self, pid: i32) -> Result<(), TraceError> {
+            ptrace::detach(Pid::from_raw(pid), None)
+                .map_err(|e| TraceError::CaptureFailed(format!("PTRACE_DETACH failed: {}", e)))
+        }
+
+        /// Kill a traced process.
+        pub fn kill(&self, pid: i32) -> Result<(), TraceError> {
+            let nix_pid = Pid::from_raw(pid);
+            nix::sys::signal::kill(nix_pid, nix::sys::signal::Signal::SIGKILL).map_err(|e| {
+                TraceError::CaptureFailed(format!("Failed to SIGKILL PID {}: {}", pid, e))
+            })?;
+            // Reap the process to prevent zombie
+            let _ = nix::sys::wait::waitpid(nix_pid, Some(nix::sys::wait::WaitPidFlag::WNOHANG));
+            Ok(())
+        }
+    }
+
+    /// Helper to convert a signal number to a human-readable name.
+    pub fn signal_name(signal: i32) -> String {
+        Signal::try_from(signal)
+            .map(|s| format!("{:?}", s))
+            .unwrap_or_else(|_| format!("SIG{}", signal))
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn test_ptrace_config_default() {
+            let config = PtraceConfig::default();
+            assert!(!config.trace_syscalls);
+            assert!(config.capture_registers);
+            assert!(config.follow_children);
+        }
+
+        #[test]
+        fn test_ptrace_tracer_new() {
+            let tracer = PtraceTracer::new_default();
+            assert!(tracer.main_pid().is_none());
+            assert!(tracer.traced_pids().is_empty());
+        }
+
+        #[test]
+        fn test_signal_name_known() {
+            assert_eq!(signal_name(9), "SIGKILL");
+            assert_eq!(signal_name(11), "SIGSEGV");
+            assert_eq!(signal_name(5), "SIGTRAP");
+        }
+
+        #[test]
+        fn test_signal_name_unknown() {
+            // Very high signal number should still produce a string
+            let name = signal_name(200);
+            assert!(!name.is_empty());
+        }
+
+        #[test]
+        fn test_ptrace_event_pid() {
+            let event = PtraceEvent::Stopped {
+                pid: 1234,
+                signal: 5,
+                signal_name: "SIGTRAP".into(),
+            };
+            assert_eq!(event.pid(), 1234);
+
+            let event = PtraceEvent::Exited {
+                pid: 5678,
+                exit_code: 0,
+            };
+            assert_eq!(event.pid(), 5678);
+
+            let event = PtraceEvent::Syscall {
+                pid: 9012,
+                syscall_nr: 1,
+                is_entry: true,
+            };
+            assert_eq!(event.pid(), 9012);
+
+            let event = PtraceEvent::Signaled {
+                pid: 3456,
+                signal: 9,
+                signal_name: "SIGKILL".into(),
+                core_dumped: false,
+            };
+            assert_eq!(event.pid(), 3456);
+        }
+
+        #[test]
+        fn test_ptrace_event_registers() {
+            let regs = RegisterState {
+                rax: 42,
+                rip: 0x400000,
+                ..Default::default()
+            };
+            let event = PtraceEvent::Registers { pid: 9999, regs };
+            assert_eq!(event.pid(), 9999);
+            if let PtraceEvent::Registers { regs, .. } = event {
+                assert_eq!(regs.rax, 42);
+                assert_eq!(regs.rip, 0x400000);
             }
         }
 
-        Ok(PerfCountersSnapshot {
-            cycles,
-            instructions,
-            cache_misses: None,
-            branch_misses: None,
-        })
-    }
+        #[test]
+        fn test_ptrace_config_custom() {
+            let config = PtraceConfig {
+                trace_syscalls: true,
+                capture_registers: false,
+                follow_children: false,
+                track_function_frames: false,
+            };
+            assert!(config.trace_syscalls);
+            assert!(!config.capture_registers);
+            assert!(!config.follow_children);
+        }
 
-    /// Check if performance counters are available.
-    #[cfg(feature = "perf_counters")]
-    pub fn has_perf_counters(&self) -> bool {
-        !self.perf_handles.is_empty()
-    }
+        /// Integration test: launch `/bin/true` (exits immediately with 0)
+        /// under ptrace and verify we get the expected events.
+        #[test]
+        fn test_launch_true_and_wait() {
+            let mut tracer = PtraceTracer::new(PtraceConfig {
+                trace_syscalls: false,
+                capture_registers: true,
+                follow_children: false,
+                track_function_frames: false,
+            });
 
-    /// Detach from a traced process, allowing it to continue freely.
-    pub fn detach(&self, pid: i32) -> Result<(), TraceError> {
-        ptrace::detach(Pid::from_raw(pid), None)
-            .map_err(|e| TraceError::CaptureFailed(format!("PTRACE_DETACH failed: {}", e)))
-    }
+            let pid = tracer
+                .launch(Path::new("/bin/true"), &[])
+                .expect("launch should work");
+            assert!(pid > 0);
+            assert_eq!(tracer.main_pid(), Some(pid));
 
-    /// Kill a traced process.
-    pub fn kill(&self, pid: i32) -> Result<(), TraceError> {
-        let nix_pid = Pid::from_raw(pid);
-        nix::sys::signal::kill(nix_pid, nix::sys::signal::Signal::SIGKILL).map_err(|e| {
-            TraceError::CaptureFailed(format!("Failed to SIGKILL PID {}: {}", pid, e))
-        })?;
-        // Reap the process to prevent zombie
-        let _ = nix::sys::wait::waitpid(nix_pid, Some(nix::sys::wait::WaitPidFlag::WNOHANG));
-        Ok(())
+            // Note: launch() now resumes the child with PTRACE_CONT, so we don't
+            // need to call continue_execution() here. Just wait for the exit event.
+
+            // Wait for exit event
+            let event = tracer.wait_event().expect("wait_event should work");
+            assert!(event.is_some());
+
+            match event {
+                Some(PtraceEvent::Exited { exit_code, .. }) => {
+                    assert_eq!(exit_code, 0);
+                }
+                Some(PtraceEvent::Signaled { signal_name, .. }) => {
+                    // Some systems may report signal instead of exit
+                    panic!("Expected Exited event, got Signaled: {}", signal_name);
+                }
+                other => panic!("Expected Exited event, got: {:?}", other),
+            }
+        }
+
+        /// Integration test: launch `/bin/true` and verify event loop completes.
+        #[test]
+        fn test_launch_captures_events() {
+            let mut tracer = PtraceTracer::new(PtraceConfig {
+                trace_syscalls: false,
+                capture_registers: true,
+                follow_children: false,
+                track_function_frames: false,
+            });
+
+            let pid = tracer
+                .launch(Path::new("/bin/true"), &[])
+                .expect("launch should work");
+
+            // Note: launch() now resumes the child with PTRACE_CONT.
+
+            // Collect events until exit
+            let mut got_exit = false;
+            for _ in 0..1000 {
+                match tracer.wait_event() {
+                    Ok(Some(PtraceEvent::Exited { .. })) => {
+                        got_exit = true;
+                        break;
+                    }
+                    Ok(Some(_)) => {
+                        tracer.continue_execution(pid).expect("cont should work");
+                    }
+                    Ok(None) => break,
+                    Err(e) => panic!("wait_event error: {}", e),
+                }
+            }
+
+            assert!(got_exit, "Should have seen Exited event for /bin/true");
+        }
+
+        /// Integration test: launch with syscall tracing enabled.
+        #[test]
+        fn test_launch_with_syscall_tracing() {
+            let mut tracer = PtraceTracer::new(PtraceConfig {
+                trace_syscalls: true,
+                capture_registers: true,
+                follow_children: false,
+                track_function_frames: false,
+            });
+
+            let pid = tracer
+                .launch(Path::new("/bin/true"), &[])
+                .expect("launch should work");
+
+            // Note: launch() now resumes the child with PTRACE_SYSCALL.
+
+            let mut syscall_count = 0;
+            let mut got_exit = false;
+            for _ in 0..10000 {
+                match tracer.wait_event() {
+                    Ok(Some(PtraceEvent::Exited { .. })) => {
+                        got_exit = true;
+                        break;
+                    }
+                    Ok(Some(PtraceEvent::Syscall { .. })) => {
+                        syscall_count += 1;
+                        tracer.syscall_continue(pid).expect("syscall should work");
+                    }
+                    Ok(Some(PtraceEvent::Registers { .. })) => {
+                        tracer.syscall_continue(pid).expect("syscall should work");
+                    }
+                    Ok(Some(PtraceEvent::Stopped { .. })) => {
+                        tracer.syscall_continue(pid).expect("syscall should work");
+                    }
+                    Ok(Some(_)) => {
+                        // Signaled, PtraceEvent, etc.
+                        tracer.syscall_continue(pid).expect("syscall should work");
+                    }
+                    Ok(None) => break,
+                    Err(e) => panic!("wait_event error: {}", e),
+                }
+            }
+
+            assert!(got_exit, "Should have seen Exited event");
+            assert!(
+                syscall_count > 0,
+                "/bin/true should make at least one syscall"
+            );
+        }
     }
 }
 
-/// Helper to convert a signal number to a human-readable name.
-pub fn signal_name(signal: i32) -> String {
-    Signal::try_from(signal)
-        .map(|s| format!("{:?}", s))
-        .unwrap_or_else(|_| format!("SIG{}", signal))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_ptrace_config_default() {
-        let config = PtraceConfig::default();
-        assert!(!config.trace_syscalls);
-        assert!(config.capture_registers);
-        assert!(config.follow_children);
-    }
-
-    #[test]
-    fn test_ptrace_tracer_new() {
-        let tracer = PtraceTracer::new_default();
-        assert!(tracer.main_pid().is_none());
-        assert!(tracer.traced_pids().is_empty());
-    }
-
-    #[test]
-    fn test_signal_name_known() {
-        assert_eq!(signal_name(9), "SIGKILL");
-        assert_eq!(signal_name(11), "SIGSEGV");
-        assert_eq!(signal_name(5), "SIGTRAP");
-    }
-
-    #[test]
-    fn test_signal_name_unknown() {
-        // Very high signal number should still produce a string
-        let name = signal_name(200);
-        assert!(!name.is_empty());
-    }
-
-    #[test]
-    fn test_ptrace_event_pid() {
-        let event = PtraceEvent::Stopped {
-            pid: 1234,
-            signal: 5,
-            signal_name: "SIGTRAP".into(),
-        };
-        assert_eq!(event.pid(), 1234);
-
-        let event = PtraceEvent::Exited {
-            pid: 5678,
-            exit_code: 0,
-        };
-        assert_eq!(event.pid(), 5678);
-
-        let event = PtraceEvent::Syscall {
-            pid: 9012,
-            syscall_nr: 1,
-            is_entry: true,
-        };
-        assert_eq!(event.pid(), 9012);
-
-        let event = PtraceEvent::Signaled {
-            pid: 3456,
-            signal: 9,
-            signal_name: "SIGKILL".into(),
-            core_dumped: false,
-        };
-        assert_eq!(event.pid(), 3456);
-    }
-
-    #[test]
-    fn test_ptrace_event_registers() {
-        let regs = RegisterState {
-            rax: 42,
-            rip: 0x400000,
-            ..Default::default()
-        };
-        let event = PtraceEvent::Registers { pid: 9999, regs };
-        assert_eq!(event.pid(), 9999);
-        if let PtraceEvent::Registers { regs, .. } = event {
-            assert_eq!(regs.rax, 42);
-            assert_eq!(regs.rip, 0x400000);
-        }
-    }
-
-    #[test]
-    fn test_ptrace_config_custom() {
-        let config = PtraceConfig {
-            trace_syscalls: true,
-            capture_registers: false,
-            follow_children: false,
-            track_function_frames: false,
-        };
-        assert!(config.trace_syscalls);
-        assert!(!config.capture_registers);
-        assert!(!config.follow_children);
-    }
-
-    /// Integration test: launch `/bin/true` (exits immediately with 0)
-    /// under ptrace and verify we get the expected events.
-    #[test]
-    fn test_launch_true_and_wait() {
-        let mut tracer = PtraceTracer::new(PtraceConfig {
-            trace_syscalls: false,
-            capture_registers: true,
-            follow_children: false,
-            track_function_frames: false,
-        });
-
-        let pid = tracer
-            .launch(Path::new("/bin/true"), &[])
-            .expect("launch should work");
-        assert!(pid > 0);
-        assert_eq!(tracer.main_pid(), Some(pid));
-
-        // Note: launch() now resumes the child with PTRACE_CONT, so we don't
-        // need to call continue_execution() here. Just wait for the exit event.
-
-        // Wait for exit event
-        let event = tracer.wait_event().expect("wait_event should work");
-        assert!(event.is_some());
-
-        match event {
-            Some(PtraceEvent::Exited { exit_code, .. }) => {
-                assert_eq!(exit_code, 0);
-            }
-            Some(PtraceEvent::Signaled { signal_name, .. }) => {
-                // Some systems may report signal instead of exit
-                panic!("Expected Exited event, got Signaled: {}", signal_name);
-            }
-            other => panic!("Expected Exited event, got: {:?}", other),
-        }
-    }
-
-    /// Integration test: launch `/bin/true` and verify event loop completes.
-    #[test]
-    fn test_launch_captures_events() {
-        let mut tracer = PtraceTracer::new(PtraceConfig {
-            trace_syscalls: false,
-            capture_registers: true,
-            follow_children: false,
-            track_function_frames: false,
-        });
-
-        let pid = tracer
-            .launch(Path::new("/bin/true"), &[])
-            .expect("launch should work");
-
-        // Note: launch() now resumes the child with PTRACE_CONT.
-
-        // Collect events until exit
-        let mut got_exit = false;
-        for _ in 0..1000 {
-            match tracer.wait_event() {
-                Ok(Some(PtraceEvent::Exited { .. })) => {
-                    got_exit = true;
-                    break;
-                }
-                Ok(Some(_)) => {
-                    tracer.continue_execution(pid).expect("cont should work");
-                }
-                Ok(None) => break,
-                Err(e) => panic!("wait_event error: {}", e),
-            }
-        }
-
-        assert!(got_exit, "Should have seen Exited event for /bin/true");
-    }
-
-    /// Integration test: launch with syscall tracing enabled.
-    #[test]
-    fn test_launch_with_syscall_tracing() {
-        let mut tracer = PtraceTracer::new(PtraceConfig {
-            trace_syscalls: true,
-            capture_registers: true,
-            follow_children: false,
-            track_function_frames: false,
-        });
-
-        let pid = tracer
-            .launch(Path::new("/bin/true"), &[])
-            .expect("launch should work");
-
-        // Note: launch() now resumes the child with PTRACE_SYSCALL.
-
-        let mut syscall_count = 0;
-        let mut got_exit = false;
-        for _ in 0..10000 {
-            match tracer.wait_event() {
-                Ok(Some(PtraceEvent::Exited { .. })) => {
-                    got_exit = true;
-                    break;
-                }
-                Ok(Some(PtraceEvent::Syscall { .. })) => {
-                    syscall_count += 1;
-                    tracer.syscall_continue(pid).expect("syscall should work");
-                }
-                Ok(Some(PtraceEvent::Registers { .. })) => {
-                    tracer.syscall_continue(pid).expect("syscall should work");
-                }
-                Ok(Some(PtraceEvent::Stopped { .. })) => {
-                    tracer.syscall_continue(pid).expect("syscall should work");
-                }
-                Ok(Some(_)) => {
-                    // Signaled, PtraceEvent, etc.
-                    tracer.syscall_continue(pid).expect("syscall should work");
-                }
-                Ok(None) => break,
-                Err(e) => panic!("wait_event error: {}", e),
-            }
-        }
-
-        assert!(got_exit, "Should have seen Exited event");
-        assert!(
-            syscall_count > 0,
-            "/bin/true should make at least one syscall"
-        );
-    }
-}
+#[cfg(target_os = "linux")]
+pub use imp::*;
