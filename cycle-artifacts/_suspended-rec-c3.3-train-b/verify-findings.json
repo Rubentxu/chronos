@@ -1,0 +1,31 @@
+{
+  "schema": "sddk.verify-findings.v1",
+  "cycle_id": "rec-c3.3-train-b",
+  "subject": {
+    "head_sha": "0a5bdb424986a7a534c8c36114160978688f8a0b",
+    "base_sha": "fa5eb5827e997c874047c6c2318ad2b5b1c8f323",
+    "dirty": false
+  },
+  "mandatory_gates": {
+    "subject_identity": "FAIL",
+    "behavioral_compliance": "PENDING",
+    "real_implementation": "PENDING",
+    "documentation_discipline": "FAIL",
+    "test_strength": "PENDING",
+    "regression_and_build": "PENDING",
+    "apply_push_discipline": "FAIL",
+    "production_readiness": "PENDING",
+    "design_and_solid": "PENDING",
+    "task_completeness": "PENDING"
+  },
+  "verdict": "FAIL",
+  "all_passed": false,
+  "findings_introduced": [
+    {
+      "id": "F-TB-CYCLE-VERIFICATION",
+      "owner_cycle": "rec-c3.3-train-b",
+      "description": "Cycle rec-c3.3-train-b was halted at the apply-phase boundary (SUSPENDED_AT_APPLY) due to a cross-project contamination warning from the operator. The exploration, proposal, specification, and task-graph artifacts are present on disk (and on the local branch feat/rec-c3.3-train-b), but no production code has been touched under that cycle's authority."
+    }
+  ],
+  "_note": "This verify-findings.json was created by the CIH-C.1 reconciliation pass (2026-09-19). The verdict is FAIL because the cycle did not ship. mandatory_gates entries that were not executed are marked 'PENDING'. Do NOT interpret this FAIL as a quality assessment of Tren B's planning artifacts (exploration-report.md, proposal.md, specification.md, task-graph.json) — those are retained in full and will be re-evaluated when the cycle resumes. The 'PAUSE for cross-project contamination' is not a finding against the design; the cycle's design, spec, and task graph pass review (operator confirmed)."
+}
