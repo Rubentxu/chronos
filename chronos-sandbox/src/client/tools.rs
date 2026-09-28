@@ -2,6 +2,7 @@
 //!
 //! Provides typed wrappers around all MCP tool methods exposed by the Chronos server.
 
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -1940,6 +1941,163 @@ pub struct RegressionReport {
     pub summary: String,
 }
 
+#[derive(Debug, Clone)]
+struct CargoWorkspacePackage {
+    name: String,
+    manifest_path: PathBuf,
+}
+
+#[derive(Debug, Clone)]
+struct CargoWorkspaceMetadata {
+    target_directory: PathBuf,
+    workspace_members: HashSet<String>,
+    package_id_by_name: HashMap<String, String>,
+    packages_by_id: HashMap<String, CargoWorkspacePackage>,
+    resolved_dependencies_by_id: HashMap<String, Vec<String>>,
+}
+
+impl CargoWorkspaceMetadata {
+    fn load() -> Result<Self, String> {
+        let value = McpTestClient::load_cargo_metadata_json()?;
+        let target_directory = value
+            .get("target_directory")
+            .and_then(|v| v.as_str())
+            .map(PathBuf::from)
+            .ok_or_else(|| "cargo metadata: missing target_directory".to_string())?;
+
+        let workspace_members: HashSet<String> = value
+            .get("workspace_members")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| "cargo metadata: missing workspace_members".to_string())?
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_owned))
+            .collect();
+
+        let mut package_id_by_name = HashMap::new();
+        let mut packages_by_id = HashMap::new();
+        let packages = value
+            .get("packages")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| "cargo metadata: missing packages".to_string())?;
+        for package in packages {
+            let id = package
+                .get("id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "cargo metadata package missing id".to_string())?;
+            if !workspace_members.contains(id) {
+                continue;
+            }
+            let name = package
+                .get("name")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "cargo metadata package missing name".to_string())?
+                .to_string();
+            let manifest_path = package
+                .get("manifest_path")
+                .and_then(|v| v.as_str())
+                .map(PathBuf::from)
+                .ok_or_else(|| format!("cargo metadata package {name} missing manifest_path"))?;
+            package_id_by_name.insert(name.clone(), id.to_string());
+            packages_by_id.insert(
+                id.to_string(),
+                CargoWorkspacePackage {
+                    name,
+                    manifest_path,
+                },
+            );
+        }
+
+        let mut resolved_dependencies_by_id = HashMap::new();
+        let nodes = value
+            .get("resolve")
+            .and_then(|v| v.get("nodes"))
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| "cargo metadata: missing resolved dependency graph".to_string())?;
+        for node in nodes {
+            let id = node
+                .get("id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "cargo metadata resolve node missing id".to_string())?;
+            let dependencies = node
+                .get("deps")
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| format!("cargo metadata resolve node {id} missing deps"))?
+                .iter()
+                .filter_map(|dep| dep.get("pkg").and_then(|v| v.as_str()).map(str::to_owned))
+                .collect();
+            resolved_dependencies_by_id.insert(id.to_string(), dependencies);
+        }
+
+        Ok(Self {
+            target_directory,
+            workspace_members,
+            package_id_by_name,
+            packages_by_id,
+            resolved_dependencies_by_id,
+        })
+    }
+
+    fn workspace_dependency_sources(
+        &self,
+        workspace_root: &Path,
+        root_package: &str,
+    ) -> Result<Vec<PathBuf>, String> {
+        let root_id = self
+            .package_id_by_name
+            .get(root_package)
+            .ok_or_else(|| format!("cargo metadata: workspace package {root_package} not found"))?;
+
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::from([root_id.clone()]);
+        while let Some(id) = queue.pop_front() {
+            if !self.workspace_members.contains(&id) || !visited.insert(id.clone()) {
+                continue;
+            }
+            let dependencies = self
+                .resolved_dependencies_by_id
+                .get(&id)
+                .ok_or_else(|| format!("cargo metadata: resolve node missing for {id}"))?;
+            for dependency_id in dependencies {
+                if self.workspace_members.contains(dependency_id) {
+                    queue.push_back(dependency_id.clone());
+                }
+            }
+        }
+
+        let mut sources = Vec::with_capacity(visited.len());
+        for id in visited {
+            let package = self
+                .packages_by_id
+                .get(&id)
+                .ok_or_else(|| format!("cargo metadata: dependency {id} disappeared"))?;
+            let package_dir = package.manifest_path.parent().ok_or_else(|| {
+                format!(
+                    "cargo metadata package {} has no parent directory",
+                    package.name
+                )
+            })?;
+            if !package_dir.starts_with(workspace_root) {
+                return Err(format!(
+                    "cargo metadata package {} is outside workspace root: {}",
+                    package.name,
+                    package_dir.display()
+                ));
+            }
+            let src = package_dir.join("src");
+            if !src.is_dir() {
+                return Err(format!(
+                    "cargo metadata package {} resolved to missing source directory: {}",
+                    package.name,
+                    src.display()
+                ));
+            }
+            sources.push(src);
+        }
+        sources.sort();
+        Ok(sources)
+    }
+}
+
 // ============================================================================
 // McpTestClient
 // ============================================================================
@@ -2094,7 +2252,7 @@ impl McpTestClient {
             Self::workspace_root().map_err(|e| format!("cannot locate workspace root: {e}"))?;
 
         let mut newest: Option<(std::time::SystemTime, std::path::PathBuf)> = None;
-        for src in Self::mcp_dependency_sources(&workspace_root) {
+        for src in Self::mcp_dependency_sources(&workspace_root)? {
             if let Some(mtime) = walk_newest_mtime(&src) {
                 if newest.as_ref().is_none_or(|(best, _)| mtime > *best) {
                     newest = Some((mtime, src));
@@ -2115,50 +2273,29 @@ impl McpTestClient {
         }
     }
 
-    /// The crate source trees `chronos-mcp` is actually built from.
-    ///
-    /// Scoped to the dependency set rather than the whole workspace on
-    /// purpose. A first attempt watched only `crates/chronos-mcp/src` and was
-    /// **wrong**: disabling the cross-session check in
-    /// `chronos-services/src/events_cursor.rs` — a direct dependency, and the
-    /// very mutation that motivated this guard — still produced a green run,
-    /// because the mutated file was outside the watched tree.
-    ///
-    /// Watching every workspace member instead would produce the opposite
-    /// error: editing an unrelated crate would invalidate the binary and force
-    /// a rebuild for no reason.
-    fn mcp_dependency_sources(workspace_root: &std::path::Path) -> Vec<std::path::PathBuf> {
-        const DEPENDENCY_CRATES: &[&str] = &[
-            "chronos-mcp",
-            "chronos-services",
-            "chronos-domain",
-            "chronos-store",
-            "chronos-log",
-            "chronos-capture",
-            "chronos-query",
-            "chronos-index",
-        ];
-        let mut sources = Vec::with_capacity(DEPENDENCY_CRATES.len());
-        for name in DEPENDENCY_CRATES {
-            // Covers both `crates/<name>` and top-level members such as
-            // chronos-log, which sits beside crates/ in this repo.
-            let in_crates = workspace_root.join("crates").join(name);
-            let crate_dir = if in_crates.is_dir() {
-                in_crates
-            } else {
-                workspace_root.join(name)
-            };
-            let src = crate_dir.join("src");
-            if src.is_dir() {
-                sources.push(src);
-            }
-        }
-        sources
+    /// The workspace crate source trees `chronos-mcp` is actually built from.
+    fn mcp_dependency_sources(
+        workspace_root: &std::path::Path,
+    ) -> Result<Vec<std::path::PathBuf>, String> {
+        let metadata = Self::cargo_workspace_metadata()?;
+        metadata.workspace_dependency_sources(workspace_root, "chronos-mcp")
     }
 
     fn cargo_metadata_target_dir() -> Result<PathBuf, String> {
+        Self::cargo_workspace_metadata().map(|metadata| metadata.target_directory.clone())
+    }
+
+    fn cargo_workspace_metadata() -> Result<&'static CargoWorkspaceMetadata, String> {
+        static METADATA: OnceLock<Result<CargoWorkspaceMetadata, String>> = OnceLock::new();
+        METADATA
+            .get_or_init(CargoWorkspaceMetadata::load)
+            .as_ref()
+            .map_err(Clone::clone)
+    }
+
+    fn load_cargo_metadata_json() -> Result<serde_json::Value, String> {
         let output = std::process::Command::new("cargo")
-            .args(["metadata", "--no-deps", "--format-version=1"])
+            .args(["metadata", "--format-version=1"])
             .output()
             .map_err(|e| format!("cargo metadata failed to spawn: {e}"))?;
         if !output.status.success() {
@@ -2167,13 +2304,8 @@ impl McpTestClient {
                 output.status.code().unwrap_or(-1)
             ));
         }
-        let value: serde_json::Value = serde_json::from_slice(&output.stdout)
-            .map_err(|e| format!("cargo metadata stdout is not JSON: {e}"))?;
-        let target_dir = value
-            .get("target_directory")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "cargo metadata: missing target_directory".to_string())?;
-        Ok(PathBuf::from(target_dir))
+        serde_json::from_slice(&output.stdout)
+            .map_err(|e| format!("cargo metadata stdout is not JSON: {e}"))
     }
 
     /// Walk PATH looking for `name`. Avoids adding a `which` dep.
@@ -2676,5 +2808,71 @@ mod tests {
         // This test verifies that the types can be instantiated
         // Actual server spawning requires a real MCP binary
         let _client: Option<McpTestClient> = None;
+    }
+
+    #[test]
+    fn mcp_dependency_sources_match_resolved_workspace_closure() {
+        let workspace_root = McpTestClient::workspace_root().unwrap();
+        let sources = McpTestClient::mcp_dependency_sources(&workspace_root).unwrap();
+
+        let expected_crates = [
+            "chronos-browser",
+            "chronos-capture",
+            "chronos-domain",
+            "chronos-ebpf",
+            "chronos-index",
+            "chronos-js",
+            "chronos-log",
+            "chronos-mcp",
+            "chronos-native",
+            "chronos-python",
+            "chronos-query",
+            "chronos-services",
+            "chronos-store",
+        ];
+        let expected_sources: Vec<_> = expected_crates
+            .iter()
+            .map(|crate_name| workspace_root.join("crates").join(crate_name).join("src"))
+            .collect();
+
+        assert_eq!(
+            sources.len(),
+            expected_sources.len(),
+            "dependency closure should watch exactly the resolved workspace package sources: {sources:?}"
+        );
+        for expected in expected_sources {
+            assert!(
+                expected.is_dir(),
+                "test fixture expected resolved package source to exist: {}",
+                expected.display()
+            );
+            assert!(
+                sources.contains(&expected),
+                "missing dependency source {} in {sources:?}",
+                expected.display()
+            );
+        }
+    }
+
+    #[test]
+    fn mcp_dependency_sources_exclude_unrelated_workspace_crates() {
+        let workspace_root = McpTestClient::workspace_root().unwrap();
+        let sources = McpTestClient::mcp_dependency_sources(&workspace_root).unwrap();
+
+        for crate_name in [
+            "chronos-cli",
+            "chronos-e2e",
+            "chronos-go",
+            "chronos-java",
+            "chronos-sandbox",
+            "chronos-webhook",
+        ] {
+            let unrelated = workspace_root.join("crates").join(crate_name).join("src");
+            assert!(
+                !sources.contains(&unrelated),
+                "unrelated workspace source was watched: {}",
+                unrelated.display()
+            );
+        }
     }
 }
