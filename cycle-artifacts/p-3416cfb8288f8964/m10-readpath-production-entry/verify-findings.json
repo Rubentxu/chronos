@@ -1,0 +1,40 @@
+{
+ "subject": {
+  "base_sha": "488a6120",
+  "head_sha": "f94864ad41da30938cad262ba4b735d7e6071021",
+  "verified_subject_sha": "c45488c46be5b8c5121134258fa1f752aa869f8b",
+  "cycle_id": "m10-readpath-production-entry",
+  "branch": "main",
+  "route": "b-direct",
+  "subject_note": "Push 488a6120..f94864ad main -> main recorded in merge-receipt.md; f94864ad verified as ancestor of current HEAD. Verify-phase subject was c45488c4 (feat(mcp): read_path wired into the production server)."
+ },
+ "cycle_id": "m10-readpath-production-entry",
+ "verdict": "PASS",
+ "all_passed": true,
+ "lens_summary": {
+  "tiers_run": ["T0", "T1", "canonical-pipelinek"],
+  "synthesis_only": false,
+  "_note": "RESTORATION \u2014 synthesized 2026-09-28 by orchestrator jcode-orchestrator (cycle ci-vault-drift-verify-findings-restoration): the cycle folder was committed without verify-findings.json, tripping CI CC#18 on 970e5d73. NO fresh verification performed at synthesis time; claims transcribed from the cycle's own committed artifacts (verification-report.md, merge-receipt.md, verify-chronos-mcp-lib.log, verify-chronos-services-lib.log).",
+  "checks": [
+   "cargo fmt --all -- --check exit 0",
+   "cargo clippy -p chronos-mcp --all-targets: 0 warnings",
+   "cargo test -p chronos-mcp --lib: 87 passed / 0 failed (log persisted)",
+   "cargo test -p chronos-services --lib: 539 passed / 0 failed (log persisted)",
+   "pipelinek run over f94864ad: Pipeline finished with SUCCESS (0 StepFailed)",
+   "merge receipt: HEAD == origin/main == f94864ad after push 488a6120..f94864ad"
+  ],
+  "known_limitations": [
+   "sddk lint fails with 5 structural errors (bootstrap dependency loop, backlog bl-bl-01M3KDNYW30003876VBVWD2G80); documented by the cycle as Blocker 1 and not a product-code defect"
+  ]
+ },
+ "gate_receipts": [
+  "gate-tests-pass-ea458bff5bd88ae2-1",
+  "gate-policy-compliant-ea458bff5bd88ae2-1",
+  "gate-no-pending-effects-9eef1dadae524f30-1",
+  "gate-release-uat-approved-1250a2e3323e345d-1 (waived convention at closure of the blocking UAT cycle)"
+ ],
+ "findings": [],
+ "synthesized_at": "2026-09-28T20:05:00Z",
+ "synthesized_by": "jcode-orchestrator ci-vault-drift-verify-findings-restoration",
+ "owner_cycle": "ci-vault-drift-verify-findings-restoration"
+}

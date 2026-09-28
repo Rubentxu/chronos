@@ -1,0 +1,45 @@
+{
+ "subject": {
+  "base_sha": "c171213354431d2620113b623a4520f9637259cf",
+  "head_sha": "e7c430644dd99441d0dc6defb088edcf09f867f0",
+  "release_sha": "5838027fc92014c642b7baec7add4a72a67574e3",
+  "remote_tag": "v0.1.2",
+  "remote_tag_peel": "5838027fc92014c642b7baec7add4a72a67574e3",
+  "cycle_id": "sandbox-stale-binary-dependency-closure",
+  "branch": "main",
+  "route": "b-direct",
+  "subject_note": "Verification ran on the dirty tree (base c1712133 + chronos-sandbox/src/client/tools.rs, diff sha256:2544325e...); the same diff was committed as e7c43064 and released within 5838027f (tag v0.1.2, annotated, peel verified by ls-remote)."
+ },
+ "cycle_id": "sandbox-stale-binary-dependency-closure",
+ "verdict": "PASS",
+ "all_passed": true,
+ "lens_summary": {
+  "tiers_run": ["T0", "T1", "T2", "canonical-pipelinek"],
+  "synthesis_only": false,
+  "_note": "RESTORATION-style synthesis at cycle-close bookkeeping by orchestrator jcode-orchestrator (cycle ci-vault-drift-verify-findings-restoration): the cycle folder rec-c3.2-stale-binary-closure was created after the standard artifact set convention and shipped without verify-findings.json, tripping CI CC#18. NO fresh verification was performed at synthesis time; every claim below references receipts and artifacts already persisted in SDDK.",
+  "checks": [
+   "rec_c2_2_canonical_consumers 2 passed / 0 failed, exit 0 (--test-threads=1, independent read-only worker, transcript session_buffalo_1790623788997_a4b5f2b243619599)",
+   "rec_c2_2_producer_derivation 1 passed / 0 failed, exit 0 (same worker)",
+   "rec_c2_2_uat_c2 6 passed / 0 failed, exit 0 (same worker)",
+   "stale-source refusal observed: focused E2E refused start (exit 101) after touching only chronos-native mtime; cleared after cargo build --bin chronos-mcp (execution_log_read_e2e 2 passed / 0 failed)",
+   "unit tests pinning the 13 reachable workspace roots: 2 passed",
+   "pipelinek fresh run 7141cde8-7e39-418a-821e-a53599962db4: Pipeline finished with SUCCESS (41 events, 0 StepFailed)"
+  ]
+ },
+ "gate_receipts": [
+  "gate-tests-pass-32f9ecb67430b0a9-1",
+  "gate-policy-compliant-32f9ecb67430b0a9-1",
+  "gate-no-pending-effects-7e069ec44682b4fc-1",
+  "gate-release-uat-approved-7e069ec44682b4fc-1 (waived, B-direct hotfix convention)"
+ ],
+ "sddk_artifacts": [
+  "art-9e49ccc41fd7-e97388b6 (implementation-receipt)",
+  "art-7dc4f4671abf-4f513819 (verification-report)",
+  "art-9ff7160afcba-4c42a741 (merge-receipt)",
+  "art-53f84f6c6893-b4bc4737 (release-receipt)"
+ ],
+ "findings": [],
+ "synthesized_at": "2026-09-28T20:05:00Z",
+ "synthesized_by": "jcode-orchestrator ci-vault-drift-verify-findings-restoration",
+ "owner_cycle": "ci-vault-drift-verify-findings-restoration"
+}
