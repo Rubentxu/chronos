@@ -143,5 +143,39 @@ UAT real (ver "Límites de esta verificación").
 
 - Implementado: sí (`896c2f17`, `c45488c4`)
 - Verificado localmente: sí (este informe)
-- Integrado en remoto: **no** — los commits verificados siguen sin push
+- Integrado en remoto: **sí** — push `488a6120..f94864ad`, `HEAD == origin/main`
+  (merge-receipt adjunto al ciclo)
 - Certificado: no
+
+## Por qué el ciclo no puede cerrarse en AUTO
+
+`release.complete` exige el gate `release-uat-approved`. La configuración del
+proyecto (`sddk uat config show --project p-3416cfb8288f8964`, `uat.toml`
+inexistente, defaults) declara:
+
+```toml
+[release_gate]
+major = required
+minor = required
+patch = skip
+
+[human]
+developer = true
+architect = true
+```
+
+Dos consecuencias:
+
+1. Cualquier release `major` o `minor` exige UAT ejecutado de verdad. No es
+   alcanzable con pruebas unitarias: requiere un release candidate
+   (`sddk uat plan --release …`) y sesiones de agente reales consumiendo
+   `execution_log_read` por MCP, ingeridas con `sddk uat ingest` y agregadas
+   con `sddk uat report`.
+2. El gate exige **dos firmas humanas** (developer y architect). Firmar en
+   nombre de un humano que no ha revisado el trabajo sería falsificar una
+   aprobación, que es exactamente lo que este informe rechaza en las demás
+   secciones.
+
+Por tanto el ciclo queda en `RELEASE_PENDING` con la implementación integrada y
+verificada, y el cierre depende de una decisión humana que excede la autoridad
+de este agente. No es un bloqueo que se pueda resolver investigando más.
