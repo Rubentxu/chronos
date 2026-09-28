@@ -27,6 +27,28 @@ pipeline {
             sh("cd $REPO && cargo build -p chronos-domain 2>&1 | tail -10; test \${PIPESTATUS[0]} -eq 0")
         }
 
+        // ---------------------------------------------------------------
+        // test-sandbox-read-path
+        //
+        // Por qué este stage existe: hasta ahora el pipeline sólo hacía
+        // `cargo check` + `cargo build`, así que un "Pipeline finished with
+        // SUCCESS" certificaba COMPILACIÓN, no comportamiento. Los tests
+        // del read path (chronos-sandbox/tests/execution_log_read_e2e.rs)
+        // hablan JSON-RPC real contra el binario chronos-mcp y nunca se
+        // ejecutaban en el gate local.
+        //
+        // El orden importa: `cargo build --bin chronos-mcp` va ANTES del test
+        // porque `cargo test -p chronos-sandbox` no construye ese binario
+        // (vive en crates/chronos-mcp, y CARGO_BIN_EXE_* sólo se define
+        // para binarios del mismo crate). Sin este paso, el resolver puede
+        // arrancar un binario viejo y dar verde falso. Es el mismo defecto
+        // que se corrigió en .github/workflows/sandbox-smoke.yml (da93f6cf).
+        // ---------------------------------------------------------------
+        stage("test-sandbox-read-path") {
+            sh("cd $REPO && cargo build --bin chronos-mcp 2>&1 | tail -10; test \${PIPESTATUS[0]} -eq 0")
+            sh("cd $REPO && cargo test -p chronos-sandbox --test execution_log_read_e2e -- --test-threads=1 2>&1 | tail -25; test \${PIPESTATUS[0]} -eq 0")
+        }
+
         stage("evidence") {
             sh("ls -la $REPO/.pipelinek/db.sqlite")
             sh("test -d $REPO/.pipelinek/control/last-run && echo 'last-run present'")
