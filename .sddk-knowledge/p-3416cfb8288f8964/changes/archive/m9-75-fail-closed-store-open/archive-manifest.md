@@ -134,9 +134,9 @@ One commit:
 | Kind | Path | SHA-256 |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-75-fail-closed-store-open/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
-| source (mcp server) | `crates/chronos-mcp/src/server.rs` | `44787c87c75dfaa5958232a707376e7bdbb67c505d7b84715280c99d9957de2e` |
+| source (mcp server) | `crates/chronos-mcp/src/server.rs` | `eeb40689b12877dc97e436c4a162b07fa49e303f23444285686e00b6335ccc99` |
 | source (mcp binary) | `crates/chronos-mcp/src/bin/chronos-mcp.rs` | `3797defa83c8218db6610047fece4b6ed67aa9b183e5c1f5193f2f10eeda1492` |
-| source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `50e6089729db9f261e6ff00bbd895d129c94ab46268abc792f997f32a17c730e` |
+| source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `21b42eccb1550c9ce6c750a55ddc80d20729ea2ba0ccc9c75a76738efbb3e644` |
 | test (store open failure) | `chronos-sandbox/tests/store_open_failure.rs` | `5f0461f8db78b9de6d27d9ba92c3c06e0ebbe3cf62eb990e69f7c9e1e4c7bec9` |
 | docs (agents manual) | `AGENTS.md` | `74a160853f405bc14779fadccb5c01b0f84f1e07a68e18f6899c299e77fe822d` |
 | docs (session management, en) | `docs/manual-ai/en/08-session-management.md` | `c35df64b6b6d0b373c09a40d1e0364eb403fb25cd78644c0e4e35a1c289cbce2` |
