@@ -50,32 +50,33 @@ contradicted the deadlock theory.
 
 ## Open blockers
 
-| # | Blocker | Owner | Next move |
+| # | Blocker | State | Evidence |
 |---|---|---|---|
-| 1 | `sddk lint` pack errors SDDK005/009/011/014 | operator | decide; do not create files to green the counter |
-| 2 | `.pipeline.kts` runs no tests, so `SUCCESS` certifies compilation only | operator-approval needed | add a test stage; see below |
-| 3 | `cargo test -p chronos-sandbox` does not rebuild `chronos-mcp`; false green possible | me, on approval | fix in the same stage as #2 |
+| 1 | `sddk lint` pack errors SDDK005/009/011/014 | OPEN, operator | do not create files just to green the counter |
+| — | `.pipeline.kts` runs no tests | **CLOSED** `e1af9c4d` | journal run `22575c65`: 5 stages success, `RunFinished/success`, 0 `StepFailed`, captured output shows both E2E tests passing (2 passed, 28.11s) |
+| — | `cargo test -p chronos-sandbox` does not rebuild `chronos-mcp` | **CLOSED** `3c011e8a` | resolver now refuses a stale binary naming the stale dir; mutation-proven |
 
-Blocker 3 now has a second, independent demonstration beyond the local mutation: `sandbox-smoke.yml`
-was shipping without a `chronos-mcp` build step at all, which is how a stale or unbuilt server reached
-the tests in CI. Fixed in `da93f6cf` for that workflow, but the hazard remains for anyone invoking
-`cargo test -p chronos-sandbox` directly.
-
-Blocker 2 is now evidence-backed rather than a read of the file. Enumerating the commands in
-`.pipeline.kts` yields exactly `cargo check --workspace`, `cargo build -p chronos-domain`, and a
-`cargo check --workspace` in a retry step. No `cargo test` appears anywhere.
+**Both quality blockers from the last session are closed.** The stale-binary hazard had two distinct
+demonstrations, and closing the workflow one (`da93f6cf`) did not close the direct-invocation one, so
+the resolver itself now fails loud.
 
 ## Next concrete action
 
-Add a test stage to `.pipeline.kts` that builds `chronos-mcp` before running the E2E suite, which
-makes the local gate meaningful and closes blocker 3 as a side effect. This edits a versioned pipeline
-contract, so it needs operator approval before landing.
+Remaining work is operator-scoped, not engineering-scoped: the four `sddk lint` pack errors, and
+certification (UAT evidence, coverage numbers), which cannot be self-granted. The roadmap records all
+10 chapters CLOSED, so there is no feature work queued.
 
 ## Do not
 
 - Do not report `RELEASE_PENDING` or `release-uat-approved`. There is no active cycle. An earlier
   report this session did exactly that, by repeating the incoming summary instead of re-deriving from
   `sddk cycle status`.
+- Do not report the full sandbox suite as green from a **truncated** run. An earlier run in this
+  session was killed by a self-imposed 1200s `timeout` and showed only 2 binaries / 10 tests; that was
+  not a pass. Verify the run reached its own end.
+- Do not mutate a source file while a suite is running against the binary built from it. Doing so
+  produced 3 `analytics_tools` failures that were the staleness guard working correctly, not a
+  regression, and they invalidated the run.
 - Do not re-run the E2E suite and call it green without building `chronos-mcp` first.
 - Do not share one MCP server across `#[tokio::test]` functions; each test needs its own.
 - Do not ship a mechanism for a failure without checking the logs for that mechanism's own marker.
