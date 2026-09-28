@@ -53,6 +53,30 @@ impl McpSession {
         self.rpc_client.call_tool(tool_name, arguments).await
     }
 
+    /// Enumerate the tools the server advertises via `tools/list`.
+    ///
+    /// `call_tool` proves a tool *responds*; it cannot prove the tool is
+    /// *discoverable*. Those are different failure modes: a tool registered
+    /// on the router but missing from `tools/list` is invisible to every
+    /// agent, and no amount of direct invocation would reveal it. Tests that
+    /// assert an agent can find a tool need this.
+    pub async fn list_tools(&mut self) -> Result<Vec<serde_json::Value>, McpSandboxError> {
+        let response = self
+            .rpc_client
+            .call("tools/list", serde_json::json!({}))
+            .await?;
+        let result = response
+            .get("result")
+            .ok_or_else(|| McpSandboxError::RpcError("Missing result in tools/list".to_string()))?;
+        let tools = result
+            .get("tools")
+            .and_then(|t| t.as_array())
+            .ok_or_else(|| {
+                McpSandboxError::RpcError("tools/list did not return a tools array".to_string())
+            })?;
+        Ok(tools.clone())
+    }
+
     /// Get the path to a compiled C fixture binary.
     ///
     /// Resolution is delegated to [`crate::FixtureResolver`], which reads
