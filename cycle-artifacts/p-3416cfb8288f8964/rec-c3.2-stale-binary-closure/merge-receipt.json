@@ -1,0 +1,13 @@
+{
+  "kind": "merge-receipt",
+  "cycle": "p-3416cfb8288f8964/sandbox-stale-binary-dependency-closure",
+  "route": "local",
+  "branch": "main",
+  "base": "main",
+  "sha": "5838027fc92014c642b7baec7add4a72a67574e3",
+  "remote": "origin/main",
+  "remote_sha": "5838027fc92014c642b7baec7add4a72a67574e3",
+  "push_receipt_id": "cap-git-push-569bfc5bbfe1",
+  "verified": "HEAD == origin/main after direct trunk push",
+  "capability_receipt": "cap-git-push-569bfc5bbfe1"
+}

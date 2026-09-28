@@ -1,0 +1,12 @@
+{
+  "kind": "release-receipt",
+  "cycle": "p-3416cfb8288f8964/sandbox-stale-binary-dependency-closure",
+  "route": "local",
+  "tag": "v0.1.2",
+  "annotated": true,
+  "sha": "5838027fc92014c642b7baec7add4a72a67574e3",
+  "tag_receipt_id": "cap-git-tag-925fd0fc702a",
+  "remote_tag_verified": "refs/tags/v0.1.2 peels to 5838027fc92014c642b7baec7add4a72a67574e3",
+  "capability_receipt": "cap-git-tag-925fd0fc702a",
+  "merge_receipt": "cycle-artifacts/p-3416cfb8288f8964/rec-c3.2-stale-binary-closure/merge-receipt.json"
+}
