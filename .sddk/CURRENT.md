@@ -10,11 +10,11 @@ started: there is **no active cycle**.
 
 ## Last verified state
 
-- `origin/main` = `da93f6cf`; the substantive code is at `2b162937`, the two CI fixes at `07d49e63` and `da93f6cf`.
-- Remote CI on `2b162937`: CI, Architecture Contracts, Supply chain, Sandbox Debt Sentinel, Coverage all
-  `success`.
-- Remote workflows on `07d49e63`: five of six `success`. **Sandbox Smoke Tests failed**, having never run
-  before. Fixed in `da93f6cf`; its verdict was still pending at time of writing.
+- `origin/main` = `5feddc67`; the substantive code is at `2b162937`, the two CI fixes at `07d49e63` and `da93f6cf`.
+- **Remote integration verified on `da93f6cf`: all six workflows `success`.** Architecture Contracts,
+  CI, Coverage, Sandbox Debt Sentinel, Sandbox Smoke Tests, Supply chain.
+- `5feddc67` (docs only) shows five workflows and no Sandbox Smoke. That is the fixed filter working
+  as designed, not a regression: the commit touched only `.sddk/`, outside `chronos-sandbox/**`.
 - Local on `2b162937`: E2E 2/2, `chronos-services --lib` 539, `chronos-mcp` 87, fmt and clippy clean,
   `pipelinek` run `3260a48d` with zero `StepFailed`.
 
@@ -28,7 +28,8 @@ The cause is that this workflow never built `chronos-mcp`. `ci.yml` runs `cargo 
 first and gets it for free; `sandbox-smoke.yml` only ran `cargo build -p chronos-sandbox`, which does
 not build a binary that lives in `crates/chronos-mcp`. The tests drive a real server process, so the
 server they exercised was not guaranteed to correspond to the revision under test. `da93f6cf` adds an
-explicit `cargo build --bin chronos-mcp` step.
+explicit `cargo build --bin chronos-mcp` step. **Verified green: Sandbox Smoke Tests passed on
+`da93f6cf`, with all six workflows `success`.**
 
 **A mechanism I asserted and then disproved.** I first wrote into the commit message and the workflow
 comment that the failure was a nested-`cargo build` lock deadlock. That was wrong on three counts,
