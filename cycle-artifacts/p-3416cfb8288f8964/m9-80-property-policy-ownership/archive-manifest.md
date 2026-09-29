@@ -69,7 +69,14 @@ digest was fabricated.
 
 ## Debt carried forward
 
-`m980-D1` (medium/P3): `compare_ord` is a 361-line function at
-`crates/chronos-domain/src/property.rs:245-605`.
-`m980-D2` (low/P4): one production `unwrap()` at line 432.
-Neither blocks release; see `debt-ledger.md`.
+**None.** The two findings this manifest originally carried (`m980-D1`,
+`m980-D2`) have been **retracted as measurement errors** — see the RETRACTED
+section of `debt-ledger.md`. Re-measured with true brace matching, the longest
+production function in the cycle's surface is 50 lines, not 361, and the single
+production `unwrap()` is provably safe. Zero debt findings.
+
+The `debt-severity-assigned` / `debt-priority-assigned` receipts
+(`gate-debt-severity-assigned-f0782ea44e4b8242-1`,
+`gate-debt-priority-assigned-f0782ea44e4b8242-1`) recorded the false findings and
+remain as historical, immutable receipts; the ledger supersedes their content.
+The release decision is unaffected.
