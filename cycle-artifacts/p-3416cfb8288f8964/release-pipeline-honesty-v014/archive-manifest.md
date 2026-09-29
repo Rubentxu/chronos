@@ -130,9 +130,69 @@ All paths are relative to
 5. The cycle inventory artifact was never created.
 6. The vault has 60 pre-existing errors blocking `archive.complete` (this file).
 
+## Root cause of the 60 errors (diagnosed, not yet fixed)
+
+The two error classes are one problem: **node ids are derived from markdown
+filenames, so every canonical filename collides vault-wide, and links written
+against directory names resolve to nothing.**
+
+SDDK indexes 138 nodes, which is exactly the count of `.md` files in the vault.
+The vault also holds 62 directories, and those are never indexed as nodes.
+
+`VAULT002` — 30 duplicate ids, from files named by *role* rather than by cycle:
+
+| Duplicate id | Files |
+|---|---|
+| `archive-manifest` | 6 under `changes/archive/m0-02…m8-07*/` |
+| `specs` | 4 under `changes/archive/m0-02…m0-06*/` |
+| `spec` | 5 (incl. `specs/capabilities/spec.md`, `cycles/m0-truth-first-foundation/spec.md`) |
+| `proposal` | 3 |
+| `tasks` | 3 |
+| `design` | 2 |
+| `index` | 2 (`cycles/index.md`, `terms/index.md`) |
+| `archive-report`, `cycle-spec`, `debt-verify`, `explore-report`, `verify` | 1 each |
+
+`VAULT003` — 30 dangling wikilinks, because links were written against
+**directory** names. Those directories do exist and hold real content; there is
+simply no node to point at:
+
+- `specs/capabilities-discovery/` exists and contains `spec.md` plus 9
+  `REQ-*.md` files. `[[capabilities-discovery]]` has no node.
+- `cycles/m2-function-level-capture/m2-native-frame-log-durable/` exists with
+  `cycle-spec.md`, `apply-checkpoint.json`, `archive-manifest.json`, `release/`.
+- `adrs/0002-capability-aware-discovery.md` exists, yet
+  `ADR-0002-capability-aware-discovery` does not resolve — the id scheme is not
+  the filename.
+- `sddk vault search` for `capabilities-discovery`, `m0-01-live-pagination`,
+  `m2-native-frame-log-durable` and `m2-native-live-probe-frame-capture` all
+  return no node.
+
+**Consequence:** fixing this is a rename/reindex migration over the whole vault,
+not a patch. Every one of the 30 colliding ids must become cycle-scoped (for
+example `archive-manifest--m0-02-snapshots-cumulative`), and 30 wikilinks must be
+retargeted to whatever the new scheme produces.
+
+## Why this was not done in this cycle
+
+`~/.sddk-knowledge/p-3416cfb8288f8964` is a **derived artifact that lives
+outside the repository**. It is not under git, `sddk knowledge verify` reports
+`registry_present: false` with 178 untracked files, and therefore nothing in it
+can be regenerated from source. A mass rename there has:
+
+- no version control and no rollback,
+- 28 files that reference `archive-manifest` and would need retargeting,
+- a naming decision (cycle-scoped ids vs. frontmatter ids vs. directory-indexed
+  nodes) that changes how every future cycle writes its vault node.
+
+A verifiable copy was taken before stopping:
+`~/.jcode/scratch/vault-backup-20260929-174612` (163 files, 992K).
+
+The naming scheme is a design decision about the knowledge vault, not a cleanup
+task inside a release cycle, so it is left to its own cycle with the operator's
+awareness. Recorded as backlog `bl-bl-01M3PXC6ZV000387DTRTP6AS00` (P1).
+
 ## Next executable step
 
-Repair the vault so `sddk vault validate` reports 0 errors — namespace the 30
-`archive-manifest` node ids per cycle and either create or correct the 10 missing
-VAULT003 targets — then re-evaluate `vault-index-current` and apply
-`archive.complete`. This is a separate cycle, not a patch to v014.
+Decide the vault identity scheme, then repair it in a dedicated cycle. Target:
+`sddk vault validate` → `errors: 0`. After that, re-evaluate
+`vault-index-current` and apply `archive.complete` for v014.
