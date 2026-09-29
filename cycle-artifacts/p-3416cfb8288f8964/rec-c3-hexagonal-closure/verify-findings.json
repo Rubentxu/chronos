@@ -1,0 +1,40 @@
+{
+ "subject": {
+  "cycle_id": "rec-c3-hexagonal-closure",
+  "head_sha": "a744e8c069af5e540e9f2697eb2e08b32710e6b9",
+  "base_sha": "a744e8c069af5e540e9f2697eb2e08b32710e6b9",
+  "sha_note": "These are NOT a code-under-test range. The Etapa notes were never verified against a recorded code range, so head_sha and base_sha both point at a744e8c0, the OBSERVED commit that last touched this folder. Recorded provenance, not a verified code range.",
+  "etapa_a1_sha256_prefix": "04abd8485198552a",
+  "branch": "unknown",
+  "route": "unknown",
+  "subject_note": "NO VERIFICATION PERFORMED. This file exists to satisfy vault-drift CC#18, which requires a verify-findings.json in every cycle-artifacts folder. It records the ABSENCE of verification, it does not assert a pass."
+ },
+ "cycle_id": "rec-c3-hexagonal-closure",
+ "verdict": "NOT_VERIFIED",
+ "all_passed": false,
+ "lens_summary": {
+  "tiers_run": [],
+  "synthesis_only": true,
+  "_note": "Honest absence record, NOT a pass. The cycle folder contains Etapa notes (A, B, C, D) and a proposal, but no verify-findings.json, no gate receipts, and no machine-recorded test evidence.",
+  "checks": [],
+  "known_limitations": [
+   "The folder documents a multi-etapa initiative (etapa-a-1, etapa-a-3, etapa-b-1-2-3, etapa-b-4, etapa-b-prime, etapa-c, etapa-d) as prose. Prose stage notes are not a substitute for recorded argv/exit_code evidence.",
+   "No per-etapa head SHA, no test output, no lint/build result is recorded anywhere in this folder.",
+   "ROADMAP and the Tren B close report both record that REC-C3.3.4-native (services->native rewire) and REC-C3.5-residual-inversion (Diff/Explain/Compare/Lifecycle/Counterexample still on &SessionStore) remain OPEN precisely because this closure initiative did not touch them. So the hexagonal closure is demonstrably partial, not complete.",
+   "Action required: this initiative should be either re-verified with recorded evidence for the etapas that actually landed, or explicitly archived as partial with the residual work tracked as separate open cycles."
+  ]
+ },
+ "gate_receipts": [],
+ "findings": [
+  {
+   "id": "rec-c3-hexagonal-closure-unverified",
+   "severity": "medium",
+   "title": "Multi-etapa initiative recorded as prose notes only, with no verification evidence",
+   "detail": "Known residual inversions (rec-c3.3.4-native, rec-c3.5-residual-inversion) are documented elsewhere in the repo as still open, so the closure is partial. CC#18 flagged the missing verify-findings.json on 2026-09-29; this file records the true NOT_VERIFIED status rather than a fabricated pass.",
+   "status": "open"
+  }
+ ],
+ "evaluated_at": "2026-09-29T17:34:00+02:00",
+ "evaluated_by": "jcode-orchestrator (CC#18 remediation, not a verification of this cycle's work)",
+ "owner_cycle": "cc18-verify-findings-remediation"
+}

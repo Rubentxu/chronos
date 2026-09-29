@@ -1,0 +1,40 @@
+{
+ "subject": {
+  "cycle_id": "rec-c3.5-residual-inversion",
+  "head_sha": "a744e8c069af5e540e9f2697eb2e08b32710e6b9",
+  "base_sha": "a744e8c069af5e540e9f2697eb2e08b32710e6b9",
+  "sha_note": "These are NOT a code-under-test range. This cycle has no verified code subject, so head_sha and base_sha both point at a744e8c0, the OBSERVED commit that last touched this folder ('docs(cycle): version the remaining historical cycle artifacts'). The proposal under review is at that tree. This is recorded provenance, not a claim that any code was verified.",
+  "proposal_sha256_prefix": "04878c6dd165f6ab",
+  "branch": "unknown",
+  "route": "unknown",
+  "subject_note": "NO VERIFICATION PERFORMED. This file exists to satisfy vault-drift CC#18, which requires a verify-findings.json in every cycle-artifacts folder. It records the ABSENCE of verification, it does not assert a pass."
+ },
+ "cycle_id": "rec-c3.5-residual-inversion",
+ "verdict": "NOT_VERIFIED",
+ "all_passed": false,
+ "lens_summary": {
+  "tiers_run": [],
+  "synthesis_only": true,
+  "_note": "Honest absence record, NOT a pass. The cycle folder contains only proposal.md. No apply-checkpoint, no test evidence, no gate receipts, and no recorded head SHA exist for this cycle in the repository. A PASS verdict here would be fabricated.",
+  "checks": [],
+  "known_limitations": [
+   "Nothing was executed for this cycle in any observed session. No test output, no build, no lint, no CI run is recorded.",
+   "The proposal describes three residual production edges in chronos-services (diff.rs -> chronos_store::TraceDiff, probe.rs/observe.rs -> chronos_native concrete backend construction, and a third) intended to clear known_dependency_violations entries in reconstruction-contracts.toml. Whether any of that landed is NOT determinable from this folder.",
+   "This cycle was already listed as open debt in session-handoff/SESSION_CLOSE_2026-09-24_rec-c3.3-train-b.md ('REC-C3.5-services-store / REC-C3.5-residual-inversion (Diff/Explain/Compare/Lifecycle/Counterexample still on &SessionStore)'). That is the current authoritative status: OPEN.",
+   "Action required to make this verdict real: execute the cycle and record argv + exit_code + output digests, or explicitly close it as not-executed with a stated reason."
+  ]
+ },
+ "gate_receipts": [],
+ "findings": [
+  {
+   "id": "rec-c3.5-residual-inversion-unverified",
+   "severity": "medium",
+   "title": "Cycle folder has a proposal but no execution evidence",
+   "detail": "Only proposal.md exists. CC#18 flagged the missing verify-findings.json on 2026-09-29; this file is an honest NOT_VERIFIED placeholder, not a certification.",
+   "status": "open"
+  }
+ ],
+ "evaluated_at": "2026-09-29T17:34:00+02:00",
+ "evaluated_by": "jcode-orchestrator (CC#18 remediation, not a verification of this cycle's work)",
+ "owner_cycle": "cc18-verify-findings-remediation"
+}

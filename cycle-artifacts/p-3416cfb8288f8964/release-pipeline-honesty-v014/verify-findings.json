@@ -1,0 +1,48 @@
+{
+ "subject": {
+  "cycle_id": "release-pipeline-honesty-v014",
+  "head_sha": "98c4cd2341058872102f458655791ec53f21bd8c",
+  "base_sha": "181886958013751172fa5d26b62b3f8a31e17083",
+  "base_note": "base_sha is origin/main immediately before this release pushed 18188695..98c4cd23.",
+  "implementation_commit": "3d935b6a3d022f8ddc85b511e7dca414de010f2d",
+  "tag": "v0.1.4",
+  "branch": "main",
+  "route": "b-direct",
+  "subject_note": "Release-pipeline honesty fix. Non-Linux callers of the ptrace capture path now fail closed with TraceError::UnsupportedOperation; release.yml fails loud when the binary is absent; docker.yml skips the publish path with a workflow notice when DOCKERHUB secrets are missing. Verified on release SHA 98c4cd23 and published as annotated tag v0.1.4."
+ },
+ "cycle_id": "release-pipeline-honesty-v014",
+ "verdict": "PASS",
+ "all_passed": true,
+ "lens_summary": {
+  "tiers_run": ["T0", "T1", "T2", "canonical-pipelinek"],
+  "synthesis_only": false,
+  "_note": "Verdict reflects the release phase of this cycle, evaluated on the published SHA. Implementation and behavioural verification were carried out before the release and are recorded in verify-report.md and implementation-receipt.json in this same folder; the release phase added Git postcondition verification and a local CI gate, both recorded below.",
+  "checks": [
+   "verify-report.md: 10 acceptance checks V1..V10 recorded, all OBSERVED (non-Linux fail-closed guards, structural parity of bridge stubs, darwin cross-cc cargo check 0 errors, 109/109 chronos-native lib tests serial, 26/26 chronos-capture, 539/539 chronos-services, clippy 0, fmt clean)",
+   "implementation-receipt.json: 9 verification entries with argv + exit_code + OBSERVED class",
+   "pipelinek v0.39.0 on release SHA 98c4cd23: runId 0b8662a3-0df8-4651-bca9-2d074cc05dd0, Pipeline finished with SUCCESS, exit 0, RunFinished/success, 5/5 stages success",
+   "pipelinek test-sandbox-read-path stage: execution_log_read_e2e 2 passed / 0 failed / 0 ignored in 33.43s against a freshly built chronos-mcp",
+   "release postconditions re-verified with local git after fresh fetch: HEAD == origin/main == 98c4cd23, v0.1.4 is object type 'tag' (annotated), peels to 98c4cd23",
+   "gate no-pending-effects: gate-no-pending-effects-1e68ae303737c6f8-1",
+   "gate release-uat-approved: gate-release-uat-approved-1e68ae303737c6f8-2 (policy skip, NOT executed UAT)",
+   "sddk cycle transition release.complete: outcome=succeeded, status=RELEASED, phase=archive",
+   "sddk ledger verify: 417 events, last_hash sha256:524d744eda0ad3d6733733c705d533767e61f32133f34869277ea8d07c18a40d"
+  ],
+  "known_limitations": [
+   "macOS runner NOT observed. The v0.1.4 tag makes the macOS CI leg runnable, but no macOS runner result is claimed. Local evidence is a Linux->darwin cross-cc cargo check/clippy, which the verify report already classified as a local cross-compilation artifact.",
+   "release-uat-approved is a documented POLICY SKIP (no project uat.toml, default [release_gate] patch=skip), not executed UAT.",
+   "Tag v0.1.4 is annotated but unsigned; GPG signing is unavailable in this environment.",
+   "Tag-triggered Release/Docker workflows are external integration status and were not awaited, per git-contract Rule 5.",
+   "A stale-cache incident occurred: a default 'pipelinek run' emitted a terminal SUCCESS with zero StepStarted events and a compilation cacheKey byte-identical to the pre-v0.1.4 tree. All cited evidence was forced with --rerun. Registered as backlog item bl-bl-01M3PWNDVW000387DS8ZH6DX00; NOT fixed by this cycle.",
+   "Pre-existing and out of scope: 'cargo test -p chronos-native --lib' in parallel mode hangs/fails (serial is the supported invocation); CapDockerfileRefresh remains OPEN."
+  ]
+ },
+ "gate_receipts": [
+  "gate-no-pending-effects-1e68ae303737c6f8-1",
+  "gate-release-uat-approved-1e68ae303737c6f8-2"
+ ],
+ "findings": [],
+ "evaluated_at": "2026-09-29T17:33:00+02:00",
+ "evaluated_by": "jcode-orchestrator (release phase of cycle p-3416cfb8288f8964/release-pipeline-honesty-v014)",
+ "owner_cycle": "release-pipeline-honesty-v014"
+}
