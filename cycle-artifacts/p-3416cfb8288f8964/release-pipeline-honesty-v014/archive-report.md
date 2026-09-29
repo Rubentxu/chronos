@@ -115,5 +115,13 @@ id. 12 distinct ids collide across 53 files:
 - **Withdrawn**: an earlier claim that "CI runs no project tests and would stay
   green on a failing tree" was **false** and is retracted. `ci.yml` runs on
   every push/PR to `main` and executes fmt, clippy, build, unit tests and the
-  mandatory integration surface; `cargo-skip.txt` is empty, so the mutated test
-  would have been caught. No CI change is warranted.
+  mandatory integration surface `cargo test --workspace --tests --exclude
+  chronos-e2e`. Verified empirically, not just read: the skip list
+  `.sddk-state/test-buckets/cargo-skip.txt` is **0 bytes**, so the CI-constructed
+  `SKIP_ARGS` expands to the empty string; `chronos-sandbox` is **not** among the
+  excludes (only `chronos-e2e` is); and
+  `cargo test -p chronos-sandbox --test execution_log_read_e2e -- --list`
+  enumerates both `execution_log_read_over_the_wire` and
+  `execution_log_read_serves_a_real_log_over_the_wire`. The mutated test is an
+  integration target under `chronos-sandbox/tests/`, so CI **would have failed**.
+  No CI change is warranted.
