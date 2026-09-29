@@ -27,10 +27,9 @@ fresh evidence** — not feature work.
 | `m9-04`, `m9-62`, `m9-63`, `m9-64`, `m9-80`, `v014` | **No record at all** | `cycle status` → `STORAGE_NOT_FOUND`; `cycle next` → "no replayable state events". Genuine released work, **zero ledger events**. Not *blocked* — never recorded. |
 | `rec-c1-5-closure` | `RELEASE_PENDING` | merge/release receipts genuinely absent |
 | `m10-readpath-production-entry` | `RELEASE_PENDING` | **no `uat.toml`**, so defaults require signatures |
-| `m9-81-counterexample-table-classifier` | `OPEN/Plan` | design node rests on a substitution that fails the design MUST; no CLI reversal |
+| `m9-81-counterexample-table-classifier` | `CLOSED` | **Verified**: tag `v0.7.83` peels to `fdc5accf…` on `origin/main`. No design phase required (B-direct). Not in the ledger → 4a. |
 | `m5-preflight-clippy-drift-cleanup` | `PAUSED` | deliberate `pause-receipt.json`, `reason: context_switch` |
 | `train-b`, `m9-88-find-m9-81-fk-investigation` | `BLOCKED` | recorded this session with real evidence |
-| `m9-04`, `m9-62`, `m9-63`, `m9-64` | `BLOCKED` | released and verified, but **zero ledger events** → unreplayable |
 
 ## Corrections made this session (all in the close-out)
 
@@ -55,9 +54,18 @@ fresh evidence** — not feature work.
 | 3 | **No project `uat.toml`** | `~/.local/share/sddk/projects/p-3416cfb8288f8964/uat.toml` does not exist; defaults apply (`minor = required`, `developer`+`architect`). Writing it changes the release gate project-wide. |
 | 4 | **SDDK escalation-policy divergence (4a)** | 1,203 repo-local SDDK artifact files (909 `cycle-artifacts/` + 294 `.sddk-knowledge/`) where `escalation-policy.md` places them in user/XDG space. **Also SIX unreplayable cycles** (zero ledger events) with genuine released work: `m9-04`, `m9-62`, `m9-63`, `m9-64`, `m9-80`, `v014`. **`rebuild` is tested and cannot fix them — circular:** `rebuild` needs a lease, `lock acquire` needs the cycle row to exist. Only `cycle start` would work, and that creates a *new* record, not a reconstruction. Human decision: accept retroactive `cycle start`, or accept permanent absence. |
 | 4b | **Project ADR numbering — NOT an SDDK blocker** | 7 numbers duplicated across 16 files; 187 of 961 citations ambiguous. SDDK has no ADR surface and no SDDK artifact depends on these numbers (19 of 20 apparent citations were my own notes). **Docs hygiene; blocks no cycle.** Do not file next to the items that block archiving. |
-| 5 | **m9-81 unsound design node** | Recorded at ledger seq 8; no `revert`, and `cycle.supersede` is not in its frontier. Route field says `A-full` while every artifact says `B-direct`; no subcommand amends a path. |
-| 6 | **`sddk lint`: 3 pack errors, exits 1** | Verified unpiped: `EXIT=1`, errors `SDDK005` (no `schemas/`), `SDDK009`, `SDDK014` (no `manifest.toml`). *(An earlier `EXIT=0` was `tail`'s status, not lint's.)* **All three turn on one question: is this project an SDDK pack?** If not, suppress as N/A. `SDDK009`'s prescribed fix is **inapplicable here** — `sddk generate docs` produces a file that self-describes as generated from `workflow/workflow.yaml`, which this repo does not have; plain `--check` validates the *framework* default (current) while `sddk lint` checks the *in-repo* one (absent). **Do not commit that file** — it would claim a provenance the repo lacks. |
-| 7 | **Tracked `.bak` in the artifact tree** | `cycle-artifacts/p-3416cfb8288f8964/rec-c3.3-train-b/apply-checkpoint.json.bak` is tracked, though **0** `.bak` files are tracked repo-wide. The artifact contract does not generate backups. Not SDDK-actionable; left alone. |
+| 5 | **`sddk lint`: 3 pack errors, exits 1** | Verified unpiped: `EXIT=1`, errors `SDDK005` (no `schemas/`), `SDDK009`, `SDDK014` (no `manifest.toml`). *(An earlier `EXIT=0` was `tail`'s status, not lint's.)* **All three turn on one question: is this project an SDDK pack?** If not, suppress as N/A. `SDDK009`'s prescribed fix is **inapplicable here** — `sddk generate docs` produces a file that self-describes as generated from `workflow/workflow.yaml`, which this repo does not have; plain `--check` validates the *framework* default (current) while `sddk lint` checks the *in-repo* one (absent). **Do not commit that file** — it would claim a provenance the repo lacks. |
+| 6 | **Tracked `.bak` in the artifact tree** | `cycle-artifacts/p-3416cfb8288f8964/rec-c3.3-train-b/apply-checkpoint.json.bak` is tracked, though **0** `.bak` files are tracked repo-wide. The artifact contract does not generate backups. Not SDDK-actionable; left alone. |
+### WITHDRAWN (were listed as blockers, now disproved)
+
+- **m9-81 "unsound design node" — WITHDRAWN.** `m9-81` is **CLOSED** with verified
+  provenance: tag `v0.7.83` (annotated `e821718e`) peels exactly to merge SHA
+  `fdc5accf64be1fcf780913243aec0496ad48e7fe`, an ancestor of `origin/main`; commits
+  `80cca0d`/`a3f59ea`/`45b53df` all exist. There is **no** "design node at ledger
+  seq 8" — m9-81 has **zero ledger events**. And `spec.md` needs no rationale markers
+  because **B-direct has no design phase** (`load-skill → execute → branch-creation →
+  verify → release → archive`). Only residue: absent from the ledger, which is 4a.
+- **"rec-c3-3-1 archive failed" — WITHDRAWN** (session 35). Its manifest reads `CLOSED`.
 
 ## Next concrete action
 
