@@ -1,22 +1,21 @@
 # CURRENT.md — operating pointer
 
-Last updated: 2026-09-28, session 3. Authority for cycle state is `sddk cycle status`, not this file.
+Last updated: 2026-09-29, session 4. Authority for cycle state is `sddk cycle status`, not this file.
 
 ## Goal / milestone
 
-M10 Execution Explorer read path. The read path now has a real production entry point and a
-mutation-proven E2E suite over the public JSON-RPC surface. Cycle-level SDDK bookkeeping has not been
-started: there is **no active cycle**.
+Release-pipeline honesty (M10-era roadmap, all 10 chapters recorded CLOSED; no feature work queued).
+v0.1.4 is published. The active work is closing out cycle v014, which is **blocked in `archive`**.
 
 ## Last verified state
 
-- `origin/main` = `5feddc67`; the substantive code is at `2b162937`, the two CI fixes at `07d49e63` and `da93f6cf`.
-- **Remote integration verified on `da93f6cf`: all six workflows `success`.** Architecture Contracts,
-  CI, Coverage, Sandbox Debt Sentinel, Sandbox Smoke Tests, Supply chain.
-- `5feddc67` (docs only) shows five workflows and no Sandbox Smoke. That is the fixed filter working
-  as designed, not a regression: the commit touched only `.sddk/`, outside `chronos-sandbox/**`.
-- Local on `2b162937`: E2E 2/2, `chronos-services --lib` 539, `chronos-mcp` 87, fmt and clippy clean,
-  `pipelinek` run `3260a48d` with zero `StepFailed`.
+- `HEAD == origin/main` = `84c42bd97cc7e951d4662232b725a2cd98b8c6b3`, working tree clean.
+- Cycle `p-3416cfb8288f8964/release-pipeline-honesty-v014`: **RELEASED**, phase `archive`, no lease.
+  It is **not CLOSED** — see the vault blocker below.
+- Release v0.1.4 published: annotated tag, tag object `d617c177…`, peel `98c4cd23`, remote verified.
+  `main` is intentionally ahead of the tag by two docs-only commits. **Do not move or recreate v0.1.4.**
+- Ledger verified: 417 events, `sha256:524d744eda0ad3d6733733c705d533767e61f32133f34869277ea8d07c18a40d`.
+- Pipelinek PASS (run `0b8662a3`, forced with `--rerun`); vault drift sweep PASS.
 
 ## What fixing the path filter actually revealed
 
@@ -53,27 +52,40 @@ contradicted the deadlock theory.
 | # | Blocker | State | Evidence |
 |---|---|---|---|
 | 1 | `sddk lint` pack errors SDDK005/009/011/014 | OPEN, operator | do not create files just to green the counter |
+| 2 | **Vault has 60 validation errors, blocking `archive.complete` for v014** | OPEN, engineering | `sddk vault validate` → `errors: 60` (VAULT002 x30 duplicate `archive-manifest` node ids, VAULT003 x30 dangling wikilinks). Gate receipt `gate-vault-index-current-f86f75d06cd14622-1` = **failed**. Runtime refused `archive.complete` with `ENGINE_GATE_FAILED_WITHOUT_TARGET`. Backlog `bl-bl-01M3PXC6ZV000387DTRTP6AS00`. Full evidence in `cycle-artifacts/…/v014/archive-manifest.md`. |
+| 3 | `pipelinek` can return SUCCESS from a stale cache | OPEN, engineering | Backlog `bl-bl-01M3PWNDVW000387DS8ZH6DX00`. Every pipeline claim must use `--rerun`. |
 | — | `.pipeline.kts` runs no tests | **CLOSED** `e1af9c4d` | journal run `22575c65`: 5 stages success, `RunFinished/success`, 0 `StepFailed`, captured output shows both E2E tests passing (2 passed, 28.11s) |
 | — | `cargo test -p chronos-sandbox` does not rebuild `chronos-mcp` | **CLOSED** `3c011e8a` | resolver now refuses a stale binary naming the stale dir; mutation-proven |
 
-**Both quality blockers from the last session are closed.** The stale-binary hazard had two distinct
+**The two quality blockers from session 3 are closed.** The stale-binary hazard had two distinct
 demonstrations, and closing the workflow one (`da93f6cf`) did not close the direct-invocation one, so
 the resolver itself now fails loud.
 
+**The v014 archive blocker is real and not cosmetic.** None of the 60 vault errors are attributable to
+v014 (it added no vault node at all), but the archive contract makes a vault validation failure
+blocking and no local ledger holds a prior `vault-index-current` receipt to justify a narrower
+reading. The gate was recorded `failed` rather than quietly redefined.
+
 ## Next concrete action
 
-Remaining work is operator-scoped, not engineering-scoped: the four `sddk lint` pack errors, and
-certification (UAT evidence, coverage numbers), which cannot be self-granted. The roadmap records all
-10 chapters CLOSED, so there is no feature work queued.
+1. Open a **vault repair cycle**: namespace the 30 colliding `archive-manifest` node ids per cycle,
+   and create or correct the 10 missing wikilink targets. Target: `sddk vault validate` → 0 errors.
+2. Re-evaluate `vault-index-current`, then apply `archive.complete` for v014 with the new receipt.
+3. Force `--rerun` for pipelinek in `AGENTS.md` so no future session can read a stale SUCCESS.
+4. Still operator-scoped: the four `sddk lint` pack errors, and certification (UAT evidence,
+   coverage numbers), which cannot be self-granted.
 
 ## Do not
 
-- Do not report `RELEASE_PENDING` or `release-uat-approved`. There is no active cycle. An earlier
-  report this session did exactly that, by repeating the incoming summary instead of re-deriving from
+- Do not report v014 as CLOSED or archived. It is RELEASED/phase=archive with a failed
+  `vault-index-current` gate. Closing it would require a pass that was never observed.
+- Do not move, recreate, or re-point tag `v0.1.4`. It correctly peels to `98c4cd23`; `main` is
+  ahead by docs-only commits.
+- Do not report `release-uat-approved` as an executed UAT. It passed by policy skip (no `uat.toml`).
+- Do not trust a `pipelinek` SUCCESS without `--rerun`.
+- Do not report `RELEASE_PENDING` or repeat an incoming summary instead of re-deriving from
   `sddk cycle status`.
-- Do not report the full sandbox suite as green from a **truncated** run. An earlier run in this
-  session was killed by a self-imposed 1200s `timeout` and showed only 2 binaries / 10 tests; that was
-  not a pass. Verify the run reached its own end.
+- Do not report the full sandbox suite as green from a **truncated** run. Verify the run reached its end.
 - Do not mutate a source file while a suite is running against the binary built from it. Doing so
   produced 3 `analytics_tools` failures that were the staleness guard working correctly, not a
   regression, and they invalidated the run.
