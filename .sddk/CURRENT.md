@@ -37,8 +37,9 @@ fresh evidence** — not feature work.
   rationale"; `spec.md` has **0** rationale markers. `sddk cycle verify-references` reports it
   `aligned` because it validates the CAS chain, not artifact legitimacy. **A green check is not
   evidence of a sound artifact.** The transition cannot be reversed (no undo in the frontier).
-- **The ledger understates `main`.** 26 merged feature branches, only 10 resolve to a cycle;
-  **≥16 do not**, including the whole m9-84…m9-87 CC001 arc. 16 is a lower bound.
+- **The ledger understates `main`.** 26 merged feature branches, exactly **16 have no cycle
+  record** (10 verified as exact slug matches, 12 with zero distinctive-token hits, 4 hand-checked
+  as different subjects) — including the whole m9-84…m9-87 CC001 arc. Exact, not a bound.
 - **Artifact split is 96, not 8.** 104 repo-tree cycle directories, 8 with an XDG counterpart.
 - **ADR-0011 makes XDG canonical**, so the repo tree is the violation: **1,203 committed files**
   (909 `cycle-artifacts/`, 294 `.sddk-knowledge/`), un-ignored, since m9-01. Note the repo's own
