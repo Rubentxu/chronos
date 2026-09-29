@@ -56,7 +56,7 @@ fresh evidence** — not feature work.
 | 4 | **SDDK escalation-policy divergence (4a)** | 1,203 repo-local SDDK artifact files (909 `cycle-artifacts/` + 294 `.sddk-knowledge/`) where `escalation-policy.md` places them in user/XDG space. **Also SIX unreplayable cycles** (zero ledger events) with genuine released work: `m9-04`, `m9-62`, `m9-63`, `m9-64`, `m9-80`, `v014`. **`rebuild` is tested and cannot fix them — circular:** `rebuild` needs a lease, `lock acquire` needs the cycle row to exist. Only `cycle start` would work, and that creates a *new* record, not a reconstruction. Human decision: accept retroactive `cycle start`, or accept permanent absence. |
 | 4b | **Project ADR numbering — NOT an SDDK blocker** | 7 numbers duplicated across 16 files; 187 of 961 citations ambiguous. SDDK has no ADR surface and no SDDK artifact depends on these numbers (19 of 20 apparent citations were my own notes). **Docs hygiene; blocks no cycle.** Do not file next to the items that block archiving. |
 | 5 | **m9-81 unsound design node** | Recorded at ledger seq 8; no `revert`, and `cycle.supersede` is not in its frontier. Route field says `A-full` while every artifact says `B-direct`; no subcommand amends a path. |
-| 6 | **`sddk lint`: 3 pack errors** | `SDDK005` (no `schemas/`), `SDDK009`, `SDDK014` (no `manifest.toml`). **All three turn on one question: is this project an SDDK pack?** If not, suppress as N/A. `SDDK009`'s prescribed fix is **inapplicable here** — `sddk generate docs` produces a file that self-describes as generated from `workflow/workflow.yaml`, which this repo does not have; plain `--check` validates the *framework* default (current) while `sddk lint` checks the *in-repo* one (absent). **Do not commit that file** — it would claim a provenance the repo lacks. |
+| 6 | **`sddk lint`: 3 pack errors, exits 1** | Verified unpiped: `EXIT=1`, errors `SDDK005` (no `schemas/`), `SDDK009`, `SDDK014` (no `manifest.toml`). *(An earlier `EXIT=0` was `tail`'s status, not lint's.)* **All three turn on one question: is this project an SDDK pack?** If not, suppress as N/A. `SDDK009`'s prescribed fix is **inapplicable here** — `sddk generate docs` produces a file that self-describes as generated from `workflow/workflow.yaml`, which this repo does not have; plain `--check` validates the *framework* default (current) while `sddk lint` checks the *in-repo* one (absent). **Do not commit that file** — it would claim a provenance the repo lacks. |
 | 7 | **Tracked `.bak` in the artifact tree** | `cycle-artifacts/p-3416cfb8288f8964/rec-c3.3-train-b/apply-checkpoint.json.bak` is tracked, though **0** `.bak` files are tracked repo-wide. The artifact contract does not generate backups. Not SDDK-actionable; left alone. |
 
 ## Next concrete action
@@ -76,6 +76,11 @@ fresh evidence** — not feature work.
 - **Never use `sddk cycle narrative` as evidence.** It renders `Cycle completed`
   for *any* input — a fabricated `zzz-not-a-real-cycle` also reports completion.
   It is a static template. Use `cycle status` / `cycle next` instead.
+- **Never read a whole-store aggregate as current state.** Three instances:
+  `cycle narrative` (any name "completes"), `sddk workflow show` (nonexistent
+  command, empty output read as "not declared"), and a whole-DB pipeline-journal
+  scan returning `StepFailed: 1` that belongs to a **superseded 16:03 run** while
+  the last run is clean. Always scope to the current run/cycle and run a control.
 - Do not delete the git-tracked `.sddk-knowledge/` copy. `vault-drift.yml` triggers on it and
   `check_vault_drift.sh` reads it — removing it disables the only automated drift protection.
 - Do not trust a `pipelinek` SUCCESS without checking for real `StepStarted` events in the
