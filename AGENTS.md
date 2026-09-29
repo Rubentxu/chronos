@@ -800,20 +800,38 @@ pipelinek run --rerun \
               .pipeline.kts
 ```
 
-### `--rerun` es obligatorio (defecto conocido, 2026-09-29)
+### `--rerun` es obligatorio (defecto reproducido por mutación, 2026-09-29)
 
 Una ejecución **sin** `--rerun` puede devolver `Pipeline finished with SUCCESS`
-recuperando el resultado cacheado de una revisión anterior. Se observó
-exactamente eso durante el ciclo `release-pipeline-honesty-v014`: un run sin
-`--rerun` devolvió SUCCESS sobre un working tree con cambios sin verificar.
+**sin ejecutar nada**. No es un resultado cacheado parcial: es un SUCCESS
+completo, con `RunFinished/success` y `StageFinished/success` para cada stage,
+pero **cero `StepStarted`**.
+
+Reproducido con mutación sobre el gate real:
+
+1. Se inyectó `panic!` en `execution_log_read_over_the_wire` (dentro de
+   `chronos-sandbox/tests/execution_log_read_e2e.rs`, ejecutado por el stage
+   `test-sandbox-read-path`).
+2. `cargo test -p chronos-sandbox --test execution_log_read_e2e` →
+   `test result: FAILED. 1 passed; 1 failed`. El fallo es real.
+3. `pipelinek run` **sin** `--rerun` → `Pipeline finished with SUCCESS`,
+   **exit 0**, en 5.5s, sin ningún `StepStarted` en el journal.
+4. `pipelinek run --rerun` → `Pipeline finished with FAILURE`, **exit 1**,
+   detectando la mutación.
 
 Consecuencia: **toda** afirmación sobre el estado del pipeline debe ejecutarse
-con `--rerun`. Un SUCCESS sin `--rerun` no es evidencia de nada y debe tratarse
-como cacheado, no como verificación.
+con `--rerun`. Un SUCCESS sin `--rerun` no es evidencia de nada: puede
+certificar un árbol de trabajo que ya no compila. Debe tratarse como cacheado, no
+como verificación.
 
-Registrado como debt de backlog `bl-bl-01M3PWNDVW000387DS8ZH6DX00`. La causa
-raíz (invalidación de cache por contenido) sigue abierta; hasta que se corrija,
-`--rerun` es la única forma honesta de declarar el pipeline verificado.
+El cache key de compilación
+(`sha256:9f26bb0571919bd012ebb6736de43b3b8bffe566b904dc76baab69923f6d96d6`)
+no cambia entre un árbol limpio y uno mutado, por eso la invalidación no ocurre.
+
+Registrado como debt de backlog `bl-bl-01M3PWNDVW000387DS8ZH6DX00`. `pipelinek`
+es un binario distribuido (0.39.0), no código de este repo, así que la causa
+raíz no puede corregirse aquí; `--rerun` es la única mitigación honesta hasta
+que se arregle la invalidación del cache.
 
 ### Criterios de éxito (todos deben cumplirse)
 
