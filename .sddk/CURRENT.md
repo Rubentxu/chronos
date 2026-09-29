@@ -54,7 +54,7 @@ fresh evidence** — not feature work.
 | 3 | **No project `uat.toml`** | `~/.local/share/sddk/projects/p-3416cfb8288f8964/uat.toml` does not exist; defaults apply (`minor = required`, `developer`+`architect`). Writing it changes the release gate project-wide. |
 | 4 | **ADR-0011 divergence** | 1,203 committed SDDK files; 4 cycles unreplayable; 3 ADRs share number 0011. Renumbering has citation consequences. |
 | 5 | **m9-81 unsound design node** | Recorded at ledger seq 8; no `revert`, and `cycle.supersede` is not in its frontier. Route field says `A-full` while every artifact says `B-direct`; no subcommand amends a path. |
-| 6 | **`sddk lint`: 3 pack errors** | Re-verified: `SDDK005` (no `schemas/`), `SDDK009` (`docs/generated/workflow.md` stale), `SDDK014` (no `manifest.toml`). **Do not create files just to green the counter** — `SDDK009` wants a regeneration, but 005 and 014 require deciding whether this project *is* an SDDK pack at all. Was 4 errors at session 4; `SDDK011` is now gone. |
+| 6 | **`sddk lint`: 3 pack errors** | `SDDK005` (no `schemas/`), `SDDK009`, `SDDK014` (no `manifest.toml`). **All three turn on one question: is this project an SDDK pack?** If not, suppress as N/A. `SDDK009`'s prescribed fix is **inapplicable here** — `sddk generate docs` produces a file that self-describes as generated from `workflow/workflow.yaml`, which this repo does not have; plain `--check` validates the *framework* default (current) while `sddk lint` checks the *in-repo* one (absent). **Do not commit that file** — it would claim a provenance the repo lacks. |
 
 ## Next concrete action
 
