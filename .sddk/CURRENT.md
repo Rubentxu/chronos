@@ -24,7 +24,7 @@ fresh evidence** — not feature work.
 | Cycle | State | Why it is not advancing |
 |---|---|---|
 | `rec-c3-3-1` | `CLOSED` | **Already archived** — manifest `status: CLOSED`, closed 2026-09-18. Earlier sessions wrongly listed it as blocked. |
-| `m9-80`, `v014` | `RELEASED/archive` | **No archive directory exists** for either. Vault sub-step is a candidate cause, **not established**. |
+| `m9-04`, `m9-62`, `m9-63`, `m9-64`, `m9-80`, `v014` | **No record at all** | `cycle status` → `STORAGE_NOT_FOUND`; `cycle next` → "no replayable state events". Genuine released work, **zero ledger events**. Not *blocked* — never recorded. |
 | `rec-c1-5-closure` | `RELEASE_PENDING` | merge/release receipts genuinely absent |
 | `m10-readpath-production-entry` | `RELEASE_PENDING` | **no `uat.toml`**, so defaults require signatures |
 | `m9-81-counterexample-table-classifier` | `OPEN/Plan` | design node rests on a substitution that fails the design MUST; no CLI reversal |
@@ -51,9 +51,9 @@ fresh evidence** — not feature work.
 | # | Blocker | Why an agent cannot clear it |
 |---|---|---|
 | 1 | **Knowledge ingestion defect (upstream)** | **Not** "180 orphans needing a hand-fix." `owner` **is** a declared field in the plan schema — `null` for all 180, `reason` for all 180. The vault is **not empty** (163 files: 17 adrs / 37 specs / 77 cycles). **14 of 43 adr candidates are already in the vault** yet all carry `existing_entry_id: null` + `disposition: quarantine`; dedup is populated 0× in all 4 plans. The 0011 collision has already reached the vault (1 there, 3 in repo). Importing blind would duplicate 14 ADRs and add two colliding `0011`s to a **Human-only** surface. Decision needed: why is `owner` never populated and why does dedup never fire? |
-| 2 | **Vault blocks the archive sub-step** | `on_failure` really is absent (0 hits in all 4 `prompts/sddk/workflows/*.yaml`) **but a route exists** — each declares `failure_modes` with explicit condition/action pairs. The real mechanism: archive's gate is a conjunction and `finalize-knowledge-graph` is one of its sub-steps, so the Human-only vault refusal fails archive in place. **`rec-c3-3-1` is already `CLOSED`** (manifest, 2026-09-18); all 9 archive manifests are CLOSED. Only **m9-80** and **v014** are blocked, and neither has an archive directory at all — cause **not yet established**. |
+| 2 | **Vault blocks the archive sub-step** | `on_failure` really is absent (0 hits in all 4 `prompts/sddk/workflows/*.yaml`) **but a route exists** — each declares `failure_modes` with explicit condition/action pairs. The mechanism: archive's gate is a conjunction and `finalize-knowledge-graph` is one of its sub-steps, so the Human-only vault refusal fails archive in place. **`rec-c3-3-1` is already `CLOSED`**; all 9 archive manifests are CLOSED. **Correction:** `m9-80`/`v014` are *not* blocked by this — they have no cycle record at all (see 4a). |
 | 3 | **No project `uat.toml`** | `~/.local/share/sddk/projects/p-3416cfb8288f8964/uat.toml` does not exist; defaults apply (`minor = required`, `developer`+`architect`). Writing it changes the release gate project-wide. |
-| 4 | **SDDK escalation-policy divergence (4a)** | 1,203 repo-local SDDK artifact files (909 `cycle-artifacts/` + 294 `.sddk-knowledge/`) where `escalation-policy.md` places them in user/XDG space. Genuine SDDK governance; also owns the 4 unreplayable cycles (zero ledger events). |
+| 4 | **SDDK escalation-policy divergence (4a)** | 1,203 repo-local SDDK artifact files (909 `cycle-artifacts/` + 294 `.sddk-knowledge/`) where `escalation-policy.md` places them in user/XDG space. Genuine SDDK governance. **Now also owns SIX unreplayable cycles** (zero ledger events): `m9-04`, `m9-62`, `m9-63`, `m9-64`, `m9-80`, `v014` — all with genuine released work. |
 | 4b | **Project ADR numbering — NOT an SDDK blocker** | 7 numbers duplicated across 16 files; 187 of 961 citations ambiguous. SDDK has no ADR surface and no SDDK artifact depends on these numbers (19 of 20 apparent citations were my own notes). **Docs hygiene; blocks no cycle.** Do not file next to the items that block archiving. |
 | 5 | **m9-81 unsound design node** | Recorded at ledger seq 8; no `revert`, and `cycle.supersede` is not in its frontier. Route field says `A-full` while every artifact says `B-direct`; no subcommand amends a path. |
 | 6 | **`sddk lint`: 3 pack errors** | `SDDK005` (no `schemas/`), `SDDK009`, `SDDK014` (no `manifest.toml`). **All three turn on one question: is this project an SDDK pack?** If not, suppress as N/A. `SDDK009`'s prescribed fix is **inapplicable here** — `sddk generate docs` produces a file that self-describes as generated from `workflow/workflow.yaml`, which this repo does not have; plain `--check` validates the *framework* default (current) while `sddk lint` checks the *in-repo* one (absent). **Do not commit that file** — it would claim a provenance the repo lacks. |
@@ -70,9 +70,12 @@ fresh evidence** — not feature work.
 ## Do not
 
 - Do not move, recreate, or re-point `v0.1.4`. It peels to `98c4cd23`.
-- Do not report **`m9-80` or `v014`** as CLOSED/archived — neither has an archive
-  directory, and the cause is not yet established. (`rec-c3-3-1` *is* CLOSED;
-  its manifest records it, and it is no longer in this category.)
+- Do not report **`m9-80` or `v014`** as CLOSED/archived. Neither has an archive
+  directory, and neither has a cycle record at all (see the cycle table). The
+  vault is **not** the cause. (`rec-c3-3-1` *is* CLOSED; its manifest records it.)
+- **Never use `sddk cycle narrative` as evidence.** It renders `Cycle completed`
+  for *any* input — a fabricated `zzz-not-a-real-cycle` also reports completion.
+  It is a static template. Use `cycle status` / `cycle next` instead.
 - Do not delete the git-tracked `.sddk-knowledge/` copy. `vault-drift.yml` triggers on it and
   `check_vault_drift.sh` reads it — removing it disables the only automated drift protection.
 - Do not trust a `pipelinek` SUCCESS without checking for real `StepStarted` events in the
