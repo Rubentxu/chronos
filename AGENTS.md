@@ -794,10 +794,26 @@ with SUCCESS` terminal.
 canónico desde la raíz del proyecto:
 
 ```bash
-pipelinek run --db .pipelinek/db.sqlite \
+pipelinek run --rerun \
+              --db .pipelinek/db.sqlite \
               --control-root .pipelinek/control \
               .pipeline.kts
 ```
+
+### `--rerun` es obligatorio (defecto conocido, 2026-09-29)
+
+Una ejecución **sin** `--rerun` puede devolver `Pipeline finished with SUCCESS`
+recuperando el resultado cacheado de una revisión anterior. Se observó
+exactamente eso durante el ciclo `release-pipeline-honesty-v014`: un run sin
+`--rerun` devolvió SUCCESS sobre un working tree con cambios sin verificar.
+
+Consecuencia: **toda** afirmación sobre el estado del pipeline debe ejecutarse
+con `--rerun`. Un SUCCESS sin `--rerun` no es evidencia de nada y debe tratarse
+como cacheado, no como verificación.
+
+Registrado como debt de backlog `bl-bl-01M3PWNDVW000387DS8ZH6DX00`. La causa
+raíz (invalidación de cache por contenido) sigue abierta; hasta que se corrija,
+`--rerun` es la única forma honesta de declarar el pipeline verificado.
 
 ### Criterios de éxito (todos deben cumplirse)
 
