@@ -1,5 +1,16 @@
 # Checkpoint — sesión 2026-09-24T05:42Z (recuperación)
 
+> **SUPERSEDED 2026-09-29 by `.sddk/CURRENT.md`.** Do not resume from this file.
+>
+> Re-verified 2026-09-29: the pipelinek commit this asked for exists (`f9ce02fb`),
+> the three stashes are still intact, and `cycle-artifacts/_suspended-rec-c3.3-train-b/`
+> still holds all six artifacts. Two of its constraints remain live and are carried
+> into `CURRENT.md`: **do not touch the non-mine stashes**, and **do not sign an absent
+> `capture_session` without first checking the documentation/code mismatch**.
+>
+> Its "Rama: `main` @ `95fc2343`" and its dirty-working-tree description are five days
+> stale and no longer true. Kept only as history.
+
 ## Estado verificado al recuperar
 - Rama: `main` @ `95fc2343` (igual a `origin/main`).
 - Working tree: AGENTS.md modificado localmente, .pipeline.kts y ci/ untracked, .sddk/CURRENT-CHECKPOINT.md untracked.

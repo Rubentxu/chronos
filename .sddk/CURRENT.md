@@ -54,6 +54,7 @@ fresh evidence** — not feature work.
 | 3 | **No project `uat.toml`** | `~/.local/share/sddk/projects/p-3416cfb8288f8964/uat.toml` does not exist; defaults apply (`minor = required`, `developer`+`architect`). Writing it changes the release gate project-wide. |
 | 4 | **ADR-0011 divergence** | 1,203 committed SDDK files; 4 cycles unreplayable; 3 ADRs share number 0011. Renumbering has citation consequences. |
 | 5 | **m9-81 unsound design node** | Recorded at ledger seq 8; no `revert`, and `cycle.supersede` is not in its frontier. Route field says `A-full` while every artifact says `B-direct`; no subcommand amends a path. |
+| 6 | **`sddk lint`: 3 pack errors** | Re-verified: `SDDK005` (no `schemas/`), `SDDK009` (`docs/generated/workflow.md` stale), `SDDK014` (no `manifest.toml`). **Do not create files just to green the counter** — `SDDK009` wants a regeneration, but 005 and 014 require deciding whether this project *is* an SDDK pack at all. Was 4 errors at session 4; `SDDK011` is now gone. |
 
 ## Next concrete action
 
@@ -82,6 +83,11 @@ fresh evidence** — not feature work.
 - Do not read a path-scoped `git log -1 -- <path>` as a full-history log; it returns the newest
   commit *touching that path*, which may be an older prior-session commit.
 - Do not ship a mechanism for a failure without checking the logs for that mechanism's own marker.
+- Do not touch the three stashes — they are not mine (`cih-d-stash-non-mine`,
+  `CIH-C.1 unstashed`, `WIP on rec-c3-ci-hygiene`). Verified intact 2026-09-29.
+- Do not sign an absent `capture_session` without first checking the
+  documentation/code mismatch. Carried from the superseded
+  `.sddk/CURRENT-CHECKPOINT.md` (2026-09-24), which is retained as history only.
 - Do not mutate a source file while a suite runs against the binary built from it. Doing so
   produced 3 `analytics_tools` failures that were the staleness guard working correctly, not a
   regression, and it invalidated the run.
