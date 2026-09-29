@@ -54,7 +54,7 @@ contradicted the deadlock theory.
 | 1 | `sddk lint` pack errors SDDK005/009/011/014 | OPEN, operator | do not create files just to green the counter |
 | 2 | **Vault violates the `knowledge-graph` protocol, blocking `archive.complete` for v014** | OPEN, **human-only** | `sddk vault validate` → `errors: 60`. Gate `gate-vault-index-current-f86f75d06cd14622-1` = **failed**; runtime refused `archive.complete` with `ENGINE_GATE_FAILED_WITHOUT_TARGET`. `knowledge scan` measured the migration: **178 candidates, 0 importable, 178 quarantined**, all for `"source has no declared owner"`. `knowledge import --approve` is refused: `actor_kind System not admitted on surface knowledge_graph_vault (admitted: [Human])`. **An agent cannot self-unblock this.** Also: 0 `CYC-*`, 0 `INC-*`, no `templates/`, no `incs/`, two ADRs numbered `0002`. Backlog `bl-bl-01M3PXC6ZV000387DTRTP6AS00` (P1). Backup `~/.jcode/scratch/vault-backup-20260929-174612`. |
 | 3 | `pipelinek` can return SUCCESS from a stale cache | OPEN, engineering | Backlog `bl-bl-01M3PWNDVW000387DS8ZH6DX00` (P1). Every pipeline claim must use `--rerun`. |
-| 4 | **Second knowledge base tracked in git at `.sddk-knowledge/`, diverging from the authoritative vault** | OPEN, engineering | 294 git-tracked files vs the external vault; **240 paths differ**. `sddk knowledge status` names the external vault authoritative, yet a drifted copy lives in the repo. `knowledge scan` reads the *repo* copy, not the vault. Neither has `CYC-*` nodes. Backlog `bl-bl-01M3PXR8HC000387DVK7R57EC0` (P1). |
+| 4 | **Two divergent knowledge bases; the repo copy is what CI actually guards, and the external vault is invisible to every gate** | OPEN, human | `.sddk-knowledge/` in the repo and `~/.sddk-knowledge/p-3416cfb8288f8964` have **zero overlapping archive manifests** (repo 102, vault 16). CI (`vault-drift.yml`) triggers on the repo copy and runs `check_vault_drift.sh` against it, so **retiring it would break the only automated drift protection** — an earlier suggestion to "reconcile or retire" was wrong and is withdrawn. The external vault is read by no gate. Both sides share the id-collision defect: vault 30 `VAULT002` errors, repo 102 duplicate `archive-manifest` + 94 `change-entry` + 19 `spec` filenames, and CI's sweep checks pinned SHAs only, never node ids. Backlog `bl-bl-01M3PXR8HC000387DVK7R57EC0` (P1). |
 | — | `.pipeline.kts` runs no tests | **CLOSED** `e1af9c4d` | journal run `22575c65`: 5 stages success, `RunFinished/success`, 0 `StepFailed`, captured output shows both E2E tests passing (2 passed, 28.11s) |
 | — | `cargo test -p chronos-sandbox` does not rebuild `chronos-mcp` | **CLOSED** `3c011e8a` | resolver now refuses a stale binary naming the stale dir; mutation-proven |
 
@@ -77,8 +77,11 @@ reading. The gate was recorded `failed` rather than quietly redefined.
    from here by design.
 2. Once the vault is clean (or the gate contract is amended), re-evaluate
    `vault-index-current` and apply `archive.complete` for v014.
-3. Reconcile or retire the git-tracked `.sddk-knowledge/` copy (blocker 4) so the
-   repo stops carrying a knowledge base that drifts from the authoritative one.
+3. Decide the knowledge-base topology (blocker 4) with a human: the repo copy
+   is CI-guarded and must be kept, while the external vault is what the SDDK
+   gates and `knowledge scan` read. Either make them one base, or explicitly
+   scope each (repo = CI-checked record, vault = SDDK index) and document which
+   is authoritative. Do not delete the repo copy.
 4. Fix the `pipelinek` cache invalidation bug properly (blocker 3). `--rerun` is
    now mandatory in AGENTS.md as the stopgap.
 5. Still operator-scoped: the four `sddk lint` pack errors, and certification
@@ -86,6 +89,9 @@ reading. The gate was recorded `failed` rather than quietly redefined.
 
 ## Do not
 
+- Do not delete or "clean up" the git-tracked `.sddk-knowledge/` copy. CI's
+  `vault-drift.yml` triggers on it and `check_vault_drift.sh` reads it, so
+  removing it would silently disable the only automated drift protection.
 - Do not report v014 as CLOSED or archived. It is RELEASED/phase=archive with a failed
   `vault-index-current` gate. Closing it would require a pass that was never observed.
 - Do not move, recreate, or re-point tag `v0.1.4`. It correctly peels to `98c4cd23`; `main` is
