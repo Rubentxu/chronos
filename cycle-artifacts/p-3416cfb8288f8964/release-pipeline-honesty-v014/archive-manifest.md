@@ -227,12 +227,80 @@ A verifiable copy of the vault was taken before any of this was attempted:
 `~/.jcode/scratch/vault-backup-20260929-174612` (163 files, 992K). It remains
 the rollback point for either option above.
 
+## Migration attempt: measured, and blocked at the authority layer
+
+Option (a) was exercised rather than assumed. `sddk knowledge scan` is
+read-only by design and was run to size the migration:
+
+```
+sddk knowledge scan --root . --scope . --format json
+```
+
+Observed plan `kp-22f7aba65e00f3b8`, source commit `d0936689`:
+
+| Field | Value |
+|---|---|
+| candidates | 178 |
+| **importable** | **0** |
+| unchanged | 0 |
+| needs_review | 0 |
+| **quarantined** | **178** |
+
+All 178 carry the identical reason `"source has no declared owner"`, and all
+178 have `owner: null`. Kinds detected: 113 `manifest`, 43 `adr`, 10
+`roadmap`, 9 `specification`, 2 `repository_context`, 1 `term`.
+
+Promotion was then attempted on a single quarantined entry and refused:
+
+```
+sddk knowledge import --plan kp-22f7aba65e00f3b8 --approve ke-bdb2eeb165de4d1c
+error: authority check failed: authority context rejected: actor_kind System
+not admitted on surface knowledge_graph_vault (admitted: [Human])
+```
+
+This is not a flag I failed to find. The import is rejected on an **authority**
+surface where only `Human` is admitted, and the protocol states outright that
+"Approval cannot promote unversioned, unowned, new ambiguous, or contradictory
+sources." An agent cannot self-grant ownership, and it cannot admit itself to a
+human-only surface.
+
+**Therefore the migration cannot be completed by an agent at all.** Option (a)
+requires a human to declare owners on the 178 sources and perform the import. It
+is not blocked by effort or risk; it is blocked by an authority boundary that
+this session is outside of. Recorded as evidence rather than proposed as
+remaining work.
+
+### Two further findings
+
+1. **The scan reads the repo copy, not the vault.** All 178 candidates have
+   `source_path` under `.sddk-knowledge/p-3416cfb8288f8964/…`, i.e. a
+   **git-tracked copy inside the repository** (294 tracked files, last touched
+   in `5b559c3d`), not the authoritative external vault. The two trees have
+   diverged: 240 paths differ, and the vault contains `adrs/` plus the
+   `m0-02…m0-06` and `ci-vault-drift-*` archive cycles that the repo copy lacks,
+   while the repo copy has `m10-m9-legacy-schema-migration` that the vault lacks.
+   `sddk knowledge status` names the external path as authoritative, so a second
+   copy of the knowledge base is tracked in git and drifting from it. Neither
+   copy contains any `CYC-*` node. Tracked as
+   `bl-bl-01M3PXR8HC000387DVK7R57EC0` (P1).
+
+2. **The scan had two benign side effects**, both expected: one line appended to
+   the append-only `_log.md`
+   (`- 2026-09-29T15:49:37 | scan | knowledge plan kp-22f7aba65e00f3b8 | 178 candidates`)
+   and one new file at `ingestion/plans/kp-22f7aba65e00f3b8.json`. No vault
+   content was modified, and `vault validate` still reports 60 errors.
+
 ## Next executable step
 
-Decide whether to (a) migrate the vault onto the governed protocol via
-`knowledge scan`/`import`, or (b) formally accept the vault as a non-conforming
-legacy artifact and amend the `vault-index-current` gate contract so a cycle can
-archive without a clean vault. Under (a), target `sddk vault validate` →
-`errors: 0`, then re-evaluate `vault-index-current` and apply
-`archive.complete` for v014. Under (b), v014 closes once the gate contract
-itself is amended by the authority that owns it.
+Option (a) needs a **human**: declare owners on the 178 quarantined sources and
+run `sddk knowledge import` from a surface where the actor is admitted as
+`Human`. That is the only route to a protocol-conforming vault, and it is
+outside an agent's authority by design.
+
+Option (b) is the alternative: accept the vault as a non-conforming legacy
+artifact and amend the `vault-index-current` gate contract so `archive.complete`
+can proceed. That is also a normative change and is likewise not mine to make.
+
+Until one of the two happens, v014 stays `RELEASED/phase=archive` with the gate
+recorded as failed. Its release is complete and `v0.1.4` is published at
+`98c4cd23`; only the archive transition is outstanding.
