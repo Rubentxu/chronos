@@ -172,27 +172,67 @@ not a patch. Every one of the 30 colliding ids must become cycle-scoped (for
 example `archive-manifest--m0-02-snapshots-cumulative`), and 30 wikilinks must be
 retargeted to whatever the new scheme produces.
 
-## Why this was not done in this cycle
+## Correction: this is not a design choice, it is a contract violation
 
-`~/.sddk-knowledge/p-3416cfb8288f8964` is a **derived artifact that lives
-outside the repository**. It is not under git, `sddk knowledge verify` reports
-`registry_present: false` with 178 untracked files, and therefore nothing in it
-can be regenerated from source. A mass rename there has:
+An earlier revision of this file said the identity scheme was "a design decision
+requiring the operator". **That was wrong**, and the evidence is the SDDK
+`knowledge-graph` protocol, which already specifies the scheme.
 
-- no version control and no rollback,
-- 28 files that reference `archive-manifest` and would need retargeting,
-- a naming decision (cycle-scoped ids vs. frontmatter ids vs. directory-indexed
-  nodes) that changes how every future cycle writes its vault node.
+The framework mandates a fixed node taxonomy and naming:
 
-A verifiable copy was taken before stopping:
-`~/.jcode/scratch/vault-backup-20260929-174612` (163 files, 992K).
+| Type | Directory | Naming | Count in this vault |
+|---|---|---|---|
+| `milestone` | `milestones/` | `M-NNN-{slug}.md` | present |
+| `adr` | `adrs/` | `ADR-NNN-{slug}.md` | 8 files, named `000N-slug.md` (no `ADR-` prefix) |
+| `requirement` | `specs/{domain}/` | `REQ-{Slug}.md` | 26 (conforming) |
+| `cycle` | `cycles/` | `CYC-{date}-{slug}.md` | **0** |
+| `incidence` | `incs/` | `INC-NNN-{slug}.md` | **0** (the vault has `incidences/`, not `incs/`) |
+| `term` | `terms/` | `TERM-{Slug}.md` | **0** |
 
-The naming scheme is a design decision about the knowledge vault, not a cleanup
-task inside a release cycle, so it is left to its own cycle with the operator's
-awareness. Recorded as backlog `bl-bl-01M3PXC6ZV000387DTRTP6AS00` (P1).
+Every node must also carry `type`, `title`, `slug`, `status`, `created`,
+`stale_after`, with an append-only `## Changelog` and a write logged to
+`_log.md`.
+
+Observed non-conformance:
+
+- `cycles/` holds `adoption.md`, `init.md`, `index.md` and per-cycle directories
+  of role files. There is not a single `CYC-*` node, so **no cycle in this
+  project is a vault node** — which is exactly why v014 has no vault node.
+- `incs/` does not exist; the vault uses `incidences/`, and it is empty.
+- ADRs are `000N-slug.md` with **two files numbered `0002`**
+  (`0002-capability-aware-discovery.md`, `0002-execution-log-source-of-truth.md`),
+  and their frontmatter is `kind: adr-mirror` + `provenance:`, not the mandated
+  property set.
+- `$VAULT/templates/` does not exist, so the protocol's "read the template
+  before creating a node" step is currently unsatisfiable.
+
+`sddk adopt apply --root . --scope .` was run to converge the vault. It returned
+`status: complete` and installed **nothing**: file count stayed at 163, and
+`templates/`, `incs/` and `CYC-*` nodes are still absent. The vault errors remain
+at 60. Adoption is a no-op when the receipt already matches, so it cannot
+repair this vault.
+
+**So the correct reading is:** the vault was hand-built without the governed
+`knowledge-graph` protocol, and the 60 errors are a symptom. Repairing the
+symptom (renaming 30 files) would still leave a vault with no cycle nodes, no
+incidence nodes, no templates, and non-conforming ADR ids. The protocol's
+prescribed path is `sddk knowledge scan` → review → `import` → `verify`, which
+builds a hash-addressed, registered vault rather than patching a hand-built one.
+
+That is a migration, not a patch, and it is operator-scoped because it changes
+the vault of record for a project whose knowledge base is largely this vault.
+Recorded as backlog `bl-bl-01M3PXC6ZV000387DTRTP6AS00` (P1).
+
+A verifiable copy of the vault was taken before any of this was attempted:
+`~/.jcode/scratch/vault-backup-20260929-174612` (163 files, 992K). It remains
+the rollback point for either option above.
 
 ## Next executable step
 
-Decide the vault identity scheme, then repair it in a dedicated cycle. Target:
-`sddk vault validate` → `errors: 0`. After that, re-evaluate
-`vault-index-current` and apply `archive.complete` for v014.
+Decide whether to (a) migrate the vault onto the governed protocol via
+`knowledge scan`/`import`, or (b) formally accept the vault as a non-conforming
+legacy artifact and amend the `vault-index-current` gate contract so a cycle can
+archive without a clean vault. Under (a), target `sddk vault validate` →
+`errors: 0`, then re-evaluate `vault-index-current` and apply
+`archive.complete` for v014. Under (b), v014 closes once the gate contract
+itself is amended by the authority that owns it.

@@ -52,7 +52,7 @@ contradicted the deadlock theory.
 | # | Blocker | State | Evidence |
 |---|---|---|---|
 | 1 | `sddk lint` pack errors SDDK005/009/011/014 | OPEN, operator | do not create files just to green the counter |
-| 2 | **Vault has 60 validation errors, blocking `archive.complete` for v014** | OPEN, engineering | `sddk vault validate` → `errors: 60` (VAULT002 x30 duplicate `archive-manifest` node ids, VAULT003 x30 dangling wikilinks). Gate receipt `gate-vault-index-current-f86f75d06cd14622-1` = **failed**. Runtime refused `archive.complete` with `ENGINE_GATE_FAILED_WITHOUT_TARGET`. Backlog `bl-bl-01M3PXC6ZV000387DTRTP6AS00`. Full evidence in `cycle-artifacts/…/v014/archive-manifest.md`. |
+| 2 | **Vault violates the `knowledge-graph` protocol, blocking `archive.complete` for v014** | OPEN, operator | `sddk vault validate` → `errors: 60` (VAULT002 x30 duplicate ids, VAULT003 x30 dangling links). Gate `gate-vault-index-current-f86f75d06cd14622-1` = **failed**; runtime refused `archive.complete` with `ENGINE_GATE_FAILED_WITHOUT_TARGET`. Root cause is NOT just naming: the vault has **0 `CYC-*` cycle nodes**, **0 `INC-*`**, no `templates/`, no `incs/`, and two ADRs numbered `0002`. `sddk adopt apply` is a no-op and cannot repair it. Backlog `bl-bl-01M3PXC6ZV000387DTRTP6AS00` (P1). Backup: `~/.jcode/scratch/vault-backup-20260929-174612`. |
 | 3 | `pipelinek` can return SUCCESS from a stale cache | OPEN, engineering | Backlog `bl-bl-01M3PWNDVW000387DS8ZH6DX00`. Every pipeline claim must use `--rerun`. |
 | — | `.pipeline.kts` runs no tests | **CLOSED** `e1af9c4d` | journal run `22575c65`: 5 stages success, `RunFinished/success`, 0 `StepFailed`, captured output shows both E2E tests passing (2 passed, 28.11s) |
 | — | `cargo test -p chronos-sandbox` does not rebuild `chronos-mcp` | **CLOSED** `3c011e8a` | resolver now refuses a stale binary naming the stale dir; mutation-proven |
@@ -68,12 +68,17 @@ reading. The gate was recorded `failed` rather than quietly redefined.
 
 ## Next concrete action
 
-1. Open a **vault repair cycle**: namespace the 30 colliding `archive-manifest` node ids per cycle,
-   and create or correct the 10 missing wikilink targets. Target: `sddk vault validate` → 0 errors.
-2. Re-evaluate `vault-index-current`, then apply `archive.complete` for v014 with the new receipt.
-3. Force `--rerun` for pipelinek in `AGENTS.md` so no future session can read a stale SUCCESS.
-4. Still operator-scoped: the four `sddk lint` pack errors, and certification (UAT evidence,
-   coverage numbers), which cannot be self-granted.
+1. **Operator decision on the vault** (see blocker 2). Either (a) migrate it onto
+   the governed protocol via `sddk knowledge scan` → review → `import`, or
+   (b) formally accept it as a non-conforming legacy artifact and amend the
+   `vault-index-current` gate contract. Renaming 30 files alone fixes the symptom
+   but leaves a vault with no cycle nodes, no incidence nodes and no templates.
+2. Once the vault is clean (or the gate contract is amended), re-evaluate
+   `vault-index-current` and apply `archive.complete` for v014.
+3. Fix the `pipelinek` cache invalidation bug properly (blocker 3). `--rerun` is
+   now mandatory in AGENTS.md as the stopgap.
+4. Still operator-scoped: the four `sddk lint` pack errors, and certification
+   (UAT evidence, coverage numbers), which cannot be self-granted.
 
 ## Do not
 
