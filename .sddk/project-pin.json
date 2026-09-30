@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "project_id": "p-3416cfb8288f8964",
+  "reason": "case drift: remote resolves to rubentxu (lowercase) creating empty p-55f14aab9263c12f; canonical ledger record is Rubentxu/chronos",
+  "pinned_at": "2026-09-30T17:04:23.427095521Z"
+}
