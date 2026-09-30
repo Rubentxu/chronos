@@ -1015,4 +1015,50 @@ Detalle menor detectado al verificar `m9-04`: cuatro de los seis SHAs de su
 trabajo: los seis commits existen y son los correctos. Es un error de
 transcripción de un carácter en el fichero de bookkeeping.
 
+### Los tres bloqueos de cierre, y por qué son distintos
+
+El grupo D (`m9-62`, `m9-63`, `m9-64`) **no** está bloqueado por aprobación
+humana. Su transición `archive.vault.complete` pide dos artefactos
+(`vault-receipt`, `archive-manifest`) y tres gates. El primero de esos
+artefactos es lo que falla:
+
+```
+$ sddk release vault --cycle p-3416cfb8288f8964/m9-62-bounded-stop-probe
+error: cycle ... has no delivery_kind declared; vault route requires
+ManagedClosureDelivery
+```
+
+**0 de los 86 ciclos del proyecto declara `delivery_kind`.** Tampoco los 67
+`CLOSED`. Y el valor requerido no es obtenible:
+
+- `find ... -iname "*0075*"` en el bundle 2.3.1 → nada. ADR-0075, que `sddk
+  release vault --help` cita como procedencia de la decisión, no se distribuye.
+- El bundle no incluye ningún fichero ADR.
+- `grep -r delivery_kind` sobre el framework → cero resultados.
+- `sddk cycle replan` solo acepta `--restage-to` y `--delta`.
+
+No hay ninguna vía por CLI para declarar el valor. Editar el manifest a mano
+en `ledger.sqlite` sería fabricar estado canónico, así que no se ha hecho.
+
+Los tres ciclos están genuinamente entregados —`b98b2a4f`, `8dc1063d` y
+`339f7b5e` son ancestros del trunk; `v0.7.64`, `v0.7.65` y `v0.7.66` peel
+exacto; CC#52 existe en `vault-drift-sweep.md:2582`; el
+`bounded_join_with_timeout(..., Duration::from_secs(10))` está en
+`probe_backend.rs:728`; `scripts/check_vault_drift.sh` y
+`.github/workflows/vault-drift.yml` existen— y sus checkpoints ya declaran
+`status: CLOSED` y `archive_status: archived`. **El estado del ledger es la
+anomalía, no el trabajo.**
+
+Resumen de los tres bloqueos, para no re-derivarlos:
+
+| Ciclo | Transición | Bloqueo | ¿Lo resuelve un humano? |
+|---|---|---|---|
+| `m9-81` | `cycle.supersede` | `ADMISSION` → `sddk approval grant` | Sí, con `grant` |
+| `m10-readpath` | `release.complete` | `release-uat-approved`: `uat.toml` + 2 firmas | Sí |
+| `m9-04` | — | sin evento `cycle.created`; replay imposible | No, requiere reconstructura |
+| `m9-62/63/64` | `archive.vault.complete` | `delivery_kind` no declarable | No, requiere fix upstream |
+
+Registrado como `bl-bl-01M3SZDDVD000387KYVFNVQGC0` (P1). Es la segunda
+aparición del mismo hallazgo tras `CLOSE-OUT-2026-09-29`, aún sin resolver.
+
 ---
