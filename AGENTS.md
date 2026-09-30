@@ -1179,6 +1179,58 @@ bajo `tests/` compilan como crate aparte y `pub(crate)` no llega hasta allí.
 `ChronosServer`, y eso es una decisión de diseño con coste real, no un
 refactor mecánico. Los 4196 líneas de producción restantes son dos `impl`
 (2952 router, 688 construcción) más el struct, y tienen el mismo prerrequisito.
+
 Backlog: `bl-bl-01M3T2KD09000387M55HZKHG80` (P3).
+
+---
+
+## Las dos bases de conocimiento: no hay conflicto (2026-09-30)
+
+`.sddk-knowledge/` (294 ficheros) contra
+`~/.sddk-knowledge/p-3416cfb8288f8964/` (168 ficheros):
+
+| Categoría | Rutas |
+|---|---|
+| Solo en el repo | 205 |
+| Solo en el vault externo | 34 |
+| Mismo path, contenido distinto | **0** |
+
+**No hay nada que fusionar.** El item de backlog que decía "241 paths differ"
+confundía *presencia* con *divergencia*, y por eso estaba en P1 sin que hubiera
+nada que arreglar. Descartado como `superseded` por
+`bl-bl-01M3T2W3BT000387M5VPCBCPC0`.
+
+Quién tiene qué: el externo posee `adrs/` y 16 ciclos archivados que el repo no
+tiene, y su `_log.md` tiene entradas del 2026-09-29, así que **sigue
+escribiéndose**. El repo posee 205 rutas más, incluidos los 102 manifests de
+`changes/archive/` que `m9-76` construyó para que `CC#4` verifique sus SHAs, y
+`vault-drift.yml` protege el del repo. Los dos crecen.
+
+### Aviso de método: `diff` está localizado en este host
+
+`diff -rq` imprime `Sólo en …` en español. Un `grep "Only in"` devuelve **cero
+sin fallar**, y la lectura resultante —"no hay ninguna ruta exclusiva"— es
+falsa. Ya produjo una conclusión equivocada en esta sesión. Filtra por
+`Sólo en` o usa `comm`, no texto en inglés.
+
+### Lo que sí hay: 50 ciclos CLOSED sin artefactos en ningún sitio
+
+| Medición | Valor |
+|---|---|
+| Ciclos `CLOSED` en el ledger | 67 |
+| Con directorio en `cycle-artifacts/` | **14** |
+| Sin directorio | 53 |
+| De esos, ausentes también del vault externo | **50** |
+
+Para esos 50, `git log --all -- <path>` devuelve **cero commits**: nunca
+materializaron artefactos en este repositorio. El rango va del 2026-09-08 al
+2026-09-28, así que no es una regresión reciente.
+
+El ledger registra ciclos que el repositorio nunca contuvo. El ledger es la
+autoridad para el *estado* de un ciclo, y eso es compatible con que los
+artefactos sean opcionales; pero nada en el repo lo declara, y la suposición
+"los artefactos están en el vault" es insegura con 50 huecos detrás.
+
+Backlog: `bl-bl-01M3T2W3BT000387M5VPCBCPC0` (P2).
 
 ---
