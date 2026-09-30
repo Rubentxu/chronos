@@ -1061,4 +1061,78 @@ Resumen de los tres bloqueos, para no re-derivarlos:
 Registrado como `bl-bl-01M3SZDDVD000387KYVFNVQGC0` (P1). Es la segunda
 aparición del mismo hallazgo tras `CLOSE-OUT-2026-09-29`, aún sin resolver.
 
+### Con eso quedan tipificados los 19 ciclos no cerrados
+
+Ninguno ofrece trabajo de producto pendiente. Todos son cierre pendiente,
+residuo, o bloqueados por una de las cuatro causas de la tabla anterior.
+
+`m9-88-find-m9-81-fk-investigation` y `train-b` son **residuo**: tres eventos
+cada uno, con `cycle.created` y `cycle.block` compartiendo `sequence: 1` en el
+mismo instante, cero artefactos, y el directorio de `m9-88` inexistente en
+disco. `grep -r "m9-88\|FOREIGN KEY" **/*.rs` → 0 resultados: la investigación
+de foreign key nunca llegó al código.
+
+Backlog: `bl-bl-01M3T0VXDS000387M1NFVT8VG0` (P2).
+
+---
+
+## `crates/chronos-mcp/src/server.rs` — composición medida (2026-09-30)
+
+8170 líneas, 2.7× el siguiente fichero del workspace
+(`chronos-services/src/output.rs`, 3001). No estaba registrado como deuda en
+ningún sitio. Auditoría de solo lectura, sin cambios.
+
+### Hipótesis descartadas antes de proponer nada
+
+| Hipótesis | Verificación | Resultado |
+|---|---|---|
+| Código generado o repetitivo | 4 handlers, una macro `tool_handler!` | Descartada |
+| Tests inflando el tamaño | `#[cfg(test)]` empieza en la línea 8118 de 8170 | Descartada |
+| Falla un lint | `cargo clippy -p chronos-mcp --all-targets` → 0 warnings | Descartada |
+
+### Composición real
+
+| Bloque | Líneas |
+|---|---|
+| `impl ServerHandler` | 2953 |
+| `impl ChronosServer` | 2952 |
+| Resto: 110 bloques top-level | 2265 |
+
+Los 2265 restantes son 81 `struct`/`enum`/`type`, 45 funciones puras, 8
+`const` y 3 módulos de test inline. Los dos `impl` suman el **72%** del
+fichero.
+
+### Por qué el corte es viable
+
+La región no-`impl` toca el estado del servidor **12 veces en 2433 líneas**,
+y de sus 4 `impl` internos solo `impl ChronosServer` depende de él. Los otros
+tres son `impl TripwireConditionType`, `impl SessionCompareWire` e
+`impl Default for ChronosServer`. Los 67 `Params` ya son `pub`.
+
+Es decir: la región es casi todo tipo y función pura. Extraerla a un módulo
+`tools_params` no requiere reescribir lógica ni tocar los 44 métodos del
+handler.
+
+### Precedente en el propio crate
+
+| Módulo | Líneas |
+|---|---|
+| `composition.rs` | 458 |
+| `security.rs` | 201 |
+| `concurrency_wire.rs` | 191 |
+| `cost_memory_wire.rs` | 172 |
+| `telemetry_wire.rs` | 115 |
+
+Todos son *composition-root seams* con documentación a nivel de módulo.
+
+### Por qué no se hizo el split aquí
+
+`server.rs` es la superficie de producción del servidor MCP, con 41
+herramientas y 44 métodos de handler, y se modifica activamente (último commit
+`c45488c4`). Es refactor de riesgo alto y el alcance de ese bloque era una
+auditoría. El hallazgo queda registrado con los números medidos para que la
+decisión de extraer sea de quien asuma ese riesgo.
+
+Backlog: `bl-bl-01M3T0VGK6000387M1N5921NW0` (P2).
+
 ---
