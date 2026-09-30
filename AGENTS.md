@@ -1152,4 +1152,33 @@ Resultado verificado: 192 passed / 0 failed (idéntico al baseline),
 
 Backlog: `bl-bl-01M3T0VGK6000387M1N5921NW0` (P2).
 
+### Lo que NO se puede hacer: extraer los tests inline
+
+Se intentó el 2026-09-30 y se revirtió. Los 2279 tests inline son la mayor
+porción restante, pero **no son separables**, y el motivo es encapsulación,
+no volumen.
+
+Los tests llegan a `ChronosServer` por `use super::*`. Ese struct tiene
+**0 campos `pub` y 0 métodos `pub(crate)`**: todo es privado por diseño, y el
+composition root basado en ports depende de esa privacidad. Extraer los tests
+exigía abrir 28 métodos y 13 campos.
+
+Peor: al hacerlo, el widening automático **degradó dos ítems que ya eran
+`pub fn`** — `is_tool_listed` y `active_toolset` pasaron a `pub(crate) fn` — y
+eso rompió `crates/chronos-mcp/tests/server_cohesion.rs`, porque los ficheros
+bajo `tests/` compilan como crate aparte y `pub(crate)` no llega hasta allí.
+
+| | Extracción que sí entró | Extracción que se revirtió |
+|---|---|---|
+| Región | params y constantes (275–2703) | tests inline |
+| Símbolos que hubo que abrir | 19, todos ya `pub` de intención | 41, casi todos privados a propósito |
+| Efecto en tests externos | ninguno | rompió `server_cohesion.rs` |
+| Coste de reversión | — | `git checkout`, 5 min |
+
+**Conclusión:** partir `server.rs` más allá de la región de params exige abrir
+`ChronosServer`, y eso es una decisión de diseño con coste real, no un
+refactor mecánico. Los 4196 líneas de producción restantes son dos `impl`
+(2952 router, 688 construcción) más el struct, y tienen el mismo prerrequisito.
+Backlog: `bl-bl-01M3T2KD09000387M55HZKHG80` (P3).
+
 ---
