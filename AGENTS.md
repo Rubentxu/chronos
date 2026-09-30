@@ -958,3 +958,61 @@ casing en la resolución de identidad, o que todo comando que lee identidad
 consulte el pin.
 
 ---
+
+## Estado del ledger: los ciclos no cerrados no son homogéneos (2026-09-30)
+
+Clasificados por **evidencia observada**, no por su campo `status`. La
+distinción importa: cerrar un ciclo entregado y descartar un residuo son
+operaciones distintas, y una exige autoridad que el agente no tiene.
+
+| Grupo | Ciclos | Artefactos | Qué hacer |
+|---|---|---|---|
+| A. Entregado y verificado | `m9-81` | 7 | Cerrar; requiere aprobación humana |
+| B. Entregado, cierre pendiente | `m9-04` | 6 | Reconstruir; bloqueado, ver abajo |
+| C. Entregado, gate humano | `m10-readpath` | 6 | Cerrar; requiere `uat.toml` + 2 firmas |
+| D. `BLOCKED` con evidencia | `m9-62`, `m9-63`, `m9-64` | 6 cada uno | Desbloquear upstream |
+| E. Residuo sin evidencia | 9 ciclos | **0** | Descartar, no reimplementar |
+
+### El grupo E no es deuda técnica
+
+`m5-02-query-service-extract` y `m5-02a-events-extract` llevan `PAUSED` desde
+2026-09-09 con cero artefactos, pero su trabajo **ya está implementado**:
+
+- `crates/chronos-query/` expone `QueryEngine` (`engine.rs`), `expr_eval.rs` y
+  `projection.rs` — 2742 líneas.
+- `crates/chronos-services/src/query_service.rs` — 125 líneas.
+- Events vive en `events_read.rs` (426) y `events_cursor.rs` (386).
+
+Son ciclos cuyo trabajo se entregó por otro camino y que nadie cerró.
+Reimplementarlos sería duplicar código que ya existe.
+
+El resto del grupo E: `m5-preflight-clippy-drift-cleanup`,
+`m5-preflight-2-sandbox-drift-cleanup`, `m-ci-flake-preflight`,
+`m-ci-flake-cleanup-2-residual-timing`, `m10-product-evolution-propose`,
+`train-b`, `m9-88-find-m9-81-fk-investigation`.
+
+### Por qué el agente no puede cerrar nada
+
+`sddk cycle supersede` responde:
+
+```
+error: ADMISSION: approval required before mutating 'cycle_state'
+(decision_id=approval-system-cycle_supersede)
+```
+
+Solo `sddk approval grant` lo levanta, y su `--actor` está documentado como
+*"Human actor id"*. **No lo emitas desde un agente**: sería simular una
+aprobación humana. Registrado como `bl-bl-01M3SYRX4M000387KXJ99CHMC0` (P1).
+
+`m9-04` añade un segundo bloqueo: `sddk cycle next` responde
+`has no replayable state events`. Su historia empieza en una transición
+(`workflow.transition.succeeded` del 2026-09-11) sin evento `cycle.created`
+previo, así que `sddk cycle rebuild` no tiene de qué reconstruir.
+
+Detalle menor detectado al verificar `m9-04`: cuatro de los seis SHAs de su
+`apply-checkpoint.json` no resuelven — `083f5ba`, `7f86a1c`, `6ec8757` y
+`140d53a` tienen 7 caracteres donde los otros dos tienen 8. No se perdió
+trabajo: los seis commits existen y son los correctos. Es un error de
+transcripción de un carácter en el fichero de bookkeeping.
+
+---
