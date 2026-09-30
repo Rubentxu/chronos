@@ -153,7 +153,7 @@ observed to fail for the reason the guard exists:
 | source (regen tool) | `scripts/regen_manifest_index_shas.py` | `2e9031fed75cfd2faa583e4a13c0370f4655a8fae7e441dd13a48d092cba84a3` |
 | test (regen unit tests) | `scripts/tests/test_regen_manifest_index_shas.py` | `57168dbb1942ac0cd58f5edd42edc2dd407abe1a6cd23b2dcb355f654e8a4672` |
 | test (cc smoke suite) | `scripts/smoke_test_ccs.sh` | `86def49d7e23b4e521687ddcb53a384aac18ec3f91f0e2845396f90d7ac3e7d3` |
-| docs (agents manual) | `AGENTS.md` | `b37860f1a08d46a13c534d5c1eb76f88b9df3c8506bb570b2c50a32a2ae402c8` |
+| docs (agents manual) | `AGENTS.md` | `c4815e2993078db07c395d87590b7a0a593900eb91bc792ca60baf56a9e2f55c` |
 | docs (vault drift sweep) | `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md` | `13350229f5ab3dc456f928b96e39999550eda60533167164894a14af886075d3` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/apply-checkpoint.json` | `232613564d78f9c0839f732c4b1647cf12f4582602c4073580cbf0cc6e20df0c` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-76-cc4-regen-tool-in-repo/verify-report.md` | `f1cb8a70dff389ce95e8ea8283b7045ba0ba05adeb47c5b2846f3777fec4988a` |

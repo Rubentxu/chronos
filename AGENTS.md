@@ -789,9 +789,11 @@ with SUCCESS` terminal.
 
 ### Binario
 
-`pipelinek` v0.39.0 — instalable desde `pipelinek-0.39.0.zip` (build local:
-`v2/pipeline-application/build/install/pipelinek/bin/pipelinek`). Comando
-canónico desde la raíz del proyecto:
+`pipelinek` v0.43.0 — instalado por asdf. La versión la fija
+`~/.tool-versions` (global), **no** el `.tool-versions` del repositorio, que
+solo declara `java temurin-24.0.2+12`. Confirma la versión con
+`asdf current pipelinek` antes de comparar comportamiento entre entornos.
+Comando canónico desde la raíz del proyecto:
 
 ```bash
 pipelinek run --rerun \
@@ -828,10 +830,31 @@ El cache key de compilación
 (`sha256:9f26bb0571919bd012ebb6736de43b3b8bffe566b904dc76baab69923f6d96d6`)
 no cambia entre un árbol limpio y uno mutado, por eso la invalidación no ocurre.
 
+#### Revalidado en v0.43.0 (2026-09-30) — el defecto NO está arreglado
+
+El incidente se reprodujo de nuevo sobre la versión actual, así que **no es
+deuda obsoleta**: el criterio sigue vigente y `--rerun` sigue siendo obligatorio.
+
+Secuencia observada, con control explícito para no leer un `tail` como verde:
+
+1. `panic!` inyectado en `execution_log_read_over_the_wire`.
+2. Control: `cargo test -p chronos-sandbox --test execution_log_read_e2e` →
+   `FAILED. 1 passed; 1 failed`. El fallo es real.
+3. `pipelinek run` **sin** `--rerun` → `Pipeline finished with SUCCESS`,
+   **exit 0**, con `RunFinished/success` y 5 `StageFinished/success` pero
+   **cero `StepStarted`** (el journal pasa de `CompilationFinished` en seq 43 a
+   `RunStarted` en seq 44 y salta directo a stages).
+4. Mutación revertida; `pipelinek run --rerun` → 9 `StepStarted`, 0 `StepFailed`,
+   E2E `2 passed; 0 failed`, exit 0.
+
+Un SUCCESS sin `--rerun` es por tanto un **falso verde autenticado** sobre un
+árbol que no pasa sus propios tests. No lo leas como verificación bajo ninguna
+circunstancia.
+
 Registrado como debt de backlog `bl-bl-01M3PWNDVW000387DS8ZH6DX00`. `pipelinek`
-es un binario distribuido (0.39.0), no código de este repo, así que la causa
-raíz no puede corregirse aquí; `--rerun` es la única mitigación honesta hasta
-que se arregle la invalidación del cache.
+es un binario distribuido, no código de este repo, así que la causa raíz no
+puede corregirse aquí; `--rerun` es la única mitigación honesta hasta que se
+arregle la invalidación del cache.
 
 ### Criterios de éxito (todos deben cumplirse)
 
@@ -859,7 +882,7 @@ test -f .pipeline.kts && \
 Cualquier stage nuevo debe:
 
 * Declarar su propósito en el `echo` inicial del stage.
-* Usar **rutas absolutas** dentro de los `sh(...)` (el motor v0.39.0 no
+* Usar **rutas absolutas** dentro de los `sh(...)` (el motor no
   resuelve el cwd del script).
 * Producir efectos secundarios solo a través de los directorios
   `.pipelinek/` y `evidence/` (no contaminar el árbol del proyecto).
@@ -881,5 +904,57 @@ que la divergencia se investigue y documente en este mismo archivo.
 
 Ninguna hasta la fecha. Toda excepción requiere entrada en
 `SESSION-JOURNAL.md` y aprobación explícita del maintainer del proyecto.
+
+---
+
+## Identidad del proyecto SDDK — deriva de casing (2026-09-30)
+
+### Regla
+
+Este repositorio está **pinnado** a `p-3416cfb8288f8964` mediante
+`.sddk/project-pin.json`. No lo borres sin leer esta sección.
+
+### Qué pasó
+
+`git remote.origin.url` es `git@github.com:Rubentxu/chronos.git` — con **R mayúscula**.
+SDDK 2.3.1 normaliza ese remote a minúsculas y deriva
+`project_id = p-55f14aab9263c12f`, que **no existe en el ledger canónico**:
+0 eventos, 0 ciclos, vault vacío.
+
+Consecuencia práctica: `sddk context bootstrap` creó una adopción vacía y todos
+los comandos que **infieren** el proyecto (`sddk cycle status`,
+`sddk adopt status`, `sddk context bootstrap`) reportaban un proyecto sin
+estado, ocultando el ledger real con **465 eventos y 86 ciclos**.
+
+### El pin no lo respeta todo
+
+Comportamiento observado con el pin aplicado, y reproducible:
+
+| Comando | Respeta el pin |
+|---|---|
+| `sddk project resolve` | **sí** |
+| `sddk ledger verify` | **sí** |
+| `sddk backlog list` / `backlog show` | **sí** |
+| `sddk adopt status` / `adopt plan` | **no** — sigue en `p-55f…` |
+| `sddk context bootstrap` | **no** — sigue en `p-55f…` |
+| `sddk cycle status` (inferido) | **no** — sigue en `p-55f…` |
+
+### Cómo trabajar mientras tanto
+
+Usa el flag explícito `--cycle` para todo comando de ciclo:
+
+```bash
+sddk cycle status --cycle p-3416cfb8288f8964/release-pipeline-honesty-v014
+sddk cycle next    --cycle p-3416cfb8288f8964/<ciclo>
+```
+
+Y verifícalo con `sddk ledger verify`: debe devolver **465 eventos**. Si
+devuelve 0, estás leyendo el proyecto equivocado.
+
+### Debt
+
+`bl-bl-01M3SP3DT5000387KC746KRBG0` (P1). Arreglo upstream: normalización de
+casing en la resolución de identidad, o que todo comando que lee identidad
+consulte el pin.
 
 ---
