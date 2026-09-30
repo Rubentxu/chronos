@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use chronos_services::error::ServiceError;
 
-use crate::server::StoreOpenError;
+use crate::composition::StoreOpenError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ChronosServerInitError {

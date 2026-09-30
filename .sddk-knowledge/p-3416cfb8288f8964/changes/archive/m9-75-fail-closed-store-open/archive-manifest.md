@@ -134,11 +134,11 @@ One commit:
 | Kind | Path | SHA-256 |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-75-fail-closed-store-open/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
-| source (mcp server) | `crates/chronos-mcp/src/server.rs` | `eeb40689b12877dc97e436c4a162b07fa49e303f23444285686e00b6335ccc99` |
+| source (mcp server) | `crates/chronos-mcp/src/server.rs` | `4415eee37a1f5a925a1e48802dd3bc655d162d678a2929db2f3fd64a05f29c2a` |
 | source (mcp binary) | `crates/chronos-mcp/src/bin/chronos-mcp.rs` | `3797defa83c8218db6610047fece4b6ed67aa9b183e5c1f5193f2f10eeda1492` |
 | source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `21b42eccb1550c9ce6c750a55ddc80d20729ea2ba0ccc9c75a76738efbb3e644` |
 | test (store open failure) | `chronos-sandbox/tests/store_open_failure.rs` | `5f0461f8db78b9de6d27d9ba92c3c06e0ebbe3cf62eb990e69f7c9e1e4c7bec9` |
-| docs (agents manual) | `AGENTS.md` | `fc719aebe7443afcb7f8d9ef028d8c4a8dd030bb5c341a5b9989a675b8152128` |
+| docs (agents manual) | `AGENTS.md` | `e71aa22b47b086da4cfbfe6ed45efc83123af94eea89ab7ff8c26e6201279de3` |
 | docs (session management, en) | `docs/manual-ai/en/08-session-management.md` | `c35df64b6b6d0b373c09a40d1e0364eb403fb25cd78644c0e4e35a1c289cbce2` |
 | docs (session management, es) | `docs/manual-ai/es/08-gestion-sesiones.md` | `1111d44fe62e66970f84211054fe491bac7aed4c288e49f68b7bc32c4b9d5092` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-75-fail-closed-store-open/apply-checkpoint.json` | `33adf19a9ac0df7a07db20f586a48ee4e280946c6aacb3785bf8b2bf98e52b5e` |

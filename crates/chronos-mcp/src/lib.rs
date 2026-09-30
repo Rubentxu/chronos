@@ -10,6 +10,7 @@ pub mod init_error;
 pub mod security;
 pub mod server;
 pub mod telemetry_wire;
+pub mod tools_params;
 
 pub use concurrency_wire::{
     build_graph_from_wire, classify_pair_from_json, classify_pair_via_wire,

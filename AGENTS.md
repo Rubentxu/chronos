@@ -1125,13 +1125,30 @@ handler.
 
 Todos son *composition-root seams* con documentación a nivel de módulo.
 
-### Por qué no se hizo el split aquí
+### Por qué se hizo el split en vez de dejarlo pendiente
 
-`server.rs` es la superficie de producción del servidor MCP, con 41
-herramientas y 44 métodos de handler, y se modifica activamente (último commit
-`c45488c4`). Es refactor de riesgo alto y el alcance de ese bloque era una
-auditoría. El hallazgo queda registrado con los números medidos para que la
-decisión de extraer sea de quien asuma ese riesgo.
+Se hizo el 2026-09-30, tras medir. Criterio de aceptación mecánico: el
+baseline `cargo test -p chronos-mcp` de esa revisión era **192 passed,
+0 failed**, y el refactor debía dejarlo exactamente igual.
+
+| Fichero | Antes | Después |
+|---|---|---|
+| `server.rs` | 8170 | 6474 |
+| `tools_params.rs` | — | 1713 |
+
+Lo que se movió son 74 `Params`/enums, 45 funciones puras, 8 `const` de
+toolset y los parsers. Se quedaron en `server.rs` los `impl ChronosServer` y
+`impl Default for ChronosServer`, que sí tocan estado, más los helpers
+`text_content` / `json_content` / `session_envelope`, que son infraestructura
+de respuesta compartida con los handlers.
+
+`server.rs` hace `pub use crate::tools_params::*`, así que
+`chronos_mcp::server::*` sigue resolviendo a los mismos elementos y los tests
+de integración no cambian.
+
+Resultado verificado: 192 passed / 0 failed (idéntico al baseline),
+`clippy -D warnings` limpio, `cargo fmt` limpio, workspace compila,
+`pipelinek --rerun` runId `07dbfe7f` PASS.
 
 Backlog: `bl-bl-01M3T0VGK6000387M1N5921NW0` (P2).
 
