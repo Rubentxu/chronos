@@ -626,6 +626,85 @@ fn assert_frame_capture(events: &[TraceEvent], stop_total_events: usize) -> Vec<
         "add must be recorded as a child frame of main, got {add:?}"
     );
 
+    // The four recursive activations all belong to the same `main` frame.
+    //
+    // This is the invariant that a re-entry whose observed return address
+    // points at no live frame used to break: unwinding popped the caller as
+    // well, so `main`'s FunctionExit was emitted before `fact` #2..#4 were
+    // entered and those invocations were recorded parentless. Measured
+    // against the live fixture, all four carry `main`.
+    let facts: Vec<&&Frame> = entries.iter().filter(|f| f.name == "fact").collect();
+    for f in &facts {
+        assert_eq!(
+            f.parent_invocation_id.as_deref(),
+            Some(main_id.as_str()),
+            "every fact activation is called from main, so it must be its child frame, got {f:?}"
+        );
+    }
+    // Four activations of the same function are four distinct invocations,
+    // not four views of one. Sharing an id would make `children_of` return
+    // one node where the call tree has four.
+    let fact_ids: std::collections::BTreeSet<&str> =
+        facts.iter().map(|f| f.invocation_id.as_str()).collect();
+    assert_eq!(
+        fact_ids.len(),
+        facts.len(),
+        "each fact activation needs its own invocation id, got {fact_ids:?}"
+    );
+
+    // `_start` is the process root, so it is the one frame with no parent;
+    // `main` is entered from it. The `_start` → `main` edge is what proves
+    // the tree has a root at all rather than a forest of orphans.
+    let start = entries
+        .iter()
+        .find(|f| f.name == "_start")
+        .expect("_start entry asserted present above");
+    assert_eq!(
+        start.parent_invocation_id, None,
+        "_start is the process root and has no caller, got {start:?}"
+    );
+    assert_eq!(
+        entries
+            .iter()
+            .find(|f| f.name == "main")
+            .expect("main entry asserted present above")
+            .parent_invocation_id
+            .as_deref(),
+        Some(start.invocation_id.as_str()),
+        "main is entered from _start, got {frames:?}"
+    );
+
+    // Replay the capture against a stack: every entry pushes its frame, and
+    // every exit must close exactly the frame on top. This is the assertion
+    // that a premature caller unwind cannot survive — a `main` exit emitted
+    // while a `fact` activation was still live would find `fact` on the top
+    // instead, and the mismatch names both frames.
+    let mut live: Vec<&str> = Vec::new();
+    for f in &frames {
+        if f.kind == "function_entry" {
+            assert_eq!(
+                f.parent_invocation_id.as_deref(),
+                live.last().copied(),
+                "{} must be entered from the frame it was called on, got {f:?} with live stack {live:?}",
+                f.name
+            );
+            live.push(f.invocation_id.as_str());
+        } else {
+            let top = live.pop().unwrap_or_else(|| {
+                panic!("{} returned with no live frame left, got {f:?}", f.name)
+            });
+            assert_eq!(
+                top, f.invocation_id,
+                "{} returned out of order: it closed {top} but the frame on top was {}",
+                f.name, f.invocation_id
+            );
+        }
+    }
+    assert!(
+        live.is_empty(),
+        "every frame must return before the capture ends, still live: {live:?}"
+    );
+
     // Real events carry advancing timestamps — not one frozen stamp.
     let first = frames.first().expect("non-empty asserted above");
     let last = frames.last().expect("non-empty asserted above");
