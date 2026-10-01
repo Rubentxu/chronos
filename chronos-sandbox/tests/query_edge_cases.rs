@@ -170,6 +170,59 @@ async fn test_query_events_limit_zero() {
     client.shutdown().await.ok();
 }
 
+/// Regression test for a hang in `query_events_walk_all`.
+///
+/// The server answers `limit = 0` with an empty page that still carries a
+/// `next_cursor`, and the walk looped while `page_len >= limit`, which is
+/// `0 >= 0` on every pass: the call never returned. The test wraps the call in
+/// a timeout so that a reintroduction fails instead of stalling the suite, and
+/// asserts the caller gets the empty list it asked for.
+#[tokio::test]
+async fn test_walk_all_with_limit_zero_terminates() {
+    let fixture = McpSession::fixture_path("test_add").expect("test_add fixture not found");
+
+    let mut client = McpTestClient::start()
+        .await
+        .expect("Failed to start MCP server");
+
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
+        .expect("probe_start failed");
+
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
+        .expect("probe_drain failed");
+    let _stop = client
+        .probe_stop(&session_id)
+        .await
+        .expect("probe_stop failed");
+
+    let walk = tokio::time::timeout(
+        Duration::from_secs(10),
+        client.query_events_walk_all(
+            &session_id,
+            QueryFilter {
+                limit: 0,
+                ..Default::default()
+            },
+        ),
+    )
+    .await
+    .expect("query_events_walk_all with limit=0 must terminate, not loop forever")
+    .expect("query_events_walk_all with limit=0 must not error");
+
+    assert!(
+        walk.is_empty(),
+        "limit=0 asks for no events, so the walk must come back empty, got {}",
+        walk.len()
+    );
+
+    client.shutdown().await.ok();
+}
+
 /// QE3: query_events with very large limit returns all available events.
 #[tokio::test]
 async fn test_query_events_limit_very_large() {
