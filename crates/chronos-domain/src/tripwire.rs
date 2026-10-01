@@ -84,6 +84,45 @@ impl TripwireCondition {
             }
         }
     }
+
+    /// Why this condition can never match any event, or `None` if it can.
+    ///
+    /// A tripwire whose condition is unsatisfiable is the worst outcome of the
+    /// `tripwire_create` path: it is created, listed, counted, and never fires,
+    /// so the caller pays for the subscription and gets silence.
+    ///
+    /// The scope is deliberately narrow: only conditions that are unsatisfiable
+    /// **by their own structure** — an empty set to test membership against, or a
+    /// range that cannot contain anything. Three neighbouring cases are left out
+    /// on purpose:
+    ///
+    /// - `FunctionName { pattern: "" }` only matches an empty function name.
+    ///   `glob_inner` returns `ti == t.len()` for an exhausted pattern, so this
+    ///   is unsatisfiable in practice, but proving it would be a claim about
+    ///   every adapter rather than about this type.
+    /// - `VariableName { name: "" }` matches a variable whose name is empty.
+    ///   Same argument.
+    /// - `ExceptionType { exc_type: "" }` is the opposite failure: `contains("")`
+    ///   is true for every string, so it matches *every* exception event rather
+    ///   than none. Rejecting it here would silently change a loud, wrong
+    ///   configuration into a refused one, which is a separate decision.
+    pub fn unsatisfiable_reason(&self) -> Option<&'static str> {
+        match self {
+            TripwireCondition::EventType(types) if types.is_empty() => {
+                Some("event_types is empty, so no event could ever satisfy it")
+            }
+            TripwireCondition::SyscallNumber { numbers } if numbers.is_empty() => {
+                Some("numbers is empty, so no syscall could ever satisfy it")
+            }
+            TripwireCondition::Signal { numbers } if numbers.is_empty() => {
+                Some("numbers is empty, so no signal could ever satisfy it")
+            }
+            TripwireCondition::MemoryAddress { start, end } if start > end => {
+                Some("the address range is inverted (start > end), so it contains nothing")
+            }
+            _ => None,
+        }
+    }
 }
 
 fn glob_match(pattern: &str, text: &str) -> bool {

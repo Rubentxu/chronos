@@ -31,11 +31,21 @@ impl TripwiresService {
     /// - `InvalidCondition` if `condition.into_condition()` returns `Err`,
     ///   meaning at least one `event_type` string could not be mapped to a known
     ///   `EventType` variant.  (Handled by the MCP caller before reaching here.)
+    /// - `UnsatisfiableCondition` if the condition can never match any event —
+    ///   an empty set to test membership against, or an inverted address range.
+    ///   Rejecting it here rather than at the MCP layer covers both entry paths
+    ///   (the v1 `tripwire_create` tool and the v2 `observe` service) with one
+    ///   authority, and avoids handing back a tripwire that is created, listed
+    ///   and counted but can never fire.
     pub fn create(
         condition: TripwireCondition,
         label: Option<String>,
         manager: &Arc<TripwireManager>,
     ) -> Result<CreateResult, ServiceError> {
+        if let Some(reason) = condition.unsatisfiable_reason() {
+            return Err(ServiceError::UnsatisfiableCondition(reason.to_string()));
+        }
+
         let id = manager.register_with_label(condition, label.clone());
 
         Ok(CreateResult {
@@ -517,5 +527,75 @@ mod tests {
         // of its global-counter-dependent ID.
         assert_eq!(query.tripwires[0].id, r2.tripwire_id);
         assert_eq!(manager.active_count(), 1);
+    }
+
+    /// A condition that cannot match anything must not become a subscription.
+    ///
+    /// Before this, `EventType([])` was accepted, listed, counted, and could
+    /// never fire: the caller paid for the tripwire and got silence.
+    #[test]
+    fn create_rejects_unsatisfiable_conditions() {
+        reset();
+        let manager = Arc::new(TripwireManager::new());
+
+        for condition in [
+            TripwireCondition::EventType(vec![]),
+            TripwireCondition::SyscallNumber { numbers: vec![] },
+            TripwireCondition::Signal { numbers: vec![] },
+            TripwireCondition::MemoryAddress {
+                start: 0x2000,
+                end: 0x1000,
+            },
+        ] {
+            let result = TripwiresService::create(condition.clone(), None, &manager);
+            assert!(
+                matches!(result, Err(ServiceError::UnsatisfiableCondition(_))),
+                "expected {condition:?} to be rejected, got {result:?}"
+            );
+        }
+
+        assert_eq!(
+            manager.active_count(),
+            0,
+            "a rejected tripwire must not be registered"
+        );
+
+        // The reason this error has its own variant. Sharing `InvalidCondition`
+        // made the edge render it as "unknown event_type '<reason>'", telling the
+        // caller its event type was unrecognised when the list was simply empty.
+        let rendered =
+            TripwiresService::create(TripwireCondition::EventType(vec![]), None, &manager)
+                .expect_err("an empty event type list is still rejected")
+                .to_string();
+        assert!(
+            !rendered.contains("unknown event_type"),
+            "an unsatisfiable condition must not be reported as an unrecognised one, got: {rendered}"
+        );
+        assert!(
+            rendered.contains("can never match"),
+            "the error should say the condition cannot match, got: {rendered}"
+        );
+    }
+
+    /// The other half: the guard must not become a blunt "reject everything".
+    #[test]
+    fn create_accepts_conditions_that_can_fire() {
+        reset();
+        let manager = Arc::new(TripwireManager::new());
+
+        for condition in [
+            TripwireCondition::EventType(vec![chronos_domain::EventType::SyscallEnter]),
+            TripwireCondition::SyscallNumber { numbers: vec![59] },
+            TripwireCondition::Signal { numbers: vec![11] },
+            TripwireCondition::MemoryAddress {
+                start: 0x1000,
+                end: 0x2000,
+            },
+        ] {
+            TripwiresService::create(condition.clone(), None, &manager)
+                .unwrap_or_else(|e| panic!("expected {condition:?} to be accepted, got {e}"));
+        }
+
+        assert_eq!(manager.active_count(), 4);
     }
 }

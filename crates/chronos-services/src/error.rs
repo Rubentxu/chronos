@@ -67,6 +67,16 @@ pub enum ServiceError {
     #[error("unknown event_type '{0}'")]
     InvalidCondition(String),
 
+    /// The condition is well-formed but unsatisfiable: an empty set to test
+    /// membership against, or an inverted address range.
+    ///
+    /// A distinct variant from [`ServiceError::InvalidCondition`] on purpose.
+    /// Sharing one variant made the two cases indistinguishable at the edge: the
+    /// MCP layer renders both as "unknown event_type '<reason>'", so rejecting an
+    /// empty `event_types` list told the caller its event type was unrecognised.
+    #[error("tripwire condition can never match any event: {0}")]
+    UnsatisfiableCondition(String),
+
     /// The tripwire ID string did not match the expected "tripwire-<number>" format.
     #[error("invalid tripwire ID format '{0}'")]
     InvalidTripwireIdFormat(String),

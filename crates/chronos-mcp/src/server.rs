@@ -1135,7 +1135,8 @@ impl ChronosServer {
             }
             // The new ServiceError variants cannot occur from list_threads,
             // but must be listed for exhaustiveness.
-            Err(ServiceError::MemoryNotFound { .. }) => {
+            Err(ServiceError::MemoryNotFound { .. })
+            | Err(ServiceError::UnsatisfiableCondition(_)) => {
                 return Ok(CallToolResult::error(text_content(
                     "internal error: unexpected memory error",
                 )));
