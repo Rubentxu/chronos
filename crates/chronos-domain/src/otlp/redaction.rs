@@ -21,9 +21,13 @@
 //!     `Vec<(String, String)>`.
 //!
 //! ## What is NOT lifted
-//!   - The spike's `ExportedSpan` / `render_json_line` (M6.4). The
-//!     product already has `chronos-services::session_export` with the
-//!     same wire-format shape — no duplication needed.
+//!   - The spike's `ExportedSpan` / `render_json_line` (M6.4). The product
+//!     exporter `chronos-services::session_export` shares only the OTel
+//!     envelope shape, so "no duplication needed" overstates the overlap:
+//!     ADR-0018's opt-in filter, export limits and JSON Lines renderer have no
+//!     counterpart there. Note also that nothing in product calls
+//!     `redact_and_limit_attributes` on an export path yet — this module is
+//!     reachable from tests only, so M6.5 is a library, not an applied policy.
 
 /// Redaction policy. Sensitive key patterns are matched
 /// case-insensitive against the attribute key name; the value of any

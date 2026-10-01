@@ -12,9 +12,15 @@
 //!
 //! The M6.6 spike (`/home/rubentxu/m6-spikes/m6.6-otel-cross-service/`) also
 //! pulled in `m6_4_otel_exporter` for `export_spans` / `render_json_line` /
-//! `OptInFilter` / `ExportLimits`. Those pieces were NOT lifted to the product
-//! per ADR-0033 §2.2 (M6.4 deferred-honesto because the canonical exporter
-//! path lives in `chronos-services::session_export::serialize_bundle_otlp_json`).
+//! `OptInFilter` / `ExportLimits`. None of those pieces are in the product, and
+//! no decision deferred them: ADR-0018 (M6.4) and ROADMAP §M6 still require
+//! opt-in export of compatible events plus declared limits. The canonical
+//! exporter (`chronos-services::session_export::serialize_bundle_otlp_json`)
+//! overlaps on 1 of those 4 pieces — the OTel-shaped envelope. It emits every
+//! event unconditionally, declares no cap on span count, attribute cardinality
+//! or field size, renders a single OTLP document rather than JSON Lines, and
+//! stamps no `traceId` / `spanId` / `parentSpanId` for a collector to correlate
+//! on. So M6.4 is unimplemented, not redundant.
 //! This lift therefore validates the UAT scenarios at the *correlation*
 //! layer — events bound to invocations, distinct invocations / trace_ids per
 //! service, drift preserved, idempotent retry under same `traceparent` — and
