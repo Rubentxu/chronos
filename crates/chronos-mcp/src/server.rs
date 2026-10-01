@@ -5789,8 +5789,18 @@ mod tests {
         // fields with dummies that compile.
         let dummy_session = CaptureSession::new(0, Language::Rust, CaptureConfig::new("noop"));
         // REC-C1.2a: a session always owns a log (the type is not `Option`), so
-        // the pre-C1.2a "no log attached" fixture is not representable. What the
-        // round must still tolerate is a log with nothing to compact.
+        // the pre-C1.2a "no log attached" fixture is not representable, and the
+        // old trailing comment claiming the postcondition was "no log was
+        // created" was simply wrong -- this test creates the log itself, on
+        // purpose, one line above. What the round must tolerate is a log with
+        // nothing to compact.
+        //
+        // That is the postcondition worth asserting, and it is observable:
+        // `run_one_compaction_round` reports what it reclaimed, and a round
+        // over an empty log must reclaim nothing. The old body ran the round
+        // and then asserted nothing at all, on the grounds that absence cannot
+        // be observed -- but `reclaimed_paths` and the cumulative metrics are
+        // exactly how absence is observed here.
         let log_dir = std::env::temp_dir().join(format!(
             "rec-c1-2a-compaction-{}-{}",
             std::process::id(),
@@ -5825,15 +5835,28 @@ mod tests {
             probes.insert("no-log-session".to_string(), live);
         }
 
-        // No log attached ⇒ daemon round should be a no-op (just
-        // continue past the entry). We can't observe the absence
-        // directly, but we can observe that nothing panics and that
-        // there's nothing to assert against.
+        // A round over a log with nothing to compact must not fabricate
+        // activity. The session stays registered after the round, so the
+        // metrics are readable through it.
         ChronosServer::run_one_compaction_round(&server).await;
 
-        // If we got here without panicking, we passed.
-        // (No assertion needed — the postcondition is "no panics +
-        // no log was created".)
+        let after = {
+            let probes = server.live_probes.lock().unwrap();
+            let live = probes
+                .get("no-log-session")
+                .expect("the session is still registered after the round");
+            live.execution_log
+                .compaction_metrics()
+                .expect("compaction metrics after the round")
+        };
+        assert_eq!(
+            after.segments_reclaimed, 0,
+            "a round over a log with nothing to compact must not reclaim segments"
+        );
+        assert_eq!(
+            after.compaction_passes, 0,
+            "no compaction pass may have run: there was nothing retired to compact"
+        );
     }
 
     /// m2-08 — `probe_drain_log` surfaces each event's `data` (which carries
