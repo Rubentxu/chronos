@@ -2803,13 +2803,6 @@ mod tests {
         assert!(json.contains("process_*"));
     }
 
-    #[tokio::test]
-    async fn test_client_creation() {
-        // This test verifies that the types can be instantiated
-        // Actual server spawning requires a real MCP binary
-        let _client: Option<McpTestClient> = None;
-    }
-
     #[test]
     fn mcp_dependency_sources_match_resolved_workspace_closure() {
         let workspace_root = McpTestClient::workspace_root().unwrap();
