@@ -108,7 +108,10 @@ async fn test_debug_diff_consecutive_events() {
         .probe_stop(&session_id)
         .await
         .expect("probe_stop failed");
-    println!("Probe stopped: {} total events", stop.total_events);
+    assert!(
+        stop.total_events > 0,
+        "test_busyloop should have been captured, got 0 events"
+    );
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
@@ -123,41 +126,45 @@ async fn test_debug_diff_consecutive_events() {
         .await
         .expect("query_events failed");
 
-    if events.len() < 3 {
-        println!("Not enough events ({}), skipping test", events.len());
-        client.shutdown().await.ok();
-        return;
-    }
-
-    println!(
-        "Events: id={}, id={}, id={}",
-        events[0].event_id, events[1].event_id, events[2].event_id
+    // The previous body returned early here, printing "Not enough events" and
+    // exiting green. A busy loop traced for two seconds always yields three
+    // events; if it ever did not, that is the failure this test exists to catch.
+    assert!(
+        events.len() >= 3,
+        "test_busyloop should yield at least 3 events, got {}",
+        events.len()
     );
 
-    // Diff between event 0 and 2
+    // Diff between the first and the third event.
+    let (id_a, id_b) = (events[0].event_id, events[2].event_id);
     let diff = client
-        .debug_diff(&session_id, events[0].event_id, events[2].event_id)
-        .await;
+        .debug_diff(&session_id, id_a, id_b)
+        .await
+        .expect("debug_diff should succeed for two real events of a busy loop");
 
-    match diff {
-        Ok(result) => {
-            println!(
-                "✓ debug_diff between event {} and {}:",
-                events[0].event_id, events[2].event_id
-            );
-            println!("  Session: {}", result.session_id);
-            println!("  Summary: {}", result.summary);
-            // Changes arrays exist, may be empty
-            println!("  Response has valid structure");
-        }
-        Err(e) => {
-            // Acceptable for simple programs without state changes
-            println!(
-                "✓ debug_diff returned error (expected for simple programs): {:?}",
-                e
-            );
-        }
-    }
+    assert_eq!(
+        diff.event_id_a, id_a,
+        "debug_diff echoed a different event_id_a"
+    );
+    assert_eq!(
+        diff.event_id_b, id_b,
+        "debug_diff echoed a different event_id_b"
+    );
+
+    // Same fixture limitation as diff_tools: the C capture yields no register
+    // or variable evidence, so an empty diff is the honest expectation.
+    assert!(
+        diff.variables_changed.is_empty() && diff.registers_changed.is_empty(),
+        "expected no changes without register or variable evidence, got {:?}",
+        diff
+    );
+
+    // Two distinct events of a spinning loop are far apart in time. This is
+    // the assertion that would have caught the tool being broken.
+    assert!(
+        diff.timestamp_delta_ns > 0,
+        "the first and third event of a two-second busy loop must be more than zero nanoseconds apart, got 0"
+    );
 
     client.shutdown().await.ok();
 }
