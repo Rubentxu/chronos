@@ -1431,33 +1431,37 @@ impl McpSession {
 
     /// Debug diff — compares process state between two event IDs.
     ///
-    /// C5.3.1 (REC-C5): now calls v2 `state_query` (`kind=state_diff`).
+    /// Calls the `debug_diff` tool, which compares the variables in scope and
+    /// the registers visible at two events of the same session.
+    ///
+    /// This previously called `state_query` with `kind = "state_diff"`, a
+    /// variant that has never existed in `StateQueryKind` (which exposes
+    /// `register_diff`, `memory_read`, `register_snapshot`, `memory_analysis`,
+    /// `expression_eval` and `variable_snapshot`). The server rejected every
+    /// such call with `-32602 "unknown variant 'state_diff'"`. The event-pair
+    /// diff is served by the `debug_diff` tool itself, and the response shape
+    /// is `StateDiffSnapshot` — see `client::types::StateDiffSnapshot`.
+    ///
+    /// Note that `register_diff` is not a substitute: it compares registers
+    /// between two *timestamps*, so using it here would force this client to
+    /// resolve event IDs to timestamps and would drop the variable comparison
+    /// the tool actually provides.
     pub async fn debug_diff(
         &mut self,
         session_id: &str,
         event_a: u64,
         event_b: u64,
-    ) -> Result<DiffResult, McpSandboxError> {
+    ) -> Result<StateDiffSnapshot, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id,
-            "kind": "state_diff",
             "event_id_a": event_a,
             "event_id_b": event_b,
         });
 
-        let response = self.rpc_client.call_tool("state_query", params).await?;
+        let response = self.rpc_client.call_tool("debug_diff", params).await?;
 
-        let result: DebugDiffResponse = serde_json::from_value(response)
-            .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
-
-        Ok(DiffResult {
-            session_id: session_id.to_string(),
-            event_a_id: result.event_a_id,
-            event_b_id: result.event_b_id,
-            registers_diff: result.registers_diff,
-            memory_diff: result.memory_diff,
-            summary: result.summary,
-        })
+        serde_json::from_value(response)
+            .map_err(|e| McpSandboxError::RpcError(format!("debug_diff response: {e}")))
     }
 
     /// Evaluate expression — evaluates an arithmetic expression using local variables.

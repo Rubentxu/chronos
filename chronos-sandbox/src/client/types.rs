@@ -3,6 +3,8 @@
 //! These types represent the request/response structures for all MCP tools
 //! exposed by the Chronos server.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -1042,34 +1044,54 @@ pub struct DebugGetMemoryResponse {
     pub data: Vec<u8>,
 }
 
-/// Diff result between two events.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DiffResult {
-    pub session_id: String,
-    pub event_a_id: u64,
-    pub event_b_id: u64,
-    pub registers_diff: Option<std::collections::HashMap<String, (u64, u64)>>,
-    pub memory_diff: Option<Vec<MemoryDiffEntry>>,
-    pub summary: String,
+/// A variable that changed between two events, as reported by `debug_diff`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VariableChange {
+    pub name: String,
+    pub before: Option<String>,
+    pub after: Option<String>,
 }
 
-/// A memory region difference entry.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MemoryDiffEntry {
-    pub address: u64,
-    pub value_before: Option<u8>,
-    pub value_after: Option<u8>,
+/// A register that changed between two events, as reported by `debug_diff`.
+///
+/// Both values are hex strings (`"0x7ffd..."`), not integers: the server
+/// formats them for display and does not expose a machine-readable width.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RegisterChange {
+    pub before: String,
+    pub after: String,
 }
 
-/// Response from debug_diff.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DebugDiffResponse {
-    pub session_id: String,
-    pub event_a_id: u64,
-    pub event_b_id: u64,
-    pub registers_diff: Option<std::collections::HashMap<String, (u64, u64)>>,
-    pub memory_diff: Option<Vec<MemoryDiffEntry>>,
-    pub summary: String,
+/// The state diff between two events, as returned by the `debug_diff` tool.
+///
+/// This mirrors `chronos_services::output::StateDiffSnapshot` field for field.
+/// The sandbox cannot import it: `chronos-sandbox` depends on `chronos-domain`,
+/// `chronos-capture` and `chronos-query`, but not on `chronos-services`, so the
+/// wire shape is mirrored here. Keep the two in sync — the server's copy is
+/// covered by `state_diff_snapshot_roundtrips` in `crates/chronos-services`.
+///
+/// The previous `DiffResult`/`DebugDiffResponse` pair described a different
+/// shape (`event_a_id`, `registers_diff`, `memory_diff`, `summary`) that the
+/// server has never produced: `DebugReadService::diff` never touches memory, so
+/// `memory_diff` had no origin, `summary` had no source, and `registers_changed`
+/// is a map of hex strings rather than `(u64, u64)` pairs. They could not be
+/// deserialized even if the right tool had been called.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StateDiffSnapshot {
+    /// Event ID of the "before" event.
+    pub event_id_a: u64,
+    /// Event ID of the "after" event.
+    pub event_id_b: u64,
+    /// Variables present at `event_id_b` but not at `event_id_a`.
+    pub variables_added: Vec<String>,
+    /// Variables present at `event_id_a` but not at `event_id_b`.
+    pub variables_removed: Vec<String>,
+    /// Variables present at both events whose values differ.
+    pub variables_changed: Vec<VariableChange>,
+    /// Registers whose values differ between the two events.
+    pub registers_changed: HashMap<String, RegisterChange>,
+    /// Time elapsed from `event_id_a` to `event_id_b`, in nanoseconds.
+    pub timestamp_delta_ns: u64,
 }
 
 /// Response from evaluate_expression.

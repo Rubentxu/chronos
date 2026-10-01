@@ -51,6 +51,15 @@ impl McpProcess {
         cmd.env("RUST_LOG", "debug");
         // Never inherit the ambient store path; callers opt in explicitly.
         cmd.env_remove("CHRONOS_DB_PATH");
+        // Pin the toolset instead of inheriting it. `debug_diff` is registered
+        // in `ALL_TOOL_NAMES` and therefore appears in `tools/list`, but it is
+        // in none of the seven per-profile lists, so under any explicit profile
+        // the toolset guard rejects it. A developer who has
+        // `CHRONOS_ACTIVE_TOOLSET` exported would otherwise make the sandbox
+        // tests fail for a reason that has nothing to do with the code under
+        // test. `auto` is the server default (`server.rs:358-359`) and is
+        // fail-open, so this changes nothing for a clean environment.
+        cmd.env("CHRONOS_ACTIVE_TOOLSET", "auto");
         // Apply extra environment variables (overriding any inherited ones)
         for (k, v) in extra_env {
             cmd.env(&k, &v);
