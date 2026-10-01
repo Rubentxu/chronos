@@ -1,5 +1,11 @@
 # CURRENT.md — operating pointer
 
+> **SUPERSEDED IN PART (2026-10-01).** This file was written 2026-09-29 and three
+> of its claims are now false; they are corrected inline below. The authoritative
+> record for cycle state and debt characterisation is **`AGENTS.md` (2026-09-30)**,
+> which already retracts the PAUSED-cycle error this file still repeats. Where the
+> two disagree, `AGENTS.md` wins. Do not re-derive cycle state from this file.
+
 Last updated: 2026-09-29, end of session 28. Authority for cycle state is `sddk cycle status`, not this file.
 Full chronology: `.sddk/CLOSE-OUT-2026-09-29.md` (2,096 lines, 28 entries).
 
@@ -11,13 +17,30 @@ fresh evidence** — not feature work.
 
 ## Last verified state
 
-- `HEAD == origin/main` = `a9cc5b76`, working tree clean.
-- Ledger valid: **465 events**, `sha256:6381bc82021a0d117bdcce8e21d73eaa55a905f32d290e8033db4fa080770cb7`.
+Re-verified 2026-10-01 against Git and the canonical ledger:
+
+- `HEAD == origin/main` = **`b5edae57`** (was `a9cc5b76` here; the 11 commits that were local-only
+  were published 2026-10-01 after a `pipelinek --rerun` T4 gate). Working tree clean.
+- Ledger valid: **472 events** (was 465 here), `sha256:6381bc82021a0d117bdcce8e21d73eaa55a905f32d290e8033db4fa080770cb7`.
+  The hash is unchanged; the count grew with the events appended on 2026-09-30.
 - `v0.1.4` re-verified immutable: peels to `98c4cd2341058872102f458655791ec53f21bd8c`. **Never moved or recreated.**
 - `pipelinek` PASS with `--rerun` (run `baefb5fc`): 9 `StepStarted` / 9 `StepFinished` /
   5 `StageFinished`, `RunFinished: success`, failure kinds **NONE**. Also PASS without `--rerun`
   (run `d8cbe899`, 9 `StepStarted`) — so neither was a vacuous success this time.
-- `.pipeline.kts` SHA-256 `c53a8be46f69cb6b04339e168f117e2a83992ffddec3353276551eb9136ed42c`.
+- **2026-10-01**: a second `--rerun` (run `5facff52`) repeated that result on `b5edae57`:
+  9 `StepStarted` / 9 `StepFinished` / 5 `StageFinished` / `RunFinished: success`, 0 `*Failed*`
+  events, E2E `2 passed; 0 failed` in 28.22s, exit 0. That run exercised the *pre-change* script
+  (SHA `c53a8be4…`).
+- `.pipeline.kts` SHA-256 `c53a8be46f69cb6b04339e168f117e2a83992ffddec3353276551eb9136ed42c`
+  (2026-09-30 value; the file was modified 2026-10-01 — see the gate section in `AGENTS.md`).
+- **SDDK identity drift is NOT fixed and is worse than this file implies.** Root cause found
+  2026-10-01: SDDK 2.4.2 normalises the remote URL to lower case, so `adopt`, `context bootstrap`
+  and `cycle` resolve `p-55f14aab9263c12f` (empty) while `project resolve` and `ledger verify`
+  honour the pin and see `p-3416cfb8288f8964` (real). Passing `--remote` with the canonical
+  `Rubentxu` casing does **not** help — verified: SDDK lower-cases the argument too.
+  Consequence: `context bootstrap --cycle <canonical-id>` fails with `cycle not found`, so the
+  cycle plane cannot see any of the 86 cycles. Do not run `sddk cycle start` or `adopt apply`:
+  they would fork state into the phantom project.
 
 ## Cycle state (re-derived, not copied)
 
@@ -29,7 +52,7 @@ fresh evidence** — not feature work.
 | `rec-c1-5-closure` | `RELEASE_PENDING` | merge/release receipts genuinely absent |
 | `m10-readpath-production-entry` | `RELEASE_PENDING` | **no `uat.toml`**, so defaults require signatures. **Corrected:** it *does* have a `cycle.created` event — my "no cycle record" note was wrong. Only the UAT/certification gap (blocker 3) stands. |
 | `m9-81-counterexample-table-classifier` | `CLOSED` | **Verified**: tag `v0.7.83` peels to `fdc5accf…` on `origin/main`. No design phase required (B-direct). Not in the ledger → 4a. |
-| `m5-preflight-clippy-drift-cleanup` | **NOT A CYCLE** | **RETRACTED: my "`PAUSED` with a genuine context-switch receipt" was fabricated.** It is a **git branch** `chore/m5-preflight-clippy-drift-cleanup` (local + origin) and nothing else: 0 artifacts, 0 manifest, 0 `pause-receipt.json`, 0 pause/`context_switch` events in the 465-event ledger, 0 files declaring a paused status. **There is no `PAUSED` cycle in this project.** Do not "resume" it — there is nothing to resume. |
+| `m5-preflight-clippy-drift-cleanup` | `PAUSED` / `release` | **THIS ROW WAS WRONG TWICE.** It was first claimed to be a `PAUSED` cycle with a genuine context-switch receipt (fabricated), then retracted as "NOT A CYCLE … there is nothing to resume". **Both were false.** The canonical `cycles` table holds **5 `PAUSED` rows**, each with real `last_pause_reason: context_switch`, `pause_at` and `review_at` (all `review_at` already expired, 2026-09-12): `m5-02-query-service-extract`, `m5-02a-events-extract`, `m5-preflight-clippy-drift-cleanup`, `m5-preflight-2-sandbox-drift-cleanup`, `m-ci-flake-cleanup-2-residual-timing`. This one has **3** ledger events (not 0) and a registered `exploration-report` artifact. It is *both* a git branch and a real cycle row. What is genuinely true is narrower: the branch's **work is superseded**, verified 2026-10-01 — `run_coverage.sh` already pins tarpaulin and uses `--out Html/Json/Xml --output-dir`; `find_chrome_binary` is now `ChromeLocator::from_host().resolve()`; `m0_10` uses `current_exe()` plus a new meta-test; `sid_for` returns the 3-tuple; `crates/chronos-domain/src/bus.rs` no longer exists; and `clippy --all-targets` on 7 crates is exit 0 / 0 warnings on `b5edae57`. So: do not resume the work, but do not claim the cycle does not exist. |
 | `train-b`, `m9-88-find-m9-81-fk-investigation` | `BLOCKED` | recorded this session with real evidence |
 
 ## Corrections made this session (all in the close-out)
@@ -102,8 +125,27 @@ fresh evidence** — not feature work.
   `check_vault_drift.sh` reads it — removing it disables the only automated drift protection.
 - Do not trust a `pipelinek` SUCCESS without checking for real `StepStarted` events in the
   journal. A cached run can report SUCCESS while executing nothing.
-- Do not read `Pipeline finished with SUCCESS` as "the workspace is green". `test-sandbox-read-path`
-  is the only test stage and runs **2** E2E tests. It is not a full-workspace gate.
+- ~~Do not read `Pipeline finished with SUCCESS` as "the workspace is green". `test-sandbox-read-path`
+  is the only test stage and runs **2** E2E tests. It is not a full-workspace gate.~~
+  **RESOLVED 2026-10-01.** That was true and it was the reason the gate was weak. `.pipeline.kts`
+  went from **5 stages / 9 steps / 2 tests / no lint** to **9 stages / 18 steps** in two tiers:
+  - TIER 1 (default, 5.4 min measured on run `863f0be3`, 0 failures): `lint-workspace`
+    (`clippy --workspace --all-targets -- -D warnings`), `test-workspace-lib` (1421 tests),
+    `architecture-contracts` (`--strict-no-gaps` with `CHRONOS_CONTRACT_BASE_REF=HEAD~1`, so the
+    added-line legacy scan runs instead of being silently skipped), plus the pre-existing E2E.
+  - TIER 2 (`CHRONOS_FULL_GATE=1`): the full `--workspace --tests --exclude chronos-e2e` matrix,
+    with the skip list derived by the project's own sentinel. Measured **>47 min without
+    finishing** while three other Rust projects compiled against the same `cargo-targets`, so it
+    is opt-in rather than mandatory — a gate that takes 47 min gets skipped, and a skipped gate is
+    worse than a fast honest one. It always logs that TIER 2 did not run; it never degrades
+    silently. The full matrix still runs in `ci.yml` on dedicated runners.
+  The guidance above is now **stale in the other direction**: re-measure before repeating it, and
+  do not re-add a caveat about the gate being weak without checking `.pipeline.kts` first.
+- **Gate subprocess leak (2026-10-01, observed).** When a `pipelinek` run is killed or times out,
+  its in-flight stage subprocess survives: run `98f999b4` was terminated at 47 min with 0 failures
+  and left an orphaned `cargo test --workspace --tests` burning CPU for over 50 min. If you abort
+  a gate, check for and kill the leftover `cargo` before starting the next run, or your timings
+  will be measuring contention you created.
 - Do not pass an existing document as a differently-named artifact. The engine accepts it and
   `verify-references` calls it `aligned`; only the phase contract catches the substitution.
 - Do not enumerate cycles from the ledger export alone — the snapshot store holds cycles with
