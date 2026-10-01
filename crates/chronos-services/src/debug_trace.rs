@@ -426,7 +426,84 @@ mod tests {
         // The implementation delegates to engine.reconstruct_call_stack
         // (returns whatever the engine returns for that event_id)
         // Just verify we got a Vec back without panicking
-        let _ = result.len();
+        //
+        // "without panicking" is what `.unwrap()` already proves. The body
+        // then did `let _ = result.len()`, so the only other thing it could
+        // have checked -- which functions are on the stack -- went unverified
+        // under a name that promises the call succeeded.
+        //
+        // Event 3 is `helper`'s entry. `main` entered at 1 and exited at 2,
+        // so the only frame still open is `helper`.
+        let names: Vec<&str> = result.iter().map(|f| f.function.as_str()).collect();
+        assert_eq!(
+            names.len(),
+            1,
+            "only `helper` is still open at event 3; main exited at event 2. got {names:?}"
+        );
+        assert!(
+            names[0].contains("helper"),
+            "the open frame at event 3 is helper, got {:?}",
+            names[0]
+        );
+    }
+
+    /// The point of `reconstruct_call_stack` is nesting, and no test asserted
+    /// it: the only call-stack test used a fixture whose deepest frame was a
+    /// single function, so a flat list and a real stack were indistinguishable.
+    ///
+    /// `engine_with_call_chain` builds a -> b -> c, all still open at event 3,
+    /// so the depth order is the thing under test. Measured on this fixture:
+    /// event 1 -> ["a"], event 3 -> ["c","b","a"], event 6 -> [] (all closed).
+    #[tokio::test]
+    async fn get_call_stack_reconstructs_nesting_innermost_first() {
+        let engines = Mutex::new(engine_with_call_chain());
+
+        let deep = DebugTraceService::get_call_stack("s2", 3, &engines)
+            .await
+            .expect("event 3 is inside the chain");
+        let names: Vec<&str> = deep.iter().map(|f| f.function.as_str()).collect();
+        assert_eq!(
+            names.len(),
+            3,
+            "a, b and c are all open at event 3, so the stack is three deep"
+        );
+        for (frame, expected) in deep.iter().zip(["c", "b", "a"]) {
+            assert!(
+                frame.function.contains(expected),
+                "frame at depth {} should be {expected}, got {:?}",
+                frame.depth,
+                frame.function
+            );
+        }
+        let depths: Vec<u32> = deep.iter().map(|f| f.depth).collect();
+        assert_eq!(
+            depths,
+            vec![2, 1, 0],
+            "depth counts from the outermost frame, so `a` is 0 and the \
+             innermost `c` is 2 -- the reverse of the order the frames are \
+             returned in"
+        );
+
+        // The single-entry point of the chain, and the state after it closes,
+        // pin the ends of the same walk.
+        let shallow = DebugTraceService::get_call_stack("s2", 1, &engines)
+            .await
+            .expect("event 1 is the entry of a");
+        assert_eq!(
+            shallow.len(),
+            1,
+            "at a's entry, nothing has been called inside it yet"
+        );
+        assert!(shallow[0].function.contains('a'));
+
+        let after = DebugTraceService::get_call_stack("s2", 6, &engines)
+            .await
+            .expect("event 6 exists");
+        assert!(
+            after.is_empty(),
+            "once a, b and c have all exited the stack is empty, got {:?}",
+            after.iter().map(|f| &f.function).collect::<Vec<_>>()
+        );
     }
 
     #[tokio::test]

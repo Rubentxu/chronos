@@ -225,7 +225,19 @@ pub struct PotentialIssue {
 /// A single stack frame in a reconstructed call stack.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StackFrame {
-    /// Frame depth (0 = innermost).
+    /// Frame depth, counted from the **outermost** frame: `0` is the frame
+    /// that was entered first, and the innermost frame carries the highest
+    /// value.
+    ///
+    /// This is the value `QueryEngine::reconstruct_call_stack` has always
+    /// produced, and the order the frames are returned in is the reverse:
+    /// innermost first. The two together are unambiguous, which is why a
+    /// consumer should not read "first" as either.
+    ///
+    /// The field previously documented `0 = innermost`, which was never true.
+    /// Correcting the prose rather than the numbering keeps the existing
+    /// consumers -- which copy the value through without recomputing from it
+    /// -- reading what they read before.
     pub depth: u32,
     /// Function name.
     pub function: String,
