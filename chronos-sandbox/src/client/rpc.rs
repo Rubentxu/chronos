@@ -187,6 +187,17 @@ impl RpcClient {
     }
 
     /// Send an RPC call and wait for response with custom timeout.
+    ///
+    /// `method` is a **raw JSON-RPC method name**, not a tool name. Since
+    /// C5.3.2 the server only exposes tools through `tools/call`, so passing a
+    /// tool name here (for example `"state_query"` or `"execution_query"`)
+    /// answers `-32601 method not found` every time. To call a tool, use
+    /// `call_tool`, which routes through `tools/call` and unwraps the content
+    /// envelope for you.
+    ///
+    /// Three tests spent months measuring that `-32601` behind a `match` that
+    /// accepted both branches, so the confusion this doc-comment removes is not
+    /// hypothetical.
     pub async fn call_with_timeout(
         &mut self,
         method: &str,
