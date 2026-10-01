@@ -849,51 +849,64 @@ async fn m1_07_compaction_metrics_exposed_impl() {
     let _ = client.shutdown().await;
 }
 
-/// m1-08 — verify the auto-compaction daemon actually fires when the
-/// real MCP binary is running with `CHRONOS_AUTO_COMPACT_INTERVAL_SECS`
-/// set to a short interval.
+/// m1-08 — the auto-compaction daemon's host process starts and stops
+/// cleanly with the daemon task attached.
 ///
-/// We don't drive this end-to-end through the public MCP tool surface
-/// (the daemon runs inside `run_stdio`, not a tool handler). Instead
-/// we verify the *unit* surface (`run_one_compaction_round`) in
-/// `chronos-mcp::server::tests::m1_08_*` and rely on the absence of
-/// clippy/fmt warnings + the daemon's own `info!` log lines to prove
-/// it stays alive when the binary starts. This minimal UAT just makes
-/// sure the binary launches with the env var set and shuts down
-/// cleanly with the daemon attached — i.e. nothing panics, the
-/// shutdown handshake works.
+/// We don't drive this end-to-end through the public MCP tool surface (the
+/// daemon runs inside `run_stdio`, not a tool handler), and this test does
+/// **not** prove a compaction round ever fires: the round only walks
+/// `live_probes`, and a session id that was never started is not in that map,
+/// so no tick could ever touch it. That behaviour is covered at the unit
+/// level in `chronos-mcp::server::tests::m1_08_*`, against
+/// `run_one_compaction_round` directly.
+///
+/// What this UAT can prove, and now does assert, is the contract its own
+/// doc has always claimed: the server binary launches with the daemon
+/// attached, its tool router is intact, and the shutdown handshake
+/// completes. Each of those was previously discarded into `let _ =` or
+/// swallowed by an early `return`, so the test reported `ok` even when the
+/// server had not started at all.
+///
+/// Note the daemon interval is left at its built-in default (30s). This test
+/// does not set `CHRONOS_AUTO_COMPACT_INTERVAL_SECS`: `set_var` mutates
+/// process-wide state and would race with the other tests sharing this
+/// binary. The default is non-zero, so the daemon is enabled, which is all
+/// the startup path needs.
 #[tokio::test(flavor = "current_thread")]
 async fn m1_08_auto_compaction_daemon_runs_in_process_impl() {
     use chronos_sandbox::client::tools::McpTestClient;
 
-    let mut client = match McpTestClient::start().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("m1_08: McpTestClient start failed: {}", e);
-            return;
-        }
-    };
+    // A UAT whose whole subject is "the server came up" cannot report success
+    // when the server did not come up. This used to `eprintln!` and return,
+    // which is indistinguishable from a pass.
+    let mut client = McpTestClient::start()
+        .await
+        .expect("m1_08: the MCP server must start for this UAT to mean anything");
 
-    // Just probe an unknown session so we exercise the `not found`
-    // path through the still-running server (which has the daemon
-    // task attached for its lifetime). The daemon's tick interval
-    // (default 30s) is not relevant — we don't wait for a tick.
-    let _ = client
-        .call_tool(
-            "probe_compaction_metrics",
-            serde_json::json!({ "session_id": "no-such-session" }),
-        )
-        .await;
+    // Probe an unknown session so we exercise the `not found` path through
+    // the still-running server. The reply is a *domain* error naming the
+    // session, not a transport failure and not a panic: that is what proves
+    // the tool router is alive and the daemon-attached host is functional.
+    for tool in ["probe_compaction_metrics", "probe_drain_log"] {
+        let reply = client
+            .call_tool(
+                tool,
+                serde_json::json!({ "session_id": "no-such-session", "limit": 8 }),
+            )
+            .await;
+        let err = reply
+            .err()
+            .unwrap_or_else(|| panic!("m1_08: {tool} must reject an unknown session"));
+        let rendered = format!("{err:?}");
+        assert!(
+            rendered.contains("no-such-session"),
+            "m1_08: {tool} must name the missing session so the failure is \
+             diagnosable, got: {rendered}"
+        );
+    }
 
-    // Calling probe_drain_log on the unknown session confirms the
-    // server's tool router is intact (this is just a smoke check
-    // that the daemon-attached server is functional).
-    let _ = client
-        .call_tool(
-            "probe_drain_log",
-            serde_json::json!({ "session_id": "no-such-session", "limit": 8 }),
-        )
-        .await;
-
-    let _ = client.shutdown().await;
+    client
+        .shutdown()
+        .await
+        .expect("m1_08: the shutdown handshake with the daemon-attached server must succeed");
 }
