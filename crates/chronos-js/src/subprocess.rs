@@ -124,9 +124,22 @@ mod tests {
 
     #[test]
     fn test_node_available() {
-        // This test passes if node is on the system PATH
-        let available = is_node_available();
-        // Just verify the method works - actual result depends on system
-        let _ = available;
+        // Whether `node` is on PATH is a property of the host, not of this
+        // code, so the absolute value is not asserted. `spawn` refuses with
+        // `NodeNotFound` when this returns false, and re-probes on every call;
+        // the property that is this code's is that the re-probe does not
+        // answer differently while nothing has changed.
+        //
+        // The old body bound the result and dropped it (`let _ = available`),
+        // which passes for any implementation, including one that is always
+        // `true`; it asserted nothing at all. That the adapter-side gate agrees
+        // with this function is asserted in `adapter::tests`.
+        let first = is_node_available();
+        let second = is_node_available();
+        assert_eq!(
+            first, second,
+            "availability must be a stable decision, not something re-evaluated to a \
+             different answer while the environment is unchanged"
+        );
     }
 }

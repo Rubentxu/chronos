@@ -275,9 +275,29 @@ mod tests {
 
     #[test]
     fn test_is_node_available() {
-        // Just verify the method works
-        let available = JsAdapter::is_node_available();
-        let _ = available;
+        // Whether `node` is on PATH is a property of the host, so the absolute
+        // value is not asserted. The property that *is* this code's: the gate
+        // `start_capture` uses and the gate `NodeProcess::spawn` uses must
+        // answer the same way. They are two separate functions today
+        // (`JsAdapter::is_node_available` and `subprocess::is_node_available`),
+        // and if they ever drift — one looking for a different binary, one
+        // cached — `start_capture` would advertise a capability it then fails
+        // to deliver at spawn time. That is the same failure the Chrome
+        // availability gate once had.
+        let via_adapter = JsAdapter::is_node_available();
+        let via_spawner = crate::subprocess::is_node_available();
+        assert_eq!(
+            via_adapter, via_spawner,
+            "the availability gate and the spawn-time check must agree, otherwise \
+             start_capture passes a check that spawning then fails"
+        );
+
+        let second = JsAdapter::is_node_available();
+        assert_eq!(
+            via_adapter, second,
+            "availability must be a stable decision, not something re-evaluated to a \
+             different answer while the environment is unchanged"
+        );
     }
 
     #[test]
@@ -618,14 +638,17 @@ mod js_cdp_adapter_tests {
     use super::*;
 
     #[test]
-    fn test_js_cdp_adapter_new() {
-        let _adapter = JsCdpAdapter::new("localhost", 9229);
-        // JsCdpAdapter is not a TraceAdapter, so we just verify construction works
-    }
+    fn test_js_cdp_adapter_new_keeps_its_target() {
+        // The adapter is a plain endpoint holder: it performs no I/O in `new`.
+        // What can be asserted without a live CDP endpoint is that it keeps the
+        // host and port it was given — the old body bound the value as
+        // `let _adapter` and asserted nothing, so the constructor could store
+        // anything at all and stay green.
+        let adapter = JsCdpAdapter::new("localhost", 9229);
+        assert_eq!(adapter.host, "localhost");
+        assert_eq!(adapter.port, 9229);
 
-    #[test]
-    fn test_cdp_session_disconnect() {
-        // Can't actually connect without a CDP endpoint, but we can verify
-        // the disconnect method signature is correct
+        // `host`/`port` are private and unreachable from an integration test,
+        // which is why this check lives here and not in tests/js_adapter_test.rs.
     }
 }

@@ -179,10 +179,21 @@ mod tests {
 
     #[test]
     fn test_is_available() {
-        // This test passes if python3 is on the system PATH
-        let available = PythonAdapter::is_python_available();
-        // We just verify the method works - actual result depends on system
-        let _ = available; // Always passes, checks method doesn't panic
+        // Whether `python3` is on PATH is a property of the host, not of this
+        // code, so the absolute value is not asserted. The property that is
+        // this code's: the probe answers the same way when nothing has changed
+        // between two calls.
+        //
+        // The old body bound the result and dropped it (`let _ = available`),
+        // which passes for any implementation, including one that is always
+        // `true`; it asserted nothing at all.
+        let first = PythonAdapter::is_python_available();
+        let second = PythonAdapter::is_python_available();
+        assert_eq!(
+            first, second,
+            "availability must be a stable decision, not something re-evaluated to a \
+             different answer while the environment is unchanged"
+        );
     }
 
     #[tokio::test]
@@ -421,10 +432,10 @@ mod dap_tests {
         assert_eq!(adapter.get_language(), Language::Python);
     }
 
-    #[test]
-    fn test_dap_session_disconnect() {
-        // Can't actually connect without debugpy running, but we can verify
-        // the disconnect method doesn't panic
-        // This test would need a real debugpy instance to be meaningful
-    }
+    // NOTE: `DapSession::disconnect` has no test. `DapSession` can only be
+    // built by `PythonDapAdapter::connect`, which needs a live debugpy DAP
+    // server (`DapClient::connect` opens a TCP socket and `initialize` sends
+    // a real request), and `disconnect(self)` consumes a session, so there is
+    // nothing to call it on without that server. A body that constructs
+    // nothing and asserts nothing was removed instead of being kept.
 }

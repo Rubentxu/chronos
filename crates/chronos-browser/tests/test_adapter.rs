@@ -17,9 +17,34 @@ fn test_browser_adapter_default() {
 
 #[test]
 fn test_browser_adapter_is_available() {
-    // This test just verifies the method doesn't panic
-    // The actual result depends on whether Chrome is installed
-    let _available = BrowserAdapter::is_chrome_available();
+    // Whether Chrome is installed is a property of the host, so the absolute
+    // value is not asserted: with a browser both values are `true`, without
+    // one both are `false`.
+    //
+    // What is asserted here, from outside the crate, is the wiring the callers
+    // actually use: `BrowserProbeFactoryImpl::create` gates on this decision,
+    // and it reaches it through the `ProbeBackend` impl, not through the
+    // static helper. The gate once answered `true` on every host because the
+    // probe behind it was a temp-dir allocation; a drift between the two
+    // entries would reopen that hole silently.
+    //
+    // The binary-discovery contract behind the static helper is pinned in
+    // `src/adapter.rs::tests` (including the host-independent locator cases).
+    let via_trait = ProbeBackend::is_available(&BrowserAdapter::new());
+    let via_helper = BrowserAdapter::is_chrome_available();
+    assert_eq!(
+        via_trait, via_helper,
+        "ProbeBackend::is_available must answer with the same discovery decision as \
+         is_chrome_available, otherwise the factory gates on a probe the adapter \
+         does not use"
+    );
+
+    let second = BrowserAdapter::is_chrome_available();
+    assert_eq!(
+        via_helper, second,
+        "availability must be a stable decision, not something re-evaluated to a \
+         different answer while the environment is unchanged"
+    );
 }
 
 #[test]

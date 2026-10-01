@@ -651,10 +651,18 @@ mod tests {
     }
 
     #[test]
-    fn test_java_adapter_is_available() {
-        // Result depends on whether java is on PATH
-        let available = JavaAdapter::is_available();
-        let _ = available; // Always passes — checks method doesn't panic
+    fn test_java_adapter_is_available_is_stable() {
+        // Whether a JVM is on PATH depends on the host, so the absolute value is
+        // not a property of this code. What is: the check does not panic, and it
+        // does not re-decide differently on a second call with nothing in
+        // between. `let _ = available; // Always passes` proved neither.
+        let first = JavaAdapter::is_available();
+        let second = JavaAdapter::is_available();
+        assert_eq!(
+            first, second,
+            "availability must be a stable decision, not something re-evaluated to \
+             a different answer while the environment is unchanged"
+        );
     }
 
     #[test]

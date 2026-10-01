@@ -386,9 +386,24 @@ mod tests {
 
     #[test]
     fn test_go_adapter_is_available() {
-        // Result depends on whether dlv is on PATH
-        let available = GoAdapter::is_available();
-        let _ = available; // Always passes — checks method doesn't panic
+        // Whether `dlv` is on PATH is a property of the host, not of this code,
+        // so the absolute value is deliberately not asserted: on a host with
+        // Delve both values are `true`, on a host without it both are `false`.
+        // What *is* a property of the code is that the probe answers the same
+        // question the same way when nothing has changed between two calls — a
+        // re-decided answer would mean `start_capture`'s gate and
+        // `is_available` could disagree about the same host.
+        //
+        // The old body bound the result and dropped it (`let _ = available`),
+        // which passes for any implementation, including one that is always
+        // `true`; it asserted nothing at all.
+        let first = GoAdapter::is_available();
+        let second = GoAdapter::is_available();
+        assert_eq!(
+            first, second,
+            "availability must be a stable decision, not something re-evaluated to a \
+             different answer while the environment is unchanged"
+        );
     }
 
     #[test]
