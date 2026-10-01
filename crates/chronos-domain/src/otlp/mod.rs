@@ -33,6 +33,12 @@ pub mod cost_memory_collision;
 // absent from the product, and nothing deferred it: ADR-0018 (M6.4) plus ROADMAP §M6
 // still require opt-in export and declared limits. See module docs for the UAT scope.
 pub mod cross_service;
+// M6.7 lift (2026-10-02): load / recovery / error-path gates over the
+// composed pipeline (parse + correlation + exporter + redaction). This is the
+// first caller of `exporter::export_spans`, which exists so redaction can act
+// on a span before it becomes text. See module docs for what each gate
+// asserts and what it deliberately leaves to the caller.
+pub mod gates;
 
 use uuid::Uuid;
 

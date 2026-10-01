@@ -203,11 +203,32 @@ pub fn export(
     filter: &OptInFilter,
     limits: &ExportLimits,
 ) -> ExportResult {
-    let mut result = ExportResult::default();
-    for span in collect_spans(store, events, filter, limits, &mut result) {
+    let (spans, mut result) = export_spans(store, events, filter, limits);
+    for span in spans {
         result.lines.push(render_json_line(&span));
     }
     result
+}
+
+/// Select and build the spans an export call would emit, **without**
+/// rendering them, together with the counters the selection produced.
+///
+/// This is the seam [`export`] is built from, exposed for the one caller
+/// that must act on a span before it becomes text: M6.5 redaction
+/// (`otlp::redaction`) rewrites attribute values, so it has to run
+/// between span construction and rendering. Everything else should keep
+/// calling [`export`] — the rendered payload is the contract, and
+/// `ExportResult::lines` stays empty in the returned counters so a caller
+/// that renders later cannot mistake this for a finished export.
+pub fn export_spans(
+    store: &CorrelationStore,
+    events: &[ChronosEvent],
+    filter: &OptInFilter,
+    limits: &ExportLimits,
+) -> (Vec<ExportedSpan>, ExportResult) {
+    let mut counters = ExportResult::default();
+    let spans = collect_spans(store, events, filter, limits, &mut counters);
+    (spans, counters)
 }
 
 /// Render the spans as a JSON Lines payload: one object per line, trailing
