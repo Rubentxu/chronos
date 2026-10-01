@@ -1635,10 +1635,62 @@ mutex y hacer fallar a los siguientes con un error engañoso.
 Resultado: **`cargo test -p chronos-native --lib` pasa en 11,23 s** en paralelo,
 donde antes colgaba indefinidamente. En serie, 13,15 s. 111 tests, 0 fallos.
 
-### Lo que sigue abierto, y no se ha tocado
+### El binario de integración tenía el mismo defecto, y otro más grave (2026-10-01)
 
-`cargo test -p chronos-native --test m2_function_frame_capture` falla **5 tests**
-con `Child killed by SIGKILL`. Verificado en HEAD sin este cambio: es
-**preexistente y de otra causa**. El binario de integración enlaza la lib sin
-`cfg(test)`, así que no incluye este lock, y ahí varios tests de captura también
-compiten por hijos. Registrado aparte en el backlog en vez de darlo por cerrado.
+`cargo test -p chronos-native --test m2_function_frame_capture` fallaba **5 de
+7** tests en paralelo y pasaba 7/7 con `--test-threads=1`. El default local de
+la suite estaba rojo en un checkout limpio.
+
+Misma causa raíz: el binario de integración enlaza la lib **sin** `cfg(test)`,
+así que no incluye `test_support::TRACE_TEST_LOCK`. Y `start_probe` —el camino
+de `live_probe_emits_real_function_entries_to_execution_log`— cae en
+`PtraceConfig::default()`, luego en la rama `waitpid(-1, __WALL)`.
+
+Caracterización, en orden:
+
+| Ejecución | Resultado |
+|---|---|
+| paralelo, 7 tests | 2 pasan, **5 fallan** |
+| `--test-threads=1` | 7 pasan |
+| `--skip live_probe`, paralelo | 6 pasan ← aísla el disparador |
+| `live_probe` solo | 1 pasa |
+| `live_probe` + `spawn_capture`, paralelo | 1 pasa, 1 falla ← **mutua** |
+
+Los dos últimos casos prueban que la interferencia es simétrica: `live_probe`
+rompe y se deja romper. Los síntomas observados eran el fixture del par
+reportado como `Signaled { signal: 9 }` — `stop_probe` manda SIGKILL al pid que
+cree suyo (`probe_backend.rs:701-709`) — y "no identity-bearing FunctionEntry
+captured".
+
+El arreglo replica `test_support.rs` en el binario de integración, con un lock
+propio: `cfg(test)` no está activo cuando un test de integración enlaza la lib,
+así que el estático de la lib no existe ahí. **Dos locks, una restricción
+documentada**; cada uno referencia al otro. Producción intacta.
+
+**`--test-threads=1` no se quitó de `.pipeline.kts` ni de `ci.yml`.** Sigue siendo
+correcto. Lo que cambia es que el binario ya no depende de él.
+
+### Un test verde que no probaba nada
+
+`pie_fixture_compute_load_bias_is_nonzero` es el **único** coverage de que
+`Int3Injector::compute_load_bias` devuelve una base no nula y alineada a página
+para un binario `ET_DYN` bajo ASLR, es decir, de que el tracer **relocaliza
+símbolos**. Nunca había ejecutado una aserción.
+
+`pie_fixture_source()` subía **un** nivel desde `CARGO_MANIFEST_DIR`, así que
+resolvía `crates/chronos-sandbox/programs/c/test_function_frames_pie.c` cuando
+el source vive en `chronos-sandbox/programs/c/...`, en la raíz del workspace.
+`src.exists()` era siempre `false`, `compile_pie_fixture()` devolvía `None`
+siempre, y el test retornaba temprano reportando `ok`. El skip es un
+`eprintln` informativo, así que nada fallaba de forma visible.
+
+El doc comment de la función ya describía el recorrido correcto de dos niveles;
+solo el código discrepaba de él. Corregido en `7ae5f7af`; el lock en `c7d70066`.
+
+### La regla que deja esto
+
+`--test-threads=1` en el gate **no es una garantía, es una muleta**: oculta
+flakiness en vez de detectarla. Un test que lanza o traza hijos debe tomar el
+lock de su binario aunque hoy la serie lo tape. Y un skip que devuelve `None`
+es un verde vacío: si el requirement depende de encontrar algo, que su ausencia
+falle o se vea en el recuento (`#[ignore]`), no que se imprima y se pase.
