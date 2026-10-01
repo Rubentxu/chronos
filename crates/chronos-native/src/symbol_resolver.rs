@@ -598,15 +598,36 @@ mod tests {
 
     #[test]
     fn test_resolver_from_bytes() {
-        // Create a minimal ELF-like data (not a real ELF, but should parse gracefully)
-        // Use actual ELF header from a simple binary
+        // A real system binary proves the positive parse path: the
+        // object must load and the resolver must be wired to the
+        // in-memory path instead of a filesystem one.
+        //
+        // The symbol *count* is deliberately NOT asserted here.
+        // `extract_symbol_info` drops `Undefined` symbols and the
+        // name-dot filter, and distros ship `/bin/ls` in many shapes:
+        // on this host `readelf -sW /bin/ls` shows no `.symtab` at all
+        // and only 2 defined FUNC exports in `.dynsym` (`error`,
+        // `error_at_line`), so `symbol_count() > 0` here would be a
+        // property of the packaging, not of the code under test.
         let data = std::fs::read("/bin/ls").expect("Failed to read /bin/ls");
-        let resolver = SymbolResolver::from_bytes(&data);
-        if resolver.is_ok() {
-            if let Ok(r) = resolver {
-                let _ = r.symbol_count();
-            }
-        }
+        let resolver = SymbolResolver::from_bytes(&data)
+            .expect("/bin/ls is a valid object file for from_bytes");
+        assert_eq!(resolver.binary_path(), "[binary data]");
+        assert_eq!(resolver.symbols().len(), resolver.symbol_count());
+
+        // The extraction path is asserted on the test binary instead.
+        // Cargo test binaries are not stripped, so they always carry a
+        // `.symtab` with defined Text symbols; that makes
+        // `symbol_count() > 0` stable here. Same premise as
+        // `test_resolver_from_path` and `dwarf/location.rs::with_reader`.
+        let exe = std::env::current_exe().expect("the test binary path is known");
+        let exe_bytes = std::fs::read(exe).expect("the test binary is readable");
+        let exe_resolver = SymbolResolver::from_bytes(&exe_bytes)
+            .expect("the test binary is a valid object file for from_bytes");
+        assert!(
+            exe_resolver.symbol_count() > 0,
+            "from_bytes must extract Text symbols from a non-stripped object, got 0"
+        );
     }
 
     #[test]
