@@ -63,7 +63,10 @@ async fn test_debug_get_variables_empty_session() {
 
 #[tokio::test]
 async fn test_debug_get_variables_out_of_range() {
-    // Query for variables at a non-existent event ID
+    // An event id that was never captured is not an event without variables.
+    // This test used to assert the opposite — an empty list — which made a
+    // typo in the id indistinguishable from a real absence. `get_registers`
+    // already answered "event N not found" for the same input; this now matches.
     let fixture = McpSession::fixture_path("test_add")
         .expect("test_add fixture not found - run cargo build first");
 
@@ -88,22 +91,37 @@ async fn test_debug_get_variables_out_of_range() {
         .probe_stop(&session_id)
         .await
         .expect("probe_stop failed");
-
-    println!("Probe stopped: {} total events", stop.total_events);
+    assert!(
+        stop.total_events > 0,
+        "the probe should have captured events, got 0"
+    );
 
     // Give query engine time to build
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Try to get variables at a high event ID that doesn't exist
-    let variables = client
+    let err = client
         .debug_get_variables(&session_id, 999999)
         .await
-        .expect("debug_get_variables failed");
+        .expect_err("an event id that was never captured must not answer with an empty list");
 
+    let message = err.to_string();
+    assert!(
+        message.contains("event 999999 not found"),
+        "the error should name the missing event, got: {}",
+        message
+    );
+
+    // The neighbouring case keeps its answer: event 0 exists, and this C fixture
+    // gives it no frame data. That must stay an empty list, not an error —
+    // otherwise "no variables" and "no such event" would be swapped rather than
+    // separated.
+    let variables = client
+        .debug_get_variables(&session_id, 0)
+        .await
+        .expect("an existing event without frame data must answer with an empty list");
     assert!(
         variables.is_empty(),
-        "event 999999 is past the end of the capture, so it must yield no \
-         variables rather than a partial or fabricated set; got {} entries",
+        "test_add event 0 carries no frame data, so no variables are expected; got {}",
         variables.len()
     );
 
