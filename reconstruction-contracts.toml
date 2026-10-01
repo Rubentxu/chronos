@@ -210,7 +210,7 @@ id = "LOG-001"
 title = "Append-only monotonic EventSeq and independent consumers"
 status = "verified"
 owner_gate = "REC-C1"
-evidence = ["crates/chronos-log", "crates/chronos-sandbox/tests/m1_acceptance.rs"]
+evidence = ["crates/chronos-log", "chronos-sandbox/tests/m1_acceptance.rs"]
 uat = ["m1_01_execution_log_core_impl", "m1_04_execution_log_durable_cursors_and_decoders_impl"]
 verify = "cargo test -p chronos-sandbox --test m1_acceptance -- --test-threads=1"
 

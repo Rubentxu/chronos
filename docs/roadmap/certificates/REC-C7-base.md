@@ -62,7 +62,7 @@ Recertifica REC-C7 **sin alterar el cierre histórico**. El ciclo REC-C7 fue arc
 
 Recertificar este certificado cuando:
 
-1. Cualquier cambio material en `crates/chronos-mcp/src/lib.rs`, `crates/chronos-sandbox/src/client/tools.rs`, o `crates/chronos-services/src/output.rs:1587` (puntos donde viven los 3 contratos G0.1/G0.2/G0.4).
+1. Cualquier cambio material en `crates/chronos-mcp/src/lib.rs`, `chronos-sandbox/src/client/tools.rs`, o `crates/chronos-services/src/output.rs:1587` (puntos donde viven los 3 contratos G0.1/G0.2/G0.4). Nota: `chronos-sandbox` es miembro del workspace en la raíz, **no** bajo `crates/`; la ruta con prefijo `crates/` no observa cambios y silenciosamente impedía esta recertificación.
 2. Cualquier bump de `rmcp`, `serde`, `serde_json`, `schemars` o `tokio` que afecte wire-shape.
 3. Cualquier nuevo tool MCP introducido en `tools::list` (el contrato canónico de 41 tools podría cambiar).
 4. Recertificación programada al menos cada release candidate o cada 90 días, lo que ocurra antes.

@@ -27,7 +27,7 @@ La plantilla mínima está definida en `CERTIFICATION.md` §4 e incluye:
 
 | ID | Perfil | Archivo | SHA base | Estado | Fecha emisión | Próxima recertificación |
 |---|---|---|---|---|---|---|
-| **REC-C7** | base | [REC-C7-base.md](REC-C7-base.md) | `afa14fd2` | CERT-0..2 `passed`; CERT-3..4 `not_run` | 2026-09-21T16:30Z | Al cambiar `crates/chronos-mcp/src/lib.rs`, `crates/chronos-sandbox/src/client/tools.rs`, o `crates/chronos-services/src/output.rs:1587`; o bump de `rmcp`/`serde`/`serde_json`/`schemars`/`tokio` que afecte wire-shape. |
+| **REC-C7** | base | [REC-C7-base.md](REC-C7-base.md) | `afa14fd2` | CERT-0..2 `passed`; CERT-3..4 `not_run` | 2026-09-21T16:30Z | Al cambiar `crates/chronos-mcp/src/lib.rs`, `chronos-sandbox/src/client/tools.rs`, o `crates/chronos-services/src/output.rs:1587`; o bump de `rmcp`/`serde`/`serde_json`/`schemars`/`tokio` que afecte wire-shape. |
 | **UAT-G0-01** | base | [uat-g0-01-events-read-kind-base.md](uat-g0-01-events-read-kind-base.md) | `afa14fd2` | `passed` | 2026-09-21T16:18Z | Al cambiar `EventsReadKind` enum o el handler que lee el discriminador. |
 | **UAT-G0-02** | base | [uat-g0-02-observe-uprobe-base.md](uat-g0-02-observe-uprobe-base.md) | `afa14fd2` | `passed` | 2026-09-21T16:19Z | Al cambiar `ObserveVerb`/`ObserveScopeWire` o el wrapper `observe`. |
 | **UAT-G0-03** | base | [uat-g0-03-cursor-gap-replay-base.md](uat-g0-03-cursor-gap-replay-base.md) | `afa14fd2` | `passed` | 2026-09-21T16:19Z | Al cambiar `TraceEvent`/`GetEventResponse`/`V2Query`/`V2Result` o el wire shape de `events_read`. |

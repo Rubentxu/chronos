@@ -17,12 +17,26 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 LEDGER = ROOT / "reconstruction-contracts.toml"
+
+# Repo-relative paths as they appear inside ledger evidence strings. Anchored
+# on top-level directories that are unambiguous from the repo root.
+#
+# `tests/` and `specs/` are deliberately NOT anchors: the ledger also cites
+# crate-relative paths such as `tests/otlp.rs`, which mean
+# `crates/chronos-domain/tests/otlp.rs`. Anchoring those would report every
+# one of them as missing. An absolute host path (a spike workspace) is
+# environment rather than repository record and is skipped too.
+EVIDENCE_PATH = re.compile(
+    r"\b((?:crates|chronos-sandbox|docs|scripts|cycle-artifacts"
+    r"|\.sddk|\.sddk-knowledge)/[A-Za-z0-9_./-]+)"
+)
 
 FORBIDDEN_DEPENDENCIES = {
     ("chronos-domain", "reqwest"),
@@ -89,6 +103,37 @@ def verify_ledger(ledger: dict, errors: list[str], strict_no_gaps: bool) -> None
         if strict_no_gaps and str(req.get("owner_gate", "")).startswith("REC-C"):
             if status in {"gap", "partial", "blocked"}:
                 error(f"{req_id}: REC-C7 strict close rejects status={status}", errors)
+
+
+def verify_evidence_paths(ledger: dict, errors: list[str]) -> None:
+    """Every repo-relative path cited as evidence must resolve on disk.
+
+    A `verified` contract whose evidence points at a path that does not
+    exist is not reproducible from the record, which is the same failure R6
+    retracted M4B-001 for. LOG-001 carried `crates/chronos-sandbox/...` for
+    a crate that is a top-level workspace member, so its evidence never
+    resolved; `sandbox-smoke.yml` had the same dead filter until `07d49e63`.
+
+    Only repo-relative paths are checked. Absolute host paths (spike
+    workspaces, scratch dirs) are environment, not repository record, and
+    are skipped rather than failed.
+    """
+    for req in ledger.get("requirement", []):
+        req_id = req.get("id")
+        for field in ("evidence", "uat"):
+            for entry in req.get(field, []) or []:
+                if not isinstance(entry, str):
+                    continue
+                for ref in EVIDENCE_PATH.finditer(entry):
+                    path = ref.group(1).rstrip(".,;:")
+                    # `path.rs::Symbol` and `path.rs:1587` both name the file.
+                    base = path.split(":")[0]
+                    if (ROOT / base).exists():
+                        continue
+                    error(
+                        f"{req_id}: {field} cites a path that does not resolve: {path}",
+                        errors,
+                    )
 
 
 def cargo_dependency_edges() -> set[tuple[str, str]]:
@@ -295,6 +340,7 @@ def main() -> int:
 
     ledger = load_toml(LEDGER)
     verify_ledger(ledger, errors, args.strict_no_gaps)
+    verify_evidence_paths(ledger, errors)
     verify_dependency_baseline(ledger, errors)
     verify_no_new_legacy(errors)
     verify_legacy_evb_inventory(errors, args.strict_legacy)
