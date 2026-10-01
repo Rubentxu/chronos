@@ -199,8 +199,19 @@ async fn test_tripwire_count_after_delete() {
     client.shutdown().await.ok();
 }
 
-/// TD3: tripwire_create with invalid condition returns graceful error (not crash).
-/// Send a malformed or empty condition — server should not crash.
+/// TD3: `tripwire_create` with an *empty* condition is accepted verbatim,
+/// and the resulting tripwire can never fire.
+///
+/// The original doc here promised "invalid condition returns graceful
+/// error". Measurement contradicts that: the server performs **no**
+/// validation of an empty `event_types` list. It returns a tripwire id
+/// and later lists the subscription with `condition == "EventType([])"`
+/// (the wire field is a Rust `Debug` repr of the condition, see
+/// `chronos-services/src/tripwires.rs`) and `fire_count == 0`. So a caller
+/// can register a dead subscription that no event can ever match. That
+/// missing input validation is reported as a production defect; this test
+/// pins the *measured* behaviour so the gap is visible in the suite and
+/// any change to it fails loudly.
 #[tokio::test]
 async fn test_tripwire_create_invalid_condition_graceful() {
     let mut client = McpTestClient::start()
@@ -210,35 +221,58 @@ async fn test_tripwire_create_invalid_condition_graceful() {
     // CIH-E: drive against a real probe session.
     let session_id = start_real_session(&mut client).await;
 
-    // Try to create a tripwire with an empty condition.
-    // The server uses TripwireConditionType which is an enum with specific variants.
-    // An "invalid" condition could be an EventType with empty event_types list.
-    let result = client
+    // Empty condition: `TripwireConditionType::EventType` with no event
+    // types. Measured: the server accepts it instead of rejecting it.
+    let id = client
         .tripwire_create(
             Some(&session_id),
             TripwireCreateParams {
                 condition: TripwireConditionType::EventType {
-                    event_types: vec![], // Empty list — potentially invalid
+                    event_types: vec![],
                 },
                 label: Some("invalid_test".into()),
                 session_id: Some(session_id.clone()),
             },
         )
-        .await;
+        .await
+        .expect("measured behaviour: an empty event_types list is accepted, not rejected");
 
-    match result {
-        Ok(id) => {
-            // Some implementations accept empty conditions gracefully
-            println!("✓ tripwire_create with empty condition succeeded: {}", id);
-        }
-        Err(e) => {
-            // Error is also acceptable — graceful handling
-            println!(
-                "✓ tripwire_create with empty condition returned error: {:?}",
-                e
-            );
-        }
-    }
+    println!("✓ Created tripwire with empty condition: {}", id);
+    assert!(
+        !id.trim().is_empty(),
+        "tripwire_create must return a non-empty id, got {:?}",
+        id
+    );
+
+    // The intermediate state matters: the subscription must be visible in
+    // the session scope carrying exactly the condition and label it was
+    // created with — not just "the call did not fail".
+    let list = client
+        .tripwire_list(Some(&session_id))
+        .await
+        .expect("tripwire_list failed after creating a tripwire with an empty condition");
+
+    let info = list
+        .iter()
+        .find(|t| t.id == id)
+        .unwrap_or_else(|| panic!("tripwire {} missing from list: {:?}", id, list));
+
+    assert_eq!(
+        info.label.as_deref(),
+        Some("invalid_test"),
+        "tripwire must carry the label it was created with"
+    );
+    assert_eq!(
+        info.condition, "EventType([])",
+        "tripwire must carry the exact (empty) condition it was created with"
+    );
+    // An empty event-type list matches no event, so the tripwire is
+    // structurally unable to fire. Pinned so that accepting empty
+    // conditions can never be mistaken for a working watchpoint.
+    assert_eq!(
+        info.fire_count, 0,
+        "a tripwire with no event types can never fire (measured: fire_count stayed 0)"
+    );
 
     client.shutdown().await.ok();
 }
@@ -320,9 +354,21 @@ async fn test_tripwire_multiple_types() {
     client.shutdown().await.ok();
 }
 
-/// TD5: tripwire_delete with nonexistent ID is idempotent (no crash).
-/// tripwire_delete with id="nonexistent-tripwire-xyz-123"
-/// Assert: graceful response (error or success, not crash).
+/// TD5: `tripwire_delete` rejects unknown ids gracefully, in two
+/// distinguishable shapes, and leaves the store untouched.
+///
+/// The test name keeps the historical "idempotent" wording, but the
+/// measured contract is **rejection, not silent success**: an unknown id
+/// always produces a structured service error surfaced as
+/// `McpSandboxError::RpcError`, never a panic and never a fake `Ok`.
+///
+/// Measured, and asserted separately because the two shapes take
+/// different server paths:
+/// - id without the `tripwire-` prefix → `observe: unsupported: observe
+///   verb=delete only supports tripwire subscriptions in m7-02; got '<id>'`
+///   (prefix guard in `chronos-services/src/observe.rs`)
+/// - well-formed but unknown id → `observe: tripwire '<id>' not found`
+///   (`TripwiresService::delete` lookup miss)
 #[tokio::test]
 async fn test_tripwire_delete_nonexistent_idempotent() {
     let mut client = McpTestClient::start()
@@ -332,20 +378,53 @@ async fn test_tripwire_delete_nonexistent_idempotent() {
     // CIH-E: drive against a real probe session.
     let session_id = start_real_session(&mut client).await;
 
-    // Try to delete a non-existent tripwire (scoped).
-    let result = client
-        .tripwire_delete(Some(&session_id), "nonexistent-tripwire-xyz-123")
-        .await;
+    // Shape 1: unknown id that is not even shaped like a tripwire id.
+    let malformed_id = "nonexistent-tripwire-xyz-123";
+    let err = client
+        .tripwire_delete(Some(&session_id), malformed_id)
+        .await
+        .expect_err("measured: deleting an id without the `tripwire-` prefix is rejected");
 
-    match result {
-        Ok(()) => {
-            println!("✓ tripwire_delete for nonexistent succeeded (idempotent)");
-        }
-        Err(e) => {
-            // Error is also acceptable — graceful handling
-            println!("✓ tripwire_delete for nonexistent returned error: {:?}", e);
-        }
-    }
+    // The error must name the offending id: a generic "unsupported verb"
+    // message would mean the request never reached the lookup, which is a
+    // different (and useless) outcome for a caller.
+    assert!(
+        format!("{err:?}").contains(malformed_id),
+        "error should echo the rejected id {:?}, got {:?}",
+        malformed_id,
+        format!("{err:?}")
+    );
+    println!("✓ Malformed id rejected: {:?}", err);
+
+    // Shape 2: well-formed `tripwire-<n>` id that was never created. This
+    // is the case a caller actually hits after a restart or a stale list.
+    let unknown_id = "tripwire-9999";
+    let err = client
+        .tripwire_delete(Some(&session_id), unknown_id)
+        .await
+        .expect_err("measured: deleting a well-formed but unknown tripwire id is rejected");
+
+    let rendered = format!("{err:?}");
+    assert!(
+        rendered.contains(unknown_id) && rendered.contains("not found"),
+        "error should report {:?} as not found, got {:?}",
+        unknown_id,
+        rendered
+    );
+    println!("✓ Unknown but well-formed id rejected: {:?}", err);
+
+    // The failed deletes must not have invented or dropped subscriptions,
+    // and the server must still be serving: this scope started empty.
+    let list_after = client
+        .tripwire_list(Some(&session_id))
+        .await
+        .expect("server must still answer tripwire_list after rejected deletes");
+
+    assert!(
+        list_after.is_empty(),
+        "rejected deletes must leave the store untouched; got {:?}",
+        list_after
+    );
 
     client.shutdown().await.ok();
 }
