@@ -2,6 +2,31 @@
 
 Accepted for the reconstruction baseline unless superseded.
 
+## Numeración duplicada: cita siempre por slug completo
+
+Ocho de estos ficheros comparten número con otro ADR del mismo directorio, y
+la tabla principal solo recoge la serie principal. Antes de añadir esta tabla
+secundaria, un lector que siguiera `0010` acababa en `0010-sandbox-as-uat`
+mientras que el ledger canónico citaba `0010-m4r5-perturbation-fallback` para
+M4B-001. Los registros no se renumeran —un ADR aceptado es inmutable—, así que
+**la desambiguación es del que cita**: usa el slug completo del fichero
+(`ADR-0010-m4r5-perturbation-fallback`), nunca el número suelto.
+
+Serie M4 reconstruida, números 0007-0013, en colisión con la serie principal:
+
+| ADR | Decision |
+|---|---|
+| [0007-m4g1-otelc-spike](0007-m4g1-otelc-spike.md) | M4G.1 `otelc` Go compile-time instrumentation spike |
+| [0008-m4r1-xray-spike](0008-m4r1-xray-spike.md) | M4R.1 Rust `-Z instrument-xray` spike |
+| [0009-m4r2-usdt-spike](0009-m4r2-usdt-spike.md) | M4R.2 Rust USDT (Userland Statically Defined Tracing) spike |
+| [0010-m4r5-perturbation-fallback](0010-m4r5-perturbation-fallback.md) | M4R.5 perturbation detected + fallback policy |
+| [0011-m4g3-go-checkout-bug](0011-m4g3-go-checkout-bug.md) | M4G.3 Go checkout-bug coarse → deep → patch verification |
+| [0011-reconstruction-convergence-truth-gate](0011-reconstruction-convergence-truth-gate.md) | Reconstruction Convergence Truth Gate |
+| [0012-m4r4-rust-state-corruption](0012-m4r4-rust-state-corruption.md) | M4R.4 Rust state-corruption coarse → deep → patch verification |
+| [0013-m4r3-overlay-semantic](0013-m4r3-overlay-semantic.md) | M4R.3 overlay semantic typing |
+
+## Serie principal
+
 | ADR | Decision |
 |---|---|
 | [0001](0001-agent-first-product.md) | Agent-first execution intelligence |
