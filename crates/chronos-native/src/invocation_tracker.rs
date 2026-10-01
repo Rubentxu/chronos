@@ -209,13 +209,23 @@ impl InvocationTracker {
     ///
     /// Compare with `flush_incomplete_on_exit` which is reserved for
     /// abnormal termination (SIGKILL) where frames may not have closed.
-    pub fn pop_all_as_exit(&mut self) -> Vec<TraceEvent> {
+    ///
+    /// `mono_ns` is the moment the frames are being closed, and it is used for
+    /// every emitted exit. It used to be `active.entry_monotonic_ns`, which
+    /// stamped each exit with the moment its frame *opened*: a `FunctionExit`
+    /// that carries its own entry timestamp, so every invocation closed here
+    /// reported a duration of zero, and a "did the capture advance in time"
+    /// check on the event stream failed. The defect stayed hidden while the
+    /// unwind loop also closed these frames during traps — those did carry a
+    /// real timestamp — and surfaced as soon as that loop stopped over-
+    /// unwinding callers that were still running.
+    pub fn pop_all_as_exit(&mut self, mono_ns: u64) -> Vec<TraceEvent> {
         let mut out = Vec::new();
         let tids: Vec<ThreadId> = self.per_thread_stack.keys().copied().collect();
         for tid in tids {
             if let Some(stack) = self.per_thread_stack.get_mut(&tid) {
                 while let Some(active) = stack.pop() {
-                    out.push(make_function_exit(&active, tid, active.entry_monotonic_ns));
+                    out.push(make_function_exit(&active, tid, mono_ns));
                 }
             }
         }
@@ -583,7 +593,7 @@ mod tests {
         assert_eq!(t.active_invocations(), 1);
 
         // Only fact is on the stack (main and add were popped when called).
-        let exits = t.pop_all_as_exit();
+        let exits = t.pop_all_as_exit(99);
         assert_eq!(exits.len(), 1, "only fact remains active");
         assert_eq!(exits[0].event_type, EventType::FunctionExit);
         assert_eq!(t.active_invocations(), 0);
@@ -650,8 +660,19 @@ mod tests {
         let _ = t.on_sigtrap(1, 0x3000, None, 3); // leaf (inside helper's range)
         assert_eq!(t.active_invocations(), 3);
 
-        let exits = t.pop_all_as_exit();
+        let exits = t.pop_all_as_exit(99);
         assert_eq!(exits.len(), 3, "must emit exit for each active frame");
+        // Every exit carries the moment the frames were closed, not the moment
+        // each one opened. Stamping them with their own entry timestamp made
+        // every invocation report a duration of exactly zero.
+        for e in &exits {
+            assert_eq!(
+                e.timestamp_ns,
+                TimestampNs::from_ns(99),
+                "exit of {:?} must be stamped when the frame closed, not when it opened",
+                e.location.function
+            );
+        }
 
         // LIFO: leaf first, then helper, then main
         let names: Vec<String> = exits

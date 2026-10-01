@@ -1006,7 +1006,7 @@ mod imp {
                     // fires the paired exits so analytics can close open frames.
                     // Compare with flush_incomplete_on_exit which is reserved for
                     // SIGKILL / abnormal termination where frames may not have closed.
-                    for ev in tracker.pop_all_as_exit() {
+                    for ev in tracker.pop_all_as_exit(timestamp_ns_now()) {
                         on_event(ev);
                     }
                     end_reason = CaptureEndReason::Exited(*exit_code);
