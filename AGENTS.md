@@ -1234,3 +1234,126 @@ artefactos sean opcionales; pero nada en el repo lo declara, y la suposición
 Backlog: `bl-bl-01M3T2W3BT000387M5VPCBCPC0` (P2).
 
 ---
+
+## El ledger no registra dos tercios del trabajo (2026-10-01)
+
+Auditoría del registro de deuda contra los criterios vigentes. El resultado
+es más grave que la nota del 2026-09-30 sobre los "50 ciclos CLOSED sin
+artefactos": ese hallazgo miraba un solo lado. Los dos lados casi no se
+solapan.
+
+| Población | Cantidad |
+|---|---|
+| Ciclos en el ledger canónico (`p-3416cfb8288f8964`) | 86 |
+| Directorios en `cycle-artifacts/p-3416cfb8288f8964/` | 150 |
+| Coincidencia exacta (artefacto **y** ciclo) | **24** |
+| Artefactos **sin** ciclo en el ledger | **126** |
+| Ciclos **sin** directorio de artefactos | **62** |
+
+### Los 126 huérfanos son trabajo real, no borradores
+
+Cada verificación se hizo por separado, porque cada una podría dar un "0" que
+se lee mal:
+
+1. **No están como filas de ciclo.** `cycles` tiene 86 filas y ninguna coincide.
+2. **No están en ningún evento.** `events_v1` sobre `cycle_id` y `subjects_json`
+   para 40 de ellos muestreados: 0 coincidencias.
+3. **No están en el vault externo.** `~/.sddk-knowledge/p-3416cfb8288f8964/cycles/`
+   tiene 10 entradas; 0 de los 126.
+4. **No están en ningún ledger del host.** Se sondearon los 322
+   `p-*/ledger.sqlite` de `~/.local/state/sddk/projects/` buscando tres
+   representativos (`m9-76-cc4-regen-tool-in-repo`,
+   `m9-60-cycle-artifacts-existence`, `m9-90-stale-branches-cleanup`):
+   0 coincidencias en todos.
+5. **Son trabajo entregado.** `git log --all -- <ruta>` para los 126:
+   **126/126 tienen commits que tocan su ruta.** Ninguno es un borrador.
+
+Entre ellos está la espina dorsal histórica del proyecto: la serie
+`m9-05` … `m9-98`, unas 90 unidades consecutivas con su juego completo de
+`change-entry`, `verify-findings`, `verify-report`, `merge-receipt` y
+`release-receipt`. `m9-76-cc4-regen-tool-in-repo` es la que construyó los 102
+manifests de los que el propio AGENTS.md depende para `CC#4`. Ninguna de esas
+unidades es visible para SDDK.
+
+### Consecuencia: "el ledger es la autoridad" hay que acotarlo
+
+Toda conclusión sacada de "el ledger dice X" describe, como mucho, 24 de las
+150 unidades de artefacto y 86 de las ~212 unidades de trabajo reales
+(86 ciclos + 126 huérfanos) que este repositorio contiene. `cycle.created`
+es 26 de 472 eventos: 60 filas de `cycles` existen sin ese evento, así que el
+snapshot y el stream ya discrepan internamente.
+
+Esto no invalida los hallazgos anteriores — los 86 ciclos del ledger son
+reales y su clasificación sigue siendo válida — pero sí acota su alcance:
+**describen el registro de SDDK, no el proyecto.**
+
+### El error que se repite, y que ya ha mordido dos veces
+
+Este hallazgo nació de una afirmación falsa en el backlog:
+`bl-bl-01M3T0VXDS000387M1NFVT8VG0` dice "the m9-88 directory does not exist on
+disk". Es falso: existe `cycle-artifacts/.../m9-88-cc55-drift-remediation`,
+con 7 ficheros y 44K. La razón es que se buscó el slug completo
+`m9-88-find-m9-81-fk-investigation`, que efectivamente no tiene directorio, y
+se concluyó que no había ningún `m9-88`. Pero `m9-88-cc55-drift-remediation`
+es **otra unidad de trabajo**, y no es ningún ciclo del ledger.
+
+Es el mismo error dos veces, en direcciones opuestas:
+
+- Con `m9-80` y `v014`: se buscaron prefijos desnudos creyendo que eran ids
+  completos, y se concluyó que no tenían registro. Retractado en
+  CLOSE-OUT-2026-09-29.
+- Con `m9-88`: se buscó el id completo creyendo que cubría el prefijo, y se
+  concluyó que el directorio no existía.
+
+**Regla:** un `m9-NN` es un *prefijo de familia*, no un identificador. Antes
+de afirmar que algo no existe, hay que buscar por prefijo (`m9-88*`) y luego
+distinguir los ids completos. Y antes de afirmar que algo existe, comprobar
+que es el id completo y no un hermano.
+
+### Qué parte de SDDK está rota y qué parte no (2026-10-01)
+
+Matiz importante, porque la caracterización amplia ("SDDK no funciona") es
+incorrecta y llevaría a **decisiones equivocadas**. El pin sí se respeta
+en unas superficies y en otras no. Medido el 2026-10-01:
+
+| Superficie | ¿Honra el pin? | Evidencia |
+|---|---|---|
+| `project resolve` | **sí** | `identity_source: pinned`, devuelve `p-3416cfb8288f8964` |
+| `ledger verify` | **sí** | 472 eventos canónicos |
+| `backlog list` | **sí** | 11 items vivos, los canónicos |
+| `backlog capture` / `discard` / `triage` | **sí** | un `discard` escribiría 1 evento nuevo; el canónico pasó de 34 a 35 en `backlog_item_events_v1` |
+| `adopt status` | **no** | devuelve `p-55f14aab9263c12f` |
+| `cycle status` | **no** | idem, incluso con `--root`/`--scope`/`--remote` explícitos |
+| `context bootstrap` | **no** | enlaza la sesión al fantasma |
+| `context delta --publish` | **no** | el delta de cierre se publicó en el fantasma |
+
+**Consecuencia práctica:** el plano *ledger + backlog* funciona y es
+mantenible — se puede registrar deuda, triarla y descargarla contra el
+proyecto canónico. Lo que está roto es el plano *ciclo* (crear, transicionar,
+archivar) más el binding de sesión. Eso acota el daño: **la trazabilidad se
+puede sostener hoy; el ciclo de vida de ciclos, no.**
+
+El proyecto fantasma está además completamente vacío: 0 en `events_v1`,
+0 en `backlog_items_v1`, 0 en `backlog_item_events_v1`. No contiene historia
+real que se pueda recuperar de él, así que **no fusionar nada hacia él**: eso
+solo crea ruido invisible. La decisión de si migrar el estado canónico al id que SDDK
+deriva hoy sigue siendo del maintainer, por lo que implica en
+`reconstruction-contracts.toml` y en las rutas de artefactos.
+
+### Auditoría del registro de deuda: un item ya no era deuda
+
+`bl-bl-01M3T0VGK6000387M1N5921NW0` ("server.rs is 8170 lines", P2) se
+descargó como `superseded`, con sucesor
+`bl-bl-01M3T2KD09000387M55HZKHG80`. Motivo: la extracción que el propio item
+recomendaba se ejecutó en `22f49b08`, con `server.rs` de 8170 → 6474 líneas y
+`tools_params.rs` naciendo con 1713. Verificado el 2026-10-01 sobre `12c11e6a`.
+
+El framework impone esa relación: `--reason superseded` sin `--superseded-by`
+se rechaza con "discarding without a successor loses findings that lived only
+in this item". Es correcto: el hallazgo de que `server.rs` es grande no se
+pierde, porque su sucesor lo sigue arrastrando — con el número corregido a
+**2316** líneas de tests inline (el módulo `mod tests` abre en la línea 4159 de
+6474; los `#[cfg(test)]` de 430/675/697 son ítems sueltos en la región de
+producción, no el módulo de tests) y **0** campos `pub` en `ChronosServer`, así
+que el bloqueo sigue siendo encapsulación y no volumen.
+
