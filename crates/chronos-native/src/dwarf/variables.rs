@@ -52,30 +52,64 @@ fn resolve_type_name<R: gimli::Reader<Offset = usize>>(
 }
 
 /// Check if a PC is within a function's address range.
+///
+/// `DW_AT_high_pc` has two mutually exclusive encodings, and reading it
+/// correctly is the whole job here:
+///
+/// * **DWARF 5** encodes it as an address (`DW_FORM_addr`). The value is
+///   already absolute, so the range is `[low_pc, high_pc)`.
+/// * **DWARF <= 4** encodes it as a *length relative to* `low_pc`
+///   (`DW_FORM_data1/2/4/8`). gcc and clang emit this by default, so it is
+///   the common case, not the exotic one. gimli normalises those forms to
+///   `AttributeValue::Udata`.
+///
+/// The two are indistinguishable by value: an absolute high address and a
+/// function length are both small unsigned integers. Only the tag says which
+/// one it is, so the variant must be matched rather than the number
+/// reinterpreted. Treating a length as an absolute address silently rejects
+/// every function, because `pc < 160` is almost never true.
 fn is_pc_in_function<R: gimli::Reader<Offset = usize>>(
     _unit: &Unit<R>,
     entry: &DebuggingInformationEntry<R>,
     pc: u64,
 ) -> bool {
-    // Get the low and high PC attributes
-    if let Ok(Some(attr)) = entry.attr(gimli::DW_AT_low_pc) {
-        if let AttributeValue::Addr(low) = attr.value() {
-            // Get high PC - could be Addr or Data8 depending on format
-            if let Ok(Some(high_attr)) = entry.attr(gimli::DW_AT_high_pc) {
-                match high_attr.value() {
-                    AttributeValue::Addr(high) => {
-                        return pc >= low && pc < high;
-                    }
-                    AttributeValue::Data8(high) => {
-                        return pc >= low && pc < high;
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
+    let Ok(Some(low_attr)) = entry.attr(gimli::DW_AT_low_pc) else {
+        return false;
+    };
+    let AttributeValue::Addr(low) = low_attr.value() else {
+        return false;
+    };
+    let Ok(Some(high_attr)) = entry.attr(gimli::DW_AT_high_pc) else {
+        return false;
+    };
 
-    false
+    match high_attr.value() {
+        // DWARF 5: an absolute address.
+        AttributeValue::Addr(high) => pc >= low && pc < high,
+        // DWARF <= 4: a length relative to low_pc. `Data*` are matched
+        // alongside `Udata` so a reader that stops normalising them keeps
+        // working; every spelling carries the same length.
+        AttributeValue::Udata(len) => in_range(pc, low, len),
+        AttributeValue::Data1(len) => in_range(pc, low, u64::from(len)),
+        AttributeValue::Data2(len) => in_range(pc, low, u64::from(len)),
+        AttributeValue::Data4(len) => in_range(pc, low, u64::from(len)),
+        AttributeValue::Data8(len) => in_range(pc, low, len),
+        // Anything else (a section offset, an expression, a flag) carries no
+        // range this function can interpret.
+        _ => false,
+    }
+}
+
+/// Half-open range test against a function whose upper bound is expressed as
+/// a length from its lower bound.
+///
+/// `low + len` is computed with `checked_add` so a corrupt or absurd length
+/// cannot wrap into a range that accidentally contains `pc`.
+fn in_range(pc: u64, low: u64, len: u64) -> bool {
+    match low.checked_add(len) {
+        Some(end) => pc >= low && pc < end,
+        None => false,
+    }
 }
 
 /// Find the subprogram DIE containing the given PC and extract its variables.
