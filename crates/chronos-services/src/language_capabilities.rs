@@ -329,12 +329,23 @@ mod tests {
 
     #[test]
     fn tier_for_unknown_default() {
-        // `Language` enum has no variant that isn't in our matrix, but the
-        // function should still return a sensible default. Verify via a
-        // synthetic case: if we add a new variant to Language and forget to
-        // update the matrix, tier_for still returns CERT-1.
-        // (Cannot construct a synthetic Language here without modifying the
-        // enum; this test simply verifies the function signature contract.)
-        let _ = tier_for(Language::Unknown);
+        // `Language::Unknown` *is* in the matrix, with CERT-1 (see
+        // `default_capability_matrix`). So `tier_for` finds that entry and
+        // returns its tier; the `unwrap_or_else(CertificationTier::
+        // default_for_unknown)` branch is defensive and is NOT reached for
+        // this variant. The old body was `let _ = tier_for(Language::Unknown)`
+        // with a comment explaining that no synthetic variant can be built --
+        // which is true, and also an admission that the test asserted nothing.
+        //
+        // What it can assert is the behaviour that actually holds: a language
+        // with no adapter resolves to the honest stub tier rather than
+        // panicking or defaulting to a certified one. The fallback branch
+        // itself is covered separately by `default_for_unknown_is_cert1`, so
+        // it is not restated here.
+        assert_eq!(
+            tier_for(Language::Unknown),
+            CertificationTier::Cert1Stub,
+            "a language with no adapter must resolve to the stub tier, not a certified one"
+        );
     }
 }
