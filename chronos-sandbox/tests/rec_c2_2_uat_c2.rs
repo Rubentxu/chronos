@@ -75,11 +75,6 @@ async fn start_probe(client: &mut McpTestClient) -> Option<String> {
 #[cfg_attr(tarpaulin, tokio::test)]
 #[cfg_attr(not(tarpaulin), tokio::test)]
 async fn uat_c2_01_probe_drain_is_not_an_authority() {
-    // R10.2 (drift #17 v2): under tarpaulin the wait-for-first-event cannot
-    // converge (4 bumps, all ratio ~1.0x, total_buffered=0 at exhaustion).
-    // Treat deadline expiry as environment-unobservable, not a contract
-    // failure: exit with recorded evidence instead of panicking.
-    const UNDER_TARPAULIN: bool = cfg!(tarpaulin);
     let mut client = McpTestClient::start()
         .await
         .expect("Failed to start MCP server");
@@ -660,14 +655,33 @@ async fn wait_for_log_advance(
     }
 }
 
+/// CIH-G diagnostic — *when*, if ever, the first event shows up.
+///
+/// This is the diagnostic twin of UAT-C2-01, which owns the cursor-advance
+/// contract. Both wait on `wait_for_first_event` with the same 300s deadline;
+/// only UAT-C2-01 ever reached a verdict. This one printed its numbers and
+/// returned, so a host that produced nothing at all — the signature recorded
+/// across four deadline bumps at ratio ~1.0x with `total_buffered=0` — still
+/// reported `ok`, indistinguishable from a host that produced the event
+/// immediately. A diagnostic that cannot distinguish its two outcomes is not
+/// a diagnostic.
+///
+/// It now decides observability the same way its twin does: from the
+/// pipeline's own state rather than from the clock.
 #[tokio::test]
 async fn cih_g_uat_c2_01_diagnostic_first_event_timing() {
     let mut client = McpTestClient::start()
         .await
         .expect("Failed to start MCP server");
     let Some(session) = start_probe_with_ring(&mut client, 50_000).await else {
-        eprintln!("CIH-G diagnostic: fixture unavailable, skipping");
-        let _ = client.shutdown().await;
+        // No fixture or probe could be started at all. That is an environment
+        // fact, not a timing observation, so it is reported as such and does
+        // not claim the deadline was met.
+        eprintln!(
+            "CIH-G SKIPPED-EVIDENCE: the fixture or probe could not be started, so \
+             first-event timing was never measured on this host."
+        );
+        client.shutdown().await.ok();
         return;
     };
 
@@ -682,9 +696,73 @@ async fn cih_g_uat_c2_01_diagnostic_first_event_timing() {
         UAT_C2_01_FIRST_EVENT_DEADLINE.as_millis(),
     );
 
-    let _ = client.probe_stop(&session).await;
-    let _ = client.shutdown().await;
+    if count == 0 {
+        // No event within the deadline. Whether that is a broken pipeline or a
+        // host that cannot show one is decidable from the wire, and UAT-C2-01
+        // already carries the argument and the policy for that call
+        // (`verdict_is_unobservable`). Reuse it instead of re-deciding.
+        let wire = client
+            .probe_drain_wire(&session, None)
+            .await
+            .expect("diagnostic re-read");
+        let session_live = wire.get("status").and_then(|s| s.as_str()) == Some("running");
+        let pipeline_silent = wire
+            .get("total_buffered")
+            .and_then(|t| t.as_u64())
+            .unwrap_or(0)
+            == 0;
+
+        if verdict_is_unobservable(session_live, pipeline_silent, UNDER_TARPAULIN) {
+            eprintln!(
+                "CIH-G SKIPPED-EVIDENCE: 0 events in {}ms (session_live={session_live}, \
+                 pipeline_silent={pipeline_silent}). The capture pipeline is attached but \
+                 produced nothing observable on this host, so first-event timing could \
+                 not be measured. Environment verdict, not a timing verdict — it must not \
+                 be read as the deadline being met. wire={:?}",
+                UAT_C2_01_FIRST_EVENT_DEADLINE.as_millis(),
+                wire
+            );
+            client.probe_stop(&session).await.ok();
+            client.shutdown().await.ok();
+            return;
+        }
+
+        // Not excusable: either the session is gone, or the pipeline buffered
+        // something, or we are under instrumentation that owns the verdict.
+        // Every one of those makes an empty wait a real failure.
+        panic!(
+            "CIH-G: no first event within {:?} and the result is not excusable \
+             (session_live={session_live}, pipeline_silent={pipeline_silent}, \
+             under_tarpaulin={UNDER_TARPAULIN}). wire={:?}",
+            UAT_C2_01_FIRST_EVENT_DEADLINE, wire
+        );
+    }
+
+    // The event arrived, so the timing is a measurement rather than an absence.
+    // Holding it to the deadline is the only thing worth asserting here; the
+    // cursor-advance contract itself belongs to UAT-C2-01.
+    assert!(
+        elapsed < UAT_C2_01_FIRST_EVENT_DEADLINE,
+        "CIH-G: the first event arrived after {:?}, past the {:?} deadline",
+        elapsed,
+        UAT_C2_01_FIRST_EVENT_DEADLINE
+    );
+
+    client.probe_stop(&session).await.ok();
+    client.shutdown().await.ok();
 }
+
+/// Whether this build runs under tarpaulin instrumentation.
+///
+/// R10.2 (drift #17 v2): under tarpaulin the wait-for-first-event cannot
+/// converge (4 bumps, all ratio ~1.0x, total_buffered=0 at exhaustion).
+/// Deadline expiry there is environment-unobservable, not a contract failure,
+/// so the waiters record evidence instead of panicking.
+///
+/// This lives at module scope because both the UAT-C2-01 contract test and
+/// the CIH-G timing diagnostic must reach the same verdict; a per-test copy
+/// would let the two drift apart, and they are required to agree.
+const UNDER_TARPAULIN: bool = cfg!(tarpaulin);
 
 /// An empty capture is only excused when the pipeline is demonstrably attached
 /// yet silent. Any state that means "the pipeline works" or "the capture
