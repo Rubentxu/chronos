@@ -28,43 +28,55 @@
 //!  * Events count is on the wire (m8-04 B3) + has its own dedicated
 //!    tool `counterexample_events_count` (m8-05 B3).
 //!
-//! Tests skip (with a printed message) if `CHRONOS_MCP_PATH` is unset
-//! AND the default binary is missing, so the file compiles even on CI.
+//! No test here skips. Every dependency the suite needs is produced by the tree
+//! itself: the C fixtures are compiled by `chronos-sandbox/build.rs`, and the
+//! MCP server is this workspace's own `chronos-mcp` binary. A failure to obtain
+//! either is therefore a defect of the build or of the seam under test, and
+//! every such step below panics with the reason instead of returning early —
+//! an early `return` here used to turn a broken server into a green test that
+//! asserted nothing.
 
 // Re-export the helpers we use so the test compiles even when skipped.
 use chronos_sandbox::client::tools::McpTestClient;
 use serde_json::json;
 use std::time::Duration;
 
-/// Spin up a server and start a probe on the given fixture, returning
-/// `(client, session_id)`. Returns `None` (and prints) if anything
-/// along the chain is unavailable so the suite can be skipped cleanly.
-async fn setup_with_probe(fixture: &str) -> Option<(McpTestClient, String)> {
-    let mut client = match McpTestClient::start().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("counterexample_tools: server start failed: {e}");
-            return None;
-        }
-    };
+/// Spin up a server, capture the given fixture, stop the probe, and return
+/// `(client, session_id, captured_events)`.
+///
+/// `captured_events` is how many events the session's query engine holds, read
+/// back from the server after `probe_stop`. Callers that need that number used
+/// to ask for it themselves via `probe_drain`, which only serves *live*
+/// sessions — a stopped one answers `Live probe session '<id>' not found` — so
+/// three of them got that error, `return`ed, and reported green without
+/// asserting anything at all.
+///
+/// Every step panics on failure. Nothing here is a host facility that may be
+/// absent: the fixture is compiled by `chronos-sandbox/build.rs` and the server
+/// is this workspace's own `chronos-mcp`.
+async fn setup_with_probe(fixture: &str) -> (McpTestClient, String, usize) {
+    let mut client = McpTestClient::start().await.unwrap_or_else(|e| {
+        panic!("counterexample_tools: failed to start the chronos-mcp server: {e}")
+    });
 
-    let path = match chronos_sandbox::McpSession::fixture_path(fixture) {
-        Some(p) => p,
-        None => {
-            eprintln!("counterexample_tools: fixture `{fixture}` not built — skipping");
-            let _ = client.shutdown().await;
-            return None;
-        }
-    };
+    let path = chronos_sandbox::McpSession::fixture_path(fixture).unwrap_or_else(|| {
+        panic!(
+            "counterexample_tools: required fixture `{fixture}` is missing from {} — it is \
+             compiled by chronos-sandbox/build.rs, so a missing fixture is a build defect",
+            chronos_sandbox::FixtureResolver::root().display()
+        )
+    });
 
-    let session_id = match client.probe_start(path.to_str().unwrap()).await {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("counterexample_tools: probe_start failed: {e}");
-            let _ = client.shutdown().await;
-            return None;
-        }
-    };
+    let session_id = client
+        .probe_start(path.to_str().unwrap())
+        .await
+        .unwrap_or_else(|e| {
+            panic!(
+                "counterexample_tools: probe_start({}) failed: {e} — the fixture is present and \
+                 ptrace needs no capability, so this is a real failure",
+                path.display()
+            )
+        });
 
     // Allow the probe to populate the in-flight buffer.
     tokio::time::sleep(Duration::from_millis(400)).await;
@@ -73,13 +85,34 @@ async fn setup_with_probe(fixture: &str) -> Option<(McpTestClient, String)> {
     // probe_stop (the query engine is built at stop time, not start
     // time). Without this, `hypothesis_test::test()` would return
     // SessionNotFound before the shrink loop even begins.
-    if let Err(e) = client.probe_stop(&session_id).await {
-        eprintln!("counterexample_tools: probe_stop failed: {e}");
-        let _ = client.shutdown().await;
-        return None;
-    }
+    client.probe_stop(&session_id).await.unwrap_or_else(|e| {
+        panic!(
+            "counterexample_tools: probe_stop failed: {e} — the shrink path needs the session \
+                registered in the engines map"
+        )
+    });
 
-    Some((client, session_id))
+    // Count the events the engine actually holds for this session, which is
+    // the same view the `EventCount` hypothesis is evaluated against. Two
+    // earlier sources of this number were wrong: `probe_drain` after
+    // `probe_stop` fails with `Live probe session '<id>' not found` (three
+    // tests used to swallow that and report green), and a drain taken while
+    // the session was still live undercounts it, because more events land
+    // between the drain and the stop — which made `events.len() >= N+1`
+    // already true and the server answer "nothing to shrink".
+    let captured = client
+        .query_events_walk_all(
+            &session_id,
+            chronos_sandbox::client::types::QueryFilter {
+                limit: 500,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_or_else(|e| panic!("counterexample_tools: query_events after probe_stop: {e}"))
+        .len();
+
+    (client, session_id, captured)
 }
 
 /// CE1: shrink a constant target on a real probe session.
@@ -95,21 +128,12 @@ async fn setup_with_probe(fixture: &str) -> Option<(McpTestClient, String)> {
 /// where busyloop captured >= 1000 events).
 #[tokio::test]
 async fn ce1_shrink_constant_target() {
-    let Some((mut client, session_id)) = setup_with_probe("test_busyloop").await else {
-        return;
-    };
+    let (mut client, session_id, count) = setup_with_probe("test_busyloop").await;
 
-    // Read the captured event count back from the server so the
-    // hypothesis is guaranteed to violate at the start, regardless of
-    // how many events the fixture captured.
-    let count = match client.probe_drain(&session_id).await {
-        Ok(events) => events.len(),
-        Err(e) => {
-            eprintln!("counterexample_tools: probe_drain failed: {e}");
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+    // The captured event count comes from the engine view read inside the
+    // setup helper. Asking for it here used to fail with `Live probe session
+    // '<id>' not found` (the helper had already stopped the probe), and this
+    // test then returned early and reported success.
     let constant = (count + 1) as f64;
 
     let target = json!({
@@ -162,9 +186,7 @@ async fn ce1_shrink_constant_target() {
 /// CE2: shrink → get round-trip with the same session.
 #[tokio::test]
 async fn ce2_shrink_then_get_round_trip() {
-    let Some((mut client, session_id)) = setup_with_probe("test_busyloop").await else {
-        return;
-    };
+    let (mut client, session_id, _captured) = setup_with_probe("test_busyloop").await;
 
     let target = json!({
         "session_id": session_id,
@@ -193,13 +215,9 @@ async fn ce2_shrink_then_get_round_trip() {
 /// at the MCP layer.
 #[tokio::test]
 async fn ce3_get_missing_bundle_errors() {
-    let mut client = match McpTestClient::start().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("counterexample_tools: server start failed: {e}");
-            return;
-        }
-    };
+    let mut client = McpTestClient::start().await.unwrap_or_else(|e| {
+        panic!("counterexample_tools: failed to start the chronos-mcp server: {e}")
+    });
 
     let result = client.counterexample_get("does-not-exist").await;
     assert!(result.is_err(), "missing bundle id should error");
@@ -210,9 +228,7 @@ async fn ce3_get_missing_bundle_errors() {
 /// CE4: list after a shrink sees the bundle.
 #[tokio::test]
 async fn ce4_list_after_shrink_includes_bundle() {
-    let Some((mut client, session_id)) = setup_with_probe("test_busyloop").await else {
-        return;
-    };
+    let (mut client, session_id, _captured) = setup_with_probe("test_busyloop").await;
 
     let target = json!({
         "session_id": session_id,
@@ -255,9 +271,7 @@ async fn ce4_list_after_shrink_includes_bundle() {
 /// the shrinker can do real work on.
 #[tokio::test]
 async fn ce5_shrink_on_exit_immediate_fixture() {
-    let Some((mut client, session_id)) = setup_with_probe("test_exit_immediate").await else {
-        return;
-    };
+    let (mut client, session_id, _captured) = setup_with_probe("test_exit_immediate").await;
 
     let target = json!({
         "session_id": session_id,
@@ -285,9 +299,7 @@ async fn ce5_shrink_on_exit_immediate_fixture() {
 /// CE6: list with workspace_id filter — call shape is honoured.
 #[tokio::test]
 async fn ce6_list_with_workspace_filter() {
-    let Some((mut client, session_id)) = setup_with_probe("test_busyloop").await else {
-        return;
-    };
+    let (mut client, session_id, _captured) = setup_with_probe("test_busyloop").await;
 
     let target = json!({
         "session_id": session_id,
@@ -317,22 +329,16 @@ async fn ce6_list_with_workspace_filter() {
 /// m8-03 vec![] placeholder.
 #[tokio::test]
 async fn ce7_shrink_response_uses_new_saved_envelope() {
-    let Some((mut client, session_id)) = setup_with_probe("test_busyloop").await else {
-        return;
-    };
+    let (mut client, session_id, count) = setup_with_probe("test_busyloop").await;
 
     // m8-06: use Ge/(N+1) where N is the captured event count, so the
     // shrinker does real work regardless of how many events the fixture
     // captured (the prior literal `1000.0` broke in CI when busyloop
-    // captured >= 1000 events).
-    let count = match client.probe_drain(&session_id).await {
-        Ok(events) => events.len(),
-        Err(e) => {
-            eprintln!("counterexample_tools: probe_drain failed: {e}");
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+    // captured >= 1000 events). The count is read inside the setup helper
+    // from the engine the hypothesis is evaluated against; requesting it
+    // after the probe was stopped via `probe_drain` failed with `Live probe
+    // session '<id>' not found`, and this test then returned early and
+    // reported success.
     let constant = (count + 1) as f64;
 
     let target = json!({
@@ -377,9 +383,7 @@ async fn ce7_shrink_response_uses_new_saved_envelope() {
 /// next iteration.
 #[tokio::test]
 async fn ce8_list_pagination_forward_cursor() {
-    let Some((mut client, session_id)) = setup_with_probe("test_busyloop").await else {
-        return;
-    };
+    let (mut client, session_id, _captured) = setup_with_probe("test_busyloop").await;
 
     // Save 2 distinct bundles in this test, each with a unique constant
     // so the minimised payload differs. saved_ids[0] is the FIRST save
@@ -455,9 +459,7 @@ async fn ce8_list_pagination_forward_cursor() {
 /// with an unknown id to confirm the error path returns LoadFailed.
 #[tokio::test]
 async fn ce9_events_count_returns_persisted_length() {
-    let Some((mut client, session_id)) = setup_with_probe("test_busyloop").await else {
-        return;
-    };
+    let (mut client, session_id, _captured) = setup_with_probe("test_busyloop").await;
 
     // Save a bundle (this records events_count from the live engine).
     let target = json!({
@@ -501,24 +503,18 @@ async fn ce9_events_count_returns_persisted_length() {
 /// assert that it shrunk to a smaller-magnitude value than the start.
 #[tokio::test]
 async fn ce10_shrink_number_target_real_shrinking() {
-    let Some((mut client, session_id)) = setup_with_probe("test_busyloop").await else {
-        return;
-    };
+    let (mut client, session_id, count) = setup_with_probe("test_busyloop").await;
 
     // m8-06: Ge/(N+1) where N is the captured event count guarantees an
     // initial violation (events.len() < N+1) and the shrinker can shrink
     // toward 0 until it crosses events.len() and the invariant flips to
     // Pass. Using N+1 instead of a literal 1000.0 makes the test robust
     // against fixture runners that capture more or fewer events than
-    // the original author estimated.
-    let count = match client.probe_drain(&session_id).await {
-        Ok(events) => events.len(),
-        Err(e) => {
-            eprintln!("counterexample_tools: probe_drain failed: {e}");
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+    // the original author estimated. The count is read inside the setup
+    // helper from the engine the hypothesis is evaluated against; requesting
+    // it after the probe was stopped via `probe_drain` failed with `Live
+    // probe session '<id>' not found`, and this test then returned early and
+    // reported success.
     let constant = (count + 1) as f64;
 
     let target = json!({
@@ -566,9 +562,7 @@ async fn ce10_shrink_number_target_real_shrinking() {
 /// when the candidate shrinks past the trace.
 #[tokio::test]
 async fn ce11_shrink_existence_target_real_shrinking() {
-    let Some((mut client, session_id)) = setup_with_probe("test_busyloop").await else {
-        return;
-    };
+    let (mut client, session_id, _captured) = setup_with_probe("test_busyloop").await;
 
     let target = json!({
         "session_id": session_id,
@@ -629,40 +623,42 @@ async fn ce12_replay_preserves_non_default_invariant_options() {
     let db_path = temp_dir.join(format!("chronos-ce12-{}.redb", std::process::id()));
 
     // Start the MCP server with the temp DB path.
-    let mut client = match McpTestClient::start_with_db_path(db_path.clone()).await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("counterexample_tools: server start failed: {e}");
-            return;
-        }
-    };
+    let mut client = McpTestClient::start_with_db_path(db_path.clone())
+        .await
+        .unwrap_or_else(|e| {
+            panic!("counterexample_tools: failed to start the chronos-mcp server: {e}")
+        });
 
-    let path = match chronos_sandbox::McpSession::fixture_path("test_busyloop") {
-        Some(p) => p,
-        None => {
-            eprintln!("counterexample_tools: fixture `test_busyloop` not built — skipping");
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+    let path = chronos_sandbox::McpSession::fixture_path("test_busyloop").unwrap_or_else(|| {
+        panic!(
+            "counterexample_tools: required fixture `test_busyloop` is missing from {} — it is \
+             compiled by chronos-sandbox/build.rs, so a missing fixture is a build defect",
+            chronos_sandbox::FixtureResolver::root().display()
+        )
+    });
 
-    let session_id = match client.probe_start(path.to_str().unwrap()).await {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("counterexample_tools: probe_start failed: {e}");
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+    let session_id = client
+        .probe_start(path.to_str().unwrap())
+        .await
+        .unwrap_or_else(|e| {
+            panic!(
+                "counterexample_tools: probe_start({}) failed: {e} — the fixture is present and \
+                 ptrace needs no capability, so this is a real failure",
+                path.display()
+            )
+        });
 
     // Allow the probe to populate the in-flight buffer.
     tokio::time::sleep(Duration::from_millis(400)).await;
 
-    if let Err(e) = client.probe_stop(&session_id).await {
-        eprintln!("counterexample_tools: probe_stop failed: {e}");
-        let _ = client.shutdown().await;
-        return;
-    }
+    // The engines map is only populated on probe_stop, which is what makes the
+    // shrink loop resolvable for this session.
+    client.probe_stop(&session_id).await.unwrap_or_else(|e| {
+        panic!(
+            "counterexample_tools: probe_stop failed: {e} — the shrink path needs the session \
+                registered in the engines map"
+        )
+    });
 
     // Shrink with non-default Invariant options: scope=EventCount, comparison=Ge.
     // The target_hypothesis is persisted verbatim via hypothesis_input_to_wire.
@@ -674,14 +670,10 @@ async fn ce12_replay_preserves_non_default_invariant_options() {
         "constant": { "Number": 1000.0 },
     });
 
-    let resp = match client.counterexample_shrink(target).await {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("counterexample_tools: counterexample_shrink failed: {e}");
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+    let resp = client
+        .counterexample_shrink(target)
+        .await
+        .unwrap_or_else(|e| panic!("counterexample_tools: counterexample_shrink failed: {e}"));
 
     assert!(
         !resp.bundle.bundle_id.is_empty(),
@@ -694,17 +686,34 @@ async fn ce12_replay_preserves_non_default_invariant_options() {
     );
     assert!(resp.events_count >= 1, "events_count must be >= 1");
 
-    // Replay the bundle using the CLI's run_replay against the same DB.
+    // The MCP server holds an exclusive lock on this redb file for its whole
+    // lifetime, and the replay runs in a *separate* `chronos test replay`
+    // process against the same file. Replaying while the server is alive fails
+    // with "Database already open. Cannot acquire lock." — which is what this
+    // test used to hit, swallow with a printed message, and then report as a
+    // pass, so the m8-07 round-trip it exists to prove was never verified.
+    let bundle_id = resp.bundle.bundle_id.clone();
+    let expected_events_count = resp.events_count;
+    let _ = client.shutdown().await;
+
+    // `replay_bundle` only spawns a subprocess against `db_path`; it never
+    // talks to the server, so a client on its own private store is enough to
+    // drive it now that the lock holder is gone.
+    let replay_client = McpTestClient::start().await.unwrap_or_else(|e| {
+        panic!("counterexample_tools: failed to start the chronos-mcp server: {e}")
+    });
+
     // The replay reads bundle.target_hypothesis and reconstructs the EXACT
     // HypothesisInput (scope=EventCount, comparison=Ge, constant=1000.0).
-    let report = match client.replay_bundle(&resp.bundle.bundle_id, &db_path).await {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("counterexample_tools: replay_bundle failed: {e}");
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+    let report = replay_client
+        .replay_bundle(&bundle_id, &db_path)
+        .await
+        .unwrap_or_else(|e| {
+            panic!(
+                "counterexample_tools: replay_bundle failed: {e} — the server holding the \
+                    store lock is already down, so this is a real replay failure"
+            )
+        });
 
     // The replay verdict is based on the MINIMISED payload (current behaviour,
     // per D4 in the m8-07 scoping doc). The key assertion is that the
@@ -718,10 +727,10 @@ async fn ce12_replay_preserves_non_default_invariant_options() {
         "replay_verdict should be one of the three, got {}",
         report.replay_verdict
     );
-    assert_eq!(report.bundle_id, resp.bundle.bundle_id);
-    assert_eq!(report.events_in_bundle, resp.events_count);
+    assert_eq!(report.bundle_id, bundle_id);
+    assert_eq!(report.events_in_bundle, expected_events_count);
 
     // Cleanup.
-    let _ = client.shutdown().await;
+    let _ = replay_client.shutdown().await;
     let _ = std::fs::remove_file(&db_path);
 }

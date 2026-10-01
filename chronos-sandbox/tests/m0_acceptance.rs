@@ -21,47 +21,37 @@ async fn m0_01_live_pagination_is_non_destructive() {
     // UAT-M0-01: probe_drain must be non-destructive. Two consecutive
     // calls with the same cursor return the same event set; a second
     // fresh call without a cursor sees all the events the first call did.
-    let fixture = match McpSession::fixture_path("test_busyloop") {
-        Some(p) => p,
-        None => {
-            eprintln!(
-                "m0_01: test_busyloop fixture not available; skipping (run `cargo build` first)"
-            );
-            return;
-        }
-    };
+    let fixture = McpSession::fixture_path("test_busyloop").unwrap_or_else(|| {
+        panic!(
+            "m0_01: required fixture `test_busyloop` is missing from {} — it is compiled by \
+             chronos-sandbox/build.rs, so a missing fixture is a build defect, not a missing \
+             host facility",
+            chronos_sandbox::FixtureResolver::root().display()
+        )
+    });
 
-    let mut client = match McpTestClient::start().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("m0_01: failed to start MCP server: {}", e);
-            return;
-        }
-    };
+    let mut client = McpTestClient::start()
+        .await
+        .unwrap_or_else(|e| panic!("m0_01: failed to start the chronos-mcp MCP server: {e}"));
 
-    let session_id = match client.probe_start(fixture.to_str().unwrap()).await {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("m0_01: probe_start failed: {}", e);
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
+        .unwrap_or_else(|e| {
+            panic!(
+                "m0_01: probe_start({}) failed: {e} — the fixture is present and ptrace needs no \
+                 capability, so this is a real failure",
+                fixture.display()
+            )
+        });
 
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     // First drain — no cursor, so the read starts at the retained boundary.
-    let first = match client
+    let first = client
         .probe_drain_with_evidence_cursor(&session_id, None)
         .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("m0_01: first probe_drain failed: {}", e);
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+        .unwrap_or_else(|e| panic!("m0_01: first probe_drain failed: {e}"));
 
     let first_cursor = first
         .evidence_cursor
@@ -74,17 +64,10 @@ async fn m0_01_live_pagination_is_non_destructive() {
 
     // Replay: a fresh read (no cursor). The read is non-destructive over the
     // durable log, so the replay MUST observe at least the events `first` saw.
-    let replay = match client
+    let replay = client
         .probe_drain_with_evidence_cursor(&session_id, None)
         .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("m0_01: replay probe_drain failed: {}", e);
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+        .unwrap_or_else(|e| panic!("m0_01: replay probe_drain failed: {e}"));
 
     assert!(
         replay.events.len() >= first.events.len(),
@@ -149,44 +132,37 @@ fn m0_02_session_snapshot_is_cumulative() {
 async fn m0_02_session_snapshot_is_cumulative_impl() {
     // UAT-M0-02: two consecutive session_snapshot calls preserve evidence
     // from both periods (cumulative refresh).
-    let fixture = match McpSession::fixture_path("test_busyloop") {
-        Some(p) => p,
-        None => {
-            eprintln!(
-                "m0_02: test_busyloop fixture not available; skipping (run `cargo build` first)"
-            );
-            return;
-        }
-    };
+    let fixture = McpSession::fixture_path("test_busyloop").unwrap_or_else(|| {
+        panic!(
+            "m0_02: required fixture `test_busyloop` is missing from {} — it is compiled by \
+             chronos-sandbox/build.rs, so a missing fixture is a build defect, not a missing \
+             host facility",
+            chronos_sandbox::FixtureResolver::root().display()
+        )
+    });
 
-    let mut client = match McpTestClient::start().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("m0_02: failed to start MCP server: {}", e);
-            return;
-        }
-    };
+    let mut client = McpTestClient::start()
+        .await
+        .unwrap_or_else(|e| panic!("m0_02: failed to start the chronos-mcp MCP server: {e}"));
 
-    let session_id = match client.probe_start(fixture.to_str().unwrap()).await {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("m0_02: probe_start failed: {}", e);
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
+        .unwrap_or_else(|e| {
+            panic!(
+                "m0_02: probe_start({}) failed: {e} — the fixture is present and ptrace needs no \
+                 capability, so this is a real failure",
+                fixture.display()
+            )
+        });
 
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     // First snapshot — builds the engine.
-    let snap1 = match client.session_snapshot(&session_id).await {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("m0_02: first session_snapshot failed: {}", e);
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+    let snap1 = client
+        .session_snapshot(&session_id)
+        .await
+        .unwrap_or_else(|e| panic!("m0_02: first session_snapshot failed: {e}"));
     let first_indexed = snap1.events_indexed;
     assert!(
         first_indexed > 0,
@@ -199,14 +175,10 @@ async fn m0_02_session_snapshot_is_cumulative_impl() {
         offset: 0,
         ..Default::default()
     };
-    let after_snap1 = match client.query_events(&session_id, filter).await {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("m0_02: query_events after snap1 failed: {}", e);
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+    let after_snap1 = client
+        .query_events(&session_id, filter)
+        .await
+        .unwrap_or_else(|e| panic!("m0_02: query_events after snap1 failed: {e}"));
     assert!(
         after_snap1.len() >= first_indexed,
         "m0_02: first query must see at least first_indexed events"
@@ -214,14 +186,10 @@ async fn m0_02_session_snapshot_is_cumulative_impl() {
 
     // Wait for more events to arrive, then second snapshot.
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let snap2 = match client.session_snapshot(&session_id).await {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("m0_02: second session_snapshot failed: {}", e);
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+    let snap2 = client
+        .session_snapshot(&session_id)
+        .await
+        .unwrap_or_else(|e| panic!("m0_02: second session_snapshot failed: {e}"));
 
     // Cumulative refresh: the engine after snap2 must hold AT LEAST
     // as many events as it did after snap1 (the second refresh adds;
@@ -231,14 +199,10 @@ async fn m0_02_session_snapshot_is_cumulative_impl() {
         offset: 0,
         ..Default::default()
     };
-    let after_snap2 = match client.query_events(&session_id, filter).await {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("m0_02: query_events after snap2 failed: {}", e);
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+    let after_snap2 = client
+        .query_events(&session_id, filter)
+        .await
+        .unwrap_or_else(|e| panic!("m0_02: query_events after snap2 failed: {e}"));
     assert_eq!(snap2.session_id, session_id, "m0_02: session_id mismatch");
     assert!(
         after_snap2.len() >= after_snap1.len(),
@@ -292,13 +256,9 @@ fn _m0_05_legacy_stub_disabled() {
 #[tokio::test(flavor = "current_thread")]
 async fn m0_05_typed_event_filters_reject_unknown_impl() {
     let _ = ();
-    let mut client = match McpTestClient::start().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("m0_05: McpTestClient start failed: {}", e);
-            return;
-        }
-    };
+    let mut client = McpTestClient::start()
+        .await
+        .unwrap_or_else(|e| panic!("m0_05: failed to start the chronos-mcp MCP server: {e}"));
 
     // REC-C5-C5.2: migrated to the v2 `observe` dispatcher; the bad
     // event_type is rejected at the observe boundary with the same
@@ -357,37 +317,32 @@ fn _m0_06_legacy_stub_disabled() {
 #[tokio::test(flavor = "current_thread")]
 async fn m0_06_state_diff_preserves_register_evidence_impl() {
     let _ = ();
-    let fixture = match McpSession::fixture_path("test_busyloop") {
-        Some(p) => p,
-        None => {
-            eprintln!("m0_06: test_busyloop fixture not available; skipping");
-            return;
-        }
-    };
-    let mut client = match McpTestClient::start().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("m0_06: McpTestClient start failed: {}", e);
-            return;
-        }
-    };
-    let session_id = match client.probe_start(fixture.to_str().unwrap()).await {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("m0_06: probe_start failed: {}", e);
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+    let fixture = McpSession::fixture_path("test_busyloop").unwrap_or_else(|| {
+        panic!(
+            "m0_06: required fixture `test_busyloop` is missing from {} — it is compiled by \
+             chronos-sandbox/build.rs, so a missing fixture is a build defect, not a missing \
+             host facility",
+            chronos_sandbox::FixtureResolver::root().display()
+        )
+    });
+    let mut client = McpTestClient::start()
+        .await
+        .unwrap_or_else(|e| panic!("m0_06: failed to start the chronos-mcp MCP server: {e}"));
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
+        .unwrap_or_else(|e| {
+            panic!(
+                "m0_06: probe_start({}) failed: {e} — the fixture is present and ptrace needs no \
+                 capability, so this is a real failure",
+                fixture.display()
+            )
+        });
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let snap = match client.session_snapshot(&session_id).await {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("m0_06: session_snapshot failed: {}", e);
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+    let snap = client
+        .session_snapshot(&session_id)
+        .await
+        .unwrap_or_else(|e| panic!("m0_06: session_snapshot failed: {e}"));
     assert!(snap.events_indexed > 0, "m0_06: snapshot must index events");
 
     // Probe by default does NOT capture registers; the diff must surface
@@ -395,7 +350,7 @@ async fn m0_06_state_diff_preserves_register_evidence_impl() {
     // REC-C5-C5.2: migrated to the v2 `state_query` dispatcher with
     // `kind=register_diff`. The v2 response flattens the v1 StateDiff
     // (register_evidence, evidence_note) under a top-level `kind` tag.
-    let raw = match client
+    let raw = client
         .call_tool(
             "state_query",
             serde_json::json!({
@@ -406,14 +361,7 @@ async fn m0_06_state_diff_preserves_register_evidence_impl() {
             }),
         )
         .await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("m0_06: state_query(kind=register_diff) call failed: {}", e);
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+        .unwrap_or_else(|e| panic!("m0_06: state_query(kind=register_diff) call failed: {e}"));
     let register_evidence = raw
         .get("register_evidence")
         .and_then(|v| v.as_bool())
@@ -452,28 +400,27 @@ fn _m0_07_legacy_stub_disabled() {
 #[tokio::test(flavor = "current_thread")]
 async fn m0_07_query_returns_not_found_when_target_missing_impl() {
     let _ = ();
-    let fixture = match McpSession::fixture_path("test_busyloop") {
-        Some(p) => p,
-        None => {
-            eprintln!("m0_07: test_busyloop fixture not available; skipping");
-            return;
-        }
-    };
-    let mut client = match McpTestClient::start().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("m0_07: McpTestClient start failed: {}", e);
-            return;
-        }
-    };
-    let session_id = match client.probe_start(fixture.to_str().unwrap()).await {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("m0_07: probe_start failed: {}", e);
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+    let fixture = McpSession::fixture_path("test_busyloop").unwrap_or_else(|| {
+        panic!(
+            "m0_07: required fixture `test_busyloop` is missing from {} — it is compiled by \
+             chronos-sandbox/build.rs, so a missing fixture is a build defect, not a missing \
+             host facility",
+            chronos_sandbox::FixtureResolver::root().display()
+        )
+    });
+    let mut client = McpTestClient::start()
+        .await
+        .unwrap_or_else(|e| panic!("m0_07: failed to start the chronos-mcp MCP server: {e}"));
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
+        .unwrap_or_else(|e| {
+            panic!(
+                "m0_07: probe_start({}) failed: {e} — the fixture is present and ptrace needs no \
+                 capability, so this is a real failure",
+                fixture.display()
+            )
+        });
     // R9.3: extended from 2s → 6s. The fixture (test_busyloop) writes
     // events asynchronously; on busy CI runners (coverage workflow) the
     // 2s window was insufficient for the snapshot to observe any
@@ -501,7 +448,7 @@ async fn m0_07_query_returns_not_found_when_target_missing_impl() {
     // The test was reading `raw.get("events")` (None in v2) instead of
     // `raw.get("result").and_then(|r| r.get("events"))`, so it always
     // observed an empty page and failed the "non-empty" assertion.
-    let raw = match client
+    let raw = client
         .call_tool(
             "events_read",
             serde_json::json!({
@@ -512,14 +459,7 @@ async fn m0_07_query_returns_not_found_when_target_missing_impl() {
             }),
         )
         .await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("m0_07: events_read(mode=query) failed: {}", e);
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+        .unwrap_or_else(|e| panic!("m0_07: events_read(mode=query) failed: {e}"));
     let page_events = raw
         .get("result")
         .and_then(|r| r.get("events"))
@@ -689,46 +629,37 @@ fn m0_10_sandbox_m0_acceptance_gate_is_current_exe_resolvable() {
 
 /// m0-03 — Session-owned eBPF probe lifecycle (UAT-M0-04).
 ///
-/// Verifies the contract that `probe_inject` writes the `EbpfAdapter`
-/// onto the session record (so the lifecycle is observable via
-/// `probe_status`), and `probe_stop` detaches it. Runs without root:
-/// the actual uprobe attach fails (the adapter is still owned and the
-/// session still records the attempted attachment); the UAT is about
-/// the *ownership* contract, not the kernel-level hook.
+/// Verifies the contract that the uprobe attachment is written onto the
+/// session record (so the lifecycle is observable via `probe_status`), and
+/// `probe_stop` detaches it.
+///
+/// This test is `#[ignore]`d because its subject cannot exist on a host
+/// without BPF privileges: the v2 server only persists the attachment when
+/// the kernel attach *succeeds*, so the `post-inject probe_status.ebpf` must
+/// be non-null assertion below is unreachable unprivileged. It used to hide
+/// that behind a `return` that reported success. The requirement is exact —
+/// run it on a host holding `CAP_BPF` **and** `CAP_PERFMON` (or
+/// `CAP_SYS_ADMIN`) with `kernel.unprivileged_bpf_disabled = 0`.
 #[tokio::test(flavor = "current_thread")]
+#[ignore = "requires CAP_BPF + CAP_PERFMON (or CAP_SYS_ADMIN): the v2 server persists the uprobe attachment only when the kernel attach succeeds, so probe_status.ebpf can never be non-null on an unprivileged host (measured here: uid 1000, CapEff=0, kernel.unprivileged_bpf_disabled=2)"]
 async fn m0_03_ebpf_probe_lifecycle_impl() {
     let _ = ();
-    let mut client = match McpTestClient::start().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("m0_03: McpTestClient start failed: {}", e);
-            return;
-        }
-    };
-    let session_id = match client.probe_start("/bin/true").await {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("m0_03: probe_start failed: {}", e);
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+    let mut client = McpTestClient::start()
+        .await
+        .unwrap_or_else(|e| panic!("m0_03: failed to start the chronos-mcp MCP server: {e}"));
+    let session_id = client
+        .probe_start("/bin/true")
+        .await
+        .unwrap_or_else(|e| panic!("m0_03: probe_start(/bin/true) failed: {e}"));
 
     // Phase 1: pre-injection status — ebpf must be null.
-    let pre = match client
+    let pre = client
         .call_tool(
             "probe_status",
             serde_json::json!({ "session_id": session_id }),
         )
         .await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("m0_03: pre probe_status failed: {}", e);
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+        .unwrap_or_else(|e| panic!("m0_03: pre probe_status failed: {e}"));
     let pre_ebpf = pre.get("ebpf").cloned().unwrap_or(serde_json::Value::Null);
     assert!(
         pre_ebpf.is_null(),
@@ -737,20 +668,21 @@ async fn m0_03_ebpf_probe_lifecycle_impl() {
     );
 
     // Phase 2: uprobe injection via the v2 `observe` dispatcher
-    // (verb=create, condition.kind=uprobe, scope=session). Likely fails to
-    // attach without root, but the ownership record MUST be persisted by the
-    // MCP server either way.
+    // (verb=create, condition.kind=uprobe, scope=session). The attach itself
+    // requires BPF privileges — see the `#[ignore]` on this test — so on an
+    // unprivileged host the server never records the attachment and
+    // `probe_status.ebpf` stays null.
     //
     // R9.3 (drift #7): the pre-C5.3.1 v1 server persisted attachment
     // metadata even when the kernel-level attach failed (so callers could
     // observe "attempted but not owned"). The v2 server only persists
     // when the kernel attach succeeds. On hosts without CAP_BPF / CAP_SYS_ADMIN
     // (e.g. CI runners with CapEff=0), the attach fails and `probe_status.ebpf`
-    // stays null. This is correct v2 semantics, but it means the assertions
-    // below are env-dependent. Skip them when the attach call reports a
-    // permission/availability error, so the test only validates the
-    // ownership round-trip on capable hosts.
-    let inject = client
+    // stays null. This is correct v2 semantics, so the assertions below are
+    // only meaningful where the attach can actually succeed — which is why
+    // this test is `#[ignore]`d with that exact requirement instead of
+    // quietly returning early.
+    client
         .call_tool(
             "observe",
             serde_json::json!({
@@ -763,62 +695,32 @@ async fn m0_03_ebpf_probe_lifecycle_impl() {
                 "scope": {"scope": "session", "session_id": session_id}
             }),
         )
-        .await;
-    let attach_succeeded = match &inject {
-        Ok(_) => true,
-        Err(e) => {
-            let msg = e.to_string().to_lowercase();
-            // Common failure modes in restricted environments:
-            // - permission denied (CAP_BPF / CAP_SYS_ADMIN missing)
-            // - kernel feature unavailable
-            // - uprobe type not supported
-            // - probe still starting up (transient resource contention when
-            //   the MCP server is busy with previous tests in the suite;
-            //   not a real regression, just timing).
-            let env_blocked = msg.contains("permission")
-                || msg.contains("cap_")
-                || msg.contains("not supported")
-                || msg.contains("operation not permitted")
-                || msg.contains("probe still starting")
-                || msg.contains("starting up");
-            if env_blocked {
-                eprintln!(
-                    "m0_03: env-blocked uprobe attach ({e}); skipping post-inject \
-                     assertions (host lacks CAP_BPF/CAP_SYS_ADMIN)"
-                );
-                let _ = client.shutdown().await;
-                return;
-            }
-            // Some other error — surface it loudly so the test does NOT
-            // silently mask a real regression as "skipped".
+        .await
+        .unwrap_or_else(|e| {
+            // Any refusal fails loudly. This branch used to `return` early
+            // for anything matching a hand-rolled "env blocked" substring
+            // list, which is how the suite reported green while verifying
+            // nothing — and which mislabelled the real error observed on an
+            // unprivileged host: `probe still starting up`, a probe_start ↔
+            // observe race in the server, NOT a permission block.
             panic!(
-                "m0_03: observe(create uprobe) returned a non-env-blocked error; \
-                 v2 server contract requires Ok(attachment_record) on success or \
-                 a CAP/syscall error on env block. Got: {e}"
-            );
-        }
-    };
+                "m0_03: observe(create uprobe) failed: {e}. This test requires CAP_BPF plus \
+                 CAP_PERFMON (or CAP_SYS_ADMIN) to load a uprobe program; on a host without \
+                 them the v2 server correctly leaves probe_status.ebpf = null, so the \
+                 ownership round-trip below cannot be verified — which is why this test \
+                 carries an #[ignore] naming that requirement. If the error above is \
+                 'probe still starting up' it is NOT a permission problem: it is a \
+                 probe_start/observe registration race in the server and is a defect."
+            )
+        });
 
-    if !attach_succeeded {
-        // Unreachable: the env_blocked branch returns above; any other Err
-        // path panics inside the match. Kept as a defensive guard.
-        unreachable!("attach_succeeded should only be false on panic path");
-    }
-
-    let post_inject = match client
+    let post_inject = client
         .call_tool(
             "probe_status",
             serde_json::json!({ "session_id": session_id }),
         )
         .await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("m0_03: post-inject probe_status failed: {}", e);
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+        .unwrap_or_else(|e| panic!("m0_03: post-inject probe_status failed: {e}"));
     let post_ebpf = post_inject
         .get("ebpf")
         .cloned()
@@ -842,14 +744,10 @@ async fn m0_03_ebpf_probe_lifecycle_impl() {
     // Either is acceptable; what matters is that the metadata is persisted.
 
     // Phase 3: probe_stop — must report ebpf_detached=true since we owned one.
-    let stop = match client.probe_stop(&session_id).await {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("m0_03: probe_stop failed: {}", e);
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+    let stop = client
+        .probe_stop(&session_id)
+        .await
+        .unwrap_or_else(|e| panic!("m0_03: probe_stop failed: {e}"));
     assert!(
         stop.ebpf_detached,
         "m0_03: probe_stop.ebpf_detached must be true when the session owned an eBPF adapter"
@@ -887,35 +785,32 @@ async fn m0_03_ebpf_probe_lifecycle_impl() {
 #[tokio::test(flavor = "current_thread")]
 async fn m0_04_tripwires_evaluated_on_canonical_flow_impl() {
     let _ = ();
-    let fixture = match McpSession::fixture_path("test_busyloop") {
-        Some(p) => p,
-        None => {
-            eprintln!(
-                "m0_04: test_busyloop fixture not available; skipping (run `cargo build` first)"
-            );
-            return;
-        }
-    };
+    let fixture = McpSession::fixture_path("test_busyloop").unwrap_or_else(|| {
+        panic!(
+            "m0_04: required fixture `test_busyloop` is missing from {} — it is compiled by \
+             chronos-sandbox/build.rs, so a missing fixture is a build defect, not a missing \
+             host facility",
+            chronos_sandbox::FixtureResolver::root().display()
+        )
+    });
 
-    let mut client = match McpTestClient::start().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("m0_04: failed to start MCP server: {}", e);
-            return;
-        }
-    };
+    let mut client = McpTestClient::start()
+        .await
+        .unwrap_or_else(|e| panic!("m0_04: failed to start the chronos-mcp MCP server: {e}"));
 
     // CIH-E: start the probe session FIRST so we have a canonical session
     // id, then create the tripwire scoped to it. Otherwise the canonical
     // observe pipeline cannot resolve the canonical session.
-    let session_id = match client.probe_start(fixture.to_str().unwrap()).await {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("m0_04: probe_start failed: {}", e);
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
+        .unwrap_or_else(|e| {
+            panic!(
+                "m0_04: probe_start({}) failed: {e} — the fixture is present and ptrace needs no \
+                 capability, so this is a real failure",
+                fixture.display()
+            )
+        });
 
     // tripwire_create returns just the tripwire_id (string). It is non-empty
     // iff the tripwire was registered successfully.
@@ -953,7 +848,7 @@ async fn m0_04_tripwires_evaluated_on_canonical_flow_impl() {
 
     tokio::time::sleep(Duration::from_secs(2)).await;
 
-    let raw = match client
+    let raw = client
         .call_tool(
             "probe_drain",
             serde_json::json!({
@@ -962,14 +857,7 @@ async fn m0_04_tripwires_evaluated_on_canonical_flow_impl() {
             }),
         )
         .await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("m0_04: raw probe_drain failed: {}", e);
-            let _ = client.shutdown().await;
-            return;
-        }
-    };
+        .unwrap_or_else(|e| panic!("m0_04: raw probe_drain failed: {e}"));
     let fired = raw
         .get("tripwires_fired")
         .and_then(|v| v.as_u64())

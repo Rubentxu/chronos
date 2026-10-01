@@ -16,11 +16,41 @@ use chronos_sandbox::McpSession;
 use std::collections::HashSet;
 use std::time::Duration;
 
-async fn start_probed_fixture(client: &mut McpTestClient) -> Option<String> {
-    let fixture = McpSession::fixture_path("test_busyloop")?;
-    let session_id = client.probe_start(fixture.to_str().unwrap()).await.ok()?;
+/// Start a probe on the `test_busyloop` fixture and return the session id.
+///
+/// Both dependencies are supposed to be present on every host that builds this
+/// workspace, so a failure here is a defect of the tree, not a missing host
+/// facility:
+///
+///   * the fixture is compiled by `chronos-sandbox/build.rs` into `OUT_DIR` and
+///     published as the compile-time `CHRONOS_FIXTURE_DIR`, so it exists
+///     whenever the test binary itself was built;
+///   * `probe_start` execs it under ptrace, which needs no extra capability.
+///
+/// This helper therefore returns the session id directly and panics on failure.
+/// It used to return `Option<String>` and let every caller `return` early,
+/// which turned a broken build into four green tests that asserted nothing.
+async fn start_probed_fixture(client: &mut McpTestClient) -> String {
+    let fixture = McpSession::fixture_path("test_busyloop").unwrap_or_else(|| {
+        panic!(
+            "probe_drain_canonical: required fixture `test_busyloop` is missing from {} — \
+             it is compiled by chronos-sandbox/build.rs, so a missing fixture is a build \
+             defect, not an absent host facility",
+            chronos_sandbox::FixtureResolver::root().display()
+        )
+    });
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
+        .unwrap_or_else(|e| {
+            panic!(
+                "probe_drain_canonical: probe_start({}) failed: {e} — the fixture is present \
+                 and ptrace needs no capability, so this is a real failure",
+                fixture.display()
+            )
+        });
     tokio::time::sleep(Duration::from_secs(2)).await;
-    Some(session_id)
+    session_id
 }
 
 /// The wire shape is canonical: an `ecv1:` cursor, an examined-range
@@ -32,11 +62,7 @@ async fn probe_drain_wire_exposes_canonical_cursor_and_completeness() {
         .await
         .expect("Failed to start MCP server");
 
-    let Some(session_id) = start_probed_fixture(&mut client).await else {
-        eprintln!("probe_drain_canonical: fixture unavailable, skipping");
-        let _ = client.shutdown().await;
-        return;
-    };
+    let session_id = start_probed_fixture(&mut client).await;
 
     let first = client
         .probe_drain_with_evidence_cursor(&session_id, None)
@@ -96,11 +122,7 @@ async fn probe_drain_cursor_continuation_does_not_reread() {
         .await
         .expect("Failed to start MCP server");
 
-    let Some(session_id) = start_probed_fixture(&mut client).await else {
-        eprintln!("probe_drain_canonical: fixture unavailable, skipping");
-        let _ = client.shutdown().await;
-        return;
-    };
+    let session_id = start_probed_fixture(&mut client).await;
 
     let first = client
         .probe_drain_with_evidence_cursor(&session_id, None)
@@ -152,15 +174,8 @@ async fn probe_drain_rejects_foreign_session_cursor() {
         .await
         .expect("Failed to start MCP server");
 
-    let Some(owner_session) = start_probed_fixture(&mut client).await else {
-        eprintln!("probe_drain_canonical: fixture unavailable, skipping");
-        let _ = client.shutdown().await;
-        return;
-    };
-    let Some(other_session) = start_probed_fixture(&mut client).await else {
-        let _ = client.shutdown().await;
-        return;
-    };
+    let owner_session = start_probed_fixture(&mut client).await;
+    let other_session = start_probed_fixture(&mut client).await;
 
     let owned = client
         .probe_drain_with_evidence_cursor(&owner_session, None)
@@ -197,11 +212,7 @@ async fn probe_drain_firing_count_is_evidence_not_subscription_state() {
         .await
         .expect("Failed to start MCP server");
 
-    let Some(session_id) = start_probed_fixture(&mut client).await else {
-        eprintln!("probe_drain_canonical: fixture unavailable, skipping");
-        let _ = client.shutdown().await;
-        return;
-    };
+    let session_id = start_probed_fixture(&mut client).await;
 
     let before = client
         .probe_drain_with_evidence_cursor(&session_id, None)
