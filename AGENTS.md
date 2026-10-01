@@ -1465,3 +1465,66 @@ fix no es un guard:
 Control tras revertir ambos: 4 tests opt-in verdes y **0 procesos huérfanos**
 (antes se contaban por ejecución). Gate local TIER 1 `f1eea6e6`:
 `RunFinished: success`, 9/9 stages, 18 `StepStarted`, **0 `StepFailed`**.
+## `Inspector.detached` nunca llegaba: variante unidad con `params` (2026-10-01)
+
+Alerta registrada el día anterior en `cdp_client.rs:676` y marcada como
+"limitación de serde, no bug de código". **Verificada, y era understated:** no
+era una limitación de serde, era un defecto funcional, en dos crates.
+
+### Qué pasaba
+
+`CdpEventType` usa un enum **adyacente**: `#[serde(tag = "method", content =
+"params")]`. Con esa forma, serde solo acepta una variante **unidad** si el
+mensaje **no trae** la clave `params`. Y Chrome **siempre** envía
+`Inspector.detached` con `params`, porque `reason` es obligatorio según el
+protocolo.
+
+Medido sobre el código real, no deducido:
+
+| JSON | Pre-fix |
+|---|---|
+| `{"method":"Debugger.resumed"}` | OK |
+| `{"method":"Debugger.resumed","params":{}}` | **ERR** |
+| `{"method":"Inspector.detached"}` | OK |
+| `{"method":"Inspector.detached","params":{"reason":"target_closed"}}` | **ERR** |
+
+### Por qué era grave, no cosmético
+
+`InspectorDetached` es la **única señal que termina los bucles de captura**:
+
+- `chronos-browser/src/adapter.rs:281` → `s.running = false; break;`
+- `chronos-browser/src/wasm_detector.rs:94` → `break`
+- `chronos-js/src/adapter.rs:212` → mismo patrón
+
+Como el evento nunca deserializaba, cada detach caía en el `warn!("Failed to
+parse CDP event")` y se descartaba. Ni el bucle de captura ni el detector de
+WASM podían cerrarse por esa vía. **Y `chronos-js` tenía el mismo enum
+duplicado con el mismo defecto** — el barrido de "responsabilidades similares"
+lo saca otra vez.
+
+### El arreglo
+
+Las dos variantes pasan a ser tupla con `Option<Value>`, que acepta **ambas**
+formas. Se comprobó antes de escribir el fix que `Option` como `content` resuelve
+con y sin `params` (`Resumed(None)`, `Resumed(Some(Object {}))`,
+`Detached(Some({"reason": "target_closed"}))`).
+
+Deliberadamente **no** se arregló el `Other` catch-all, que sigue sin funcionar
+para eventos desconocidos con `params`: hacerlo los dejaría pasar al broadcast y
+volcaría `Network.*` y `Page.*` en todos los consumidores. Es un cambio de
+comportamiento de riesgo desconocido, no una corrección. Se deja como está, con
+su test de caracterización, que **sigue siendo exacto** y se verificó otra vez
+tras el cambio.
+
+### Verificación
+
+Mutation-tested contra el código **pre-fix**: el test
+`test_cdp_event_inspector_detached_with_params_parses` falla con *"Inspector.detached
+con params debe parsear"*. Post-fix, 4 tests nuevos en `chronos-browser` y 2 en
+`chronos-js` cubren ambas formas, **sin `#[ignore]` y por tanto dentro del gate
+por defecto** — que es la diferencia con el resto de adaptadores: aquí no hace
+falta Chrome para fijar el contrato.
+
+Sin Chrome en el host, la evidencia es deserialización contra la forma exacta
+del protocolo, no un detach observado en vivo. Es conocimiento negativo que
+conviene no olvidar.

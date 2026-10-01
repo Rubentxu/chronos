@@ -25,7 +25,7 @@ pub enum CdpEventType {
     DebuggerPaused(DebuggerPausedParams),
 
     #[serde(rename = "Debugger.resumed")]
-    DebuggerResumed,
+    DebuggerResumed(Option<Value>),
 
     #[serde(rename = "Debugger.scriptParsed")]
     DebuggerScriptParsed(ScriptParsedParams),
@@ -33,8 +33,22 @@ pub enum CdpEventType {
     #[serde(rename = "Runtime.executionContextCreated")]
     RuntimeExecutionContextCreated(ExecutionContextCreatedParams),
 
+    /// Declared as a tuple variant carrying the raw params, not as a unit one.
+    ///
+    /// With `tag = "method", content = "params"` serde only accepts a *unit*
+    /// variant when the payload has no `params` key at all. Chrome always sends
+    /// `Inspector.detached` with one — `reason` is required by the protocol —
+    /// so as a unit variant the event failed to deserialize every time and was
+    /// dropped with a `warn!`, logged as "Failed to parse CDP event".
+    ///
+    /// That mattered: `InspectorDetached` is the only signal that stops the
+    /// capture loop (`adapter.rs`) and the WASM detection loop
+    /// (`wasm_detector.rs`), so neither could ever end on detach.
+    ///
+    /// `Option<Value>` accepts both shapes, so a spec-compliant `params` and a
+    /// bare event are both handled.
     #[serde(rename = "Inspector.detached")]
-    InspectorDetached,
+    InspectorDetached(Option<Value>),
 
     /// Catch-all for other events — skips unknown params via #[serde(skip)]
     #[serde(other)]
@@ -259,7 +273,7 @@ impl BrowserCdpClient {
                                                                 hit_breakpoints: params.hit_breakpoints,
                                                             }
                                                         }
-                                                        CdpEventType::DebuggerResumed => CdpEvent::DebuggerResumed,
+                                                        CdpEventType::DebuggerResumed(_) => CdpEvent::DebuggerResumed,
                                                         CdpEventType::DebuggerScriptParsed(params) => {
                                                             CdpEvent::DebuggerScriptParsed {
                                                                 script_id: params.script_id,
@@ -276,7 +290,7 @@ impl BrowserCdpClient {
                                                                 name: params.context.name,
                                                             }
                                                         }
-                                                        CdpEventType::InspectorDetached => CdpEvent::InspectorDetached,
+                                                        CdpEventType::InspectorDetached(_) => CdpEvent::InspectorDetached,
                                                         CdpEventType::Other => CdpEvent::Other,
                                                     };
                                                     let _ = event_tx_clone.send(cdp_event);
@@ -662,14 +676,14 @@ mod tests {
     fn test_cdp_event_debugger_resumed_deserialize() {
         let json = r#"{"method": "Debugger.resumed"}"#;
         let event: CdpEventType = serde_json::from_str(json).unwrap();
-        assert!(matches!(event, CdpEventType::DebuggerResumed));
+        assert!(matches!(event, CdpEventType::DebuggerResumed(_)));
     }
 
     #[test]
     fn test_cdp_event_inspector_detached_deserialize() {
         let json = r#"{"method": "Inspector.detached"}"#;
         let event: CdpEventType = serde_json::from_str(json).unwrap();
-        assert!(matches!(event, CdpEventType::InspectorDetached));
+        assert!(matches!(event, CdpEventType::InspectorDetached(_)));
     }
 
     #[test]
@@ -692,7 +706,54 @@ mod tests {
         // Debugger.resumed has no params field — should still deserialize
         let json = r#"{"method": "Debugger.resumed"}"#;
         let event: CdpEventType = serde_json::from_str(json).unwrap();
-        assert!(matches!(event, CdpEventType::DebuggerResumed));
+        assert!(matches!(event, CdpEventType::DebuggerResumed(_)));
+    }
+
+    /// The regression that mattered: `Inspector.detached` carries a required
+    /// `reason` per the protocol, so Chrome always sends `params`. As a unit
+    /// variant the event never parsed, which meant the capture loop and the
+    /// WASM detector could never stop on detach.
+    #[test]
+    fn test_cdp_event_inspector_detached_with_params_parses() {
+        let json = r#"{"method": "Inspector.detached", "params": {"reason": "target_closed"}}"#;
+        let event: CdpEventType =
+            serde_json::from_str(json).expect("Inspector.detached must parse with params");
+        match event {
+            CdpEventType::InspectorDetached(params) => {
+                let reason = params
+                    .as_ref()
+                    .and_then(|v| v.get("reason"))
+                    .and_then(|v| v.as_str())
+                    .expect("reason should be preserved");
+                assert_eq!(reason, "target_closed");
+            }
+            other => panic!("expected InspectorDetached, got {other:?}"),
+        }
+    }
+
+    /// The bare shape must keep working too, so the fix does not trade one
+    /// event form for another.
+    #[test]
+    fn test_cdp_event_inspector_detached_without_params_parses() {
+        let json = r#"{"method": "Inspector.detached"}"#;
+        let event: CdpEventType = serde_json::from_str(json).expect("bare event must parse");
+        assert!(matches!(event, CdpEventType::InspectorDetached(None)));
+    }
+
+    /// `Debugger.resumed` is spec'd without params, but tolerating both shapes
+    /// costs nothing and protects against Chrome sending one anyway.
+    #[test]
+    fn test_cdp_event_debugger_resumed_accepts_both_shapes() {
+        let bare: CdpEventType = serde_json::from_str(r#"{"method": "Debugger.resumed"}"#).unwrap();
+        assert!(matches!(bare, CdpEventType::DebuggerResumed(None)));
+
+        let with_params: CdpEventType =
+            serde_json::from_str(r#"{"method": "Debugger.resumed", "params": {}}"#)
+                .expect("resumed must tolerate params too");
+        assert!(matches!(
+            with_params,
+            CdpEventType::DebuggerResumed(Some(_))
+        ));
     }
 
     #[test]

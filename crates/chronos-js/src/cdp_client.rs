@@ -27,15 +27,26 @@ pub enum CdpEventType {
     #[serde(rename = "Debugger.paused")]
     DebuggerPaused(DebuggerPausedParams),
     #[serde(rename = "Debugger.resumed")]
-    DebuggerResumed,
+    DebuggerResumed(Option<Value>),
     #[serde(rename = "Runtime.executionContextCreated")]
     RuntimeExecutionContextCreated(ExecutionContextCreatedParams),
     #[serde(rename = "Runtime.consoleAPICalled")]
     RuntimeConsoleApiCalled(ConsoleApiCalledParams),
     #[serde(rename = "Runtime.exceptionThrown")]
     RuntimeExceptionThrown(ExceptionThrownParams),
+    /// Declared as a tuple variant carrying the raw params, not as a unit one.
+    ///
+    /// With `tag = "method", content = "params"` serde only accepts a *unit*
+    /// variant when the payload has no `params` key at all. Chrome always sends
+    /// `Inspector.detached` with one — `reason` is required by the protocol —
+    /// so as a unit variant the event failed to deserialize every time and was
+    /// dropped with a `warn!`, logged as "Failed to parse CDP event".
+    ///
+    /// `Option<Value>` accepts both shapes, so a spec-compliant `params` and a
+    /// bare event are both handled. Same fix as `chronos-browser`, which shares
+    /// this duplicated CDP client shape.
     #[serde(rename = "Inspector.detached")]
-    InspectorDetached,
+    InspectorDetached(Option<Value>),
     /// Catch-all for other events
     #[serde(other)]
     Other,
@@ -214,7 +225,7 @@ impl CdpClient {
                                                                 hit_breakpoints: params.hit_breakpoints,
                                                             }
                                                         }
-                                                        CdpEventType::DebuggerResumed => CdpEvent::DebuggerResumed,
+                                                        CdpEventType::DebuggerResumed(_) => CdpEvent::DebuggerResumed,
                                                         CdpEventType::RuntimeExecutionContextCreated(params) => {
                                                             CdpEvent::RuntimeExecutionContextCreated {
                                                                 context_id: params.context.id,
@@ -233,7 +244,7 @@ impl CdpClient {
                                                                 text: params.exception_details.text,
                                                             }
                                                         }
-                                                        CdpEventType::InspectorDetached => CdpEvent::InspectorDetached,
+                                                        CdpEventType::InspectorDetached(_) => CdpEvent::InspectorDetached,
                                                         CdpEventType::Other => CdpEvent::Other,
                                                     };
                                                     let _ = event_tx_clone.send(cdp_event);
@@ -560,5 +571,35 @@ mod tests {
         let error = response.error.unwrap();
         assert_eq!(error.code, -32601);
         assert_eq!(error.message, "Method not found");
+    }
+
+    /// `Inspector.detached` carries a required `reason` per the protocol, so
+    /// Chrome always sends `params`. As a unit variant it never parsed and was
+    /// dropped with a `warn!`, so the adapter could not stop on detach.
+    #[test]
+    fn test_cdp_event_inspector_detached_with_params_parses() {
+        let json = r#"{"method": "Inspector.detached", "params": {"reason": "target_closed"}}"#;
+        let event: CdpEventType =
+            serde_json::from_str(json).expect("Inspector.detached must parse with params");
+        match event {
+            CdpEventType::InspectorDetached(params) => {
+                let reason = params
+                    .as_ref()
+                    .and_then(|v| v.get("reason"))
+                    .and_then(|v| v.as_str())
+                    .expect("reason should be preserved");
+                assert_eq!(reason, "target_closed");
+            }
+            other => panic!("expected InspectorDetached, got {other:?}"),
+        }
+    }
+
+    /// The bare shape must keep working too, so the fix does not trade one
+    /// event form for another.
+    #[test]
+    fn test_cdp_event_inspector_detached_without_params_parses() {
+        let json = r#"{"method": "Inspector.detached"}"#;
+        let event: CdpEventType = serde_json::from_str(json).expect("bare event must parse");
+        assert!(matches!(event, CdpEventType::InspectorDetached(None)));
     }
 }
