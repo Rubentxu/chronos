@@ -2078,3 +2078,74 @@ porque nada funcionara**. Y cuando descartes un assert por ser frágil,
 escríbelo: un assert que se descartó con el motivo escrito se puede reevaluar
 después; uno que se descartó en silencio se vuelve a proponer tres meses más
 tarde como si fuera nuevo.
+
+## Dos servicios que respondían igual a cosas distintas (2026-10-01)
+
+### «No hay variables» y «no existe ese evento»
+
+`DebugReadService::get_variables` pasaba el `event_id` al motor sin comprobar
+existencia, así que un id equivocado respondía `Ok([])`, exactamente igual que
+un evento real sin datos de marco. Quien leyera una lista vacía no tenía forma
+de distinguir una ausencia verdadera de un error de tipeo — y un agente que
+construye su hipótesis forense sobre esa lista no puede saber cuál de las dos
+está mirando.
+
+La asimetría de la que había que darse cuenta: **`register_snapshot` ya
+distinguía los dos casos**, con `EventNotFound` frente a `NoRegisterState`. Dos
+variantes del mismo enum, en el mismo fichero, respondiendo distinto ante la
+misma pregunta. El precedente estaba a treinta líneas.
+
+Antes de escribir el arreglo se comprobó lo que podía hacerlo falso:
+`get_variables_at_event` (`crates/chronos-query/src/engine.rs:526-540`) es una
+**búsqueda por igualdad exacta** con `binary_search_by_key`, no una ventana. Un
+id nunca capturado no cae legítimamente en ningún rango. El caso que sí tiene
+semántica de rango es `get_memory_at`, «at or before timestamp», y quedó
+intacto. Sin esa comprobación, «no encontrado» y «sin frame data» se habrían
+mezclado justo al separarlas.
+
+La validación se puso en el servicio y no en el brazo del `match` porque hay dos
+call sites de producción —`state_query` y la tool v1 `debug_get_variables`— y
+arreglar solo uno deja dos comportamientos para el mismo concepto.
+
+### Un tripwire que no puede dispararse
+
+`tripwire_create` aceptaba `EventType([])`. El tripwire se creaba, se listaba,
+se contaba, y ningún evento podía satisfacerlo jamás. El llamante pagaba la
+suscripción y recibía silencio.
+
+El alcance del rechazo se acotó a propósito a las condiciones **insatisfacibles
+por su propia estructura**: conjuntos vacíos contra los que probar pertenencia
+(`EventType`, `SyscallNumber`, `Signal`) y rangos invertidos (`MemoryAddress`).
+Tres casos vecinos quedaron fuera, y el motivo importa:
+
+- `FunctionName { pattern: "" }` solo casa con un nombre de función vacío
+  (`glob_inner` devuelve `ti == t.len()` con el patrón agotado). Es
+  insatisfacible en la práctica, pero probarlo sería una afirmación sobre **todos
+  los adaptadores**, no sobre este tipo.
+- `VariableName { name: "" }` tiene el mismo argumento.
+- `ExceptionType { exc_type: "" }` es el fallo **contrario**: `contains("")` es
+  cierto para cualquier cadena, así que casa con *todos* los eventos de
+  excepción en lugar de con ninguno. Rechazarlo aquí convertiría en silencio una
+  configuración ruidosa y equivocada en una rechazada, que es otra decisión.
+
+**Un error con dos causas necesita dos mensajes.** La primera versión devolvió
+`ServiceError::InvalidCondition`, que ya existía para «este `event_type` no lo
+reconozco». El test falló con:
+
+```
+observe: unknown event_type 'event_types is empty, so no event could ever satisfy it'
+```
+
+La capa MCP renderiza ambas causas con la misma etiqueta, así que rechazar una
+lista vacía le decía al llamante que su tipo de evento era desconocido. Pasó a
+`ServiceError::UnsatisfiableCondition`, y un test de servicio fija que el
+mensaje **no** vuelva a contener `unknown event_type`. Añadir la variante
+rompió un `match` exhaustivo en `server.rs:1118`, que el compilador cazó.
+
+### La regla
+
+Antes de unificar dos errores porque «son el mismo enum», comprobar si el
+llamante puede distinguirlos. Y cuando el rechazo de un caso sea correcto pero
+su alcance no esté claro, escribir **por qué los otros quedan fuera**: un
+límite justificado se puede revisar; uno arbitrario se vuelve a ampliar sin
+querer dentro de seis meses.
