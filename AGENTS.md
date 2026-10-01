@@ -1984,3 +1984,97 @@ que acepta ambos brazos no es un test débil: es el que está **impidiendo** que
 vea. Arreglar el transporte sin mirar la forma solo habría movido el fallo. Y
 antes de «arreglar» una capa, comprueba con `git log -S` de dónde salió la forma
 que no funciona: casi siempre la respuesta es que nunca funcionó.
+
+## Un helper del sandbox que siempre devolvía `-32601` (2026-10-01)
+
+### El hallazgo
+
+Al convertir los tests de profundidad apareció uno que no fallaba por la razón
+que parecía. `test_evaluate_expression_simple_arithmetic` llamaba a
+`state_query` mediante `call_with_timeout` y aceptaba `Ok` **y** `Err`. Al
+medirlo: `Err(-32601 "method not found")`.
+
+La causa no estaba en el test ni en la tool. `call_with_timeout` envía un
+**método JSON-RPC crudo**, y desde C5.3.2 el servidor solo implementa
+`tools/call`. Ese helper no puede funcionar nunca para ninguna tool.
+
+Un segundo agente, trabajando en otro par de ficheros y sin saber nada del
+anterior, encontró lo mismo: los dos tests de umbral de `race_depth` invocaban
+`execution_query` por ese camino y llevaban meses midiendo `-32601`. **Dos
+investigaciones independientes, mismo defecto.** Eso es la señal de que la causa
+es compartida y no de cada test.
+
+### Un caso peor: la ruta JSON equivocada
+
+`events_read` con `mode = query` anida la página en `result.events`. El test lo
+leía en el nivel superior con `v.get("events")` y reportaba «0 events» sobre una
+página llena de cinco. No fallaba, no estaba verde por tolerancia: estaba
+**leyendo otra cosa** y le daba un nombre que sonaba razonable.
+
+Un assert sobre la clave equivocada es peor que no tener assert, porque además
+de no probar nada parece que sí.
+
+### La regla
+
+Un `-32601` o un «0 eventos» en un test tolerante no es un detalle del fixture:
+es una **ruta de llamada que dejó de existir**. Y cuando varios tests, en
+ficheros distintos y para tools distintas, devuelven el mismo código de error,
+sospecha del helper compartido antes que de cada test.
+
+## Dieciséis tests de profundidad del sandbox, y lo que no se puede afirmar (2026-10-01)
+
+Seis ficheros, dieciséis tests convertidos de «imprimir» o «aceptar ambos
+brazos» a aserciones medidas. Todos se invirtieron y se vieron fallar antes de
+revertir; las seis suites quedaron verdes (43 tests).
+
+### El límite que hay que escribir en el propio test
+
+`test_detect_races_threads` ahora exige cero carreras. Es un assert válido, pero
+solo con dos datos verificados de forma independiente:
+
+1. `test_many_threads.c` no tiene carrera por construcción: cada worker acumula
+   en su `volatile long sum` **de pila propio** y solo lee `ids[i]`, que `main`
+   escribe antes de crear los hilos.
+2. Aun así, `total_writes` y `access_count` son 0 sobre 374–376 eventos: la
+   captura ptrace de un fixture en C no emite escrituras a memoria, así que el
+   detector no tiene direcciones que emparejar.
+
+El segundo punto significa que **el verde no demuestra que el detector supiera
+encontrar una carrera si existiera**. Eso está escrito en el doc-comment, porque
+un test que aparenta más de lo que prueba es una trampa para el que lo lea seis
+meses después.
+
+En `concurrency_stress` se descartó todo lo que dependiera del reloj:
+`duration_ms` y `elapsed` se midieron en 6–10 ms en un host compartido,
+`ebpf_detached` refleja privilegios y kernel, y los recuentos absolutos variaron
+entre 128 y 129 entre tests. Se afirmó lo estructural: identificadores distintos
+por ciclo, ids ascendentes y sin duplicar dentro de cada página, y las 20
+llamadas mezcladas terminando todas en `Ok`.
+
+### Guardas anti-vacuidad
+
+Varios asserts «todo vacío» se acompañaron de una guarda que demuestra que la
+sesión no estaba muerta: `total_events >= 100`, o un control `limit = 5` junto al
+`limit = 0` que se está afirmando. **Cero porque no hay nada** y **cero porque
+no se capturó nada** producen el mismo test verde; la guarda es lo que los
+distingue.
+
+Un caso límite que se dejó anotado sin tocar: `CS7 probes_different_durations`
+ya afirmaba `drain3.len() >= drain1.len()`, que sí depende de temporización.
+Queda fuera de esta tanda y marcada como riesgo latente.
+
+### Un nombre que ya no describe lo que hace
+
+`ED2 debug_call_graph_has_edges` ahora afirma que **no hay** aristas, porque la
+captura en C no produce grafo de llamadas. Se conserva el nombre porque
+renombrarlo rompería referencias de UAT y receipts; la contradicción queda
+documentada en el doc-comment. Renombrar es lo correcto en abstracto, y lo
+incorrecto aquí.
+
+### La regla
+
+Cuando afirmes un vacío, afirma también **por qué está vacío** y **que no era
+porque nada funcionara**. Y cuando descartes un assert por ser frágil,
+escríbelo: un assert que se descartó con el motivo escrito se puede reevaluar
+después; uno que se descartó en silencio se vuelve a proponer tres meses más
+tarde como si fuera nuevo.
