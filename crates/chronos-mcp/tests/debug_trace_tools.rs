@@ -171,8 +171,11 @@ async fn debug_call_graph_returns_graph() {
         .unwrap();
     // 3 unique functions: main, helper, worker
     assert_eq!(result.stats.node_count, 3);
-    // No register evidence expected
-    assert_eq!(result.stats.max_observed_depth, 0);
+    // Thread 1 nests main -> helper, so the walk reaches depth 2. Thread 2 only
+    // enters worker at depth 1, and the two threads are stacked separately.
+    // The old comment here said "no register evidence expected", which was
+    // about a different tool entirely and said nothing about call depth.
+    assert_eq!(result.stats.max_observed_depth, 2);
 }
 
 #[tokio::test]

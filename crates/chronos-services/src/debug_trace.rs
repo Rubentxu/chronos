@@ -157,6 +157,7 @@ impl DebugTraceService {
         let mut callees: HashMap<String, Vec<String>> = HashMap::new();
         let mut call_counts: HashMap<String, u64> = HashMap::new();
         let mut stacks: HashMap<u64, Vec<String>> = HashMap::new();
+        let mut max_observed_depth: u32 = 0;
 
         let query = TraceQuery::new(session_id).pagination(usize::MAX, 0);
         let result = engine.execute(&query);
@@ -181,6 +182,10 @@ impl DebugTraceService {
                             callers.entry(func.clone()).or_default().push(parent);
                         }
                         stack.push(func);
+                        // Measured here, while the stack still holds the path.
+                        // It used to be measured after the loop, over the
+                        // emptied stacks, so it was pinned at 0 forever.
+                        max_observed_depth = max_observed_depth.max(stack.len() as u32);
                     }
                 }
                 EventType::FunctionExit => {
@@ -224,13 +229,6 @@ impl DebugTraceService {
             .collect();
 
         let edge_count = edges.len();
-
-        let mut max_observed_depth = 0u32;
-        for stack in stacks.values() {
-            if !stack.is_empty() {
-                max_observed_depth = max_observed_depth.max(stack.len() as u32);
-            }
-        }
 
         Ok(CallGraph {
             nodes,
@@ -277,7 +275,12 @@ pub struct CallGraphStats {
     pub node_count: usize,
     /// Total unique edges.
     pub edge_count: usize,
-    /// Maximum observed call-stack depth.
+    /// Deepest call stack the walk actually descended to.
+    ///
+    /// Never larger than the `max_depth` the caller asked for, and equal to it
+    /// whenever the trace is nested at least that deep. Zero means no
+    /// `FunctionEntry` was recorded at all — a trace with no function events,
+    /// not a trace that stopped early.
     pub max_observed_depth: u32,
 }
 
@@ -567,6 +570,53 @@ mod tests {
             .unwrap();
         // 2 unique functions: main, helper
         assert_eq!(result.stats.node_count, 2);
+        // `events_engine` enters and exits each function with an empty stack
+        // in between, so nothing is ever nested: the deepest the walk gets is 1.
+        assert_eq!(result.stats.max_observed_depth, 1);
+    }
+
+    /// The field used to be structurally pinned at zero.
+    ///
+    /// It was measured after the walk, over the per-thread stacks, and every
+    /// `FunctionExit` had already popped its own frame — so the map held only
+    /// empty vectors and the `if !stack.is_empty()` branch never ran. This test
+    /// covers both directions of the argument: a nested trace reports its real
+    /// depth, and lowering `max_depth` lowers the reported depth with it, which
+    /// is what proves the gate is the thing being measured.
+    #[tokio::test]
+    async fn debug_call_graph_reports_observed_depth_within_the_limit() {
+        let map = engine_with_call_chain();
+        let engines = Mutex::new(map);
+
+        // a -> b -> c is three frames deep, and the limit allows all three.
+        let full = DebugTraceService::debug_call_graph("s2", 3, &engines)
+            .await
+            .unwrap();
+        assert_eq!(full.stats.max_observed_depth, 3);
+        assert_eq!(full.stats.node_count, 3);
+        assert_eq!(full.stats.edge_count, 2, "a->b and b->c survive the cut");
+
+        // With a limit of 2 the walk stops before c, and the metric follows.
+        let cut = DebugTraceService::debug_call_graph("s2", 2, &engines)
+            .await
+            .unwrap();
+        assert_eq!(cut.stats.max_observed_depth, 2);
+        assert_eq!(cut.stats.edge_count, 1, "only a->b remains");
+    }
+
+    /// A trace with no function events is depth zero — a different statement
+    /// from "the walk was cut short", and the reason the doc on the field
+    /// spells both out.
+    #[tokio::test]
+    async fn debug_call_graph_without_function_events_is_depth_zero() {
+        let engine = QueryEngine::new(vec![trace_event(1, 10, 1, EventType::SyscallEnter, "")]);
+        let engines = Mutex::new(HashMap::from([("s3".to_string(), engine)]));
+
+        let result = DebugTraceService::debug_call_graph("s3", 5, &engines)
+            .await
+            .unwrap();
+        assert_eq!(result.stats.node_count, 0);
+        assert_eq!(result.stats.max_observed_depth, 0);
     }
 
     #[tokio::test]
