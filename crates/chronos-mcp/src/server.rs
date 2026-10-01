@@ -692,8 +692,28 @@ impl ChronosServer {
 
     /// Inject a `QueryEngine` into the server's engine map for testing.
     ///
-    /// This is intentionally **not** public in the production API — it exists
-    /// only to support integration tests in `tests/debug_read_tools.rs`.
+    /// **`#[cfg(test)]` limits this to this crate's own unit tests.** An
+    /// earlier version of this doc claimed the method existed "only to
+    /// support integration tests in `tests/debug_read_tools.rs`", which is
+    /// impossible: `cfg(test)` is not set when the crate is compiled as a
+    /// dependency of an integration test, so the method does not exist from
+    /// `tests/`. That file never called it, and neither does anything else —
+    /// this currently has no callers.
+    ///
+    /// It stays because the seam is legitimate and the map it writes is
+    /// otherwise unreachable from a test. If an integration test ever needs
+    /// it, the repo already has two working precedents for widening a
+    /// production symbol for tests, and either is the shape to follow:
+    ///
+    /// - `chronos-services`'s `test_support` module, gated on
+    ///   `#[cfg(any(test, feature = "test-utils"))]` with the feature
+    ///   declared by the consumer crate, which is how
+    ///   `chronos-mcp/tests/*` and `chronos-sandbox/tests/*` reach it.
+    /// - `chronos-store`'s `ce_test_hooks`, a `#[doc(hidden)] pub` surface
+    ///   documented as a narrow, versioned test chokepoint.
+    ///
+    /// Do not remove the `#[cfg(test)]` to make an integration test compile;
+    /// that widens the production API to accommodate the test.
     #[cfg(test)]
     pub async fn inject_engine_for_testing(
         &self,
