@@ -1752,3 +1752,68 @@ no distingue nada: al revertir solo el arreglo 1, los 3 tests dependientes
 fallan y el de degradación pasa — que es lo correcto, porque el código viejo
 siempre devolvía vacío. Un test que no puede fallar no es un test, y uno que
 falla siempre por lo mismo que sus vecinos tampoco informa.
+
+## Dos UATs queepasaban sin ejecutarse (2026-10-01)
+
+Del barrido de tests sin aserción. Los dos casos de gravedad 3, y los dos
+vienen del mismo molde: **`let _ =` sobre todo lo que importa**.
+
+### `m1_08_auto_compaction_daemon_runs_in_process_impl`
+
+`chronos-sandbox/tests/m1_acceptance.rs`. Cero aserciones. Si
+`McpTestClient::start()` fallaba, `eprintln!` + `return` → verde. Las dos
+llamadas a tools iban a `let _ =`. El `shutdown()` también.
+
+Es decir: **un servidor que no arrancó y uno que respondió bien eran
+indistinguibles.** Y el test se llama `..._daemon_runs_in_process`.
+
+El detalle que lo hace instructive: su propio doc ya declaraba el contrato
+que incumplía — *"just makes sure the binary launches … and shuts down
+cleanly with the daemon attached"*. El arreglo fue hacer que el cuerpo cumpla
+el doc, no reescribir el doc. Ahora afirma: `start()` tiene éxito, ambos tools
+rechazan la sesión inexistente nombrándola (medido:
+`RpcError("Live probe session 'no-such-session' not found.")`), y `shutdown()`
+devuelve `Ok`.
+
+El doc además afirmaba que el binario arranca *"with the env var set"* y el
+test **no ponía ninguna env var**. El daemon lee
+`CHRONOS_AUTO_COMPACT_INTERVAL_SECS` al arrancar y `0` lo desactiva; el
+default 30s ya lo habilita. El doc ahora dice eso. El test deliberadamente
+**no** llama `set_var`: muta estado de proceso y competiría con los otros
+tests del binario.
+
+Y sigue sin probar que una ronda de compactación ocurra —una ronda solo
+recorre `live_probes`, y una sesión que nunca se inició no está ahí—, pero el
+doc lo dice de forma clara en vez de insinuarlo.
+
+### `cih_g_uat_c2_01_diagnostic_first_event_timing`
+
+`chronos-sandbox/tests/rec_c2_2_uat_c2.rs`. Imprimía sus números y `return`.
+Los dos resultados que existe para distinguir —el evento llegó, o nunca llegó
+— daban `ok`.
+
+La firma del segundo está documentada en ese mismo fichero, a 500 líneas:
+4 subidas de deadline (10s→30s→60s→300s), todas expirando a ratio ~1.0x con
+`total_buffered=0`.
+
+Su gemelo, **UAT-C2-01, ya decidía ese caso bien**: relee el wire, saca
+`session_live` de `status` y `pipeline_silent` de `total_buffered`, y se los
+pasa a `verdict_is_unobservable` — helper que existe para esto y que
+`unobservable_verdict_requires_a_live_but_silent_pipeline` testea en el mismo
+fichero. **Solo el gemelo diagnóstico nunca la llamó.** El arreglo reutiliza
+esa política en vez de inventar una segunda, para que los dos no puedan
+divergir sobre qué significa "no observable".
+
+Medido en este host, **las dos ramas son reales**: ejecutado solo, el
+diagnóstico vio `first_event_after_ms=11 count=1`; ejecutado dentro del binario
+completo, bajo la carga del UAT previo, C2-01 se pasó los 300 s con el fixture
+corriendo. Es exactamente la condición que el veredicto clasifica.
+
+### La regla
+
+Un UAT que no puede fallar no es un UAT, es un `println!` con presupuesto. Y
+cuando la política ya existe a 500 líneas de distancia —un helper, una función de
+veredicto, un precedente— **reutilízala**: duplicar la política es cómo dos
+tests empiezan a discrepar sobre el mismo caso. `UNDER_TARPAULIN` se elevó a
+nivel de módulo por exactamente eso: la necesitaban dos tests y una copia por
+test dejaría que el contractual y el diagnóstico no coincidieran.
