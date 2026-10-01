@@ -45,22 +45,18 @@ async fn test_debug_get_variables_empty_session() {
         .await
         .expect("debug_get_variables failed");
 
-    // === Assertions ===
-    // C programs don't have Python-style frame events with local variables,
-    // so we expect empty results - but the call should succeed
-    println!(
-        "✓ debug_get_variables at event 0: {} variables (expected empty for C)",
-        variables.len()
+    // The comment above already said what the result must be: a C program
+    // produces no Python-style frame events, so there are no variables in
+    // scope. That was printed, not asserted, so the test passed either way.
+    assert!(
+        variables.is_empty(),
+        "a native C fixture produces no frame locals, so event 0 must yield no \
+         variables; got {:?}",
+        variables
+            .iter()
+            .map(|v| (&v.name, &v.type_name))
+            .collect::<Vec<_>>()
     );
-
-    for var in variables.iter() {
-        println!(
-            "  {} = {} ({})",
-            var.name,
-            var.value,
-            var.type_name.as_str()
-        );
-    }
 
     client.shutdown().await.ok();
 }
@@ -104,9 +100,10 @@ async fn test_debug_get_variables_out_of_range() {
         .await
         .expect("debug_get_variables failed");
 
-    // Should return empty - the event doesn't exist
-    println!(
-        "✓ debug_get_variables at event 999999: {} variables",
+    assert!(
+        variables.is_empty(),
+        "event 999999 is past the end of the capture, so it must yield no \
+         variables rather than a partial or fabricated set; got {} entries",
         variables.len()
     );
 
@@ -150,19 +147,23 @@ async fn test_evaluate_expression_empty_session() {
     // Try to evaluate an expression - will fail because no Python frames with locals
     let result = client.evaluate_expression(&session_id, "x + y").await;
 
-    match result {
-        Ok(value) => {
-            // If it succeeds, it means there were variables but they might not match
-            println!("✓ evaluate_expression returned: {:?}", value);
-        }
-        Err(e) => {
-            // Expected: C programs don't have Python-style variables
-            println!(
-                "✓ evaluate_expression failed as expected for C program: {:?}",
-                e
-            );
-        }
-    }
+    // Measured, not assumed: a C fixture has no variable named `x`, and the
+    // evaluation error is carried as a *value*, not as a transport error --
+    // `DebugReadService::evaluate_expression` maps it to
+    // `EvalResult::Error`. The old body accepted both branches, so it could
+    // not tell a working evaluator from a broken one.
+    let rendered = match &result {
+        Ok(serde_json::Value::String(s)) => s.clone(),
+        other => panic!(
+            "a C fixture has no `x`, so evaluate_expression must return the \
+             evaluation error as a string value; got {other:?}"
+        ),
+    };
+    assert!(
+        rendered.contains("UnknownVariable"),
+        "the error must name the unknown variable so the caller can act on it; \
+         got {rendered:?}"
+    );
 
     client.shutdown().await.ok();
 }
@@ -201,17 +202,98 @@ async fn test_evaluate_expression_invalid_expression() {
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Try to evaluate a syntactically invalid expression
-    let result = client.evaluate_expression(&session_id, "x +++ y").await;
+    let result = client.evaluate_expression(&session_id, "1 +++ 1").await;
 
-    match result {
-        Ok(value) => {
-            // Might succeed with an error result in the JSON
-            println!("✓ evaluate_expression returned: {:?}", value);
-        }
-        Err(e) => {
-            // Also acceptable - the call itself failed
-            println!("✓ evaluate_expression call failed: {:?}", e);
-        }
+    // The old comment read "Might succeed" / "Also acceptable", which is a
+    // test that cannot fail. Measured: a malformed expression is reported as
+    // the parse error inside the returned string, and that is the only
+    // outcome that distinguishes a parser from a stub.
+    //
+    // Note the expression carries no identifiers. `x +++ y` would not do: the
+    // evaluator resolves variables as it goes, so it reports
+    // UnknownVariable("x") and never reaches the `+++`. That ordering is
+    // pinned separately below, because "the first error wins" is a real part
+    // of the contract and it is why the two cases differ.
+    let rendered = match &result {
+        Ok(serde_json::Value::String(s)) => s.clone(),
+        other => panic!("`1 +++ 1` cannot parse, so evaluate_expression must return the parse error as a string value; got {other:?}"),
+    };
+    assert!(
+        rendered.contains("InvalidNumber"),
+        "the parse failure must be reported as such; got {rendered:?}"
+    );
+
+    // The first error wins: an unknown identifier is reported before the
+    // malformed arithmetic is ever reached.
+    let mixed = client.evaluate_expression(&session_id, "x +++ y").await;
+    let mixed = match &mixed {
+        Ok(serde_json::Value::String(s)) => s.clone(),
+        other => panic!("`x +++ y` must report its first error as a string; got {other:?}"),
+    };
+    assert!(
+        mixed.contains("UnknownVariable"),
+        "identifier resolution precedes arithmetic parsing, so the unknown \
+         variable is what gets reported; got {mixed:?}"
+    );
+
+    client.shutdown().await.ok();
+}
+
+/// The other half the file never had: proof that `evaluate_expression`
+/// actually *evaluates*.
+///
+/// Every other test in this file fed it something that cannot succeed, and
+/// each one accepted whatever came back. Nothing ever asked for a number and
+/// checked it arrived -- so the evaluator could return an error for every
+/// input, forever, and the file stayed green.
+///
+/// That is not hypothetical. `state_query`'s `expression_eval` payload was
+/// flattened from a single-field `#[serde(untagged)]` enum, which serialises
+/// to nothing, so the whole payload went out as `{}` and this client's
+/// deserialiser failed on it every single time. Fixed in
+/// chronos-services::output; this is the test that would have caught it.
+#[tokio::test]
+async fn test_evaluate_expression_computes_arithmetic() {
+    let fixture = McpSession::fixture_path("test_add")
+        .expect("test_add fixture not found - run cargo build first");
+
+    let mut client = McpTestClient::start()
+        .await
+        .expect("Failed to start MCP server");
+
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
+        .expect("probe_start failed");
+
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let _drained = client
+        .probe_drain(&session_id)
+        .await
+        .expect("probe_drain failed");
+    let stop = client
+        .probe_stop(&session_id)
+        .await
+        .expect("probe_stop failed");
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // The capture must have produced something, or "the evaluator works" would
+    // be vacuous on a session that never ran.
+    assert!(
+        stop.total_events > 0,
+        "the fixture must have been captured before evaluating anything"
+    );
+
+    for (expression, expected) in [("1 + 1", 2.0), ("2 * 3", 6.0), ("10 - 4", 6.0)] {
+        let value = client
+            .evaluate_expression(&session_id, expression)
+            .await
+            .unwrap_or_else(|e| panic!("`{expression}` must evaluate: {e:?}"));
+        assert_eq!(
+            value.as_f64(),
+            Some(expected),
+            "`{expression}` must evaluate to {expected}; got {value:?}"
+        );
     }
 
     client.shutdown().await.ok();
