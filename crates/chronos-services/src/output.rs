@@ -1201,11 +1201,26 @@ pub enum StateQueryOutput {
         #[serde(flatten)]
         result: MemoryAnalysis,
     },
+    /// Expression evaluation result.
+    ///
+    /// Deliberately **not** flattened. `EvalResult` is a single-field
+    /// `#[serde(untagged)]` enum, so it serialises to the bare value
+    /// (`42.0` or `"error text"`) rather than to a map. `#[serde(flatten)]`
+    /// can only merge structs and maps, so flattening one produced an empty
+    /// object: the whole `expression_eval` payload serialised to `{}`.
+    ///
+    /// That shipped because every test of this path stopped at the service
+    /// boundary, where `StateQueryOutput::ExpressionEval { result }` is
+    /// returned as a value and never serialised. The first consumer to
+    /// serialise it -- `McpTestClient::evaluate_expression`, which
+    /// deserialises `{result: <value>}` -- could therefore never succeed, and
+    /// its two tests accepted both `Ok` and `Err`, so nothing failed.
+    ///
+    /// Named field rather than flattened is also the shape the client
+    /// expects, which is what the enum's own doc above promises: the v1
+    /// tool's output plus a `kind` discriminator.
     #[serde(rename = "expression_eval")]
-    ExpressionEval {
-        #[serde(flatten)]
-        result: EvalResult,
-    },
+    ExpressionEval { result: EvalResult },
     /// Variable snapshot at a given `event_id`. The payload is flattened
     /// so the on-wire shape preserves the v1 `debug_get_variables` DTO
     /// (`{kind: "variable_snapshot", event_id, variables[]}`) plus the
@@ -2998,4 +3013,83 @@ fn capabilities_output_has_tool_availability_and_probed_at() {
     assert!(json.get("tool_availability").is_some());
     assert!(json.get("probed_at").is_some());
     assert_eq!(json["probed_at"], 1_700_000_000_000i64);
+}
+
+/// The wire shape of `state_query` is part of the public contract: the sandbox
+/// client deserialises these payloads by hand. These tests exist because the
+/// only coverage until now stopped at the service boundary, where a
+/// `StateQueryOutput` is a Rust value and nothing is ever serialised — which is
+/// how `expression_eval` shipped emitting `{}` and could not be consumed.
+#[cfg(test)]
+mod state_query_wire_shape_tests {
+    use super::*;
+
+    /// Every variant flattens a struct into the envelope, plus `kind`.
+    #[test]
+    fn expression_eval_serialises_result_under_its_own_key() {
+        let json = serde_json::to_value(StateQueryOutput::ExpressionEval {
+            result: EvalResult::Value(42.0),
+        })
+        .expect("expression_eval must serialise");
+
+        assert_eq!(
+            json.get("kind").and_then(|k| k.as_str()),
+            Some("expression_eval"),
+            "the kind discriminator must survive"
+        );
+        assert_eq!(
+            json.get("result").and_then(|r| r.as_f64()),
+            Some(42.0),
+            "the value must be reachable at `result`, which is where the client looks; \
+             got {json}"
+        );
+    }
+
+    /// The error arm is a bare string, and it must reach the client intact
+    /// rather than vanish the way the value arm used to.
+    #[test]
+    fn expression_eval_error_arm_is_not_dropped() {
+        let json = serde_json::to_value(StateQueryOutput::ExpressionEval {
+            result: EvalResult::Error("unknown identifier `x`".to_string()),
+        })
+        .expect("expression_eval error arm must serialise");
+
+        assert_eq!(
+            json.get("result").and_then(|r| r.as_str()),
+            Some("unknown identifier `x`"),
+            "a failed evaluation must still be visible to the caller; got {json}"
+        );
+    }
+
+    /// A regression guard for the exact class of bug: a payload that
+    /// serialises to an empty object is indistinguishable, on the wire, from a
+    /// success with no content. Any future flatten over a non-struct type
+    /// reintroduces it silently.
+    #[test]
+    fn no_state_query_variant_serialises_to_an_empty_object() {
+        let variants = vec![
+            StateQueryOutput::ExpressionEval {
+                result: EvalResult::Value(0.0),
+            },
+            StateQueryOutput::VariableSnapshot {
+                result: VariableSnapshotResult {
+                    event_id: 1,
+                    variables: Vec::new(),
+                },
+            },
+        ];
+        for out in variants {
+            let json = serde_json::to_value(&out).expect("serialise");
+            let obj = json.as_object().expect("must serialise to an object");
+            assert!(
+                !obj.is_empty(),
+                "{out:?} serialised to an empty object, which is what a dropped \
+                 payload looks like on the wire"
+            );
+            assert!(
+                obj.contains_key("kind"),
+                "{out:?} must carry the `kind` discriminator; got {json}"
+            );
+        }
+    }
 }
