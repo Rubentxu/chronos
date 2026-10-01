@@ -12,15 +12,29 @@
 
 use chronos_ebpf::EbpfAdapter;
 
-/// Verify kernel version check works (doesn't panic, returns sensible result).
+/// The host running this suite must satisfy the crate's own stated minimum.
+///
+/// This crate exists to drive BPF ring buffers, which need kernel >= 5.8
+/// (`MIN_KERNEL_VERSION`). A host below that cannot exercise any part of it,
+/// so `Ok(())` is the expected outcome here and `Err` is a real failure — not
+/// an acceptable alternative to assert "either way". The failure message
+/// carries the raw `/proc/version` and the required version so an operator
+/// can tell an unsupported host from a broken parse.
+///
+/// The unit test `kernel_version_check_parses_proc_version` in `src/lib.rs`
+/// pins the parse/verdict agreement against the host; this test pins the
+/// host-level expectation, which is the part an integration suite owns.
 #[test]
 fn test_kernel_version_check_integration() {
     let result = EbpfAdapter::check_kernel_version();
-    // On any Linux kernel: either Ok (>= 5.8) or Err with a message.
-    match result {
-        Ok(()) => println!("Kernel >= 5.8, eBPF ring buffers supported"),
-        Err(e) => println!("Kernel too old or check failed: {}", e),
-    }
+    let host_version = std::fs::read_to_string("/proc/version").unwrap_or_else(|e| {
+        panic!("/proc/version must be readable on the Linux host this suite targets: {e}")
+    });
+    assert!(
+        result.is_ok(),
+        "host kernel does not meet chronos-ebpf's minimum (5.8.0): {result:?}\n\
+         /proc/version: {host_version}"
+    );
 }
 
 /// End-to-end test that attaches a uprobe to an existing binary.

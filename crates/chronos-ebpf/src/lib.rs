@@ -577,10 +577,45 @@ mod tests {
         }
     }
 
+    /// Reference read of the same input [`kernel_version_check`] parses:
+    /// the third whitespace token of `/proc/version` is the kernel release,
+    /// and its `major.minor` is what gets compared against
+    /// [`MIN_KERNEL_VERSION`]. `None` means the file (or that token) could not
+    /// be read at all.
+    fn reference_kernel_major_minor() -> Option<(u32, u32)> {
+        let text = std::fs::read_to_string("/proc/version").ok()?;
+        let release = text.split_whitespace().nth(2)?;
+        let mut parts = release.split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+        Some((parts.next().unwrap_or(0), parts.next().unwrap_or(0)))
+    }
+
     #[test]
     fn test_kernel_version_check_parses_proc_version() {
-        // This test runs on any kernel. It just verifies the parsing doesn't panic.
-        let _ = EbpfAdapter::check_kernel_version();
+        // The name claims the /proc/version parse is exercised, so the test
+        // derives the expected verdict from that same file and asserts the
+        // production function agrees. Discarding the result would prove
+        // nothing: `Err` and `Ok` would both pass.
+        //
+        // An unreadable /proc/version is NOT treated as "either is fine":
+        // production substitutes "0.0.0" for it, which is below the minimum,
+        // so the verdict must be `Err` and this test says so out loud.
+        let (expected_ok, host) = match reference_kernel_major_minor() {
+            Some((major, minor)) => (
+                (major, minor) >= (MIN_KERNEL_VERSION.0, MIN_KERNEL_VERSION.1),
+                format!("/proc/version reports kernel {major}.{minor}"),
+            ),
+            None => (
+                false,
+                "/proc/version is unreadable or has no release token".to_string(),
+            ),
+        };
+
+        let verdict = EbpfAdapter::check_kernel_version();
+        assert_eq!(
+            verdict.is_ok(),
+            expected_ok,
+            "check_kernel_version() disagrees with the parsed host kernel: {host}; got {verdict:?}"
+        );
     }
 
     #[test]

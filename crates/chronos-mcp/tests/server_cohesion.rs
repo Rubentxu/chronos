@@ -68,6 +68,29 @@ fn drop_server(_server: ChronosServer, dir: PathBuf) {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Write a durable session log with `records` entries under `dir`, built the
+/// same way the production path builds one, so `try_new`'s bootstrap has real
+/// state to discover rather than an empty directory.
+fn seed_execution_log(dir: &std::path::Path, session: &str, records: u64) {
+    let session_id = chronos_log::SessionId::new(session);
+    let cfg = chronos_log::SegmentedConfig::with_dir(dir.to_path_buf());
+    let log = chronos_log::SegmentedExecutionLog::open(session_id.clone(), cfg).expect("open log");
+    for i in 0..records {
+        log.append(chronos_log::NewExecutionRecord {
+            kind: chronos_log::ExecutionKind::Raw,
+            session_id: session_id.clone(),
+            monotonic_ns: i,
+            payload: chronos_log::ExecutionPayload::new(format!("r{i}").into_bytes(), "raw"),
+            invocation_id: None,
+            parent_invocation_id: None,
+            symbol_id: None,
+            captured_at_unix_ns: None,
+        })
+        .expect("append");
+    }
+    log.flush().expect("flush");
+}
+
 // =====================================================================
 // INV-1: `try_new` is fail-closed.
 // Pinned by `bootstrap_readiness.rs` (pre-existing canonical). Here we
@@ -295,21 +318,70 @@ fn inv_6_degraded_is_stable_across_reads() {
 // =====================================================================
 // INV-7: `execution_logs` registry is populated as part of `try_new`,
 // not by an explicit bootstrap call.
-// Asserted by `execution_log_registry()` returning a non-panicking,
-// snapshot-able structure right after `new`, before any tool call.
+//
+// The name is a claim, so the test proves it: it writes a real durable
+// session log to disk BEFORE the server is built, and then asserts the
+// registry the server exposes serves that state back — identity, the
+// entry itself, and the records that were persisted. The previous version
+// of this test called `execution_log_registry()` and discarded the
+// result, which holds for an empty registry too.
+//
+// Seeding location: `chronos_log::resolve_execution_log_root` memoises on
+// first call for the whole process ("first writer wins"), so the
+// per-test `CHRONOS_EXECUTION_LOG_DIR` that `unique_server` sets is only
+// honoured by whichever test happens to run first. The seed therefore
+// goes under the root this process actually resolves, in a directory
+// named after this test, and only that directory is removed afterwards.
 // =====================================================================
 
 #[test]
 fn inv_7_execution_log_registry_is_populated_after_new() {
     let _g = lock();
-    let server = unique_server();
-    // `execution_log_registry()` is `pub`. Calling it must succeed
-    // without an explicit `bootstrap_execution_logs` call. The exact
-    // contents depend on what's already on disk under CHRONOS_EXECUTION_LOG_DIR;
-    // we create the dir ourselves so the registry is at least accessible.
-    // INV-7 only requires that the call return without panicking and
-    // the server stays usable afterwards.
-    let _snapshot = server.execution_log_registry();
-    let _ = server.is_degraded();
-    let _ = server.active_toolset();
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let dir = env::temp_dir().join(format!("chronos-h1.4-inv7-{}-{n}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("unique temp dir");
+    // SAFETY: see `unique_server`. Single-threaded suite; env is process-wide.
+    unsafe {
+        env::set_var("CHRONOS_EXECUTION_LOG_DIR", &dir);
+        env::set_var("CHRONOS_ALLOW_IN_MEMORY_FALLBACK", "1");
+    }
+
+    let session = format!("s-inv7-{}-{n}", std::process::id());
+    let root = chronos_log::resolve_execution_log_root();
+    std::fs::create_dir_all(&root).expect("execution log root must be creatable");
+    let log_dir = root.join(format!("inv7-{session}"));
+    seed_execution_log(&log_dir, &session, 3);
+
+    let server = ChronosServer::new();
+
+    let registry = server.execution_log_registry();
+    assert!(
+        registry.contains(&session),
+        "try_new must populate the registry from durable state it found on disk; \
+         {session} is missing from the registry"
+    );
+    let log = registry
+        .get(&session)
+        .expect("a discovered session must be registered as Available, not Unavailable");
+    assert_eq!(
+        log.session_id().as_str(),
+        session,
+        "the registered handle must carry the discovered identity"
+    );
+    let page = log
+        .handle()
+        .read_from_seq(chronos_log::EventSeq::ZERO, 16)
+        .expect("read the registered log");
+    assert_eq!(
+        page.records.len(),
+        3,
+        "the registered handle must serve the persisted evidence, not an empty log"
+    );
+
+    // Teardown is asserted, not best-effort: the root is shared with the
+    // other tests in this binary (see the memoisation note above), so
+    // leaving a session behind would leak into their next `try_new`.
+    std::fs::remove_dir_all(&log_dir)
+        .unwrap_or_else(|e| panic!("the seeded log directory must be removable: {e}"));
+    drop_server(server, dir);
 }

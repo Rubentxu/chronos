@@ -322,10 +322,25 @@ mod tests {
 
     #[test]
     fn test_session_elapsed() {
+        // `elapsed()` is time since `CaptureSession::new`, read off the
+        // monotonic clock. Assert it tracks real elapsed time and never goes
+        // backwards, instead of only proving the call does not panic.
         let config = CaptureConfig::new("test.rs");
         let session = CaptureSession::new(1, Language::Rust, config);
-        // Just verify it doesn't panic
-        let _ = session.elapsed();
+
+        let first = session.elapsed();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let second = session.elapsed();
+
+        assert!(
+            second >= first,
+            "elapsed() must be monotonic: {second:?} went backwards from {first:?}"
+        );
+        assert!(
+            second >= std::time::Duration::from_millis(20),
+            "elapsed() must be measured from session creation, not from some later point: \
+             a 20ms sleep yielded {second:?}"
+        );
     }
 
     #[test]

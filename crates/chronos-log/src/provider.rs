@@ -893,46 +893,193 @@ mod tests {
 
     // -- ADAPTER-6: error mapping is total.
 
+    /// The `ExecutionLogError` category a `LogError` must land on.
+    ///
+    /// `map_log_error` is exhaustive, so the compiler already proves
+    /// *totality*; what it cannot prove is the *category*. A variant can be
+    /// remapped to the wrong category with no compile error, and callers
+    /// branch on the category (e.g. `IntegrityFailure` vs `Unavailable`).
+    #[derive(Debug, PartialEq, Eq)]
+    enum MappedCategory {
+        PositionBeforeRetention,
+        Sealed,
+        IntegrityFailure,
+        Unavailable,
+        InvalidGap,
+    }
+
+    fn category_of(e: &ExecutionLogError) -> MappedCategory {
+        match e {
+            ExecutionLogError::PositionBeforeRetention { .. } => {
+                MappedCategory::PositionBeforeRetention
+            }
+            ExecutionLogError::Sealed { .. } => MappedCategory::Sealed,
+            ExecutionLogError::IntegrityFailure { .. } => MappedCategory::IntegrityFailure,
+            ExecutionLogError::Unavailable { .. } => MappedCategory::Unavailable,
+            ExecutionLogError::InvalidGap { .. } => MappedCategory::InvalidGap,
+            // A new `ExecutionLogError` variant must be classified here
+            // before anyone relies on it.
+            other => panic!("unclassified ExecutionLogError variant: {other:?}"),
+        }
+    }
+
     #[test]
     fn log_error_mapping_is_total() {
-        // Every LogError variant must map to *some* ExecutionLogError
-        // without panicking. The exact category is contract per
-        // variant, asserted individually below.
-        let samples = vec![
-            LogError::PositionBeforeRetention {
-                requested_next_seq: EventSeq::new(5),
-                retained_from: EventSeq::new(10),
-            },
-            LogError::IdentityMismatch {
-                requested: "a".to_string(),
-                manifest: "b".to_string(),
-            },
-            LogError::LogSealed("s".to_string()),
-            LogError::InvalidGap {
-                reason: "x".to_string(),
-            },
-            LogError::TailIntegrityMismatch {
-                session_id: "s".to_string(),
-                expected: Some(0),
-                actual: Some(1),
-            },
-            LogError::AppendFailed {
-                session: "s".to_string(),
-                reason: "io".to_string(),
-            },
-            LogError::Backend("io".to_string()),
-            LogError::CursorStale {
-                consumer: crate::cursor::LogConsumerId::new("c"),
-                expected: EventSeq::new(1),
-                current: EventSeq::new(2),
-            },
-            LogError::SessionNotFound,
+        // The name is a claim about the WHOLE enum, so this table carries one
+        // sample per `LogError` variant — all twelve — and pins the exact
+        // category each must land on.
+        //
+        // It used to carry nine of the twelve (`RetentionMetadataMissing`,
+        // `SegmentCrossesRetention` and `ReplayIntegrity` were absent) and only
+        // asserted that the call did not panic, so the name overstated what
+        // was checked on two counts. Adding a variant to `LogError` now means
+        // adding a row here: the `cases.len()` assertion is not what enforces
+        // that, the compiler is, via `map_log_error` losing exhaustiveness.
+        //
+        // The 4th column says whether the mapped error's human-readable
+        // detail must embed the source error's own message. The pass-through
+        // variants are `false`: their payload is asserted field-by-field by
+        // the sibling tests below, and `map_log_error` copies it verbatim.
+        let cases: Vec<(&str, LogError, MappedCategory, bool)> = vec![
+            (
+                "SessionNotFound",
+                LogError::SessionNotFound,
+                MappedCategory::Unavailable,
+                true,
+            ),
+            (
+                "CursorStale",
+                LogError::CursorStale {
+                    consumer: crate::cursor::LogConsumerId::new("c"),
+                    expected: EventSeq::new(1),
+                    current: EventSeq::new(2),
+                },
+                MappedCategory::Unavailable,
+                true,
+            ),
+            (
+                "AppendFailed",
+                LogError::AppendFailed {
+                    session: "s".to_string(),
+                    reason: "io".to_string(),
+                },
+                MappedCategory::Unavailable,
+                true,
+            ),
+            (
+                "InvalidGap",
+                LogError::InvalidGap {
+                    reason: "first > last".to_string(),
+                },
+                MappedCategory::InvalidGap,
+                false,
+            ),
+            (
+                "PositionBeforeRetention",
+                LogError::PositionBeforeRetention {
+                    requested_next_seq: EventSeq::new(5),
+                    retained_from: EventSeq::new(10),
+                },
+                MappedCategory::PositionBeforeRetention,
+                false,
+            ),
+            (
+                "RetentionMetadataMissing",
+                LogError::RetentionMetadataMissing {
+                    dir: "/tmp/logs".to_string(),
+                    first_segment_seq: 7,
+                },
+                MappedCategory::IntegrityFailure,
+                true,
+            ),
+            (
+                // Deliberately not a pass-through: the legacy variant carried
+                // `String`s, not `SessionId`s, so the mapping states the loss
+                // instead of inventing identities. Pinned literally below.
+                "IdentityMismatch",
+                LogError::IdentityMismatch {
+                    requested: "a".to_string(),
+                    manifest: "b".to_string(),
+                },
+                MappedCategory::IntegrityFailure,
+                false,
+            ),
+            (
+                "SegmentCrossesRetention",
+                LogError::SegmentCrossesRetention {
+                    segment_start: 1,
+                    segment_end: 9,
+                    retained_from: 5,
+                },
+                MappedCategory::IntegrityFailure,
+                true,
+            ),
+            (
+                "LogSealed",
+                LogError::LogSealed("session-x".to_string()),
+                MappedCategory::Sealed,
+                false,
+            ),
+            (
+                "TailIntegrityMismatch",
+                LogError::TailIntegrityMismatch {
+                    session_id: "s".to_string(),
+                    expected: Some(0),
+                    actual: Some(1),
+                },
+                MappedCategory::IntegrityFailure,
+                true,
+            ),
+            (
+                "ReplayIntegrity",
+                LogError::ReplayIntegrity {
+                    session_id: "s".to_string(),
+                    kind: Box::new(crate::replay::ReplayIntegrityError::CorruptSegment {
+                        path: PathBuf::from("/tmp/logs/s.seg"),
+                        reason: "bad header".to_string(),
+                    }),
+                },
+                MappedCategory::IntegrityFailure,
+                true,
+            ),
+            (
+                "Backend",
+                LogError::Backend("io".to_string()),
+                MappedCategory::Unavailable,
+                true,
+            ),
         ];
-        for sample in samples {
-            // The mere fact that `map_log_error` returns (instead of
-            // panicking) is the load-bearing invariant. The category
-            // checks are next.
-            let _ = super::map_log_error(sample);
+        assert_eq!(cases.len(), 12, "one sample per LogError variant");
+
+        for (name, sample, expected, embeds_source) in cases {
+            let mapped = super::map_log_error(sample.clone());
+            assert_eq!(
+                category_of(&mapped),
+                expected,
+                "{name} must map to {expected:?}, got {mapped:?}"
+            );
+            if embeds_source {
+                let source_text = sample.to_string();
+                assert!(
+                    mapped.to_string().contains(&source_text),
+                    "{name}: the mapped detail must carry the source message \
+                     {source_text:?}, got {mapped:?}"
+                );
+            }
+        }
+
+        // The one variant whose detail is a fixed literal rather than the
+        // source's own rendering.
+        let legacy = super::map_log_error(LogError::IdentityMismatch {
+            requested: "a".to_string(),
+            manifest: "b".to_string(),
+        });
+        match legacy {
+            ExecutionLogError::IntegrityFailure { detail } => assert_eq!(
+                detail, "execution log identity mismatch (legacy backend)",
+                "IdentityMismatch must name the legacy-backend loss explicitly"
+            ),
+            other => panic!("expected IntegrityFailure, got {other:?}"),
         }
     }
 
