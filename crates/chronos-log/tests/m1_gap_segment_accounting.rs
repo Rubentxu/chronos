@@ -177,7 +177,31 @@ fn gap_persist_2_record_gap_reopens_valid() {
         log.flush().expect("flush");
     }
 
-    SegmentedExecutionLog::open(session.clone(), cfg).expect("reopen after record_gap");
+    let log = SegmentedExecutionLog::open(session.clone(), cfg).expect("reopen after record_gap");
+
+    // The gap must survive the reopen, not just the file handle. GAP-PERSIST-1
+    // above asserts this and this test did not: it opened the log, discarded
+    // the handle, and reported ok, so "reopens valid" was never checked. A
+    // segment that reopens without error but loses the gap still passes an
+    // `.expect("reopen")`.
+    let page = log
+        .read_from_seq(EventSeq::ZERO, 100)
+        .expect("read after reopen");
+    assert_eq!(
+        page.gaps.len(),
+        1,
+        "the Gap written by record_gap must survive the reopen"
+    );
+    assert_eq!(
+        page.gaps[0].first_missing,
+        EventSeq::new(1),
+        "first_missing is the seq the Gap declared"
+    );
+    assert_eq!(
+        page.gaps[0].last_missing,
+        EventSeq::new(9),
+        "last_missing is the seq the Gap declared"
+    );
 }
 
 /// GAP-PERSIST-3: a Gap created by the memory-budget overflow path
