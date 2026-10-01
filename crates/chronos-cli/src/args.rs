@@ -160,6 +160,56 @@ mod tests {
         items.iter().map(|s| (*s).to_string()).collect()
     }
 
+    /// Serialises every test in this module that reads or writes the
+    /// process-wide variables `default_db_path` and `expand_tilde` consult.
+    ///
+    /// The harness runs tests on parallel threads, and both of those helpers
+    /// read `XDG_DATA_HOME` / `HOME` from the environment rather than from
+    /// parameters. Without this lock a test that pins a value is observed by
+    /// an unrelated test running concurrently. Readers need the lock as well
+    /// as writers: mutual exclusion only holds if both sides take it.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Holds [`ENV_LOCK`] and restores `XDG_DATA_HOME` / `HOME` on drop.
+    ///
+    /// Restoring at the end of the test body is not sufficient: a failing
+    /// assert panics, unwinds past the restore, and leaves the environment
+    /// corrupted for the remainder of the run. `Drop` runs in both cases.
+    struct EnvGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        prior: Vec<(&'static str, Option<String>)>,
+    }
+
+    impl EnvGuard {
+        fn acquire() -> Self {
+            let lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let prior = ["XDG_DATA_HOME", "HOME"]
+                .into_iter()
+                .map(|key| (key, std::env::var(key).ok()))
+                .collect();
+            Self { _lock: lock, prior }
+        }
+
+        fn set(&self, key: &str, value: &str) {
+            std::env::set_var(key, value);
+        }
+
+        fn unset(&self, key: &str) {
+            std::env::remove_var(key);
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (key, value) in &self.prior {
+                match value {
+                    Some(v) => std::env::set_var(key, v),
+                    None => std::env::remove_var(key),
+                }
+            }
+        }
+    }
+
     #[test]
     fn empty_argv_is_help() {
         let argv: Vec<String> = vec![];
@@ -173,6 +223,7 @@ mod tests {
 
     #[test]
     fn replay_subcommand() {
+        let _env = EnvGuard::acquire();
         match parse(&args(&["test", "replay", "bundle-123"])).unwrap() {
             Command::Replay { bundle_id, db } => {
                 assert_eq!(bundle_id, "bundle-123");
@@ -184,6 +235,7 @@ mod tests {
 
     #[test]
     fn replay_requires_bundle_id() {
+        let _env = EnvGuard::acquire();
         let err = parse(&args(&["test", "replay"])).unwrap_err();
         match err {
             ArgsError::MissingArgument(_) => {}
@@ -193,6 +245,7 @@ mod tests {
 
     #[test]
     fn replay_with_db_flag() {
+        let _env = EnvGuard::acquire();
         match parse(&args(&["--db", "/tmp/chrono.db", "test", "replay", "b1"])).unwrap() {
             Command::Replay { bundle_id, db } => {
                 assert_eq!(bundle_id, "b1");
@@ -204,6 +257,7 @@ mod tests {
 
     #[test]
     fn run_subcommand_captures_rest() {
+        let _env = EnvGuard::acquire();
         match parse(&args(&["test", "run", "./hello", "--arg"])).unwrap() {
             Command::Run { args, .. } => {
                 assert_eq!(args, vec!["./hello".to_string(), "--arg".to_string()]);
@@ -214,19 +268,75 @@ mod tests {
 
     #[test]
     fn run_subcommand_no_args_is_ok() {
+        let _env = EnvGuard::acquire();
         match parse(&args(&["test", "run"])).unwrap() {
             Command::Run { args, .. } => assert!(args.is_empty()),
             other => panic!("unexpected: {other:?}"),
         }
     }
 
+    // -----------------------------------------------------------------
+    // B-decision B5: the default store path. Nothing pinned these four
+    // branches — `replay_subcommand` only asserted `db.ends_with(
+    // "chronos.db")`, which every branch satisfies, so reordering them
+    // or dropping a path segment left the whole suite green.
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn default_db_path_prefers_xdg_over_home() {
+        let env = EnvGuard::acquire();
+        env.set("XDG_DATA_HOME", "/xdg");
+        env.set("HOME", "/home/alice");
+        assert_eq!(
+            default_db_path(),
+            PathBuf::from("/xdg/chronos/chronos.db"),
+            "B5: a non-empty XDG_DATA_HOME takes precedence over HOME"
+        );
+    }
+
+    #[test]
+    fn default_db_path_falls_back_to_home_when_xdg_unset() {
+        let env = EnvGuard::acquire();
+        env.unset("XDG_DATA_HOME");
+        env.set("HOME", "/home/alice");
+        assert_eq!(
+            default_db_path(),
+            PathBuf::from("/home/alice/.local/share/chronos/chronos.db"),
+            "B5: without XDG_DATA_HOME the path is XDG-data under HOME"
+        );
+    }
+
+    #[test]
+    fn default_db_path_treats_empty_xdg_as_unset() {
+        let env = EnvGuard::acquire();
+        // An exported-but-empty XDG_DATA_HOME is how a shell that
+        // interpolates an unset variable presents itself. Treating it as a
+        // real root would yield the relative path "/chronos/chronos.db".
+        env.set("XDG_DATA_HOME", "");
+        env.set("HOME", "/home/alice");
+        assert_eq!(
+            default_db_path(),
+            PathBuf::from("/home/alice/.local/share/chronos/chronos.db"),
+            "an empty XDG_DATA_HOME must be treated as unset, not as a root"
+        );
+    }
+
+    #[test]
+    fn default_db_path_falls_back_to_cwd_without_any_root() {
+        let env = EnvGuard::acquire();
+        env.unset("XDG_DATA_HOME");
+        env.set("HOME", "");
+        assert_eq!(
+            default_db_path(),
+            PathBuf::from("chronos.db"),
+            "with neither XDG_DATA_HOME nor HOME the path is CWD-relative"
+        );
+    }
+
     #[test]
     fn tilde_expansion_on_db() {
-        // SAFETY: tests run in parallel but HOME is process-wide; the value
-        // we set is only observed by tests in this module (no other env
-        // mutations), and we restore the prior value at the end.
-        let prior = std::env::var("HOME").ok();
-        std::env::set_var("HOME", "/home/alice");
+        let env = EnvGuard::acquire();
+        env.set("HOME", "/home/alice");
         match parse(&args(&["--db", "~/data.db", "test", "replay", "x"])).unwrap() {
             Command::Replay { db, .. } => {
                 assert_eq!(db, PathBuf::from("/home/alice/data.db"));
@@ -238,14 +348,38 @@ mod tests {
             Command::Replay { db, .. } => assert_eq!(db, PathBuf::from("/home/alice")),
             other => panic!("unexpected: {other:?}"),
         }
-        match prior {
-            Some(v) => std::env::set_var("HOME", v),
-            None => std::env::remove_var("HOME"),
-        }
+    }
+
+    #[test]
+    fn tilde_stays_literal_without_home() {
+        let env = EnvGuard::acquire();
+        env.unset("HOME");
+        assert_eq!(
+            expand_tilde("~"),
+            PathBuf::from("~"),
+            "with no HOME a bare `~` must stay literal rather than resolve to \"\""
+        );
+        assert_eq!(
+            expand_tilde("~/data.db"),
+            PathBuf::from("~/data.db"),
+            "with no HOME a `~/` path must stay literal rather than resolve to \"/data.db\""
+        );
+    }
+
+    #[test]
+    fn tilde_user_form_is_not_expanded() {
+        // `~user/...` is intentionally out of scope (see `expand_tilde`).
+        // The input never matches the `~` or `~/` forms, so this reads no
+        // environment and needs no guard.
+        assert_eq!(
+            expand_tilde("~root/data.db"),
+            PathBuf::from("~root/data.db")
+        );
     }
 
     #[test]
     fn unknown_subcommand_errors() {
+        let _env = EnvGuard::acquire();
         // A bare "test" with neither "run" nor "replay" falls through to Usage.
         let err = parse(&args(&["test"])).unwrap_err();
         assert!(matches!(err, ArgsError::Usage));
