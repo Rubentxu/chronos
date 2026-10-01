@@ -1365,12 +1365,34 @@ en el mismo camino de código.
 
 ### La fuga, que era la esperada
 
-`DelveSubprocess::spawn` y `JavaSubprocess::spawn` tenían un `impl Drop` **vacío**
-con el comentario *"SIGTERM is sent automatically when Child is dropped"*. Es
-falso: `tokio::process::Child` solo mata al dropearse si se configura
-`kill_on_drop`. Un `dlv` huérfano sobrevivió **11m36s** reparentado a
-`systemd --user`. Corregido con `cmd.kill_on_drop(true)` —el patrón que
-`chronos-js` ya usaba— y eliminado el `Drop` vacío, que además mentía.
+`DelveSubprocess::spawn`, `JavaSubprocess::spawn` y `PythonSubprocess::spawn`
+tenían un `impl Drop` **vacío** con el comentario *"SIGTERM is sent
+automatically when Child is dropped"*. Es falso: `tokio::process::Child` solo
+mata al dropearse si se configura `kill_on_drop`. Un `dlv` huérfano sobrevivió
+**11m36s** reparentado a `systemd --user`. Corregido con
+`cmd.kill_on_drop(true)` —el patrón que `chronos-js` ya usaba— y eliminado el
+`Drop` vacío, que además mentía.
+
+Python era la tercera copia literal del mismo defecto: mismo fichero, misma
+estructura y el mismo comentario falso pegado. Se detectó al buscar **los demás
+adaptadores que lanzan procesos** tras arreglar dos: ese barrido es parte del
+trabajo, no una extracurricular. Resultado del barrido, sobre los seis
+adaptadores que lanzan procesos:
+
+| Adaptador | Mecanismo | Estado |
+|---|---|---|
+| `chronos-js` | `kill_on_drop` | ya correcto |
+| `chronos-browser` | `Drop` propio con `kill()` + `wait()` | ya correcto |
+| `chronos-go` | `kill_on_drop` | corregido aquí |
+| `chronos-java` | `kill_on_drop` | corregido aquí |
+| `chronos-python` | `kill_on_drop` | corregido aquí |
+| `chronos-ebpf` | `std::process`, guarda **solo el pid** y mata por `kill -9` en `stop_capture` | **otro diseño**: `kill_on_drop` no aplica |
+
+eBPF queda **fuera de este item y sin corregir**, y conviene decirlo claro: al
+no retener el `Child`, depende de que se llame a `stop_capture`; si la sesión se
+dropea sin él, el target queda vivo. No es el mismo defecto ni se arregla con la
+misma línea, y su test ya está `#[ignore]`d por `CAP_BPF`. Queda como
+candidato, no como deuda ya cerrada.
 
 Los dos tests que deberían haberlo cazado no afirmaban nada: el de Go descartaba
 el resultado con `let _result = ...` y su propio comentario decía *"we just
@@ -1438,6 +1460,7 @@ fix no es un guard:
 | `read_jdwp_port` solo con `stderr` (el bug original) | 2 tests `FAILED`, reproduce el cuelgue como error a los 30 s |
 | `kill_on_drop` desactivado (Go) | el guard falla: *"el proceso dlv 3079456 seguía vivo tras dropear"* |
 | `kill_on_drop` desactivado (Java) | el guard falla y reproduce la fuga |
+| `kill_on_drop` desactivado (Python) | el guard falla tras los 10 s de sondeo, y el `python3` sobrevive |
 
 Control tras revertir ambos: 4 tests opt-in verdes y **0 procesos huérfanos**
 (antes se contaban por ejecución). Gate local TIER 1 `f1eea6e6`:
