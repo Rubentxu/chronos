@@ -6,7 +6,18 @@ use chronos_sandbox::McpSession;
 use std::time::Duration;
 
 /// SD1: test_debug_get_registers_at_first_event
-/// Probe test_busyloop, get first event, debug_get_registers, assert valid response.
+/// Probe test_busyloop, query the first events, and pin the *measured*
+/// contract of `state_query(kind=register_snapshot)`:
+///
+/// - a real event id is answered with an error naming the event and saying
+///   there is no register state for it (`no register state at event <id>`),
+///   because a C fixture capture carries no register evidence;
+/// - an event id that does not exist produces a *different* error
+///   (`event <id> not found`).
+///
+/// The second assertion is what keeps this test alive: if the tool answered
+/// every id with the same blanket error, the first assertion alone would
+/// still pass on a tool that never resolves the event at all.
 #[tokio::test]
 async fn test_debug_get_registers_at_first_event() {
     let fixture = McpSession::fixture_path("test_busyloop")
@@ -35,9 +46,9 @@ async fn test_debug_get_registers_at_first_event() {
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Query first event
+    // Query the first events of the session.
     let filter = QueryFilter {
-        limit: 1,
+        limit: 5,
         offset: 0,
         ..Default::default()
     };
@@ -46,11 +57,15 @@ async fn test_debug_get_registers_at_first_event() {
         .await
         .expect("query_events failed");
 
-    if events.is_empty() {
-        println!("No events found, skipping test");
-        client.shutdown().await.ok();
-        return;
-    }
+    // The previous body returned early here, printing "No events found,
+    // skipping test" and exiting green. A busy loop traced for two seconds
+    // always yields a full page; if it ever did not, that is a failure.
+    assert_eq!(
+        events.len(),
+        5,
+        "test_busyloop must yield a full page of 5 events, got {}",
+        events.len()
+    );
 
     let first_event_id = events[0].event_id;
     println!("First event_id: {}", first_event_id);
@@ -60,24 +75,48 @@ async fn test_debug_get_registers_at_first_event() {
         .debug_get_registers(&session_id, first_event_id)
         .await;
 
-    match registers {
-        Ok(reg) => {
-            println!(
-                "✓ debug_get_registers at event {}: {} registers",
-                first_event_id,
-                reg.registers.len()
-            );
-            // Registers map may be empty for events without register capture
-            println!("  Registers: {:?}", reg.registers);
-        }
-        Err(e) => {
-            // This is acceptable - not all events have register state
-            println!(
-                "✓ debug_get_registers returned error (expected for some events): {:?}",
-                e
-            );
-        }
+    let err = registers.expect_err(
+        "debug_get_registers must report 'no register state' for a real event of a \
+         capture that carries no register evidence, not answer with data",
+    );
+    let err_msg = err.to_string();
+    assert!(
+        err_msg.contains(&format!("no register state at event {first_event_id}")),
+        "the error must name the queried event ({first_event_id}), got: {err_msg}"
+    );
+
+    // Every sampled real event behaves the same way, and the error always
+    // names the event that was asked for.
+    for event in &events {
+        let sampled = client
+            .debug_get_registers(&session_id, event.event_id)
+            .await;
+        let sampled_err = sampled.expect_err(&format!(
+            "event {} is a real event of the capture and must answer \
+             'no register state at event {}'",
+            event.event_id, event.event_id
+        ));
+        assert!(
+            sampled_err
+                .to_string()
+                .contains(&format!("no register state at event {}", event.event_id)),
+            "error for event {} did not name that event: {}",
+            event.event_id,
+            sampled_err
+        );
     }
+
+    // Discriminator: the tool *does* resolve the event id, because an unknown
+    // id fails differently ("not found") instead of with a blanket refusal.
+    let bogus = client
+        .debug_get_registers(&session_id, 999_999)
+        .await
+        .expect_err("an unknown event id must be rejected");
+    let bogus_msg = bogus.to_string();
+    assert!(
+        bogus_msg.contains("999999") && bogus_msg.contains("not found"),
+        "an unknown event id must report 'event 999999 not found', got: {bogus_msg}"
+    );
 
     client.shutdown().await.ok();
 }
@@ -170,7 +209,20 @@ async fn test_debug_diff_consecutive_events() {
 }
 
 /// SD3: test_state_diff_first_and_last_timestamps
-/// Probe test_busyloop, get first and last timestamps, state_diff, assert valid response.
+/// Probe test_busyloop, resolve the real first and last event timestamps by
+/// walking the session, and pin the measured contract of
+/// `state_query(kind=register_diff)`:
+///
+/// - the cursor walk reaches the true tail of the session (the last event it
+///   returns carries the maximum timestamp of the whole session);
+/// - the first and last events of a ~2 s busy loop are far apart in time;
+/// - `state_diff` answers `Ok` with zero changes, because a C fixture
+///   capture carries no register or variable evidence.
+///
+/// The previous body accepted `Ok` *and* `Err`, and when the walk came back
+/// empty it replaced `ts_last` with a fabricated `ts_first + duration_ms` —
+/// a timestamp that never existed, which would have poisoned any assertion
+/// made with it. Both are gone.
 #[tokio::test]
 async fn test_state_diff_first_and_last_timestamps() {
     let fixture = McpSession::fixture_path("test_busyloop")
@@ -210,11 +262,13 @@ async fn test_state_diff_first_and_last_timestamps() {
         .await
         .expect("query_events for first failed");
 
-    if first_events.is_empty() {
-        println!("No events found, skipping test");
-        client.shutdown().await.ok();
-        return;
-    }
+    // No early return: a two-second busy loop always yields events, and a
+    // silent skip would hide the exact regression this test exists to catch.
+    assert_eq!(
+        first_events.len(),
+        1,
+        "the first page of a two-second busy loop must contain one event"
+    );
 
     let ts_first = first_events[0].timestamp_ns;
     println!("First timestamp: {}", ts_first);
@@ -238,48 +292,104 @@ async fn test_state_diff_first_and_last_timestamps() {
         )
         .await
         .expect("query_events_walk_all for last failed");
-    let last_events_opt = if last_events.is_empty() {
-        None
-    } else {
-        Some(vec![last_events.last().cloned().unwrap()])
-    };
 
-    // If walk returned empty, fall back to estimate from `stop.duration_ms`.
-    let ts_last = if let Some(ref events) = last_events_opt {
-        events[0].timestamp_ns
-    } else {
-        // Use duration_ms from stop result to estimate
-        (stop.duration_ms as u64 * 1_000_000) + ts_first
-    };
+    // Measured: the walk returns the whole session (~1650 events for a 2 s
+    // busy loop). An empty walk is a failure, not a reason to skip, and the
+    // walk must never invent events either.
+    assert!(
+        !last_events.is_empty(),
+        "the cursor walk over a two-second busy loop must return events, got 0"
+    );
+    assert!(
+        last_events.len() <= stop.total_events as usize,
+        "the walk must not invent events: {} walked vs {} reported by stop",
+        last_events.len(),
+        stop.total_events
+    );
+
+    let ts_last = last_events.last().expect("walk is non-empty").timestamp_ns;
+
+    // The walk must end at the *true* tail: the last event it returned has to
+    // carry the maximum timestamp of the whole session. This is the assertion
+    // that would catch a pagination loop that stops one page early.
+    let max_ts = last_events
+        .iter()
+        .map(|e| e.timestamp_ns)
+        .max()
+        .expect("walk is non-empty");
+    assert_eq!(
+        ts_last, max_ts,
+        "the last event of the walk must be the highest-timestamped event of the session"
+    );
+
+    // A two-second busy loop cannot have identical first and last timestamps.
+    assert!(
+        ts_last > ts_first,
+        "first ({ts_first}) and last ({ts_last}) timestamps of a two-second busy loop must differ"
+    );
     println!("Last timestamp: {}", ts_last);
 
     // State diff
     let diff = client.state_diff(&session_id, ts_first, ts_last).await;
 
-    match diff {
-        Ok(result) => {
-            println!(
-                "✓ state_diff between {} and {}: {} changes",
-                ts_first,
-                ts_last,
-                result.changes.len()
-            );
-            println!("  Response has valid structure");
-        }
-        Err(e) => {
-            // Acceptable - simple programs may not have state to diff
-            println!(
-                "✓ state_diff returned error (expected for simple programs): {:?}",
-                e
-            );
-        }
-    }
+    let result =
+        diff.expect("state_diff over two real timestamps of a real session must answer Ok");
+    println!(
+        "✓ state_diff between {} and {}: {} changes",
+        ts_first,
+        ts_last,
+        result.changes.len()
+    );
+
+    // `StateDiffResponse.timestamp_a/b` are echoed from the request when the
+    // server omits them (`client/tools.rs`: `v2.timestamp_a.unwrap_or(timestamp_a)`),
+    // so these assertions pin "the client passes the two timestamps through
+    // untouched", not "the server re-derived them". The real evidence in this
+    // test is the walk reaching the tail plus the non-zero temporal span.
+    assert_eq!(
+        result.timestamp_a, ts_first,
+        "state_diff must not alter the first timestamp it was given"
+    );
+    assert_eq!(
+        result.timestamp_b, ts_last,
+        "state_diff must not alter the second timestamp it was given"
+    );
+    assert!(
+        result.timestamp_b > result.timestamp_a,
+        "the diff window must stay ordered"
+    );
+
+    // Empty by construction: a C fixture emits `kind=Unresolved` events whose
+    // descriptors are `SyscallEnter`/`SyscallExit`, i.e. no register and no
+    // variable evidence, so there is nothing for a state diff to report.
+    // Measured: `changes == []`. Asserted as a tripwire for wire drift — a
+    // non-empty diff would mean the decoding or the fixture changed.
+    assert!(
+        result.changes.is_empty(),
+        "expected no changes without register or variable evidence, got {:?}",
+        result.changes
+    );
 
     client.shutdown().await.ok();
 }
 
 /// SD4: test_debug_get_variables_at_valid_event
-/// Probe test_add, query events, try debug_get_variables on each, assert valid response.
+/// Probe test_add, query the first 5 events, and ask `debug_get_variables`
+/// about each one, pinning the *measured* contract of
+/// `state_query(kind=variable_snapshot)`: it answers `Ok` with an empty
+/// variable list for every event of this fixture.
+///
+/// Emptiness is the honest expectation, not a weak one, because a C fixture
+/// capture emits `kind=Unresolved` events with `SyscallEnter`/`SyscallExit`
+/// descriptors — there is no frame with in-scope variables to report. The
+/// previous body accepted `Ok` *and* `Err` per event and then printed
+/// "All debug_get_variables calls returned valid responses (or expected
+/// errors)", which asserted nothing at all.
+///
+/// Known weakness (measured, deliberately not asserted here): an event id
+/// that does not exist also answers `Ok([])`, so this tool cannot currently
+/// distinguish "no variables at this event" from "no such event". Reported
+/// as a production defect rather than pinned as expected behaviour.
 #[tokio::test]
 async fn test_debug_get_variables_at_valid_event() {
     let fixture = McpSession::fixture_path("test_add")
@@ -321,37 +431,68 @@ async fn test_debug_get_variables_at_valid_event() {
 
     println!("Got {} events", events.len());
 
-    // Try debug_get_variables on each event
+    // The queried page must be a full, non-empty page of distinct events;
+    // otherwise the loop below would assert nothing at all.
+    assert_eq!(
+        events.len(),
+        5,
+        "test_add must yield a full page of 5 events, got {}",
+        events.len()
+    );
+    let mut ids: Vec<u64> = events.iter().map(|e| e.event_id).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(
+        ids.len(),
+        events.len(),
+        "the queried page must hold 5 distinct event ids, got {ids:?}"
+    );
+
+    // Ask for the variables of each queried event: every call must answer Ok,
+    // and the list must be empty.
     for event in &events {
-        let vars = client
+        let variables = client
             .debug_get_variables(&session_id, event.event_id)
-            .await;
+            .await
+            .unwrap_or_else(|e| {
+                panic!(
+                    "debug_get_variables failed for the real event {} ({}): {e}",
+                    event.event_id, event.event_type
+                )
+            });
 
-        match vars {
-            Ok(variables) => {
-                println!(
-                    "✓ debug_get_variables at event {}: {} vars",
-                    event.event_id,
-                    variables.len()
-                );
-            }
-            Err(e) => {
-                // Acceptable - not all events have variables
-                println!(
-                    "  debug_get_variables at event {} returned: {:?}",
-                    event.event_id, e
-                );
-            }
-        }
+        println!(
+            "✓ debug_get_variables at event {} ({}): {} vars",
+            event.event_id,
+            event.event_type,
+            variables.len()
+        );
+        assert!(
+            variables.is_empty(),
+            "a C fixture capture carries no in-scope variables, so event {} must report none, got {:?}",
+            event.event_id,
+            variables
+        );
     }
-
-    println!("✓ All debug_get_variables calls returned valid responses (or expected errors)");
 
     client.shutdown().await.ok();
 }
 
 /// SD5: test_evaluate_expression_simple_arithmetic
-/// Probe test_add, get an event_id, evaluate "1 + 2 * 3", assert valid response.
+/// Probe test_add, take the first event id, and evaluate `1 + 2 * 3`
+/// against it through the v2 `state_query` dispatcher
+/// (`kind=expression_eval`), asserting the real numeric result 7.0.
+///
+/// The previous body claimed to do this but could not: it invoked
+/// `call_with_timeout("state_query", ...)`, which sends a *bare JSON-RPC
+/// method* named `state_query`. The MCP server only implements `tools/call`,
+/// so the call always failed with `-32601 {"message":"state_query"}` — and
+/// because the body accepted that `Err` as "acceptable", the test stayed
+/// green while proving nothing. Tools must be reached through `call_tool` (or
+/// the `evaluate_expression` helper, which wraps it).
+///
+/// Measured: `evaluate_expression("1 + 2 * 3")` returns `Ok(7.0)`, and the
+/// raw `tools/call` envelope is `{"kind":"expression_eval","result":7.0}`.
 #[tokio::test]
 async fn test_evaluate_expression_simple_arithmetic() {
     let fixture = McpSession::fixture_path("test_add")
@@ -391,17 +532,19 @@ async fn test_evaluate_expression_simple_arithmetic() {
         .await
         .expect("query_events failed");
 
-    if events.is_empty() {
-        println!("No events found, skipping test");
-        client.shutdown().await.ok();
-        return;
-    }
+    // No early return: without a real event to scope the expression to, this
+    // test cannot evaluate anything and must fail rather than skip.
+    assert_eq!(
+        events.len(),
+        1,
+        "the first page of a traced test_add run must contain one event"
+    );
 
     let event_id = events[0].event_id;
     println!("Using event_id: {}", event_id);
 
-    // REC-C5-C5.2: migrated to the v2 `state_query` dispatcher with
-    // `kind=expression_eval` (same event_id/expression fields).
+    // The v2 envelope, asserted so the dispatcher shape is pinned and not
+    // only the helper's convenience return value.
     let params = serde_json::json!({
         "session_id": session_id,
         "kind": "expression_eval",
@@ -409,28 +552,28 @@ async fn test_evaluate_expression_simple_arithmetic() {
         "expression": "1 + 2 * 3"
     });
 
-    let result = client
-        .call_with_timeout("state_query", params, Duration::from_secs(5))
-        .await;
+    let envelope = client
+        .call_tool("state_query", params)
+        .await
+        .expect("state_query(kind=expression_eval) must be callable through tools/call");
+    assert_eq!(
+        envelope,
+        serde_json::json!({"kind": "expression_eval", "result": 7.0}),
+        "state_query(kind=expression_eval) must evaluate 1 + 2 * 3 as 7.0 and report the kind"
+    );
 
-    match result {
-        Ok(json) => {
-            println!("✓ state_query(kind=expression_eval) returned valid JSON");
-            // The response should have a "result" field
-            // Result may be "no variables" or actual "7"
-            if let Some(result_val) = json.get("result") {
-                println!("  Result: {}", result_val);
-            }
-            println!("  Full response: {}", json);
-        }
-        Err(e) => {
-            // Acceptable - expression evaluation may not work for all events
-            println!(
-                "✓ evaluate_expression returned error (expected for some events): {:?}",
-                e
-            );
-        }
-    }
+    // Same evaluation through the dedicated helper, which unwraps `result`.
+    let evaluated = client
+        .evaluate_expression(&session_id, "1 + 2 * 3")
+        .await
+        .expect("evaluate_expression must answer for a real session and event");
+    assert_eq!(
+        evaluated,
+        serde_json::json!(7.0),
+        "1 + 2 * 3 must evaluate to 7.0, got {evaluated}"
+    );
+
+    println!("✓ state_query(kind=expression_eval): 1 + 2 * 3 = {evaluated}");
 
     client.shutdown().await.ok();
 }

@@ -87,6 +87,19 @@ async fn test_query_events_offset_beyond_total() {
 }
 
 /// QE2: query_events with limit = 0 returns empty.
+///
+/// The previous body printed the event count and asserted nothing. Measured
+/// contract: a `limit: 0` page answers `Ok` with **no** events, while the
+/// very same session queried with `limit: 5` answers 5 events — so the
+/// emptiness is caused by `limit: 0` and not by a session that captured
+/// nothing. The control query is what makes this assertion meaningful.
+///
+/// NOTE (measured, deliberately not asserted): the `limit: 0` page still
+/// carries `next_cursor = Some("ecv1:…:0")` even though it returns no events.
+/// `query_events_walk_all` continues while `page_len >= limit`, and `0 >= 0`
+/// is always true, so `query_events_walk_all(limit = 0)` never terminates
+/// (measured: still running after 15 s). Reported as a production/client
+/// defect rather than pinned here.
 #[tokio::test]
 async fn test_query_events_limit_zero() {
     let fixture = McpSession::fixture_path("test_add").expect("test_add fixture not found");
@@ -128,6 +141,30 @@ async fn test_query_events_limit_zero() {
     println!(
         "✓ query_events with limit=0 returned {} events",
         events.len()
+    );
+    assert!(
+        events.is_empty(),
+        "limit=0 must return no events, got {}",
+        events.len()
+    );
+
+    // Control: the same session with a real limit must see events, so the
+    // assertion above is attributable to limit=0 and not to an empty session.
+    let control = client
+        .query_events(
+            &session_id,
+            QueryFilter {
+                limit: 5,
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("query_events with limit=5 must succeed on the same session");
+    assert_eq!(
+        control.len(),
+        5,
+        "the same session must return a full page of 5 events with limit=5, got {}",
+        control.len()
     );
 
     client.shutdown().await.ok();
@@ -186,7 +223,16 @@ async fn test_query_events_limit_very_large() {
     client.shutdown().await.ok();
 }
 
-/// QE4: query_events with invalid session_id returns error or empty.
+/// QE4: query_events with an invalid session_id is rejected with a
+/// session-specific error.
+///
+/// The previous body printed one line for the `Ok` arm and one for the `Err`
+/// arm and asserted nothing, so an implementation that answered `Ok([])` for a
+/// session that does not exist passed just as happily as one that rejects it.
+/// Measured contract: the server answers `Err` with
+/// `ExecutionLog unavailable for session '<id>': no ExecutionLog registered
+/// for this session …`, naming the id that was asked for. A control query on
+/// the real session id proves the rejection comes from the bogus id.
 #[tokio::test]
 async fn test_query_events_invalid_session() {
     let fixture = McpSession::fixture_path("test_add").expect("test_add fixture not found");
@@ -213,26 +259,34 @@ async fn test_query_events_invalid_session() {
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Query with completely invalid session ID
+    const BOGUS_SESSION: &str = "this-session-does-not-exist-12345";
     let filter = QueryFilter::default();
-    let result = client
-        .query_events("this-session-does-not-exist-12345", filter)
-        .await;
+    let result = client.query_events(BOGUS_SESSION, filter).await;
 
-    match result {
-        Ok(events) => {
-            // Some implementations might return empty instead of error
-            println!(
-                "✓ query_events with invalid session returned {} events (empty instead of error)",
-                events.len()
-            );
-        }
-        Err(e) => {
-            println!(
-                "✓ query_events correctly returned error for invalid session: {:?}",
-                e
-            );
-        }
-    }
+    let err = result.expect_err(
+        "query_events must reject an unknown session id instead of silently \
+         returning an empty page that reads like 'this session captured nothing'",
+    );
+    let err_msg = err.to_string();
+    assert!(
+        err_msg.contains("ExecutionLog unavailable for session"),
+        "the rejection must say the session has no ExecutionLog, got: {err_msg}"
+    );
+    assert!(
+        err_msg.contains(BOGUS_SESSION),
+        "the rejection must name the session that was asked for, got: {err_msg}"
+    );
+
+    // Control: the real session id answers with events, so the rejection
+    // above is caused by the id and not by a session that captured nothing.
+    let control = client
+        .query_events(&session_id, QueryFilter::default())
+        .await
+        .expect("query_events on the real session must succeed");
+    assert!(
+        !control.is_empty(),
+        "the real session must return events, so the rejection above is id-specific"
+    );
 
     client.shutdown().await.ok();
 }
@@ -288,7 +342,20 @@ async fn test_query_events_thread_filter_no_match() {
     client.shutdown().await.ok();
 }
 
-/// QE6: query_events with timestamp range in the past (before program ran).
+/// QE6: query_events with a timestamp window that ends before the program ran.
+///
+/// The previous body printed the event count and asserted nothing. Measured
+/// contract, asserted here:
+///
+/// - a `[0, 1 ms]` window is empty, and the reason is checked rather than
+///   assumed: event timestamps are epoch nanoseconds (~1.79e18), so that
+///   window closes roughly 56 years before the capture;
+/// - the timestamp filter is *live*, not just always-empty: an inclusive
+///   window spanning `[min_ts, max_ts]` of the real events returns every
+///   event the cursor walk found (128 for `test_add`).
+///
+/// The second assertion is what would catch a timestamp filter that had been
+/// dropped from the query path: an always-empty result would otherwise pass.
 #[tokio::test]
 async fn test_query_events_timestamp_before_program() {
     let fixture = McpSession::fixture_path("test_add").expect("test_add fixture not found");
@@ -331,6 +398,60 @@ async fn test_query_events_timestamp_before_program() {
     println!(
         "✓ query_events with timestamp range [0, 1ms] returned {} events",
         events.len()
+    );
+    assert!(
+        events.is_empty(),
+        "a window that ends at 1 ms cannot contain events captured in epoch nanoseconds, got {}",
+        events.len()
+    );
+
+    // Where the real timestamps actually live, so the emptiness above is
+    // explained by the timestamp origin instead of by a filter that silently
+    // drops everything.
+    let all = client
+        .query_events_walk_all(
+            &session_id,
+            QueryFilter {
+                limit: 200,
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("the cursor walk over the session must succeed");
+    assert!(!all.is_empty(), "test_add must capture at least one event");
+
+    let min_ts = all.iter().map(|e| e.timestamp_ns).min().expect("non-empty");
+    let max_ts = all.iter().map(|e| e.timestamp_ns).max().expect("non-empty");
+    println!(
+        "  test_add spans [{min_ts}, {max_ts}] over {} events",
+        all.len()
+    );
+    assert!(
+        min_ts > 1_000_000,
+        "event timestamps are epoch nanoseconds (earliest {min_ts}); if they were not, the \
+         empty [0, 1ms] result above would need a different explanation"
+    );
+
+    // The timestamp filter is live: the inclusive window that exactly spans
+    // the capture returns every event.
+    let full_window = client
+        .query_events(
+            &session_id,
+            QueryFilter {
+                limit: 200,
+                timestamp_start: Some(min_ts),
+                timestamp_end: Some(max_ts),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("query_events over the real timestamp span must succeed");
+    assert_eq!(
+        full_window.len(),
+        all.len(),
+        "an inclusive window spanning the capture must return all {} events, got {}",
+        all.len(),
+        full_window.len()
     );
 
     client.shutdown().await.ok();
