@@ -2211,3 +2211,104 @@ Un campo que devuelve siempre lo mismo no es un campo: es una constante con
 nombre de métrica. Y un número que parece contradecir lo que esperas puede
 estar perfectamente bien — **antes de "arreglar" un valor, encuentra quién lo
 escribe y para qué se usa**.
+
+## La recursión cerraba a quien seguía corriendo (2026-10-01)
+
+### Cómo se encontró
+
+Un subagente convirtió tres tests de escenarios y, al medir, encontró algo que
+no buscaba: `fact` #1 recibía el `parent_invocation_id` de `main`, las tres
+siguientes recibían `null`, y el `function_exit` de `main` se emitía **antes de
+que las siguientes entraran**. Reproducido 2/2 sobre dos fixtures distintos.
+
+### El primer defecto: el desenrollado miraba solo la cima
+
+`invocation_tracker.rs` decide si un frame sigue activo preguntando si el return
+address cae dentro del frame de la cima. Eso **supone que desenrollar es
+consecutivo**, y la recursión rompe la suposición: en la reentrada el return
+address cae dentro de la propia función recursiva, así que tras desapilar su
+frame el caller de abajo tampoco lo contiene — y se lo desenrollaba igual.
+
+El arreglo comprueba, **cuando hay un return address conocido**, que ese return
+address siga perteneciendo a algún frame vivo antes de seguir. Si no pertenece a
+ninguno, el frame de abajo es un caller que se está ejecutando.
+
+La guarda se aplica solo con return address conocido porque sin él `ra` es
+igual a `ip` y no hay nada contra lo que comprobar. Eso seaverificó porque el
+primer arreglo, más simple, rompió `range_aware_pop_emits_exit_when_caller_returns`,
+que cubre justo el caso sin return address.
+
+El test que ya existía, `recursive_distinct_invocation_ids`, **no podía detectar
+nada de esto**: recursiona con una sola función, así que no hay caller debajo que
+se pueda desenrollar por error. El caso nuevo anida `main → fact → fact`.
+
+### El segundo defecto: una salida fechada en su entrada
+
+Al arreglar el primero, los tests de escenarios empezó a fallar con
+`first == last` exacto. No era una regresión: era un segundo defecto que el
+primero tapaba.
+
+`pop_all_as_exit` sellaba cada `FunctionExit` con `active.entry_monotonic_ns`,
+el momento en que el frame **se abrió**. Una salida fechada en su entrada hace
+que toda invocación cerrada ahí reporte duración **exactamente cero**, lo que
+contradice el propósito declarado de la función («paired exits so analytics can
+close open frames»). Además, el resto de desenrollados sí usan el reloj del trap,
+así que la incoherencia era interna.
+
+Estaba oculto porque el bug del desenrollado cerraba esos mismos frames durante
+los traps, y ahí sí llevaba un timestamp real. **Arreglar un defecto puede
+destapar otro que dependía de él**, y el indicio de que algo más falla no es que
+el arreglo fuera malo: es que el síntoma estaba repartido.
+
+### La regla
+
+Un test que afirma algo razonable y falla no se relaja: **se investigates por
+qué ahora falla lo que antes pasaba**. Y un test que pasa no demuestra que el
+código bajo él esté bien: los dos asserts que destaparon esto los escribió un
+agente sin saber que existían los defectos.
+
+## El salto que se esconde en el propio `return` (2026-10-01)
+
+### Por qué no sale en ningún inventario
+
+Un test como este no está «sin assert». Tiene asserts, se lee bien, y pasa:
+
+```rust
+let mut client = match McpTestClient::start().await {
+    Ok(c) => c,
+    Err(e) => { eprintln!("SKIP: {e}"); return; }   // verde sin probar nada
+};
+```
+
+Un barrido estático no lo ve, porque el problema no es qué afirma el test sino
+que **puede no afirmar nada**. En cualquier host donde el build falle, el fixture
+no exista o el servidor no arranque, esos tests se convierten en verde.
+
+De 16 saltos encontrados en `m0_acceptance.rs`, `counterexample_tools.rs` y
+`probe_drain_canonical.rs`, **11 ni siquiera se activaban en este host**: aquí
+eran inocuos, y aun así eran un fallo esperando un entorno peor. Los otros 5 sí
+estaban mudos, y cuatro de ellos eran defectos de diseño del propio test que
+ningún host podía satisfacer — tres llamaban a `probe_drain` sobre una sesión ya
+parada, y uno pedía un lock de base de datos que el propio servidor tenía
+abierto.
+
+### La distinción que evita romper cosas
+
+Un salto solo es legítimo cuando la dependencia ausente es genuinamente un
+factor del entorno, y entonces debe ser **visible**. La línea que separa los dos
+casos: los fixtures los compila el `build.rs` del propio árbol y `chronos-mcp` es
+un binario del repo, así que si faltan **es un fallo de build**, no una limitación
+del host — y un fallo de build tiene que ser un fallo.
+
+El único caso B real del lote fue `m0_03_ebpf_probe_lifecycle_impl`, que quedó
+`#[ignore]` con el motivo exacto visible en la salida de `cargo test`. Y su
+`return` interno tenía una segunda trampa: la rama `env_blocked` se activaba de
+verdad, pero por una **carrera** (`probe still starting up`), no por falta de
+permisos, y el mensaje culpaba al entorno. Este host tiene `CapEff=0`, lo que
+hace creíble el diagnóstico equivocado.
+
+### La regla
+
+Un skip invisible es peor que un test ausente, porque ocupa sitio en el informe
+de cobertura y aparenta estar midiendo. Si el caso se salta, que se vea: con
+`#[ignore]` y su motivo escrito, o con un fallo. **Nunca con un `return`.**
