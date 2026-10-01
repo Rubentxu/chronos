@@ -67,8 +67,17 @@ async fn test_get_execution_summary_top_functions_not_empty() {
 }
 
 /// ED2: test_debug_call_graph_has_edges
-/// Probe test_busyloop, debug_call_graph, assert response is valid.
-/// Note: nodes may be empty for C programs without debug symbols.
+/// Probe test_busyloop and ask for a call graph at max_depth=10.
+///
+/// Measured on this environment the graph is empty *by construction*:
+/// `unique_functions=0`, `nodes=0`, `edges=0` and every `stats` field 0.
+/// The fixture is a C program probed without function-frame tracking, so
+/// there are no `function_entry` events to derive nodes or edges from.
+/// The name predates that measurement and is kept for traceability; what
+/// the test now pins is (a) the empty-graph contract, which fails loudly
+/// if frame tracking ever starts producing nodes, and (b) the structural
+/// invariants that must hold between the `nodes`/`edges` arrays and the
+/// `stats` aggregate the server computes separately.
 #[tokio::test]
 async fn test_debug_call_graph_has_edges() {
     let fixture = McpSession::fixture_path("test_busyloop")
@@ -93,6 +102,10 @@ async fn test_debug_call_graph_has_edges() {
         .probe_stop(&session_id)
         .await
         .expect("probe_stop failed");
+    assert!(
+        stop.total_events > 0,
+        "probe must capture events before a graph can be reasoned about"
+    );
     println!("Probe stopped: {} total events", stop.total_events);
 
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -102,51 +115,71 @@ async fn test_debug_call_graph_has_edges() {
         .await
         .expect("debug_call_graph failed");
 
-    println!(
-        "Call graph: {} unique functions, {} nodes",
-        call_graph.unique_functions,
-        call_graph.nodes.len()
+    // The session's own identity must come back with the response, so a
+    // graph can never be attributed to the wrong session.
+    assert_eq!(
+        call_graph.session_id, session_id,
+        "call graph must belong to the session it was requested for"
     );
 
-    // Note: nodes may be empty for C programs without debug symbols
-    // Just verify the response structure is valid
-    if !call_graph.nodes.is_empty() {
-        let has_edges = call_graph
+    // Empty by construction (see doc-comment): a C fixture probed without
+    // function frames yields no nodes and no edges.
+    assert_eq!(
+        call_graph.nodes.len(),
+        0,
+        "expected an empty node set for a fixture without function frames, got {:?}",
+        call_graph
             .nodes
             .iter()
-            .any(|n| !n.callers.is_empty() || !n.callees.is_empty());
-        println!(
-            "  Nodes with edges: {}",
-            call_graph
-                .nodes
-                .iter()
-                .filter(|n| !n.callers.is_empty() || !n.callees.is_empty())
-                .count()
-        );
+            .map(|n| n.function.clone())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        call_graph.edges.len(),
+        0,
+        "expected an empty edge set for a fixture without function frames, got {:?}",
+        call_graph
+            .edges
+            .iter()
+            .map(|e| (e.from.clone(), e.to.clone()))
+            .collect::<Vec<_>>()
+    );
 
-        // Print some sample nodes
-        for (i, node) in call_graph.nodes.iter().take(3).enumerate() {
-            println!(
-                "    [{}] {}: callers={}, callees={}",
-                i,
-                node.function,
-                node.callers.len(),
-                node.callees.len()
-            );
-        }
+    // `stats` is computed server-side, independently of the arrays, so the
+    // two must agree.
+    assert_eq!(
+        call_graph.stats.node_count as usize,
+        call_graph.nodes.len(),
+        "stats.node_count must agree with the node array"
+    );
+    assert_eq!(
+        call_graph.stats.edge_count as usize,
+        call_graph.edges.len(),
+        "stats.edge_count must agree with the edge array"
+    );
+    assert_eq!(
+        call_graph.unique_functions,
+        call_graph.nodes.len(),
+        "unique_functions must agree with the node array"
+    );
 
-        if has_edges {
-            println!("✓ debug_call_graph has nodes with edges");
-        } else {
-            println!(
-                "✓ debug_call_graph response is valid (no edges - C program without debug symbols)"
-            );
-        }
-    } else {
-        println!(
-            "✓ debug_call_graph response is valid (no nodes - C program without debug symbols)"
-        );
-    }
+    // `max_depth` is the *observed* depth of the returned graph, not an
+    // echo of the requested 10 — measured 0 for an empty graph.
+    assert_eq!(
+        call_graph.stats.max_depth, 0,
+        "an empty graph must report observed depth 0"
+    );
+    assert_eq!(
+        call_graph.max_depth, 0,
+        "max_depth must report the observed depth of the graph, not the request"
+    );
+
+    println!(
+        "✓ debug_call_graph: {} unique functions, {} nodes, {} edges (empty by construction)",
+        call_graph.unique_functions,
+        call_graph.nodes.len(),
+        call_graph.edges.len()
+    );
 
     client.shutdown().await.ok();
 }
@@ -382,8 +415,15 @@ async fn test_debug_get_saliency_scores_sorted() {
 }
 
 /// ED7: test_get_call_stack_at_syscall_event
-/// Probe test_busyloop, query for syscall_enter event, get_call_stack at that event.
-/// Assert: frames array is valid (may be empty for native).
+/// Probe test_busyloop, filter for a `syscall_enter` event, then ask for
+/// the call stack at that event.
+///
+/// Measured: the filter is honoured (the page comes back filled with
+/// `syscall_enter` events, never `syscall_exit`), and `get_call_stack`
+/// returns an empty frame list for them — the C fixture is probed without
+/// frame-pointer tracking, so there is no unwind information to report.
+/// The empty result is the asserted contract, not a skip: this test no
+/// longer returns early when the syscall filter finds nothing.
 #[tokio::test]
 async fn test_get_call_stack_at_syscall_event() {
     let fixture = McpSession::fixture_path("test_busyloop")
@@ -408,6 +448,10 @@ async fn test_get_call_stack_at_syscall_event() {
         .probe_stop(&session_id)
         .await
         .expect("probe_stop failed");
+    assert!(
+        stop.total_events > 0,
+        "probe must capture events before a call stack can be requested"
+    );
     println!("Probe stopped: {} total events", stop.total_events);
 
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -424,10 +468,24 @@ async fn test_get_call_stack_at_syscall_event() {
         .await
         .expect("query_events for syscall_enter failed");
 
-    if events.is_empty() {
-        println!("No syscall_enter events found, skipping call stack test");
-        client.shutdown().await.ok();
-        return;
+    // A live dynamically linked process always makes syscalls, so an empty
+    // page here means the query path or the filter broke.
+    assert!(
+        !events.is_empty(),
+        "a live dynamically linked process must yield at least one syscall_enter event"
+    );
+    assert_eq!(
+        events.len(),
+        1,
+        "limit=1 must cap the page to a single event"
+    );
+    // If the filter were ignored, the page would come back mixed.
+    for ev in &events {
+        assert_eq!(
+            ev.event_type, "syscall_enter",
+            "event_types filter leaked a {} event into a syscall_enter page",
+            ev.event_type
+        );
     }
 
     let first_syscall_event_id = events[0].event_id;
@@ -439,30 +497,39 @@ async fn test_get_call_stack_at_syscall_event() {
         .await
         .expect("get_call_stack failed");
 
-    // Assert: frames array is valid (may be empty for native)
+    // Empty by construction (see doc-comment): no frame-pointer tracking,
+    // so no unwind data exists for a C fixture. Asserted so that a real
+    // regression (frames lost when they *should* exist) is visible, and so
+    // that a future frame-tracking capability has to update this test.
+    assert!(
+        frames.is_empty(),
+        "expected no unwind frames for a fixture without frame-pointer tracking, got {:?}",
+        frames
+            .iter()
+            .map(|f| (f.depth, f.function.clone(), f.address.clone()))
+            .collect::<Vec<_>>()
+    );
+
     println!(
-        "✓ get_call_stack at event {}: {} frames",
+        "✓ get_call_stack at event {}: {} frames (empty by construction)",
         first_syscall_event_id,
         frames.len()
     );
-
-    for (i, frame) in frames.iter().enumerate().take(5) {
-        println!(
-            "  [{}] {} at {}:{} (0x{})",
-            i,
-            frame.function,
-            frame.file.as_deref().unwrap_or("?"),
-            frame.line.unwrap_or(0),
-            frame.address
-        );
-    }
 
     client.shutdown().await.ok();
 }
 
 /// ED8: test_debug_call_graph_max_depth
-/// Probe test_busyloop, debug_call_graph with max_depth=1, assert response valid.
-/// Note: nodes may be empty for C programs without debug symbols.
+/// Probe test_busyloop and ask for a call graph capped at max_depth=1,
+/// then ask again at max_depth=10 for comparison.
+///
+/// Measured: both requests return the same empty graph
+/// (`unique_functions=0`, `nodes=0`, `edges=0`) and both report
+/// `max_depth=0` — the field carries the *observed* depth of the returned
+/// graph, it is not an echo of the request. The invariant pinned here is
+/// that a tighter depth cap can never grow the graph, plus the same
+/// array/stats agreement asserted in ED2. The cap is deliberately not
+/// asserted as an echo: measured 0, not 1.
 #[tokio::test]
 async fn test_debug_call_graph_max_depth() {
     let fixture = McpSession::fixture_path("test_busyloop")
@@ -487,6 +554,10 @@ async fn test_debug_call_graph_max_depth() {
         .probe_stop(&session_id)
         .await
         .expect("probe_stop failed");
+    assert!(
+        stop.total_events > 0,
+        "probe must capture events before a graph can be reasoned about"
+    );
     println!("Probe stopped: {} total events", stop.total_events);
 
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -496,25 +567,85 @@ async fn test_debug_call_graph_max_depth() {
         .await
         .expect("debug_call_graph failed");
 
-    // Assert: response valid (structure is correct even if nodes is empty)
-    println!(
-        "✓ debug_call_graph max_depth=1: {} unique functions, {} nodes",
-        call_graph.unique_functions,
-        call_graph.nodes.len()
+    // Same session at the default depth, to compare the two caps.
+    let deep_graph = client
+        .debug_call_graph(&session_id, 10)
+        .await
+        .expect("debug_call_graph(10) failed");
+
+    assert_eq!(
+        call_graph.session_id, session_id,
+        "call graph must belong to the session it was requested for"
+    );
+    assert_eq!(
+        deep_graph.session_id, session_id,
+        "deep call graph must belong to the same session"
     );
 
-    if !call_graph.nodes.is_empty() {
-        println!("  Sample nodes:");
-        for (i, node) in call_graph.nodes.iter().take(3).enumerate() {
-            println!(
-                "    [{}] {}: callers={}, callees={}",
-                i,
-                node.function,
-                node.callers.len(),
-                node.callees.len()
-            );
-        }
-    }
+    // A depth cap can only remove nodes and edges, never add them.
+    assert!(
+        call_graph.nodes.len() <= deep_graph.nodes.len(),
+        "max_depth=1 returned {} nodes, more than max_depth=10 ({})",
+        call_graph.nodes.len(),
+        deep_graph.nodes.len()
+    );
+    assert!(
+        call_graph.edges.len() <= deep_graph.edges.len(),
+        "max_depth=1 returned {} edges, more than max_depth=10 ({})",
+        call_graph.edges.len(),
+        deep_graph.edges.len()
+    );
+
+    // Empty by construction for this C fixture (see doc-comment).
+    assert_eq!(
+        call_graph.nodes.len(),
+        0,
+        "expected an empty node set for a fixture without function frames"
+    );
+    assert_eq!(
+        call_graph.edges.len(),
+        0,
+        "expected an empty edge set for a fixture without function frames"
+    );
+
+    // `stats` is computed independently of the arrays and must agree.
+    assert_eq!(
+        call_graph.stats.node_count as usize,
+        call_graph.nodes.len(),
+        "stats.node_count must agree with the node array"
+    );
+    assert_eq!(
+        call_graph.stats.edge_count as usize,
+        call_graph.edges.len(),
+        "stats.edge_count must agree with the edge array"
+    );
+    assert_eq!(
+        call_graph.unique_functions,
+        call_graph.nodes.len(),
+        "unique_functions must agree with the node array"
+    );
+
+    // `max_depth` is the observed depth of the graph, not the request.
+    assert_eq!(
+        call_graph.max_depth, 0,
+        "max_depth must report the observed depth, not the requested 1"
+    );
+    assert_eq!(
+        deep_graph.max_depth, 0,
+        "max_depth must report the observed depth, not the requested 10"
+    );
+    assert_eq!(
+        call_graph.stats.max_depth, 0,
+        "stats.max_depth must report the observed depth of an empty graph"
+    );
+
+    println!(
+        "✓ debug_call_graph max_depth=1: {} unique functions, {} nodes, {} edges (empty by construction; max_depth=10 gives {} nodes)",
+        call_graph.unique_functions,
+        call_graph.nodes.len(),
+        call_graph.edges.len(),
+        deep_graph.nodes.len()
+    );
 
     client.shutdown().await.ok();
 }
