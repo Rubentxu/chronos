@@ -139,10 +139,38 @@ impl InvocationTracker {
                     .symbols_by_address
                     .get(&top.entry_ip)
                     .is_some_and(|(sid, _, _)| *sid == top.symbol_id);
-            if return_in_caller_range && !is_recursive_reentry {
-                break; // normal execution inside the frame; caller is still active
+
+            if !is_recursive_reentry {
+                if return_in_caller_range {
+                    break; // normal execution inside the frame; caller is still active
+                }
+                // The return address is not inside this frame. When it is known,
+                // keep unwinding only while it still belongs to a frame that is
+                // on the stack. If it belongs to none, the frame below is a
+                // *caller that is still running*, not a frame that has exited, and
+                // unwinding it would emit a premature FunctionExit.
+                //
+                // The two checks above only ever looked at the top frame, which
+                // assumed unwinding is consecutive. Recursion breaks that: on a
+                // recursive re-entry the return address lies inside the recursive
+                // function itself, so after popping it the caller below does not
+                // contain the return address either — and used to be popped as
+                // well, leaving the new invocation parentless.
+                //
+                // This only applies when a return address was actually observed.
+                // Without one, `ra` is just `ip`, and there is nothing to check it
+                // against: that is the `None` case in which unwinding proceeds.
+                if return_addr.is_some()
+                    && !stack
+                        .iter()
+                        .any(|f| ra >= f.entry_ip && ra < f.entry_ip + f.size)
+                {
+                    break;
+                }
             }
-            // return_addr is outside the frame's range OR is a recursive re-entry
+
+            // Case (a) unwinding past a frame, or case (b) closing the previous
+            // activation of a recursively re-entered function.
             let active = stack.pop().unwrap();
             events.push(make_function_exit(&active, tid, mono_ns));
         }
@@ -718,5 +746,108 @@ mod tests {
             exit_id_bar, entry_id_bar2,
             "bar(1) and bar(2) must have distinct invocation_ids"
         );
+    }
+
+    /// A recursive call must not unwind its caller.
+    ///
+    /// The unwind loop decided whether a frame was still active by asking only
+    /// whether the return address fell inside the topmost frame. On a recursive
+    /// re-entry the top frame is the recursive function itself, and the return
+    /// address points inside *it*, not inside the caller below. So the caller
+    /// was asked next, did not contain the return address, and got popped
+    /// anyway: `main` emitted its exit while it was still running, and the next
+    /// `fact` frame entered with no parent at all.
+    ///
+    /// The existing `recursive_distinct_invocation_ids` test cannot catch this
+    /// because it recurses with a single function: there is no caller frame
+    /// below to be wrongly unwound.
+    #[test]
+    fn recursive_reentry_keeps_the_caller_frame_open() {
+        let mut symbols = HashMap::new();
+        symbols.insert(0x1000, sym("main", 0x100));
+        symbols.insert(0x1100, sym("fact", 0x100));
+        let mut t = InvocationTracker::from_symbols(symbols);
+
+        // main enters.
+        let r1 = t.on_sigtrap(1, 0x1000, None, 10);
+        assert_eq!(r1.len(), 1, "main entry");
+        let main_id = entry_id(&r1[0]);
+
+        // main calls fact; the return address is the instruction after the
+        // call, which lives inside main.
+        let r2 = t.on_sigtrap(1, 0x1100, Some(0x1010), 20);
+        assert_eq!(r2.len(), 1, "fact entry only, no unwind expected");
+        let fact1_id = entry_id(&r2[0]);
+        assert_eq!(
+            parent_id(&r2[0]),
+            Some(main_id),
+            "fact(1) must be a child of main"
+        );
+
+        // fact calls itself; the return address now lives inside fact, not
+        // inside main.
+        let r3 = t.on_sigtrap(1, 0x1100, Some(0x1110), 30);
+        assert_eq!(
+            r3.len(),
+            2,
+            "exactly one unwind (fact(1)) plus one entry (fact(2)); got {:?}",
+            r3.iter().map(|e| e.event_type).collect::<Vec<_>>()
+        );
+        assert_eq!(r3[0].event_type, EventType::FunctionExit);
+        assert_eq!(
+            exit_id(&r3[0]),
+            fact1_id,
+            "the frame that unwinds is fact(1), not main"
+        );
+        assert_eq!(
+            r3[1].event_type,
+            EventType::FunctionEntry,
+            "the second event must be the new fact frame"
+        );
+
+        // The regression itself: fact(2) is still a call made by main.
+        assert_eq!(
+            parent_id(&r3[1]),
+            Some(main_id),
+            "a recursive call is still a call from the caller that made it"
+        );
+
+        // And main is still on the stack, still running.
+        assert_eq!(
+            t.active_invocations(),
+            2,
+            "main and the new fact must both still be active"
+        );
+
+        // One more level, to be sure it holds as the recursion deepens.
+        let r4 = t.on_sigtrap(1, 0x1100, Some(0x1110), 40);
+        assert_eq!(r4.len(), 2);
+        assert_eq!(exit_id(&r4[0]), entry_id(&r3[1]));
+        assert_eq!(parent_id(&r4[1]), Some(main_id));
+        assert_eq!(t.active_invocations(), 2);
+    }
+
+    fn entry_id(e: &TraceEvent) -> InvocationId {
+        match &e.data {
+            EventData::Function {
+                invocation_id: Some(id),
+                ..
+            } => *id,
+            other => panic!("not a function event: {other:?}"),
+        }
+    }
+
+    fn parent_id(e: &TraceEvent) -> Option<InvocationId> {
+        match &e.data {
+            EventData::Function {
+                parent_invocation_id,
+                ..
+            } => *parent_invocation_id,
+            other => panic!("not a function event: {other:?}"),
+        }
+    }
+
+    fn exit_id(e: &TraceEvent) -> InvocationId {
+        entry_id(e)
     }
 }
