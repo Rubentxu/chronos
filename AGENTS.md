@@ -2312,3 +2312,164 @@ hace creíble el diagnóstico equivocado.
 Un skip invisible es peor que un test ausente, porque ocupa sitio en el informe
 de cobertura y aparenta estar midiendo. Si el caso se salta, que se vea: con
 `#[ignore]` y su motivo escrito, o con un fallo. **Nunca con un `return`.**
+
+## Un mutex que serializaba sin aislar (2026-10-01)
+
+### El fallo invisible
+
+`server_cohesion.rs` tenía un `static TESTS_LOCK: Mutex<()>` y un comentario
+que explicaba que serializar la suite era lo que impedía que un test leyera el
+entorno de otro. La mutex lo impedía a medias: **serializa los cuerpos, pero
+no restaura valores**. Un test que fija `CHRONOS_ACTIVE_TOOLSET=native` deja
+ese valor puesto para todos los que vengan después, y el orden lo elige el
+harness.
+
+`inv_4` pasaba solo por suerte de orden. Se mide en dos comandos:
+
+```
+cargo test -p chronos-mcp --test server_cohesion inv_4                        # ok
+CHRONOS_ACTIVE_TOOLSET=native cargo test -p chronos-mcp --test server_cohesion inv_4  # FAILED
+```
+
+El arreglo no es la mutex: es que **cada test fije lo que depende**. Aquí,
+`unique_server()` pasó a fijar `CHRONOS_ACTIVE_TOOLSET=auto` junto a las otras
+dos variables. Con eso, 9/9 en cuatro condiciones: por defecto, con perfil
+hostil `python`, con `--test-threads=1` y tres repeticiones.
+
+### El segundo matiz: restaurar al final del cuerpo no es restaurar
+
+`chronos-cli` hacía lo propio a mano, y su comentario de seguridad afirmaba que
+el valor «solo lo observan tests de este módulo». Falso en cuanto un test más
+lo fija: `parse()` calcula `default_db_path()` **antes** de decidir el comando,
+así que todo test sin `--db` lee el entorno. Y restaurar al final del cuerpo
+solo funciona si ningún assert falla antes: un panic desenrolla y se lleva el
+`env` por delante, dejando el proceso contaminado para el resto del run.
+
+La forma que sí aguanta es un guard con `Drop`:
+
+```rust
+struct EnvGuard { _lock: MutexGuard<'static, ()>, prior: Vec<(&'static str, Option<String>)> }
+impl Drop for EnvGuard { /* restaura en ambos casos */ }
+```
+
+Y lo toman **tanto los que escriben el entorno como los que solo lo leen**: la
+exclusión mutua solo se cumple si ambos lados cogen el cerrojo.
+
+### La regla
+
+Un cerrojo no aísla, ordena. El aislamiento viene de que cada test declare sus
+entradas. Y si un test muta estado de proceso, la restauración tiene que vivir
+en `Drop`, no en la última línea del cuerpo.
+
+## `#[cfg(test)]` no es una puerta para los tests de integración (2026-10-01)
+
+`ChronosServer::inject_engine_for_testing` lleva `#[cfg(test)]` y su doc dice que
+existe «solo para soportar los tests de integración en `tests/debug_read_tools.rs`».
+Las dos mitades son incompatibles: `#[cfg(test)]` compila los tests unitarios
+**del propio crate**, así que desde `tests/` el método no existe. Y
+`debug_read_tools.rs` no lo invoca: barrido del repo, **cero llamadores**.
+
+El error de compilación que destapó esto fue `no method named
+inject_engine_for_testing found for struct ChronosServer`. La tentación era
+quitar el `#[cfg(test)]` para que el test compilara; eso habría ampliarado la
+API de producción para acomodar a un test.
+
+Lo que se hizo fue lo contrario: `inv_2` se reescribió para afirmar la
+propiedad que **sí** es observable desde fuera. `engines` y `projection_meta`
+son privados, pero la sombra de su contrato —que las herramientas de consulta
+se ofrecen exactamente bajo el toolset que las lista— sí se ve, y es la que se
+rompería con la misma regresión.
+
+Relacionado, y con el mismo olor: el perfil se fija a `native` porque en `auto`
+`is_tool_listed` devuelve `true` para cualquier nombre (`server.rs:529`).
+Cualquier comparación de listados escrita contra `auto` es una tautología, y
+una lista de perfiles que no incluya `python`/`java`/`go`/`js` es falsa por
+construcción: un valor desconocido pasa verbatim, que es justo lo que afirma
+`inv_5b` diez líneas más abajo.
+
+### La regla
+
+Antes de ampliar una visibilidad para que un test compile, comprueba que el
+`cfg` que lo oculta tiene sentido desde el binaries que lo necesitan. Y cuando
+la propiedad no es observable, no la expongas: afirma la sombra que sí lo es.
+
+## Una decisión documentada tres veces que ningún test fijaba (2026-10-01)
+
+`default_db_path` decide dónde vive el store. B-decision B5, enunciada en el
+doc del módulo, en el de la función y en el `--help` del binario. La función
+tiene cuatro ramas observables. La única afirmación del repo que rozaba el
+asunto era:
+
+```rust
+assert!(db.ends_with("chronos.db"));   // la satisfacen las cuatro
+```
+
+Reordenar las ramas, perder un segmento de ruta o cambiar el nombre del
+fallback dejaba la suite **verde**. Una decisión de arquitectura enunciada tres
+veces y verificada cero.
+
+Se añaden un test por rama, incluidas las dos que nadie miraba: `XDG_DATA_HOME`
+exportado pero vacío (que debe tratarse como no puesto, no como una raíz
+relativa) y el fallback a CWD. Cuatro mutaciones de producción —invertir la
+precedencia XDG/HOME, ignorar el vacío, perder `.local/share`, renombrar el
+fallback— rompen las cuatro.
+
+### La regla
+
+Un `ends_with` sobre una ruta no afirma una ruta. Cuando el valor tiene ramas,
+el test se escribe por rama: es más trabajo y es lo único que detecta que
+alguien movió una.
+
+## Lo que un test no distingue, y lo que no era deuda (2026-10-01)
+
+Cuatro cosas de esta tanda, y solo la última era una hipótesis que se cayó: las
+tres primeras son defectos confirmados, uno de ellos en un test mío.
+
+**`ends_with` y `parse().unwrap_or(0)`.** El segundo es el mismo error con
+otra forma: parsear un componente entero cuando lleva sufijo. En
+`/proc/version`, el tercer componente de `5.10.134-19-generic` es
+`134-19-generic`; `unwrap_or(0)` lo volvía `0`, y el mensaje de error llegaba
+a afirmar «kernel 5.10.0» en un host que corre 5.10.134. No cambiaba el
+veredicto porque el parche no participaba en la comparación, así que ningún
+test se enteró. Cada componente se corta ahora en su primer no dígito.
+
+**Un `unwrap_or_default()` que fabricaba una causa raíz.** Un
+`/proc/version` ilegible se sustituía por `"0.0.0"` y se reportaba como
+«kernel 0.0.0 < required 5.8.0». Al operador se le diagnosticaba un kernel
+antiguo cuando el problema era un `/proc` no montado. Fallo de lectura y
+kernel por debajo del mínimo son diagnósticos distintos y ahora lo son.
+
+**Un test mío que no discriminaba.** El primero de los tres llamaba a
+`check_kernel_release("")` —la ruta de parseo— para cubrir el defecto de la
+ruta de *lectura*. Revirtiendo la lectura a `unwrap_or_default()` seguía en
+verde, porque tocar la lectura no toca el parseo. Se arreglo inyectando el
+lector como parámetro (`kernel_version_check_with`): en un host normal
+`/proc/version` siempre se lee, así que un test que llamase a
+`read_to_string` solo podía ejercitar el camino de éxito. **La primera
+discriminancia que ejecuté mantuvo en verde a mi propio test.** Por eso
+importa ejecutarla y no darla por buena.
+
+**Y una que no era deuda.** Iba a borrar seis `#[ignore]` con cuerpo vacío de
+`m0_acceptance.rs`. `STATE.md` y `JOURNAL.md` del 2026-09-23 ya lo habían
+juzgado, con un criterio explícito: los cuatro `_m0_XX_legacy_stub_disabled`
+son «stubs documentados (trazabilidad, no deuda)», medido como «0 `#[ignore]`
+no-doc». Borrarlos habría destruido una decisión registrada para satisfacer un
+inventario. Lo que sí era deuda era lo contiguo al audit: ese criterio se
+midió solo sobre `chronos-sandbox/tests/*.rs`, y por el resto del workspace
+había siete `#[ignore]` **desnudos** cuyo motivo solo se leía abriendo el
+fichero.
+
+Con `#[ignore = "..."]`, libtest expone el motivo al seleccionar el test:
+
+```
+test: m0_03_ebpf_probe_lifecycle_impl, ignore_message: requires CAP_BPF + CAP_PERFMON ...
+```
+
+### La regla
+
+Una alerta de deuda cuyo criterio no se ha contrastado con el estado actual no
+es deuda. El `git log` y el ledger suelen tener la respuesta, y acertar a
+partir de un inventario de tests vacíos es un error caro: se borra
+trazabilidad que alguien pagó. Lo que sí se puede hacer al lado es extender el
+criterio a lo que nunca se midió.
+
