@@ -6,7 +6,9 @@ use std::time::Duration;
 
 #[tokio::test]
 async fn test_state_diff_after_probe_stop() {
-    // state_diff requires two timestamps to compare
+    // state_diff compares the program state at two timestamps; after
+    // probe_stop the session is queryable and the first/last drained event
+    // timestamps form a valid pair.
     let fixture = McpSession::fixture_path("test_add")
         .expect("test_add fixture not found - run cargo build first");
 
@@ -32,55 +34,55 @@ async fn test_state_diff_after_probe_stop() {
         .await
         .expect("probe_stop failed");
 
-    println!("Probe stopped: {} total events", stop.total_events);
     assert!(stop.total_events > 0, "Should have captured events");
 
     // Give query engine time to build
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Use timestamps from the drained events if available
-    if !drained.is_empty() && drained.len() >= 2 {
-        let ts_a = drained[0].timestamp_ns;
-        let ts_b = drained[drained.len() - 1].timestamp_ns;
+    // Use timestamps from the drained events. This capture always produces a
+    // large event buffer (measured: 128 events for test_add), so the real
+    // two-timestamp path is asserted directly instead of falling back to
+    // arbitrary timestamps that would prove nothing.
+    assert!(
+        drained.len() >= 2,
+        "need at least two drained events to derive two timestamps, got {}",
+        drained.len()
+    );
 
-        let diff = client.state_diff(&session_id, ts_a, ts_b).await;
+    let ts_a = drained[0].timestamp_ns;
+    let ts_b = drained[drained.len() - 1].timestamp_ns;
+    assert!(
+        ts_a < ts_b,
+        "drained event timestamps must be ordered, got ts_a={} ts_b={}",
+        ts_a,
+        ts_b
+    );
 
-        match diff {
-            Ok(result) => {
-                println!(
-                    "✓ state_diff between {} and {}: {} changes",
-                    ts_a,
-                    ts_b,
-                    result.changes.len()
-                );
-                for change in result.changes.iter().take(5) {
-                    println!(
-                        "  {}: {} -> {}",
-                        change.field, change.value_a, change.value_b
-                    );
-                }
-            }
-            Err(e) => {
-                // state_diff might fail if there's no state to compare
-                println!(
-                    "state_diff returned error (expected for simple programs): {:?}",
-                    e
-                );
-            }
-        }
-    } else {
-        // Try with arbitrary timestamps
-        let diff = client.state_diff(&session_id, 0, 1000000).await;
+    let result = client
+        .state_diff(&session_id, ts_a, ts_b)
+        .await
+        .expect("state_diff should succeed for a captured session");
 
-        match diff {
-            Ok(result) => {
-                println!("✓ state_diff: {} changes", result.changes.len());
-            }
-            Err(e) => {
-                println!("state_diff returned error: {:?}", e);
-            }
-        }
-    }
+    // The response must be bound to the two timestamps we asked about.
+    assert_eq!(
+        result.timestamp_a, ts_a,
+        "state_diff echoed a different timestamp_a than requested"
+    );
+    assert_eq!(
+        result.timestamp_b, ts_b,
+        "state_diff echoed a different timestamp_b than requested"
+    );
+
+    // Measured behaviour: this trace carries no register evidence (every
+    // drained event is an Unresolved SyscallEnter/SyscallExit), and the
+    // service documents state_diff as returning an empty diff when neither
+    // timestamp has register evidence. So no changes is the expected result
+    // here — a non-empty list would mean unexpected register data.
+    assert!(
+        result.changes.is_empty(),
+        "expected no register changes without register evidence, got {:?}",
+        result.changes
+    );
 
     client.shutdown().await.ok();
 }
@@ -113,25 +115,35 @@ async fn test_state_diff_same_timestamp() {
         .await
         .expect("probe_stop failed");
 
-    println!("Probe stopped: {} total events", stop.total_events);
+    assert!(
+        stop.total_events > 0,
+        "probe_stop should report captured events, got {}",
+        stop.total_events
+    );
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Use same timestamp for both - should have no changes
-    let diff = client.state_diff(&session_id, 1000, 1000).await;
+    let result = client
+        .state_diff(&session_id, 1000, 1000)
+        .await
+        .expect("state_diff should succeed with identical timestamps");
 
-    match diff {
-        Ok(result) => {
-            // Same timestamp = no changes expected
-            println!(
-                "✓ state_diff (same timestamp): {} changes",
-                result.changes.len()
-            );
-        }
-        Err(e) => {
-            println!("state_diff returned error: {:?}", e);
-        }
-    }
+    assert_eq!(
+        result.timestamp_a, 1000,
+        "state_diff echoed a different timestamp_a than requested"
+    );
+    assert_eq!(
+        result.timestamp_b, 1000,
+        "state_diff echoed a different timestamp_b than requested"
+    );
+
+    // Same timestamp = no changes expected
+    assert!(
+        result.changes.is_empty(),
+        "identical timestamps must yield no changes, got {:?}",
+        result.changes
+    );
 
     client.shutdown().await.ok();
 }
@@ -164,7 +176,11 @@ async fn test_debug_diff_after_probe_stop() {
         .await
         .expect("probe_stop failed");
 
-    println!("Probe stopped: {} total events", stop.total_events);
+    assert!(
+        stop.total_events > 0,
+        "probe_stop should report captured events, got {}",
+        stop.total_events
+    );
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
@@ -223,7 +239,11 @@ async fn test_debug_diff_out_of_range_events() {
         .await
         .expect("probe_stop failed");
 
-    println!("Probe stopped: {} total events", stop.total_events);
+    assert!(
+        stop.total_events > 0,
+        "probe_stop should report captured events, got {}",
+        stop.total_events
+    );
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 

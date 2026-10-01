@@ -33,7 +33,11 @@ async fn test_debug_detect_races_no_races() {
         .await
         .expect("probe_stop failed");
 
-    println!("Probe stopped: {} total events", stop.total_events);
+    assert!(
+        stop.total_events > 0,
+        "probe_stop should report captured events, got {}",
+        stop.total_events
+    );
 
     // Give query engine time to build
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -47,14 +51,11 @@ async fn test_debug_detect_races_no_races() {
     // === Assertions ===
     // test_add is single-threaded, so no races expected
     // But the call should succeed and return valid JSON
-    println!("✓ debug_detect_races returned {} races", races.len());
-
-    for race in races.iter().take(5) {
-        println!(
-            "  Race at address {}: delta_ns={}",
-            race.address, race.delta_ns
-        );
-    }
+    assert!(
+        races.is_empty(),
+        "single-threaded test_add must not report data races, got {:?}",
+        races
+    );
 
     client.shutdown().await.ok();
 }
@@ -87,7 +88,11 @@ async fn test_debug_detect_races_threads() {
         .await
         .expect("probe_stop failed");
 
-    println!("Probe stopped: {} total events", stop.total_events);
+    assert!(
+        stop.total_events > 0,
+        "probe_stop should report captured events, got {}",
+        stop.total_events
+    );
 
     // Give query engine time to build
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -98,9 +103,16 @@ async fn test_debug_detect_races_threads() {
         .await
         .expect("debug_detect_races failed");
 
-    // May or may not find races depending on whether threads
-    // access shared memory simultaneously
-    println!("✓ debug_detect_races returned {} races", races.len());
+    // The test_threads fixture has no shared mutable state: each worker()
+    // accumulates into its own stack-local `sum` and reads only its own
+    // `ids[i]` slot. Two different addresses are never written by two
+    // threads, so zero races is the deterministic expectation here, not an
+    // environment-dependent one.
+    assert!(
+        races.is_empty(),
+        "test_threads has no shared memory writes, so no races are expected, got {:?}",
+        races
+    );
 
     client.shutdown().await.ok();
 }
@@ -133,12 +145,17 @@ async fn test_inspect_causality_empty_address() {
         .await
         .expect("probe_stop failed");
 
-    println!("Probe stopped: {} total events", stop.total_events);
+    assert!(
+        stop.total_events > 0,
+        "probe_stop should report captured events, got {}",
+        stop.total_events
+    );
 
     // Give query engine time to build
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Inspect an address that likely has no writes
+    // Inspect an address that has no writes. 0xDEAD is not touched by the
+    // fixture, so the report must come back empty (and not fail).
     let report = client
         .inspect_causality(&session_id, 0xDEAD)
         .await
@@ -146,15 +163,19 @@ async fn test_inspect_causality_empty_address() {
 
     // === Assertions ===
     assert_eq!(report.session_id, session_id, "session_id should match");
-    // Address format may vary - check the string representation
-    println!(
-        "✓ inspect_causality at 0xDEAD: {} mutations",
-        report.mutation_count
+    assert_eq!(
+        report.address, 0xDEAD,
+        "causality report should echo the requested address"
     );
-
-    if let Some(note) = report.note {
-        println!("  Note: {}", note);
-    }
+    assert_eq!(
+        report.mutation_count, 0,
+        "an address that is never written must report zero mutations"
+    );
+    assert!(
+        report.mutations.is_empty(),
+        "mutation_count and mutations must agree, got {:?}",
+        report.mutations
+    );
 
     client.shutdown().await.ok();
 }
@@ -187,35 +208,45 @@ async fn test_inspect_causality_valid_address() {
         .await
         .expect("probe_stop failed");
 
-    println!("Probe stopped: {} total events", stop.total_events);
+    assert!(
+        stop.total_events > 0,
+        "probe_stop should report captured events, got {}",
+        stop.total_events
+    );
 
     // Give query engine time to build
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Inspect a valid address range - typically stack is in lower addresses
-    // and heap is in higher addresses
+    // Inspect a plausible stack address. This capture of test_add records
+    // only syscall events (every drained event is an Unresolved
+    // SyscallEnter/SyscallExit), so the trace carries no memory-write
+    // evidence at all and the report legitimately comes back empty for any
+    // address - including this realistic-looking one. The value asserted here
+    // is the observable contract: the report echoes the requested address and
+    // reports no mutations for it.
     let stack_address: u64 = 0x7fff0000; // Common stack base
-
     let report = client
         .inspect_causality(&session_id, stack_address)
         .await
         .expect("inspect_causality failed");
 
-    println!(
-        "✓ inspect_causality at 0x{:x}: {} mutations",
-        stack_address, report.mutation_count
+    assert_eq!(
+        report.session_id, session_id,
+        "session_id should match the queried session"
     );
-
-    // Show first few mutations if any
-    for mutation in report.mutations.iter().take(3) {
-        println!(
-            "  Event {}: thread {}, value {} -> {}",
-            mutation.event_id,
-            mutation.thread_id,
-            mutation.value_before.as_deref().unwrap_or("?"),
-            mutation.value_after,
-        );
-    }
+    assert_eq!(
+        report.address, stack_address,
+        "causality report should echo the requested address"
+    );
+    assert_eq!(
+        report.mutation_count, 0,
+        "a trace without memory-write evidence must report zero mutations"
+    );
+    assert!(
+        report.mutations.is_empty(),
+        "mutation_count and mutations must agree, got {:?}",
+        report.mutations
+    );
 
     client.shutdown().await.ok();
 }
