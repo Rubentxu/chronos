@@ -7,9 +7,17 @@
 //!
 //! Every test here is fast (< 5s), uses the production composition path
 //! (`ChronosServer::new` and the `CHRONOS_ACTIVE_TOOLSET` env contract),
-//! and is independent of `~/.local/share/chronos` on disk — set
-//! `CHRONOS_ALLOW_IN_MEMORY_FALLBACK=1` and `CHRONOS_EXECUTION_LOG_DIR` to
-//! a temp dir to make the whole file deterministic.
+//! and is independent of `~/.local/share/chronos` on disk, which
+//! `CHRONOS_ALLOW_IN_MEMORY_FALLBACK=1` plus a `CHRONOS_EXECUTION_LOG_DIR`
+//! under a temp dir arrange.
+//!
+//! What this file does **not** have is per-test isolation of the durable
+//! log root. `resolve_execution_log_root` memoizes in a `OnceLock` and the
+//! first writer wins, so the temp dir only applies to the first server
+//! built in this binary. The suite is deterministic in what it asserts
+//! (env values are pinned per test, and the invariants are about
+//! composition, not about log contents) but the tests share one durable
+//! root. See `unique_server` for the measurement.
 //!
 //! ## Serial execution (rationale)
 //!
@@ -46,9 +54,24 @@ fn lock() -> std::sync::MutexGuard<'static, ()> {
     TESTS_LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Build a server with a unique `CHRONOS_EXECUTION_LOG_DIR` so concurrent
-/// test runs do not collide. `CHRONOS_ALLOW_IN_MEMORY_FALLBACK=1` lets the
-/// in-memory store be used when the on-disk path is unavailable.
+/// Build a server with a unique `CHRONOS_EXECUTION_LOG_DIR`.
+/// `CHRONOS_ALLOW_IN_MEMORY_FALLBACK=1` lets the in-memory store be used
+/// when the on-disk path is unavailable.
+///
+/// **The unique log dir is best-effort, not isolation.**
+/// `chronos_log::resolve_execution_log_root` memoizes in a `OnceLock` and
+/// the first writer wins, so only the first server built in this binary
+/// gets the directory it asks for; every later one is handed that same
+/// root. Measured with three sequential probes: the first matched, the
+/// second and third both got the first's. The intended override,
+/// `chronos_log::test_root::set_for_testing`, is gated `#[cfg(test)]` in
+/// `chronos-log` and so is unreachable from `tests/` here.
+///
+/// What the directory *does* still buy is a fresh, empty path for the
+/// first test in the process, and a unique name for the leftover
+/// directories the suite creates. Tests here must therefore not assume
+/// they own the durable root. See the module doc for what the suite does
+/// guarantee.
 ///
 /// `CHRONOS_ACTIVE_TOOLSET` is pinned to `auto` rather than left alone. The
 /// suite lock serialises test *bodies* but does not restore env values, so a

@@ -20,10 +20,24 @@
 //!
 //! ## Test seam
 //!
-//! Tests that need isolation call
-//! `test_root::set_for_testing(root)` (gated `#[cfg(test)]`). The seam
-//! is process-wide and lasts until the process exits; per-test tempdirs
-//! guarantee no cross-test pollution.
+//! [`test_root::set_for_testing`] is the intended seam, and it is gated
+//! `#[cfg(test)]`. That gate means **this crate's own unit tests only**:
+//! `cfg(test)` is not set when `chronos-log` is compiled as a dependency,
+//! so no test in `chronos-mcp` or `chronos-sandbox` can call it. The seam
+//! currently has no callers outside this file.
+//!
+//! The root is therefore **sticky in both directions**: the first writer
+//! wins, whether that is `test_root::set_for_testing` or an earlier read of
+//! `CHRONOS_EXECUTION_LOG_DIR`, and there is no unset. A test that sets
+//! `CHRONOS_EXECUTION_LOG_DIR` to a fresh tempdir after something else has
+//! already resolved the root gets the *previous* root, not its own.
+//! Measured on this host with three sequential probes: the first matched
+//! its own directory, the second and third were both handed the first's.
+//!
+//! **Do not read a per-test tempdir as isolation.** It is only a fresh
+//! path; whether it is honoured depends on what ran earlier in the
+//! process. Tests that need genuinely separate roots must either be the
+//! only reader in their binary or ask for a resettable root.
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -36,8 +50,11 @@ use crate::SessionId;
 /// 1. `CHRONOS_EXECUTION_LOG_DIR` env var, if set and non-empty.
 /// 2. Otherwise `${temp_dir}/chronos-execution-logs`.
 ///
-/// The result is memoized for the lifetime of the process. Tests that
-/// need a different root use `test_root::set_for_testing` (cfg-gated).
+/// The result is memoized for the lifetime of the process and the first
+/// writer wins. Note that `test_root::set_for_testing` is gated
+/// `#[cfg(test)]`, so it is reachable from this crate's unit tests only —
+/// a test in a downstream crate that sets `CHRONOS_EXECUTION_LOG_DIR` after
+/// the root has already been resolved is silently ignored.
 pub fn resolve_execution_log_root() -> PathBuf {
     if let Some(p) = ROOT.get() {
         return p.clone();
