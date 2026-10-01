@@ -791,20 +791,38 @@ impl McpSession {
     /// pagination. The returned vector preserves the observable
     /// properties asserted by the legacy tests (no overlap,
     /// strictly increasing timestamp order, beyond-tail empty).
+    ///
+    /// The walk used to be able to spin forever. The server answers
+    /// `limit = 0` with an empty page that still carries a
+    /// `next_cursor`, and the loop condition `page_len >= limit` then
+    /// evaluated `0 >= 0` on every pass, so the call never returned.
+    /// Two independent guards now close it: `limit == 0` short-circuits
+    /// before any round trip, and a page that comes back empty with a
+    /// cursor ends the walk instead of counting as progress, since a
+    /// cursor that does not advance the iteration cannot make it
+    /// terminate.
     pub async fn query_events_walk_all(
         &mut self,
         session_id: &str,
         mut filter: QueryFilter,
     ) -> Result<Vec<TraceEvent>, McpSandboxError> {
-        filter.cursor = None;
         let limit = filter.limit;
+        if limit == 0 {
+            // "Give me nothing" is a well-formed request, and the
+            // server answers it with an empty page plus a cursor.
+            // Walking it would never terminate. The `page_len > 0`
+            // guard below already stops the loop; this short-circuit
+            // saves the round trip and states the intent outright.
+            return Ok(Vec::new());
+        }
+        filter.cursor = None;
         let mut out: Vec<TraceEvent> = Vec::new();
         loop {
             let page = self.query_events_page(session_id, filter.clone()).await?;
             let page_len = page.events.len();
             out.extend(page.events);
             match page.next_cursor {
-                Some(c) if page_len >= limit => {
+                Some(c) if page_len > 0 => {
                     filter.cursor = Some(c);
                 }
                 _ => break,
