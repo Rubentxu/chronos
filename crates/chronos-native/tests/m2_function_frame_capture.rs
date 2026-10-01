@@ -25,6 +25,54 @@ use chronos_native::ptrace_tracer::PtraceConfig;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Mutex, MutexGuard, PoisonError};
+
+/// Serialises every test in this binary that traces a real child process.
+///
+/// # Why this exists
+///
+/// `PtraceTracer::wait_event` has two branches: with `follow_children: true`
+/// (or no main pid) it calls `waitpid(-1, __WALL)`, which reaps **any** child
+/// of the current process, not just its own tracee. `start_probe` — the path
+/// used by `live_probe_emits_real_function_entries_to_execution_log` — goes
+/// through `PtraceConfig::default()`, so it is on that branch.
+///
+/// In production that is correct: `ChronosServer` keeps a single
+/// `active_session` (`Arc<Mutex<Option<String>>>`), so exactly one tracer
+/// follows exactly one process tree and `waitpid(-1)` is how it sees every
+/// thread and clone of that tree.
+///
+/// In this test binary it is not. `cargo test` runs tests in parallel threads
+/// inside one process, so that `waitpid(-1, __WALL)` reaps the fixture another
+/// test is tracing. The interference is mutual and load-sensitive: observed
+/// symptom was the other test's fixture reported as
+/// `Signaled { signal: 9, signal_name: "SIGKILL" }` (the peer's `stop_probe`
+/// SIGKILLs the pid it believes is its own tracee) or
+/// "no identity-bearing FunctionEntry captured". With `--test-threads=1` all
+/// seven pass, which is why the defect hid: `.pipeline.kts` and `ci.yml` both
+/// pass that flag for the whole suite.
+///
+/// This is the integration-binary counterpart of
+/// `src/test_support.rs::TRACE_TEST_LOCK`, which does the same job for the
+/// `#[cfg(test)]` unit tests. It cannot be the same object: `cfg(test)` is not
+/// set when an integration test links the library, so that static does not
+/// exist in this binary. Two locks, one documented constraint — this crate
+/// supports one active trace session per process.
+///
+/// Test-only by construction. Guarding production paths with this would hide
+/// the real constraint rather than express it.
+static TRACE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+/// Acquire [`TRACE_TEST_LOCK`], tolerating a poisoned mutex.
+///
+/// A panic in a guarded test poisons the mutex, and every later test would then
+/// fail with a confusing poison error instead of running. Clearing the poison
+/// keeps the remaining tests meaningful.
+fn lock_trace_test() -> MutexGuard<'static, ()> {
+    TRACE_TEST_LOCK
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+}
 
 /// Absolute path to the fixture C source committed in this crate.
 fn fixture_source() -> PathBuf {
@@ -125,6 +173,7 @@ fn function_entry_name_and_invocation(ev: &TraceEvent) -> Option<(String, Invoca
 
 #[test]
 fn spawn_capture_emits_real_function_entries_with_recursion_ids() {
+    let _trace_guard = lock_trace_test();
     let Some(exe) = compile_fixture() else {
         return;
     };
@@ -170,6 +219,7 @@ fn spawn_capture_emits_real_function_entries_with_recursion_ids() {
 
 #[test]
 fn real_function_entries_round_trip_into_execution_log_v2() {
+    let _trace_guard = lock_trace_test();
     let Some(exe) = compile_fixture() else {
         return;
     };
@@ -233,6 +283,7 @@ fn real_function_entries_round_trip_into_execution_log_v2() {
 
 #[test]
 fn real_function_frame_capture_persists_durable_execution_log_v2() {
+    let _trace_guard = lock_trace_test();
     let Some(exe) = compile_fixture() else {
         return;
     };
@@ -308,6 +359,7 @@ fn real_function_frame_capture_persists_durable_execution_log_v2() {
 /// through the same `dual_push` producer used by the flat syscall loop.
 #[test]
 fn live_probe_emits_real_function_entries_to_execution_log() {
+    let _trace_guard = lock_trace_test();
     use std::time::Duration;
 
     let Some(exe) = compile_fixture() else {
@@ -573,6 +625,7 @@ fn _ensure_linux_only_used() {}
 
 #[test]
 fn pie_fixture_compute_load_bias_is_nonzero() {
+    let _trace_guard = lock_trace_test();
     let exe = match compile_pie_fixture() {
         Some(e) => e,
         None => return, // skip silently when no compiler
@@ -629,6 +682,7 @@ fn pie_fixture_compute_load_bias_is_nonzero() {
 /// invocations), add, and main.
 #[test]
 fn function_exit_is_emitted_when_caller_returns() {
+    let _trace_guard = lock_trace_test();
     let Some(exe) = compile_fixture() else {
         return;
     };
@@ -707,6 +761,7 @@ fn function_exit_is_emitted_when_caller_returns() {
 /// paired exits share the same `parent_invocation_id`.
 #[test]
 fn entry_exit_pairs_share_invocation_id() {
+    let _trace_guard = lock_trace_test();
     let Some(exe) = compile_fixture() else {
         return;
     };
