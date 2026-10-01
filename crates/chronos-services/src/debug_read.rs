@@ -49,7 +49,13 @@ impl DebugReadService {
 
     /// Get all variables in scope at a specific event.
     ///
-    /// Returns the variable list directly; empty if the event has no frame data.
+    /// Returns [`ServiceError::EventNotFound`] when the event does not exist,
+    /// and an empty list when it does exist but carries no frame data. Those
+    /// are different answers: "this event is not in the trace" cannot be
+    /// reported as "this event has no variables", because a caller reading an
+    /// empty list has no way to tell a real absence from a typo in the id.
+    /// `get_registers` above draws the same distinction, with
+    /// [`ServiceError::NoRegisterState`] for the second case.
     pub async fn get_variables(
         session_id: &str,
         event_id: u64,
@@ -59,6 +65,12 @@ impl DebugReadService {
         let engine = guard
             .get(session_id)
             .ok_or_else(|| ServiceError::SessionNotFound(session_id.to_string()))?;
+
+        // Exact-id lookup, not a range: an id that was never captured belongs to
+        // no frame and must not fall through as an empty variable set.
+        engine
+            .get_event_by_id(event_id)
+            .ok_or(ServiceError::EventNotFound { event_id })?;
 
         Ok(engine.get_variables_at_event(event_id))
     }
@@ -467,6 +479,46 @@ mod tests {
         let engines = Mutex::new(map);
         let result = DebugReadService::get_variables("missing", 0, &engines).await;
         assert!(matches!(result, Err(ServiceError::SessionNotFound(_))));
+    }
+
+    /// An id that was never captured is not an event without variables.
+    ///
+    /// This is the case that made the two halves of the contract look alike: an
+    /// empty list is a real answer for an event with no frame data, and a
+    /// misleading one for a bad id.
+    #[tokio::test]
+    async fn get_variables_event_not_found() {
+        let map = vars_engine();
+        let engines = Mutex::new(map);
+        let result = DebugReadService::get_variables("s1", 999_999, &engines).await;
+        assert!(
+            matches!(
+                result,
+                Err(ServiceError::EventNotFound { event_id: 999_999 })
+            ),
+            "an event id that was never captured must be reported as not found, got {result:?}"
+        );
+    }
+
+    /// The neighbouring case must keep its answer: the event exists, it simply
+    /// carries no frame data. Without this pair, the fix above could be "fixed"
+    /// by always erroring, which would pass the test above and break the real one.
+    #[tokio::test]
+    async fn get_variables_event_without_frame_data_is_empty_not_an_error() {
+        let engine = QueryEngine::new(vec![trace_event(
+            7,
+            700,
+            1,
+            EventType::SyscallEnter,
+            EventData::Empty,
+        )]);
+        let engines = Mutex::new(HashMap::from([("s1".to_string(), engine)]));
+
+        let result = DebugReadService::get_variables("s1", 7, &engines).await;
+        assert!(
+            matches!(result, Ok(ref vars) if vars.is_empty()),
+            "an existing event with no frame data must return an empty list, got {result:?}"
+        );
     }
 
     // --- get_memory ---
