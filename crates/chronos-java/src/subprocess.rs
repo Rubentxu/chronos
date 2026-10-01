@@ -39,6 +39,13 @@ impl JavaSubprocess {
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
 
+        // Without this, dropping the handle does NOT kill the JVM: `tokio::process::Child`
+        // only kills on drop when `kill_on_drop` is configured. Without this line
+        // every attach to a Java target left a live JVM —and blocked on
+        // `suspend=y` waiting for a debugger— holding its JDWP port. Same reason
+        // and same pattern as chronos-go and chronos-js.
+        cmd.kill_on_drop(true);
+
         let mut child = cmd.spawn().map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 JavaError::JavaNotFound
@@ -200,11 +207,10 @@ fn parse_jdwp_port_from_line(line: &str) -> Option<u16> {
     digits.parse().ok()
 }
 
-impl Drop for JavaSubprocess {
-    fn drop(&mut self) {
-        // SIGTERM is sent automatically when Child is dropped
-    }
-}
+// There is no `impl Drop`: the cleanup is done by `kill_on_drop(true)` in `spawn`.
+// An empty `Drop` whose comment claims tokio sends SIGTERM would be false, and
+// it was: `tokio::process::Child` only kills on drop when `kill_on_drop` is
+// configured. See crates/chronos-java/src/subprocess.rs::spawn.
 
 #[cfg(test)]
 mod tests {
@@ -369,5 +375,71 @@ mod tests {
         let addr = std::net::SocketAddr::from(([127, 0, 0, 1], sub.jdwp_port));
         std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(5))
             .unwrap_or_else(|e| panic!("JDWP port {addr} should accept a connection: {e}"));
+
+        // On leaving scope, `kill_on_drop(true)` must terminate the JVM.
+    }
+
+    /// Guards the process leak: dropping the handle has to terminate the JVM,
+    /// not merely forget the handle.
+    ///
+    /// This test is non-vacuous by prior characterisation: with `suspend=y` and
+    /// a missing target the JVM does **not** exit on its own — it stays
+    /// suspended waiting for a debugger — so this passes only because
+    /// `kill_on_drop(true)` killed it. Without that line the guard fails.
+    #[tokio::test]
+    #[ignore = "requires java on PATH; run by the gate's opt-in tier"]
+    async fn test_jvm_subprocess_is_killed_on_drop() {
+        if which::which("java").is_err() {
+            eprintln!("DECLARED SKIP: java not on PATH, nothing to assert");
+            return;
+        }
+
+        let pid = {
+            let sub = JavaSubprocess::spawn("NoSuchClassParaChronos")
+                .await
+                .expect("the JVM should publish a JDWP port");
+            sub.child.id().expect("the child should have a pid")
+        };
+        // `sub` has been dropped here.
+
+        // Reaping the child can take a moment; retry briefly instead of
+        // demanding instantaneous death.
+        for _ in 0..40 {
+            if !process_is_alive(pid) {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+
+        panic!(
+            "java process {pid} was still alive after dropping JavaSubprocess: \
+             kill_on_drop(true) is not taking effect"
+        );
+    }
+
+    /// `kill(pid, 0)` sends no signal: it only reports whether the process
+    /// exists. A zombie still occupies the table, so its state is checked too,
+    /// to avoid calling an already-reaped child alive.
+    fn process_is_alive(pid: u32) -> bool {
+        // /proc/<pid>/stat: field 3 is the state ('Z' = zombie).
+        let stat = match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+            Ok(s) => s,
+            // Without /proc (macOS, BSD) fall back to the simpler criterion.
+            Err(_) => return unsafe { libc_kill(pid) == 0 },
+        };
+        // The process name sits in parentheses and may contain spaces, so split
+        // after the last ')'.
+        let state = match stat.rfind(')') {
+            Some(i) => stat[i + 1..].split_whitespace().next().unwrap_or(""),
+            None => "",
+        };
+        state != "Z"
+    }
+
+    unsafe fn libc_kill(pid: u32) -> i32 {
+        extern "C" {
+            fn kill(pid: i32, sig: i32) -> i32;
+        }
+        kill(pid as i32, 0)
     }
 }
