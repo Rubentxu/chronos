@@ -980,6 +980,10 @@ mod imp {
         /// under ptrace and verify we get the expected events.
         #[test]
         fn test_launch_true_and_wait() {
+            // Serialised: this test traces a real child, and `wait_event` with
+            // `follow_children` reaps any child of this process.
+            // See `test_support::TRACE_TEST_LOCK`.
+            let _trace_guard = crate::test_support::lock_trace_test();
             let mut tracer = PtraceTracer::new(PtraceConfig {
                 trace_syscalls: false,
                 capture_registers: true,
@@ -1015,6 +1019,10 @@ mod imp {
         /// Integration test: launch `/bin/true` and verify event loop completes.
         #[test]
         fn test_launch_captures_events() {
+            // Serialised: this test traces a real child, and `wait_event` with
+            // `follow_children` reaps any child of this process.
+            // See `test_support::TRACE_TEST_LOCK`.
+            let _trace_guard = crate::test_support::lock_trace_test();
             let mut tracer = PtraceTracer::new(PtraceConfig {
                 trace_syscalls: false,
                 capture_registers: true,
@@ -1050,6 +1058,10 @@ mod imp {
         /// Integration test: launch with syscall tracing enabled.
         #[test]
         fn test_launch_with_syscall_tracing() {
+            // Serialised: this test traces a real child, and `wait_event` with
+            // `follow_children` reaps any child of this process.
+            // See `test_support::TRACE_TEST_LOCK`.
+            let _trace_guard = crate::test_support::lock_trace_test();
             let mut tracer = PtraceTracer::new(PtraceConfig {
                 trace_syscalls: true,
                 capture_registers: true,

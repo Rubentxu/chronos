@@ -1589,3 +1589,56 @@ el descubrimiento del host, locator vacío ⇒ no disponible, y binario existent
 Mutation-tested: al volver a `attach_port`, el test falla con `left: true,
 right: false`, que es exactamente el falso positivo que se estaba publicando.
 49 tests del crate y 87 de `chronos-mcp` (consumidor de la capacidad) en verde.
+## `waitpid(-1, __WALL)`: los tests de ptrace se robaban los hijos (2026-10-01)
+
+`cargo test -p chronos-native --lib` fallaba 3 tests de `ptrace_tracer` y
+**colgaba** 2 de `capture_runner` de forma intermitente. El gate local pasaba
+limpio, lo que lo hacía parecer un problema del entorno. No lo era.
+
+### La causa
+
+`PtraceTracer::wait_event` tiene dos ramas:
+
+- `follow_children: true` (o sin `main_pid`) → **`waitpid(-1, __WALL)`**, que
+  reape **cualquier hijo del proceso actual** (`ptrace_tracer.rs:482`).
+- `follow_children: false` → `waitpid(pid, WNOHANG)`, acotado a un pid
+  (`ptrace_tracer.rs:511`).
+
+`capture_runner` usa `follow_children: true` (líneas 196, 214, 343) y los tests
+de `ptrace_tracer` usan `false`. Pero `cargo test` corre los tests en **hilos
+paralelos dentro del mismo proceso**, así que el `waitpid(-1)` de un test se
+comía el estado de salida del `/bin/true` que otro estaba trazando. El
+afectado nunca veía su evento `Exited`: o fallaba el `assert!(got_exit)` o se
+quedaba bloqueado en `do_wait` para siempre.
+
+**El gate lo ocultaba**: `test-workspace-lib` corre
+`cargo test --workspace --lib -- --test-threads=1`. En serie no hay colisión.
+`ci.yml` hace lo mismo. Nadie ejecutaba el crate en paralelo.
+
+### Por qué NO se tocó producción
+
+Porque el código de producción es correcto. `ChronosServer` guarda **una sola**
+sesión activa (`active_session: Arc<Mutex<Option<String>>>`, `server.rs:209`), así
+que hay un solo tracer siguiendo un solo árbol de procesos, y `waitpid(-1, __WALL)`
+es la forma correcta de ver todos sus hilos y clones. El defecto era de
+**aislamiento entre tests**, no del producto. Poner un lock en producción
+habría escondido la restricción real: este crate soporta una sesión de traza
+activa por proceso.
+
+### El arreglo
+
+`crates/chronos-native/src/test_support.rs` (nuevo, solo `#[cfg(test])`) expone
+`TRACE_TEST_LOCK`, y los **5** tests que trazan hijos lo toman durante todo su
+cuerpo. El lock tolera veneno: un panic dentro de un test no puede envenenar el
+mutex y hacer fallar a los siguientes con un error engañoso.
+
+Resultado: **`cargo test -p chronos-native --lib` pasa en 11,23 s** en paralelo,
+donde antes colgaba indefinidamente. En serie, 13,15 s. 111 tests, 0 fallos.
+
+### Lo que sigue abierto, y no se ha tocado
+
+`cargo test -p chronos-native --test m2_function_frame_capture` falla **5 tests**
+con `Child killed by SIGKILL`. Verificado en HEAD sin este cambio: es
+**preexistente y de otra causa**. El binario de integración enlaza la lib sin
+`cfg(test)`, así que no incluye este lock, y ahí varios tests de captura también
+compiten por hijos. Registrado aparte en el backlog en vez de darlo por cerrado.

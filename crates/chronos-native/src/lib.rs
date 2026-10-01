@@ -18,6 +18,9 @@ pub mod ptrace_tracer;
 pub mod symbol_resolver;
 pub mod syscall_table;
 
+#[cfg(test)]
+pub(crate) mod test_support;
+
 // Perf counters module (feature-gated)
 #[cfg(feature = "perf_counters")]
 pub mod perf;

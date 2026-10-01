@@ -1174,6 +1174,11 @@ mod imp {
         /// May fail with permission error in CI environments without CAP_SYS_PTRACE.
         #[test]
         fn test_attach_to_sleep_process() {
+            // Serialised: this test traces a real child, and `wait_event` with
+            // `follow_children` reaps any child of this process, which would
+            // otherwise swallow another test's exit status.
+            // See `test_support::TRACE_TEST_LOCK`.
+            let _trace_guard = crate::test_support::lock_trace_test();
             use std::process::Command;
 
             // Spawn a long-running process
@@ -1235,6 +1240,11 @@ mod imp {
         /// `Initial continue failed: PTRACE_CONT: ESRCH`.
         #[test]
         fn test_spawn_run_completion_no_double_resume() {
+            // Serialised: this test traces a real child, and `wait_event` with
+            // `follow_children` reaps any child of this process, which would
+            // otherwise swallow another test's exit status.
+            // See `test_support::TRACE_TEST_LOCK`.
+            let _trace_guard = crate::test_support::lock_trace_test();
             if std::path::Path::new("/bin/true").exists() {
                 let config = CaptureConfig::new("/bin/true");
                 let result = CaptureRunner::new(config).run_to_completion();
