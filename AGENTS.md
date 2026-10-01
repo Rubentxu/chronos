@@ -1694,3 +1694,61 @@ flakiness en vez de detectarla. Un test que lanza o traza hijos debe tomar el
 lock de su binario aunque hoy la serie lo tape. Y un skip que devuelve `None`
 es un verde vacío: si el requirement depende de encontrar algo, que su ausencia
 falle o se vea en el recuento (`#[ignore]`), no que se imprima y se pase.
+
+## `variables_in_scope` nunca había devuelto una variable (2026-10-01)
+
+Búsqueda de tests sin aserción, en `chronos-native/src/dwarf/variables.rs`. De
+los 5 tests del módulo, 2 tenían el cuerpo **solo con comentarios** y 1 terminaba
+en `assert!(result.is_empty() || !result.is_empty())` — una tautología, cierta
+para cualquier entrada. Los otros 2 no llegaban lejos.
+
+Detrás de la aserción inútil había **dos defectos de producción**.
+
+### 1. `DW_AT_high_pc` se leía solo en su forma DWARF 5
+
+`is_pc_in_function` matcheaba `AttributeValue::Addr` y `Data8`, y todo lo demás
+caía en `false`. Pero `DW_AT_high_pc` tiene dos codificaciones, y gcc/clang
+emiten la de **DWARF ≤ 4**: una **longitud relativa a `low_pc`**
+(`DW_FORM_data1/2/4/8`), que gimli normaliza a `Udata`. El match no la veía.
+
+El fallo es silencioso y total: una dirección absoluta y una longitud son
+ambas enteros pequeños sin signo, así que leer la longitud como dirección da
+`pc < 160`, falso para casi todo `pc`. Medido sobre el fixture antes del fix:
+
+| low | high | rango real | ¿contiene `pc=0x116c`? |
+|---|---|---|---|
+| `Addr(4457)` | `Udata(160)` | `[0x1169, 0x1209)` | **sí** |
+
+`simple_function`. La función decía que no, y devolvía vacío para **toda
+dirección de toda compilación**.
+
+### 2. `DW_FORM_strp` no se leía, así que los nombres eran `"unknown"`
+
+`get_string_attr_value` aceptaba solo `AttributeValue::String` (inline). Los
+toolchains reales emiten `DW_FORM_strp`, un offset a `.debug_str`. Con el
+arreglo 1 aplicado, el mismo fixture daba 11 variables, **10 de ellas
+llamadas `"unknown"`** — porque los llamantes sustituyen por ese literal.
+
+### Resultado
+
+`variables_in_scope(0x116c)` pasa de **0** a **11** variables con nombre
+(`param1` … `loop_var`), y el límite semiabierto es exacto: `0x1208` sigue
+siendo `simple_function` y `0x1209` ya es `no_params_function`.
+
+Commits `00cdcab9` (rango) y `e29a4396` (nombres + tests).
+
+### Nota: la capacidad sigue sin consumidor
+
+`DwarfReader::variables_in_scope` **no lo llama nada** fuera de su propio
+módulo en todo el workspace. El fix no puede romper aguas abajo, y a la vez
+dice que la capacidad está expuesta y desconectada. No se ha tocado: decidir
+si se conecta al hot-path de captura es producto, no calidad.
+
+### La regla: una tautología no es cobertura
+
+`assert!(x.is_empty() || !x.is_empty())` se **lee** como cobertura. Oculta que
+la función devolvía siempre vacío durante meses. Una batería donde todo pasa
+no distingue nada: al revertir solo el arreglo 1, los 3 tests dependientes
+fallan y el de degradación pasa — que es lo correcto, porque el código viejo
+siempre devolvía vacío. Un test que no puede fallar no es un test, y uno que
+falla siempre por lo mismo que sus vecinos tampoco informa.
