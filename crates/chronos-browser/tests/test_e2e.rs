@@ -103,15 +103,13 @@ impl TestHttpServer {
     }
 }
 
-/// Test Chrome detection - always runs but is ignored by default
-#[test]
-#[ignore]
-fn test_e2e_chrome_detection() {
-    // This test always runs but is ignored by default
-    // It just verifies Chrome detection works
-    let available = chrome_available();
-    println!("Chrome available: {}", available);
-}
+// NOTE: there is no Chrome-detection test in this file. `test_e2e_chrome_detection`
+// was `#[ignore]`d, called `chrome_available()`, printed the result and asserted
+// nothing, so it could only fail if the call panicked. It was removed instead
+// of being enabled: the availability decision is pinned by
+// `tests/test_adapter.rs::test_browser_adapter_is_available` (wiring) and by
+// `src/adapter.rs::tests` (binary discovery, including hosts with no browser).
+// The remaining tests here stay `#[ignore]`d and gated on `e2e_enabled()`.
 
 /// Test browser probe with actual Chrome - only runs with CHRONOS_E2E=1
 #[tokio::test]

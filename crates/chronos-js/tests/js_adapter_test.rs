@@ -4,11 +4,12 @@
 
 use chronos_js::JsCdpAdapter;
 
-#[test]
-fn test_js_adapter_creation() {
-    let _adapter = JsCdpAdapter::new("localhost", 9229);
-    // JsCdpAdapter is not a TraceAdapter, so we just verify construction
-}
+// NOTE: construction of `JsCdpAdapter` is covered by the unit test
+// `adapter::js_cdp_adapter_tests::test_js_cdp_adapter_new_keeps_its_target`.
+// `JsCdpAdapter` keeps its host and port private with no accessors, so from
+// outside the crate this file could only repeat "it does not panic", which is
+// not a test; the duplicate that used to live here was removed for that
+// reason.
 
 #[test]
 fn test_js_console_output_conversion() {

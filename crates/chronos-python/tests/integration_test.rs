@@ -15,12 +15,14 @@ fn test_python_adapter_session_flow() {
     assert_eq!(adapter.get_language(), chronos_domain::Language::Python);
 }
 
-#[test]
-fn test_dap_client_creation() {
-    // DapClient::connect requires a running debugpy server,
-    // so we just verify the struct can be created and used with mock data
-    // In a real scenario, this would connect to debugpy
-}
+// NOTE: there is no `DapClient` creation test here. `DapClient` can only be
+// built by `DapClient::connect`, which opens a TCP socket to a live debugpy
+// DAP server, and `DapSession::disconnect` consumes a connected session, so
+// neither can be exercised without that server. The body that used to sit
+// under the name `test_dap_client_creation` built nothing and asserted
+// nothing; it was removed rather than left behind. The host-independent
+// coverage lives in `test_python_adapter_session_flow` and
+// `test_python_adapter_creation` below, and in `src/adapter.rs::dap_tests`.
 
 #[test]
 fn test_python_adapter_creation() {

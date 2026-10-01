@@ -27,7 +27,6 @@ fn test_registry_has_java_adapter() {
 }
 
 #[test]
-#[test]
 fn test_java_adapter_is_available_is_stable() {
     // Whether a JVM is reachable depends on the host, so the absolute value is
     // not a property of this code and is not asserted.
