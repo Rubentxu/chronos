@@ -23,17 +23,22 @@ fn test_registry_has_go_adapter() {
 }
 
 #[test]
-// The assertion 'available || !available' is intentionally tautological:
-// this test verifies that the is_available() call does not panic. Both
-// branches must complete without side effects. The lint's suggestion to
-// collapse to `true` is correct but defeats the panic-checking intent.
-#[allow(clippy::overly_complex_bool_expr, clippy::nonminimal_bool)]
-fn test_go_adapter_is_available_check() {
-    // Just verify the is_available method works
-    let available = GoAdapter::is_available();
-    // The test passes regardless of whether dlv is installed
-    // This ensures the method doesn't panic
-    assert!(available || !available);
+fn test_go_adapter_is_available_is_stable() {
+    // Whether `dlv` is on PATH depends on the host, so the absolute value is
+    // not a property of this code and is not asserted. The cases that need dlv
+    // live behind `#[ignore]` (see `test_go_main_capture`).
+    //
+    // What *is* a property of the code: the check does not panic, and it does
+    // not re-decide differently on a second call with nothing in between. The
+    // old assertion was `available || !available`, which is `true` by
+    // construction and existed only to keep two clippy lints quiet.
+    let first = GoAdapter::is_available();
+    let second = GoAdapter::is_available();
+    assert_eq!(
+        first, second,
+        "availability must be a stable decision, not something re-evaluated to a \
+         different answer while the environment is unchanged"
+    );
 }
 
 #[tokio::test]
