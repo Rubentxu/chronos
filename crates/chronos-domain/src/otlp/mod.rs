@@ -11,6 +11,10 @@
 
 pub mod correlation;
 pub mod equivalence;
+// M6.4 lift (2026-10-02): opt-in OTel JSON Lines export with declared
+// limits. Unrelated to the M6.6 note below: session_export emits whole
+// bundles, this emits caller-selected spans. See module docs.
+pub mod exporter;
 pub mod ingest;
 pub mod parse;
 pub mod redaction;
