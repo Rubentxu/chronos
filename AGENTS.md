@@ -1357,3 +1357,88 @@ pierde, porque su sucesor lo sigue arrastrando — con el número corregido a
 producción, no el módulo de tests) y **0** campos `pub` en `ChronosServer`, así
 que el bloqueo sigue siendo encapsulación y no volumen.
 
+## Los adaptadores de lenguaje colgaban y fugaban procesos (2026-10-01)
+
+WorkItem `language-adapter-spawn-has-no-real-test`. El defecto que motivó el
+item era la fuga de procesos, pero al ejecutar los tests apareció otro más grave
+en el mismo camino de código.
+
+### La fuga, que era la esperada
+
+`DelveSubprocess::spawn` y `JavaSubprocess::spawn` tenían un `impl Drop` **vacío**
+con el comentario *"SIGTERM is sent automatically when Child is dropped"*. Es
+falso: `tokio::process::Child` solo mata al dropearse si se configura
+`kill_on_drop`. Un `dlv` huérfano sobrevivió **11m36s** reparentado a
+`systemd --user`. Corregido con `cmd.kill_on_drop(true)` —el patrón que
+`chronos-js` ya usaba— y eliminado el `Drop` vacío, que además mentía.
+
+Los dos tests que deberían haberlo cazado no afirmaban nada: el de Go descartaba
+el resultado con `let _result = ...` y su propio comentario decía *"we just
+verify it doesn't panic"*; el de Java compilaba una clase y terminaba en *"so we
+just verify the spawn function works"*. Ambos dropeaban el handle dejando el
+proceso vivo. **Un test que no afirma nada no es cobertura: es la razón por la
+que el defecto llegó a `main`.**
+
+### El defecto grave: el banner JDWP se leía del stream equivocado
+
+`JavaSubprocess::spawn` leía **solo stderr**, y su parser solo reconocía el
+formato antiguo `address: 127.0.0.1:<port>`. temurin 24.0.2 escribe el banner a
+**stdout** y sin el prefijo de host:
+
+```
+$ java -agentlib:jdwp=...=address=127.0.0.1:0 -cp . NoSuchClass >/tmp/out 2>/tmp/err
+$ cat -A /tmp/out | head -1
+Listening for transport dt_socket at address: 52849$
+$ cat -A /tmp/err
+(vacío)
+```
+
+Con `suspend=y` la JVM **no muere**: queda suspendida esperando debugger. Así que
+`read_line` se quedaba bloqueado para siempre sobre un pipe de stderr vacío.
+`JavaAdapter::attach` (`adapter.rs:134`) la invoca dentro de un `block_on`, luego
+**el adaptador Java colgaba sin error y sin timeout**: inusable en cualquier JDK
+soportado. Dos defectos encadenados —stream equivocado y formato equivocado— que
+el bucle no acotado convertía en un cuelgue silencioso en vez de un error.
+
+**Cómo pasó inadvertido durante tres caracterizaciones:** todas fusionaban los
+flujos con `2>&1` (`2>&1 | cat -A`, `> file 2>&1`, `java -version 2>&1 | head`),
+así que el stream **nunca fue observable**. Separarlos fue lo que reveló el
+defecto. Cuando se sospeche de un proceso hijo, `> /tmp/o 2>/tmp/e` y mirar
+ambos por separado; no fusionar.
+
+Corrección: se vigilan **los dos flujos** (`tokio::select!`, y un flujo ya
+cerrado devuelve `pending()` en vez de `None` para no hacer spin sobre EOF), se
+aceptan **las dos formas** del banner, y la espera se acota con
+`JDWP_PORT_TIMEOUT` para que un banner irreconocible sea un error y no un
+cuelgue. `kill_on_drop` garantiza además que la JVM muera en la ruta de error.
+
+### Por qué los tests de `spawn` siguen siendo `#[ignore]`
+
+`ci.yml` no declara `java` ni `dlv`. Un test que hace `return` temprano cuando
+falta la herramienta **convierte un verde vacío en un falso verde**, que es
+justo lo que este repo prohíbe. Se mantienen omitidos por defecto y los ejecuta
+el tier opt-in del gate.
+
+La lección es que **la ruta de lectura sí se puede cubrir sin toolchain
+externo**: cinco tests alimentan banners por `sh` a través del bucle real
+(`read_loop_accepts_the_modern_banner_on_stdout`,
+`..._legacy_banner_on_stderr`, `..._skips_noise_before_the_banner`,
+`..._errors_when_the_jvm_exits_silently`,
+`..._is_bounded_against_a_silent_jvm`). Esos **sí corren en el gate por
+defecto**, sin `java` instalado. Un contrato que se puede fijar sin la
+dependencia externa, se fija sin ella.
+
+### Verificación
+
+Mutation-tested en ambos commits, porque un guard que no falla al quitarle el
+fix no es un guard:
+
+| Qué se muteó | Resultado |
+|---|---|
+| `read_jdwp_port` solo con `stderr` (el bug original) | 2 tests `FAILED`, reproduce el cuelgue como error a los 30 s |
+| `kill_on_drop` desactivado (Go) | el guard falla: *"el proceso dlv 3079456 seguía vivo tras dropear"* |
+| `kill_on_drop` desactivado (Java) | el guard falla y reproduce la fuga |
+
+Control tras revertir ambos: 4 tests opt-in verdes y **0 procesos huérfanos**
+(antes se contaban por ejecución). Gate local TIER 1 `f1eea6e6`:
+`RunFinished: success`, 9/9 stages, 18 `StepStarted`, **0 `StepFailed`**.
