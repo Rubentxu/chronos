@@ -1817,3 +1817,91 @@ veredicto, un precedente— **reutilízala**: duplicar la política es cómo dos
 tests empiezan a discrepar sobre el mismo caso. `UNDER_TARPAULIN` se elevó a
 nivel de módulo por exactamente eso: la necesitaban dos tests y una copia por
 test dejaría que el contractual y el diagnóstico no coincidieran.
+
+## Catorce tests del sandbox que solo imprimían (2026-10-01)
+
+### El patrón
+
+Cuatro ficheros de `chronos-sandbox/tests/` compartían la misma forma de pasar en
+verde sin probar nada:
+
+```rust
+match result {
+    Ok(v)  => { println!("…: {} cambios", v.changes.len()); }
+    Err(e) => { println!("… returned error (also acceptable): {:?}", e); }
+}
+```
+
+El nombre del test promete una propiedad —«sin carreras», «sin cambios», «error»—
+y el cuerpo acepta **ambos** brazos del `match`, así que el resultado es el mismo
+haga lo que haga el servidor. Se añadieron 14 asserts reales en
+`diff_tools.rs`, `memory_tools.rs`, `boundary_conditions.rs` y
+`error_handling.rs`.
+
+### Todos los ceros tenían la misma causa
+
+Antes de escribir un solo assert se midió el comportamiento real, y los resultados
+explicaron por sí solos por qué todos esos tests devolvían vacío: **la captura de
+los fixtures en C no produce evidencia de registros ni de escrituras a memoria**.
+Volcando los eventos de `test_add`, los 128 eventos son `kind=Unresolved`, con
+descriptores `SyscallEnter`/`SyscallExit`. Nada más.
+
+De ahí se sigue que `state_diff`, `inspect_causality` y `debug_detect_races` son
+vacías **por construcción**, y que afirmar «vacío» es honesto siempre que el
+comentario diga por qué. `test_debug_detect_races_threads` mereció un comentario
+nuevo tras leer `test_threads.c`: cada worker solo escribe su `sum` local de
+pila, así que cero carreras es un hecho del fixture, no una moneda al aire.
+
+### Un comentario corregido por la medición
+
+`test_probe_start_program_crashes_sigsegv` decía que el crash «podía no detectarse».
+No: `debug_find_crash` devuelve `Some`, con `signal == "SIGSEGV"` y `event_id`
+concreto. El test ahora lo exige, porque detectar el crash es su propósito.
+
+### El acoplamiento a literales que sí se acepta
+
+Cuatro asserts comprueban subcadenas del mensaje de error del servidor:
+`"ExecutionLog unavailable"`, `"Invalid program path"`, `"Program not found"`,
+`"Non-absolute path rejected"`. Antes, esos tests admitían cualquier resultado.
+Es un intercambio deliberado: el mensaje es parte observable del contrato de
+error, y se comprueban **subcadenas estables**, no el mensaje completo, para que
+reformular la redacción no rompa el test. Un test de error que no mira el error
+no prueba que el error sea el correcto.
+
+### `debug_diff` estaba roto siempre, y no por la migración que lo tocó
+
+`McpTestClient::debug_diff` (`chronos-sandbox/src/client/tools.rs`) manda
+`state_query` con `kind: "state_diff"`, y ese variant **no existe** en
+`StateQueryKind` (`crates/chronos-services/src/output.rs:1164`, que tiene
+`register_diff`, `memory_read`, `register_snapshot`, `memory_analysis`,
+`expression_eval` y `variable_snapshot`). El servidor responde siempre
+`-32602 "unknown variant 'state_diff'"`.
+
+Tres cosas que la investigation descartó:
+
+- **No es culpa de la migración C5.3.1.** El doc de `m5-agent-api-v2-scoping.md`
+  que fusiona `debug_diff` en `session_compare` es un *scoping proposal* que él
+  mismo declara «no production code changes»; nunca se aplicó. Y aunque el
+  rollback literal se hiciera, tampoco deserializaría: el handler del servidor
+  emite forma `StateDiffSnapshot` (`event_id_a`, `variables_added`,
+  `registers_changed`), mientras que `DebugDiffResponse` espera `event_a_id`,
+  `registers_diff` y `summary`, sin un solo `#[serde(default)]`. **Esa deriva es
+  anterior a la migración.**
+- **`state_diff` sí funciona** y usa `kind=register_diff`; los dos viven en el
+  mismo fichero, a 480 líneas de distancia.
+- **Borrarlo no es opción**: `session_compare` compara sesión contra sesión, no
+  acepta eventos.
+
+Queda abierto con su consumidor (dos tests de `diff_tools.rs` y uno de
+`state_depth.rs` aceptan hoy ambos brazos por esta causa). Además, y adyacente:
+`"state_diff"` sigue listado en seis listas por perfil
+(`crates/chronos-mcp/src/tools_params.rs:48,78,120,164,208,252`) pese a que su
+handler fue borrado como alias, de modo que `capabilities` anuncia tools que no
+existen.
+
+### La regla
+
+**Mide antes de afirmar, y afirma el brazo que corresponde.** Cuando un test
+acepta `Ok` y `Err`, la primera pregunta no es qué debería pasar: es qué pasa de
+verdad. Aquí la respuesta fue la misma en los catorce casos, y no era ninguna de
+las dos que el test toleraba.
