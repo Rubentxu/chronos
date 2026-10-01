@@ -2387,11 +2387,54 @@ una lista de perfiles que no incluya `python`/`java`/`go`/`js` es falsa por
 construcción: un valor desconocido pasa verbatim, que es justo lo que afirma
 `inv_5b` diez líneas más abajo.
 
+### El patrón, medido en los tres crates que lo usan
+
+La costura `#[cfg(test)]` no es mala por sí misma. Tres crates la tienen y solo
+una la usa mal:
+
+- `chronos-native::test_support` es `pub(crate)`, y lo usan `ptrace_tracer.rs`
+  y `capture_runner.rs` desde sus propios bloques de test. Correcto.
+- `chronos-store::test_support` es privada, y la usan `storage.rs` y `cas.rs`
+  desde sus propios bloques de test. Correcto.
+- `chronos-log::test_root::set_for_testing` era `pub` —y por eso su doc la
+  vendía como costura para otros crates— pero su `#[cfg(test)]` la volvía
+  local. **Cero llamadas en todo el repo**, ni siquiera desde los tests de
+  `chronos-log`: las ocho referencias eran la definición, tres docs, el
+  mensaje del panic y un comentario.
+
+Por qué no se usaba nunca estaba escrito en el propio fichero, y explica todo:
+probar la costura forzaría la memoización del `OnceLock` y rompería cada test
+posterior del binario. Es decir, **la costura era inutilizable, no solo no
+testeada**, y su doc atribuía el motivo a «verificado por revisión de código».
+
+### Cómo se encontró: hacer honesta la visibilidad
+
+Bajar `pub` a `pub(crate)` —copiando lo que ya hacía `chronos-native`— no cambió
+el comportamiento, pero salió a flote lo que el `pub` tapaba:
+
+```
+error: function `set_for_testing` is never used
+  --> crates/chronos-log/src/location.rs:105:12
+```
+
+El compilador llevaba tiempo diciendo la verdad sobre ese símbolo, y la
+visibilidad `pub` era lo que la ocultaba. Eliminado el módulo, y con él las
+tres afirmaciones falsas sobre aislamiento, el cambio es de **−22 líneas
+netas**. Nada de esto se resolvió con `#[allow(dead_code)]`: el aviso era
+correcto.
+
 ### La regla
 
 Antes de ampliar una visibilidad para que un test compile, comprueba que el
-`cfg` que lo oculta tiene sentido desde el binaries que lo necesitan. Y cuando
-la propiedad no es observable, no la expongas: afirma la sombra que sí lo es.
+`cfg` que lo oculta tiene sentido desde los binarios que lo necesitan. Y
+cuando la propiedad no es observable, no la expongas: afirma la sombra que sí
+lo es.
+
+La señal de que una costura está mal no es el `#[cfg(test)]`, es el
+**desajuste entre la visibilidad y lo que el doc promete**. `pub` encima de
+`#[cfg(test)]` es un aviso: alguien promete acceso cruzado a algo que no lo
+tiene. Bajarla a `pub(crate)` no cuesta nada y deja que el compilador cuente
+los llamadores por ti.
 
 ## Una decisión documentada tres veces que ningún test fijaba (2026-10-01)
 

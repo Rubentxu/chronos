@@ -18,26 +18,32 @@
 //!   `SessionId::as_str()` is the canonical identity (matches
 //!   `chronos_log::discovery`).
 //!
-//! ## Test seam
+//! ## Test isolation
 //!
-//! [`test_root::set_for_testing`] is the intended seam, and it is gated
-//! `#[cfg(test)]`. That gate means **this crate's own unit tests only**:
-//! `cfg(test)` is not set when `chronos-log` is compiled as a dependency,
-//! so no test in `chronos-mcp` or `chronos-sandbox` can call it. The seam
-//! currently has no callers outside this file.
+//! There is no override seam. `CHRONOS_EXECUTION_LOG_DIR` is read once, on
+//! the first resolution, and the root is a `OnceLock` with no unset — the
+//! first writer wins, whether that is an env var, a `test-support` fixture
+//! or the `temp_dir` fallback.
 //!
-//! The root is therefore **sticky in both directions**: the first writer
-//! wins, whether that is `test_root::set_for_testing` or an earlier read of
-//! `CHRONOS_EXECUTION_LOG_DIR`, and there is no unset. A test that sets
-//! `CHRONOS_EXECUTION_LOG_DIR` to a fresh tempdir after something else has
-//! already resolved the root gets the *previous* root, not its own.
-//! Measured on this host with three sequential probes: the first matched
-//! its own directory, the second and third were both handed the first's.
+//! A test that sets `CHRONOS_EXECUTION_LOG_DIR` to a fresh tempdir after
+//! something else has already resolved the root gets the *previous* root,
+//! not its own. Measured on this host with three sequential probes: the
+//! first matched its own directory, the second and third were both handed
+//! the first's.
 //!
 //! **Do not read a per-test tempdir as isolation.** It is only a fresh
 //! path; whether it is honoured depends on what ran earlier in the
-//! process. Tests that need genuinely separate roots must either be the
-//! only reader in their binary or ask for a resettable root.
+//! process. A test that needs a genuinely separate root has to be the only
+//! reader in its binary.
+//!
+//! This module used to carry a `test_root::set_for_testing` override. It
+//! is gone: it had no callers anywhere, including this crate's own tests,
+//! because calling it would memoize the root and break every later test in
+//! the binary. An earlier note here credited that to review rather than a
+//! test; the honest reason is that the seam was unusable, not untested.
+//! Giving the root a real per-test override means either a resettable root
+//! or exposing the seam behind a feature the consumer opts into, the way
+//! `chronos-services` does with `test-utils`.
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -51,10 +57,9 @@ use crate::SessionId;
 /// 2. Otherwise `${temp_dir}/chronos-execution-logs`.
 ///
 /// The result is memoized for the lifetime of the process and the first
-/// writer wins. Note that `test_root::set_for_testing` is gated
-/// `#[cfg(test)]`, so it is reachable from this crate's unit tests only —
-/// a test in a downstream crate that sets `CHRONOS_EXECUTION_LOG_DIR` after
-/// the root has already been resolved is silently ignored.
+/// writer wins. See the module doc: a caller that sets
+/// `CHRONOS_EXECUTION_LOG_DIR` after the root has already been resolved is
+/// silently ignored, so this is not a per-test isolation seam.
 pub fn resolve_execution_log_root() -> PathBuf {
     if let Some(p) = ROOT.get() {
         return p.clone();
@@ -78,33 +83,6 @@ pub fn execution_log_dir_for_session(session_id: &SessionId) -> PathBuf {
 }
 
 static ROOT: OnceLock<PathBuf> = OnceLock::new();
-
-/// Test-only override seam.
-///
-/// Calling this in a test forces `resolve_execution_log_root()` to
-/// return `root` for the rest of the process. Tests MUST use a fresh
-/// `tempdir` per test to avoid cross-test pollution; the helper is
-/// sticky and there is no `unset`.
-#[cfg(test)]
-pub mod test_root {
-    use super::ROOT;
-    use std::path::{Path, PathBuf};
-
-    /// Replace the resolved root for the rest of the process.
-    pub fn set_for_testing(root: impl AsRef<Path>) -> PathBuf {
-        let r = root.as_ref().to_path_buf();
-        // `OnceLock::set` only works if no value was previously set.
-        // If a value is already there we cannot override; panic with
-        // a clear message instead of silently ignoring.
-        match ROOT.set(r.clone()) {
-            Ok(()) => r,
-            Err(_) => panic!(
-                "resolve_execution_log_root() already memoized for this process; \
-                 set_for_testing() must be the first call in the test process"
-            ),
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -192,8 +170,8 @@ mod tests {
         assert_eq!(dir.file_name().and_then(|s| s.to_str()), Some(sid.as_str()));
     }
 
-    // Note: the `test_root::set_for_testing` panic-on-second-invocation
-    // contract is enforced by the `OnceLock::set` semantics, not a test.
-    // Testing it here would force the resolver to memoize and break
-    // every subsequent test in this binary; verified by code review.
+    // The stickiness of the root is deliberately not exercised here: a test
+    // that forced the memoization would pin the root for every later test
+    // in this binary. It is verified by the three-probe measurement recorded
+    // in the module doc instead.
 }

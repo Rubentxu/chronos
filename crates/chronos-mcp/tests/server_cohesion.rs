@@ -63,9 +63,9 @@ fn lock() -> std::sync::MutexGuard<'static, ()> {
 /// the first writer wins, so only the first server built in this binary
 /// gets the directory it asks for; every later one is handed that same
 /// root. Measured with three sequential probes: the first matched, the
-/// second and third both got the first's. The intended override,
-/// `chronos_log::test_root::set_for_testing`, is gated `#[cfg(test)]` in
-/// `chronos-log` and so is unreachable from `tests/` here.
+/// second and third both got the first's. `chronos-log` has no override
+/// for this: its `test_root::set_for_testing` seam was removed because it
+/// had no callers anywhere, not even `chronos-log`'s own tests.
 ///
 /// What the directory *does* still buy is a fresh, empty path for the
 /// first test in the process, and a unique name for the leftover
