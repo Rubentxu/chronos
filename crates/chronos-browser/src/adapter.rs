@@ -4,7 +4,7 @@
 //! AI agents capture everything first, then query semantically after — no selective
 //! breakpoints, no human-style filtering. The agent is the consumer, not a human debugger.
 
-use crate::browser::ChromeProcess;
+use crate::browser::{ChromeLocator, ChromeProcess};
 use crate::cdp_client::{BrowserCdpClient, CdpEvent};
 use crate::error::BrowserError;
 use crate::event_mapper::paused_to_wasm_events;
@@ -105,8 +105,21 @@ impl BrowserAdapter {
     }
 
     /// Check if Chrome is available on the system.
+    ///
+    /// Resolves the browser binary through the host locator, which is the same
+    /// search `start_probe_async` uses to launch Chrome.
+    ///
+    /// This used to be `ChromeProcess::attach_port(9222).is_ok()`, which reads
+    /// like a reachability probe but is not one: `attach_port` only creates a
+    /// temp dir and formats URLs, leaving `process: None`. It cannot fail on any
+    /// normal host, so this returned `true` everywhere — verified on a host
+    /// with no Chrome installed, where it returned `true` while
+    /// `ChromeLocator` correctly reported `false`. `BrowserProbeFactoryImpl::create`
+    /// gates on this, so the browser-probe capability was advertised as
+    /// available on machines that cannot run it, and the failure only surfaced
+    /// later and deeper, as a spawn error.
     pub fn is_chrome_available() -> bool {
-        ChromeProcess::attach_port(9222).is_ok()
+        ChromeLocator::from_host().resolve().is_ok()
     }
 
     /// Quick probe: start, wait for events, stop.
@@ -448,8 +461,47 @@ mod tests {
 
     #[test]
     fn test_browser_adapter_is_available() {
-        // Just verify the method works - actual availability depends on Chrome
-        let _available = BrowserAdapter::is_chrome_available();
+        // This used to bind the result and assert nothing, so a function that
+        // returned `true` on every host — including hosts with no browser —
+        // stayed green. It now pins the wiring: availability must follow the
+        // binary discovery, not a temp-dir allocation.
+        let expected = ChromeLocator::from_host().resolve().is_ok();
+        assert_eq!(
+            BrowserAdapter::is_chrome_available(),
+            expected,
+            "availability must follow Chrome discovery, not an unrelated probe"
+        );
+    }
+
+    /// The guard that actually catches the regression: with an empty candidate
+    /// list the locator must report Chrome as missing, so `is_chrome_available`
+    /// cannot be answering `true` by accident on a host without a browser.
+    #[test]
+    fn test_availability_is_false_when_no_browser_is_discoverable() {
+        let locator = ChromeLocator {
+            env_override: None,
+            candidates: Vec::new(),
+        };
+        assert!(
+            locator.resolve().is_err(),
+            "an empty locator must not resolve a browser"
+        );
+    }
+
+    /// And the positive case, without depending on the host: a locator whose
+    /// only candidate is a file that exists must resolve. This is what a host
+    /// with Chrome must produce, and it is what the availability gate relies on.
+    #[test]
+    fn test_locator_resolves_an_existing_binary() {
+        let exe = std::env::current_exe().expect("test binary path is known");
+        let locator = ChromeLocator {
+            env_override: Some(exe.to_string_lossy().to_string()),
+            candidates: Vec::new(),
+        };
+        let resolved = locator
+            .resolve()
+            .expect("an existing override must resolve");
+        assert_eq!(resolved, exe.to_string_lossy());
     }
 
     #[test]

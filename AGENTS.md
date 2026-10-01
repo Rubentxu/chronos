@@ -1528,3 +1528,64 @@ falta Chrome para fijar el contrato.
 Sin Chrome en el host, la evidencia es deserialización contra la forma exacta
 del protocolo, no un detach observado en vivo. Es conocimiento negativo que
 conviene no olvidar.
+## La capacidad `browser-probe` se anunciaba disponible donde no podía (2026-10-01)
+
+Tercera instancia de la misma familia: **un nombre o comentario que afirma algo
+que el código no hace**. Encontrada al barrer los tests sin aserción.
+
+### Qué pasaba
+
+```rust
+pub fn is_chrome_available() -> bool {
+    ChromeProcess::attach_port(9222).is_ok()   // NO es una sonda de alcance
+}
+```
+
+`attach_port` **no consulta nada**: crea un `TempDir`, compone las URLs y deja
+`process: None`. Solo puede fallar si no se puede crear el tempdir, así que en
+cualquier host normal devuelve `Ok`. Es decir, `is_chrome_available()` devolvía
+`true` **siempre**.
+
+Medido en este host, que **no tiene Chrome**:
+
+```
+PROBE is_chrome_available()      = true      <-- falso positivo
+PROBE ChromeLocator resolve ok   = false     <-- la verdad
+PROBE attach_port(9222).is_ok()  = true      <-- por eso
+```
+
+Y `BrowserProbeFactoryImpl::create()` hace short-circuit con
+`if !is_chrome_available()`. Como nunca era `false`, **la puerta no disparaba
+nunca**: la capacidad `browser-probe` se anunciaba como disponible en máquinas
+que no pueden ejecutarla, y el fallo solo aparecía más tarde y más hondo, como
+un error de spawn.
+
+El repo ya tenía la respuesta correcta a un metro de ahí: `ChromeLocator`, que
+resuelve `CHROME_PATH` y la lista de candidatos, y que además está diseñado para
+poder testearse sin depender del host. El defecto era **solo de cableado**.
+
+### El doc registraba la observación contraria
+
+`H1.5-runtimes-capabilities-benchmarks.md` afirmaba que en el host base
+`is_chrome_available()` devuelve `false`. **No era reproducible**: bajo el
+cableado antiguo devolvía `true` incluso sin navegador. Corregido en el doc,
+marcando qué se midió antes y qué se mide ahora, porque un documento que
+consigna un dato falso engaña tanto como el código que lo produce.
+
+### El test que lo tapaba
+
+`test_browser_adapter_is_available` hacía `let _available = ...`, sin afirmar
+nada. Su comentario — *"Just verify the method works"* — es de la misma familia
+que el ya corregido en los adaptadores de lenguaje. Hay **cinco** tests
+`*_is_available` así en los adaptadores; son el siguiente barrido pendiente.
+
+### Arreglo y verificación
+
+`is_chrome_available()` pasa a `ChromeLocator::from_host().resolve().is_ok()`, y
+el test ahora fija el cableado con tres casos deterministas: coincidencia con
+el descubrimiento del host, locator vacío ⇒ no disponible, y binario existente
+⇒ disponible (sin depender de que haya Chrome).
+
+Mutation-tested: al volver a `attach_port`, el test falla con `left: true,
+right: false`, que es exactamente el falso positivo que se estaba publicando.
+49 tests del crate y 87 de `chronos-mcp` (consumidor de la capacidad) en verde.
