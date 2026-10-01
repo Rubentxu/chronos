@@ -199,21 +199,21 @@ async fn test_tripwire_count_after_delete() {
     client.shutdown().await.ok();
 }
 
-/// TD3: `tripwire_create` with an *empty* condition is accepted verbatim,
-/// and the resulting tripwire can never fire.
+/// TD3: `tripwire_create` rejects a condition that can never fire.
 ///
-/// The original doc here promised "invalid condition returns graceful
-/// error". Measurement contradicts that: the server performs **no**
-/// validation of an empty `event_types` list. It returns a tripwire id
-/// and later lists the subscription with `condition == "EventType([])"`
-/// (the wire field is a Rust `Debug` repr of the condition, see
-/// `chronos-services/src/tripwires.rs`) and `fire_count == 0`. So a caller
-/// can register a dead subscription that no event can ever match. That
-/// missing input validation is reported as a production defect; this test
-/// pins the *measured* behaviour so the gap is visible in the suite and
-/// any change to it fails loudly.
+/// This test used to assert the opposite. It was written to pin a measured
+/// defect — the server performed no validation of an empty `event_types` list,
+/// returned a tripwire id, and listed a subscription that no event could ever
+/// match — so a caller could register a dead watchpoint and pay for it in
+/// silence.
+///
+/// The gap is now closed in `TripwiresService::create`, which rejects a
+/// condition that is unsatisfiable by construction. The test follows: it
+/// asserts the rejection, that the reason is legible, and that nothing was
+/// registered. The last part matters — an error returned *after* registering
+/// would leave the dead subscription behind while looking correct.
 #[tokio::test]
-async fn test_tripwire_create_invalid_condition_graceful() {
+async fn test_tripwire_create_rejects_unsatisfiable_condition() {
     let mut client = McpTestClient::start()
         .await
         .expect("Failed to start MCP server");
@@ -221,9 +221,7 @@ async fn test_tripwire_create_invalid_condition_graceful() {
     // CIH-E: drive against a real probe session.
     let session_id = start_real_session(&mut client).await;
 
-    // Empty condition: `TripwireConditionType::EventType` with no event
-    // types. Measured: the server accepts it instead of rejecting it.
-    let id = client
+    let err = client
         .tripwire_create(
             Some(&session_id),
             TripwireCreateParams {
@@ -235,43 +233,27 @@ async fn test_tripwire_create_invalid_condition_graceful() {
             },
         )
         .await
-        .expect("measured behaviour: an empty event_types list is accepted, not rejected");
+        .expect_err("an empty event_types list can never match, so it must be refused");
 
-    println!("✓ Created tripwire with empty condition: {}", id);
+    let message = err.to_string();
     assert!(
-        !id.trim().is_empty(),
-        "tripwire_create must return a non-empty id, got {:?}",
-        id
+        message.to_lowercase().contains("condition"),
+        "the error should say the condition is the problem, got: {}",
+        message
     );
 
-    // The intermediate state matters: the subscription must be visible in
-    // the session scope carrying exactly the condition and label it was
-    // created with — not just "the call did not fail".
+    // Nothing may be left behind: a rejection that still registered the
+    // tripwire would satisfy the assertion above and keep the dead watchpoint.
     let list = client
         .tripwire_list(Some(&session_id))
         .await
-        .expect("tripwire_list failed after creating a tripwire with an empty condition");
-
-    let info = list
-        .iter()
-        .find(|t| t.id == id)
-        .unwrap_or_else(|| panic!("tripwire {} missing from list: {:?}", id, list));
-
-    assert_eq!(
-        info.label.as_deref(),
-        Some("invalid_test"),
-        "tripwire must carry the label it was created with"
-    );
-    assert_eq!(
-        info.condition, "EventType([])",
-        "tripwire must carry the exact (empty) condition it was created with"
-    );
-    // An empty event-type list matches no event, so the tripwire is
-    // structurally unable to fire. Pinned so that accepting empty
-    // conditions can never be mistaken for a working watchpoint.
-    assert_eq!(
-        info.fire_count, 0,
-        "a tripwire with no event types can never fire (measured: fire_count stayed 0)"
+        .expect("tripwire_list failed after a rejected create");
+    assert!(
+        !list
+            .iter()
+            .any(|t| t.label.as_deref() == Some("invalid_test")),
+        "a rejected tripwire must not be registered; list still holds {:?}",
+        list
     );
 
     client.shutdown().await.ok();
