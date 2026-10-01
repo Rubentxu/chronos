@@ -42,7 +42,7 @@ fn test_go_adapter_is_available_is_stable() {
 }
 
 #[tokio::test]
-#[ignore] // requires dlv on PATH
+#[ignore = "requires the Delve debugger (dlv) on PATH to build and run the Go fixture"]
 async fn test_go_main_capture() {
     use std::fs;
     use std::process::Command;

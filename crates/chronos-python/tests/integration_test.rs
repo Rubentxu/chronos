@@ -85,9 +85,8 @@ fn test_dap_event_to_trace_stopped() {
 }
 
 #[test]
-#[ignore]
+#[ignore = "requires a real debugpy listening on localhost:5678"]
 fn test_connect_to_debugpy() {
-    // This test requires debugpy running on localhost:5678
     // Run with: debugpy --listen 5678 --wait-for-client
     let adapter = PythonDapAdapter::new("localhost", 5678);
     let result = adapter.connect(0);

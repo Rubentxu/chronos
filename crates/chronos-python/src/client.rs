@@ -263,9 +263,8 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // Integration tests that need real debugpy are marked ignored
     #[test]
-    #[ignore]
+    #[ignore = "requires a real debugpy listening on localhost:5678"]
     fn test_connect_to_debugpy() {
         // requires: debugpy running on localhost:5678
         let client = DapClient::connect("localhost:5678");

@@ -113,7 +113,7 @@ impl TestHttpServer {
 
 /// Test browser probe with actual Chrome - only runs with CHRONOS_E2E=1
 #[tokio::test]
-#[ignore]
+#[ignore = "requires a real Chrome instance; gated on e2e_enabled() (CHRONOS_E2E=1)"]
 async fn test_e2e_browser_probe_wasm_detection() {
     // Skip if E2E not enabled
     if !e2e_enabled() {
@@ -172,7 +172,7 @@ async fn test_e2e_browser_probe_wasm_detection() {
 
 /// Test WASM module detection only - minimal version
 #[tokio::test]
-#[ignore]
+#[ignore = "requires a real Chrome instance; gated on e2e_enabled() (CHRONOS_E2E=1)"]
 async fn test_e2e_wasm_module_detection() {
     if !e2e_enabled() {
         eprintln!("E2E tests skipped: CHRONOS_E2E=1 not set");

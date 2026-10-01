@@ -74,9 +74,8 @@ fn test_cdp_event_debugger_paused_conversion() {
 }
 
 #[test]
-#[ignore]
+#[ignore = "requires a Node.js process listening for CDP on localhost:9229"]
 fn test_connect_to_cdp() {
-    // This test requires a Node.js process with --inspect running on localhost:9229
     // Run with: node --inspect=localhost:9229 script.js
     let adapter = JsCdpAdapter::new("localhost", 9229);
     let result = adapter.connect();

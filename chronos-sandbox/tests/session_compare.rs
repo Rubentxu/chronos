@@ -19,7 +19,7 @@ use chronos_sandbox::McpTestClient;
 ///
 /// Run with: cargo test -p chronos-sandbox -- --ignored
 #[tokio::test]
-#[ignore]
+#[ignore = "superseded by tripwire_tools.rs::test_compare_sessions, which passes the absolute fixture path that probe_start requires; this copy also compares non-deterministic syscall events between runs"]
 async fn test_compare_sessions() {
     let mut client = McpTestClient::start().await.unwrap();
 

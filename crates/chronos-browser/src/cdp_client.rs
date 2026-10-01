@@ -686,11 +686,11 @@ mod tests {
         assert!(matches!(event, CdpEventType::InspectorDetached(_)));
     }
 
-    #[test]
-    #[ignore]
     // serde cannot deserialize unknown CDP methods with params using #[serde(other)] on a
     // unit variant — this is a serde limitation, not a code bug. Unknown methods are
     // safely ignored via filter_map in the server (logged as "Failed to parse CDP event").
+    #[test]
+    #[ignore = "serde cannot place params into a #[serde(other)] unit variant"]
     fn test_cdp_event_unknown_method_with_params_is_discarded() {
         let json = r#"{"method": "Network.requestWillBeSent", "params": {}}"#;
         // This will fail to deserialize because serde can't put a map into a unit variant
