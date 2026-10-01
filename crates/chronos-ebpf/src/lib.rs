@@ -523,40 +523,87 @@ fn convert_ebpf_to_semantic(e: EbpfEvent, source_event_id: u64) -> SemanticEvent
     }
 }
 
-/// Parse `/proc/version` and compare against [`MIN_KERNEL_VERSION`].
-pub(crate) fn kernel_version_check() -> Result<(), EbpfError> {
-    let proc_version = std::fs::read_to_string("/proc/version").unwrap_or_default();
+/// Parse the leading run of ASCII digits in `s`.
+///
+/// Distribution kernels append an ABI/flavour suffix to the release
+/// (`5.15.0-91-generic`, `5.10.134-19-generic`), so a component cannot be
+/// parsed whole: `unwrap_or(0)` would report patch 0 for every one of them.
+/// Cutting at the first non-digit yields the real value. `None` when the
+/// component does not start with a digit.
+fn leading_number(s: &str) -> Option<u32> {
+    let digits: String = s.chars().take_while(char::is_ascii_digit).collect();
+    if digits.is_empty() {
+        None
+    } else {
+        digits.parse().ok()
+    }
+}
 
-    // Extract the kernel version string (e.g. "5.15.0-91-generic")
-    let version_str = proc_version.split_whitespace().nth(2).unwrap_or("0.0.0");
+/// Parse a `/proc/version` body into `(major, minor, patch)`.
+///
+/// The third whitespace token is the kernel release. `None` means the body
+/// carries no release token or its major component is not a number — the
+/// caller must report that as "could not determine the kernel", which is a
+/// different diagnosis from "the kernel is too old".
+fn parse_kernel_release(proc_version: &str) -> Option<(u32, u32, u32)> {
+    let release = proc_version.split_whitespace().nth(2)?;
+    let mut parts = release.split('.');
+    let major = leading_number(parts.next()?)?;
+    let minor = leading_number(parts.next().unwrap_or("0")).unwrap_or(0);
+    let patch = leading_number(parts.next().unwrap_or("0")).unwrap_or(0);
+    Some((major, minor, patch))
+}
 
-    let parts: Vec<u32> = version_str
-        .split('.')
-        .take(3)
-        .map(|s| s.parse::<u32>().unwrap_or(0))
-        .collect();
+/// Compare an already-read `/proc/version` body against [`MIN_KERNEL_VERSION`].
+fn check_kernel_release(proc_version: &str) -> Result<(), EbpfError> {
+    let (major, minor, patch) =
+        parse_kernel_release(proc_version).ok_or_else(|| EbpfError::Unavailable {
+            reason: format!(
+                "/proc/version carries no parseable kernel release: {:?}",
+                proc_version.trim()
+            ),
+        })?;
 
-    let major = parts.first().copied().unwrap_or(0);
-    let minor = parts.get(1).copied().unwrap_or(0);
-    let patch = parts.get(2).copied().unwrap_or(0);
+    let (min_maj, min_min, min_patch) = MIN_KERNEL_VERSION;
+    let supported = major > min_maj
+        || (major == min_maj && (minor > min_min || (minor == min_min && patch >= min_patch)));
 
-    let (min_maj, min_min, _min_patch) = MIN_KERNEL_VERSION;
-
-    if major > min_maj || (major == min_maj && minor >= min_min) {
+    if supported {
         Ok(())
     } else {
         Err(EbpfError::Unavailable {
             reason: format!(
                 "kernel {}.{}.{} < required {}.{}.{}",
-                major,
-                minor,
-                patch,
-                MIN_KERNEL_VERSION.0,
-                MIN_KERNEL_VERSION.1,
-                MIN_KERNEL_VERSION.2,
+                major, minor, patch, min_maj, min_min, min_patch,
             ),
         })
     }
+}
+
+/// Read the kernel release through `read` and compare against
+/// [`MIN_KERNEL_VERSION`].
+///
+/// The reader is a parameter so the read-failure path is reachable from a
+/// test: on a normal host `/proc/version` always reads, so a test that
+/// called `std::fs::read_to_string` directly could only ever exercise the
+/// success path.
+fn kernel_version_check_with(
+    read: impl FnOnce() -> std::io::Result<String>,
+) -> Result<(), EbpfError> {
+    let proc_version = read().map_err(|e| EbpfError::Unavailable {
+        reason: format!("cannot read /proc/version to determine the kernel release: {e}"),
+    })?;
+    check_kernel_release(&proc_version)
+}
+
+/// Read `/proc/version` and compare against [`MIN_KERNEL_VERSION`].
+///
+/// A read failure and a kernel that is genuinely too old are reported
+/// differently on purpose: substituting `"0.0.0"` for an unreadable file
+/// told the operator their kernel was ancient when the real problem was an
+/// unreadable `/proc` (a container without it mounted, for instance).
+pub(crate) fn kernel_version_check() -> Result<(), EbpfError> {
+    kernel_version_check_with(|| std::fs::read_to_string("/proc/version"))
 }
 
 #[cfg(test)]
@@ -589,6 +636,118 @@ mod tests {
         Some((parts.next().unwrap_or(0), parts.next().unwrap_or(0)))
     }
 
+    /// The release token is the third whitespace field, and each dotted
+    /// component is cut at its first non-digit because distribution kernels
+    /// append an ABI/flavour suffix.
+    #[test]
+    fn parse_kernel_release_handles_distribution_suffixes() {
+        for (body, expected) in [
+            (
+                "Linux version 5.15.0-91-generic (buildd@lcy02-amd64-051) #101-Ubuntu SMP PREEMPT_DYNAMIC Tue May 14 17:41:35 UTC 2024",
+                Some((5, 15, 0)),
+            ),
+            // The discriminating case: the patch is 134, not 0.
+            (
+                "Linux version 5.10.134-19-generic (buildd@lcy02-amd64-021) #1 SMP PREEMPT_DYNAMIC",
+                Some((5, 10, 134)),
+            ),
+            (
+                "Linux version 6.1.0-13-amd64 (debian-kernel@lists.debian.org) #1 SMP PREEMPT_DYNAMIC",
+                Some((6, 1, 0)),
+            ),
+            // No suffix at all.
+            (
+                "Linux version 6.6.8 (gcc-13.2.0) #1 SMP PREEMPT_DYNAMIC",
+                Some((6, 6, 8)),
+            ),
+            // Two components only: patch defaults to 0.
+            ("Linux version 6.7 (gcc) #1 SMP", Some((6, 7, 0))),
+            // Unparseable: no token, no digits, or truncated.
+            ("", None),
+            ("Linux version", None),
+            ("Linux version not-a-release (x)", None),
+        ] {
+            assert_eq!(
+                parse_kernel_release(body),
+                expected,
+                "release parse of {:?}",
+                body.split_whitespace().nth(2).unwrap_or("<none>")
+            );
+        }
+    }
+
+    /// An unreadable `/proc/version` is a *diagnosis*, not a version. The
+    /// previous implementation substituted `"0.0.0"` and reported the kernel
+    /// as ancient, sending operators after the wrong root cause.
+    #[test]
+    fn check_kernel_release_separates_unreadable_from_too_old() {
+        // The read path, through the same entry point production uses. An
+        // earlier version of this test called `check_kernel_release("")`
+        // instead, which left the read-failure path uncovered: reverting the
+        // read to `unwrap_or_default()` kept it green.
+        let denied = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+        let unreadable = kernel_version_check_with(|| Err(denied)).unwrap_err();
+        let reason = match &unreadable {
+            EbpfError::Unavailable { reason } => reason.as_str(),
+            other => panic!("expected Unavailable, got {other:?}"),
+        };
+        assert!(
+            reason.contains("cannot read /proc/version"),
+            "an unreadable /proc/version must be reported as such, got: {reason}"
+        );
+        assert!(
+            !reason.contains("< required"),
+            "the too-old wording must not be used for an unreadable file, got: {reason}"
+        );
+
+        // A readable file that carries no release token is the other
+        // "cannot determine" case, and must not read as an old kernel either.
+        let garbled = check_kernel_release("").unwrap_err();
+        let reason = match &garbled {
+            EbpfError::Unavailable { reason } => reason.as_str(),
+            other => panic!("expected Unavailable, got {other:?}"),
+        };
+        assert!(
+            reason.contains("no parseable kernel release"),
+            "an unparseable /proc/version must not be reported as an old kernel, got: {reason}"
+        );
+        assert!(
+            !reason.contains("< required"),
+            "the too-old wording must not be used for an unparseable file, got: {reason}"
+        );
+
+        // A genuinely old kernel keeps the old wording, with the real patch.
+        let too_old = check_kernel_release("Linux version 4.19.0-21-amd64 (x) #1 SMP").unwrap_err();
+        let reason = match &too_old {
+            EbpfError::Unavailable { reason } => reason.as_str(),
+            other => panic!("expected Unavailable, got {other:?}"),
+        };
+        assert_eq!(
+            reason, "kernel 4.19.0 < required 5.8.0",
+            "a kernel below the minimum must still name both versions"
+        );
+    }
+
+    /// The minimum is `(5, 8, 0)`, so adding `patch` to the comparison is a
+    /// no-op today. This pins the boundary from both sides so that a future
+    /// bump of `MIN_KERNEL_VERSION` cannot silently change the verdict.
+    #[test]
+    fn check_kernel_release_boundary_around_the_minimum() {
+        for (body, supported) in [
+            ("Linux version 5.7.9 (x) #1 SMP", false),
+            ("Linux version 5.8.0 (x) #1 SMP", true),
+            ("Linux version 5.8.0-91-generic (x) #1 SMP", true),
+            ("Linux version 5.15.0-91-generic (x) #1 SMP", true),
+            ("Linux version 6.0.0 (x) #1 SMP", true),
+        ] {
+            assert_eq!(
+                check_kernel_release(body).is_ok(),
+                supported,
+                "verdict for {body:?}"
+            );
+        }
+    }
+
     #[test]
     fn test_kernel_version_check_parses_proc_version() {
         // The name claims the /proc/version parse is exercised, so the test
@@ -597,8 +756,9 @@ mod tests {
         // nothing: `Err` and `Ok` would both pass.
         //
         // An unreadable /proc/version is NOT treated as "either is fine":
-        // production substitutes "0.0.0" for it, which is below the minimum,
-        // so the verdict must be `Err` and this test says so out loud.
+        // production reports it as its own diagnosis (it can no longer read
+        // the file, or the file has no release token), and either way the
+        // verdict is `Err` and this test says so out loud.
         let (expected_ok, host) = match reference_kernel_major_minor() {
             Some((major, minor)) => (
                 (major, minor) >= (MIN_KERNEL_VERSION.0, MIN_KERNEL_VERSION.1),
