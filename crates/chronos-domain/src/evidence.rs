@@ -570,13 +570,26 @@ mod tests {
             "seq": 1,
             "monotonic_ns": 1000,
             "kind": "Raw",
-            "payload": {"bytes": "YQ==", "tag": "raw"},
+            "payload": {"bytes": [97], "tag": "raw"},
             "future_field": "ignored"
         }"#;
-        // We don't assert equality here — only that decoding does not
-        // panic and produces the canonical fields. (The exact payload
-        // decode depends on the ExecutionPayload serde shape; this
-        // test only gates the "extra field" tolerance.)
-        let _ = serde_json::from_str::<serde_json::Value>(json).expect("json is valid");
+        // Decode for real, and assert the canonical fields survive the
+        // unknown key. The unknown-field tolerance is a *deliberate
+        // absence* of `#[serde(deny_unknown_fields)]` on
+        // `ExecutionRecord`, so do not ever add that attribute: it is
+        // the reason this test exists.
+        let rec: ExecutionRecord =
+            serde_json::from_str(json).expect("decode v1 with unknown field");
+        assert_eq!(rec.session_id, SessionId::new("fwd"));
+        assert_eq!(rec.seq, EventSeq::new(1));
+        assert_eq!(rec.monotonic_ns, 1000);
+        assert_eq!(rec.kind, ExecutionKind::Raw);
+        assert_eq!(rec.payload, ExecutionPayload::new(b"a".to_vec(), "raw"));
+        // The four fields a v2 producer would have written stay `None`
+        // thanks to `#[serde(default)]` — absence must not abort the
+        // parse, it must decode as "not present".
+        assert!(rec.invocation_id.is_none() && rec.parent_invocation_id.is_none());
+        assert!(rec.symbol_id.is_none() && rec.captured_at_unix_ns.is_none());
+        assert_eq!(rec.schema_version(), "chronos_exec_v1");
     }
 }
