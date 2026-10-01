@@ -39,13 +39,11 @@ pub const NATIVE_TOOL_NAMES: &[&str] = &[
     "probe_drain",
     "probe_drain_log",
     "probe_compaction_metrics",
-    "probe_inject",
     "probe_status",
     // Analysis / core read tools (8)
     "events_read",
     "execution_query",
     "state_query",
-    "state_diff",
     "observe",
     "capabilities",
     "list_threads",
@@ -70,17 +68,13 @@ pub const EBPF_TOOL_NAMES: &[&str] = &[
     "probe_drain",
     "probe_drain_log",
     "probe_compaction_metrics",
-    "probe_inject",
     "probe_status",
     "events_read",
     "execution_query",
     "state_query",
-    "state_diff",
     "observe",
     "capabilities",
     "list_threads",
-    "debug_detect_races",
-    "inspect_causality",
     "compare_sessions",
     "causal_slice",
     "trace_slice",
@@ -112,24 +106,19 @@ pub const PYTHON_TOOL_NAMES: &[&str] = &[
     "probe_drain",
     "probe_drain_log",
     "probe_compaction_metrics",
-    "probe_inject",
     "probe_status",
     "events_read",
     "execution_query",
     "state_query",
-    "state_diff",
     "observe",
     "capabilities",
     "list_threads",
-    "debug_detect_races",
-    "inspect_causality",
     "compare_sessions",
     "causal_slice",
     "trace_slice",
     "mutation_lens",
     "hypothesis_test",
     "performance_regression_audit",
-    "evaluate_expression",
     "debug_get_variables",
     "counterexample_shrink",
     "counterexample_get",
@@ -156,24 +145,19 @@ pub const JAVA_TOOL_NAMES: &[&str] = &[
     "probe_drain",
     "probe_drain_log",
     "probe_compaction_metrics",
-    "probe_inject",
     "probe_status",
     "events_read",
     "execution_query",
     "state_query",
-    "state_diff",
     "observe",
     "capabilities",
     "list_threads",
-    "debug_detect_races",
-    "inspect_causality",
     "compare_sessions",
     "causal_slice",
     "trace_slice",
     "mutation_lens",
     "hypothesis_test",
     "performance_regression_audit",
-    "evaluate_expression",
     "debug_get_variables",
     "counterexample_shrink",
     "counterexample_get",
@@ -200,24 +184,19 @@ pub const GO_TOOL_NAMES: &[&str] = &[
     "probe_drain",
     "probe_drain_log",
     "probe_compaction_metrics",
-    "probe_inject",
     "probe_status",
     "events_read",
     "execution_query",
     "state_query",
-    "state_diff",
     "observe",
     "capabilities",
     "list_threads",
-    "debug_detect_races",
-    "inspect_causality",
     "compare_sessions",
     "causal_slice",
     "trace_slice",
     "mutation_lens",
     "hypothesis_test",
     "performance_regression_audit",
-    "evaluate_expression",
     "debug_get_variables",
     "counterexample_shrink",
     "counterexample_get",
@@ -244,24 +223,19 @@ pub const JS_TOOL_NAMES: &[&str] = &[
     "probe_drain",
     "probe_drain_log",
     "probe_compaction_metrics",
-    "probe_inject",
     "probe_status",
     "events_read",
     "execution_query",
     "state_query",
-    "state_diff",
     "observe",
     "capabilities",
     "list_threads",
-    "debug_detect_races",
-    "inspect_causality",
     "compare_sessions",
     "causal_slice",
     "trace_slice",
     "mutation_lens",
     "hypothesis_test",
     "performance_regression_audit",
-    "evaluate_expression",
     "debug_get_variables",
     "counterexample_shrink",
     "counterexample_get",
@@ -1710,4 +1684,49 @@ pub struct CounterexampleBundleEventsParams {
     pub limit: Option<usize>,
     /// Zero-based starting index into the events stream. None means 0.
     pub offset: Option<usize>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every tool a profile lists must actually be registered by the router.
+    ///
+    /// C5.3.2 deleted 22 deprecated alias handlers from `server.rs`, but five of
+    /// them (`probe_inject`, `state_diff`, `evaluate_expression`,
+    /// `debug_detect_races`, `inspect_causality`) survived in the profile lists:
+    /// 26 stale entries across six profiles. The alias-deletion test could not
+    /// catch it because it only greps the router, and these lists live here.
+    ///
+    /// The runtime impact of the drift is nil — `build_tool_availability`
+    /// iterates `ALL_TOOL_NAMES`, and `toolset_guard` is only reached from
+    /// handlers these names no longer have. The cost is that the profile lists
+    /// are the executable specification of what each toolset contains, and they
+    /// were describing a toolset that does not exist. This test keeps them
+    /// honest.
+    #[test]
+    fn profile_lists_only_name_registered_tools() {
+        let registered: std::collections::HashSet<&str> = ALL_TOOL_NAMES.iter().copied().collect();
+
+        for (profile, list) in [
+            ("native", NATIVE_TOOL_NAMES),
+            ("ebpf", EBPF_TOOL_NAMES),
+            ("python", PYTHON_TOOL_NAMES),
+            ("java", JAVA_TOOL_NAMES),
+            ("go", GO_TOOL_NAMES),
+            ("js", JS_TOOL_NAMES),
+            ("minimal", MINIMAL_TOOL_NAMES),
+        ] {
+            let stale: Vec<&&str> = list
+                .iter()
+                .filter(|name| !registered.contains(**name))
+                .collect();
+            assert!(
+                stale.is_empty(),
+                "toolset profile '{profile}' lists tools the router does not \
+                 register: {stale:?}. Remove them, or register the tool if it is \
+                 meant to exist."
+            );
+        }
+    }
 }
