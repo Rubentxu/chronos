@@ -1905,3 +1905,82 @@ existen.
 acepta `Ok` y `Err`, la primera pregunta no es qué debería pasar: es qué pasa de
 verdad. Aquí la respuesta fue la misma en los catorce casos, y no era ninguna de
 las dos que el test toleraba.
+
+## `debug_diff`: una tool que fallaba siempre, y dos formas que no se hablaban (2026-10-01)
+
+### El síntoma
+
+`McpTestClient::debug_diff` devolvía error en el 100 % de las llamadas, con
+`-32602 "unknown variant 'state_diff'"`. Sus tres consumidores —dos en
+`diff_tools.rs` y uno en `state_depth.rs`— aceptaban ambos brazos del `match`, así
+que el workspace estaba verde mientras la tool estaba muerta.
+
+### Dos defectos, no uno
+
+**El transporte.** El método mandaba `state_query` con `kind: "state_diff"`, y
+ese variant no ha existido nunca en `StateQueryKind`
+(`crates/chronos-services/src/output.rs:1164`, que expone `register_diff`,
+`memory_read`, `register_snapshot`, `memory_analysis`, `expression_eval` y
+`variable_snapshot`).
+
+**La forma, que es anterior.** `DebugDiffResponse` pedía `session_id`,
+`event_a_id`, `event_b_id`, `registers_diff`, `memory_diff` y `summary`. El
+handler del servidor (`crates/chronos-mcp/src/server.rs:1684-1731`) emite otra
+cosa: `StateDiffSnapshot`, con `event_id_a`, `event_id_b`, `variables_added`,
+`variables_removed`, `variables_changed`, `registers_changed` y
+`timestamp_delta_ns`.
+
+`git log -S DebugDiffResponse` lo resuelve: **un solo commit**, `1e4f842b` (el
+framework e2e del sandbox). En ese commit el cliente llamaba a la tool correcta y
+el servidor ya emitía `StateDiffSnapshot`. **La forma del cliente era inventada y
+nunca tuvo contraparte**, así que el test no podía haber pasado ni en el día en
+que se escribió. C5.3.1 (`73431af2`) migró el transporte y dejó la forma igual:
+convirtió un fallo de serde en un variante inexistente. Ninguna de las dos
+migraciones lo detectó, porque los tests aceptaban ambos brazos.
+
+### Por qué se arregló el cliente y no el servidor
+
+`StateDiffSnapshot` es la forma real, está cubierta por
+`state_diff_snapshot_roundtrips` (`output.rs:2424`) y no ha cambiado desde
+`1e4f842b`. Adaptarla a la forma inventada habría exigido **inventar datos**:
+`DebugReadService::diff` no toca memoria —`memory_diff` no tendría origen—,
+`summary` no tiene fuente, y `registers_changed` es un mapa de cadenas hex
+(`"0x7ffd..."`), no pares `(u64, u64)`. Alinearse con el servidor modela un
+contrato existente y verificado.
+
+Las dos salidas alternativas se descartaron con el código, no con criterio:
+`register_diff` (`tools.rs:957`) compara entre *timestamps*, así que usarlo
+obligaría a resolver `event_id → timestamp` en el cliente y perdería la
+comparación de variables; y `session_compare` (`server.rs:3090-3093`) es
+sesión contra sesión, no acepta eventos.
+
+El doc de `docs/milestones/m5-agent-api-v2-scoping.md:59`, que mapea
+`debug_diff → session_compare`, es un *scoping proposal* que él mismo declara
+«no production code changes». Nunca fue un decreto, y la fila nunca se aplicó.
+
+### El tipo se espeja, no se importa
+
+`chronos-sandbox` depende de `chronos-domain`, `chronos-capture` y
+`chronos-query`, **no** de `chronos-services`. Por eso el cliente se había
+inventado sus propios DTO. Se añadió `StateDiffSnapshot` local en
+`client/types.rs` con una nota de sincronización, en vez de añadir una
+dependencia de peso al sandbox por un solo tipo de datos.
+
+### El toolset se pinea, por el mismo motivo que la base de datos
+
+`debug_diff` está en `ALL_TOOL_NAMES` y aparece en `tools/list`, pero **no está en
+ninguno de los siete perfiles por toolset**. Con un perfil explícito, el guard lo
+rechaza. `McpProcess::spawn_with_env` ya eliminaba `CHRONOS_DB_PATH` del ambiente
+por un motivo idéntico —que un desarrollador con la variable exportada no redirija
+el servidor sandbox en su almacén real—, así que ahora hace lo mismo con
+`CHRONOS_ACTIVE_TOOLSET` y fija `auto`, que es el default del servidor. Sin eso,
+cualquier assert sobre `Ok` fallaría por una variable del entorno del operador y
+no por el código.
+
+### La regla
+
+Cuando el cliente y el servidor llevan años hablando en dos dialectos, el test
+que acepta ambos brazos no es un test débil: es el que está **impidiendo** que se
+vea. Arreglar el transporte sin mirar la forma solo habría movido el fallo. Y
+antes de «arreglar» una capa, comprueba con `git log -S` de dónde salió la forma
+que no funciona: casi siempre la respuesta es que nunca funcionó.
