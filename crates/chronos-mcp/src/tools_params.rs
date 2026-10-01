@@ -33,14 +33,14 @@ pub const NATIVE_TOOL_NAMES: &[&str] = &[
     "list_sessions",
     "delete_session",
     "drop_session",
-    // Probe lifecycle (7)
+    // Probe lifecycle (6)
     "probe_start",
     "probe_stop",
     "probe_drain",
     "probe_drain_log",
     "probe_compaction_metrics",
     "probe_status",
-    // Analysis / core read tools (8)
+    // Analysis / core read tools (7)
     "events_read",
     "execution_query",
     "state_query",
