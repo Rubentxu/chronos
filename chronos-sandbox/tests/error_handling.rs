@@ -6,6 +6,7 @@
 //!
 //! Category A tests cover error handling and resilience.
 
+use chronos_sandbox::client::error::McpSandboxError;
 use chronos_sandbox::client::tools::McpTestClient;
 use chronos_sandbox::McpSession;
 use std::time::Duration;
@@ -13,7 +14,8 @@ use std::time::Duration;
 /// A2: Verify probe_stop returns an error for nonexistent session.
 ///
 /// Calls probe_stop with session_id = "nonexistent-session-xyz" and asserts
-/// that the response contains an error (not a panic/connection drop).
+/// that the call fails with an RPC error naming that session, rather than
+/// returning a successful response or dropping the connection.
 #[tokio::test]
 async fn test_probe_stop_nonexistent_session() {
     let mut client = McpTestClient::start()
@@ -23,24 +25,21 @@ async fn test_probe_stop_nonexistent_session() {
     // Call probe_stop with a session that doesn't exist
     let result = client.probe_stop("nonexistent-session-xyz").await;
 
-    // Should get an error response, not a panic
-    match result {
-        Ok(response) => {
-            // If it succeeds, the status should indicate error
-            println!("probe_stop returned OK with status: {}", response.status);
-            assert!(
-                response.status.to_lowercase().contains("error")
-                    || response.status.to_lowercase().contains("not found")
-                    || response.status.to_lowercase().contains("stopped"),
-                "Expected error status, got: {}",
-                response.status
-            );
-        }
-        Err(e) => {
-            // Error is also acceptable - means the server properly rejected the invalid session
-            println!("probe_stop correctly returned error: {}", e);
-        }
-    }
+    // The unknown session must be reported as an error. Accepting a success
+    // response here would make this test unable to detect a regression that
+    // silently pretends the session exists.
+    let err = result.expect_err("probe_stop should reject a nonexistent session with an error");
+
+    assert!(
+        matches!(&err, McpSandboxError::RpcError(_)),
+        "expected an RPC error, got: {:?}",
+        err
+    );
+    assert!(
+        err.to_string().contains("nonexistent-session-xyz"),
+        "the error should name the unknown session, got: {}",
+        err
+    );
 
     client.shutdown().await.ok();
 }
@@ -48,7 +47,7 @@ async fn test_probe_stop_nonexistent_session() {
 /// A3: Verify probe_drain returns an error for nonexistent session.
 ///
 /// Calls probe_drain with session_id = "nonexistent-session-xyz" and asserts
-/// that the response contains an error.
+/// that the call fails with an RPC error naming that session.
 #[tokio::test]
 async fn test_probe_drain_nonexistent_session() {
     let mut client = McpTestClient::start()
@@ -58,33 +57,28 @@ async fn test_probe_drain_nonexistent_session() {
     // Call probe_drain with a session that doesn't exist
     let result = client.probe_drain_raw("nonexistent-session-xyz").await;
 
-    // Should get an error response, not a panic
-    match result {
-        Ok(response) => {
-            // If it succeeds, the status should indicate error
-            println!("probe_drain returned OK with status: {}", response.status);
-            // Session not found should be reflected in the response
-            assert!(
-                response.status.to_lowercase().contains("error")
-                    || response.status.to_lowercase().contains("not found")
-                    || response.status.to_lowercase().contains("running"),
-                "Expected error or 'running' status (session not found), got: {}",
-                response.status
-            );
-        }
-        Err(e) => {
-            // Error is also acceptable
-            println!("probe_drain correctly returned error: {}", e);
-        }
-    }
+    // Draining an unknown session must be an error, never an empty success.
+    let err = result.expect_err("probe_drain should reject a nonexistent session with an error");
+
+    assert!(
+        matches!(&err, McpSandboxError::RpcError(_)),
+        "expected an RPC error, got: {:?}",
+        err
+    );
+    assert!(
+        err.to_string().contains("nonexistent-session-xyz"),
+        "the error should name the unknown session, got: {}",
+        err
+    );
 
     client.shutdown().await.ok();
 }
 
-/// A4: Verify query_events returns error or empty result for invalid session.
+/// A4: Verify query_events returns an error for invalid session.
 ///
 /// Calls query_events with session_id = "invalid-does-not-exist" and asserts
-/// that the response contains an error or empty result.
+/// that the call fails with an RPC error naming that session. An empty event
+/// list is not acceptable: the server has no log for the session and must say so.
 #[tokio::test]
 async fn test_query_events_invalid_session() {
     let mut client = McpTestClient::start()
@@ -94,19 +88,25 @@ async fn test_query_events_invalid_session() {
     let filter = chronos_sandbox::client::types::QueryFilter::default();
     let result = client.query_events("invalid-does-not-exist", filter).await;
 
-    match result {
-        Ok(events) => {
-            // Empty result is acceptable - session doesn't exist so no events
-            println!(
-                "query_events returned {} events (empty is OK for invalid session)",
-                events.len()
-            );
-        }
-        Err(e) => {
-            // Error is also acceptable - server properly rejected invalid session
-            println!("query_events correctly returned error: {}", e);
-        }
-    }
+    // An unknown session is an error, not an empty result: reporting zero
+    // events would be indistinguishable from a real session with no events.
+    let err = result.expect_err("query_events should reject an unknown session with an error");
+
+    assert!(
+        matches!(&err, McpSandboxError::RpcError(_)),
+        "expected an RPC error, got: {:?}",
+        err
+    );
+    assert!(
+        err.to_string().contains("ExecutionLog unavailable"),
+        "the error should report the missing execution log, got: {}",
+        err
+    );
+    assert!(
+        err.to_string().contains("invalid-does-not-exist"),
+        "the error should name the unknown session, got: {}",
+        err
+    );
 
     client.shutdown().await.ok();
 }
@@ -145,7 +145,10 @@ async fn test_get_event_out_of_range() {
         .await
         .expect("probe_stop failed");
 
-    println!("Probe stopped with {} events", stop.total_events);
+    assert!(
+        stop.total_events > 0,
+        "the probe should have captured events before querying an out-of-range id, got 0"
+    );
 
     // Give the query engine time to build
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -174,7 +177,6 @@ async fn test_get_event_out_of_range() {
             // The client flattens the `event` field directly without
             // substituting a fallback object, so missing events surface
             // as JSON null (NOT an empty object).
-            println!("get_event(999999) returned: {}", value);
             assert!(
                 value.is_null(),
                 "Expected JSON null for missing event id, got: {}",
@@ -229,7 +231,6 @@ async fn test_save_then_delete_then_load() {
         .await
         .expect("probe_stop failed");
 
-    println!("Probe stopped with {} events", stop.total_events);
     assert!(stop.total_events > 0, "Should have captured some events");
 
     // Give the query engine time to build
@@ -240,30 +241,40 @@ async fn test_save_then_delete_then_load() {
         .save_session(&session_id, "test_save_delete_load")
         .await
         .expect("save_session failed");
-    println!("Session saved: {} events", save_result.event_count);
+
+    assert_eq!(
+        save_result.status, "saved",
+        "save_session should report status 'saved', got: {}",
+        save_result.status
+    );
+    assert!(
+        save_result.event_count > 0,
+        "save_session should persist the captured events, got 0"
+    );
 
     // Delete the session
     client
         .delete_session(&session_id)
         .await
         .expect("delete_session failed");
-    println!("Session deleted");
 
     // Try to load the deleted session - should fail
     let load_result = client.load_session(&session_id).await;
 
-    match load_result {
-        Ok(info) => {
-            // If it succeeds, it should have 0 events or be otherwise indicate the session is gone
-            println!("load_session returned: {:?}", info);
-            // The behavior may vary - some implementations may still return the session
-            // or indicate it's not found in the content
-        }
-        Err(e) => {
-            // Error is the expected behavior - session was deleted
-            println!("load_session correctly failed after delete: {}", e);
-        }
-    }
+    // A deleted session must not load. Returning session info here would mean
+    // the delete did not take effect and the test would pass while broken.
+    let err = load_result.expect_err("load_session should fail for a deleted session");
+
+    assert!(
+        matches!(&err, McpSandboxError::RpcError(_)),
+        "expected an RPC error, got: {:?}",
+        err
+    );
+    assert!(
+        err.to_string().contains("session not found"),
+        "the error should report the session as not found, got: {}",
+        err
+    );
 
     client.shutdown().await.ok();
 }
@@ -271,7 +282,7 @@ async fn test_save_then_delete_then_load() {
 /// A9: Verify list_threads returns graceful error for invalid session.
 ///
 /// Calls list_threads with session_id = "ghost-session" and asserts
-/// that it returns a graceful error, not a crash.
+/// that it fails with an RPC error naming that session, not a crash.
 #[tokio::test]
 async fn test_list_threads_invalid_session() {
     let mut client = McpTestClient::start()
@@ -281,24 +292,29 @@ async fn test_list_threads_invalid_session() {
     // Call list_threads with a session that doesn't exist
     let result = client.list_threads("ghost-session").await;
 
-    match result {
-        Ok(threads) => {
-            // Empty result is acceptable for non-existent session
-            println!("list_threads returned {} threads", threads.len());
-        }
-        Err(e) => {
-            // Error is also acceptable
-            println!("list_threads correctly returned error: {}", e);
-        }
-    }
+    // An unknown session has no execution log to summarise, so the server
+    // must report an error instead of an empty thread list.
+    let err = result.expect_err("list_threads should reject an unknown session with an error");
+
+    assert!(
+        matches!(&err, McpSandboxError::RpcError(_)),
+        "expected an RPC error, got: {:?}",
+        err
+    );
+    assert!(
+        err.to_string().contains("ghost-session"),
+        "the error should name the unknown session, got: {}",
+        err
+    );
 
     client.shutdown().await.ok();
 }
 
-/// A10: Verify probe_start returns error for empty program path.
+/// A10: Verify probe_start rejects an empty program path.
 ///
-/// Calls probe_start with program = "" and asserts that it returns
-/// an error response (validation error).
+/// Calls probe_start with program = "" and asserts that it fails with an
+/// "Invalid program path" error. The empty string is rejected by the
+/// non-absolute path validation, which is the check that fires first.
 #[tokio::test]
 async fn test_probe_start_empty_path() {
     let mut client = McpTestClient::start()
@@ -308,26 +324,25 @@ async fn test_probe_start_empty_path() {
     // Call probe_start with empty program path
     let result = client.probe_start_raw("").await;
 
-    match result {
-        Ok(value) => {
-            // Check if the response indicates an error
-            let value_str = serde_json::to_string(&value).unwrap_or_default();
-            println!("probe_start with empty path returned: {}", value_str);
-            // Should contain error indication
-            assert!(
-                value_str.to_lowercase().contains("error")
-                    || value_str.to_lowercase().contains("invalid")
-                    || value_str.to_lowercase().contains("not found")
-                    || value_str.to_lowercase().contains("path"),
-                "Expected error about invalid path, got: {}",
-                value_str
-            );
-        }
-        Err(e) => {
-            // Error is also acceptable
-            println!("probe_start correctly returned error for empty path: {}", e);
-        }
-    }
+    // The empty path must be rejected outright; spawning it cannot succeed.
+    let err = result.expect_err("probe_start should reject an empty program path with an error");
+
+    assert!(
+        matches!(&err, McpSandboxError::RpcError(_)),
+        "expected an RPC error, got: {:?}",
+        err
+    );
+    let message = err.to_string();
+    assert!(
+        message.contains("Invalid program path"),
+        "the error should report an invalid program path, got: {}",
+        message
+    );
+    assert!(
+        message.contains("Non-absolute path rejected"),
+        "an empty path should be rejected as non-absolute, got: {}",
+        message
+    );
 
     client.shutdown().await.ok();
 }
@@ -335,7 +350,8 @@ async fn test_probe_start_empty_path() {
 /// A10b: Verify probe_start returns error for nonexistent binary path.
 ///
 /// Calls probe_start with program = "/nonexistent/path/to/binary" and asserts
-/// that it returns an error response.
+/// that it fails with an "Invalid program path" error reporting the missing
+/// program.
 #[tokio::test]
 async fn test_probe_start_nonexistent_path() {
     let mut client = McpTestClient::start()
@@ -345,29 +361,31 @@ async fn test_probe_start_nonexistent_path() {
     // Call probe_start with a path that doesn't exist
     let result = client.probe_start_raw("/nonexistent/path/to/binary").await;
 
-    match result {
-        Ok(value) => {
-            // Check if the response indicates an error
-            let value_str = serde_json::to_string(&value).unwrap_or_default();
-            println!("probe_start with nonexistent path returned: {}", value_str);
-            // Should contain error indication
-            assert!(
-                value_str.to_lowercase().contains("error")
-                    || value_str.to_lowercase().contains("invalid")
-                    || value_str.to_lowercase().contains("not found")
-                    || value_str.to_lowercase().contains("failed"),
-                "Expected error about nonexistent path, got: {}",
-                value_str
-            );
-        }
-        Err(e) => {
-            // Error is also acceptable - server may reject at RPC level
-            println!(
-                "probe_start correctly returned error for nonexistent path: {}",
-                e
-            );
-        }
-    }
+    // An absolute but missing binary must be rejected with a not-found error.
+    let err =
+        result.expect_err("probe_start should reject a nonexistent binary path with an error");
+
+    assert!(
+        matches!(&err, McpSandboxError::RpcError(_)),
+        "expected an RPC error, got: {:?}",
+        err
+    );
+    let message = err.to_string();
+    assert!(
+        message.contains("Invalid program path"),
+        "the error should report an invalid program path, got: {}",
+        message
+    );
+    assert!(
+        message.contains("Program not found"),
+        "the error should report the program as not found, got: {}",
+        message
+    );
+    assert!(
+        message.contains("/nonexistent/path/to/binary"),
+        "the error should name the missing binary, got: {}",
+        message
+    );
 
     client.shutdown().await.ok();
 }

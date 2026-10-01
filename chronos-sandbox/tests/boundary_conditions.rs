@@ -15,8 +15,10 @@ use std::time::Duration;
 
 /// B1: Verify probe on immediately-exiting program handles gracefully.
 ///
-/// Starts a probe on test_exit_immediate, waits 300ms, stops (may get "not found"
-/// if program already exited), then verifies query_events returns valid response.
+/// Starts a probe on test_exit_immediate, waits 300ms, then stops it. The
+/// traced program has already exited by then, but the session stays queryable:
+/// probe_stop must return Ok with status "stopped" (not a "not found" error)
+/// and query_events must return the events captured before the exit.
 #[tokio::test]
 async fn test_probe_start_program_exits_immediately() {
     let fixture = McpSession::fixture_path("test_exit_immediate")
@@ -35,21 +37,21 @@ async fn test_probe_start_program_exits_immediately() {
     // Wait 300ms for the program to exit
     tokio::time::sleep(Duration::from_millis(300)).await;
 
-    // Stop the probe - may get "not found" if program already exited
-    let stop_result = client.probe_stop(&session_id).await;
+    // Stop the probe. An already-exited program is not a server error: the
+    // session is finalized normally, so probe_stop must succeed.
+    let stop = client
+        .probe_stop(&session_id)
+        .await
+        .expect("probe_stop should succeed even though the traced program already exited");
 
-    match stop_result {
-        Ok(stop) => {
-            println!(
-                "probe_stop succeeded: {} events, {}ms",
-                stop.total_events, stop.duration_ms
-            );
-        }
-        Err(e) => {
-            // This is also acceptable - program may have already exited
-            println!("probe_stop returned error (program already exited): {}", e);
-        }
-    }
+    assert_eq!(
+        stop.status, "stopped",
+        "probe_stop on an already-exited program should report status 'stopped'"
+    );
+    assert!(
+        stop.total_events > 0,
+        "probe_stop should report the events captured before exit, got 0"
+    );
 
     // Give query engine time to build
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -61,15 +63,18 @@ async fn test_probe_start_program_exits_immediately() {
         .await
         .expect("query_events should return valid response, not crash");
 
-    println!("query_events returned {} events", events.len());
+    assert!(
+        !events.is_empty(),
+        "query_events should return the events captured before the program exited, got 0"
+    );
 
     client.shutdown().await.ok();
 }
 
 /// B2: Verify probe on SIGSEGV program detects crash correctly.
 ///
-/// Starts a probe on test_segfault, waits 500ms for crash to happen,
-/// stops the probe, then verifies debug_find_crash detects the crash.
+/// Starts a probe on test_segfault, waits 500ms for the crash to happen,
+/// stops the probe, then verifies debug_find_crash detects the SIGSEGV.
 #[tokio::test]
 async fn test_probe_start_program_crashes_sigsegv() {
     let fixture = McpSession::fixture_path("test_segfault")
@@ -88,23 +93,21 @@ async fn test_probe_start_program_crashes_sigsegv() {
     // Wait 500ms for the crash to happen
     tokio::time::sleep(Duration::from_millis(500)).await;
 
-    // Stop the probe - may already be done
-    let stop_result = client.probe_stop(&session_id).await;
+    // Stop the probe. The crash is recorded in the trace, so the session is
+    // still finalized normally; probe_stop must succeed.
+    let stop = client
+        .probe_stop(&session_id)
+        .await
+        .expect("probe_stop should succeed after the traced program crashed");
 
-    match stop_result {
-        Ok(stop) => {
-            println!(
-                "probe_stop succeeded: {} events, {}ms",
-                stop.total_events, stop.duration_ms
-            );
-        }
-        Err(e) => {
-            println!(
-                "probe_stop returned error (program may have crashed): {}",
-                e
-            );
-        }
-    }
+    assert_eq!(
+        stop.status, "stopped",
+        "probe_stop after a crash should report status 'stopped'"
+    );
+    assert!(
+        stop.total_events > 0,
+        "probe_stop should report the events captured before the crash, got 0"
+    );
 
     // Give query engine time to build
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -116,23 +119,26 @@ async fn test_probe_start_program_crashes_sigsegv() {
         .await
         .expect("query_events should return valid response");
 
-    println!("query_events returned {} events", events.len());
+    assert!(
+        !events.is_empty(),
+        "query_events should return the events captured before the crash, got 0"
+    );
 
-    // debug_find_crash should detect the SIGSEGV
-    let crash_result = client
+    // debug_find_crash must detect the SIGSEGV. A missing crash is a failure,
+    // not an acceptable outcome: detecting it is the purpose of this test.
+    let crash = client
         .debug_find_crash(&session_id)
         .await
-        .expect("debug_find_crash should not crash");
+        .expect("debug_find_crash should not crash")
+        .expect("debug_find_crash should report the SIGSEGV of the traced program, got None");
 
-    if let Some(crash) = crash_result {
-        println!(
-            "✓ Crash detected: signal={:?}, event_id={:?}",
-            crash.signal, crash.event_id
-        );
-        assert!(crash.crash_found, "crash_found should be true");
-    } else {
-        println!("Note: No crash detected (crash may have happened after probe stopped)");
-    }
+    assert!(crash.crash_found, "crash_found should be true");
+    assert_eq!(
+        crash.signal.as_deref(),
+        Some("SIGSEGV"),
+        "expected the reported crash signal to be SIGSEGV, got: {:?}",
+        crash.signal
+    );
 
     client.shutdown().await.ok();
 }
@@ -165,9 +171,10 @@ async fn test_probe_start_many_threads() {
         .await
         .expect("probe_stop failed");
 
-    println!(
-        "Probe stopped: {} events, {}ms",
-        stop.total_events, stop.duration_ms
+    assert_eq!(
+        stop.status, "stopped",
+        "probe_stop should report status 'stopped', got: {}",
+        stop.status
     );
 
     // Give query engine time to build
@@ -178,11 +185,6 @@ async fn test_probe_start_many_threads() {
         .list_threads(&session_id)
         .await
         .expect("list_threads failed");
-
-    println!("list_threads returned {} threads", threads.len());
-    for thread in threads.iter().take(5) {
-        println!("  thread_id: {}", thread.thread_id);
-    }
 
     // We expect at least 3 threads (main + at least 2 worker threads)
     assert!(
@@ -216,12 +218,10 @@ async fn test_query_events_limit_zero() {
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     // Stop the probe
-    let stop = client
+    let _stop = client
         .probe_stop(&session_id)
         .await
         .expect("probe_stop failed");
-
-    println!("Probe stopped: {} events", stop.total_events);
 
     // Give query engine time to build
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -236,8 +236,6 @@ async fn test_query_events_limit_zero() {
         .query_events(&session_id, filter)
         .await
         .expect("query_events with limit=0 should return valid response, not error");
-
-    println!("query_events with limit=0 returned {} events", events.len());
 
     // Should return empty array, not an error
     assert!(events.is_empty(), "limit=0 should return empty array");
@@ -267,12 +265,10 @@ async fn test_query_events_limit_one() {
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     // Stop the probe
-    let stop = client
+    let _stop = client
         .probe_stop(&session_id)
         .await
         .expect("probe_stop failed");
-
-    println!("Probe stopped: {} events", stop.total_events);
 
     // Give query engine time to build
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -288,18 +284,17 @@ async fn test_query_events_limit_one() {
         .await
         .expect("query_events with limit=1 should succeed");
 
-    println!("query_events with limit=1 returned {} events", events.len());
-
     // Should return exactly 1 event
     assert_eq!(events.len(), 1, "limit=1 should return exactly 1 event");
 
     client.shutdown().await.ok();
 }
 
-/// B6: Verify query_events with timestamp_start > timestamp_end returns empty or error.
+/// B6: Verify query_events with timestamp_start > timestamp_end returns empty.
 ///
 /// Starts a probe on test_busyloop, runs for 2s, stops, then queries with
-/// inverted timestamp range (start > end).
+/// inverted timestamp range (start > end). Such a range matches nothing, so the
+/// server answers with an empty event list rather than an error.
 #[tokio::test]
 async fn test_query_events_timestamp_start_greater_than_end() {
     let fixture = McpSession::fixture_path("test_busyloop")
@@ -324,7 +319,10 @@ async fn test_query_events_timestamp_start_greater_than_end() {
         .await
         .expect("probe_stop failed");
 
-    println!("Probe stopped: {} events", stop.total_events);
+    assert!(
+        stop.total_events > 0,
+        "the probe should have captured events before the inverted-range query, got 0"
+    );
 
     // Give query engine time to build
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -336,32 +334,26 @@ async fn test_query_events_timestamp_start_greater_than_end() {
         ..Default::default()
     };
 
-    let result = client.query_events(&session_id, filter).await;
+    // An inverted range is a valid filter that matches nothing; it is not an
+    // error, so the response must be Ok with an empty event list.
+    let events = client
+        .query_events(&session_id, filter)
+        .await
+        .expect("query_events with an inverted timestamp range should not error");
 
-    match result {
-        Ok(events) => {
-            // Empty events is acceptable - inverted range means no matches
-            println!(
-                "query_events with inverted range returned {} events (empty OK)",
-                events.len()
-            );
-        }
-        Err(e) => {
-            // Error is also acceptable - invalid timestamp range
-            println!(
-                "query_events with inverted range returned error (acceptable): {}",
-                e
-            );
-        }
-    }
+    assert!(
+        events.is_empty(),
+        "an inverted timestamp range should match no events, got {}",
+        events.len()
+    );
 
     client.shutdown().await.ok();
 }
 
-/// B7: Verify state_diff with same timestamp twice returns valid response.
+/// B7: Verify state_diff with same timestamp twice returns no changes.
 ///
 /// Starts a probe on test_busyloop, runs for 2s, stops, gets execution summary
-/// to find valid timestamps, then calls state_diff with same timestamp for both.
+/// to find a valid timestamp, then calls state_diff with same timestamp for both.
 #[tokio::test]
 async fn test_state_diff_same_timestamp_twice() {
     let fixture = McpSession::fixture_path("test_busyloop")
@@ -386,7 +378,10 @@ async fn test_state_diff_same_timestamp_twice() {
         .await
         .expect("probe_stop failed");
 
-    println!("Probe stopped: {} events", stop.total_events);
+    assert!(
+        stop.total_events > 0,
+        "the probe should have captured events before the state diff, got 0"
+    );
 
     // Give query engine time to build
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -400,32 +395,27 @@ async fn test_state_diff_same_timestamp_twice() {
     // Use the duration_ns as a timestamp for the diff
     let timestamp = summary.duration_ns;
 
-    println!("Using timestamp: {} ns", timestamp);
+    // Identical timestamps describe an empty interval, so the diff is
+    // computed over no events and must report no changes.
+    let diff = client
+        .state_diff(&session_id, timestamp, timestamp)
+        .await
+        .expect("state_diff with the same timestamp on both ends should not error");
 
-    // Call state_diff with same timestamp for both
-    let diff_result = client.state_diff(&session_id, timestamp, timestamp).await;
-
-    match diff_result {
-        Ok(diff) => {
-            // Same timestamp should produce empty changes
-            println!(
-                "state_diff with same timestamp: {} changes",
-                diff.changes.len()
-            );
-        }
-        Err(e) => {
-            // Error is also acceptable
-            println!("state_diff with same timestamp returned error: {}", e);
-        }
-    }
+    assert!(
+        diff.changes.is_empty(),
+        "state_diff between identical timestamps should report no changes, got {}",
+        diff.changes.len()
+    );
 
     client.shutdown().await.ok();
 }
 
-/// B10: Verify debug_analyze_memory with start_address == end_address doesn't crash.
+/// B10: Verify debug_analyze_memory with start == end returns an empty analysis.
 ///
 /// Starts a probe on test_busyloop, runs for 2s, stops, then calls
-/// debug_analyze_memory with same address for start and end.
+/// debug_analyze_memory with the same address for start and end. The address
+/// range is empty, so the analysis succeeds and reports no writes.
 #[tokio::test]
 async fn test_debug_analyze_memory_start_equals_end() {
     let fixture = McpSession::fixture_path("test_busyloop")
@@ -450,13 +440,16 @@ async fn test_debug_analyze_memory_start_equals_end() {
         .await
         .expect("probe_stop failed");
 
-    println!("Probe stopped: {} events", stop.total_events);
+    assert!(
+        stop.total_events > 0,
+        "the probe should have captured events before the memory analysis, got 0"
+    );
 
     // Give query engine time to build
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Call debug_analyze_memory with same address for start and end
-    let result = client
+    let resp = client
         .debug_analyze_memory(
             &session_id,
             0x1000,   // start_address
@@ -464,24 +457,27 @@ async fn test_debug_analyze_memory_start_equals_end() {
             0,        // start_ts
             u64::MAX, // end_ts
         )
-        .await;
+        .await
+        .expect("debug_analyze_memory with start == end should not error");
 
-    match result {
-        Ok(resp) => {
-            // Should return valid response (possibly empty)
-            println!(
-                "debug_analyze_memory with same address: {} total_writes",
-                resp.total_writes
-            );
-        }
-        Err(e) => {
-            // Error is also acceptable
-            println!(
-                "debug_analyze_memory with same address returned error: {}",
-                e
-            );
-        }
-    }
+    assert_eq!(
+        resp.start_address, "0x1000",
+        "the analysis should echo the requested start address"
+    );
+    assert_eq!(
+        resp.end_address, "0x1000",
+        "the analysis should echo the requested end address"
+    );
+    assert_eq!(
+        resp.total_writes, 0,
+        "an empty address range should report 0 total writes, got {}",
+        resp.total_writes
+    );
+    assert!(
+        resp.accesses.is_empty(),
+        "an empty address range should report no accesses, got {}",
+        resp.accesses.len()
+    );
 
     client.shutdown().await.ok();
 }
@@ -514,31 +510,29 @@ async fn test_forensic_memory_audit_limit_zero() {
         .await
         .expect("probe_stop failed");
 
-    println!("Probe stopped: {} events", stop.total_events);
+    assert!(
+        stop.total_events > 0,
+        "the probe should have captured events before the memory audit, got 0"
+    );
 
     // Give query engine time to build
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Call forensic_memory_audit with limit=0
-    let result = client.forensic_memory_audit(&session_id, 0x1000, 0).await;
+    let resp = client
+        .forensic_memory_audit(&session_id, 0x1000, 0)
+        .await
+        .expect("forensic_memory_audit with limit=0 should not error");
 
-    match result {
-        Ok(resp) => {
-            // Should return valid response with empty writes
-            println!(
-                "forensic_memory_audit with limit=0: {} writes",
-                resp.write_count
-            );
-            assert!(
-                resp.writes.is_empty(),
-                "limit=0 should return empty writes array"
-            );
-        }
-        Err(e) => {
-            // Error is also acceptable for limit=0
-            println!("forensic_memory_audit with limit=0 returned error: {}", e);
-        }
-    }
+    assert_eq!(
+        resp.write_count, 0,
+        "limit=0 should report 0 writes, got {}",
+        resp.write_count
+    );
+    assert!(
+        resp.writes.is_empty(),
+        "limit=0 should return an empty writes array"
+    );
 
     client.shutdown().await.ok();
 }
