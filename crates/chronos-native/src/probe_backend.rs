@@ -1373,25 +1373,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// REC-C2.3 — there is no `EventBus`, so no `EventBus::read_since` to
-    /// characterize. The characterization retires with the type.
-    ///
-    /// The invariant that outlives CHAR-C2-06 is now: an observation the
-    /// log accepted is observable through the canonical reader, and the
-    /// reader is non-destructive. This is asserted by
-    /// `c2_3_persist_first_accepted_lands_in_log_refused_does_not` (above)
-    /// and by the canonical drain tests in `chronos-services`. The test is
-    /// kept here as a stub that documents the retirement.
-    #[test]
-    fn char_c2_06_retired_with_eventbus() {
-        // The bus is gone; the test exists to mark the retirement.
-        // The behaviour CHAR-C2-06 used to characterize — that a read of the
-        // ring could empty it for other consumers — was the live-mirror's
-        // defining failure mode. Without a live mirror there is no ring to
-        // empty, and the canonical reader (chronos-services::canonical_drain)
-        // is asserted non-destructive in its own suite.
-    }
-
     #[test]
     fn test_native_probe_backend_creation() {
         let backend = NativeProbeBackend::new();

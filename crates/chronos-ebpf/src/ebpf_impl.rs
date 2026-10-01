@@ -405,14 +405,4 @@ mod tests {
             assert!(matches!(err, EbpfError::Unavailable { .. }));
         }
     }
-
-    #[test]
-    #[ignore = "requires: cap_bpf and compiled eBPF program"]
-    fn test_ebpf_adapter_with_real_bpf() {
-        // This test requires:
-        // 1. CAP_BPF or CAP_PERFMON
-        // 2. A compiled eBPF object file
-        // 3. Kernel >= 5.8
-        todo!("enable when eBPF environment is available")
-    }
 }
