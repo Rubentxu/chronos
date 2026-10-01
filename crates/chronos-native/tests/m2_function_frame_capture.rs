@@ -452,11 +452,19 @@ fn live_probe_emits_real_function_entries_to_execution_log() {
 /// build.rs uses, falling back gracefully if no C compiler is present.
 fn pie_fixture_source() -> PathBuf {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    // The fixture source lives in the chronos-sandbox workspace member; we
-    // resolve it relative to the workspace root via CARGO_MANIFEST_DIR's
-    // parent (chronos-native -> workspace root -> chronos-sandbox/...).
+    // The fixture source lives in the chronos-sandbox workspace member, which
+    // is a *top-level* member, not one under `crates/`. So the walk up is
+    // two levels: chronos-native -> crates -> workspace root -> chronos-sandbox.
+    //
+    // A single `.parent()` resolves to `crates/`, which does not exist as
+    // `crates/chronos-sandbox/`; `src.exists()` was therefore always false,
+    // `compile_pie_fixture` always returned None, and
+    // `pie_fixture_compute_load_bias_is_nonzero` reported ok without ever
+    // asserting anything. The skip was informational, so nothing failed
+    // loudly and the load-bias relocation requirement stayed unverified.
     manifest_dir
         .parent()
+        .and_then(Path::parent)
         .expect("workspace root")
         .join("chronos-sandbox")
         .join("programs")
