@@ -1,7 +1,7 @@
 //! Program-Specific Scenarios tests — verify tools work correctly with various program types.
 
 use chronos_sandbox::client::tools::McpTestClient;
-use chronos_sandbox::client::types::QueryFilter;
+use chronos_sandbox::client::types::{QueryFilter, TraceEvent};
 use chronos_sandbox::McpSession;
 use std::time::Duration;
 
@@ -376,9 +376,47 @@ async fn test_trace_syscalls_false_still_captures_events() {
         "✓ query_events with trace_syscalls=false: {} events",
         events.len()
     );
-    // Events may be empty if ptrace relies on syscalls for function detection
-    // Just verify the response is valid
-    println!("  Response is valid (events array exists)");
+
+    // Measured on this fixture: the capture is NOT empty. `trace_syscalls=false`
+    // suppresses syscall interception, but the probe still records the program
+    // reaching its exit, so the log holds exactly the `process_exit` custom
+    // marker (with `exit_code`) and zero syscall events. The previous
+    // "events may be empty / just verify the response" comment was wrong.
+    assert!(
+        !events.is_empty(),
+        "trace_syscalls=false must still capture the program_exit marker"
+    );
+    assert_eq!(
+        events.len(),
+        stop.total_events,
+        "query_events and probe_stop disagree on the captured event count"
+    );
+
+    for e in &events {
+        assert_eq!(
+            e.event_type, "custom",
+            "trace_syscalls=false must not capture syscall events, got {e:?}"
+        );
+        let Some(custom) = e.data.get("Custom") else {
+            panic!("event carries no data.Custom payload: {e:?}");
+        };
+        assert_eq!(
+            custom.get("name").and_then(|n| n.as_str()),
+            Some("process_exit"),
+            "the only custom event a finished probe emits is process_exit, got {e:?}"
+        );
+        let exit_json = custom
+            .get("data_json")
+            .and_then(|d| d.as_str())
+            .unwrap_or_else(|| panic!("process_exit carries no data_json: {e:?}"));
+        let exit: serde_json::Value = serde_json::from_str(exit_json)
+            .unwrap_or_else(|err| panic!("data_json is not valid JSON ({err}): {exit_json:?}"));
+        assert_eq!(
+            exit.get("exit_code").and_then(|c| c.as_i64()),
+            Some(0),
+            "test_add must run to completion and exit 0, got {exit_json:?}"
+        );
+    }
 
     // Get execution summary
     let summary = client
@@ -390,7 +428,34 @@ async fn test_trace_syscalls_false_still_captures_events() {
         "✓ get_execution_summary: total_events={}",
         summary.total_events
     );
-    println!("  Response is valid");
+
+    // A third tool has to agree on the same number.
+    assert_eq!(
+        summary.total_events, stop.total_events as u64,
+        "execution_summary and probe_stop disagree on the captured event count"
+    );
+    assert_eq!(
+        summary
+            .event_counts_by_type
+            .iter()
+            .map(|c| c.count)
+            .sum::<u64>(),
+        summary.total_events,
+        "per-type counts must add up to total_events, got {:?}",
+        summary.event_counts_by_type
+    );
+    assert_eq!(
+        summary.thread_count, 1,
+        "test_add is a single-threaded fixture, got {}",
+        summary.thread_count
+    );
+    // Honest empty: with syscall tracing off there is no function attribution
+    // to rank, so this is empty by construction rather than by accident.
+    assert!(
+        summary.top_functions.is_empty(),
+        "no syscalls were traced, so no function can be attributed, got {:?}",
+        summary.top_functions
+    );
 
     client.shutdown().await.ok();
 }
@@ -443,14 +508,151 @@ async fn test_infinite_loop_stopped_by_probe_stop() {
     client.shutdown().await.ok();
 }
 
+/// One decoded `function_entry` / `function_exit` frame.
+#[derive(Debug)]
+struct Frame {
+    kind: String,
+    name: String,
+    invocation_id: String,
+    parent_invocation_id: Option<String>,
+    address: u64,
+    timestamp_ns: u64,
+}
+
+/// Asserts the invariants shared by every `track_function_frames=true`
+/// live-probe capture of the `test_function_frames` fixture family, and
+/// returns the decoded frames so each caller can apply its own load-address
+/// rule (see PS-FF1 vs PS-PIE1).
+///
+/// The fixture is deterministic — `main` calls `add` once and `fact(4)`,
+/// which recurses over n = 4, 3, 2, 1 — and the whole capture lands in ~1 ms,
+/// so the counts below are exact, not a tolerance.
+fn assert_frame_capture(events: &[TraceEvent], stop_total_events: usize) -> Vec<Frame> {
+    assert!(
+        !events.is_empty(),
+        "track_function_frames=true must stream FunctionEntry events onto the ExecutionLog"
+    );
+    assert_eq!(
+        events.len(),
+        stop_total_events,
+        "query_events and probe_stop disagree on the frame event count"
+    );
+
+    let frames: Vec<Frame> = events
+        .iter()
+        .map(|e| {
+            assert!(
+                e.event_type == "function_entry" || e.event_type == "function_exit",
+                "track_function_frames=true must capture frame events only, got {e:?}"
+            );
+            let Some(payload) = e.data.get("Function") else {
+                panic!("frame event carries no data.Function payload: {e:?}");
+            };
+            let text = |key: &str| {
+                payload
+                    .get(key)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_else(|| panic!("data.Function.{key} missing: {e:?}"))
+                    .to_string()
+            };
+            Frame {
+                kind: e.event_type.clone(),
+                name: text("name"),
+                invocation_id: text("invocation_id"),
+                parent_invocation_id: payload
+                    .get("parent_invocation_id")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
+                address: e
+                    .location
+                    .get("address")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or_else(|| panic!("location.address is not a u64: {e:?}")),
+                timestamp_ns: e.timestamp_ns,
+            }
+        })
+        .collect();
+
+    let entries: Vec<&Frame> = frames
+        .iter()
+        .filter(|f| f.kind == "function_entry")
+        .collect();
+    let exits: Vec<&Frame> = frames
+        .iter()
+        .filter(|f| f.kind == "function_exit")
+        .collect();
+    assert_eq!(
+        entries.len(),
+        exits.len(),
+        "every captured frame must also return: {frames:?}"
+    );
+
+    let names: Vec<&str> = entries.iter().map(|f| f.name.as_str()).collect();
+    for expected in ["_start", "main", "add", "fact"] {
+        assert!(
+            names.contains(&expected),
+            "no frame entry captured for {expected}, got {names:?}"
+        );
+    }
+    assert_eq!(
+        names.iter().filter(|n| **n == "fact").count(),
+        4,
+        "main calls fact(4) so n=4,3,2,1 must yield 4 fact entries, got {names:?}"
+    );
+
+    // Every entry is closed by the exit of the same invocation.
+    for e in &entries {
+        assert!(
+            exits.iter().any(|x| x.invocation_id == e.invocation_id),
+            "frame entry {} (invocation {}) never returned",
+            e.name,
+            e.invocation_id
+        );
+    }
+
+    // `add` is called from `main`, so the parent link must resolve.
+    let main_id = &entries
+        .iter()
+        .find(|f| f.name == "main")
+        .expect("main entry asserted present above")
+        .invocation_id;
+    let add = entries
+        .iter()
+        .find(|f| f.name == "add")
+        .expect("add entry asserted present above");
+    assert_eq!(
+        add.parent_invocation_id.as_deref(),
+        Some(main_id.as_str()),
+        "add must be recorded as a child frame of main, got {add:?}"
+    );
+
+    // Real events carry advancing timestamps — not one frozen stamp.
+    let first = frames.first().expect("non-empty asserted above");
+    let last = frames.last().expect("non-empty asserted above");
+    assert!(
+        last.timestamp_ns > first.timestamp_ns,
+        "frame timestamps must advance across the capture, got first={} last={}",
+        first.timestamp_ns,
+        last.timestamp_ns
+    );
+    assert!(
+        frames
+            .windows(2)
+            .all(|w| w[1].timestamp_ns >= w[0].timestamp_ns),
+        "frame timestamps must be non-decreasing in emission order"
+    );
+
+    frames
+}
+
 /// PS-FF1: test_track_function_frames_opt_in_live_probe
 ///
 /// m2-native-live-probe-frame-capture: confirm that `probe_start` accepts
 /// the new opt-in `track_function_frames=true` field on the spawned
-/// fixture and runs to completion without errors. Full `FunctionEntry`
-/// identity assertions live in `crates/chronos-native/tests/m2_function_frame_capture.rs`
-/// (chronos-native knows the ExecutionLog v2 layout); this UAT only
-/// exercises the MCP surface and proves the new field flows end-to-end.
+/// fixture and that the fixture yields real `FunctionEntry` events through
+/// the MCP surface. Full `FunctionEntry` identity assertions live in
+/// `crates/chronos-native/tests/m2_function_frame_capture.rs`
+/// (chronos-native knows the ExecutionLog v2 layout).
 #[tokio::test]
 async fn test_track_function_frames_opt_in_live_probe() {
     let fixture = McpSession::fixture_path("test_function_frames")
@@ -486,12 +688,9 @@ async fn test_track_function_frames_opt_in_live_probe() {
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // EventBus should not be empty if any FunctionEntry / syscall fired.
-    // We accept ≥ 0 because the fixture may legitimately produce 0 syscall
-    // events when track_function_frames takes over the capture loop and
-    // only emits function entries. The main assertion here is that the
-    // MCP surface accepted the new field, started the probe, and stopped
-    // cleanly.
+    // `track_function_frames=true` takes over the capture loop, so the log
+    // holds frame events only — no syscall events at all. `assert_frame_capture`
+    // pins that down.
     let filter = QueryFilter {
         limit: 100,
         offset: 0,
@@ -506,8 +705,24 @@ async fn test_track_function_frames_opt_in_live_probe() {
         "  events captured with track_function_frames=true: {}",
         events.len()
     );
-    // We accept ≥0 (probe_stop may have finalised the log); the strict
-    // FunctionEntry-on-ExecutionLog assertion lives in chronos-native.
+
+    // Measured: 14 events — 7 `function_entry` + 7 `function_exit` — for
+    // `_start`, `main`, `add` and 4 recursive `fact` calls. The old
+    // "the fixture may legitimately produce 0 events" comment was wrong:
+    // the capture is deterministic and always populated.
+    let frames = assert_frame_capture(&events, stop.total_events);
+
+    // This fixture is built `-no-pie`, so every frame address sits in the
+    // static image around 0x400000: the zero-bias fast path. PS-PIE1 covers
+    // the randomised one.
+    for f in &frames {
+        assert!(
+            (0x0040_0000..0x0100_0000).contains(&f.address),
+            "non-PIE fixture frame {} resolved to {:#x}, expected the static 0x400000 image",
+            f.name,
+            f.address
+        );
+    }
 
     client.shutdown().await.ok();
 }
@@ -517,8 +732,9 @@ async fn test_track_function_frames_opt_in_live_probe() {
 /// m2-pie-fixture-ci: same as PS-FF1 but on the PIE-flagged variant. Linux
 /// ASLR randomises the load base for the PIE binary on every exec, so the
 /// Int3Injector::compute_load_bias path is exercised (not the zero-bias
-/// fast-path). The capture should still produce ≥1 FunctionEntry event and
-/// run to completion without errors.
+/// fast-path). The capture must still produce the same 7 `FunctionEntry` /
+/// 7 `FunctionExit` events as the non-PIE variant, and every resolved address
+/// must carry the non-zero load bias.
 #[tokio::test]
 async fn test_track_function_frames_pie_fixture_yields_real_entries() {
     let fixture = McpSession::fixture_path("test_function_frames_pie")
@@ -568,8 +784,24 @@ async fn test_track_function_frames_pie_fixture_yields_real_entries() {
         "  events captured with PIE fixture + track_function_frames=true: {}",
         events.len()
     );
-    // Loose assertion: ≥0 (the capture may drain before query). The strict
-    // bias-must-be-nonzero assertion lives in chronos-native/tests.
+    // Measured: 14 events — 7 `function_entry` + 7 `function_exit` — same
+    // shape as the non-PIE variant, so the randomised load base does not
+    // cost us any frame. The old "loose assertion: ≥0" comment was wrong.
+    let frames = assert_frame_capture(&events, stop.total_events);
+
+    // The point of this variant: ASLR moves the image on every exec, so every
+    // frame address must sit far above the static 0x400000 base. That is what
+    // proves Int3Injector::compute_load_bias actually ran instead of the
+    // zero-bias fast-path exercised by PS-FF1.
+    for f in &frames {
+        assert!(
+            f.address >= 0x0100_0000,
+            "PIE fixture frame {} resolved to {:#x}, which is inside the non-PIE static image — \
+             the randomised load bias was not applied",
+            f.name,
+            f.address
+        );
+    }
 
     client.shutdown().await.ok();
 }
