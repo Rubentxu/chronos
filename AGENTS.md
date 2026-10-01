@@ -2149,3 +2149,65 @@ llamante puede distinguirlos. Y cuando el rechazo de un caso sea correcto pero
 su alcance no esté claro, escribir **por qué los otros quedan fuera**: un
 límite justificado se puede revisar; uno arbitrario se vuelve a ampliar sin
 querer dentro de seis meses.
+
+## Una métrica que no podía decir nada (2026-10-01)
+
+`CallGraphStats.max_observed_depth` estaba documentada como *«maximum observed
+call-stack depth»* y era **estructuralmente incapaz de devolver otro valor que
+cero**. No era un bug de aritmética ni un caso raro: el valor no podía salir
+bien nunca.
+
+La medición se hacía al final del recorrido:
+
+```rust
+for stack in stacks.values() {   // todas vacías
+    if !stack.is_empty() {        // nunca entra
+```
+
+Cada `FunctionExit` había hecho `pop` de su propio frame, así que al terminar el
+mapa por hilo solo contenía vectores vacíos. La rama nunca se tomaba, y el
+campo llevaba desde su creación devolviendo un cero que no significaba nada.
+
+### El detalle que hace que esto no fuera obvio
+
+**El corte por profundidad sí funcionaba.** El gate `stack.len() < max_depth`
+era lo que hacía que el grafo respetase el límite pedido. Es decir: la
+funcionalidad estaba, la métrica que la reflejaba no. Un test que comprobaba
+«el grafo tiene 2 aristas con límite 2» pasaba, y el campo de al lado seguía
+mintiendo sin que nada lo delatara.
+
+Por eso el doc del campo ahora especifica los dos ceros que antes se
+confundían: cero porque **el recorrido se cortó** y cero porque **la traza no
+tiene ningún `FunctionEntry`**. Sin esa distinción, un `0` no es interpretable.
+
+### El test que de verdad discrimina
+
+El caso anidado `a → b → c` da **3 con límite 3 y 2 con límite 2**. El segundo
+caso es el que importa: si el valor fuera fijo o si la métrica midiera otra
+cosa, el `2` no aparecería. Un test que solo afirmase `== 3` habría pasado
+también con un `return 3` en el sitio equivocado.
+
+Y el caso contrario —traza con solo `SyscallEnter`, que da 0— **no discrimina**,
+porque da 0 con y sin el arreglo. Se dejó escrito en su comentario que no
+discrimina, en vez de contarlo como cobertura.
+
+### Y una hipótesis que se cayó al verificar
+
+De los tres defectos que había dado por buenos, `ebpf_detached = false` con 128
+eventos de evidencia **no era ninguno**. El campo significa «hubo un adjunto eBPF
+que se desadjuntó» y se rellena desde `ebpf_was_attached`; estos fixtures se
+capturan con **ptrace**, así que no hubo eBPF que desadjuntar. Leerlo como «debe
+ser `true` porque hay evidencia» confunde el origen de los eventos con el
+mecanismo de captura.
+
+Era la segunda hipótesis que se caía al verificarla, después de las 26 tools
+fantasma de `tools_params.rs`. Las tres las propuso el mismo tipo de lectura: un
+valor que *parece* contradictorio, sin seguir de dónde sale. Corregirlas habría
+destruido información correcta.
+
+### La regla
+
+Un campo que devuelve siempre lo mismo no es un campo: es una constante con
+nombre de métrica. Y un número que parece contradecir lo que esperas puede
+estar perfectamente bien — **antes de "arreglar" un valor, encuentra quién lo
+escribe y para qué se usa**.
