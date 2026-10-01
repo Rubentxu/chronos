@@ -162,8 +162,17 @@ impl DebugReadService {
 
     /// Compare process state between two event IDs — variables, registers, memory.
     ///
-    /// When `event_id_a` or `event_id_b` is not found, the corresponding side is
-    /// treated as absent (zero-delta, no variables/registers compared).
+    /// Returns [`ServiceError::EventNotFound`] when either side names an event
+    /// that does not exist, and the id in the error is the offending one, so a
+    /// caller holding two ids can tell which was mistyped; `event_id_a` is
+    /// checked first, so when both are missing the error names it. A zero delta
+    /// is reserved for the answer it actually means: both events exist and
+    /// nothing changed between them. Those are different answers — reporting a
+    /// bad id as an unchanged comparison would claim to have compared two
+    /// events when at most one was ever captured, and would report every
+    /// variable on the real side as removed against a side that does not
+    /// exist. `get_variables` and `get_registers` already draw this distinction
+    /// for a single event; a two-sided comparison must not lose it.
     pub async fn diff(
         session_id: &str,
         event_id_a: u64,
@@ -174,6 +183,20 @@ impl DebugReadService {
         let engine = guard
             .get(session_id)
             .ok_or_else(|| ServiceError::SessionNotFound(session_id.to_string()))?;
+
+        // Exact-id lookup on both sides, not a range: an id that was never
+        // captured belongs to no frame and must not stand in for an empty
+        // side, or every variable on the other side reads as removed.
+        engine
+            .get_event_by_id(event_id_a)
+            .ok_or(ServiceError::EventNotFound {
+                event_id: event_id_a,
+            })?;
+        engine
+            .get_event_by_id(event_id_b)
+            .ok_or(ServiceError::EventNotFound {
+                event_id: event_id_b,
+            })?;
 
         // Get variables at both events
         let vars_a = engine.get_variables_at_event(event_id_a);
@@ -617,14 +640,117 @@ mod tests {
 
     // --- diff ---
 
+    /// Two ids that were never captured cannot be compared, and must not be
+    /// reported as "nothing changed between them".
     #[tokio::test]
-    async fn diff_both_events_missing_returns_zero_delta() {
+    async fn diff_both_events_missing_returns_event_not_found() {
         let map = register_engine();
         let engines = Mutex::new(map);
-        let result = DebugReadService::diff("s3", 9999, 8888, &engines)
+        let result = DebugReadService::diff("s3", 9999, 8888, &engines).await;
+        // `event_id_a` is validated first, so it is the id the error names.
+        assert!(
+            matches!(result, Err(ServiceError::EventNotFound { event_id: 9999 })),
+            "two ids that were never captured must be reported as not found, got {result:?}"
+        );
+    }
+
+    /// The caller asked two ids and only one is wrong. The error has to name
+    /// that one, otherwise the caller cannot tell which side to fix.
+    #[tokio::test]
+    async fn diff_second_event_missing_names_that_id() {
+        let map = register_engine();
+        let engines = Mutex::new(map);
+        let result = DebugReadService::diff("s3", 1, 9999, &engines).await;
+        assert!(
+            matches!(result, Err(ServiceError::EventNotFound { event_id: 9999 })),
+            "the missing side must be the id named in the error, got {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn diff_first_event_missing_names_that_id() {
+        let map = register_engine();
+        let engines = Mutex::new(map);
+        let result = DebugReadService::diff("s3", 9999, 1, &engines).await;
+        assert!(
+            matches!(result, Err(ServiceError::EventNotFound { event_id: 9999 })),
+            "the missing side must be the id named in the error, got {result:?}"
+        );
+    }
+
+    /// The case that must survive the fix: both events exist and neither
+    /// carries frame data. "Nothing changed" is then a real answer, and erroring
+    /// on it would leave a comparison of two real events unrepresentable.
+    #[tokio::test]
+    async fn diff_both_events_without_variables_is_a_zero_delta() {
+        let engine = QueryEngine::new(vec![
+            trace_event(
+                1,
+                50,
+                1,
+                EventType::FunctionEntry,
+                EventData::Function {
+                    name: "main".to_string(),
+                    signature: None,
+                    symbol_id: None,
+                    invocation_id: None,
+                    parent_invocation_id: None,
+                },
+            ),
+            trace_event(7, 700, 1, EventType::SyscallEnter, EventData::Empty),
+        ]);
+        let engines = Mutex::new(HashMap::from([("s3".to_string(), engine)]));
+
+        let result = DebugReadService::diff("s3", 1, 7, &engines)
             .await
-            .unwrap();
-        assert_eq!(result.timestamp_delta_ns, 0);
+            .expect("two existing events without frame data must compare, not error");
+        assert!(
+            result.variables_added.is_empty()
+                && result.variables_removed.is_empty()
+                && result.variables_changed.is_empty()
+                && result.registers_changed.is_empty(),
+            "no frame data on either side means nothing changed, got {result:?}"
+        );
+    }
+
+    /// Two existing events that do differ must still report the difference.
+    /// Guards the fix from over-correcting into a blanket rejection.
+    #[tokio::test]
+    async fn diff_two_existing_events_reports_the_change() {
+        let engine = QueryEngine::new(vec![
+            trace_event(
+                2,
+                150,
+                1,
+                EventType::VariableWrite,
+                EventData::Variable(VariableInfo::new(
+                    "x",
+                    "10",
+                    "i32",
+                    0x2000,
+                    chronos_domain::value::VariableScope::Local,
+                )),
+            ),
+            trace_event(
+                3,
+                250,
+                1,
+                EventType::VariableWrite,
+                EventData::Variable(VariableInfo::new(
+                    "y",
+                    "20",
+                    "i32",
+                    0x2008,
+                    chronos_domain::value::VariableScope::Local,
+                )),
+            ),
+        ]);
+        let engines = Mutex::new(HashMap::from([("s3".to_string(), engine)]));
+
+        let result = DebugReadService::diff("s3", 2, 3, &engines).await.unwrap();
+        assert_eq!(result.variables_removed, vec!["x".to_string()]);
+        assert_eq!(result.variables_added, vec!["y".to_string()]);
+        assert_eq!(result.timestamp_delta_ns, 100);
     }
 
     #[tokio::test]

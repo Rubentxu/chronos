@@ -240,8 +240,24 @@ async fn test_debug_diff_after_probe_stop() {
 }
 
 #[tokio::test]
-async fn test_debug_diff_out_of_range_events() {
-    // debug_diff with non-existent event IDs
+async fn test_debug_diff_out_of_range_events_are_rejected() {
+    // debug_diff with non-existent event IDs.
+    //
+    // This test used to assert the opposite: that the server answers an
+    // out-of-range id with a zero-delta snapshot. It noted that rejecting
+    // "would be nicer", then deferred the question and asserted the
+    // behaviour as it stood. The question has since been answered by the
+    // sibling tools — `debug_get_variables` and `debug_get_registers` already
+    // reject an id that was never captured, and their contract says why: a
+    // caller cannot tell a real absence from a typo by reading an empty
+    // answer. `debug_diff` was the one sibling that had not caught up.
+    //
+    // What settled it is worse than an unhelpful answer. With one real side
+    // and one typo, the zero-delta snapshot did not merely return nothing —
+    // it returned `variables_removed: ["x"]`, a variable removal attributed
+    // to an event that never existed. A consumer reading that concludes `x`
+    // disappeared from the trace. An error is visible; a fabricated removal
+    // is not.
     let fixture = McpSession::fixture_path("test_add")
         .expect("test_add fixture not found - run cargo build first");
 
@@ -275,40 +291,40 @@ async fn test_debug_diff_out_of_range_events() {
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Event ids that were never captured. The server does not reject them: it
-    // answers with a zero-delta snapshot, because an event that does not exist
-    // cannot have differed from anything. Whether rejecting would be nicer is a
-    // product question, but the behaviour under test is unambiguous, so it gets
-    // asserted rather than tolerated.
-    let result = client
+    // Both ids are out of range. The call must fail rather than describe a
+    // comparison that cannot exist.
+    let err = client
         .debug_diff(&session_id, 999999, 999998)
         .await
-        .expect("debug_diff answers out-of-range event ids with a zero-delta snapshot");
+        .expect_err("debug_diff must reject event ids that were never captured");
 
-    assert_eq!(
-        result.event_id_a, 999999,
-        "debug_diff echoed a different event_id_a"
-    );
-    assert_eq!(
-        result.event_id_b, 999998,
-        "debug_diff echoed a different event_id_b"
-    );
-
+    // The discrimination that carries the weight: the error names the
+    // offending id, so an agent holding two ids knows which one is wrong. A
+    // generic "not found" would leave it guessing.
+    let message = err.to_string();
     assert!(
-        result.variables_added.is_empty()
-            && result.variables_removed.is_empty()
-            && result.variables_changed.is_empty()
-            && result.registers_changed.is_empty(),
-        "events that do not exist cannot yield changes, got {:?}",
-        result
+        message.contains("999999"),
+        "the error must name the offending event id, got {message:?}"
+    );
+    assert!(
+        !message.contains("999998"),
+        "with both ids missing the error names event_id_a, checked first; it must not \
+         claim the other id is also the offender, got {message:?}"
     );
 
-    // The discriminating half. Compare with test_debug_diff_after_probe_stop,
-    // which asserts a strictly positive delta for two real events: the tool is
-    // genuinely reading the event stream, not answering every pair the same way.
-    assert_eq!(
-        result.timestamp_delta_ns, 0,
-        "event ids that were never captured have no time between them"
+    // The one-sided case, which is what the fabricated removal lived in: a
+    // real event paired with a typo. Event 0 exists in this session (see
+    // test_debug_diff_after_probe_stop), so any removal reported here would be
+    // invented. The error must name the missing side, not the real one.
+    let err_one_sided = client
+        .debug_diff(&session_id, 0, 999999)
+        .await
+        .expect_err("debug_diff must reject a pair whose second id was never captured");
+
+    let one_sided_message = err_one_sided.to_string();
+    assert!(
+        one_sided_message.contains("999999"),
+        "the error must name the id that is missing, got {one_sided_message:?}"
     );
 
     client.shutdown().await.ok();
