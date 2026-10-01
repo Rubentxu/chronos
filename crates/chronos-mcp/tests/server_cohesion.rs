@@ -6,7 +6,7 @@
 //! remain valid across future slice-B extraction.
 //!
 //! Every test here is fast (< 5s), uses the production composition path
-//! (`ChronosServer::new` / `with_toolset` / `inject_engine_for_testing`),
+//! (`ChronosServer::new` and the `CHRONOS_ACTIVE_TOOLSET` env contract),
 //! and is independent of `~/.local/share/chronos` on disk — set
 //! `CHRONOS_ALLOW_IN_MEMORY_FALLBACK=1` and `CHRONOS_EXECUTION_LOG_DIR` to
 //! a temp dir to make the whole file deterministic.
@@ -22,12 +22,18 @@
 //! single-threaded *per process* but the test binary still uses the
 //! default harness — call sites `lock()` at the top of every test.
 //!
+//! The lock serializes but does **not** isolate: a value one test writes
+//! stays in the environment for the next one, and the harness picks the
+//! order. Isolation therefore comes from each test pinning the values it
+//! depends on, not from the lock. See `unique_server`.
+//!
 //! See `H1.4-chronos-server-cohesion-map.md` §3 for the invariant table.
 
 use std::env;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use chronos_mcp::tools_params::ALL_TOOL_NAMES;
 use chronos_mcp::ChronosServer;
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -43,6 +49,14 @@ fn lock() -> std::sync::MutexGuard<'static, ()> {
 /// Build a server with a unique `CHRONOS_EXECUTION_LOG_DIR` so concurrent
 /// test runs do not collide. `CHRONOS_ALLOW_IN_MEMORY_FALLBACK=1` lets the
 /// in-memory store be used when the on-disk path is unavailable.
+///
+/// `CHRONOS_ACTIVE_TOOLSET` is pinned to `auto` rather than left alone. The
+/// suite lock serialises test *bodies* but does not restore env values, so a
+/// test that pins another profile (`inv_2`, `inv_3`, `inv_5b`, `inv_5c`) would
+/// otherwise leak that value into every later test that reaches the default
+/// profile — `inv_4` did exactly that, and failed whenever the harness ran it
+/// after `inv_3`. Pinning here makes each test hermetic with respect to both
+/// the host environment and the test execution order.
 fn unique_server() -> ChronosServer {
     let pid = std::process::id();
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -60,6 +74,7 @@ fn unique_server() -> ChronosServer {
     unsafe {
         env::set_var("CHRONOS_EXECUTION_LOG_DIR", &dir);
         env::set_var("CHRONOS_ALLOW_IN_MEMORY_FALLBACK", "1");
+        env::set_var("CHRONOS_ACTIVE_TOOLSET", "auto");
     }
     ChronosServer::new()
 }
@@ -125,57 +140,145 @@ fn inv_1_happy_path_try_new_succeeds_with_temp_root() {
 
 // =====================================================================
 // INV-2: `engines` and `projection_meta` mirror 1:1.
-// Asserted indirectly via `inject_engine_for_testing`, which is the
-// production's documented seam to populate an engine entry. The test
-// then calls `execution_log_registry()` to confirm the registry is
-// observable and `is_tool_listed` for a query tool — combined these
-// confirm a populated engine flows through to the MCP layer without
-// looking at private fields.
+//
+// Neither field is reachable from an integration test. The only writer of
+// `engines` a test could reach for, `inject_engine_for_testing`, carries
+// `#[cfg(test)]` in `src/server.rs` — and `#[cfg(test)]` compiles the
+// crate's *own* unit tests only, so it is structurally invisible from
+// `tests/`. This test therefore pins the property that *is* observable and
+// that the same class of regression breaks: the query tools gated on that
+// mirror are offered under exactly the toolset that lists them, and the
+// `capabilities` response agrees with the listing for every registered
+// tool.
+//
+// `auto` returns `true` for every name (server.rs:529), which would make
+// the comparison vacuous, so the profile is pinned to `native`.
 // =====================================================================
 
-#[tokio::test]
-async fn inv_2_session_cache_engines_and_projection_meta_mirror() {
+#[test]
+fn inv_2_session_cache_engines_and_projection_meta_mirror() {
     let _g = lock();
-    let server = unique_server();
-    // `is_tool_listed("execution_query")` is true iff a default engine
-    // exists *and* the projection_meta gate passes. We assert the listed
-    // state is stable before and after touching the engines map.
-    let before_exec_query = server.is_tool_listed("execution_query");
-    let before_events_read = server.is_tool_listed("events_read");
-    // Both must be present in the default toolset after `new`.
-    assert!(
-        before_events_read,
-        "events_read must be listed in the default toolset"
+    let dir = env::temp_dir().join(format!(
+        "chronos-h1.4-inv2-{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    // SAFETY: see `unique_server`. The profile is pinned rather than
+    // inherited: the host may export `CHRONOS_ACTIVE_TOOLSET`.
+    unsafe {
+        env::set_var("CHRONOS_ACTIVE_TOOLSET", "native");
+        env::set_var("CHRONOS_EXECUTION_LOG_DIR", &dir);
+        env::set_var("CHRONOS_ALLOW_IN_MEMORY_FALLBACK", "1");
+    }
+    let server = ChronosServer::new();
+
+    // `build_tool_availability` is what the `capabilities` response is made
+    // of. With no target language, a listed tool is available and an
+    // unlisted one is not, so the two must agree for every registered name.
+    let availability = server.build_tool_availability(ALL_TOOL_NAMES, None);
+    assert_eq!(
+        availability.len(),
+        ALL_TOOL_NAMES.len(),
+        "build_tool_availability must cover every registered tool name, \
+         got {} entries for {} names",
+        availability.len(),
+        ALL_TOOL_NAMES.len()
     );
-    // `execution_query` may or may not be listed depending on the
-    // configuration; we only assert it doesn't flip, i.e. INV-2 means
-    // engines+projection_meta are consistent at every step.
-    let _ = before_exec_query; // suppress unused warning if logic changes
-                               // (preserved intentionally for INV-2 trace)
-    drop_server(server, env::temp_dir()); // dir no-op
+
+    let disagreements: Vec<String> = ALL_TOOL_NAMES
+        .iter()
+        .filter_map(|name| {
+            let entry = availability
+                .get(*name)
+                .expect("registered name must be present");
+            let listed = server.is_tool_listed(name);
+            (entry.available != listed).then(|| {
+                format!(
+                    "{name}: listed={listed} but capabilities reports available={}",
+                    entry.available
+                )
+            })
+        })
+        .collect();
+    assert!(
+        disagreements.is_empty(),
+        "the capabilities availability map must agree with the toolset listing; \
+         disagreements: {disagreements:?}"
+    );
+
+    // If the profile boundary did not bite, the loop above proved nothing.
+    assert!(
+        !server.is_tool_listed("no_such_tool"),
+        "a name in no profile list must not be listed under 'native'"
+    );
+
+    drop_server(server, dir);
 }
 
 // =====================================================================
 // INV-3: `uprobe_injector` and `native_probe_factory` populated together.
 // The composition root (composition.rs) wires both at once. We confirm
-// the *observable* consequence: the tools that *use* those factories
-// are listed.
+// the *observable* consequence: the tools that *use* those factories are
+// listed.
+//
+// The profile is pinned to `native` because under `auto` `is_tool_listed`
+// returns `true` for every name, which would turn the coupling assertion
+// below into a tautology. The probe names are exactly the `native` probe
+// family in `tools_params::NATIVE_TOOL_NAMES`.
 // =====================================================================
 
 #[test]
 fn inv_3_probe_factories_populated_together() {
     let _g = lock();
-    let server = unique_server();
-    // The `session_start` tool family uses uprobe_injector +
-    // native_probe_factory. If both are present (default composition),
-    // `session_start` is listed; if either is missing, it would not be
-    // listed (or it would emit a typed `CapabilityUnavailable`).
+    let dir = env::temp_dir().join(format!(
+        "chronos-h1.4-inv3-{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    // SAFETY: see `unique_server`. The profile is pinned rather than
+    // inherited: the host may export `CHRONOS_ACTIVE_TOOLSET`.
+    unsafe {
+        env::set_var("CHRONOS_ACTIVE_TOOLSET", "native");
+        env::set_var("CHRONOS_EXECUTION_LOG_DIR", &dir);
+        env::set_var("CHRONOS_ALLOW_IN_MEMORY_FALLBACK", "1");
+    }
+    let server = ChronosServer::new();
+
+    // `session_start` is the tool that consumes uprobe_injector +
+    // native_probe_factory. The probe_* family is wired by the same
+    // composition root. Were either factory missing, composition would drop
+    // the two families independently and the listing would diverge — which
+    // is precisely what INV-3 forbids.
+    let session_start_listed = server.is_tool_listed("session_start");
     assert!(
-        server.is_tool_listed("session_start"),
-        "session_start tool must be listed iff uprobe_injector + native_probe_factory are both present"
+        session_start_listed,
+        "session_start must be listed in the 'native' profile, where it is a member"
     );
-    let _ = server.active_toolset(); // touches the gating field without panicking
-    drop_server(server, env::temp_dir());
+    for tool in [
+        "probe_start",
+        "probe_stop",
+        "probe_drain",
+        "probe_drain_log",
+        "probe_compaction_metrics",
+        "probe_status",
+    ] {
+        assert_eq!(
+            server.is_tool_listed(tool),
+            session_start_listed,
+            "{tool} and session_start are wired by the same uprobe_injector + \
+             native_probe_factory pair, so their listing must agree"
+        );
+    }
+
+    // The boundary must bite, else the loop above is vacuous.
+    assert!(
+        !server.is_tool_listed("no_such_tool"),
+        "a name in no profile list must not be listed under 'native'"
+    );
+
+    drop_server(server, dir);
 }
 
 // =====================================================================
