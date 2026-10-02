@@ -11,10 +11,16 @@ const CHUNK_SIZE_NS: u64 = 10_000_000;
 ///
 /// Used for queries like "what happened between T1 and T2?" or
 /// "what was the state at timestamp T?"
+///
+/// The value is a **list**, not a single id: timestamps are not unique. Two
+/// threads can be observed within the same nanosecond, and the clock is not
+/// the event's identity. Keying by timestamp and holding one id made the
+/// second insert overwrite the first, so a queried event silently vanished
+/// and the indexed path disagreed with the unindexed scan.
 #[derive(Debug, Clone, Default)]
 pub struct TemporalIndex {
-    /// Timestamp → event ID.
-    entries: BTreeMap<TimestampNs, EventId>,
+    /// Timestamp → every event ID observed at that timestamp, in push order.
+    entries: BTreeMap<TimestampNs, Vec<EventId>>,
     /// Precomputed chunk boundaries for fast range seeks.
     chunks: Vec<TimeChunk>,
     /// Whether chunks need to be rebuilt.
@@ -41,8 +47,12 @@ impl TemporalIndex {
     }
 
     /// Insert a timestamp → event ID mapping.
+    ///
+    /// A timestamp already present gains a second id rather than losing the
+    /// first: nanosecond resolution does not make timestamps unique, and
+    /// dropping an event here made it undiscoverable for every later query.
     pub fn insert(&mut self, timestamp: TimestampNs, event_id: EventId) {
-        self.entries.insert(timestamp, event_id);
+        self.entries.entry(timestamp).or_default().push(event_id);
         self.dirty = true;
     }
 
@@ -59,7 +69,7 @@ impl TemporalIndex {
         let mut first_event_id = None;
         let mut event_count = 0u64;
 
-        for (&ts, &eid) in &self.entries {
+        for (&ts, ids) in &self.entries {
             if ts.get() >= current_end {
                 // Flush current chunk
                 if let Some(first_eid) = first_event_id {
@@ -74,14 +84,16 @@ impl TemporalIndex {
                 // Advance to the chunk containing this timestamp
                 current_start = (ts.get() / CHUNK_SIZE_NS) * CHUNK_SIZE_NS;
                 current_end = current_start + CHUNK_SIZE_NS;
-                first_event_id = Some(eid);
+                first_event_id = ids.first().copied();
                 event_count = 0;
             }
 
             if first_event_id.is_none() {
-                first_event_id = Some(eid);
+                first_event_id = ids.first().copied();
             }
-            event_count += 1;
+            // Count every event at this timestamp, not every timestamp, so
+            // the chunk census matches the number of events actually indexed.
+            event_count += ids.len() as u64;
         }
 
         // Flush last chunk
@@ -110,12 +122,17 @@ impl TemporalIndex {
         }
         self.entries
             .range(start..end)
-            .map(|(_, &eid)| eid)
+            .flat_map(|(_, ids)| ids.iter().copied())
             .collect()
     }
 
     /// Find the event ID closest to a given timestamp.
     /// Returns (timestamp, event_id) of the nearest event.
+    ///
+    /// When several events share the nearest timestamp, the **last** one in
+    /// push order wins. That is the id the old single-valued map used to
+    /// hold, so the observable answer is unchanged, and for "what was the
+    /// state at T" the latest event at T is the informative one.
     pub fn nearest(&self, target: TimestampNs) -> Option<(TimestampNs, EventId)> {
         if self.entries.is_empty() {
             return None;
@@ -126,18 +143,25 @@ impl TemporalIndex {
         // Get the entry before target
         let before = self.entries.range(..=target).next_back();
 
+        // The last id of a timestamp's list is the one this method reports.
+        let pick = |v: &Vec<EventId>| v.last().copied();
+
         match (before, after) {
-            (Some((ts_before, eid_before)), Some((ts_after, eid_after))) => {
+            (Some((ts_before, ids_before)), Some((ts_after, ids_after))) => {
+                let (Some(eid_before), Some(eid_after)) = (pick(ids_before), pick(ids_after))
+                else {
+                    return None;
+                };
                 let dist_before = target.get() - ts_before.get();
                 let dist_after = ts_after.get() - target.get();
                 if dist_before <= dist_after {
-                    Some((*ts_before, *eid_before))
+                    Some((*ts_before, eid_before))
                 } else {
-                    Some((*ts_after, *eid_after))
+                    Some((*ts_after, eid_after))
                 }
             }
-            (Some((ts, eid)), None) => Some((*ts, *eid)),
-            (None, Some((ts, eid))) => Some((*ts, *eid)),
+            (Some((ts, ids)), None) => pick(ids).map(|eid| (*ts, eid)),
+            (None, Some((ts, ids))) => pick(ids).map(|eid| (*ts, eid)),
             (None, None) => None,
         }
     }
@@ -153,8 +177,11 @@ impl TemporalIndex {
     }
 
     /// Returns the total number of indexed events.
+    ///
+    /// Counts events, not distinct timestamps. The builder counts pushes, and
+    /// the two silently disagreed whenever two events shared a nanosecond.
     pub fn len(&self) -> usize {
-        self.entries.len()
+        self.entries.values().map(Vec::len).sum()
     }
 
     /// Returns true if the index is empty.
@@ -198,6 +225,76 @@ mod tests {
         assert_eq!(
             index.range(TimestampNs::from(100), TimestampNs::from(300)),
             vec![1, 2]
+        );
+    }
+
+    /// The discriminating case. Nanosecond resolution does not make a
+    /// timestamp unique — two threads can be observed in the same nanosecond.
+    /// With a single id per timestamp the second insert overwrote the first,
+    /// so `range` reported one event where the unindexed scan reports two, and
+    /// `len` under-counted. Both must now account for every event.
+    #[test]
+    fn colliding_timestamps_keep_every_event() {
+        let mut index = TemporalIndex::new();
+        index.insert(TimestampNs::from(100), 1);
+        index.insert(TimestampNs::from(100), 2);
+        index.insert(TimestampNs::from(200), 3);
+
+        let mut found = index.range(TimestampNs::from(0), TimestampNs::from(300));
+        found.sort_unstable();
+        assert_eq!(
+            found,
+            vec![1, 2, 3],
+            "a shared timestamp must contribute every event, not just the last insert"
+        );
+        assert_eq!(
+            index.len(),
+            3,
+            "len counts events, so it must agree with the builder's push count"
+        );
+    }
+
+    /// The chunk census must count events too, or `TimeChunk::event_count`
+    /// under-reports exactly where collisions happen.
+    #[test]
+    fn colliding_timestamps_are_counted_in_chunks() {
+        let mut index = TemporalIndex::new();
+        index.insert(TimestampNs::from(100), 1);
+        index.insert(TimestampNs::from(100), 2);
+        index.insert(TimestampNs::from(200), 3);
+        index.build_chunks();
+
+        let counted: u64 = index.chunks.iter().map(|c| c.event_count).sum();
+        assert_eq!(counted, 3, "chunk census must count events, not timestamps");
+    }
+
+    /// `nearest` keeps reporting the last event at the nearest timestamp,
+    /// which is what the old single-valued map held.
+    #[test]
+    fn nearest_keeps_reporting_the_last_event_at_a_timestamp() {
+        let mut index = TemporalIndex::new();
+        index.insert(TimestampNs::from(100), 1);
+        index.insert(TimestampNs::from(100), 7);
+        index.insert(TimestampNs::from(200), 3);
+
+        assert_eq!(
+            index.nearest(TimestampNs::from(100)),
+            Some((TimestampNs::from(100), 7))
+        );
+    }
+
+    /// The ordered, collision-free path must be untouched.
+    #[test]
+    fn distinct_timestamps_still_behave() {
+        let mut index = TemporalIndex::new();
+        index.insert(TimestampNs::from(100), 1);
+        index.insert(TimestampNs::from(200), 2);
+        index.insert(TimestampNs::from(300), 3);
+
+        assert_eq!(index.len(), 3);
+        assert_eq!(
+            index.range(TimestampNs::from(150), TimestampNs::from(350)),
+            vec![2, 3]
         );
     }
 
