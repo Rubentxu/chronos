@@ -20,9 +20,9 @@
 //!   a single write transaction with internal deduplication, ensuring atomicity under
 //!   concurrent writes of identical content.
 //!
-//! - **Background sessions**: The `background_sessions` map tracks pending sessions
-//!   (as empty placeholders) until completion, at which point they're added to
-//!   `engines` and removed from the map.
+//! - **Background sessions**: none. The placeholder map once reserved for
+//!   pending background sessions was removed because no code path ever read or
+//!   mutated it.
 
 // BrowserAdapter / CaptureConfig / CaptureSession are used by the in-file
 // `#[cfg(test)] mod tests` block; the lib code itself delegates everything
@@ -136,12 +136,6 @@ impl Default for ResourceLimits {
     }
 }
 
-/// Type alias for background session placeholder storage.
-/// Background sessions store an empty placeholder here while running. Once complete,
-/// the session is moved to `engines` and becomes queryable. The placeholder is kept
-/// in this map to track which sessions are still pending completion.
-type BackgroundSessionEvents = Arc<std::sync::Mutex<Vec<TraceEvent>>>;
-
 /// Empty parameter type for tools that take no arguments.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NoParams {}
@@ -181,26 +175,6 @@ pub struct ChronosServer {
     /// consume the port; `store` stays for non-port consumers (probe
     /// persistence, etc.).
     archive: Arc<dyn chronos_domain::ports::session::SessionArchive>,
-    /// Active background sessions: session_id → events vector.
-    /// Tracks pending sessions that are still running in background threads.
-    /// Uses `std::sync::Mutex` (not tokio) intentionally: all lock holders are
-    /// sync, locks are held only for short non-blocking operations, and std Mutex
-    /// is faster than tokio Mutex for sub-microsecond critical sections.
-    /// INVARIANT: Never hold this lock across an `.await` point.
-    ///
-    /// **ponytail:background-sessions-dead** — The field is allocated at
-    /// construction but never read or mutated after. The module-level doc
-    /// (server.rs:23) still describes the field as if it tracks pending
-    /// sessions, but no code path inserts or removes entries. Originally
-    /// intended for a deferred "session_start async mode" feature (m8+)
-    /// that landed elsewhere (`engines` map directly). The gap is tracked
-    /// as `CAP-GAP-CHRONOS-MCP-DEAD-CODE-BACKGROUND-SESSIONS` in
-    /// `docs/architecture/H1.4-chronos-server-cohesion-map.md` §6.2.
-    /// Resolution options: (a) wire it to the `engines` map for the
-    /// eventual streaming-warmup path, (b) remove it cleanly once the
-    /// module doc is updated. Decision deferred per H1.4 slice A scope.
-    #[allow(dead_code)]
-    background_sessions: Arc<std::sync::Mutex<HashMap<String, BackgroundSessionEvents>>>,
     /// Sessions with connected debug clients (Python debugpy or JS Node.js inspector).
     /// Used to track which sessions have active DAP/CDP connections.
     connected_sessions: Arc<std::sync::Mutex<HashSet<String>>>,
@@ -404,7 +378,6 @@ impl ChronosServer {
             lifecycle_store,
             counterexample_repository,
             archive,
-            background_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
             connected_sessions: Arc::new(std::sync::Mutex::new(HashSet::new())),
             active_session: Arc::new(Mutex::new(None)),
             tripwire_manager: Arc::new(TripwireManager::new()),
@@ -461,7 +434,6 @@ impl ChronosServer {
                     lifecycle_store,
                     counterexample_repository,
                     archive,
-                    background_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
                     connected_sessions: Arc::new(std::sync::Mutex::new(HashSet::new())),
                     active_session: Arc::new(Mutex::new(None)),
                     tripwire_manager: Arc::new(TripwireManager::new()),
