@@ -208,6 +208,38 @@ impl ChronosDiffService {
             .load_session(&input.session_b)
             .map_err(|e| map_load_error(e, &input.session_b))?;
 
+        // A session that loaded fewer events than its own record declares is
+        // incomplete, and the diff engine cannot tell an incomplete session
+        // from a short one: it hashes whatever it is handed. Comparing two
+        // truncated sessions produced a confident "highly similar (100%)"
+        // with nothing behind it. Same root cause as a bundle whose events do
+        // not match its `events_count`: the record states a quantity that was
+        // never checked against what was actually read.
+        for (meta, events, id) in [
+            (&meta_a, &events_a, &input.session_a),
+            (&meta_b, &events_b, &input.session_b),
+        ] {
+            if meta.event_count != events.len() {
+                return Err(ServiceError::SessionIncomplete {
+                    session_id: id.clone(),
+                    declared: meta.event_count,
+                    loaded: events.len(),
+                });
+            }
+        }
+
+        // With no events on either side there is no set difference to compute.
+        // The engine's `similarity_pct` divides by the number of distinct
+        // events compared and answers 100.0 when that number is zero, which
+        // the summary below rendered as "highly similar, most events match".
+        // Nothing was matched; say so instead of scoring it.
+        if events_a.is_empty() && events_b.is_empty() {
+            return Err(ServiceError::NothingToCompare {
+                session_a: input.session_a,
+                session_b: input.session_b,
+            });
+        }
+
         let report = ctx.engine.compare(
             &input.session_a,
             &input.session_b,
@@ -353,6 +385,137 @@ mod tests {
             reader: adapter,
             engine,
         }
+    }
+
+    /// A session that loaded fewer events than its record declares is
+    /// incomplete, and the diff engine cannot tell that from a genuinely short
+    /// session: it hashes whatever it is handed and reports on the result.
+    ///
+    /// Before this check the engine computed `similarity_pct` over the events
+    /// that survived, so two truncated sessions came back as a confident
+    /// "highly similar (100%)" with nothing behind the number.
+    ///
+    /// The state is real, not simulated: `SessionStore::save_session` stores
+    /// the metadata it is given and does not recompute `event_count`, which is
+    /// exactly how a session truncated by loss becomes indistinguishable from a
+    /// short one.
+    #[test]
+    fn compare_refuses_a_session_whose_events_are_fewer_than_it_declares() {
+        let store = empty_arc_store();
+        // Stores three events but claims ninety-nine.
+        store
+            .save_session(
+                SessionMetadata {
+                    session_id: "truncated-a".to_string(),
+                    created_at: 0,
+                    language: "native".to_string(),
+                    target: "/bin/test".to_string(),
+                    event_count: 99,
+                    duration_ms: 100,
+                    tail_sealed: false,
+                    sealed_at: None,
+                },
+                &[
+                    make_event(0, "main"),
+                    make_event(1, "main"),
+                    make_event(2, "helper"),
+                ],
+            )
+            .unwrap();
+        save_session(&store, "intact-b", &["main", "main", "helper"]);
+        let ctx = make_ctx_with_arc(std::sync::Arc::clone(&store));
+
+        match ChronosDiffService::compare_sessions(
+            &ctx,
+            CompareSessionsInput {
+                session_a: "truncated-a".into(),
+                session_b: "intact-b".into(),
+            },
+        ) {
+            Err(ServiceError::SessionIncomplete {
+                session_id,
+                declared,
+                loaded,
+            }) => {
+                assert_eq!(session_id, "truncated-a");
+                assert_eq!(declared, 99);
+                assert_eq!(loaded, 3);
+            }
+            other => panic!(
+                "a session missing events must not be compared as if whole, got {other:?}"
+            ),
+        }
+
+        // Control: the two sessions carry the same three events, so with an
+        // honest count the comparison succeeds. Without it, the test above
+        // could be passing because the sessions simply differ.
+        save_session(&store, "intact-a", &["main", "main", "helper"]);
+        let ok = ChronosDiffService::compare_sessions(
+            &ctx,
+            CompareSessionsInput {
+                session_a: "intact-a".into(),
+                session_b: "intact-b".into(),
+            },
+        );
+        assert!(ok.is_ok(), "intact sessions must still compare: {ok:?}");
+    }
+
+    /// Two sessions with no events have no set difference to compute, and the
+    /// engine answers `100.0` when nothing was compared — a value the summary
+    /// rendered as "highly similar, most events match". The honest answer to
+    /// "do these match" over no data is that there was nothing to compare.
+    #[test]
+    fn compare_refuses_two_empty_sessions_instead_of_reporting_a_perfect_match() {
+        let store = empty_arc_store();
+        for id in ["empty-a", "empty-b"] {
+            store
+                .save_session(
+                    SessionMetadata {
+                        session_id: id.to_string(),
+                        created_at: 0,
+                        language: "native".to_string(),
+                        target: "/bin/test".to_string(),
+                        event_count: 0,
+                        duration_ms: 100,
+                        tail_sealed: false,
+                        sealed_at: None,
+                    },
+                    &[],
+                )
+                .unwrap();
+        }
+        let ctx = make_ctx_with_arc(std::sync::Arc::clone(&store));
+
+        match ChronosDiffService::compare_sessions(
+            &ctx,
+            CompareSessionsInput {
+                session_a: "empty-a".into(),
+                session_b: "empty-b".into(),
+            },
+        ) {
+            Err(ServiceError::NothingToCompare { session_a, session_b }) => {
+                assert_eq!(session_a, "empty-a");
+                assert_eq!(session_b, "empty-b");
+            }
+            Ok(result) => panic!(
+                "two empty sessions must not score as a perfect match, got \
+                 similarity {} with summary {:?}",
+                result.similarity_pct, result.summary
+            ),
+            other => panic!("unexpected outcome: {other:?}"),
+        }
+
+        // Control: one empty against one populated is a real comparison, and
+        // the empty side is simply a session whose events are all unique to it.
+        save_session(&store, "populated", &["main", "helper"]);
+        let ok = ChronosDiffService::compare_sessions(
+            &ctx,
+            CompareSessionsInput {
+                session_a: "empty-a".into(),
+                session_b: "populated".into(),
+            },
+        );
+        assert!(ok.is_ok(), "an empty side must still compare: {ok:?}");
     }
 
     #[test]

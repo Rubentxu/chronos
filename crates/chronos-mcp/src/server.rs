@@ -1161,6 +1161,15 @@ impl ChronosServer {
                     "internal error: unexpected memory error",
                 )));
             }
+            // Session integrity / comparison cannot occur from list_threads,
+            // but the enum gained two variants and the match must remain
+            // exhaustive. They are answered on their own tool instead.
+            Err(ServiceError::SessionIncomplete { .. })
+            | Err(ServiceError::NothingToCompare { .. }) => {
+                return Ok(CallToolResult::error(text_content(
+                    "internal error: unexpected session comparison error",
+                )));
+            }
             // REC-C3.3.3 (Tren B slice G): SessionRunning/SessionStopped
             // cannot occur from list_threads, but the enum gained two
             // variants and the match must remain exhaustive.

@@ -37,6 +37,32 @@ pub enum ServiceError {
     #[error("session '{0}' has no events to save")]
     EmptySession(String),
 
+    /// A session loaded fewer events than its own record declares.
+    ///
+    /// `SessionMetadata::event_count` is "total number of events stored",
+    /// so a session whose loaded events do not match that number is
+    /// incomplete, and a comparison built on it is a comparison of damage.
+    /// Reporting the mismatch beats reporting the truncated side as the truth.
+    #[error("session '{session_id}' declares {declared} event(s) but {loaded} could be loaded")]
+    SessionIncomplete {
+        /// The session whose declared and loaded counts disagree.
+        session_id: String,
+        /// What the session record claims to hold.
+        declared: usize,
+        /// What was actually loaded.
+        loaded: usize,
+    },
+
+    /// Both sessions to compare hold no events, so there is nothing to
+    /// compare. Distinct from two sessions that genuinely match.
+    #[error("cannot compare sessions '{session_a}' and '{session_b}': neither has any events, so there is nothing to compare")]
+    NothingToCompare {
+        /// First session id.
+        session_a: String,
+        /// Second session id.
+        session_b: String,
+    },
+
     /// SessionStore::save_session failed.
     #[error("save failed: {0}")]
     SaveFailed(String),
