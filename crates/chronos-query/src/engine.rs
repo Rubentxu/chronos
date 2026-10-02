@@ -160,13 +160,20 @@ impl QueryEngine {
         );
         // The extend above is a pure append, so the order is broken
         // whenever an incoming id is not greater than the current
-        // maximum. That happens in practice when a second capture run
-        // reusing the same session id re-mints ids from 1: ids the
-        // stored run dropped are absent here, so they are backfilled
-        // below the maximum. Unsorted, `get_event_by_id`'s binary search
+        // maximum. Unsorted, `get_event_by_id`'s binary search
         // returns None for events that exist — no panic, just a missing
         // answer. Re-sort before rebuilding the indices (which scan the
         // vec linearly and are therefore order-independent).
+        //
+        // An earlier version of this comment justified the sort with a
+        // "second capture run reusing the same session id re-mints ids
+        // from 1". That scenario is not reachable: every capture run
+        // mints a fresh session UUID, so two runs never share a session
+        // and their id spaces cannot overlap. The sort stays — it is
+        // still the invariant `get_event_by_id` requires, and callers can
+        // reach this method from outside — but the stated reason was
+        // wrong, and a comment that names an impossible cause stops being
+        // checked.
         self.events.sort_by_key(|e| e.event_id);
         self.rebuild_indices();
     }

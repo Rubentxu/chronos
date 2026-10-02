@@ -40,6 +40,20 @@ pub struct InvocationTracker {
     symbols_by_address: HashMap<u64, (chronos_domain::SymbolId, String, u64)>,
     /// Per-thread call stack. Most recent invocation at the end.
     per_thread_stack: HashMap<ThreadId, Vec<ActiveInvocation>>,
+    /// Next `event_id` to hand out, and the reason this field exists.
+    ///
+    /// `TraceEvent::event_id` is documented as the "monotonically increasing
+    /// event identifier within a session". These events used to take their id
+    /// from the clock instead of a counter, which cannot satisfy that: a single
+    /// `on_sigtrap` receives one `mono_ns` and emits an exit for every frame it
+    /// pops *and* an entry, so every one of those events carried the same id;
+    /// `pop_all_as_exit` closes every open frame with one shared timestamp for
+    /// the same reason; and `flush_incomplete_on_exit` reused the frame's
+    /// `entry_monotonic_ns`, which is by construction the id its own
+    /// `FunctionEntry` already took. Duplicate ids are not cosmetic — the query
+    /// engine's `merge` drops the later event, so a frame and its own closure
+    /// could be silently discarded from the session.
+    next_event_id: u64,
 }
 
 impl InvocationTracker {
@@ -60,7 +74,19 @@ impl InvocationTracker {
         Some(Self {
             symbols_by_address,
             per_thread_stack: HashMap::new(),
+            next_event_id: 0,
         })
+    }
+
+    /// Mint the next `event_id` from the session counter.
+    ///
+    /// Callers that are already holding a borrow of `self.per_thread_stack`
+    /// cannot call this — hence the pattern of taking the counter into a local,
+    /// minting from it, and writing it back before returning.
+    fn alloc_event_id(next: &mut u64) -> u64 {
+        let id = *next;
+        *next = next.wrapping_add(1);
+        id
     }
 
     /// Number of tracked addresses (test/debug accessor).
@@ -109,6 +135,11 @@ impl InvocationTracker {
         mono_ns: u64,
     ) -> Vec<TraceEvent> {
         let mut events = Vec::new();
+
+        // The loops below already hold a mutable borrow of
+        // `self.per_thread_stack`, so the session counter is taken into a local
+        // and written back on every exit path.
+        let mut next_event_id = self.next_event_id;
 
         // Look up the symbol BEFORE taking the mutable borrow on per_thread_stack
         // to avoid a borrow conflict between `entry()` and `lookup()`.
@@ -172,7 +203,12 @@ impl InvocationTracker {
             // Case (a) unwinding past a frame, or case (b) closing the previous
             // activation of a recursively re-entered function.
             let active = stack.pop().unwrap();
-            events.push(make_function_exit(&active, tid, mono_ns));
+            events.push(make_function_exit(
+                &active,
+                tid,
+                Self::alloc_event_id(&mut next_event_id),
+                mono_ns,
+            ));
         }
 
         // 2. If ip matches a known function entry, push and emit entry.
@@ -191,6 +227,7 @@ impl InvocationTracker {
             events.push(make_function_entry(
                 tid,
                 ip,
+                Self::alloc_event_id(&mut next_event_id),
                 mono_ns,
                 name,
                 symbol_id,
@@ -199,6 +236,7 @@ impl InvocationTracker {
             ));
         }
 
+        self.next_event_id = next_event_id;
         events
     }
 
@@ -221,14 +259,21 @@ impl InvocationTracker {
     /// unwinding callers that were still running.
     pub fn pop_all_as_exit(&mut self, mono_ns: u64) -> Vec<TraceEvent> {
         let mut out = Vec::new();
+        let mut next_event_id = self.next_event_id;
         let tids: Vec<ThreadId> = self.per_thread_stack.keys().copied().collect();
         for tid in tids {
             if let Some(stack) = self.per_thread_stack.get_mut(&tid) {
                 while let Some(active) = stack.pop() {
-                    out.push(make_function_exit(&active, tid, mono_ns));
+                    out.push(make_function_exit(
+                        &active,
+                        tid,
+                        Self::alloc_event_id(&mut next_event_id),
+                        mono_ns,
+                    ));
                 }
             }
         }
+        self.next_event_id = next_event_id;
         out
     }
 
@@ -240,13 +285,14 @@ impl InvocationTracker {
     /// process exit without a paired FunctionExit for the active call.
     pub fn flush_incomplete_on_exit(&mut self) -> Vec<TraceEvent> {
         let mut out = Vec::new();
+        let mut next_event_id = self.next_event_id;
         // Iterate threads in deterministic order for test reproducibility.
         let tids: Vec<ThreadId> = self.per_thread_stack.keys().copied().collect();
         for tid in tids {
             if let Some(stack) = self.per_thread_stack.get_mut(&tid) {
                 while let Some(active) = stack.pop() {
                     out.push(TraceEvent {
-                        event_id: active.entry_monotonic_ns,
+                        event_id: Self::alloc_event_id(&mut next_event_id),
                         timestamp_ns: TimestampNs::from_ns(active.entry_monotonic_ns),
                         thread_id: tid,
                         event_type: EventType::InvocationIncomplete,
@@ -266,6 +312,7 @@ impl InvocationTracker {
                 }
             }
         }
+        self.next_event_id = next_event_id;
         out
     }
 }
@@ -285,6 +332,7 @@ impl FromNs for TimestampNs {
 fn make_function_entry(
     tid: ThreadId,
     ip: u64,
+    event_id: u64,
     mono_ns: u64,
     name: String,
     symbol_id: chronos_domain::SymbolId,
@@ -292,7 +340,7 @@ fn make_function_entry(
     parent: Option<InvocationId>,
 ) -> TraceEvent {
     TraceEvent {
-        event_id: mono_ns,
+        event_id,
         timestamp_ns: TimestampNs::from_ns(mono_ns),
         thread_id: tid,
         event_type: EventType::FunctionEntry,
@@ -312,9 +360,14 @@ fn make_function_entry(
 }
 
 /// Build a FunctionExit TraceEvent from an ActiveInvocation.
-fn make_function_exit(active: &ActiveInvocation, tid: ThreadId, mono_ns: u64) -> TraceEvent {
+fn make_function_exit(
+    active: &ActiveInvocation,
+    tid: ThreadId,
+    event_id: u64,
+    mono_ns: u64,
+) -> TraceEvent {
     TraceEvent {
-        event_id: mono_ns,
+        event_id,
         timestamp_ns: TimestampNs::from_ns(mono_ns),
         thread_id: tid,
         event_type: EventType::FunctionExit,
@@ -344,6 +397,7 @@ impl InvocationTracker {
         Self {
             symbols_by_address: symbols,
             per_thread_stack: HashMap::new(),
+            next_event_id: 0,
         }
     }
 
@@ -870,5 +924,81 @@ mod tests {
 
     fn exit_id(e: &TraceEvent) -> InvocationId {
         entry_id(e)
+    }
+
+    /// `TraceEvent::event_id` must be unique and increasing within the
+    /// session — that is what the field is documented to be, and what the
+    /// query engine's `merge` relies on when it drops an id it has already
+    /// seen.
+    ///
+    /// The cases below do not depend on clock resolution at all: the clock is
+    /// passed in explicitly, so feeding the same `mono_ns` twice is a legal
+    /// input, and one `on_sigtrap` legitimately emits several events at once.
+    /// Every collision here was guaranteed by construction before the fix:
+    ///
+    /// - a recursive re-entry emits an exit and an entry from one `mono_ns`;
+    /// - `pop_all_as_exit` closes every open frame with one shared timestamp;
+    /// - `flush_incomplete_on_exit` reused the frame's `entry_monotonic_ns`,
+    ///   which is the very id its `FunctionEntry` already took.
+    #[test]
+    fn event_ids_are_unique_and_increasing_across_every_emitting_path() {
+        fn ids(events: &[TraceEvent]) -> Vec<u64> {
+            events.iter().map(|e| e.event_id).collect()
+        }
+
+        let mut symbols = HashMap::new();
+        symbols.insert(0x1000, sym("factorial", 0x100));
+        symbols.insert(0x2000, sym("helper", 0x100));
+        let mut t = InvocationTracker::from_symbols(symbols);
+
+        // Two stops sharing one clock reading. A single `on_sigtrap` can emit
+        // an exit and an entry for the same `mono_ns`, so using the same value
+        // for both calls maximises the collisions without depending on how
+        // many events each call happens to produce.
+        let r1 = t.on_sigtrap(1, 0x1000, None, 500);
+        let r2 = t.on_sigtrap(1, 0x2000, None, 500);
+        // The still-open frames closed after an abnormal termination. This one
+        // used to reuse `entry_monotonic_ns` — the very id the matching
+        // `FunctionEntry` had already taken.
+        let flushed = t.flush_incomplete_on_exit();
+
+        let all: Vec<u64> = ids(&r1)
+            .into_iter()
+            .chain(ids(&r2))
+            .chain(ids(&flushed))
+            .collect();
+        assert!(
+            all.len() >= 4,
+            "expected at least four events across the three calls, got {all:?}"
+        );
+
+        let mut sorted = all.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(
+            all, sorted,
+            "event ids must be strictly increasing within a session; got {all:?}"
+        );
+
+        // Control on the multi-frame close: two open frames, one timestamp.
+        // `helper` sits inside `factorial`'s range, so the second stop nests
+        // instead of unwinding the first frame.
+        let mut symbols = HashMap::new();
+        symbols.insert(0x1000, sym("factorial", 0x2000));
+        symbols.insert(0x2000, sym("helper", 0x100));
+        let mut t = InvocationTracker::from_symbols(symbols);
+        t.on_sigtrap(1, 0x1000, None, 10);
+        t.on_sigtrap(1, 0x2000, None, 20);
+        assert_eq!(
+            t.active_invocations(),
+            2,
+            "both frames must still be open, or this control proves nothing"
+        );
+        let closed = ids(&t.pop_all_as_exit(900));
+        assert_eq!(closed.len(), 2);
+        assert!(
+            closed[0] < closed[1],
+            "two frames closed at the same instant must still get distinct ids; got {closed:?}"
+        );
     }
 }
