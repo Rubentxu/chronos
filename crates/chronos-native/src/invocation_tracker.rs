@@ -214,26 +214,25 @@ impl InvocationTracker {
         // 2. If ip matches a known function entry, push and emit entry.
         if let Some((symbol_id, name, _size)) = symbol_info {
             let parent = stack.last().map(|a| a.invocation_id);
-            let invocation_id = InvocationId::now();
-            stack.push(ActiveInvocation {
-                invocation_id,
+            let active = ActiveInvocation {
+                invocation_id: InvocationId::now(),
                 parent_invocation_id: parent,
                 symbol_id,
                 entry_monotonic_ns: mono_ns,
                 entry_ip: ip,
                 size: _size,
-                function_name: name.clone(),
-            });
-            events.push(make_function_entry(
+                function_name: name,
+            };
+            // The event is built from the frame before the frame is moved into
+            // the stack, so both see the same values.
+            let entry = make_function_entry(
+                &active,
                 tid,
-                ip,
                 Self::alloc_event_id(&mut next_event_id),
                 mono_ns,
-                name,
-                symbol_id,
-                invocation_id,
-                parent,
-            ));
+            );
+            stack.push(active);
+            events.push(entry);
         }
 
         self.next_event_id = next_event_id;
@@ -329,15 +328,16 @@ impl FromNs for TimestampNs {
 }
 
 /// Build a FunctionEntry TraceEvent from scratch.
+/// Build a FunctionEntry TraceEvent for a frame that is being pushed.
+///
+/// Takes the same [`ActiveInvocation`] the exit side takes, so the two
+/// builders read alike and neither has to restate the frame's identity as a
+/// list of separate parameters.
 fn make_function_entry(
+    active: &ActiveInvocation,
     tid: ThreadId,
-    ip: u64,
     event_id: u64,
     mono_ns: u64,
-    name: String,
-    symbol_id: chronos_domain::SymbolId,
-    invocation_id: InvocationId,
-    parent: Option<InvocationId>,
 ) -> TraceEvent {
     TraceEvent {
         event_id,
@@ -345,16 +345,16 @@ fn make_function_entry(
         thread_id: tid,
         event_type: EventType::FunctionEntry,
         location: SourceLocation {
-            function: Some(name.clone()),
-            address: ip,
+            function: Some(active.function_name.clone()),
+            address: active.entry_ip,
             ..Default::default()
         },
         data: EventData::Function {
-            name,
+            name: active.function_name.clone(),
             signature: None,
-            symbol_id: Some(symbol_id),
-            invocation_id: Some(invocation_id),
-            parent_invocation_id: parent,
+            symbol_id: Some(active.symbol_id),
+            invocation_id: Some(active.invocation_id),
+            parent_invocation_id: active.parent_invocation_id,
         },
     }
 }
