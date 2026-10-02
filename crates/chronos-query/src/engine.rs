@@ -695,14 +695,24 @@ impl QueryEngine {
                 .collect()
         } else {
             // Fallback: call-count based scoring
-            let total_calls: u64 = summary.top_functions.iter().map(|f| f.call_count).sum();
+            //
+            // The denominator is the analysed set, not the trace total:
+            // `execution_summary` keeps only the hottest 20 functions
+            // (`truncate(20)` above), so the score is each function's share
+            // *within that set*. That is the right question here -- the
+            // rankings stay consistent because numerator and denominator
+            // cover the same set. Using the true trace total would shrink
+            // every score by the same factor while answering a different
+            // one, and it is not available from a summary. Mirrors the
+            // same fallback in `chronos-services::debug_trace_specialized`.
+            let analyzed_calls: u64 = summary.top_functions.iter().map(|f| f.call_count).sum();
             summary
                 .top_functions
                 .iter()
                 .take(limit)
                 .map(|f| {
-                    let score = if total_calls > 0 {
-                        f.call_count as f64 / total_calls as f64
+                    let score = if analyzed_calls > 0 {
+                        f.call_count as f64 / analyzed_calls as f64
                     } else {
                         0.0
                     };

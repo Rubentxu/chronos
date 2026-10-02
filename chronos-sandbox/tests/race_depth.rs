@@ -16,9 +16,11 @@ use std::time::Duration;
 /// on the wire.
 ///
 /// Emptiness caveat, measured on this fixture: `total_writes == 0` and
-/// `access_count == 0` over ~207 captured events. The ptrace capture of a
-/// C fixture yields no `VariableWrite`/`MemoryWrite` events at all, so the
-/// detector has no address to pair and the empty verdict is structural —
+/// `access_count == 0` over ~207 captured events. Note the unit of the
+/// `total_writes` key despite its name: it counts distinct addresses the
+/// detector checked, not write events. The ptrace capture of a C fixture
+/// yields no `VariableWrite`/`MemoryWrite` events at all, so the detector has
+/// no address to pair and the empty verdict is structural —
 /// it is not evidence that the detector examined and cleared the threads.
 #[tokio::test]
 async fn test_debug_detect_races_threshold_1ns() {
@@ -126,7 +128,7 @@ async fn test_debug_detect_races_threshold_1ns() {
     assert_eq!(
         json.get("total_writes").and_then(|v| v.as_u64()),
         Some(0),
-        "C captures carry no VariableWrite/MemoryWrite events; the emptiness is structural, got {}",
+        "C captures carry no VariableWrite/MemoryWrite events, so the detector had 0 addresses to compare; the `total_writes` key counts distinct addresses, not write events (both are 0 here only because the capture has no writes at all), got {}",
         json
     );
     assert_eq!(
@@ -247,7 +249,7 @@ async fn test_debug_detect_races_threshold_1ms() {
     assert_eq!(
         json.get("total_writes").and_then(|v| v.as_u64()),
         Some(0),
-        "C captures carry no VariableWrite/MemoryWrite events; the emptiness is structural, got {}",
+        "C captures carry no VariableWrite/MemoryWrite events, so the detector had 0 addresses to compare; the `total_writes` key counts distinct addresses, not write events (both are 0 here only because the capture has no writes at all), got {}",
         json
     );
     assert_eq!(
@@ -271,7 +273,8 @@ async fn test_debug_detect_races_threshold_1ms() {
 /// and only reads `ids[i]`, which `main` wrote before any thread started.
 /// No two threads ever write the same address, so the fixture itself has
 /// no race. On top of that, measured on this capture: `total_writes == 0`
-/// and `access_count == 0` over 374-376 events — the ptrace capture of a C
+/// (distinct addresses checked, not write events) and `access_count == 0`
+/// over 374-376 events — the ptrace capture of a C
 /// fixture emits no `VariableWrite`/`MemoryWrite` events, so the detector
 /// has no address to pair. Both reasons are properties of the fixture and
 /// the capture, not of thread interleaving: the assert is deterministic.
@@ -363,7 +366,7 @@ async fn test_debug_detect_races_many_threads() {
     assert_eq!(
         json.get("total_writes").and_then(|v| v.as_u64()),
         Some(0),
-        "C captures carry no VariableWrite/MemoryWrite events; the emptiness is structural, got {}",
+        "C captures carry no VariableWrite/MemoryWrite events, so the detector had 0 addresses to compare; the `total_writes` key counts distinct addresses, not write events (both are 0 here only because the capture has no writes at all), got {}",
         json
     );
     assert!(
@@ -384,8 +387,9 @@ async fn test_debug_detect_races_many_threads() {
 /// emptiness assert), so it is kept as-is apart from one honest caveat
 /// added after measuring: the empty result is **not** mainly a fact about
 /// single-threadedness. Like RD1-RD3, this capture carries no
-/// `VariableWrite`/`MemoryWrite` events (measured `total_writes == 0`
-/// over 128 events), so the detector has no address to pair. The green
+/// `VariableWrite`/`MemoryWrite` events (measured `total_writes == 0`,
+/// which counts distinct addresses rather than write events, over 128
+/// events), so the detector has no address to pair. The green
 /// assert therefore proves the query works end to end and reports
 /// nothing; it does not prove the detector weighed concurrent writes and
 /// found none.

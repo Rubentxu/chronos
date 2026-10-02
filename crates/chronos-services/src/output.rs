@@ -757,6 +757,19 @@ pub struct RaceReport {
     /// Raw accesses from the engine (contains write pairs with delta_ns).
     pub accesses: Vec<chronos_domain::query::SuspiciousConcurrentAccess>,
     /// Total addresses checked.
+    ///
+    /// The name says "writes" but the value is the number of *distinct
+    /// addresses* the detector inspected, not the number of write events: the
+    /// engine increments this once per address
+    /// (`chronos-query/src/engine.rs`, `for (addr, writes) in &addr_writes`),
+    /// so N write events to one address report 1, not N.
+    ///
+    /// The name is kept for wire compatibility: the struct is flattened into
+    /// the `kind = "race_detect"` envelope of `execution_query`, which is
+    /// documented to preserve the v1 tool JSON shape byte-for-byte, and
+    /// `chronos-sandbox/tests/race_depth.rs` reads this exact JSON key off the
+    /// MCP response. Renaming the key would be a material contract change, so
+    /// the honest fix is this documentation.
     pub total_writes: usize,
     /// Extracted (function_a, function_b) pairs for quick triage.
     pub suspicious_pairs: Vec<(String, String)>,
@@ -790,6 +803,21 @@ pub struct HotspotReport {
     pub session_id: String,
     pub compression_level: String,
     pub top_n: usize,
+    /// Sum of the call counts of the functions the engine *analysed*, not the
+    /// call total of the trace.
+    ///
+    /// The engine truncates `execution_summary().top_functions` to its 20
+    /// hottest functions (`chronos-query/src/engine.rs`, `truncate(20)`), so
+    /// this is at most the sum of those 20 call counts. On a session with more
+    /// than 20 distinct functions it is strictly smaller than the real number
+    /// of calls, and the two coincide only when at most 20 distinct functions
+    /// were called.
+    ///
+    /// The field name is kept despite the mismatch because it is a published
+    /// wire key: it is flattened into the `kind = "hotspot"` envelope of
+    /// `execution_query` and declared by the published client type
+    /// `chronos-sandbox/src/client/types.rs` (`total_calls_in_trace`). The
+    /// value is correct for what it measures; only the label overstates it.
     pub total_calls_in_trace: u64,
     pub hotspot_functions: Vec<HotspotEntry>,
     pub hint: Option<String>,

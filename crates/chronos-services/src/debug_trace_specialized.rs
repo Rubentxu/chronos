@@ -166,7 +166,12 @@ impl DebugTraceSpecializedService {
         };
         let result = engine.detect_concurrent_access(&query);
 
-        let total_writes = result.addresses_checked;
+        // Distinct addresses the detector inspected, NOT the number of write
+        // events. The engine groups writes by address and counts one per
+        // address, so this is an address count. The `total_writes` field it
+        // feeds is a published wire key and keeps its name (see
+        // `RaceReport::total_writes`); the local name says what it holds.
+        let addresses_checked = result.addresses_checked;
 
         // Build a list of (function_a, function_b) pairs that are suspicious
         let suspicious_pairs: Vec<(String, String)> = result
@@ -181,7 +186,7 @@ impl DebugTraceSpecializedService {
             format!(
                 "Found {} suspicious concurrent accesses across {} addresses",
                 result.accesses.len(),
-                total_writes
+                addresses_checked
             )
         };
 
@@ -190,7 +195,7 @@ impl DebugTraceSpecializedService {
             threshold_ns,
             access_count: result.accesses.len(),
             accesses: result.accesses,
-            total_writes,
+            total_writes: addresses_checked,
             suspicious_pairs,
             summary,
         })
@@ -275,13 +280,18 @@ impl DebugTraceSpecializedService {
             });
         }
 
-        let total_calls: u64 = summary.top_functions.iter().map(|f| f.call_count).sum();
+        // Sum over the functions the engine analysed (its `top_functions` list
+        // is truncated to the 20 hottest), which is why this is NOT the call
+        // total of the trace despite what `total_calls_in_trace` suggests.
+        // The name here is local, so it states the truth: this is the
+        // denominator of a quota *within the analysed set*.
+        let analyzed_calls: u64 = summary.top_functions.iter().map(|f| f.call_count).sum();
 
         Ok(HotspotReport {
             session_id: session_id.to_string(),
             compression_level: "hotspot".to_string(),
             top_n,
-            total_calls_in_trace: total_calls,
+            total_calls_in_trace: analyzed_calls,
             hotspot_functions,
             hint: Some(
                 "Use debug_call_graph for full call graph or query_events to drill into specific functions"
@@ -336,14 +346,24 @@ impl DebugTraceSpecializedService {
                 })
                 .collect()
         } else {
-            let total_calls: u64 = summary.top_functions.iter().map(|f| f.call_count).sum();
+            // Fallback when no perf samples exist: score by call count.
+            //
+            // The denominator is the sum of the call counts of the analysed set
+            // (`top_functions`, truncated to the 20 hottest), NOT the call
+            // total of the trace. That is the right choice here: the score
+            // answers "which share of the calls *of the analysed set* does this
+            // function account for?", and numerator and denominator cover the
+            // same set, so comparing two functions is consistent. Using the
+            // real trace total would instead measure the analysed set's share
+            // of the whole session, which is not what saliency ranks.
+            let analyzed_calls: u64 = summary.top_functions.iter().map(|f| f.call_count).sum();
             summary
                 .top_functions
                 .iter()
                 .take(limit)
                 .map(|f| {
-                    let score = if total_calls > 0 {
-                        f.call_count as f64 / total_calls as f64
+                    let score = if analyzed_calls > 0 {
+                        f.call_count as f64 / analyzed_calls as f64
                     } else {
                         0.0
                     };
@@ -399,6 +419,27 @@ mod tests {
             event_type,
             location: SourceLocation {
                 function: Some(function.to_string()),
+                ..SourceLocation::default()
+            },
+            data: EventData::Empty,
+        }
+    }
+
+    /// A `MemoryWrite` event anchored at a concrete address. The race detector
+    /// groups writes by `location.address`, not by `EventData::Memory`.
+    fn memory_write_event(
+        event_id: u64,
+        timestamp_ns: u64,
+        thread_id: u64,
+        address: u64,
+    ) -> TraceEvent {
+        TraceEvent {
+            event_id,
+            timestamp_ns: MonotonicNs::from(timestamp_ns),
+            thread_id,
+            event_type: EventType::MemoryWrite,
+            location: SourceLocation {
+                address,
                 ..SourceLocation::default()
             },
             data: EventData::Empty,
@@ -646,5 +687,102 @@ mod tests {
             .unwrap();
         assert_eq!(result.scored_functions, 0);
         assert!(result.hint.is_some());
+    }
+
+    // --- unit/label contract: the value is right, the name overstates it ---
+
+    /// `total_calls_in_trace` is the sum over the functions the engine
+    /// *analysed* (its top-20 hottest list), not the call total of the trace.
+    /// With more than 20 distinct functions the two differ, and the field must
+    /// be the smaller one. The field name promises the larger one, so this test
+    /// pins the real relationship: if the value were ever "corrected" into the
+    /// true trace total, the strict inequality below fails.
+    #[tokio::test]
+    async fn expand_hotspot_total_calls_is_analysed_sum_not_trace_total() {
+        // 25 distinct functions x 4 entries each = 100 real calls in the trace.
+        const FUNCTIONS: usize = 25;
+        const CALLS_PER_FUNCTION: u64 = 4;
+        const ENGINE_TOP_N: usize = 20;
+
+        let mut events = Vec::new();
+        let mut event_id = 1u64;
+        for f in 0..FUNCTIONS {
+            for _ in 0..CALLS_PER_FUNCTION {
+                events.push(trace_event(
+                    event_id,
+                    100 + event_id,
+                    1,
+                    EventType::FunctionEntry,
+                    &format!("fn_{f:02}"),
+                ));
+                event_id += 1;
+            }
+        }
+        let trace_total_calls: u64 = FUNCTIONS as u64 * CALLS_PER_FUNCTION;
+        assert_eq!(trace_total_calls, 100, "fixture sanity: 25 x 4 real calls");
+
+        let engines = engines_with_session("s1", events);
+        // top_n above 20 so the report is limited by the engine's truncation,
+        // not by the caller's window.
+        let result = DebugTraceSpecializedService::expand_hotspot("s1", FUNCTIONS, &engines)
+            .await
+            .unwrap();
+
+        // Only the engine's top 20 survive `truncate(20)`.
+        assert_eq!(result.hotspot_functions.len(), ENGINE_TOP_N);
+        assert_eq!(
+            result.total_calls_in_trace,
+            ENGINE_TOP_N as u64 * CALLS_PER_FUNCTION,
+            "total_calls_in_trace must be the sum over the analysed top-20 set"
+        );
+        assert!(
+            result.total_calls_in_trace < trace_total_calls,
+            "total_calls_in_trace ({}) must stay below the real trace call total ({}): \
+             the engine analyses only the 20 hottest functions, so the field is an \
+             analysed-set sum and not the trace total its name suggests",
+            result.total_calls_in_trace,
+            trace_total_calls
+        );
+    }
+
+    /// `RaceReport.total_writes` counts the distinct ADDRESSES the detector
+    /// inspected, not the write events. Two writes to one address must report
+    /// 1, not 2. If the value were ever changed into a write-event count, the
+    /// equality below fails.
+    #[tokio::test]
+    async fn detect_races_total_writes_counts_addresses_not_write_events() {
+        // Two write events, different threads, SAME address, 10ns apart.
+        let events = vec![
+            memory_write_event(1, 100, 1, 0x1000),
+            memory_write_event(2, 110, 2, 0x1000),
+        ];
+        // The detector needs a causality index configured, but it may be empty:
+        // the write grouping walks the events, and the index is only a lookup
+        // with an event-derived fallback.
+        let engine = make_engine(events).with_causality(chronos_domain::CausalityIndex::new());
+        let mut map = HashMap::new();
+        map.insert("s1".to_string(), engine);
+        let engines = Mutex::new(map);
+
+        let result = DebugTraceSpecializedService::detect_races("s1", 100, &engines)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            result.total_writes, 1,
+            "total_writes counts distinct addresses checked, not write events: \
+             2 writes to 0x1000 is 1 address"
+        );
+        // The access itself is still reported, so the count above is not a
+        // vacuous 0 from an unpopulated detector.
+        assert_eq!(
+            result.access_count, 1,
+            "one cross-thread pair, got {result:?}"
+        );
+        assert!(
+            result.summary.contains("across 1 address"),
+            "the human summary must state the address unit too, got {:?}",
+            result.summary
+        );
     }
 }
