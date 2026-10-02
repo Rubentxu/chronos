@@ -23,6 +23,12 @@
 //! serialization or write leaves no partial file behind at the final
 //! location.
 //!
+//! The bundle carries `EventData::Memory` payloads -- raw captured
+//! process memory -- so the artifact is created `0600` (owner only)
+//! through `chronos_log::segment::create_owner_only`, the same helper
+//! that protects chronos-log segments. `File::create` follows the
+//! process umask and would have left it world-readable at `0644`.
+//!
 //! # Known limitation: `properties_snapshot` is always `Vec::new()`
 //!
 //! The `QueryEngine` API exposes events and indices but does not currently
@@ -42,6 +48,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use chronos_domain::{Language, SessionMetadata, TraceEvent};
+use chronos_log::create_owner_only;
 use chronos_query::QueryEngine;
 use serde_json::json;
 use tokio::sync::Mutex as TokioMutex;
@@ -280,9 +287,13 @@ fn atomic_write(output_path: &Path, bytes: &[u8]) -> Result<PathBuf, ServiceErro
         }
     }
 
-    // Write tmp.
+    // Write tmp. The bundle embeds `EventData::Memory` payloads, i.e.
+    // raw captured process memory, so the tmp file must not be
+    // world-readable. `File::create` follows the process umask and
+    // landed the artifact at 0644; `create_owner_only` is the shared
+    // helper that fixes that for chronos-log segments too.
     let write_result = (|| -> std::io::Result<()> {
-        let mut f = fs::File::create(&tmp_path)?;
+        let mut f = create_owner_only(&tmp_path)?;
         f.write_all(bytes)?;
         f.sync_all()?;
         Ok(())
@@ -299,6 +310,12 @@ fn atomic_write(output_path: &Path, bytes: &[u8]) -> Result<PathBuf, ServiceErro
 
     // Rename onto final path. If rename fails (cross-device, etc.) copy
     // + remove as a fallback so the export still lands somewhere sane.
+    //
+    // The fallback keeps the 0600 mode: `fs::copy` propagates the source
+    // file's permissions onto the destination via an explicit fchmod
+    // (measured on rustc 1.98.1: 0600 src -> 0600 dst, 0644 src ->
+    // 0644 dst, and a pre-existing 0666 dst is narrowed to 0600), so no
+    // extra chmod is needed here.
     if let Err(e) = fs::rename(&tmp_path, output_path) {
         match fs::copy(&tmp_path, output_path).and_then(|_| fs::remove_file(&tmp_path)) {
             Ok(_) => {}
@@ -761,5 +778,46 @@ mod tests {
         let p = std::env::temp_dir().join(format!("chronos-test-{pid}-{nanos}"));
         std::fs::create_dir_all(&p).unwrap();
         p
+    }
+
+    /// Security regression, same defect class as the chronos-log segment
+    /// fix (commit 1e403466): the bundle embeds `EventData::Memory`
+    /// payloads, i.e. raw captured process memory, so the artifact must
+    /// land at 0600 and never at the umask-derived 0644.
+    ///
+    /// This drives the real dispatcher end to end, so reverting
+    /// `atomic_write` back to `File::create` makes it fail with
+    /// `export artifact mode was 0644`.
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn export_artifact_is_owner_read_write_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempdir();
+        let path = dir.join("session.json");
+        let mut ev = func_event(1, 1, "main");
+        ev.data = EventData::Memory {
+            address: 0xdead_beef,
+            size: 4,
+            data: Some(b"ABCD".to_vec()),
+        };
+        let ctx = make_engines_clean("s1", vec![ev]);
+        ChronosSessionExportService::export(
+            "s1",
+            Language::Python,
+            "x.py".to_string(),
+            ExportFormat::Json,
+            &path,
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            mode, 0o600,
+            "export artifact mode was {:04o}, expected 0600",
+            mode
+        );
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

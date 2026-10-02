@@ -57,7 +57,9 @@ pub use chronos_domain::session_id::SessionId;
 pub use replay::{
     apply_replay_plan, build_replay_plan, plan_gaps, ReplayIntegrityError, ReplayPlan,
 };
-pub use segment::{segment_path, write_segment, DecodedSegment, SegmentEntry, SegmentMetadata};
+pub use segment::{
+    create_owner_only, segment_path, write_segment, DecodedSegment, SegmentEntry, SegmentMetadata,
+};
 pub use segmented::{CompactionMetrics, CompactionOutcome, SegmentedConfig, SegmentedExecutionLog};
 // REC-C3.3.1: `ExecutionLogProvider` is the application-shape port in
 // `chronos_domain::ports::execution_log`. The two adapters that

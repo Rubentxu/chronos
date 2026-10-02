@@ -188,7 +188,12 @@ pub fn decode_payload(payload: &[u8]) -> Result<Vec<SegmentEntry>, LogError> {
 /// mode, but the kernel still ANDs it with the umask, so the handle is
 /// also `fchmod`ed afterwards: a umask can only clear bits from the
 /// requested mode, never restore them.
-pub(crate) fn create_owner_only(path: &Path) -> std::io::Result<File> {
+///
+/// Public since the same defect class reappeared in `chronos-services`
+/// (`session_export::atomic_write`, whose bundle carries raw captured
+/// memory). Reuse this instead of a second copy so the umask reasoning
+/// above stays in one place and cannot drift.
+pub fn create_owner_only(path: &Path) -> std::io::Result<File> {
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
     let f = fs::OpenOptions::new()
         .write(true)
