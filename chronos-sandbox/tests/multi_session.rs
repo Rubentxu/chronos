@@ -138,6 +138,16 @@ async fn test_save_session_a_load_while_session_b_runs() {
 
     println!("Started session B (busyloop): {}", session_b);
 
+    // Let B actually execute before anything else happens. test_busyloop
+    // runs ~3 seconds, and the only work between probe_start and probe_stop
+    // below is the single load_session round trip -- far too short for the
+    // traced target to emit anything, so probe_stop drained an empty ring
+    // buffer and the "Session B should have events" assertion failed
+    // deterministically. Session A and the sibling busyloop tests already
+    // give their probes 2s of wall clock; do the same here so the load
+    // genuinely happens while B is running.
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
     // Load saved session A while B is still running
     let load_result = client
         .load_session(&session_a)
