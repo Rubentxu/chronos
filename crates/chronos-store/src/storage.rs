@@ -85,7 +85,15 @@ impl SessionStore {
 
     /// Try to open an existing session store, with graceful handling of lock conflicts.
     /// If the database is locked by another process, returns a special error.
-    /// If the database appears corrupted, attempts recovery.
+    ///
+    /// A database file that exists but cannot be opened is reported as an
+    /// error, never replaced. `redb` initializes an empty file as a fresh
+    /// database, so falling through to `Database::create` on any failure
+    /// turned an unreadable store into an empty one that still reported
+    /// `is_persistent() == true` — the sessions it held were gone and the
+    /// degraded-mode disclosure added in m9-82 stayed silent. Creating a
+    /// store is legitimate only when there is no file yet, which is the
+    /// first-run case this entry point exists for.
     #[allow(clippy::result_large_err)]
     pub fn try_open(path: &Path) -> Result<Self, StoreError> {
         // Ensure parent directory exists
@@ -128,12 +136,21 @@ impl SessionStore {
                     }
                 }
 
-                // If still failing, try creating a fresh database
-                tracing::warn!(
-                    "Could not open existing database at {:?}: {}, creating fresh database",
-                    path,
-                    e
-                );
+                // There is a file but redb refused it. Creating a database
+                // here would overwrite the evidence with an empty one and
+                // report success, so the fault is surfaced instead.
+                if path.exists() {
+                    tracing::error!(
+                        "Database at {:?} exists but could not be opened: {}. Not replacing it; \
+                         its contents are preserved and the store stays unavailable.",
+                        path,
+                        e
+                    );
+                    return Err(StoreError::Database(e.into()));
+                }
+
+                // First run: no database yet.
+                tracing::info!("No database at {:?}, creating a fresh one", path);
                 Self::open(path)
             }
         }
@@ -591,6 +608,63 @@ mod tests {
         let path = dir.path().join("sessions.redb");
         let store = SessionStore::try_open(&path).expect("try_open must succeed");
         assert!(store.is_persistent());
+    }
+
+    /// A database file that exists but cannot be opened must be reported,
+    /// not replaced. `try_open` used to fall through to `Database::create`
+    /// for every failure, and `redb` initializes an empty file as a fresh
+    /// database: an unreadable store became an empty store that still
+    /// reported `is_persistent() == true`, which is exactly the disclosure
+    /// m9-82 added. The sessions it held were gone and nothing said so.
+    #[test]
+    fn test_try_open_reports_unreadable_database_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sessions.redb");
+        // What a crash (or a full disk) mid-creation leaves behind.
+        std::fs::write(&path, b"").expect("create empty file");
+
+        let err = match SessionStore::try_open(&path) {
+            Ok(_) => panic!("an unreadable database file must not become an empty store"),
+            Err(e) => e,
+        };
+        assert!(
+            matches!(err, StoreError::Database(_)),
+            "expected StoreError::Database, got {err:?}"
+        );
+    }
+
+    /// Control: the reason `try_open` exists. A missing database is a first
+    /// run, not a fault, so it is created and reported as persistent.
+    #[test]
+    fn test_try_open_creates_a_missing_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sessions.redb");
+        assert!(!path.exists());
+
+        let store = SessionStore::try_open(&path).expect("a missing database is created");
+        assert!(store.is_persistent());
+    }
+
+    /// Control: the file that `try_open` was protecting is still readable,
+    /// with its sessions, after the branch above became fail-closed.
+    #[test]
+    fn test_try_open_reopens_a_populated_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sessions.redb");
+        {
+            let store = SessionStore::try_open(&path).expect("create");
+            store
+                .save_session(session_meta("s1"), &[make_event(1, "main")])
+                .unwrap();
+        }
+
+        let reopened = SessionStore::try_open(&path).expect("reopen");
+        assert!(reopened.is_persistent());
+        assert_eq!(
+            reopened.list_sessions().unwrap().len(),
+            1,
+            "the session saved before reopening must still be there"
+        );
     }
 
     #[test]
