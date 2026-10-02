@@ -607,7 +607,14 @@ mod tests {
 
     #[tokio::test]
     async fn call_path_self_loop_pass() {
-        let engines = make_engine(vec![]);
+        // The self-loop shortcut is a claim that the trace shows `main`
+        // reaching itself, so the fixture has to contain `main`. An empty
+        // trace would make the assertion vacuous.
+        let events = vec![
+            func_event(1, 1, EventType::FunctionEntry, "main"),
+            func_event(2, 1, EventType::FunctionExit, "main"),
+        ];
+        let engines = make_engine(events);
         let ctx = HypothesisTestContext {
             engines: engines.as_ref(),
         };
@@ -627,6 +634,41 @@ mod tests {
         match out {
             HypothesisOutput::CallPath { verdict, .. } => {
                 assert_eq!(verdict, HypothesisVerdict::Pass);
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    /// The discriminating case. With the same empty trace, a non-self caller
+    /// already answers `Unsupported` (see
+    /// `call_path_missing_caller_unsupported`); before the fix a self caller
+    /// answered `Pass` instead, certifying a path that no evidence supports.
+    /// Both answers must be `Unsupported`, because the function is absent.
+    #[tokio::test]
+    async fn call_path_self_loop_absent_is_unsupported() {
+        let engines = make_engine(vec![]);
+        let ctx = HypothesisTestContext {
+            engines: engines.as_ref(),
+        };
+        let inp = HypothesisInput {
+            session_id: "s1".into(),
+            kind: HypothesisKind::CallPath,
+            scope: None,
+            comparison: None,
+            constant: None,
+            property_target: None,
+            predicate: None,
+            caller: Some("main".into()),
+            callee: Some("main".into()),
+            max_depth: None,
+        };
+        let out = ChronosHypothesisTestService::test(&ctx, inp).await.unwrap();
+        match out {
+            HypothesisOutput::CallPath { verdict, .. } => {
+                assert!(
+                    matches!(verdict, HypothesisVerdict::Unsupported { .. }),
+                    "an absent function cannot reach itself; got {verdict:?}"
+                );
             }
             _ => panic!("wrong variant"),
         }

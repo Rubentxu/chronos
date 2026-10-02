@@ -1728,7 +1728,18 @@ pub fn eval_call_path(
         };
     }
 
-    if caller == callee {
+    // A self path is a claim that the trace shows `caller` reaching itself, so
+    // it needs the same presence evidence as any other caller. Short-circuiting
+    // before that check returned `Pass` with empty `support_event_ids` even on
+    // an empty trace, certifying a path that was never observed and collapsing
+    // the `Unsupported` case into `Pass` (contract: hypothesis_test.rs, "the
+    // caller must NOT collapse `Unsupported` to `Pass`"). When the function is
+    // absent the branch is skipped and the guard below answers `Unsupported`.
+    if caller == callee
+        && events
+            .iter()
+            .any(|ev| matches!(&ev.data, EventData::Function { name, .. } if name == &caller))
+    {
         let p = caller.clone();
         return CallPathOutcome {
             verdict: PropertyHypothesisVerdict::Pass,
