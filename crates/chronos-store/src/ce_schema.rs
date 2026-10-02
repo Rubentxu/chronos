@@ -138,7 +138,14 @@ pub fn collect_v3_keys_for_bundle(
     };
 
     let mut keys = Vec::new();
-    for (k, v) in range.flatten() {
+    // `flatten()` here would drop an I/O error mid-scan and report the
+    // cleanup as done. A chunk that survives this scan survives the re-save
+    // too, and the next read then finds more events than the bundle declares
+    // — the save returned `Ok` and left the store unreadable. This is the
+    // only place in the crate that discarded a storage error, and the
+    // sibling range scan above propagates it.
+    for entry in range {
+        let (k, v) = entry.map_err(|e| StoreError::Database(e.into()))?;
         if decode_chunk_key(k.value()).is_some() {
             if let Some((ref id, _)) = decode_chunk_value(v.value()) {
                 if id == bundle_id {

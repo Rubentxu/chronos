@@ -874,6 +874,64 @@ fn m9_02_save_events_idempotent_overwrites_prior_chunks() {
     assert_eq!(events[49].event_id, 249, "last event must be id 249");
 }
 
+/// D6 cleanup has to remove the chunks the previous save wrote, and the
+/// existing overwrite test cannot see it: 100 events then 50 is one chunk
+/// then one chunk, so whether the prior chunk was deleted or not is the
+/// same observable state. Crossing a chunk boundary makes it visible.
+///
+/// `BUNDLE_EVENTS_CHUNK_SIZE` is 256, so 600 events are three chunks and
+/// 300 are two. If the third survives, the next read finds more events than
+/// the bundle declares and fails with `BundleEventsIncomplete` — the save
+/// already returned `Ok`.
+#[test]
+fn m9_02_resave_below_a_chunk_boundary_removes_the_orphaned_chunk() {
+    let store = make_store();
+    let record = |created_at_ms, ids: std::ops::Range<u64>| CounterexampleBundleRecord {
+        summary: CounterexampleBundleSummary {
+            bundle_id: "b-shrink".into(),
+            property_kind: "invariant".into(),
+            workspace_id: "ws".into(),
+            created_at_ms,
+            rounds_used: 1,
+            has_full_bundle: true,
+            schema_version: 1,
+            events_count: 0,
+        },
+        events: ids.map(|i| make_event(i, "x")).collect(),
+        minimised: None,
+        event_cas_hashes: vec![],
+        target_hypothesis: None,
+        schema_version: 1,
+    };
+
+    store
+        .save_counterexample_bundle(record(0, 0..600))
+        .expect("first save must succeed");
+    assert_eq!(
+        store.count_v3_chunks_for_test("b-shrink").unwrap(),
+        3,
+        "600 events at 256 per chunk must be three chunks"
+    );
+
+    store
+        .save_counterexample_bundle(record(1, 1000..1300))
+        .expect("re-save must succeed");
+    assert_eq!(
+        store.count_v3_chunks_for_test("b-shrink").unwrap(),
+        2,
+        "300 events are two chunks; the third is an orphan the re-save \
+         must have removed"
+    );
+    assert_eq!(
+        store
+            .load_counterexample_bundle_events("b-shrink")
+            .unwrap()
+            .len(),
+        300,
+        "the re-saved bundle reads back as exactly what it declares"
+    );
+}
+
 // 4.1: partial last chunk count is correct.
 #[test]
 fn m9_02_count_events_handles_partial_last_chunk() {
@@ -1441,9 +1499,7 @@ fn m9_04_collision_containment_via_bundle_id() {
             assert_eq!(expected, 1, "the record declares one event");
             assert_eq!(found, 0, "the foreign chunk must not be counted");
         }
-        other => panic!(
-            "identity check must drop chunks with wrong bundle_id, got {other:?}"
-        ),
+        other => panic!("identity check must drop chunks with wrong bundle_id, got {other:?}"),
     }
 }
 
@@ -1501,7 +1557,10 @@ fn m9_05_undecodable_chunk_is_reported_instead_of_returned_short() {
 
     // Control: intact, the bundle reads back in full.
     assert_eq!(
-        store.load_counterexample_bundle_events(bundle_id).unwrap().len(),
+        store
+            .load_counterexample_bundle_events(bundle_id)
+            .unwrap()
+            .len(),
         10,
         "an intact bundle must read back whole, or this test proves nothing"
     );
@@ -1509,9 +1568,7 @@ fn m9_05_undecodable_chunk_is_reported_instead_of_returned_short() {
     // Corrupt the only chunk.
     let tx = store.db().begin_write().unwrap();
     {
-        let mut table = tx
-            .open_table(COUNTEREXAMPLE_BUNDLE_EVENTS)
-            .unwrap();
+        let mut table = tx.open_table(COUNTEREXAMPLE_BUNDLE_EVENTS).unwrap();
         let key = encode_chunk_key(bundle_id, 0);
         table.insert(&key[..], b"not a chunk".as_slice()).unwrap();
     }
