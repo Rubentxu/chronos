@@ -37,29 +37,32 @@ impl McpProcess {
     ///
     /// Used by sandbox tests that need to control the MCP server's DB path (e.g., ce12).
     ///
-    /// The child's `CHRONOS_DB_PATH` is **only** what `extra_env` supplies: the
-    /// ambient value is removed first, so a developer who has the variable
-    /// exported cannot silently redirect a sandbox server at their real store
-    /// (`FIND-M9-72-SANDBOX-SHARED-STORE-SAVE-TIMEOUT`). `Command` inherits the
-    /// parent environment by default, so without the removal an empty
-    /// `extra_env` would inherit the ambient store.
+    /// The ambient values of `CHRONOS_DB_PATH` and
+    /// `CHRONOS_EXECUTION_LOG_DIR` are **removed**; only what
+    /// `extra_env` supplies reaches the child. `Command` inherits the parent
+    /// environment by default, so without the removal a developer who has
+    /// either variable exported silently redirects the sandbox server at
+    /// their real on-disk locations
+    /// (`FIND-M9-72-SANDBOX-SHARED-STORE-SAVE-TIMEOUT` for the store). The
+    /// execution-log root is worse than a shared store: it is resolved once
+    /// per process and memoized in a `OnceLock`, so every sandbox server in
+    /// the run would write its durable logs into the developer's real log
+    /// root and mix test sessions in with real ones.
     pub async fn spawn_with_env(
         mcp_path: &Path,
         extra_env: std::collections::HashMap<String, String>,
     ) -> Result<Self, McpSandboxError> {
         let mut cmd = tokio::process::Command::new(mcp_path);
-        cmd.env("RUST_LOG", "debug");
-        // Never inherit the ambient store path; callers opt in explicitly.
-        cmd.env_remove("CHRONOS_DB_PATH");
-        // Pin the toolset instead of inheriting it. `debug_diff` is registered
-        // in `ALL_TOOL_NAMES` and therefore appears in `tools/list`, but it is
-        // in none of the seven per-profile lists, so under any explicit profile
-        // the toolset guard rejects it. A developer who has
-        // `CHRONOS_ACTIVE_TOOLSET` exported would otherwise make the sandbox
-        // tests fail for a reason that has nothing to do with the code under
-        // test. `auto` is the server default (`server.rs:358-359`) and is
-        // fail-open, so this changes nothing for a clean environment.
-        cmd.env("CHRONOS_ACTIVE_TOOLSET", "auto");
+        for (key, value) in Self::sandbox_env() {
+            match value {
+                Some(v) => {
+                    cmd.env(key, v);
+                }
+                None => {
+                    cmd.env_remove(key);
+                }
+            }
+        }
         // Apply extra environment variables (overriding any inherited ones)
         for (k, v) in extra_env {
             cmd.env(&k, &v);
@@ -206,6 +209,36 @@ impl McpProcess {
 
         Ok(())
     }
+
+    /// The environment every sandbox server starts with, as `(key, value)`.
+    ///
+    /// `None` means "remove from the child's environment". `Command`
+    /// inherits the parent environment by default, so a location variable
+    /// that is only absent because nobody wrote it down is still inherited
+    /// at runtime.
+    fn sandbox_env() -> Vec<(&'static str, Option<&'static str>)> {
+        vec![
+            ("RUST_LOG", Some("debug")),
+            // Never inherit the ambient store path; callers opt in explicitly.
+            ("CHRONOS_DB_PATH", None),
+            // Same class of leak, same reason. The execution-log root is
+            // read once per process and memoized in a `OnceLock`
+            // (`chronos_log::location`), so an exported value would point
+            // every sandbox server at the developer's real durable log root
+            // for the whole run.
+            ("CHRONOS_EXECUTION_LOG_DIR", None),
+            // Pin the toolset instead of inheriting it. `debug_diff` is
+            // registered in `ALL_TOOL_NAMES` and therefore appears in
+            // `tools/list`, but it is in none of the seven per-profile lists,
+            // so under any explicit profile the toolset guard rejects it. A
+            // developer who has `CHRONOS_ACTIVE_TOOLSET` exported would
+            // otherwise make the sandbox tests fail for a reason that has
+            // nothing to do with the code under test. `auto` is the server
+            // default (`server.rs:358-359`) and is fail-open, so this changes
+            // nothing for a clean environment.
+            ("CHRONOS_ACTIVE_TOOLSET", Some("auto")),
+        ]
+    }
 }
 
 /// Ensure proper cleanup when McpProcess is dropped.
@@ -263,5 +296,48 @@ pub mod factory {
         let reader = McpReader::new(stdout);
 
         Ok((process, stdin, reader))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::McpProcess;
+
+    fn env_entry(key: &str) -> Option<Option<&'static str>> {
+        McpProcess::sandbox_env()
+            .into_iter()
+            .find(|(k, _)| *k == key)
+            .map(|(_, v)| v)
+    }
+
+    /// FIND-M9-72 closed this leak for the store. The execution-log root is
+    /// the same defect in a different variable, and it was still inherited:
+    /// every sandbox server in a run wrote its durable logs into whatever
+    /// the developer running the tests had exported.
+    #[test]
+    fn sandbox_env_removes_both_ambient_location_variables() {
+        assert_eq!(
+            env_entry("CHRONOS_DB_PATH"),
+            Some(None),
+            "the ambient store path must be removed, not inherited"
+        );
+        assert_eq!(
+            env_entry("CHRONOS_EXECUTION_LOG_DIR"),
+            Some(None),
+            "the ambient execution-log root must be removed, not inherited"
+        );
+    }
+
+    /// Control: the entries that are deliberately pinned must stay pinned,
+    /// so the test above cannot pass by returning an empty environment.
+    #[test]
+    fn sandbox_env_pins_toolset_and_log_level() {
+        assert_eq!(env_entry("CHRONOS_ACTIVE_TOOLSET"), Some(Some("auto")));
+        assert_eq!(env_entry("RUST_LOG"), Some(Some("debug")));
+        assert_eq!(
+            McpProcess::sandbox_env().len(),
+            4,
+            "the sandbox environment is exactly these four entries"
+        );
     }
 }
