@@ -238,7 +238,10 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
         serde_json::from_value(first).expect("first drain response shape");
     let cursor = first.evidence_cursor.clone().expect("cursor");
     let first_ids: HashSet<u64> = first.events.iter().map(|e| e.event_id).collect();
-    let first_firings = first.tripwires_fired.unwrap_or(0);
+    let first_firings = first.tripwires_fired.expect(
+        "probe_drain_log always emits tripwires_fired; absence means the wire \
+         contract changed, and defaulting to 0 would make the comparison below vacuous",
+    );
     let first_total = first.total_buffered;
     let first_cursor = cursor.clone();
     eprintln!(
@@ -372,7 +375,10 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
         .probe_drain_with_evidence_cursor(&session, None)
         .await
         .expect("post-perturbation drain");
-    let after_firings = after.tripwires_fired.unwrap_or(0);
+    let after_firings = after.tripwires_fired.expect(
+        "probe_drain_log always emits tripwires_fired; absence means the wire \
+         contract changed, and defaulting to 0 would make the comparison below vacuous",
+    );
     let new_raw = (after.events.len() as i64) - (first.events.len() as i64);
     assert!(
         after_firings as i64 - first_firings as i64 <= 2 * new_raw.max(0),

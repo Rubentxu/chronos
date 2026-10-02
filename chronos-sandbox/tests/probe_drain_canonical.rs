@@ -218,7 +218,10 @@ async fn probe_drain_firing_count_is_evidence_not_subscription_state() {
         .probe_drain_with_evidence_cursor(&session_id, None)
         .await
         .expect("baseline drain failed");
-    let baseline_firings = before.tripwires_fired.unwrap_or(0);
+    let baseline_firings = before.tripwires_fired.expect(
+        "probe_drain_log always emits tripwires_fired; absence means the wire \
+         contract changed, and defaulting to 0 would make the comparison below vacuous",
+    );
     let baseline_events = before.events.len();
 
     // Add a subscription that would match essentially everything already
@@ -252,7 +255,10 @@ async fn probe_drain_firing_count_is_evidence_not_subscription_state() {
         .probe_drain_with_evidence_cursor(&session_id, None)
         .await
         .expect("post-subscription drain failed");
-    let after_firings = after.tripwires_fired.unwrap_or(0);
+    let after_firings = after.tripwires_fired.expect(
+        "probe_drain_log always emits tripwires_fired; absence means the wire \
+         contract changed, and defaulting to 0 would make the comparison below vacuous",
+    );
 
     assert!(
         after.events.len() >= baseline_events,
