@@ -1356,8 +1356,15 @@ fn m9_04_resave_migrates_v2_to_v3() {
 
 // m9-04 §5: Range-scan upper bound is prefix || 0xFFFF_FFFF.
 // scoping §5: insert A+B chunks, range(A) returns only A's chunks.
+//
+// What this pins is the *scoping* — the range never leaks another
+// bundle's chunks — with indices 0-3 and 0-9. It does not pin the upper
+// bound itself: reaching index `u32::MAX` needs 1.1e12 events, so the
+// exclusive end of the range is unreachable in a test. The limit and what
+// a bundle that large would need are documented on
+// `collect_bundle_chunks_range`.
 #[test]
-fn m9_04_range_scan_covers_all_chunk_indices() {
+fn m9_04_range_scan_is_scoped_to_one_bundle() {
     let store = make_store();
 
     // Inject v3 chunks for two different bundles.

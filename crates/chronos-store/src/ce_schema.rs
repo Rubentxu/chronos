@@ -63,8 +63,14 @@ pub const BUNDLE_EVENTS_CHUNK_SIZE: usize = 256;
 
 /// Collect v3 chunks for a bundle using a bounded range scan.
 ///
-/// m9-04 D4: range `[prefix, prefix || 0xFFFF_FFFF)` covers all chunk indices
-/// [0, u32::MAX] while excluding the next bundle (whose first 16 bytes differ).
+/// m9-04 D4: range `[prefix, prefix || 0xFFFF_FFFF)` excludes the next bundle
+/// (whose first 16 bytes differ) while covering chunk indices `0 ..=
+/// u32::MAX - 1`. The upper bound is **exclusive**, so a chunk stored at
+/// index exactly `u32::MAX` would fall outside it. Reaching that index takes
+/// `u32::MAX * BUNDLE_EVENTS_CHUNK_SIZE` events in one bundle, about 1.1e12,
+/// so the boundary is not reachable in practice; the limit is recorded here
+/// rather than papered over, because "all indices" is not what this range
+/// does. A bundle that large needs an inclusive upper bound.
 ///
 /// m9-04 D3: value carries bundle_id; we verify it matches the queried bundle_id
 /// to defend against hash-truncation collisions.
@@ -116,6 +122,10 @@ pub fn collect_bundle_chunks_range(
 /// before writing new v3 chunks.
 ///
 /// Returns `Ok(Vec::new())` when the events table does not exist.
+///
+/// The scan bounds are the same as in [`collect_bundle_chunks_range`], so
+/// the same exclusive upper bound applies here: index exactly `u32::MAX`
+/// is not covered, and the reasoning is recorded there.
 #[allow(clippy::result_large_err)]
 pub fn collect_v3_keys_for_bundle(
     tx: &redb::ReadTransaction,
