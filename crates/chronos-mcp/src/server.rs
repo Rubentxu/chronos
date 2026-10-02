@@ -1079,7 +1079,7 @@ impl ChronosServer {
 
     #[tool(
         name = "state_query",
-        description = "v2 dispatcher for state transition/value evidence queries. Select the query kind via `kind` (register_diff | memory_read | register_snapshot | memory_analysis | expression_eval). Each kind has its own required fields; see `docs/chronos-agentic-reconstruction/docs/specs/AGENT_API_V2.md`."
+        description = "v2 dispatcher for state transition/value evidence queries. Select the query kind via `kind` (register_diff | memory_read | register_snapshot | memory_analysis | expression_eval). Each kind has its own required fields; see `docs/chronos-agentic-reconstruction/docs/specs/AGENT_API_V2.md`. DATA HANDLING: `kind=memory_read` returns `data` (raw bytes) and `hex` for the address and timestamp requested, and `kind=memory_analysis` returns per-access `data_hex`; both carry captured process memory verbatim and unredacted, limited to bytes the capture configuration already recorded. The other kinds do not return memory contents. Treat those two responses as sensitive: they can leave the machine through the model context."
     )]
     async fn state_query(
         &self,
@@ -3364,7 +3364,7 @@ further would be a Silent Lie."
 
     #[tool(
         name = "trace_slice",
-        description = "Causal evidence around a target. Discriminated by slice_kind: variable_origin (mutations to a named variable), crash (call stack at last fatal signal), causality (full reads + writes at an address), memory_audit (writes at an address with call stacks). Supersedes the v1 debug_find_variable_origin, debug_find_crash, inspect_causality, and forensic_memory_audit tools."
+        description = "Causal evidence around a target. Discriminated by slice_kind: variable_origin (mutations to a named variable), crash (call stack at last fatal signal), causality (full reads + writes at an address), memory_audit (writes at an address with call stacks). DATA HANDLING: for slice_kind causality and memory_audit, each returned entry carries data_hex, the hex-encoded bytes of the captured process memory at that address, verbatim and unredacted; only bytes the capture configuration already recorded are returned, and nothing is fetched from outside the session. Treat those responses as sensitive: they can leave the machine through the model context. Supersedes the v1 debug_find_variable_origin, debug_find_crash, inspect_causality, and forensic_memory_audit tools."
     )]
     async fn trace_slice(
         &self,
@@ -3402,7 +3402,7 @@ further would be a Silent Lie."
 
     #[tool(
         name = "events_read",
-        description = "v2 dispatcher for event reads. Select the read mode via `mode` (query | by_id). `mode=query` is a cursor-based, non-destructive event-list read with filters (event_types, thread_id, timestamp range, function_pattern, limit, cursor); `mode=by_id` is a single-event lookup by event_id. Supersedes the v1 `query_events` and `get_event` tools. See docs/chronos-agentic-reconstruction/docs/specs/AGENT_API_V2.md (line 15)."
+        description = "v2 dispatcher for event reads. Select the read mode via `mode` (query | by_id). `mode=query` is a cursor-based, non-destructive event-list read with filters (event_types, thread_id, timestamp range, function_pattern, limit, cursor); `mode=by_id` is a single-event lookup by event_id. DATA HANDLING: events are returned as recorded, so any event whose `data` is the `Memory` variant includes `data` with the captured process memory bytes verbatim and unredacted; other event kinds carry no memory contents. Treat such events as sensitive: they can leave the machine through the model context. Supersedes the v1 `query_events` and `get_event` tools. See docs/chronos-agentic-reconstruction/docs/specs/AGENT_API_V2.md (line 15)."
     )]
     async fn events_read(
         &self,
