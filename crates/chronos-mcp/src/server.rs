@@ -2659,7 +2659,7 @@ further would be a Silent Lie."
     /// can be passed back as `since` for the next call.
     #[tool(
         name = "probe_drain_log",
-        description = "m1-03 ExecutionLog-backed query path. Reads TraceEvents from the durable ExecutionLog attached to a live probe session, instead of the legacy in-memory EventBus. Cursor is a seq number (None for fresh). Returns 0 records when the probe is not configured with an ExecutionLog directory."
+        description = "m1-03 ExecutionLog-backed query path. Reads TraceEvents from the durable ExecutionLog attached to a live probe session, instead of the legacy in-memory EventBus. Cursor is a seq number (None for fresh). Returns 0 records when the probe is not configured with an ExecutionLog directory. DATA HANDLING: each record's `data` field is the captured `EventData` serialized verbatim and unredacted. `Memory` records carry the raw bytes read from the target process as a JSON array of numbers, with no byte cap; `Variable` records carry the variable value verbatim. No redaction layer sits on this path, so a response can carry whatever the target process held in memory, including credentials. Treat the response as sensitive: it can leave the machine through the model context."
     )]
     async fn probe_drain_log(
         &self,
