@@ -368,15 +368,31 @@ impl QueryEngine {
     ///
     /// Uses FunctionEntry/FunctionExit events to build a virtual stack.
     /// Only considers events from the same thread as the target event.
+    ///
+    /// # When the event cannot be resolved
+    ///
+    /// Returns no frames when `at_event_id` does not resolve to an event of
+    /// this engine, and an empty result then means "the thread is unknown",
+    /// not "the stack was empty at that point".
+    ///
+    /// Resolution goes through [`Self::get_event_by_id`], a binary search that
+    /// requires the log to be sorted by `event_id`. An unsorted log can miss an
+    /// event that is really present: frame events minted from a timestamp
+    /// (`event_id == entry_monotonic_ns`) and flushed at the tail of the log
+    /// on process kill arrive with ids that descend again, and a log built by
+    /// `new`/`with_indices` keeps the caller's order. The thread to walk is
+    /// unknown in that case, and this used to answer with thread 1 -- a
+    /// well-formed stack belonging to a different thread, indistinguishable
+    /// from a correct answer. Declining is the only answer that cannot be
+    /// wrong; sorting the log is a separate decision owned by the services
+    /// layer, which derives causal edges from the vector order.
     pub fn reconstruct_call_stack(&self, at_event_id: u64) -> Vec<StackFrame> {
-        // Find the thread_id of the target event
+        // Find the thread_id of the target event. There is no safe default
+        // thread: guessing one reports another thread's frames as if they were
+        // the answer to this query.
         let target_thread = match self.get_event_by_id(at_event_id) {
             Some(e) => e.thread_id,
-            None => {
-                // If we can't find the event, use thread 1
-                // (for events past the end of the trace)
-                1
-            }
+            None => return Vec::new(),
         };
 
         let mut stack: Vec<StackFrame> = Vec::new();
@@ -1127,11 +1143,72 @@ mod tests {
     #[test]
     fn test_reconstruct_call_stack_after_exit() {
         let engine = QueryEngine::new(sample_events());
-        // Event 10 doesn't exist — engine falls back to thread 1
-        // Thread 1 events: main→helper→helper_exit→process→process_exit→main_exit
-        // All balanced, stack should be empty
+        // Event 100 does not exist, so no thread can be resolved for it and the
+        // engine reports no frames. Thread 1's own events here are balanced
+        // (main -> helper -> helper_exit -> process -> process_exit ->
+        // main_exit), so an empty result is also exactly what thread 1 would
+        // have produced. That agreement is why this test cannot tell "thread
+        // unknown" from "stack empty", and why the unsorted-log test below
+        // carries the contract.
         let stack = engine.reconstruct_call_stack(100);
         assert!(stack.is_empty());
+    }
+
+    /// Regression: an event id that IS in the log can still be unresolvable,
+    /// because `get_event_by_id` binary-searches a vector that is not required
+    /// to be sorted. The old code answered with thread 1, so the caller got a
+    /// complete, plausible call stack belonging to a different thread -- the
+    /// worst shape for a consumer, indistinguishable from a correct answer.
+    ///
+    /// Frame events minted from a timestamp (`event_id == entry_monotonic_ns`)
+    /// and flushed at the tail of the log on process kill arrive with ids that
+    /// descend again, which is where the unsorted log comes from.
+    #[test]
+    fn test_reconstruct_call_stack_unresolvable_id_does_not_borrow_thread_one() {
+        // Ids 5, 20, 15, 12, 10: the target (id 20, thread 2) is followed by a
+        // strictly descending tail, so the vector is unsorted and the binary
+        // search never compares against index 1.
+        let engine = QueryEngine::new(vec![
+            make_event(5, 100, 1, EventType::FunctionEntry, "t1_outer", 0x1000),
+            make_event(20, 200, 2, EventType::FunctionEntry, "t2_target", 0x4000),
+            make_event(15, 300, 1, EventType::FunctionEntry, "t1_inner", 0x2000),
+            make_event(12, 400, 1, EventType::SyscallEnter, "t1_inner", 0x2000),
+            make_event(10, 500, 1, EventType::Custom, "t1_inner", 0x2000),
+        ]);
+
+        // Premise 1: the target event really is in this log.
+        assert!(
+            engine.events().iter().any(|e| e.event_id == 20),
+            "the target event must exist, or this scenario proves nothing"
+        );
+        // Premise 2: the binary search cannot see it. Thread 1 is two frames
+        // deep at id 20, so the old fallback answered with two wrong frames
+        // rather than accidentally agreeing with the honest answer.
+        assert!(
+            engine.get_event_by_id(20).is_none(),
+            "an unsorted log is the premise of this test"
+        );
+
+        // Same log, sorted: now the query is answerable and does answer, with
+        // the open thread 2 frame. Without this, "returns no frames" could
+        // pass by returning no frames for every input.
+        let mut sorted_events = engine.events().to_vec();
+        sorted_events.sort_by_key(|e| e.event_id);
+        let sorted_stack = QueryEngine::new(sorted_events).reconstruct_call_stack(20);
+        let sorted_frames: Vec<&str> = sorted_stack.iter().map(|f| f.function.as_str()).collect();
+        assert_eq!(
+            sorted_frames,
+            vec!["t2_target"],
+            "the sorted log must still answer, with the target thread's frame"
+        );
+
+        let stack = engine.reconstruct_call_stack(20);
+        let frames: Vec<&str> = stack.iter().map(|f| f.function.as_str()).collect();
+        assert!(
+            frames.is_empty(),
+            "an unresolvable event id must not borrow another thread's stack; \
+             got {frames:?} (thread 1) for an event on thread 2: {stack:?}"
+        );
     }
 
     #[test]
