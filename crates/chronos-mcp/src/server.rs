@@ -203,8 +203,14 @@ pub struct ChronosServer {
     /// SessionExecutionLog via `chronos_services::projection::build_engine`.
     /// Used by the MCP-wrapper gate (`meta_is_full`) on execution_query,
     /// state_query, trace_slice to reject queries whose projection is
-    /// Truncated or Empty. Mirrored 1:1 with `engines`: every entry here
-    /// has a corresponding entry in `engines`.
+    /// Truncated or Empty. Mirrored with `engines` in one direction only:
+    /// every entry here has a corresponding entry in `engines`, because
+    /// `ensure_projection` inserts both under the same lock pair and
+    /// `cleanup_session_memory` evicts both. The converse does not hold —
+    /// `build_and_store_engine`, used by the live capture drains, registers
+    /// an engine without a projection, so `engines` can be a strict superset.
+    /// The map is a cache, never an authority: a missing entry means "not
+    /// projected yet", and the next query rebuilds it from the log.
     projection_meta: Arc<Mutex<HashMap<String, chronos_services::projection::ProjectionMeta>>>,
     /// Live probe sessions: session_id → LiveProbeSession.
     /// These are real-time probe sessions using `NativeProbeBackend` where events
@@ -699,13 +705,22 @@ impl ChronosServer {
     }
 
     /// Remove all in-memory state for a session: query engine, language tag,
-    /// and connected-session marker.
+    /// projection metadata, and connected-session marker.
     async fn cleanup_session_memory(&self, session_id: &str) {
         // REC-C1.3: drop/delete ends the log's in-memory life. Segment files are
         // NOT removed here; retention policy belongs to REC-C1.5.
         self.execution_logs.remove(session_id);
         self.engines.lock().await.remove(session_id);
         self.session_languages.lock().await.remove(session_id);
+        // REC-C1.7: `projection_meta` is populated by `ensure_projection` and
+        // by nothing else, so omitting it here made the map insert-only: every
+        // session recovered through `load_session`, the `list_sessions`
+        // bootstrap or any stored-session recovery left an entry that outlived
+        // the session itself, and the map grew monotonically for the life of
+        // the process. Evicting is safe because `ensure_projection` treats a
+        // cache miss as the normal path and rebuilds from the canonical
+        // `SessionExecutionLog`.
+        self.projection_meta.lock().await.remove(session_id);
         if let Ok(mut sessions) = self.connected_sessions.lock() {
             sessions.remove(session_id);
         }
@@ -4526,6 +4541,23 @@ mod tests {
         assert!(text.contains("loaded") || text.contains("event_count"));
     }
 
+    /// Discriminante for the `projection_meta` eviction.
+    ///
+    /// `projection_meta` is populated by `ensure_projection` and by nothing
+    /// else, so before this test it had no coverage at all: the previous
+    /// version of this test set the session up through `build_and_store_engine`,
+    /// which writes `engines` and `session_languages` but never
+    /// `projection_meta`, so it could not have observed the map even by
+    /// accident. It asserted "all in-memory state is gone" over three of the
+    /// four session maps.
+    ///
+    /// The entry is inserted directly rather than by calling `ensure_projection`,
+    /// which needs a real `SessionExecutionLog`. What is under test is the
+    /// eviction, not the shape of `ProjectionMeta`.
+    ///
+    /// Reverting the fix — dropping the `projection_meta` eviction from
+    /// `cleanup_session_memory` — makes this fail with the entry still
+    /// present.
     #[tokio::test]
     async fn test_cleanup_session_memory_removes_all_state() {
         let server = ChronosServer::new();
@@ -4537,9 +4569,22 @@ mod tests {
             .build_and_store_engine(&sid, events, Language::Python)
             .await;
 
+        // Stand in for `ensure_projection`, the only writer of this map.
+        server.projection_meta.lock().await.insert(
+            sid.clone(),
+            ProjectionMeta {
+                session_id: chronos_domain::SessionId::new(sid.clone()),
+                projected_from: chronos_domain::EventSeq::ZERO,
+                projected_through: Some(chronos_domain::EventSeq::ZERO),
+                completeness: projection::ProjectionCompleteness::Full,
+                source: projection::ProjectionSource::ExecutionLog,
+            },
+        );
+
         // Verify it's registered
         assert!(server.engines.lock().await.contains_key(&sid));
         assert!(server.session_languages.lock().await.contains_key(&sid));
+        assert!(server.projection_meta.lock().await.contains_key(&sid));
 
         // Cleanup
         server.cleanup_session_memory(&sid).await;
@@ -4548,6 +4593,47 @@ mod tests {
         assert!(!server.engines.lock().await.contains_key(&sid));
         assert!(!server.session_languages.lock().await.contains_key(&sid));
         assert!(!server.connected_sessions.lock().unwrap().contains(&sid));
+        assert!(
+            !server.projection_meta.lock().await.contains_key(&sid),
+            "cleanup must evict projection_meta too, otherwise every session \
+             recovered from the store leaks an entry that outlives it"
+        );
+    }
+
+    /// Positive control for the neighbouring map: a projection entry for a
+    /// *different* session must survive another session's cleanup. Without
+    /// this, the guard above could be satisfied by clearing the whole map.
+    #[tokio::test]
+    async fn test_cleanup_session_memory_keeps_other_sessions_projections() {
+        let server = ChronosServer::new();
+        let kept = "kept-session".to_string();
+        let dropped = "dropped-session".to_string();
+
+        let meta_for = |sid: &str| ProjectionMeta {
+            session_id: chronos_domain::SessionId::new(sid),
+            projected_from: chronos_domain::EventSeq::ZERO,
+            projected_through: Some(chronos_domain::EventSeq::ZERO),
+            completeness: projection::ProjectionCompleteness::Full,
+            source: projection::ProjectionSource::ExecutionLog,
+        };
+        server
+            .projection_meta
+            .lock()
+            .await
+            .insert(kept.clone(), meta_for(&kept));
+        server
+            .projection_meta
+            .lock()
+            .await
+            .insert(dropped.clone(), meta_for(&dropped));
+
+        server.cleanup_session_memory(&dropped).await;
+
+        assert!(!server.projection_meta.lock().await.contains_key(&dropped));
+        assert!(
+            server.projection_meta.lock().await.contains_key(&kept),
+            "evicting one session must not disturb another's projection"
+        );
     }
 
     #[tokio::test]
