@@ -1409,15 +1409,30 @@ fn flush_inner(
     // (records and Gaps) counts 1. Replay validates against this same unit,
     // so a gap-bearing segment reopens cleanly (FIND-C1.8-01).
     let entry_count = inner.buffer.len() as u64;
+    // Take the buffer, write it, and put it back if the write fails.
+    //
+    // Draining before a fallible write loses the whole batch: the entries are
+    // dropped with the local, `inner.buffer` is left empty, and the next
+    // `flush()` answers `Ok(None)` ("nothing to flush") for evidence that never
+    // reached the disk and left no `Gap`. The surviving copy lives only in the
+    // in-memory backend, so a restart drops it. Restore on error instead:
+    // `write_segment` publishes by tmp+rename (`segment.rs:230,254`), so a
+    // failed attempt leaves no `.seg` behind and retrying is safe.
     let entries = std::mem::take(&mut inner.buffer);
-    let path = write_segment(
+    let path = match write_segment(
         &config.segment_dir,
         session,
         first_seq,
         last_seq,
         entry_count,
         &entries,
-    )?;
+    ) {
+        Ok(path) => path,
+        Err(e) => {
+            inner.buffer = entries;
+            return Err(e);
+        }
+    };
     inner.last_flushed_tail = Some(last_seq);
     inner.flushed_segments.push(FlushedSegment {
         start_seq: first_seq,
@@ -1508,6 +1523,57 @@ mod tests {
         let log =
             SegmentedExecutionLog::open(session.clone(), SegmentedConfig::with_dir(&dir)).unwrap();
         assert_eq!(log.tail_seq(), None);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A failed flush must not consume the batch.
+    ///
+    /// The buffer used to be taken before the fallible write, so a write error
+    /// dropped the entries with the local, left `inner.buffer` empty and
+    /// recorded no `Gap`. The next `flush()` then answered `Ok(None)` ("nothing
+    /// to flush") for evidence that never reached the disk, and the only
+    /// surviving copy was the in-memory backend, which a restart discards.
+    ///
+    /// The test clears the fault and flushes again: with the batch intact the
+    /// second flush writes it out. That write is exactly what the old code
+    /// made impossible, so the assertion discriminates on the evidence, not on
+    /// the error having been reported once.
+    #[test]
+    fn failed_flush_keeps_the_batch_for_the_next_attempt() {
+        let dir = tempdir();
+        let session = SessionId::new("flush-fail");
+        let seg_dir = dir.join("segs");
+        std::fs::create_dir_all(&seg_dir).unwrap();
+        let log = SegmentedExecutionLog::open(session.clone(), SegmentedConfig::with_dir(&seg_dir))
+            .unwrap();
+        log.append(new_record(&session, 10, "a")).unwrap();
+        log.append(new_record(&session, 20, "b")).unwrap();
+
+        // Make the segment directory unwritable in a deterministic way: a
+        // regular file where the directory must be makes `create_dir_all`
+        // fail (segment.rs:218). No segment has been written yet, so removing
+        // the directory discards nothing.
+        std::fs::remove_dir_all(&seg_dir).unwrap();
+        std::fs::write(&seg_dir, b"not a directory").unwrap();
+
+        assert!(
+            log.flush().is_err(),
+            "premise broken: the flush was expected to fail while the segment dir is a file"
+        );
+
+        // Clear the fault and flush again. The two appended records must still
+        // be pending, so this must produce a segment.
+        std::fs::remove_file(&seg_dir).unwrap();
+        std::fs::create_dir_all(&seg_dir).unwrap();
+        let path = log
+            .flush()
+            .expect("the batch must survive a failed write")
+            .expect("and must still be pending after the fault cleared");
+        assert!(
+            path.exists(),
+            "the recovered flush must have written a segment"
+        );
+        assert_eq!(log.flushed_segments().len(), 1);
         std::fs::remove_dir_all(&dir).ok();
     }
 
