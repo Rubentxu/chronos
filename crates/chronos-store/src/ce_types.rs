@@ -32,7 +32,9 @@ pub(crate) fn default_schema_version() -> u32 {
 /// Filter shape for `SessionStore::list_counterexample_bundles`.
 ///
 /// All fields are optional; passing `None` for everything returns the
-/// most recent bundles up to `limit`.
+/// OLDEST bundles up to `limit`, ordered by `bundle_id`. `bundle_id` is
+/// uuid::v7, whose lexicographic order is chronological, so the listing
+/// is oldest-first (see `ce_read::list_counterexample_bundles`).
 ///
 /// m8-05 (B2): `cursor` carries the `bundle_id` returned by the
 /// previous page's `next_cursor`. When `Some`, the list skips rows
