@@ -10,7 +10,8 @@
 //!   lives in `session_compare{kind=regression}`).
 //! - `inferred` — best-effort characterisations: CrashDetected,
 //!   IoHeavy (>50% IO syscalls), CpuBound (one function >70% of
-//!   call counts), SingleThreaded (thread_count==1), or Unknown.
+//!   the trace's function calls), SingleThreaded (thread_count==1),
+//!   or Unknown.
 //! - `hypothesis` — typed `HypothesisTestPlan` the agent can execute
 //!   via the m6-04 `hypothesis_test` tool. `session_explain` does
 //!   NOT execute the plan; it only plans.
@@ -43,8 +44,12 @@ pub struct SessionExplainContext {
 /// IO-syscall events). 0.50 = 50%.
 const IO_HEAVY_THRESHOLD: f64 = 0.50;
 
-/// Threshold for the CpuBound inference (one function's share of
-/// total call counts). 0.70 = 70%.
+/// Threshold for the CpuBound inference (one function's share of the
+/// trace's function calls). 0.70 = 70%.
+///
+/// The denominator is `ExecutionSummary::total_function_calls`, the
+/// whole-trace call census -- NOT the sum over the engine's truncated
+/// `top_functions` list, which is a subtotal of the 20 hottest functions.
 const CPU_BOUND_THRESHOLD: f64 = 0.70;
 
 /// Names of syscalls considered "IO" for the IoHeavy inference.
@@ -207,7 +212,11 @@ fn build_derived(
     session_id: &str,
     summary: &chronos_domain::query::ExecutionSummary,
 ) -> DerivedBundle {
-    let total_calls: u64 = summary.top_functions.iter().map(|f| f.call_count).sum();
+    // The denominator is the call census of the WHOLE trace, not the sum over
+    // `top_functions`: that list is truncated to its 20 hottest entries, so
+    // summing it understates the trace and inflates every listed share. The
+    // census is exactly what `ExecutionSummary::total_function_calls` holds.
+    let total_calls: u64 = summary.total_function_calls;
     let mut hotspots: Vec<FunctionHotspot> = summary
         .top_functions
         .iter()
@@ -223,6 +232,11 @@ fn build_derived(
         .collect();
     // Sort by call count descending.
     hotspots.sort_by_key(|h| std::cmp::Reverse(h.call_count));
+    // Cardinality of the ANALYSED hotspot set, not a callee census: it
+    // counts callers as well, and it saturates at the engine's top-20
+    // cutoff. See the `CallGraphSummary::distinct_callees` doc for why the
+    // name is kept; the honest graph cardinality is `execution_query`
+    // `kind = "call_graph"`.
     let distinct_callees = hotspots.len();
     DerivedBundle {
         session_id: session_id.to_string(),
@@ -269,8 +283,16 @@ fn build_inferred(
         }
     }
 
-    // 3. CpuBound: one function dominates >70% of total call counts.
-    let total_calls: u64 = summary.top_functions.iter().map(|f| f.call_count).sum();
+    // 3. CpuBound: one function dominates >70% of the trace's function calls.
+    //    The denominator is the whole-trace call census
+    //    (`total_function_calls`), NOT the sum over `top_functions`: that list
+    //    is truncated to the 20 hottest functions, so a top-20 denominator
+    //    inflates the leader's share for exactly the traces with the most
+    //    distinct functions, and fires this tag on sessions where no
+    //    function holds a majority. A false CpuBound is not cosmetic -- it
+    //    also suppresses the typed `Unknown` fallback below, so the agent
+    //    loses the "nothing characterises this session" signal.
+    let total_calls: u64 = summary.total_function_calls;
     if total_calls > 0 {
         let max_share = summary
             .top_functions
@@ -607,6 +629,197 @@ mod tests {
                 );
             }
             other => panic!("expected Inferred, got {:?}", other),
+        }
+    }
+
+    /// Session shape that makes the engine's top-20 subtotal and the
+    /// whole-trace call census differ: 100 distinct functions, 199 calls.
+    ///
+    /// `hot` is called 100 times, each `cold_NN` once. The engine ranks 20
+    /// entries, so `top_functions` is `hot` plus 19 cold ones: a subtotal of
+    /// 119 against a real total of 199. Two threads are used so that
+    /// `SingleThreaded` cannot fire and the `Unknown` fallback stays
+    /// reachable -- the whole point of the `CpuBound` regression is that a
+    /// false tag must not eat that signal.
+    const LOP_HOT_CALLS: u64 = 100;
+    const LOP_TAIL_FUNCTIONS: u64 = 99;
+    const LOP_TRACE_TOTAL: u64 = 199;
+    const LOP_ENGINE_TOP_N: usize = 20;
+    const LOP_SUBTOTAL: u64 = 119;
+
+    fn lopsided_session() -> (std::sync::Arc<SessionStore>, String) {
+        let store = empty_arc_store();
+        let mut events: Vec<TraceEvent> = Vec::new();
+        let mut id = 0u64;
+        for _ in 0..LOP_HOT_CALLS {
+            events.push(make_event(id, "hot"));
+            id += 1;
+        }
+        for tail in 0..LOP_TAIL_FUNCTIONS {
+            events.push(make_event(id, &format!("cold_{tail:02}")));
+            id += 1;
+        }
+        for (i, ev) in events.iter_mut().enumerate() {
+            ev.thread_id = (i % 2) as u64;
+        }
+        let meta = SessionMetadata {
+            session_id: "lopsided".to_string(),
+            created_at: 0,
+            language: "native".to_string(),
+            target: "/bin/test".to_string(),
+            event_count: events.len(),
+            duration_ms: 100,
+            tail_sealed: false,
+            sealed_at: None,
+        };
+        store.save_session(meta, &events).unwrap();
+        (store, "lopsided".to_string())
+    }
+
+    fn explain_lopsided(kind: SessionExplainKind) -> SessionExplainOutput {
+        let (store, sid) = lopsided_session();
+        let ctx = make_ctx(store);
+        let input = SessionExplainInput {
+            kind,
+            session_id: sid,
+            hypothesis_kind: None,
+        };
+        ChronosSessionExplainService::explain(&ctx, input).unwrap()
+    }
+
+    /// Regression: a session with more distinct functions than the engine's
+    /// top-20 cutoff must NOT be characterised as `CpuBound` merely because
+    /// the cutoff removed the cold tail from the denominator.
+    ///
+    /// The leader holds 100 of 199 calls = 50.3% of the trace, which is below
+    /// the 70% threshold. Measured over the top-20 subtotal of 119 the very
+    /// same leader reads 84.0% and fires the tag. That is a wrong verdict, not
+    /// a mislabelled field, and it used to travel with the loss of the
+    /// `Unknown` fallback -- telling the agent "this is CPU bound" about a
+    /// session where no function even holds a majority.
+    #[test]
+    fn explain_inferred_does_not_fire_cpu_bound_over_a_truncated_denominator() {
+        // Fixture sanity, computed here so the test's own premise is checked
+        // independently of the production arithmetic.
+        let true_share = LOP_HOT_CALLS as f64 / LOP_TRACE_TOTAL as f64; // 0.5025
+        let subtotal_share = LOP_HOT_CALLS as f64 / LOP_SUBTOTAL as f64; // 0.8403
+        assert!(
+            true_share < CPU_BOUND_THRESHOLD,
+            "fixture is broken: the true share {} already exceeds the threshold",
+            true_share
+        );
+        assert!(
+            subtotal_share > CPU_BOUND_THRESHOLD,
+            "fixture no longer discriminates: the subtotal share {} no longer \
+             crosses the threshold, so the test would pass with or without the fix",
+            subtotal_share
+        );
+
+        let out = explain_lopsided(SessionExplainKind::Inferred);
+        match out {
+            SessionExplainOutput::Inferred { bundle, .. } => {
+                assert!(
+                    !bundle.inferences.contains(&InferredTag::CpuBound),
+                    "CpuBound must not fire: the hottest function holds {}/{} = \
+                     {:.2}% of the trace's function calls, under the {:.0}% threshold. \
+                     Inferences: {:?}",
+                    LOP_HOT_CALLS,
+                    LOP_TRACE_TOTAL,
+                    true_share * 100.0,
+                    CPU_BOUND_THRESHOLD * 100.0,
+                    bundle.inferences
+                );
+                // The honest "nothing characterises this session" signal must
+                // survive: a false CpuBound used to suppress it by leaving
+                // `inferences` non-empty.
+                assert_eq!(
+                    bundle.inferences,
+                    vec![InferredTag::Unknown],
+                    "with no crash, no IO, 2 threads and no dominant function, \
+                     Unknown is the only correct inference"
+                );
+            }
+            other => panic!("expected Inferred, got {:?}", other),
+        }
+    }
+
+    /// `CallGraphSummary::total_calls` and `FunctionHotspot.share_pct` are
+    /// denominated over the whole trace (199 calls), not over the engine's
+    /// top-20 subtotal (119). Exact values, no tolerance.
+    #[test]
+    fn explain_derived_total_calls_and_share_use_the_whole_trace_census() {
+        let out = explain_lopsided(SessionExplainKind::Derived);
+        match out {
+            SessionExplainOutput::Derived { bundle, .. } => {
+                assert_eq!(
+                    bundle.call_graph_summary.total_calls,
+                    LOP_TRACE_TOTAL,
+                    "total_calls must be the census of the whole trace, not the \
+                     subtotal over the 20 hottest functions ({}); the gap is the \
+                     {} calls of the truncated tail",
+                    LOP_SUBTOTAL,
+                    LOP_TRACE_TOTAL - LOP_SUBTOTAL
+                );
+
+                // The ranking itself is still capped, and the leader is first.
+                assert_eq!(bundle.hotspots.len(), LOP_ENGINE_TOP_N);
+                let leader = &bundle.hotspots[0];
+                assert_eq!(leader.function, "hot");
+                assert_eq!(leader.call_count, LOP_HOT_CALLS);
+
+                // Exact: 100/199 of the trace, as a percentage.
+                let expected_share = (LOP_HOT_CALLS as f64 / LOP_TRACE_TOTAL as f64) * 100.0;
+                assert_eq!(
+                    leader.share_pct, expected_share,
+                    "leader share must be 100/199 = 50.2512...%, not 100/119 = \
+                     84.0336...% from the truncated subtotal"
+                );
+                // Same value pinned at two decimals, so a reader does not have
+                // to trust the float expression above.
+                assert_eq!((leader.share_pct * 100.0).round() / 100.0, 50.25);
+
+                // The listed hotspots cover 119 of the 199 calls, so their
+                // shares sum to well under 100%: the tail is real work and the
+                // denominator now shows it.
+                let share_sum: f64 = bundle.hotspots.iter().map(|h| h.share_pct).sum();
+                assert!(
+                    share_sum < 100.0,
+                    "hotspot shares must sum below 100%, got {}",
+                    share_sum
+                );
+                assert_eq!((share_sum * 100.0).round() / 100.0, 59.8);
+            }
+            other => panic!("expected Derived, got {:?}", other),
+        }
+    }
+
+    /// `distinct_callees` is the cardinality of the ANALYSED hotspot set and
+    /// saturates at the engine's top-20 cutoff. The field name is a published
+    /// wire key and stays as it is; this test pins the value that the
+    /// `CallGraphSummary::distinct_callees` doc describes, so nobody reads
+    /// `20` as "this trace had 20 callees".
+    #[test]
+    fn distinct_callees_is_the_analysed_set_cardinality_not_a_callee_census() {
+        let out = explain_lopsided(SessionExplainKind::Derived);
+        match out {
+            SessionExplainOutput::Derived { bundle, .. } => {
+                assert_eq!(
+                    bundle.call_graph_summary.distinct_callees,
+                    LOP_ENGINE_TOP_N,
+                    "the value is the analysed hotspot set, capped at {}; the trace \
+                     called {} distinct functions. The honest graph cardinality is \
+                     `execution_query{{kind=\"call_graph\"}}`, not this field.",
+                    LOP_ENGINE_TOP_N,
+                    LOP_HOT_CALLS + LOP_TAIL_FUNCTIONS
+                );
+                // It is not a callee count either: `hot` is a leaf here, called
+                // 100 times and never calling anything, and it is still
+                // counted.
+                let leaf_only = &bundle.hotspots[0];
+                assert_eq!(leaf_only.function, "hot");
+                assert_eq!(bundle.call_graph_summary.max_depth, 0);
+            }
+            other => panic!("expected Derived, got {:?}", other),
         }
     }
 

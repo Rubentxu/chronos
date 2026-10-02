@@ -1987,13 +1987,44 @@ pub struct DerivedBundle {
 pub struct FunctionHotspot {
     pub function: String,
     pub call_count: u64,
+    /// This function's share of the session's function calls, in percent.
+    ///
+    /// The denominator is `CallGraphSummary::total_calls`, which counts the
+    /// calls of the WHOLE trace, not just the analysed hotspot set. The
+    /// shares of the listed hotspots therefore sum to at most 100%, and to
+    /// noticeably less than 100% whenever the trace called more than 20
+    /// distinct functions and the tail was cut off. That is the point: the
+    /// tail is real work, and hiding it inside the denominator is what
+    /// would overstate a leader.
     pub share_pct: f64,
 }
 
 /// Call-graph summary (counts only — full graph is `execution_query`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CallGraphSummary {
+    /// Function calls in the whole trace: every `FunctionEntry` event with
+    /// a resolved function name.
+    ///
+    /// This is a census over the entire trace, not a sum over the analysed
+    /// hotspot list, so it stays correct no matter how many distinct
+    /// functions the session called. `CallGraphSummary::total_calls` counts
+    /// entry events; it is not a count of distinct functions.
     pub total_calls: u64,
+    /// Number of functions in the analysed hotspot set, which is
+    /// `ExecutionSummary::top_functions` truncated to the 20 hottest
+    /// entries.
+    ///
+    /// Despite the name, this is **not** a count of distinct callees: it
+    /// counts the analysed functions (callers included just as much as
+    /// callees), and it saturates at 20 -- a trace that called 100 distinct
+    /// functions still reports 20. Read it as "how many functions were
+    /// ranked", never as graph cardinality.
+    ///
+    /// The honest graph -- callers, callees, and their true cardinality --
+    /// is available through `execution_query` with `kind = "call_graph"`.
+    /// The field name is a published wire key and is kept unchanged; only
+    /// the label overstates the value, so the value stays as it is and
+    /// the doc carries the truth.
     pub distinct_callees: usize,
     pub max_depth: u32,
 }
@@ -2017,7 +2048,11 @@ pub enum InferredTag {
     CrashDetected,
     /// >50% of events are syscall_enter/exit for IO syscalls.
     IoHeavy,
-    /// One function dominates >70% of total call counts.
+    /// One function accounts for more than 70% of the session's function
+    /// calls.
+    ///
+    /// The share is taken over `CallGraphSummary::total_calls` (the
+    /// whole-trace call census), not over the analysed top-20 hotspot set.
     CpuBound,
     /// `facts.thread_count == 1`.
     SingleThreaded,

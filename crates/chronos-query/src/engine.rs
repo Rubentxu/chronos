@@ -329,6 +329,11 @@ impl QueryEngine {
             _ => 0,
         };
 
+        // Census of the whole trace, taken BEFORE the ranking cutoff below:
+        // after `truncate(20)` this number is gone for good, and it is the
+        // only honest denominator for any share computed downstream.
+        let total_function_calls: u64 = function_counts.values().sum();
+
         // Sort functions by call count descending
         let mut top_functions: Vec<FunctionStats> = function_counts
             .into_iter()
@@ -352,6 +357,7 @@ impl QueryEngine {
             duration_ns,
             total_events: self.events.len() as u64,
             event_counts_by_type,
+            total_function_calls,
             top_functions,
             thread_count: threads.len() as u64,
             potential_issues: issues,
@@ -716,8 +722,11 @@ impl QueryEngine {
             // rankings stay consistent because numerator and denominator
             // cover the same set. Using the true trace total would shrink
             // every score by the same factor while answering a different
-            // one, and it is not available from a summary. Mirrors the
-            // same fallback in `chronos-services::debug_trace_specialized`.
+            // one. (It is now available: `summary.total_function_calls`. This
+            // fallback keeps the analysed-set semantics on purpose -- do not
+            // "fix" it into a trace-total score without changing the
+            // documented meaning of the field.) Mirrors the same fallback in
+            // `chronos-services::debug_trace_specialized`.
             let analyzed_calls: u64 = summary.top_functions.iter().map(|f| f.call_count).sum();
             summary
                 .top_functions

@@ -199,7 +199,25 @@ pub struct ExecutionSummary {
     pub total_events: u64,
     /// Event counts by type.
     pub event_counts_by_type: Vec<(String, u64)>,
-    /// Top functions by call count.
+    /// Number of function calls in the WHOLE trace: every `FunctionEntry`
+    /// event that carries a resolved function name, summed before any
+    /// ranking cutoff is applied.
+    ///
+    /// Unit: call events, not distinct functions and not distinct threads.
+    ///
+    /// `top_functions` is a *truncated ranking*, not a census: the engine
+    /// keeps only its 20 hottest entries, so summing that list yields a
+    /// subtotal that understates the trace whenever more than 20 distinct
+    /// functions were called. This field is the census, and it is the only
+    /// correct denominator for a share or a percentage over the session --
+    /// a share taken over the top-20 sum is biased upwards for precisely
+    /// the functions the truncation keeps, which is enough to turn a
+    /// below-threshold trace into a false "one function dominates" verdict.
+    pub total_function_calls: u64,
+    /// Top functions by call count, truncated to the 20 hottest entries.
+    ///
+    /// A subtotal, not a census: use `total_function_calls` for the
+    /// denominator when a share over the whole trace is what is wanted.
     pub top_functions: Vec<FunctionStats>,
     /// Number of threads.
     pub thread_count: u64,
