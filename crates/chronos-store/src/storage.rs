@@ -113,35 +113,29 @@ impl SessionStore {
                 })
             }
             Err(e) => {
-                // Check if it's a lock error
-                let error_str = e.to_string();
-                if error_str.contains("DatabaseAlreadyOpen") || error_str.contains("lock") {
-                    tracing::warn!(
-                        "Database at {:?} is locked by another process, trying to recover...",
-                        path
-                    );
-
-                    // Try to remove stale lock files and retry once
-                    Self::cleanup_stale_locks(path);
-
-                    // Retry opening
-                    if let Ok(db) = redb::Database::open(path) {
-                        let db = Arc::new(db);
-                        let cas = ContentStore::new(db.clone());
-                        return Ok(Self {
-                            db,
-                            cas,
-                            kind: StoreKind::Persistent,
-                        });
-                    }
-                }
-
-                // There is a file but redb refused it. Creating a database
-                // here would overwrite the evidence with an empty one and
-                // report success, so the fault is surfaced instead.
+                // `DatabaseAlreadyOpen` is redb reporting that a *live*
+                // process holds the database: redb 2.6.3 takes an advisory
+                // `flock(LOCK_EX | LOCK_NB)` on the file descriptor, and
+                // `WouldBlock` from that call is what produces this error.
+                //
+                // This branch used to delete lock files and retry. That was
+                // wrong in every direction. A crashed process needs no
+                // cleanup — the kernel drops its `flock` when it dies, which
+                // is why a stale database is never what this error means.
+                // And deleting a file cannot release another process's
+                // descriptor lock, so the retry could not succeed for the
+                // reason it was written for. What it could do is destroy
+                // `sessions.lock`, which is not redb's file at all: it
+                // belongs to whatever else uses that convention in this
+                // directory, and removing it breaks that component's mutual
+                // exclusion while a live process still holds it.
+                //
+                // So the lock is reported, not fought over. The fault path
+                // below turns this into `StoreError::Database` with the file
+                // untouched.
                 if path.exists() {
                     tracing::error!(
-                        "Database at {:?} exists but could not be opened: {}. Not replacing it; \
+                        "Database at {:?} could not be opened: {}. Not replacing it; \
                          its contents are preserved and the store stays unavailable.",
                         path,
                         e
@@ -152,21 +146,6 @@ impl SessionStore {
                 // First run: no database yet.
                 tracing::info!("No database at {:?}, creating a fresh one", path);
                 Self::open(path)
-            }
-        }
-    }
-
-    /// Clean up stale lock files that may be left by crashed processes.
-    fn cleanup_stale_locks(path: &Path) {
-        if let Some(parent) = path.parent() {
-            // Look for common lock file patterns and remove them
-            let lock_patterns = ["sessions.redb.lock", ".sessions.redb.lock", "sessions.lock"];
-            for pattern in lock_patterns {
-                let lock_path = parent.join(pattern);
-                if lock_path.exists() {
-                    tracing::info!("Removing stale lock file: {:?}", lock_path);
-                    let _ = std::fs::remove_file(&lock_path);
-                }
             }
         }
     }
@@ -753,6 +732,61 @@ mod tests {
             matches!(err, StoreError::Database(_)),
             "expected StoreError::Database, got {err:?}"
         );
+    }
+
+    /// Discriminante. When a live process holds the database, `try_open`
+    /// used to delete `sessions.lock` in the same directory before
+    /// retrying. redb 2.6.3 holds an advisory `flock` on the file
+    /// descriptor, so that retry could never succeed — but the deletion
+    /// still happened, and `sessions.lock` is not redb's file: it belongs
+    /// to whatever else uses that convention there, and destroying it
+    /// breaks that component's exclusion while a live owner still holds
+    /// the store.
+    ///
+    /// Reverting the fix restores the `cleanup_stale_locks` call and this
+    /// fails on `assert!(foreign_lock.exists())` with the file gone.
+    #[test]
+    fn test_try_open_does_not_delete_a_foreign_lock_while_a_live_owner_holds_the_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sessions.redb");
+        // A live owner: this handle is never dropped.
+        let _live = SessionStore::open(&path).expect("first open must succeed");
+
+        // A lock file belonging to something else in this directory.
+        let foreign_lock = dir.path().join("sessions.lock");
+        std::fs::write(&foreign_lock, b"held by another component").expect("create foreign lock");
+
+        let err = match SessionStore::try_open(&path) {
+            Ok(_) => panic!("a store held by a live process must not be opened twice"),
+            Err(e) => e,
+        };
+        assert!(
+            matches!(err, StoreError::Database(_)),
+            "the live owner must be reported, got {err:?}"
+        );
+        assert!(
+            foreign_lock.exists(),
+            "a live owner's lock must not be destroyed by a losing racer: {}",
+            dir.path().display()
+        );
+    }
+
+    /// Control: the first owner is untouched by the failed second attempt,
+    /// so the test above is not passing because the whole directory was
+    /// damaged.
+    #[test]
+    fn test_try_open_leaves_the_live_owner_usable() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sessions.redb");
+        let live = SessionStore::open(&path).expect("first open must succeed");
+
+        assert!(SessionStore::try_open(&path).is_err());
+
+        // The surviving owner still reads and writes the store.
+        live.save_session(session_meta("s1"), &[make_event(1, "a")])
+            .expect("the live owner must still be able to save");
+        assert!(live.is_persistent());
+        assert!(path.exists());
     }
 
     /// Control: the reason `try_open` exists. A missing database is a first
