@@ -503,6 +503,84 @@ mod tests {
         );
     }
 
+
+    /// A captured value of `"inf"` is not a number, and dividing by it is not
+    /// a zero.
+    ///
+    /// `f64::from_str` accepts `"inf"`, `"infinity"` and `"NaN"` as valid
+    /// parses, so the evaluator took them for numbers. `1/x` then produced
+    /// `0.0` — a confident, plausible zero derived from an operand that was
+    /// never numeric — and the tool returned `{"value": 0.0}`.
+    ///
+    /// The JSON detail matters for the general case: `serde_json` renders a
+    /// non-finite `f64` as `null`, so an overflow such as `1e308 * 10` answered
+    /// a successful evaluation with a void one.
+    #[tokio::test]
+    async fn evaluate_expression_rejects_non_finite_operands_and_results() {
+        let events = vec![trace_event(
+            0,
+            0,
+            1,
+            EventType::FunctionEntry,
+            EventData::Variable(VariableInfo::new(
+                "x",
+                "inf",
+                "f64",
+                0x1000,
+                chronos_domain::value::VariableScope::Local,
+            )),
+        )];
+        let mut map = HashMap::new();
+        map.insert("s1".to_string(), QueryEngine::new(events));
+        let engines = Mutex::new(map);
+
+        for expr in ["1 / x", "1e308 * 10"] {
+            let result = DebugReadService::evaluate_expression("s1", 0, expr, &engines)
+                .await
+                .expect("evaluation must not fail the call itself");
+            assert!(
+                matches!(result, EvalResult::Error(_)),
+                "`{expr}` produced {result:?}; a non-finite answer has no JSON \
+                 representation and `1 / inf` is a fabricated 0.0"
+            );
+        }
+    }
+
+    /// Control: a subnormal is a real number, just a very small one, and must
+    /// keep evaluating. The guard is on finiteness, not on magnitude.
+    #[tokio::test]
+    async fn evaluate_expression_still_accepts_a_subnormal_operand() {
+        let events = vec![trace_event(
+            0,
+            0,
+            1,
+            EventType::FunctionEntry,
+            EventData::Variable(VariableInfo::new(
+                "x",
+                "1e-320",
+                "f64",
+                0x1000,
+                chronos_domain::value::VariableScope::Local,
+            )),
+        )];
+        let mut map = HashMap::new();
+        map.insert("s1".to_string(), QueryEngine::new(events));
+        let engines = Mutex::new(map);
+
+        // Arithmetic chosen to stay finite: `1 / 1e-320` would overflow, and
+        // the result guard would (correctly) reject that too, which would
+        // test the wrong thing here.
+        match DebugReadService::evaluate_expression("s1", 0, "x + 0", &engines)
+            .await
+            .expect("a subnormal is a number")
+        {
+            EvalResult::Value(v) => {
+                assert!(v > 0.0 && v < 1e-300, "expected the subnormal back, got {v}")
+            }
+            other => panic!("a subnormal operand must evaluate, got {other:?}"),
+        }
+    }
+
     /// Control: the same expression on the event that does exist still works,
     /// so the guard above is not passing because constant expressions fail.
     #[tokio::test]
@@ -968,4 +1046,5 @@ mod tests {
             analyze_pairs(&analysis)
         );
     }
+
 }

@@ -10,6 +10,15 @@ pub enum EvalError {
     InvalidNumber(String),
     EmptyExpression,
     ExtraTokens(String),
+    /// The arithmetic produced a value that is not a finite number, so there
+    /// is no answer to report.
+    ///
+    /// `serde_json` renders a non-finite `f64` as `null`, so returning one
+    /// would answer a successful evaluation with a void one that the caller
+    /// cannot tell from a legitimate absence. The `&'static str` names which
+    /// of the two produced it, since this enum has no `Display` and the
+    /// service formats it with `{:?}`.
+    NonFiniteResult(&'static str),
 }
 
 /// Expression evaluator — recursive descent parser and evaluator.
@@ -32,6 +41,13 @@ impl ExprEvaluator {
         let tokens = self.tokenize(expr)?;
         let mut parser = Parser::new(tokens, &self.locals);
         let result = parser.parse_expr()?;
+        // Backstop for arithmetic overflow: `1e308 * 10` is `inf` with every
+        // operand finite and every division non-zero. `EvalResult::Value(inf)`
+        // would serialize as `null`, so a successful evaluation would answer
+        // with nothing.
+        if !result.is_finite() {
+            return Err(EvalError::NonFiniteResult("overflow"));
+        }
         if parser.pos < parser.tokens.len() {
             let remaining = parser.tokens[parser.pos..]
                 .iter()
@@ -191,8 +207,18 @@ impl<'a> Parser<'a> {
         match token {
             Token::Number(ref s) => {
                 self.advance();
-                s.parse::<f64>()
-                    .map_err(|_| EvalError::InvalidNumber(s.clone()))
+                // `f64::from_str` accepts "inf", "infinity" and "NaN" as valid
+                // parses, so a literal — or a captured variable whose value
+                // string is one of those — became a number here. Subnormals
+                // like `1e-320` are left alone: those are real numbers, just
+                // very small.
+                let n = s
+                    .parse::<f64>()
+                    .map_err(|_| EvalError::InvalidNumber(s.clone()))?;
+                if !n.is_finite() {
+                    return Err(EvalError::NonFiniteResult("non-finite literal"));
+                }
+                Ok(n)
             }
             Token::Variable(ref name) => {
                 self.advance();
@@ -200,9 +226,15 @@ impl<'a> Parser<'a> {
                 let value_str = locals
                     .get(name)
                     .ok_or_else(|| EvalError::UnknownVariable(name.clone()))?;
-                value_str
+                let n = value_str
                     .parse::<f64>()
-                    .map_err(|_| EvalError::InvalidNumber(name.clone()))
+                    .map_err(|_| EvalError::InvalidNumber(name.clone()))?;
+                // Same rule as the literal branch: a captured value of "inf"
+                // or "NaN" parses, and `1/inf` is a confident 0.0.
+                if !n.is_finite() {
+                    return Err(EvalError::NonFiniteResult("non-finite variable"));
+                }
+                Ok(n)
             }
             Token::LParen => {
                 self.advance();
@@ -473,4 +505,5 @@ mod tests {
             matches!(result.unwrap_err(), EvalError::InvalidNumber(ref s) if s.contains("parenthesis"))
         );
     }
+
 }
