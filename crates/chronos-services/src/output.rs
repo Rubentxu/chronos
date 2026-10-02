@@ -1329,6 +1329,17 @@ pub struct FunctionRegressionEntry {
 /// relative to baseline (sorted by `call_delta_pct` descending).
 /// `improvements` contains functions whose call count shrank by more than
 /// 50% (sorted by `call_delta_pct` ascending — most-improved first).
+///
+/// `functions_analyzed` is the size of the analyzed set: the union of the
+/// hottest functions kept by each session's execution summary (20 per
+/// session by default, further capped by the audit's `top_n`). A session
+/// with more distinct functions than that is only partially visible here, so
+/// `functions_analyzed` can be smaller than the number of distinct functions
+/// actually called in the session.
+///
+/// `summary` is an LLM-readable string; it states the analyzed-set scope
+/// explicitly because the call totals it carries are sums over that set, not
+/// session-wide totals.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PerformanceRegressionAuditResult {
     pub baseline_session_id: String,
@@ -1336,6 +1347,14 @@ pub struct PerformanceRegressionAuditResult {
     pub regressions: Vec<FunctionRegressionEntry>,
     pub improvements: Vec<FunctionRegressionEntry>,
     pub functions_analyzed: usize,
+    /// Call-count delta (target minus baseline) over the analyzed set
+    /// described by [`Self::functions_analyzed`], i.e. the hottest functions
+    /// kept by each session's execution summary. It is *not* the session-wide
+    /// total-call delta: functions outside that set contribute nothing to it,
+    /// so with more distinct functions than the set holds the two differ.
+    /// The name is retained because the JSON key is part of the published
+    /// wire contract (`chronos-sandbox` client and its v1 -> v2 shim), so it
+    /// cannot be corrected without a breaking change.
     pub total_call_delta: i64,
     pub summary: String,
 }

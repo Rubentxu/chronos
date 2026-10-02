@@ -66,6 +66,12 @@ impl ChronosDiffService {
     ///
     /// Both lists are sorted (descending / ascending by `call_delta_pct`).
     /// A `summary` string is produced for LLM consumers.
+    ///
+    /// The analyzed set is bounded by the hottest functions of each session
+    /// (`execution_summary` keeps 20 per session, further capped by `top_n`),
+    /// so every call total reported here is scoped to that set and never
+    /// covers the whole session. The `summary` names the scope for that
+    /// reason.
     pub fn performance_regression_audit(
         ctx: &DiffContext,
         input: PerformanceRegressionAuditInput,
@@ -102,14 +108,14 @@ impl ChronosDiffService {
         let all: HashSet<&str> = map_a.keys().chain(map_b.keys()).copied().collect();
         let mut regressions: Vec<FunctionRegressionEntry> = Vec::new();
         let mut improvements: Vec<FunctionRegressionEntry> = Vec::new();
-        let mut total_a: i64 = 0;
-        let mut total_b: i64 = 0;
+        let mut analyzed_calls_a: i64 = 0;
+        let mut analyzed_calls_b: i64 = 0;
 
         for func in &all {
             let ca = map_a.get(func).copied().unwrap_or(0);
             let cb = map_b.get(func).copied().unwrap_or(0);
-            total_a += ca as i64;
-            total_b += cb as i64;
+            analyzed_calls_a += ca as i64;
+            analyzed_calls_b += cb as i64;
 
             if ca == 0 || cb == 0 {
                 continue;
@@ -141,21 +147,29 @@ impl ChronosDiffService {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
+        // The call totals below are sums over the analyzed set only, never
+        // session totals: `execution_summary` keeps just the hottest 20
+        // functions per session, so a session with more distinct functions
+        // has an audit view strictly narrower than the session. The summary
+        // therefore names the scope explicitly instead of calling these
+        // numbers "total calls", which an LLM consumer would read as the
+        // whole session and could invert a triage decision.
+        let scope_note = format!(
+            "Across the {} functions analyzed, target had {} calls vs {} in baseline.",
+            all.len(),
+            analyzed_calls_b,
+            analyzed_calls_a
+        );
         let summary = if regressions.is_empty() {
-            format!(
-                "No significant regressions found. Target had {} total calls vs {} in baseline.",
-                total_b, total_a
-            )
+            format!("No significant regressions found. {}", scope_note)
         } else {
             let top = &regressions[0];
             format!(
-                "Found {} significant regression(s). Top: '{}' increased by {:.0}%. \
-                 Target: {} total calls vs baseline: {}.",
+                "Found {} significant regression(s). Top: '{}' increased by {:.0}%. {}",
                 regressions.len(),
                 top.function,
                 top.call_delta_pct,
-                total_b,
-                total_a
+                scope_note
             )
         };
 
@@ -165,7 +179,7 @@ impl ChronosDiffService {
             regressions,
             improvements,
             functions_analyzed: all.len(),
-            total_call_delta: total_b - total_a,
+            total_call_delta: analyzed_calls_b - analyzed_calls_a,
             summary,
         })
     }
@@ -306,6 +320,25 @@ mod tests {
         std::sync::Arc::new(SessionStore::in_memory().unwrap())
     }
 
+    /// Seed `id` with 30 distinct functions named `f00`..`f29`, function `i`
+    /// being called `count_for(i)` times.
+    ///
+    /// 30 distinct functions is the interesting width here:
+    /// `QueryEngine::execution_summary` keeps only the hottest 20, so with
+    /// more than 20 distinct functions the audit numbers are necessarily a
+    /// partial view and the reported figures must say so. Counts must stay
+    /// distinct within a session: the summary sorts by call count only, so
+    /// ties would make top-20 membership depend on `HashMap` iteration order.
+    fn save_wide_session(store: &SessionStore, id: &str, count_for: impl Fn(usize) -> usize) {
+        let names: Vec<String> = (0..30).map(|i| format!("f{:02}", i)).collect();
+        let funcs: Vec<&str> = names
+            .iter()
+            .enumerate()
+            .flat_map(|(i, n)| (0..count_for(i)).map(move |_| n.as_str()))
+            .collect();
+        save_session(store, id, &funcs);
+    }
+
     /// Build a `DiffContext` from a pre-seeded `Arc<SessionStore>`.
     /// Use this when the test seeds sessions into a specific store
     /// before exercising the service.
@@ -375,6 +408,95 @@ mod tests {
         // "helper" is exactly -50%, which is NOT < -50, so no improvement.
         assert!(result.improvements.is_empty());
         assert!(result.summary.contains("Found 1 significant regression"));
+    }
+
+    /// Regression audit over 30 distinct functions (more than the 20 the
+    /// execution summary keeps): the reported figures must be scoped to the
+    /// analyzed set, and the summary must say so instead of calling them
+    /// session totals.
+    #[test]
+    fn performance_regression_audit_scopes_call_totals_to_analyzed_functions() {
+        let store = empty_arc_store();
+        // Baseline: f00..f29 called 30..1 times. Session total 465;
+        // hottest 20 (f00..f19, counts 30..11) sum to 410.
+        save_wide_session(&store, "wide-base", |i| 30 - i);
+        // Target: same functions one call lighter each, f29 never called.
+        // Session total 435; hottest 20 (counts 29..10) sum to 390.
+        save_wide_session(&store, "wide-tgt", |i| 29usize.saturating_sub(i));
+
+        let ctx = make_ctx_with_arc(std::sync::Arc::clone(&store));
+        let result = ChronosDiffService::performance_regression_audit(
+            &ctx,
+            PerformanceRegressionAuditInput {
+                baseline_session_id: "wide-base".into(),
+                target_session_id: "wide-tgt".into(),
+                top_n: None,
+            },
+        )
+        .unwrap();
+
+        // Each session holds 30 distinct functions, yet only the hottest 20
+        // survive `execution_summary`, so 20 is the whole analyzed set here.
+        assert_eq!(result.functions_analyzed, 20);
+        // Every function shrank by a small relative amount, so neither list
+        // is populated and the summary takes the no-regression branch.
+        assert!(result.regressions.is_empty());
+        assert!(result.improvements.is_empty());
+        // The delta covers the analyzed functions only. The session-wide
+        // delta would be -30 (465 - 435); the analyzed-set delta is -20.
+        assert_eq!(result.total_call_delta, -20);
+        assert_ne!(result.total_call_delta, -30);
+        // The summary must state the scope and must not call these numbers
+        // session totals.
+        assert!(result.summary.contains(
+            "Across the 20 functions analyzed, target had 390 calls vs 410 in baseline."
+        ));
+        assert!(!result.summary.contains("total calls"));
+    }
+
+    /// Same 30-function width, but with a real regression so the second
+    /// summary branch is covered: its tail carries the same scoped totals.
+    #[test]
+    fn performance_regression_audit_scopes_totals_in_the_regression_summary() {
+        let store = empty_arc_store();
+        // Baseline: f00..f29 called 30..1 times (session total 465,
+        // hottest 20 = f00..f19 sum to 410).
+        save_wide_session(&store, "wide-base", |i| 30 - i);
+        // Target: f18 grows from 12 to 40 calls (+233%, regression), and
+        // f29 grows from 1 to 5 calls but stays outside the hottest 20.
+        // Session total 497; hottest 20 still f00..f19, sum to 438.
+        save_wide_session(&store, "wide-tgt", |i| match i {
+            18 => 40,
+            29 => 5,
+            _ => 30 - i,
+        });
+
+        let ctx = make_ctx_with_arc(std::sync::Arc::clone(&store));
+        let result = ChronosDiffService::performance_regression_audit(
+            &ctx,
+            PerformanceRegressionAuditInput {
+                baseline_session_id: "wide-base".into(),
+                target_session_id: "wide-tgt".into(),
+                top_n: None,
+            },
+        )
+        .unwrap();
+
+        // Both sessions yield the same hottest-20 set (f00..f19).
+        assert_eq!(result.functions_analyzed, 20);
+        assert_eq!(result.regressions.len(), 1);
+        assert_eq!(result.regressions[0].function, "f18");
+        assert_eq!(result.regressions[0].call_delta_pct, 233.33);
+        // f29 is invisible to the audit: it is outside both hottest-20 sets.
+        assert!(result.improvements.is_empty());
+        // Analyzed-set delta is +28; the session-wide delta would be +32.
+        assert_eq!(result.total_call_delta, 28);
+        assert_ne!(result.total_call_delta, 32);
+        assert!(result.summary.contains(
+            "Found 1 significant regression(s). Top: 'f18' increased by 233%. \
+             Across the 20 functions analyzed, target had 438 calls vs 410 in baseline."
+        ));
+        assert!(!result.summary.contains("total calls"));
     }
 
     #[test]
