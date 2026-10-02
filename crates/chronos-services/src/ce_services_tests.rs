@@ -893,101 +893,103 @@ fn m8_05_shrink_invariant_empty_engines_session_not_found() {
 // m8-05 (B2) tests: list pagination cursor
 // ========================================================================
 
-    /// A `limit` large enough to wrap `offset + limit` must not turn into a
-    /// slice that ends before it starts.
-    ///
-    /// `offset` and `limit` reach this function as raw `usize` from the
-    /// `counterexample_bundle_events` tool, which declares no bounds on
-    /// either. `offset=5` with `limit=usize::MAX` overflowed the sum in
-    /// release, the `.min` kept the wrapped-down value, and the slice then
-    /// asked for `5..4` — a panic, not a wrong answer. Debug aborted on the
-    /// overflow instead, so the tool crashed in both profiles.
-    ///
-    /// A large limit is a normal thing for a caller to send, not a hostile
-    /// one: it just means "give me everything from here".
-    #[test]
-    fn events_pagination_survives_a_limit_that_would_overflow_the_sum() {
-        use crate::hypothesis_test::HypothesisTestContext;
-        use chronos_domain::property::PropertyValue;
-        use chronos_query::QueryEngine;
-        use chronos_store::SessionStore;
-        use std::collections::HashMap;
-        use tokio::sync::Mutex as TokioMutex;
+/// A `limit` large enough to wrap `offset + limit` must not turn into a
+/// slice that ends before it starts.
+///
+/// `offset` and `limit` reach this function as raw `usize` from the
+/// `counterexample_bundle_events` tool, which declares no bounds on
+/// either. `offset=5` with `limit=usize::MAX` overflowed the sum in
+/// release, the `.min` kept the wrapped-down value, and the slice then
+/// asked for `5..4` — a panic, not a wrong answer. Debug aborted on the
+/// overflow instead, so the tool crashed in both profiles.
+///
+/// A large limit is a normal thing for a caller to send, not a hostile
+/// one: it just means "give me everything from here".
+#[test]
+fn events_pagination_survives_a_limit_that_would_overflow_the_sum() {
+    use crate::hypothesis_test::HypothesisTestContext;
+    use chronos_domain::property::PropertyValue;
+    use chronos_query::QueryEngine;
+    use chronos_store::SessionStore;
+    use std::collections::HashMap;
+    use tokio::sync::Mutex as TokioMutex;
 
-        let store = std::sync::Arc::new(SessionStore::in_memory().expect("in_memory store"));
-        let engines: HashMap<String, QueryEngine> = HashMap::new();
-        let engines = TokioMutex::new(engines);
-        let hyp_ctx = HypothesisTestContext { engines: &engines };
-        let ctx = CounterexampleContext {
+    let store = std::sync::Arc::new(SessionStore::in_memory().expect("in_memory store"));
+    let engines: HashMap<String, QueryEngine> = HashMap::new();
+    let engines = TokioMutex::new(engines);
+    let hyp_ctx = HypothesisTestContext { engines: &engines };
+    let ctx = CounterexampleContext {
             repository: chronos_store::counterexample_repository::SessionStoreBackedCounterexampleRepository::new(std::sync::Arc::clone(&store)).into_arc(),
             hypothesis_ctx: &hyp_ctx,
         };
 
-        let events: Vec<chronos_domain::TraceEvent> = (0..10u64)
-            .map(|i| {
-                chronos_domain::TraceEvent::function_entry(
-                    i,
-                    chronos_domain::MonotonicNs::from(i * 10),
-                    1,
-                    format!("f{i}"),
-                    0x1000 + i,
-                )
-            })
-            .collect();
-        let saved = ChronosCounterexampleService::save(
-            &ctx,
-            "ws-overflow",
-            HypothesisKind::Invariant,
-            (3, Some(PropertyValue::Number(1.5)), None, None),
-            &dummy_target_invariant(PropertyValue::Number(1.5)),
-            events,
-        )
-        .expect("save should succeed");
-        let saved_id = match saved {
-            CounterexampleOutput::Saved { summary, .. } => summary.bundle_id,
-            other => panic!("expected Saved, got {other:?}"),
-        };
+    let events: Vec<chronos_domain::TraceEvent> = (0..10u64)
+        .map(|i| {
+            chronos_domain::TraceEvent::function_entry(
+                i,
+                chronos_domain::MonotonicNs::from(i * 10),
+                1,
+                format!("f{i}"),
+                0x1000 + i,
+            )
+        })
+        .collect();
+    let saved = ChronosCounterexampleService::save(
+        &ctx,
+        "ws-overflow",
+        HypothesisKind::Invariant,
+        (3, Some(PropertyValue::Number(1.5)), None, None),
+        &dummy_target_invariant(PropertyValue::Number(1.5)),
+        events,
+    )
+    .expect("save should succeed");
+    let saved_id = match saved {
+        CounterexampleOutput::Saved { summary, .. } => summary.bundle_id,
+        other => panic!("expected Saved, got {other:?}"),
+    };
 
-        // The discriminating call: five in, "all the rest" requested.
-        let page =
-            ChronosCounterexampleService::events(&ctx, &saved_id, Some(usize::MAX), Some(5))
-                .expect("a large limit must page, not panic");
+    // The discriminating call: five in, "all the rest" requested.
+    let page = ChronosCounterexampleService::events(&ctx, &saved_id, Some(usize::MAX), Some(5))
+        .expect("a large limit must page, not panic");
 
-        match page {
-            CounterexampleOutput::Events {
-                events_count,
-                returned_events,
-                next_offset,
-                ..
-            } => {
-                assert_eq!(events_count, 10);
-                assert_eq!(
-                    returned_events.len(),
-                    5,
-                    "from offset 5 with an unlimited window the remaining five must come back"
-                );
-                assert_eq!(next_offset, None, "the whole tail was returned");
-            }
-            other => panic!("expected Events, got {other:?}"),
+    match page {
+        CounterexampleOutput::Events {
+            events_count,
+            returned_events,
+            next_offset,
+            ..
+        } => {
+            assert_eq!(events_count, 10);
+            assert_eq!(
+                returned_events.len(),
+                5,
+                "from offset 5 with an unlimited window the remaining five must come back"
+            );
+            assert_eq!(next_offset, None, "the whole tail was returned");
         }
-
-        // Control: the same page with a limit that cannot wrap returns the
-        // same five, so the assertion above is about the overflow and not
-        // about the offset arithmetic in general.
-        let control = ChronosCounterexampleService::events(&ctx, &saved_id, Some(5), Some(5))
-            .expect("a bounded limit must page normally");
-        match control {
-            CounterexampleOutput::Events { returned_events, .. } => {
-                assert_eq!(returned_events.len(), 5)
-            }
-            other => panic!("expected Events, got {other:?}"),
-        }
+        other => panic!("expected Events, got {other:?}"),
     }
+
+    // Control: the same page with a limit that cannot wrap returns the
+    // same five, so the assertion above is about the overflow and not
+    // about the offset arithmetic in general.
+    let control = ChronosCounterexampleService::events(&ctx, &saved_id, Some(5), Some(5))
+        .expect("a bounded limit must page normally");
+    match control {
+        CounterexampleOutput::Events {
+            returned_events, ..
+        } => {
+            assert_eq!(returned_events.len(), 5)
+        }
+        other => panic!("expected Events, got {other:?}"),
+    }
+}
 
 // m8-05 #7: list with `limit` smaller than the bundle count returns a
 // non-None `next_cursor` so callers can fetch the following page.
 #[test]
-fn m8_05_list_full_page_sets_next_cursor() {    use crate::hypothesis_test::HypothesisTestContext;
+fn m8_05_list_full_page_sets_next_cursor() {
+    use crate::hypothesis_test::HypothesisTestContext;
     use chronos_query::QueryEngine;
     use chronos_store::SessionStore;
     use std::collections::HashMap;
