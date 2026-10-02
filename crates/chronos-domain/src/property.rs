@@ -1483,22 +1483,40 @@ pub fn eval_invariant(
 ) -> InvariantOutcome {
     let (verdict, support_event_ids, counter_event_ids, mut summary) = match observation.clone() {
         PropertyObservationSource::EventCount => {
-            let count = events.len() as f64;
-            let observed = PropertyValue::Number(count);
-            let outcome = Property {
-                id: PropertyId(0),
-                name: "event_count".into(),
-                version: 1,
-                observe: "event_count".into(),
-                trigger: String::new(),
-                invariant: InvariantCheck::Comparison {
-                    op: comparison,
-                    constant: constant.clone(),
-                },
+            // An empty session yields a fabricated `0`, not an observation.
+            // The same absence already answers `Unsupported` in
+            // `eval_existence` and in the `PropertyValue` arm below, so
+            // counting must too: with no events at all, `count >= 0` and
+            // `count < 1` are vacuously true and would otherwise certify an
+            // invariant over nothing.
+            if events.is_empty() {
+                (
+                    PropertyHypothesisVerdict::Unsupported {
+                        reason: "session has no captured events; event count is not observable"
+                            .into(),
+                    },
+                    Vec::new(),
+                    Vec::new(),
+                    "scope=event_count: no captured events to count".to_string(),
+                )
+            } else {
+                let count = events.len() as f64;
+                let observed = PropertyValue::Number(count);
+                let outcome = Property {
+                    id: PropertyId(0),
+                    name: "event_count".into(),
+                    version: 1,
+                    observe: "event_count".into(),
+                    trigger: String::new(),
+                    invariant: InvariantCheck::Comparison {
+                        op: comparison,
+                        constant: constant.clone(),
+                    },
+                }
+                .evaluate(Some(&observed), None);
+                let (v, s) = property_outcome_to_verdict(outcome, &comparison, &constant);
+                (v, Vec::new(), Vec::new(), s)
             }
-            .evaluate(Some(&observed), None);
-            let (v, s) = property_outcome_to_verdict(outcome, &comparison, &constant);
-            (v, Vec::new(), Vec::new(), s)
         }
         PropertyObservationSource::PropertyValue { target } => {
             match observe_property_target(events, &target) {

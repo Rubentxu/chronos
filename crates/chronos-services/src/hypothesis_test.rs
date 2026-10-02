@@ -304,6 +304,74 @@ mod tests {
         }
     }
 
+    /// The discriminating case. With no captured events the count is not
+    /// observed, it is fabricated as `0`, so `Ge 0` and `Lt 1` would be
+    /// vacuously true and would certify an invariant over nothing. The same
+    /// absence already answers `Unsupported` in `eval_existence` and in the
+    /// `PropertyValue` arm, so counting must agree.
+    #[tokio::test]
+    async fn invariant_event_count_on_empty_session_is_unsupported() {
+        let engines = make_engine(vec![]);
+        let ctx = HypothesisTestContext {
+            engines: engines.as_ref(),
+        };
+        let inp = HypothesisInput {
+            session_id: "s1".into(),
+            kind: HypothesisKind::Invariant,
+            scope: Some(HypothesisScope::EventCount),
+            // `count >= 0` is trivially true for any count, including the
+            // fabricated zero. It must not be reported as an observed Pass.
+            comparison: Some(ComparisonOp::Ge),
+            constant: Some(PropertyValue::Number(0.0)),
+            property_target: None,
+            predicate: None,
+            caller: None,
+            callee: None,
+            max_depth: None,
+        };
+        let out = ChronosHypothesisTestService::test(&ctx, inp).await.unwrap();
+        match out {
+            HypothesisOutput::Invariant { verdict, .. } => {
+                assert!(
+                    matches!(verdict, HypothesisVerdict::Unsupported { .. }),
+                    "an empty session cannot observe an event count; got {verdict:?}"
+                );
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    /// The positive control for the test above: with events recorded the
+    /// count is observed, and `1 < 2` on a one-event session is a real Pass.
+    /// Without this, the guard could be over-broad and reject honest counts.
+    #[tokio::test]
+    async fn invariant_event_count_with_events_still_evaluates() {
+        let events = vec![func_event(1, 1, EventType::FunctionEntry, "main")];
+        let engines = make_engine(events);
+        let ctx = HypothesisTestContext {
+            engines: engines.as_ref(),
+        };
+        let inp = HypothesisInput {
+            session_id: "s1".into(),
+            kind: HypothesisKind::Invariant,
+            scope: Some(HypothesisScope::EventCount),
+            comparison: Some(ComparisonOp::Lt),
+            constant: Some(PropertyValue::Number(2.0)),
+            property_target: None,
+            predicate: None,
+            caller: None,
+            callee: None,
+            max_depth: None,
+        };
+        let out = ChronosHypothesisTestService::test(&ctx, inp).await.unwrap();
+        match out {
+            HypothesisOutput::Invariant { verdict, .. } => {
+                assert_eq!(verdict, HypothesisVerdict::Pass);
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
     #[tokio::test]
     async fn invariant_event_count_ge_violation() {
         let events = vec![func_event(1, 1, EventType::FunctionEntry, "main")];
