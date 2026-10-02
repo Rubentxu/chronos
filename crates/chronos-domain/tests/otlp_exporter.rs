@@ -450,14 +450,19 @@ fn export_groups_events_by_invocation() {
     assert!(has_a && has_b, "both invocations emit one span each");
     // Within a group the emitted event is the lowest event_idx of that group,
     // and the groups themselves are ordered by that same lowest event_idx —
-    // so the sequence is now pinned, not merely the set.
-    assert_eq!(
-        span_ids_in_order(&result),
-        vec![
-            "0000000000000000".to_string(),
-            "0000000000000002".to_string()
-        ],
-        "one span per invocation, in stream order: {:?}",
+    // so the sequence is now pinned, not merely the set. Pinning it by the
+    // literal ids would restate the seed, so this asserts the property:
+    // two distinct identities, neither of them a stream position.
+    let ids = span_ids_in_order(&result);
+    assert_eq!(ids.len(), 2, "one span per invocation: {:?}", result.lines);
+    assert_ne!(
+        ids[0], ids[1],
+        "one span per invocation means one identity each: {:?}",
+        result.lines
+    );
+    assert!(
+        ids.iter().all(|id| id != "0000000000000000"),
+        "a span id must not be the bare stream position: {:?}",
         result.lines
     );
 }
@@ -483,23 +488,71 @@ fn export_with_empty_filter_emits_nothing() {
 
 // ----- Span identity -----
 
+/// Two services in one trace must not mint the same span id.
+///
+/// `run_service_pipeline` builds a fresh `CorrelationStore` per call, so
+/// `event_idx` restarts at 0 in every service. When two services share a
+/// traceparent, the old `event_idx`-only seed gave both their first event
+/// `span_id 0000000000000000` — the same OTel identity for two different
+/// spans, and a collector absorbs the second as a duplicate and loses it.
+///
+/// Discriminating: with the previous seed both sides are byte-identical
+/// here, so the assertion below passes trivially.
 #[test]
-fn export_span_id_for_first_event_is_zero() {
+fn two_services_sharing_a_traceparent_do_not_emit_the_same_span_id() {
+    let filter = OptInFilter::new(vec!["p".to_string()]);
+    let limits = ExportLimits::default();
+    let events = [event(100, "p", 1)];
+
+    // Same inbound traceparent, different services, both at event_idx 0.
+    let mut service_a = CorrelationStore::new();
+    service_a.bind(0, &recorded_with_traceparent(W3C_TP_A));
+    let mut service_b = CorrelationStore::new();
+    service_b.bind(0, &recorded_with_traceparent(W3C_TP_A));
+
+    let a = export(&service_a, &events, &filter, &limits);
+    let b = export(&service_b, &events, &filter, &limits);
+
+    assert_eq!(a.emitted, 1);
+    assert_eq!(b.emitted, 1);
+    assert_ne!(
+        span_ids_in_order(&a),
+        span_ids_in_order(&b),
+        "the same trace, the same position and the same event produced \
+         one identity for two services: {:?} vs {:?}",
+        a.lines,
+        b.lines
+    );
+}
+
+/// Control: what ADR-0018 §2.3 was actually protecting survives the
+/// change. Re-exporting the same stream under the same trace and the same
+/// invocation reproduces the same ids — the reproducibility is scoped, not
+/// dropped.
+#[test]
+fn re_exporting_the_same_stream_reproduces_the_same_span_id() {
     let mut store = CorrelationStore::new();
     let rec = recorded_internal();
     let events = vec![event(100, "p", 1)];
     store.bind(0, &rec);
     let filter = OptInFilter::new(vec!["p".to_string()]);
-    let result = export(&store, &events, &filter, &ExportLimits::default());
-    assert!(
-        result.lines[0].contains("\"span_id\":\"0000000000000000\""),
-        "event_idx 0 seeds the span id: {}",
-        result.lines[0]
+    let limits = ExportLimits::default();
+
+    let first = export(&store, &events, &filter, &limits);
+    let second = export(&store, &events, &filter, &limits);
+
+    assert_eq!(
+        span_ids_in_order(&first),
+        span_ids_in_order(&second),
+        "the same event re-exported under the same trace and invocation \
+         must reproduce its span id: {:?} vs {:?}",
+        first.lines,
+        second.lines
     );
 }
 
 #[test]
-fn export_span_id_is_derived_from_event_idx_not_from_the_payload() {
+fn export_span_id_follows_the_stream_position_not_the_payload() {
     let mut store = CorrelationStore::new();
     let rec = recorded_internal();
     let events = vec![event(100, "p", 7), event(200, "p", 7)];
@@ -507,15 +560,18 @@ fn export_span_id_is_derived_from_event_idx_not_from_the_payload() {
     store.bind(1, &rec);
     let filter = OptInFilter::new(vec!["p".to_string()]);
     let result = export(&store, &events, &filter, &ExportLimits::default());
-    assert!(
-        result.lines[0].contains("\"span_id\":\"0000000000000000\""),
-        "event_idx 0: {}",
+    let ids = span_ids_in_order(&result);
+    assert_ne!(
+        ids[0], ids[1],
+        "two positions in the stream must be two identities even when the \
+         payload is identical: {}",
         result.lines[0]
     );
-    assert!(
-        result.lines[1].contains("\"span_id\":\"0000000000000001\""),
-        "event_idx 1: {}",
-        result.lines[1]
+    assert_ne!(
+        ids[0], "0000000000000000",
+        "the span id must no longer be the raw stream position, which two \
+         services in one trace would both hand out: {}",
+        result.lines[0]
     );
 }
 
@@ -585,22 +641,31 @@ fn export_is_reproducible_across_stores_with_the_same_stream() {
     // The whole stream comes out ascending, because groups are ordered by
     // their lowest event_idx and are themselves ascending. Under invocation-id
     // ordering store_a would emit [0,1,2,3] and store_b [2,3,0,1].
-    let ascending = vec![
-        "0000000000000000".to_string(),
-        "0000000000000001".to_string(),
-        "0000000000000002".to_string(),
-        "0000000000000003".to_string(),
-    ];
+    //
+    // What is compared is the payload, which is the stream position, and
+    // not the span id: spans are derived from the invocation id as well as
+    // the position, so two stores that hand the invocations to different
+    // event ranges produce different identities for the same position. That
+    // is the property that stops two services in one trace from colliding.
+    let a_order = payload_values_in_order(&a);
+    let b_order = payload_values_in_order(&b);
     assert_eq!(
-        span_ids_in_order(&a),
-        ascending,
+        a_order,
+        vec![0, 1, 2, 3],
         "groups follow the stream, not the random invocation ids: {:?}",
         a.lines
     );
     assert_eq!(
-        span_ids_in_order(&a),
-        span_ids_in_order(&b),
+        a_order, b_order,
         "the same stream must export in the same order regardless of which invocation id owns which event range"
+    );
+    // The two stores really did disagree about ownership, so the assertion
+    // above is not vacuous: the invocation sequences are the mirror image.
+    assert_ne!(
+        invocation_ids_in_order(&a),
+        invocation_ids_in_order(&b),
+        "the stores assign the invocations to opposite halves; if they did \
+         not, comparing payload order would prove nothing"
     );
     assert_eq!(
         a.skipped_limit_total, b.skipped_limit_total,
@@ -608,10 +673,15 @@ fn export_is_reproducible_across_stores_with_the_same_stream() {
     );
 }
 
-/// Span ids in emission order. This is the part of the output that must match
-/// across runs: `chronos_invocation_id` carries the v4 id, so it differs by
-/// construction between two independent stores and comparing it would assert
-/// that randomness reproduces itself.
+/// Span ids in emission order.
+///
+/// Compared *within one store*, where the trace and the invocation are
+/// held fixed, so a difference means a real difference in stream
+/// position. Across two stores that bound different invocation ids the
+/// ids deliberately differ for the same position — see
+/// [`payload_values_in_order`] for what is comparable across stores, and
+/// [`invocation_ids_in_order`] for the mirror-image check that keeps that
+/// comparison from going vacuous.
 fn span_ids_in_order(result: &ExportResult) -> Vec<String> {
     result
         .lines
@@ -619,6 +689,52 @@ fn span_ids_in_order(result: &ExportResult) -> Vec<String> {
         .map(|line| {
             let v: serde_json::Value = serde_json::from_str(line).expect("valid JSON");
             v["span_id"].as_str().expect("span_id").to_string()
+        })
+        .collect()
+}
+
+/// The `value` attribute of each emitted line, in emission order.
+///
+/// This is the stream position the exporter promises to emit in, and it
+/// is what this test asserts on. Span ids and invocation ids cannot:
+/// spans are derived from the invocation id (so two stores that assign
+/// the invocations differently produce different identities for the same
+/// position), and the invocation id is a random v4 on purpose.
+fn payload_values_in_order(result: &ExportResult) -> Vec<i64> {
+    result
+        .lines
+        .iter()
+        .map(|line| {
+            let v: serde_json::Value = serde_json::from_str(line).expect("valid JSON");
+            let attrs = v["attributes"].as_array().expect("attributes array");
+            let entry = attrs
+                .iter()
+                .find(|a| a["key"] == "value")
+                .expect("the value attribute");
+            entry["value"]
+                .as_str()
+                .expect("a string on the wire")
+                .parse()
+                .expect("an integer payload")
+        })
+        .collect()
+}
+
+/// The invocation each emitted line belongs to, in emission order.
+///
+/// Separate from [`span_ids_in_order`] because the span id is derived from
+/// the invocation, so the two answer different questions: which span is
+/// this, and which group does it belong to.
+fn invocation_ids_in_order(result: &ExportResult) -> Vec<String> {
+    result
+        .lines
+        .iter()
+        .map(|line| {
+            let v: serde_json::Value = serde_json::from_str(line).expect("valid JSON");
+            v["chronos_invocation_id"]
+                .as_str()
+                .expect("chronos_invocation_id")
+                .to_string()
         })
         .collect()
 }

@@ -58,7 +58,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use super::correlation::{ChronosEvent, CorrelationStore, EventField};
-use super::{RecordedInvocation, SpanId, TraceId};
+use super::{OtlpInvocationId, RecordedInvocation, SpanId, TraceId};
 use crate::trace::TraceEvent;
 
 /// Clock domain disclosed on every emitted span. Same literal as
@@ -366,12 +366,7 @@ fn render_span(
         None => ZERO_TRACE_ID_HEX.to_string(),
     };
 
-    // Span identity is the stream position, not anything the payload
-    // carries: re-exporting the same stream must reproduce the same ids.
-    // `event_idx` is the index the store binds, which for a stream ingested
-    // in session order equals the `TraceEvent::event_id` of the same event
-    // (`pub type EventId = u64`), so the seed is the event's own id.
-    let span_id = SpanId::from_bytes(event_idx.to_be_bytes());
+    let span_id = derive_span_id(&trace_id_hex, &recorded.invocation_id, event_idx);
 
     let mut attributes: Vec<(String, String)> = Vec::with_capacity(event.fields.len() + 3);
     for (key, field) in &event.fields {
@@ -403,6 +398,47 @@ fn render_span(
         chronos_invocation_id: recorded.invocation_id.to_string(),
         attributes,
     }
+}
+
+/// FNV-1a/64, carried forward from one chunk of bytes to the next.
+fn fnv1a64(seed: u64, bytes: &[u8]) -> u64 {
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+    let mut hash = seed;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(PRIME);
+    }
+    hash
+}
+
+/// Derive a span id that is unique across the services sharing a trace.
+///
+/// ADR-0018 §2.3 derived it from `event_idx` alone, for reproducibility
+/// across re-runs of the same stream. That reason does not survive two
+/// services in one trace: `run_service_pipeline` builds a fresh
+/// `CorrelationStore` per call, so `event_idx` restarts at 0 in every
+/// service, and two services that share a traceparent both emitted
+/// `span_id 0000000000000000` for their first event. Same OTel identity
+/// for two different spans — a collector absorbs the second as a
+/// duplicate and one span of the trace is lost.
+///
+/// Reproducibility and cross-service uniqueness cannot both come from a
+/// counter, so the trade is recorded rather than implied: uniqueness
+/// won, and re-exporting an event under a different trace id or
+/// invocation now yields a different span id. Re-exporting the *same*
+/// event under the same trace and invocation still reproduces it, which
+/// is the reproducibility the ADR was protecting.
+///
+/// FNV-1a/64 rather than a cryptographic hash: this is trace identity,
+/// not a trust boundary, and `chronos-domain` carries no hash dependency
+/// today. A 64-bit space turns the certain collision of a shared counter
+/// into a birthday-probability one, which is the whole point.
+fn derive_span_id(trace_id_hex: &str, invocation_id: &OtlpInvocationId, event_idx: u64) -> SpanId {
+    const OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+    let hash = fnv1a64(OFFSET_BASIS, trace_id_hex.as_bytes());
+    let hash = fnv1a64(hash, invocation_id.as_uuid().as_bytes());
+    let hash = fnv1a64(hash, &event_idx.to_be_bytes());
+    SpanId::from_bytes(hash.to_be_bytes())
 }
 
 /// Attribute values are strings on the wire even when the chronos-side field
