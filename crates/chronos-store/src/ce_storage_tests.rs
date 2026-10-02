@@ -130,7 +130,17 @@ fn list_with_limit_truncates() {
         cursor: None,
     };
     let summaries = store.list_counterexample_bundles(filter).unwrap();
-    assert_eq!(summaries.len(), 3);
+    // Pin WHICH bundles, not just how many. `len() == 3` holds under both
+    // "first N in key order" and "last N", so it left the oldest-first
+    // contract that `CounterexampleBundleFilter`'s doc states unpinned by any
+    // assertion: it could be reverted to newest-first and the suite would
+    // stay green. The ids are the paired evidence; the count alone is shape.
+    let ids: Vec<&str> = summaries.iter().map(|s| s.bundle_id.as_str()).collect();
+    assert_eq!(
+        ids,
+        vec!["b-00", "b-01", "b-02"],
+        "limit must take the OLDEST N"
+    );
 }
 
 // m8-05 (B2): cursor skips rows <= cursor's bundle_id, returning
