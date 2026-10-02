@@ -691,7 +691,7 @@ pub enum RecoveryGateVerdict {
 /// 2. **No invocation id was reused.** Two attempts sharing an id would
 ///    make a consumer's deduplication swallow a genuinely new attempt.
 /// 3. **Every outage-phase request was recorded.** `outages.len() ==
-///    n_outage_requests`, each tagged [`CONSUMER_TARGET`]. An outage that
+///    n_outage_requests`, each tagged with the consumer target name. An outage that
 ///    is not recorded is the failure mode this gate exists to catch: the
 ///    pipeline keeps working locally while the downstream silently stops
 ///    receiving anything.

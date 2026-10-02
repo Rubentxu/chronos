@@ -25,9 +25,20 @@
 //!     exporter `chronos-services::session_export` shares only the OTel
 //!     envelope shape, so "no duplication needed" overstates the overlap:
 //!     ADR-0018's opt-in filter, export limits and JSON Lines renderer have no
-//!     counterpart there. Note also that nothing in product calls
-//!     `redact_and_limit_attributes` on an export path yet — this module is
-//!     reachable from tests only, so M6.5 is a library, not an applied policy.
+//!     counterpart there. That gap was closed by the M6.4 lift, which added
+//!     `otlp::exporter` — so M6.5 now composes with a real exporter instead of
+//!     being generic over a shape nothing produces.
+//!
+//! ## Where it is applied
+//!
+//! [`super::gates::run_service_pipeline`] calls
+//! [`redact_and_limit_attributes`] between span construction
+//! ([`super::exporter::export_spans`]) and rendering
+//! ([`super::exporter::render_json_line`]), so M6.5 is an applied policy on the
+//! product pipeline, not a library awaiting one. `super::exporter::export`
+//! deliberately does not redact: it is the renderer, and a policy it applied
+//! silently would make "render this span" and "render this span under policy
+//! P" the same call with no way to name which one ran.
 
 /// Redaction policy. Sensitive key patterns are matched
 /// case-insensitive against the attribute key name; the value of any

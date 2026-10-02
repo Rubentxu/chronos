@@ -91,9 +91,10 @@ pub struct HypothesisInputWire {
     pub predicate: Option<ExistencePredicateWire>,
     pub caller: Option<String>,
     pub callee: Option<String>,
-    /// HypothesisInput::max_depth is Option<usize>; we persist as Option<u64>
-    /// for forward compatibility (future widening to u128). Cast is
-    /// saturating in `hypothesis_input_from_wire` (bounded by usize::MAX).
+    /// `HypothesisInput::max_depth` is `Option<usize>`; we persist as
+    /// `Option<u64>` for forward compatibility (future widening to `u128`).
+    /// Cast is saturating in `hypothesis_input_from_wire` (bounded by
+    /// `usize::MAX`).
     pub max_depth: Option<u64>,
 }
 

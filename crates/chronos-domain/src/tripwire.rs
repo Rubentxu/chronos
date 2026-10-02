@@ -293,9 +293,8 @@ impl TripwireManager {
     /// REC-C2.1: the tripwires that match `event`, as a **pure** query (no
     /// buffer side effect).
     ///
-    /// Derivation of durable `TripwireFired` evidence uses this rather than
-    /// [`evaluate`](Self::evaluate), so that producing evidence does not
-    /// simultaneously mutate the legacy in-memory fired buffer. Returns a
+    /// Derivation of durable `TripwireFired` evidence uses this pure query,
+    /// so producing evidence has no side effect on the manager's state. Returns a
     /// snapshot of the subscription (id, condition, label) so the caller can
     /// persist a self-describing firing.
     pub fn matching(&self, event: &TraceEvent) -> Vec<TripwireMatch> {

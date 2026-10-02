@@ -1,9 +1,16 @@
 //! M6.4 lift: opt-in OTel JSON Lines export with declared limits.
 //!
 //! Source of truth: ADR-0018. The export contract is
-//! `export(store, events, filter, limits) -> ExportResult`, and it is the
-//! **only** export path: there is no `export_all()`. An event leaves chronos
-//! only when the caller named it in an [`OptInFilter`].
+//! `export(store, events, filter, limits) -> ExportResult`. It is the only
+//! *complete* export path, and there is no `export_all()`: an event leaves
+//! chronos only when the caller named it in an [`OptInFilter`].
+//!
+//! The opt-in itself lives one level down, in [`export_spans`], which every
+//! path goes through — so "no unfiltered export" holds for the seam as well,
+//! not just for this wrapper. The product pipeline
+//! ([`super::gates::run_service_pipeline`]) calls [`export_spans`] and renders
+//! itself because redaction has to act on a span before it becomes text;
+//! that composition is deliberate, not a second export path.
 //!
 //! ## What the spike got wrong about the product
 //!
@@ -39,9 +46,12 @@
 //!
 //! No OTLP/HTTP transport, no batching, no retry, no parent-child spans, no
 //! cardinality policy — ADR-0018 §6 places all of those downstream. Redaction
-//! is likewise not wired here: `otlp::redaction::redact_and_limit_attributes`
-//! consumes the `Vec<(String, String)>` on [`ExportedSpan`], so the future
-//! M6.5 integration point is a policy call, not a renderer change.
+//! is likewise not wired *here*: `otlp::redaction::redact_and_limit_attributes`
+//! consumes the `Vec<(String, String)>` on [`ExportedSpan`], so integrating M6.5
+//! is a policy call, not a renderer change. That call already exists — it is
+//! [`super::gates::run_service_pipeline`], which acts on the spans returned by
+//! [`export_spans`] before rendering. [`export`] alone still renders unredacted,
+//! because it is the renderer, not the policy.
 
 use std::collections::HashMap;
 

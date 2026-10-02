@@ -296,8 +296,8 @@ pub trait NativeProbeController: Send + Sync + Debug {
     ///
     /// The `binary_path` is optional and is used to seed the resolver
     /// pipeline with module/symbol information. The returned context
-    /// is fed to [`SemanticResolver::resolve`] to project raw events
-    /// into semantic events.
+    /// is fed to [`SemanticResolver::resolve`](crate::semantic::SemanticResolver::resolve)
+    /// to project raw events into semantic events.
     fn resolve_context(&self, binary_path: Option<String>) -> ResolveContext;
 }
 
@@ -353,10 +353,9 @@ pub trait NativeProbeControllerFactory: Send + Sync {
     ///
     /// On success the returned `CaptureSession` is the live session
     /// handle the consumer stores alongside the controller in its
-    /// registry. Errors are surfaced as
-    /// [`NativeProbeBuildError::Factory`] with a string detail so the
-    /// port does not leak the concrete error type from
-    /// `chronos_native`.
+    /// registry. Errors are surfaced as [`NativeProbeBuildError`] with a
+    /// string detail so the port does not leak the concrete error type
+    /// from `chronos_native`.
     fn build_for_spawn(
         &self,
         config: CaptureConfig,
