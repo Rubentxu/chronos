@@ -942,13 +942,12 @@ impl NativeProbeBackend {
                 // EventBus fallback. The log (if attached) takes the record
                 // and the application observer runs synchronously before the
                 // next event is processed.
-                let accepted = Self::accept_and_publish(
+                let accept = Self::accept_and_publish(
                     seam.log.as_ref(),
                     &trace_event,
                     timestamp_ns.get(),
                     seam.observer.as_ref(),
-                )
-                .is_ok();
+                );
 
                 // Resolve to semantic event via the pipeline. Kept for the
                 // pipeline's own accounting (and so future fan-out can
@@ -959,8 +958,18 @@ impl NativeProbeBackend {
                     binary_path: Some(program_path.to_string()),
                 };
                 let _semantic_event = resolver_pipeline.resolve(&trace_event, &ctx);
-                if !accepted {
-                    debug!("probe loop: rejected observation (no canonical sink)");
+                if let Err(e) = &accept {
+                    // A rejected observation is captured evidence that will
+                    // NOT be in the log. A failed append consumes no seq, so
+                    // the log stays contiguous, records no gap, and a range
+                    // reader still reports the page as complete. That silence
+                    // is why this is `warn` and not `debug`: the old message
+                    // blamed "no canonical sink" whatever the real cause was,
+                    // and `debug` is off by default in release.
+                    warn!(
+                        "probe loop: observation not persisted to the execution log: {e}; \
+                         the log has no gap for it, so completeness is understated"
+                    );
                 }
 
                 event_id += 1;
@@ -1067,21 +1076,26 @@ impl NativeProbeBackend {
                 // REC-C2.3: the accepted-Raw seam is the only sink (the
                 // attach loop already shared this with spawn in C2.2.1; the
                 // EventBus fallback is retired here).
-                let accepted = Self::accept_and_publish(
+                let accept = Self::accept_and_publish(
                     seam.log.as_ref(),
                     &trace_event,
                     timestamp_ns.get(),
                     seam.observer.as_ref(),
-                )
-                .is_ok();
+                );
 
                 let ctx = ResolveContext {
                     pid,
                     binary_path: None,
                 };
                 let _semantic_event = resolver_pipeline.resolve(&trace_event, &ctx);
-                if !accepted {
-                    debug!("attach loop: rejected observation (no canonical sink)");
+                if let Err(e) = &accept {
+                    // See the spawn loop: a failed append leaves no trace in
+                    // the log and no gap for it, so it has to be reported at
+                    // a level that survives release.
+                    warn!(
+                        "attach loop: observation not persisted to the execution log: {e}; \
+                         the log has no gap for it, so completeness is understated"
+                    );
                 }
 
                 event_id += 1;
