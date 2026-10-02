@@ -17,6 +17,23 @@ pub enum StoreError {
     #[error("Hash not found: {0}")]
     HashNotFound(String),
 
+    /// The bytes stored under a content address do not hash to that address.
+    ///
+    /// A content-addressed store derives the row key from the content, so the
+    /// key is only meaningful if the read path re-derives it. This arm is what
+    /// makes a mismatch a fault instead of a silently substituted value: the
+    /// caller asked for one event and would otherwise be handed a different
+    /// one that deserializes cleanly. `{found}` is the hash the stored bytes
+    /// actually have, which is usually the address of a real row elsewhere in
+    /// the store.
+    #[error("content hash mismatch: stored under {expected} but hashes to {found}")]
+    ContentHashMismatch {
+        /// The address the caller asked for.
+        expected: String,
+        /// The address the retrieved bytes actually have.
+        found: String,
+    },
+
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 

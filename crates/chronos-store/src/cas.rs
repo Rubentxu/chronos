@@ -169,6 +169,23 @@ impl ContentStore {
         };
 
         let bytes: &[u8] = stored.value();
+
+        // Re-derive the address from the content. `insert_batch` computes the
+        // key as `blake3(compressed)`, so the key is only trustworthy if the
+        // read side recomputes it: without this check a row whose bytes no
+        // longer match its key deserializes cleanly and `get` hands the caller
+        // a different event than the one it asked for. That is the surviving
+        // half of the hole m9-72 closed — `get` no longer answers a storage
+        // fault as "not found" (which silently dropped events in
+        // `load_session`), but a substituted event was still accepted.
+        let found = hash(bytes).to_hex().to_string();
+        if found != hash_hex {
+            return Err(StoreError::ContentHashMismatch {
+                expected: hash_hex.to_string(),
+                found,
+            });
+        }
+
         let decompressed =
             decompress_size_prepended(bytes).map_err(|e| StoreError::Compression(e.to_string()))?;
 
@@ -280,6 +297,54 @@ mod tests {
         let retrieved = retrieved.unwrap();
         assert_eq!(retrieved.event_id, 1);
         assert_eq!(retrieved.location.function.as_deref(), Some("main"));
+    }
+
+    /// A row whose bytes do not hash to its own key must be a fault, not a
+    /// silently substituted event.
+    ///
+    /// The fault is real, not simulated: a second event's compressed bytes are
+    /// written under the first event's address, so the row deserializes
+    /// perfectly and every structural check downstream is satisfied. Before
+    /// the read-side re-derivation, `get` answered `Ok(Some(other))` and
+    /// `load_session` pushed that other event into the session it was
+    /// reconstructing — the caller received a coherent-looking session that
+    /// was not the one that was stored.
+    ///
+    /// `test_cas_get_returns_event` above is the control: it proves the
+    /// check does not reject rows that do match.
+    #[test]
+    fn test_get_rejects_bytes_that_do_not_hash_to_the_requested_address() {
+        let db = in_memory_db();
+        let store = ContentStore::new(db.clone());
+        let honest = make_event(1, "honest");
+        let impostor = make_event(2, "impostor");
+        let honest_hash = store.put(&honest).unwrap();
+        let (_, impostor_bytes) = ContentStore::encode(&impostor).unwrap();
+
+        // Corruption that keeps the row structurally valid: right table, right
+        // value type, bytes that decompress and deserialize without complaint.
+        let tx = db.begin_write().unwrap();
+        {
+            let mut table = tx.open_table(CAS_TABLE).unwrap();
+            table
+                .insert(honest_hash.as_bytes(), impostor_bytes.as_slice())
+                .unwrap();
+        }
+        tx.commit().unwrap();
+
+        match store.get(&honest_hash) {
+            Err(StoreError::ContentHashMismatch { expected, found }) => {
+                assert_eq!(expected, honest_hash);
+                assert_ne!(
+                    found, honest_hash,
+                    "the reported hash must be the one the bytes actually have"
+                );
+            }
+            other => panic!(
+                "bytes stored under {honest_hash} that hash elsewhere must be rejected, \
+                 got {other:?} — a substituted event would load as a valid session"
+            ),
+        }
     }
 
     #[test]
